@@ -111,7 +111,7 @@ fn cache_storage_policy_measurement() {
         let store = QueryStore::open(&manifest).unwrap();
         let started = Instant::now();
         for (key, expected) in keys {
-            let value = store.get(&key).unwrap().unwrap();
+            let value = store.read_view().get(&key).unwrap().unwrap();
             assert_eq!(black_box(value), expected);
         }
         let read_microseconds = started.elapsed().as_micros();

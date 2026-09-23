@@ -1,7 +1,7 @@
 # Architecture (normative)
 
-Blobray is a generic, deliberately non-inferential evidence
-tool. It extracts, links, and presents observations from caller-supplied
+Blobray records evidence and derives explicitly qualified hypotheses.
+It extracts, links, and presents observations from caller-supplied
 artifacts. It may attach reviewed labels and executable boundary models, but
 it must preserve uncertainty and must not promote a hint to hardware truth.
 
@@ -33,6 +33,83 @@ of observed behavior.
 | Documentation | Explain current contracts and workflow | Normative architecture and operator guidance | Code/schema contracts | Human guidance | Duplicate historical narratives | This file + code/tests |
 
 ## Dependency and knowledge direction
+
+The project analysis application owns a `CapturedSourceSet` for binary stages.
+It captures declared run-input paths when the first uncached binary stage
+requires them. Symbol inventory, MMIO discovery, interface discovery and all
+selected IR profiles borrow this set through their analysis and export APIs.
+Standalone commands construct a set for their declared inputs. Those APIs
+reject a path absent from the set; they cannot silently open it themselves.
+
+Each capture owns immutable bytes and a content digest. Its lazy backend
+catalog shares those bytes without copying the container. Failed reads and
+failed binary parses remain associated with the captured path and are not
+retried during the run. A binary parse failure does not discard the captured
+raw bytes. Rendering uses captured digests and data objects, so it cannot
+combine analyzed code with a later version of a file.
+
+A project session also owns the immutable `InterfaceFacts` query capture.
+Snapshot and revision queries borrow that capture; reviewed interface bindings
+are constructed over the same allocation. A missing or invalid reviewed pack
+does not remove raw observations from the workspace snapshot. Loading errors
+remain diagnostics. The first observation load, including a missing-file or
+parse-error result, is retained for the session lifetime. Explicit application
+reload opens a new session; existing snapshots retain their captured facts.
+This capture does not atomically freeze the reviewed pack or other workspaces.
+`BlobrayApplication` opens a query session without constructing the backend
+register catalog. It retains the full memory map, including 64-bit ranges.
+Analysis, comparison and project-analysis planning prepare a separate session
+from the already resolved declarations and explicit overrides. This preparation
+owns the backend catalog and input guards; unsupported addresses fail explicitly
+without installing an empty catalog. Successful preparation is retained until
+reload. Reload replaces the query session and clears the prepared session and
+analysis cache only after resolution succeeds. Model preparation does not freeze
+all project inputs into one snapshot.
+
+A session retains its first register inventory capture, including a failed load,
+until reload. List, detail, research and revision use that same graph. The public
+`RegisterInventorySnapshot` owns the graph and its content ID; retaining its
+`Arc` keeps the graph available after reload. Publication inspection captures the
+model, discovery facts, review scopes and selected assertions once alongside the
+inventory, preserving separate load failures. The inventory ID describes only the
+graph, not those publication inputs. Workspace generations distinguish reloads
+even when the graph is unchanged. Capture currently reads these inputs in
+sequence; it is not an atomic transaction across their files.
+
+Register inventory queries accept the resolved `ProjectSession`, including its
+SVD selection and published artifact owner. Selected SVD bytes use the shared
+`CapturedSourceSet` during initial inventory capture, including opaque invalid
+text and explicit read failures. Discovery and linked-IR records come from the
+selected published epoch; deleting their exports does not change the graph.
+Missing publication, missing members and malformed records retain explicit gaps.
+Malformed MMIO payloads are retained as opaque evidence from the selected epoch.
+The inventory builder has no query-store writer and does not publish on a cache
+miss. Its derived graph is retained in memory by the session; the former
+file-fingerprinted persistent inventory cache is removed. Models, reviewed
+inputs and external observations still have separate file capture lifetimes.
+Plan/statistics readers retain their separate exclusion lock.
+Interface calls, assignments and decode diagnostics retain their physical code
+owner through discovery and query. Function review consumes this identity in
+both compact and full queries and uses it to associate interface callers.
+Relocated roots carry a captured symbol reference or an explicit unknown reason.
+Argument roots belong to their physical function owner. Navigation groups captured
+symbols by occurrence and preserves every display label; relocated roots use the
+same occurrence lookup. Reviewed root selectors and project-call reachability
+still use separate association logic. Neither a navigation link nor a physical
+caller identity proves linker selection or target behavior.
+
+Publication input guards remain separate: they check whether current files
+still belong to the run's generation. Capturing binary bytes does not make
+project configuration, reviewed workspaces, replay execution or publication
+one atomic snapshot. Those components retain their own guards and lifetimes.
+The source set also does not prove linker selection or resolve conflicting
+companion layouts. Captured data definitions carry physical symbol identities
+through export, indexed queries and correspondence. Global memory-access
+expressions preserve physical relocation references alongside display names.
+A local target in the same
+captured artifact has an exact data-object association; global/weak definitions
+and name-only associations remain candidates. Runtime-address enrichment still
+uses a data-symbol range match and records an explicit unknown physical binding.
 
 ```text
 artifact bytes + provenance
@@ -130,6 +207,140 @@ complementary levels. An immutable profile/stage projection and its generated
 outputs can be restored from CAS for an identical request. Linked-IR analysis
 also persists direct-function facts, so different root sets can reuse facts for
 the functions they share instead of repeating every cold function analysis.
+
+Project orchestration uses the `PassSpec` registry in
+`application/project_analysis/pass_spec.rs`. It owns pass identities, semantic
+revisions, output schema references, configuration fingerprints, cache-domain
+requirements and execution dispatch. A resolved `PassGraph` fixes configured
+stages, prerequisites and required/optional dependencies once per invocation.
+Execution and the plan report consume that same graph; rendering the plan does
+not inspect files again to reconstruct dependency policy. A failed optional
+predecessor does not block its consumer. Every executed pass, including coverage,
+checks the run's input guard before invoking its domain operation.
+
+Cache-backed domain operations resolve one `ResolvedWork` declaration with checked identity,
+configuration, required/optional inputs, ordered outputs and execution mode.
+Preparation selects planning, cached completion or an owned `ExecutionWork`.
+Successful execution consumes that declaration when recording results; completion
+does not rebuild configuration or choose another set of files. Linked-IR profile
+expansion uses this same path for planning, writing and check mode, while batching
+pending profiles for shared analysis. Coverage declares the bundle files and
+source artifacts it verifies as inputs, with no generated outputs.
+
+The run also captures an `OutputCatalog` of exact file and IR bundle ownership.
+Replay declarations are retained from one reviewed pack read. Output conflicts
+and aliases of protected project inputs fail before any pass writes or restores
+files. Work preparation verifies the ordered output declaration and its current
+path binding. Plan dependency lookup names the producing work item, including
+its profile; it does not infer production from a shared path prefix.
+
+Project analysis retains an `OutputSet` with each execution declaration. A slot
+can issue one consuming file request; a shared clone retains the same claim and
+completion state. Dropping a request or failing emission does not complete it.
+Completion of a work item requires all its declared outputs to have succeeded,
+including check mode. Domain helpers receive these requests instead of choosing
+destinations again from project configuration. Cache hits use separate candidate
+sets: verified existing bytes or a successful CAS restore complete their slots;
+a cache miss discards that candidate before preparing execution.
+
+Completion retains the byte length and SHA-256 observed during emission,
+comparison or verified reuse. Collecting output receipts never replaces those
+values with a later read of the destination. Cache recording validates the
+receipts before and after storing the stage; a change during publication retires
+that stage binding. The coordinator checks receipts for executed and reused
+outputs again before activating the analysis epoch.
+
+Successful project analysis retains a schema-2 output manifest in that epoch.
+It records the declared destination, length and SHA-256 of each completed output,
+including uncached work, and the owning project manifest locator. The locator
+uses the resolved parent directory and declared filename; it is not a content
+fingerprint of the project configuration. A reader rejects an active epoch owned
+by another project manifest sharing the cache directory.
+Output payloads are immutable query results backed by
+CAS; the manifest depends on those queries, so the existing epoch/retention graph
+owns their lifetime. No separate object store or garbage collector is involved.
+
+The public `PublishedAnalysisOutputs` capability opens the current manifest and
+pins its SQLite read transaction and pack descriptors. `manifest()` exposes the
+epoch and ordered bindings; `read(path)` returns verified bytes from that epoch,
+even after generated files change or a later run publishes. An undeclared path
+returns `None`; unavailable or corrupt declared content is an error.
+`open_output(path)` authenticates the payload in bounded memory and returns a
+`PublishedOutputReader` implementing `Read` and `Seek`. Its cursor is relative to
+the payload and cannot enter an adjacent CAS frame. The reader owns its file
+descriptor independently of the manifest handle and survives pack replacement.
+`read(path)` collects that same verified view into memory. Neither API yet
+selects snapshots for all existing frontend loaders.
+
+CAS restoration, compaction, query reads and indexed IR share `FileView`, a
+bounded file descriptor with independent positional-read cursors. The indexed
+IR reader binds all bundle files before parsing its indexes; later function,
+object, overview, graph and register reads use those bindings. They do not reopen
+generated paths. Indexed ranges are checked against the captured extent before
+allocating record data. `LinkedIrReader::from_files` accepts the same bindings
+from a published CAS snapshot without requiring an exported directory.
+
+Directory import still captures its members sequentially; it is not an atomic
+initial bundle snapshot. Standalone loaders still select directory inputs.
+Descriptor retention protects against path replacement, not external in-place
+modification. Published output streams verify once at open and rely thereafter
+on the CAS writer contract that existing payload bytes are immutable.
+
+`ProjectArtifactStore` selects one published epoch on its first query and retains
+that selection, including missing/failed publication, until session reload. It
+admits only declared project IR roots and binds every requested bundle member
+from that manifest. Missing members are errors; exported files cannot fill them.
+The single-reader MRU evicts indexes, not the epoch, so another profile loaded
+later cannot select a newer run.
+
+Application function summaries, full function records, their static MMIO
+annotations, register discovery/IR evidence, code-boundary facts, interface
+observations and research IR graphs
+use this owner. Function investigation accepts
+an explicit IR reader capability and captured function pack; nested event-handler
+queries use the same capability. A changed live binary cannot be combined with
+the function's old published evidence. The raw-body/origin/replacement services
+are not yet a common immutable input snapshot. Standalone investigation supplies
+an explicit directory importer to the same implementation.
+
+`WorkspaceSnapshot.generated_analysis_epoch` identifies the published generation
+used by these readers; `FunctionDetailSummary.analysis_epoch` identifies the
+detail's owner. Interface review borrows the same captured observations. Missing
+publication or a missing declared output is an explicit error, including when an
+export exists. Deleting exports does not prevent reading published evidence.
+These fields do not claim that reviewed inputs, external observations, the entire
+register inventory, project status or other research projections belong to that
+epoch. Those domains still have separate captures and loaders.
+
+The linked-IR builder requires the coordinator's profile output sets in both
+write and check modes, validating profile identities, ordered members and mode
+before analysis. Its bundle adapter accounts for all bundle files and coverage;
+it captures their content identities from staging before directory publication.
+Stale check results stay incomplete and remain aggregated across profiles.
+Standalone IR build explicitly declares its own sets and uses the same builder.
+`ProjectIrBuildContext` borrows its immutable analysis inputs separately from
+the caller's query-store writer and output sets.
+
+Single generated files use the consuming `GeneratedOutput` request for text,
+bytes, streaming JSON and verified CAS frames. It owns one write/check lifecycle:
+check compares against the existing file without staging; write creates an owned
+sibling temporary file, finishes encoding, validates any expected length/digest,
+syncs the file and replaces the destination. Failure or unwind before replacement
+keeps the previous file and drops only the owned temporary file. Text publication
+therefore replaces a destination entry rather than modifying an existing inode.
+The request itself is a file-emission primitive; project work obtains tracked
+requests through its admitted output set. Other standalone exporters still
+construct requests directly. Linked-IR bundle publication uses a directory
+adapter on the same output set, with the existing directory swap primitive.
+
+The work contract does not provide a transaction over those files or restrict
+every domain writer to a publication capability. Receipt validation does not pin
+paths against replacement after validation. The final input check and cache-epoch activation remain separate
+coordinator transitions. Function-body queries and other workflows also retain
+their own orchestration contracts.
+The output manifest captures emitted content, not the complete source/evidence
+graph. Downstream passes still consume generated paths during execution;
+run-local staging and a common snapshot across all query families remain absent.
 
 A direct-function key binds the exact owner identity and body, relocations and
 memory layout. It also includes conservative fingerprints of the resolver

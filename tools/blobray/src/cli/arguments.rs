@@ -699,8 +699,8 @@ pub(crate) struct InspectFlowArgs {
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct InspectObjectArgs {
-    /// Project source plus a raw symbol or reviewed memory-object identity.
-    #[arg(value_name = "SOURCE:SYMBOL|SOURCE:memory-object:PATH")]
+    /// Project source plus a symbol, reviewed memory-object identity or exact occurrence.
+    #[arg(value_name = "SOURCE:SELECTOR")]
     pub(crate) selector: String,
     /// Restrict memory evidence to one signed byte offset (for example `0x74`).
     #[arg(long, value_name = "OFFSET")]
@@ -715,8 +715,8 @@ pub(crate) struct InspectObjectArgs {
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct InspectRegisterArgs {
-    /// Physical MMIO address in hexadecimal (`0x...`) or decimal form.
-    #[arg(value_name = "ADDRESS")]
+    /// Exact register subject ID, or a 64-bit address in hexadecimal or decimal form.
+    #[arg(value_name = "SUBJECT_OR_ADDRESS")]
     pub(crate) address: String,
 }
 

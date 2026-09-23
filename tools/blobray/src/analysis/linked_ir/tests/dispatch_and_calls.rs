@@ -329,6 +329,12 @@ fn opaque_runtime_body_is_not_an_artifact_wide_analysis_root() {
 fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
     let owner = symbol("vendor_init", 0x1000, vec![0x67, 0x80, 0x00, 0x00]);
     let external = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "ets_delay_us",
+            0x2f80_003c,
+        ),
         member: None,
         name: "ets_delay_us".to_owned(),
         address: 0x2f80_003c,
@@ -403,12 +409,101 @@ fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
 }
 
 #[test]
-fn unique_archive_origin_can_name_a_relaxed_internal_definition() {
-    let owner = symbol("vendor_init", 0x1000, vec![0x67, 0x80, 0x00, 0x00]);
-    let linked = symbol("pp_post", 0x2000, vec![0x67, 0x80, 0x00, 0x00]);
+fn unverified_semantic_projection_retains_body_and_persisted_gap() {
+    let origin = symbol("pp_post", 0, vec![0x67, 0x80, 0, 0]);
+    let mut linked = symbol(
+        "pp_post",
+        0x2000,
+        vec![0x13, 0x05, 0x10, 0, 0x67, 0x80, 0, 0],
+    );
+    linked.addresses_resolved = true;
     let hooks = Box::leak(Box::new(crate::RiscvSummaryHooks {
         secondary_return_target: |_| false,
-        direct_semantic: |_| None,
+        direct_semantic: |symbol| {
+            (!symbol.addresses_resolved
+                && symbol.name == "pp_post"
+                && symbol.bytes == [0x67, 0x80, 0, 0])
+            .then_some(&LINK_UNIT_DELAY_SEMANTIC)
+        },
+        direct_external_semantic: |_| None,
+        direct_external_intrinsic: |_, _| None,
+        reference_intrinsic: |_, _, _| None,
+        caller_memory_input_domain: |_, _, _| None,
+        standard_memory_function: |_| None,
+        wide_signed_divide: |_, _| None,
+    }));
+    let mut resolver = empty_resolver();
+    resolver.pointer_context.summary_hooks = Some(hooks);
+    resolver.symbols = vec![linked.clone()];
+    resolver
+        .symbol_ids
+        .insert(linked.identity.clone(), linked.address as u32);
+    resolver
+        .symbols_by_address
+        .insert(linked.address as u32, linked.clone());
+    assert!(
+        resolver
+            .review_projected_direct_semantic(&linked, &origin)
+            .is_some()
+    );
+    assert!(!opaque_semantic_boundary(&resolver, &linked));
+    let report = build_linked_ir_for_source(
+        &resolver,
+        &MmioMap {
+            registers: Vec::new(),
+            regions: Vec::new(),
+        },
+        LinkedIrSourceOptions {
+            symbol_prefix: "pp_post",
+            source: "vendor",
+            artifact_sha256: TEST_ARTIFACT_SHA256,
+            namespace_identities: true,
+            include_reachable: true,
+            jobs: 1,
+            compact_projected_actions: false,
+        },
+    );
+    assert_eq!(
+        report.functions.len(),
+        1,
+        "unverified opaque overlays must not hide bodies"
+    );
+    assert_eq!(report.root_blockers.len(), 1);
+    assert!(report.root_blockers[0].reason.contains("DifferentBody"));
+    let persisted = crate::artifacts::render_linked_ir_fixture_with_blockers(
+        report.functions.clone(),
+        report.mmio_registers.clone(),
+        report.root_blockers.clone(),
+        &BTreeMap::new(),
+    );
+    let restored = crate::artifacts::parse_linked_ir(&persisted).unwrap();
+    assert_eq!(restored.root_blockers.len(), 1);
+    assert_eq!(restored.root_blockers[0].code_identity, linked.identity);
+    assert!(restored.root_blockers[0].reason.contains("DifferentBody"));
+    let json = serde_json::to_value(&report).unwrap();
+    assert!(
+        json["root_blockers"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("unverified")
+    );
+}
+
+#[test]
+fn verified_archive_body_can_name_an_internal_definition() {
+    let owner = symbol("vendor_init", 0x1000, vec![0x67, 0x80, 0x00, 0x00]);
+    let origin = symbol("pp_post", 0, vec![0x67, 0x80, 0x00, 0x00]);
+    let mut linked = origin.clone();
+    linked.address = 0x2000;
+    linked.addresses_resolved = true;
+    let hooks = Box::leak(Box::new(crate::RiscvSummaryHooks {
+        secondary_return_target: |_| false,
+        direct_semantic: |symbol| {
+            (!symbol.addresses_resolved
+                && symbol.name == "pp_post"
+                && symbol.bytes == [0x67, 0x80, 0, 0])
+            .then_some(&LINK_UNIT_DELAY_SEMANTIC)
+        },
         direct_external_semantic: |_| None,
         direct_external_intrinsic: |_, _| None,
         reference_intrinsic: |_, _, _| None,
@@ -419,7 +514,11 @@ fn unique_archive_origin_can_name_a_relaxed_internal_definition() {
     let mut resolver = empty_resolver();
     resolver.symbols = vec![owner.clone(), linked.clone()];
     resolver.pointer_context.summary_hooks = Some(hooks);
-    resolver.register_projected_direct_semantic(&linked, &LINK_UNIT_DELAY_SEMANTIC);
+    assert!(
+        resolver
+            .review_projected_direct_semantic(&linked, &origin)
+            .is_some()
+    );
     let identities = IrIdentityCatalog::new(&resolver, None);
     let mut calls = vec![LinkedCall {
         kind: "internal",
@@ -458,7 +557,7 @@ fn unique_archive_origin_can_name_a_relaxed_internal_definition() {
             .semantic_contract
             .as_ref()
             .map(|contract| contract.source),
-        Some("unique-reviewed-archive-origin")
+        Some("verified-position-independent-archive-body")
     );
 }
 
@@ -609,20 +708,10 @@ fn direct_call_graph_survives_reference_summary_inlining() {
     let child_id = 0x8000_0000;
     let resolver = ReferenceResolver {
         symbols: vec![parent.clone(), child.clone()],
-        symbols_by_address: BTreeMap::from([(child_id, child)]),
+        symbols_by_address: BTreeMap::from([(child_id, child.clone())]),
         symbol_ids: BTreeMap::from([
-            (
-                (parent.member.clone(), parent.name.clone(), parent.address),
-                0x8000_0001,
-            ),
-            (
-                (
-                    Some("member.o".to_owned()),
-                    "vendor_child".to_owned(),
-                    0x2000,
-                ),
-                child_id,
-            ),
+            (parent.identity.clone(), 0x8000_0001),
+            (child.identity.clone(), child_id),
         ]),
         exported_symbol_keys: BTreeSet::new(),
         relocated_calls: direct::StructuralRelocatedCalls::from([(
@@ -632,7 +721,7 @@ fn direct_call_graph_survives_reference_summary_inlining() {
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: Vec::new(),
         data_objects: Vec::new(),
-        projected_direct_semantics: BTreeMap::new(),
+        projected_direct_semantics: Default::default(),
         projected_origins: BTreeMap::new(),
     };
     let map = MmioMap {
@@ -726,18 +815,9 @@ fn reachable_callees_are_loaded_as_one_late_cache_batch() {
             (second_id, second.clone()),
         ]),
         symbol_ids: BTreeMap::from([
-            (
-                (parent.member.clone(), parent.name.clone(), parent.address),
-                0x8000_0002,
-            ),
-            (
-                (first.member.clone(), first.name.clone(), first.address),
-                first_id,
-            ),
-            (
-                (second.member.clone(), second.name.clone(), second.address),
-                second_id,
-            ),
+            (parent.identity.clone(), 0x8000_0002),
+            (first.identity.clone(), first_id),
+            (second.identity.clone(), second_id),
         ]),
         exported_symbol_keys: BTreeSet::new(),
         relocated_calls: direct::StructuralRelocatedCalls::from([
@@ -753,7 +833,7 @@ fn reachable_callees_are_loaded_as_one_late_cache_batch() {
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: Vec::new(),
         data_objects: Vec::new(),
-        projected_direct_semantics: BTreeMap::new(),
+        projected_direct_semantics: Default::default(),
         projected_origins: BTreeMap::new(),
     };
     let map = MmioMap {
@@ -818,12 +898,7 @@ fn changing_one_function_reuses_unrelated_persistent_facts() {
     resolver.symbol_ids = symbols
         .iter()
         .enumerate()
-        .map(|(index, symbol)| {
-            (
-                (symbol.member.clone(), symbol.name.clone(), symbol.address),
-                0x8000_0000 + index as u32,
-            )
-        })
+        .map(|(index, symbol)| (symbol.identity.clone(), 0x8000_0000 + index as u32))
         .collect();
     let map = MmioMap {
         registers: Vec::new(),
@@ -902,10 +977,9 @@ fn linked_base_shift_does_not_reuse_stale_pc_relative_mmio_facts() {
             ],
         );
         let mut resolver = empty_resolver();
-        resolver.symbol_ids.insert(
-            (owner.member.clone(), owner.name.clone(), owner.address),
-            address as u32,
-        );
+        resolver
+            .symbol_ids
+            .insert(owner.identity.clone(), address as u32);
         resolver.symbols = vec![owner];
         resolver
     };
@@ -1043,6 +1117,12 @@ fn lossless_resolved_archive_call_keeps_reviewed_diagnostic_semantics() {
 #[test]
 fn archive_call_projects_through_relaxed_instruction_correspondence() {
     let runtime = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "vendor_parent",
+            0x1000,
+        ),
         member: None,
         name: "vendor_parent".to_owned(),
         address: 0x1000,
@@ -1052,6 +1132,12 @@ fn archive_call_projects_through_relaxed_instruction_correspondence() {
         relocations: Vec::new(),
     };
     let origin = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("parent.o".to_owned())),
+            "vendor_parent",
+            0,
+        ),
         member: Some("parent.o".to_owned()),
         name: "vendor_parent".to_owned(),
         address: 0,
@@ -1062,6 +1148,9 @@ fn archive_call_projects_through_relaxed_instruction_correspondence() {
         addresses_resolved: false,
         memory_regions: Default::default(),
         relocations: vec![artifact::SymbolRelocation {
+            reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                reason: "synthetic fixture".to_owned(),
+            },
             address: 0,
             kind: artifact::RelocationKind::Call,
             symbol: "vendor_child".to_owned(),
@@ -1069,6 +1158,12 @@ fn archive_call_projects_through_relaxed_instruction_correspondence() {
         }],
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "vendor_child",
+            0x2000,
+        ),
         member: None,
         name: "vendor_child".to_owned(),
         address: 0x2000,
@@ -1754,6 +1849,9 @@ fn pseudo_arguments_compact_exact_and_unknown_abi_slot_runs() {
 #[test]
 fn call_argument_exactness_comes_from_symbolic_provenance() {
     let unresolved_symbol = SymbolicValue::SymbolAddress {
+        reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+            reason: "synthetic fixture".to_owned(),
+        },
         member: None,
         symbol: "callback".to_owned(),
         hi_addend: 0,

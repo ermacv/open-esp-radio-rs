@@ -33,6 +33,7 @@ pub enum MemoryObjectRoot {
         index: u8,
     },
     RelocatedSymbol {
+        reference: open_radio_vendor_contracts::SymbolReference,
         member: Option<String>,
         symbol: String,
     },
@@ -89,6 +90,7 @@ pub enum SymbolicValue {
     },
     StackAddress(i32),
     SymbolAddress {
+        reference: open_radio_vendor_contracts::SymbolReference,
         member: Option<String>,
         symbol: String,
         hi_addend: i64,

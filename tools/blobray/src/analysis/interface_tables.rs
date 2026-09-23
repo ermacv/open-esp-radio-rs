@@ -5,40 +5,10 @@ use std::{collections::BTreeSet, path::PathBuf};
 use crate::{
     Result, artifact,
     interface_discovery::{InterfaceCallCandidate, InterfaceRoot, InterfaceSlotAssignment},
+    interfaces::InterfaceGapFact,
 };
 
 use super::{LinkageSymbolLocation, ProjectLinkageInventory, build_project_linkage_inventory};
-
-fn persistent_call_identity(
-    discovered: &DiscoveredInterfaceCall,
-) -> (usize, InterfaceCallCandidate) {
-    let mut call = discovered.call.clone();
-    // The persistent facts retain the final slot-load site, but intentionally
-    // compare container shape independently of the path-specific instruction
-    // that loaded each intermediate pointer. Normalize exactly that omitted
-    // provenance before deduplicating so the strict reader never receives two
-    // records that deserialize to the same fact.
-    let container_len = call.target.loads.len().saturating_sub(1);
-    for load in &mut call.target.loads[..container_len] {
-        load.site = 0;
-    }
-    for argument in &mut call.arguments {
-        if let crate::interface_discovery::InterfaceArgumentValue::Pointer(pointer) = argument {
-            for load in &mut pointer.loads {
-                load.site = 0;
-            }
-        }
-    }
-    if matches!(
-        call.kind,
-        crate::interface_discovery::InterfaceCallKind::LinkedJump(_)
-    ) {
-        // The stable fact vocabulary records this class as `linked-jump`; the
-        // exact architectural link register remains presentation evidence.
-        call.kind = crate::interface_discovery::InterfaceCallKind::LinkedJump(0);
-    }
-    (discovered.artifact, call)
-}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ProjectInterfaceDiscoveryOptions {
@@ -60,6 +30,7 @@ pub(crate) struct DiscoveredInterfaceAssignment {
 
 #[derive(Clone)]
 pub(crate) struct InterfaceDecodeFailure {
+    pub(crate) owner: crate::artifact::CodeIdentity,
     pub(crate) artifact: usize,
     pub(crate) member: Option<String>,
     pub(crate) function: String,
@@ -68,6 +39,7 @@ pub(crate) struct InterfaceDecodeFailure {
 
 #[derive(Clone)]
 pub(crate) struct InterfaceDecodeBlocker {
+    pub(crate) owner: crate::artifact::CodeIdentity,
     pub(crate) artifact: usize,
     pub(crate) member: Option<String>,
     pub(crate) function: String,
@@ -79,6 +51,8 @@ pub(crate) struct InterfaceDecodeBlocker {
 }
 
 pub(crate) struct ProjectInterfaceDiscovery {
+    pub(crate) limits: crate::interface_discovery::InterfaceDiscoveryLimits,
+    pub(crate) gaps: Vec<InterfaceGapFact>,
     pub(crate) linkage: ProjectLinkageInventory,
     pub(crate) functions: Vec<usize>,
     pub(crate) reviewed_boundaries: Vec<usize>,
@@ -89,17 +63,19 @@ pub(crate) struct ProjectInterfaceDiscovery {
 }
 
 pub(crate) fn discover_project_interfaces(
+    captures: &crate::source_set::CapturedSourceSet,
     inputs: &[(String, PathBuf)],
     options: &ProjectInterfaceDiscoveryOptions,
     effective_code: Option<&super::EffectiveCodeCatalog>,
 ) -> Result<ProjectInterfaceDiscovery> {
-    let linkage = build_project_linkage_inventory(inputs)?;
+    let linkage = build_project_linkage_inventory(captures, inputs)?;
     let mut functions = Vec::with_capacity(linkage.artifacts.len());
     let mut reviewed_boundaries = Vec::with_capacity(linkage.artifacts.len());
     let mut calls = Vec::new();
     let mut assignments = Vec::new();
     let mut decode_blockers = Vec::new();
     let mut failures = Vec::new();
+    let mut gaps = Vec::new();
     for (artifact_index, artifact) in linkage.artifacts.iter().enumerate() {
         let source = artifact.sources.first().ok_or_else(|| {
             crate::Error::invalid(format!(
@@ -107,36 +83,48 @@ pub(crate) fn discover_project_interfaces(
                 artifact.path.display()
             ))
         })?;
+        let capture = captures.artifact(&artifact.path)?;
         let (symbols, reviewed_count) = match effective_code {
             Some(catalog) => {
                 let loaded = catalog.load_symbols(
                     source,
                     &artifact.path,
+                    capture,
                     &options.name_prefix,
                     artifact::CodeSymbolSelection::All,
                 )?;
                 (loaded.symbols, loaded.reviewed_boundaries)
             }
             None => (
-                artifact::load_code_symbols(
-                    &artifact.path,
-                    &options.name_prefix,
-                    artifact::CodeSymbolSelection::All,
-                )?,
+                capture
+                    .code_symbols(&options.name_prefix, artifact::CodeSymbolSelection::All)?
+                    .into_iter()
+                    .map(|symbol| symbol.definition.clone())
+                    .collect(),
                 0,
             ),
         };
-        let data_symbols = artifact::load_data_symbols(&artifact.path)?;
+        let data_symbols = capture.data_symbols()?;
         functions.push(symbols.len());
         reviewed_boundaries.push(reviewed_count);
         for symbol in symbols {
             match crate::interface_discovery::discover_interface_calls_with_data_symbols(
                 &symbol,
-                &data_symbols,
+                data_symbols,
             ) {
                 Ok(discovered) => {
+                    gaps.extend(
+                        discovered
+                            .gaps
+                            .into_iter()
+                            .map(|evidence| InterfaceGapFact {
+                                artifact: artifact_index,
+                                evidence,
+                            }),
+                    );
                     decode_blockers.extend(discovered.decode_blockers.into_iter().map(|blocker| {
                         InterfaceDecodeBlocker {
+                            owner: symbol.identity.clone(),
                             artifact: artifact_index,
                             member: symbol.member.clone(),
                             function: symbol.name.clone(),
@@ -165,6 +153,7 @@ pub(crate) fn discover_project_interfaces(
                     }));
                 }
                 Err(error) => failures.push(InterfaceDecodeFailure {
+                    owner: symbol.identity.clone(),
                     artifact: artifact_index,
                     member: symbol.member,
                     function: symbol.name,
@@ -174,11 +163,13 @@ pub(crate) fn discover_project_interfaces(
         }
     }
     calls.sort_by(|left, right| (left.artifact, &left.call).cmp(&(right.artifact, &right.call)));
-    calls.dedup_by(|left, right| persistent_call_identity(left) == persistent_call_identity(right));
+    calls.dedup_by(|left, right| left.artifact == right.artifact && left.call == right.call);
     assignments.sort_by(|left, right| {
         (left.artifact, &left.assignment).cmp(&(right.artifact, &right.assignment))
     });
     Ok(ProjectInterfaceDiscovery {
+        limits: Default::default(),
+        gaps,
         linkage,
         functions,
         reviewed_boundaries,
@@ -207,24 +198,33 @@ pub(crate) fn interface_root_linkage(
             continue;
         }
         let matches = match root {
-            InterfaceRoot::RelocatedSymbol {
-                member,
-                symbol: name,
-                ..
-            } => &symbol.member == member && &symbol.fact.name == name,
-            InterfaceRoot::AbsoluteAddress { address } => {
-                symbol.fact.definition.is_definition() && symbol.fact.address == u64::from(*address)
-            }
-            InterfaceRoot::BoundedDataAddress {
-                member,
-                symbol: name,
-                symbol_address,
-                ..
+            InterfaceRoot::RelocatedSymbol { reference, .. } => match reference {
+                open_radio_vendor_contracts::SymbolReference::Captured {
+                    artifact_sha256,
+                    location,
+                    ..
+                } => {
+                    artifact_sha256 == &discovery.linkage.artifacts[symbol.artifact].sha256
+                        && *location == symbol.location
+                }
+                open_radio_vendor_contracts::SymbolReference::Unknown { .. } => false,
+            },
+            InterfaceRoot::AbsoluteAddress {
+                address,
+                data_address,
             } => {
                 symbol.fact.definition.is_definition()
-                    && &symbol.member == member
-                    && &symbol.fact.name == name
-                    && symbol.fact.address == u64::from(*symbol_address)
+                    && ((data_address.candidates().is_empty()
+                        && symbol.fact.address == u64::from(*address))
+                        || data_address.candidates().iter().any(|candidate| {
+                            candidate.identity
+                                == crate::artifact::DataIdentity::Symbol {
+                                    artifact_sha256: discovery.linkage.artifacts[symbol.artifact]
+                                        .sha256
+                                        .clone(),
+                                    location: symbol.location,
+                                }
+                        }))
             }
             InterfaceRoot::FunctionArgument { .. } => false,
         };
@@ -235,57 +235,4 @@ pub(crate) fn interface_root_linkage(
         }
     }
     result
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::interface_discovery::{
-        InterfaceCallKind, InterfaceLoad, InterfacePointer, InterfaceRoot,
-    };
-
-    fn call(container_site: u32, slot_site: u32) -> DiscoveredInterfaceCall {
-        DiscoveredInterfaceCall {
-            artifact: 0,
-            call: InterfaceCallCandidate {
-                member: Some("event.o".to_owned()),
-                function: "dispatch".to_owned(),
-                function_address: 0x1000,
-                site: 0x1020,
-                kind: InterfaceCallKind::Call,
-                target: InterfacePointer {
-                    root: InterfaceRoot::FunctionArgument { index: 0 },
-                    loads: vec![
-                        InterfaceLoad {
-                            site: container_site,
-                            offset: 4,
-                            width: 32,
-                            selector: None,
-                        },
-                        InterfaceLoad {
-                            site: slot_site,
-                            offset: 8,
-                            width: 32,
-                            selector: None,
-                        },
-                    ],
-                    post_offset: 0,
-                },
-                jalr_offset: 0,
-                arguments: Vec::new(),
-            },
-        }
-    }
-
-    #[test]
-    fn persistent_identity_ignores_only_unstored_container_load_sites() {
-        assert_eq!(
-            persistent_call_identity(&call(0x1004, 0x101c)),
-            persistent_call_identity(&call(0x1008, 0x101c)),
-        );
-        assert_ne!(
-            persistent_call_identity(&call(0x1004, 0x101c)),
-            persistent_call_identity(&call(0x1004, 0x1018)),
-        );
-    }
 }

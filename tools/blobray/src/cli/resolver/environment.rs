@@ -203,7 +203,7 @@ pub(super) fn resolve_from(
         run_spec,
         memory_map,
         resolved_svd_paths,
-        mut svd,
+        svd,
         explicit_context,
     ) = if let Some(manifest) = project_path.as_deref() {
         let session = ProjectSession::open_with(
@@ -266,12 +266,6 @@ pub(super) fn resolve_from(
     apply_target_defaults(&mut command, &target);
     apply_project_defaults(&mut command, project.as_ref(), memory_map.as_ref())?;
 
-    if let Some(memory_map) = &memory_map {
-        svd.regions.extend(memory_map.resolved_mmio_regions()?);
-        svd.regions
-            .sort_by_key(|region| (region.start, region.end, region.name.clone()));
-        svd.regions.dedup();
-    }
     if needs.mmio_map && svd.regions.is_empty() {
         return Err(crate::Error::invalid(
             "command requires an MMIO region; add memory-map to the project",

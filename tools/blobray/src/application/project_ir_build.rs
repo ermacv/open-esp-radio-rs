@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use super::output_set::OutputSet;
 use super::project_inputs::{ResolvedInputs, resolve_inputs};
 use serde::Serialize;
 
@@ -56,7 +57,18 @@ pub(crate) struct BuildDocument<'a> {
     pub(crate) documents: usize,
 }
 
+/// Borrowed analysis inputs; output and query-store permissions are supplied
+/// separately by the owning workflow.
+pub(crate) struct ProjectIrBuildContext<'project, 'input> {
+    pub(crate) captures: &'input crate::source_set::CapturedSourceSet,
+    pub(crate) project: &'project ProjectSpec,
+    pub(crate) run_spec: &'input RunSpec,
+    pub(crate) svd: &'input MmioMap,
+    pub(crate) target: &'input TargetSpec,
+}
+
 pub(crate) fn build_project_ir<'a>(
+    captures: &crate::source_set::CapturedSourceSet,
     request: ProjectIrBuildRequest,
     project_manifest: &Path,
     project: &'a ProjectSpec,
@@ -64,6 +76,24 @@ pub(crate) fn build_project_ir<'a>(
     svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<BuildDocument<'a>> {
+    let outputs = select_profiles(&project.ir_profiles, &request.profiles)?
+        .into_iter()
+        .map(|profile| {
+            Ok((
+                profile.id.clone(),
+                OutputSet::new(&profile_outputs(profile), request.check)?,
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let review_outputs = if request.refresh_review_scopes {
+        project
+            .review
+            .as_ref()
+            .map(|review| OutputSet::new(std::slice::from_ref(&review.output), request.check))
+            .transpose()?
+    } else {
+        None
+    };
     // Check mode must reproduce evidence without creating, migrating or
     // updating persistent query-cache state. It intentionally performs
     // uncached function analysis; write mode keeps the normal fact-store path.
@@ -71,12 +101,17 @@ pub(crate) fn build_project_ir<'a>(
         .then(|| crate::application::query_store::QueryStore::open(project_manifest))
         .transpose()?;
     build_project_ir_impl(
+        ProjectIrBuildContext {
+            captures,
+            project,
+            run_spec,
+            svd,
+            target,
+        },
         request,
-        project,
-        run_spec,
-        svd,
-        target,
         function_fact_store.as_mut(),
+        &outputs,
+        review_outputs.as_ref(),
     )
 }
 
@@ -86,27 +121,65 @@ pub(crate) fn build_project_ir<'a>(
 /// entry point reuses that writer for function facts instead of trying to open
 /// a second `QueryStore` for the same database. Check mode never consults the
 /// supplied store, matching [`build_project_ir`]'s read-only behavior.
-pub(crate) fn build_project_ir_with_store<'a>(
+pub(crate) fn build_project_ir_with_outputs<'a>(
+    context: ProjectIrBuildContext<'a, '_>,
     request: ProjectIrBuildRequest,
-    project: &'a ProjectSpec,
-    run_spec: &RunSpec,
-    svd: &MmioMap,
-    target: &TargetSpec,
-    function_fact_store: &mut crate::application::query_store::QueryStore,
+    function_fact_store: Option<&mut crate::application::query_store::QueryStore>,
+    outputs: &BTreeMap<String, OutputSet>,
 ) -> Result<BuildDocument<'a>> {
-    let function_fact_store = (!request.check).then_some(function_fact_store);
-    build_project_ir_impl(request, project, run_spec, svd, target, function_fact_store)
+    if request.refresh_review_scopes {
+        return Err(crate::Error::invalid(
+            "coordinator-owned IR work cannot publish the separate review-scopes output",
+        ));
+    }
+    let function_fact_store = if request.check {
+        None
+    } else {
+        function_fact_store
+    };
+    build_project_ir_impl(context, request, function_fact_store, outputs, None)
+}
+
+fn profile_outputs(profile: &ProjectIrProfile) -> Vec<PathBuf> {
+    crate::artifacts::bundle_files(&profile.output)
+        .chain(std::iter::once(profile.output.join(super::coverage::FILE)))
+        .collect()
 }
 
 fn build_project_ir_impl<'a>(
+    context: ProjectIrBuildContext<'a, '_>,
     request: ProjectIrBuildRequest,
-    project: &'a ProjectSpec,
-    run_spec: &RunSpec,
-    svd: &MmioMap,
-    target: &TargetSpec,
     mut function_fact_store: Option<&mut crate::application::query_store::QueryStore>,
+    outputs: &BTreeMap<String, OutputSet>,
+    review_outputs: Option<&OutputSet>,
 ) -> Result<BuildDocument<'a>> {
+    let ProjectIrBuildContext {
+        captures,
+        project,
+        run_spec,
+        svd,
+        target,
+    } = context;
     let selected = select_profiles(&project.ir_profiles, &request.profiles)?;
+    if outputs.len() != selected.len() {
+        return Err(crate::Error::invalid(
+            "IR output bindings do not match selected profiles",
+        ));
+    }
+    for profile in &selected {
+        let bound = outputs.get(&profile.id).ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "IR profile {:?} has no output bindings",
+                profile.id
+            ))
+        })?;
+        if bound.paths() != profile_outputs(profile) || bound.check() != request.check {
+            return Err(crate::Error::invalid(format!(
+                "IR profile {:?} changed its output bindings or mode",
+                profile.id
+            )));
+        }
+    }
     // Resolve and validate every selected input before loading catalogs or
     // beginning expensive analysis. A missing generated ELF must name its
     // profile, role and path instead of surfacing later as an anonymous
@@ -145,6 +218,7 @@ fn build_project_ir_impl<'a>(
         }
         let documents =
             linked_ir_export::generate_project_profile(linked_ir_export::ProjectProfileRequest {
+                captures,
                 inputs: inputs.artifacts,
                 inventories: inputs.inventories,
                 companions: inputs.companions,
@@ -175,12 +249,7 @@ fn build_project_ir_impl<'a>(
             bundle_bytes = bundle.bytes(),
             "staged linked-IR bundle"
         );
-        if request.check {
-            stale.extend(bundle.compare(&profile.output)?);
-            drop(bundle);
-        } else {
-            bundle.publish(&profile.output)?;
-        }
+        stale.extend(outputs[&profile.id].bundle(&profile.output, bundle)?);
         built.push(BuiltProfileSummary {
             profile,
             sources,
@@ -209,16 +278,16 @@ fn build_project_ir_impl<'a>(
     }
     let status = if request.check { "verified" } else { "written" };
     let mut document_count = built.iter().map(|built| built.documents).sum::<usize>();
-    if let (true, Some(workspace)) = (request.refresh_review_scopes, project.review.as_ref()) {
+    if let Some(review) = review_outputs {
         let document = crate::review_scopes::build_document(project)?;
-        super::generated_file::write_or_check_json(
-            &workspace.output,
-            &document,
-            request.check,
-            "review scope report",
-            true,
-        )?;
+        review
+            .file(0, "review scope report")?
+            .json(&document, true)?;
+        review.require_complete()?;
         document_count += 1;
+    }
+    for output in outputs.values() {
+        output.require_complete()?;
     }
     Ok(BuildDocument {
         schema: 1,

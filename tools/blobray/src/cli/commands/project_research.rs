@@ -36,7 +36,8 @@ pub(super) fn run(
         },
     )?;
     if let Some(path) = arguments.output.as_deref() {
-        generated_file::write_or_check_json(path, &report, arguments.check, "research plan", true)?;
+        generated_file::GeneratedOutput::new(path, arguments.check, "research plan")
+            .json(&report, true)?;
     }
     output::render_report(&report, || render(&report));
     Ok(true)

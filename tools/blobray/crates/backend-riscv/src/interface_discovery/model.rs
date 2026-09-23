@@ -1,6 +1,9 @@
 //! Architecture-neutral evidence records emitted by the RV32 discovery pass.
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
 pub enum InterfaceSymbolAddressing {
     Absolute,
     PcRelative,
@@ -17,31 +20,25 @@ impl InterfaceSymbolAddressing {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum InterfaceRoot {
     RelocatedSymbol {
+        reference: crate::SymbolReference,
         member: Option<String>,
         symbol: String,
         addend: i64,
         addressing: InterfaceSymbolAddressing,
     },
     FunctionArgument {
+        owner: crate::artifact::CodeIdentity,
         index: u8,
     },
-    /// Exact linked address proven to lie inside one sized data symbol.
-    ///
-    /// This preserves the bound that distinguishes an observed static-data
-    /// pointer from an arbitrary numeric constant. It does not claim that the
-    /// pointed object has been initialized or that a producer has executed.
-    BoundedDataAddress {
-        member: Option<String>,
-        symbol: String,
-        symbol_address: u32,
-        symbol_size: u32,
-        address: u32,
-    },
+    /// Original numeric base with all range candidates for the observed access.
+    /// A containing symbol is an association, not proof of ownership or bounds.
     AbsoluteAddress {
         address: u32,
+        data_address: crate::DataAddressResolution,
     },
 }
 
@@ -50,7 +47,6 @@ impl InterfaceRoot {
         match self {
             Self::RelocatedSymbol { .. } => "relocated-symbol",
             Self::FunctionArgument { .. } => "function-argument",
-            Self::BoundedDataAddress { .. } => "bounded-data-address",
             Self::AbsoluteAddress { .. } => "absolute-address",
         }
     }
@@ -66,33 +62,24 @@ impl InterfaceRoot {
                 "{}::{symbol}{addend:+#x}",
                 member.as_deref().unwrap_or("<elf>")
             ),
-            Self::FunctionArgument { index } => format!("arg{index}"),
-            Self::BoundedDataAddress {
-                member,
-                symbol,
-                symbol_address,
+            Self::FunctionArgument { index, .. } => format!("arg{index}"),
+            Self::AbsoluteAddress {
                 address,
-                ..
-            } => format!(
-                "{}::{symbol}{:+#x}",
-                member.as_deref().unwrap_or("<elf>"),
-                address.wrapping_sub(*symbol_address)
-            ),
-            Self::AbsoluteAddress { address } => format!("{address:#010x}"),
+                data_address,
+            } => format!("{address:#010x} [data-address:{data_address:?}]"),
         }
     }
 
     pub const fn addressing(&self) -> Option<InterfaceSymbolAddressing> {
         match self {
             Self::RelocatedSymbol { addressing, .. } => Some(*addressing),
-            Self::FunctionArgument { .. }
-            | Self::BoundedDataAddress { .. }
-            | Self::AbsoluteAddress { .. } => None,
+            Self::FunctionArgument { .. } | Self::AbsoluteAddress { .. } => None,
         }
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InterfaceLoad {
     pub site: u32,
     pub offset: i32,
@@ -100,7 +87,8 @@ pub struct InterfaceLoad {
     pub selector: Option<InterfaceSlotSelector>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InterfaceSlotSelector {
     pub argument: u8,
     pub scale: u32,
@@ -118,23 +106,27 @@ impl InterfaceSlotSelector {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InterfacePointer {
     pub root: InterfaceRoot,
     pub loads: Vec<InterfaceLoad>,
     pub post_offset: i32,
 }
 
-/// One statically evidenced pointer store into a table slot or pointer cell.
+/// One statically observed store with possible pointer provenance.
 ///
 /// Both sides retain provenance. A target may be a relocated function, a
 /// function argument supplied by a runtime registration call, or a linked
-/// address bounded by a sized static-data symbol. This record says only that
+/// numeric address with explicit range candidates or an unknown association.
+/// Numeric values may also be scalars; this record does not prove a pointer
+/// type or a valid interface slot. It says only that
 /// the producer can perform the store; it does not claim that the producer
 /// has executed, that an argument is executable code, that static data has
 /// its initial contents, or that the assignment is the active runtime value.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
 pub struct InterfaceSlotAssignment {
+    pub owner: crate::artifact::CodeIdentity,
     pub member: Option<String>,
     pub function: String,
     pub function_address: u32,
@@ -144,6 +136,8 @@ pub struct InterfaceSlotAssignment {
     pub offset: i32,
     pub width: u8,
     pub target: InterfaceRoot,
+    pub target_loads: Vec<InterfaceLoad>,
+    pub target_offset: i32,
 }
 
 impl InterfacePointer {
@@ -178,24 +172,64 @@ impl InterfacePointer {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "kebab-case",
+    deny_unknown_fields
+)]
 pub enum InterfaceArgumentValue {
     Unknown,
+    Alternatives(Vec<InterfaceArgumentValue>),
+    Selector(InterfaceSlotSelector),
+    IndexedPointer {
+        pointer: InterfacePointer,
+        selector: InterfaceSlotSelector,
+    },
+    GotAddress(InterfacePointer),
     Constant(u32),
     Pointer(InterfacePointer),
 }
 
 impl InterfaceArgumentValue {
+    pub const fn kind(&self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::Constant(_) => "constant",
+            Self::Pointer(_) => "pointer-provenance",
+            Self::Alternatives(_) => "alternatives",
+            Self::Selector(_) => "selector",
+            Self::IndexedPointer { .. } => "indexed-pointer",
+            Self::GotAddress(_) => "got-address",
+        }
+    }
+
     pub fn canonical(&self) -> String {
         match self {
             Self::Unknown => "?".to_owned(),
+            Self::Alternatives(values) => format!(
+                "alternatives[{}]",
+                values
+                    .iter()
+                    .map(Self::canonical)
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            ),
+            Self::Selector(selector) => selector.canonical(),
+            Self::IndexedPointer { pointer, selector } => {
+                format!("{}+{}", pointer.canonical(), selector.canonical())
+            }
+            Self::GotAddress(pointer) => format!("GOT({})", pointer.canonical()),
             Self::Constant(value) => format!("{value:#010x}"),
             Self::Pointer(pointer) => pointer.canonical(),
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
 pub enum InterfaceCallKind {
     Call,
     TailJump,
@@ -212,8 +246,9 @@ impl InterfaceCallKind {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
 pub struct InterfaceCallCandidate {
+    pub owner: crate::artifact::CodeIdentity,
     pub member: Option<String>,
     pub function: String,
     pub function_address: u32,
@@ -222,4 +257,53 @@ pub struct InterfaceCallCandidate {
     pub target: InterfacePointer,
     pub jalr_offset: i32,
     pub arguments: Vec<InterfaceArgumentValue>,
+}
+
+/// Limits stop propagation without replacing the retained frontier with unknown.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InterfaceDiscoveryLimits {
+    pub max_state_updates: usize,
+    pub max_value_alternatives: usize,
+}
+
+impl Default for InterfaceDiscoveryLimits {
+    fn default() -> Self {
+        Self {
+            max_state_updates: 4096,
+            max_value_alternatives: 64,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum InterfaceGapReason {
+    StateUpdateLimit { limit: usize, processed: usize },
+    ValueAlternativeLimit { limit: usize, observed: usize },
+    UnresolvedCallTarget,
+    UnsupportedInstruction,
+    UnmodeledValueTransform { registers: Vec<u8> },
+    UnresolvedAssignmentLocation,
+    UnresolvedAssignmentValue,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InterfaceRegisterValue {
+    pub register: u8,
+    pub value: InterfaceArgumentValue,
+}
+
+/// A concrete unresolved use or an unprocessed analysis frontier. The complete
+/// captured register state is retained; values are candidates, not path proofs.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InterfaceAnalysisGap {
+    pub owner: crate::CodeIdentity,
+    pub member: Option<String>,
+    pub function: String,
+    pub site: u32,
+    pub reason: InterfaceGapReason,
+    pub registers: Vec<InterfaceRegisterValue>,
 }

@@ -28,6 +28,7 @@ pub(crate) struct InputIdentity {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RootOutcome {
+    pub code_identity: crate::artifact::CodeIdentity,
     pub source: String,
     pub artifact_sha256: String,
     pub member: Option<String>,
@@ -83,7 +84,11 @@ fn configuration(profile: &ProjectIrProfile) -> String {
     )
 }
 
-fn identities(profile: &ProjectIrProfile, run: &RunSpec) -> Result<Vec<InputIdentity>> {
+fn identities(
+    profile: &ProjectIrProfile,
+    run: &RunSpec,
+    digest: impl Fn(&Path) -> Result<String>,
+) -> Result<Vec<InputIdentity>> {
     let resolved = resolve_inputs(profile, run)?;
     resolved
         .artifacts
@@ -109,7 +114,7 @@ fn identities(profile: &ProjectIrProfile, run: &RunSpec) -> Result<Vec<InputIden
         )
         .map(|(role, path)| {
             Ok(InputIdentity {
-                sha256: crate::artifact_sha256(&path)?,
+                sha256: digest(&path)?,
                 role,
                 path,
             })
@@ -119,23 +124,18 @@ fn identities(profile: &ProjectIrProfile, run: &RunSpec) -> Result<Vec<InputIden
 
 /// Build from actual primary bytes and the functions emitted by the analyzer.
 pub(crate) fn build(
+    captures: &crate::source_set::CapturedSourceSet,
     profile: &ProjectIrProfile,
     run: &RunSpec,
     report: &crate::LinkedIrReport,
 ) -> Result<ProfileCoverage> {
-    let inputs = identities(profile, run)?;
+    let inputs = identities(profile, run, |path| Ok(captures.sha256(path)?.to_owned()))?;
     let functions = report
         .functions
         .iter()
         .map(|function| {
             (
-                (
-                    function.source.as_str(),
-                    function.artifact_sha256.as_str(),
-                    function.member.as_deref(),
-                    function.symbol.as_str(),
-                    u64::from(function.object_offset),
-                ),
+                (function.source.as_str(), function.code_identity.clone()),
                 function,
             )
         })
@@ -145,13 +145,7 @@ pub(crate) fn build(
         .iter()
         .map(|root| {
             (
-                (
-                    root.source.as_str(),
-                    root.artifact_sha256.as_str(),
-                    root.member.as_deref(),
-                    root.symbol.as_str(),
-                    root.address,
-                ),
+                (root.source.as_str(), root.code_identity.clone()),
                 root.reason.clone(),
             )
         })
@@ -159,50 +153,39 @@ pub(crate) fn build(
     let mut roots = Vec::new();
     let mut members = Vec::new();
     for input in &inputs {
-        let inventory = artifact::inspect_artifact(&input.path)?;
+        let inventory = captures.artifact(&input.path)?.inventory()?;
         let source = input.role.split_once(':').map_or("", |(_, source)| source);
-        members.extend(inventory.members.into_iter().map(|member| MemberOutcome {
-            source: source.to_owned(),
-            artifact_sha256: input.sha256.clone(),
-            role: input.role.clone(),
-            member,
-        }));
+        members.extend(
+            inventory
+                .members
+                .iter()
+                .cloned()
+                .map(|member| MemberOutcome {
+                    source: source.to_owned(),
+                    artifact_sha256: input.sha256.clone(),
+                    role: input.role.clone(),
+                    member,
+                }),
+        );
         if !input.role.starts_with("source-artifact:") {
             continue;
         }
-        let mut sections = BTreeMap::<_, std::collections::BTreeSet<_>>::new();
         for object in &inventory.objects {
-            for symbol in &object.symbols {
-                if symbol.kind == artifact::ArtifactSymbolKind::Text
-                    && symbol.definition.is_definition()
-                {
-                    sections
-                        .entry((object.member.clone(), symbol.name.clone(), symbol.address))
-                        .or_default()
-                        .insert(symbol.section.clone());
-                }
-            }
-        }
-        for object in inventory.objects {
             for symbol in object.symbols.iter().filter(|symbol| {
                 symbol.kind == artifact::ArtifactSymbolKind::Text
                     && symbol.definition.is_definition()
             }) {
                 let selected = symbol.name.starts_with(profile.roots.symbol_prefix());
-                let key = (
-                    source,
-                    input.sha256.as_str(),
-                    object.member.as_deref(),
-                    symbol.name.as_str(),
-                    symbol.address,
-                );
-                let function = functions.get(&key);
-                let ambiguous = sections
-                    .get(&(object.member.clone(), symbol.name.clone(), symbol.address))
-                    .is_some_and(|sections| sections.len() > 1);
-                let (outcome, blockers) = if selected && ambiguous {
-                    ("missing", vec!["function identity is ambiguous across sections; IR cannot uniquely account for this root".to_owned()])
-                } else if let Some(function) = function {
+                let code_identity = artifact::CodeIdentity::Symbol {
+                    artifact_sha256: input.sha256.clone(),
+                    location: crate::SymbolLocation {
+                        object: object.location,
+                        table: symbol.table,
+                        index: symbol.index,
+                    },
+                };
+                let key = (source, code_identity.clone());
+                let (outcome, blockers) = if let Some(function) = functions.get(&key) {
                     let blockers = function
                         .decode_blockers
                         .iter()
@@ -240,6 +223,7 @@ pub(crate) fn build(
                     )
                 };
                 roots.push(RootOutcome {
+                    code_identity,
                     source: source.to_owned(),
                     artifact_sha256: input.sha256.clone(),
                     member: object.member.clone(),
@@ -253,27 +237,10 @@ pub(crate) fn build(
             }
         }
     }
-    roots.sort_by(|a, b| {
-        (
-            &a.source,
-            &a.artifact_sha256,
-            &a.member,
-            &a.section,
-            &a.symbol,
-            a.address,
-        )
-            .cmp(&(
-                &b.source,
-                &b.artifact_sha256,
-                &b.member,
-                &b.section,
-                &b.symbol,
-                b.address,
-            ))
-    });
+    roots.sort_by(|a, b| (&a.source, &a.code_identity).cmp(&(&b.source, &b.code_identity)));
     roots.dedup();
     Ok(ProfileCoverage {
-        schema: 1,
+        schema: 2,
         configuration: configuration(profile),
         inputs,
         products: BTreeMap::new(),
@@ -295,9 +262,9 @@ pub(crate) fn seal(mut coverage: ProfileCoverage, root: &Path) -> Result<Vec<u8>
 pub(crate) fn read(profile: &ProjectIrProfile, run: &RunSpec) -> Result<ProfileCoverage> {
     let coverage: ProfileCoverage =
         serde_json::from_slice(&std::fs::read(profile.output.join(FILE))?)?;
-    if coverage.schema != 1
+    if coverage.schema != 2
         || coverage.configuration != configuration(profile)
-        || coverage.inputs != identities(profile, run)?
+        || coverage.inputs != identities(profile, run, crate::artifact_sha256)?
     {
         return Err(crate::Error::invalid(format!(
             "stale coverage for profile {:?}: input bytes, order or configuration changed",
@@ -583,7 +550,8 @@ mod tests {
             },
             None,
         );
-        let covered = build(&profile, &run, &report).unwrap();
+        let captures = crate::source_set::CapturedSourceSet::capture([path.clone()]);
+        let covered = build(&captures, &profile, &run, &report).unwrap();
         assert_eq!(covered.roots.len(), 2);
         let unknown = covered
             .roots
@@ -596,7 +564,7 @@ mod tests {
             .functions
             .retain(|function| function.symbol != "api_known");
         assert!(!report.functions.is_empty());
-        let partial = build(&profile, &run, &report).unwrap();
+        let partial = build(&captures, &profile, &run, &report).unwrap();
         assert_eq!(
             partial
                 .roots

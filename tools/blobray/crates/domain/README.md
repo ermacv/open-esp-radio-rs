@@ -1,0 +1,91 @@
+# Blobray domain
+
+`blobray-domain` owns shared identities, schema-1 revisions, resource budgets,
+outcomes and portable byte/record/control ports. It has no internal crate,
+filesystem, database, backend or frontend dependencies.
+
+[Revision types](src/lib.rs) retain physical object/symbol identities, lossless
+names and origins, capture outcomes and ordered bindings. `Revision::validate`
+checks manifest relationships without storage. Recorded malformed ELF references
+remain coverage diagnostics; broken manifest ownership is a different error.
+
+[Execution values](src/jobs.rs) distinguish attempt identity from content identity,
+requested kernel/watchdog enforcement, lifecycle states and terminal outcomes.
+Persisted run/owner records and import receipts belong to
+[store](../store/README.md); host launch, observation, cancellation and reaping
+ports and private worker messages belong to [application](../application/README.md).
+
+A `Snapshot` owns selected revision data, with no writer authority or live source
+handles. The [implemented contract](../../next/README.md) describes schemas and
+authority. Knowledge values are implemented; verification remains outside this
+crate's implemented scope.
+
+[Resource ports](src/resources.rs) define `RunControl`, injected `RunEnvironment`,
+physical progress and bounded diagnostic records. Work policy 1 and its default
+budget are shared values; the application owns enforcement. `ResourceBudget` uses
+optional work fields only to represent unknown values in old records; new-run
+admission requires a positive limit and supported policy. Fixed-size `ControlStop`
+is separate from rendering/storage errors that still use normal host allocations.
+`Revision::validate_controlled` visits retained relationships under the caller's
+control; `validate` remains the synchronous unmetered snapshot convenience API.
+
+[Memory contracts](src/memory.rs) provide `WorkingMemory`, RAII reservations and
+fallible `ScratchBytes`. Borrowed scratch cannot outlive its authority, and live
+reservations cannot exceed its capacity. These values account requested capacity,
+not resident process pages. `MemoryFailure` carries a rejected reservation without
+requiring memory from the exhausted pool. Old records omit new observations.
+
+[Streaming ports](src/stream.rs) separate stable positional byte reads from ELF
+and inventory consumers. Callbacks borrow records for one call; retaining copies
+requires consumer-owned capacity. Query admission, worker ownership and rendering
+formats are outside domain. The wire revision schema remains 1.
+
+[Selection values](src/selection.rs) qualify object/symbol IDs with an input ordinal
+inside a fixed revision. Exact-byte name searches return candidates, not implicit
+resolution. `RevisionHeader` supplies producer/target context through streaming
+callbacks. `PlanId` identifies a bounded application recipe; recipe construction,
+execution, storage leases and Human/JSON formatting remain outside domain.
+
+[Temporary storage ports](src/temporary.rs) define `TemporaryCapacity`,
+`TemporaryUsage` and `StorageFailure`, independently of Plan identity. The shared
+`storage_io` adapter preserves typed capacity errors and distinguishes filesystem
+exhaustion (`disk-full`). Application chooses local policy; store owns bounded
+files and accounting. Optional progress/error fields preserve unknown historical
+observations. See [temporary storage](../../next/README.md#temporary-storage-and-crash-cleanup).
+
+[Image values](src/image.rs) own exact root selections, bounded RV32 regions,
+linker identity, versioned synthetic recipes and retained manifest/provenance
+values. `LinkPlanId` and `PreparedImageId` are distinct from inspection-plan,
+revision and run IDs. Recipe identity excludes local emergency budgets; image
+lifecycle and publication belong to application/store.
+
+[Function values](src/function.rs) define exact requests, extent authority,
+typed input/image sources, address spaces, per-obligation coverage and the `FunctionDecoder` / `FunctionSemantics` ports. Typed operations and
+abstract values describe local effects without granting access to machine state.
+`FunctionAnalysisId` identifies a retained manifest. Dynamic execution, inferred
+function extents and cross-archive definition selection are not implicit in these
+values. Calls and possible continuations remain distinct graph observations.
+
+
+[Investigation values](src/investigation.rs) distinguish a bounded saved plan
+from its immutable publication. Entries retain exact function identities and
+explicit gaps; membership assigns each function either a saved analysis or a
+semantic blocker. Coverage distinguishes analyzed and complete functions.
+`InvestigationStatus` separates revision freshness from coverage.
+`InvestigationFinding` preserves publication/function/instruction provenance.
+Selection, hashing policy, I/O, execution and publication authority belong to
+application/store, not these values. `InventorySink::container` reports framing
+coverage before object callbacks, so a partial archive cannot appear complete.
+
+`ImageMemory` is a borrowed immutable-byte port, not a loader or mutable execution
+bus. `RiscvAbi` records the ELF calling convention separately from the RV32
+integer-analysis target. Function transfers preserve image-qualified source
+identity and unknown targets. `NamedLinkRequest` is explicit input order and a
+name-selection request; only application can resolve it into an exact recipe.
+
+
+Concrete execution values include exact targets, explicit scenarios, producer
+identities, observations and comparison evidence. `Executor` and `ExecutionMemory`
+are injected ports; domain selects neither an ISA nor an environment. Request
+validation bounds control cardinalities. Host admission also bounds serialization
+before copying requests. See the [execution contract](../../next/README.md#concrete-execution-and-comparison).

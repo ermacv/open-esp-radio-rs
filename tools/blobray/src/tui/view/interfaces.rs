@@ -1,4 +1,4 @@
-//! Reviewed interface slot list and detail rendering.
+//! Shared interface observations and reviewed slot rendering.
 
 use ratatui::{
     Frame,
@@ -12,22 +12,15 @@ use crate::tui::state::BrowserState;
 
 pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
     let [list, detail] = columns(area);
-    let rows = state
-        .snapshot
-        .interfaces
-        .slots
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| state.is_visible(*index))
+    let total = crate::tui::interface_rows::count(&state.snapshot.interfaces);
+    let selected = state.selected();
+    let rows = (0..total)
+        .filter(|index| state.is_visible(*index))
         .skip(state.viewport_start(table_rows(list)))
         .take(table_rows(list))
-        .map(|(index, slot)| {
-            Row::new([
-                slot.name.clone(),
-                format!("{:+#x}", slot.offset),
-                slot.review_state.label().to_owned(),
-            ])
-            .style(selected_style(index, state.selected()))
+        .filter_map(|index| {
+            crate::tui::interface_rows::at(&state.snapshot.interfaces, index)
+                .map(|row| Row::new(row.columns()).style(selected_style(index, selected)))
         });
     frame.render_widget(
         Table::new(
@@ -38,24 +31,24 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                 Constraint::Length(10),
             ],
         )
-        .header(Row::new(["Slot", "Offset", "Review"]).style(heading()))
+        .header(Row::new(["Observation / slot", "Site / offset", "Status"]).style(heading()))
         .block(
             Block::default()
                 .title(format!(
-                    " Interface slots ({}/{}) ",
+                    " Interface evidence ({}/{}) ",
                     state.visible_count(),
-                    state.snapshot.interfaces.slots.len()
+                    total
                 ))
                 .borders(Borders::ALL),
         ),
         list,
     );
-    let lines = state
-        .snapshot
-        .interfaces
-        .slots
-        .get(state.selected())
-        .map(|slot| {
+    let selected_row = state
+        .is_visible(selected)
+        .then(|| crate::tui::interface_rows::at(&state.snapshot.interfaces, selected))
+        .flatten();
+    let lines = match selected_row {
+        Some(crate::tui::interface_rows::InterfaceRow::Slot(slot)) => {
             let mut lines = vec![
                 field("ID", &slot.id),
                 field("Contract", &slot.contract),
@@ -89,8 +82,36 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                 lines.push(field("Effects", slot.effects.join(", ")));
             }
             lines
-        })
-        .unwrap_or_else(|| vec![Line::from("Interface facts/review pack are not available")]);
+        }
+        Some(row) => {
+            let mut lines = vec![
+                field("Evidence", row.columns()[0].clone()),
+                field("Behavior", "unknown from this observation alone"),
+            ];
+            lines.extend(
+                row.evidence()
+                    .lines()
+                    .map(|line| Line::from(line.to_owned())),
+            );
+            lines
+        }
+        None => vec![Line::from(
+            match &state.snapshot.interfaces.observation_state {
+                crate::InterfaceObservationState::NotConfigured => {
+                    "Interface observations are not configured".to_owned()
+                }
+                crate::InterfaceObservationState::Missing => {
+                    "Interface observations have not been generated".to_owned()
+                }
+                crate::InterfaceObservationState::Failed { reason } => {
+                    format!("Interface observations unavailable: {reason}")
+                }
+                crate::InterfaceObservationState::Available => {
+                    "No observations match the current view".to_owned()
+                }
+            },
+        )],
+    };
     frame.render_widget(
         detail_paragraph(" Interface detail ", lines, state.detail_scroll()),
         detail,

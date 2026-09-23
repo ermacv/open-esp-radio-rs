@@ -464,15 +464,16 @@ mod tests {
     use super::*;
     use crate::{
         CodeWorkspaceReport, ComparisonProfileSummary, FunctionSummary, InterfaceWorkspaceReport,
-        ProjectStatusPhase, ProjectStatusReport, ProjectTargetIdentity, RegisterSummary,
-        RegisterWorkspaceReport, ResearchCompleteness, ResearchProgress, ScenarioArgumentSummary,
-        ScenarioSuggestionSummary, ScenarioSuggestionVariantSummary, WorkspaceSnapshot,
+        ProjectStatusPhase, ProjectStatusReport, ProjectTargetIdentity, RegisterWorkspaceReport,
+        ResearchCompleteness, ResearchProgress, ScenarioArgumentSummary, ScenarioSuggestionSummary,
+        ScenarioSuggestionVariantSummary, WorkspaceSnapshot,
     };
 
     #[test]
     fn overview_renders_from_the_typed_snapshot() {
         let snapshot = WorkspaceSnapshot {
             generation: 7,
+            generated_analysis_epoch: None,
             project_status: ProjectStatusReport {
                 project_id: "fixture-project".to_owned(),
                 manifest: "vendor-project.toml".to_owned(),
@@ -520,15 +521,13 @@ mod tests {
                 model: None,
                 ranges: 0,
                 observed: 0,
-                reviewed: 0,
-                ignored: 0,
-                non_operational: 0,
-                manual: 0,
-                unreviewed: 0,
+                publication: None,
                 fields: 0,
-                registers: Vec::new(),
+                inventory: crate::tui::register_snapshot(Default::default()),
             },
             interfaces: InterfaceWorkspaceReport {
+                observations: None,
+                observation_state: crate::InterfaceObservationState::NotConfigured,
                 configured: false,
                 facts: None,
                 pack: None,
@@ -587,6 +586,10 @@ mod tests {
         assert!(compact.contains("q quit"));
 
         let function = FunctionSummary {
+            code_identity: crate::artifact::CodeIdentity::Synthetic {
+                namespace: module_path!().into(),
+                key: format!("fixture:{}", line!()),
+            },
             profile: "phy".to_owned(),
             source: "rom".to_owned(),
             identity: "rom::phy_init".to_owned(),
@@ -616,6 +619,7 @@ mod tests {
             function.identity.clone(),
             Some(crate::FunctionDetailSummary {
                 identity: function.identity.clone(),
+                analysis_epoch: "fixture-epoch".to_owned(),
                 registers: Vec::new(),
                 contexts: Vec::new(),
                 memory_fields: Vec::new(),
@@ -697,20 +701,20 @@ mod tests {
             item.identity = format!("rom::function-{index:02}");
             item.symbol = format!("function-{index:02}");
             state.snapshot.functions.push(item);
-            state.snapshot.registers.registers.push(RegisterSummary {
-                address: 0x2010_0000 + index * 4,
-                name: format!("REGISTER_{index:02}"),
-            });
+            crate::tui::append_register(
+                &mut state.snapshot.registers,
+                crate::tui::register_fixture(
+                    u64::from(0x2010_0000 + index * 4),
+                    &format!("REGISTER_{index:02}"),
+                ),
+            );
             let mut comparison = state.snapshot.comparisons[0].clone();
             comparison.name = format!("case-{index:02}");
             state.snapshot.comparisons.push(comparison);
         }
-        state.snapshot.registers.registers.insert(
-            0,
-            RegisterSummary {
-                address: 0x2010_0000,
-                name: "REGISTER_00".to_owned(),
-            },
+        crate::tui::append_register(
+            &mut state.snapshot.registers,
+            crate::tui::register_fixture(0x2010_0000, "REGISTER_00"),
         );
 
         state.section = Section::Functions;

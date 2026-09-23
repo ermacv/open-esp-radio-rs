@@ -5,6 +5,87 @@ use rv_asm::{Inst, IsCompressed, Reg, Xlen};
 
 use super::model::riscv_relocation_kind;
 
+#[test]
+fn captured_linked_data_and_execution_survive_input_replacement() {
+    use crate::execution::ExecutableImage;
+    use object::{
+        Architecture, BinaryFormat, Endianness, SymbolFlags, SymbolScope,
+        write::{Object, Symbol, SymbolSection},
+    };
+
+    let linked_data = |name: &str, address: u32, value: u8| {
+        let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+        let section = object.add_section(Vec::new(), b".data".to_vec(), SectionKind::Data);
+        object.append_section_data(section, &[value, 0, 0, 0], 4);
+        object.add_symbol(Symbol {
+            name: name.as_bytes().to_vec(),
+            value: u64::from(address),
+            size: 4,
+            kind: SymbolKind::Data,
+            scope: SymbolScope::Dynamic,
+            weak: false,
+            section: SymbolSection::Section(section),
+            flags: SymbolFlags::None,
+        });
+        let mut bytes = object.write().unwrap();
+        // Give this synthetic ELF an addressed data section, as in ROM images
+        // without a corresponding PT_LOAD segment.
+        bytes[16..18].copy_from_slice(&object::elf::ET_EXEC.to_le_bytes());
+        let headers = u32::from_le_bytes(bytes[32..36].try_into().unwrap()) as usize;
+        let data_address = headers + 40 + 12;
+        bytes[data_address..data_address + 4].copy_from_slice(&address.to_le_bytes());
+        bytes
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let primary_path = directory.path().join("primary.elf");
+    let companion_path = directory.path().join("companion.elf");
+    std::fs::write(
+        &primary_path,
+        with_duplicate_dynamic_table(linked_data("primary_state", 0x2000, 17)),
+    )
+    .unwrap();
+    std::fs::write(&companion_path, linked_data("companion_state", 0x3000, 29)).unwrap();
+    let primary = CapturedArtifact::open(&primary_path).unwrap();
+    let companion = CapturedArtifact::open(&companion_path).unwrap();
+    // No catalog has been queried yet: lazy parsing must use frozen bytes too.
+    std::fs::write(&primary_path, linked_data("replacement", 0x4000, 99)).unwrap();
+    std::fs::remove_file(companion_path).unwrap();
+    let mut image = ExecutableImage::from_captured(&primary).unwrap();
+    image.add_captured_companion(&companion).unwrap();
+    for (capture, name, address, value) in [
+        (&primary, "primary_state", 0x2000, 17),
+        (&companion, "companion_state", 0x3000, 29),
+    ] {
+        assert_eq!(image.symbol_address(name), Some(address));
+        assert_eq!(image.loaded_byte(address), Some(value));
+        let symbols = capture.data_symbols().unwrap();
+        assert_eq!(symbols.len(), if name == "primary_state" { 2 } else { 1 });
+        assert_eq!(
+            symbols
+                .iter()
+                .map(|symbol| &symbol.identity)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            symbols.len()
+        );
+        assert!(
+            symbols
+                .iter()
+                .all(|symbol| symbol.identity.artifact_sha256() == Some(capture.sha256()))
+        );
+        assert_eq!(symbols[0].name, name);
+        assert_eq!(symbols[0].address, address);
+        assert!(std::ptr::eq(symbols, capture.data_symbols().unwrap()));
+        let objects = capture.data_objects().unwrap();
+        assert!(
+            objects
+                .iter()
+                .any(|object| object.initializer == [value, 0, 0, 0])
+        );
+    }
+    assert_eq!(image.symbol_address("replacement"), None);
+}
+
 fn write_visibility_fixture() -> std::path::PathBuf {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -166,6 +247,12 @@ fn write_pcrel_fixture(got: bool, include_high: bool) -> std::path::PathBuf {
 #[test]
 fn decoder_reads_mixed_width_code_without_objdump() {
     let symbol = ArtifactSymbolDefinition {
+        identity: ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "synthetic_mixed_width",
+            0x1000,
+        ),
         member: None,
         name: "synthetic_mixed_width".to_owned(),
         address: 0x1000,
@@ -190,6 +277,12 @@ fn analysis_decoder_preserves_explicit_extension_blockers() {
     let custom = 0x0000_000b_u32;
     let addi = 0x0015_0513_u32;
     let symbol = ArtifactSymbolDefinition {
+        identity: ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "extension_mix",
+            0x2000,
+        ),
         member: None,
         name: "extension_mix".to_owned(),
         address: 0x2000,
@@ -238,6 +331,12 @@ fn analysis_decoder_preserves_explicit_extension_blockers() {
 fn analysis_decoder_classifies_compressed_float_memory_operations() {
     // Quadrant 0, funct3 011 is C.FLW on RV32 with the F extension.
     let symbol = ArtifactSymbolDefinition {
+        identity: ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "compressed_float",
+            0x3000,
+        ),
         member: None,
         name: "compressed_float".to_owned(),
         address: 0x3000,
@@ -261,6 +360,12 @@ fn analysis_decoder_classifies_compressed_float_memory_operations() {
 #[test]
 fn analysis_decoder_preserves_zero_fill_as_ambiguous_trap_evidence() {
     let symbol = ArtifactSymbolDefinition {
+        identity: ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "zero_fill",
+            0x3800,
+        ),
         member: None,
         name: "zero_fill".to_owned(),
         address: 0x3800,
@@ -285,6 +390,12 @@ fn analysis_decoder_preserves_zero_fill_as_ambiguous_trap_evidence() {
 #[test]
 fn reachable_blockers_exclude_padding_after_return() {
     let symbol = ArtifactSymbolDefinition {
+        identity: ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "entry",
+            0x3900,
+        ),
         member: None,
         name: "entry".to_owned(),
         address: 0x3900,
@@ -382,6 +493,12 @@ fn floating_decoder_only_invalidates_real_integer_destinations() {
     let instruction = |funct7: u32| {
         let raw = (funct7 << 25) | (11 << 20) | (10 << 15) | (2 << 12) | (15 << 7) | 0x53;
         let symbol = ArtifactSymbolDefinition {
+            identity: ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "floating_destination",
+                0,
+            ),
             member: None,
             name: "floating_destination".to_owned(),
             address: 0,
@@ -546,6 +663,12 @@ fn floating_data_decoder_accepts_rx11ax_ampdu_limit_sequence() {
 fn analysis_decoder_distinguishes_standard_float_and_vendor_csrs() {
     let csr = |address: u32| (address << 20) | (2 << 12) | (10 << 7) | 0x73;
     let symbol = ArtifactSymbolDefinition {
+        identity: ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "csr_classes",
+            0x4000,
+        ),
         member: None,
         name: "csr_classes".to_owned(),
         address: 0x4000,
@@ -768,6 +891,12 @@ fn unpaired_pcrel_low_is_rejected_as_malformed_evidence() {
 #[test]
 fn relocated_call_link_register_distinguishes_call_and_tail_call() {
     let mut symbol = ArtifactSymbolDefinition {
+        identity: ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "relocated_call",
+            0x1000,
+        ),
         member: None,
         name: "relocated_call".to_owned(),
         address: 0x1000,
@@ -933,4 +1062,276 @@ fn archive_inventory_distinguishes_non_code_payloads_from_unknown_members() {
     assert_eq!(inventory.members[1].status, "unrecognized");
     assert!(inventory.members[1].reason.is_some());
     assert_eq!(inventory.skipped_members, 1);
+}
+
+#[test]
+fn captured_archive_preserves_repeated_member_names_and_immutable_bytes() {
+    use std::io::Write as _;
+    let object_path = write_visibility_fixture();
+    let bytes = std::fs::read(&object_path).unwrap();
+    std::fs::remove_file(object_path).unwrap();
+    let mut archive = b"!<arch>\n".to_vec();
+    for _ in 0..2 {
+        writeln!(
+            archive,
+            "{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`",
+            "same.o/",
+            0,
+            0,
+            0,
+            "100644",
+            bytes.len()
+        )
+        .unwrap();
+        archive.extend_from_slice(&bytes);
+        if !bytes.len().is_multiple_of(2) {
+            archive.push(b'\n');
+        }
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("repeated.a");
+    std::fs::write(&path, archive).unwrap();
+    let capture = CapturedArtifact::open(&path).unwrap();
+    let digest = capture.sha256().to_owned();
+    let inventory = inspect_artifact(&path).unwrap();
+    assert_eq!(inventory.objects.len(), 2);
+    assert_eq!(inventory.objects[0].member, inventory.objects[1].member);
+    assert_ne!(inventory.objects[0].location, inventory.objects[1].location);
+    std::fs::write(&path, b"replaced after capture").unwrap();
+    let symbols = capture
+        .code_symbols("exported_function", CodeSymbolSelection::Exported)
+        .unwrap();
+    assert_eq!(symbols.len(), 2);
+    assert_ne!(symbols[0].location, symbols[1].location);
+    assert_ne!(
+        symbols[0].definition.identity,
+        symbols[1].definition.identity
+    );
+    for symbol in symbols {
+        let body = inspect_captured_function(&path, &capture, symbol.location).unwrap();
+        assert_eq!(body.code_identity, symbol.definition.identity);
+        assert!(
+            body.labels
+                .iter()
+                .any(|label| label.name == "exported_function")
+        );
+        let selected = capture.code_symbol(symbol.location).unwrap().unwrap();
+        assert!(
+            std::ptr::eq(selected, symbol),
+            "queries share the same parsed object"
+        );
+        assert_eq!(selected.definition.bytes, [0xef, 0x00, 0x80, 0x00]);
+    }
+    assert_eq!(capture.sha256(), digest);
+}
+
+#[test]
+fn unnamed_symbol_definitions_retain_their_table_identity() {
+    use object::{
+        Architecture, BinaryFormat, Endianness, SymbolFlags, SymbolScope,
+        write::{Object, Symbol, SymbolSection},
+    };
+    let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let section = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    object.append_section_data(section, &[0x67, 0x80, 0, 0], 4);
+    object.add_symbol(Symbol {
+        name: Vec::new(),
+        value: 0,
+        size: 4,
+        kind: SymbolKind::Text,
+        scope: SymbolScope::Compilation,
+        weak: false,
+        section: SymbolSection::Section(section),
+        flags: SymbolFlags::None,
+    });
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("unnamed.o");
+    std::fs::write(&path, object.write().unwrap()).unwrap();
+    let inventory = inspect_artifact(&path).unwrap();
+    let fact = inventory.objects[0]
+        .symbols
+        .iter()
+        .find(|symbol| symbol.name.is_empty() && symbol.kind == ArtifactSymbolKind::Text)
+        .unwrap();
+    let capture = CapturedArtifact::open(&path).unwrap();
+    let symbol = capture
+        .code_symbol(open_radio_vendor_analysis_model::SymbolLocation {
+            object: inventory.objects[0].location,
+            table: fact.table,
+            index: fact.index,
+        })
+        .unwrap()
+        .unwrap();
+    assert!(symbol.definition.name.is_empty());
+    assert_eq!(symbol.definition.bytes, [0x67, 0x80, 0, 0]);
+}
+
+#[test]
+fn entirely_unknown_archive_payloads_remain_inspectable() {
+    use std::io::Write as _;
+    let mut bytes = b"!<arch>\n".to_vec();
+    let opaque = b"opaque";
+    writeln!(
+        bytes,
+        "{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`",
+        "unknown.bin/",
+        0,
+        0,
+        0,
+        "100644",
+        opaque.len()
+    )
+    .unwrap();
+    bytes.extend_from_slice(opaque);
+    let capture = CapturedArtifact::from_data(&bytes).unwrap();
+    let inventory = capture.inventory().unwrap();
+    assert_eq!(inventory.objects.len(), 0);
+    assert_eq!(inventory.skipped_members, 1);
+    assert_eq!(inventory.members[0].status, "unrecognized");
+    assert!(inventory.members[0].reason.is_some());
+    assert_eq!(
+        capture
+            .object_bytes(capture.objects()[0].location())
+            .unwrap(),
+        Some(opaque.as_slice())
+    );
+    assert!(std::ptr::eq(capture.inventory().unwrap(), inventory));
+}
+
+#[test]
+fn thin_archive_without_external_capture_has_an_explicit_gap() {
+    use std::io::Write as _;
+    let mut bytes = b"!<thin>\n".to_vec();
+    writeln!(
+        bytes,
+        "{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`",
+        "missing.o/", 0, 0, 0, "100644", 128
+    )
+    .unwrap();
+    let capture = CapturedArtifact::from_data(&bytes).unwrap();
+    let inventory = capture.inventory().unwrap();
+    assert_eq!(inventory.members.len(), 1);
+    assert_eq!(inventory.members[0].status, "unavailable");
+    assert!(
+        capture
+            .object_bytes(capture.objects()[0].location())
+            .is_err()
+    );
+    assert!(capture.code_symbols("", CodeSymbolSelection::All).is_err());
+}
+
+fn with_duplicate_dynamic_table(mut bytes: Vec<u8>) -> Vec<u8> {
+    let table_offset = u32::from_le_bytes(bytes[32..36].try_into().unwrap()) as usize;
+    let stride = u16::from_le_bytes(bytes[46..48].try_into().unwrap()) as usize;
+    let count = u16::from_le_bytes(bytes[48..50].try_into().unwrap());
+    let headers = bytes[table_offset..table_offset + stride * usize::from(count)].to_vec();
+    let mut dynamic = headers
+        .chunks_exact(stride)
+        .find(|header| {
+            u32::from_le_bytes(header[4..8].try_into().unwrap()) == object::elf::SHT_SYMTAB
+        })
+        .unwrap()
+        .to_vec();
+    // Both tables deliberately describe the same symbols. Table ownership still
+    // distinguishes the occurrences; names and addresses cannot be their key.
+    dynamic[4..8].copy_from_slice(&object::elf::SHT_DYNSYM.to_le_bytes());
+    while !bytes.len().is_multiple_of(4) {
+        bytes.push(0);
+    }
+    let offset = u32::try_from(bytes.len()).unwrap();
+    bytes.extend_from_slice(&headers);
+    bytes.extend_from_slice(&dynamic);
+    bytes[32..36].copy_from_slice(&offset.to_le_bytes());
+    bytes[48..50].copy_from_slice(&(count + 1).to_le_bytes());
+    bytes
+}
+
+#[test]
+fn data_catalog_retains_unnamed_symbols_colocated_anchors_and_both_tables() {
+    use object::{
+        Architecture, BinaryFormat, Endianness, SymbolFlags, SymbolScope,
+        write::{Object, Symbol, SymbolSection},
+    };
+    let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let section = object.add_section(Vec::new(), b".data".to_vec(), SectionKind::Data);
+    object.append_section_data(section, &[1, 2, 3, 4, 5, 6, 7, 8], 4);
+    for (name, value, size, kind) in [
+        ("anchor", 0, 0, SymbolKind::Label),
+        ("alias", 0, 0, SymbolKind::Label),
+        ("sized", 0, 4, SymbolKind::Data),
+        ("", 4, 4, SymbolKind::Data),
+        ("tail", 0, 0, SymbolKind::Data),
+    ] {
+        object.add_symbol(Symbol {
+            name: name.as_bytes().to_vec(),
+            value,
+            size,
+            kind,
+            scope: SymbolScope::Compilation,
+            weak: false,
+            section: SymbolSection::Section(section),
+            flags: SymbolFlags::None,
+        });
+    }
+    let bytes = with_duplicate_dynamic_table(object.write().unwrap());
+    let capture = CapturedArtifact::from_data(&bytes).unwrap();
+    let objects = capture.data_objects().unwrap();
+    assert_eq!(objects.len(), 10);
+    let identities = objects
+        .iter()
+        .map(|object| &object.identity)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(identities.len(), objects.len());
+    for name in ["anchor", "alias", "sized", "", "tail"] {
+        let definitions = objects
+            .iter()
+            .filter(|object| object.name == name)
+            .collect::<Vec<_>>();
+        assert_eq!(definitions.len(), 2);
+        for definition in definitions {
+            assert_eq!(
+                definition.synthetic_from_anchor,
+                matches!(name, "anchor" | "alias" | "tail")
+            );
+            assert_eq!(
+                definition.initializer,
+                if name.is_empty() {
+                    vec![5, 6, 7, 8]
+                } else {
+                    vec![1, 2, 3, 4]
+                }
+            );
+        }
+    }
+}
+
+#[test]
+fn static_and_dynamic_tables_are_both_queryable_without_merging_occurrences() {
+    let path = write_visibility_fixture();
+    let bytes = with_duplicate_dynamic_table(std::fs::read(&path).unwrap());
+    std::fs::remove_file(path).unwrap();
+    let capture = CapturedArtifact::from_data(&bytes).unwrap();
+    let definitions = capture
+        .code_symbols("exported_function", CodeSymbolSelection::Exported)
+        .unwrap();
+    assert_eq!(definitions.len(), 2);
+    assert_ne!(definitions[0].location.table, definitions[1].location.table);
+    assert_ne!(
+        definitions[0].definition.identity,
+        definitions[1].definition.identity
+    );
+    for symbol in definitions {
+        let body = inspect_captured_function(
+            std::path::Path::new("<captured>"),
+            &capture,
+            symbol.location,
+        )
+        .unwrap();
+        assert_eq!(body.code_identity, symbol.definition.identity);
+        assert!(
+            body.labels
+                .iter()
+                .any(|label| label.name == "exported_function")
+        );
+    }
 }

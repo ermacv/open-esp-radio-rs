@@ -22,6 +22,12 @@ use crate::{
     run_spec::{InputRole, RunSpec},
 };
 
+#[cfg(test)]
+use super::ownership::ensure_unique_replay_outputs;
+use super::ownership::{OutputCatalog, ReplayDeclarations};
+use super::pass_spec::{CachePass, PassKind, stage_configuration};
+use super::work::{ExecutionWork, ResolvedWork, WorkDecision};
+use super::{ProjectAnalysisInput, ProjectAnalysisInputRequirement};
 use super::{
     ProjectAnalysisInputs, ProjectAnalysisOperations, ProjectAnalysisPlanAction,
     ProjectAnalysisPlanReport, ProjectAnalysisPlanWorkItem, ProjectAnalysisPlanner,
@@ -29,15 +35,22 @@ use super::{
     cache::{PipelineInputObservation, ProjectAnalysisCache, ProjectAnalysisCachePlan},
 };
 use crate::application::{ProjectSession, pipeline::StageRun};
+use crate::application::{
+    generated_file::GeneratedOutput,
+    output_set::{OutputReceipt, OutputSet},
+};
 
 pub(crate) fn analyze_project(
     session: &ProjectSession,
     request: ProjectAnalysisRequest,
 ) -> ProjectAnalysisReport {
-    let inputs = project_analysis_inputs(session);
+    let replays = ReplayDeclarations::capture(&session.project);
+    let inputs = project_analysis_inputs(session, &replays);
+    let graph = super::pass_spec::PassGraph::resolve(&session.project, inputs);
     let compiled_knowledge_identity =
         crate::providers::analysis_cache_identity(session.target.knowledge_provider.as_deref());
-    let (pipeline_inputs, pipeline_input_error) = pipeline_input_observation(session);
+    let (pipeline_inputs, pipeline_input_error, output_catalog) =
+        pipeline_input_observation(session, &replays);
     let mut operations = ResolvedProjectAnalysisOperations {
         session,
         cache: if request.check {
@@ -53,9 +66,13 @@ pub(crate) fn analyze_project(
         planner: None,
         pipeline_inputs,
         pipeline_input_error,
+        output_catalog,
+        replays,
         coverage_report: None,
+        completed_outputs: Vec::new(),
+        captures: std::sync::OnceLock::new(),
     };
-    let mut report = super::run(&session.project, request, inputs, &mut operations);
+    let mut report = super::run(&graph, request, &mut operations);
     report.coverage = operations.coverage_report.take().unwrap_or_else(|| {
         crate::application::coverage::inspect(&session.project, session.run_spec.as_ref())
     });
@@ -67,10 +84,13 @@ pub(crate) fn plan_project(
     session: &ProjectSession,
     request: ProjectAnalysisRequest,
 ) -> ProjectAnalysisPlanReport {
-    let inputs = project_analysis_inputs(session);
+    let replays = ReplayDeclarations::capture(&session.project);
+    let inputs = project_analysis_inputs(session, &replays);
+    let graph = super::pass_spec::PassGraph::resolve(&session.project, inputs);
     let compiled_knowledge_identity =
         crate::providers::analysis_cache_identity(session.target.knowledge_provider.as_deref());
-    let (pipeline_inputs, pipeline_input_error) = pipeline_input_observation(session);
+    let (pipeline_inputs, pipeline_input_error, output_catalog) =
+        pipeline_input_observation(session, &replays);
     let mut operations = ResolvedProjectAnalysisOperations {
         session,
         cache: ProjectAnalysisCache::planning(&session.manifest)
@@ -82,40 +102,37 @@ pub(crate) fn plan_project(
         planner: Some(ProjectAnalysisPlanner::default()),
         pipeline_inputs,
         pipeline_input_error,
+        output_catalog,
+        replays,
         coverage_report: None,
+        completed_outputs: Vec::new(),
+        captures: std::sync::OnceLock::new(),
     };
-    let mut execution = super::run(&session.project, request, inputs, &mut operations);
+    let mut execution = super::run(&graph, request, &mut operations);
     execution.coverage =
         crate::application::coverage::declarations(&session.project, session.run_spec.as_ref());
     operations
         .planner
         .take()
         .expect("project analysis planner was configured")
-        .finish(&session.project, inputs, execution)
+        .finish(&graph, execution)
 }
 
-fn project_analysis_inputs(session: &ProjectSession) -> ProjectAnalysisInputs {
-    let replay_requirements = match session.project.functions.as_ref() {
-        None => (false, false),
-        Some(paths) => match crate::function_workspace::FunctionPack::load_reviewed(&paths.pack) {
-            Ok(pack) => {
-                let replays = pack
-                    .event_routes
-                    .iter()
-                    .filter_map(crate::function_workspace::ReviewedEventRoute::replay)
-                    .collect::<Vec<_>>();
-                let requires_interfaces = replays.iter().any(|replay| {
-                    crate::application::event_replay::manifest_requires_reviewed_interfaces(
-                        &replay.manifest,
-                    )
-                    .unwrap_or(true)
-                });
-                (!replays.is_empty(), requires_interfaces)
-            }
-            // Preserve fail-closed orchestration for an invalid reviewed pack:
-            // the event stage will surface the precise load error when it runs.
-            Err(_) => (true, true),
-        },
+fn project_analysis_inputs(
+    session: &ProjectSession,
+    replays: &ReplayDeclarations,
+) -> ProjectAnalysisInputs {
+    let replay_requirements = match replays.records() {
+        Ok(replays) => (
+            !replays.is_empty(),
+            replays.iter().any(|replay| {
+                crate::application::event_replay::manifest_requires_reviewed_interfaces(
+                    &replay.manifest,
+                )
+                .unwrap_or(true)
+            }),
+        ),
+        Err(_) => (true, true),
     };
     ProjectAnalysisInputs {
         run_spec: session.run_spec.is_some(),
@@ -127,19 +144,29 @@ fn project_analysis_inputs(session: &ProjectSession) -> ProjectAnalysisInputs {
 
 fn pipeline_input_observation(
     session: &ProjectSession,
-) -> (Option<PipelineInputObservation>, Option<String>) {
-    match pipeline_input_paths(session)
-        .and_then(PipelineInputObservation::capture)
-        .and_then(|observation| {
-            session.validate_active_artifacts()?;
-            Ok(observation)
-        }) {
-        Ok(observation) => (Some(observation), None),
-        Err(error) => (None, Some(error.to_string())),
+    replays: &ReplayDeclarations,
+) -> (
+    Option<PipelineInputObservation>,
+    Option<String>,
+    Option<OutputCatalog>,
+) {
+    let result = (|| -> Result<_> {
+        let paths = pipeline_input_paths(session, replays)?;
+        let observation = PipelineInputObservation::capture(paths.clone())?;
+        let outputs = OutputCatalog::capture(&session.project, &paths, replays)?;
+        session.validate_active_artifacts()?;
+        Ok((observation, outputs))
+    })();
+    match result {
+        Ok((observation, outputs)) => (Some(observation), None, Some(outputs)),
+        Err(error) => (None, Some(error.to_string()), None),
     }
 }
 
-fn pipeline_input_paths(session: &ProjectSession) -> Result<Vec<std::path::PathBuf>> {
+fn pipeline_input_paths(
+    session: &ProjectSession,
+    replays: &ReplayDeclarations,
+) -> Result<Vec<std::path::PathBuf>> {
     let mut paths = crate::application::project_files::collect(&session.context())?
         .files
         .into_iter()
@@ -157,17 +184,16 @@ fn pipeline_input_paths(session: &ProjectSession) -> Result<Vec<std::path::PathB
     {
         paths.extend(RegisterModel::input_paths(&registers.model)?);
     }
-    if let Some(functions) = session
+    if session
         .project
         .functions
         .as_ref()
-        .filter(|functions| functions.pack.is_file())
+        .is_some_and(|functions| functions.pack.is_file())
     {
-        let pack = crate::function_workspace::FunctionPack::load_reviewed(&functions.pack)?;
         paths.extend(
-            pack.event_routes
+            replays
+                .records()?
                 .iter()
-                .filter_map(crate::function_workspace::ReviewedEventRoute::replay)
                 .map(|replay| replay.manifest.clone()),
         );
     }
@@ -175,6 +201,7 @@ fn pipeline_input_paths(session: &ProjectSession) -> Result<Vec<std::path::PathB
 }
 
 struct ResolvedProjectAnalysisOperations<'a> {
+    captures: std::sync::OnceLock<crate::source_set::CapturedSourceSet>,
     session: &'a ProjectSession,
     cache: ProjectAnalysisCache,
     check: bool,
@@ -183,6 +210,9 @@ struct ResolvedProjectAnalysisOperations<'a> {
     planner: Option<ProjectAnalysisPlanner>,
     pipeline_inputs: Option<PipelineInputObservation>,
     pipeline_input_error: Option<String>,
+    output_catalog: Option<OutputCatalog>,
+    replays: ReplayDeclarations,
+    completed_outputs: Vec<OutputReceipt>,
     coverage_report: Option<Vec<crate::application::CoverageObligation>>,
 }
 
@@ -224,57 +254,118 @@ fn append_register_workspace_inputs(
 }
 
 impl ResolvedProjectAnalysisOperations<'_> {
-    fn plan_stage(
-        &mut self,
-        stage: &str,
-        cache_stage: &str,
+    fn captured_sources(&self) -> &crate::source_set::CapturedSourceSet {
+        self.captures.get_or_init(|| {
+            crate::source_set::CapturedSourceSet::capture(
+                self.session
+                    .run_spec
+                    .iter()
+                    .flat_map(|run| run.inputs())
+                    .map(|input| input.path.clone()),
+            )
+        })
+    }
+
+    fn resolve_work(
+        &self,
+        key: &str,
         check: bool,
-        inputs: &[std::path::PathBuf],
-        outputs: &[std::path::PathBuf],
-    ) -> Result<Option<StageRun>> {
+        inputs: Vec<std::path::PathBuf>,
+        outputs: Vec<std::path::PathBuf>,
+    ) -> Result<ResolvedWork> {
+        let owner = CachePass::parse(key)?.spec.kind;
+        let inputs = inputs
+            .into_iter()
+            .map(|path| {
+                let optional = owner == PassKind::LinkedIr
+                    && self.session.project.code.is_none()
+                    && self
+                        .session
+                        .project
+                        .symbol_inventory
+                        .as_ref()
+                        .is_some_and(|symbols| symbols.output == path);
+                ProjectAnalysisInput {
+                    path,
+                    requirement: if optional {
+                        ProjectAnalysisInputRequirement::Optional
+                    } else {
+                        ProjectAnalysisInputRequirement::Required
+                    },
+                }
+            })
+            .collect();
+        ResolvedWork::new(
+            key.to_owned(),
+            self.stage_configuration(key)?,
+            inputs,
+            outputs,
+            check,
+            self.linked_ir_semantic_cache_domain(),
+        )
+    }
+
+    fn prepare_work(&mut self, work: ResolvedWork) -> Result<WorkDecision> {
+        self.output_catalog
+            .as_ref()
+            .ok_or_else(|| crate::Error::invalid("output ownership preflight failed"))?
+            .validate(&work)?;
+        if let Some(run) = self.plan_work(&work)? {
+            return Ok(WorkDecision::Complete(run));
+        }
+        if let Some(run) = self.cached_work(&work)? {
+            return Ok(WorkDecision::Complete(run));
+        }
+        Ok(WorkDecision::Execute(work.prepared()?))
+    }
+
+    fn plan_work(&mut self, work: &ResolvedWork) -> Result<Option<StageRun>> {
+        let stage = work.owner().spec().name;
+        let cache_stage = work.key();
+        let inputs = work.input_paths();
+        let outputs = work.outputs();
+        let check = work.check();
         let Some(planner) = self.planner.as_ref() else {
             return Ok(None);
         };
         self.cache.ensure_planning_snapshot()?;
+        let catalog = self
+            .output_catalog
+            .as_ref()
+            .expect("output ownership was validated");
         let materializations = inputs
             .iter()
-            .filter_map(|input| {
-                planner
-                    .input_materialization(input)
-                    .map(|(dependency, output)| {
-                        (input.clone(), dependency.to_owned(), output.to_owned())
-                    })
+            .map(|input| {
+                Ok(catalog
+                    .producer(input)?
+                    .filter(|owner| planner.materializes(&owner.work))
+                    .map(|owner| (input.clone(), owner.clone())))
             })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
             .collect::<Vec<_>>();
-        let concrete_inputs = inputs
+        // A producer can defer only the paths that this work declares.
+        let deferred = materializations
             .iter()
-            .filter(|input| {
-                !materializations
-                    .iter()
-                    .any(|(materialized, _, _)| materialized == *input)
-            })
-            .cloned()
+            .map(|(path, _)| path.clone())
             .collect::<Vec<_>>();
-        // A generated predecessor can defer only the paths that it owns. All
-        // independent inputs must still pass preflight now, otherwise a plan
-        // can claim READY even though execution will fail before this stage.
-        self.ensure_cache_inputs(cache_stage, &concrete_inputs)?;
+        work.validate_inputs(&deferred)?;
         if materializations.is_empty() && check {
             ensure_check_outputs(outputs)?;
         }
         let awaiting_inputs = materializations
             .iter()
-            .map(
-                |(input, dependency, _)| super::ProjectAnalysisPlanAwaitingInput {
-                    path: input.clone(),
-                    producer_stage: dependency.clone(),
-                },
-            )
+            .map(|(input, owner)| super::ProjectAnalysisPlanAwaitingInput {
+                path: input.clone(),
+                producer_stage: owner.pass.spec().name.to_owned(),
+                producer_work: owner.work.clone(),
+            })
             .collect::<Vec<_>>();
         let (action, signature, cause) = if !materializations.is_empty() {
             let producers = materializations
                 .iter()
-                .map(|(_, dependency, _)| dependency.as_str())
+                .map(|(_, owner)| owner.pass.spec().name)
                 .collect::<std::collections::BTreeSet<_>>()
                 .into_iter()
                 .collect::<Vec<_>>()
@@ -296,7 +387,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
                         .to_owned(),
                 ),
             )
-        } else if self.is_unversioned_linked_ir_stage(cache_stage) {
+        } else if !work.cacheable() {
             (
                 ProjectAnalysisPlanAction::Compute,
                 None,
@@ -306,10 +397,9 @@ impl ResolvedProjectAnalysisOperations<'_> {
                 ),
             )
         } else {
-            let configuration = self.stage_configuration(cache_stage);
             match self
                 .cache
-                .plan(cache_stage, &configuration, inputs, outputs)?
+                .plan(cache_stage, work.configuration(), inputs, outputs)?
             {
                 ProjectAnalysisCachePlan::Current { signature } => {
                     (ProjectAnalysisPlanAction::Current, Some(signature), None)
@@ -340,6 +430,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
                     name: cache_stage.to_owned(),
                     action,
                     signature,
+                    inputs: work.inputs().to_vec(),
                     outputs: outputs.to_vec(),
                     cause,
                     awaiting_inputs,
@@ -393,7 +484,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
         if let Some(interfaces) = project
             .interfaces
             .as_ref()
-            .filter(|_| super::linked_ir_uses_reviewed_interfaces(project))
+            .filter(|_| super::pass_spec::linked_ir_uses_reviewed_interfaces(project))
         {
             append_interface_workspace_inputs(&mut paths, interfaces);
         }
@@ -486,25 +577,6 @@ impl ResolvedProjectAnalysisOperations<'_> {
             .is_some_and(std::path::Path::is_file)
     }
 
-    fn ensure_cache_inputs(&self, stage: &str, inputs: &[std::path::PathBuf]) -> Result<()> {
-        for input in inputs {
-            let optional_missing_symbol_projection = (stage == "linked-ir"
-                || stage.starts_with("linked-ir:"))
-                && self.session.project.code.is_none()
-                && self
-                    .session
-                    .project
-                    .symbol_inventory
-                    .as_ref()
-                    .is_some_and(|symbols| symbols.output == *input)
-                && !input.exists();
-            if !optional_missing_symbol_projection {
-                ensure_stage_input(input)?;
-            }
-        }
-        Ok(())
-    }
-
     fn function_workspace_inputs(&self) -> Result<Vec<std::path::PathBuf>> {
         let mut paths = self.common_inputs();
         if let Some(functions) = self.session.project.functions.as_ref() {
@@ -575,18 +647,16 @@ impl ResolvedProjectAnalysisOperations<'_> {
         Ok(paths)
     }
 
-    fn cache_hit(
-        &mut self,
-        stage: &str,
-        check: bool,
-        inputs: &[std::path::PathBuf],
-        outputs: &[std::path::PathBuf],
-    ) -> Result<Option<StageRun>> {
-        self.ensure_cache_inputs(stage, inputs)?;
+    fn cached_work(&mut self, work: &ResolvedWork) -> Result<Option<StageRun>> {
+        let stage = work.key();
+        let inputs = work.input_paths();
+        let outputs = work.outputs();
+        let check = work.check();
+        work.validate_inputs(&[])?;
         if check {
             return Ok(None);
         }
-        if self.is_unversioned_linked_ir_stage(stage) {
+        if !work.cacheable() {
             tracing::warn!(
                 cache_stage = stage,
                 cache_outcome = "bypass",
@@ -594,10 +664,13 @@ impl ResolvedProjectAnalysisOperations<'_> {
             );
             return Ok(None);
         }
-        let configuration = self.stage_configuration(stage);
+        let destinations = OutputSet::new(outputs, false)?;
         let current = self
             .cache
-            .is_current(stage, &configuration, inputs, outputs)?;
+            .is_current(stage, work.configuration(), inputs, &destinations)?;
+        if current {
+            self.completed_outputs.extend(destinations.receipts()?);
+        }
         if current {
             let run = if self.cache.last_lookup_restored() {
                 tracing::info!(
@@ -625,22 +698,22 @@ impl ResolvedProjectAnalysisOperations<'_> {
         }
     }
 
-    fn cache_record(
-        &mut self,
-        stage: &str,
-        check: bool,
-        inputs: &[std::path::PathBuf],
-        outputs: &[std::path::PathBuf],
-    ) -> Result<()> {
-        if !check && !self.is_unversioned_linked_ir_stage(stage) {
-            let configuration = self.stage_configuration(stage);
-            self.cache.record(stage, &configuration, inputs, outputs)?;
+    fn complete_work(&mut self, execution: ExecutionWork) -> Result<()> {
+        let (work, receipts) = execution.finish()?;
+        if !work.check() && work.cacheable() {
+            self.cache.record(
+                work.key(),
+                work.configuration(),
+                work.input_paths(),
+                &receipts,
+            )?;
             tracing::info!(
-                cache_stage = stage,
+                cache_stage = work.key(),
                 cache_outcome = "recomputed-published",
                 "published recomputed stage to the persistent cache"
             );
         }
+        self.completed_outputs.extend(receipts);
         Ok(())
     }
 
@@ -650,16 +723,12 @@ impl ResolvedProjectAnalysisOperations<'_> {
             .map(|harness| harness.semantic_cache_domain)
     }
 
-    fn is_unversioned_linked_ir_stage(&self, stage: &str) -> bool {
-        !linked_ir_stage_cacheable(stage, self.linked_ir_semantic_cache_domain())
-    }
-
     /// Stable, stage-owned project configuration included in the cache key.
     ///
     /// File contents remain explicit inputs. Keeping unrelated manifest
     /// sections out of this value prevents, for example, a review-scope edit
     /// from invalidating artifact-wide decoding and linked IR.
-    fn stage_configuration(&self, stage: &str) -> String {
+    fn stage_configuration(&self, stage: &str) -> Result<String> {
         stage_configuration(
             &self.session.project,
             stage,
@@ -688,160 +757,23 @@ impl ResolvedProjectAnalysisOperations<'_> {
     }
 }
 
-fn stage_configuration(
-    project: &ProjectSpec,
-    stage: &str,
-    linked_ir_semantic_cache_domain: Option<&str>,
-) -> String {
-    if let Some(profile_id) = stage.strip_prefix("linked-ir:") {
-        let profile = project
-            .ir_profiles
-            .iter()
-            .find(|profile| profile.id == profile_id)
-            .expect("linked-IR cache stage must name a configured profile");
-        return format!(
-            "sources={:?};roots={:?};include-reachable={};entry-contract={:?};effective-code-domain={:?};riscv-semantic-cache-domain={:?}",
-            profile.sources,
-            profile.roots,
-            profile.include_reachable,
-            profile.entry_contract,
-            effective_code_domain(project),
-            linked_ir_semantic_cache_domain,
-        );
-    }
-    match stage.split_once(':').map_or(stage, |(owner, _)| owner) {
-        "symbol-inventory" => format!("{:?}", project.symbol_inventory),
-        "mmio-discovery" => format!(
-            "facts={:?};effective-code-domain={:?}",
-            project.registers.as_ref().map(|registers| &registers.facts),
-            effective_code_domain(project),
-        ),
-        "interface-discovery" => format!(
-            "facts={:?};effective-code-domain={:?}",
-            project
-                .interfaces
-                .as_ref()
-                .map(|interfaces| &interfaces.facts),
-            effective_code_domain(project),
-        ),
-        "linked-ir" => format!(
-            "profiles={:?};effective-code-domain={:?};riscv-semantic-cache-domain={:?}",
-            project.ir_profiles,
-            effective_code_domain(project),
-            linked_ir_semantic_cache_domain,
-        ),
-        "event-replays" => format!("{:?}", project.functions),
-        "review-scopes" => format!(
-            "project-id={:?};review={:?};profile-bindings={:?};policy={:?}",
-            project.id,
-            project.review,
-            review_profile_bindings(project),
-            project
-                .verification
-                .as_ref()
-                .and_then(|verification| verification.policy.as_ref())
-        ),
-        "navigation-index" => {
-            let profile_bindings = project
-                .ir_profiles
-                .iter()
-                .map(|profile| (profile.id.as_str(), profile.output.as_path()))
-                .collect::<Vec<_>>();
-            format!(
-                "navigation={:?};linked-ir-profile-bindings={profile_bindings:?}",
-                project.navigation_index
-            )
-        }
-        "code-boundary-validation" | "code-boundary-review" => {
-            format!("project-id={:?};code={:?}", project.id, project.code)
-        }
-        "register-validation" | "register-review" => {
-            format!("{:?}", project.registers)
-        }
-        "function-validation" | "function-review" => format!(
-            "functions={:?};profile-bindings={:?}",
-            project.functions,
-            function_profile_bindings(project)
-        ),
-        "interface-validation" | "interface-capability-context" => {
-            format!("{:?}", project.interfaces)
-        }
-        _ => unreachable!("cache stage revision rejects unknown stage {stage:?}"),
-    }
-}
-
-fn effective_code_domain(
-    project: &ProjectSpec,
-) -> Option<(&str, &crate::project::CodeWorkspacePaths)> {
-    project
-        .code
-        .as_ref()
-        .map(|code| (project.id.as_str(), code))
-}
-
-fn function_profile_bindings(project: &ProjectSpec) -> Vec<(String, std::path::PathBuf)> {
-    project
-        .functions
-        .as_ref()
-        .map(|functions| ir_profile_bindings(project, &functions.profiles))
-        .unwrap_or_default()
-}
-
-fn review_profile_bindings(project: &ProjectSpec) -> Vec<(String, std::path::PathBuf)> {
-    let ids = project
-        .review
-        .iter()
-        .flat_map(|review| &review.scopes)
-        .flat_map(|scope| &scope.profiles)
-        .cloned()
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    ir_profile_bindings(project, &ids)
-}
-
-fn ir_profile_bindings(project: &ProjectSpec, ids: &[String]) -> Vec<(String, std::path::PathBuf)> {
-    ids.iter()
-        .map(|id| {
-            let profile = project
-                .ir_profiles
-                .iter()
-                .find(|profile| profile.id == *id)
-                .expect("reviewed project profile was validated while loading the manifest");
-            (id.clone(), profile.output.clone())
-        })
-        .collect()
-}
-
-fn ensure_unique_replay_outputs<'a>(
-    replays: impl IntoIterator<Item = &'a crate::function_workspace::ReviewedEventReplay>,
-) -> Result<()> {
-    let mut owners = std::collections::BTreeMap::new();
-    for replay in replays {
-        let identity = (replay.manifest.clone(), replay.source.clone());
-        if let Some(previous) = owners.insert(replay.evidence.clone(), identity.clone())
-            && previous != identity
-        {
-            return Err(crate::Error::invalid(format!(
-                "event replay evidence output {} is assigned to both manifest/source {:?} and {:?}",
-                replay.evidence.display(),
-                previous,
-                identity
-            )));
-        }
-    }
-    Ok(())
-}
-
 impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
     fn complete_analysis_epoch(&mut self) -> Result<()> {
-        self.cache.complete_analysis_epoch()
+        // Plan uses the shared pass traversal, but it owns no publication
+        // capability and must not open a writer at the simulated success edge.
+        if self.planner.is_some() {
+            return Ok(());
+        }
+        for receipt in &self.completed_outputs {
+            receipt.validate()?;
+        }
+        self.cache.publish_analysis_outputs(&self.completed_outputs)
     }
 
     fn validate_pipeline_inputs(&mut self) -> Result<()> {
         if let Some(error) = self.pipeline_input_error.as_deref() {
             return Err(crate::Error::invalid(format!(
-                "project input generation could not be captured: {error}"
+                "project analysis preflight failed: {error}"
             )));
         }
         self.pipeline_inputs
@@ -861,20 +793,19 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
                 .output
                 .clone(),
         ];
-        if let Some(run) = self.plan_stage(
-            "symbol-inventory",
-            "symbol-inventory",
-            check,
-            &inputs,
-            &outputs,
-        )? {
-            return Ok(run);
-        }
-        if let Some(run) = self.cache_hit("symbol-inventory", check, &inputs, &outputs)? {
-            return Ok(run);
-        }
-        build_symbol_inventory(&self.session.project, self.run_spec()?, check)?;
-        self.cache_record("symbol-inventory", check, &inputs, &outputs)?;
+        let work = self.resolve_work("symbol-inventory", check, inputs, outputs)?;
+        let execution = match self.prepare_work(work)? {
+            WorkDecision::Complete(run) => {
+                return Ok(run);
+            }
+            WorkDecision::Execute(execution) => execution,
+        };
+        build_symbol_inventory(
+            self.captured_sources(),
+            self.run_spec()?,
+            execution.outputs().file(0, "symbol inventory")?,
+        )?;
+        self.complete_work(execution)?;
         Ok(StageRun::Executed)
     }
 
@@ -900,23 +831,23 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
                 .facts
                 .clone(),
         ];
-        if let Some(run) =
-            self.plan_stage("mmio-discovery", "mmio-discovery", check, &inputs, &outputs)?
-        {
-            return Ok(run);
-        }
-        if let Some(run) = self.cache_hit("mmio-discovery", check, &inputs, &outputs)? {
-            return Ok(run);
-        }
+        let work = self.resolve_work("mmio-discovery", check, inputs, outputs)?;
+        let execution = match self.prepare_work(work)? {
+            WorkDecision::Complete(run) => {
+                return Ok(run);
+            }
+            WorkDecision::Execute(execution) => execution,
+        };
         discover_project_mmio(
+            self.captured_sources(),
             &self.session.project,
             self.run_spec()?,
             self.memory_map()?,
             &self.session.mmio,
-            check,
+            execution.outputs().file(0, "MMIO discovery report")?,
             jobs,
         )?;
-        self.cache_record("mmio-discovery", check, &inputs, &outputs)?;
+        self.complete_work(execution)?;
         Ok(StageRun::Executed)
     }
 
@@ -941,20 +872,20 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
                 .facts
                 .clone(),
         ];
-        if let Some(run) = self.plan_stage(
-            "interface-discovery",
-            "interface-discovery",
-            check,
-            &inputs,
-            &outputs,
-        )? {
-            return Ok(run);
-        }
-        if let Some(run) = self.cache_hit("interface-discovery", check, &inputs, &outputs)? {
-            return Ok(run);
-        }
-        discover_project_interfaces_operation(&self.session.project, self.run_spec()?, check)?;
-        self.cache_record("interface-discovery", check, &inputs, &outputs)?;
+        let work = self.resolve_work("interface-discovery", check, inputs, outputs)?;
+        let execution = match self.prepare_work(work)? {
+            WorkDecision::Complete(run) => {
+                return Ok(run);
+            }
+            WorkDecision::Execute(execution) => execution,
+        };
+        discover_project_interfaces_operation(
+            self.captured_sources(),
+            &self.session.project,
+            self.run_spec()?,
+            execution.outputs().file(0, "interface discovery report")?,
+        )?;
+        self.complete_work(execution)?;
         Ok(StageRun::Executed)
     }
 
@@ -964,24 +895,72 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
         crate::application::coverage::require_complete(
             &crate::application::coverage::declarations(project, run),
         )?;
+        let profile_inputs = if self.planner.is_some() {
+            project
+                .ir_profiles
+                .iter()
+                .map(|profile| {
+                    let mut inputs = self
+                        .session
+                        .run_spec_path
+                        .iter()
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    inputs.extend(crate::application::project_ir_build::profile_input_paths(
+                        profile,
+                        self.run_spec()?,
+                    )?);
+                    inputs.extend(self.linked_ir_outputs(profile));
+                    inputs.sort();
+                    inputs.dedup();
+                    Ok(inputs
+                        .into_iter()
+                        .map(|path| ProjectAnalysisInput {
+                            path,
+                            requirement: ProjectAnalysisInputRequirement::Required,
+                        })
+                        .collect::<Vec<_>>())
+                })
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            Vec::new()
+        };
         if let Some(planner) = self.planner.as_mut() {
             for family in project.analysis_symbol_families.iter().filter(|family| {
                 family.disposition == crate::project::AnalysisSymbolFamilyDisposition::Required
             }) {
                 planner.record("analysis-coverage", ProjectAnalysisPlanWorkItem {
                     name: format!("required:{}", family.id), action: ProjectAnalysisPlanAction::Verify,
+                    inputs: self.session.run_spec_path.iter().cloned().map(|path| ProjectAnalysisInput { path, requirement: ProjectAnalysisInputRequirement::Required }).collect(),
                     signature: None, outputs: Vec::new(), cause: Some(format!("source-artifact:{}; profile={:?}; every root matching {:?} must have an outcome", family.source, family.profile, family.symbol_prefix)), awaiting_inputs: Vec::new(),
                 });
             }
-            for profile in &project.ir_profiles {
+            for (profile, inputs) in project.ir_profiles.iter().zip(profile_inputs) {
                 crate::application::project_inputs::resolve_inputs(
                     profile,
                     run.ok_or_else(|| crate::Error::invalid("run-spec is not configured"))?,
                 )?;
+                let catalog = self.output_catalog.as_ref().expect("preflight succeeded");
+                let awaiting_inputs = inputs
+                    .iter()
+                    .map(|input| {
+                        Ok(catalog
+                            .producer(&input.path)?
+                            .filter(|owner| planner.materializes(&owner.work))
+                            .map(|owner| super::ProjectAnalysisPlanAwaitingInput {
+                                path: input.path.clone(),
+                                producer_stage: owner.pass.spec().name.to_owned(),
+                                producer_work: owner.work.clone(),
+                            }))
+                    })
+                    .collect::<Result<Vec<_>>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect();
                 planner.record("analysis-coverage", ProjectAnalysisPlanWorkItem {
                     name: format!("coverage:{}", profile.id), action: ProjectAnalysisPlanAction::Verify,
-                    signature: None, outputs: vec![profile.output.join(crate::application::coverage::FILE)],
-                    cause: Some("verify every selected root and required family after linked-IR materialization".to_owned()), awaiting_inputs: Vec::new(),
+                    signature: None, inputs, outputs: Vec::new(),
+                    cause: Some("verify every selected root and required family after linked-IR materialization".to_owned()), awaiting_inputs,
                 });
             }
             return Ok(StageRun::Executed);
@@ -998,90 +977,80 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
     }
 
     fn build_linked_ir(&mut self, check: bool, jobs: usize) -> Result<StageRun> {
-        if self.planner.is_some() {
-            let profiles = self.session.project.ir_profiles.clone();
-            let mut all_current = true;
-            for profile in profiles {
-                let cache_stage = format!("linked-ir:{}", profile.id);
-                let inputs = self.linked_ir_inputs(&profile)?;
-                let outputs = self.linked_ir_outputs(&profile);
-                let run = self
-                    .plan_stage("linked-ir", &cache_stage, check, &inputs, &outputs)?
-                    .expect("linked-IR planner is configured");
-                all_current &= run == StageRun::Current;
-            }
-            return Ok(if all_current {
-                StageRun::Current
-            } else {
-                StageRun::Executed
-            });
-        }
-        if check {
-            crate::application::project_ir_build::build_project_ir(
-                crate::application::project_ir_build::ProjectIrBuildRequest {
-                    profiles: Default::default(),
-                    check: true,
-                    jobs,
-                    refresh_review_scopes: false,
-                },
-                &self.session.manifest,
-                &self.session.project,
-                self.run_spec()?,
-                &self.session.mmio,
-                &self.session.target,
-            )?;
-            return Ok(StageRun::Executed);
-        }
-
-        // Resolve cache state for every profile before entering the expensive
-        // linker/analysis pipeline.  Building one stale profile at a time
-        // reloads the same code catalog and reviewed interface knowledge for
-        // each profile and prevents the analysis layer from sharing lazy
-        // function queries across the selected set.
         let profiles = self.session.project.ir_profiles.clone();
-        let mut stale = Vec::new();
+        let mut pending = Vec::new();
         let mut restored = false;
+        let mut planned = false;
         for profile in profiles {
-            let stage = format!("linked-ir:{}", profile.id);
-            let inputs = self.linked_ir_inputs(&profile)?;
-            let outputs = self.linked_ir_outputs(&profile);
-            if let Some(run) = self.cache_hit(&stage, false, &inputs, &outputs)? {
-                restored |= run == StageRun::Restored;
-                continue;
+            let key = format!("linked-ir:{}", profile.id);
+            let work = self.resolve_work(
+                &key,
+                check,
+                self.linked_ir_inputs(&profile)?,
+                self.linked_ir_outputs(&profile),
+            )?;
+            match self.prepare_work(work)? {
+                WorkDecision::Complete(StageRun::Current) => (),
+                WorkDecision::Complete(StageRun::Restored) => restored = true,
+                WorkDecision::Complete(StageRun::Executed) => planned = true,
+                WorkDecision::Execute(execution) => pending.push(execution),
             }
-            stale.push((profile.id, stage, inputs, outputs));
         }
-        if stale.is_empty() {
-            return Ok(if restored {
+        if pending.is_empty() {
+            return Ok(if planned {
+                StageRun::Executed
+            } else if restored {
                 StageRun::Restored
             } else {
                 StageRun::Current
             });
         }
-
+        let request = crate::application::project_ir_build::ProjectIrBuildRequest {
+            profiles: pending
+                .iter()
+                .map(|execution| execution.work().profile().expect("profile work").to_owned())
+                .collect(),
+            check,
+            jobs,
+            refresh_review_scopes: false,
+        };
+        let output_sets = pending
+            .iter()
+            .map(|execution| {
+                (
+                    execution.work().profile().expect("profile work").to_owned(),
+                    execution.outputs().clone(),
+                )
+            })
+            .collect();
+        self.captured_sources();
+        let captures = self
+            .captures
+            .get()
+            .expect("source set captured before borrowing writer");
         let session = self.session;
-        let function_fact_store = self.cache.query_store_mut()?;
-        crate::application::project_ir_build::build_project_ir_with_store(
-            crate::application::project_ir_build::ProjectIrBuildRequest {
-                profiles: stale
-                    .iter()
-                    .map(|(profile, _, _, _)| profile.clone())
-                    .collect(),
-                check: false,
-                jobs,
-                refresh_review_scopes: false,
+        let function_fact_store = if check {
+            None
+        } else {
+            Some(self.cache.query_store_mut()?)
+        };
+        crate::application::project_ir_build::build_project_ir_with_outputs(
+            crate::application::project_ir_build::ProjectIrBuildContext {
+                captures,
+                project: &session.project,
+                run_spec: session
+                    .run_spec
+                    .as_ref()
+                    .ok_or_else(|| crate::Error::invalid("run-spec is not configured"))?,
+                svd: &session.mmio,
+                target: &session.target,
             },
-            &session.project,
-            session
-                .run_spec
-                .as_ref()
-                .ok_or_else(|| crate::Error::invalid("run-spec is not configured"))?,
-            &session.mmio,
-            &session.target,
+            request,
             function_fact_store,
+            &output_sets,
         )?;
-        for (_, stage, inputs, outputs) in stale {
-            self.cache_record(&stage, false, &inputs, &outputs)?;
+        for execution in pending {
+            self.complete_work(execution)?;
         }
         Ok(StageRun::Executed)
     }
@@ -1093,35 +1062,15 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
             .functions
             .as_ref()
             .ok_or_else(|| crate::Error::invalid("[functions] is absent"))?;
-        let pack = crate::function_workspace::FunctionPack::load_reviewed(&functions.pack)?;
+        let configured = self.replays.records()?;
         let run_spec = self.run_spec()?;
-        ensure_unique_replay_outputs(
-            pack.event_routes
-                .iter()
-                .filter_map(crate::function_workspace::ReviewedEventRoute::replay),
-        )?;
-        let mut configured = std::collections::BTreeMap::new();
-        for replay in pack
-            .event_routes
-            .iter()
-            .filter_map(crate::function_workspace::ReviewedEventRoute::replay)
-        {
-            configured
-                .entry((
-                    replay.manifest.clone(),
-                    replay.source.clone(),
-                    replay.evidence.clone(),
-                ))
-                .or_insert_with(|| replay.clone());
-        }
         if configured.is_empty() {
             return Err(crate::Error::invalid(
                 "event-replays stage has no configured reviewed replay",
             ));
         }
-
         let mut requests = Vec::with_capacity(configured.len());
-        for replay in configured.into_values() {
+        for replay in configured.iter().cloned() {
             let artifact = run_spec
                 .inputs()
                 .iter()
@@ -1188,24 +1137,28 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
             .iter()
             .map(|(_, output)| output.clone())
             .collect::<Vec<_>>();
-        if let Some(run) =
-            self.plan_stage("event-replays", "event-replays", check, &inputs, &outputs)?
-        {
-            return Ok(run);
-        }
-        if let Some(run) = self.cache_hit("event-replays", check, &inputs, &outputs)? {
-            return Ok(run);
-        }
-        for (prepared, output) in requests {
+        let work = self.resolve_work("event-replays", check, inputs, outputs)?;
+        let execution = match self.prepare_work(work)? {
+            WorkDecision::Complete(run) => {
+                return Ok(run);
+            }
+            WorkDecision::Execute(execution) => execution,
+        };
+        for (index, (prepared, _)) in requests.into_iter().enumerate() {
             let document = crate::application::event_replay::execute_prepared(
                 prepared,
                 &self.session.mmio,
                 &self.session.target,
                 Some(&self.session.project),
             )?;
-            crate::application::event_replay::publish(&document, &output, check)?;
+            crate::application::event_replay::publish(
+                &document,
+                execution
+                    .outputs()
+                    .file(index, "execution replay evidence")?,
+            )?;
         }
-        self.cache_record("event-replays", check, &inputs, &outputs)?;
+        self.complete_work(execution)?;
         Ok(StageRun::Executed)
     }
 
@@ -1233,16 +1186,18 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
                 .output
                 .clone(),
         ];
-        if let Some(run) =
-            self.plan_stage("review-scopes", "review-scopes", check, &inputs, &outputs)?
-        {
-            return Ok(run);
-        }
-        if let Some(run) = self.cache_hit("review-scopes", check, &inputs, &outputs)? {
-            return Ok(run);
-        }
-        build_review_scopes(&self.session.project, check)?;
-        self.cache_record("review-scopes", check, &inputs, &outputs)?;
+        let work = self.resolve_work("review-scopes", check, inputs, outputs)?;
+        let execution = match self.prepare_work(work)? {
+            WorkDecision::Complete(run) => {
+                return Ok(run);
+            }
+            WorkDecision::Execute(execution) => execution,
+        };
+        build_review_scopes(
+            &self.session.project,
+            execution.outputs().file(0, "review scope report")?,
+        )?;
+        self.complete_work(execution)?;
         Ok(StageRun::Executed)
     }
 
@@ -1264,20 +1219,18 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
                 .output
                 .clone(),
         ];
-        if let Some(run) = self.plan_stage(
-            "navigation-index",
-            "navigation-index",
-            check,
-            &inputs,
-            &outputs,
-        )? {
-            return Ok(run);
-        }
-        if let Some(run) = self.cache_hit("navigation-index", check, &inputs, &outputs)? {
-            return Ok(run);
-        }
-        build_navigation(&self.session.project, check)?;
-        self.cache_record("navigation-index", check, &inputs, &outputs)?;
+        let work = self.resolve_work("navigation-index", check, inputs, outputs)?;
+        let execution = match self.prepare_work(work)? {
+            WorkDecision::Complete(run) => {
+                return Ok(run);
+            }
+            WorkDecision::Execute(execution) => execution,
+        };
+        build_navigation(
+            &self.session.project,
+            execution.outputs().file(0, "navigation index")?,
+        )?;
+        self.complete_work(execution)?;
         Ok(StageRun::Executed)
     }
 
@@ -1300,19 +1253,18 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
                 .clone(),
         );
         let stage = validation_key("code-boundary-validation", deny_unreviewed);
-        if let Some(run) =
-            self.plan_stage("code-boundary-validation", &stage, self.check, &inputs, &[])?
-        {
-            return Ok(run);
-        }
-        if let Some(run) = self.cache_hit(&stage, self.check, &inputs, &[])? {
-            return Ok(run);
-        }
+        let work = self.resolve_work(&stage, self.check, inputs, Vec::new())?;
+        let execution = match self.prepare_work(work)? {
+            WorkDecision::Complete(run) => {
+                return Ok(run);
+            }
+            WorkDecision::Execute(execution) => execution,
+        };
         successful(validate_code_boundaries(
             &self.session.project,
             deny_unreviewed,
         )?)?;
-        self.cache_record(&stage, self.check, &inputs, &[])?;
+        self.complete_work(execution)?;
         Ok(StageRun::Executed)
     }
 
@@ -1335,40 +1287,37 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
                 .clone(),
         );
         let outputs = code.review_output.iter().cloned().collect::<Vec<_>>();
-        if let Some(run) = self.plan_stage(
-            "code-boundary-review",
-            "code-boundary-review",
-            check,
-            &inputs,
-            &outputs,
-        )? {
-            return Ok(run);
-        }
-        if let Some(run) = self.cache_hit("code-boundary-review", check, &inputs, &outputs)? {
-            return Ok(run);
-        }
-        successful(review_code_boundaries(&self.session.project, check)?)?;
-        self.cache_record("code-boundary-review", check, &inputs, &outputs)?;
+        let work = self.resolve_work("code-boundary-review", check, inputs, outputs)?;
+        let execution = match self.prepare_work(work)? {
+            WorkDecision::Complete(run) => {
+                return Ok(run);
+            }
+            WorkDecision::Execute(execution) => execution,
+        };
+        successful(review_code_boundaries(
+            &self.session.project,
+            execution.outputs().file(0, "code-boundary review")?,
+        )?)?;
+        self.complete_work(execution)?;
         Ok(StageRun::Executed)
     }
 
     fn validate_registers(&mut self, deny_unreviewed: bool) -> Result<StageRun> {
         let inputs = self.register_workspace_inputs(false)?;
         let stage = validation_key("register-validation", deny_unreviewed);
-        if let Some(run) =
-            self.plan_stage("register-validation", &stage, self.check, &inputs, &[])?
-        {
-            return Ok(run);
-        }
-        if let Some(run) = self.cache_hit(&stage, self.check, &inputs, &[])? {
-            return Ok(run);
-        }
+        let work = self.resolve_work(&stage, self.check, inputs, Vec::new())?;
+        let execution = match self.prepare_work(work)? {
+            WorkDecision::Complete(run) => {
+                return Ok(run);
+            }
+            WorkDecision::Execute(execution) => execution,
+        };
         successful(validate_registers(
             &self.session.project,
             self.session.memory_map.as_ref(),
             deny_unreviewed,
         )?)?;
-        self.cache_record(&stage, self.check, &inputs, &[])?;
+        self.complete_work(execution)?;
         Ok(StageRun::Executed)
     }
 
@@ -1384,34 +1333,31 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
             .iter()
             .cloned()
             .collect::<Vec<_>>();
-        if let Some(run) = self.plan_stage(
-            "register-review",
-            "register-review",
-            check,
-            &inputs,
-            &outputs,
-        )? {
-            return Ok(run);
-        }
-        if let Some(run) = self.cache_hit("register-review", check, &inputs, &outputs)? {
-            return Ok(run);
-        }
-        successful(review_registers(&self.session.project, check)?)?;
-        self.cache_record("register-review", check, &inputs, &outputs)?;
+        let work = self.resolve_work("register-review", check, inputs, outputs)?;
+        let execution = match self.prepare_work(work)? {
+            WorkDecision::Complete(run) => {
+                return Ok(run);
+            }
+            WorkDecision::Execute(execution) => execution,
+        };
+        successful(review_registers(
+            &self.session.project,
+            execution.outputs().file(0, "register review")?,
+        )?)?;
+        self.complete_work(execution)?;
         Ok(StageRun::Executed)
     }
 
     fn validate_functions(&mut self, deny_unreviewed: bool) -> Result<StageRun> {
         let inputs = self.function_workspace_inputs()?;
         let stage = validation_key("function-validation", deny_unreviewed);
-        if let Some(run) =
-            self.plan_stage("function-validation", &stage, self.check, &inputs, &[])?
-        {
-            return Ok(run);
-        }
-        if let Some(run) = self.cache_hit(&stage, self.check, &inputs, &[])? {
-            return Ok(run);
-        }
+        let work = self.resolve_work(&stage, self.check, inputs, Vec::new())?;
+        let execution = match self.prepare_work(work)? {
+            WorkDecision::Complete(run) => {
+                return Ok(run);
+            }
+            WorkDecision::Execute(execution) => execution,
+        };
         self.ensure_function_workspace()?;
         let summary = self
             .functions
@@ -1425,7 +1371,7 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
                     && summary.unreviewed_fields == 0
                     && summary.unreviewed_type_fields == 0),
         )?;
-        self.cache_record(&stage, self.check, &inputs, &[])?;
+        self.complete_work(execution)?;
         Ok(StageRun::Executed)
     }
 
@@ -1442,19 +1388,14 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
             .iter()
             .cloned()
             .collect::<Vec<_>>();
-        if let Some(run) = self.plan_stage(
-            "function-review",
-            "function-review",
-            check,
-            &inputs,
-            &outputs,
-        )? {
-            return Ok(run);
-        }
-        if let Some(run) = self.cache_hit("function-review", check, &inputs, &outputs)? {
-            self.functions = None;
-            return Ok(run);
-        }
+        let work = self.resolve_work("function-review", check, inputs, outputs)?;
+        let execution = match self.prepare_work(work)? {
+            WorkDecision::Complete(run) => {
+                self.functions = None;
+                return Ok(run);
+            }
+            WorkDecision::Execute(execution) => execution,
+        };
         self.ensure_function_workspace()?;
         let has_interface_pack = self.has_reviewed_interface_workspace();
         if has_interface_pack {
@@ -1470,13 +1411,11 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
             .map(|interfaces| link_reviewed_interfaces(workspace, interfaces.bindings()))
             .transpose()?;
         let contents = render_function_review(workspace, interface_links.as_deref())?;
-        super::super::generated_file::write_or_check(
-            &outputs[0],
-            &contents,
-            check,
-            "function review",
-        )?;
-        self.cache_record("function-review", check, &inputs, &outputs)?;
+        execution
+            .outputs()
+            .file(0, "function review")?
+            .text(&contents)?;
+        self.complete_work(execution)?;
         // Function validation and review share one heavyweight projection, but
         // no later pipeline stage consumes it. Release it before interface
         // validation instead of extending the cold-run memory peak.
@@ -1488,14 +1427,13 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
         let mut inputs = self.common_inputs();
         inputs.extend(self.interface_workspace_inputs());
         let stage = validation_key("interface-validation", deny_unreviewed);
-        if let Some(run) =
-            self.plan_stage("interface-validation", &stage, self.check, &inputs, &[])?
-        {
-            return Ok(run);
-        }
-        if let Some(run) = self.cache_hit(&stage, self.check, &inputs, &[])? {
-            return Ok(run);
-        }
+        let work = self.resolve_work(&stage, self.check, inputs, Vec::new())?;
+        let execution = match self.prepare_work(work)? {
+            WorkDecision::Complete(run) => {
+                return Ok(run);
+            }
+            WorkDecision::Execute(execution) => execution,
+        };
         self.ensure_interface_workspace()?;
         let summary = self
             .interfaces
@@ -1505,7 +1443,7 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
         successful(
             !deny_unreviewed || (summary.unreviewed_anchors == 0 && summary.unreviewed_slots == 0),
         )?;
-        self.cache_record(&stage, self.check, &inputs, &[])?;
+        self.complete_work(execution)?;
         Ok(StageRun::Executed)
     }
 
@@ -1520,48 +1458,26 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
             .ok_or_else(|| crate::Error::invalid("[interfaces.capability-context] is absent"))?
             .clone();
         let outputs = vec![output.clone()];
-        if let Some(run) = self.plan_stage(
-            "interface-capability-context",
-            "interface-capability-context",
-            check,
-            &inputs,
-            &outputs,
-        )? {
-            return Ok(run);
-        }
-        if let Some(run) =
-            self.cache_hit("interface-capability-context", check, &inputs, &outputs)?
-        {
-            return Ok(run);
-        }
+        let work = self.resolve_work("interface-capability-context", check, inputs, outputs)?;
+        let execution = match self.prepare_work(work)? {
+            WorkDecision::Complete(run) => {
+                return Ok(run);
+            }
+            WorkDecision::Execute(execution) => execution,
+        };
         self.ensure_interface_workspace()?;
         crate::application::capability_context::build_and_publish(
             self.session,
             self.interfaces
                 .as_ref()
                 .expect("interface workspace was loaded"),
-            &output,
-            check,
+            execution
+                .outputs()
+                .file(0, "interface capability context")?,
         )?;
-        self.cache_record("interface-capability-context", check, &inputs, &outputs)?;
+        self.complete_work(execution)?;
         Ok(StageRun::Executed)
     }
-}
-
-fn ensure_stage_input(input: &std::path::Path) -> Result<()> {
-    let metadata = std::fs::metadata(input).map_err(|error| {
-        crate::Error::invalid(format!(
-            "analysis input {} is unavailable: {error}",
-            input.display()
-        ))
-    })?;
-    if !metadata.is_file() && !metadata.is_dir() {
-        return Err(crate::Error::invalid(format!(
-            "analysis input {} is neither a file nor a directory",
-            input.display()
-        )));
-    }
-    Ok(())
 }
 
 fn ensure_check_outputs(outputs: &[std::path::PathBuf]) -> Result<()> {
@@ -1590,51 +1506,31 @@ fn validation_key(stage: &str, deny_unreviewed: bool) -> String {
     format!("{stage}:deny-unreviewed={deny_unreviewed}")
 }
 
-fn linked_ir_stage_cacheable(stage: &str, semantic_domain: Option<&str>) -> bool {
-    let is_linked_ir = stage == "linked-ir" || stage.starts_with("linked-ir:");
-    !is_linked_ir || semantic_domain.is_some_and(|domain| !domain.trim().is_empty())
-}
-
 pub(crate) fn build_symbol_inventory(
-    project: &ProjectSpec,
+    captures: &crate::source_set::CapturedSourceSet,
     run_spec: &RunSpec,
-    check: bool,
+    output: GeneratedOutput<'_>,
 ) -> Result<bool> {
-    let output = &project
-        .symbol_inventory
-        .as_ref()
-        .ok_or_else(|| crate::Error::invalid("[analysis.symbols] is absent"))?
-        .output;
     let inputs = run_spec
         .inputs()
         .iter()
         .map(|input| (input.role.to_string(), input.path.clone()))
         .collect::<Vec<_>>();
-    let inventory = build_project_linkage_inventory(&inputs)?;
-    let document = build_symbol_inventory_document(&inventory, |_| true)?;
-    super::super::generated_file::write_or_check_json(
-        output,
-        &document,
-        check,
-        "symbol inventory",
-        false,
-    )?;
+    let inventory = build_project_linkage_inventory(captures, &inputs)?;
+    let document = build_symbol_inventory_document(&inventory, |_| true);
+    output.json(&document, false)?;
     Ok(true)
 }
 
 pub(crate) fn discover_project_mmio(
+    captures: &crate::source_set::CapturedSourceSet,
     project: &ProjectSpec,
     run_spec: &RunSpec,
     memory_map: &MemoryMap,
     svd: &MmioMap,
-    check: bool,
+    output: GeneratedOutput<'_>,
     jobs: usize,
 ) -> Result<bool> {
-    let output = &project
-        .registers
-        .as_ref()
-        .ok_or_else(|| crate::Error::invalid("[registers] is absent"))?
-        .facts;
     let artifacts = run_spec
         .inputs()
         .iter()
@@ -1648,36 +1544,27 @@ pub(crate) fn discover_project_mmio(
         .into_iter()
         .map(|(name, start, end)| DiscoveryRange { name, start, end })
         .collect::<Vec<_>>();
-    let report = discover_mmio(
-        &artifacts,
-        &ranges,
-        "",
-        artifact::CodeSymbolSelection::All,
+    let report = discover_mmio(crate::analysis::MmioDiscoveryRequest {
+        captures,
+        artifacts: &artifacts,
+        ranges: &ranges,
+        symbol_prefix: "",
+        code_symbol_selection: artifact::CodeSymbolSelection::All,
         svd,
-        Some(&EffectiveCodeCatalog::load(project)?),
-        crate::analysis::MmioDiscoveryOptions { jobs },
-    )?;
+        effective_code: Some(&EffectiveCodeCatalog::load(project)?),
+        options: crate::analysis::MmioDiscoveryOptions { jobs },
+    })?;
     let document = mmio_document(&report)?;
-    super::super::generated_file::write_or_check_json(
-        output,
-        &document,
-        check,
-        "MMIO discovery report",
-        false,
-    )?;
+    output.json(&document, false)?;
     Ok(true)
 }
 
 pub(crate) fn discover_project_interfaces_operation(
+    captures: &crate::source_set::CapturedSourceSet,
     project: &ProjectSpec,
     run_spec: &RunSpec,
-    check: bool,
+    output: GeneratedOutput<'_>,
 ) -> Result<bool> {
-    let output = &project
-        .interfaces
-        .as_ref()
-        .ok_or_else(|| crate::Error::invalid("[interfaces] is absent"))?
-        .facts;
     let inputs = run_spec
         .inputs()
         .iter()
@@ -1690,18 +1577,13 @@ pub(crate) fn discover_project_interfaces_operation(
         ));
     }
     let discovery = discover_project_interfaces(
+        captures,
         &inputs,
         &ProjectInterfaceDiscoveryOptions::default(),
         Some(&EffectiveCodeCatalog::load(project)?),
     )?;
     let document = build_interface_facts(&discovery)?;
-    super::super::generated_file::write_or_check_json(
-        output,
-        &document,
-        check,
-        "interface discovery report",
-        false,
-    )?;
+    output.json(&document, false)?;
     if !discovery.decode_blockers.is_empty() || !discovery.failures.is_empty() {
         tracing::warn!(
             decode_blockers = discovery.decode_blockers.len(),
@@ -1712,37 +1594,18 @@ pub(crate) fn discover_project_interfaces_operation(
     Ok(true)
 }
 
-pub(crate) fn build_navigation(project: &ProjectSpec, check: bool) -> Result<bool> {
-    let output = &project
-        .navigation_index
-        .as_ref()
-        .ok_or_else(|| crate::Error::invalid("[analysis.navigation] is absent"))?
-        .output;
+pub(crate) fn build_navigation(project: &ProjectSpec, output: GeneratedOutput<'_>) -> Result<bool> {
     let document = crate::navigation::build(project)?;
-    super::super::generated_file::write_or_check_json(
-        output,
-        &document,
-        check,
-        "navigation index",
-        false,
-    )?;
+    output.json(&document, false)?;
     Ok(true)
 }
 
-pub(crate) fn build_review_scopes(project: &ProjectSpec, check: bool) -> Result<bool> {
-    let output = &project
-        .review
-        .as_ref()
-        .ok_or_else(|| crate::Error::invalid("[review] is absent"))?
-        .output;
+pub(crate) fn build_review_scopes(
+    project: &ProjectSpec,
+    output: GeneratedOutput<'_>,
+) -> Result<bool> {
     let document = crate::review_scopes::build_document(project)?;
-    super::super::generated_file::write_or_check_json(
-        output,
-        &document,
-        check,
-        "review scope report",
-        true,
-    )?;
+    output.json(&document, true)?;
     Ok(true)
 }
 
@@ -1764,15 +1627,15 @@ pub(crate) fn validate_code_boundaries(
     Ok(!deny_unreviewed || workspace.summary().unreviewed == 0)
 }
 
-pub(crate) fn review_code_boundaries(project: &ProjectSpec, check: bool) -> Result<bool> {
+pub(crate) fn review_code_boundaries(
+    project: &ProjectSpec,
+    output: GeneratedOutput<'_>,
+) -> Result<bool> {
     let paths = project
         .code
         .as_ref()
         .ok_or_else(|| crate::Error::invalid("[code] is absent"))?;
-    let output = paths
-        .review_output
-        .as_ref()
-        .ok_or_else(|| crate::Error::invalid("[code.review] is absent"))?;
+
     let inventory = &project
         .symbol_inventory
         .as_ref()
@@ -1781,7 +1644,7 @@ pub(crate) fn review_code_boundaries(project: &ProjectSpec, check: bool) -> Resu
     let facts = crate::artifacts::symbol_inventory::load_code_boundary_facts(inventory)?;
     let workspace = CodeWorkspace::load(&facts, &paths.pack, &project.id)?;
     let contents = render_code_boundary_review(&workspace, inventory)?;
-    super::super::generated_file::write_or_check(output, &contents, check, "code-boundary review")?;
+    output.text(&contents)?;
     Ok(true)
 }
 
@@ -1803,15 +1666,12 @@ pub(crate) fn validate_registers(
     Ok(!deny_unreviewed || summary.unreviewed == 0)
 }
 
-pub(crate) fn review_registers(project: &ProjectSpec, check: bool) -> Result<bool> {
+pub(crate) fn review_registers(project: &ProjectSpec, output: GeneratedOutput<'_>) -> Result<bool> {
     let paths = project
         .registers
         .as_ref()
         .ok_or_else(|| crate::Error::invalid("[registers] is absent"))?;
-    let output = paths
-        .review_output
-        .as_deref()
-        .ok_or_else(|| crate::Error::invalid("[registers.review] is absent"))?;
+
     if !RegisterModel::is_model_file(&paths.model)? {
         return Err(crate::Error::invalid(
             "registers review requires a register-model-v3 manifest",
@@ -1828,7 +1688,7 @@ pub(crate) fn review_registers(project: &ProjectSpec, check: bool) -> Result<boo
         &paths.facts,
         &paths.model,
     )?;
-    super::super::generated_file::write_or_check(output, &contents, check, "register review")?;
+    output.text(&contents)?;
     Ok(true)
 }
 
@@ -1836,8 +1696,7 @@ pub(crate) fn review_registers(project: &ProjectSpec, check: bool) -> Result<boo
 mod cache_domain_tests {
     use super::{
         append_interface_workspace_inputs, append_register_workspace_inputs,
-        ensure_unique_replay_outputs, linked_ir_stage_cacheable, register_catalog_input_paths,
-        stage_configuration,
+        ensure_unique_replay_outputs, register_catalog_input_paths, stage_configuration,
     };
     use crate::{
         function_workspace::{ReviewedEventReplay, ReviewedEventStateModel},
@@ -1880,12 +1739,24 @@ mod cache_domain_tests {
     #[test]
     fn linked_ir_stage_cache_requires_a_stable_semantic_domain() {
         for stage in ["linked-ir", "linked-ir:rom-all"] {
-            assert!(!linked_ir_stage_cacheable(stage, None));
-            assert!(!linked_ir_stage_cacheable(stage, Some("")));
-            assert!(!linked_ir_stage_cacheable(stage, Some("  \t")));
-            assert!(linked_ir_stage_cacheable(stage, Some("provider/riscv/v2")));
+            assert!(!super::CachePass::parse(stage).unwrap().cacheable(None));
+            assert!(!super::CachePass::parse(stage).unwrap().cacheable(Some("")));
+            assert!(
+                !super::CachePass::parse(stage)
+                    .unwrap()
+                    .cacheable(Some("  \t"))
+            );
+            assert!(
+                super::CachePass::parse(stage)
+                    .unwrap()
+                    .cacheable(Some("provider/riscv/v2"))
+            );
         }
-        assert!(linked_ir_stage_cacheable("symbol-inventory", None));
+        assert!(
+            super::CachePass::parse("symbol-inventory")
+                .unwrap()
+                .cacheable(None)
+        );
     }
 
     #[test]
@@ -1906,14 +1777,14 @@ mod cache_domain_tests {
             "code-boundary-review",
         ] {
             assert_ne!(
-                stage_configuration(&before, stage, None),
-                stage_configuration(&after, stage, None),
+                stage_configuration(&before, stage, None).unwrap(),
+                stage_configuration(&after, stage, None).unwrap(),
                 "{stage} must include project.id in its cache domain"
             );
         }
         assert_eq!(
-            stage_configuration(&before, "symbol-inventory", None),
-            stage_configuration(&after, "symbol-inventory", None),
+            stage_configuration(&before, "symbol-inventory", None).unwrap(),
+            stage_configuration(&after, "symbol-inventory", None).unwrap(),
             "project.id must not invalidate unrelated artifact discovery"
         );
     }
@@ -1946,16 +1817,16 @@ mod cache_domain_tests {
         let mut renamed = before.clone();
         renamed.ir_profiles[0].id = "boot-rom".to_owned();
         assert_ne!(
-            stage_configuration(&before, "navigation-index", None),
-            stage_configuration(&renamed, "navigation-index", None),
+            stage_configuration(&before, "navigation-index", None).unwrap(),
+            stage_configuration(&renamed, "navigation-index", None).unwrap(),
             "navigation embeds profile IDs"
         );
 
         let mut reordered = before.clone();
         reordered.ir_profiles.swap(0, 1);
         assert_ne!(
-            stage_configuration(&before, "navigation-index", None),
-            stage_configuration(&reordered, "navigation-index", None),
+            stage_configuration(&before, "navigation-index", None).unwrap(),
+            stage_configuration(&reordered, "navigation-index", None).unwrap(),
             "navigation preserves manifest profile order in its input document"
         );
     }
@@ -2003,10 +1874,14 @@ mod cache_domain_tests {
         swapped.ir_profiles[0].output = swapped.ir_profiles[1].output.clone();
         swapped.ir_profiles[1].output = first;
 
-        for stage in ["review-scopes", "function-validation", "function-review"] {
+        for stage in [
+            "review-scopes",
+            "function-validation:deny-unreviewed=false",
+            "function-review",
+        ] {
             assert_ne!(
-                stage_configuration(&before, stage, None),
-                stage_configuration(&swapped, stage, None),
+                stage_configuration(&before, stage, None).unwrap(),
+                stage_configuration(&swapped, stage, None).unwrap(),
                 "{stage} must retain each logical profile's report binding"
             );
         }
@@ -2145,5 +2020,107 @@ mod cache_domain_tests {
         assert!(error.to_string().contains("project inputs changed"));
         drop(observation);
         std::fs::remove_dir_all(directory).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod receipt_publication_tests {
+    use super::*;
+
+    fn operations(session: &ProjectSession) -> ResolvedProjectAnalysisOperations<'_> {
+        let replays = ReplayDeclarations::capture(&session.project);
+        let (pipeline_inputs, pipeline_input_error, output_catalog) =
+            pipeline_input_observation(session, &replays);
+        assert!(pipeline_input_error.is_none(), "{pipeline_input_error:?}");
+        ResolvedProjectAnalysisOperations {
+            session,
+            cache: ProjectAnalysisCache::deferred(&session.manifest),
+            check: false,
+            functions: None,
+            interfaces: None,
+            planner: None,
+            pipeline_inputs,
+            pipeline_input_error,
+            output_catalog,
+            replays,
+            completed_outputs: Vec::new(),
+            coverage_report: None,
+            captures: std::sync::OnceLock::new(),
+        }
+    }
+
+    fn active_epoch(manifest: &std::path::Path) -> String {
+        let path = manifest
+            .parent()
+            .unwrap()
+            .join("generated/.blobray-cache/queries.sqlite3");
+        let connection =
+            rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .unwrap();
+        connection
+            .query_row(
+                "SELECT active_epoch FROM cache_state WHERE singleton = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn coordinator_keeps_previous_epoch_when_a_completed_cached_output_changes() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/generic-project/target.toml");
+        let manifest = directory.path().join("project.toml");
+        std::fs::write(&manifest, format!("schema = 4\nid = \"receipt-fixture\"\ntarget-spec = {:?}\n[analysis.symbols]\noutput = \"generated/result\"\n", target.display().to_string())).unwrap();
+        let session = ProjectSession::open_with(&manifest, Default::default()).unwrap();
+        let output = session
+            .project
+            .symbol_inventory
+            .as_ref()
+            .unwrap()
+            .output
+            .clone();
+        {
+            let mut first = operations(&session);
+            let work = first
+                .resolve_work(
+                    "symbol-inventory",
+                    false,
+                    vec![manifest.clone()],
+                    vec![output.clone()],
+                )
+                .unwrap();
+            let WorkDecision::Execute(execution) = first.prepare_work(work).unwrap() else {
+                panic!("cold work must execute")
+            };
+            execution
+                .outputs()
+                .file(0, "fixture")
+                .unwrap()
+                .text("original")
+                .unwrap();
+            first.complete_work(execution).unwrap();
+            first.complete_analysis_epoch().unwrap();
+        }
+        let previous = active_epoch(&manifest);
+        let mut next = operations(&session);
+        let work = next
+            .resolve_work(
+                "symbol-inventory",
+                false,
+                vec![manifest.clone()],
+                vec![output.clone()],
+            )
+            .unwrap();
+        assert!(matches!(
+            next.prepare_work(work).unwrap(),
+            WorkDecision::Complete(StageRun::Current)
+        ));
+        assert_eq!(next.completed_outputs.len(), 1);
+        std::fs::write(&output, "modified").unwrap();
+        let error = next.complete_analysis_epoch().unwrap_err();
+        assert!(error.to_string().contains("changed after emission"));
+        assert_eq!(active_epoch(&manifest), previous);
     }
 }

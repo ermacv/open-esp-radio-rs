@@ -33,7 +33,7 @@ const LINKED_IR_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 // The project-stage cache fingerprints this domain as well as the per-function
 // store, so a semantic cut cannot leave a previously generated linked-IR
 // bundle looking current.
-pub(crate) const FUNCTION_FACT_CACHE_DOMAIN: &[u8] = b"blobray/direct-function-facts/v26\0";
+pub(crate) const FUNCTION_FACT_CACHE_DOMAIN: &[u8] = b"blobray/direct-function-facts/v32\0";
 
 mod model;
 
@@ -588,7 +588,7 @@ fn annotate_direct_semantic_calls(
                 let source = if (hooks.direct_semantic)(symbol).is_some() {
                     function.source
                 } else {
-                    "unique-reviewed-archive-origin"
+                    "verified-position-independent-archive-body"
                 };
                 (function, source)
             } else {
@@ -796,6 +796,7 @@ pub(crate) fn build_linked_ir_for_source_with_cache(
             .iter()
             .filter(|symbol| opaque_semantic_boundary(resolver, symbol))
             .map(|symbol| model::LinkedIrRootBlocker {
+                code_identity: symbol.identity.clone(),
                 source: source.to_owned(),
                 artifact_sha256: artifact_sha256.to_owned(),
                 member: symbol.member.clone(),
@@ -806,6 +807,44 @@ pub(crate) fn build_linked_ir_for_source_with_cache(
                         .to_owned(),
             })
             .collect();
+    }
+    // A candidate association is useful evidence even when it cannot justify
+    // an exact semantic overlay. Keep the failure in the persisted report;
+    // ordinary body analysis above still runs and retains its own findings.
+    for symbol in resolver.symbols.iter().filter(|symbol| {
+        symbol.name.starts_with(symbol_prefix)
+            || report
+                .functions
+                .iter()
+                .any(|function| function.code_identity == symbol.identity)
+    }) {
+        let origin_candidates = resolver.projected_origin_candidates(symbol);
+        if origin_candidates.len() > 1 {
+            report.root_blockers.push(model::LinkedIrRootBlocker {
+                code_identity: symbol.identity.clone(),
+                source: source.to_owned(),
+                artifact_sha256: artifact_sha256.to_owned(),
+                member: symbol.member.clone(),
+                symbol: symbol.name.clone(),
+                address: symbol.address,
+                reason: format!(
+                    "ambiguous archive origin for {}: {} retained candidates",
+                    symbol.identity,
+                    origin_candidates.len()
+                ),
+            });
+        }
+        for gap in resolver.projected_direct_semantics.gaps(symbol) {
+            report.root_blockers.push(model::LinkedIrRootBlocker {
+                code_identity: symbol.identity.clone(),
+                source: source.to_owned(),
+                artifact_sha256: artifact_sha256.to_owned(),
+                member: symbol.member.clone(),
+                symbol: symbol.name.clone(),
+                address: symbol.address,
+                reason: format!("unverified reviewed semantic projection: {gap:?}"),
+            });
+        }
     }
     tracing::debug!(
         source,
@@ -979,7 +1018,7 @@ fn build_linked_functions_for_roots(
                     &recovered_indexed_dispatch_sites,
                 );
                 let mut memory_accesses = memory_object_accesses_for_trace(&trace);
-                attribute_data_symbols(&mut memory_accesses, resolver);
+                annotate_data_addresses(&mut memory_accesses, resolver);
                 let mut memory_fields = memory_object_fields_for_accesses(&memory_accesses);
                 let context_accesses = context_accesses_for_memory_objects(&memory_accesses);
                 let context_fields = context_fields_for_accesses(&context_accesses);
@@ -1059,8 +1098,13 @@ fn build_linked_functions_for_roots(
                     .unwrap_or(expanded_pseudo);
                 let pseudo = annotate_indexed_dispatch_pseudo(pseudo, &indexed_dispatches);
                 functions.push(LinkedIrFunction {
+                    code_identity: symbol.identity.clone(),
                     source: source.to_owned(),
-                    artifact_sha256: artifact_sha256.to_owned(),
+                    artifact_sha256: symbol
+                        .identity
+                        .artifact_sha256()
+                        .unwrap_or(artifact_sha256)
+                        .to_owned(),
                     identity: function_identity.clone(),
                     selection,
                     member: symbol.member.clone(),
@@ -1116,8 +1160,9 @@ fn build_linked_functions_for_roots(
                 annotate_direct_semantic_calls(&mut calls, symbol, resolver, &identities);
                 let scenario_suggestions = scenario_suggestions(None, &direct_mmio_predicates, &[]);
                 functions.push(LinkedIrFunction {
+                    code_identity: symbol.identity.clone(),
                     source: source.to_owned(),
-                    artifact_sha256: artifact_sha256.to_owned(),
+                    artifact_sha256: symbol.identity.artifact_sha256().unwrap_or(artifact_sha256).to_owned(),
                     identity: function_identity.clone(),
                     selection,
                     member: symbol.member.clone(),

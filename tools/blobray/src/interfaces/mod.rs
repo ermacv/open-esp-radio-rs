@@ -3,6 +3,7 @@
 mod capabilities;
 mod execution_models;
 mod facts;
+pub(crate) mod observations;
 mod origin_projection;
 mod pack;
 mod pack_model;

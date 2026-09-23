@@ -3,10 +3,10 @@ use super::*;
 
 pub(super) fn observations(
     source: &str,
-    path: &Path,
+    capture: &artifact::CapturedArtifact<'_>,
     selected: &[artifact::ArtifactSymbolDefinition],
 ) -> Vec<serde_json::Value> {
-    let inventory = match artifact::inspect_artifact(path) {
+    let inventory = match capture.inventory() {
         Ok(inventory) => inventory,
         Err(error) => {
             return vec![

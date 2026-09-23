@@ -222,10 +222,10 @@ pub(super) fn compact_diagnostics(messages: &[String]) -> Vec<LinkedDiagnostic> 
     diagnostics
 }
 
-pub(super) type SymbolKey = (Option<String>, String, u64);
+pub(super) type SymbolKey = artifact::CodeIdentity;
 
 pub(super) fn symbol_key(symbol: &artifact::ArtifactSymbolDefinition) -> SymbolKey {
-    (symbol.member.clone(), symbol.name.clone(), symbol.address)
+    symbol.identity.clone()
 }
 
 pub(super) struct IrIdentityCatalog {
@@ -242,7 +242,11 @@ impl IrIdentityCatalog {
         definitions.dedup_by_key(|symbol| symbol_key(symbol));
 
         let mut base_counts = BTreeMap::<(Option<String>, String), usize>::new();
+        let mut address_counts = BTreeMap::new();
         for symbol in &definitions {
+            *address_counts
+                .entry((symbol.member.clone(), symbol.name.clone(), symbol.address))
+                .or_insert(0) += 1;
             *base_counts
                 .entry((symbol.member.clone(), symbol.name.clone()))
                 .or_default() += 1;
@@ -256,7 +260,12 @@ impl IrIdentityCatalog {
                     .copied()
                     .unwrap_or_default()
                     > 1;
-                let value = if duplicate {
+                let value = if address_counts
+                    [&(symbol.member.clone(), symbol.name.clone(), symbol.address)]
+                    > 1
+                {
+                    format!("{base}#{}", symbol.identity)
+                } else if duplicate {
                     format!("{base}@{:#010x}", symbol.address as u32)
                 } else {
                     base
@@ -265,6 +274,12 @@ impl IrIdentityCatalog {
                     .pointer_context
                     .function_target_identities
                     .get(&(symbol.address as u32))
+                    .filter(|_| {
+                        resolver
+                            .symbols_by_address
+                            .get(&(symbol.address as u32))
+                            .is_some_and(|selected| selected.identity == symbol.identity)
+                    })
                     .cloned()
                     .unwrap_or_else(|| {
                         namespace.map_or(value.clone(), |source| format!("{source}::{value}"))
@@ -333,6 +348,12 @@ mod tests {
 
     fn resolved_symbol(name: &str, address: u64) -> artifact::ArtifactSymbolDefinition {
         artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                name,
+                address,
+            ),
             member: None,
             name: name.to_owned(),
             address,
@@ -358,7 +379,7 @@ mod tests {
             pointer_context: direct::StructuralPointerContext::default(),
             data_symbols: Vec::new(),
             data_objects: Vec::new(),
-            projected_direct_semantics: BTreeMap::new(),
+            projected_direct_semantics: Default::default(),
             projected_origins: BTreeMap::new(),
         }
     }

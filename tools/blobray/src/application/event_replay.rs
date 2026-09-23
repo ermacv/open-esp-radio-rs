@@ -610,15 +610,9 @@ fn expectation_error(
 
 pub(crate) fn publish(
     document: &crate::artifacts::ReplayEvidenceDocument,
-    output: &Path,
-    check: bool,
+    output: super::generated_file::GeneratedOutput<'_>,
 ) -> Result<()> {
-    crate::application::generated_file::write_or_check(
-        output,
-        &crate::artifacts::render_replay_evidence(document)?,
-        check,
-        "execution replay evidence",
-    )
+    output.text(&crate::artifacts::render_replay_evidence(document)?)
 }
 
 fn seed_memory(

@@ -61,60 +61,100 @@ pub(crate) fn validate(
     Ok(())
 }
 
-pub(crate) fn function_locator(member: Option<&str>, symbol: &str, address: u64) -> String {
-    match member {
-        Some(member) => {
-            format!("archive-member:{member}/symbol:{symbol}/object-offset:{address:#x}")
-        }
-        None => format!("symbol:{symbol}/address:{address:#x}"),
+/// Validate physical coordinates as well as the derived revision occurrence.
+pub(crate) fn validate_function(
+    identity: &crate::artifact::CodeIdentity,
+    source: &str,
+    artifact_sha256: &str,
+    locator: &str,
+    occurrence: &str,
+    semantic: Option<&str>,
+) -> Result<()> {
+    if identity
+        .artifact_sha256()
+        .is_some_and(|digest| digest != artifact_sha256)
+        || function_locator(identity) != locator
+    {
+        return Err(Error::invalid(
+            "function has inconsistent physical identity",
+        ));
     }
+    validate(
+        EntityDomain::Function,
+        source,
+        artifact_sha256,
+        locator,
+        occurrence,
+        semantic,
+    )
+}
+
+pub(crate) fn function_locator(identity: &crate::artifact::CodeIdentity) -> String {
+    identity.to_string()
 }
 
 pub(crate) fn function_occurrence(
     artifact: &ArtifactIdentity,
-    member: Option<&str>,
-    symbol: &str,
-    address: u64,
+    identity: &crate::artifact::CodeIdentity,
 ) -> Result<ArtifactOccurrence> {
-    occurrence(
-        EntityDomain::Function,
-        artifact,
-        function_locator(member, symbol, address),
-    )
+    if identity
+        .artifact_sha256()
+        .is_some_and(|digest| digest != artifact.sha256())
+    {
+        return Err(Error::invalid(
+            "function physical identity belongs to another artifact",
+        ));
+    }
+    occurrence(EntityDomain::Function, artifact, function_locator(identity))
 }
 
-pub(crate) fn memory_object_locator(
-    member: Option<&str>,
-    section: &str,
-    symbol: &str,
-    object_offset: u64,
-    address: Option<u32>,
-    size: u64,
-) -> String {
-    match member {
-        Some(member) => format!(
-            "archive-member:{member}/section:{section}/symbol:{symbol}/object-offset:{object_offset:#x}/size:{size:#x}"
-        ),
-        None => format!(
-            "section:{section}/symbol:{symbol}/address:{:#x}/size:{size:#x}",
-            address.unwrap_or(object_offset as u32)
-        ),
-    }
+pub(crate) fn memory_object_locator(identity: &crate::artifact::DataIdentity) -> String {
+    format!("data:{identity}")
 }
 
 pub(crate) fn memory_object_occurrence(
     artifact: &ArtifactIdentity,
-    member: Option<&str>,
-    section: &str,
-    symbol: &str,
-    object_offset: u64,
-    address: Option<u32>,
-    size: u64,
+    identity: &crate::artifact::DataIdentity,
 ) -> Result<ArtifactOccurrence> {
+    if identity
+        .artifact_sha256()
+        .is_some_and(|digest| digest != artifact.sha256())
+    {
+        return Err(Error::invalid(
+            "data physical identity belongs to another artifact",
+        ));
+    }
     occurrence(
         EntityDomain::MemoryObject,
         artifact,
-        memory_object_locator(member, section, symbol, object_offset, address, size),
+        memory_object_locator(identity),
+    )
+}
+
+pub(crate) fn validate_data(
+    identity: &crate::artifact::DataIdentity,
+    source: &str,
+    digest: &str,
+    locator: &str,
+    occurrence: &str,
+    semantic: Option<&str>,
+) -> Result<()> {
+    if identity
+        .artifact_sha256()
+        .is_some_and(|actual| actual != digest)
+        || memory_object_locator(identity) != locator
+    {
+        return Err(Error::invalid(
+            "data object has inconsistent physical identity",
+        ));
+    }
+    validate(
+        EntityDomain::MemoryObject,
+        source,
+        digest,
+        locator,
+        occurrence,
+        semantic,
     )
 }
 
@@ -137,51 +177,66 @@ mod tests {
     }
 
     #[test]
-    fn function_occurrences_preserve_archive_and_linked_locators() {
-        let archived = function_occurrence(&artifact(), Some("15.o"), "r_sym_ble", 0x24).unwrap();
-        assert_eq!(
-            archived.locator,
-            "archive-member:15.o/symbol:r_sym_ble/object-offset:0x24"
-        );
-        assert_eq!(archived.id.domain(), EntityDomain::Function);
-
-        let linked = function_occurrence(&artifact(), None, "r_sym_ble", 0x4200_1234).unwrap();
-        assert_eq!(linked.locator, "symbol:r_sym_ble/address:0x42001234");
-        assert_eq!(linked.id.domain(), EntityDomain::Function);
+    fn function_occurrences_preserve_physical_positions_without_names() {
+        let identity = |ordinal| crate::artifact::CodeIdentity::Symbol {
+            artifact_sha256: "a".repeat(64),
+            location: crate::SymbolLocation {
+                object: crate::ObjectLocation::ArchiveMember { ordinal },
+                table: crate::ArtifactSymbolTable::Static,
+                index: 1,
+            },
+        };
+        let first = function_occurrence(&artifact(), &identity(0)).unwrap();
+        let second = function_occurrence(&artifact(), &identity(1)).unwrap();
+        assert_ne!(first.id, second.id);
+        assert_ne!(first.locator, second.locator);
+        assert_eq!(first.id.domain(), EntityDomain::Function);
+        validate(
+            EntityDomain::Function,
+            "vendor/ble",
+            &"a".repeat(64),
+            &first.locator,
+            &first.id.to_string(),
+            None,
+        )
+        .unwrap();
     }
 
     #[test]
-    fn memory_object_occurrences_preserve_archive_and_linked_locators() {
-        let archived = memory_object_occurrence(
-            &artifact(),
-            Some("55.o"),
-            ".bss",
-            "r_data_ble",
-            0x18,
-            None,
-            0x20,
-        )
-        .unwrap();
-        assert_eq!(
-            archived.locator,
-            "archive-member:55.o/section:.bss/symbol:r_data_ble/object-offset:0x18/size:0x20"
+    fn data_occurrences_distinguish_repeated_members_and_reject_wrong_artifact() {
+        let identity = |ordinal| crate::artifact::DataIdentity::Symbol {
+            artifact_sha256: "a".repeat(64),
+            location: open_radio_vendor_contracts::SymbolLocation {
+                object: open_radio_vendor_contracts::ObjectLocation::ArchiveMember { ordinal },
+                table: open_radio_vendor_contracts::ArtifactSymbolTable::Static,
+                index: 3,
+            },
+        };
+        let first = memory_object_occurrence(&artifact(), &identity(0)).unwrap();
+        let second = memory_object_occurrence(&artifact(), &identity(1)).unwrap();
+        assert_ne!(first.id, second.id);
+        assert_ne!(first.locator, second.locator);
+        assert!(
+            validate_data(
+                &identity(1),
+                "vendor/ble",
+                &"a".repeat(64),
+                &first.locator,
+                &first.id.to_string(),
+                None
+            )
+            .is_err()
         );
-        assert_eq!(archived.id.domain(), EntityDomain::MemoryObject);
-
-        let linked = memory_object_occurrence(
-            &artifact(),
-            None,
-            ".data",
-            "r_data_ble",
-            0x18,
-            Some(0x4080_0100),
-            4,
-        )
-        .unwrap();
-        assert_eq!(
-            linked.locator,
-            "section:.data/symbol:r_data_ble/address:0x40800100/size:0x4"
+        assert!(
+            validate_data(
+                &identity(0),
+                "vendor/ble",
+                &"b".repeat(64),
+                &first.locator,
+                &first.id.to_string(),
+                None
+            )
+            .is_err()
         );
-        assert_eq!(linked.id.domain(), EntityDomain::MemoryObject);
     }
 }

@@ -1,0 +1,22 @@
+[package]
+name = "blobray-backend-riscv"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "RV32 function decoding and relocation interpretation"
+
+[dependencies]
+blobray-domain = { path = "../domain" }
+rv-asm = "=0.2.1"
+object = { version = "=0.39.1", default-features = false, features = ["elf"] }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "tool"
+platform = "host"

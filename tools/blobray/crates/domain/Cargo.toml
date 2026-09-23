@@ -1,0 +1,22 @@
+[package]
+name = "blobray-domain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Blobray investigation identities and immutable inventory records"
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+sha2 = "=0.10.9"
+thiserror = "=2.0.19"
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "tool"
+platform = "host"

@@ -7,6 +7,38 @@ use crate::Result;
 use super::*;
 
 pub(super) fn validate(facts: &InterfaceFacts) -> Result<()> {
+    for blocker in &facts.decode_blockers {
+        validate_owner(facts, blocker.artifact, &blocker.owner)?;
+        if facts.artifact(blocker.artifact).is_none() || blocker.class.is_empty() {
+            return Err(crate::Error::invalid(
+                "interface decode blocker has invalid source or class",
+            ));
+        }
+    }
+    for failure in &facts.analysis_failures {
+        validate_owner(facts, failure.artifact, &failure.owner)?;
+        if facts.artifact(failure.artifact).is_none() || failure.error.is_empty() {
+            return Err(crate::Error::invalid(
+                "interface analysis failure has invalid source or diagnostic",
+            ));
+        }
+    }
+    for gap in &facts.gaps {
+        if facts.artifact(gap.artifact).is_none() || gap.evidence.registers.len() != 32 {
+            return Err(crate::Error::invalid(
+                "interface gap has invalid artifact or register snapshot",
+            ));
+        }
+        validate_owner(facts, gap.artifact, &gap.evidence.owner)?;
+        for (index, register) in gap.evidence.registers.iter().enumerate() {
+            if usize::from(register.register) != index {
+                return Err(crate::Error::invalid(
+                    "interface gap register indices are not consecutive",
+                ));
+            }
+            validate_argument(facts, gap.artifact, &gap.evidence.owner, &register.value)?;
+        }
+    }
     let mut artifact_indices = BTreeSet::new();
     for artifact in &facts.artifacts {
         if !artifact_indices.insert(artifact.index) {
@@ -37,6 +69,8 @@ pub(super) fn validate(facts: &InterfaceFacts) -> Result<()> {
         if !table_keys.insert(key) {
             return Err(crate::Error::invalid("duplicate interface table candidate"));
         }
+        validate_root_origin(facts, table.artifact, None, &table.root)?;
+        validate_data_root(&table.root, "interface table root")?;
         validate_steps(&table.container_path, "interface container path")?;
         validate_slots(&table.slots, "interface slots")?;
         if table.slots.is_empty() {
@@ -56,6 +90,7 @@ pub(super) fn validate(facts: &InterfaceFacts) -> Result<()> {
     }
     let mut assignment_keys = BTreeSet::new();
     for assignment in &facts.assignments {
+        validate_owner(facts, assignment.artifact, &assignment.owner)?;
         if facts.artifact(assignment.artifact).is_none() {
             return Err(crate::Error::invalid(format!(
                 "interface assignment refers to unknown artifact {}",
@@ -77,43 +112,44 @@ pub(super) fn validate(facts: &InterfaceFacts) -> Result<()> {
             &assignment.container_path,
             "interface assignment container path",
         )?;
-        validate_bounded_data_root(&assignment.root, "interface assignment root")?;
-        validate_bounded_data_root(&assignment.target, "interface assignment target")?;
-        if let InterfaceFactRoot::BoundedDataAddress {
-            address,
-            symbol_address,
-            symbol_size,
-            ..
-        } = &assignment.root
-            && assignment.container_path.is_empty()
-        {
-            if assignment.offset != 0 {
-                return Err(crate::Error::invalid(
-                    "bounded interface assignment root is not normalized to offset zero",
-                ));
-            }
-            let end = symbol_address
-                .checked_add(*symbol_size)
-                .ok_or_else(|| crate::Error::invalid("bounded data-symbol range overflows"))?;
-            let access_end = address
-                .checked_add(u32::from(assignment.width) / 8)
-                .ok_or_else(|| crate::Error::invalid("bounded assignment access overflows"))?;
-            if access_end > end {
-                return Err(crate::Error::invalid(
-                    "bounded interface assignment store exceeds its data symbol",
-                ));
-            }
+        validate_root_origin(
+            facts,
+            assignment.artifact,
+            Some(&assignment.owner),
+            &assignment.root,
+        )?;
+        validate_root_origin(
+            facts,
+            assignment.artifact,
+            Some(&assignment.owner),
+            &assignment.target,
+        )?;
+        validate_data_root(&assignment.root, "interface assignment root")?;
+        validate_data_root(&assignment.target, "interface assignment target")?;
+        if assignment.container_path.is_empty() {
+            validate_access(
+                &assignment.root,
+                assignment.offset,
+                Some(assignment.width),
+                "interface assignment root",
+            )?;
         }
-        if !matches!(
-            assignment.target,
-            InterfaceFactRoot::RelocatedSymbol { .. }
-                | InterfaceFactRoot::FunctionArgument { .. }
-                | InterfaceFactRoot::BoundedDataAddress { .. }
-        ) {
-            return Err(crate::Error::invalid(
-                "interface assignment target lacks function-pointer provenance",
-            ));
-        }
+        validate_steps(
+            &assignment.target_loads,
+            "interface assignment target loads",
+        )?;
+        let (offset, width) = assignment
+            .target_loads
+            .first()
+            .map_or((assignment.target_offset, None), |load| {
+                (load.offset, Some(load.width))
+            });
+        validate_access(
+            &assignment.target,
+            offset,
+            width,
+            "interface assignment target",
+        )?;
         if !assignment_keys.insert(assignment.clone()) {
             return Err(crate::Error::invalid("duplicate interface assignment fact"));
         }
@@ -121,40 +157,104 @@ pub(super) fn validate(facts: &InterfaceFacts) -> Result<()> {
     Ok(())
 }
 
-fn validate_bounded_data_root(root: &InterfaceFactRoot, context: &str) -> Result<()> {
-    let InterfaceFactRoot::BoundedDataAddress {
-        canonical,
-        member,
-        symbol,
+fn validate_owner(
+    facts: &InterfaceFacts,
+    artifact: usize,
+    owner: &crate::artifact::CodeIdentity,
+) -> Result<()> {
+    let artifact = facts
+        .artifact(artifact)
+        .ok_or_else(|| crate::Error::invalid("interface owner references an absent artifact"))?;
+    if let Some(digest) = owner.artifact_sha256() {
+        validate_sha256(digest, "interface code owner")?;
+        if artifact.sha256.as_deref() != Some(digest) {
+            return Err(crate::Error::invalid(
+                "interface code owner belongs to another artifact",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_reference(
+    facts: &InterfaceFacts,
+    artifact: usize,
+    reference: &open_radio_vendor_contracts::SymbolReference,
+) -> Result<()> {
+    match reference {
+        open_radio_vendor_contracts::SymbolReference::Captured {
+            artifact_sha256, ..
+        } => {
+            validate_sha256(artifact_sha256, "interface relocation reference")?;
+            if facts
+                .artifact(artifact)
+                .and_then(|artifact| artifact.sha256.as_ref())
+                != Some(artifact_sha256)
+            {
+                return Err(crate::Error::invalid(
+                    "interface relocation reference belongs to another artifact",
+                ));
+            }
+        }
+        open_radio_vendor_contracts::SymbolReference::Unknown { reason }
+            if reason.trim().is_empty() =>
+        {
+            return Err(crate::Error::invalid(
+                "unknown interface relocation reference requires a reason",
+            ));
+        }
+        open_radio_vendor_contracts::SymbolReference::Unknown { .. } => {}
+    }
+    Ok(())
+}
+
+fn validate_root_origin(
+    facts: &InterfaceFacts,
+    artifact: usize,
+    expected_owner: Option<&crate::artifact::CodeIdentity>,
+    root: &InterfaceFactRoot,
+) -> Result<()> {
+    match root {
+        InterfaceFactRoot::RelocatedSymbol { reference, .. } => {
+            validate_reference(facts, artifact, reference)?
+        }
+        InterfaceFactRoot::FunctionArgument { owner, argument } => {
+            validate_owner(facts, artifact, owner)?;
+            if *argument >= 8 || expected_owner.is_some_and(|expected| expected != owner) {
+                return Err(crate::Error::invalid(
+                    "interface argument root has invalid index or belongs to another function",
+                ));
+            }
+        }
+        InterfaceFactRoot::AbsoluteAddress { .. } => {}
+    }
+    Ok(())
+}
+
+fn validate_data_root(root: &InterfaceFactRoot, context: &str) -> Result<()> {
+    if let InterfaceFactRoot::AbsoluteAddress { data_address, .. } = root {
+        data_address
+            .validate()
+            .map_err(|error| crate::Error::invalid(format!("{context}: {error}")))?;
+    }
+    Ok(())
+}
+
+fn validate_access(
+    root: &InterfaceFactRoot,
+    offset: i32,
+    width: Option<u8>,
+    context: &str,
+) -> Result<()> {
+    if let InterfaceFactRoot::AbsoluteAddress {
         address,
-        symbol_address,
-        symbol_size,
-        ..
+        data_address,
     } = root
-    else {
-        return Ok(());
-    };
-    if symbol.is_empty() || *symbol_size == 0 {
+        && let Some((observed, observed_width)) = data_address.access()
+        && (address.checked_add_signed(offset) != Some(observed) || observed_width != width)
+    {
         return Err(crate::Error::invalid(format!(
-            "{context} has an empty data-symbol identity or range"
-        )));
-    }
-    let end = symbol_address
-        .checked_add(*symbol_size)
-        .ok_or_else(|| crate::Error::invalid(format!("{context} data-symbol range overflows")))?;
-    if *address < *symbol_address || *address >= end {
-        return Err(crate::Error::invalid(format!(
-            "{context} address lies outside its data-symbol range"
-        )));
-    }
-    let expected = format!(
-        "{}::{symbol}{:+#x}",
-        member.as_deref().unwrap_or("<elf>"),
-        address.wrapping_sub(*symbol_address)
-    );
-    if canonical != &expected {
-        return Err(crate::Error::invalid(format!(
-            "{context} canonical identity does not match its bounded address"
+            "{context}: data-address evidence does not match the observed access"
         )));
     }
     Ok(())
@@ -165,6 +265,7 @@ fn validate_call(
     call: &InterfaceCallFact,
     keys: &mut BTreeSet<InterfaceCallFact>,
 ) -> Result<()> {
+    validate_owner(facts, call.artifact, &call.owner)?;
     if facts.artifact(call.artifact).is_none() {
         return Err(crate::Error::invalid(format!(
             "interface call refers to unknown artifact {}",
@@ -181,6 +282,18 @@ fn validate_call(
             "interface call has unsupported kind {:?}",
             call.kind
         )));
+    }
+    if call.link_register >= 32
+        || match call.kind.as_str() {
+            "call" => call.link_register != 1,
+            "tail-jump" => call.link_register != 0,
+            "linked-jump" => call.link_register <= 1,
+            _ => true,
+        }
+    {
+        return Err(crate::Error::invalid(
+            "interface call kind disagrees with link register",
+        ));
     }
     if !keys.insert(call.clone()) {
         return Err(crate::Error::invalid("duplicate interface call fact"));
@@ -199,6 +312,16 @@ fn validate_call(
         return Err(crate::Error::invalid(
             "interface call root linkage has an empty resolution",
         ));
+    }
+    validate_root_origin(facts, call.artifact, Some(&call.owner), &call.root)?;
+    validate_data_root(&call.root, "interface call root")?;
+    if let Some(load) = call.loads.first() {
+        validate_access(
+            &call.root,
+            load.offset,
+            Some(load.width),
+            "interface call root",
+        )?;
     }
     for load in &call.loads {
         if !matches!(load.width, 8 | 16 | 32 | 64) {
@@ -226,7 +349,7 @@ fn validate_call(
             let table = facts.tables.iter().find(|table| {
                 table.artifact == call.artifact
                     && table.root == call.root
-                    && table.container_path == container
+                    && crate::interfaces::facts::same_step_shape(&table.container_path, container)
             });
             let Some(table) = table else {
                 return Err(crate::Error::invalid(
@@ -257,21 +380,85 @@ fn validate_call(
                 "interface call arguments must use consecutive indices",
             ));
         }
-        if !matches!(
-            argument.kind.as_str(),
-            "unknown" | "constant" | "pointer-provenance"
-        ) {
-            return Err(crate::Error::invalid(format!(
-                "interface call argument {} has unsupported kind {:?}",
-                argument.index, argument.kind
-            )));
+        validate_argument(facts, call.artifact, &call.owner, &argument.value)?;
+    }
+    Ok(())
+}
+
+fn validate_argument(
+    facts: &InterfaceFacts,
+    artifact: usize,
+    owner: &crate::artifact::CodeIdentity,
+    value: &crate::interface_discovery::InterfaceArgumentValue,
+) -> Result<()> {
+    use crate::interface_discovery::{InterfaceArgumentValue as V, InterfaceRoot};
+    match value {
+        V::Alternatives(values) => {
+            if values.len() < 2
+                || values.iter().collect::<BTreeSet<_>>().len() != values.len()
+                || values.iter().any(|v| matches!(v, V::Alternatives(_)))
+            {
+                return Err(crate::Error::invalid(
+                    "interface alternatives must contain distinct atomic values",
+                ));
+            }
+            for value in values {
+                validate_argument(facts, artifact, owner, value)?;
+            }
         }
-        if argument.expression.is_empty() {
-            return Err(crate::Error::invalid(format!(
-                "interface call argument {} has an empty expression",
-                argument.index
-            )));
+        V::Selector(selector) => validate_selector(
+            Some(InterfaceFactSelector {
+                argument: selector.argument,
+                scale: selector.scale,
+                addend: selector.addend,
+            }),
+            "interface argument selector",
+        )?,
+        V::Pointer(pointer) | V::GotAddress(pointer) | V::IndexedPointer { pointer, .. } => {
+            match &pointer.root {
+                InterfaceRoot::RelocatedSymbol { reference, .. } => {
+                    validate_reference(facts, artifact, reference)?
+                }
+                InterfaceRoot::FunctionArgument {
+                    owner: root_owner, ..
+                } => {
+                    validate_owner(facts, artifact, root_owner)?;
+                    if root_owner != owner {
+                        return Err(crate::Error::invalid(
+                            "interface argument root belongs to another function",
+                        ));
+                    }
+                }
+                InterfaceRoot::AbsoluteAddress { .. } => {}
+            }
+            if let InterfaceRoot::AbsoluteAddress { data_address, .. } = &pointer.root {
+                data_address.validate().map_err(crate::Error::invalid)?;
+            }
+            if let InterfaceRoot::FunctionArgument { index, .. } = &pointer.root
+                && *index >= 8
+            {
+                return Err(crate::Error::invalid("invalid interface argument root"));
+            }
+            for load in &pointer.loads {
+                validate_steps(
+                    &[InterfaceFactStep {
+                        site: Some(load.site),
+                        offset: load.offset,
+                        width: load.width,
+                        selector: load.selector.as_ref().map(|s| InterfaceFactSelector {
+                            argument: s.argument,
+                            scale: s.scale,
+                            addend: s.addend,
+                        }),
+                    }],
+                    "interface argument load",
+                )?;
+            }
+            if let V::IndexedPointer { selector, .. } = value {
+                validate_argument(facts, artifact, owner, &V::Selector(selector.clone()))?;
+            }
         }
+        V::Unknown | V::Constant(_) => {}
     }
     Ok(())
 }
@@ -344,6 +531,7 @@ mod tests {
     #[test]
     fn repeated_offsets_at_different_pointer_depths_are_valid() {
         let step = InterfaceFactStep {
+            site: None,
             offset: 0,
             width: 32,
             selector: None,

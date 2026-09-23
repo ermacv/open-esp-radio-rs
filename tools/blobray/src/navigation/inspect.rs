@@ -24,7 +24,42 @@ pub(crate) struct StoredNavigationSummary {
 pub(crate) fn inspect_report(path: &Path) -> Result<StoredNavigationSummary> {
     let document: NavigationDocument = serde_json::from_str(&fs::read_to_string(path)?)?;
     validate_header(&document)?;
+    if let Some(observations) = &document.interface_observations {
+        observations.validate()?;
+    }
+    let has_interface_input = document
+        .inputs
+        .iter()
+        .any(|input| input.kind == "interface-facts");
+    if has_interface_input != document.interface_observations.is_some() {
+        return Err(crate::Error::invalid(
+            "navigation interface input and observations disagree",
+        ));
+    }
     validate_inputs(&document, path.parent().unwrap_or_else(|| Path::new(".")))?;
+    if let Some(observations) = &document.interface_observations {
+        let inputs = document
+            .inputs
+            .iter()
+            .filter(|input| input.kind == "interface-facts")
+            .collect::<Vec<_>>();
+        if inputs.len() != 1 {
+            return Err(crate::Error::invalid(
+                "navigation requires one interface observation input",
+            ));
+        }
+        let source = crate::interfaces::InterfaceFacts::load(
+            &path
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join(&inputs[0].path),
+        )?;
+        if observations != &source {
+            return Err(crate::Error::invalid(
+                "navigation interface observations disagree with authenticated input",
+            ));
+        }
+    }
     let artifact_ids = validate_artifacts(&document)?;
     validate_symbols(&document.symbols, &artifact_ids)?;
     validate_project_calls(&document)?;
@@ -162,11 +197,38 @@ fn validate_symbols(symbols: &[SymbolDocument], artifact_ids: &BTreeSet<&str>) -
             )));
         }
         let key = SymbolKey {
+            occurrence: symbol.occurrence.clone(),
             artifact_sha256: symbol.artifact_sha256.clone(),
             member: symbol.member.clone(),
             name: symbol.name.clone(),
             object_address: address(&symbol.object_address, "navigation symbol")?,
         };
+        if let super::model::NavigationIdentity::CodeBody {
+            artifact_sha256,
+            identity,
+        } = &symbol.occurrence
+            && (matches!(identity, crate::artifact::CodeIdentity::Symbol { .. })
+                || identity
+                    .artifact_sha256()
+                    .is_some_and(|digest| digest != artifact_sha256))
+        {
+            return Err(crate::Error::invalid(
+                "navigation code boundary has inconsistent physical identity",
+            ));
+        }
+        if symbol.occurrence.digest() != symbol.artifact_sha256 {
+            return Err(crate::Error::invalid(
+                "navigation physical occurrence belongs to another artifact",
+            ));
+        }
+        if !symbol.labels.contains(&key.label()) {
+            return Err(crate::Error::invalid(
+                "navigation display label is absent from retained labels",
+            ));
+        }
+        for label in &symbol.labels {
+            address(&label.object_address, "navigation label")?;
+        }
         if symbol.id != key.id() {
             return Err(crate::Error::invalid(format!(
                 "navigation symbol {index} has an invalid stable id"

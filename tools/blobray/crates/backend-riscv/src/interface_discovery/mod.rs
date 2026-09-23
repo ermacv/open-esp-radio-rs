@@ -12,14 +12,17 @@ use crate::{RV32_REGISTER_ARGUMENT_COUNT, Result, artifact};
 mod model;
 mod state;
 pub use model::{
-    InterfaceArgumentValue, InterfaceCallCandidate, InterfaceCallKind, InterfaceLoad,
-    InterfacePointer, InterfaceRoot, InterfaceSlotAssignment, InterfaceSlotSelector,
+    InterfaceAnalysisGap, InterfaceArgumentValue, InterfaceCallCandidate, InterfaceCallKind,
+    InterfaceDiscoveryLimits, InterfaceGapReason, InterfaceLoad, InterfacePointer,
+    InterfaceRegisterValue, InterfaceRoot, InterfaceSlotAssignment, InterfaceSlotSelector,
     InterfaceSymbolAddressing,
 };
 use state::*;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct InterfaceDiscovery {
+    pub limits: InterfaceDiscoveryLimits,
+    pub gaps: Vec<InterfaceAnalysisGap>,
     pub calls: Vec<InterfaceCallCandidate>,
     pub assignments: Vec<InterfaceSlotAssignment>,
     pub decode_blockers: Vec<artifact::UnsupportedInstruction>,
@@ -46,32 +49,86 @@ pub fn discover_interface_calls(
 ///
 /// Linked instructions contain final numeric addresses even when retained ELF
 /// relocations are ambiguous local aliases. `data_symbols` is therefore used
-/// only to classify a numeric value as a pointer into a bounded data object;
-/// it does not assign a type or claim that the producer has executed.
+/// to attach every containing data definition as a candidate. Original numeric
+/// bases and load/store offsets remain intact; missing ranges are explicit
+/// unknowns. Neither a containing symbol nor a numeric store proves a pointer
+/// type, initialization, interface layout or execution of the producer.
 pub fn discover_interface_calls_with_data_symbols(
     symbol: &artifact::ArtifactSymbolDefinition,
     data_symbols: &[artifact::ArtifactDataSymbolDefinition],
 ) -> Result<InterfaceDiscovery> {
+    discover_interface_calls_with_limits(symbol, data_symbols, InterfaceDiscoveryLimits::default())
+}
+
+/// Discover candidates under explicit propagation limits. A limit retains all
+/// accumulated states and records the unprocessed frontier as typed gaps.
+pub fn discover_interface_calls_with_limits(
+    symbol: &artifact::ArtifactSymbolDefinition,
+    data_symbols: &[artifact::ArtifactDataSymbolDefinition],
+    limits: InterfaceDiscoveryLimits,
+) -> Result<InterfaceDiscovery> {
     let instructions = artifact::decode_symbol_for_analysis(symbol)?;
     if instructions.is_empty() {
-        return Ok(InterfaceDiscovery::default());
+        return Ok(InterfaceDiscovery {
+            limits,
+            ..InterfaceDiscovery::default()
+        });
     }
     let instruction_indices = instructions
         .iter()
         .enumerate()
         .map(|(index, instruction)| (instruction.address() as u32, index))
         .collect::<BTreeMap<_, _>>();
-    let mut states = BTreeMap::from([(0usize, initial_state())]);
+    let mut states = BTreeMap::from([(0usize, initial_state(&symbol.identity))]);
     let mut queue = VecDeque::from([0usize]);
     let mut decode_blockers = BTreeMap::new();
 
-    while let Some(index) = queue.pop_front() {
+    let mut gaps = BTreeSet::new();
+    let mut processed = 0usize;
+    while let Some(index) = queue.front().copied() {
+        let observed = states[&index]
+            .iter()
+            .map(|value| value.atoms().len())
+            .max()
+            .unwrap_or(0);
+        let limit = if observed > limits.max_value_alternatives {
+            Some(InterfaceGapReason::ValueAlternativeLimit {
+                limit: limits.max_value_alternatives,
+                observed,
+            })
+        } else if processed >= limits.max_state_updates {
+            Some(InterfaceGapReason::StateUpdateLimit {
+                limit: limits.max_state_updates,
+                processed,
+            })
+        } else {
+            None
+        };
+        if let Some(reason) = limit {
+            for pending in queue.iter().copied().collect::<BTreeSet<_>>() {
+                gaps.insert(capture_gap(
+                    symbol,
+                    instructions[pending].address() as u32,
+                    reason.clone(),
+                    &states[&pending],
+                ));
+            }
+            break;
+        }
+        queue.pop_front();
+        processed += 1;
         let decoded_or_blocker = instructions[index];
         let Some(decoded) = decoded_or_blocker.supported() else {
             let artifact::AnalysisInstruction::Unsupported(blocker) = decoded_or_blocker else {
                 unreachable!();
             };
             decode_blockers.insert(blocker.address, blocker);
+            gaps.insert(capture_gap(
+                symbol,
+                blocker.address as u32,
+                InterfaceGapReason::UnsupportedInstruction,
+                &states[&index],
+            ));
             let mut values = states[&index].clone();
             if let Some(destination) = blocker.integer_destination {
                 values[usize::from(destination)] = Value::Unknown;
@@ -138,27 +195,7 @@ pub fn discover_interface_calls_with_data_symbols(
             Inst::Add { dest, src1, src2 } => {
                 let left = values[usize::from(src1.0)].clone();
                 let right = values[usize::from(src2.0)].clone();
-                let value = match (left, right) {
-                    (value, Value::Constant(offset)) | (Value::Constant(offset), value) => {
-                        value.add_constant(offset as i32)
-                    }
-                    (Value::Pointer(pointer), Value::Selector(selector))
-                    | (Value::Selector(selector), Value::Pointer(pointer)) => {
-                        Value::IndexedPointer(pointer, selector)
-                    }
-                    (Value::Pointer(pointer), Value::Argument { index, offset: 0 })
-                    | (Value::Argument { index, offset: 0 }, Value::Pointer(pointer)) => {
-                        Value::IndexedPointer(
-                            pointer,
-                            InterfaceSlotSelector {
-                                argument: index,
-                                scale: 1,
-                                addend: 0,
-                            },
-                        )
-                    }
-                    _ => Value::Unknown,
-                };
+                let value = left.add(right);
                 set(&mut values, dest, value);
                 successors.push(index + 1);
             }
@@ -239,11 +276,42 @@ pub fn discover_interface_calls_with_data_symbols(
             | Inst::Sd { .. }
             | Inst::Fence { .. } => successors.push(index + 1),
             _ => {
-                clear_destination(instruction, &mut values);
+                if let Some(register) = clear_destination(instruction, &mut values) {
+                    gaps.insert(capture_gap(
+                        symbol,
+                        pc,
+                        InterfaceGapReason::UnmodeledValueTransform {
+                            registers: vec![register.0],
+                        },
+                        &states[&index],
+                    ));
+                }
                 successors.push(index + 1);
             }
         }
 
+        if !matches!(
+            instruction,
+            Inst::Jal { .. } | Inst::Jalr { .. } | Inst::Ecall
+        ) {
+            let lost = states[&index]
+                .iter()
+                .zip(&values)
+                .enumerate()
+                .filter_map(|(register, (before, after))| {
+                    (*before != Value::Unknown && *after == Value::Unknown)
+                        .then_some(register as u8)
+                })
+                .collect::<Vec<_>>();
+            if !lost.is_empty() {
+                gaps.insert(capture_gap(
+                    symbol,
+                    pc,
+                    InterfaceGapReason::UnmodeledValueTransform { registers: lost },
+                    &states[&index],
+                ));
+            }
+        }
         values[0] = Value::Constant(0);
         for successor in successors {
             if successor < instructions.len() {
@@ -258,37 +326,51 @@ pub fn discover_interface_calls_with_data_symbols(
         let Some(decoded) = instructions[index].supported() else {
             continue;
         };
-        if let Inst::Sw { offset, src, base } = decoded.instruction
-            && let (Some(mut location), Some(target)) = (
-                values[usize::from(base.0)].as_data_store_pointer(
-                    offset.as_i32(),
-                    32,
-                    data_symbols,
-                ),
-                values[usize::from(src.0)].as_data_pointer(data_symbols),
-            )
-            && target.loads.is_empty()
-            && target.post_offset == 0
-            && matches!(
-                target.root,
-                InterfaceRoot::RelocatedSymbol { .. }
-                    | InterfaceRoot::FunctionArgument { .. }
-                    | InterfaceRoot::BoundedDataAddress { .. }
-            )
-        {
-            let slot_offset = location.post_offset;
-            location.post_offset = 0;
-            assignments.insert(InterfaceSlotAssignment {
-                member: symbol.member.clone(),
-                function: symbol.name.clone(),
-                function_address: symbol.address as u32,
-                site: decoded.address as u32,
-                root: location.root,
-                container_loads: location.loads,
-                offset: slot_offset,
-                width: 32,
-                target: target.root,
-            });
+        if let Inst::Sw { offset, src, base } = decoded.instruction {
+            let locations = values[usize::from(base.0)]
+                .atoms()
+                .iter()
+                .filter_map(|value| value.as_data_store_pointer(offset.as_i32(), 32, data_symbols))
+                .collect::<Vec<_>>();
+            let targets = values[usize::from(src.0)]
+                .atoms()
+                .iter()
+                .filter_map(|value| value.as_data_pointer(data_symbols))
+                .collect::<Vec<_>>();
+            if locations.len() != values[usize::from(base.0)].atoms().len() {
+                gaps.insert(capture_gap(
+                    symbol,
+                    decoded.address as u32,
+                    InterfaceGapReason::UnresolvedAssignmentLocation,
+                    &values,
+                ));
+            }
+            if targets.len() != values[usize::from(src.0)].atoms().len() {
+                gaps.insert(capture_gap(
+                    symbol,
+                    decoded.address as u32,
+                    InterfaceGapReason::UnresolvedAssignmentValue,
+                    &values,
+                ));
+            }
+            for location in &locations {
+                for target in &targets {
+                    assignments.insert(InterfaceSlotAssignment {
+                        owner: symbol.identity.clone(),
+                        member: symbol.member.clone(),
+                        function: symbol.name.clone(),
+                        function_address: symbol.address as u32,
+                        site: decoded.address as u32,
+                        root: location.root.clone(),
+                        container_loads: location.loads.clone(),
+                        offset: location.post_offset,
+                        width: 32,
+                        target: target.root.clone(),
+                        target_loads: target.loads.clone(),
+                        target_offset: target.post_offset,
+                    });
+                }
+            }
         }
         let Inst::Jalr { offset, base, dest } = decoded.instruction else {
             continue;
@@ -303,8 +385,21 @@ pub fn discover_interface_calls_with_data_symbols(
         } else {
             InterfaceCallKind::LinkedJump(dest.0)
         };
+        if values[usize::from(base.0)]
+            .atoms()
+            .iter()
+            .any(|value| value.as_pointers().is_empty())
+        {
+            gaps.insert(capture_gap(
+                symbol,
+                decoded.address as u32,
+                InterfaceGapReason::UnresolvedCallTarget,
+                &values,
+            ));
+        }
         for target in values[usize::from(base.0)].as_pointers() {
             calls.insert(InterfaceCallCandidate {
+                owner: symbol.identity.clone(),
                 member: symbol.member.clone(),
                 function: symbol.name.clone(),
                 function_address: symbol.address as u32,
@@ -320,10 +415,35 @@ pub fn discover_interface_calls_with_data_symbols(
     }
 
     Ok(InterfaceDiscovery {
+        limits,
+        gaps: gaps.into_iter().collect(),
         calls: calls.into_iter().collect(),
         assignments: assignments.into_iter().collect(),
         decode_blockers: decode_blockers.into_values().collect(),
     })
+}
+
+fn capture_gap(
+    symbol: &artifact::ArtifactSymbolDefinition,
+    site: u32,
+    reason: InterfaceGapReason,
+    values: &RegisterState,
+) -> InterfaceAnalysisGap {
+    InterfaceAnalysisGap {
+        owner: symbol.identity.clone(),
+        member: symbol.member.clone(),
+        function: symbol.name.clone(),
+        site,
+        reason,
+        registers: values
+            .iter()
+            .enumerate()
+            .map(|(register, value)| InterfaceRegisterValue {
+                register: register as u8,
+                value: value.as_argument(),
+            })
+            .collect(),
+    }
 }
 
 #[cfg(test)]

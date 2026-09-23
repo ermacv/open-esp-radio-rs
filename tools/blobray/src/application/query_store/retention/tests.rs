@@ -154,13 +154,23 @@ fn explicit_epoch_prune_preserves_current_pins_shared_facts_and_evidence() {
         assert!(store.open_object(&digests[label]).is_ok());
     }
     assert!(store.open_object(&digests["expired"]).is_err());
-    assert!(store.get("function-direct:expired").unwrap().is_none());
     assert!(
-        store.get("function-direct:baseline").unwrap().is_none(),
+        store
+            .read_view()
+            .get("function-direct:expired")
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        store
+            .read_view()
+            .get("function-direct:baseline")
+            .unwrap()
+            .is_none(),
         "pinning must not promote historical visibility"
     );
     assert!(
-        store.get("failed").unwrap().is_none(),
+        store.read_view().get("failed").unwrap().is_none(),
         "GC must not publish failed-epoch results"
     );
     assert_eq!(
@@ -175,7 +185,7 @@ fn explicit_epoch_prune_preserves_current_pins_shared_facts_and_evidence() {
         1
     );
     assert_eq!(
-        store.get("focused").unwrap(),
+        store.read_view().get("focused").unwrap(),
         Some(b"standalone result".to_vec())
     );
     assert_eq!(
@@ -265,7 +275,7 @@ fn inline_only_history_can_be_pruned_without_any_cas_candidates() {
             .is_none()
     );
     assert_eq!(
-        store.get("current").unwrap(),
+        store.read_view().get("current").unwrap(),
         Some(b"current inline".to_vec())
     );
 }
@@ -329,7 +339,7 @@ fn epoch_retention_fails_closed_on_missing_retained_dependency_ownership() {
     assert!(error.to_string().contains("last owner of dependency"));
     assert_eq!(snapshot_tree(manifest.parent().unwrap()), before);
     let store = QueryStore::open(&manifest).unwrap();
-    assert!(store.get("child").unwrap().is_none());
+    assert!(store.read_view().get("child").unwrap().is_none());
 }
 
 #[cfg(target_os = "linux")]

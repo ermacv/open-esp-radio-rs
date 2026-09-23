@@ -1,0 +1,347 @@
+# Target investigation workflows
+
+**Status: target design; streaming inventory, supervised operations, inspection plans, synthetic image preparation, object/linked-image investigation, limited reviewed knowledge, concrete RV32 execution/comparison and preservation implemented.**
+[Blobray Next](../../next/README.md) documents implemented commands, including function/call/data queries and native PHY/ROM research with explicit ABI, ROM companions and MMIO review. Bounded concrete execution/replay/comparison is implemented for the
+[explicit integer scenario profile](../../next/README.md#concrete-execution-and-comparison).
+The general model and comparison policies below remain target contracts. Operation names below refer to the target
+[application interface](contracts.md#application-interface). Use the
+[current project workflow](../project-workflow.md) to operate the
+existing tool. The [target architecture](architecture.md) defines responsibility;
+[contracts](contracts.md) defines the ownership and persistence rules exercised
+here.
+
+## Workflow contract map
+
+These routes define the user-facing responsibilities of the target system.
+An arrow transfers a typed request/result or resource lease, not a database
+connection. Existing CLI commands are not the authority for these boundaries.
+
+| User question or action | Operation route and retained result | Governing contract | Acceptance scenarios |
+| --- | --- | --- | --- |
+| What is in these inputs, including missing/unsupported parts? | import → store capture → artifacts inventory → revision → read query | [Import](contracts.md#import-and-revision-capture), [identity](contracts.md#identity-and-provenance) | A1, A3, A4, A6, A8, R5, R7 |
+| What does this occurrence do? | snapshot → plan → analysis with ISA ports → validated publication → query | [Handles](contracts.md#handles-and-capability-boundaries), [passes](contracts.md#analysis-knowledge-and-verification-ports) | A7, K2, I1, I3, R1, R8, R9 |
+| Can this archive entry be executed under this environment? | snapshot → link plan → host tool → prepared image → execution session | [Image preparation](contracts.md#artifact-inspection-and-image-preparation) | A2, A5, A7, J1 |
+| Can this interpretation be accepted and explained later? | evidence-bearing candidate → knowledge validation → review transaction → retained knowledge revision | [Review](contracts.md#analysis-knowledge-and-verification-ports), [retention](contracts.md#durable-repository-and-disposable-cache) | K1, K4, K5, P3 |
+| What remains applicable after an input/model change? | new revision → correspondence/lineage proposals → explicit review → dependency-qualified recomputation | [Identity](contracts.md#identity-and-provenance), [passes](contracts.md#analysis-knowledge-and-verification-ports) | A8, K2, K3 |
+| Does the compiled Rust implementation satisfy the declared comparison? | identified pair → prepared images → sessions → verifier → retained evidence | [Comparison](contracts.md#analysis-knowledge-and-verification-ports) | V1, V2, V3, A5 |
+| Can I cancel, recover, clean caches or move the project? | supervisor or explicit maintenance/export → retained roots and leased closure → validated outcome | [Jobs](contracts.md#jobs-cancellation-and-failures), [retention](contracts.md#durable-repository-and-disposable-cache) | J1–J5, P1–P6, M1, M2 |
+
+A workflow requires all its relevant authority, resource and coverage contracts,
+not just its successful path. Resource containment does not make a wrong symbol
+association correct; an atomic publication does not validate its scientific claim.
+
+## Start an investigation
+
+The researcher supplies ordered vendor libraries or linked images, the target
+and ABI, optional companion images, and selected chip/ecosystem interpretation
+inputs. A generic investigation can begin without reviewed function/interface
+packs or a configured Rust replacement.
+
+1. Import copies the inputs into private repository storage and reports their
+   identities, roles and capture diagnostics. Original paths remain provenance.
+2. The researcher inspects the physical inventory: all objects, member ordinals,
+   symbols, sections, relocations, unsupported content and missing thin members.
+3. The application records an immutable revision of the selected input set and
+   configuration. Missing declarations remain visible research obligations.
+4. The researcher selects a question and scope: an occurrence, entry closure,
+   interface, register interaction or comparison scenario.
+5. Planning reports required operations, exact inputs, reusable computations,
+   missing prerequisites and resource budget before execution.
+
+Success means that the revision can still be inspected after the original files
+are moved or removed. A missing required artifact blocks the dependent operation
+while inspection of available inputs remains possible. A malformed member is an
+inventory outcome; it cannot disappear from archive-wide coverage counts.
+
+The initial review documents can be created from observations when useful, but
+their existence is not a prerequisite for structural inspection. Reviewed chip
+facts and executable models remain optional, explicit interpretation inputs.
+
+## Analyze and inspect results
+
+Starting a plan returns a run handle. The client receives bounded progress and
+can inspect the selected revision concurrently. Results are attached to the
+revision that the plan captured, even when newer working files exist.
+
+The result identifies analyzed scope, observations, hypotheses, blockers,
+coverage and provenance. An investigator can navigate from a semantic subject
+to its exact physical occurrences and from a finding to the bytes and producer
+that support it. Queries use a retained snapshot and do not trigger analysis,
+cache repair or publication as a hidden side effect.
+
+Publication makes the completed result bundle visible in one metadata commit.
+Switching to it is an explicit frontend action or completion handling for the
+same selected revision. An older snapshot remains readable. A failed run leaves
+the previous completed publication available and explains which operation failed.
+
+Repeated requests can reuse computations when their dependency identities match.
+The plan explains reuse or invalidation in terms of changed inputs, parameters,
+providers or producers. A result without a reproducible dependency identity is
+not made persistent merely to avoid repeated work.
+
+## Build and execute an archive entry
+
+The caller selects the exact entry occurrence or resolves an ambiguous name from
+the physical candidates. Inventory and candidate relationships remain available
+before a link plan exists. Supplying several libraries does not itself prove
+their order or selection in an original firmware build.
+
+The caller chooses an existing linked image or an explicit synthetic link recipe.
+The recipe records library order, roots, companion definitions, target/ABI,
+linker identity and options. The application prepares an image once and passes
+the resulting image/mapping to execution, replay or comparison.
+
+Companion data and call definitions participate in image preparation. Indirect
+callback roots are explicit inputs. Unresolved relocations, conflicting layouts
+and unknown source mappings remain visible and block claims that require them.
+There is no path where a late companion attachment silently changes the meaning
+of an already-prepared image.
+
+Success means the image and executed recipe are retained with the result, the
+selected source occurrences can be traced where known, and all execution entry
+points apply the same preparation rules. Synthetic placement is labeled in every
+export that exposes addresses.
+
+## Review and preserve knowledge
+
+The researcher proposes an assertion over a physical occurrence or semantic
+subject, supplies its applicability, and references supporting evidence. Examples
+include a recovered function boundary, interface signature, register meaning,
+data layout or a correspondence between library revisions.
+
+Validation checks that the evidence exists, the subject is unambiguous, the claim
+does not exceed its evidence class, and the assertion is consistent with other
+accepted assertions. The reviewer accepts a specific candidate against a specific
+base revision. The commit creates a new knowledge revision and retains the full
+evidence dependency closure. If the base changed, the application returns a
+conflict with both revisions rather than overwriting another decision.
+
+Code, function, interface and register assertions keep their own validation
+rules. They share the transaction, provenance and retention mechanism. An
+accepted display name does not become a physical symbol identity, and acceptance
+does not erase a contradictory observation.
+
+Success means accepted knowledge can be explained and exported after clearing
+the computational cache. Required recovered hardware tables and calibration
+coefficients retain source identity, purpose, representation and applicability
+under the [source policy](../../../../docs/source-policy.md). Their binary origin
+does not justify dropping them or substituting another profile.
+
+## Compare a Rust replacement
+
+The caller selects identified compiled vendor and Rust artifacts, their entry
+occurrences, explicit environment/scenario inputs, a comparison relation and the
+requested claim scope. A generated reference, shared production core and exact
+production entry remain different evidence classes.
+
+The application prepares both images through the common image operation and
+creates the declared execution sessions. Independent cases start fresh;
+stateful sequences retain only declared state across phases. Executable models
+record their selected implementation and applicability in the evidence.
+
+Verification compares observations and coverage. `MATCH` answers the declared
+relation over its stated scope; `DIFF` retains the counterexample; `INCOMPLETE`
+retains missing obligations. None of these outcomes is silently relabeled a
+product readiness result. Clients can inspect valid incomplete research and
+choose the next question without editing a status file to make it load.
+
+Success means the retained evidence names both compiled implementations, scenario,
+models, producer, comparison policy, verdict and claim ceiling. The independent
+qualification evaluator decides whether that evidence is sufficient for its own
+requirements.
+
+## Update a vendor library or interpretation input
+
+Importing changed libraries creates a new revision with its own physical
+identities. Changing a chip pack, ABI declaration or model selection also creates
+a new revision even when binary bytes are unchanged.
+
+Correspondence analysis proposes associations between old and new occurrences.
+Lineage composes supported relationships across several revisions. The result
+distinguishes confirmed evidence, ambiguous candidates, conflicts and unmatched
+entities. Knowledge review decides which assertions can be transferred under
+their applicability; behavioral evidence remains bound to its original context.
+
+Planning invalidates only computations whose semantic dependencies changed. A
+rename does not invalidate unrelated structural byte facts; an executable model
+change invalidates consumers of that model even when its human label is unchanged.
+An old result can still be opened explicitly without being shown as current proof.
+
+Success means no manual repair of generated files is necessary to preserve the
+old investigation or establish the new one. The user can explain each retained,
+recomputed and unresolved result.
+
+## Cancel, close and recover
+
+Cancellation is a request to the application supervisor, independent of whether
+it comes from CLI signals, TUI, or an embedded client. The supervisor stops new
+work, cooperatively cancels workers, terminates owned child processes where
+necessary, reaps them and releases staging within its shutdown contract.
+
+An operation cancelled before commit does not advance publication. An operation
+that already committed reports completion. Closing the application's frontend
+does not detach a worker whose resource lifetime has no remaining owner.
+
+After a crash, opening the repository reconciles abandoned operations before
+admitting a new writer. Read-only inspection never performs that reconciliation
+implicitly; it either reads a committed snapshot or returns an explicit recovery
+requirement. A subsequent run can reuse verified completed computations.
+
+Next query/Plan admission reconciles its private runtime root independently of
+project recovery: dead owner, inactive lease and empty containment are all
+required before deleting an identified workspace. Live or unverifiable entries
+remain with bounded diagnostics. This path cannot delete saved Plans, exports or
+project revisions. The [temporary storage contract](../../next/README.md#temporary-storage-and-crash-cleanup)
+also governs aggregate admission and retained-result lifetime.
+
+Disk exhaustion reports protected data and the failed operation. Corrupt retained
+evidence reports an integrity failure and supports restoration from a known backup;
+it is not silently regenerated under today's analyzer. Damaged disposable cache
+data can be discarded and recomputed with a diagnostic.
+
+Success means a previous coherent publication remains accessible, no interrupted
+run appears complete, and recovery does not require deleting unknown database,
+lock or pack files by hand.
+
+## Export, back up and move an investigation
+
+Research export and private backup have separate purposes. A research export
+contains selected knowledge/evidence and provenance; it does not include private
+binary bytes unless the caller explicitly selects a private bundle. A complete
+backup includes retained revisions, their source/evidence closure and a manifest
+of object identities. Neither operation uploads data implicitly.
+
+Backup reads a fixed snapshot and retains its objects while streaming them. The
+completed bundle is verified before it becomes the backup destination. Restore
+imports into a separate destination, validates every referenced object and only
+then exposes the restored project. A failed restore leaves the source and any
+existing destination project intact.
+
+Project and occurrence identities survive moving the repository. Origin paths
+remain descriptive provenance and need not exist on the destination machine.
+Reading results requires a supported record schema. Re-execution additionally
+requires the recorded tool/model implementations and reports missing dependencies.
+
+Downstream SVD/PAC and reference-code generators consume a selected validated
+snapshot or versioned export. Their outputs retain links to the knowledge and
+evidence used. Generator failure does not invalidate the research publication,
+and generated code does not acquire a stronger proof class through publication.
+
+## Preserve existing investigations
+
+Compatibility preserves valuable data and its meaning; existing commands and
+private Rust APIs need not retain their shape. A legacy import adapter runs
+against a captured source project and creates a separate target repository.
+
+The import inventory includes reviewed packs, provenance/schema inputs,
+revision identities, saved correspondence/lineage, compiled-input bindings,
+comparison evidence, publication manifests and referenced generated payloads.
+Required tables and coefficients are included with their original provenance.
+The adapter follows dependency references, including evidence retained by the
+legacy cache, rather than assuming that everything called a cache is disposable.
+
+Each source record receives one explicit outcome:
+
+| Outcome | Preservation and use |
+| --- | --- |
+| Converted and validated | New typed record retains original identity, original bytes and an explicit mapping |
+| Preserved but unresolved | Original bytes/provenance remain available; missing dependencies or ambiguous mapping block affected claims |
+| Unsupported representation | Opaque original record is retained with its format identity and diagnostic; it does not become an accepted assertion |
+| Missing source payload | Manifest retains the original reference and missing identity; affected proof remains unavailable |
+
+No entry is silently omitted. The import report maps records and counts their
+outcomes; it is an operation artifact in ignored output storage, not a tracked
+migration diary. The old project remains usable with the old tool. A new current
+publication is exposed only after validating the imported closure and its stated
+limitations. Operator review is required to resolve uncertain semantic mappings.
+
+## Acceptance scenarios
+
+These are required behavioral checks for a future implementation, not a record
+of tests already run. Synthetic ELF/AR fixtures exercise contracts without vendor
+inputs. Real vendor reproductions remain private and use the resource-limited
+host. Tests assert observable behavior and ownership rather than internal file
+layout or generated register constants.
+
+| ID | Scenario | Required observable result | Responsible boundary |
+| --- | --- | --- | --- |
+| A1 | Two archive members have equal names and bytes; symbols repeat across tables | Every occurrence remains selectable; unqualified selection reports ambiguity | artifacts, domain |
+| A2 | Weak/common definitions, duplicate exports, library reordering and cyclic archive references | Inventory remains unchanged; selected image and recipe reflect the actual chosen linker semantics | image preparation |
+| A3 | Thin archive with an external member; then delete its original directory | Imported member remains usable; an uncaptured member is an explicit gap | import, artifacts |
+| A4 | Mixed or malformed archive members | Every payload occurrence has an outcome; supported subsets cannot claim complete archive coverage | artifacts, analysis |
+| A5 | Companion supplies data relocation and callback definitions | Run, replay and comparison prepare equivalent images for the same recipe | application, backend |
+| A6 | Source changes during import or after revision creation | Detectable capture change/expected-digest mismatch rejects capture; committed revision always uses its imported bytes | import, store |
+| A7 | Required source mapping or relocation is unknown | Affected claim is incomplete, never inferred from an equal label or placeholder value | artifacts, verification |
+| A8 | Import unchanged thin-container bytes with a changed external member | Old and new snapshots retain their own payload bindings; equal occurrence selectors do not reuse stale analysis or transfer evidence | domain, planning, store |
+| K1 | Clear all computational cache after accepting reviewed knowledge | Assertions, cited evidence and captured inputs remain readable | store, knowledge |
+| K2 | Change one assertion or selected model | Only dependent computations become stale, with an explanation; old evidence keeps its identity | planning, analysis |
+| K3 | Rebase between renamed/changed/ambiguous functions | Supported associations are explicit; uncertainty blocks automatic proof transfer | analysis, knowledge |
+| K4 | Two reviews use the same base revision | First commit succeeds; second reports conflict without lost decisions | application, store |
+| K5 | An analysis proposes an assertion, then its candidate or evidence changes before review commit | Analysis cannot accept it; commit validates the exact reviewed candidate and retained supporting closure | knowledge, application, store |
+| P1 | Inject failure before payload sync, before metadata commit and after commit | Readers see the previous or new complete publication; no mixed result bundle | store |
+| P2 | Hold an old reader while publishing, compacting and pruning | Reader retains its selected content; active and persisted roots remain protected | store |
+| P3 | Corrupt cache-only data versus referenced evidence | Cache miss/recompute and retained-evidence integrity failure remain distinct outcomes | store |
+| P4 | Exhaust disk quota with protected content | Write fails without evicting accepted evidence or replacing current publication | store |
+| P5 | Export files are deleted or changed | Snapshot queries still read retained content; export can be recreated | application, store |
+| P6 | Exhaust temporary-output quota or disk while spooling a query, manifest or image | Typed failure, prior publication intact, owned residue identified, no eviction of retained evidence | application, store, host |
+| J1 | Cancel CPU analysis, blocked external tool and TUI-owned comparison | Bounded cleanup, descendant reaping, no unmanaged worker or false publication | supervisor, host |
+| J2 | Race cancellation or project revision change with commit | One explicit terminal outcome; stale run cannot replace a newer revision's current result | application, store |
+| J3 | Kill a writer and restart | Interrupted attempt is abandoned; committed evidence survives; verified work can be reused | recovery |
+| J4 | Drop all client handles or close the frontend during import, query or execution | Supervisor retains ownership through terminal cleanup; shutdown rejects new work and does not detach workers | application, host |
+| J5 | Query succeeds but destination fails; cancellation races with commit admission | Delivery failure remains distinct from computation; accepted cancellation prevents commit and rejected cancellation reports actual commit outcome | application, store, host |
+| R1 | Exhaust work in an ELF table, member iteration or long name | Typed resource failure retains exact last context; current is unchanged | application, artifacts |
+| R2 | Cancel or expire deadline inside a heavy operation | Cooperative stop, with forced cleanup for uncooperative code; budget never restarts between phases | application, host |
+| R3 | Worker aborts, receives a signal, hits cgroup OOM or floods stderr | Bounded diagnostics distinguish observations from inferred causes | host |
+| R4 | Cleanup fails after an earlier failure or completed commit | Primary cause and committed success survive; cleanup is secondary | application, store |
+| R5 | Reopen large inventory or run doctor under a small working-memory budget | Bounded read-only processing without hidden writes or partial success | store, application |
+| R6 | Exhaust scoped scratch, unwind a phase, then start another | Typed capacity failure; no escaped reference or stale ID; temporary capacity is reusable | computing module |
+| R7 | Process many thin members and a large result | Input leases and temporary memory end when no longer needed; staged output avoids aggregate RAM growth | application, store, artifacts |
+| R8 | Repeat with the same work policy and budget; overflow a counter | Deterministic accounting and checked arithmetic; no budget reset or wraparound | application |
+| R9 | Cyclic CFG/call graph or nonconvergent dataflow; a cycle in pass dependencies | Program traversal is iterative and bounded with declared completeness; scheduler dependency cycle is rejected before execution | analysis, planning |
+| R10 | A sink retains records, a phase grows a buffer, or a child worker starts | Simultaneous allocations and result lifetimes remain charged; capacity/work cannot be duplicated or reset | consumer, application |
+| R11 | Exhaust computation capacity while emitting diagnostics; request a claimed allocation-controlled path | Fixed-size failure remains available; only independently checked paths claim absence of hidden allocation | computing module, host |
+| V1 | Missing behavior, known difference and fully discharged comparison | Typed INCOMPLETE, DIFF and MATCH with their coverage and claim scopes | verification |
+| V2 | Generated reference or model stands in for production behavior | Evidence keeps its limited class; exact production equivalence is not asserted | verification |
+| V3 | Stateful phase is incomplete, or independent cases run in a different order | Dependent phases cannot consume unknown state; independent cases have fresh session state and no cross-case leakage | executor, verification |
+| I1 | Issue equivalent requests through API, CLI/JSON and TUI | Same selection, revision, results and diagnostics; only presentation differs | application, frontends |
+| I2 | Create two applications with different provider sets | Independent behavior and identities without process-global interference | host composition |
+| I3 | Open an absent cache or query an existing snapshot | No hidden analysis, repair, migration or writer acquisition | query interface |
+| M1 | Import legacy data with unknown schema, missing dependency or ambiguous identity | Every record has a preservation outcome; original project remains unchanged | legacy adapter |
+| M2 | Backup, move and restore; original input paths are unavailable | Retained closure verifies and remains readable; missing replay tools are reported | store, application |
+| B1 | Build generic Blobray without open-radio-specific providers | No generic dependency on production code, chip hosts or qualification policy | crate dependency checks |
+| B2 | Attempt a forbidden dependency or mutation through a read handle | Dependency checks or type boundary reject it | architecture and API checks |
+| B3 | Pass a snapshot/analysis port to code attempting writer acquisition, tool discovery or provider installation | Public capabilities do not expose those operations; compile-fail API checks reject authority escalation | application, domain, store |
+| B4 | Start a planned operation after inputs/providers/current selection change | It uses retained inputs and identified implementations or returns explicit unavailability; no implicit replanning or fallback | application, host |
+
+## Contract enforcement
+
+Crate-graph checks enforce dependency direction and standalone composition. They
+cannot establish module authority, lifetime safety or recovery behavior. Compile-
+fail API tests cover forbidden capabilities and escaping scratch/image borrows;
+behavioral tests cover publication, cancellation, retention and claim semantics.
+Failure injection targets capture, output staging, payload durability, commit
+admission, metadata commit and terminal cleanup separately.
+
+Capability tests establish what the supplied API permits, not an OS security
+sandbox: code linked with `std` can still attempt ambient filesystem or process
+access. Source/dependency review must reject such hidden access in computation
+modules; host containment covers resource failures, not arbitrary hostile plugins.
+
+Tests use synthetic AR/ELF inputs for structural and lifecycle contracts. A large
+unsupported payload tests streaming inspection, not an ELF allocation limit;
+memory-limit checks need a supported object that exercises the actual workspace.
+Nested/compressed formats not supported by a parser test explicit coverage gaps,
+not nonexistent decompression behavior. Real vendor cases supplement these tests
+without replacing them or entering tracked fixtures.
+
+An operation is conforming only when its public API, every frontend adapter and
+embedded entry point meet the same semantic contract. Lower-level streaming APIs
+publish their caller obligations explicitly. A completed import/inventory path
+does not establish readiness of linking, review, retention or comparison.
+
+The design is complete only when each operation above maps to a component and a
+resource owner in the linked contracts. Implementation acceptance additionally
+requires these behavioral tests, published API/schema documentation, standalone
+composition checks and relevant repository architecture checks. Documentation
+validation alone establishes neither those runtime guarantees nor hardware
+qualification.

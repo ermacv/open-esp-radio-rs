@@ -16,17 +16,11 @@ pub(crate) struct FunctionInterfaceIrCall {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct FunctionInterfaceCall {
-    pub(crate) artifact: usize,
-    pub(crate) member: Option<String>,
+    pub(crate) observation: crate::interfaces::InterfaceCallFact,
     pub(crate) caller: String,
-    pub(crate) function_address: u32,
-    pub(crate) site: u32,
-    pub(crate) kind: String,
-    pub(crate) jalr_offset: i32,
     pub(crate) slot_selector: Option<String>,
     pub(crate) slot_index: Option<u32>,
     pub(crate) slot_index_domain: Option<(u8, u32, u32, String)>,
-    pub(crate) arguments: Vec<(usize, String, String)>,
     pub(crate) linked_ir_matches: usize,
     pub(crate) linked_ir: Option<FunctionInterfaceIrCall>,
 }
@@ -55,20 +49,16 @@ pub(crate) fn link_reviewed_interfaces(
     workspace: &FunctionWorkspace,
     bindings: &[ResolvedInterfaceSlot],
 ) -> Result<Vec<FunctionInterfaceLink>> {
-    // Interface evidence names the concrete caller symbol. Index those facts
-    // once instead of scanning every generated function for every
-    // root/binding/call combination. On the real ESP32-S31 workspace the old
-    // nested scan multiplied 5,132 functions by 54 bindings, 176 calls and a
-    // second 5,132-function scan.
+    // Index physical callers once. Display names and member labels do not
+    // establish identity, including for byte-identical repeated archive members.
     let mut functions_by_caller =
-        BTreeMap::<(&str, &str, &str, Option<&str>), Vec<&FunctionFact>>::new();
+        BTreeMap::<(&str, &str, &crate::artifact::CodeIdentity), Vec<&FunctionFact>>::new();
     for function in &workspace.facts.functions {
         functions_by_caller
             .entry((
                 function.profile.as_str(),
                 function.source.as_str(),
-                function.symbol.as_str(),
-                function.member.as_deref(),
+                &function.code_identity,
             ))
             .or_default()
             .push(function);
@@ -148,8 +138,7 @@ pub(crate) fn link_reviewed_interfaces(
                 let key = (
                     reviewed_function.profile.as_str(),
                     binding.source.as_str(),
-                    call.function.as_str(),
-                    call.member.as_deref(),
+                    &call.observation.owner,
                 );
                 let Some(candidates) = functions_by_caller.get(&key) else {
                     continue;
@@ -162,7 +151,7 @@ pub(crate) fn link_reviewed_interfaces(
                     let linked_ir = function
                         .calls
                         .iter()
-                        .filter(|candidate| candidate.site == Some(call.site))
+                        .filter(|candidate| candidate.site == Some(call.observation.site))
                         .collect::<Vec<_>>();
                     let exact_linked_ir = if linked_ir.len() == 1 {
                         let candidate = linked_ir[0];
@@ -173,7 +162,7 @@ pub(crate) fn link_reviewed_interfaces(
                             return Err(crate::Error::invalid(format!(
                                 "interface semantic mismatch at {}:{:#010x}: reviewed slot {:?} uses {:?}, linked IR uses {:?}",
                                 function.identity,
-                                call.site,
+                                call.observation.site,
                                 binding.name,
                                 interface_semantic,
                                 ir_semantic
@@ -190,13 +179,8 @@ pub(crate) fn link_reviewed_interfaces(
                         None
                     };
                     calls.insert(FunctionInterfaceCall {
-                        artifact: call.artifact,
-                        member: call.member.clone(),
+                        observation: call.observation.clone(),
                         caller: function.identity.clone(),
-                        function_address: call.function_address,
-                        site: call.site,
-                        kind: call.kind.clone(),
-                        jalr_offset: call.jalr_offset,
                         slot_selector: call.slot_selector.clone(),
                         slot_index: call.slot_index,
                         slot_index_domain: call.slot_index_domain.as_ref().map(|domain| {
@@ -207,17 +191,6 @@ pub(crate) fn link_reviewed_interfaces(
                                 domain.evidence.clone(),
                             )
                         }),
-                        arguments: call
-                            .arguments
-                            .iter()
-                            .map(|argument| {
-                                (
-                                    argument.index,
-                                    argument.kind.clone(),
-                                    argument.expression.clone(),
-                                )
-                            })
-                            .collect(),
                         linked_ir_matches: linked_ir.len(),
                         linked_ir: exact_linked_ir,
                     });

@@ -6,6 +6,88 @@ The append-only CAS pack stores generated outputs and large query values.
 Reviewed TOML, revision snapshots and reproducible linked IR remain outside
 this cache.
 
+Project-stage signatures use the same `PassSpec` registry as the analysis
+coordinator and planner. Each descriptor supplies its semantic revision,
+artifact schema, analysis domain and compiled-knowledge dependency. Checked
+work-item keys distinguish whole stages, linked-IR profiles and validation
+policy. Unknown owners, unsupported suffixes and missing validation policy are
+errors. Equivalent linked-IR profile bindings share a semantic cache name;
+validation with and without `deny-unreviewed` has distinct identity. A linked-IR
+provider without a nonempty semantic domain cannot use persistent stage cache.
+
+The coordinator retains one resolved work declaration through planning, lookup
+and completion. The input requirement is explicit; absent optional paths remain
+in the cache fingerprint. Completion uses the retained configuration and ordered
+outputs, and consumes its execution handle once. Existing input mutation guards
+still prevent recording a result after its inputs change.
+
+Project analysis validates output ownership before cache lookup or restoration.
+Overlapping outputs, protected input aliases and changed output bindings cannot
+be admitted as restoration targets. The same catalog determines exact producer
+work identities for deferred plan inputs. This is a preflight boundary; it does
+not pin filesystem destinations against subsequent concurrent replacement or
+make publication of several output files transactional.
+
+CAS restoration uses the same `GeneratedOutput` streaming writer as generated
+reports. It copies one framed payload and verifies its exact length and SHA-256
+before replacing the destination; truncated or corrupt payloads preserve the
+previous file. The common writer owns cleanup of its sibling staging file and
+syncs completed content before replacement. Store-level authority and epoch
+publication remain separate from this single-file operation.
+
+The cache accepts an explicit `OutputSet` rather than arbitrary restore paths.
+An existing file completes its slot only after its actual SHA-256 matches the
+cached digest. Otherwise restoration obtains a consuming request for that slot;
+successful verified emission completes it. A current hit must complete all its
+slots. If lookup detects changed inputs and requests recomputation, its candidate
+set is discarded; execution receives a fresh set from the retained declaration.
+Domain completion cannot cache a work item whose output was omitted, whose
+request was dropped, or whose emission failed.
+
+Each completed slot retains its emitted or verified content length and SHA-256.
+Stage recording uses that retained digest and checks the destination before and
+after cache publication. A changed output retires the new stage binding; a
+changed restored output also retires its consumed binding. Before epoch
+activation, the coordinator validates every completed output, including cache
+hits. A mismatch leaves the previous epoch active. These checks detect changes
+at the validation boundaries; they do not make exported files an immutable,
+transactional snapshot or prevent replacement after the final check.
+
+At successful project completion, the writer publishes an
+`analysis-output-manifest` immutable query and `analysis-output` payload queries
+for every completed output, including those of uncached work. Manifest entries
+carry logical paths, lengths and SHA-256; its query dependencies retain those
+payloads through the existing epoch and CAS retention rules. The manifest becomes
+visible when the epoch activates. An unsuccessful run cannot replace the active
+manifest, even if its generated files have already been written.
+
+`PublishedAnalysisOutputs::open` uses the read-only WAL snapshot capability.
+Reads access verified CAS content, never current generated paths. Missing cache
+or no published project epoch returns `None`. A published epoch with no manifest
+requires a fresh analysis; no compatibility reader reconstructs it from files.
+Older valid stage results can still be consumed by a new analysis and included
+in its newly published manifest. Output payload queries use version-1 keys;
+output manifests use version-2 keys and schema 2. They record the owning project
+manifest locator (resolved parent directory plus declared filename). Readers
+reject an epoch belonging to another manifest in the same directory. Schema-1
+output manifests have no reader; rerun project analysis to publish a current
+manifest from valid stage results. The SQLite table schema remains unchanged.
+
+Project-session IR queries retain their first published reader, including a
+failed or absent capture. Profile reader eviction does not select a new epoch.
+Function summaries, details and their generated MMIO annotations read the same
+manifest; an exported file cannot replace a missing or corrupt declared result.
+Reloading the session allows it to observe a newer publication.
+
+`open_output(path)` provides a bounded `Read + Seek` payload reader. Opening
+checks query membership, kind, content identity, pack framing, byte length and
+SHA-256 without materializing the payload. Subsequent reads use a private cursor
+and positional file I/O; cloned descriptors cannot move another reader's cursor.
+The reader retains the descriptor after its parent manifest handle is dropped
+and after compaction removes the old pack pathname. It cannot seek into another
+object or read bytes appended beyond its captured extent. Integrity is checked
+at open; external in-place changes afterward are outside the CAS writer contract.
+
 A successfully consumed function fact belongs to the publishing analysis epoch,
 including when it was loaded from an earlier completed epoch. Each linked-IR
 stage records its consumed function queries as dependencies. Restoring a whole
@@ -14,6 +96,39 @@ dependency must be visible in the caller's snapshot. Merely finding a result in
 an unfinished epoch does not authorize publishing it. Batched profiles keep
 separate dependency scopes, including shared functions used by several profiles.
 Existing identical function values acquire membership without another CAS write.
+
+Published analysis queries use a separate `QueryReader` capability. It opens
+an existing database read-only, holds one WAL read transaction and retains file
+descriptors for that transaction's CAS packs. It acquires no analysis writer
+lock and cannot publish, restore files or run maintenance. An absent cache
+remains absent. SQLite may create or update its WAL coordination sidecars;
+read-only access does not mean an immutable filesystem image.
+
+Register inventory is derived in memory from session inputs and retained until
+reload. Its builder does not open a writer or populate a persistent query cache;
+generated discovery and IR inputs remain durable in the published CAS manifest.
+
+The reader owns its connection, published epoch and pinned files directly. It
+contains no writer, publication state or maintenance capability. Readers,
+writers and locked plan inspection share one borrowed lookup layer for epoch
+visibility, query digests and CAS validation. That layer does not open stores,
+restore generated files or acquire query ownership. Snapshot pack reads use
+their retained descriptors; a missing pin never falls back to a current pack
+pathname.
+
+On Linux, snapshot opening briefly holds a shared directory lock while pinning
+pack descriptors. Pack cleanup defers unlinking if that guard is held. Once
+opened, readers can outlive compaction and continue reading unlinked packs from
+their descriptors. Those disk blocks remain allocated until the last reader
+closes, even though directory-size accounting no longer includes their names.
+Writer shutdown attempts a nonblocking checkpoint and leaves pinned WAL frames
+to SQLite. A reader sees its original published epoch and standalone facts as
+of its transaction; it never sees another writer's unpublished epoch.
+
+Inventory queries retain derived graphs in the session without persistent cache writes.
+Plan, statistics and maintenance previews still use their stricter shared-lock
+inspection path, which excludes a writer and rejects a nonempty WAL. These paths
+do not yet share the concurrent query-reader lifecycle.
 
 ## Inline versus CAS
 

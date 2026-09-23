@@ -15,12 +15,12 @@ pub(super) fn generate_pac_api(
 ) -> Result<bool> {
     crate::application::project_publication::validate_output_paths(paths)?;
     let publication = prepare_project_pac_api(paths)?;
-    crate::application::generated_file::write_or_check(
+    crate::application::generated_file::GeneratedOutput::new(
         publication.output(),
-        publication.contents(),
         arguments.check,
         publication.kind(),
-    )?;
+    )
+    .text(publication.contents())?;
     emit_pac_api(
         if arguments.check {
             "verified"
@@ -52,7 +52,8 @@ pub(super) fn export_svd(
         )));
     }
     let (contents, summary) = workspace.render_svd()?;
-    crate::application::generated_file::write_or_check(output, &contents, arguments.check, "SVD")?;
+    crate::application::generated_file::GeneratedOutput::new(output, arguments.check, "SVD")
+        .text(&contents)?;
     emit_svd(
         if arguments.check {
             "verified"
@@ -103,7 +104,8 @@ pub(super) fn generate_pac_raw_source(
     }
     let (svd, svd_summary) = workspace.render_svd()?;
     let source = generate_pac_with_api(&svd, target, edition, api_pack.as_ref())?;
-    crate::application::generated_file::write_or_check(output, &source, arguments.check, "PAC")?;
+    crate::application::generated_file::GeneratedOutput::new(output, arguments.check, "PAC")
+        .text(&source)?;
     emit_pac(
         if arguments.check {
             "verified"
@@ -146,12 +148,12 @@ pub(super) fn generate_bindings(
     }
     let (svd, svd_summary) = workspace.render_svd()?;
     let contents = open_esp_radio_register_model::generate_pac_binding_index(&svd, crate_name)?;
-    crate::application::generated_file::write_or_check(
+    crate::application::generated_file::GeneratedOutput::new(
         output,
-        &contents,
         arguments.check,
         "PAC binding index",
-    )?;
+    )
+    .text(&contents)?;
     emit_bindings(
         if arguments.check {
             "verified"

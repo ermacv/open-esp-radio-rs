@@ -46,6 +46,12 @@ fn whole_call_result_preserves_a_symbolic_expression_during_substitution() {
 #[test]
 fn returning_direct_call_is_flattened_from_binary_symbols() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "parent",
+            0x1000,
+        ),
         member: None,
         name: "parent".to_owned(),
         address: 0x1000,
@@ -59,6 +65,12 @@ fn returning_direct_call_is_flattened_from_binary_symbols() {
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "child",
+            0x2000,
+        ),
         member: None,
         name: "child".to_owned(),
         address: 0x2000,
@@ -92,6 +104,12 @@ fn returning_direct_call_is_flattened_from_binary_symbols() {
 #[test]
 fn direct_call_to_symbolic_cfg_callee_is_scoped_and_composed() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "branch_parent",
+            0x1000,
+        ),
         member: None,
         name: "branch_parent".to_owned(),
         address: 0x1000,
@@ -104,6 +122,12 @@ fn direct_call_to_symbolic_cfg_callee_is_scoped_and_composed() {
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "branch_child",
+            0x2000,
+        ),
         member: None,
         name: "branch_child".to_owned(),
         address: 0x2000,
@@ -164,6 +188,12 @@ fn direct_call_to_symbolic_cfg_callee_is_scoped_and_composed() {
 #[test]
 fn nested_call_graph_keeps_each_composed_token_scope_local() {
     let grandparent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "grandparent",
+            0x0800,
+        ),
         member: None,
         name: "grandparent".to_owned(),
         address: 0x0800,
@@ -177,6 +207,12 @@ fn nested_call_graph_keeps_each_composed_token_scope_local() {
         relocations: Vec::new(),
     };
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "branch_parent",
+            0x1000,
+        ),
         member: None,
         name: "branch_parent".to_owned(),
         address: 0x1000,
@@ -189,6 +225,12 @@ fn nested_call_graph_keeps_each_composed_token_scope_local() {
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "branch_child",
+            0x2000,
+        ),
         member: None,
         name: "branch_child".to_owned(),
         address: 0x2000,
@@ -234,6 +276,12 @@ fn nested_call_graph_keeps_each_composed_token_scope_local() {
 #[test]
 fn caller_cfg_can_branch_on_a_composed_callee_result() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "branch_on_call_result",
+            0x1000,
+        ),
         member: None,
         name: "branch_on_call_result".to_owned(),
         address: 0x1000,
@@ -250,6 +298,12 @@ fn caller_cfg_can_branch_on_a_composed_callee_result() {
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "branch_child",
+            0x2000,
+        ),
         member: None,
         name: "branch_child".to_owned(),
         address: 0x2000,
@@ -299,6 +353,12 @@ fn caller_cfg_can_branch_on_a_composed_callee_result() {
 #[test]
 fn caller_cfg_rejects_an_unmodeled_callee_result_used_as_a_condition() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "branch_on_void_call",
+            0x1000,
+        ),
         member: None,
         name: "branch_on_void_call".to_owned(),
         address: 0x1000,
@@ -315,6 +375,12 @@ fn caller_cfg_rejects_an_unmodeled_callee_result_used_as_a_condition() {
         relocations: Vec::new(),
     };
     let delay = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "ets_delay_us",
+            0x2000,
+        ),
         member: None,
         name: "ets_delay_us".to_owned(),
         address: 0x2000,
@@ -346,6 +412,12 @@ fn caller_cfg_rejects_an_unmodeled_callee_result_used_as_a_condition() {
 #[test]
 fn caller_cfg_allows_an_unmodeled_callee_result_when_it_is_discarded() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "branch_with_void_call",
+            0x1000,
+        ),
         member: None,
         name: "branch_with_void_call".to_owned(),
         address: 0x1000,
@@ -363,6 +435,12 @@ fn caller_cfg_allows_an_unmodeled_callee_result_when_it_is_discarded() {
         relocations: Vec::new(),
     };
     let delay = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "ets_delay_us",
+            0x2000,
+        ),
         member: None,
         name: "ets_delay_us".to_owned(),
         address: 0x2000,
@@ -399,6 +477,12 @@ fn caller_cfg_allows_an_unmodeled_callee_result_when_it_is_discarded() {
 #[test]
 fn relocated_returning_call_is_flattened_without_executing_auipc_jalr() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "relocated_parent",
+            0x1000,
+        ),
         member: None,
         name: "relocated_parent".to_owned(),
         address: 0x1000,
@@ -413,6 +497,12 @@ fn relocated_returning_call_is_flattened_without_executing_auipc_jalr() {
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "companion_child",
+            0x2000,
+        ),
         member: None,
         name: "companion_child".to_owned(),
         address: 0x2000,
@@ -447,6 +537,12 @@ fn relocated_returning_call_is_flattened_without_executing_auipc_jalr() {
 #[test]
 fn constant_size_memcpy_relocation_becomes_ordered_memory_effects() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("memory.o".to_owned())),
+            "copy_four",
+            0x1000,
+        ),
         member: Some("memory.o".to_owned()),
         name: "copy_four".to_owned(),
         address: 0x1000,
@@ -506,6 +602,12 @@ fn constant_size_memcpy_relocation_becomes_ordered_memory_effects() {
 #[test]
 fn resolved_memset_relocation_preserves_standard_effects_and_return_pointer() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("memory.o".to_owned())),
+            "fill_three",
+            0x1000,
+        ),
         member: Some("memory.o".to_owned()),
         name: "fill_three".to_owned(),
         address: 0x1000,
@@ -560,6 +662,12 @@ fn resolved_memset_relocation_preserves_standard_effects_and_return_pointer() {
 #[test]
 fn reviewed_allocator_result_accepts_memset_and_controller_field_write() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("controller.o".to_owned())),
+            "allocate_controller_state",
+            0x1000,
+        ),
         member: Some("controller.o".to_owned()),
         name: "allocate_controller_state".to_owned(),
         address: 0x1000,
@@ -640,6 +748,12 @@ fn reviewed_allocator_result_accepts_memset_and_controller_field_write() {
 #[test]
 fn reviewed_allocator_result_accepts_memcpy_destination() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("controller.o".to_owned())),
+            "copy_controller_state",
+            0x1000,
+        ),
         member: Some("controller.o".to_owned()),
         name: "copy_controller_state".to_owned(),
         address: 0x1000,
@@ -719,6 +833,12 @@ fn reviewed_allocator_result_accepts_memcpy_destination() {
 #[test]
 fn internal_allocator_result_accepts_memcpy_destination_after_composition() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("controller.o".to_owned())),
+            "copy_allocated_controller_state",
+            0x1000,
+        ),
         member: Some("controller.o".to_owned()),
         name: "copy_allocated_controller_state".to_owned(),
         address: 0x1000,
@@ -738,6 +858,12 @@ fn internal_allocator_result_accepts_memcpy_destination_after_composition() {
         relocations: Vec::new(),
     };
     let allocator = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("controller.o".to_owned())),
+            "allocate_controller_state",
+            0x2004,
+        ),
         member: Some("controller.o".to_owned()),
         name: "allocate_controller_state".to_owned(),
         address: 0x2004,
@@ -805,6 +931,12 @@ fn internal_allocator_result_accepts_memcpy_destination_after_composition() {
 #[test]
 fn internal_non_allocator_result_cannot_authorize_memcpy_destination() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("controller.o".to_owned())),
+            "copy_opaque_controller_state",
+            0x1000,
+        ),
         member: Some("controller.o".to_owned()),
         name: "copy_opaque_controller_state".to_owned(),
         address: 0x1000,
@@ -824,6 +956,12 @@ fn internal_non_allocator_result_cannot_authorize_memcpy_destination() {
         relocations: Vec::new(),
     };
     let opaque_wrapper = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("controller.o".to_owned())),
+            "opaque_controller_state",
+            0x2004,
+        ),
         member: Some("controller.o".to_owned()),
         name: "opaque_controller_state".to_owned(),
         address: 0x2004,
@@ -871,6 +1009,12 @@ fn internal_non_allocator_result_cannot_authorize_memcpy_destination() {
 #[test]
 fn allocation_pointer_round_trips_through_exact_global_cell() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("controller.o".to_owned())),
+            "initialize_controller_state",
+            0x1000,
+        ),
         member: Some("controller.o".to_owned()),
         name: "initialize_controller_state".to_owned(),
         address: 0x1000,
@@ -899,18 +1043,27 @@ fn allocation_pointer_round_trips_through_exact_global_cell() {
         memory_regions: Default::default(),
         relocations: vec![
             artifact::SymbolRelocation {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 address: 0x1014,
                 kind: artifact::RelocationKind::Hi20,
                 symbol: "controller_state".to_owned(),
                 addend: 0,
             },
             artifact::SymbolRelocation {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 address: 0x1018,
                 kind: artifact::RelocationKind::Lo12S,
                 symbol: "controller_state".to_owned(),
                 addend: 0,
             },
             artifact::SymbolRelocation {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 address: 0x1030,
                 kind: artifact::RelocationKind::Lo12I,
                 symbol: "controller_state".to_owned(),
@@ -973,6 +1126,12 @@ fn allocation_pointer_round_trips_through_exact_global_cell() {
 #[test]
 fn overlapping_global_store_invalidates_allocation_pointer_cell() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("controller.o".to_owned())),
+            "overwrite_controller_pointer",
+            0x1000,
+        ),
         member: Some("controller.o".to_owned()),
         name: "overwrite_controller_pointer".to_owned(),
         address: 0x1000,
@@ -1039,6 +1198,12 @@ fn overlapping_global_store_invalidates_allocation_pointer_cell() {
 #[test]
 fn unknown_alias_store_invalidates_allocation_pointer_cell() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("controller.o".to_owned())),
+            "ambiguous_controller_pointer",
+            0x1000,
+        ),
         member: Some("controller.o".to_owned()),
         name: "ambiguous_controller_pointer".to_owned(),
         address: 0x1000,
@@ -1101,6 +1266,12 @@ fn unknown_alias_store_invalidates_allocation_pointer_cell() {
 #[test]
 fn opaque_pointer_stored_in_global_cell_is_not_fresh_allocation() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("controller.o".to_owned())),
+            "opaque_controller_pointer",
+            0x1000,
+        ),
         member: Some("controller.o".to_owned()),
         name: "opaque_controller_pointer".to_owned(),
         address: 0x1000,
@@ -1161,6 +1332,12 @@ fn opaque_pointer_stored_in_global_cell_is_not_fresh_allocation() {
 #[test]
 fn non_allocator_symbolic_return_does_not_gain_writable_provenance() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("controller.o".to_owned())),
+            "opaque_result_is_not_storage",
+            0x1000,
+        ),
         member: Some("controller.o".to_owned()),
         name: "opaque_result_is_not_storage".to_owned(),
         address: 0x1000,
@@ -1214,6 +1391,12 @@ fn non_allocator_symbolic_return_does_not_gain_writable_provenance() {
 #[test]
 fn dynamic_size_memcpy_relocation_remains_fail_closed() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("memory.o".to_owned())),
+            "copy_dynamic",
+            0x1000,
+        ),
         member: Some("memory.o".to_owned()),
         name: "copy_dynamic".to_owned(),
         address: 0x1000,
@@ -1254,6 +1437,12 @@ fn dynamic_size_memcpy_relocation_remains_fail_closed() {
 #[test]
 fn unresolved_call_relocation_fails_closed() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "unresolved_parent",
+            0x1000,
+        ),
         member: None,
         name: "unresolved_parent".to_owned(),
         address: 0x1000,
@@ -1291,6 +1480,12 @@ fn unresolved_call_relocation_fails_closed() {
 #[test]
 fn unresolved_returning_relocation_continues_with_abi_clobbers() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "unresolved_returning_parent",
+            0x1000,
+        ),
         member: None,
         name: "unresolved_returning_parent".to_owned(),
         address: 0x1000,
@@ -1342,6 +1537,12 @@ fn unresolved_returning_relocation_continues_with_abi_clobbers() {
 #[test]
 fn unresolved_indirect_returning_call_continues_with_abi_clobbers() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "unresolved_indirect_parent",
+            0x1000,
+        ),
         member: None,
         name: "unresolved_indirect_parent".to_owned(),
         address: 0x1000,
@@ -1388,6 +1589,12 @@ fn unresolved_indirect_returning_call_continues_with_abi_clobbers() {
 #[test]
 fn linked_diagnostic_symbol_remains_a_modeled_boundary() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "linked_diagnostic_parent",
+            0x1000,
+        ),
         member: None,
         name: "linked_diagnostic_parent".to_owned(),
         address: 0x1000,
@@ -1423,6 +1630,12 @@ fn linked_diagnostic_symbol_remains_a_modeled_boundary() {
 #[test]
 fn linked_tail_diagnostic_symbol_terminates_without_a_link_register_blocker() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "linked_tail_diagnostic_parent",
+            0x1000,
+        ),
         member: None,
         name: "linked_tail_diagnostic_parent".to_owned(),
         address: 0x1000,
@@ -1461,6 +1674,12 @@ fn linked_tail_diagnostic_symbol_terminates_without_a_link_register_blocker() {
 #[test]
 fn modeled_direct_platform_call_propagates_constant_result() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "fixed_xtal_parent",
+            0x1000,
+        ),
         member: None,
         name: "fixed_xtal_parent".to_owned(),
         address: 0x1000,
@@ -1499,6 +1718,12 @@ fn modeled_direct_platform_call_propagates_constant_result() {
 #[test]
 fn modeled_direct_wide_runtime_call_propagates_both_return_words() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "wide_runtime_parent",
+            0x1000,
+        ),
         member: None,
         name: "wide_runtime_parent".to_owned(),
         address: 0x1000,
@@ -1539,6 +1764,12 @@ fn modeled_direct_wide_runtime_call_propagates_both_return_words() {
 #[test]
 fn reviewed_indirect_call_keeps_abi_identity_without_claiming_execution_semantics() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "reviewed_indirect_parent",
+            0x1000,
+        ),
         member: None,
         name: "reviewed_indirect_parent".to_owned(),
         address: 0x1000,
@@ -1603,6 +1834,12 @@ fn reviewed_indirect_call_keeps_abi_identity_without_claiming_execution_semantic
 #[test]
 fn alternative_reviewed_calls_with_the_same_abi_and_behavior_share_one_model() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "alternative_allocators",
+            0x1000,
+        ),
         member: None,
         name: "alternative_allocators".to_owned(),
         address: 0x1000,
@@ -1671,6 +1908,12 @@ fn alternative_reviewed_calls_with_the_same_abi_and_behavior_share_one_model() {
 #[test]
 fn projected_relaxed_pointer_load_recovers_reviewed_table_call_and_arguments() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "linked_parent",
+            0x1000,
+        ),
         member: None,
         name: "linked_parent".to_owned(),
         address: 0x1000,
@@ -1694,6 +1937,9 @@ fn projected_relaxed_pointer_load_recovers_reviewed_table_call_and_arguments() {
     context.projected_relocations.insert(
         StructuralCallSite::new(&parent, 0x1000),
         vec![StructuralProjectedRelocation {
+            reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                reason: "synthetic fixture".to_owned(),
+            },
             origin_member: Some("pp.o".to_owned()),
             origin_symbol: "linked_parent".to_owned(),
             origin_offsets: vec![0, 4],
@@ -1750,6 +1996,12 @@ fn projected_relaxed_pointer_load_recovers_reviewed_table_call_and_arguments() {
 #[test]
 fn observed_slot_assignment_promotes_reviewed_indirect_call_to_internal_code() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "linked_parent",
+            0x1000,
+        ),
         member: None,
         name: "linked_parent".to_owned(),
         address: 0x1000,
@@ -1772,6 +2024,9 @@ fn observed_slot_assignment_promotes_reviewed_indirect_call_to_internal_code() {
     context.projected_relocations.insert(
         StructuralCallSite::new(&parent, 0x1000),
         vec![StructuralProjectedRelocation {
+            reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                reason: "synthetic fixture".to_owned(),
+            },
             origin_member: Some("consumer.o".to_owned()),
             origin_symbol: "linked_parent".to_owned(),
             origin_offsets: vec![0, 4],
@@ -1831,6 +2086,12 @@ fn observed_slot_assignment_promotes_reviewed_indirect_call_to_internal_code() {
 #[test]
 fn reviewed_void_external_call_is_an_executable_boundary_without_a_fake_result() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "reviewed_void_parent",
+            0x1000,
+        ),
         member: None,
         name: "reviewed_void_parent".to_owned(),
         address: 0x1000,
@@ -1888,6 +2149,12 @@ fn reviewed_void_external_call_is_an_executable_boundary_without_a_fake_result()
 #[test]
 fn reviewed_external_call_keeps_return_and_private_stack_output_independent() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "reviewed_return_and_output",
+            0x1000,
+        ),
         member: None,
         name: "reviewed_return_and_output".to_owned(),
         address: 0x1000,
@@ -2002,6 +2269,12 @@ fn reviewed_external_call_keeps_return_and_private_stack_output_independent() {
 #[test]
 fn reviewed_memory_output_populates_a_nonzero_stack_range() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "reviewed_memory_output",
+            0x1000,
+        ),
         member: None,
         name: "reviewed_memory_output".to_owned(),
         address: 0x1000,
@@ -2102,6 +2375,12 @@ fn reviewed_memory_output_populates_a_nonzero_stack_range() {
 #[test]
 fn reviewed_external_u64_result_keeps_a0_and_a1_independent() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "reviewed_u64_result",
+            0x1000,
+        ),
         member: None,
         name: "reviewed_u64_result".to_owned(),
         address: 0x1000,

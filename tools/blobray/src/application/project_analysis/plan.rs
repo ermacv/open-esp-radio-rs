@@ -4,8 +4,8 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 use serde::Serialize;
 
-use super::{ProjectAnalysisInputs, ProjectAnalysisReport, ProjectAnalysisStatus};
-use crate::project::ProjectSpec;
+use super::pass_spec::PassGraph;
+use super::{ProjectAnalysisReport, ProjectAnalysisStatus};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -41,12 +41,36 @@ impl ProjectAnalysisPlanAction {
     }
 }
 
+/// Whether a work item can run when a declared input is absent.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProjectAnalysisInputRequirement {
+    Required,
+    Optional,
+}
+
+impl ProjectAnalysisInputRequirement {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Required => "required",
+            Self::Optional => "optional",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ProjectAnalysisInput {
+    pub path: PathBuf,
+    pub requirement: ProjectAnalysisInputRequirement,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ProjectAnalysisPlanWorkItem {
     pub name: String,
     pub action: ProjectAnalysisPlanAction,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
+    pub inputs: Vec<ProjectAnalysisInput>,
     pub outputs: Vec<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cause: Option<String>,
@@ -59,6 +83,8 @@ pub struct ProjectAnalysisPlanAwaitingInput {
     pub path: PathBuf,
     #[serde(rename = "producer-stage")]
     pub producer_stage: String,
+    #[serde(rename = "producer-work")]
+    pub producer_work: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -109,25 +135,11 @@ pub(super) struct ProjectAnalysisPlanner {
 }
 
 impl ProjectAnalysisPlanner {
-    pub(super) fn input_materialization(
-        &self,
-        input: &std::path::Path,
-    ) -> Option<(&str, &std::path::Path)> {
-        self.stages.iter().find_map(|(stage, items)| {
-            items.iter().find_map(|item| {
-                item.action
-                    .materializes_inputs()
-                    .then(|| {
-                        item.outputs.iter().find(|output| {
-                            input == output.as_path()
-                                || input.starts_with(output)
-                                || output.starts_with(input)
-                        })
-                    })
-                    .flatten()
-                    .map(|output| (stage.as_str(), output.as_path()))
-            })
-        })
+    pub(super) fn materializes(&self, work: &str) -> bool {
+        self.stages
+            .values()
+            .flatten()
+            .any(|item| item.name == work && item.action.materializes_inputs())
     }
 
     pub(super) fn record(&mut self, stage: &str, item: ProjectAnalysisPlanWorkItem) {
@@ -136,14 +148,31 @@ impl ProjectAnalysisPlanner {
 
     pub(super) fn finish(
         mut self,
-        project: &ProjectSpec,
-        inputs: ProjectAnalysisInputs,
+        graph: &PassGraph,
         execution: ProjectAnalysisReport,
     ) -> ProjectAnalysisPlanReport {
         let mut stages = Vec::with_capacity(execution.stages.len());
         for (index, stage) in execution.stages.into_iter().enumerate() {
-            let dependencies = stage_dependencies(project, inputs, &stage.name);
-            let optional_dependencies = stage_optional_dependencies(project, &stage.name);
+            let (dependencies, optional_dependencies) = match graph.node(&stage.name) {
+                Some(node) => (
+                    node.dependencies
+                        .iter()
+                        .map(|kind| kind.spec().name.to_owned())
+                        .collect(),
+                    node.optional_dependencies
+                        .iter()
+                        .map(|kind| kind.spec().name.to_owned())
+                        .collect(),
+                ),
+                None if matches!(
+                    stage.name.as_str(),
+                    "input-consistency" | "cache-epoch-publication"
+                ) =>
+                {
+                    (Vec::new(), Vec::new())
+                }
+                None => panic!("execution reported an unregistered pass {:?}", stage.name),
+            };
             let work_items = self.stages.remove(&stage.name).unwrap_or_default();
             let terminal = action_for_stage_status(stage.status);
             let (action, cause) = if let Some(action) = terminal {
@@ -174,7 +203,7 @@ impl ProjectAnalysisPlanner {
         let count = |action| stages.iter().filter(|stage| stage.action == action).count();
         ProjectAnalysisPlanReport {
             coverage: execution.coverage,
-            schema: 3,
+            schema: 5,
             command: "project analyze --plan",
             mode: execution.mode,
             read_only: true,
@@ -254,115 +283,11 @@ fn aggregate_actions(
         .unwrap_or(ProjectAnalysisPlanAction::Skip)
 }
 
-pub(super) fn stage_dependencies(
-    project: &ProjectSpec,
-    inputs: ProjectAnalysisInputs,
-    stage: &str,
-) -> Vec<String> {
-    let mut dependencies = Vec::new();
-    if stage == "analysis-coverage" && !project.ir_profiles.is_empty() {
-        dependencies.push("linked-ir".to_owned());
-    }
-    let mut configured = |name: &str, include: bool| {
-        if include {
-            dependencies.push(name.to_owned());
-        }
-    };
-    match stage {
-        "mmio-discovery" | "interface-discovery" => {
-            configured(
-                "symbol-inventory",
-                project.code.is_some() && project.symbol_inventory.is_some(),
-            );
-        }
-        "linked-ir" => {
-            configured(
-                "symbol-inventory",
-                project.code.is_some() && project.symbol_inventory.is_some(),
-            );
-            configured(
-                "interface-discovery",
-                super::linked_ir_uses_reviewed_interfaces(project),
-            );
-        }
-        "event-replays" => {
-            configured(
-                "interface-discovery",
-                inputs.event_replays_require_interfaces && project.interfaces.is_some(),
-            );
-        }
-        "review-scopes" => {
-            configured("linked-ir", !project.ir_profiles.is_empty());
-            configured("mmio-discovery", project.registers.is_some());
-        }
-        "navigation-index" => {
-            configured("symbol-inventory", project.symbol_inventory.is_some());
-            configured("linked-ir", !project.ir_profiles.is_empty());
-            configured("interface-discovery", project.interfaces.is_some());
-        }
-        "code-boundary-validation" | "code-boundary-review" => {
-            configured("symbol-inventory", project.symbol_inventory.is_some());
-        }
-        "register-validation" => {
-            configured("mmio-discovery", project.registers.is_some());
-        }
-        "register-review" => {
-            configured("mmio-discovery", project.registers.is_some());
-            configured(
-                "linked-ir",
-                project.registers.as_ref().is_some_and(|registers| {
-                    project.ir_profiles.iter().any(|profile| {
-                        registers
-                            .review_ir_reports
-                            .iter()
-                            .any(|report| report == &profile.output)
-                    })
-                }),
-            );
-        }
-        "function-validation" => {
-            configured("linked-ir", !project.ir_profiles.is_empty());
-        }
-        "function-review" => {
-            configured("linked-ir", !project.ir_profiles.is_empty());
-            configured(
-                "interface-discovery",
-                project
-                    .interfaces
-                    .as_ref()
-                    .and_then(|paths| paths.pack.as_deref())
-                    .is_some_and(std::path::Path::is_file),
-            );
-        }
-        "interface-validation" => {
-            configured("interface-discovery", project.interfaces.is_some());
-        }
-        "interface-capability-context" => {
-            configured(
-                "interface-validation",
-                project
-                    .interfaces
-                    .as_ref()
-                    .is_some_and(|interfaces| interfaces.capability_context.is_some()),
-            );
-        }
-        _ => {}
-    }
-    dependencies
-}
-
-pub(super) fn stage_optional_dependencies(project: &ProjectSpec, stage: &str) -> Vec<String> {
-    match stage {
-        "linked-ir" if project.code.is_none() && project.symbol_inventory.is_some() => {
-            vec!["symbol-inventory".to_owned()]
-        }
-        _ => Vec::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use super::super::ProjectAnalysisInputs;
     use super::*;
+    use crate::project::ProjectSpec;
 
     fn project() -> ProjectSpec {
         ProjectSpec {
@@ -411,6 +336,7 @@ mod tests {
                 name: format!("linked-ir:profile-{index}"),
                 action: ProjectAnalysisPlanAction::Compute,
                 signature: Some(format!("signature-{index}")),
+                inputs: Vec::new(),
                 outputs: Vec::new(),
                 cause: Some("no cached result matches the current stage signature".to_owned()),
                 awaiting_inputs: Vec::new(),
@@ -431,14 +357,14 @@ mod tests {
                 name: "linked-ir:first".to_owned(),
                 action: ProjectAnalysisPlanAction::Current,
                 signature: Some("first-signature".to_owned()),
+                inputs: Vec::new(),
                 outputs: vec!["generated/first.ir".into()],
                 cause: None,
                 awaiting_inputs: Vec::new(),
             },
         );
         let report = planner.finish(
-            &project(),
-            ProjectAnalysisInputs::default(),
+            &PassGraph::resolve(&project(), ProjectAnalysisInputs::default()),
             ProjectAnalysisReport {
                 coverage: Vec::new(),
                 schema: 7,
@@ -486,11 +412,13 @@ mod tests {
         });
 
         assert_eq!(
-            stage_dependencies(
-                &project,
-                ProjectAnalysisInputs::default(),
-                "interface-capability-context",
-            ),
+            PassGraph::resolve(&project, ProjectAnalysisInputs::default())
+                .node("interface-capability-context")
+                .unwrap()
+                .dependencies
+                .iter()
+                .map(|kind| kind.spec().name)
+                .collect::<Vec<_>>(),
             ["interface-validation"]
         );
     }

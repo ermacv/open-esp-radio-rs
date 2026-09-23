@@ -65,6 +65,88 @@ fn init_temporary_project(label: &str) -> (PathBuf, PathBuf) {
     (directory, manifest)
 }
 
+#[test]
+fn register_queries_use_selected_svd_and_reject_missing_or_invalid_overrides() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let target = repository_root().join("tools/blobray/tests/fixtures/generic-project/target.toml");
+    let manifest = root.join("project.toml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "schema = 4\nid = \"svd-override\"\ntarget-spec = {:?}\nchip-pack = \"chip.toml\"\n",
+            target.display().to_string()
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("chip.toml"),
+        "schema = 3\nid = \"fixture\"\nsvd = [\"base.svd\"]\nknowledge-packs = []\n",
+    )
+    .unwrap();
+    let xml = |address: u32| {
+        format!(
+            r#"<device schemaVersion="1.3"><name>Test</name><version>1</version><description>fixture</description><addressUnitBits>8</addressUnitBits><width>32</width><peripherals><peripheral><name>DEV</name><baseAddress>{address}</baseAddress><registers><register><name>CONTROL</name><addressOffset>0</addressOffset><size>32</size></register></registers></peripheral></peripherals></device>"#
+        )
+    };
+    std::fs::write(root.join("base.svd"), xml(0x1000)).unwrap();
+    let selected = root.join("selected.svd");
+    std::fs::write(&selected, xml(0x2000)).unwrap();
+    let query = |arguments: &[&str], svd: Option<&Path>| {
+        let mut command = blobray();
+        command
+            .current_dir(root)
+            .args(arguments)
+            .arg("--project")
+            .arg(&manifest)
+            .args(["--format", "json", "--progress", "never"]);
+        if let Some(svd) = svd {
+            command.arg("--svd").arg(svd);
+        }
+        command.output().unwrap()
+    };
+    let document = |output: std::process::Output| {
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()
+    };
+    let base = document(query(&["registers", "list"], None));
+    let override_list = document(query(&["registers", "list"], Some(&selected)));
+    assert_ne!(
+        base["registers"][0]["id"],
+        override_list["registers"][0]["id"]
+    );
+    assert_eq!(base["registers"][0]["subject"]["address"], 0x1000);
+    assert_eq!(override_list["registers"][0]["subject"]["address"], 0x2000);
+    assert_eq!(document(query(&["registers", "list"], None)), base);
+    assert_eq!(
+        document(query(&["registers", "list"], Some(&selected))),
+        override_list
+    );
+    let coverage = document(query(&["registers", "coverage"], Some(&selected)));
+    assert_eq!(coverage["registers"], override_list["registers"]);
+    assert_eq!(coverage["sources"], override_list["sources"]);
+    let id = override_list["registers"][0]["evidence"][0]
+        .as_str()
+        .unwrap();
+    let evidence = document(query(&["registers", "evidence", id], Some(&selected)));
+    assert_eq!(evidence["id"], id);
+    let wrong_context = query(&["registers", "evidence", id], None);
+    assert!(!wrong_context.status.success());
+
+    std::fs::remove_file(&selected).unwrap();
+    let missing = query(&["registers", "list"], Some(&selected));
+    assert!(!missing.status.success());
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("explicitly selected SVD"));
+    std::fs::write(&selected, "broken XML").unwrap();
+    let invalid = query(&["registers", "coverage"], Some(&selected));
+    assert!(!invalid.status.success());
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("invalid explicitly selected SVD"));
+}
+
 fn snapshot_tree(root: &Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
     fn collect(root: &Path, directory: &Path, snapshot: &mut Vec<(PathBuf, Option<Vec<u8>>)>) {
         let mut entries = std::fs::read_dir(directory)
@@ -88,6 +170,131 @@ fn snapshot_tree(root: &Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
     snapshot
 }
 
+#[test]
+fn inspect_register_preserves_wide_fields_and_exact_banked_subjects() {
+    use serde_json::json;
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let target = repository_root().join("tools/blobray/tests/fixtures/generic-project/target.toml");
+    let manifest = root.join("project.toml");
+    std::fs::write(&manifest, format!(
+        "schema = 4\nid = \"subject-query\"\ntarget-spec = {:?}\nchip-pack = \"chip.toml\"\n[registers]\nmodel = \"missing-model.toml\"\nfacts = \"missing-facts.json\"\nowned-ranges = [\"dev\"]\nobservations = [\"hints.json\"]\n",
+        target.display().to_string()
+    )).unwrap();
+    std::fs::write(
+        root.join("chip.toml"),
+        "schema = 3\nid = \"fixture\"\nsvd = [\"wide.svd\"]\nknowledge-packs = []\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("wide.svd"), r#"<device schemaVersion="1.3"><name>Test</name><version>1</version><description>fixture</description><addressUnitBits>8</addressUnitBits><width>32</width><peripherals><peripheral><name>DEV</name><baseAddress>0x100001000</baseAddress><registers><register><name>WIDE</name><addressOffset>0</addressOffset><size>512</size><fields><field><name>HIGH</name><bitOffset>300</bitOffset><bitWidth>64</bitWidth></field></fields></register></registers></peripheral></peripherals></device>"#).unwrap();
+    let address = 0x1_0000_1000_u64;
+    std::fs::write(root.join("hints.json"), json!({
+        "schema_version":1, "artifact":"synthetic-hints", "applicability":{}, "gaps":[],
+        "observations": ([address, address+8].map(|address| json!({
+            "id":address.to_string(), "subject":{"chip":"unknown","address_space":"cpu","route":"indexed","bank":"second","address":address},
+            "kind":"hint", "physical_width":32, "payload":{"note":"unresolved bank operation"}
+        })))
+    }).to_string()).unwrap();
+    let query = |args: &[&str]| {
+        let output = blobray()
+            .current_dir(root)
+            .args(args)
+            .arg("--project")
+            .arg(&manifest)
+            .args(["--format", "json", "--progress", "never"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()
+    };
+    let list = query(&["registers", "list"]);
+    let records = list["registers"].as_array().unwrap();
+    assert_eq!(records.len(), 3);
+    let wide = records
+        .iter()
+        .find(|r| r["subject"]["bank"].is_null())
+        .unwrap();
+    let bank = records
+        .iter()
+        .find(|r| !r["subject"]["bank"].is_null() && r["subject"]["address"] == address)
+        .unwrap();
+    let all = query(&["inspect", "register", "0x100001000"]);
+    assert_eq!(all["register"]["subjects"].as_array().unwrap().len(), 2);
+    assert!(all["recording"].is_null());
+    assert!(all["register"]["width"].is_null());
+    let exact = query(&["inspect", "register", wide["id"].as_str().unwrap()]);
+    assert_eq!(exact["schema_version"], 10);
+    assert_eq!(exact["register"]["inventory_snapshot"], list["snapshot_id"]);
+    assert_eq!(list["schema_version"], 2);
+    assert_eq!(
+        query(&[
+            "registers",
+            "list",
+            "--start",
+            "0x100001000",
+            "--end-exclusive",
+            "0x100001001"
+        ])["total"],
+        2
+    );
+    assert_eq!(
+        query(&[
+            "registers",
+            "coverage",
+            "--start",
+            "0x100001008",
+            "--end-exclusive",
+            "0x100001009"
+        ])["total"],
+        1
+    );
+
+    assert!(exact["register"].get("name_source").is_none());
+    assert_eq!(exact["register"]["subjects"], json!([wide]));
+    assert_eq!(exact["register"]["address"], address);
+    let fields = exact["register"]["fields"].as_array().unwrap();
+    assert_eq!(fields.len(), wide["fields"].as_object().unwrap().len());
+    let high = fields.iter().find(|f| f["field"]["offset"] == 300).unwrap();
+    assert_eq!(high["field"]["width"], 64);
+    assert!(high["field"]["mask"].is_null());
+    assert_eq!(high["field"]["semantics"]["state"], "unknown");
+    assert!(
+        exact["conclusion"]
+            .as_str()
+            .unwrap()
+            .contains("no observed access sites")
+    );
+    assert!(
+        exact["neighbors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["subject"] == wide["id"])
+    );
+    let selected_bank = query(&["inspect", "register", bank["id"].as_str().unwrap()]);
+    assert_eq!(selected_bank["register"]["subjects"], json!([bank]));
+    assert!(selected_bank["recording"].is_null());
+    assert!(
+        selected_bank["register"]["coverage_gaps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["reason"].as_str().unwrap().contains("route or bank"))
+    );
+    assert_eq!(selected_bank["neighbors"].as_array().unwrap().len(), 2);
+    assert!(
+        selected_bank["neighbors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["subject"] != wide["id"])
+    );
+}
+
 fn write_rv32_symbol_fixture(path: &Path) {
     let bytes = include_str!("fixtures/symbols-rv32.hex")
         .split_ascii_whitespace()
@@ -108,6 +315,89 @@ fn write_rv32_e2e_fixture(path: &Path) {
         .map(|octet| u8::from_str_radix(std::str::from_utf8(octet).unwrap(), 16).unwrap())
         .collect::<Vec<_>>();
     std::fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn inspect_analysis_keeps_repeated_occurrences_in_reports_and_impacts() {
+    use object::{
+        Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,
+        write::{Object, Symbol, SymbolSection},
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("repeated.a");
+    let mut archive = b"!<arch>\n".to_vec();
+    for _ in 0..2 {
+        let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+        let text = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+        // An environment call leaves both physical occurrences incomplete.
+        object.append_section_data(text, &[0x73, 0, 0, 0, 0x67, 0x80, 0, 0], 4);
+        object.add_symbol(Symbol {
+            name: b"entry".to_vec(),
+            value: 0,
+            size: 8,
+            kind: SymbolKind::Text,
+            scope: SymbolScope::Dynamic,
+            weak: false,
+            section: SymbolSection::Section(text),
+            flags: SymbolFlags::None,
+        });
+        let bytes = object.write().unwrap();
+        writeln!(
+            archive,
+            "{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`",
+            "same.o/",
+            0,
+            0,
+            0,
+            "100644",
+            bytes.len()
+        )
+        .unwrap();
+        archive.extend_from_slice(&bytes);
+        if !bytes.len().is_multiple_of(2) {
+            archive.push(b'\n');
+        }
+    }
+    std::fs::write(&path, archive).unwrap();
+    let output = blobray()
+        .current_dir(repository_root())
+        .args([
+            "--project",
+            GENERIC_PROJECT,
+            "--format",
+            "json",
+            "inspect",
+            "analyze",
+            "--artifact",
+        ])
+        .arg(&path)
+        .args(["--entry-contract", "none", "--symbol-prefix", "entry"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["schema_version"], 4);
+    assert_eq!(report["summary"]["functions"], 2);
+    let functions = report["functions"].as_array().unwrap();
+    assert_eq!(functions.len(), 2);
+    assert_eq!(functions[0]["symbol"], functions[1]["symbol"]);
+    assert_eq!(functions[0]["owner"], functions[1]["owner"]);
+    assert_ne!(functions[0]["code_identity"], functions[1]["code_identity"]);
+    let impacts = report["blocker_impact"].as_array().unwrap();
+    assert!(!impacts.is_empty());
+    for impact in impacts {
+        assert_eq!(impact["affected_functions"], 2);
+        let affected = impact["functions"].as_array().unwrap();
+        assert_eq!(affected.len(), 2);
+        for function in functions {
+            assert!(affected.contains(&function["code_identity"]));
+        }
+    }
 }
 
 #[test]
@@ -1043,6 +1333,49 @@ include-reachable = true
         std::fs::read_to_string(directory.join("generated/pac/src/generated.rs")).unwrap();
     syn::parse_file(&reviewed_pac).expect("published reviewed PAC must be valid Rust syntax");
 
+    let mut application = blobray::BlobrayApplication::open(&manifest).unwrap();
+    let baseline = application.snapshot().unwrap();
+    let functions = baseline.functions.clone();
+    assert!(
+        functions
+            .iter()
+            .any(|function| !function.mmio_sites.is_empty())
+    );
+    let configuration: toml_edit::DocumentMut =
+        std::fs::read_to_string(&manifest).unwrap().parse().unwrap();
+    let facts_path = directory.join(configuration["registers"]["facts"].as_str().unwrap());
+    std::fs::write(&facts_path, b"invalid newer exported MMIO facts").unwrap();
+    let published = blobray::PublishedAnalysisOutputs::open(&manifest)
+        .unwrap()
+        .unwrap();
+    for output in &published.manifest().outputs {
+        std::fs::remove_file(&output.path).unwrap();
+    }
+    let mut fresh = blobray::BlobrayApplication::open(&manifest).unwrap();
+    let restored = fresh.snapshot().unwrap();
+    assert_eq!(
+        restored.functions, functions,
+        "function annotations must use the same published epoch as IR"
+    );
+    assert_eq!(restored.code, baseline.code);
+    assert_eq!(restored.registers, baseline.registers);
+    assert_eq!(restored.interfaces, baseline.interfaces);
+    assert_eq!(
+        restored.generated_analysis_epoch,
+        baseline.generated_analysis_epoch
+    );
+    assert!(matches!(
+        restored.interfaces.observation_state,
+        blobray::InterfaceObservationState::Available
+    ));
+    assert!(!restored.diagnostics.iter().any(|diagnostic| matches!(
+        diagnostic.component.as_str(),
+        "code-boundaries" | "interface-observations" | "interface-review"
+    )));
+
+    drop(fresh);
+    drop(application);
+
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -1799,7 +2132,7 @@ fn project_analysis_plan_is_deterministic_and_read_only_when_blocked() {
     assert_eq!(first.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&first.stdout).expect("analysis plan stdout must be valid JSON");
-    assert_eq!(document["schema"], 3);
+    assert_eq!(document["schema"], 5);
     assert_eq!(document["command"], "project analyze --plan");
     assert_eq!(document["mode"], "write");
     assert_eq!(document["read_only"], true);
@@ -1956,13 +2289,189 @@ fn project_analysis_plan_tracks_soft_symbol_materialization_for_linked_ir() {
         item["awaiting-inputs"][0]["producer-stage"],
         "symbol-inventory"
     );
+    assert_eq!(
+        item["awaiting-inputs"][0]["producer-work"],
+        "symbol-inventory"
+    );
     assert!(
         item["awaiting-inputs"][0]["path"]
             .as_str()
             .is_some_and(|path| path.ends_with("generated/symbols.json"))
     );
+    let inputs = item["inputs"].as_array().unwrap();
+    assert!(inputs.iter().any(|input| {
+        input["path"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("generated/symbols.json"))
+            && input["requirement"] == "optional"
+    }));
+    assert!(
+        inputs
+            .iter()
+            .any(|input| input["path"] == artifact.to_string_lossy().as_ref()
+                && input["requirement"] == "required")
+    );
+    let coverage = document["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|stage| stage["name"] == "analysis-coverage")
+        .unwrap();
+    let verification = coverage["work-items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["name"] == "coverage:fixture")
+        .unwrap();
+    assert_eq!(verification["outputs"], serde_json::json!([]));
+    assert!(
+        verification["inputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|input| input["path"] == artifact.to_string_lossy().as_ref())
+    );
+    assert!(
+        verification["inputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|input| input["path"]
+                .as_str()
+                .is_some_and(|path| path.ends_with("coverage.json")))
+    );
+    assert!(
+        verification["awaiting-inputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|input| input["producer-stage"] == "linked-ir"
+                && input["producer-work"] == "linked-ir:fixture")
+    );
     assert_eq!(snapshot_tree(&directory), before);
     std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn analysis_output_conflicts_fail_before_any_write_in_every_mode() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let target = repository_root().join("tools/blobray/tests/fixtures/generic-project/target.toml");
+    let manifest = root.join("vendor-project.toml");
+    write_rv32_symbol_fixture(&root.join("vendor.o"));
+    std::fs::write(
+        root.join("local.toml"),
+        "schema = 1\n[[inputs]]\nrole = \"source-artifact:fixture\"\npath = \"vendor.o\"\n",
+    )
+    .unwrap();
+    for (output, reason) in [
+        ("vendor.o", "protected analysis input"),
+        ("local.toml", "protected analysis input"),
+        ("vendor-project.toml", "protected analysis input"),
+        (
+            "generated/fixture.ir/undeclared.json",
+            "conflicting output ownership",
+        ),
+    ] {
+        std::fs::write(&manifest, format!(
+            "schema = 4\nid = \"output-conflict\"\ntarget-spec = {:?}\n[analysis.symbols]\noutput = {output:?}\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
+            target.display().to_string(),
+        )).unwrap();
+        let before = snapshot_tree(root);
+        for args in [
+            vec!["project", "analyze", "--plan"],
+            vec!["project", "analyze", "--plan", "--check"],
+            vec!["project", "analyze", "--check"],
+            vec!["project", "analyze"],
+        ] {
+            let result = run_project_command(&manifest, &args);
+            assert_eq!(
+                result.status.code(),
+                Some(2),
+                "{output}, {args:?}: {}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+            assert!(
+                report.to_string().contains(reason),
+                "{output}, {args:?}: {report}"
+            );
+            assert_eq!(snapshot_tree(root), before, "{output}, {args:?}");
+            assert!(!root.join("generated/.blobray-cache").exists());
+        }
+    }
+}
+
+#[test]
+fn plan_coverage_names_the_exact_producer_for_each_ir_profile() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let target = repository_root().join("tools/blobray/tests/fixtures/generic-project/target.toml");
+    let manifest = root.join("vendor-project.toml");
+    let mut declaration = format!(
+        "schema = 4\nid = \"profile-owners\"\ntarget-spec = {:?}\n",
+        target.display().to_string()
+    );
+    for id in ["first", "second"] {
+        declaration.push_str(&format!("[[analysis.ir]]\nid = {id:?}\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/{id}.ir\"\n"));
+    }
+    std::fs::write(&manifest, declaration).unwrap();
+    write_rv32_symbol_fixture(&root.join("vendor.o"));
+    std::fs::write(
+        root.join("local.toml"),
+        "schema = 1\n[[inputs]]\nrole = \"source-artifact:fixture\"\npath = \"vendor.o\"\n",
+    )
+    .unwrap();
+    let before = snapshot_tree(root);
+    let result = run_project_command(&manifest, &["project", "analyze", "--plan"]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    let stage = report["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|stage| stage["name"] == "analysis-coverage")
+        .unwrap();
+    let items = stage["work-items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    for id in ["first", "second"] {
+        let item = items
+            .iter()
+            .find(|item| item["name"] == format!("coverage:{id}"))
+            .unwrap();
+        let awaiting = item["awaiting-inputs"].as_array().unwrap();
+        assert!(!awaiting.is_empty());
+        assert!(
+            awaiting
+                .iter()
+                .all(|input| input["producer-stage"] == "linked-ir"
+                    && input["producer-work"] == format!("linked-ir:{id}"))
+        );
+    }
+    let human = blobray()
+        .args([
+            "project",
+            "analyze",
+            "--plan",
+            "--details",
+            "--color",
+            "never",
+            "--project",
+        ])
+        .arg(&manifest)
+        .output()
+        .unwrap();
+    assert!(human.status.success());
+    let rendered = String::from_utf8(human.stdout).unwrap();
+    assert!(rendered.contains("Producer work"));
+    for id in ["first", "second"] {
+        assert!(rendered.contains(&format!("linked-ir:{id}")));
+    }
+    assert_eq!(snapshot_tree(root), before);
 }
 
 #[test]
@@ -2669,7 +3178,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     let report = directory.join("generated/symbols.json");
     let document: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&report).unwrap()).unwrap();
-    assert_eq!(document["schema_version"], 6);
+    assert_eq!(document["schema_version"], 7);
     assert_eq!(document["command"], "symbols inventory");
     assert!(document["summary"]["symbol_facts"].as_u64().unwrap() > 0);
     assert!(document["summary"]["executable_bytes"].as_u64().unwrap() > 0);
@@ -2687,7 +3196,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         &std::fs::read(directory.join("generated/navigation.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(navigation["schema_version"], 3);
+    assert_eq!(navigation["schema_version"], 7);
     assert_eq!(navigation["summary"]["linked_ir_functions"], 1);
     let fixture = navigation["symbols"]
         .as_array()
@@ -2697,7 +3206,13 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         .expect("fixture_entry navigation symbol");
     assert_eq!(fixture["inventory"].as_array().unwrap().len(), 1);
     assert_eq!(fixture["linked_ir"].as_array().unwrap().len(), 1);
-    assert!(fixture["id"].as_str().unwrap().starts_with("symbol-v1:"));
+    assert!(fixture["id"].as_str().unwrap().starts_with("symbol-v2:"));
+    assert_eq!(fixture["occurrence"]["kind"], "symbol");
+    assert_eq!(
+        fixture["occurrence"]["artifact_sha256"],
+        fixture["artifact_sha256"]
+    );
+    assert_eq!(fixture["labels"].as_array().unwrap().len(), 1);
 
     let status = blobray()
         .current_dir(repository_root())
@@ -2953,7 +3468,7 @@ fn revision_diff_is_a_typed_project_workflow() {
         )
         .unwrap();
         serde_json::json!({
-            "schema_version": 5,
+            "schema_version": 6,
             "command": "revision snapshot",
             "name": name,
             "project": "revision-diff",
@@ -2985,7 +3500,13 @@ fn revision_diff_is_a_typed_project_workflow() {
                 },
                 "blocker_roots": []
             }],
-            "registers": [],
+            "registers": {
+                "inventory": {
+                    "schema_version": 1, "sources": [], "registers": {}, "evidence": {},
+                    "gaps": [], "regions": [], "address_domains": []
+                },
+                "fingerprints": {}, "context_fingerprint": null
+            },
             "interfaces": [],
             "assertions": [],
             "vendor_bugs": [],
@@ -3064,11 +3585,24 @@ fn revision_snapshot_creates_a_durable_immutable_state() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 4\nid = \"revision-state\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
+            "schema = 4\nid = \"revision-state\"\ntarget-spec = {:?}\nchip-pack = \"chip.toml\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
             target.display().to_string()
         ),
     )
     .unwrap();
+    std::fs::write(
+        directory.join("chip.toml"),
+        "schema = 3\nid = \"fixture\"\nsvd = [\"base.svd\"]\nknowledge-packs = []\n",
+    )
+    .unwrap();
+    let svd = |address| {
+        format!(
+            r#"<device schemaVersion="1.3"><name>Test</name><version>1</version><description>fixture</description><addressUnitBits>8</addressUnitBits><width>32</width><peripherals><peripheral><name>DEV</name><baseAddress>{address}</baseAddress><registers><register><name>CONTROL</name><description>unknown behavior</description><addressOffset>0</addressOffset><size>32</size></register></registers></peripheral></peripherals></device>"#
+        )
+    };
+    std::fs::write(directory.join("base.svd"), svd(0x1000)).unwrap();
+    let selected_svd = directory.join("selected.svd");
+    std::fs::write(&selected_svd, svd(0x2000)).unwrap();
     let artifact = directory.join("vendor.o");
     write_rv32_symbol_fixture(&artifact);
     let inputs = blobray()
@@ -3128,6 +3662,35 @@ fn revision_snapshot_creates_a_durable_immutable_state() {
             .join("revisions/snapshots/vendor-1.json.gz")
             .is_file()
     );
+    let stored: serde_json::Value = serde_json::from_reader(flate2::read::GzDecoder::new(
+        std::fs::File::open(directory.join("revisions/snapshots/vendor-1.json.gz")).unwrap(),
+    ))
+    .unwrap();
+    assert_eq!(stored["schema_version"], 6);
+    let listed = run_project_command(&manifest, &["registers", "list"]);
+    assert!(
+        listed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&listed.stderr)
+    );
+    let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
+    let stored_registers = stored["registers"]["inventory"]["registers"]
+        .as_object()
+        .unwrap();
+    assert_eq!(
+        stored_registers.len(),
+        listed["registers"].as_array().unwrap().len()
+    );
+    for register in listed["registers"].as_array().unwrap() {
+        assert_eq!(
+            &stored_registers[register["id"].as_str().unwrap()],
+            register
+        );
+    }
+    assert_eq!(
+        stored["registers"]["inventory"]["sources"],
+        listed["sources"]
+    );
     let state = std::fs::read_to_string(directory.join("revisions/state.blobray")).unwrap();
     assert!(state.starts_with("blobray-revision-state 1\n"));
     assert!(state.contains("project [\"revision-state\"]\n"));
@@ -3165,6 +3728,44 @@ fn revision_snapshot_creates_a_durable_immutable_state() {
         std::fs::read(directory.join("revisions/state.blobray")).unwrap(),
         state_before_live_diff,
         "a live diff must not advance or rewrite the revision state"
+    );
+    let overridden = run_project_command(
+        &manifest,
+        &[
+            "project",
+            "revision",
+            "diff",
+            "vendor-1",
+            "@live",
+            "--svd",
+            selected_svd.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        overridden.status.success(),
+        "{}",
+        String::from_utf8_lossy(&overridden.stderr)
+    );
+    let overridden: serde_json::Value = serde_json::from_slice(&overridden.stdout).unwrap();
+    let changes = overridden["changes"].as_array().unwrap();
+    assert!(
+        changes
+            .iter()
+            .any(|change| change["domain"] == "register" && change["classification"] == "added")
+    );
+    assert!(
+        changes
+            .iter()
+            .any(|change| change["domain"] == "register" && change["classification"] == "removed")
+    );
+    assert!(
+        changes
+            .iter()
+            .any(|change| change["domain"] == "register-coverage")
+    );
+    assert_eq!(
+        std::fs::read(directory.join("revisions/state.blobray")).unwrap(),
+        state_before_live_diff
     );
     let prepared = run_project_command(&manifest, &["project", "revision", "prepare-update"]);
     assert!(
@@ -3230,6 +3831,134 @@ fn named_archive(path: &Path, name: &str) {
         .unwrap();
     bytes[offset..offset + 13].copy_from_slice(name.as_bytes());
     std::fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn application_function_queries_use_one_published_epoch_without_ir_exports() {
+    let directory = tempfile::tempdir().unwrap();
+    let profile = format!(
+        "{COVERAGE_PROFILE}\n[functions]\npack = \"functions/reviewed.toml\"\nprofiles = [\"fixture\"]\n"
+    );
+    let manifest = coverage_project(directory.path(), &profile);
+    let artifact = directory.path().join("fixture.elf");
+    write_rv32_e2e_fixture(&artifact);
+    assert_success(&bind_coverage_inputs(
+        &manifest,
+        &[("source-artifact:fixture", &artifact)],
+    ));
+    assert_success(&run_project_command(
+        &manifest,
+        &["advanced", "ir", "build"],
+    ));
+    assert_success(&run_project_command(
+        &manifest,
+        &["advanced", "functions", "init-pack"],
+    ));
+    // Exported IR exists, but no project epoch has been published. Querying it
+    // must not substitute standalone output files for publication authority.
+    let mut before = blobray::BlobrayApplication::open(&manifest).unwrap();
+    let missing = before.snapshot().unwrap();
+    assert!(missing.functions.is_empty());
+    assert!(
+        serde_json::to_string(&missing)
+            .unwrap()
+            .contains("no published analysis epoch")
+    );
+    assert_success(&run_project_command(&manifest, &["project", "analyze"]));
+    assert!(
+        before.snapshot().unwrap().functions.is_empty(),
+        "a failed capture stays failed until reload"
+    );
+
+    let mut application = blobray::BlobrayApplication::open(&manifest).unwrap();
+    let snapshot = application.snapshot().unwrap();
+    let identity = snapshot
+        .functions
+        .iter()
+        .find(|function| function.symbol == "fixture_entry")
+        .unwrap()
+        .identity
+        .clone();
+    let detail = application.function_detail(&identity).unwrap().unwrap();
+    assert_eq!(
+        snapshot.generated_analysis_epoch.as_deref(),
+        Some(detail.analysis_epoch.as_str())
+    );
+    assert!(!detail.investigation.as_ref().unwrap().semantics.is_empty());
+    std::fs::remove_dir_all(directory.path().join("generated/fixture.ir")).unwrap();
+    assert_eq!(
+        application.snapshot().unwrap().functions,
+        snapshot.functions
+    );
+    assert_eq!(
+        application.function_detail(&identity).unwrap().unwrap(),
+        detail
+    );
+    let mut fresh = blobray::BlobrayApplication::open(&manifest).unwrap();
+    assert_eq!(fresh.snapshot().unwrap().functions, snapshot.functions);
+    assert_eq!(fresh.function_detail(&identity).unwrap().unwrap(), detail);
+    assert_success(&run_project_command(&manifest, &["project", "analyze"]));
+    assert_eq!(
+        application.function_detail(&identity).unwrap().unwrap(),
+        detail
+    );
+    // Do not combine the old published semantics with a newly changed binary.
+    let mut bytes = std::fs::read(&artifact).unwrap();
+    bytes.extend_from_slice(b"changed source identity");
+    std::fs::write(&artifact, bytes).unwrap();
+    let error = application.function_detail(&identity).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("does not match the published function evidence"),
+        "{error}"
+    );
+}
+
+#[test]
+fn project_analysis_publishes_outputs_readable_without_generated_files() {
+    use blobray::PublishedAnalysisOutputs;
+
+    let directory = tempfile::tempdir().unwrap();
+    let manifest = coverage_project(directory.path(), COVERAGE_PROFILE);
+    let artifact = directory.path().join("fixture.a");
+    named_archive(&artifact, "fixture_entry");
+    assert_success(&bind_coverage_inputs(
+        &manifest,
+        &[
+            ("source-artifact:fixture", &artifact),
+            ("source-inventory:fixture", &artifact),
+        ],
+    ));
+    assert_success(&run_project_command(&manifest, &["project", "analyze"]));
+    let snapshot = PublishedAnalysisOutputs::open(&manifest).unwrap().unwrap();
+    let mut expected = std::collections::BTreeMap::new();
+    for output in &snapshot.manifest().outputs {
+        let bytes = std::fs::read(&output.path).unwrap();
+        assert_eq!(output.bytes, bytes.len() as u64);
+        assert_eq!(snapshot.read(&output.path).unwrap().as_ref(), Some(&bytes));
+        expected.insert(output.path.clone(), bytes);
+    }
+    let bundle = directory.path().join("generated/fixture.ir");
+    assert!(expected.contains_key(&bundle.join("functions.jsonl")));
+    assert!(expected.contains_key(&bundle.join("coverage.json")));
+    for path in expected.keys() {
+        std::fs::remove_file(path).unwrap();
+    }
+    for (path, bytes) in &expected {
+        assert_eq!(snapshot.read(path).unwrap().as_ref(), Some(bytes));
+    }
+    // A live manifest reader must allow the next coordinator to restore and
+    // publish while retaining its own prior epoch and content.
+    assert_success(&run_project_command(&manifest, &["project", "analyze"]));
+    let next = PublishedAnalysisOutputs::open(&manifest).unwrap().unwrap();
+    assert_ne!(next.manifest().epoch, snapshot.manifest().epoch);
+    assert_eq!(next.manifest().outputs, snapshot.manifest().outputs);
+    for (path, bytes) in expected {
+        assert_eq!(snapshot.read(&path).unwrap().unwrap(), bytes);
+        assert_eq!(next.read(&path).unwrap().unwrap(), bytes);
+        assert_eq!(std::fs::read(path).unwrap(), bytes);
+    }
 }
 
 #[test]

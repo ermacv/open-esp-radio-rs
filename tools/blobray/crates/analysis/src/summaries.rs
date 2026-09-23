@@ -1,0 +1,595 @@
+//! Bounded composition of saved local facts. No source discovery or publication.
+use super::*;
+
+/// A selected, acyclic callee. Application resolves exact image-qualified identity.
+pub struct Callee<'a> {
+    pub offset: u64,
+    pub analysis: &'a FunctionAnalysisId,
+    pub source: &'a FunctionSource,
+    pub object: &'a ObjectId,
+    pub records: &'a [FunctionRecord],
+}
+fn substitute(v: &AbstractValue, map: &[AbstractValue]) -> Result<AbstractValue> {
+    match v {
+        AbstractValue::Expression { id } => map.get(*id as usize).cloned().ok_or_else(|| {
+            Error::new(
+                ErrorCode::Integrity,
+                "expression references an absent or forward node",
+            )
+        }),
+        v => Ok(v.clone()),
+    }
+}
+fn in_frame(
+    v: &AbstractValue,
+    map: &[AbstractValue],
+    callee: &Callee<'_>,
+) -> Result<AbstractValue> {
+    match v {
+        AbstractValue::ImageAddress { address } => Ok(AbstractValue::ScopedAddress {
+            source: callee.source.clone(),
+            object: callee.object.clone(),
+            address: *address,
+        }),
+        // Stack storage belongs to the callee frame; do not alias it with its caller.
+        AbstractValue::EntryStack { .. } => Ok(AbstractValue::Unknown),
+        _ => substitute(v, map),
+    }
+}
+fn import_expression(
+    expr: &Expression,
+    map: &[AbstractValue],
+    callee: &Callee<'_>,
+) -> Result<Expression> {
+    Ok(match expr {
+        Expression::Integer { op, left, right } => Expression::Integer {
+            op: *op,
+            left: in_frame(left, map, callee)?,
+            right: in_frame(right, map, callee)?,
+        },
+        Expression::Load {
+            address,
+            width,
+            signed,
+        } => Expression::Load {
+            address: in_frame(address, map, callee)?,
+            width: *width,
+            signed: *signed,
+        },
+        e => e.clone(),
+    })
+}
+fn rewrite(expr: &Expression, map: &[AbstractValue]) -> Result<Expression> {
+    Ok(match expr {
+        Expression::Integer { op, left, right } => Expression::Integer {
+            op: *op,
+            left: substitute(left, map)?,
+            right: substitute(right, map)?,
+        },
+        Expression::Load {
+            address,
+            width,
+            signed,
+        } => Expression::Load {
+            address: substitute(address, map)?,
+            width: *width,
+            signed: *signed,
+        },
+        e => e.clone(),
+    })
+}
+fn push_expression(
+    out: &mut Vec<FunctionRecord>,
+    next: &mut u32,
+    offset: u64,
+    origin: Option<FunctionAnalysisId>,
+    expression: Expression,
+) -> Result<AbstractValue> {
+    if let Expression::Integer { op, left, right } = &expression {
+        if let (AbstractValue::Constant { value: a }, AbstractValue::Constant { value: b }) =
+            (left, right)
+        {
+            return Ok(AbstractValue::Constant {
+                value: values::fold_integer(*op, *a, *b),
+            });
+        }
+        if matches!(
+            (op, right),
+            (
+                IntegerOp::Add | IntegerOp::Or | IntegerOp::Xor,
+                AbstractValue::Constant { value: 0 }
+            ) | (IntegerOp::And, AbstractValue::Constant { value: u32::MAX })
+        ) {
+            return Ok(left.clone());
+        }
+    }
+    let id = *next;
+    *next = next
+        .checked_add(1)
+        .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "expression ID overflow"))?;
+    out.push(FunctionRecord::Expression {
+        id,
+        offset,
+        origin,
+        expression,
+    });
+    Ok(AbstractValue::Expression { id })
+}
+/// Input/output capacity is owned by the application; every loop consumes its control.
+/// Callee effects are may-effects, never a claim of unconditional execution/order.
+pub struct Composed<'a> {
+    pub records: Vec<FunctionRecord>,
+    _capacity: MemoryReservation<'a>,
+}
+pub fn compose<'a>(
+    records: &[FunctionRecord],
+    callees: &[Callee<'_>],
+    memory: &'a WorkingMemory,
+    control: &mut dyn RunControl,
+) -> Result<Composed<'a>> {
+    let count = callees
+        .iter()
+        .try_fold(records.len(), |n, c| {
+            n.checked_add(c.records.len().checked_mul(2)?)
+        })
+        .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "summary capacity overflow"))?;
+    let capacity = memory.reserve(
+        (count as u64)
+            .checked_mul(2048)
+            .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "summary bytes overflow"))?,
+        control.position(),
+    )?;
+    let mut out = reserve_vec(count)?;
+    let mut mapping = Vec::new();
+    let mut next = 0;
+    let mut returns: Vec<(u64, AbstractValue, AbstractValue)> = Vec::new();
+    // Local expressions are topological, including arguments to earlier calls.
+    for record in records {
+        control.checkpoint(1)?;
+        if let FunctionRecord::Expression {
+            id,
+            offset,
+            origin,
+            expression,
+        } = record
+        {
+            if *id as usize != mapping.len() {
+                return Err(Error::new(
+                    ErrorCode::Integrity,
+                    "noncanonical expression IDs",
+                ));
+            }
+            let value = if let Expression::CallResult { callsite, register } = expression {
+                if !returns.iter().any(|r| r.0 == *callsite) {
+                    let callee = callees.iter().find(|c| c.offset == *callsite);
+                    let args = records.iter().find_map(|r| {
+                        if let FunctionRecord::CallInputs { offset, registers } = r {
+                            (*offset == *callsite).then_some(registers)
+                        } else {
+                            None
+                        }
+                    });
+                    if let (Some(callee), Some(args)) = (callee, args) {
+                        let args: Vec<_> = args
+                            .iter()
+                            .map(|v| substitute(v, &mapping))
+                            .collect::<Result<_>>()?;
+                        let mut imported = Vec::new();
+                        let mut low = None;
+                        let mut high = None;
+                        let mut complete = true;
+                        for r in callee.records {
+                            control.checkpoint(1)?;
+                            match r {
+                                FunctionRecord::Expression {
+                                    id,
+                                    offset,
+                                    origin,
+                                    expression,
+                                } => {
+                                    if *id as usize != imported.len() {
+                                        return Err(Error::new(
+                                            ErrorCode::Integrity,
+                                            "invalid callee DAG",
+                                        ));
+                                    }
+                                    let v = match expression {
+                                        Expression::EntryRegister { register } => args
+                                            .get(*register as usize)
+                                            .cloned()
+                                            .unwrap_or(AbstractValue::Unknown),
+                                        _ => push_expression(
+                                            &mut out,
+                                            &mut next,
+                                            *offset,
+                                            Some(
+                                                origin.as_ref().unwrap_or(callee.analysis).clone(),
+                                            ),
+                                            import_expression(expression, &imported, callee)?,
+                                        )?,
+                                    };
+                                    imported.push(v);
+                                }
+                                FunctionRecord::ReturnValue {
+                                    low: a, high: b, ..
+                                } => {
+                                    for (slot, v) in [(&mut low, a), (&mut high, b)] {
+                                        let v = in_frame(v, &imported, callee)?;
+                                        *slot = Some(match slot.as_ref() {
+                                            None => v,
+                                            Some(old) if old == &v => v,
+                                            _ => AbstractValue::Unknown,
+                                        });
+                                    }
+                                }
+                                FunctionRecord::MemoryAccess {
+                                    offset,
+                                    access,
+                                    width,
+                                    address,
+                                    value,
+                                    ..
+                                } => {
+                                    out.push(FunctionRecord::CalleeEffect {
+                                        callsite: *callsite,
+                                        analysis: callee.analysis.clone(),
+                                        offset: *offset,
+                                        access: *access,
+                                        width: *width,
+                                        address: in_frame(address, &imported, callee)?,
+                                        value: value
+                                            .as_ref()
+                                            .map(|v| in_frame(v, &imported, callee))
+                                            .transpose()?,
+                                    });
+                                }
+                                FunctionRecord::CalleeEffect {
+                                    analysis,
+                                    offset,
+                                    access,
+                                    width,
+                                    address,
+                                    value,
+                                    ..
+                                } => {
+                                    out.push(FunctionRecord::CalleeEffect {
+                                        callsite: *callsite,
+                                        analysis: analysis.clone(),
+                                        offset: *offset,
+                                        access: *access,
+                                        width: *width,
+                                        address: in_frame(address, &imported, callee)?,
+                                        value: value
+                                            .as_ref()
+                                            .map(|v| in_frame(v, &imported, callee))
+                                            .transpose()?,
+                                    });
+                                }
+                                FunctionRecord::SemanticGap { .. } | FunctionRecord::Gap { .. } => {
+                                    complete = false
+                                }
+                                _ => (),
+                            }
+                        }
+                        // Missing/partial return behavior cannot supply a value.
+                        returns.push((
+                            *callsite,
+                            if complete {
+                                low.unwrap_or(AbstractValue::Unknown)
+                            } else {
+                                AbstractValue::Unknown
+                            },
+                            if complete {
+                                high.unwrap_or(AbstractValue::Unknown)
+                            } else {
+                                AbstractValue::Unknown
+                            },
+                        ));
+                    } else {
+                        returns.push((*callsite, AbstractValue::Unknown, AbstractValue::Unknown));
+                    }
+                }
+                let r = returns.iter().find(|r| r.0 == *callsite).unwrap();
+                if *register == 10 {
+                    r.1.clone()
+                } else {
+                    r.2.clone()
+                }
+            } else {
+                push_expression(
+                    &mut out,
+                    &mut next,
+                    *offset,
+                    origin.clone(),
+                    rewrite(expression, &mapping)?,
+                )?
+            };
+            mapping.push(value);
+        }
+    }
+    for record in records {
+        control.checkpoint(1)?;
+        let r = match record {
+            FunctionRecord::Expression { .. } => continue,
+            FunctionRecord::Condition {
+                offset,
+                test,
+                left,
+                right,
+            } => FunctionRecord::Condition {
+                offset: *offset,
+                test: *test,
+                left: substitute(left, &mapping)?,
+                right: substitute(right, &mapping)?,
+            },
+            FunctionRecord::Value {
+                offset,
+                register,
+                value,
+                relocation,
+            } => FunctionRecord::Value {
+                offset: *offset,
+                register: *register,
+                value: substitute(value, &mapping)?,
+                relocation: *relocation,
+            },
+            FunctionRecord::MemoryAccess {
+                offset,
+                access,
+                width,
+                address,
+                value,
+                relocation,
+            } => FunctionRecord::MemoryAccess {
+                offset: *offset,
+                access: *access,
+                width: *width,
+                address: substitute(address, &mapping)?,
+                value: value
+                    .as_ref()
+                    .map(|v| substitute(v, &mapping))
+                    .transpose()?,
+                relocation: *relocation,
+            },
+            FunctionRecord::ReturnValue { offset, low, high } => FunctionRecord::ReturnValue {
+                offset: *offset,
+                low: substitute(low, &mapping)?,
+                high: substitute(high, &mapping)?,
+            },
+            FunctionRecord::CallInputs { offset, registers } => FunctionRecord::CallInputs {
+                offset: *offset,
+                registers: registers
+                    .iter()
+                    .map(|v| substitute(v, &mapping))
+                    .collect::<Result<_>>()?,
+            },
+            FunctionRecord::SemanticGap {
+                offset,
+                reason: SemanticGapReason::OpaqueCall,
+            } if callees.iter().any(|c| {
+                c.offset == *offset
+                    && c.records
+                        .iter()
+                        .any(|r| matches!(r, FunctionRecord::ReturnValue { .. }))
+                    && !c.records.iter().any(|r| {
+                        matches!(
+                            r,
+                            FunctionRecord::Gap { .. } | FunctionRecord::SemanticGap { .. }
+                        )
+                    })
+            }) =>
+            {
+                continue;
+            }
+            r => r.clone(),
+        };
+        out.push(r);
+    }
+    Ok(Composed {
+        records: out,
+        _capacity: capacity,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn expr(id: u32, expression: Expression) -> FunctionRecord {
+        FunctionRecord::Expression {
+            id,
+            offset: u64::from(id) * 4,
+            origin: None,
+            expression,
+        }
+    }
+    #[test]
+    fn arguments_returns_and_may_writes_keep_callee_provenance_and_budget() {
+        let x = AbstractValue::Expression { id: 0 };
+        let mut args = vec![AbstractValue::Unknown; 32];
+        args[10] = x.clone();
+        let root = vec![
+            expr(0, Expression::EntryRegister { register: 10 }),
+            expr(
+                1,
+                Expression::CallResult {
+                    callsite: 4,
+                    register: 10,
+                },
+            ),
+            FunctionRecord::CallInputs {
+                offset: 4,
+                registers: args,
+            },
+            FunctionRecord::ReturnValue {
+                offset: 8,
+                low: AbstractValue::Expression { id: 1 },
+                high: AbstractValue::Unknown,
+            },
+            FunctionRecord::SemanticGap {
+                offset: 4,
+                reason: SemanticGapReason::OpaqueCall,
+            },
+        ];
+        let callee = vec![
+            expr(0, Expression::EntryRegister { register: 10 }),
+            expr(
+                1,
+                Expression::Integer {
+                    op: IntegerOp::Add,
+                    left: x,
+                    right: AbstractValue::Constant { value: 7 },
+                },
+            ),
+            FunctionRecord::MemoryAccess {
+                offset: 4,
+                access: MemoryKind::Store,
+                width: 4,
+                address: AbstractValue::Constant { value: 0x60000000 },
+                value: Some(AbstractValue::Expression { id: 1 }),
+                relocation: None,
+            },
+            FunctionRecord::ReturnValue {
+                offset: 8,
+                low: AbstractValue::Expression { id: 1 },
+                high: AbstractValue::Unknown,
+            },
+        ];
+        let artifact = ArtifactId::of_bytes(b"callee");
+        let id: FunctionAnalysisId = artifact.as_str().parse().unwrap();
+        let source = FunctionSource::Input { input: 0 };
+        let object = ObjectId {
+            artifact,
+            location: ObjectLocation::Standalone,
+        };
+        let selected = [Callee {
+            offset: 4,
+            analysis: &id,
+            source: &source,
+            object: &object,
+            records: &callee,
+        }];
+        let small = WorkingMemory::new(1).unwrap();
+        assert_eq!(
+            compose(&root, &selected, &small, &mut || Ok(()))
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::ResourceLimited
+        );
+        assert_eq!(small.used(), 0);
+        let memory = WorkingMemory::new(1024 * 1024).unwrap();
+        let result = compose(&root, &selected, &memory, &mut || Ok(())).unwrap();
+        assert!(result.records.iter().any(|r| matches!(r, FunctionRecord::CalleeEffect { analysis, value: Some(AbstractValue::Expression { .. }), .. } if analysis == &id)));
+        assert!(result.records.iter().any(|r| matches!(r, FunctionRecord::Expression { origin: Some(origin), expression: Expression::Integer { op: IntegerOp::Add, .. }, .. } if origin == &id)));
+        assert!(!result.records.iter().any(|r| matches!(
+            r,
+            FunctionRecord::SemanticGap { .. }
+                | FunctionRecord::Expression {
+                    expression: Expression::CallResult { .. },
+                    ..
+                }
+        )));
+        assert!(memory.used() > 0);
+        drop(result);
+        assert_eq!(memory.used(), 0);
+        let result = compose(&root, &[], &memory, &mut || Ok(())).unwrap();
+        assert!(result.records.iter().any(|r| matches!(
+            r,
+            FunctionRecord::SemanticGap {
+                reason: SemanticGapReason::OpaqueCall,
+                ..
+            }
+        )));
+    }
+    #[test]
+    fn invalid_dag_and_cancellation_fail_without_a_summary() {
+        let memory = WorkingMemory::new(1024 * 1024).unwrap();
+        let bad = vec![expr(
+            0,
+            Expression::Integer {
+                op: IntegerOp::Add,
+                left: AbstractValue::Expression { id: 0 },
+                right: AbstractValue::Constant { value: 1 },
+            },
+        )];
+        assert_eq!(
+            compose(&bad, &[], &memory, &mut || Ok(()))
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::Integrity
+        );
+        assert_eq!(memory.used(), 0);
+        assert_eq!(
+            compose(&bad, &[], &memory, &mut || Err(Error::new(
+                ErrorCode::Cancelled,
+                "stop"
+            )))
+            .err()
+            .unwrap()
+            .code,
+            ErrorCode::Cancelled
+        );
+        assert_eq!(memory.used(), 0);
+    }
+    #[test]
+    fn constant_callee_return_resolves_a_caller_memory_address() {
+        let artifact = ArtifactId::of_bytes(b"address-provider");
+        let id: FunctionAnalysisId = artifact.as_str().parse().unwrap();
+        let source = FunctionSource::Input { input: 1 };
+        let object = ObjectId {
+            artifact,
+            location: ObjectLocation::Standalone,
+        };
+        let root = vec![
+            expr(
+                0,
+                Expression::CallResult {
+                    callsite: 4,
+                    register: 10,
+                },
+            ),
+            expr(
+                1,
+                Expression::Integer {
+                    op: IntegerOp::Add,
+                    left: AbstractValue::Expression { id: 0 },
+                    right: AbstractValue::Constant { value: 4 },
+                },
+            ),
+            FunctionRecord::CallInputs {
+                offset: 4,
+                registers: vec![AbstractValue::Unknown; 32],
+            },
+            FunctionRecord::MemoryAccess {
+                offset: 12,
+                access: MemoryKind::Store,
+                width: 4,
+                address: AbstractValue::Expression { id: 1 },
+                value: Some(AbstractValue::Constant { value: 7 }),
+                relocation: None,
+            },
+        ];
+        let callee = [FunctionRecord::ReturnValue {
+            offset: 0,
+            low: AbstractValue::Constant { value: 0x60000000 },
+            high: AbstractValue::Unknown,
+        }];
+        let selected = [Callee {
+            offset: 4,
+            analysis: &id,
+            source: &source,
+            object: &object,
+            records: &callee,
+        }];
+        let memory = WorkingMemory::new(1024 * 1024).unwrap();
+        let result = compose(&root, &selected, &memory, &mut || Ok(())).unwrap();
+        assert!(result.records.iter().any(|r| matches!(
+            r,
+            FunctionRecord::MemoryAccess {
+                address: AbstractValue::Constant { value: 0x60000004 },
+                ..
+            }
+        )));
+    }
+}

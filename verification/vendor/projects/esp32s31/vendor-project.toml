@@ -229,8 +229,8 @@ entry-contract = "none"
 output = "generated/findings/btdm-task-lifecycle.ir"
 
 # Focused IEEE 802.15.4 discovery surfaces over the authenticated BTBB and
-# coexistence artifacts. The public esp_ieee802154_ controller profile requires
-# its matching caller-bound artifact; absent inputs remain coverage errors. The
+# coexistence artifacts. The open ESP-IDF esp_ieee802154_ controller is ported
+# from source and explicitly excluded from binary controller coverage. The
 # existing artifact-wide profiles remain the function/register inventory
 # authority; these focused profiles only bound human-sized review scopes.
 [[analysis.public-symbol-families]]
@@ -254,16 +254,8 @@ id = "ieee802154-public-controller"
 protocols = ["ieee802154"]
 source = "ieee802154"
 symbol-prefix = "esp_ieee802154_"
-disposition = "required"
-profile = "ieee802154-controller"
-
-[[analysis.ir]]
-id = "ieee802154-controller"
-sources = ["ieee802154"]
-roots = "all"
-include-reachable = true
-entry-contract = "none"
-output = "generated/findings/ieee802154-controller.ir"
+disposition = "excluded"
+reason = "The open ESP-IDF IEEE 802.15.4 controller is ported from source; no controller archive or ELF is required. Binary coverage of closed BTBB and COEX functions remains required through the ieee802154-btbb, ieee802154-zb and ieee802154-coex profiles."
 
 [[analysis.ir]]
 id = "ieee802154-btbb"

@@ -499,7 +499,7 @@ pub(crate) fn render_pseudo(
 fn memory_object_label(object: &LinkedMemoryObject) -> String {
     match object {
         LinkedMemoryObject::Argument { index } => format!("arg{index}"),
-        LinkedMemoryObject::Global { member, symbol } => {
+        LinkedMemoryObject::Global { member, symbol, .. } => {
             format!("{}::{symbol}", member.as_deref().unwrap_or("<linked>"))
         }
         LinkedMemoryObject::Dereferenced {

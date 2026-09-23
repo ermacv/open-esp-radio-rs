@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use super::MMIO_FACTS;
-use crate::{analysis::MmioDiscoveryReport, artifact_sha256};
+use crate::analysis::MmioDiscoveryReport;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct ArtifactIdentity {
@@ -122,7 +122,7 @@ pub(crate) fn build_mmio_facts(report: &MmioDiscoveryReport) -> crate::Result<Mm
                     source: artifact.source.clone(),
                     artifact: ArtifactIdentity {
                         path: artifact.path.display().to_string(),
-                        sha256: artifact_sha256(&artifact.path)?,
+                        sha256: artifact.sha256.clone(),
                     },
                     functions: artifact.functions,
                     reviewed_boundaries: artifact.reviewed_boundaries,

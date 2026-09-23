@@ -46,8 +46,16 @@ fn event_loop(
                 worker::Event::FunctionDetail { identity, detail } => {
                     state.function_detail_finished(identity, detail.map(|detail| *detail));
                 }
-                worker::Event::RegisterDetail { address, detail } => {
-                    state.register_detail_finished(address, detail.map(|detail| *detail));
+                worker::Event::RegisterDetail {
+                    subject,
+                    generation,
+                    detail,
+                } => {
+                    state.register_detail_finished(
+                        subject,
+                        generation,
+                        detail.map(|detail| *detail),
+                    );
                 }
                 worker::Event::Error(message) => state.operation_failed(message),
             }
@@ -92,8 +100,8 @@ fn request_details(state: &mut BrowserState, worker: &Worker) {
     {
         state.operation_failed(error.to_string());
     }
-    if let Some(address) = state.request_register_detail()
-        && let Err(error) = worker.register_detail(address)
+    if let Some(subject) = state.request_register_detail()
+        && let Err(error) = worker.register_detail(subject, state.snapshot.generation)
     {
         state.operation_failed(error.to_string());
     }

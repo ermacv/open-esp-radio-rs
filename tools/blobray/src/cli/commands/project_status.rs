@@ -35,12 +35,12 @@ pub(super) fn run(arguments: ProjectStatusArgs, context: ProjectContext<'_>) -> 
     if let Some(path) = options.output.as_deref() {
         let stored_document = render::document(&report, validation_actions.clone(), None);
         let rendered = render::json_document(&stored_document)?;
-        crate::application::generated_file::write_or_check(
+        crate::application::generated_file::GeneratedOutput::new(
             path,
-            &rendered,
             options.check,
             "project status",
-        )?;
+        )
+        .text(&rendered)?;
     }
     let document = render::document(&report, validation_actions, publication.clone());
     if !crate::cli::output::structured(&document) {

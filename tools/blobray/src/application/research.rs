@@ -3158,7 +3158,7 @@ fn add_register_questions(
     candidates: &mut BTreeMap<String, Accumulator>,
     diagnostics: &mut Vec<String>,
 ) -> Result<()> {
-    let inventory = super::register_inventory::load(&session.project, &session.mmio)?;
+    let inventory = session.register_query()?.snapshot.inventory();
     diagnostics.extend(
         inventory
             .gaps
@@ -6399,21 +6399,15 @@ mod tests {
         if path.exists() {
             std::fs::remove_file(&path).unwrap();
         }
-        crate::application::generated_file::write_or_check_json(
+        crate::application::generated_file::GeneratedOutput::new(&path, false, "research fixture")
+            .json(&original, true)
+            .unwrap();
+        let error = crate::application::generated_file::GeneratedOutput::new(
             &path,
-            &original,
-            false,
-            "research fixture",
-            true,
-        )
-        .unwrap();
-        let error = crate::application::generated_file::write_or_check_json(
-            &path,
-            &changed,
             true,
             "research fixture",
-            true,
         )
+        .json(&changed, true)
         .unwrap_err();
         assert!(error.to_string().contains("differs"));
         std::fs::remove_file(path).unwrap();

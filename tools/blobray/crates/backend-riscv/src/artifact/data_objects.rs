@@ -1,14 +1,14 @@
 //! Static data-object inventory for linked ELF images and archive members.
 
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashMap},
     ops::Bound::{Excluded, Unbounded},
     path::Path,
 };
 
 use object::{
     FileKind, Object, ObjectKind, ObjectSection, ObjectSymbol, RelocationFlags, RelocationTarget,
-    SectionIndex, SectionKind, SymbolKind, read::archive::ArchiveFile,
+    SectionIndex, SectionKind, SymbolKind,
 };
 
 use crate::Result;
@@ -81,6 +81,8 @@ fn collect_relocations(
 fn collect_objects(
     data: &[u8],
     member: Option<&str>,
+    artifact_sha256: &str,
+    object_location: crate::ObjectLocation,
     output: &mut Vec<ArtifactDataObjectDefinition>,
 ) -> Result<()> {
     let file = object::File::parse(data)?;
@@ -92,15 +94,19 @@ fn collect_objects(
     let addresses_resolved = file.kind() != ObjectKind::Relocatable;
     let mut aliases_by_location = HashMap::<_, Vec<String>>::new();
     let mut symbol_locations_by_section = HashMap::<SectionIndex, BTreeSet<u64>>::new();
-    for symbol in file.symbols().filter(|symbol| symbol.is_definition()) {
+    for symbol in file
+        .symbols()
+        .chain(file.dynamic_symbols())
+        .filter(|symbol| symbol.is_definition())
+    {
         let (Some(section_index), Ok(name)) = (symbol.section_index(), symbol.name()) else {
             continue;
         };
+        symbol_locations_by_section
+            .entry(section_index)
+            .or_default()
+            .insert(symbol.address());
         if !name.is_empty() {
-            symbol_locations_by_section
-                .entry(section_index)
-                .or_default()
-                .insert(symbol.address());
             aliases_by_location
                 .entry((section_index, symbol.address()))
                 .or_default()
@@ -112,8 +118,14 @@ fn collect_objects(
         aliases.dedup();
     }
 
-    let mut named_locations = HashSet::new();
-    for symbol in file.symbols() {
+    for (table, symbol) in file
+        .symbols()
+        .map(|symbol| (super::ArtifactSymbolTable::Static, symbol))
+        .chain(
+            file.dynamic_symbols()
+                .map(|symbol| (super::ArtifactSymbolTable::Dynamic, symbol)),
+        )
+    {
         if symbol.kind() != SymbolKind::Data || !symbol.is_definition() || symbol.size() == 0 {
             continue;
         }
@@ -150,6 +162,14 @@ fn collect_objects(
             .checked_add(symbol.size())
             .ok_or_else(|| format!("data symbol {name} address range overflows"))?;
         output.push(ArtifactDataObjectDefinition {
+            identity: super::DataIdentity::Symbol {
+                artifact_sha256: artifact_sha256.to_owned(),
+                location: crate::SymbolLocation {
+                    object: object_location,
+                    table,
+                    index: symbol.index().0 as u64,
+                },
+            },
             member: member.map(str::to_owned),
             section: section.name().unwrap_or("<unnamed>").to_owned(),
             name: name.to_owned(),
@@ -173,27 +193,26 @@ fn collect_objects(
             initializer,
             relocations: collect_relocations(&file, section_index, symbol.address(), symbol_end)?,
         });
-        named_locations.insert((section_index, symbol.address()));
     }
 
-    let mut synthetic_locations = HashSet::new();
-    for anchor in file.symbols() {
-        if anchor.kind() != SymbolKind::Unknown || !anchor.is_definition() || anchor.size() != 0 {
+    for (table, anchor) in file
+        .symbols()
+        .map(|symbol| (super::ArtifactSymbolTable::Static, symbol))
+        .chain(
+            file.dynamic_symbols()
+                .map(|symbol| (super::ArtifactSymbolTable::Dynamic, symbol)),
+        )
+    {
+        if !matches!(anchor.kind(), SymbolKind::Unknown | SymbolKind::Data)
+            || !anchor.is_definition()
+            || anchor.size() != 0
+        {
             continue;
         }
         let Some(section_index) = anchor.section_index() else {
             continue;
         };
-        if named_locations.contains(&(section_index, anchor.address())) {
-            continue;
-        }
-        if !synthetic_locations.insert((section_index, anchor.address())) {
-            continue;
-        }
         let name = anchor.name()?;
-        if name.is_empty() {
-            continue;
-        }
         let section = file.section_by_index(section_index)?;
         let Some((writable, initialized)) = section_properties(section.kind()) else {
             continue;
@@ -202,10 +221,9 @@ fn collect_objects(
             .address()
             .checked_sub(section.address())
             .ok_or_else(|| format!("data anchor {name} precedes its section"))?;
-        // A zero-sized compiler label names one local object, not every byte
-        // until the end of the section.  Bounding it by the next symbol is
-        // both more faithful and avoids retaining quadratically duplicated
-        // `.rodata` tails for dense jump-table/constant-pool sections.
+        // A zero-sized label supplies an anchor, not a proven object extent.
+        // Bound its candidate bytes by the next symbol (including unnamed
+        // definitions). Keep co-located anchors as independent occurrences.
         let section_end = section.address().saturating_add(section.size());
         let object_end = symbol_locations_by_section
             .get(&section_index)
@@ -239,6 +257,14 @@ fn collect_objects(
         };
         let anchor_end = anchor.address().saturating_add(size);
         output.push(ArtifactDataObjectDefinition {
+            identity: super::DataIdentity::Symbol {
+                artifact_sha256: artifact_sha256.to_owned(),
+                location: crate::SymbolLocation {
+                    object: object_location,
+                    table,
+                    index: anchor.index().0 as u64,
+                },
+            },
             member: member.map(str::to_owned),
             section: section.name().unwrap_or("<unnamed>").to_owned(),
             name: name.to_owned(),
@@ -266,25 +292,31 @@ fn collect_objects(
     Ok(())
 }
 
-/// Load named static data objects and compiler anchors from linked images and
-/// relocatable archive members. Archive offsets remain section-relative.
+/// Load data definitions and compiler anchors from both ELF symbol tables,
+/// including unnamed definitions. Archive offsets remain section-relative.
 pub fn load_data_objects(path: &Path) -> Result<Vec<ArtifactDataObjectDefinition>> {
-    let data = crate::read_artifact(path)?;
+    Ok(super::CapturedArtifact::open(path)?
+        .data_objects()?
+        .to_vec())
+}
+
+pub(super) fn captured_data_objects(
+    capture: &super::CapturedArtifact<'_>,
+) -> Result<Vec<ArtifactDataObjectDefinition>> {
     let mut objects = Vec::new();
-    match FileKind::parse(data.as_slice())? {
-        FileKind::Archive => {
-            let archive = ArchiveFile::parse(data.as_slice())?;
-            for member in archive.members() {
-                let member = member?;
-                let name = String::from_utf8_lossy(member.name()).into_owned();
-                let member_data = member.data(data.as_slice())?;
-                if matches!(FileKind::parse(member_data), Ok(FileKind::Elf32)) {
-                    collect_objects(member_data, Some(&name), &mut objects)?;
-                }
-            }
+    for object in capture.objects() {
+        let data = capture
+            .object_bytes(object.location())?
+            .ok_or("missing captured object")?;
+        if matches!(FileKind::parse(data), Ok(FileKind::Elf32)) {
+            collect_objects(
+                data,
+                object.name(),
+                capture.sha256(),
+                object.location(),
+                &mut objects,
+            )?;
         }
-        FileKind::Elf32 => collect_objects(&data, None, &mut objects)?,
-        kind => return Err(format!("unsupported artifact kind: {kind:?}").into()),
     }
     objects.sort_by(|left, right| {
         (&left.member, &left.section, left.object_offset, &left.name).cmp(&(

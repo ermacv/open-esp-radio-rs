@@ -7,11 +7,12 @@ use std::{
 
 use object::{
     FileKind, Object, ObjectKind, ObjectSection, ObjectSymbol, SectionFlags, SectionKind,
-    SymbolFlags, SymbolKind, SymbolScope, SymbolSection, read::archive::ArchiveFile,
+    SymbolFlags, SymbolKind, SymbolScope, SymbolSection,
 };
 use rv_asm::{Inst, Reg};
 
 use crate::Result;
+use open_radio_vendor_analysis_model::ObjectLocation;
 
 use super::model::*;
 
@@ -93,11 +94,8 @@ fn symbol_fact<'data>(
     file: &object::File<'data>,
     symbol: impl ObjectSymbol<'data>,
     table: ArtifactSymbolTable,
-) -> Result<Option<ArtifactSymbolFact>> {
+) -> Result<ArtifactSymbolFact> {
     let name_bytes = symbol.name_bytes()?;
-    if name_bytes.is_empty() {
-        return Ok(None);
-    }
     let section = symbol
         .section_index()
         .map(|index| {
@@ -105,7 +103,8 @@ fn symbol_fact<'data>(
                 .and_then(|section| section.name().map(str::to_owned))
         })
         .transpose()?;
-    Ok(Some(ArtifactSymbolFact {
+    Ok(ArtifactSymbolFact {
+        index: symbol.index().0 as u64,
         table,
         name: String::from_utf8_lossy(name_bytes).into_owned(),
         address: symbol.address(),
@@ -115,8 +114,9 @@ fn symbol_fact<'data>(
         kind: symbol_kind(symbol.kind()),
         definition: symbol_definition(symbol.section()),
         section,
+        section_index: symbol.section_index().map(|index| index.0 as u64),
         scope: symbol_scope(symbol.scope()),
-    }))
+    })
 }
 
 fn executable_section<'data>(section: &impl ObjectSection<'data>) -> bool {
@@ -130,6 +130,8 @@ fn executable_section<'data>(section: &impl ObjectSection<'data>) -> bool {
 
 fn code_section_coverage<'data>(
     file: &object::File<'data>,
+    artifact_sha256: &str,
+    object: ObjectLocation,
 ) -> Result<Vec<ArtifactCodeSectionCoverage>> {
     let mut sections = Vec::new();
     for section in file.sections() {
@@ -240,6 +242,13 @@ fn code_section_coverage<'data>(
                 continue;
             };
             let definition = ArtifactSymbolDefinition {
+                identity: CodeIdentity::SectionRange {
+                    artifact_sha256: artifact_sha256.to_owned(),
+                    object,
+                    section_index: section.index().0 as u64,
+                    start_offset: *start,
+                    end_offset: *end,
+                },
                 member: None,
                 name: name.clone(),
                 address: section.address() + start,
@@ -341,7 +350,12 @@ fn code_section_coverage<'data>(
     Ok(sections)
 }
 
-fn inspect_object(data: &[u8], member: Option<String>) -> Result<ArtifactObjectInventory> {
+fn inspect_object(
+    data: &[u8],
+    member: Option<String>,
+    location: ObjectLocation,
+    artifact_sha256: &str,
+) -> Result<ArtifactObjectInventory> {
     let file = object::File::parse(data)?;
     if file.architecture() != object::Architecture::Riscv32 {
         return Err(format!("artifact member {member:?} is not RISC-V 32-bit").into());
@@ -351,14 +365,10 @@ fn inspect_object(data: &[u8], member: Option<String>) -> Result<ArtifactObjectI
     }
     let mut symbols = Vec::new();
     for symbol in file.symbols() {
-        if let Some(fact) = symbol_fact(&file, symbol, ArtifactSymbolTable::Static)? {
-            symbols.push(fact);
-        }
+        symbols.push(symbol_fact(&file, symbol, ArtifactSymbolTable::Static)?);
     }
     for symbol in file.dynamic_symbols() {
-        if let Some(fact) = symbol_fact(&file, symbol, ArtifactSymbolTable::Dynamic)? {
-            symbols.push(fact);
-        }
+        symbols.push(symbol_fact(&file, symbol, ArtifactSymbolTable::Dynamic)?);
     }
     symbols.sort_by(|left, right| {
         (
@@ -379,9 +389,10 @@ fn inspect_object(data: &[u8], member: Option<String>) -> Result<ArtifactObjectI
             ))
     });
     Ok(ArtifactObjectInventory {
+        location,
         member,
         kind: object_kind(file.kind()),
-        code_sections: code_section_coverage(&file)?,
+        code_sections: code_section_coverage(&file, artifact_sha256, location)?,
         symbols,
     })
 }
@@ -393,19 +404,45 @@ fn inspect_object(data: &[u8], member: Option<String>) -> Result<ArtifactObjectI
 /// are not decodable function bodies.
 #[tracing::instrument(name = "inspect_riscv_artifact", skip_all, fields(path = %path.display()))]
 pub fn inspect_artifact(path: &Path) -> Result<ArtifactInventory> {
-    let data = crate::read_artifact(path)?;
-    match FileKind::parse(data.as_slice())? {
-        FileKind::Archive => {
-            let archive = ArchiveFile::parse(data.as_slice())?;
-            let mut objects = Vec::new();
-            let mut skipped_members = 0usize;
-            let mut members = Vec::new();
-            for (ordinal, member) in archive.members().enumerate() {
-                let member = member?;
-                let name = String::from_utf8_lossy(member.name()).into_owned();
-                let member_data = member.data(data.as_slice())?;
-                let (status, reason) = match FileKind::parse(member_data) {
-                    Ok(FileKind::Elf32) => match inspect_object(member_data, Some(name.clone())) {
+    Ok(super::CapturedArtifact::open(path)?.inventory()?.clone())
+}
+
+pub(super) fn inspect_capture(capture: &super::CapturedArtifact<'_>) -> Result<ArtifactInventory> {
+    if capture.container() == ArtifactContainerKind::Elf32 {
+        let data = capture
+            .object_bytes(ObjectLocation::Standalone)?
+            .expect("standalone object");
+        return Ok(ArtifactInventory {
+            container: ArtifactContainerKind::Elf32,
+            objects: vec![inspect_object(
+                data,
+                None,
+                ObjectLocation::Standalone,
+                capture.sha256(),
+            )?],
+            skipped_members: 0,
+            members: Vec::new(),
+        });
+    }
+    let mut objects = Vec::new();
+    let mut skipped_members = 0;
+    let mut members = Vec::new();
+    for object in capture.objects() {
+        let ObjectLocation::ArchiveMember { ordinal } = object.location() else {
+            return Err("archive capture contains a standalone object".into());
+        };
+        let name = object.name().expect("archive member name").to_owned();
+        let (status, reason) = match capture.object_bytes(object.location()) {
+            Err(error) => ("unavailable", Some(error.to_string())),
+            Ok(None) => return Err("captured object is absent from its own catalog".into()),
+            Ok(Some(data)) => match FileKind::parse(data) {
+                Ok(FileKind::Elf32) => {
+                    match inspect_object(
+                        data,
+                        Some(name.clone()),
+                        object.location(),
+                        capture.sha256(),
+                    ) {
                         Ok(object) => {
                             let status = if object.code_sections.is_empty() {
                                 "non-code"
@@ -416,42 +453,31 @@ pub fn inspect_artifact(path: &Path) -> Result<ArtifactInventory> {
                             (status, None)
                         }
                         Err(error) => ("invalid", Some(error.to_string())),
-                    },
-                    Ok(kind) => (
-                        "unsupported",
-                        Some(format!("unsupported member format: {kind:?}")),
-                    ),
-                    Err(error) => ("unrecognized", Some(error.to_string())),
-                };
-                if reason.is_some() {
-                    skipped_members += 1;
+                    }
                 }
-                members.push(super::ArtifactMemberOutcome {
-                    ordinal,
-                    name,
-                    status: status.to_owned(),
-                    reason,
-                });
-            }
-            if objects.is_empty() {
-                return Err(format!("archive has no RISC-V ELF32 members: {members:?}").into());
-            }
-            objects.sort_by(|left, right| left.member.cmp(&right.member));
-            Ok(ArtifactInventory {
-                container: ArtifactContainerKind::Archive,
-                objects,
-                skipped_members,
-                members,
-            })
+                Ok(kind) => (
+                    "unsupported",
+                    Some(format!("unsupported member format: {kind:?}")),
+                ),
+                Err(error) => ("unrecognized", Some(error.to_string())),
+            },
+        };
+        if reason.is_some() {
+            skipped_members += 1;
         }
-        FileKind::Elf32 => Ok(ArtifactInventory {
-            container: ArtifactContainerKind::Elf32,
-            objects: vec![inspect_object(&data, None)?],
-            skipped_members: 0,
-            members: Vec::new(),
-        }),
-        kind => Err(format!("unsupported artifact kind: {kind:?}").into()),
+        members.push(super::ArtifactMemberOutcome {
+            ordinal: ordinal as usize,
+            name,
+            status: status.to_owned(),
+            reason,
+        });
     }
+    Ok(ArtifactInventory {
+        container: ArtifactContainerKind::Archive,
+        objects,
+        skipped_members,
+        members,
+    })
 }
 
 /// Read only the container header for interactive readiness checks.

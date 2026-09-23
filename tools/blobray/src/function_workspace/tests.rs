@@ -333,6 +333,9 @@ fn write_ir(path: &std::path::Path) {
         .memory_fields
         .push(crate::LinkedSummaryMemoryField {
             object: crate::LinkedMemoryObject::Global {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 member: Some("state.o".to_owned()),
                 symbol: "phy_state".to_owned(),
             },
@@ -352,6 +355,9 @@ fn write_ir(path: &std::path::Path) {
         .memory_fields
         .push(crate::LinkedSummaryMemoryField {
             object: crate::LinkedMemoryObject::Global {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 member: Some("state.o".to_owned()),
                 symbol: "phy_state".to_owned(),
             },
@@ -373,6 +379,12 @@ fn write_ir(path: &std::path::Path) {
                     calls: Vec<crate::LinkedCall>,
                     effect_summary: crate::LinkedEffectSummary,
                     pseudo: &str| crate::LinkedIrFunction {
+        code_identity: crate::artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &None,
+            symbol,
+            u64::from(object_offset),
+        ),
         source: "rom".to_owned(),
         artifact_sha256: digest.clone(),
         identity: identity.to_owned(),
@@ -474,7 +486,8 @@ fn write_ir(path: &std::path::Path) {
     document["artifacts"] = serde_json::json!([{
         "source": "rom",
         "artifact": {"path": "rom.elf", "sha256": digest},
-        "reviewed_code_boundaries": []
+        "reviewed_code_boundaries": [],
+        "companions": []
     }]);
     crate::artifacts::write_fixture_bundle(path, &serde_json::to_string_pretty(&document).unwrap())
         .unwrap();
@@ -675,6 +688,20 @@ display-type = "u16"
     .replace("__ARTIFACT_DIGEST__", &"a".repeat(64));
     std::fs::write(&pack, &reviewed).unwrap();
     let workspace = FunctionWorkspace::load(&reports, &pack).unwrap();
+    let compact_workspace = FunctionWorkspace::from_summary_facts(
+        FunctionFacts::load_summary(&reports).unwrap(),
+        &pack,
+    )
+    .unwrap();
+    let owners = |workspace: &FunctionWorkspace| {
+        workspace
+            .facts
+            .functions
+            .iter()
+            .map(|function| (function.identity.clone(), function.code_identity.clone()))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    assert_eq!(owners(&workspace), owners(&compact_workspace));
     let summary = workspace.summary();
     assert_eq!(summary.reviewed_functions, 1);
     assert_eq!(summary.reviewed_contexts, 1);
@@ -711,40 +738,113 @@ display-type = "u16"
         assignments: Vec::new(),
         functions: ["vendor_helper".to_owned()].into(),
         calls: vec![crate::interfaces::ResolvedInterfaceCall {
-            artifact: 0,
-            member: None,
-            function: "vendor_helper".to_owned(),
-            function_address: 0x100,
-            site: 0x120,
-            slot_load_site: Some(0x118),
-            kind: "call".to_owned(),
-            jalr_offset: 0,
             slot_selector: None,
             slot_index: None,
             slot_index_domain: None,
-            arguments: vec![
-                crate::interfaces::ResolvedInterfaceArgument {
-                    index: 0,
-                    kind: "unknown".to_owned(),
-                    expression: "?".to_owned(),
+            observation: crate::interfaces::InterfaceCallFact {
+                owner: workspace
+                    .facts
+                    .functions
+                    .iter()
+                    .find(|function| function.symbol == "vendor_helper")
+                    .unwrap()
+                    .code_identity
+                    .clone(),
+                link_register: 1,
+                target_offset: 0,
+                root: crate::interfaces::InterfaceFactRoot::FunctionArgument {
+                    owner: crate::artifact::CodeIdentity::Synthetic {
+                        namespace: module_path!().into(),
+                        key: "root-fixture".into(),
+                    },
+                    argument: 0,
                 },
-                crate::interfaces::ResolvedInterfaceArgument {
-                    index: 1,
-                    kind: "constant".to_owned(),
-                    expression: "0x0000002a".to_owned(),
+                loads: vec![],
+                container_depth: 0,
+                slot_offset: None,
+                root_linkage: crate::interfaces::InterfaceRootLinkageFact {
+                    symbols: vec![],
+                    resolutions: vec![],
+                    candidates: vec![],
                 },
-            ],
+
+                artifact: 0,
+                member: None,
+                function: "vendor_helper".to_owned(),
+                function_address: 0x100,
+                site: 0x120,
+                slot_load_site: Some(0x118),
+                kind: "call".to_owned(),
+                jalr_offset: 0,
+                arguments: vec![
+                    crate::interfaces::InterfaceArgumentFact {
+                        index: 0,
+                        value: crate::interface_discovery::InterfaceArgumentValue::Unknown,
+                    },
+                    crate::interfaces::InterfaceArgumentFact {
+                        index: 1,
+                        value: crate::interface_discovery::InterfaceArgumentValue::Constant(42),
+                    },
+                ],
+            },
         }],
     };
+    let mut unrelated_occurrence = binding.clone();
+    unrelated_occurrence.calls[0].observation.owner = crate::artifact::CodeIdentity::Synthetic {
+        namespace: module_path!().into(),
+        key: "another object with identical display metadata".into(),
+    };
+    assert!(
+        link_reviewed_interfaces(&workspace, &[unrelated_occurrence])
+            .unwrap()
+            .is_empty()
+    );
+    // Display metadata does not select the physical caller.
+    let mut renamed = binding.clone();
+    renamed.calls[0].observation.function = "new display name".into();
+    assert!(
+        !link_reviewed_interfaces(&workspace, &[renamed])
+            .unwrap()
+            .is_empty()
+    );
     let mut mismatch = binding.clone();
     mismatch.semantic = Some("rtos.queue.receive".to_owned());
     let error = link_reviewed_interfaces(&workspace, &[mismatch]).unwrap_err();
     assert!(error.to_string().contains("interface semantic mismatch"));
 
+    let mut binding = binding;
+    let argument = |site| {
+        crate::interface_discovery::InterfaceArgumentValue::Alternatives(vec![
+            crate::interface_discovery::InterfaceArgumentValue::Unknown,
+            crate::interface_discovery::InterfaceArgumentValue::Pointer(
+                crate::interface_discovery::InterfacePointer {
+                    root: crate::interface_discovery::InterfaceRoot::FunctionArgument {
+                        owner: crate::artifact::CodeIdentity::Synthetic {
+                            namespace: module_path!().into(),
+                            key: "root-fixture".into(),
+                        },
+                        index: 0,
+                    },
+                    loads: vec![crate::interface_discovery::InterfaceLoad {
+                        site,
+                        offset: 4,
+                        width: 32,
+                        selector: None,
+                    }],
+                    post_offset: 0,
+                },
+            ),
+        ])
+    };
+    binding.calls[0].observation.arguments[0].value = argument(0x108);
+    let mut alternate = binding.calls[0].clone();
+    alternate.observation.arguments[0].value = argument(0x10c);
+    binding.calls.push(alternate);
     let links = link_reviewed_interfaces(&workspace, &[binding]).unwrap();
     assert_eq!(links.len(), 2);
     assert!(links.iter().all(|link| {
-        link.calls.len() == 1
+        link.calls.len() == 2
+            && link.calls[0].observation.arguments != link.calls[1].observation.arguments
             && link.calls[0].linked_ir_matches == 1
             && link.calls[0].linked_ir.is_some()
             && link.contract == "fixture::wifi-osi"
@@ -759,6 +859,8 @@ display-type = "u16"
     assert!(report_text.contains("Decode blockers: 1 total"));
     assert!(report_text.contains("`zero-fill-or-illegal-trap` at `0x118`"));
     assert!(report_text.contains("Validated interface call sites"));
+    assert!(report_text.contains("Static observation:"));
+    assert!(report_text.contains("\"kind\": \"alternatives\""));
     assert!(report_text.contains("a1=0x0000002a"));
     assert!(report_text.contains("(arg0 & 0x00000001) != 0"));
     assert!(report_text.contains("`rtos.queue.send-from-isr`"));

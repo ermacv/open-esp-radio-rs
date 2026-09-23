@@ -316,6 +316,9 @@ mod tests {
             },
             relocations: relocation
                 .map(|(kind, symbol)| artifact::FunctionInstructionRelocation {
+                    reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                        reason: "synthetic fixture".to_owned(),
+                    },
                     kind: kind.to_owned(),
                     symbol: symbol.to_owned(),
                     addend: 0,
@@ -331,6 +334,12 @@ mod tests {
         instructions: Vec<artifact::FunctionInstruction>,
     ) -> artifact::FunctionBody {
         artifact::FunctionBody {
+            code_identity: crate::artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &None,
+                "body",
+                u64::from(line!()),
+            ),
             artifact: artifact_name.to_owned(),
             member: None,
             symbol: "root".to_owned(),

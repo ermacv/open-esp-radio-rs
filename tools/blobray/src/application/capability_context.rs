@@ -139,8 +139,7 @@ struct CapabilityContextInputPaths<'a> {
 pub(crate) fn build_and_publish(
     session: &ProjectSession,
     workspace: &InterfaceWorkspace,
-    output: &Path,
-    check: bool,
+    output: super::generated_file::GeneratedOutput<'_>,
 ) -> Result<()> {
     let paths = require_context_inputs(session)?;
     let report = workspace.evaluate_capabilities(paths.capability_packs)?;
@@ -151,13 +150,7 @@ pub(crate) fn build_and_publish(
         &report,
     );
     validate_document(&document)?;
-    super::generated_file::write_or_check_json(
-        output,
-        &document,
-        check,
-        "interface capability context",
-        false,
-    )
+    output.json(&document, false)
 }
 
 pub(crate) fn load(session: &ProjectSession) -> Result<InterfaceResearchContext> {

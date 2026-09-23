@@ -9,6 +9,8 @@ use crate::Result;
 
 #[derive(Clone, Debug)]
 pub(super) struct SectionRelocation {
+    pub(super) target_index: u64,
+    pub(super) target_binding: crate::SymbolBinding,
     pub(super) address: u64,
     pub(super) kind: RelocationKind,
     pub(super) symbol: String,
@@ -16,6 +18,22 @@ pub(super) struct SectionRelocation {
 }
 
 impl SectionRelocation {
+    pub(super) fn reference(
+        &self,
+        digest: &str,
+        object: crate::ObjectLocation,
+    ) -> crate::SymbolReference {
+        crate::SymbolReference::Captured {
+            artifact_sha256: digest.to_owned(),
+            location: crate::SymbolLocation {
+                object,
+                table: crate::ArtifactSymbolTable::Static,
+                index: self.target_index,
+            },
+            binding: self.target_binding,
+        }
+    }
+
     pub(super) const fn addend(&self) -> i64 {
         self.addend
     }
@@ -23,6 +41,8 @@ impl SectionRelocation {
 
 #[derive(Clone, Debug)]
 struct RawRelocation {
+    target_index: u64,
+    target_binding: crate::SymbolBinding,
     address: u64,
     r_type: u32,
     symbol: String,
@@ -43,14 +63,9 @@ fn normalize(
         let Some(kind) = riscv_relocation_kind(raw.r_type) else {
             return Ok(None);
         };
-        if raw.symbol.is_empty() {
-            return Err(format!(
-                "RISC-V relocation {kind:?} at {:#x} has an unnamed target",
-                raw.address
-            )
-            .into());
-        }
         return Ok(Some(SectionRelocation {
+            target_index: raw.target_index,
+            target_binding: raw.target_binding,
             address: raw.address,
             kind,
             symbol: raw.symbol.clone(),
@@ -87,13 +102,6 @@ fn normalize(
                 raw.address, raw.target_address
             )
         })?;
-    if high.symbol.is_empty() {
-        return Err(format!(
-            "RISC-V PCREL HI20 relocation at {:#x} has an unnamed target",
-            high.address
-        )
-        .into());
-    }
     let kind = match (raw.r_type, high.r_type) {
         (object::elf::R_RISCV_PCREL_LO12_I, object::elf::R_RISCV_PCREL_HI20) => {
             RelocationKind::PcRelLo12I
@@ -114,6 +122,8 @@ fn normalize(
         _ => unreachable!(),
     };
     Ok(Some(SectionRelocation {
+        target_index: high.target_index,
+        target_binding: high.target_binding,
         address: raw.address,
         kind,
         symbol: high.symbol.clone(),
@@ -143,6 +153,16 @@ pub(super) fn collect_section_relocations(
             section_start.wrapping_add(offset)
         };
         raw.push(RawRelocation {
+            target_index: index.0 as u64,
+            target_binding: if !target.is_definition() {
+                crate::SymbolBinding::Undefined
+            } else if target.is_weak() {
+                crate::SymbolBinding::WeakDefinition
+            } else if target.is_local() {
+                crate::SymbolBinding::LocalDefinition
+            } else {
+                crate::SymbolBinding::GlobalDefinition
+            },
             address,
             r_type,
             symbol: target.name().unwrap_or_default().to_owned(),

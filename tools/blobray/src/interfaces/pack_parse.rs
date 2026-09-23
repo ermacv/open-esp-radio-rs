@@ -352,6 +352,7 @@ fn parse_steps(array: &Array, context: &str) -> Result<Vec<InterfaceFactStep>> {
                 .ok_or_else(|| format!("{context} must be an inline table"))
                 .map_err(crate::Error::invalid)?;
             Ok(InterfaceFactStep {
+                site: None,
                 offset: inline_i64(table, "offset", &context)?
                     .try_into()
                     .map_err(|_| format!("{context}.offset must fit i32"))

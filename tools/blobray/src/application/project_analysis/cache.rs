@@ -12,7 +12,10 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
-use crate::Result;
+use crate::{
+    Result,
+    application::output_set::{OutputReceipt, OutputSet},
+};
 
 pub(super) struct ProjectAnalysisCache {
     store: PersistentStore,
@@ -530,9 +533,9 @@ impl ProjectAnalysisCache {
         stage: &str,
         configuration: &str,
         inputs: &[PathBuf],
-        outputs: &[PathBuf],
+        destinations: &OutputSet,
     ) -> Result<bool> {
-        self.is_current_with_post_bind_hook(stage, configuration, inputs, outputs, || {})
+        self.is_current_with_post_bind_hook(stage, configuration, inputs, destinations, || {})
     }
 
     fn is_current_with_post_bind_hook(
@@ -540,9 +543,10 @@ impl ProjectAnalysisCache {
         stage: &str,
         configuration: &str,
         inputs: &[PathBuf],
-        outputs: &[PathBuf],
+        destinations: &OutputSet,
         after_bind: impl FnOnce(),
     ) -> Result<bool> {
+        let outputs = destinations.paths();
         self.last_lookup_restored = false;
         self.observed_inputs.remove(stage);
         // Initialize the persistent cache before taking the stage snapshot.
@@ -561,14 +565,10 @@ impl ProjectAnalysisCache {
             return Ok(false);
         }
         let mut restored = false;
-        for (path, expected) in outputs.iter().zip(&cached) {
-            let current = path
-                .is_file()
-                .then(|| self.digest(path))
-                .transpose()?
-                .is_some_and(|actual| &actual == expected);
-            if !current {
-                self.store_mut()?.restore_output(expected, path)?;
+        for (index, (path, expected)) in outputs.iter().zip(&cached).enumerate() {
+            if !destinations.reuse(index, expected)? {
+                self.store_mut()?
+                    .restore_output(expected, destinations.file(index, "cached output")?)?;
                 self.digests.remove(path);
                 if self.digest(path)? != *expected {
                     return Err(crate::Error::invalid(format!(
@@ -597,6 +597,17 @@ impl ProjectAnalysisCache {
         self.store_mut()?
             .bind_restored_stage(stage, &signature, &paths, &cached)?;
         after_bind();
+        if let Err(error) = destinations
+            .receipts()?
+            .iter()
+            .try_for_each(OutputReceipt::validate)
+        {
+            self.digests.clear();
+            self.store_mut()?.retire_stage_binding(stage, &signature)?;
+            return Err(crate::Error::invalid(format!(
+                "cached stage {stage:?} output changed during binding; the cached binding was retired: {error}"
+            )));
+        }
         match self.observed_inputs_changed(stage, configuration, inputs, &mut observed) {
             Ok(false) => {}
             Ok(true) => {
@@ -629,7 +640,7 @@ impl ProjectAnalysisCache {
         stage: &str,
         configuration: &str,
         inputs: &[PathBuf],
-        outputs: &[PathBuf],
+        outputs: &[OutputReceipt],
     ) -> Result<()> {
         self.record_with_post_publish_hook(stage, configuration, inputs, outputs, || {})
     }
@@ -639,7 +650,7 @@ impl ProjectAnalysisCache {
         stage: &str,
         configuration: &str,
         inputs: &[PathBuf],
-        outputs: &[PathBuf],
+        outputs: &[OutputReceipt],
         after_publish: impl FnOnce(),
     ) -> Result<()> {
         let mut expected = self.observed_inputs.remove(stage).ok_or_else(|| {
@@ -654,13 +665,25 @@ impl ProjectAnalysisCache {
         }
         let signature = expected.snapshot.signature.clone();
         let mut cached_outputs = Vec::with_capacity(outputs.len());
-        for path in outputs {
-            self.digests.remove(path);
-            cached_outputs.push((path_key(path), self.digest(path)?, path.clone()));
+        for receipt in outputs {
+            receipt.validate()?;
+            self.digests.remove(receipt.path());
+            cached_outputs.push((
+                path_key(receipt.path()),
+                receipt.sha256().to_owned(),
+                receipt.path().to_owned(),
+            ));
         }
         self.store_mut()?
             .record_stage(stage, &signature, &cached_outputs)?;
         after_publish();
+        if let Err(error) = outputs.iter().try_for_each(OutputReceipt::validate) {
+            self.digests.clear();
+            self.store_mut()?.retire_stage_binding(stage, &signature)?;
+            return Err(crate::Error::invalid(format!(
+                "stage {stage:?} output changed during cache publication; the cached binding was retired: {error}"
+            )));
+        }
         match self.observed_inputs_changed(stage, configuration, inputs, &mut expected) {
             Ok(false) => Ok(()),
             Ok(true) => {
@@ -695,6 +718,7 @@ impl ProjectAnalysisCache {
     /// Publish the run-owned epoch only after the complete coordinator has
     /// succeeded. If no cacheable stage opened the store, success is a no-op
     /// and preserves the lazy/disposable cache boundary.
+    #[cfg(test)]
     pub(super) fn complete_analysis_epoch(&mut self) -> Result<()> {
         match &mut self.store {
             PersistentStore::Ready(store) => store.complete_analysis_epoch(),
@@ -703,6 +727,10 @@ impl ProjectAnalysisCache {
                 "persistent query store is unavailable: {error}"
             ))),
         }
+    }
+
+    pub(super) fn publish_analysis_outputs(&mut self, outputs: &[OutputReceipt]) -> Result<()> {
+        self.store_mut()?.publish_analysis_outputs(outputs)
     }
 
     fn store_mut(&mut self) -> Result<&mut crate::application::query_store::QueryStore> {
@@ -808,26 +836,22 @@ impl ProjectAnalysisCache {
         let mut inputs = inputs.to_vec();
         inputs.sort();
         inputs.dedup();
+        let pass = super::pass_spec::CachePass::parse(stage)?;
         let mut digest = Sha256::new();
         digest.update(b"blobray-project-stage-v4\0");
         // A profile name is a project-local binding, not an analysis input.
         // Equivalent linked-IR profiles with different IDs/output paths must
         // address the same immutable query result.
-        let query_kind = if stage.starts_with("linked-ir:") {
-            "linked-ir"
-        } else {
-            stage
-        };
-        digest.update(query_kind.as_bytes());
+        digest.update(pass.semantic_name().as_bytes());
         digest.update([0]);
         digest.update(env!("CARGO_PKG_VERSION").as_bytes());
         digest.update([0]);
-        digest.update(stage_revision(stage)?.to_le_bytes());
+        digest.update(pass.revision().to_le_bytes());
         digest.update([0]);
         digest.update(b"active-applicability");
         digest.update([0]);
         digest.update(self.active_applicability_fingerprint.as_bytes());
-        if let Some(schema) = stage_artifact_schema(stage) {
+        if let Some(schema) = pass.spec.artifact_schema {
             digest.update([0]);
             digest.update(b"output-schema");
             digest.update([0]);
@@ -835,13 +859,13 @@ impl ProjectAnalysisCache {
             digest.update([0]);
             digest.update(schema.command.as_bytes());
         }
-        if let Some(domain) = stage_analysis_domain(stage) {
+        if let Some(domain) = pass.spec.analysis_domain {
             digest.update([0]);
             digest.update(b"analysis-domain");
             digest.update([0]);
             digest.update(domain);
         }
-        if stage_uses_compiled_knowledge(stage) {
+        if pass.spec.compiled_knowledge {
             digest.update([0]);
             digest.update(self.compiled_knowledge_identity.as_bytes());
         }
@@ -1056,84 +1080,24 @@ fn same_file_version(before: &fs::Metadata, after: &fs::Metadata) -> bool {
         && FileVersion::from_metadata(before) == FileVersion::from_metadata(after)
 }
 
-fn stage_uses_compiled_knowledge(stage: &str) -> bool {
-    stage == "linked-ir"
-        || stage.starts_with("linked-ir:")
-        || stage == "event-replays"
-        || stage == "function-review"
-        || stage == "interface-capability-context"
-        || stage.starts_with("interface-validation:")
-}
-
-fn stage_artifact_schema(stage: &str) -> Option<crate::artifacts::ArtifactSchema> {
-    let owner = stage.split_once(':').map_or(stage, |(owner, _)| owner);
-    match owner {
-        "symbol-inventory" => Some(crate::artifacts::SYMBOL_INVENTORY),
-        "mmio-discovery" => Some(crate::artifacts::MMIO_FACTS),
-        "interface-discovery" => Some(crate::artifacts::INTERFACE_FACTS),
-        "interface-capability-context" => Some(crate::artifacts::CAPABILITY_CONTEXT),
-        "linked-ir" => Some(crate::artifacts::LINKED_IR),
-        "event-replays" => Some(crate::artifacts::REPLAY_EVIDENCE),
-        _ => None,
-    }
-}
-
-fn stage_analysis_domain(stage: &str) -> Option<&'static [u8]> {
-    let owner = stage.split_once(':').map_or(stage, |(owner, _)| owner);
-    match owner {
-        "linked-ir" => Some(crate::analysis::FUNCTION_FACT_CACHE_DOMAIN),
-        _ => None,
-    }
-}
-
-/// Explicit semantic revision of each cached generator.
-///
-/// A digest of the whole executable made presentation-only changes invalidate
-/// every expensive artifact-wide stage.  Bump only the owner below when its
-/// generated document or analysis semantics change.  Input/output content
-/// hashes continue to protect project and caller-owned state.
-fn stage_revision(stage: &str) -> Result<u32> {
-    if stage.starts_with("linked-ir:") {
-        return Ok(61);
-    }
-    match stage {
-        "symbol-inventory" => Ok(2),
-        // v7 follows the indexed-register-before-RAM classification cut. MMIO
-        // discovery consumes the shared structural memory classifier directly,
-        // so retaining a v6 result can hide newly recovered indexed MMIO even
-        // when linked IR has already moved to its matching semantic domain.
-        "mmio-discovery" => Ok(7),
-        "interface-discovery" => Ok(7),
-        "interface-capability-context" => Ok(1),
-        // v61 includes authenticated member/root coverage and source-owned
-        // companions. Older stage products cannot establish these obligations.
-        "linked-ir" => Ok(61),
-        "event-replays" => Ok(1),
-        "review-scopes" => Ok(5),
-        "navigation-index" => Ok(2),
-        "code-boundary-review" => Ok(1),
-        "register-review" => Ok(1),
-        "function-review" => Ok(2),
-        "code-boundary-validation:deny-unreviewed=false"
-        | "code-boundary-validation:deny-unreviewed=true"
-        | "register-validation:deny-unreviewed=false"
-        | "register-validation:deny-unreviewed=true"
-        | "interface-validation:deny-unreviewed=false"
-        | "interface-validation:deny-unreviewed=true" => Ok(1),
-        "function-validation:deny-unreviewed=false"
-        | "function-validation:deny-unreviewed=true" => Ok(2),
-        _ => Err(crate::Error::invalid(format!(
-            "analysis cache has no semantic revision for stage {stage:?}"
-        ))),
-    }
-}
-
 fn path_key(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
 #[cfg(test)]
 mod tests {
+    fn fixture_receipts(paths: &[std::path::PathBuf]) -> Vec<super::OutputReceipt> {
+        let outputs = super::OutputSet::new(paths, false).unwrap();
+        for (index, path) in paths.iter().enumerate() {
+            let identity = crate::application::generated_file::ContentIdentity::read(
+                std::fs::File::open(path).unwrap(),
+            )
+            .unwrap();
+            assert!(outputs.reuse(index, &identity.sha256).unwrap());
+        }
+        outputs.receipts().unwrap()
+    }
+
     use super::*;
 
     #[test]
@@ -1165,7 +1129,12 @@ mod tests {
                 .unwrap();
             assert!(
                 !cache
-                    .is_current("linked-ir", "config", &inputs, &outputs)
+                    .is_current(
+                        "linked-ir",
+                        "config",
+                        &inputs,
+                        &OutputSet::new(&outputs, false).unwrap()
+                    )
                     .unwrap()
             );
             cache
@@ -1175,7 +1144,7 @@ mod tests {
                 .unwrap();
             fs::write(&output, b"linked output").unwrap();
             cache
-                .record("linked-ir", "config", &inputs, &outputs)
+                .record("linked-ir", "config", &inputs, &fixture_receipts(&outputs))
                 .unwrap();
             cache.complete_analysis_epoch().unwrap();
         }
@@ -1184,7 +1153,12 @@ mod tests {
             let mut cache = ProjectAnalysisCache::deferred(&manifest);
             assert!(
                 cache
-                    .is_current("linked-ir", "config", &inputs, &outputs)
+                    .is_current(
+                        "linked-ir",
+                        "config",
+                        &inputs,
+                        &OutputSet::new(&outputs, false).unwrap()
+                    )
                     .unwrap()
             );
             assert!(cache.last_lookup_restored());
@@ -1197,7 +1171,12 @@ mod tests {
             // even though B only restored the whole stage from CAS.
             assert!(
                 !cache
-                    .is_current("linked-ir", "changed", &inputs, &outputs)
+                    .is_current(
+                        "linked-ir",
+                        "changed",
+                        &inputs,
+                        &OutputSet::new(&outputs, false).unwrap()
+                    )
                     .unwrap()
             );
             let facts = cache
@@ -1252,7 +1231,7 @@ mod tests {
                     "linked-ir",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output)
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1261,7 +1240,7 @@ mod tests {
                 "linked-ir",
                 "profile=a",
                 std::slice::from_ref(&input),
-                std::slice::from_ref(&output),
+                &fixture_receipts(std::slice::from_ref(&output)),
             )
             .unwrap();
         assert!(
@@ -1270,7 +1249,7 @@ mod tests {
                     "linked-ir",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output)
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1282,7 +1261,7 @@ mod tests {
                     "linked-ir",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output)
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1295,7 +1274,7 @@ mod tests {
                     "linked-ir",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output)
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1309,7 +1288,7 @@ mod tests {
                     "linked-ir",
                     "profile=b",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output)
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1322,7 +1301,7 @@ mod tests {
                     "linked-ir",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output)
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1351,7 +1330,7 @@ mod tests {
                     "linked-ir",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output),
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1365,7 +1344,7 @@ mod tests {
                 "linked-ir",
                 "profile=a",
                 std::slice::from_ref(&input),
-                std::slice::from_ref(&output),
+                &fixture_receipts(std::slice::from_ref(&output)),
             )
             .unwrap_err();
 
@@ -1400,7 +1379,7 @@ mod tests {
                     "linked-ir",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output),
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1417,7 +1396,7 @@ mod tests {
                 "linked-ir",
                 "profile=a",
                 std::slice::from_ref(&input),
-                std::slice::from_ref(&output),
+                &fixture_receipts(std::slice::from_ref(&output)),
                 || {
                     fs::rename(&input, &saved).unwrap();
                     fs::rename(&replacement, &input).unwrap();
@@ -1443,7 +1422,7 @@ mod tests {
                     "linked-ir",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output),
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1488,7 +1467,7 @@ mod tests {
                     "linked-ir",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output),
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1504,7 +1483,7 @@ mod tests {
                 "linked-ir",
                 "profile=a",
                 std::slice::from_ref(&input),
-                std::slice::from_ref(&output),
+                &fixture_receipts(std::slice::from_ref(&output)),
             )
             .unwrap();
         fs::remove_file(&output).unwrap();
@@ -1515,13 +1494,13 @@ mod tests {
                     "linked-ir",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output),
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap(),
                     || {
                         fs::rename(&input, &saved).unwrap();
                         fs::rename(&replacement, &input).unwrap();
                         fs::rename(&input, &replacement).unwrap();
                         fs::rename(&saved, &input).unwrap();
-                    },
+                    }
                 )
                 .unwrap()
         );
@@ -1573,7 +1552,7 @@ mod tests {
                     "linked-ir",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output),
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1587,7 +1566,7 @@ mod tests {
                 "linked-ir",
                 "profile=a",
                 std::slice::from_ref(&input),
-                std::slice::from_ref(&output),
+                &fixture_receipts(std::slice::from_ref(&output)),
             )
             .unwrap_err();
 
@@ -1651,7 +1630,7 @@ mod tests {
                     "linked-ir",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output),
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1665,7 +1644,7 @@ mod tests {
                 "linked-ir",
                 "profile=a",
                 std::slice::from_ref(&input),
-                std::slice::from_ref(&output),
+                &fixture_receipts(std::slice::from_ref(&output)),
             )
             .unwrap_err();
 
@@ -1696,7 +1675,7 @@ mod tests {
                     "mmio-discovery",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output),
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1707,7 +1686,7 @@ mod tests {
                 "mmio-discovery",
                 "profile=a",
                 std::slice::from_ref(&input),
-                std::slice::from_ref(&output),
+                &fixture_receipts(std::slice::from_ref(&output)),
             )
             .unwrap();
 
@@ -1737,7 +1716,7 @@ mod tests {
                     "function-review",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output),
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1746,7 +1725,7 @@ mod tests {
                 "function-review",
                 "profile=a",
                 std::slice::from_ref(&input),
-                std::slice::from_ref(&output),
+                &fixture_receipts(std::slice::from_ref(&output)),
             )
             .unwrap();
         assert!(
@@ -1755,7 +1734,7 @@ mod tests {
                     "function-review",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output)
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1767,7 +1746,7 @@ mod tests {
                     "function-review",
                     "profile=a",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&output)
+                    &OutputSet::new(std::slice::from_ref(&output), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1833,7 +1812,7 @@ mod tests {
                     "linked-ir:focused",
                     "sources=[vendor];roots=all",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&focused),
+                    &OutputSet::new(std::slice::from_ref(&focused), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1842,7 +1821,7 @@ mod tests {
                 "linked-ir:focused",
                 "sources=[vendor];roots=all",
                 std::slice::from_ref(&input),
-                std::slice::from_ref(&focused),
+                &fixture_receipts(std::slice::from_ref(&focused)),
             )
             .unwrap();
         assert!(
@@ -1851,7 +1830,7 @@ mod tests {
                     "linked-ir:renamed",
                     "sources=[vendor];roots=all",
                     std::slice::from_ref(&input),
-                    std::slice::from_ref(&renamed),
+                    &OutputSet::new(std::slice::from_ref(&renamed), false).unwrap()
                 )
                 .unwrap()
         );
@@ -1883,54 +1862,110 @@ mod tests {
             "interface-validation:deny-unreviewed=false",
             "interface-validation:deny-unreviewed=true",
         ] {
-            assert!(stage_revision(stage).unwrap() > 0);
+            assert!(
+                super::super::pass_spec::CachePass::parse(stage)
+                    .unwrap()
+                    .revision()
+                    > 0
+            );
         }
-        assert!(stage_revision("new-unversioned-stage").is_err());
-        assert_eq!(stage_revision("mmio-discovery").unwrap(), 7);
-        assert_eq!(stage_revision("linked-ir").unwrap(), 61);
-        assert_eq!(stage_revision("linked-ir:any-profile").unwrap(), 61);
+        assert!(super::super::pass_spec::CachePass::parse("new-unversioned-stage").is_err());
+        assert_eq!(
+            super::super::pass_spec::CachePass::parse("mmio-discovery")
+                .unwrap()
+                .revision(),
+            9
+        );
+        assert_eq!(
+            super::super::pass_spec::CachePass::parse("linked-ir")
+                .unwrap()
+                .revision(),
+            69
+        );
+        assert_eq!(
+            super::super::pass_spec::CachePass::parse("linked-ir:any-profile")
+                .unwrap()
+                .revision(),
+            69
+        );
     }
 
     #[test]
     fn persistent_artifact_stages_include_their_strict_output_schema() {
         assert_eq!(
-            stage_artifact_schema("symbol-inventory"),
+            super::super::pass_spec::CachePass::parse("symbol-inventory")
+                .unwrap()
+                .spec
+                .artifact_schema,
             Some(crate::artifacts::SYMBOL_INVENTORY)
         );
         assert_eq!(
-            stage_artifact_schema("mmio-discovery"),
+            super::super::pass_spec::CachePass::parse("mmio-discovery")
+                .unwrap()
+                .spec
+                .artifact_schema,
             Some(crate::artifacts::MMIO_FACTS)
         );
         assert_eq!(
-            stage_artifact_schema("interface-discovery"),
+            super::super::pass_spec::CachePass::parse("interface-discovery")
+                .unwrap()
+                .spec
+                .artifact_schema,
             Some(crate::artifacts::INTERFACE_FACTS)
         );
         assert_eq!(
-            stage_artifact_schema("interface-capability-context"),
+            super::super::pass_spec::CachePass::parse("interface-capability-context")
+                .unwrap()
+                .spec
+                .artifact_schema,
             Some(crate::artifacts::CAPABILITY_CONTEXT)
         );
         assert_eq!(
-            stage_artifact_schema("linked-ir:focused"),
+            super::super::pass_spec::CachePass::parse("linked-ir:focused")
+                .unwrap()
+                .spec
+                .artifact_schema,
             Some(crate::artifacts::LINKED_IR)
         );
         assert_eq!(
-            stage_artifact_schema("event-replays"),
+            super::super::pass_spec::CachePass::parse("event-replays")
+                .unwrap()
+                .spec
+                .artifact_schema,
             Some(crate::artifacts::REPLAY_EVIDENCE)
         );
-        assert_eq!(stage_artifact_schema("register-review"), None);
+        assert_eq!(
+            super::super::pass_spec::CachePass::parse("register-review")
+                .unwrap()
+                .spec
+                .artifact_schema,
+            None
+        );
     }
 
     #[test]
     fn linked_ir_stage_fingerprints_the_function_fact_analysis_domain() {
         assert_eq!(
-            stage_analysis_domain("linked-ir"),
+            super::super::pass_spec::CachePass::parse("linked-ir")
+                .unwrap()
+                .spec
+                .analysis_domain,
             Some(crate::analysis::FUNCTION_FACT_CACHE_DOMAIN)
         );
         assert_eq!(
-            stage_analysis_domain("linked-ir:any-profile"),
+            super::super::pass_spec::CachePass::parse("linked-ir:any-profile")
+                .unwrap()
+                .spec
+                .analysis_domain,
             Some(crate::analysis::FUNCTION_FACT_CACHE_DOMAIN)
         );
-        assert_eq!(stage_analysis_domain("function-review"), None);
+        assert_eq!(
+            super::super::pass_spec::CachePass::parse("function-review")
+                .unwrap()
+                .spec
+                .analysis_domain,
+            None
+        );
     }
 
     #[test]
@@ -2104,5 +2139,126 @@ mod tests {
         }
 
         fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn emitted_receipt_cannot_be_replaced_by_later_file_content_during_cache_record() {
+        for during_publication in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let manifest = directory.path().join("project.toml");
+            fs::write(&manifest, "schema = 1\n").unwrap();
+            let output = directory.path().join("generated/result");
+            let inputs = [manifest.clone()];
+            let paths = [output.clone()];
+            let mut cache = ProjectAnalysisCache::deferred(&manifest);
+            assert!(
+                !cache
+                    .is_current(
+                        "symbol-inventory",
+                        "fixture",
+                        &inputs,
+                        &OutputSet::new(&paths, false).unwrap()
+                    )
+                    .unwrap()
+            );
+            let signature = cache.observed_inputs["symbol-inventory"]
+                .snapshot
+                .signature
+                .clone();
+            let emitted = OutputSet::new(&paths, false).unwrap();
+            emitted
+                .file(0, "fixture")
+                .unwrap()
+                .text("original")
+                .unwrap();
+            if !during_publication {
+                fs::write(&output, "modified").unwrap();
+            }
+            let error = cache
+                .record_with_post_publish_hook(
+                    "symbol-inventory",
+                    "fixture",
+                    &inputs,
+                    &emitted.receipts().unwrap(),
+                    || {
+                        if during_publication {
+                            fs::write(&output, "modified").unwrap();
+                        }
+                    },
+                )
+                .unwrap_err();
+            assert!(error.to_string().contains("changed after emission"));
+            if during_publication {
+                assert!(error.to_string().contains("binding was retired"));
+            }
+            assert!(
+                cache
+                    .store_mut()
+                    .unwrap()
+                    .stage_output_digests(&signature)
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(fs::read_to_string(&output).unwrap(), "modified");
+        }
+    }
+
+    #[test]
+    fn restored_output_receipt_retires_a_binding_changed_by_the_post_bind_hook() {
+        let directory = tempfile::tempdir().unwrap();
+        let manifest = directory.path().join("project.toml");
+        fs::write(&manifest, "schema = 1\n").unwrap();
+        let output = directory.path().join("generated/result");
+        let inputs = [manifest.clone()];
+        let paths = [output.clone()];
+        let mut cache = ProjectAnalysisCache::deferred(&manifest);
+        assert!(
+            !cache
+                .is_current(
+                    "symbol-inventory",
+                    "fixture",
+                    &inputs,
+                    &OutputSet::new(&paths, false).unwrap()
+                )
+                .unwrap()
+        );
+        let signature = cache.observed_inputs["symbol-inventory"]
+            .snapshot
+            .signature
+            .clone();
+        let emitted = OutputSet::new(&paths, false).unwrap();
+        emitted
+            .file(0, "fixture")
+            .unwrap()
+            .text("original")
+            .unwrap();
+        cache
+            .record(
+                "symbol-inventory",
+                "fixture",
+                &inputs,
+                &emitted.receipts().unwrap(),
+            )
+            .unwrap();
+        fs::remove_file(&output).unwrap();
+        let error = cache
+            .is_current_with_post_bind_hook(
+                "symbol-inventory",
+                "fixture",
+                &inputs,
+                &OutputSet::new(&paths, false).unwrap(),
+                || {
+                    fs::write(&output, "modified").unwrap();
+                },
+            )
+            .unwrap_err();
+        assert!(error.to_string().contains("binding was retired"));
+        assert!(
+            cache
+                .store_mut()
+                .unwrap()
+                .stage_output_digests(&signature)
+                .unwrap()
+                .is_none()
+        );
     }
 }

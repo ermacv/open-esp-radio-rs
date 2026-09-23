@@ -304,8 +304,10 @@ pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bo
         .iter()
         .map(|input| (input.role.to_string(), input.path.clone()))
         .collect::<Vec<_>>();
-    let inventory = build_project_linkage_inventory(&inputs)?;
-    let artifact = build_symbol_inventory_document(&inventory, |symbol| options.includes(symbol))?;
+    let captures =
+        crate::source_set::CapturedSourceSet::capture(inputs.iter().map(|(_, path)| path.clone()));
+    let inventory = build_project_linkage_inventory(&captures, &inputs)?;
+    let artifact = build_symbol_inventory_document(&inventory, |symbol| options.includes(symbol));
     let publication = options.output.as_deref().map(|path| {
         crate::cli::output::Publication::new(
             path,
@@ -313,13 +315,12 @@ pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bo
         )
     });
     if let Some(path) = options.output.as_deref() {
-        crate::application::generated_file::write_or_check_json(
+        crate::application::generated_file::GeneratedOutput::new(
             path,
-            &artifact,
             options.check,
             "symbol inventory",
-            false,
-        )?;
+        )
+        .json(&artifact, false)?;
     }
     let document = CommandDocument {
         artifact: &artifact,

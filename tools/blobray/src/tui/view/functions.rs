@@ -63,6 +63,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
             let mut lines = vec![
                 field("Identity", &function.identity),
                 field("Source", &function.source),
+                field("Code occurrence", &function.code_identity),
                 field("Profile", &function.profile),
                 field("Selection", function.selection.label()),
                 field("Calls", function.calls.to_string()),

@@ -89,6 +89,12 @@ mod tests {
         assert_eq!(crystal.source, "esp32s31-rev0-chip-addon");
 
         let blob = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                "chip-addon-rejected-blob",
+                &Some("pp.o".to_owned()),
+                "pp_post",
+                0,
+            ),
             member: Some("pp.o".to_owned()),
             name: "pp_post".to_owned(),
             address: 0,

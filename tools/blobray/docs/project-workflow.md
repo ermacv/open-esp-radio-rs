@@ -289,6 +289,14 @@ Large JSON outputs are serialized directly against their existing bytes with
 bounded buffers in check mode; verification does not need a second copy in
 `/tmp` and does not write a staging file into the project.
 
+Text, binary and JSON file exports share one write/check lifecycle with cached
+output restoration. Write mode completes and syncs a sibling temporary file
+before replacing the destination. A failed encoder leaves the previous file
+intact. Existing hard links and symbolic links at the destination are replaced
+as entries, rather than modifying the linked file. This guarantee applies to one
+file; directory bundles and an entire project generation have separate
+publication lifecycles.
+
 ## Source-only register publication
 
 An explicitly selected model-only composition can validate its register model
@@ -644,7 +652,7 @@ unless its predecessor has a matching marker, so cleanup or an accidental
 binding edit cannot silently erase the old correspondence map.
 While `baseline` and `current` differ, `project status` and deep doctor report
 `revision-review-pending` instead of `ready`; a captured snapshot is not an
-accepted review decision. Blobray accepts only schema-5 snapshots and
+accepted review decision. Blobray accepts only schema-6 snapshots and
 revision-state DSL version 1. TOML and older state are not migrated or
 interpreted: remove invalid state, then capture a fresh current snapshot from
 the live typed vendor bindings.
@@ -745,9 +753,68 @@ storage, cold-store compatibility and retention contracts are in
 [`cache-policy.md`](cache-policy.md). `project analyze --plan` is the
 read-only way to see whether
 each stage is current, restorable from CAS, or requires recomputation. Plan
-schema 2 keeps the default decision summary bounded while exposing every
-deferred generated input and its producer stage as structured
-`awaiting-inputs` in JSON and in `--details` output.
+schema 5 keeps the default decision summary bounded. Each work item exposes
+`inputs` with a path and `required`/`optional` requirement, ordered `outputs`,
+and deferred generated inputs with their `producer-stage` and exact
+`producer-work` identity under `awaiting-inputs`.
+These declarations are also available in `--details` output. Coverage verification
+lists linked-IR files as inputs and has no generated outputs. Required inputs
+must pass preflight; only a declared optional input can be absent, and other I/O
+errors remain errors. An optional use cannot weaken another required use of the
+same path.
+
+Analysis captures a catalog of output owners before running stages or restoring
+cached files. Conflicting destinations and overlaps with source or reviewed
+inputs fail preflight in plan, check and write modes. A generated dependency
+must name an exact declared file or IR bundle root; parent directories and
+undeclared children do not inherit a producer. Replay output declarations are
+captured from the reviewed function pack once for the invocation.
+
+Execution retains these output bindings through completion. A stage can acquire
+each file destination once; successful write or comparison completes that slot.
+An old file merely existing at the destination cannot substitute for execution.
+IR bundles account for all declared members, including coverage, using the same
+per-work completion contract. Cache reuse and restoration have their own
+candidate bindings, admitted from the same declaration.
+
+Completion retains the exact content length and SHA-256. If an output changes
+before cache recording, during cache publication or before epoch activation,
+analysis fails instead of accepting the changed bytes as its result. The previous
+cache epoch remains active when final validation fails; generated files already
+written by the invocation are not rolled back.
+
+A successful analysis also retains an output manifest in its published cache
+epoch. Library callers can use `PublishedAnalysisOutputs::open(project_manifest)`
+to obtain its epoch and exact output bindings, then `read(path)` to access a
+declared output without its generated file. A handle keeps its original epoch
+while another analysis runs. Missing or corrupt declared CAS content is an
+error; there is no fallback to a file at the same path. The manifest also names
+its owning project manifest and rejects reads through another project's locator.
+It does not capture all project inputs or reviewed state.
+
+Application/TUI function summaries, details and their static MMIO annotations,
+interface observations, code-boundary facts, register discovery/IR evidence and
+research IR graphs select the published epoch through the session. This requires a successful `project analyze`; a standalone IR export alone is not a
+published project generation. A failed first capture remains failed until
+reload. `generated_analysis_epoch` in the workspace snapshot and `analysis_epoch` in
+function details expose the selected generation. Deleting the corresponding exported files
+does not prevent these queries, while a changed live binary produces an explicit
+identity error during focused investigation. Other query domains and standalone
+inspection commands still have their own loaders.
+
+For large outputs, `open_output(path)` returns a verified streaming reader with
+payload-relative `Read` and `Seek`, avoiding a full payload allocation. Keep that
+reader to make multiple indexed reads without rehashing the object on every
+seek. Opening a new reader verifies the payload again. Dropping the manifest
+handle does not invalidate an already opened output reader.
+
+Before each cache-backed operation, its ordered outputs must still match that
+catalog. Existing symlinks are resolved, changed output bindings are rejected,
+and Unix hosts also reject existing hard-link aliases. These checks cover
+project analysis, not all standalone commands or publication workflows. They
+are preflight checks, not pinned filesystem capabilities: concurrent path
+replacement after validation and atomic publication of an entire generation
+are not provided by this contract.
 
 Writing analysis emits structured `cache_outcome` events for current hits,
 restored hits, misses followed by recomputation, and publication of recomputed

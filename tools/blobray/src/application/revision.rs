@@ -21,12 +21,14 @@ use super::{ProjectContext, ProjectSession};
 use crate::{
     Result,
     artifacts::LinkedIrReader,
-    interfaces::{InterfaceFactRoot, InterfaceFactStep, InterfaceFacts},
-    registers::{RegisterFacts, load_effective_register_model},
+    interfaces::{InterfaceFactRoot, InterfaceFactStep},
     symbol_lineage::{SymbolLineageRebaseEvidence, SymbolLineageStatus},
 };
 
-pub(crate) const REVISION_SCHEMA: u32 = 5;
+mod registers;
+use registers::RevisionRegisters;
+
+pub(crate) const REVISION_SCHEMA: u32 = 6;
 pub(crate) const REVISION_DIFF_REPORT_SCHEMA: u32 = 2;
 pub(crate) const REVISION_REBASE_REPORT_SCHEMA: u32 = 3;
 pub(crate) const REVISION_PREPARE_UPDATE_REPORT_SCHEMA: u32 = 2;
@@ -50,7 +52,7 @@ pub(crate) struct RevisionSnapshot {
     pub(crate) artifacts: Vec<RevisionArtifact>,
     pub(crate) applicability: ApplicabilityContext,
     pub(crate) functions: Vec<RevisionFunction>,
-    pub(crate) registers: Vec<RevisionRegister>,
+    pub(crate) registers: RevisionRegisters,
     pub(crate) interfaces: Vec<RevisionInterface>,
     pub(crate) assertions: Vec<RevisionReviewedRecord>,
     pub(crate) vendor_bugs: Vec<RevisionReviewedRecord>,
@@ -99,17 +101,6 @@ pub(crate) struct RevisionFunction {
     pub(crate) features: Vec<String>,
     pub(crate) completeness: RevisionCompleteness,
     pub(crate) blocker_roots: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct RevisionRegister {
-    pub(crate) id: String,
-    pub(crate) address: u32,
-    pub(crate) width: u8,
-    pub(crate) name: Option<String>,
-    pub(crate) fingerprint: String,
-    pub(crate) features: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1569,12 +1560,8 @@ fn write_snapshot_or_check(path: &Path, snapshot: &RevisionSnapshot, check: bool
         return Ok(());
     }
     let encoded = encode_snapshot(snapshot, path)?;
-    crate::application::generated_file::write_or_check_bytes(
-        path,
-        &encoded,
-        false,
-        "revision snapshot",
-    )?;
+    crate::application::generated_file::GeneratedOutput::new(path, false, "revision snapshot")
+        .bytes(&encoded)?;
     // The shared binary writer publishes by atomic rename. Sync the renamed
     // file and then its directory before publishing the state pointer. That
     // ordering permits an orphan snapshot after a crash, never a durable
@@ -1967,151 +1954,45 @@ fn snapshot_registers(
     session: &ProjectSession,
     revision_artifacts: &BTreeSet<RevisionArtifact>,
     vendor_sources: &BTreeSet<String>,
-) -> Result<Vec<RevisionRegister>> {
-    let Some(paths) = session.project.registers.as_ref() else {
-        return Ok(Vec::new());
-    };
-    let facts = RegisterFacts::load(&paths.facts)?;
-    let fact_artifacts = facts
-        .artifacts
-        .iter()
-        .map(|artifact| RevisionArtifact {
-            role: None,
-            source: artifact.source.clone(),
-            sha256: artifact.sha256.clone(),
-        })
-        .collect::<Vec<_>>();
-    validate_vendor_projection_artifacts(
-        "MMIO facts",
-        &fact_artifacts,
-        revision_artifacts,
-        vendor_sources,
-        true,
-    )?;
-    let model = load_effective_register_model(paths)?;
-    let projections = model.register_projections()?;
-    let identities = projections
-        .iter()
-        .map(|(key, projection)| (*key, projection.identity.clone()))
-        .collect::<BTreeMap<_, _>>();
-    let mut reviewed_features = BTreeMap::<(u64, u32), Vec<String>>::new();
-    for (key, projection) in projections {
-        if let Some(annotation) = projection.review {
-            let encoded = serde_json::to_string(&annotation)?;
-            reviewed_features
-                .entry(key)
-                .or_default()
-                .push(format!("reviewed-model:{}", fingerprint(&[encoded])?));
-        }
-    }
-    for assertion in model.reviewed_register_facts() {
-        let key = match &assertion.subject {
-            SemanticEntityId::Register { address, width, .. } => (*address, *width),
-            SemanticEntityId::RegisterField {
-                address,
-                register_width,
-                ..
-            } => (*address, *register_width),
-            _ => continue,
-        };
-        let encoded = serde_json::to_string(assertion)?;
-        reviewed_features
-            .entry(key)
-            .or_default()
-            .push(format!("reviewed:{}", fingerprint(&[encoded])?));
-    }
-    let encode_id = |address: u64, width: u32| {
-        SemanticEntityId::register(model.chip(), model.address_space(), address, width)
-            .map(|identity| identity.to_string())
-            .map_err(|error| {
-                crate::Error::invalid(format!(
-                    "cannot encode revision register identity at {address:#010x}: {error}"
-                ))
+) -> Result<RevisionRegisters> {
+    let inventory = session.register_query()?.snapshot.inventory();
+    validate_register_artifacts(inventory, revision_artifacts, vendor_sources)?;
+    RevisionRegisters::capture(inventory.clone())
+}
+
+fn validate_register_artifacts(
+    inventory: &super::register_inventory::RegisterInventory,
+    revision_artifacts: &BTreeSet<RevisionArtifact>,
+    vendor_sources: &BTreeSet<String>,
+) -> Result<()> {
+    // Authenticate captured discovery provenance, without reopening the source
+    // through a second loader or rebuilding a width-based register projection.
+    for evidence in inventory
+        .evidence
+        .values()
+        .filter(|evidence| evidence.kind == "analysis-run")
+    {
+        let artifacts: Vec<crate::artifacts::StoredMmioArtifact> =
+            serde_json::from_value(evidence.payload.get("artifacts").cloned().ok_or_else(
+                || crate::Error::invalid("MMIO facts have no captured artifact provenance"),
+            )?)?;
+        let artifacts = artifacts
+            .into_iter()
+            .map(|artifact| RevisionArtifact {
+                role: None,
+                source: artifact.source,
+                sha256: artifact.artifact.sha256,
             })
-    };
-    let mut registers = BTreeMap::<(u64, u32), RevisionRegister>::new();
-    for register in facts.registers {
-        let key = (u64::from(register.address), u32::from(register.width));
-        let name = identities.get(&key).cloned();
-        let mut features = vec![
-            "observed".to_owned(),
-            format!("reads:{}", register.reads),
-            format!("writes:{}", register.writes),
-        ];
-        if let Some(name) = &name {
-            features.push(format!("name:{name}"));
-        }
-        features.extend(reviewed_features.get(&key).into_iter().flatten().cloned());
-        features.extend(
-            register
-                .read_functions
-                .iter()
-                .map(|function| format!("read:{function}")),
-        );
-        features.extend(
-            register
-                .write_functions
-                .iter()
-                .map(|function| format!("write:{function}")),
-        );
-        features.extend(register.write_patterns.iter().map(|pattern| {
-            format!(
-                "pattern:{:#010x}:{:#010x}:{:#010x}:{:#010x}:{:#010x}:{:#010x}",
-                pattern.modified_mask,
-                pattern.preserved_mask,
-                pattern.inverted_mask,
-                pattern.forced_zero_mask,
-                pattern.forced_one_mask,
-                pattern.dynamic_mask
-            )
-        }));
-        features.sort();
-        features.dedup();
-        registers.insert(
-            key,
-            RevisionRegister {
-                id: encode_id(key.0, key.1)?,
-                address: register.address,
-                width: register.width,
-                name,
-                fingerprint: fingerprint(&features)?,
-                features,
-            },
-        );
+            .collect::<Vec<_>>();
+        validate_vendor_projection_artifacts(
+            "MMIO facts",
+            &artifacts,
+            revision_artifacts,
+            vendor_sources,
+            true,
+        )?;
     }
-    for (key, name) in identities {
-        if registers.contains_key(&key) {
-            continue;
-        }
-        let address = u32::try_from(key.0).map_err(|_| {
-            crate::Error::invalid(format!(
-                "model-only revision register address {:#x} exceeds the snapshot address domain",
-                key.0
-            ))
-        })?;
-        let width = u8::try_from(key.1).map_err(|_| {
-            crate::Error::invalid(format!(
-                "model-only revision register width {} exceeds the snapshot width domain",
-                key.1
-            ))
-        })?;
-        let mut features = vec!["model-only".to_owned(), format!("name:{name}")];
-        features.extend(reviewed_features.get(&key).into_iter().flatten().cloned());
-        features.sort();
-        features.dedup();
-        registers.insert(
-            key,
-            RevisionRegister {
-                id: encode_id(key.0, key.1)?,
-                address,
-                width,
-                name: Some(name),
-                fingerprint: fingerprint(&features)?,
-                features,
-            },
-        );
-    }
-    Ok(registers.into_values().collect())
+    Ok(())
 }
 
 fn snapshot_interfaces(
@@ -2123,7 +2004,12 @@ fn snapshot_interfaces(
     let Some(paths) = session.project.interfaces.as_ref() else {
         return Ok((Vec::new(), Vec::new()));
     };
-    let facts = InterfaceFacts::load(&paths.facts)?;
+    let facts = session.interface_facts()?.ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "interface observations have not been generated: {}",
+            paths.facts.display()
+        ))
+    })?;
     let mut artifacts = BTreeSet::new();
     let mut revision_artifact_indices = BTreeSet::new();
     for artifact in &facts.artifacts {
@@ -2182,76 +2068,161 @@ fn snapshot_interfaces(
             "interface facts contain no current vendor artifact provenance",
         ));
     }
-    let mut entities = facts
+    let entities = interface_revision_entities(facts, &revision_artifact_indices)?;
+    Ok((artifacts.into_iter().collect(), entities))
+}
+
+fn interface_revision_entities(
+    facts: &crate::interfaces::InterfaceFacts,
+    included: &BTreeSet<usize>,
+) -> Result<Vec<RevisionInterface>> {
+    let mut subjects = BTreeMap::<String, (BTreeSet<String>, BTreeSet<(usize, String)>)>::new();
+    for table in facts
         .tables
         .iter()
-        .filter(|table| revision_artifact_indices.contains(&table.artifact))
-        .map(|table| {
-            let artifact = facts.artifact(table.artifact).ok_or_else(|| {
-                crate::Error::invalid("interface table references an absent artifact")
-            })?;
-            let sources = artifact
-                .sources
+        .filter(|table| included.contains(&table.artifact))
+    {
+        let artifact = facts.artifact(table.artifact).ok_or_else(|| {
+            crate::Error::invalid("interface table references an absent artifact")
+        })?;
+        let sources = artifact
+            .sources
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(",");
+        let path = table
+            .container_path
+            .iter()
+            .map(interface_step)
+            .collect::<Vec<_>>()
+            .join("/");
+        let id = format!("interface:{sources}:{}:{path}", interface_root(&table.root));
+        let (features, functions) = subjects.entry(id).or_default();
+        features.extend(table.slots.iter().map(|slot| {
+            format!(
+                "slot:{:+#x}/{}:{}",
+                slot.offset,
+                slot.width,
+                slot.selector
+                    .map_or_else(|| "-".to_owned(), |selector| selector.canonical())
+            )
+        }));
+        if let InterfaceFactRoot::AbsoluteAddress { data_address, .. } = &table.root {
+            features.insert(format!(
+                "data-address:{}",
+                serde_json::to_string(data_address)?
+            ));
+        }
+        functions.extend(
+            table
+                .functions
                 .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(",");
-            let path = table
-                .container_path
-                .iter()
-                .map(interface_step)
-                .collect::<Vec<_>>()
-                .join("/");
-            let id = format!("interface:{sources}:{}:{path}", interface_root(&table.root));
-            let mut features = table
-                .slots
-                .iter()
-                .map(|slot| {
-                    format!(
-                        "slot:{:+#x}/{}:{}",
-                        slot.offset,
-                        slot.width,
-                        slot.selector
-                            .map_or_else(|| "-".to_owned(), |selector| selector.canonical())
-                    )
-                })
-                .collect::<Vec<_>>();
-            features.sort();
-            features.dedup();
+                .map(|function| (table.artifact, function.clone())),
+        );
+    }
+    // Preserve instruction evidence independently of the aggregated table shape.
+    // An unresolved call may have no table candidate at all.
+    let mut observations = Vec::new();
+    for call in &facts.calls {
+        observations.push((
+            call.artifact,
+            &call.owner,
+            call.function.as_str(),
+            Some(call.site),
+            "call",
+            serde_json::to_string(call)?,
+        ));
+    }
+    for assignment in &facts.assignments {
+        observations.push((
+            assignment.artifact,
+            &assignment.owner,
+            assignment.function.as_str(),
+            Some(assignment.site),
+            "assignment",
+            serde_json::to_string(assignment)?,
+        ));
+    }
+    for gap in &facts.gaps {
+        observations.push((
+            gap.artifact,
+            &gap.evidence.owner,
+            gap.evidence.function.as_str(),
+            Some(gap.evidence.site),
+            "gap",
+            serde_json::to_string(&gap.evidence)?,
+        ));
+    }
+    for blocker in &facts.decode_blockers {
+        observations.push((
+            blocker.artifact,
+            &blocker.owner,
+            blocker.function.as_str(),
+            Some(blocker.address),
+            "decode-blocker",
+            serde_json::to_string(blocker)?,
+        ));
+    }
+    for failure in &facts.analysis_failures {
+        observations.push((
+            failure.artifact,
+            &failure.owner,
+            failure.function.as_str(),
+            None,
+            "analysis-failure",
+            serde_json::to_string(failure)?,
+        ));
+    }
+    for (artifact_index, owner, function, site, kind, evidence) in observations {
+        if !included.contains(&artifact_index) {
+            continue;
+        }
+        let artifact = facts.artifact(artifact_index).ok_or_else(|| {
+            crate::Error::invalid("interface evidence references an absent artifact")
+        })?;
+        let sources = serde_json::to_string(&artifact.sources)?;
+        let locator = serde_json::to_string(&(owner, site))?;
+        let (features, functions) = subjects
+            .entry(format!("interface-evidence:{sources}:{locator}"))
+            .or_default();
+        features.insert(format!("{kind}:{evidence}"));
+        features.insert(format!("limits:{}", serde_json::to_string(&facts.limits)?));
+        functions.insert((artifact_index, function.to_owned()));
+    }
+    subjects
+        .into_iter()
+        .map(|(id, (features, functions))| {
+            let features = features.into_iter().collect::<Vec<_>>();
             Ok(RevisionInterface {
                 id,
                 fingerprint: fingerprint(&features)?,
                 features,
-                functions: table.functions.len(),
+                functions: functions.len(),
             })
         })
-        .collect::<Result<Vec<_>>>()?;
-    entities.sort_by(|left, right| left.id.cmp(&right.id));
-    Ok((artifacts.into_iter().collect(), entities))
+        .collect()
 }
 
 fn interface_root(root: &InterfaceFactRoot) -> String {
     match root {
         InterfaceFactRoot::RelocatedSymbol {
-            member,
-            symbol,
             addend,
             addressing,
-        } => format!(
-            "reloc:{}:{symbol}:{addend}:{addressing}",
-            member.as_deref().unwrap_or("-")
-        ),
-        InterfaceFactRoot::FunctionArgument { argument } => format!("arg:{argument}"),
-        InterfaceFactRoot::BoundedDataAddress {
-            canonical,
-            member,
-            symbol,
+            reference,
             ..
-        } => format!(
-            "data:{canonical}:{}:{symbol}",
-            member.as_deref().unwrap_or("-")
-        ),
-        InterfaceFactRoot::AbsoluteAddress { address } => format!("absolute:{address:#010x}"),
+        } => match reference {
+            open_radio_vendor_contracts::SymbolReference::Captured { .. } => {
+                format!("reloc:{reference:?}:{addend}:{addressing}")
+            }
+            open_radio_vendor_contracts::SymbolReference::Unknown { .. } => {
+                format!("opaque-reloc:{root:?}")
+            }
+        },
+        InterfaceFactRoot::FunctionArgument { owner, argument } => {
+            format!("arg:{owner}:{argument}")
+        }
+        InterfaceFactRoot::AbsoluteAddress { address, .. } => format!("absolute:{address:#010x}"),
     }
 }
 
@@ -2442,39 +2413,7 @@ fn validate_snapshot(snapshot: &RevisionSnapshot) -> Result<()> {
             &function.fingerprint,
         )?;
     }
-    validate_unique(
-        "register",
-        snapshot.registers.iter().map(|entity| &entity.id),
-    )?;
-    for register in &snapshot.registers {
-        validate_revision_features(
-            "register",
-            &register.id,
-            &register.features,
-            &register.fingerprint,
-        )?;
-        let identity = register.id.parse::<SemanticEntityId>().map_err(|error| {
-            crate::Error::invalid(format!(
-                "revision register {:?} is not a canonical semantic identity: {error}",
-                register.id
-            ))
-        })?;
-        let SemanticEntityId::Register { address, width, .. } = &identity else {
-            return Err(crate::Error::invalid(format!(
-                "revision register {:?} does not use the register semantic domain",
-                register.id
-            )));
-        };
-        if identity.to_string() != register.id
-            || *address != u64::from(register.address)
-            || *width != u32::from(register.width)
-        {
-            return Err(crate::Error::invalid(format!(
-                "revision register {:?} does not match its canonical address {:#010x}/{}",
-                register.id, register.address, register.width
-            )));
-        }
-    }
+    snapshot.registers.validate()?;
     validate_unique(
         "interface",
         snapshot.interfaces.iter().map(|entity| &entity.id),
@@ -2693,14 +2632,15 @@ pub(crate) fn diff(from: &RevisionSnapshot, to: &RevisionSnapshot) -> RevisionDi
     );
     diff_domain(
         "register",
-        from.registers.iter().map(|entity| EntityView {
-            id: &entity.id,
-            fingerprint: &entity.fingerprint,
-        }),
-        to.registers.iter().map(|entity| EntityView {
-            id: &entity.id,
-            fingerprint: &entity.fingerprint,
-        }),
+        from.registers.entities(),
+        to.registers.entities(),
+        &mut summary,
+        &mut changes,
+    );
+    diff_domain(
+        "register-coverage",
+        from.registers.context_entity(),
+        to.registers.context_entity(),
         &mut summary,
         &mut changes,
     );
@@ -2831,7 +2771,9 @@ fn research_invalidations(
                 "changed or unresolved function identity invalidates semantic conclusions and dependent evidence",
                 &subjects,
             ),
-            ("register", classification) if classification != RevisionChangeClass::Unchanged => {
+            ("register" | "register-coverage", classification)
+                if classification != RevisionChangeClass::Unchanged =>
+            {
                 add(
                     "register-model",
                     "register observations changed and reviewed names/access semantics require revalidation",
@@ -2919,6 +2861,9 @@ fn research_invalidations(
     for area in areas.values_mut() {
         for record in &reviewed {
             let subject_matches = record.anchor.semantic_entities().any(|subject| {
+                if let Some(location) = registers::semantic_location(subject) {
+                    return area.subjects.contains(&location);
+                }
                 let encoded = subject.to_string();
                 let (subject, _) = split_subject_suffix(&encoded);
                 area.subjects.contains(subject)
@@ -3117,7 +3062,7 @@ pub(crate) fn rebase(
         .functions
         .iter()
         .map(|entity| entity.id.as_str())
-        .chain(to.registers.iter().map(|entity| entity.id.as_str()))
+        .chain(to.registers.entities().map(|entity| entity.id))
         .chain(to.interfaces.iter().map(|entity| entity.id.as_str()))
         .collect::<BTreeSet<_>>();
     let current = to
@@ -3141,7 +3086,7 @@ pub(crate) fn rebase(
                     &current,
                     &unchanged_subjects,
                     &target_subjects,
-                    &to.applicability,
+                    to,
                     &mappings,
                 )
             })
@@ -3152,7 +3097,7 @@ pub(crate) fn rebase(
                     &current,
                     &unchanged_subjects,
                     &target_subjects,
-                    &to.applicability,
+                    to,
                     &mappings,
                 )
             }))
@@ -3246,10 +3191,7 @@ fn subject_fingerprints(snapshot: &RevisionSnapshot) -> BTreeMap<&str, Vec<&str>
             id: &entity.id,
             fingerprint: &entity.fingerprint,
         })
-        .chain(snapshot.registers.iter().map(|entity| EntityView {
-            id: &entity.id,
-            fingerprint: &entity.fingerprint,
-        }))
+        .chain(snapshot.registers.entities())
         .chain(snapshot.interfaces.iter().map(|entity| EntityView {
             id: &entity.id,
             fingerprint: &entity.fingerprint,
@@ -3282,7 +3224,7 @@ fn rebase_record(
     current: &BTreeMap<&str, &RevisionReviewedRecord>,
     unchanged_subjects: &BTreeSet<&str>,
     target_subjects: &BTreeSet<&str>,
-    target_context: &ApplicabilityContext,
+    target_snapshot: &RevisionSnapshot,
     mappings: &BTreeMap<&str, &str>,
 ) -> Result<RevisionRebaseRecord> {
     let semantic = record.anchor.primary_semantic();
@@ -3301,19 +3243,32 @@ fn rebase_record(
         .iter()
         .all(|subject| unchanged_subjects.contains(subject.as_str()));
     let exact_target = target_subjects.contains(base.as_str()) && dependents_target;
-    let exact_unchanged = unchanged_subjects.contains(base.as_str()) && dependents_unchanged;
-    let mapped = (!matches!(semantic, SemanticEntityId::RegisterField { .. })
-        && dependents_unchanged)
+    let geometry_supported = record
+        .anchor
+        .semantic_entities()
+        .all(|subject| target_snapshot.registers.supports_semantic(subject));
+    let exact_unchanged =
+        unchanged_subjects.contains(base.as_str()) && dependents_unchanged && geometry_supported;
+    let mapped = (!matches!(
+        semantic,
+        SemanticEntityId::Register { .. } | SemanticEntityId::RegisterField { .. }
+    ) && dependents_unchanged
+        && geometry_supported)
         .then(|| mappings.get(base.as_str()).copied())
         .flatten();
     let proposed_subject = mapped
         .map(str::to_owned)
         .or_else(|| exact_target.then(|| old_subject.clone()));
-    let applicability_current = applicability_matches(record, target_context)?;
+    let applicability_current = applicability_matches(record, &target_snapshot.applicability)?;
     let (status, reason) = if !applicability_current {
         (
             RevisionRebaseStatus::ReviewRequired,
             "record applicability does not match the target revision context",
+        )
+    } else if exact_target && !geometry_supported {
+        (
+            RevisionRebaseStatus::ReviewRequired,
+            "target register geometry is unknown, conflicted or incompatible with the reviewed assertion",
         )
     } else if exact_unchanged
         && current
@@ -3360,18 +3315,7 @@ fn rebase_record(
 }
 
 fn rebase_subject_base(subject: &SemanticEntityId) -> String {
-    match subject {
-        SemanticEntityId::RegisterField {
-            chip,
-            address_space,
-            address,
-            register_width,
-            ..
-        } => SemanticEntityId::register(chip, address_space, *address, *register_width)
-            .expect("a validated register-field identity has a valid parent register")
-            .to_string(),
-        _ => subject.to_string(),
-    }
+    registers::semantic_location(subject).unwrap_or_else(|| subject.to_string())
 }
 
 fn rebase_binding(
@@ -3544,12 +3488,203 @@ fn reviewed_record_applicability(record: &RevisionReviewedRecord) -> Result<Appl
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn interface_revision_retains_gap_only_subject_and_register_alternatives() {
+        use crate::{
+            interface_discovery::{
+                InterfaceAnalysisGap, InterfaceArgumentValue as V, InterfaceGapReason,
+                InterfaceRegisterValue,
+            },
+            interfaces::InterfaceGapFact,
+            interfaces::{InterfaceFactArtifact, InterfaceFacts},
+        };
+        let mut facts = InterfaceFacts {
+            decode_blockers: Vec::new(),
+            analysis_failures: Vec::new(),
+            limits: Default::default(),
+            gaps: vec![InterfaceGapFact {
+                artifact: 0,
+                evidence: InterfaceAnalysisGap {
+                    owner: crate::artifact::ArtifactSymbolDefinition::synthetic_identity(
+                        module_path!(),
+                        &None,
+                        "worker",
+                        0,
+                    ),
+                    member: None,
+                    function: "worker".into(),
+                    site: 4,
+                    reason: InterfaceGapReason::UnresolvedCallTarget,
+                    registers: (0..32)
+                        .map(|register| InterfaceRegisterValue {
+                            register,
+                            value: V::Unknown,
+                        })
+                        .collect(),
+                },
+            }],
+            artifacts: vec![InterfaceFactArtifact {
+                index: 0,
+                sources: BTreeSet::from(["fixture".into()]),
+                sha256: Some("a".repeat(64)),
+            }],
+            tables: vec![],
+            calls: vec![],
+            assignments: vec![],
+        };
+        let included = BTreeSet::from([0]);
+        let before = super::interface_revision_entities(&facts, &included).unwrap();
+        facts.gaps[0].evidence.registers[5].value =
+            V::Alternatives(vec![V::Unknown, V::Constant(42)]);
+        let after = super::interface_revision_entities(&facts, &included).unwrap();
+        assert_eq!(before.len(), 1);
+        assert_eq!(before[0].id, after[0].id);
+        assert_ne!(before[0].fingerprint, after[0].fingerprint);
+        assert!(
+            after[0]
+                .features
+                .iter()
+                .any(|feature| feature.contains("alternatives") && feature.contains("unknown"))
+        );
+        facts
+            .analysis_failures
+            .push(crate::interfaces::InterfaceDecodeFailureFact {
+                owner: crate::artifact::CodeIdentity::Synthetic {
+                    namespace: module_path!().into(),
+                    key: format!("fixture:{}", line!()),
+                },
+                artifact: 0,
+                member: None,
+                function: "undecodable".into(),
+                error: "unsupported container payload".into(),
+            });
+        let with_failure = super::interface_revision_entities(&facts, &included).unwrap();
+        assert_eq!(with_failure.len(), 2);
+        let original_ids = with_failure
+            .iter()
+            .map(|entity| entity.id.clone())
+            .collect::<BTreeSet<_>>();
+        let mut other_occurrence = facts.gaps[0].clone();
+        other_occurrence.evidence.owner = crate::artifact::CodeIdentity::Synthetic {
+            namespace: module_path!().into(),
+            key: "same name and site, another member".into(),
+        };
+        facts.gaps.push(other_occurrence);
+        let distinct = super::interface_revision_entities(&facts, &included).unwrap();
+        assert_eq!(distinct.len(), 3);
+        assert!(original_ids.is_subset(&distinct.iter().map(|entity| entity.id.clone()).collect()));
+        let original_gap_id = before[0].id.clone();
+        facts.gaps[0].evidence.function = "renamed display label".into();
+        assert!(
+            super::interface_revision_entities(&facts, &included)
+                .unwrap()
+                .iter()
+                .any(|entity| entity.id == original_gap_id)
+        );
+
+        assert!(with_failure.iter().any(|entity| {
+            entity.id.ends_with(",null]")
+                && entity
+                    .features
+                    .iter()
+                    .any(|feature| feature.contains("analysis-failure"))
+        }));
+        assert!(
+            super::interface_revision_entities(&facts, &BTreeSet::new())
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn interface_address_evidence_changes_fingerprint_without_replacing_subject() {
+        use crate::interfaces::{
+            InterfaceFactArtifact, InterfaceFactRoot, InterfaceFacts, InterfaceTableFact,
+        };
+        use open_radio_vendor_contracts::{
+            DataAddressCandidate, DataAddressGap, DataAddressResolution, DataIdentity,
+        };
+        let mut facts = InterfaceFacts {
+            decode_blockers: Vec::new(),
+            analysis_failures: Vec::new(),
+            limits: Default::default(),
+            gaps: Vec::new(),
+            artifacts: vec![InterfaceFactArtifact {
+                index: 0,
+                sources: BTreeSet::from(["fixture".to_owned()]),
+                sha256: Some("a".repeat(64)),
+            }],
+            tables: vec![InterfaceTableFact {
+                artifact: 0,
+                root: InterfaceFactRoot::AbsoluteAddress {
+                    address: 0x2000,
+                    data_address: DataAddressResolution::Unknown {
+                        reason: DataAddressGap::NoContainingDefinition,
+                    },
+                },
+                container_path: vec![],
+                slots: vec![],
+                functions: BTreeSet::from(["worker".to_owned()]),
+            }],
+            calls: vec![],
+            assignments: vec![],
+        };
+        let included = BTreeSet::from([0]);
+        let before = super::interface_revision_entities(&facts, &included).unwrap();
+        let mut observation = facts.tables[0].clone();
+        observation.root = InterfaceFactRoot::AbsoluteAddress {
+            address: 0x2000,
+            data_address: DataAddressResolution::from_candidates(
+                0x2000,
+                Some(32),
+                vec![DataAddressCandidate {
+                    identity: DataIdentity::Synthetic {
+                        namespace: module_path!().to_owned(),
+                        key: "candidate".to_owned(),
+                    },
+                    member: None,
+                    symbol: "candidate".to_owned(),
+                    symbol_address: 0x2000,
+                    symbol_size: 4,
+                    exported: false,
+                    offset: 0,
+                }],
+            ),
+        };
+        facts.tables.push(observation);
+        let after = super::interface_revision_entities(&facts, &included).unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(before[0].id, after[0].id);
+        assert_ne!(before[0].fingerprint, after[0].fingerprint);
+        assert_eq!(after[0].features.len(), 2);
+        assert_eq!(after[0].functions, 1);
+        assert!(
+            after[0]
+                .features
+                .iter()
+                .any(|feature| feature.contains("unknown"))
+        );
+        assert!(
+            after[0]
+                .features
+                .iter()
+                .any(|feature| feature.contains("candidate"))
+        );
+    }
+
     use super::*;
 
     fn function(id: &str, feature: &str) -> RevisionFunction {
         let features = vec![format!("fixture:{feature}")];
         let artifact_sha256 = "a".repeat(64);
-        let locator = crate::artifact_occurrence::function_locator(None, id, 0);
+        let locator = crate::artifact_occurrence::function_locator(
+            &crate::artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &None,
+                id,
+                0,
+            ),
+        );
         let occurrence = crate::artifact_occurrence::derive(
             open_radio_vendor_contracts::EntityDomain::Function,
             "vendor",
@@ -3588,7 +3723,7 @@ mod tests {
         function
     }
 
-    fn snapshot(name: &str, functions: Vec<RevisionFunction>) -> RevisionSnapshot {
+    pub(super) fn snapshot(name: &str, functions: Vec<RevisionFunction>) -> RevisionSnapshot {
         let artifacts = (!functions.is_empty()).then(|| RevisionArtifact {
             role: Some("source-artifact:vendor".to_owned()),
             source: "vendor".to_owned(),
@@ -3614,7 +3749,10 @@ mod tests {
             artifacts: artifacts.into_iter().collect(),
             applicability,
             functions,
-            registers: Vec::new(),
+            registers: RevisionRegisters::capture(
+                crate::application::register_inventory::RegisterInventory::default(),
+            )
+            .unwrap(),
             interfaces: Vec::new(),
             assertions: Vec::new(),
             vendor_bugs: Vec::new(),
@@ -3730,16 +3868,55 @@ mod tests {
         }
     }
 
-    fn register(id: &str, address: u32, width: u8) -> RevisionRegister {
-        let features = vec!["fixture:register".to_owned()];
-        RevisionRegister {
-            id: id.to_owned(),
-            address,
-            width,
-            name: None,
-            fingerprint: fingerprint(&features).unwrap(),
-            features,
-        }
+    fn register(id: &str, address: u32, width: u8) -> RevisionRegisters {
+        use super::super::register_inventory::{
+            BitCoverage, InventoryRegister, RegisterEvidence, RegisterInventory,
+        };
+        use open_radio_vendor_contracts::register_inventory::{KnowledgeProperty, RegisterSubject};
+        let semantic: SemanticEntityId = id.parse().unwrap();
+        let SemanticEntityId::Register {
+            chip,
+            address_space,
+            ..
+        } = semantic
+        else {
+            panic!("register fixture")
+        };
+        let subject = RegisterSubject {
+            chip,
+            address_space,
+            route: "mmio".to_owned(),
+            bank: None,
+            address: address.into(),
+        };
+        let evidence = "fixture-geometry".to_owned();
+        let mut physical_width = KnowledgeProperty::Unknown;
+        physical_width.insert(u32::from(width), evidence.clone());
+        let register = InventoryRegister {
+            id: subject.id(),
+            subject,
+            names: KnowledgeProperty::Unknown,
+            physical_width,
+            semantics: KnowledgeProperty::Unknown,
+            access_widths: BTreeSet::new(),
+            functions: BTreeSet::new(),
+            fields: BTreeMap::new(),
+            evidence: BTreeSet::from([evidence.clone()]),
+            coverage: BitCoverage::default(),
+        };
+        let mut inventory = RegisterInventory::default();
+        inventory.registers.insert(register.id.clone(), register);
+        inventory.evidence.insert(
+            evidence.clone(),
+            RegisterEvidence {
+                id: evidence,
+                kind: "geometry".to_owned(),
+                identity: serde_json::json!(id),
+                sources: BTreeSet::new(),
+                payload: serde_json::json!({"width": width}),
+            },
+        );
+        RevisionRegisters::capture(inventory.clone()).unwrap()
     }
 
     fn temporary_manifest(label: &str) -> (PathBuf, PathBuf) {
@@ -3994,7 +4171,7 @@ mod tests {
         let register_id = SemanticEntityId::register("fixture-chip", "cpu", 0x1000, 32).unwrap();
         let record = vendor_bug_record("bug.register", "stable", register_id.clone());
         let mut before = snapshot("old", vec![semantic_function("stable", "stable", "a")]);
-        before.registers = vec![register(&register_id.to_string(), 0x1000, 32)];
+        before.registers = register(&register_id.to_string(), 0x1000, 32);
         before.vendor_bugs = vec![record.clone()];
         let mut after = snapshot("new", vec![semantic_function("stable", "stable", "a")]);
         after.vendor_bugs = vec![record];
@@ -4005,6 +4182,9 @@ mod tests {
         assert_eq!(report.summary.carry_exact, 0);
         assert_eq!(report.summary.review_required, 1);
         assert!(report.records[0].reason.contains("target subject"));
+        let invalidated = diff(&before, &after).invalidated_research;
+        assert!(invalidated.iter().any(|area| area.area == "register-model"
+            && area.reviewed_records.contains(&"bug.register".to_owned())));
     }
 
     #[test]
@@ -4314,31 +4494,41 @@ mod tests {
     }
 
     #[test]
-    fn schema_five_registers_require_canonical_matching_coordinates() {
+    fn revision_registers_require_common_subject_identity_and_verified_fingerprints() {
         let mut valid = snapshot("valid-register", Vec::new());
-        valid.registers = vec![register(
-            "register:esp32s31/cpu/0x20103064/32",
-            0x2010_3064,
-            32,
-        )];
+        valid.registers = register("register:fixture-chip/cpu/0x1000/32", 0x1000, 32);
         validate_snapshot(&valid).unwrap();
-
-        let mut legacy = valid.clone();
-        legacy.registers[0].id = "mmio:cpu:0x20103064/32".to_owned();
-        assert!(
-            validate_snapshot(&legacy)
-                .unwrap_err()
-                .to_string()
-                .contains("not a canonical semantic identity")
-        );
-
-        let mut mismatched = valid;
-        mismatched.registers[0].address = 0x2010_3068;
+        let mut mismatched = valid.clone();
+        mismatched
+            .registers
+            .inventory
+            .registers
+            .values_mut()
+            .next()
+            .unwrap()
+            .subject
+            .address += 4;
         assert!(
             validate_snapshot(&mismatched)
                 .unwrap_err()
                 .to_string()
-                .contains("does not match its canonical address")
+                .contains("subject identity mismatch")
+        );
+        let mut changed = valid;
+        changed
+            .registers
+            .inventory
+            .registers
+            .values_mut()
+            .next()
+            .unwrap()
+            .access_widths
+            .insert(8);
+        assert!(
+            validate_snapshot(&changed)
+                .unwrap_err()
+                .to_string()
+                .contains("fingerprint does not match")
         );
     }
 
@@ -4353,14 +4543,52 @@ mod tests {
         };
         record.record["subject"] = serde_json::json!(field.to_string());
         let mut before = snapshot("field-old", Vec::new());
-        before.registers = vec![register(register_id, 0x2010_3064, 32)];
+        before.registers = register(register_id, 0x2010_3064, 32);
         before.assertions = vec![record];
         let mut after = snapshot("field-new", Vec::new());
-        after.registers = vec![register(register_id, 0x2010_3064, 32)];
+        after.registers = register(register_id, 0x2010_3064, 32);
 
         let report = rebase(&before, &after, None).unwrap();
         assert_eq!(report.summary.carry_exact, 1);
         assert_eq!(report.records[0].proposed_subject, Some(field.to_string()));
+    }
+
+    #[test]
+    fn unchanged_location_with_incompatible_geometry_cannot_carry_a_field_assertion() {
+        let field =
+            SemanticEntityId::register_field("fixture-chip", "cpu", 0x1000, 32, 3, 1).unwrap();
+        let mut record = assertion_record("field.pending", "placeholder", serde_json::json!({}));
+        record.anchor = RevisionReviewedAnchor::Assertion {
+            subject: field.clone(),
+        };
+        record.record["subject"] = serde_json::json!(field.to_string());
+        let mut before = snapshot("before", Vec::new());
+        before.registers = register("register:fixture-chip/cpu/0x1000/16", 0x1000, 16);
+        before.assertions = vec![record];
+        let after = before.clone();
+        let report = rebase(&before, &after, None).unwrap();
+        assert_eq!(report.summary.already_present, 0);
+        assert_eq!(report.summary.carry_exact, 0);
+        assert_eq!(report.summary.review_required, 1);
+        assert!(report.records[0].reason.contains("geometry"));
+    }
+
+    #[test]
+    fn register_changes_invalidate_reviewed_field_records_by_physical_parent() {
+        let field =
+            SemanticEntityId::register_field("fixture-chip", "cpu", 0x1000, 32, 3, 1).unwrap();
+        let mut record = assertion_record("field.pending", "placeholder", serde_json::json!({}));
+        record.anchor = RevisionReviewedAnchor::Assertion {
+            subject: field.clone(),
+        };
+        record.record["subject"] = serde_json::json!(field.to_string());
+        let mut before = snapshot("before", Vec::new());
+        before.registers = register("register:fixture-chip/cpu/0x1000/32", 0x1000, 32);
+        before.assertions = vec![record];
+        let after = snapshot("after", Vec::new());
+        let invalidated = diff(&before, &after).invalidated_research;
+        assert!(invalidated.iter().any(|area| area.area == "register-model"
+            && area.reviewed_records.contains(&"field.pending".to_owned())));
     }
 
     #[test]

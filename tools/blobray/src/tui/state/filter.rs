@@ -17,8 +17,8 @@ impl BrowserState {
             Section::Code => self.snapshot.code.boundaries.len(),
             Section::Functions => self.snapshot.functions.len(),
             Section::Blockers => self.snapshot.review_queue.len(),
-            Section::Registers => self.snapshot.registers.registers.len(),
-            Section::Interfaces => self.snapshot.interfaces.slots.len(),
+            Section::Registers => self.snapshot.registers.register_count(),
+            Section::Interfaces => crate::tui::interface_rows::count(&self.snapshot.interfaces),
             Section::Comparisons => self.snapshot.comparisons.len(),
             Section::Diagnostics => self.snapshot.diagnostics.len(),
             Section::Types => self.snapshot.logical_types.len(),
@@ -88,6 +88,7 @@ impl BrowserState {
                 }),
             Section::Functions => self.snapshot.functions.get(index).is_some_and(|function| {
                 contains(&function.identity)
+                    || contains(&function.code_identity.to_string())
                     || contains(&function.symbol)
                     || function.reviewed_name.as_deref().is_some_and(&contains)
                     || function.role.as_deref().is_some_and(&contains)
@@ -113,25 +114,15 @@ impl BrowserState {
             Section::Registers => {
                 self.snapshot
                     .registers
-                    .registers
-                    .get(index)
+                    .register_at(index)
                     .is_some_and(|register| {
-                        contains(&register.name) || contains(&format!("{:#010x}", register.address))
+                        contains(&register.label())
+                            || contains(&register.id)
+                            || contains(&format!("{:#010x}", register.subject.address))
                     })
             }
-            Section::Interfaces => self
-                .snapshot
-                .interfaces
-                .slots
-                .get(index)
-                .is_some_and(|slot| {
-                    contains(&slot.id)
-                        || contains(&slot.name)
-                        || contains(slot.review_state.label())
-                        || slot.selector.as_deref().is_some_and(&contains)
-                        || slot.semantic.as_deref().is_some_and(&contains)
-                        || slot.functions.iter().any(|value| contains(value))
-                }),
+            Section::Interfaces => crate::tui::interface_rows::at(&self.snapshot.interfaces, index)
+                .is_some_and(|row| row.matches(&query)),
             Section::Comparisons => self.snapshot.comparisons.get(index).is_some_and(|profile| {
                 contains(&profile.name)
                     || contains(&profile.vendor_symbol)

@@ -137,30 +137,16 @@ pub(crate) struct InterfaceWorkspaceSummary {
     pub(crate) templated_anchors: usize,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct ResolvedInterfaceArgument {
-    pub(crate) index: usize,
-    pub(crate) kind: String,
-    pub(crate) expression: String,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+/// A reviewed slot association retains the exact immutable observation.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize)]
 pub(crate) struct ResolvedInterfaceCall {
-    pub(crate) artifact: usize,
-    pub(crate) member: Option<String>,
-    pub(crate) function: String,
-    pub(crate) function_address: u32,
-    pub(crate) site: u32,
-    pub(crate) slot_load_site: Option<u32>,
-    pub(crate) kind: String,
-    pub(crate) jalr_offset: i32,
+    pub(crate) observation: super::InterfaceCallFact,
     pub(crate) slot_selector: Option<String>,
     pub(crate) slot_index: Option<u32>,
     pub(crate) slot_index_domain: Option<ResolvedInterfaceIndexDomain>,
-    pub(crate) arguments: Vec<ResolvedInterfaceArgument>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize)]
 pub(crate) struct ResolvedInterfaceIndexDomain {
     pub(crate) argument: u8,
     pub(crate) min: u32,
@@ -191,11 +177,9 @@ pub(crate) struct ResolvedInterfaceSlot {
     pub(crate) calls: Vec<ResolvedInterfaceCall>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize)]
 pub(crate) struct ResolvedInterfaceAssignment {
-    pub(crate) member: Option<String>,
-    pub(crate) producer: String,
-    pub(crate) site: u32,
+    pub(crate) observation: super::InterfaceAssignmentFact,
     pub(crate) target_member: Option<String>,
     pub(crate) target_symbol: String,
     pub(crate) target_addend: i64,
@@ -271,7 +255,7 @@ pub(crate) struct InterfaceWorkspace {
     contracts: Vec<ResolvedInterfaceContract>,
     bindings: Vec<ResolvedInterfaceSlot>,
     unreviewed_observations: Vec<UnreviewedInterfaceObservation>,
-    facts: InterfaceFacts,
+    facts: std::sync::Arc<InterfaceFacts>,
     pub(super) semantic_catalogs: SemanticCatalogs,
     template_pack_ids: Vec<String>,
     template_summaries: Vec<super::templates::InterfaceTemplateSummary>,
@@ -304,7 +288,24 @@ impl InterfaceWorkspace {
         calling_convention: &str,
         execution_contracts: Option<&KnowledgeContractSpec>,
     ) -> Result<Self> {
-        let facts = InterfaceFacts::load(facts_path)?;
+        Self::from_facts(
+            std::sync::Arc::new(InterfaceFacts::load(facts_path)?),
+            pack_path,
+            semantic_paths,
+            template_paths,
+            calling_convention,
+            execution_contracts,
+        )
+    }
+
+    pub(crate) fn from_facts(
+        facts: std::sync::Arc<InterfaceFacts>,
+        pack_path: &Path,
+        semantic_paths: &[impl AsRef<Path>],
+        template_paths: &[impl AsRef<Path>],
+        calling_convention: &str,
+        execution_contracts: Option<&KnowledgeContractSpec>,
+    ) -> Result<Self> {
         let catalogs = SemanticCatalogs::load(semantic_paths)?;
         let templates =
             super::templates::InterfaceTemplateCatalog::load(template_paths, &catalogs)?;
@@ -351,7 +352,7 @@ impl InterfaceWorkspace {
         &self.bindings
     }
 
-    pub(super) const fn facts(&self) -> &InterfaceFacts {
+    pub(crate) fn facts(&self) -> &InterfaceFacts {
         &self.facts
     }
 

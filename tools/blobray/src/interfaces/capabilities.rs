@@ -454,9 +454,9 @@ fn binding_evidence(
             .operation
             .clone(),
         effect: None,
-        function: call.map(|call| call.function.clone()),
-        artifact: call.map(|call| call.artifact),
-        site: call.map(|call| call.site),
+        function: call.map(|call| call.observation.function.clone()),
+        artifact: call.map(|call| call.observation.artifact),
+        site: call.map(|call| call.observation.site),
     }
 }
 
@@ -558,18 +558,42 @@ mod tests {
             assignments: Vec::new(),
             functions: BTreeSet::from(["wifi_input".to_owned()]),
             calls: vec![ResolvedInterfaceCall {
-                artifact: 2,
-                member: Some("rx.o".to_owned()),
-                function: "wifi_input".to_owned(),
-                function_address: 0x1000,
-                site: 0x1010,
-                slot_load_site: Some(0x100c),
-                kind: "indirect".to_owned(),
-                jalr_offset: 0,
                 slot_selector: None,
                 slot_index: None,
                 slot_index_domain: None,
-                arguments: Vec::new(),
+                observation: crate::interfaces::InterfaceCallFact {
+                    owner: crate::artifact::CodeIdentity::Synthetic {
+                        namespace: module_path!().into(),
+                        key: format!("fixture:{}", line!()),
+                    },
+                    link_register: 1,
+                    target_offset: 0,
+                    root: crate::interfaces::InterfaceFactRoot::FunctionArgument {
+                        owner: crate::artifact::CodeIdentity::Synthetic {
+                            namespace: module_path!().into(),
+                            key: "root-fixture".into(),
+                        },
+                        argument: 0,
+                    },
+                    loads: vec![],
+                    container_depth: 0,
+                    slot_offset: None,
+                    root_linkage: crate::interfaces::InterfaceRootLinkageFact {
+                        symbols: vec![],
+                        resolutions: vec![],
+                        candidates: vec![],
+                    },
+
+                    artifact: 2,
+                    member: Some("rx.o".to_owned()),
+                    function: "wifi_input".to_owned(),
+                    function_address: 0x1000,
+                    site: 0x1010,
+                    slot_load_site: Some(0x100c),
+                    kind: "indirect".to_owned(),
+                    jalr_offset: 0,
+                    arguments: Vec::new(),
+                },
             }],
         }
     }

@@ -150,6 +150,7 @@ pub(crate) struct StoredSymbolArtifactIdentity {
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredSymbolFact {
     pub(crate) artifact: usize,
+    pub(crate) location: crate::SymbolLocation,
     pub(crate) member: Option<String>,
     object_kind: String,
     pub(crate) name: String,
@@ -159,6 +160,7 @@ pub(crate) struct StoredSymbolFact {
     pub(crate) definition: String,
     pub(crate) kind: String,
     section: Option<String>,
+    section_index: Option<u64>,
     pub(crate) address: String,
     size: u64,
     scope: String,
@@ -172,6 +174,7 @@ pub(crate) struct StoredSymbolFact {
 #[serde(deny_unknown_fields)]
 struct StoredSymbolCandidate {
     artifact: usize,
+    location: crate::SymbolLocation,
     member: Option<String>,
     address: String,
     kind: String,
@@ -205,6 +208,7 @@ struct OriginArtifactIdentityProjection {
 #[derive(Deserialize)]
 struct OriginSymbolProjection {
     artifact: usize,
+    location: crate::SymbolLocation,
     member: Option<String>,
     name: String,
     address: String,
@@ -216,6 +220,7 @@ struct OriginSymbolProjection {
 #[derive(Deserialize)]
 struct OriginCandidateProjection {
     artifact: usize,
+    location: crate::SymbolLocation,
     member: Option<String>,
     address: String,
 }
@@ -227,6 +232,8 @@ struct OriginCandidateProjection {
 /// only emitted for the inventory's fail-closed `unique-name-and-kind` case.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct LinkUnitOriginFact {
+    pub(crate) linked_location: crate::SymbolLocation,
+    pub(crate) origin_location: crate::SymbolLocation,
     pub(crate) linked_sources: Vec<String>,
     pub(crate) linked_artifact_sha256: String,
     pub(crate) linked_member: Option<String>,
@@ -237,6 +244,22 @@ pub(crate) struct LinkUnitOriginFact {
     pub(crate) origin_artifact_sha256: String,
     pub(crate) origin_member: Option<String>,
     pub(crate) origin_address: u64,
+}
+
+impl LinkUnitOriginFact {
+    pub(crate) fn origin_identity(&self) -> crate::artifact::CodeIdentity {
+        crate::artifact::CodeIdentity::Symbol {
+            artifact_sha256: self.origin_artifact_sha256.clone(),
+            location: self.origin_location,
+        }
+    }
+
+    pub(crate) fn linked_identity(&self) -> crate::artifact::CodeIdentity {
+        crate::artifact::CodeIdentity::Symbol {
+            artifact_sha256: self.linked_artifact_sha256.clone(),
+            location: self.linked_location,
+        }
+    }
 }
 
 pub(crate) fn parse_symbol_inventory(input: &str) -> crate::Result<StoredSymbolInventory> {
@@ -331,7 +354,37 @@ pub(crate) fn parse_symbol_inventory(input: &str) -> crate::Result<StoredSymbolI
         function_boundary_candidates += section.function_candidates.len();
         code_recovery_blockers += section.recovery_blockers.len();
     }
+    let mut occurrences = std::collections::BTreeSet::new();
     for symbol in &document.symbols {
+        validate_location(
+            &document.artifacts,
+            symbol.artifact,
+            symbol.location,
+            symbol.member.as_deref(),
+        )?;
+        if symbol.location.table.label() != symbol.table
+            || !occurrences.insert((symbol.artifact, symbol.location))
+            || symbol.section.is_some() != symbol.section_index.is_some()
+        {
+            return Err(crate::Error::invalid(format!(
+                "inconsistent or duplicate physical symbol occurrence {:?}",
+                symbol.location
+            )));
+        }
+        for candidates in [&symbol.candidates, &symbol.origin_candidates] {
+            let mut locations = std::collections::BTreeSet::new();
+            for candidate in candidates {
+                validate_location(
+                    &document.artifacts,
+                    candidate.artifact,
+                    candidate.location,
+                    candidate.member.as_deref(),
+                )?;
+                if !locations.insert((candidate.artifact, candidate.location)) {
+                    return Err(crate::Error::invalid("duplicate physical symbol candidate"));
+                }
+            }
+        }
         let valid_origin = match symbol.origin_association.as_str() {
             "not-applicable" | "missing" => symbol.origin_candidates.is_empty(),
             "unique-name-and-kind" => symbol.origin_candidates.len() == 1,
@@ -358,6 +411,33 @@ pub(crate) fn parse_symbol_inventory(input: &str) -> crate::Result<StoredSymbolI
         ));
     }
     Ok(document)
+}
+
+fn validate_location(
+    artifacts: &[StoredSymbolArtifact],
+    artifact_index: usize,
+    location: crate::SymbolLocation,
+    member: Option<&str>,
+) -> crate::Result<()> {
+    let artifact = artifacts
+        .iter()
+        .find(|artifact| artifact.index == artifact_index)
+        .ok_or_else(|| crate::Error::invalid("symbol occurrence refers to an absent artifact"))?;
+    let valid = match location.object {
+        crate::ObjectLocation::Standalone => member.is_none() && artifact.container != "archive",
+        crate::ObjectLocation::ArchiveMember { ordinal } => {
+            artifact.container == "archive"
+                && artifact.members.iter().any(|entry| {
+                    entry.ordinal as u64 == ordinal && Some(entry.name.as_str()) == member
+                })
+        }
+    };
+    if !valid {
+        return Err(crate::Error::invalid(
+            "symbol occurrence disagrees with its physical object",
+        ));
+    }
+    Ok(())
 }
 
 fn hex_u64(value: &str) -> crate::Result<u64> {
@@ -456,10 +536,12 @@ pub(crate) fn load_link_unit_origins(path: &Path) -> crate::Result<Vec<LinkUnitO
                 symbol.name, symbol.artifact
             ))
         })?;
-        let origin = symbol
-            .origin_candidates
-            .first()
-            .expect("validated unique origin has one candidate");
+        let [origin] = symbol.origin_candidates.as_slice() else {
+            return Err(crate::Error::invalid(format!(
+                "unique origin for {:?} requires exactly one physical candidate",
+                symbol.name
+            )));
+        };
         let origin_artifact = artifacts.get(&origin.artifact).ok_or_else(|| {
             crate::Error::invalid(format!(
                 "symbol {:?} refers to missing origin artifact {}",
@@ -467,6 +549,8 @@ pub(crate) fn load_link_unit_origins(path: &Path) -> crate::Result<Vec<LinkUnitO
             ))
         })?;
         origins.push(LinkUnitOriginFact {
+            linked_location: symbol.location,
+            origin_location: origin.location,
             linked_sources: linked.sources.clone(),
             linked_artifact_sha256: linked.artifact.sha256.clone(),
             linked_member: symbol.member,
@@ -485,7 +569,14 @@ pub(crate) fn load_link_unit_origins(path: &Path) -> crate::Result<Vec<LinkUnitO
 
 pub(crate) fn load_code_boundary_facts(path: &Path) -> crate::Result<CodeBoundaryFacts> {
     let input = std::fs::read_to_string(path)?;
-    let document = parse_symbol_inventory(&input).map_err(|error| {
+    parse_code_boundary_facts(path, &input)
+}
+
+pub(crate) fn parse_code_boundary_facts(
+    path: &Path,
+    input: &str,
+) -> crate::Result<CodeBoundaryFacts> {
+    let document = parse_symbol_inventory(input).map_err(|error| {
         crate::Error::invalid(format!(
             "unsupported symbol inventory in {}: {error}",
             path.display()
@@ -561,7 +652,7 @@ mod tests {
         ));
         std::fs::write(
             &path,
-            r#"{"schema_version":6,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"code_sections":[],"symbols":[],"summary":{"artifacts":3,"symbol_facts":40,"emitted":40,"exported_definitions":12,"undefined":7,"unresolved_or_associated":5,"executable_sections":0,"executable_bytes":0,"symbol_covered_bytes":0,"uncovered_executable_bytes":0,"named_zero_sized_code_symbols":0,"function_boundary_candidates":0,"code_recovery_blockers":0,"link_unit_definitions":0,"unique_archive_origins":0,"ambiguous_archive_origins":0,"missing_archive_origins":0}}"#,
+            r#"{"schema_version":7,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"code_sections":[],"symbols":[],"summary":{"artifacts":3,"symbol_facts":40,"emitted":40,"exported_definitions":12,"undefined":7,"unresolved_or_associated":5,"executable_sections":0,"executable_bytes":0,"symbol_covered_bytes":0,"uncovered_executable_bytes":0,"named_zero_sized_code_symbols":0,"function_boundary_candidates":0,"code_recovery_blockers":0,"link_unit_definitions":0,"unique_archive_origins":0,"ambiguous_archive_origins":0,"missing_archive_origins":0}}"#,
         )
         .unwrap();
         let summary = inspect_symbol_inventory(&path).unwrap();
@@ -578,14 +669,14 @@ mod tests {
             inspect_symbol_inventory(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("expected schema_version 6")
+                .contains("expected schema_version 7")
         );
         std::fs::remove_file(path).unwrap();
     }
 
     #[test]
     fn stored_inventory_rejects_unknown_and_missing_fields() {
-        let input = r#"{"schema_version":6,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"code_sections":[],"symbols":[],"summary":{"artifacts":0,"symbol_facts":0,"emitted":0,"exported_definitions":0,"undefined":0,"unresolved_or_associated":0,"executable_sections":0,"executable_bytes":0,"symbol_covered_bytes":0,"uncovered_executable_bytes":0,"named_zero_sized_code_symbols":0,"function_boundary_candidates":0,"code_recovery_blockers":0,"link_unit_definitions":0,"unique_archive_origins":0,"ambiguous_archive_origins":0,"missing_archive_origins":0}}"#;
+        let input = r#"{"schema_version":7,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"code_sections":[],"symbols":[],"summary":{"artifacts":0,"symbol_facts":0,"emitted":0,"exported_definitions":0,"undefined":0,"unresolved_or_associated":0,"executable_sections":0,"executable_bytes":0,"symbol_covered_bytes":0,"uncovered_executable_bytes":0,"named_zero_sized_code_symbols":0,"function_boundary_candidates":0,"code_recovery_blockers":0,"link_unit_definitions":0,"unique_archive_origins":0,"ambiguous_archive_origins":0,"missing_archive_origins":0}}"#;
         let mut unknown: serde_json::Value = serde_json::from_str(input).unwrap();
         unknown["summary"]["legacy_field"] = serde_json::json!(true);
         let error = parse_symbol_inventory(&unknown.to_string()).unwrap_err();
@@ -603,7 +694,7 @@ mod tests {
     #[test]
     fn generated_inventory_cannot_promote_a_recovery_candidate_to_reviewed() {
         let input = serde_json::json!({
-            "schema_version": 6,
+            "schema_version": 7,
             "command": "symbols inventory",
             "linkage_mode": "association-only",
             "linker_resolution_claim": false,

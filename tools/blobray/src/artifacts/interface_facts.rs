@@ -20,6 +20,7 @@ use crate::{
 #[serde(untagged)]
 enum RootDocument {
     Relocated {
+        reference: open_radio_vendor_contracts::SymbolReference,
         kind: &'static str,
         canonical: String,
         member: Option<String>,
@@ -28,20 +29,13 @@ enum RootDocument {
         addressing: &'static str,
     },
     FunctionArgument {
+        owner: crate::artifact::CodeIdentity,
         kind: &'static str,
         canonical: String,
         argument: u8,
     },
-    BoundedDataAddress {
-        kind: &'static str,
-        canonical: String,
-        member: Option<String>,
-        symbol: String,
-        address: String,
-        symbol_address: String,
-        symbol_size: u32,
-    },
     AbsoluteAddress {
+        data_address: open_radio_vendor_contracts::DataAddressResolution,
         kind: &'static str,
         canonical: String,
         address: String,
@@ -52,11 +46,13 @@ impl From<&InterfaceRoot> for RootDocument {
     fn from(root: &InterfaceRoot) -> Self {
         match root {
             InterfaceRoot::RelocatedSymbol {
+                reference,
                 member,
                 symbol,
                 addend,
                 addressing,
             } => Self::Relocated {
+                reference: reference.clone(),
                 kind: root.kind(),
                 canonical: root.canonical(),
                 member: member.clone(),
@@ -64,27 +60,17 @@ impl From<&InterfaceRoot> for RootDocument {
                 addend: *addend,
                 addressing: addressing.label(),
             },
-            InterfaceRoot::FunctionArgument { index } => Self::FunctionArgument {
+            InterfaceRoot::FunctionArgument { owner, index } => Self::FunctionArgument {
+                owner: owner.clone(),
                 kind: root.kind(),
                 canonical: root.canonical(),
                 argument: *index,
             },
-            InterfaceRoot::BoundedDataAddress {
-                member,
-                symbol,
-                symbol_address,
-                symbol_size,
+            InterfaceRoot::AbsoluteAddress {
                 address,
-            } => Self::BoundedDataAddress {
-                kind: root.kind(),
-                canonical: root.canonical(),
-                member: member.clone(),
-                symbol: symbol.clone(),
-                address: format!("{address:#010x}"),
-                symbol_address: format!("{symbol_address:#010x}"),
-                symbol_size: *symbol_size,
-            },
-            InterfaceRoot::AbsoluteAddress { address } => Self::AbsoluteAddress {
+                data_address,
+            } => Self::AbsoluteAddress {
+                data_address: data_address.clone(),
                 kind: root.kind(),
                 canonical: root.canonical(),
                 address: format!("{address:#010x}"),
@@ -95,6 +81,7 @@ impl From<&InterfaceRoot> for RootDocument {
 
 #[derive(Serialize)]
 struct LocationDocument {
+    location: crate::SymbolLocation,
     artifact: usize,
     member: Option<String>,
     address: String,
@@ -104,6 +91,7 @@ struct LocationDocument {
 impl From<&LinkageSymbolLocation> for LocationDocument {
     fn from(location: &LinkageSymbolLocation) -> Self {
         Self {
+            location: location.location,
             artifact: location.artifact,
             member: location.member.clone(),
             address: format!("{:#x}", location.address),
@@ -152,51 +140,21 @@ impl From<&InterfaceLoad> for LoadDocument {
 }
 
 #[derive(Serialize)]
-#[serde(untagged)]
-enum ArgumentDocument {
-    Unknown {
-        index: usize,
-        kind: &'static str,
-    },
-    Constant {
-        index: usize,
-        kind: &'static str,
-        value: String,
-    },
-    Pointer {
-        index: usize,
-        kind: &'static str,
-        canonical: String,
-        root: RootDocument,
-        loads: Vec<LoadDocument>,
-        post_offset: i32,
-    },
+struct ArgumentDocument {
+    index: usize,
+    value: InterfaceArgumentValue,
 }
 
 fn argument_document(index: usize, value: &InterfaceArgumentValue) -> ArgumentDocument {
-    match value {
-        InterfaceArgumentValue::Unknown => ArgumentDocument::Unknown {
-            index,
-            kind: "unknown",
-        },
-        InterfaceArgumentValue::Constant(value) => ArgumentDocument::Constant {
-            index,
-            kind: "constant",
-            value: format!("{value:#010x}"),
-        },
-        InterfaceArgumentValue::Pointer(pointer) => ArgumentDocument::Pointer {
-            index,
-            kind: "pointer-provenance",
-            canonical: pointer.canonical(),
-            root: (&pointer.root).into(),
-            loads: pointer.loads.iter().map(Into::into).collect(),
-            post_offset: pointer.post_offset,
-        },
+    ArgumentDocument {
+        index,
+        value: value.clone(),
     }
 }
 
 #[derive(Serialize)]
 struct TargetDocument {
+    post_offset: i32,
     canonical: String,
     root: RootDocument,
     loads: Vec<LoadDocument>,
@@ -210,6 +168,7 @@ struct TargetDocument {
 impl TargetDocument {
     fn new(pointer: &InterfacePointer, jalr_offset: i32) -> Self {
         Self {
+            post_offset: pointer.post_offset,
             canonical: pointer.canonical(),
             root: (&pointer.root).into(),
             loads: pointer.loads.iter().map(Into::into).collect(),
@@ -234,6 +193,7 @@ struct RootLinkageDocument {
 
 #[derive(Serialize)]
 struct CallDocument {
+    owner: crate::artifact::CodeIdentity,
     artifact: usize,
     member: Option<String>,
     function: String,
@@ -248,6 +208,9 @@ struct CallDocument {
 
 #[derive(Serialize)]
 struct AssignmentDocument {
+    owner: crate::artifact::CodeIdentity,
+    target_loads: Vec<LoadDocument>,
+    target_offset: i32,
     artifact: usize,
     member: Option<String>,
     function: String,
@@ -263,6 +226,9 @@ struct AssignmentDocument {
 fn assignment_document(discovered: &DiscoveredInterfaceAssignment) -> AssignmentDocument {
     let assignment = &discovered.assignment;
     AssignmentDocument {
+        owner: assignment.owner.clone(),
+        target_loads: assignment.target_loads.iter().map(Into::into).collect(),
+        target_offset: assignment.target_offset,
         artifact: discovered.artifact,
         member: assignment.member.clone(),
         function: assignment.function.clone(),
@@ -283,6 +249,7 @@ fn call_document(
     let call = &discovered.call;
     let linkage = interface_root_linkage(discovery, discovered.artifact, &call.target.root);
     CallDocument {
+        owner: call.owner.clone(),
         artifact: discovered.artifact,
         member: call.member.clone(),
         function: call.function.clone(),
@@ -430,6 +397,7 @@ struct AnalysisScope {
 
 #[derive(Serialize)]
 struct DecodeFailureDocument<'a> {
+    owner: &'a crate::artifact::CodeIdentity,
     artifact: usize,
     member: &'a Option<String>,
     function: &'a str,
@@ -438,6 +406,7 @@ struct DecodeFailureDocument<'a> {
 
 #[derive(Serialize)]
 struct DecodeBlockerDocument<'a> {
+    owner: &'a crate::artifact::CodeIdentity,
     artifact: usize,
     member: &'a Option<String>,
     function: &'a str,
@@ -450,6 +419,8 @@ struct DecodeBlockerDocument<'a> {
 
 #[derive(Serialize)]
 pub(crate) struct InterfaceFactsDocument<'a> {
+    limits: crate::interface_discovery::InterfaceDiscoveryLimits,
+    gaps: &'a [crate::interfaces::InterfaceGapFact],
     schema_version: u32,
     command: &'static str,
     analysis_scope: AnalysisScope,
@@ -465,6 +436,8 @@ pub(crate) fn build_interface_facts(
     discovery: &ProjectInterfaceDiscovery,
 ) -> Result<InterfaceFactsDocument<'_>> {
     Ok(InterfaceFactsDocument {
+        limits: discovery.limits,
+        gaps: &discovery.gaps,
         schema_version: super::INTERFACE_FACTS.version,
         command: super::INTERFACE_FACTS.command,
         analysis_scope: AnalysisScope {
@@ -488,7 +461,7 @@ pub(crate) fn build_interface_facts(
                     path: artifact.path.display().to_string(),
                     roles: &artifact.roles,
                     sources: &artifact.sources,
-                    sha256: crate::artifact_sha256(&artifact.path)?,
+                    sha256: artifact.sha256.clone(),
                     container: artifact.container.label(),
                     functions: discovery.functions[index],
                     reviewed_boundaries: discovery.reviewed_boundaries[index],
@@ -510,6 +483,7 @@ pub(crate) fn build_interface_facts(
             .decode_blockers
             .iter()
             .map(|blocker| DecodeBlockerDocument {
+                owner: &blocker.owner,
                 artifact: blocker.artifact,
                 member: &blocker.member,
                 function: &blocker.function,
@@ -524,6 +498,7 @@ pub(crate) fn build_interface_facts(
             .failures
             .iter()
             .map(|failure| DecodeFailureDocument {
+                owner: &failure.owner,
                 artifact: failure.artifact,
                 member: &failure.member,
                 function: &failure.function,

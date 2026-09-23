@@ -1463,13 +1463,12 @@ mod tests {
             "blobray-symbol-lineage-rebase-{}.json",
             std::process::id()
         ));
-        crate::application::generated_file::write_or_check_json(
+        crate::application::generated_file::GeneratedOutput::new(
             &path,
-            &report,
             false,
             "symbol lineage fixture",
-            false,
         )
+        .json(&report, false)
         .unwrap();
 
         let evidence = load_rebase_evidence(&path).unwrap();

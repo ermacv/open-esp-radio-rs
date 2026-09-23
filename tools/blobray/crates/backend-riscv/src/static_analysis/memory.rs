@@ -690,6 +690,7 @@ pub(super) fn relocation_symbol_address(
     relocation: &artifact::SymbolRelocation,
 ) -> SymbolicValue {
     SymbolicValue::SymbolAddress {
+        reference: relocation.reference.clone(),
         member: owner.member.clone(),
         symbol: relocation.symbol.clone(),
         hi_addend: relocation.addend,
@@ -718,6 +719,7 @@ pub(super) fn complete_low_relocation(
         ));
     }
     let SymbolicValue::SymbolAddress {
+        reference,
         member,
         symbol,
         hi_addend,
@@ -729,13 +731,15 @@ pub(super) fn complete_low_relocation(
             "relocation {kind:?} at {pc:#x} has no matching incomplete HI20 base"
         ));
     };
-    if member != &owner.member || symbol != &relocation.symbol {
+    if reference != &relocation.reference || member != &owner.member || symbol != &relocation.symbol
+    {
         return Err(format!(
-            "relocation {kind:?} at {pc:#x} does not match its HI20 base: low={:?}::{}{:+#x}, high={member:?}::{symbol}{hi_addend:+#x}",
-            owner.member, relocation.symbol, relocation.addend
+            "relocation {kind:?} at {pc:#x} does not match its HI20 base: low={:?}::{}{:+#x} reference={:?}, high={member:?}::{symbol}{hi_addend:+#x} reference={reference:?}",
+            owner.member, relocation.symbol, relocation.addend, relocation.reference
         ));
     }
     Ok(Some(SymbolicValue::SymbolAddress {
+        reference: reference.clone(),
         member: member.clone(),
         symbol: symbol.clone(),
         hi_addend: *hi_addend,
@@ -752,6 +756,12 @@ mod tests {
 
     fn table_symbol() -> artifact::ArtifactSymbolDefinition {
         artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "bounded_table_consumer",
+                0x1000,
+            ),
             member: None,
             name: "bounded_table_consumer".to_owned(),
             address: 0x1000,
@@ -772,6 +782,51 @@ mod tests {
         values[usize::from(Reg::A5.0)] =
             SymbolicValue::memory_read(3, 8, false).add_constant(0x2000);
         values
+    }
+
+    #[test]
+    fn low_relocation_rejects_a_same_name_target_with_different_physical_identity() {
+        let mut owner = table_symbol();
+        owner.addresses_resolved = false;
+        let reference = crate::SymbolReference::Captured {
+            artifact_sha256: "1".repeat(64),
+            location: crate::SymbolLocation {
+                object: crate::ObjectLocation::Standalone,
+                table: crate::ArtifactSymbolTable::Static,
+                index: 2,
+            },
+            binding: crate::SymbolBinding::LocalDefinition,
+        };
+        let high = artifact::SymbolRelocation {
+            reference: reference.clone(),
+            address: 0x1000,
+            kind: artifact::RelocationKind::Hi20,
+            symbol: "state".to_owned(),
+            addend: 0,
+        };
+        let base = relocation_symbol_address(&owner, &high);
+        owner.relocations.push(artifact::SymbolRelocation {
+            reference,
+            address: 0x1004,
+            kind: artifact::RelocationKind::Lo12I,
+            symbol: "state".to_owned(),
+            addend: 0,
+        });
+        assert!(
+            complete_low_relocation(&owner, 0x1004, artifact::RelocationKind::Lo12I, &base, 0)
+                .unwrap()
+                .is_some()
+        );
+        let crate::SymbolReference::Captured { location, .. } = &mut owner.relocations[0].reference
+        else {
+            unreachable!()
+        };
+        location.index += 1;
+        assert!(
+            complete_low_relocation(&owner, 0x1004, artifact::RelocationKind::Lo12I, &base, 0)
+                .unwrap_err()
+                .contains("does not match its HI20 base")
+        );
     }
 
     #[test]

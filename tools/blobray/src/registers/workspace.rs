@@ -84,16 +84,18 @@ pub(crate) fn load_effective_register_model(
     Ok(model)
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct RegisterWorkspaceSummary {
-    pub(crate) ranges: usize,
-    pub(crate) observed: usize,
-    pub(crate) reviewed: usize,
-    pub(crate) ignored: usize,
-    pub(crate) non_operational: usize,
-    pub(crate) manual: usize,
-    pub(crate) unreviewed: usize,
-    pub(crate) fields: usize,
+/// Publication review counts for configured model/discovery facts.
+/// These counts do not describe the complete research inventory.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct RegisterWorkspaceSummary {
+    pub ranges: usize,
+    pub observed: usize,
+    pub reviewed: usize,
+    pub ignored: usize,
+    pub non_operational: usize,
+    pub manual: usize,
+    pub unreviewed: usize,
+    pub fields: usize,
 }
 
 /// Project publication ownership for one complete physical MMIO access.
@@ -184,12 +186,24 @@ impl ProjectRegisterWorkspace {
             .is_file()
             .then(|| RegisterFacts::load(&paths.facts))
             .transpose()?;
-        Ok(Self {
+        Ok(Self::from_captured(
+            paths,
+            load_effective_register_model(paths)?,
             facts,
-            model: Box::new(load_effective_register_model(paths)?),
+        ))
+    }
+
+    pub(crate) fn from_captured(
+        paths: &RegisterWorkspacePaths,
+        model: RegisterModel,
+        facts: Option<RegisterFacts>,
+    ) -> Self {
+        Self {
+            facts,
+            model: Box::new(model),
             owned_ranges: paths.owned_ranges.iter().cloned().collect(),
             non_operational_functions: paths.non_operational_functions.iter().cloned().collect(),
-        })
+        }
     }
 
     pub(crate) fn required_facts(&self) -> Result<&RegisterFacts> {

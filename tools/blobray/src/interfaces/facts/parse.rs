@@ -6,7 +6,45 @@ use super::*;
 
 pub(super) fn parse(input: &str) -> Result<InterfaceFacts> {
     let document = artifacts::parse_interface_facts(input)?;
+    from_document(document)
+}
+
+pub(super) fn from_document(document: artifacts::StoredInterfaceFacts) -> Result<InterfaceFacts> {
     let facts = InterfaceFacts {
+        decode_blockers: document
+            .decode_blockers
+            .into_iter()
+            .map(|blocker| {
+                Ok(InterfaceDecodeBlockerFact {
+                    owner: blocker.owner,
+                    artifact: blocker.artifact,
+                    member: blocker.member,
+                    function: blocker.function,
+                    address: crate::parse_u32(&blocker.address).ok_or_else(|| {
+                        crate::Error::invalid("invalid interface blocker address")
+                    })?,
+                    width: blocker.width,
+                    raw: crate::parse_u32(&blocker.raw).ok_or_else(|| {
+                        crate::Error::invalid("invalid interface blocker encoding")
+                    })?,
+                    class: blocker.class,
+                    linear_control_flow: blocker.linear_control_flow,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+        analysis_failures: document
+            .analysis_failures
+            .into_iter()
+            .map(|failure| InterfaceDecodeFailureFact {
+                owner: failure.owner,
+                artifact: failure.artifact,
+                member: failure.member,
+                function: failure.function,
+                error: failure.error,
+            })
+            .collect(),
+        limits: document.limits,
+        gaps: document.gaps,
         artifacts: document
             .artifacts
             .into_iter()
@@ -22,7 +60,16 @@ pub(super) fn parse(input: &str) -> Result<InterfaceFacts> {
             .map(|table| InterfaceTableFact {
                 artifact: table.artifact,
                 root: root(table.root),
-                container_path: table.container_path.into_iter().map(step).collect(),
+                container_path: table
+                    .container_path
+                    .into_iter()
+                    .map(|shape| InterfaceFactStep {
+                        site: None,
+                        offset: shape.offset,
+                        width: shape.width,
+                        selector: shape.selector.map(selector),
+                    })
+                    .collect(),
                 slots: table
                     .slots
                     .into_iter()
@@ -46,7 +93,7 @@ pub(super) fn parse(input: &str) -> Result<InterfaceFacts> {
                         call.root_linkage.mode
                     )));
                 }
-                let slot_load_site = call.target.loads.last().and_then(|load| load.site);
+                let slot_load_site = call.target.loads.last().map(|load| load.site);
                 let root_linkage = InterfaceRootLinkageFact {
                     symbols: call.root_linkage.symbols,
                     resolutions: call.root_linkage.resolutions,
@@ -56,6 +103,7 @@ pub(super) fn parse(input: &str) -> Result<InterfaceFacts> {
                         .into_iter()
                         .map(|candidate| {
                             Ok(InterfaceSymbolLocationFact {
+                                location: candidate.location,
                                 artifact: candidate.artifact,
                                 member: candidate.member,
                                 address: crate::parse_u32(&candidate.address).ok_or_else(|| {
@@ -70,6 +118,9 @@ pub(super) fn parse(input: &str) -> Result<InterfaceFacts> {
                         .collect::<Result<Vec<_>>>()?,
                 };
                 Ok(InterfaceCallFact {
+                    owner: call.owner,
+                    link_register: call.link_register,
+                    target_offset: call.target.post_offset,
                     artifact: call.artifact,
                     member: call.member,
                     function: call.function,
@@ -91,6 +142,9 @@ pub(super) fn parse(input: &str) -> Result<InterfaceFacts> {
             .assignments
             .into_iter()
             .map(|assignment| InterfaceAssignmentFact {
+                owner: assignment.owner,
+                target_loads: assignment.target_loads.into_iter().map(step).collect(),
+                target_offset: assignment.target_offset,
                 artifact: assignment.artifact,
                 member: assignment.member,
                 function: assignment.function,
@@ -111,44 +165,36 @@ pub(super) fn parse(input: &str) -> Result<InterfaceFacts> {
 fn root(root: artifacts::StoredInterfaceRoot) -> InterfaceFactRoot {
     match root {
         artifacts::StoredInterfaceRoot::RelocatedSymbol {
+            reference,
             member,
             symbol,
             addend,
             addressing,
             ..
         } => InterfaceFactRoot::RelocatedSymbol {
+            reference,
             member,
             symbol,
             addend,
             addressing,
         },
-        artifacts::StoredInterfaceRoot::FunctionArgument { argument, .. } => {
-            InterfaceFactRoot::FunctionArgument { argument }
-        }
-        artifacts::StoredInterfaceRoot::BoundedDataAddress {
-            canonical,
-            member,
-            symbol,
+        artifacts::StoredInterfaceRoot::FunctionArgument {
+            owner, argument, ..
+        } => InterfaceFactRoot::FunctionArgument { owner, argument },
+        artifacts::StoredInterfaceRoot::AbsoluteAddress {
             address,
-            symbol_address,
-            symbol_size,
+            data_address,
             ..
-        } => InterfaceFactRoot::BoundedDataAddress {
-            canonical,
-            member,
-            symbol,
+        } => InterfaceFactRoot::AbsoluteAddress {
             address,
-            symbol_address,
-            symbol_size,
+            data_address,
         },
-        artifacts::StoredInterfaceRoot::AbsoluteAddress { address, .. } => {
-            InterfaceFactRoot::AbsoluteAddress { address }
-        }
     }
 }
 
 fn step(step: artifacts::StoredInterfaceStep) -> InterfaceFactStep {
     InterfaceFactStep {
+        site: Some(step.site),
         offset: step.offset,
         width: step.width,
         selector: step.selector.map(selector),
@@ -164,23 +210,8 @@ fn selector(selector: artifacts::StoredInterfaceSelector) -> InterfaceFactSelect
 }
 
 fn argument(argument: artifacts::StoredInterfaceArgument) -> InterfaceArgumentFact {
-    match argument {
-        artifacts::StoredInterfaceArgument::Unknown { index } => InterfaceArgumentFact {
-            index,
-            kind: "unknown".to_owned(),
-            expression: "?".to_owned(),
-        },
-        artifacts::StoredInterfaceArgument::Constant { index, value } => InterfaceArgumentFact {
-            index,
-            kind: "constant".to_owned(),
-            expression: format!("{value:#010x}"),
-        },
-        artifacts::StoredInterfaceArgument::PointerProvenance {
-            index, canonical, ..
-        } => InterfaceArgumentFact {
-            index,
-            kind: "pointer-provenance".to_owned(),
-            expression: canonical,
-        },
+    InterfaceArgumentFact {
+        index: argument.index,
+        value: argument.value,
     }
 }

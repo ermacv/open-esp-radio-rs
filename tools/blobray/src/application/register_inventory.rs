@@ -15,14 +15,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::{ProjectSpec, Result};
+use crate::Result;
 
 mod hints;
 mod observations;
 mod query;
-pub use query::{InventoryQuery, RegisterQuestion};
+pub use query::{InventoryQuery, RegisterQuestion, RegisterSelector};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InventorySource {
     pub path: String,
     pub kind: String,
@@ -32,6 +33,7 @@ pub struct InventorySource {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RegisterEvidence {
     pub id: String,
     pub kind: String,
@@ -42,6 +44,7 @@ pub struct RegisterEvidence {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InventoryField {
     pub id: String,
     pub offset: u32,
@@ -53,7 +56,18 @@ pub struct InventoryField {
     pub evidence: BTreeSet<String>,
 }
 
+impl InventoryField {
+    pub(crate) fn evidence_ids(&self) -> BTreeSet<&String> {
+        self.evidence
+            .iter()
+            .chain(self.names.claims().map(|claim| &claim.evidence))
+            .chain(self.semantics.claims().map(|claim| &claim.evidence))
+            .collect()
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BitCoverage {
     pub transport_read: u32,
     pub transport_written: u32,
@@ -70,6 +84,7 @@ pub struct BitCoverage {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InventoryRegister {
     pub id: String,
     pub subject: RegisterSubject,
@@ -84,6 +99,17 @@ pub struct InventoryRegister {
 }
 
 impl InventoryRegister {
+    /// Evidence referenced by the subject, its fields and every property claim.
+    pub(crate) fn evidence_ids(&self) -> BTreeSet<&String> {
+        self.evidence
+            .iter()
+            .chain(self.names.claims().map(|claim| &claim.evidence))
+            .chain(self.physical_width.claims().map(|claim| &claim.evidence))
+            .chain(self.semantics.claims().map(|claim| &claim.evidence))
+            .chain(self.fields.values().flat_map(InventoryField::evidence_ids))
+            .collect()
+    }
+
     pub fn width(&self) -> Option<u32> {
         match &self.physical_width {
             KnowledgeProperty::Known { claims } => claims.first().map(|claim| claim.value),
@@ -106,6 +132,7 @@ impl InventoryRegister {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AddressCoverage {
     pub name: String,
     pub address_space: String,
@@ -121,17 +148,21 @@ pub struct AddressCoverage {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct RegisterInventory {
+#[serde(deny_unknown_fields)]
+/// The shared subject and coverage graph. Query results retain complete
+/// evidence records; durable revision snapshots use the same graph with
+/// content-addressed evidence references as `E`.
+pub struct RegisterInventory<E = RegisterEvidence> {
     pub schema_version: u32,
     pub sources: Vec<InventorySource>,
     pub registers: BTreeMap<String, InventoryRegister>,
-    pub evidence: BTreeMap<String, RegisterEvidence>,
+    pub evidence: BTreeMap<String, E>,
     pub gaps: BTreeSet<CoverageGap>,
     pub regions: Vec<AddressCoverage>,
     pub address_domains: BTreeSet<String>,
 }
 
-impl Default for RegisterInventory {
+impl<E> Default for RegisterInventory<E> {
     fn default() -> Self {
         Self {
             schema_version: 1,
@@ -142,6 +173,85 @@ impl Default for RegisterInventory {
             regions: Vec::new(),
             address_domains: BTreeSet::new(),
         }
+    }
+}
+
+impl<E> RegisterInventory<E> {
+    pub(crate) fn validate(&self) -> Result<()> {
+        if self.schema_version != 1 {
+            return Err(crate::Error::invalid(
+                "register inventory requires schema_version 1",
+            ));
+        }
+        fn property<T: Clone + Ord, E>(
+            value: &KnowledgeProperty<T>,
+            evidence: &BTreeMap<String, E>,
+        ) -> Result<()> {
+            value.validate().map_err(crate::Error::invalid)?;
+            if value
+                .claims()
+                .any(|claim| !evidence.contains_key(&claim.evidence))
+            {
+                return Err(crate::Error::invalid("dangling property claim evidence"));
+            }
+            Ok(())
+        }
+        for (id, register) in &self.registers {
+            property(&register.names, &self.evidence)?;
+            property(&register.physical_width, &self.evidence)?;
+            property(&register.semantics, &self.evidence)?;
+            for (id, field) in &register.fields {
+                if id != &field.id {
+                    return Err(crate::Error::invalid(
+                        "register inventory field identity mismatch",
+                    ));
+                }
+                property(&field.names, &self.evidence)?;
+                property(&field.semantics, &self.evidence)?;
+            }
+            if id != &register.id || id != &register.subject.id() {
+                return Err(crate::Error::invalid(
+                    "register inventory subject identity mismatch",
+                ));
+            }
+            for evidence in register.evidence.iter().chain(
+                register
+                    .fields
+                    .values()
+                    .flat_map(|field| field.evidence.iter()),
+            ) {
+                if !self.evidence.contains_key(evidence) {
+                    return Err(crate::Error::invalid(format!(
+                        "dangling register evidence {evidence}"
+                    )));
+                }
+            }
+            if register
+                .fields
+                .values()
+                .any(|field| field.width == 0 || field.offset.checked_add(field.width).is_none())
+            {
+                return Err(crate::Error::invalid("invalid register field geometry"));
+            }
+        }
+        for id in &self.address_domains {
+            if !self.evidence.contains_key(id) {
+                return Err(crate::Error::invalid("dangling address-domain evidence"));
+            }
+        }
+        for id in self
+            .sources
+            .iter()
+            .flat_map(|source| &source.evidence)
+            .chain(self.regions.iter().flat_map(|region| &region.evidence))
+        {
+            if !self.evidence.contains_key(id) {
+                return Err(crate::Error::invalid(
+                    "dangling register inventory context evidence",
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -317,14 +427,25 @@ impl RegisterInventory {
     }
 
     fn unavailable(&mut self, path: &Path, kind: &str, error: Option<String>) {
-        if let Ok(bytes) = std::fs::read(path) {
+        let bytes = std::fs::read(path).ok();
+        self.unavailable_captured(path, kind, error, bytes.as_deref());
+    }
+
+    fn unavailable_captured(
+        &mut self,
+        path: &Path,
+        kind: &str,
+        error: Option<String>,
+        bytes: Option<&[u8]>,
+    ) {
+        if let Some(bytes) = bytes {
             let digest = self
                 .sources
                 .iter()
                 .find(|source| source.path == path.display().to_string() && source.kind == kind)
                 .and_then(|source| source.digest.clone())
-                .unwrap_or_else(|| self.loaded(path, kind, &bytes));
-            let payload = match String::from_utf8(bytes.clone()) {
+                .unwrap_or_else(|| self.loaded(path, kind, bytes));
+            let payload = match std::str::from_utf8(bytes) {
                 Ok(text) => json!({"text":text}),
                 Err(_) => json!({"bytes":bytes}),
             };
@@ -452,12 +573,11 @@ impl RegisterInventory {
         }
     }
 
-    fn import_facts(&mut self, chip: &str, space: &str, path: &Path) -> Result<()> {
-        let bytes = std::fs::read(path)?;
-        let text = std::str::from_utf8(&bytes)
-            .map_err(|error| crate::Error::invalid(error.to_string()))?;
+    fn import_facts(&mut self, chip: &str, space: &str, path: &Path, bytes: &[u8]) -> Result<()> {
+        let text =
+            std::str::from_utf8(bytes).map_err(|error| crate::Error::invalid(error.to_string()))?;
         crate::artifacts::parse_mmio_facts(text)?;
-        let document: Value = serde_json::from_slice(&bytes)?;
+        let document: Value = serde_json::from_slice(bytes)?;
         for fact in document["registers"].as_array().into_iter().flatten() {
             if !matches!(number(&fact["width"]), Some(8 | 16 | 32)) {
                 return Err(crate::Error::invalid(
@@ -476,7 +596,7 @@ impl RegisterInventory {
                 ));
             }
         }
-        let digest = self.loaded(path, "discovery", &bytes);
+        let digest = self.loaded(path, "discovery", bytes);
         let mut run_payload = document.clone();
         run_payload
             .as_object_mut()
@@ -670,22 +790,17 @@ impl RegisterInventory {
         Ok(())
     }
 
-    fn import_ir(&mut self, chip: &str, space: &str, path: &Path) -> Result<()> {
-        let reader = crate::artifacts::LinkedIrReader::open(path)?;
-        let manifest = std::fs::read(path.join("manifest.json"))?;
-        let mut bundle_identity = BTreeMap::new();
-        for input in crate::artifacts::bundle_files(path) {
-            bundle_identity.insert(
-                input
-                    .file_name()
-                    .expect("bundle member")
-                    .to_string_lossy()
-                    .to_string(),
-                format!("{:x}", Sha256::digest(std::fs::read(&input)?)),
-            );
-        }
-        let digest = self.loaded(path, "linked-ir", &serde_json::to_vec(&bundle_identity)?);
-        let manifest: Value = serde_json::from_slice(&manifest)?;
+    fn import_ir(
+        &mut self,
+        chip: &str,
+        space: &str,
+        path: &Path,
+        inputs: &super::artifact_store::PublishedIrEvidence,
+    ) -> Result<()> {
+        let reader = &inputs.reader;
+        let manifest = &inputs.manifest;
+        let digest = self.loaded(path, "linked-ir", &serde_json::to_vec(&inputs.members)?);
+        let manifest: Value = serde_json::from_slice(manifest)?;
         self.record(&digest, "analysis-run", &json!(digest), manifest.clone());
         let mut users = BTreeMap::<String, BTreeSet<String>>::new();
         let function_labels = reader.discovery_function_labels();
@@ -1036,66 +1151,6 @@ impl RegisterInventory {
         self.regions.dedup();
     }
 
-    pub(crate) fn validate(&self) -> Result<()> {
-        if self.schema_version != 1 {
-            return Err(crate::Error::invalid(
-                "register inventory requires schema_version 1",
-            ));
-        }
-        fn property<T: Clone + Ord>(
-            value: &KnowledgeProperty<T>,
-            evidence: &BTreeMap<String, RegisterEvidence>,
-        ) -> Result<()> {
-            value.validate().map_err(crate::Error::invalid)?;
-            if value
-                .claims()
-                .any(|claim| !evidence.contains_key(&claim.evidence))
-            {
-                return Err(crate::Error::invalid("dangling property claim evidence"));
-            }
-            Ok(())
-        }
-        for (id, register) in &self.registers {
-            property(&register.names, &self.evidence)?;
-            property(&register.physical_width, &self.evidence)?;
-            property(&register.semantics, &self.evidence)?;
-            for field in register.fields.values() {
-                property(&field.names, &self.evidence)?;
-                property(&field.semantics, &self.evidence)?;
-            }
-            if id != &register.id || id != &register.subject.id() {
-                return Err(crate::Error::invalid(
-                    "register inventory subject identity mismatch",
-                ));
-            }
-            for evidence in register.evidence.iter().chain(
-                register
-                    .fields
-                    .values()
-                    .flat_map(|field| field.evidence.iter()),
-            ) {
-                if !self.evidence.contains_key(evidence) {
-                    return Err(crate::Error::invalid(format!(
-                        "dangling register evidence {evidence}"
-                    )));
-                }
-            }
-            if register
-                .fields
-                .values()
-                .any(|field| field.width == 0 || field.offset.checked_add(field.width).is_none())
-            {
-                return Err(crate::Error::invalid("invalid register field geometry"));
-            }
-        }
-        for id in &self.address_domains {
-            if !self.evidence.contains_key(id) {
-                return Err(crate::Error::invalid("dangling address-domain evidence"));
-            }
-        }
-        Ok(())
-    }
-
     /// All subjects containing an address; ambiguities are returned explicitly.
     pub fn at_address(&self, address: u64) -> Vec<&InventoryRegister> {
         self.registers
@@ -1115,7 +1170,25 @@ impl RegisterInventory {
     }
 }
 
-pub(crate) fn load(project: &ProjectSpec, catalog: &crate::MmioMap) -> Result<RegisterInventory> {
+pub(crate) fn load(session: &super::ProjectSession) -> Result<RegisterInventory> {
+    let context = session.context();
+    let project = context.project;
+    let catalog = context.svd;
+    let explicit_svd = !context.explicit_context.svd_paths.is_empty();
+    // Import and fingerprint share the same immutable byte capture, including
+    // opaque invalid text and typed read failures.
+    let svd_inputs =
+        crate::source_set::CapturedSourceSet::capture(context.svd_paths.iter().cloned());
+    if explicit_svd {
+        for path in context.svd_paths {
+            svd_inputs.bytes(path).map_err(|error| {
+                crate::Error::invalid(format!(
+                    "cannot read explicitly selected SVD {}: {error}",
+                    path.display()
+                ))
+            })?;
+        }
+    }
     let mut output = RegisterInventory::default();
     let model = project.registers.as_ref().and_then(|paths| {
         if !paths.model.is_file() {
@@ -1130,12 +1203,6 @@ pub(crate) fn load(project: &ProjectSpec, catalog: &crate::MmioMap) -> Result<Re
             }
         }
     });
-    let query_key = inventory_cache_key(project, catalog, model.as_ref())?;
-    if let Some(bytes) = super::query_store::QueryStore::open(&project.manifest)?.get(&query_key)? {
-        let cached: RegisterInventory = serde_json::from_slice(&bytes)?;
-        cached.validate()?;
-        return Ok(cached);
-    }
     let chip = model.as_ref().map_or_else(
         || {
             if project.review_context.chips.len() == 1 {
@@ -1293,21 +1360,25 @@ pub(crate) fn load(project: &ProjectSpec, catalog: &crate::MmioMap) -> Result<Re
             }
         }
     }
-    for path in &project.svd_paths {
-        if !path.is_file() {
-            output.unavailable(path, "svd", None);
+    for path in context.svd_paths.iter().collect::<BTreeSet<_>>() {
+        if let Some(failure) = svd_inputs.capture_failure(path) {
+            output.unavailable_captured(
+                path,
+                "svd",
+                (!failure.missing).then(|| failure.reason.clone()),
+                None,
+            );
             continue;
         }
+        let bytes = svd_inputs.bytes(path)?;
         let result = (|| -> Result<()> {
-            let xml = std::fs::read_to_string(path)?;
-            let geometry = open_esp_radio_register_model::svd_geometry(&xml)?;
-            let digest = output.loaded(path, "svd", xml.as_bytes());
+            let xml = std::str::from_utf8(bytes)
+                .map_err(|error| crate::Error::invalid(error.to_string()))?;
+            let geometry = open_esp_radio_register_model::svd_geometry(xml)?;
+            let regions = open_esp_radio_register_model::svd_regions(xml)?;
+            let digest = output.loaded(path, "svd", bytes);
             output.record(&digest, "svd-source", &json!(digest), json!({"xml":xml}));
-            output.import_regions(
-                space,
-                &digest,
-                open_esp_radio_register_model::svd_regions(&xml)?,
-            );
+            output.import_regions(space, &digest, regions);
             output.import_geometry(
                 chip,
                 space,
@@ -1319,7 +1390,13 @@ pub(crate) fn load(project: &ProjectSpec, catalog: &crate::MmioMap) -> Result<Re
             Ok(())
         })();
         if let Err(error) = result {
-            output.unavailable(path, "svd", Some(error.to_string()));
+            if explicit_svd {
+                return Err(crate::Error::invalid(format!(
+                    "invalid explicitly selected SVD {}: {error}",
+                    path.display()
+                )));
+            }
+            output.unavailable_captured(path, "svd", Some(error.to_string()), Some(bytes));
         }
     }
     if let Some(paths) = &project.registers {
@@ -1335,20 +1412,45 @@ pub(crate) fn load(project: &ProjectSpec, catalog: &crate::MmioMap) -> Result<Re
                 }
             }
         }
-        if paths.facts.is_file() {
-            if let Err(error) = output.import_facts(chip, space, &paths.facts) {
-                output.unavailable(&paths.facts, "discovery", Some(error.to_string()));
+        match session.artifacts.read_output(&paths.facts) {
+            Ok(Some(bytes)) => {
+                if let Err(error) = output.import_facts(chip, space, &paths.facts, &bytes) {
+                    output.unavailable_captured(
+                        &paths.facts,
+                        "discovery",
+                        Some(error.to_string()),
+                        Some(&bytes),
+                    );
+                }
             }
-        } else {
-            output.unavailable(&paths.facts, "discovery", None);
+            Ok(None) => output.unavailable_captured(
+                &paths.facts,
+                "discovery",
+                Some("selected published epoch has no declared MMIO facts".to_owned()),
+                None,
+            ),
+            Err(error) => output.unavailable_captured(
+                &paths.facts,
+                "discovery",
+                Some(error.to_string()),
+                None,
+            ),
         }
         for path in &paths.review_ir_reports {
-            if path.is_dir() {
-                if let Err(error) = output.import_ir(chip, space, path) {
-                    output.unavailable(path, "linked-ir", Some(error.to_string()));
+            match session.artifacts.ir_evidence(path) {
+                Ok(inputs) => {
+                    if let Err(error) = output.import_ir(chip, space, path, &inputs) {
+                        output.unavailable_captured(
+                            path,
+                            "linked-ir",
+                            Some(error.to_string()),
+                            Some(&inputs.manifest),
+                        );
+                    }
                 }
-            } else {
-                output.unavailable(path, "linked-ir", None);
+                Err(error) => {
+                    output.unavailable_captured(path, "linked-ir", Some(error.to_string()), None)
+                }
             }
         }
     }
@@ -1402,26 +1504,8 @@ pub(crate) fn load(project: &ProjectSpec, catalog: &crate::MmioMap) -> Result<Re
     }
     output.finish();
     output.validate()?;
-    // Immutable query results use the existing SQLite/CAS store. Inputs stay
-    // authoritative; a removed cache is rebuilt from their complete records.
-    let bytes = serde_json::to_vec(&output)?;
-    let fingerprint = format!("{:x}", Sha256::digest(&bytes));
-    let mut store = super::query_store::QueryStore::open(&project.manifest)?;
-    let mut dependencies = Vec::new();
-    for evidence in output.evidence.values() {
-        let bytes = serde_json::to_vec(evidence)?;
-        let digest = format!("{:x}", Sha256::digest(&bytes));
-        let key = format!("register-evidence-v1:{digest}");
-        store.put(&key, "register-evidence", &digest, &[], &bytes)?;
-        dependencies.push(key);
-    }
-    store.put(
-        &query_key,
-        "register-inventory",
-        &fingerprint,
-        &dependencies,
-        &bytes,
-    )?;
+    // This query has no writer capability. The session owns the derived graph;
+    // published inputs remain durable in CAS independently of exported paths.
     Ok(output)
 }
 
@@ -1459,60 +1543,6 @@ fn observed_access(evidence: &RegisterEvidence) -> Option<(u64, u64)> {
 
 /// Content identities include every configured source (including absent files),
 /// model fragments and every linked bundle member. No mtime-only freshness.
-fn inventory_cache_key(
-    project: &ProjectSpec,
-    catalog: &crate::MmioMap,
-    model: Option<&crate::registers::RegisterModel>,
-) -> Result<String> {
-    let mut paths = BTreeSet::new();
-    paths.extend(project.svd_paths.iter().cloned());
-    paths.extend(project.memory_map.iter().cloned());
-    if let Some(model) = model {
-        paths.extend(model.loaded_inputs().keys().cloned());
-    }
-    if let Some(registers) = &project.registers {
-        paths.insert(registers.model.clone());
-        paths.insert(registers.facts.clone());
-        paths.extend(registers.reviewed_knowledge.iter().cloned());
-        paths.extend(registers.observations.iter().cloned());
-        for observation in &registers.observations {
-            if let Ok(bytes) = std::fs::read(observation)
-                && let Ok(document) = serde_json::from_slice::<Value>(&bytes)
-                && document["command"].as_str() == Some("execute replay")
-            {
-                for key in ["manifest", "artifact"] {
-                    if let Some(path) = document[key]["path"].as_str() {
-                        paths.insert(path.into());
-                    }
-                }
-            }
-        }
-        for bundle in &registers.review_ir_reports {
-            paths.extend(crate::artifacts::bundle_files(bundle));
-        }
-    }
-    let mut digest = Sha256::new();
-    digest.update(format!(
-        "register-inventory-query-v4:{project:?}:{catalog:?}"
-    ));
-    for path in paths {
-        digest.update(serde_json::to_vec(&path)?);
-        match std::fs::read(&path) {
-            Ok(bytes) => {
-                digest.update(b"present");
-                digest.update(Sha256::digest(bytes));
-            }
-            Err(error) => {
-                digest.update(format!("unavailable:{:?}:{error}", error.kind()));
-            }
-        }
-    }
-    Ok(format!(
-        "register-inventory-query-v4:{:x}",
-        digest.finalize()
-    ))
-}
-
 /// Complement of covered byte extents, without assuming a register stride.
 pub fn interval_gaps(start: u64, end: u64, covered: &[(u64, u64)]) -> Vec<(u64, u64)> {
     let mut intervals = covered.to_vec();

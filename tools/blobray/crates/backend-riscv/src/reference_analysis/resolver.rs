@@ -3,7 +3,7 @@
 use super::*;
 use crate::{DirectSemanticFunctionSpec, EntryContractRef, FunctionTarget, RiscvHarnessSpec};
 
-pub type ReferenceSymbolKey = (Option<String>, String, u64);
+pub type ReferenceSymbolKey = artifact::CodeIdentity;
 
 pub struct ReferenceResolver {
     pub symbols: Vec<artifact::ArtifactSymbolDefinition>,
@@ -21,19 +21,17 @@ pub struct ReferenceResolver {
     /// recovery. Synthetic labels are clipped to the next symbol by the
     /// artifact loader, so this does not duplicate section tails.
     pub data_objects: Vec<artifact::ArtifactDataObjectDefinition>,
-    /// Reviewed exact-body semantics projected from a unique archive origin
-    /// onto the authoritative linked definition. The facade owns origin and
-    /// digest validation; the backend only stores the resulting typed fact.
-    pub projected_direct_semantics:
-        BTreeMap<ReferenceSymbolKey, &'static DirectSemanticFunctionSpec>,
+    /// Body-bound proofs and explicit gaps for reviewed origin candidates.
+    /// Entries can only be added through backend verification.
+    pub projected_direct_semantics: SemanticProjectionCatalog,
     /// Exact relocatable definitions associated with authoritative linked
     /// functions by the project layer. Kept separate from linker-selected
     /// symbols: these provide lossless structural relocation evidence only.
-    pub projected_origins: BTreeMap<ReferenceSymbolKey, artifact::ArtifactSymbolDefinition>,
+    pub projected_origins: BTreeMap<ReferenceSymbolKey, Vec<artifact::ArtifactSymbolDefinition>>,
 }
 
 fn symbol_key(symbol: &artifact::ArtifactSymbolDefinition) -> ReferenceSymbolKey {
-    (symbol.member.clone(), symbol.name.clone(), symbol.address)
+    symbol.identity.clone()
 }
 
 fn insert_preferred_symbol(
@@ -64,22 +62,21 @@ fn unique_exported_address(
 }
 
 impl ReferenceResolver {
-    pub fn register_projected_direct_semantic(
+    pub fn review_projected_direct_semantic(
         &mut self,
-        symbol: &artifact::ArtifactSymbolDefinition,
-        semantic: &'static DirectSemanticFunctionSpec,
-    ) {
+        linked: &artifact::ArtifactSymbolDefinition,
+        origin: &artifact::ArtifactSymbolDefinition,
+    ) -> Option<SemanticProjectionStatus> {
+        let hooks = self.pointer_context.summary_hooks?;
         self.projected_direct_semantics
-            .insert(symbol_key(symbol), semantic);
+            .observe(origin, linked, hooks)
     }
 
     pub fn projected_direct_semantic(
         &self,
         symbol: &artifact::ArtifactSymbolDefinition,
     ) -> Option<&'static DirectSemanticFunctionSpec> {
-        self.projected_direct_semantics
-            .get(&symbol_key(symbol))
-            .copied()
+        self.projected_direct_semantics.semantic(symbol)
     }
 
     pub fn register_projected_origin(
@@ -87,14 +84,33 @@ impl ReferenceResolver {
         linked: &artifact::ArtifactSymbolDefinition,
         origin: artifact::ArtifactSymbolDefinition,
     ) {
-        self.projected_origins.insert(symbol_key(linked), origin);
+        let candidates = self
+            .projected_origins
+            .entry(symbol_key(linked))
+            .or_default();
+        if !candidates.contains(&origin) {
+            candidates.push(origin);
+        }
     }
 
     pub fn projected_origin(
         &self,
         linked: &artifact::ArtifactSymbolDefinition,
     ) -> Option<&artifact::ArtifactSymbolDefinition> {
-        self.projected_origins.get(&symbol_key(linked))
+        match self.projected_origin_candidates(linked) {
+            [only] => Some(only),
+            _ => None,
+        }
+    }
+
+    pub fn projected_origin_candidates(
+        &self,
+        linked: &artifact::ArtifactSymbolDefinition,
+    ) -> &[artifact::ArtifactSymbolDefinition] {
+        self.projected_origins
+            .get(&symbol_key(linked))
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
 
     /// Replace a linked-address call label with the exact relocatable-origin
@@ -224,8 +240,37 @@ impl ReferenceResolver {
         selection: artifact::CodeSymbolSelection,
         reviewed: &[artifact::ReviewedCodeRange],
     ) -> Result<Self> {
-        let exported_symbols =
-            artifact::load_code_symbols(artifact, "", artifact::CodeSymbolSelection::Exported)?;
+        let capture = artifact::CapturedArtifact::open(artifact)?;
+        let captured_companions = companions
+            .iter()
+            .map(|path| artifact::CapturedArtifact::open(path))
+            .collect::<Result<Vec<_>>>()?;
+        Self::from_captured(
+            &capture,
+            &captured_companions.iter().collect::<Vec<_>>(),
+            harness,
+            entry_contract,
+            selection,
+            reviewed,
+        )
+    }
+
+    /// Construct one resolver from a caller-owned immutable binary input set.
+    /// Code, data initializers and the private execution image consume these
+    /// exact captures. This constructor performs no filesystem reads.
+    pub fn from_captured(
+        capture: &artifact::CapturedArtifact<'_>,
+        companions: &[&artifact::CapturedArtifact<'_>],
+        harness: &'static RiscvHarnessSpec,
+        entry_contract: EntryContractRef,
+        selection: artifact::CodeSymbolSelection,
+        reviewed: &[artifact::ReviewedCodeRange],
+    ) -> Result<Self> {
+        let exported_symbols = capture
+            .code_symbols("", artifact::CodeSymbolSelection::Exported)?
+            .into_iter()
+            .map(|symbol| symbol.definition.clone())
+            .collect::<Vec<_>>();
         let exported_symbol_keys = exported_symbols
             .iter()
             .map(symbol_key)
@@ -242,11 +287,15 @@ impl ReferenceResolver {
         }
         let mut address_preferred_symbol_keys = exported_symbol_keys.clone();
         let mut symbols = if selection == artifact::CodeSymbolSelection::All {
-            artifact::load_code_symbols(artifact, "", selection)?
+            capture
+                .code_symbols("", selection)?
+                .into_iter()
+                .map(|symbol| symbol.definition.clone())
+                .collect()
         } else {
             exported_symbols
         };
-        symbols.extend(artifact::load_reviewed_code_ranges(artifact, reviewed)?);
+        symbols.extend(capture.reviewed_code_ranges(reviewed)?);
         symbols.sort_by(|left, right| {
             (&left.member, &left.name, left.address).cmp(&(
                 &right.member,
@@ -281,37 +330,33 @@ impl ReferenceResolver {
                 .insert(identity.clone(), next_archive_symbol_id)
                 .is_some()
             {
-                return Err(format!(
-                    "duplicate archive symbol identity {:?}::{}",
-                    identity.0, identity.1
-                )
-                .into());
+                return Err(format!("duplicate archive symbol identity {identity:?}").into());
             }
             symbols_by_address.insert(next_archive_symbol_id, symbol.clone());
             next_archive_symbol_id = next_archive_symbol_id.wrapping_add(1);
         }
         let mut image = if symbols.iter().any(|symbol| symbol.addresses_resolved) {
-            Some(execution::ExecutableImage::load(artifact)?)
+            Some(execution::ExecutableImage::from_captured(capture)?)
         } else {
             None
         };
-        let mut data_symbols = artifact::load_data_symbols(artifact)?;
-        let data_objects = artifact::load_data_objects(artifact)?;
+        let mut data_symbols = capture.data_symbols()?.to_vec();
+        let data_objects = capture.data_objects()?.to_vec();
         for companion in companions {
             let Some(image) = image.as_mut() else {
                 return Err(format!(
                     "reference companions require a linked ELF primary artifact: {}",
-                    artifact.display()
+                    capture.sha256()
                 )
                 .into());
             };
-            image.add_companion(companion)?;
-            data_symbols.extend(artifact::load_data_symbols(companion)?);
-            let companion_exported_symbols = artifact::load_code_symbols(
-                companion,
-                "",
-                artifact::CodeSymbolSelection::Exported,
-            )?;
+            image.add_captured_companion(companion)?;
+            data_symbols.extend_from_slice(companion.data_symbols()?);
+            let companion_exported_symbols = companion
+                .code_symbols("", artifact::CodeSymbolSelection::Exported)?
+                .into_iter()
+                .map(|symbol| symbol.definition.clone())
+                .collect::<Vec<_>>();
             for symbol in companion_exported_symbols
                 .iter()
                 .filter(|symbol| symbol.addresses_resolved)
@@ -323,7 +368,11 @@ impl ReferenceResolver {
             }
             address_preferred_symbol_keys.extend(companion_exported_symbols.iter().map(symbol_key));
             let companion_symbols = if selection == artifact::CodeSymbolSelection::All {
-                artifact::load_code_symbols(companion, "", selection)?
+                companion
+                    .code_symbols("", selection)?
+                    .into_iter()
+                    .map(|symbol| symbol.definition.clone())
+                    .collect()
             } else {
                 companion_exported_symbols
             };
@@ -338,22 +387,7 @@ impl ReferenceResolver {
                 );
             }
         }
-        data_symbols.sort_by(|left, right| {
-            (
-                left.size,
-                !left.exported,
-                left.address,
-                &left.member,
-                &left.name,
-            )
-                .cmp(&(
-                    right.size,
-                    !right.exported,
-                    right.address,
-                    &right.member,
-                    &right.name,
-                ))
-        });
+        data_symbols.sort_by(|left, right| left.identity.cmp(&right.identity));
         let mut pointer_context = StructuralPointerContext::from_harness(harness);
         let entry_spec = entry_contract.spec();
         if let Some(table) = entry_spec.function_table {
@@ -443,6 +477,11 @@ impl ReferenceResolver {
                     )
                 })?;
                 let value = SymbolicValue::SymbolAddress {
+                    reference: crate::SymbolReference::Unknown {
+                        reason:
+                            "entry contract binds symbol names without a physical symbol occurrence"
+                                .to_owned(),
+                    },
                     member: None,
                     symbol: target_symbol.to_owned(),
                     hi_addend: 0,
@@ -478,14 +517,14 @@ impl ReferenceResolver {
             }
         }
 
-        let mut archive_definitions = BTreeMap::<String, Vec<(Option<String>, u32)>>::new();
+        let mut archive_definitions = BTreeMap::<String, Vec<(artifact::CodeIdentity, u32)>>::new();
         for symbol in symbols.iter().filter(|symbol| !symbol.addresses_resolved) {
             let identity = symbol_key(symbol);
             archive_definitions
                 .entry(symbol.name.clone())
                 .or_default()
                 .push((
-                    symbol.member.clone(),
+                    symbol.identity.clone(),
                     *symbol_ids
                         .get(&identity)
                         .expect("every archive symbol received a synthetic identity"),
@@ -504,7 +543,12 @@ impl ReferenceResolver {
                     .unwrap_or_default();
                 let same_member = candidates
                     .iter()
-                    .filter(|(member, _)| member == &owner.member)
+                    .filter(|(identity, _)| {
+                        owner
+                            .identity
+                            .object()
+                            .is_some_and(|object| identity.object() == Some(object))
+                    })
                     .map(|(_, target)| *target)
                     .collect::<Vec<_>>();
                 let target = if relocation.addend != 0 {
@@ -534,6 +578,11 @@ impl ReferenceResolver {
             symbols_by_address.insert(
                 target,
                 artifact::ArtifactSymbolDefinition {
+                    identity: artifact::CodeIdentity::ModelBoundary {
+                        artifact_sha256: capture.sha256().to_owned(),
+                        symbol: name.clone(),
+                        address: u64::from(target),
+                    },
                     member: None,
                     name: name.clone(),
                     address: u64::from(target),
@@ -553,9 +602,34 @@ impl ReferenceResolver {
             pointer_context,
             data_symbols,
             data_objects,
-            projected_direct_semantics: BTreeMap::new(),
+            projected_direct_semantics: Default::default(),
             projected_origins: BTreeMap::new(),
         })
+    }
+
+    /// Resolve a human selector without choosing the first ambiguous occurrence.
+    /// Exact callers can select by `CodeIdentity` from `symbols` directly.
+    pub fn select_symbol(
+        &self,
+        member: Option<&str>,
+        name: &str,
+        address: Option<u64>,
+    ) -> Result<&artifact::ArtifactSymbolDefinition> {
+        let mut candidates = self.symbols.iter().filter(|candidate| {
+            candidate.name == name
+                && member.is_none_or(|member| candidate.member.as_deref() == Some(member))
+                && address.is_none_or(|address| candidate.address == address)
+        });
+        let first = candidates
+            .next()
+            .ok_or_else(|| format!("symbol {name} in member {member:?} was not found"))?;
+        if candidates.next().is_some() {
+            return Err(format!(
+                "symbol {name} in member {member:?} is ambiguous; select its physical code identity"
+            )
+            .into());
+        }
+        Ok(first)
     }
 
     pub fn trace(
@@ -564,15 +638,25 @@ impl ReferenceResolver {
         name: &str,
         svd: &MmioMap,
     ) -> Result<FunctionAnalysis> {
-        let symbol = self
-            .symbols
-            .iter()
-            .find(|candidate| {
-                candidate.name == name
-                    && member.is_none_or(|member| candidate.member.as_deref() == Some(member))
-            })
-            .ok_or_else(|| format!("symbol {name} in member {member:?} was not found"))?;
+        let symbol = self.select_symbol(member, name, None)?;
         self.trace_symbol(symbol, svd)
+    }
+
+    /// Run the direct analysis domain with this resolver's captured call and
+    /// pointer context. Reference analysis remains a separate domain over the
+    /// same definitions; it additionally composes interprocedural summaries.
+    pub fn trace_direct_symbol(
+        &self,
+        symbol: &artifact::ArtifactSymbolDefinition,
+        svd: &MmioMap,
+    ) -> Result<FunctionAnalysis> {
+        crate::static_analysis::trace_binary_symbol(
+            symbol,
+            svd,
+            &self.relocated_calls,
+            &self.pointer_context,
+            None,
+        )
     }
 
     pub fn trace_symbol(
@@ -639,31 +723,51 @@ impl ReferenceResolver {
         self.exported_symbol_keys.contains(&symbol_key(symbol))
     }
 
-    /// Resolve a concrete memory access to the narrowest containing data
-    /// symbol. Exported aliases win ties, while unresolved/zero-sized symbols
-    /// never participate.
-    pub fn data_symbol_location(
-        &self,
+    /// Return every captured data definition containing the complete access.
+    /// Aliases, overlapping definitions and different artifact owners remain
+    /// candidates; size, export visibility and input order confer no authority.
+    pub fn data_address_resolution(&self, address: u32, width: u8) -> crate::DataAddressResolution {
+        Self::resolve_data_address(&self.data_symbols, address, Some(width))
+    }
+
+    /// Resolve a numeric range against a captured catalog without selecting an owner.
+    /// A missing width checks only the addressed byte, not the extent of a load.
+    pub fn resolve_data_address(
+        data_symbols: &[artifact::ArtifactDataSymbolDefinition],
         address: u32,
-        width: u8,
-    ) -> Option<(Option<&str>, &str, i64)> {
-        if width == 0 || !width.is_multiple_of(8) {
-            return None;
+        width: Option<u8>,
+    ) -> crate::DataAddressResolution {
+        use crate::{DataAddressCandidate, DataAddressGap, DataAddressResolution};
+        if width.is_some_and(|width| width == 0 || !width.is_multiple_of(8)) {
+            return DataAddressResolution::Unknown {
+                reason: DataAddressGap::InvalidAccessWidth,
+            };
         }
-        let bytes = u32::from(width / 8);
-        let end = address.checked_add(bytes)?;
-        self.data_symbols
+        let Some(end) = address.checked_add(u32::from(width.map_or(1, |width| width / 8))) else {
+            return DataAddressResolution::Unknown {
+                reason: DataAddressGap::AddressOverflow,
+            };
+        };
+        let candidates = data_symbols
             .iter()
-            .find(|symbol| {
-                address >= symbol.address && end <= symbol.address.saturating_add(symbol.size)
+            .filter(|symbol| {
+                address >= symbol.address
+                    && symbol
+                        .address
+                        .checked_add(symbol.size)
+                        .is_some_and(|limit| end <= limit)
             })
-            .map(|symbol| {
-                (
-                    symbol.member.as_deref(),
-                    symbol.name.as_str(),
-                    i64::from(address - symbol.address),
-                )
+            .map(|symbol| DataAddressCandidate {
+                identity: symbol.identity.clone(),
+                member: symbol.member.clone(),
+                symbol: symbol.name.clone(),
+                symbol_address: symbol.address,
+                symbol_size: symbol.size,
+                exported: symbol.exported,
+                offset: i64::from(address - symbol.address),
             })
+            .collect();
+        DataAddressResolution::from_candidates(address, width, candidates)
     }
 }
 
@@ -719,22 +823,7 @@ mod tests {
     fn resolver_with_data_symbols(
         mut data_symbols: Vec<artifact::ArtifactDataSymbolDefinition>,
     ) -> ReferenceResolver {
-        data_symbols.sort_by(|left, right| {
-            (
-                left.size,
-                !left.exported,
-                left.address,
-                &left.member,
-                &left.name,
-            )
-                .cmp(&(
-                    right.size,
-                    !right.exported,
-                    right.address,
-                    &right.member,
-                    &right.name,
-                ))
-        });
+        data_symbols.sort_by(|left, right| left.identity.cmp(&right.identity));
         ReferenceResolver {
             symbols: Vec::new(),
             symbols_by_address: BTreeMap::new(),
@@ -744,7 +833,7 @@ mod tests {
             pointer_context: StructuralPointerContext::default(),
             data_symbols,
             data_objects: Vec::new(),
-            projected_direct_semantics: BTreeMap::new(),
+            projected_direct_semantics: Default::default(),
             projected_origins: BTreeMap::new(),
         }
     }
@@ -752,6 +841,12 @@ mod tests {
     #[test]
     fn projected_call_identity_wins_over_folded_linked_stub_alias() {
         let owner = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "lmacProcessTxComplete",
+                0x1000,
+            ),
             member: None,
             name: "lmacProcessTxComplete".to_owned(),
             address: 0x1000,
@@ -761,6 +856,12 @@ mod tests {
             relocations: Vec::new(),
         };
         let stub = |name: &str| artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                name,
+                0x2000,
+            ),
             member: None,
             name: name.to_owned(),
             address: 0x2000,
@@ -789,6 +890,12 @@ mod tests {
     #[test]
     fn projected_origin_preserves_an_exact_same_name_companion_target() {
         let owner = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "read_hw_noisefloor",
+                0x1000,
+            ),
             member: None,
             name: "read_hw_noisefloor".to_owned(),
             address: 0x1000,
@@ -816,6 +923,12 @@ mod tests {
     #[test]
     fn projected_folded_intrinsic_uses_exact_origin_name_and_value_semantics() {
         let owner = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "lmacProcessTxComplete",
+                0x1000,
+            ),
             member: None,
             name: "lmacProcessTxComplete".to_owned(),
             address: 0x1000,
@@ -889,6 +1002,12 @@ mod tests {
     #[test]
     fn modeled_direct_boundary_accepts_relocated_tail_call() {
         let owner = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "controller_tail_wrapper",
+                0x1000,
+            ),
             member: None,
             name: "controller_tail_wrapper".to_owned(),
             address: 0x1000,
@@ -947,6 +1066,12 @@ mod tests {
     #[test]
     fn projected_call_accepts_linker_relaxed_jal_form() {
         let owner = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "lmacProcessRxSucData",
+                0x1006_941e,
+            ),
             member: None,
             name: "lmacProcessRxSucData".to_owned(),
             address: 0x1006_941e,
@@ -959,6 +1084,12 @@ mod tests {
             relocations: Vec::new(),
         };
         let callee = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "pp_post",
+                0x1006_7688,
+            ),
             member: None,
             name: "pp_post".to_owned(),
             address: 0x1006_7688,
@@ -1006,9 +1137,13 @@ mod tests {
     }
 
     #[test]
-    fn data_symbol_location_prefers_narrow_exported_evidence_and_checks_width() {
+    fn data_address_resolution_preserves_overlaps_and_checks_width() {
         let resolver = resolver_with_data_symbols(vec![
             artifact::ArtifactDataSymbolDefinition {
+                identity: open_radio_vendor_analysis_model::DataIdentity::Synthetic {
+                    namespace: module_path!().to_owned(),
+                    key: "image".to_owned(),
+                },
                 member: None,
                 name: "image".to_owned(),
                 address: 0x1000,
@@ -1016,6 +1151,10 @@ mod tests {
                 exported: true,
             },
             artifact::ArtifactDataSymbolDefinition {
+                identity: open_radio_vendor_analysis_model::DataIdentity::Synthetic {
+                    namespace: module_path!().to_owned(),
+                    key: "private_state".to_owned(),
+                },
                 member: None,
                 name: "private_state".to_owned(),
                 address: 0x1020,
@@ -1023,6 +1162,10 @@ mod tests {
                 exported: false,
             },
             artifact::ArtifactDataSymbolDefinition {
+                identity: open_radio_vendor_analysis_model::DataIdentity::Synthetic {
+                    namespace: module_path!().to_owned(),
+                    key: "state".to_owned(),
+                },
                 member: None,
                 name: "state".to_owned(),
                 address: 0x1020,
@@ -1031,15 +1174,84 @@ mod tests {
             },
         ]);
 
+        use crate::{DataAddressGap, DataAddressResolution};
+        let resolution = resolver.data_address_resolution(0x1024, 32);
+        assert!(matches!(
+            resolution,
+            DataAddressResolution::Ambiguous { .. }
+        ));
+        assert_eq!(resolution.candidates().len(), 3);
+        let candidates = resolution
+            .candidates()
+            .iter()
+            .map(|candidate| (candidate.symbol.as_str(), candidate.offset))
+            .collect::<BTreeMap<_, _>>();
         assert_eq!(
-            resolver.data_symbol_location(0x1024, 32),
-            Some((None, "state", 4))
+            candidates,
+            BTreeMap::from([("image", 0x24), ("private_state", 4), ("state", 4)])
         );
+        let mut reversed = resolver.data_symbols.clone();
+        reversed.reverse();
         assert_eq!(
-            resolver.data_symbol_location(0x103f, 16),
-            Some((None, "image", 0x3f))
+            resolution,
+            ReferenceResolver::resolve_data_address(&reversed, 0x1024, Some(32))
         );
-        assert_eq!(resolver.data_symbol_location(0x1024, 7), None);
-        assert_eq!(resolver.data_symbol_location(u32::MAX, 32), None);
+        let crossing = resolver.data_address_resolution(0x103f, 16);
+        assert_eq!(crossing.candidates().len(), 1);
+        assert_eq!(crossing.candidates()[0].symbol, "image");
+        // A location hint without a known width retains all ranges containing
+        // that byte; it must not invent a 32-bit read and reject narrow ranges.
+        let point = ReferenceResolver::resolve_data_address(&resolver.data_symbols, 0x103f, None);
+        assert!(matches!(
+            point,
+            DataAddressResolution::Ambiguous { width: None, .. }
+        ));
+        assert_eq!(point.candidates().len(), 3);
+        for (address, width, reason) in [
+            (0x1024, 0, DataAddressGap::InvalidAccessWidth),
+            (0x1024, 7, DataAddressGap::InvalidAccessWidth),
+            (u32::MAX, 32, DataAddressGap::AddressOverflow),
+            (0x2000, 32, DataAddressGap::NoContainingDefinition),
+        ] {
+            assert_eq!(
+                resolver.data_address_resolution(address, width),
+                DataAddressResolution::Unknown { reason }
+            );
+        }
+    }
+    #[test]
+    fn competing_origin_observations_are_retained_without_last_writer_wins() {
+        let linked = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &None,
+                "linked",
+                0x1000,
+            ),
+            member: None,
+            name: "linked".to_owned(),
+            address: 0x1000,
+            bytes: vec![0x67, 0x80, 0, 0],
+            addresses_resolved: true,
+            memory_regions: Default::default(),
+            relocations: Vec::new(),
+        };
+        let mut first = linked.clone();
+        first.identity =
+            artifact::ArtifactSymbolDefinition::synthetic_identity("origin-a", &None, "linked", 0);
+        first.addresses_resolved = false;
+        let mut second = first.clone();
+        second.identity =
+            artifact::ArtifactSymbolDefinition::synthetic_identity("origin-b", &None, "linked", 0);
+        let mut resolver = resolver_with_data_symbols(Vec::new());
+        resolver.register_projected_origin(&linked, first.clone());
+        resolver.register_projected_origin(&linked, first.clone());
+        assert_eq!(resolver.projected_origin(&linked), Some(&first));
+        resolver.register_projected_origin(&linked, second.clone());
+        assert_eq!(
+            resolver.projected_origin_candidates(&linked),
+            &[first, second]
+        );
+        assert!(resolver.projected_origin(&linked).is_none());
     }
 }

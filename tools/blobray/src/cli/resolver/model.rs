@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use crate::{
-    MemoryMap, MmioMap, ProjectSpec, TargetSpec,
+    MmioMap, ProjectSpec, TargetSpec,
     application::ProjectSession,
     cli::{
         args::{CompletionArgs, ManpageArgs},
@@ -87,8 +87,7 @@ pub(in crate::cli) enum ResolvedInvocation {
     },
     RegisterWorkspace {
         command: RegisterWorkspaceCommand,
-        project: ProjectSpec,
-        memory_map: Option<MemoryMap>,
+        session: Box<ProjectSession>,
     },
     InterfaceWorkspace {
         command: InterfaceWorkspaceCommand,

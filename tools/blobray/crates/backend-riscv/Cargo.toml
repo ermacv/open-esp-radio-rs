@@ -16,6 +16,7 @@ open-radio-vendor-execution-model = { path = "../execution-model" }
 rv-asm = "=0.2.1"
 rustc-demangle = "=0.1.28"
 serde = { version = "=1.0.229", features = ["derive"] }
+sha2 = "=0.10.9"
 thiserror = "=2.0.19"
 tracing = "=0.1.44"
 tempfile = "=3.27.0"

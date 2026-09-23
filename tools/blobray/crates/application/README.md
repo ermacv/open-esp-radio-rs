@@ -1,0 +1,178 @@
+# Blobray application
+
+`blobray-application` owns import/query orchestration, supervision and explicit recovery.
+Its internal dependencies are [domain](../domain/README.md),
+[artifacts](../artifacts/README.md), [analysis](../analysis/README.md) and
+[store](../store/README.md), [knowledge](../knowledge/README.md) and
+[verification](../verification/README.md).
+It does not depend on the legacy engine or a concrete Linux process adapter.
+
+`Application::new` receives a host capability. `start_import`, `start_query`,
+`start_plan`, `start_reopen_plan` and `start_run`
+return a `RunHandle` from one owned job set; `import` and `query` are blocking
+adapters over those paths. Import, image preparation and function analysis register typed durable project runs.
+The application retains job ownership after client handles disappear. Shutdown
+closes admission, cancels jobs and drains workers outside the registration mutex.
+Concurrent shutdown callers wait for the same cleanup. Handles expose status,
+bounded progress events, cancellation and a repeatable terminal outcome.
+
+`ApplicationLimits` bounds active operations and retained results: default 16
+slots and 64 events per operation, configurable within 1..1024 and 1..4096.
+Admission returns `busy` when full. Completed job entries are reaped on admission
+or shutdown; a retained client handle, transferred result or live plan keeps its slot.
+Plan clones share a slot, while each execution requires another slot.
+`RunHandle::take_output` transfers query output once. Waiting does not transfer it.
+
+Import owns ordered roles, target selection, source provenance and thin-member
+resolution. Worker-only `prepare_import` receives a staging capability, captures
+inputs and returns a validated receipt; it cannot publish. The supervisor retains
+one writer, validates/promotes the closure, linearizes cancellation against commit
+and publishes the revision and completed run together. Signals and process-tree
+mechanics belong to the injected host, not this library.
+
+`create_project`, `inventory`, `revisions`, `runs`, `doctor` and `upgrade` expose
+project operations. `Application::recover` combines store ownership checks with
+host process-identity and containment checks. Read operations do not migrate,
+repair or schedule analysis. `inventory_stream` and `doctor_stream` receive explicit memory/control ports
+and borrowed-record consumers. Materializing conveniences remain capped adapters
+for small results. `ReadView` exposes selection, inventory and diagnosis without
+writer/recovery access. `InventoryView` owns a verified manifest lease and lends
+its byte source; it is not a transitive retention pin. Query admission resolves
+current to a revision ID once before launching the worker.
+
+`OperationHost`, `OperationWorker` and versioned execution messages belong to
+this crate. Persisted run records and receipts belong to store. `prepare_query`
+produces a private typed disk stream and captured manifest outside the project;
+Human/JSON rendering belongs to the frontend. Workers are reaped before output
+becomes available. `QueryOutput` continues the original work/deadline budget and
+retains the maximum observed working capacity during one delivery attempt,
+including failure. Drop removes temporary output; no query journal is persisted.
+
+Missing inputs may produce a completed but incomplete inventory. Execution
+failure, cancellation, timeout, resource exhaustion and abandonment remain
+separate outcomes. See the [implemented contracts](../../next/README.md) for
+schemas, resource modes, cancellation semantics and lifecycle limits.
+
+`RunContext` owns operation-wide work accounting through the domain `RunControl`
+port and obtains time, cancellation and observation from `RunEnvironment`.
+`prepare_import` requires that port explicitly. Worker accounting continues in
+coordinator retention; a successful worker receipt without accounting is invalid.
+Progress and terminal errors retain phase and physical position. The primary
+failure stays separate from bounded cleanup/persistence diagnostics. See
+[cooperative control](../../next/README.md#cooperative-control-and-failure-diagnostics)
+for policy, protocol versions and working-memory boundaries.
+
+The application creates one `WorkingMemory` authority per worker operation.
+Import releases each thin payload and object scratch before advancing the member
+cursor. Artifact records go directly to store-owned streams; the application does
+not accumulate member leases, object inventory or revision data. Capacity failure
+retains structured allocation context and prevents publication.
+
+`Plan` owns an immutable inspection recipe and captured manifest; it exposes no
+store project, writer or recovery capability. `planning` owns creation, bounded
+serialization, reopening and execution admission. `selection` filters the common
+store stream and retains only bounded recipe metadata or one selected symbol's
+section index. Domain supplies revision-local selectors; names only enumerate
+candidates. No scheduling graph or analysis engine is introduced for inspection.
+
+Each execution retains the plan independently of client handles, validates its
+manifest/recipe and streams the selected records under the saved execution
+budget. Reopening explicitly checks a selected project; it cannot rebind current.
+See [selection and plans](../../next/README.md#selection-and-inspection-plans)
+for formats, CLI use, lifecycle, capacity and coverage limitations.
+
+`TemporaryStoragePolicy` and the `temporary` module own per-operation admission,
+the aggregate Application pool and versioned runtime workspace lifecycle.
+`OperationHost::temporary_root` supplies a validated private root;
+`TemporaryStorageStatus` exposes reservations and cleanup residue. The local
+policy is absent from Plan serialization. A completed result shrinks its full
+admission to retained file lengths; Plan clones share that reservation. Cleanup
+failure retains the charge and diagnostics. Query runtime reconciliation is
+automatic for proven abandoned workspaces; project import recovery stays explicit.
+`write_control_message` is the bounded 64 KiB host-control serializer, including
+guard and worker reports. See the [temporary storage contract](../../next/README.md#temporary-storage-and-crash-cleanup)
+for accounting, defaults, observations and cleanup limits.
+
+`linking` owns the synthetic image policy and the `LinkerHost` port. `LinkPlan`
+retains a frozen description and captured manifest; image admission revalidates
+its project and revision. `start_prepare_image` uses the same durable supervisor,
+staging and commit boundary as import with a typed image receipt. Map evidence
+must prove the exact entry/root occurrences before publication. Saved image
+queries and exports use the ordinary read-query lifecycle. See
+[prepared images](../../next/README.md#synthetic-prepared-images) for the supported
+profile, mapping limits, metadata capacities and resource ownership.
+
+`functions` owns exact captured-object/prepared-image function selection and the schema-1 `FunctionWork`
+message. It passes admitted bytes and raw relocations to `blobray-analysis` with
+an injected `FunctionSemantics`, never a concrete ISA dependency. The same durable
+supervisor publishes typed function receipts, including semantic incompleteness.
+Read/export operations consume retained records without scheduling computation.
+See [function analysis](../../next/README.md#function-analysis-contract).
+
+
+`investigations` owns object-input or prepared-image selection and execution through
+`ReadQuery::PlanInvestigation` and `Application::start_analyze_project`. It freezes
+an `InvestigationPlan`, validates every explicit selector, and streams exact
+function occurrences plus input/object coverage. The worker re-enumerates the
+frozen revision before executing, then calls the same `FunctionEngine` as single
+function analysis. It shares one work/deadline/working-memory/disk budget, caches
+only the current container/object, and releases function state between calls.
+Missing extents and unsupported functions become blocked outcomes; resource,
+cancellation, integrity and I/O failures prevent publication.
+
+The existing supervisor owns registration, containment, retention and the final
+store transaction. Publication members and child results are invisible until
+that transaction completes. Publication/status/access/reference queries consume
+retained records only. `RunControl::progress` lets the store persist final
+accounting in the same transaction after streamed child inserts. This operation
+adds no scheduler, backend dependency or subprocess per function. See the
+[library contract](../../next/README.md#library-investigations).
+
+## Knowledge and preservation
+
+`start_knowledge` admits proposals and review changes through the durable job
+supervisor. The worker resolves exact retained occurrences, verifies evidence
+and uses `blobray-knowledge` for conflicts/transitions. Store atomically publishes
+the event and run outcome. `ReadQuery::Knowledge` freezes its head at admission;
+`ValidateKnowledge` checks a change without publication.
+
+Backup, restore and legacy import use the same supervised query lifecycle. The
+legacy adapter can create a writer only for its new private staging project;
+it cannot mutate the original legacy project or an existing destination. The
+caller publishes a verified new project with `QueryOutput::publish_restore`.
+Original bytes, unresolved references and unsupported representations remain
+explicit catalog records. [Commands and contracts](../../next/README.md#knowledge-and-preservation)
+define the formats, bounds, publication boundary and supported conversions.
+
+`ReadQuery::NamedLinkPlan` resolves one defined entry in an explicit input and
+returns the ordinary exact link plan. Missing/ambiguous names return candidate
+records without selecting a definition. Prepared-image analysis freezes that
+image's original revision, retains its ELF lease, and uses the existing function
+engine. Queries expose saved functions, call targets, memory accesses and mapping
+precision. No query performs linking or analysis as a side effect.
+
+## Research ownership
+
+`research` resolves a saved function through image-qualified publication entries,
+walks the reachable call closure iteratively, and supplies acyclic callee facts to
+analysis. Recursive components remain explicit gaps. It applies only the selected
+knowledge revision. The local ELF borrow ends before summary composition starts.
+No second worker, parser, scheduler or provider registry is introduced.
+
+`companions` validates exact retained ROM definitions for the common link recipe.
+It rejects name collisions and synthetic-placement overlap; the host still only
+executes the explicit linker invocation. Knowledge occurrence validation shares
+input/image identity with function analysis. See the
+[native workflow](../../next/README.md#phyrom-research).
+
+## Concrete execution
+
+`start_execution` pins the executor/environment/verifier identities and admits an
+`ExecutionRequest` before cloning worker state. `execution` resolves captured
+inputs and prepared images; `execution_memory` owns mutable session regions,
+initialization state and bounded events. `Executor` is injected from domain;
+application has no concrete ISA dependency. The pure verification crate owns
+comparison. All cases share the ordinary durable supervisor, budget, staging and
+publication boundary. Read/replay clients use `ReadQuery::Execution`.
+See [execution and comparison](../../next/README.md#concrete-execution-and-comparison)
+for stateful lifetimes, resource obligations and claim limits.

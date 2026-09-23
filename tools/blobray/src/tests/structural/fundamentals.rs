@@ -31,6 +31,12 @@ fn compressed_pointer_trace_with_context(
         0x0003_00e7, // jalr ra, 0(t1)
     ];
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("compressed_pointer.o".to_owned())),
+            name,
+            0x1000_0000,
+        ),
         member: Some("compressed_pointer.o".to_owned()),
         name: name.to_owned(),
         address: 0x1000_0000,
@@ -278,6 +284,12 @@ fn invalid_reviewed_compressed_pointer_encodings_fail_closed() {
 #[test]
 fn indexed_absolute_ram_preserves_argument_stride_and_field_offset() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("diagnostic.o".to_owned())),
+            "record_slot",
+            0x1000_0000,
+        ),
         member: Some("diagnostic.o".to_owned()),
         name: "record_slot".to_owned(),
         address: 0x1000_0000,
@@ -341,6 +353,12 @@ fn shifted_argument_index_preserves_absolute_table_read() {
     let add_a1_a2 = (12_u32 << 20) | (11 << 15) | (11 << 7) | 0x33;
     let lhu_a0 = (11_u32 << 15) | (5 << 12) | (10 << 7) | 0x03;
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "shifted_table_read",
+            0x1000_0000,
+        ),
         member: None,
         name: "shifted_table_read".to_owned(),
         address: 0x1000_0000,
@@ -396,6 +414,12 @@ fn indexed_absolute_mmio_prefers_a_typed_register_domain() {
     let add_a2_a2_a3 = (13_u32 << 20) | (12 << 15) | (12 << 7) | 0x33;
     let sw_a1_0_a2 = (11_u32 << 20) | (12 << 15) | (2 << 12) | 0x23;
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("table.o".to_owned())),
+            "write_table_entry",
+            0x1000_0000,
+        ),
         member: Some("table.o".to_owned()),
         name: "write_table_entry".to_owned(),
         address: 0x1000_0000,
@@ -470,6 +494,12 @@ fn indexed_absolute_mmio_read_retains_indexed_register_provenance() {
     let add_a1_a1_a2 = (12_u32 << 20) | (11 << 15) | (11 << 7) | 0x33;
     let lw_a0_0_a1 = (11_u32 << 15) | (2 << 12) | (10 << 7) | 0x03;
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("table.o".to_owned())),
+            "read_table_entry",
+            0x1000_0000,
+        ),
         member: Some("table.o".to_owned()),
         name: "read_table_entry".to_owned(),
         address: 0x1000_0000,
@@ -509,6 +539,12 @@ fn indexed_absolute_mmio_read_retains_indexed_register_provenance() {
 #[test]
 fn unsigned_set_less_than_keeps_snez_dataflow_codegen_ready() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "snez_write",
+            0x2010_0000,
+        ),
         member: None,
         name: "snez_write".to_owned(),
         address: 0x2010_0000,
@@ -549,6 +585,12 @@ fn unsigned_set_less_than_keeps_snez_dataflow_codegen_ready() {
 #[test]
 fn single_read_backedge_becomes_a_structural_mmio_poll() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "wait_ready",
+            0x2010_0000,
+        ),
         member: None,
         name: "wait_ready".to_owned(),
         address: 0x2010_0000,
@@ -614,6 +656,12 @@ fn single_read_backedge_becomes_a_structural_mmio_poll() {
 #[test]
 fn structural_poll_does_not_expose_an_unmodeled_final_read_value() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "wait_and_reuse",
+            0x2010_0000,
+        ),
         member: None,
         name: "wait_and_reuse".to_owned(),
         address: 0x2010_0000,
@@ -736,6 +784,12 @@ fn unmodeled_ram_keeps_mmio_trace_exact_but_blocks_reference_generation() {
 #[test]
 fn caller_owned_argument_ram_is_preserved_as_a_symbolic_memory_contract() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("caller_memory.o".to_owned())),
+            "caller_memory",
+            0,
+        ),
         member: Some("caller_memory.o".to_owned()),
         name: "caller_memory".to_owned(),
         address: 0,
@@ -799,6 +853,12 @@ fn caller_owned_argument_ram_is_preserved_as_a_symbolic_memory_contract() {
 #[test]
 fn pointer_loaded_from_caller_ram_preserves_distinct_pointee_provenance() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("indirect_pointer.o".to_owned())),
+            "indirect_pointer",
+            0,
+        ),
         member: Some("indirect_pointer.o".to_owned()),
         name: "indirect_pointer".to_owned(),
         address: 0,
@@ -845,6 +905,12 @@ fn floating_word_memory_preserves_context_address_and_value_provenance() {
     let flw = (4_u32 << 20) | (10 << 15) | (2 << 12) | (10 << 7) | 0x07;
     let fsw = (10_u32 << 20) | (10 << 15) | (2 << 12) | (8 << 7) | 0x27;
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("floating-memory.o".to_owned())),
+            "floating_memory",
+            0,
+        ),
         member: Some("floating-memory.o".to_owned()),
         name: "floating_memory".to_owned(),
         address: 0,
@@ -904,6 +970,12 @@ fn floating_bit_move_preserves_integer_argument_into_context_store() {
     let fmv_w_x = (0x78_u32 << 25) | (11 << 15) | (10 << 7) | 0x53;
     let fsw = (10_u32 << 20) | (10 << 15) | (2 << 12) | (8 << 7) | 0x27;
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "floating_bit_move",
+            0,
+        ),
         member: None,
         name: "floating_bit_move".to_owned(),
         address: 0,
@@ -948,6 +1020,12 @@ fn floating_comparison_of_exact_bits_preserves_later_integer_control_data() {
     let lui_mmio = (0x20107_u32 << 12) | (12 << 7) | 0x37;
     let store_result = (1_u32 << 25) | (10 << 20) | (12 << 15) | (2 << 12) | (16 << 7) | 0x23;
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "floating_compare",
+            0,
+        ),
         member: None,
         name: "floating_compare".to_owned(),
         address: 0,
@@ -996,6 +1074,12 @@ fn floating_comparison_of_exact_bits_preserves_later_integer_control_data() {
 #[test]
 fn hi20_lo12_relocations_preserve_symbolic_data_reads_and_writes() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("relocated_state.o".to_owned())),
+            "relocated_state",
+            0,
+        ),
         member: Some("relocated_state.o".to_owned()),
         name: "relocated_state".to_owned(),
         address: 0,
@@ -1009,18 +1093,27 @@ fn hi20_lo12_relocations_preserve_symbolic_data_reads_and_writes() {
         memory_regions: Default::default(),
         relocations: vec![
             artifact::SymbolRelocation {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 address: 0,
                 kind: artifact::RelocationKind::Hi20,
                 symbol: "state".to_owned(),
                 addend: 0,
             },
             artifact::SymbolRelocation {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 address: 4,
                 kind: artifact::RelocationKind::Lo12I,
                 symbol: "state".to_owned(),
                 addend: 4,
             },
             artifact::SymbolRelocation {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 address: 8,
                 kind: artifact::RelocationKind::Lo12S,
                 symbol: "state".to_owned(),
@@ -1087,6 +1180,12 @@ fn hi20_lo12_relocations_preserve_symbolic_data_reads_and_writes() {
 #[test]
 fn projected_origin_relocation_accepts_final_linked_low_immediate() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "linked_read",
+            0x1000_0000,
+        ),
         member: None,
         name: "linked_read".to_owned(),
         address: 0x1000_0000,
@@ -1109,6 +1208,9 @@ fn projected_origin_relocation_accepts_final_linked_low_immediate() {
     context.projected_relocations.insert(
         StructuralCallSite::new(&symbol, 0x1000_0004),
         vec![StructuralProjectedRelocation {
+            reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                reason: "synthetic fixture".to_owned(),
+            },
             origin_member: Some("origin.o".to_owned()),
             origin_symbol: "linked_read".to_owned(),
             origin_offsets: vec![4],
@@ -1148,6 +1250,12 @@ fn projected_origin_relocation_accepts_final_linked_low_immediate() {
 #[test]
 fn projected_relaxed_unknown_pointer_cell_preserves_pointee_provenance() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "linked_pointer_write",
+            0x1000,
+        ),
         member: None,
         name: "linked_pointer_write".to_owned(),
         address: 0x1000,
@@ -1164,6 +1272,9 @@ fn projected_relaxed_unknown_pointer_cell_preserves_pointee_provenance() {
     context.projected_relocations.insert(
         StructuralCallSite::new(&symbol, 0x1000),
         vec![StructuralProjectedRelocation {
+            reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                reason: "synthetic fixture".to_owned(),
+            },
             origin_member: Some("lmac.o".to_owned()),
             origin_symbol: "linked_pointer_write".to_owned(),
             origin_offsets: vec![12, 16],
@@ -1208,6 +1319,9 @@ fn projected_relaxed_unknown_pointer_cell_preserves_pointee_provenance() {
         0,
         MemoryObjectLocation {
             root: MemoryObjectRoot::RelocatedSymbol {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 member: Some("lmac.o".to_owned()),
                 symbol: "our_instances_ptr".to_owned(),
             },
@@ -1229,6 +1343,12 @@ fn projected_relaxed_unknown_pointer_cell_preserves_pointee_provenance() {
 #[test]
 fn projected_relaxed_load_does_not_require_the_deleted_hi20_to_survive_projection() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "linked_pointer_read",
+            0x1000,
+        ),
         member: None,
         name: "linked_pointer_read".to_owned(),
         address: 0x1000,
@@ -1245,6 +1365,9 @@ fn projected_relaxed_load_does_not_require_the_deleted_hi20_to_survive_projectio
     context.projected_relocations.insert(
         StructuralCallSite::new(&symbol, 0x1000),
         vec![StructuralProjectedRelocation {
+            reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                reason: "synthetic fixture".to_owned(),
+            },
             origin_member: Some("pp.o".to_owned()),
             origin_symbol: "linked_pointer_read".to_owned(),
             // The linker removed the origin HI20 instruction.  Only the
@@ -1286,6 +1409,12 @@ fn projected_relaxed_load_does_not_require_the_deleted_hi20_to_survive_projectio
 #[test]
 fn relocated_global_pointer_load_preserves_pointee_memory_provenance() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("global_pointer.o".to_owned())),
+            "read_global_pointee",
+            0,
+        ),
         member: Some("global_pointer.o".to_owned()),
         name: "read_global_pointee".to_owned(),
         address: 0,
@@ -1299,12 +1428,18 @@ fn relocated_global_pointer_load_preserves_pointee_memory_provenance() {
         memory_regions: Default::default(),
         relocations: vec![
             artifact::SymbolRelocation {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 address: 0,
                 kind: artifact::RelocationKind::Hi20,
                 symbol: "g_state".to_owned(),
                 addend: 0,
             },
             artifact::SymbolRelocation {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 address: 4,
                 kind: artifact::RelocationKind::Lo12I,
                 symbol: "g_state".to_owned(),
@@ -1337,6 +1472,9 @@ fn relocated_global_pointer_load_preserves_pointee_memory_provenance() {
         0,
         MemoryObjectLocation {
             root: MemoryObjectRoot::RelocatedSymbol {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 member: Some("global_pointer.o".to_owned()),
                 symbol: "g_state".to_owned(),
             },
@@ -1358,6 +1496,12 @@ fn relocated_global_pointer_load_preserves_pointee_memory_provenance() {
 #[test]
 fn absolute_ram_pointer_load_preserves_pointee_memory_provenance() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("absolute_pointer.o".to_owned())),
+            "read_absolute_pointee",
+            0,
+        ),
         member: Some("absolute_pointer.o".to_owned()),
         name: "read_absolute_pointee".to_owned(),
         address: 0,
@@ -1424,6 +1568,12 @@ fn absolute_ram_pointer_load_preserves_pointee_memory_provenance() {
 #[test]
 fn mismatched_hi20_lo12_symbols_fail_closed() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("mismatched_relocation.o".to_owned())),
+            "mismatched_relocation",
+            0,
+        ),
         member: Some("mismatched_relocation.o".to_owned()),
         name: "mismatched_relocation".to_owned(),
         address: 0,
@@ -1436,12 +1586,18 @@ fn mismatched_hi20_lo12_symbols_fail_closed() {
         memory_regions: Default::default(),
         relocations: vec![
             artifact::SymbolRelocation {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 address: 0,
                 kind: artifact::RelocationKind::Hi20,
                 symbol: "first".to_owned(),
                 addend: 0,
             },
             artifact::SymbolRelocation {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 address: 4,
                 kind: artifact::RelocationKind::Lo12I,
                 symbol: "second".to_owned(),

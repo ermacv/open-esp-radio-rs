@@ -9,6 +9,12 @@ const TEST_OTHER_ARTIFACT_SHA256: &str =
 
 fn symbol(name: &str, address: u64, bytes: Vec<u8>) -> artifact::ArtifactSymbolDefinition {
     artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("member.o".to_owned())),
+            name,
+            address,
+        ),
         member: Some("member.o".to_owned()),
         name: name.to_owned(),
         address,
@@ -29,7 +35,7 @@ fn empty_resolver() -> ReferenceResolver {
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: Vec::new(),
         data_objects: Vec::new(),
-        projected_direct_semantics: BTreeMap::new(),
+        projected_direct_semantics: Default::default(),
         projected_origins: BTreeMap::new(),
     }
 }
@@ -41,6 +47,9 @@ fn linked_test_function(
     calls: Vec<LinkedCall>,
 ) -> LinkedIrFunction {
     LinkedIrFunction {
+        code_identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            source, &None, symbol, 0,
+        ),
         source: source.to_owned(),
         artifact_sha256: TEST_ARTIFACT_SHA256.to_owned(),
         identity: format!("{source}::{symbol}"),
@@ -94,7 +103,7 @@ fn linked_test_function(
 }
 
 #[test]
-fn schema_v69_requires_artifact_provenance_and_frontier_fields() {
+fn schema_v73_requires_artifact_provenance_and_frontier_fields() {
     let render = || {
         crate::artifacts::render_linked_ir_fixture(
             vec![linked_test_function("rom", "worker", "global", Vec::new())],
@@ -129,9 +138,7 @@ fn schema_v69_requires_artifact_provenance_and_frontier_fields() {
     forged["functions"][0]["locator"] = serde_json::json!("symbol:other/address:0x0");
     let error = crate::artifacts::parse_linked_ir(&forged.to_string()).unwrap_err();
     assert!(
-        error
-            .to_string()
-            .contains("does not match exact artifact locator"),
+        error.to_string().contains("inconsistent physical identity"),
         "{error}"
     );
 
@@ -190,7 +197,7 @@ fn schema_v69_requires_artifact_provenance_and_frontier_fields() {
 #[test]
 fn reviewed_function_binding_adds_semantic_identity_without_replacing_raw_provenance() {
     let function = linked_test_function("rom", "r_sym_ble", "global", Vec::new());
-    let locator = crate::artifact_occurrence::function_locator(None, "r_sym_ble", 0);
+    let locator = crate::artifact_occurrence::function_locator(&function.code_identity);
     let occurrence = crate::artifact_occurrence::derive(
         open_radio_vendor_contracts::EntityDomain::Function,
         "rom",
@@ -301,3 +308,43 @@ mod flow_and_mmio;
 mod guard_provenance;
 mod project_summary;
 mod recursion_and_delay;
+
+#[test]
+fn companion_identity_is_admitted_only_in_its_declared_source_context() {
+    let mut function = linked_test_function("radio", "callback", "global", Vec::new());
+    function.artifact_sha256 = TEST_OTHER_ARTIFACT_SHA256.to_owned();
+    function.code_identity = artifact::CodeIdentity::Symbol {
+        artifact_sha256: TEST_OTHER_ARTIFACT_SHA256.to_owned(),
+        location: crate::SymbolLocation {
+            object: crate::ObjectLocation::Standalone,
+            table: crate::ArtifactSymbolTable::Static,
+            index: 1,
+        },
+    };
+    let mut document: serde_json::Value = serde_json::from_str(
+        &crate::artifacts::render_linked_ir_fixture(vec![function], Vec::new()),
+    )
+    .unwrap();
+    let companion =
+        serde_json::json!({"path":"companion.elf", "sha256":TEST_OTHER_ARTIFACT_SHA256});
+    document["companions"] = serde_json::json!([companion.clone()]);
+    document["artifacts"] = serde_json::json!([
+        {"source":"radio", "artifact":{"path":"radio.elf", "sha256":TEST_ARTIFACT_SHA256}, "reviewed_code_boundaries":[], "companions":[]},
+        {"source":"unrelated", "artifact":{"path":"other.elf", "sha256":TEST_ARTIFACT_SHA256}, "reviewed_code_boundaries":[], "companions":[companion.clone()]}
+    ]);
+    assert!(
+        crate::artifacts::parse_linked_ir(&document.to_string())
+            .unwrap_err()
+            .to_string()
+            .contains("undeclared source artifact")
+    );
+    document["artifacts"][0]["companions"] = serde_json::json!([companion]);
+    let directory = tempfile::tempdir().unwrap();
+    crate::artifacts::write_fixture_bundle(directory.path(), &document.to_string()).unwrap();
+    let reader = crate::artifacts::LinkedIrReader::open(directory.path()).unwrap();
+    let selected = reader
+        .get_function_by_identity("radio::callback")
+        .unwrap()
+        .unwrap();
+    assert_eq!(selected.artifact_sha256, TEST_OTHER_ARTIFACT_SHA256);
+}

@@ -71,6 +71,7 @@ enum Check {
     },
     SourceOnly,
     BlobrayStandalone,
+    BlobrayNextStandalone,
 }
 
 #[derive(Subcommand)]
@@ -161,6 +162,7 @@ fn run() -> Result<std::process::ExitCode> {
             }
             Check::SourceOnly => checks::source_only::run(&ctx),
             Check::BlobrayStandalone => checks::standalone::run(&ctx),
+            Check::BlobrayNextStandalone => checks::standalone::run_next(&ctx),
         },
         Task::Build {
             build:

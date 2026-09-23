@@ -200,12 +200,12 @@ impl ProjectPublicationOperations for RegisterPublicationOperations<'_> {
     }
 
     fn publish(&mut self, publication: &Self::Prepared, check: bool) -> Result<bool> {
-        super::generated_file::write_or_check(
+        super::generated_file::GeneratedOutput::new(
             publication.output(),
-            publication.contents(),
             check,
             publication.kind(),
-        )?;
+        )
+        .text(publication.contents())?;
         Ok(true)
     }
 }

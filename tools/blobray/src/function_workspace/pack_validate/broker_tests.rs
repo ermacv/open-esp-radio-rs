@@ -24,6 +24,10 @@ fn call(target: &str, site: u32, arguments: &[&str]) -> FunctionCallFact {
 
 fn function(identity: &str, calls: Vec<FunctionCallFact>) -> FunctionFact {
     FunctionFact {
+        code_identity: crate::artifact::CodeIdentity::Synthetic {
+            namespace: module_path!().into(),
+            key: format!("fixture:{}", line!()),
+        },
         profile: "controller".to_owned(),
         source: "vendor".to_owned(),
         identity: identity.to_owned(),

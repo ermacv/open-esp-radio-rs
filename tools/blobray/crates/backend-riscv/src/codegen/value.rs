@@ -162,6 +162,7 @@ pub(super) fn render_value_scoped(
             "private stack address {offset:+#x} escaped into generated behavior"
         )),
         SymbolicValue::SymbolAddress {
+            reference: _,
             member,
             symbol,
             hi_addend,

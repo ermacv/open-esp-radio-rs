@@ -23,13 +23,12 @@ pub(super) fn run(arguments: SymbolCorrelateArgs) -> Result<bool> {
         )
     });
     if let Some(path) = arguments.output.as_deref() {
-        crate::application::generated_file::write_or_check_json(
+        crate::application::generated_file::GeneratedOutput::new(
             path,
-            &report,
             arguments.check,
             "symbol correspondence",
-            false,
-        )?;
+        )
+        .json(&report, false)?;
     }
     if !crate::cli::output::structured(&report) {
         outputln!("Symbol correspondence");

@@ -11,11 +11,18 @@ pub(crate) mod event_replay;
 pub(crate) mod generated_file;
 mod model;
 mod operations;
+mod output_set;
+mod published_outputs;
+pub use published_outputs::{
+    PublishedAnalysisOutputs, PublishedOutput, PublishedOutputManifest, PublishedOutputReader,
+};
 pub(crate) mod register_inventory;
+pub(crate) mod register_query;
 pub use register_inventory::{
     AddressCoverage, BitCoverage, InventoryField, InventoryQuery, InventoryRegister,
-    InventorySource, RegisterEvidence, RegisterInventory, RegisterQuestion,
+    InventorySource, RegisterEvidence, RegisterInventory, RegisterQuestion, RegisterSelector,
 };
+pub use register_query::RegisterInventorySnapshot;
 pub(crate) mod pipeline;
 pub(crate) mod project_analysis;
 pub(crate) mod project_check;
@@ -33,6 +40,7 @@ pub(crate) mod status;
 
 use std::{collections::BTreeMap, path::Path};
 
+pub use crate::registers::RegisterWorkspaceSummary;
 pub use action::{ExecutableAction, ProjectContextRequirement};
 pub use configuration::{ProjectConfigureReport, ProjectConfigureRequest, configure_project};
 pub use coverage::{CoverageObligation, MemberOutcome, RootOutcome};
@@ -40,9 +48,10 @@ pub use error::{ApplicationError, ApplicationResult};
 pub use model::*;
 pub use pipeline::StageReport as ProjectAnalysisStageReport;
 pub use project_analysis::{
-    ProjectAnalysisPlanAction, ProjectAnalysisPlanAwaitingInput, ProjectAnalysisPlanReport,
-    ProjectAnalysisPlanStage, ProjectAnalysisPlanWorkItem, ProjectAnalysisReport,
-    ProjectAnalysisRequest, ProjectAnalysisStatus,
+    ProjectAnalysisInput, ProjectAnalysisInputRequirement, ProjectAnalysisPlanAction,
+    ProjectAnalysisPlanAwaitingInput, ProjectAnalysisPlanReport, ProjectAnalysisPlanStage,
+    ProjectAnalysisPlanWorkItem, ProjectAnalysisReport, ProjectAnalysisRequest,
+    ProjectAnalysisStatus,
 };
 pub(crate) use query_store::{
     QueryStoreCompactionResult as ProjectCacheCompactionResult,
@@ -52,7 +61,8 @@ pub(crate) use query_store::{
     QueryStoreStatistics as ProjectCacheStatistics, RetentionScope as ProjectCacheRetentionScope,
 };
 pub(crate) use resolve::{
-    ExplicitProjectContext, ProjectContext, ProjectSession, ProjectSessionOptions,
+    ExplicitProjectContext, ProjectContext, ProjectSession, ProjectSessionInputs,
+    ProjectSessionOptions,
 };
 pub use status::model::{
     AnalysisSurfaceDetail, ArtifactDetail, Component as ProjectStatusComponent, DetailValue,
@@ -66,19 +76,69 @@ pub use status::model::{
 ///
 /// This type never writes to CLI stdout and never parses rendered command
 /// output. Frontends receive the same typed reports used by JSON renderers.
+/// Opening resolves query inputs without narrowing register geometry to backend
+/// limits. Analysis models are prepared on demand from those declarations and
+/// retained until a successful reload; preparation errors never install a
+/// substitute catalog. Register queries retain their first inventory and review
+/// capture until reload. Initial capture is not an atomic project snapshot.
 pub struct BlobrayApplication {
     resolved: ProjectSession,
     generation: u64,
+    analysis_session: Option<ProjectSession>,
     analysis_cache: BTreeMap<AnalyzeRequest, AnalysisReport>,
 }
 
 impl BlobrayApplication {
     pub fn open(manifest: &Path) -> ApplicationResult<Self> {
         Ok(Self {
-            resolved: ProjectSession::open(manifest)?,
+            resolved: Self::open_query_session(manifest, &ExplicitProjectContext::default(), None)?,
             generation: 1,
+            analysis_session: None,
             analysis_cache: BTreeMap::new(),
         })
+    }
+
+    fn open_query_session(
+        manifest: &Path,
+        explicit: &ExplicitProjectContext,
+        invocation_directory: Option<std::path::PathBuf>,
+    ) -> crate::Result<ProjectSession> {
+        ProjectSession::open_with(
+            manifest,
+            ProjectSessionOptions {
+                target_spec: explicit.target_spec.clone(),
+                run_spec: explicit.run_spec.clone(),
+                svd_paths: explicit.svd_paths.clone(),
+                invocation_directory,
+                load_register_catalog: false,
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Analysis owns its backend models for this reload generation. A failed
+    /// preparation propagates to the caller and never installs an empty model.
+    fn analysis_session(&mut self) -> ApplicationResult<&ProjectSession> {
+        if self.analysis_session.is_none() {
+            self.analysis_session = Some(self.resolved.with_analysis_models()?);
+        }
+        Ok(self
+            .analysis_session
+            .as_ref()
+            .expect("prepared analysis session"))
+    }
+
+    fn reload_session(&mut self) -> ApplicationResult<()> {
+        let resolved = Self::open_query_session(
+            &self.resolved.manifest,
+            &self.resolved.explicit_context,
+            Some(self.resolved.invocation_directory.clone()),
+        )?;
+        self.resolved = resolved;
+        self.analysis_session = None;
+        self.generation = self.generation.saturating_add(1);
+        self.analysis_cache.clear();
+        Ok(())
     }
 
     pub fn snapshot(&mut self) -> ApplicationResult<WorkspaceSnapshot> {
@@ -93,26 +153,26 @@ impl BlobrayApplication {
         Ok(snapshot::function_detail(&self.resolved, identity)?)
     }
 
-    /// Load heavyweight discovery, review and linked-IR evidence for one MMIO address.
-    pub fn register_inventory(&self) -> ApplicationResult<RegisterInventory> {
-        Ok(register_inventory::load(
-            &self.resolved.project,
-            &self.resolved.mmio,
-        )?)
+    /// Query complete register geometry and evidence without preparing backend models.
+    pub fn register_inventory(
+        &self,
+    ) -> ApplicationResult<std::sync::Arc<RegisterInventorySnapshot>> {
+        Ok(self.resolved.register_query()?.snapshot.clone())
     }
 
+    /// Select one physical subject or every subject containing an address.
     pub fn register_detail(
         &self,
-        address: u32,
+        selector: &RegisterSelector,
     ) -> ApplicationResult<Option<RegisterDetailSummary>> {
-        Ok(snapshot::register_detail(&self.resolved, address)?)
+        Ok(self.resolved.register_detail(selector)?)
     }
 
     pub fn analyze(&mut self, request: AnalyzeRequest) -> ApplicationResult<AnalysisReport> {
         if let Some(report) = self.analysis_cache.get(&request) {
             return Ok(report.clone());
         }
-        let report = operations::analyze(&self.resolved, &request)?;
+        let report = operations::analyze(self.analysis_session()?, &request)?;
         self.analysis_cache.insert(request, report.clone());
         Ok(report)
     }
@@ -123,34 +183,34 @@ impl BlobrayApplication {
         request: ProjectAnalysisRequest,
     ) -> ApplicationResult<ProjectAnalysisReport> {
         let request = request.validate()?;
-        let report = project_analysis::analyze_project(&self.resolved, request);
+        let report = project_analysis::analyze_project(self.analysis_session()?, request);
         if !request.check {
             // A write run may publish only part of a failed pipeline or restore
             // CAS outputs while reporting the owning stage as current. Reload
             // unconditionally so snapshots and focused queries never retain
             // pre-run OnceLocks or memoized analysis results.
-            let mut resolved = ProjectSession::open(&self.resolved.manifest)?;
-            std::mem::swap(&mut self.resolved, &mut resolved);
-            self.generation = self.generation.saturating_add(1);
-            self.analysis_cache.clear();
+            self.reload_session()?;
         }
         Ok(report)
     }
 
     /// Compute the exact read-only execution/cache plan for project analysis.
     pub fn project_analysis_plan(
-        &self,
+        &mut self,
         request: ProjectAnalysisRequest,
     ) -> ApplicationResult<ProjectAnalysisPlanReport> {
         let request = request.validate()?;
-        Ok(project_analysis::plan_project(&self.resolved, request))
+        Ok(project_analysis::plan_project(
+            self.analysis_session()?,
+            request,
+        ))
     }
 
     pub fn compare(
         &mut self,
         request: CompareRequest,
     ) -> ApplicationResult<crate::ExecutionComparisonReport> {
-        Ok(operations::compare(&self.resolved, request)?)
+        Ok(operations::compare(self.analysis_session()?, request)?)
     }
 
     /// Execute one checked-in project comparison profile using artifact
@@ -159,14 +219,11 @@ impl BlobrayApplication {
         &mut self,
         name: &str,
     ) -> ApplicationResult<crate::ExecutionComparisonReport> {
-        comparison::compare_profile(&self.resolved, name)
+        comparison::compare_profile(self.analysis_session()?, name)
     }
 
     pub fn reload(&mut self) -> ApplicationResult<WorkspaceSnapshot> {
-        let mut resolved = ProjectSession::open(&self.resolved.manifest)?;
-        std::mem::swap(&mut self.resolved, &mut resolved);
-        self.generation = self.generation.saturating_add(1);
-        self.analysis_cache.clear();
+        self.reload_session()?;
         self.snapshot()
     }
 
@@ -175,12 +232,13 @@ impl BlobrayApplication {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn register_detail_from_inventory(
     project: &crate::ProjectSpec,
     inventory: RegisterInventory,
-    address: u32,
+    selector: &RegisterSelector,
 ) -> crate::Result<Option<RegisterDetailSummary>> {
-    snapshot::registers::detail_from_inventory(project, inventory, address)
+    snapshot::registers::detail_from_inventory(project, inventory, selector)
 }
 
 /// Inspect the project-owned persistent cache without creating or repairing it.

@@ -1,0 +1,31 @@
+[package]
+name = "blobray-application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Blobray import and snapshot application operations"
+
+[dependencies]
+blobray-verification = { path = "../verification" }
+toml_edit = { version = "=0.25.13", features = ["serde"] }
+blobray-knowledge = { path = "../knowledge" }
+blobray-analysis = { path = "../analysis" }
+blobray-domain = { path = "../domain" }
+blobray-artifacts = { path = "../artifacts" }
+blobray-store = { path = "../store" }
+
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+
+tempfile = "=3.27.0"
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "tool"
+platform = "host"

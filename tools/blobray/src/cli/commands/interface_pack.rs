@@ -99,7 +99,9 @@ fn validate(
         "valid"
     };
     let report = InterfaceWorkspaceDocument {
-        schema: 1,
+        schema: 4,
+        observations: workspace.facts(),
+        analysis_completeness_claim: false,
         command: "interfaces validate",
         status,
         deny_unreviewed: arguments.deny_unreviewed,
@@ -227,38 +229,8 @@ fn validate(
                     }
                 }),
                 functions: binding.functions.iter().map(String::as_str).collect(),
-                calls: binding
-                    .calls
-                    .iter()
-                    .map(|call| InterfaceCallDocument {
-                        artifact: call.artifact,
-                        member: call.member.as_deref(),
-                        function: &call.function,
-                        function_address: call.function_address,
-                        site: call.site,
-                        kind: &call.kind,
-                        jalr_offset: call.jalr_offset,
-                        slot_selector: call.slot_selector.as_deref(),
-                        slot_index: call.slot_index,
-                        slot_index_domain: call.slot_index_domain.as_ref().map(|domain| {
-                            InterfaceIndexDomainDocument {
-                                argument: domain.argument,
-                                min: domain.min,
-                                max: domain.max,
-                                evidence: &domain.evidence,
-                            }
-                        }),
-                        arguments: call
-                            .arguments
-                            .iter()
-                            .map(|argument| InterfaceArgumentDocument {
-                                index: argument.index,
-                                kind: &argument.kind,
-                                expression: &argument.expression,
-                            })
-                            .collect(),
-                    })
-                    .collect(),
+                calls: &binding.calls,
+                assignments: &binding.assignments,
             })
             .collect(),
         unreviewed: workspace

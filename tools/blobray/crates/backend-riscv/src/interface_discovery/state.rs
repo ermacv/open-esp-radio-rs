@@ -6,59 +6,93 @@ use rv_asm::{Inst, Reg};
 
 use super::*;
 
-const MAX_POINTER_ALTERNATIVES: usize = 8;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum Value {
     Unknown,
     Constant(u32),
-    Argument { index: u8, offset: i32 },
+    Argument {
+        owner: artifact::CodeIdentity,
+        index: u8,
+        offset: i32,
+    },
     Selector(InterfaceSlotSelector),
     Pointer(InterfacePointer),
-    PointerAlternatives(Vec<InterfacePointer>),
+    Alternatives(Vec<Value>),
     IndexedPointer(InterfacePointer, InterfaceSlotSelector),
     GotAddress(InterfacePointer),
 }
 
 impl Value {
-    fn bounded_data_root(
+    fn absolute_root(
         address: u32,
-        byte_width: u32,
+        accessed_address: u32,
+        width: Option<u8>,
         data_symbols: &[artifact::ArtifactDataSymbolDefinition],
-    ) -> Option<InterfaceRoot> {
-        let access_end = address.checked_add(byte_width)?;
-        let symbol = data_symbols
-            .iter()
-            .filter(|symbol| {
-                symbol
-                    .address
-                    .checked_add(symbol.size)
-                    .is_some_and(|end| symbol.address <= address && access_end <= end)
-            })
-            .min_by(|left, right| {
-                (left.size, !left.exported, &left.member, &left.name).cmp(&(
-                    right.size,
-                    !right.exported,
-                    &right.member,
-                    &right.name,
-                ))
-            })?;
-        Some(InterfaceRoot::BoundedDataAddress {
-            member: symbol.member.clone(),
-            symbol: symbol.name.clone(),
-            symbol_address: symbol.address,
-            symbol_size: symbol.size,
+    ) -> InterfaceRoot {
+        InterfaceRoot::AbsoluteAddress {
             address,
-        })
+            data_address: crate::ReferenceResolver::resolve_data_address(
+                data_symbols,
+                accessed_address,
+                width,
+            ),
+        }
+    }
+
+    pub(super) fn atoms(&self) -> &[Self] {
+        match self {
+            Self::Alternatives(values) => values,
+            _ => std::slice::from_ref(self),
+        }
+    }
+
+    pub(super) fn add(self, right: Self) -> Self {
+        let mut output = Vec::new();
+        for left in self.atoms() {
+            for right in right.atoms() {
+                output.push(match (left.clone(), right.clone()) {
+                    (value, Self::Constant(offset)) | (Self::Constant(offset), value) => {
+                        value.add_constant(offset as i32)
+                    }
+                    (Self::Pointer(pointer), Self::Selector(selector))
+                    | (Self::Selector(selector), Self::Pointer(pointer)) => {
+                        Self::IndexedPointer(pointer, selector)
+                    }
+                    (
+                        Self::Pointer(pointer),
+                        Self::Argument {
+                            index, offset: 0, ..
+                        },
+                    )
+                    | (
+                        Self::Argument {
+                            index, offset: 0, ..
+                        },
+                        Self::Pointer(pointer),
+                    ) => Self::IndexedPointer(
+                        pointer,
+                        InterfaceSlotSelector {
+                            argument: index,
+                            scale: 1,
+                            addend: 0,
+                        },
+                    ),
+                    _ => Self::Unknown,
+                });
+            }
+        }
+        alternatives(output)
     }
 
     pub(super) fn add_constant(self, offset: i32) -> Self {
         match self {
             Self::Constant(value) => Self::Constant(value.wrapping_add(offset as u32)),
             Self::Argument {
+                owner,
                 index,
                 offset: current,
             } => Self::Argument {
+                owner,
                 index,
                 offset: current.wrapping_add(offset),
             },
@@ -70,13 +104,10 @@ impl Value {
                 pointer.post_offset = pointer.post_offset.wrapping_add(offset);
                 Self::Pointer(pointer)
             }
-            Self::PointerAlternatives(pointers) => pointer_alternatives(
-                pointers
+            Self::Alternatives(values) => alternatives(
+                values
                     .into_iter()
-                    .map(|mut pointer| {
-                        pointer.post_offset = pointer.post_offset.wrapping_add(offset);
-                        pointer
-                    })
+                    .map(|value| value.add_constant(offset))
                     .collect(),
             ),
             Self::IndexedPointer(mut pointer, selector) => {
@@ -95,24 +126,43 @@ impl Value {
         match self {
             Self::Unknown => InterfaceArgumentValue::Unknown,
             Self::Constant(value) => InterfaceArgumentValue::Constant(*value),
-            Self::Argument { index, offset } => InterfaceArgumentValue::Pointer(InterfacePointer {
-                root: InterfaceRoot::FunctionArgument { index: *index },
+            Self::Argument {
+                owner,
+                index,
+                offset,
+            } => InterfaceArgumentValue::Pointer(InterfacePointer {
+                root: InterfaceRoot::FunctionArgument {
+                    owner: owner.clone(),
+                    index: *index,
+                },
                 loads: Vec::new(),
                 post_offset: *offset,
             }),
             Self::Pointer(pointer) => InterfaceArgumentValue::Pointer(pointer.clone()),
-            Self::Selector(_)
-            | Self::PointerAlternatives(_)
-            | Self::IndexedPointer(_, _)
-            | Self::GotAddress(_) => InterfaceArgumentValue::Unknown,
+            Self::Alternatives(values) => {
+                InterfaceArgumentValue::Alternatives(values.iter().map(Self::as_argument).collect())
+            }
+            Self::Selector(selector) => InterfaceArgumentValue::Selector(selector.clone()),
+            Self::IndexedPointer(pointer, selector) => InterfaceArgumentValue::IndexedPointer {
+                pointer: pointer.clone(),
+                selector: selector.clone(),
+            },
+            Self::GotAddress(pointer) => InterfaceArgumentValue::GotAddress(pointer.clone()),
         }
     }
 
     pub(super) fn as_pointer(&self) -> Option<InterfacePointer> {
         match self {
             Self::Pointer(pointer) => Some(pointer.clone()),
-            Self::Argument { index, offset } => Some(InterfacePointer {
-                root: InterfaceRoot::FunctionArgument { index: *index },
+            Self::Argument {
+                owner,
+                index,
+                offset,
+            } => Some(InterfacePointer {
+                root: InterfaceRoot::FunctionArgument {
+                    owner: owner.clone(),
+                    index: *index,
+                },
                 loads: Vec::new(),
                 post_offset: *offset,
             }),
@@ -128,8 +178,8 @@ impl Value {
             let Self::Constant(address) = self else {
                 return None;
             };
-            Self::bounded_data_root(*address, 1, data_symbols).map(|root| InterfacePointer {
-                root,
+            Some(InterfacePointer {
+                root: Self::absolute_root(*address, *address, None, data_symbols),
                 loads: Vec::new(),
                 post_offset: 0,
             })
@@ -150,14 +200,25 @@ impl Value {
             let Self::Constant(base) = self else {
                 return None;
             };
-            let address = base.checked_add_signed(offset)?;
-            let byte_width = u32::from(width).checked_div(8)?;
-            Self::bounded_data_root(address, byte_width, data_symbols).map(|root| {
-                InterfacePointer {
-                    root,
-                    loads: Vec::new(),
-                    post_offset: 0,
-                }
+            let data_address = base.checked_add_signed(offset).map_or(
+                crate::DataAddressResolution::Unknown {
+                    reason: crate::DataAddressGap::AddressOverflow,
+                },
+                |address| {
+                    crate::ReferenceResolver::resolve_data_address(
+                        data_symbols,
+                        address,
+                        Some(width),
+                    )
+                },
+            );
+            Some(InterfacePointer {
+                root: InterfaceRoot::AbsoluteAddress {
+                    address: *base,
+                    data_address,
+                },
+                loads: Vec::new(),
+                post_offset: offset,
             })
         })()
     }
@@ -165,9 +226,16 @@ impl Value {
     pub(super) fn as_pointers(&self) -> Vec<InterfacePointer> {
         match self {
             Self::Pointer(pointer) => vec![pointer.clone()],
-            Self::PointerAlternatives(pointers) => pointers.clone(),
-            Self::Argument { index, offset } => vec![InterfacePointer {
-                root: InterfaceRoot::FunctionArgument { index: *index },
+            Self::Alternatives(values) => values.iter().flat_map(Self::as_pointers).collect(),
+            Self::Argument {
+                owner,
+                index,
+                offset,
+            } => vec![InterfacePointer {
+                root: InterfaceRoot::FunctionArgument {
+                    owner: owner.clone(),
+                    index: *index,
+                },
                 loads: Vec::new(),
                 post_offset: *offset,
             }],
@@ -178,7 +246,15 @@ impl Value {
     pub(super) fn shift_left(self, amount: u32) -> Self {
         let scale = 1_u32.wrapping_shl(amount & 31);
         match self {
-            Self::Argument { index, offset: 0 } => Self::Selector(InterfaceSlotSelector {
+            Self::Alternatives(values) => alternatives(
+                values
+                    .into_iter()
+                    .map(|value| value.shift_left(amount))
+                    .collect(),
+            ),
+            Self::Argument {
+                index, offset: 0, ..
+            } => Self::Selector(InterfaceSlotSelector {
                 argument: index,
                 scale,
                 addend: 0,
@@ -194,24 +270,31 @@ impl Value {
     }
 }
 
-fn pointer_alternatives(mut pointers: Vec<InterfacePointer>) -> Value {
-    pointers.sort();
-    pointers.dedup();
-    match pointers.len() {
+fn alternatives(values: Vec<Value>) -> Value {
+    let mut atoms = values
+        .into_iter()
+        .flat_map(|value| match value {
+            Value::Alternatives(values) => values,
+            value => vec![value],
+        })
+        .collect::<Vec<_>>();
+    atoms.sort();
+    atoms.dedup();
+    match atoms.len() {
         0 => Value::Unknown,
-        1 => Value::Pointer(pointers.pop().expect("one pointer alternative")),
-        2..=MAX_POINTER_ALTERNATIVES => Value::PointerAlternatives(pointers),
-        _ => Value::Unknown,
+        1 => atoms.pop().expect("one alternative"),
+        _ => Value::Alternatives(atoms),
     }
 }
 
 pub(super) type RegisterState = [Value; 32];
 
-pub(super) fn initial_state() -> RegisterState {
+pub(super) fn initial_state(owner: &artifact::CodeIdentity) -> RegisterState {
     let mut values = core::array::from_fn(|_| Value::Unknown);
     values[0] = Value::Constant(0);
     for index in 0..RV32_REGISTER_ARGUMENT_COUNT {
         values[10 + index] = Value::Argument {
+            owner: owner.clone(),
             index: index as u8,
             offset: 0,
         };
@@ -245,6 +328,7 @@ pub(super) fn relocated_root(
     };
     let pointer = InterfacePointer {
         root: InterfaceRoot::RelocatedSymbol {
+            reference: relocation.reference.clone(),
             member: owner.member.clone(),
             symbol: relocation.symbol.clone(),
             addend: relocation.addend,
@@ -294,7 +378,24 @@ pub(super) fn low_relocation_value<'a>(
         }
         _ => value.clone(),
     };
-    Some((base == &expected_base).then_some((relocation, value)))
+    let matched = base.atoms().iter().any(|base| base == &expected_base);
+    Some(matched.then(|| {
+        (
+            relocation,
+            alternatives(
+                base.atoms()
+                    .iter()
+                    .map(|base| {
+                        if base == &expected_base {
+                            value.clone()
+                        } else {
+                            Value::Unknown
+                        }
+                    })
+                    .collect(),
+            ),
+        )
+    }))
 }
 
 pub(super) fn append_load(
@@ -304,37 +405,28 @@ pub(super) fn append_load(
     width: u8,
     data_symbols: &[artifact::ArtifactDataSymbolDefinition],
 ) -> Value {
-    if let Value::PointerAlternatives(pointers) = value {
-        return pointer_alternatives(
-            pointers
+    if let Value::Alternatives(values) = value {
+        return alternatives(
+            values
                 .into_iter()
-                .filter_map(|pointer| {
-                    match append_load(Value::Pointer(pointer), site, offset, width, data_symbols) {
-                        Value::Pointer(pointer) => Some(pointer),
-                        _ => None,
-                    }
-                })
+                .map(|value| append_load(value, site, offset, width, data_symbols))
                 .collect(),
         );
     }
     if let Value::Constant(base) = value {
-        let byte_width = u32::from(width) / 8;
-        if let Some(address) = base.checked_add_signed(offset)
-            && let Some(root) = Value::bounded_data_root(address, byte_width, data_symbols)
-        {
-            return Value::Pointer(InterfacePointer {
-                root,
-                loads: vec![InterfaceLoad {
-                    site,
-                    offset: 0,
-                    width,
-                    selector: None,
-                }],
-                post_offset: 0,
-            });
-        }
+        let data_address = base.checked_add_signed(offset).map_or(
+            crate::DataAddressResolution::Unknown {
+                reason: crate::DataAddressGap::AddressOverflow,
+            },
+            |address| {
+                crate::ReferenceResolver::resolve_data_address(data_symbols, address, Some(width))
+            },
+        );
         let mut pointer = InterfacePointer {
-            root: InterfaceRoot::AbsoluteAddress { address: base },
+            root: InterfaceRoot::AbsoluteAddress {
+                address: base,
+                data_address,
+            },
             loads: Vec::new(),
             post_offset: 0,
         };
@@ -349,19 +441,22 @@ pub(super) fn append_load(
     let (mut pointer, selector) = match value {
         Value::Pointer(pointer) => (pointer, None),
         Value::IndexedPointer(pointer, selector) => (pointer, Some(selector)),
-        Value::Argument { index, offset } => (
+        Value::Argument {
+            owner,
+            index,
+            offset,
+        } => (
             InterfacePointer {
-                root: InterfaceRoot::FunctionArgument { index },
+                root: InterfaceRoot::FunctionArgument { owner, index },
                 loads: Vec::new(),
                 post_offset: offset,
             },
             None,
         ),
         Value::Constant(_) => unreachable!("constant load handled above"),
-        Value::Selector(_)
-        | Value::PointerAlternatives(_)
-        | Value::GotAddress(_)
-        | Value::Unknown => return Value::Unknown,
+        Value::Selector(_) | Value::Alternatives(_) | Value::GotAddress(_) | Value::Unknown => {
+            return Value::Unknown;
+        }
     };
     pointer.loads.push(InterfaceLoad {
         site,
@@ -396,7 +491,7 @@ pub(super) fn clear_call_clobbers(values: &mut RegisterState) {
     }
 }
 
-pub(super) fn clear_destination(instruction: Inst, values: &mut RegisterState) {
+pub(super) fn clear_destination(instruction: Inst, values: &mut RegisterState) -> Option<Reg> {
     let destination = match instruction {
         Inst::Slti { dest, .. }
         | Inst::Sltiu { dest, .. }
@@ -444,24 +539,15 @@ pub(super) fn clear_destination(instruction: Inst, values: &mut RegisterState) {
     if let Some(destination) = destination {
         set(values, destination, Value::Unknown);
     }
+    destination.filter(|register| *register != Reg::ZERO)
 }
 
 fn merge_state(target: &mut RegisterState, incoming: &RegisterState) -> bool {
     let mut changed = false;
     for (target, incoming) in target.iter_mut().zip(incoming) {
-        if target != incoming && *target != Value::Unknown {
-            let target_pointers = target.as_pointers();
-            let incoming_pointers = incoming.as_pointers();
-            *target = if target_pointers.is_empty() || incoming_pointers.is_empty() {
-                Value::Unknown
-            } else {
-                pointer_alternatives(
-                    target_pointers
-                        .into_iter()
-                        .chain(incoming_pointers)
-                        .collect(),
-                )
-            };
+        let merged = alternatives(vec![target.clone(), incoming.clone()]);
+        if *target != merged {
+            *target = merged;
             changed = true;
         }
     }
@@ -476,7 +562,7 @@ pub(super) fn enqueue_state(
 ) {
     match states.get_mut(&index) {
         Some(existing) => {
-            if merge_state(existing, state) {
+            if merge_state(existing, state) && !queue.contains(&index) {
                 queue.push_back(index);
             }
         }
@@ -495,4 +581,88 @@ pub(super) fn branch_target(
     instruction_indices
         .get(&pc.wrapping_add(offset as u32))
         .copied()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn join_retains_unknown_and_values_independently_of_arrival_order() {
+        let mut known = initial_state(&artifact::CodeIdentity::Synthetic {
+            namespace: module_path!().into(),
+            key: "state-fixture".into(),
+        });
+        known[5] = Value::Argument {
+            owner: artifact::CodeIdentity::Synthetic {
+                namespace: module_path!().into(),
+                key: "state-fixture".into(),
+            },
+            index: 0,
+            offset: 4,
+        };
+        let unknown = initial_state(&artifact::CodeIdentity::Synthetic {
+            namespace: module_path!().into(),
+            key: "state-fixture".into(),
+        });
+        let mut forward = known.clone();
+        let mut reverse = unknown.clone();
+        assert!(merge_state(&mut forward, &unknown));
+        assert!(merge_state(&mut reverse, &known));
+        assert_eq!(forward, reverse);
+        assert!(!merge_state(&mut forward, &unknown));
+        assert!(!merge_state(&mut forward, &known));
+        let loaded = append_load(forward[5].clone(), 20, 8, 32, &[]);
+        assert_eq!(loaded.as_pointers()[0].loads[0].offset, 12);
+        assert!(loaded.atoms().contains(&Value::Unknown));
+    }
+
+    #[test]
+    fn scalar_selector_indexed_and_got_alternatives_survive_join_and_serialization() {
+        let pointer = InterfacePointer {
+            root: InterfaceRoot::FunctionArgument {
+                owner: artifact::CodeIdentity::Synthetic {
+                    namespace: module_path!().into(),
+                    key: "state-fixture".into(),
+                },
+                index: 0,
+            },
+            loads: vec![],
+            post_offset: 0,
+        };
+        let selector = InterfaceSlotSelector {
+            argument: 1,
+            scale: 4,
+            addend: 0,
+        };
+        let values = vec![
+            Value::Constant(8),
+            Value::Unknown,
+            Value::Selector(selector.clone()),
+            Value::IndexedPointer(pointer.clone(), selector),
+            Value::GotAddress(pointer),
+        ];
+        let mut joined = initial_state(&artifact::CodeIdentity::Synthetic {
+            namespace: module_path!().into(),
+            key: "state-fixture".into(),
+        });
+        for value in &values {
+            let mut incoming = initial_state(&artifact::CodeIdentity::Synthetic {
+                namespace: module_path!().into(),
+                key: "state-fixture".into(),
+            });
+            incoming[5] = value.clone();
+            merge_state(&mut joined, &incoming);
+        }
+        assert_eq!(joined[5].atoms().len(), values.len());
+        let result = joined[5].clone().add_constant(4).as_argument();
+        let json = serde_json::to_string(&result).unwrap();
+        assert_eq!(
+            serde_json::from_str::<InterfaceArgumentValue>(&json).unwrap(),
+            result
+        );
+        assert!(json.contains("indexed-pointer"));
+        assert!(json.contains("got-address"));
+        assert!(json.contains("selector"));
+    }
 }

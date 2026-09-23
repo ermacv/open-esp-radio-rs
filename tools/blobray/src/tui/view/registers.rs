@@ -16,25 +16,27 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
     let rows = state
         .snapshot
         .registers
-        .registers
-        .iter()
+        .registers()
         .enumerate()
         .filter(|(index, _)| state.is_visible(*index))
         .skip(state.viewport_start(table_rows(list)))
         .take(table_rows(list))
         .map(|(index, register)| {
-            Row::new([format!("0x{:08x}", register.address), register.name.clone()])
-                .style(selected_style(index, state.selected()))
+            Row::new([
+                format!("0x{:08x}", register.subject.address),
+                register.label(),
+            ])
+            .style(selected_style(index, state.selected()))
         });
     frame.render_widget(
-        Table::new(rows, [Constraint::Length(12), Constraint::Min(12)])
+        Table::new(rows, [Constraint::Length(18), Constraint::Min(12)])
             .header(Row::new(["Address", "Name"]).style(heading()))
             .block(
                 Block::default()
                     .title(format!(
                         " Register catalog ({}/{}) ",
                         state.visible_count(),
-                        state.snapshot.registers.registers.len()
+                        state.snapshot.registers.register_count()
                     ))
                     .borders(Borders::ALL),
             ),
@@ -45,27 +47,77 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         field("Configured", report.configured),
         field("Ranges", report.ranges),
         field("Observed", report.observed),
-        field("Reviewed", report.reviewed),
-        field("Outside publication scope", report.ignored),
-        field("Non-operational only", report.non_operational),
-        field("Manual", report.manual),
-        field("Unreviewed", report.unreviewed),
         field("Fields", report.fields),
     ];
+    if let Some(publication) = report.publication {
+        lines.push(field("Publication reviewed", publication.reviewed));
+        lines.push(field("Outside publication scope", publication.ignored));
+        lines.push(field("Non-operational only", publication.non_operational));
+        lines.push(field("Manual", publication.manual));
+        lines.push(field("Publication unreviewed", publication.unreviewed));
+    } else {
+        lines.push(field("Publication review", "unknown / not configured"));
+    }
     if let Some(model) = &report.model {
         lines.push(field("Model", model.display()));
     }
-    if let Some(register) = report.registers.get(state.selected()) {
+    if let Some(register) = report.register_at(state.selected()) {
         lines.push(Line::from(""));
-        if let Some(detail) = state.register_detail(register.address) {
+        if let Some(detail) = state.register_detail(&register.id) {
             render_detail(&mut lines, detail);
         } else {
             lines.push(field(
                 "Selected address",
-                format!("0x{:08x}", register.address),
+                format!("0x{:08x}", register.subject.address),
             ));
-            lines.push(field("Selected name", &register.name));
+            lines.push(field("Subject", &register.id));
+            lines.push(field("Selected name", register.label()));
             lines.push(Line::from("Loading register evidence..."));
+        }
+    }
+    match &report.inventory {
+        crate::RegisterInventoryState::Failed { reason } => {
+            lines.push(field("Inventory failed", reason))
+        }
+        crate::RegisterInventoryState::Available { snapshot } => {
+            let inventory = snapshot.inventory();
+            lines.push(field("Snapshot", snapshot.id()));
+            for source in &inventory.sources {
+                lines.push(Line::from(format!(
+                    "SOURCE {} {} {:?}",
+                    source.kind, source.path, source.state
+                )));
+            }
+            for gap in &inventory.gaps {
+                lines.push(Line::from(format!(
+                    "INCOMPLETE {}: {} ({})",
+                    gap.scope, gap.reason, gap.source
+                )));
+            }
+            for domain in &inventory.address_domains {
+                lines.push(field("Indexed domain", domain));
+                if let Some(evidence) = inventory.evidence.get(domain) {
+                    lines.push(field("Domain evidence", evidence.payload.to_string()));
+                }
+            }
+            for region in &inventory.regions {
+                lines.push(Line::from(format!(
+                    "RANGE {} {} {:#x}..{:#x} {}",
+                    region.address_space,
+                    region.name,
+                    region.start,
+                    region.end_exclusive,
+                    region.boundary
+                )));
+                for (start, end) in &region.geometry_gaps {
+                    lines.push(Line::from(format!("unknown geometry {start:#x}..{end:#x}")));
+                }
+                for (start, end) in &region.observation_gaps {
+                    lines.push(Line::from(format!(
+                        "unobserved-in-scope {start:#x}..{end:#x}"
+                    )));
+                }
+            }
         }
     }
     frame.render_widget(
@@ -77,10 +129,12 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
 fn render_detail(lines: &mut Vec<Line<'_>>, detail: &crate::RegisterDetailSummary) {
     lines.push(field("Address", format!("0x{:08x}", detail.address)));
     lines.push(field("Name", &detail.name));
-    lines.push(field("Name source", detail.name_source.label()));
     lines.push(field("Review", detail.review_status.label()));
-    if let Some(range) = &detail.range {
-        lines.push(field("Range", range));
+    for region in &detail.regions {
+        lines.push(field(
+            "Range",
+            format!("{} / {}", region.address_space, region.name),
+        ));
     }
     lines.push(field(
         "Publication",
@@ -154,18 +208,8 @@ fn render_detail(lines: &mut Vec<Line<'_>>, detail: &crate::RegisterDetailSummar
             "{} semantics={:?}",
             subject.id, subject.semantics
         )));
+        lines.push(Line::from(format!("Names: {:?}", subject.names)));
         lines.push(Line::from(format!("Coverage: {:?}", subject.coverage)));
-        for field in subject.fields.values().filter(|field| field.mask.is_none()) {
-            lines.push(Line::from(format!(
-                "{} bits {}..{} names={:?} semantics={:?} evidence={:?}",
-                field.kind,
-                field.offset,
-                u64::from(field.offset) + u64::from(field.width),
-                field.names,
-                field.semantics,
-                field.evidence
-            )));
-        }
     }
     for gap in &detail.coverage_gaps {
         lines.push(Line::from(format!(
@@ -181,23 +225,44 @@ fn render_detail(lines: &mut Vec<Line<'_>>, detail: &crate::RegisterDetailSummar
         )));
         for candidate in &detail.fields {
             lines.push(Line::from(format!(
-                "{} name={} evidence={}",
-                candidate.kind,
-                if candidate.names.is_empty() {
+                "{} {} name={} evidence={}",
+                candidate.subject,
+                candidate.field.kind,
+                if candidate.field.names.is_unknown() {
                     "unknown".to_owned()
                 } else {
-                    candidate.names.join(" | ")
+                    candidate
+                        .field
+                        .names
+                        .values()
+                        .into_iter()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(" | ")
                 },
-                candidate.evidence.join(", ")
+                candidate
+                    .field
+                    .evidence
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
             )));
             lines.push(Line::from(format!(
-                "bits {}..{} mask={:#010x} writes={} predicates={} polls={}",
-                candidate.most_significant_bit,
-                candidate.least_significant_bit,
-                candidate.mask,
+                "bits {}..{} mask={} writes={} predicates={} polls={}",
+                candidate.field.offset + candidate.field.width - 1,
+                candidate.field.offset,
+                candidate
+                    .field
+                    .mask
+                    .map_or_else(|| "unknown".to_owned(), |mask| format!("{mask:#010x}")),
                 candidate.write_shapes,
                 candidate.predicate_shapes,
                 candidate.poll_shapes,
+            )));
+            lines.push(Line::from(format!(
+                "field semantics={:?}",
+                candidate.field.semantics
             )));
             if !candidate.semantic_operations.is_empty() {
                 lines.push(Line::from(format!(

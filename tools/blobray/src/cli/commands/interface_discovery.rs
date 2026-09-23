@@ -111,17 +111,21 @@ fn print_report(discovery: &Discovery) {
         .filter(|call| !call.call.target.loads.is_empty())
         .count();
     outputln!(
-        "Summary: artifacts={} functions={} indirect-candidates={} table-slot-candidates={} decode-blockers={} analysis-failures={} semantic-claims=false completeness-claim=false",
+        "Summary: artifacts={} functions={} indirect-candidates={} table-slot-candidates={} decode-blockers={} analysis-gaps={} analysis-failures={} semantic-claims=false completeness-claim=false",
         discovery.linkage.artifacts.len(),
         discovery.functions.iter().sum::<usize>(),
         discovery.calls.len(),
         table_calls,
         discovery.decode_blockers.len(),
+        discovery.gaps.len(),
         discovery.failures.len(),
     );
-    if !discovery.decode_blockers.is_empty() || !discovery.failures.is_empty() {
+    if !discovery.decode_blockers.is_empty()
+        || !discovery.failures.is_empty()
+        || !discovery.gaps.is_empty()
+    {
         outputln!(
-            "Decode blockers are retained with instruction provenance in the JSON report; usable findings from other instructions and functions remain available."
+            "Analysis gaps and decode blockers retain instruction provenance and captured state in the JSON report; usable findings from other instructions and functions remain available."
         );
     }
 }
@@ -148,7 +152,10 @@ pub(super) fn run(
     let effective_code = project
         .map(crate::analysis::EffectiveCodeCatalog::load)
         .transpose()?;
+    let captures =
+        crate::source_set::CapturedSourceSet::capture(inputs.iter().map(|(_, path)| path.clone()));
     let discovery = discover_project_interfaces(
+        &captures,
         &inputs,
         &ProjectInterfaceDiscoveryOptions {
             name_prefix: options.name_prefix.clone(),
@@ -161,22 +168,25 @@ pub(super) fn run(
         print_report(&discovery);
     }
     if let Some(path) = options.output.as_deref() {
-        crate::application::generated_file::write_or_check_json(
+        crate::application::generated_file::GeneratedOutput::new(
             path,
-            &document,
             options.check,
             "interface discovery report",
-            false,
-        )?;
+        )
+        .json(&document, false)?;
         tracing::info!(
             status = if options.check { "verified" } else { "written" },
             path = %path.display(),
             "interface discovery JSON report"
         );
     }
-    if !discovery.decode_blockers.is_empty() || !discovery.failures.is_empty() {
+    if !discovery.decode_blockers.is_empty()
+        || !discovery.failures.is_empty()
+        || !discovery.gaps.is_empty()
+    {
         tracing::warn!(
             decode_blockers = discovery.decode_blockers.len(),
+            analysis_gaps = discovery.gaps.len(),
             analysis_failures = discovery.failures.len(),
             "interface discovery retained partial findings"
         );

@@ -2,20 +2,21 @@
 
 mod cache;
 mod operations;
+mod ownership;
+mod pass_spec;
 mod plan;
+mod work;
 
 pub(crate) use operations::*;
 pub use plan::*;
-
-use std::path::Path;
 
 use serde::Serialize;
 
 use super::{
     FollowUpStep, ProjectContext, ProjectContextRequirement,
-    pipeline::{PipelineSummary, StageExecution, StageRun, StageSuccess, WorkflowMode, execute},
+    pipeline::{PipelineSummary, StageExecution, StageRun, WorkflowMode, execute},
 };
-use crate::{Result, project::ProjectSpec};
+use crate::Result;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProjectAnalysisRequest {
@@ -133,256 +134,46 @@ impl ProjectAnalysisReport {
     }
 }
 
-pub(crate) fn run(
-    project: &ProjectSpec,
+fn run(
+    graph: &pass_spec::PassGraph,
     request: ProjectAnalysisRequest,
-    inputs: ProjectAnalysisInputs,
     operations: &mut impl ProjectAnalysisOperations,
 ) -> ProjectAnalysisReport {
+    use pass_spec::{Availability, PassKind};
     let mode = WorkflowMode::from_check(request.check);
-    let generated = mode.generated_success();
     let mut summary = PipelineSummary::default();
-
-    let symbols = match project.symbol_inventory.as_ref() {
-        None => StageExecution::not_configured("[analysis.symbols] is absent"),
-        Some(_) if !inputs.run_spec => StageExecution::blocked("run-spec is not configured"),
-        Some(_) => execute("symbol-inventory", generated, || {
-            operations.validate_pipeline_inputs()?;
-            operations.symbol_inventory(mode.is_check())
-        }),
-    };
-    summary.record("symbol-inventory", &symbols);
-
-    let mmio = match project.registers.as_ref() {
-        None => StageExecution::not_configured("[registers] is absent"),
-        Some(_) if !inputs.run_spec => StageExecution::blocked("run-spec is not configured"),
-        Some(_) if !inputs.memory_map => StageExecution::blocked("memory-map is not configured"),
-        Some(_) if project.code.is_some() && symbols.blocks_dependants() => {
-            StageExecution::blocked("symbol-inventory did not complete")
-        }
-        Some(_) => execute("mmio-discovery", generated, || {
-            operations.validate_pipeline_inputs()?;
-            operations.discover_mmio(mode.is_check(), request.jobs)
-        }),
-    };
-    summary.record("mmio-discovery", &mmio);
-
-    let interfaces = match project.interfaces.as_ref() {
-        None => StageExecution::not_configured("[interfaces] is absent"),
-        Some(_) if !inputs.run_spec => StageExecution::blocked("run-spec is not configured"),
-        Some(_) if project.code.is_some() && symbols.blocks_dependants() => {
-            StageExecution::blocked("symbol-inventory did not complete")
-        }
-        Some(_) => execute("interface-discovery", generated, || {
-            operations.validate_pipeline_inputs()?;
-            operations.discover_interfaces(mode.is_check())
-        }),
-    };
-    summary.record("interface-discovery", &interfaces);
-
-    let ir = if project.ir_profiles.is_empty() {
-        StageExecution::not_configured("[[analysis.ir]] is absent")
-    } else if !inputs.run_spec {
-        StageExecution::blocked("run-spec is not configured")
-    } else if project.code.is_some() && symbols.blocks_dependants() {
-        StageExecution::blocked("symbol-inventory did not complete")
-    } else if linked_ir_uses_reviewed_interfaces(project) && interfaces.blocks_dependants() {
-        StageExecution::blocked("interface-discovery did not complete")
-    } else {
-        execute("linked-ir", generated, || {
-            operations.validate_pipeline_inputs()?;
-            operations.build_linked_ir(mode.is_check(), request.jobs)
-        })
-    };
-    summary.record("linked-ir", &ir);
-
-    let event_replays = if !inputs.event_replays {
-        StageExecution::not_configured("no reviewed event replay is configured")
-    } else if !inputs.run_spec {
-        StageExecution::blocked("run-spec is not configured")
-    } else if inputs.event_replays_require_interfaces && interfaces.blocks_dependants() {
-        StageExecution::blocked("interface-discovery did not complete")
-    } else {
-        execute("event-replays", generated, || {
-            operations.validate_pipeline_inputs()?;
-            operations.build_event_replays(mode.is_check())
-        })
-    };
-    summary.record("event-replays", &event_replays);
-
-    let review_scopes = match project.review.as_ref() {
-        None => StageExecution::not_configured("[review] is absent"),
-        Some(_) if ir.blocks_dependants() => StageExecution::blocked("linked-ir did not complete"),
-        Some(_) if project.registers.is_some() && mmio.blocks_dependants() => {
-            StageExecution::blocked("mmio-discovery did not complete")
-        }
-        Some(_) => execute("review-scopes", generated, || {
-            operations.validate_pipeline_inputs()?;
-            operations.build_review_scopes(mode.is_check())
-        }),
-    };
-    summary.record("review-scopes", &review_scopes);
-
-    let navigation = match project.navigation_index.as_ref() {
-        None => StageExecution::not_configured("[analysis.navigation] is absent"),
-        Some(_) if symbols.blocks_dependants() => {
-            StageExecution::blocked("symbol-inventory did not complete")
-        }
-        Some(_) if !project.ir_profiles.is_empty() && ir.blocks_dependants() => {
-            StageExecution::blocked("linked-ir did not complete")
-        }
-        Some(_) if project.interfaces.is_some() && interfaces.blocks_dependants() => {
-            StageExecution::blocked("interface-discovery did not complete")
-        }
-        Some(_) => execute("navigation-index", generated, || {
-            operations.validate_pipeline_inputs()?;
-            operations.build_navigation(mode.is_check())
-        }),
-    };
-    summary.record("navigation-index", &navigation);
-
-    let code_validation = match project.code.as_ref() {
-        None => StageExecution::not_configured("[code] is absent"),
-        Some(_) if symbols.blocks_dependants() => {
-            StageExecution::blocked("symbol-inventory did not complete")
-        }
-        Some(_) => execute("code-boundary-validation", StageSuccess::Verified, || {
-            operations.validate_pipeline_inputs()?;
-            operations.validate_code(request.deny_unreviewed)
-        }),
-    };
-    summary.record("code-boundary-validation", &code_validation);
-
-    let code_review = match project.code.as_ref() {
-        None => StageExecution::not_configured("[code] is absent"),
-        Some(paths) if paths.review_output.is_none() => {
-            StageExecution::not_configured("[code.review] is absent")
-        }
-        Some(_) if symbols.blocks_dependants() => {
-            StageExecution::blocked("symbol-inventory did not complete")
-        }
-        Some(_) => execute("code-boundary-review", generated, || {
-            operations.validate_pipeline_inputs()?;
-            operations.review_code(mode.is_check())
-        }),
-    };
-    summary.record("code-boundary-review", &code_review);
-
-    let register_validation = match project.registers.as_ref() {
-        None => StageExecution::not_configured("[registers] is absent"),
-        Some(_) if mmio.blocks_dependants() => {
-            StageExecution::blocked("mmio-discovery did not complete")
-        }
-        Some(_) => execute("register-validation", StageSuccess::Verified, || {
-            operations.validate_pipeline_inputs()?;
-            operations.validate_registers(request.deny_unreviewed)
-        }),
-    };
-    summary.record("register-validation", &register_validation);
-
-    let register_review = match project.registers.as_ref() {
-        None => StageExecution::not_configured("[registers] is absent"),
-        Some(paths) if paths.review_output.is_none() => {
-            StageExecution::not_configured("[registers.review] is absent")
-        }
-        Some(_) if mmio.blocks_dependants() => {
-            StageExecution::blocked("mmio-discovery did not complete")
-        }
-        Some(paths)
-            if review_depends_on_project_ir(project, &paths.review_ir_reports)
-                && ir.blocks_dependants() =>
-        {
-            StageExecution::blocked("linked-ir did not complete")
-        }
-        Some(_) => execute("register-review", generated, || {
-            operations.validate_pipeline_inputs()?;
-            operations.review_registers(mode.is_check())
-        }),
-    };
-    summary.record("register-review", &register_review);
-
-    let function_validation = match project.functions.as_ref() {
-        None => StageExecution::not_configured("[functions] is absent"),
-        Some(_) if ir.blocks_dependants() => StageExecution::blocked("linked-ir did not complete"),
-        Some(_) => execute("function-validation", StageSuccess::Verified, || {
-            operations.validate_pipeline_inputs()?;
-            operations.validate_functions(request.deny_unreviewed)
-        }),
-    };
-    summary.record("function-validation", &function_validation);
-
-    let function_review = match project.functions.as_ref() {
-        None => StageExecution::not_configured("[functions] is absent"),
-        Some(paths) if paths.review_output.is_none() => {
-            StageExecution::not_configured("[functions.review] is absent")
-        }
-        Some(_) if ir.blocks_dependants() => StageExecution::blocked("linked-ir did not complete"),
-        Some(_)
-            if project
-                .interfaces
-                .as_ref()
-                .and_then(|paths| paths.pack.as_deref())
-                .is_some_and(Path::is_file)
-                && interfaces.blocks_dependants() =>
-        {
-            StageExecution::blocked("interface-discovery did not complete")
-        }
-        Some(_) => execute("function-review", generated, || {
-            operations.validate_pipeline_inputs()?;
-            operations.review_functions(mode.is_check())
-        }),
-    };
-    summary.record("function-review", &function_review);
-
-    let interface_validation = match project.interfaces.as_ref() {
-        None => StageExecution::not_configured("[interfaces] is absent"),
-        Some(paths) if paths.pack.is_none() => {
-            StageExecution::not_configured("[interfaces].pack is absent")
-        }
-        Some(_) if interfaces.blocks_dependants() => {
-            StageExecution::blocked("interface-discovery did not complete")
-        }
-        Some(_) => execute("interface-validation", StageSuccess::Verified, || {
-            operations.validate_pipeline_inputs()?;
-            operations.validate_interfaces(request.deny_unreviewed)
-        }),
-    };
-    summary.record("interface-validation", &interface_validation);
-
-    let capability_context = match project.interfaces.as_ref() {
-        None => StageExecution::not_configured("[interfaces] is absent"),
-        Some(paths) if paths.capability_context.is_none() => {
-            StageExecution::not_configured("[interfaces].pack is absent")
-        }
-        Some(_) if interface_validation.blocks_dependants() => {
-            StageExecution::blocked("interface-validation did not complete")
-        }
-        Some(_) => execute("interface-capability-context", generated, || {
-            operations.validate_pipeline_inputs()?;
-            operations.build_capability_context(mode.is_check())
-        }),
-    };
-    summary.record("interface-capability-context", &capability_context);
-
-    if !project.ir_profiles.is_empty()
-        || project.analysis_symbol_families.iter().any(|family| {
-            family.disposition == crate::project::AnalysisSymbolFamilyDisposition::Required
-        })
-    {
-        let coverage = if !inputs.run_spec {
-            StageExecution::blocked(
-                "run-spec is not configured; required coverage cannot be established",
-            )
-        } else if ir.blocks_dependants() {
-            StageExecution::blocked(
-                "linked-ir did not complete; required coverage cannot be established",
-            )
-        } else {
-            execute("analysis-coverage", StageSuccess::Verified, || {
-                operations.coverage()
-            })
+    let mut outcomes = std::collections::BTreeMap::<PassKind, StageExecution>::new();
+    for node in &graph.nodes {
+        let spec = node.spec;
+        let execution = match node.availability {
+            Availability::NotConfigured(reason) => StageExecution::not_configured(reason),
+            Availability::Blocked(reason) => StageExecution::blocked(reason),
+            Availability::Ready => {
+                let blocked = node.dependencies.iter().find(|dependency| {
+                    outcomes
+                        .get(dependency)
+                        .expect("dependency precedes consumer")
+                        .blocks_dependants()
+                });
+                if let Some(dependency) = blocked {
+                    let suffix = if spec.kind == PassKind::Coverage {
+                        "; required coverage cannot be established"
+                    } else {
+                        ""
+                    };
+                    StageExecution::blocked(format!(
+                        "{} did not complete{suffix}",
+                        dependency.spec().name
+                    ))
+                } else {
+                    execute(spec.name, spec.success(mode), || {
+                        spec.execute(request, operations)
+                    })
+                }
+            }
         };
-        summary.record("analysis-coverage", &coverage);
+        summary.record(spec.name, &execution);
+        outcomes.insert(spec.kind, execution);
     }
 
     if summary.succeeded()
@@ -510,24 +301,23 @@ pub(crate) fn follow_up_steps(
     Vec::new()
 }
 
-fn review_depends_on_project_ir(project: &ProjectSpec, reports: &[std::path::PathBuf]) -> bool {
-    project
-        .ir_profiles
-        .iter()
-        .any(|profile| reports.iter().any(|report| report == &profile.output))
-}
-
-pub(super) fn linked_ir_uses_reviewed_interfaces(project: &ProjectSpec) -> bool {
-    project
-        .interfaces
-        .as_ref()
-        .is_some_and(|interfaces| interfaces.pack.is_some())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::project_analysis::SymbolInventorySpec;
+    use crate::{project::ProjectSpec, project_analysis::SymbolInventorySpec};
+
+    fn run(
+        project: &ProjectSpec,
+        request: ProjectAnalysisRequest,
+        inputs: ProjectAnalysisInputs,
+        operations: &mut impl ProjectAnalysisOperations,
+    ) -> ProjectAnalysisReport {
+        super::run(
+            &super::pass_spec::PassGraph::resolve(project, inputs),
+            request,
+            operations,
+        )
+    }
 
     #[derive(Default)]
     struct FakeOperations {
@@ -569,7 +359,7 @@ mod tests {
 
     impl ProjectAnalysisOperations for FakeOperations {
         fn coverage(&mut self) -> Result<StageRun> {
-            Ok(StageRun::Executed)
+            self.called("coverage")
         }
         fn complete_analysis_epoch(&mut self) -> Result<()> {
             self.called("epoch-publication").map(|_| ())
@@ -1002,5 +792,170 @@ mod tests {
             .find(|stage| stage.name == "event-replays")
             .unwrap();
         assert_eq!(replay.status, "written");
+    }
+
+    #[test]
+    fn plan_and_run_keep_the_same_dependency_graph_after_pack_removal() {
+        let directory = tempfile::tempdir().unwrap();
+        let pack = directory.path().join("interfaces.toml");
+        std::fs::write(&pack, "captured configuration presence").unwrap();
+        let mut project = empty_project();
+        project.interfaces = Some(crate::project::InterfaceWorkspacePaths {
+            facts: "interfaces.json".into(),
+            pack: Some(pack.clone()),
+            capability_context: None,
+            semantic_catalogs: vec![],
+            capability_packs: vec![],
+            interface_template_packs: vec![],
+        });
+        project.functions = Some(crate::project::FunctionWorkspacePaths {
+            pack: "functions.toml".into(),
+            profiles: vec![],
+            review_output: Some("functions.md".into()),
+        });
+        let graph = super::pass_spec::PassGraph::resolve(
+            &project,
+            ProjectAnalysisInputs {
+                run_spec: true,
+                ..Default::default()
+            },
+        );
+        std::fs::remove_file(pack).unwrap();
+        let mut operations = FakeOperations {
+            fail: Some("interfaces"),
+            ..Default::default()
+        };
+        let execution = super::run(&graph, ProjectAnalysisRequest::default(), &mut operations);
+        assert!(
+            operations.calls.contains(&"function-validation"),
+            "independent stages still run"
+        );
+        assert!(!operations.calls.contains(&"function-review"));
+        let plan = super::plan::ProjectAnalysisPlanner::default().finish(&graph, execution);
+        let review = plan
+            .stages
+            .iter()
+            .find(|stage| stage.name == "function-review")
+            .unwrap();
+        assert_eq!(review.dependencies, ["interface-discovery"]);
+        assert_eq!(
+            review.action,
+            super::plan::ProjectAnalysisPlanAction::Blocked
+        );
+        assert_eq!(
+            review.cause.as_deref(),
+            Some("interface-discovery did not complete")
+        );
+    }
+
+    #[test]
+    fn optional_symbol_inventory_failure_does_not_block_ir_but_required_failure_does() {
+        let mut project = empty_project();
+        project.symbol_inventory = Some(SymbolInventorySpec {
+            output: "symbols.json".into(),
+        });
+        project
+            .ir_profiles
+            .push(crate::project_ir::ProjectIrProfile {
+                id: "fixture".into(),
+                sources: vec!["fixture".into()],
+                roots: crate::project_ir::ProjectIrRoots::All,
+                include_reachable: true,
+                entry_contract: "none".into(),
+                output: "fixture.ir".into(),
+            });
+        for required in [false, true] {
+            project.code = required.then(|| crate::project::CodeWorkspacePaths {
+                pack: "code.toml".into(),
+                review_output: None,
+            });
+            let graph = super::pass_spec::PassGraph::resolve(
+                &project,
+                ProjectAnalysisInputs {
+                    run_spec: true,
+                    ..Default::default()
+                },
+            );
+            let mut operations = FakeOperations {
+                fail: Some("symbols"),
+                ..Default::default()
+            };
+            let execution = super::run(&graph, ProjectAnalysisRequest::default(), &mut operations);
+            assert_eq!(operations.calls.contains(&"ir"), !required);
+            assert!(!operations.calls.contains(&"epoch-publication"));
+            let plan = super::plan::ProjectAnalysisPlanner::default().finish(&graph, execution);
+            let ir = plan
+                .stages
+                .iter()
+                .find(|stage| stage.name == "linked-ir")
+                .unwrap();
+            if required {
+                assert_eq!(ir.dependencies, ["symbol-inventory"]);
+                assert!(ir.optional_dependencies.is_empty());
+                assert_eq!(ir.action, super::plan::ProjectAnalysisPlanAction::Blocked);
+            } else {
+                assert!(ir.dependencies.is_empty());
+                assert_eq!(ir.optional_dependencies, ["symbol-inventory"]);
+                assert_ne!(ir.action, super::plan::ProjectAnalysisPlanAction::Blocked);
+            }
+        }
+    }
+
+    #[test]
+    fn coverage_obeys_the_same_input_guard_as_other_passes() {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("artifact.bin");
+        let replacement = directory.path().join("replacement.bin");
+        let saved = directory.path().join("saved.bin");
+        std::fs::write(&input, "original artifact").unwrap();
+        std::fs::write(&replacement, "temporary replacement").unwrap();
+        let mut project = empty_project();
+        project
+            .ir_profiles
+            .push(crate::project_ir::ProjectIrProfile {
+                id: "fixture".into(),
+                sources: vec!["fixture".into()],
+                roots: crate::project_ir::ProjectIrRoots::All,
+                include_reachable: true,
+                entry_contract: "none".into(),
+                output: "fixture.ir".into(),
+            });
+        let mut operations = FakeOperations {
+            pipeline_inputs: Some(
+                super::cache::PipelineInputObservation::capture(vec![input.clone()]).unwrap(),
+            ),
+            rebind_after: Some("ir"),
+            rebind: Some(InputRebind {
+                input,
+                saved,
+                replacement,
+            }),
+            ..Default::default()
+        };
+        let report = run(
+            &project,
+            ProjectAnalysisRequest::default(),
+            ProjectAnalysisInputs {
+                run_spec: true,
+                ..Default::default()
+            },
+            &mut operations,
+        );
+        assert!(operations.calls.contains(&"ir"));
+        assert!(!operations.calls.contains(&"coverage"));
+        assert!(!operations.calls.contains(&"epoch-publication"));
+        let coverage = report
+            .stages
+            .iter()
+            .find(|stage| stage.name == "analysis-coverage")
+            .unwrap();
+        assert_eq!(coverage.status, "failed");
+        assert!(
+            coverage
+                .reason
+                .as_deref()
+                .unwrap()
+                .contains("changed during analysis")
+        );
     }
 }

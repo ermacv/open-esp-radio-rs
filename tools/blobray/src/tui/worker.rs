@@ -12,7 +12,7 @@ enum Command {
     Reload,
     Compare(String),
     FunctionDetail(String),
-    RegisterDetail(u32),
+    RegisterDetail { subject: String, generation: u64 },
     Shutdown,
 }
 
@@ -27,7 +27,8 @@ pub(super) enum Event {
         detail: Option<Box<FunctionDetailSummary>>,
     },
     RegisterDetail {
-        address: u32,
+        subject: String,
+        generation: u64,
         detail: Option<Box<RegisterDetailSummary>>,
     },
     Error(String),
@@ -81,10 +82,16 @@ impl Worker {
                                 break;
                             }
                         }
-                        Command::RegisterDetail(address) => {
-                            let event = match application.register_detail(address) {
+                        Command::RegisterDetail {
+                            subject,
+                            generation,
+                        } => {
+                            let event = match application
+                                .register_detail(&crate::RegisterSelector::Subject(subject.clone()))
+                            {
                                 Ok(detail) => Event::RegisterDetail {
-                                    address,
+                                    subject,
+                                    generation,
                                     detail: detail.map(Box::new),
                                 },
                                 Err(error) => Event::Error(error.to_string()),
@@ -122,9 +129,12 @@ impl Worker {
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "TUI worker stopped"))
     }
 
-    pub(super) fn register_detail(&self, address: u32) -> io::Result<()> {
+    pub(super) fn register_detail(&self, subject: String, generation: u64) -> io::Result<()> {
         self.commands
-            .send(Command::RegisterDetail(address))
+            .send(Command::RegisterDetail {
+                subject,
+                generation,
+            })
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "TUI worker stopped"))
     }
 

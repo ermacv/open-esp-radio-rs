@@ -198,17 +198,21 @@ pub(super) fn run(
     let effective_code = project
         .map(crate::analysis::EffectiveCodeCatalog::load)
         .transpose()?;
-    let report = discover_mmio(
-        &artifacts,
-        &ranges,
-        &arguments.symbol_prefix,
+    let captures = crate::source_set::CapturedSourceSet::capture(
+        artifacts.iter().map(|(_, path)| path.clone()),
+    );
+    let report = discover_mmio(crate::analysis::MmioDiscoveryRequest {
+        captures: &captures,
+        artifacts: &artifacts,
+        ranges: &ranges,
+        symbol_prefix: &arguments.symbol_prefix,
         code_symbol_selection,
         svd,
-        effective_code.as_ref(),
-        crate::analysis::MmioDiscoveryOptions {
+        effective_code: effective_code.as_ref(),
+        options: crate::analysis::MmioDiscoveryOptions {
             jobs: usize::from(arguments.jobs),
         },
-    )?;
+    })?;
     let publication = arguments.output.as_deref().map(|path| {
         crate::cli::output::Publication::new(
             path,
@@ -221,13 +225,12 @@ pub(super) fn run(
     });
     let artifact = crate::artifacts::build_mmio_facts(&report)?;
     if let Some(path) = arguments.output.as_deref() {
-        crate::application::generated_file::write_or_check_json(
+        crate::application::generated_file::GeneratedOutput::new(
             path,
-            &artifact,
             arguments.check,
             "MMIO discovery report",
-            false,
-        )?;
+        )
+        .json(&artifact, false)?;
     }
     let document = CommandDocument {
         artifact: &artifact,

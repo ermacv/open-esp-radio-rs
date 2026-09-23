@@ -68,7 +68,7 @@ fn snapshot(
         output: path.display().to_string(),
         artifacts: snapshot.artifacts.len(),
         functions: snapshot.functions.len(),
-        registers: snapshot.registers.len(),
+        registers: snapshot.registers.inventory.registers.len(),
         interfaces: snapshot.interfaces.len(),
         assertions: snapshot.assertions.len(),
         vendor_bugs: snapshot.vendor_bugs.len(),
@@ -125,7 +125,8 @@ fn diff(arguments: RevisionDiffArgs, session: &crate::application::ProjectSessio
     revision::validate_operand_pair(&session.project.id, &from, &to)?;
     let report = revision::diff(&from, &to);
     if let Some(path) = arguments.output.as_deref() {
-        generated_file::write_or_check_json(path, &report, arguments.check, "revision diff", true)?;
+        generated_file::GeneratedOutput::new(path, arguments.check, "revision diff")
+            .json(&report, true)?;
     }
     output::render_report(&report, || render_diff(&report));
     Ok(true)
@@ -145,13 +146,8 @@ fn rebase(
         .transpose()?;
     let report = revision::rebase(&from, &to, lineage.as_ref())?;
     if let Some(path) = arguments.output.as_deref() {
-        generated_file::write_or_check_json(
-            path,
-            &report,
-            arguments.check,
-            "revision rebase plan",
-            true,
-        )?;
+        generated_file::GeneratedOutput::new(path, arguments.check, "revision rebase plan")
+            .json(&report, true)?;
     }
     output::render_report(&report, || render_rebase(&report));
     Ok(true)

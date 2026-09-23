@@ -10,19 +10,20 @@ use std::{
     path::Path,
 };
 
-use object::{FileKind, Object, ObjectSymbol, SymbolKind, read::archive::ArchiveFile};
+use object::{Object, ObjectSymbol, SymbolKind};
 use rv_asm::{Imm, Inst, Reg};
 
 use crate::{Error, Result};
 
-use super::symbols::load_code_symbols_from_data;
 use super::{
     AnalysisInstruction, ArtifactSymbolDefinition, CodeSymbolSelection, RelocationKind,
     andi_immediate, decode_symbol_for_analysis, unsupported_instruction_mnemonic,
 };
+use open_radio_vendor_analysis_model::{ArtifactSymbolTable, SymbolLocation};
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct FunctionBody {
+    pub code_identity: super::CodeIdentity,
     pub artifact: String,
     pub member: Option<String>,
     pub symbol: String,
@@ -56,6 +57,7 @@ pub struct FunctionInstruction {
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct FunctionInstructionRelocation {
+    pub reference: crate::SymbolReference,
     pub kind: String,
     pub symbol: String,
     pub addend: i64,
@@ -186,9 +188,12 @@ pub fn inspect_function_body_at_data(
     symbol: &str,
     address: Option<u64>,
 ) -> Result<FunctionBody> {
-    let mut candidates = load_code_symbols_from_data(data, symbol, CodeSymbolSelection::All)?
+    let capture = super::CapturedArtifact::from_data(data)?;
+    let mut candidates = capture
+        .code_symbols(symbol, CodeSymbolSelection::All)?
         .into_iter()
-        .filter(|candidate| {
+        .filter(|captured| {
+            let candidate = &captured.definition;
             candidate.name == symbol
                 && member.is_none_or(|m| candidate.member.as_deref() == Some(m))
                 && address.is_none_or(|address| candidate.address == address)
@@ -206,23 +211,33 @@ pub fn inspect_function_body_at_data(
     if candidates.len() != 1 {
         let choices = candidates
             .iter()
-            .map(|candidate| {
-                format!(
-                    "{}@{:#x}",
-                    candidate.member.as_deref().unwrap_or("<linked-image>"),
-                    candidate.address
-                )
-            })
+            .map(|candidate| candidate.definition.identity.to_string())
             .collect::<Vec<_>>()
             .join(", ");
         return Err(Error::Message(format!(
-            "function {symbol:?} is ambiguous in {} ({choices}); select --member or SYMBOL@0xADDRESS",
+            "function {symbol:?} is ambiguous in {} ({choices}); select an exact physical symbol location",
             artifact.display()
         )));
     }
-    let definition = candidates.pop().expect("one candidate");
-    let labels = load_labels(data, &definition)?;
-    build_body(artifact, definition, labels)
+    let selected = candidates.pop().expect("one candidate");
+    inspect_captured_function(artifact, &capture, selected.location)
+}
+
+/// Inspect an exact captured occurrence, including labels from its own object.
+/// The path is display metadata and is never reopened.
+pub fn inspect_captured_function(
+    artifact: &Path,
+    capture: &super::CapturedArtifact<'_>,
+    location: SymbolLocation,
+) -> Result<FunctionBody> {
+    let selected = capture
+        .code_symbol(location)?
+        .ok_or("physical code symbol was not found")?;
+    let data = capture
+        .object_bytes(location.object)?
+        .ok_or("physical object was not found")?;
+    let labels = collect_labels(data, &selected.definition, location)?;
+    build_body(artifact, selected.definition.clone(), labels)
 }
 
 /// Decode a definition already owned by an analysis catalog without reopening
@@ -325,6 +340,7 @@ pub(super) fn build_body(
                     && u64::from(relocation.address) < address + u64::from(width)
             })
             .map(|relocation| FunctionInstructionRelocation {
+                reference: relocation.reference.clone(),
                 kind: relocation_kind_label(relocation.kind).to_owned(),
                 symbol: relocation.symbol.clone(),
                 addend: relocation.addend,
@@ -350,6 +366,7 @@ pub(super) fn build_body(
     let basic_blocks = build_cfg(&instructions, definition.address, definition.bytes.len());
     let loops = recover_loops(&basic_blocks, &decoded, definition.address);
     Ok(FunctionBody {
+        code_identity: definition.identity.clone(),
         artifact: artifact.display().to_string(),
         member: definition.member,
         symbol: definition.name,
@@ -1017,42 +1034,30 @@ fn integer_destination(instruction: AnalysisInstruction) -> Option<Option<Reg>> 
     }
 }
 
-fn load_labels(data: &[u8], definition: &ArtifactSymbolDefinition) -> Result<Vec<FunctionLabel>> {
-    match FileKind::parse(data)? {
-        FileKind::Archive => {
-            let archive = ArchiveFile::parse(data)?;
-            for member in archive.members() {
-                let member = member?;
-                if Some(member.name()) == definition.member.as_deref().map(str::as_bytes) {
-                    return collect_labels(member.data(data)?, definition);
-                }
-            }
-            Ok(Vec::new())
-        }
-        FileKind::Elf32 => collect_labels(data, definition),
-        kind => Err(format!("unsupported artifact kind: {kind:?}").into()),
-    }
-}
-
 fn collect_labels(
     data: &[u8],
     definition: &ArtifactSymbolDefinition,
+    location: SymbolLocation,
 ) -> Result<Vec<FunctionLabel>> {
     let file = object::File::parse(data)?;
-    let selected = file
-        .symbols()
-        .find(|symbol| {
-            symbol.name().ok() == Some(definition.name.as_str())
-                && symbol.address() == definition.address
-                && symbol.size() as usize == definition.bytes.len()
-        })
-        .ok_or_else(|| {
-            Error::Message(format!("cannot recover section for {:?}", definition.name))
-        })?;
+    let selected = match location.table {
+        ArtifactSymbolTable::Static => file
+            .symbols()
+            .find(|symbol| symbol.index().0 as u64 == location.index),
+        ArtifactSymbolTable::Dynamic => file
+            .dynamic_symbols()
+            .find(|symbol| symbol.index().0 as u64 == location.index),
+    }
+    .ok_or_else(|| {
+        Error::Message(format!(
+            "cannot recover section for physical symbol {location:?}"
+        ))
+    })?;
     let section = selected.section_index();
     let end = definition.address + definition.bytes.len() as u64;
     let mut labels = file
         .symbols()
+        .chain(file.dynamic_symbols())
         .filter(|symbol| {
             symbol.is_definition()
                 && symbol.section_index() == section
@@ -1102,6 +1107,12 @@ mod tests {
 
     fn definition(words: &[u32]) -> ArtifactSymbolDefinition {
         ArtifactSymbolDefinition {
+            identity: ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "focused",
+                0x1000,
+            ),
             member: None,
             name: "focused".to_owned(),
             address: 0x1000,

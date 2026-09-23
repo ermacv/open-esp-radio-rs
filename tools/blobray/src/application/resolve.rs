@@ -117,6 +117,20 @@ impl Default for ProjectSessionOptions {
     }
 }
 
+pub(crate) struct ProjectSessionInputs {
+    pub(crate) manifest: PathBuf,
+    pub(crate) project: ProjectSpec,
+    pub(crate) target_path: PathBuf,
+    pub(crate) target: TargetSpec,
+    pub(crate) run_spec_path: Option<PathBuf>,
+    pub(crate) run_spec: Option<RunSpec>,
+    pub(crate) memory_map: Option<MemoryMap>,
+    pub(crate) svd_paths: Vec<PathBuf>,
+    pub(crate) mmio: MmioMap,
+    pub(crate) explicit_context: ExplicitProjectContext,
+    pub(crate) invocation_directory: PathBuf,
+}
+
 pub(crate) struct ProjectSession {
     pub(crate) manifest: PathBuf,
     pub(crate) project: ProjectSpec,
@@ -129,22 +143,21 @@ pub(crate) struct ProjectSession {
     pub(crate) mmio: MmioMap,
     pub(crate) explicit_context: ExplicitProjectContext,
     pub(crate) invocation_directory: PathBuf,
-    pub(crate) function_workspace:
+    function_workspace:
         OnceLock<std::result::Result<Option<crate::function_workspace::FunctionWorkspace>, String>>,
-    pub(crate) code_workspace:
+    code_workspace:
         OnceLock<std::result::Result<Option<crate::code_workspace::CodeWorkspace>, String>>,
-    pub(crate) register_workspace:
-        OnceLock<std::result::Result<Option<crate::registers::ProjectRegisterWorkspace>, String>>,
-    pub(crate) interface_workspace:
+    interface_facts: OnceLock<
+        std::result::Result<Option<std::sync::Arc<crate::interfaces::InterfaceFacts>>, String>,
+    >,
+    interface_workspace:
         OnceLock<std::result::Result<Option<crate::interfaces::InterfaceWorkspace>, String>>,
+    register_query:
+        OnceLock<std::result::Result<super::register_query::RegisterQueryCapture, String>>,
     pub(crate) artifacts: ProjectArtifactStore,
 }
 
 impl ProjectSession {
-    pub(crate) fn open(manifest: &Path) -> Result<Self> {
-        Self::open_with(manifest, ProjectSessionOptions::default())
-    }
-
     pub(crate) fn open_with(manifest: &Path, options: ProjectSessionOptions) -> Result<Self> {
         let invocation_directory = options
             .invocation_directory
@@ -208,46 +221,19 @@ impl ProjectSession {
                     ))
                 })?;
         }
-        let memory_map_path = project.memory_map.as_deref();
-        let memory_map = if options.load_memory_map {
-            memory_map_path
-                .map(|path| {
-                    use sha2::{Digest, Sha256};
-                    let mut copies = crate::verification::ExecutionInputs::new()?;
-                    let mut copy = path.to_owned();
-                    copies.capture(&mut copy)?;
-                    let model = MemoryMap::load(&copy)?;
-                    project.loaded_model_inputs.insert(
-                        path.canonicalize()?,
-                        format!("{:x}", Sha256::digest(std::fs::read(&copy)?)),
-                    );
-                    Ok::<_, crate::Error>(model)
-                })
-                .transpose()?
-        } else {
-            None
-        };
         let svd_paths = if !options.svd_paths.is_empty() {
             options.svd_paths
         } else {
             project.svd_paths.clone()
         };
-        let mut mmio = if options.load_register_catalog {
-            let (catalog, inputs) =
-                crate::register_catalog::load_with_inputs(&svd_paths, Some(&project))?;
-            project.loaded_model_inputs.extend(inputs);
-            catalog
-        } else {
-            MmioMap::load_all(&[])?
-        };
-        if let Some(memory_map) = &memory_map {
-            mmio.regions.extend(memory_map.resolved_mmio_regions()?);
-            mmio.regions
-                .sort_by_key(|region| (region.start, region.end, region.name.clone()));
-            mmio.regions.dedup();
-        }
+        let (memory_map, mmio) = load_analysis_models(
+            &mut project,
+            &svd_paths,
+            options.load_memory_map,
+            options.load_register_catalog,
+        )?;
 
-        Ok(Self {
+        Ok(Self::from_inputs(ProjectSessionInputs {
             manifest,
             project,
             target_path,
@@ -259,12 +245,51 @@ impl ProjectSession {
             mmio,
             explicit_context,
             invocation_directory,
+        }))
+    }
+
+    /// Prepare backend models from this session's resolved declarations.
+    /// Never re-resolve the manifest or lose the caller's overrides.
+    pub(crate) fn with_analysis_models(&self) -> Result<Self> {
+        let mut project = self.project.clone();
+        let (memory_map, mmio) = load_analysis_models(&mut project, &self.svd_paths, true, true)?;
+        Ok(Self::from_inputs(ProjectSessionInputs {
+            manifest: self.manifest.clone(),
+            project,
+            target_path: self.target_path.clone(),
+            target: self.target.clone(),
+            run_spec_path: self.run_spec_path.clone(),
+            run_spec: self.run_spec.clone(),
+            memory_map,
+            svd_paths: self.svd_paths.clone(),
+            mmio,
+            explicit_context: self.explicit_context.clone(),
+            invocation_directory: self.invocation_directory.clone(),
+        }))
+    }
+
+    /// Start a session with fresh owner-managed caches for resolved inputs.
+    pub(crate) fn from_inputs(inputs: ProjectSessionInputs) -> Self {
+        let artifacts = ProjectArtifactStore::new(&inputs.manifest, &inputs.project);
+        Self {
+            manifest: inputs.manifest,
+            project: inputs.project,
+            target_path: inputs.target_path,
+            target: inputs.target,
+            run_spec_path: inputs.run_spec_path,
+            run_spec: inputs.run_spec,
+            memory_map: inputs.memory_map,
+            svd_paths: inputs.svd_paths,
+            mmio: inputs.mmio,
+            explicit_context: inputs.explicit_context,
+            invocation_directory: inputs.invocation_directory,
             function_workspace: OnceLock::new(),
             code_workspace: OnceLock::new(),
-            register_workspace: OnceLock::new(),
             interface_workspace: OnceLock::new(),
-            artifacts: ProjectArtifactStore::default(),
-        })
+            interface_facts: OnceLock::new(),
+            register_query: OnceLock::new(),
+            artifacts,
+        }
     }
 
     pub(crate) fn context(&self) -> ProjectContext<'_> {
@@ -322,23 +347,52 @@ impl ProjectSession {
     pub(crate) fn function_workspace(
         &self,
     ) -> Result<Option<&crate::function_workspace::FunctionWorkspace>> {
-        cached_function_workspace(&self.project, &self.function_workspace)
+        cached_function_workspace(self)
     }
 
     pub(crate) fn code_workspace(&self) -> Result<Option<&crate::code_workspace::CodeWorkspace>> {
-        cached_code_workspace(&self.project, &self.code_workspace)
+        cached_code_workspace(self)
     }
 
-    pub(crate) fn register_workspace(
+    pub(crate) fn register_detail(
         &self,
-    ) -> Result<Option<&crate::registers::ProjectRegisterWorkspace>> {
-        cached_register_workspace(&self.project, &self.register_workspace)
+        selector: &super::RegisterSelector,
+    ) -> Result<Option<super::RegisterDetailSummary>> {
+        super::snapshot::registers::detail(self, selector)
+    }
+
+    pub(crate) fn register_query(&self) -> Result<&super::register_query::RegisterQueryCapture> {
+        self.register_query
+            .get_or_init(|| {
+                super::register_query::RegisterQueryCapture::capture(self)
+                    .map_err(|error| error.to_string())
+            })
+            .as_ref()
+            .map_err(|reason| crate::Error::invalid(reason.clone()))
+    }
+
+    pub(crate) fn interface_facts(
+        &self,
+    ) -> Result<Option<&std::sync::Arc<crate::interfaces::InterfaceFacts>>> {
+        cached_optional(&self.interface_facts, || {
+            let Some(paths) = &self.project.interfaces else {
+                return Ok(None);
+            };
+            let input = self.artifacts.read_text(&paths.facts)?;
+            crate::interfaces::InterfaceFacts::parse(&paths.facts, &input)
+                .map(|facts| Some(std::sync::Arc::new(facts)))
+        })
     }
 
     pub(crate) fn interface_workspace(
         &self,
     ) -> Result<Option<&crate::interfaces::InterfaceWorkspace>> {
-        cached_interface_workspace(&self.project, &self.target, &self.interface_workspace)
+        cached_interface_workspace(
+            &self.project,
+            &self.target,
+            &self.interface_workspace,
+            self.interface_facts()?.cloned(),
+        )
     }
 
     pub(crate) fn linked_ir(
@@ -349,37 +403,23 @@ impl ProjectSession {
     }
 }
 
-fn cached_code_workspace<'a>(
-    project: &crate::ProjectSpec,
-    cache: &'a OnceLock<std::result::Result<Option<crate::code_workspace::CodeWorkspace>, String>>,
-) -> Result<Option<&'a crate::code_workspace::CodeWorkspace>> {
-    cached_optional(cache, || {
+fn cached_code_workspace(
+    session: &ProjectSession,
+) -> Result<Option<&crate::code_workspace::CodeWorkspace>> {
+    cached_optional(&session.code_workspace, || {
+        let project = &session.project;
         let (Some(paths), Some(inventory)) = (&project.code, &project.symbol_inventory) else {
             return Ok(None);
         };
-        if !inventory.output.is_file() || !paths.pack.is_file() {
+        if !paths.pack.is_file() {
             return Ok(None);
         }
-        let facts =
-            crate::artifacts::symbol_inventory::load_code_boundary_facts(&inventory.output)?;
+        let input = session.artifacts.read_text(&inventory.output)?;
+        let facts = crate::artifacts::symbol_inventory::parse_code_boundary_facts(
+            &inventory.output,
+            &input,
+        )?;
         crate::code_workspace::CodeWorkspace::load(&facts, &paths.pack, &project.id).map(Some)
-    })
-}
-
-fn cached_register_workspace<'a>(
-    project: &crate::ProjectSpec,
-    cache: &'a OnceLock<
-        std::result::Result<Option<crate::registers::ProjectRegisterWorkspace>, String>,
-    >,
-) -> Result<Option<&'a crate::registers::ProjectRegisterWorkspace>> {
-    cached_optional(cache, || {
-        let Some(paths) = project.registers.as_ref() else {
-            return Ok(None);
-        };
-        if !paths.model.is_file() {
-            return Ok(None);
-        }
-        crate::registers::ProjectRegisterWorkspace::load(paths).map(Some)
     })
 }
 
@@ -387,6 +427,7 @@ fn cached_interface_workspace<'a>(
     project: &crate::ProjectSpec,
     target: &crate::TargetSpec,
     cache: &'a OnceLock<std::result::Result<Option<crate::interfaces::InterfaceWorkspace>, String>>,
+    facts: Option<std::sync::Arc<crate::interfaces::InterfaceFacts>>,
 ) -> Result<Option<&'a crate::interfaces::InterfaceWorkspace>> {
     cached_optional(cache, || {
         let Some(paths) = project.interfaces.as_ref() else {
@@ -395,15 +436,19 @@ fn cached_interface_workspace<'a>(
         let Some(pack) = paths.pack.as_ref() else {
             return Ok(None);
         };
-        if !paths.facts.is_file() || !pack.is_file() {
+        let Some(facts) = facts else {
+            return Ok(None);
+        };
+        if !pack.is_file() {
             return Ok(None);
         }
         let contracts = target
             .knowledge_provider
             .as_deref()
-            .and_then(|harness| crate::providers::contracts(harness).ok());
-        crate::interfaces::InterfaceWorkspace::load_with_templates(
-            &paths.facts,
+            .map(crate::providers::contracts)
+            .transpose()?;
+        crate::interfaces::InterfaceWorkspace::from_facts(
+            facts,
             pack,
             &paths.semantic_catalogs,
             &paths.interface_template_packs,
@@ -424,28 +469,66 @@ fn cached_optional<T>(
     }
 }
 
-fn cached_function_workspace<'a>(
-    project: &crate::ProjectSpec,
-    cache: &'a OnceLock<
-        std::result::Result<Option<crate::function_workspace::FunctionWorkspace>, String>,
-    >,
-) -> Result<Option<&'a crate::function_workspace::FunctionWorkspace>> {
-    let cached = cache.get_or_init(|| {
-        let Some(paths) = project.functions.as_ref() else {
+fn cached_function_workspace(
+    session: &ProjectSession,
+) -> Result<Option<&crate::function_workspace::FunctionWorkspace>> {
+    cached_optional(&session.function_workspace, || {
+        let Some(paths) = session.project.functions.as_ref() else {
             return Ok(None);
         };
-        let reports = project
-            .function_ir_reports()
-            .map_err(|error| error.to_string())?;
-        if reports.iter().any(|(_, report)| !report.is_dir()) || !paths.pack.is_file() {
+        if !paths.pack.is_file() {
             return Ok(None);
         }
-        crate::function_workspace::FunctionWorkspace::load_summary(&reports, &paths.pack)
+        let reports = session.project.function_ir_reports()?;
+        let facts =
+            crate::function_workspace::FunctionFacts::load_summary_with(&reports, |path| {
+                session.linked_ir(path)?.read_review_projection()
+            })?;
+        crate::function_workspace::FunctionWorkspace::from_summary_facts(facts, &paths.pack)
             .map(Some)
-            .map_err(|error| error.to_string())
-    });
-    match cached {
-        Ok(workspace) => Ok(workspace.as_ref()),
-        Err(message) => Err(crate::Error::invalid(message.clone())),
+    })
+}
+
+/// Backend model preparation is explicit; inventory queries read the complete
+/// source geometry independently of the backend's address/width limits.
+fn load_analysis_models(
+    project: &mut ProjectSpec,
+    svd_paths: &[PathBuf],
+    load_memory_map: bool,
+    load_register_catalog: bool,
+) -> Result<(Option<MemoryMap>, MmioMap)> {
+    let memory_map_path = project.memory_map.as_deref();
+    let memory_map = if load_memory_map {
+        memory_map_path
+            .map(|path| {
+                use sha2::{Digest, Sha256};
+                let mut copies = crate::verification::ExecutionInputs::new()?;
+                let mut copy = path.to_owned();
+                copies.capture(&mut copy)?;
+                let model = MemoryMap::load(&copy)?;
+                project.loaded_model_inputs.insert(
+                    path.canonicalize()?,
+                    format!("{:x}", Sha256::digest(std::fs::read(&copy)?)),
+                );
+                Ok::<_, crate::Error>(model)
+            })
+            .transpose()?
+    } else {
+        None
+    };
+    let mut mmio = if load_register_catalog {
+        let (catalog, inputs) =
+            crate::register_catalog::load_with_inputs(svd_paths, Some(project))?;
+        project.loaded_model_inputs.extend(inputs);
+        catalog
+    } else {
+        MmioMap::load_all(&[])?
+    };
+    if load_register_catalog && let Some(memory_map) = &memory_map {
+        mmio.regions.extend(memory_map.resolved_mmio_regions()?);
+        mmio.regions
+            .sort_by_key(|region| (region.start, region.end, region.name.clone()));
+        mmio.regions.dedup();
     }
+    Ok((memory_map, mmio))
 }

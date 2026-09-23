@@ -1,4 +1,4 @@
-//! Typed consumer projection for schema-v7 interface discovery facts.
+//! Typed consumer projection for schema-v11 interface discovery facts.
 
 #![allow(
     dead_code,
@@ -12,6 +12,8 @@ use crate::Result;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredInterfaceFacts {
+    pub(crate) limits: crate::interface_discovery::InterfaceDiscoveryLimits,
+    pub(crate) gaps: Vec<crate::interfaces::InterfaceGapFact>,
     schema_version: u32,
     command: String,
     analysis_scope: StoredAnalysisScope,
@@ -19,13 +21,16 @@ pub(crate) struct StoredInterfaceFacts {
     pub(crate) calls: Vec<StoredInterfaceCall>,
     pub(crate) assignments: Vec<StoredInterfaceAssignment>,
     pub(crate) table_candidates: Vec<StoredInterfaceTable>,
-    decode_blockers: Vec<StoredDecodeBlocker>,
-    analysis_failures: Vec<StoredDecodeFailure>,
+    pub(crate) decode_blockers: Vec<StoredDecodeBlocker>,
+    pub(crate) analysis_failures: Vec<StoredDecodeFailure>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredInterfaceAssignment {
+    pub(crate) owner: crate::artifact::CodeIdentity,
+    pub(crate) target_loads: Vec<StoredInterfaceStep>,
+    pub(crate) target_offset: i32,
     pub(crate) artifact: usize,
     pub(crate) member: Option<String>,
     pub(crate) function: String,
@@ -71,7 +76,7 @@ pub(crate) struct StoredInterfaceArtifact {
 pub(crate) struct StoredInterfaceTable {
     pub(crate) artifact: usize,
     pub(crate) root: StoredInterfaceRoot,
-    pub(crate) container_path: Vec<StoredInterfaceStep>,
+    pub(crate) container_path: Vec<StoredInterfaceShape>,
     pub(crate) slots: Vec<StoredInterfaceSlot>,
     pub(crate) functions: Vec<String>,
     call_sites: usize,
@@ -90,6 +95,7 @@ pub(crate) struct StoredInterfaceSlot {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredInterfaceCall {
+    pub(crate) owner: crate::artifact::CodeIdentity,
     pub(crate) artifact: usize,
     pub(crate) member: Option<String>,
     pub(crate) function: String,
@@ -98,7 +104,7 @@ pub(crate) struct StoredInterfaceCall {
     #[serde(deserialize_with = "hex_u32")]
     pub(crate) site: u32,
     pub(crate) kind: String,
-    link_register: u8,
+    pub(crate) link_register: u8,
     pub(crate) target: StoredInterfaceTarget,
     pub(crate) root_linkage: StoredRootLinkage,
     pub(crate) arguments: Vec<StoredInterfaceArgument>,
@@ -107,6 +113,7 @@ pub(crate) struct StoredInterfaceCall {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredInterfaceTarget {
+    pub(crate) post_offset: i32,
     canonical: String,
     pub(crate) root: StoredInterfaceRoot,
     pub(crate) loads: Vec<StoredInterfaceStep>,
@@ -119,8 +126,16 @@ pub(crate) struct StoredInterfaceTarget {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredInterfaceStep {
-    #[serde(default, deserialize_with = "optional_hex_u32")]
-    pub(crate) site: Option<u32>,
+    #[serde(deserialize_with = "hex_u32")]
+    pub(crate) site: u32,
+    pub(crate) offset: i32,
+    pub(crate) width: u8,
+    pub(crate) selector: Option<StoredInterfaceSelector>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredInterfaceShape {
     pub(crate) offset: i32,
     pub(crate) width: u8,
     pub(crate) selector: Option<StoredInterfaceSelector>,
@@ -139,6 +154,7 @@ pub(crate) struct StoredInterfaceSelector {
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum StoredInterfaceRoot {
     RelocatedSymbol {
+        reference: open_radio_vendor_contracts::SymbolReference,
         canonical: String,
         member: Option<String>,
         symbol: String,
@@ -146,20 +162,12 @@ pub(crate) enum StoredInterfaceRoot {
         addressing: String,
     },
     FunctionArgument {
+        owner: crate::artifact::CodeIdentity,
         canonical: String,
         argument: u8,
     },
-    BoundedDataAddress {
-        canonical: String,
-        member: Option<String>,
-        symbol: String,
-        #[serde(deserialize_with = "hex_u32")]
-        address: u32,
-        #[serde(deserialize_with = "hex_u32")]
-        symbol_address: u32,
-        symbol_size: u32,
-    },
     AbsoluteAddress {
+        data_address: open_radio_vendor_contracts::DataAddressResolution,
         canonical: String,
         #[serde(deserialize_with = "hex_u32")]
         address: u32,
@@ -167,23 +175,10 @@ pub(crate) enum StoredInterfaceRoot {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub(crate) enum StoredInterfaceArgument {
-    Unknown {
-        index: usize,
-    },
-    Constant {
-        index: usize,
-        #[serde(deserialize_with = "hex_u32")]
-        value: u32,
-    },
-    PointerProvenance {
-        index: usize,
-        canonical: String,
-        root: StoredInterfaceRoot,
-        loads: Vec<StoredInterfaceStep>,
-        post_offset: i32,
-    },
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredInterfaceArgument {
+    pub(crate) index: usize,
+    pub(crate) value: crate::interface_discovery::InterfaceArgumentValue,
 }
 
 #[derive(Debug, Deserialize)]
@@ -198,6 +193,7 @@ pub(crate) struct StoredRootLinkage {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredSymbolLocation {
+    pub(crate) location: crate::SymbolLocation,
     pub(crate) artifact: usize,
     pub(crate) member: Option<String>,
     pub(crate) address: String,
@@ -206,24 +202,26 @@ pub(crate) struct StoredSymbolLocation {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct StoredDecodeFailure {
-    artifact: usize,
-    member: Option<String>,
-    function: String,
-    error: String,
+pub(crate) struct StoredDecodeFailure {
+    pub(crate) owner: crate::artifact::CodeIdentity,
+    pub(crate) artifact: usize,
+    pub(crate) member: Option<String>,
+    pub(crate) function: String,
+    pub(crate) error: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct StoredDecodeBlocker {
-    artifact: usize,
-    member: Option<String>,
-    function: String,
-    address: String,
-    width: u8,
-    raw: String,
-    class: String,
-    linear_control_flow: bool,
+pub(crate) struct StoredDecodeBlocker {
+    pub(crate) owner: crate::artifact::CodeIdentity,
+    pub(crate) artifact: usize,
+    pub(crate) member: Option<String>,
+    pub(crate) function: String,
+    pub(crate) address: String,
+    pub(crate) width: u8,
+    pub(crate) raw: String,
+    pub(crate) class: String,
+    pub(crate) linear_control_flow: bool,
 }
 
 pub(crate) fn parse_interface_facts(input: &str) -> Result<StoredInterfaceFacts> {
@@ -248,18 +246,4 @@ where
     let value = String::deserialize(deserializer)?;
     crate::parse_u32(&value)
         .ok_or_else(|| serde::de::Error::custom(format!("invalid hexadecimal u32 {value:?}")))
-}
-
-fn optional_hex_u32<'de, D>(deserializer: D) -> std::result::Result<Option<u32>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Option::<String>::deserialize(deserializer)?;
-    value
-        .map(|value| {
-            crate::parse_u32(&value).ok_or_else(|| {
-                serde::de::Error::custom(format!("invalid hexadecimal u32 {value:?}"))
-            })
-        })
-        .transpose()
 }

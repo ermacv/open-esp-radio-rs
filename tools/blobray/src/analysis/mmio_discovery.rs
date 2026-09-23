@@ -141,6 +141,7 @@ pub(crate) struct FunctionDiagnostic {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ArtifactDiscoverySummary {
+    pub(crate) sha256: String,
     pub(crate) source: String,
     pub(crate) path: PathBuf,
     pub(crate) functions: usize,
@@ -678,25 +679,38 @@ fn discovery_map(svd: &MmioMap, ranges: &[DiscoveryRange]) -> MmioMap {
     map
 }
 
+pub(crate) struct MmioDiscoveryRequest<'a> {
+    pub(crate) captures: &'a crate::source_set::CapturedSourceSet,
+    pub(crate) artifacts: &'a [(String, PathBuf)],
+    pub(crate) ranges: &'a [DiscoveryRange],
+    pub(crate) symbol_prefix: &'a str,
+    pub(crate) code_symbol_selection: artifact::CodeSymbolSelection,
+    pub(crate) svd: &'a MmioMap,
+    pub(crate) effective_code: Option<&'a super::EffectiveCodeCatalog>,
+    pub(crate) options: MmioDiscoveryOptions,
+}
+
 #[tracing::instrument(
     name = "discover_mmio",
-    skip(artifacts, ranges, svd),
+    skip(request),
     fields(
-        artifacts = artifacts.len(),
-        ranges = ranges.len(),
-        symbol_prefix,
-        code_symbols = code_symbol_selection.label()
+        artifacts = request.artifacts.len(),
+        ranges = request.ranges.len(),
+        symbol_prefix = request.symbol_prefix,
+        code_symbols = request.code_symbol_selection.label()
     )
 )]
-pub(crate) fn discover_mmio(
-    artifacts: &[(String, PathBuf)],
-    ranges: &[DiscoveryRange],
-    symbol_prefix: &str,
-    code_symbol_selection: artifact::CodeSymbolSelection,
-    svd: &MmioMap,
-    effective_code: Option<&super::EffectiveCodeCatalog>,
-    options: MmioDiscoveryOptions,
-) -> Result<MmioDiscoveryReport> {
+pub(crate) fn discover_mmio(request: MmioDiscoveryRequest<'_>) -> Result<MmioDiscoveryReport> {
+    let MmioDiscoveryRequest {
+        captures,
+        artifacts,
+        ranges,
+        symbol_prefix,
+        code_symbol_selection,
+        svd,
+        effective_code,
+        options,
+    } = request;
     let map = discovery_map(svd, ranges);
     let relocated_calls = direct::StructuralRelocatedCalls::default();
     let pointer_context = StructuralPointerContext::default();
@@ -706,22 +720,28 @@ pub(crate) fn discover_mmio(
     let mut artifact_summaries = Vec::new();
 
     for (source, path) in artifacts {
+        let capture = captures.artifact(path)?;
         let (symbols, reviewed_boundaries) = match effective_code {
             Some(catalog) => {
                 let loaded = catalog.load_symbols(
                     source,
                     Path::new(path),
+                    capture,
                     symbol_prefix,
                     code_symbol_selection,
                 )?;
                 (loaded.symbols, loaded.reviewed_boundaries)
             }
             None => (
-                artifact::load_code_symbols(Path::new(path), symbol_prefix, code_symbol_selection)?,
+                capture
+                    .code_symbols(symbol_prefix, code_symbol_selection)?
+                    .into_iter()
+                    .map(|symbol| symbol.definition.clone())
+                    .collect(),
                 0,
             ),
         };
-        observations.extend(coverage::observations(source, path, &symbols));
+        observations.extend(coverage::observations(source, capture, &symbols));
         let jobs = options.worker_count(symbols.len());
         let progress = artifact_progress_span(source, path, symbols.len());
         progress.pb_set_message(&format!(
@@ -785,10 +805,20 @@ pub(crate) fn discover_mmio(
             Some(match effective_code {
                 Some(catalog) => {
                     catalog
-                        .load_symbols(source, path, "", artifact::CodeSymbolSelection::All)?
+                        .load_symbols(
+                            source,
+                            path,
+                            capture,
+                            "",
+                            artifact::CodeSymbolSelection::All,
+                        )?
                         .symbols
                 }
-                None => artifact::load_code_symbols(path, "", artifact::CodeSymbolSelection::All)?,
+                None => capture
+                    .code_symbols("", artifact::CodeSymbolSelection::All)?
+                    .into_iter()
+                    .map(|symbol| symbol.definition.clone())
+                    .collect(),
             })
         };
         contexts.run(
@@ -802,6 +832,7 @@ pub(crate) fn discover_mmio(
         )?;
         progress.pb_set_finish_message(&format!("{source}: analyzed {} functions", symbols.len()));
         artifact_summaries.push(ArtifactDiscoverySummary {
+            sha256: capture.sha256().to_owned(),
             source: source.clone(),
             path: path.clone(),
             functions: symbols.len(),
@@ -942,6 +973,12 @@ mod tests {
     #[test]
     fn explores_mmio_on_both_sides_of_an_input_dependent_branch() {
         let symbol = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "branched_mmio",
+                0x1000,
+            ),
             member: None,
             name: "branched_mmio".to_owned(),
             address: 0x1000,
@@ -1008,6 +1045,12 @@ mod tests {
     #[test]
     fn parallel_function_exploration_matches_serial_results() {
         let template = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "",
+                0x1000,
+            ),
             member: None,
             name: String::new(),
             address: 0x1000,

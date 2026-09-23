@@ -1,0 +1,24 @@
+[package]
+name = "blobray-artifacts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Filesystem-independent ELF and archive inventory for Blobray"
+
+[dependencies]
+blobray-domain = { path = "../domain" }
+object = { version = "=0.39.1", default-features = false, features = ["archive", "elf", "read", "std"] }
+
+[dev-dependencies]
+object = { version = "=0.39.1", default-features = false, features = ["elf", "std", "write"] }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "tool"
+platform = "host"

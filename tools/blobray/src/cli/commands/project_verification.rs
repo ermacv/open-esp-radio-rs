@@ -158,13 +158,8 @@ pub(super) fn execute(
         )?;
         restore_component_paths(&execution_inputs, &mut completed);
         let path = crate::verification::policy::suite_report_path(&workspace.report, &suite.id);
-        generated_file::write_or_check_json(
-            &path,
-            &completed.suites[0],
-            checking,
-            "verification suite report",
-            true,
-        )?;
+        generated_file::GeneratedOutput::new(&path, checking, "verification suite report")
+            .json(&completed.suites[0], true)?;
         if let Some(publication) = &publication {
             publication.complete(
                 &suite.id,
@@ -205,13 +200,12 @@ pub(super) fn execute(
 
     restore_component_paths(&execution_inputs, &mut report);
     if complete_project_run {
-        generated_file::write_or_check_json(
+        generated_file::GeneratedOutput::new(
             &workspace.report,
-            &report,
             arguments.check,
             "project verification report",
-            true,
-        )?;
+        )
+        .json(&report, true)?;
     }
     if arguments.check {
         crate::verification::evidence_publication::Publication::check(

@@ -37,7 +37,11 @@ struct LocationKey {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum MemoryObjectIdentity {
     Argument(u8),
-    Global(Option<String>, String),
+    Global(
+        open_radio_vendor_contracts::SymbolReference,
+        Option<String>,
+        String,
+    ),
     Dereferenced(Box<Self>, i64),
     Absolute(String, u32),
     Indexed(Box<Self>, u8, i64),
@@ -1714,9 +1718,11 @@ fn classify_object(object: &artifacts::StoredMemoryObject) -> ObjectClass {
 fn memory_object_identity(object: &artifacts::StoredMemoryObject) -> MemoryObjectIdentity {
     match object {
         artifacts::StoredMemoryObject::Argument { index } => MemoryObjectIdentity::Argument(*index),
-        artifacts::StoredMemoryObject::Global { member, symbol } => {
-            MemoryObjectIdentity::Global(member.clone(), symbol.clone())
-        }
+        artifacts::StoredMemoryObject::Global {
+            reference,
+            member,
+            symbol,
+        } => MemoryObjectIdentity::Global(reference.clone(), member.clone(), symbol.clone()),
         artifacts::StoredMemoryObject::Dereferenced {
             pointer,
             pointer_offset,
@@ -1752,7 +1758,7 @@ fn memory_object_identity(object: &artifacts::StoredMemoryObject) -> MemoryObjec
 fn display_object(object: &artifacts::StoredMemoryObject) -> String {
     match object {
         artifacts::StoredMemoryObject::Argument { index } => format!("arg{index}"),
-        artifacts::StoredMemoryObject::Global { member, symbol } => member
+        artifacts::StoredMemoryObject::Global { member, symbol, .. } => member
             .as_deref()
             .map_or_else(|| symbol.clone(), |member| format!("{member}::{symbol}")),
         artifacts::StoredMemoryObject::Dereferenced {
@@ -1828,6 +1834,12 @@ mod tests {
     ) -> FunctionBody {
         let size = instructions.len() * 4;
         FunctionBody {
+            code_identity: crate::artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &None,
+                "body",
+                u64::from(line!()),
+            ),
             artifact: "fixture.elf".to_owned(),
             member: None,
             symbol: "fixture".to_owned(),
@@ -2269,12 +2281,24 @@ mod tests {
     #[test]
     fn differently_named_globals_are_not_proven_disjoint() {
         let left = LocationKey {
-            object: MemoryObjectIdentity::Global(None, "image".to_owned()),
+            object: MemoryObjectIdentity::Global(
+                open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
+                None,
+                "image".to_owned(),
+            ),
             offset: 0x24,
             width: 32,
         };
         let right = LocationKey {
-            object: MemoryObjectIdentity::Global(None, "state".to_owned()),
+            object: MemoryObjectIdentity::Global(
+                open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
+                None,
+                "state".to_owned(),
+            ),
             offset: 4,
             width: 32,
         };

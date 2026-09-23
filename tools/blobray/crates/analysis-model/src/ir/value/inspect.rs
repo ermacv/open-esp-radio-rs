@@ -79,6 +79,7 @@ impl SymbolicValue {
                 offset: 0,
             }),
             Self::SymbolAddress {
+                reference,
                 member,
                 symbol,
                 lo_addend: Some(addend),
@@ -86,6 +87,7 @@ impl SymbolicValue {
                 ..
             } => Some(MemoryObjectLocation {
                 root: MemoryObjectRoot::RelocatedSymbol {
+                    reference: reference.clone(),
                     member: member.clone(),
                     symbol: symbol.clone(),
                 },
@@ -113,6 +115,7 @@ impl SymbolicValue {
                 offset: 0,
             }),
             Self::SymbolAddress {
+                reference,
                 member,
                 symbol,
                 lo_addend: Some(addend),
@@ -120,6 +123,7 @@ impl SymbolicValue {
                 ..
             } => Some(MemoryObjectLocation {
                 root: MemoryObjectRoot::RelocatedSymbol {
+                    reference: reference.clone(),
                     member: member.clone(),
                     symbol: symbol.clone(),
                 },
@@ -552,13 +556,14 @@ impl SymbolicValue {
             Self::InputConstant { index, .. } => Self::input(*index).canonical(),
             Self::StackAddress(offset) => format!("private-stack:{offset:+#x}"),
             Self::SymbolAddress {
+                reference,
                 member,
                 symbol,
                 hi_addend,
                 lo_addend,
                 post_offset,
             } => format!(
-                "symbol:{}::{symbol}:hi{hi_addend:+#x}:lo{}:post{post_offset:+#x}",
+                "symbol:{}::{symbol}:hi{hi_addend:+#x}:lo{}:post{post_offset:+#x}:reference={reference:?}",
                 member.as_deref().unwrap_or("<linked>"),
                 lo_addend.map_or_else(|| "?".to_owned(), |addend| format!("{addend:+#x}"))
             ),
@@ -859,6 +864,9 @@ mod tests {
     #[test]
     fn memory_object_location_preserves_byte_index_into_relocated_global() {
         let base = SymbolicValue::SymbolAddress {
+            reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                reason: "synthetic fixture".to_owned(),
+            },
             member: Some("table.o".to_owned()),
             symbol: ".LANCHOR1".to_owned(),
             hi_addend: 0,
@@ -873,6 +881,9 @@ mod tests {
             Some(MemoryObjectLocation {
                 root: MemoryObjectRoot::Indexed {
                     root: std::sync::Arc::new(MemoryObjectRoot::RelocatedSymbol {
+                        reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                            reason: "synthetic fixture".to_owned()
+                        },
                         member: Some("table.o".to_owned()),
                         symbol: ".LANCHOR1".to_owned(),
                     }),
@@ -887,6 +898,9 @@ mod tests {
     #[test]
     fn memory_object_location_preserves_biased_byte_index_into_relocated_global() {
         let base = SymbolicValue::SymbolAddress {
+            reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                reason: "synthetic fixture".to_owned(),
+            },
             member: Some("table.o".to_owned()),
             symbol: ".LANCHOR2".to_owned(),
             hi_addend: 0,
@@ -901,6 +915,9 @@ mod tests {
             Some(MemoryObjectLocation {
                 root: MemoryObjectRoot::Indexed {
                     root: std::sync::Arc::new(MemoryObjectRoot::RelocatedSymbol {
+                        reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                            reason: "synthetic fixture".to_owned()
+                        },
                         member: Some("table.o".to_owned()),
                         symbol: ".LANCHOR2".to_owned(),
                     }),
@@ -915,6 +932,9 @@ mod tests {
     #[test]
     fn memory_object_location_recovers_completed_global_relocations() {
         let address = SymbolicValue::SymbolAddress {
+            reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                reason: "synthetic fixture".to_owned(),
+            },
             member: Some("state.o".to_owned()),
             symbol: "phy_state".to_owned(),
             hi_addend: 4,
@@ -925,6 +945,9 @@ mod tests {
             address.memory_object_location(),
             Some(MemoryObjectLocation {
                 root: MemoryObjectRoot::RelocatedSymbol {
+                    reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                        reason: "synthetic fixture".to_owned()
+                    },
                     member: Some("state.o".to_owned()),
                     symbol: "phy_state".to_owned(),
                 },
@@ -940,6 +963,9 @@ mod tests {
             3,
             MemoryObjectLocation {
                 root: MemoryObjectRoot::RelocatedSymbol {
+                    reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                        reason: "synthetic fixture".to_owned(),
+                    },
                     member: Some("globals.o".to_owned()),
                     symbol: "g_state".to_owned(),
                 },
@@ -953,6 +979,9 @@ mod tests {
             Some(MemoryObjectLocation {
                 root: MemoryObjectRoot::Dereferenced {
                     pointer: std::sync::Arc::new(MemoryObjectRoot::RelocatedSymbol {
+                        reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                            reason: "synthetic fixture".to_owned()
+                        },
                         member: Some("globals.o".to_owned()),
                         symbol: "g_state".to_owned(),
                     }),

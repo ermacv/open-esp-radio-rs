@@ -4,8 +4,7 @@ use serde::Serialize;
 
 use super::super::*;
 use crate::registers::{
-    RegisterFacts, RegisterPublicationOwnership, classify_register_publication,
-    load_effective_register_model, render_sparse_review_draft,
+    RegisterPublicationOwnership, classify_register_publication, render_sparse_review_draft,
 };
 
 #[derive(Serialize)]
@@ -39,7 +38,7 @@ struct RegisterReviewDraft {
 
 #[derive(Serialize)]
 struct RegisterNeighbor {
-    address: u32,
+    address: u64,
     subject: String,
     width: Option<u32>,
     name: String,
@@ -60,28 +59,17 @@ pub(super) fn run(
     arguments: InspectRegisterArgs,
     session: &crate::application::ProjectSession,
 ) -> Result<bool> {
-    let mut inventory =
-        crate::application::register_inventory::load(&session.project, &session.mmio)?;
-    let address = if let Some(subject) = inventory.registers.get(&arguments.address) {
-        u32::try_from(subject.subject.address).map_err(|_| {
-            crate::Error::invalid(
-                "inspect address exceeds the current 32-bit frontend; use registers list --subject",
-            )
-        })?
-    } else {
-        parse_address(&arguments.address)?
-    };
-    let neighbors = neighbors(&inventory, address);
-    if inventory.registers.contains_key(&arguments.address) {
-        inventory.registers.retain(|id, _| id == &arguments.address);
-    }
-    let mut detail =
-        crate::application::register_detail_from_inventory(&session.project, inventory, address)?
-            .ok_or_else(|| {
-            crate::Error::invalid(format!(
-                "register {address:#010x} is absent from all configured inventory sources"
-            ))
-        })?;
+    let inventory = session.register_query()?.snapshot.inventory();
+    let selector: crate::RegisterSelector =
+        arguments.address.parse().map_err(crate::Error::invalid)?;
+    let selected = inventory.resolve_selector(&selector);
+    let neighbors = neighbors(inventory, &selected);
+    let mut detail = session.register_detail(&selector)?.ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "register selector {:?} is absent from all configured inventory sources",
+            arguments.address
+        ))
+    })?;
     fn optional<T>(
         result: Result<Option<T>>,
         scope: &str,
@@ -118,7 +106,7 @@ pub(super) fn run(
         reviewed_assertions,
         review_draft,
         conclusion: conclusion(&detail),
-        schema_version: 8,
+        schema_version: 10,
         command: "inspect register",
         register: detail,
     };
@@ -130,31 +118,14 @@ fn reviewed_assertions(
     session: &crate::application::ProjectSession,
     detail: &crate::RegisterDetailSummary,
 ) -> Result<Option<RegisterReviewedAssertions>> {
-    let Some(paths) = session.project.registers.as_ref() else {
+    let Some(subject) = detail.semantic_subject()? else {
         return Ok(None);
     };
-    let Some(width) = detail.width else {
-        return Ok(None);
-    };
-    let model = load_effective_register_model(paths)?;
-    let subject = open_radio_vendor_contracts::SemanticEntityId::register(
-        model.chip(),
-        model.address_space(),
-        u64::from(detail.address),
-        u32::from(width),
-    )
-    .map_err(|error| crate::Error::invalid(error.to_string()))?;
-    let knowledge =
-        open_radio_vendor_review::ReviewKnowledge::load_all(&session.project.reviewed_knowledge)
-            .and_then(|knowledge| knowledge.select_for(&session.project.review_context))
-            .map_err(|error| {
-                crate::Error::invalid(format!(
-                    "cannot inspect reviewed knowledge for register: {error}"
-                ))
-            })?;
-    let assertions = knowledge
-        .assertions()
-        .values()
+    let assertions = session
+        .register_query()?
+        .publication
+        .assertions()?
+        .iter()
         .filter(|assertion| assertion.subject == subject)
         .cloned()
         .collect();
@@ -175,26 +146,35 @@ fn review_draft(
     let Some(destination) = session.project.reviewed_knowledge_default.as_ref() else {
         return Ok(None);
     };
+    if detail.semantic_subject()?.is_none() {
+        return Ok(None);
+    };
+    let publication = &session.register_query()?.publication;
+    let model = publication.model()?;
+    let location = &detail.subjects[0].subject;
+    if location.chip != model.chip() || location.address_space != model.address_space() {
+        return Err(crate::Error::invalid(
+            "review draft model does not describe the selected physical subject",
+        ));
+    }
     let Some(width) = detail.width else {
         return Ok(None);
     };
-    if !paths.facts.is_file() {
+    let Some(facts) = publication.facts()? else {
         return Ok(None);
-    }
-    let facts = RegisterFacts::load(&paths.facts)?;
+    };
     let Some(fact) = facts
         .registers
         .iter()
-        .find(|fact| fact.address == detail.address && fact.width == width)
+        .find(|fact| u64::from(fact.address) == detail.address && u32::from(fact.width) == width)
     else {
         return Ok(None);
     };
     let ownership =
-        classify_register_publication(&facts, &paths.owned_ranges, fact.address, fact.width)?;
+        classify_register_publication(facts, &paths.owned_ranges, fact.address, fact.width)?;
     if !may_render_review_draft(detail.review_status, Some(ownership)) {
         return Ok(None);
     }
-    let model = load_effective_register_model(paths)?;
     let finding_id = format!("register-{:#010x}-{}", fact.address, fact.width);
     let context = session.context();
     Ok(Some(RegisterReviewDraft {
@@ -238,21 +218,13 @@ fn recording_guide(
     project: &ProjectSpec,
     detail: &crate::RegisterDetailSummary,
 ) -> Result<Option<RegisterRecordingGuide>> {
-    let Some(paths) = project.registers.as_ref() else {
+    let Some(subject) = detail.semantic_subject()? else {
         return Ok(None);
     };
-    let Some(width) = detail.width else {
-        return Ok(None);
-    };
-    let model = crate::registers::load_effective_register_model(paths)?;
+    let width = detail.width.expect("semantic subject has known width");
+    let location = &detail.subjects[0].subject;
     Ok(Some(RegisterRecordingGuide {
-        subject: open_radio_vendor_contracts::SemanticEntityId::register(
-            model.chip(),
-            model.address_space(),
-            u64::from(detail.address),
-            u32::from(width),
-        )
-        .map_err(|error| crate::Error::invalid(error.to_string()))?,
+        subject,
         reviewed_knowledge_destination: project
             .reviewed_knowledge_default
             .as_ref()
@@ -271,34 +243,34 @@ fn recording_guide(
         ],
         field_subject_template: format!(
             "register-field:{}/{}/{:#x}/{width}/<offset>/<width>",
-            model.chip(),
-            model.address_space(),
-            detail.address
+            location.chip, location.address_space, detail.address
         ),
         evidence_rule: "Add an assertion only after manual review and link it to durable evidence; generated reads, writes, masks, names and neighboring addresses are candidates, not hardware truth.",
         reuse_rule: "Keep a blob-specific conclusion in a project reviewed-knowledge pack; promote it to the chip baseline only when independently reviewed and reusable across investigations.",
     }))
 }
 
-fn parse_address(value: &str) -> Result<u32> {
-    value
-        .strip_prefix("0x")
-        .map_or_else(|| value.parse(), |digits| u32::from_str_radix(digits, 16))
-        .map_err(|_| crate::Error::invalid(format!("invalid MMIO address {value:?}")))
-}
-
-fn neighbors(inventory: &crate::RegisterInventory, address: u32) -> Vec<RegisterNeighbor> {
+fn neighbors(
+    inventory: &crate::RegisterInventory,
+    selected: &[&crate::InventoryRegister],
+) -> Vec<RegisterNeighbor> {
     inventory
         .registers
         .values()
-        .filter(|register| register.subject.address.abs_diff(u64::from(address)) <= 0x10)
-        .filter_map(|register| {
-            Some(RegisterNeighbor {
-                address: u32::try_from(register.subject.address).ok()?,
-                subject: register.id.clone(),
-                width: register.width(),
-                name: register.label(),
+        .filter(|register| {
+            selected.iter().any(|selected| {
+                register.subject.chip == selected.subject.chip
+                    && register.subject.address_space == selected.subject.address_space
+                    && register.subject.route == selected.subject.route
+                    && register.subject.bank == selected.subject.bank
+                    && register.subject.address.abs_diff(selected.subject.address) <= 0x10
             })
+        })
+        .map(|register| RegisterNeighbor {
+            address: register.subject.address,
+            subject: register.id.clone(),
+            width: register.width(),
+            name: register.label(),
         })
         .collect()
 }
@@ -317,6 +289,9 @@ fn conclusion(detail: &crate::RegisterDetailSummary) -> String {
         crate::RegisterReviewState::Unreviewed if detail.writes == 0 && detail.reads > 0 => {
             "Only read evidence is known. The hardware meaning and fields are not proven; do not assign a semantic SVD name from address adjacency alone.".to_owned()
         }
+        crate::RegisterReviewState::Unreviewed if detail.writes == 0 && detail.reads == 0 => {
+            "The subject has no observed access sites in this query. Its declarations, hints and unknown properties remain available; hardware behavior is not established by their presence.".to_owned()
+        }
         crate::RegisterReviewState::Unreviewed => {
             "The address has operational evidence but no reviewed identity. Review its write patterns and call paths before publishing it.".to_owned()
         }
@@ -327,14 +302,19 @@ fn render_human(report: &RegisterInvestigationReport) {
     let detail = &report.register;
     outputln!("{}", crate::cli::output::heading("Register"));
     outputln!("Address:      {:#010x}", detail.address);
-    outputln!(
-        "Name:         {} ({})",
-        detail.name,
-        detail.name_source.label()
-    );
+    outputln!("Name:         {}", detail.name);
     outputln!(
         "Location:     {} / {}",
-        detail.range.as_deref().unwrap_or("unknown range"),
+        if detail.regions.is_empty() {
+            "unknown range".to_owned()
+        } else {
+            detail
+                .regions
+                .iter()
+                .map(|region| region.name.as_str())
+                .collect::<Vec<_>>()
+                .join(" | ")
+        },
         detail.width.map_or_else(
             || "unknown width".to_owned(),
             |width| format!("{width}-bit")
@@ -362,6 +342,7 @@ fn render_human(report: &RegisterInvestigationReport) {
     );
     for subject in &detail.subjects {
         outputln!("Subject: {}", subject.id);
+        outputln!("  names={:?}", subject.names);
         outputln!(
             "  physical-width={:?} access-widths={:?} semantics={:?}",
             subject.width(),

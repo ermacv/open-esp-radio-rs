@@ -73,7 +73,7 @@ impl RegisterFacts {
         })
     }
 
-    fn parse(input: &str) -> Result<Self> {
+    pub(crate) fn parse(input: &str) -> Result<Self> {
         let document = crate::artifacts::parse_mmio_facts(input)?;
         let artifacts = document
             .artifacts

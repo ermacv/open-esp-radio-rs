@@ -20,7 +20,7 @@ use open_radio_vendor_contracts::ArtifactIdentity;
 
 use crate::{Result, artifact, artifact_occurrence};
 
-pub(crate) const SYMBOL_CORRESPONDENCE_SCHEMA: u32 = 9;
+pub(crate) const SYMBOL_CORRESPONDENCE_SCHEMA: u32 = 11;
 const MINIMUM_COMMON_OBFUSCATION_TOKENS: usize = 64;
 const MINIMUM_OBFUSCATION_TOKEN_RETENTION_PARTS_PER_MILLION: u32 = 900_000;
 const MINIMUM_MEMBER_ORDER_FUNCTION_SUPPORT: usize = 64;
@@ -105,6 +105,7 @@ pub(crate) struct SymbolMemberMappingEvidence {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct DataObjectCorrespondenceObject {
+    pub(crate) data_identity: artifact::DataIdentity,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) member: Option<String>,
     pub(crate) section: String,
@@ -1576,16 +1577,9 @@ fn data_object_document(
     object: &artifact::ArtifactDataObjectDefinition,
     artifact: &ArtifactIdentity,
 ) -> Result<DataObjectCorrespondenceObject> {
-    let occurrence = artifact_occurrence::memory_object_occurrence(
-        artifact,
-        object.member.as_deref(),
-        &object.section,
-        &object.name,
-        object.object_offset,
-        object.address,
-        object.size,
-    )?;
+    let occurrence = artifact_occurrence::memory_object_occurrence(artifact, &object.identity)?;
     Ok(DataObjectCorrespondenceObject {
+        data_identity: object.identity.clone(),
         member: object.member.clone(),
         section: object.section.clone(),
         symbol: object.name.clone(),
@@ -1601,14 +1595,7 @@ fn data_object_document(
 }
 
 fn data_object_locator(object: &artifact::ArtifactDataObjectDefinition) -> String {
-    artifact_occurrence::memory_object_locator(
-        object.member.as_deref(),
-        &object.section,
-        &object.name,
-        object.object_offset,
-        object.address,
-        object.size,
-    )
+    artifact_occurrence::memory_object_locator(&object.identity)
 }
 
 fn normalized_data_fingerprint(object: &artifact::ArtifactDataObjectDefinition) -> String {
@@ -1991,12 +1978,7 @@ fn function_document(
     symbol: &artifact::ArtifactSymbolDefinition,
     artifact: &ArtifactIdentity,
 ) -> Result<SymbolCorrespondenceFunction> {
-    let occurrence = artifact_occurrence::function_occurrence(
-        artifact,
-        symbol.member.as_deref(),
-        &symbol.name,
-        symbol.address,
-    )?;
+    let occurrence = artifact_occurrence::function_occurrence(artifact, &symbol.identity)?;
     Ok(SymbolCorrespondenceFunction {
         member: symbol.member.clone(),
         symbol: symbol.name.clone(),
@@ -2008,7 +1990,7 @@ fn function_document(
 }
 
 fn function_locator(symbol: &artifact::ArtifactSymbolDefinition) -> String {
-    artifact_occurrence::function_locator(symbol.member.as_deref(), &symbol.name, symbol.address)
+    artifact_occurrence::function_locator(&symbol.identity)
 }
 
 fn normalized_body_fingerprint(symbol: &artifact::ArtifactSymbolDefinition) -> String {
@@ -2061,6 +2043,12 @@ mod tests {
 
     fn symbol(name: &str, bytes: &[u8], target: &str) -> artifact::ArtifactSymbolDefinition {
         artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(Some("radio.o".to_owned())),
+                name,
+                0,
+            ),
             member: Some("radio.o".to_owned()),
             name: name.to_owned(),
             address: 0,
@@ -2068,6 +2056,9 @@ mod tests {
             addresses_resolved: false,
             memory_regions: Arc::from([]),
             relocations: vec![artifact::SymbolRelocation {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 address: 4,
                 kind: artifact::RelocationKind::Call,
                 symbol: target.to_owned(),
@@ -2107,6 +2098,12 @@ mod tests {
         let mut current_root = symbol("r_sym_root", &[1, 2, 3, 4, 5, 6], "r_sym_leaf_b");
         current_root.member = Some("current-root.o".to_owned());
         let leaf = |member: &str, name: &str| artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(Some(member.to_owned())),
+                name,
+                0,
+            ),
             member: Some(member.to_owned()),
             name: name.to_owned(),
             address: 0,
@@ -2181,6 +2178,12 @@ mod tests {
     #[test]
     fn a_unique_mapped_caller_site_identifies_a_changed_callee() {
         let leaf = |member: &str, name: &str, bytes: &[u8]| artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(Some(member.to_owned())),
+                name,
+                0,
+            ),
             member: Some(member.to_owned()),
             name: name.to_owned(),
             address: 0,
@@ -2239,6 +2242,12 @@ mod tests {
     #[test]
     fn mapped_caller_sites_never_merge_two_source_functions() {
         let leaf = |name: &str| artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(Some("leaves.o".to_owned())),
+                name,
+                0,
+            ),
             member: Some("leaves.o".to_owned()),
             name: name.to_owned(),
             address: 0,
@@ -2305,6 +2314,12 @@ mod tests {
     #[test]
     fn mapped_callees_produce_review_only_candidates_for_changed_callers() {
         let leaf = |name: &str| artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(Some("leaf.o".to_owned())),
+                name,
+                0,
+            ),
             member: Some("leaf.o".to_owned()),
             name: name.to_owned(),
             address: 0,
@@ -2362,6 +2377,12 @@ mod tests {
     #[test]
     fn review_candidates_reject_additional_mapped_callees() {
         let leaf = |name: &str| artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(Some("leaf.o".to_owned())),
+                name,
+                0,
+            ),
             member: Some("leaf.o".to_owned()),
             name: name.to_owned(),
             address: 0,
@@ -2372,6 +2393,9 @@ mod tests {
         };
         let mut changed_caller = symbol("changed_caller", &[1, 2, 3, 4], "named_leaf");
         changed_caller.relocations.push(artifact::SymbolRelocation {
+            reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                reason: "synthetic fixture".to_owned(),
+            },
             address: 8,
             kind: artifact::RelocationKind::Call,
             symbol: "unmapped_leaf".to_owned(),
@@ -2381,6 +2405,9 @@ mod tests {
         invalid_candidate
             .relocations
             .push(artifact::SymbolRelocation {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 address: 8,
                 kind: artifact::RelocationKind::Call,
                 symbol: "current_other_leaf".to_owned(),
@@ -2433,6 +2460,12 @@ mod tests {
     #[test]
     fn review_candidate_lists_fail_closed_above_the_bound() {
         let leaf = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(Some("leaf.o".to_owned())),
+                "named_leaf",
+                0,
+            ),
             member: Some("leaf.o".to_owned()),
             name: "named_leaf".to_owned(),
             address: 0,
@@ -2491,6 +2524,12 @@ mod tests {
     #[test]
     fn one_remaining_function_in_a_proven_member_stays_review_only() {
         let function = |member: &str, name: &str| artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(Some(member.to_owned())),
+                name,
+                0,
+            ),
             member: Some(member.to_owned()),
             name: name.to_owned(),
             address: 0,
@@ -2547,6 +2586,12 @@ mod tests {
     #[test]
     fn residual_dictionary_removes_only_unique_one_to_one_matches() {
         let function = |name: &str| artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(Some("radio.o".to_owned())),
+                name,
+                0,
+            ),
             member: Some("radio.o".to_owned()),
             name: name.to_owned(),
             address: 0,
@@ -2773,6 +2818,10 @@ mod tests {
     #[test]
     fn proven_obfuscation_epoch_maps_a_changed_static_object() {
         let object = |name: &str, initializer: &[u8]| artifact::ArtifactDataObjectDefinition {
+            identity: artifact::DataIdentity::Synthetic {
+                namespace: "data-correspondence-test".to_owned(),
+                key: name.to_owned(),
+            },
             member: Some("radio.o".to_owned()),
             section: ".data".to_owned(),
             name: name.to_owned(),
@@ -2838,6 +2887,12 @@ mod tests {
         let identity = |source: &str, byte| artifact_identity(source, byte);
         let correspondence = |index: u8, from_member: &str, to_member: &str| {
             let function = |member: &str, name: &str| artifact::ArtifactSymbolDefinition {
+                identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                    module_path!(),
+                    &(Some(member.to_owned())),
+                    name,
+                    0,
+                ),
                 member: Some(member.to_owned()),
                 name: name.to_owned(),
                 address: 0,
@@ -2874,6 +2929,10 @@ mod tests {
     #[test]
     fn mapped_function_reference_resolves_identical_static_data() {
         let object = |name: &str, offset: u64| artifact::ArtifactDataObjectDefinition {
+            identity: artifact::DataIdentity::Synthetic {
+                namespace: "data-correspondence-test".to_owned(),
+                key: name.to_owned(),
+            },
             member: Some("radio.o".to_owned()),
             section: ".bss".to_owned(),
             name: name.to_owned(),
@@ -2933,8 +2992,74 @@ mod tests {
     }
 
     #[test]
+    fn repeated_data_occurrences_remain_ambiguous_correspondence_candidates() {
+        let from_identity = artifact_identity("old", '1');
+        let to_identity = artifact_identity("new", '2');
+        let object = |digest: char, ordinal: u64| artifact::ArtifactDataObjectDefinition {
+            identity: artifact::DataIdentity::Symbol {
+                artifact_sha256: digest.to_string().repeat(64),
+                location: open_radio_vendor_contracts::SymbolLocation {
+                    object: open_radio_vendor_contracts::ObjectLocation::ArchiveMember { ordinal },
+                    table: artifact::ArtifactSymbolTable::Static,
+                    index: 1,
+                },
+            },
+            member: Some("same.o".to_owned()),
+            section: ".data".to_owned(),
+            name: "state".to_owned(),
+            aliases: Vec::new(),
+            address: None,
+            object_offset: 0,
+            size: 4,
+            writable: true,
+            initialized: true,
+            synthetic_from_anchor: false,
+            exported: false,
+            initializer: vec![1, 2, 3, 4],
+            relocations: Vec::new(),
+        };
+        let from = [object('1', 0), object('1', 1)];
+        let to = [object('2', 0), object('2', 1)];
+        let (summary, correspondences) = correlate_data_objects(
+            &from,
+            &to,
+            &[],
+            &[],
+            &[],
+            &from_identity,
+            &to_identity,
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(summary.ambiguous, 2);
+        assert_eq!(summary.unique, 0);
+        assert_ne!(
+            correspondences[0].from.occurrence,
+            correspondences[1].from.occurrence
+        );
+        for correspondence in correspondences {
+            assert_eq!(correspondence.candidates.len(), 2);
+            assert_ne!(
+                correspondence.candidates[0].data_identity,
+                correspondence.candidates[1].data_identity
+            );
+            assert_ne!(
+                correspondence.candidates[0].occurrence,
+                correspondence.candidates[1].occurrence
+            );
+        }
+    }
+
+    #[test]
     fn mapped_data_relocation_site_identifies_a_changed_function() {
         let function = |name: &str, bytes: &[u8]| artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(Some("radio.o".to_owned())),
+                name,
+                0,
+            ),
             member: Some("radio.o".to_owned()),
             name: name.to_owned(),
             address: 0,
@@ -2944,6 +3069,10 @@ mod tests {
             relocations: Vec::new(),
         };
         let object = |name: &str, target: &str| artifact::ArtifactDataObjectDefinition {
+            identity: artifact::DataIdentity::Synthetic {
+                namespace: "data-correspondence-test".to_owned(),
+                key: name.to_owned(),
+            },
             member: Some("radio.o".to_owned()),
             section: format!(".rodata.{name}"),
             name: name.to_owned(),
@@ -3011,6 +3140,10 @@ mod tests {
     #[test]
     fn proven_member_correspondence_resolves_identical_static_data_inside_one_module() {
         let object = |member: &str, name: &str| artifact::ArtifactDataObjectDefinition {
+            identity: artifact::DataIdentity::Synthetic {
+                namespace: "data-correspondence-test".to_owned(),
+                key: name.to_owned(),
+            },
             member: Some(member.to_owned()),
             section: format!(".bss.{name}"),
             name: name.to_owned(),
@@ -3134,6 +3267,10 @@ mod tests {
     #[test]
     fn data_pin_candidates_exclude_compiler_and_obfuscated_names() {
         let object = |symbol: &str, occurrence: &str| DataObjectCorrespondenceObject {
+            data_identity: artifact::DataIdentity::Synthetic {
+                namespace: "data-pin-test".to_owned(),
+                key: format!("{occurrence}/{symbol}"),
+            },
             member: Some("radio.o".to_owned()),
             section: ".bss".to_owned(),
             symbol: symbol.to_owned(),

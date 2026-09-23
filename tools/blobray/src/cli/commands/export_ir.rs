@@ -33,6 +33,12 @@ pub(super) fn run(
             companions: Vec::new(),
         })
         .collect::<Vec<_>>();
+    let captures = crate::source_set::CapturedSourceSet::capture(
+        artifacts
+            .iter()
+            .map(|artifact| artifact.path.clone())
+            .chain(arguments.companion.iter().cloned()),
+    );
     let effective_code = project
         .map(crate::analysis::EffectiveCodeCatalog::load)
         .transpose()?;
@@ -65,12 +71,17 @@ pub(super) fn run(
         .unwrap_or_default();
     if let Some(catalog) = &effective_code {
         for artifact in &mut artifacts {
-            artifact.reviewed_code = catalog.reviewed_ranges(&artifact.source, &artifact.path)?;
+            artifact.reviewed_code = catalog.reviewed_ranges(
+                &artifact.source,
+                &artifact.path,
+                captures.artifact(&artifact.path)?,
+            )?;
         }
     }
     let inventories = Vec::new();
     let (entry_contract, report) = analyze(
         crate::linked_ir_export::LinkedIrAnalysisRequest {
+            captures: &captures,
             artifacts: &artifacts,
             inventories: &inventories,
             companions: &arguments.companion,
@@ -100,6 +111,7 @@ pub(super) fn run(
         &arguments.symbol_prefix,
         entry_contract,
         crate::artifacts::LinkedIrPublication {
+            captures: &captures,
             report: &report,
             reviewed_bindings: &reviewed_bindings,
         },

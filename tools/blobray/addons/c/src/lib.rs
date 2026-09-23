@@ -576,6 +576,12 @@ mod tests {
     #[test]
     fn body_bytes_do_not_select_or_change_the_standard_contract() {
         let symbol = |bytes| ArtifactSymbolDefinition {
+            identity: ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "memcpy",
+                0x1000,
+            ),
             member: None,
             name: "memcpy".to_owned(),
             address: 0x1000,
@@ -593,6 +599,12 @@ mod tests {
     #[test]
     fn pure_runtime_intrinsics_have_exact_symbolic_results() {
         let symbol = ArtifactSymbolDefinition {
+            identity: ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "__popcountsi2",
+                0x1000,
+            ),
             member: None,
             name: "__popcountsi2".to_owned(),
             address: 0x1000,

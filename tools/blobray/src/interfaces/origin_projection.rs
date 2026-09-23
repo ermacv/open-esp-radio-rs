@@ -10,32 +10,17 @@ use super::{
 use crate::artifacts::LinkUnitOriginFact;
 use crate::{StructuralCallSite, StructuralProjectedRelocation};
 
-type FunctionCallKey = (usize, Option<String>, String, u32);
+type FunctionCallKey = (usize, crate::artifact::CodeIdentity);
 
 fn function_call_key(call: &InterfaceCallFact) -> FunctionCallKey {
-    (
-        call.artifact,
-        call.member.clone(),
-        call.function.clone(),
-        call.function_address,
-    )
-}
-
-fn origin_call_key(
-    artifact: usize,
-    member: &Option<String>,
-    function: &str,
-    address: u32,
-) -> FunctionCallKey {
-    (artifact, member.clone(), function.to_owned(), address)
+    (call.artifact, call.owner.clone())
 }
 
 /// One reviewed slot binding projected onto an exact call instruction in the
 /// authoritative link unit.
 #[derive(Clone, Debug)]
 pub(crate) struct ProjectedInterfaceCall<'a> {
-    pub(crate) member: Option<String>,
-    pub(crate) function: String,
+    pub(crate) owner: crate::artifact::CodeIdentity,
     pub(crate) site: u32,
     pub(crate) slot_load_site: Option<u32>,
     pub(crate) tail: bool,
@@ -45,7 +30,7 @@ pub(crate) struct ProjectedInterfaceCall<'a> {
 impl InterfaceWorkspace {
     /// Project reviewed archive evidence onto `source` in a linked ELF.
     ///
-    /// The projection requires a unique name-and-kind archive origin from the
+    /// The projection requires a physical archive and linked occurrences from the
     /// symbol inventory and an identical decoded indirect-target shape.  Call
     /// addresses are deliberately not compared by relative offset because
     /// RISC-V linker relaxation can change instruction widths and positions.
@@ -98,25 +83,8 @@ impl InterfaceWorkspace {
             else {
                 continue;
             };
-            let Ok(linked_address) = u32::try_from(origin.linked_address) else {
-                continue;
-            };
-            let Ok(archive_address) = u32::try_from(origin.origin_address) else {
-                continue;
-            };
-
-            let linked_key = origin_call_key(
-                linked_artifact,
-                &origin.linked_member,
-                &origin.symbol,
-                linked_address,
-            );
-            let archive_key = origin_call_key(
-                archive_artifact,
-                &origin.origin_member,
-                &origin.symbol,
-                archive_address,
-            );
+            let linked_key = (linked_artifact, origin.linked_identity());
+            let archive_key = (archive_artifact, origin.origin_identity());
             let Some(linked_calls) = calls_by_function.get(&linked_key) else {
                 continue;
             };
@@ -161,8 +129,7 @@ impl InterfaceWorkspace {
                 }
                 let binding = matching_bindings[0];
                 projected.push(ProjectedInterfaceCall {
-                    member: linked_call.member.clone(),
-                    function: linked_call.function.clone(),
+                    owner: origin.linked_identity(),
                     site: linked_call.site,
                     slot_load_site: linked_call.slot_load_site,
                     tail: linked_call.kind == "tail-jump",
@@ -171,16 +138,14 @@ impl InterfaceWorkspace {
             }
         }
         projected.sort_by(|left, right| {
-            (&left.member, &left.function, left.site, &left.binding.id).cmp(&(
-                &right.member,
-                &right.function,
+            (&left.owner, left.site, &left.binding.id).cmp(&(
+                &right.owner,
                 right.site,
                 &right.binding.id,
             ))
         });
         projected.dedup_by(|left, right| {
-            left.member == right.member
-                && left.function == right.function
+            left.owner == right.owner
                 && left.site == right.site
                 && left.binding.id == right.binding.id
         });
@@ -207,12 +172,16 @@ fn relocated_direct_target_matches(
     else {
         return false;
     };
-    if archive.container_depth != 0
+    if archive.owner != origin.origin_identity()
+        || linked.owner != origin.linked_identity()
+        || archive.container_depth != 0
         || linked.container_depth != 0
         || archive.loads.len() != 1
         || linked.loads.len() != 1
         || archive.kind != linked.kind
         || archive.jalr_offset != linked.jalr_offset
+        || archive.target_offset != linked.target_offset
+        || archive.link_register != linked.link_register
         || archive.loads[0].width != linked.loads[0].width
         || archive.loads[0].selector != linked.loads[0].selector
     {
@@ -223,8 +192,7 @@ fn relocated_direct_target_matches(
     };
     projected_relocations
         .get(&StructuralCallSite::from_identity(
-            linked.member.clone(),
-            linked.function.clone(),
+            origin.linked_identity(),
             load_site,
         ))
         .is_some_and(|relocations| {
@@ -247,7 +215,11 @@ fn archive_call_matches_binding(
     let Some(slot) = call.loads.last() else {
         return false;
     };
-    if slot.offset != binding.offset || slot.width != binding.width || slot.selector.is_some() {
+    if call.target_offset.wrapping_add(call.jalr_offset) != 0
+        || slot.offset != binding.offset
+        || slot.width != binding.width
+        || slot.selector.is_some()
+    {
         return false;
     }
     let call_container = &call.loads[..call.container_depth];
@@ -256,7 +228,10 @@ fn archive_call_matches_binding(
             .iter()
             .skip(1)
             .zip(contract.container_path.iter().skip(1))
-            .all(|(call, contract)| call == contract)
+            .all(|(call, contract)| {
+                (call.offset, call.width, call.selector)
+                    == (contract.offset, contract.width, contract.selector)
+            })
     {
         return false;
     }
@@ -273,9 +248,10 @@ fn archive_call_matches_binding(
                 symbol: call_symbol,
                 addend: call_addend,
                 addressing: call_addressing,
+                ..
             },
         ) => {
-            call_container == contract.container_path
+            crate::interfaces::facts::same_step_shape(call_container, &contract.container_path)
                 && member == call_member
                 && symbol == call_symbol
                 && addend == call_addend
@@ -285,8 +261,12 @@ fn archive_call_matches_binding(
             InterfaceRootSelector::FunctionArgument { argument },
             super::InterfaceFactRoot::FunctionArgument {
                 argument: call_argument,
+                ..
             },
-        ) => call_container == contract.container_path && argument == call_argument,
+        ) => {
+            crate::interfaces::facts::same_step_shape(call_container, &contract.container_path)
+                && argument == call_argument
+        }
         (InterfaceRootSelector::AbsoluteAddress { address }, _) => {
             let Some(first_contract_step) = contract.container_path.first() else {
                 return false;
@@ -318,10 +298,13 @@ fn archive_call_matches_binding(
                                         && matches!(
                                             table.root,
                                             super::InterfaceFactRoot::AbsoluteAddress {
-                                                address: table_address
+                                                address: table_address, ..
                                             } if table_address == *address
                                         )
-                                        && table.container_path == contract.container_path
+                                        && crate::interfaces::facts::same_step_shape(
+                                            &table.container_path,
+                                            &contract.container_path,
+                                        )
                                 }))
                 })
                 .count()
@@ -333,6 +316,8 @@ fn archive_call_matches_binding(
 
 fn same_indirect_target_shape(left: &InterfaceCallFact, right: &InterfaceCallFact) -> bool {
     left.kind == right.kind
+        && left.target_offset == right.target_offset
+        && left.link_register == right.link_register
         && left.jalr_offset == right.jalr_offset
         && left.container_depth == right.container_depth
         && left.loads.len() == right.loads.len()
@@ -358,6 +343,20 @@ mod tests {
         site: u32,
     ) -> InterfaceCallFact {
         InterfaceCallFact {
+            owner: crate::artifact::CodeIdentity::Symbol {
+                artifact_sha256: if member.is_some() { "11" } else { "22" }.repeat(32),
+                location: crate::SymbolLocation {
+                    object: if member.is_some() {
+                        crate::ObjectLocation::ArchiveMember { ordinal: 0 }
+                    } else {
+                        crate::ObjectLocation::Standalone
+                    },
+                    table: crate::ArtifactSymbolTable::Static,
+                    index: 1,
+                },
+            },
+            link_register: 1,
+            target_offset: 0,
             artifact,
             member: member.map(str::to_owned),
             function: "post_event".to_owned(),
@@ -366,6 +365,9 @@ mod tests {
             slot_load_site: Some(site - 2),
             kind: "call".to_owned(),
             root: InterfaceFactRoot::RelocatedSymbol {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "fixture lacks captured relocation".into(),
+                },
                 member: member.map(str::to_owned),
                 symbol: "g_services".to_owned(),
                 addend: 0,
@@ -373,11 +375,13 @@ mod tests {
             },
             loads: vec![
                 InterfaceFactStep {
+                    site: None,
                     offset: 0,
                     width: 32,
                     selector: None,
                 },
                 InterfaceFactStep {
+                    site: None,
                     offset: 16,
                     width: 32,
                     selector: None,
@@ -391,6 +395,11 @@ mod tests {
                 symbols: vec!["g_services".to_owned()],
                 resolutions: vec!["project-associated".to_owned()],
                 candidates: vec![InterfaceSymbolLocationFact {
+                    location: crate::SymbolLocation {
+                        object: crate::ObjectLocation::Standalone,
+                        table: crate::ArtifactSymbolTable::Static,
+                        index: 1,
+                    },
                     artifact: 0,
                     member: None,
                     address: 0x1f00,
@@ -433,6 +442,7 @@ mod tests {
             source: "rom".to_owned(),
             root: InterfaceRootSelector::AbsoluteAddress { address: 0x2000 },
             container_path: vec![InterfaceFactStep {
+                site: None,
                 offset: -0x100,
                 width: 32,
                 selector: None,
@@ -449,6 +459,10 @@ mod tests {
 
     fn facts() -> InterfaceFacts {
         InterfaceFacts {
+            decode_blockers: Vec::new(),
+            analysis_failures: Vec::new(),
+            limits: Default::default(),
+            gaps: Vec::new(),
             artifacts: vec![InterfaceFactArtifact {
                 index: 0,
                 sources: BTreeSet::from(["rom".to_owned()]),
@@ -495,8 +509,14 @@ mod tests {
 
         facts.tables.push(InterfaceTableFact {
             artifact: 0,
-            root: InterfaceFactRoot::AbsoluteAddress { address: 0x2000 },
+            root: InterfaceFactRoot::AbsoluteAddress {
+                address: 0x2000,
+                data_address: open_radio_vendor_contracts::DataAddressResolution::Unknown {
+                    reason: open_radio_vendor_contracts::DataAddressGap::NotAnalyzed,
+                },
+            },
             container_path: vec![InterfaceFactStep {
+                site: None,
                 offset: -0x100,
                 width: 32,
                 selector: None,
@@ -523,6 +543,7 @@ mod tests {
             addressing: "absolute".to_owned(),
         };
         contract.container_path = vec![InterfaceFactStep {
+            site: None,
             offset: 0,
             width: 32,
             selector: None,
@@ -556,6 +577,11 @@ mod tests {
         call.root_linkage
             .candidates
             .push(InterfaceSymbolLocationFact {
+                location: crate::SymbolLocation {
+                    object: crate::ObjectLocation::Standalone,
+                    table: crate::ArtifactSymbolTable::Static,
+                    index: 1,
+                },
                 artifact: 1,
                 member: None,
                 address: 0x3000,
@@ -573,6 +599,51 @@ mod tests {
             &binding(),
             &contract(),
             &facts,
+        ));
+    }
+
+    #[test]
+    fn reviewed_nested_shape_keeps_sites_separate_and_rejects_shifted_target() {
+        let mut observed = call(1, Some("event.o"), 0, 0x40);
+        let mut reviewed = contract();
+        reviewed.root = InterfaceRootSelector::RelocatedSymbol {
+            member: Some("event.o".into()),
+            symbol: "g_services".into(),
+            addend: 0,
+            addressing: "absolute".into(),
+        };
+        let intermediate = InterfaceFactStep {
+            site: Some(0x20),
+            offset: 4,
+            width: 32,
+            selector: None,
+        };
+        observed.loads.insert(1, intermediate);
+        observed.container_depth = 2;
+        reviewed.container_path[0].offset = 0;
+        reviewed.container_path.push(InterfaceFactStep {
+            site: None,
+            ..intermediate
+        });
+        assert!(archive_call_matches_binding(
+            &observed,
+            &binding(),
+            &reviewed,
+            &facts()
+        ));
+        observed.target_offset = 4;
+        assert!(!archive_call_matches_binding(
+            &observed,
+            &binding(),
+            &reviewed,
+            &facts()
+        ));
+        observed.jalr_offset = -4;
+        assert!(archive_call_matches_binding(
+            &observed,
+            &binding(),
+            &reviewed,
+            &facts()
         ));
     }
 
@@ -603,9 +674,22 @@ mod tests {
         linked.slot_offset = Some(0x160);
         linked.slot_load_site = Some(0x105c);
         linked.root = InterfaceFactRoot::AbsoluteAddress {
+            data_address: open_radio_vendor_contracts::DataAddressResolution::Unknown {
+                reason: open_radio_vendor_contracts::DataAddressGap::NotAnalyzed,
+            },
             address: 0x1008_8000,
         };
         let origin = LinkUnitOriginFact {
+            linked_location: crate::SymbolLocation {
+                object: crate::ObjectLocation::Standalone,
+                table: crate::ArtifactSymbolTable::Static,
+                index: 1,
+            },
+            origin_location: crate::SymbolLocation {
+                object: crate::ObjectLocation::ArchiveMember { ordinal: 0 },
+                table: crate::ArtifactSymbolTable::Static,
+                index: 1,
+            },
             linked_sources: vec!["rom".to_owned()],
             linked_artifact_sha256: "22".repeat(32),
             linked_member: None,
@@ -618,8 +702,11 @@ mod tests {
             origin_address: 0,
         };
         let relocations = BTreeMap::from([(
-            StructuralCallSite::from_identity(None, "post_event".to_owned(), 0x105c),
+            StructuralCallSite::from_identity(origin.linked_identity(), 0x105c),
             vec![StructuralProjectedRelocation {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 origin_member: Some("event.o".to_owned()),
                 origin_symbol: "post_event".to_owned(),
                 origin_offsets: vec![0],

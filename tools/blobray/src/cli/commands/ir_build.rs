@@ -22,7 +22,11 @@ pub(super) fn run(
         return Err(crate::Error::invalid("ir build --jobs accepts 1..=8"));
     }
     let refresh_review_scopes = arguments.profile.is_empty();
+    let captures = crate::source_set::CapturedSourceSet::capture(
+        run_spec.inputs().iter().map(|input| input.path.clone()),
+    );
     let document = build_project_ir(
+        &captures,
         ProjectIrBuildRequest {
             profiles: arguments.profile.into_iter().collect::<BTreeSet<_>>(),
             check: arguments.check,

@@ -22,7 +22,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     fs::write(
         &symbols_path,
         serde_json::to_string(&json!({
-            "schema_version": 6,
+            "schema_version": 7,
             "command": "symbols inventory",
             "linkage_mode": "association-only",
             "linker_resolution_claim": false,
@@ -43,6 +43,8 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
                     "member": null,
                     "object_kind": "relocatable",
                     "name": "caller",
+                    "location": {"object": {"kind": "standalone"}, "table": "static", "index": 1},
+                    "section_index": 1,
                     "address": "0x100",
                     "table": "static",
                     "binding": "global",
@@ -62,6 +64,8 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
                     "member": null,
                     "object_kind": "relocatable",
                     "name": "g_table",
+                    "location": {"object": {"kind": "standalone"}, "table": "static", "index": 2},
+                    "section_index": 2,
                     "address": "0x200",
                     "table": "static",
                     "binding": "global",
@@ -103,8 +107,10 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     fs::write(
         &interfaces_path,
         serde_json::to_string(&json!({
-            "schema_version": 7,
+            "schema_version": 11,
             "command": "interfaces discover",
+            "limits": {"max_state_updates":4096,"max_value_alternatives":64},
+            "gaps": [],
             "analysis_scope": {
                 "architecture": "riscv32",
                 "calling_convention": "riscv-ilp32",
@@ -127,6 +133,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
             }],
             "assignments": [],
             "calls": [{
+                "owner":{"kind":"symbol","artifact_sha256":digest,"location":{"object":{"kind":"standalone"},"table":"static","index":1}},
                 "artifact": 0,
                 "member": null,
                 "function": "caller",
@@ -138,6 +145,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
                     "canonical": "g_table",
                     "root": {
                         "kind": "relocated-symbol",
+                        "reference":{"kind":"captured","artifact_sha256":digest,"location":{"object":{"kind":"standalone"},"table":"static","index":2},"binding":"local-definition"},
                         "canonical": "g_table",
                         "member": null,
                         "symbol": "g_table",
@@ -147,7 +155,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
                     "loads": [],
                     "container_depth": 0,
                     "slot_offset": null,
-                    "jalr_offset": 0
+                    "post_offset": 0, "jalr_offset": 0
                 },
                 "root_linkage": {
                     "mode": "association-only",
@@ -165,6 +173,32 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     )
     .unwrap();
 
+    let mut evidence: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&interfaces_path).unwrap()).unwrap();
+    let gap = crate::interface_discovery::InterfaceAnalysisGap {
+        owner: crate::artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &None,
+            "unmatched_owner",
+            0x200,
+        ),
+        member: None,
+        function: "unmatched_owner".into(),
+        site: 0x210,
+        reason: crate::interface_discovery::InterfaceGapReason::UnresolvedCallTarget,
+        registers: (0..32)
+            .map(
+                |register| crate::interface_discovery::InterfaceRegisterValue {
+                    register,
+                    value: crate::interface_discovery::InterfaceArgumentValue::Unknown,
+                },
+            )
+            .collect(),
+    };
+    evidence["gaps"] = json!([{"artifact":0,"evidence":gap}]);
+    evidence["calls"][0]["arguments"] = json!([{"index":0,"value":{"kind":"alternatives","value":[{"kind":"unknown"},{"kind":"constant","value":42}]}}]);
+    fs::write(&interfaces_path, evidence.to_string()).unwrap();
+    let expected_observations = crate::interfaces::InterfaceFacts::load(&interfaces_path).unwrap();
     let project = ProjectSpec {
         manifest: std::path::PathBuf::from("project.toml"),
         loaded_model_inputs: Default::default(),
@@ -202,6 +236,15 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
         verification: None,
     };
     let document = build(&project).unwrap();
+    assert_eq!(document.schema_version, 7);
+    assert_eq!(
+        document.interface_observations.as_ref(),
+        Some(&expected_observations)
+    );
+    assert_eq!(
+        document.interface_observations.as_ref().unwrap().gaps[0].evidence,
+        gap
+    );
     let caller = document
         .symbols
         .iter()
@@ -230,6 +273,17 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     )
     .unwrap();
     assert_eq!(inspect_report(&navigation_path).unwrap().symbols, 2);
+
+    let mut altered = serde_json::to_value(&document).unwrap();
+    altered["interface_observations"]["calls"][0]["arguments"][0]["value"] =
+        json!({"kind":"unknown"});
+    fs::write(&navigation_path, altered.to_string()).unwrap();
+    assert!(
+        inspect_report(&navigation_path)
+            .unwrap_err()
+            .to_string()
+            .contains("observations disagree")
+    );
 
     let mut stale_schema = serde_json::to_value(&document).unwrap();
     stale_schema["legacy_field"] = json!(true);

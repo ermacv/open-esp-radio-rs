@@ -288,6 +288,7 @@ fn reviewed_object_matches(
                 symbol: left_symbol,
             },
             FunctionMemoryObjectFact::Global {
+                reference: _,
                 member: right_member,
                 symbol: right_symbol,
             },
@@ -581,7 +582,7 @@ fn write_memory_objects(output: &mut String, fact: &FunctionFact) {
 fn function_memory_object_label(object: &super::FunctionMemoryObjectFact) -> String {
     match object {
         super::FunctionMemoryObjectFact::Argument { index } => format!("argument:{index}"),
-        super::FunctionMemoryObjectFact::Global { member, symbol } => format!(
+        super::FunctionMemoryObjectFact::Global { member, symbol, .. } => format!(
             "global:{}::{symbol}",
             member.as_deref().unwrap_or("<linked>")
         ),
@@ -622,7 +623,7 @@ fn write_interface_links(output: &mut String, links: &[&FunctionInterfaceLink]) 
     }
     output.push_str("\n#### Validated interface call sites\n\n");
     output.push_str(
-        "Each row joins a reviewed interface slot to a concrete static call instruction and the argument expressions recovered by generic provenance analysis. When schema-v69 linked IR contains exactly the same caller and site, its factorized CFG guard paths are attached as separate evidence. The reviewed semantic is a catalog claim attached to that slot. This evidence does not establish runtime order, branch feasibility, callee side effects, return values or scheduler/storage behavior.\n\n",
+        "Each row joins a reviewed interface slot to a concrete static call instruction and the argument expressions recovered by generic provenance analysis. When schema-v73 linked IR contains exactly the same caller and site, its factorized CFG guard paths are attached as separate evidence. The reviewed semantic is a catalog claim attached to that slot. This evidence does not establish runtime order, branch feasibility, callee side effects, return values or scheduler/storage behavior.\n\n",
     );
     output.push_str("| Contract/version | Slot | Static site | Caller/kind | Recovered arguments | Linked-IR CFG evidence | ABI | Semantic | Execution model |\n");
     output.push_str("| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
@@ -636,26 +637,32 @@ fn write_interface_links(output: &mut String, links: &[&FunctionInterfaceLink]) 
         }
         for call in &link.calls {
             let recovered_arguments = call
+                .observation
                 .arguments
                 .iter()
-                .map(|(index, kind, expression)| {
+                .map(|argument| {
                     format!(
                         "`a{}={}` ({})",
-                        index,
-                        markdown_code(expression),
-                        markdown_text(kind)
+                        argument.index,
+                        markdown_code(&argument.value.canonical()),
+                        markdown_text(argument.value.kind())
                     )
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            let location = call.member.as_ref().map_or_else(
-                || format!("artifact {} / `{:#010x}`", call.artifact, call.site),
+            let location = call.observation.member.as_ref().map_or_else(
+                || {
+                    format!(
+                        "artifact {} / `{:#010x}`",
+                        call.observation.artifact, call.observation.site
+                    )
+                },
                 |member| {
                     format!(
                         "artifact {} / `{}` / `{:#010x}`",
-                        call.artifact,
+                        call.observation.artifact,
                         markdown_code(member),
-                        call.site
+                        call.observation.site
                     )
                 },
             );
@@ -670,10 +677,10 @@ fn write_interface_links(output: &mut String, links: &[&FunctionInterfaceLink]) 
                 markdown_code(&link.name),
                 location,
                 markdown_code(&call.caller),
-                call.function_address,
+                call.observation.function_address,
                 markdown_text(
                     &call.slot_selector.as_ref().map_or_else(
-                        || call.kind.clone(),
+                        || call.observation.kind.clone(),
                         |selector| {
                             let domain = call.slot_index_domain.as_ref().map_or_else(
                                 || "unproven-domain".to_owned(),
@@ -683,14 +690,14 @@ fn write_interface_links(output: &mut String, links: &[&FunctionInterfaceLink]) 
                             );
                             format!(
                                 "{} indexed({selector}) index={} {domain}",
-                                call.kind,
+                                call.observation.kind,
                                 call.slot_index
                                     .map_or_else(|| "?".to_owned(), |index| index.to_string())
                             )
                         },
                     ),
                 ),
-                call.jalr_offset,
+                call.observation.jalr_offset,
                 if recovered_arguments.is_empty() {
                     "-"
                 } else {
@@ -703,6 +710,11 @@ fn write_interface_links(output: &mut String, links: &[&FunctionInterfaceLink]) 
                 optional_code(link.execution_model.as_deref()),
             )
             .expect("writing to String cannot fail");
+        }
+    }
+    for link in links {
+        for call in &link.calls {
+            writeln!(output, "\n<details><summary>Static observation: {:#010x}</summary>\n\n```json\n{}\n```\n\n</details>\n", call.observation.site, serde_json::to_string_pretty(&call.observation).expect("typed interface observation is serializable")).expect("writing to String cannot fail");
         }
     }
 }

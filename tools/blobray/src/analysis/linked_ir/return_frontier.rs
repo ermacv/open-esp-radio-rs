@@ -548,7 +548,7 @@ mod tests {
             pointer_context: direct::StructuralPointerContext::default(),
             data_symbols: Vec::new(),
             data_objects: Vec::new(),
-            projected_direct_semantics: BTreeMap::new(),
+            projected_direct_semantics: Default::default(),
             projected_origins: BTreeMap::new(),
         }
     }

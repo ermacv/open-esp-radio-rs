@@ -27,4 +27,5 @@ pub(crate) use project_validation::*;
 pub(crate) use publication::*;
 pub(crate) use review::*;
 pub(crate) use review_draft::render_sparse_review_draft;
+pub use workspace::RegisterWorkspaceSummary;
 pub(crate) use workspace::*;

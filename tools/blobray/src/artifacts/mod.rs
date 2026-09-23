@@ -28,8 +28,8 @@ pub(crate) use linked_ir::inspect_linked_ir;
 #[cfg(test)]
 pub(crate) use linked_ir_bundle::write_fixture_bundle;
 pub(crate) use linked_ir_bundle::{
-    GraphSearchLimits, LinkedIrReader, LinkedIrReviewProjection, StoredGraphEdge, bundle_files,
-    load_linked_ir_functions,
+    BUNDLE_FILES, GraphSearchLimits, LinkedIrReader, LinkedIrReviewProjection, StoredGraphEdge,
+    bundle_files, load_linked_ir_functions,
 };
 pub(crate) use linked_ir_document::{
     LinkedIrPublication, StagedLinkedIrBundle, build_linked_ir_document, stage_linked_ir_bundle,
@@ -37,15 +37,16 @@ pub(crate) use linked_ir_document::{
 #[cfg(test)]
 pub(crate) use linked_ir_document::{
     render_linked_ir_fixture, render_linked_ir_fixture_with_bindings,
+    render_linked_ir_fixture_with_blockers,
 };
 pub(crate) use linked_ir_read::{
-    GuardedReturnClassification, GuardedReturnMatch, LinkedIrStoredDocument, StoredCall,
-    StoredDataObject, StoredFlowValue, StoredFunction, StoredInstructionEffect,
+    DataObjectAssociation, GuardedReturnClassification, GuardedReturnMatch, LinkedIrStoredDocument,
+    StoredCall, StoredDataObject, StoredFlowValue, StoredFunction, StoredInstructionEffect,
     StoredLocalValueFlow, StoredMemoryObject, StoredMmioAccess, StoredMmioRegister,
     StoredReviewCall, StoredReviewDirectEffect, parse_linked_ir,
 };
 pub(crate) use mmio_facts::{MmioFactsDocument, build_mmio_facts};
-pub(crate) use mmio_facts_read::parse_mmio_facts;
+pub(crate) use mmio_facts_read::{StoredMmioArtifact, parse_mmio_facts};
 pub(crate) use replay_evidence::{
     ReplayCompletionDocument, ReplayEvidenceDocument, ReplayMemoryObservationDocument,
     ReplayMemoryWriteDocument, ReplayPhaseEvidence, build_replay_evidence, render_replay_evidence,
@@ -69,7 +70,7 @@ pub(crate) struct ArtifactSchema {
 }
 
 pub(crate) const SYMBOL_INVENTORY: ArtifactSchema = ArtifactSchema {
-    version: 6,
+    version: 7,
     command: "symbols inventory",
 };
 
@@ -79,7 +80,7 @@ pub(crate) const MMIO_FACTS: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const INTERFACE_FACTS: ArtifactSchema = ArtifactSchema {
-    version: 7,
+    version: 11,
     command: "interfaces discover",
 };
 
@@ -89,7 +90,7 @@ pub(crate) const CAPABILITY_CONTEXT: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
-    version: 69,
+    version: 73,
     command: "ir export",
 };
 
@@ -124,7 +125,7 @@ mod tests {
         assert_eq!(
             SYMBOL_INVENTORY,
             ArtifactSchema {
-                version: 6,
+                version: 7,
                 command: "symbols inventory",
             }
         );
@@ -138,7 +139,7 @@ mod tests {
         assert_eq!(
             INTERFACE_FACTS,
             ArtifactSchema {
-                version: 7,
+                version: 11,
                 command: "interfaces discover",
             }
         );
@@ -152,7 +153,7 @@ mod tests {
         assert_eq!(
             LINKED_IR,
             ArtifactSchema {
-                version: 69,
+                version: 73,
                 command: "ir export",
             }
         );

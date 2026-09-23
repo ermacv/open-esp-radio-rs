@@ -3,6 +3,12 @@ use super::super::*;
 #[test]
 fn structurally_accounted_floating_load_does_not_block_later_integer_ir() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "float_then_integer",
+            0x1000,
+        ),
         member: None,
         name: "float_then_integer".to_owned(),
         address: 0x1000,
@@ -34,6 +40,12 @@ fn structurally_accounted_floating_load_does_not_block_later_integer_ir() {
 fn unsupported_floating_arithmetic_remains_a_blocker() {
     let fadd_s = (11_u32 << 20) | (10 << 15) | (12 << 7) | 0x53;
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "floating_arithmetic_then_integer",
+            0x1000,
+        ),
         member: None,
         name: "floating_arithmetic_then_integer".to_owned(),
         address: 0x1000,
@@ -66,6 +78,12 @@ fn rx11ax_ampdu_float_slice_preserves_structural_value_flow() {
     let fmv_from_integer =
         |floating: u32, integer: u32| (0x78_u32 << 25) | (integer << 15) | (floating << 7) | 0x53;
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "rx11ax_ampdu_float_slice",
+            0x1000,
+        ),
         member: None,
         name: "rx11ax_ampdu_float_slice".to_owned(),
         address: 0x1000,
@@ -134,6 +152,12 @@ fn floating_comparison_with_unknown_inputs_remains_a_blocker() {
     let fmv_f11 = (0x78_u32 << 25) | (11 << 15) | (11 << 7) | 0x53;
     let feq = (0x50_u32 << 25) | (11 << 20) | (10 << 15) | (2 << 12) | (10 << 7) | 0x53;
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "unknown_floating_compare",
+            0x1000,
+        ),
         member: None,
         name: "unknown_floating_compare".to_owned(),
         address: 0x1000,
@@ -164,6 +188,12 @@ fn floating_comparison_with_unknown_inputs_remains_a_blocker() {
 #[test]
 fn vendor_custom_decode_blocker_stops_unknown_control_flow() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "custom_then_integer",
+            0x1000,
+        ),
         member: None,
         name: "custom_then_integer".to_owned(),
         address: 0x1000,
@@ -194,6 +224,12 @@ fn vendor_custom_decode_blocker_stops_unknown_control_flow() {
 #[test]
 fn forward_local_jump_skips_dead_instructions() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "local_jump",
+            0x1000,
+        ),
         member: None,
         name: "local_jump".to_owned(),
         address: 0x1000,
@@ -224,6 +260,12 @@ fn forward_local_jump_skips_dead_instructions() {
 #[test]
 fn local_jump_loop_fails_closed() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "local_loop",
+            0x1000,
+        ),
         member: None,
         name: "local_loop".to_owned(),
         address: 0x1000,
@@ -249,6 +291,12 @@ fn local_jump_loop_fails_closed() {
 #[test]
 fn constant_counted_loop_is_bounded_and_fully_unrolled() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "constant_counted_loop",
+            0x1000,
+        ),
         member: None,
         name: "constant_counted_loop".to_owned(),
         address: 0x1000,
@@ -282,6 +330,12 @@ fn constant_counted_loop_is_bounded_and_fully_unrolled() {
 #[test]
 fn calibration_sized_constant_loop_is_bounded_and_fully_unrolled() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "calibration_sized_constant_loop",
+            0x1000,
+        ),
         member: None,
         name: "calibration_sized_constant_loop".to_owned(),
         address: 0x1000,
@@ -315,6 +369,12 @@ fn calibration_sized_constant_loop_is_bounded_and_fully_unrolled() {
 #[test]
 fn backward_edge_to_an_unvisited_return_block_is_not_a_loop() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "backward_acyclic_edge",
+            0x1000,
+        ),
         member: None,
         name: "backward_acyclic_edge".to_owned(),
         address: 0x1000,
@@ -350,6 +410,12 @@ fn backward_edge_to_an_unvisited_return_block_is_not_a_loop() {
 #[test]
 fn partial_cfg_keeps_indexed_memory_evidence_across_an_opaque_call() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "partial_indexed_snapshot",
+            0x1000,
+        ),
         member: None,
         name: "partial_indexed_snapshot".to_owned(),
         address: 0x1000,
@@ -432,6 +498,12 @@ fn partial_cfg_keeps_branch_evidence_across_unsupported_floating_arithmetic() {
     let lui_a2 = (0x20107_u32 << 12) | (12 << 7) | 0x37;
     let store_a1 = (1_u32 << 25) | (11 << 20) | (12 << 15) | (2 << 12) | (16 << 7) | 0x23;
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "partial_floating_branch",
+            0x1000,
+        ),
         member: None,
         name: "partial_floating_branch".to_owned(),
         address: 0x1000,
@@ -493,6 +565,12 @@ fn partial_cfg_keeps_branch_evidence_across_unsupported_floating_arithmetic() {
 #[test]
 fn structured_cfg_resolves_common_stack_spills_on_each_complete_path() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "stack_spill_branch",
+            0x1000,
+        ),
         member: None,
         name: "stack_spill_branch".to_owned(),
         address: 0x1000,
@@ -535,6 +613,12 @@ fn structured_cfg_resolves_common_stack_spills_on_each_complete_path() {
 #[test]
 fn structured_cfg_composes_private_stack_memset_on_only_one_path() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("branch.o".to_owned())),
+            "branch_with_stack_fill",
+            0x1000,
+        ),
         member: Some("branch.o".to_owned()),
         name: "branch_with_stack_fill".to_owned(),
         address: 0x1000,
@@ -564,6 +648,12 @@ fn structured_cfg_composes_private_stack_memset_on_only_one_path() {
         ("memset".to_owned(), Some(0x2000)),
     )]);
     let memset = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("runtime.o".to_owned())),
+            "memset",
+            0x2000,
+        ),
         member: Some("runtime.o".to_owned()),
         name: "memset".to_owned(),
         address: 0x2000,
@@ -614,6 +704,12 @@ fn structured_cfg_composes_private_stack_memset_on_only_one_path() {
 #[test]
 fn delay_intrinsic_is_composed_without_decoding_its_rom_body() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "delay_wrapper",
+            0x1000,
+        ),
         member: None,
         name: "delay_wrapper".to_owned(),
         address: 0x1000,
@@ -623,6 +719,12 @@ fn delay_intrinsic_is_composed_without_decoding_its_rom_body() {
         relocations: Vec::new(),
     };
     let delay = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "ets_delay_us",
+            0x2000,
+        ),
         member: None,
         name: "ets_delay_us".to_owned(),
         address: 0x2000,
@@ -658,6 +760,12 @@ fn delay_intrinsic_is_composed_without_decoding_its_rom_body() {
 #[test]
 fn constant_conditional_branch_follows_only_the_feasible_edge() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "constant_branch",
+            0x1000,
+        ),
         member: None,
         name: "constant_branch".to_owned(),
         address: 0x1000,
@@ -686,6 +794,12 @@ fn constant_conditional_branch_follows_only_the_feasible_edge() {
 #[test]
 fn symbolic_conditional_branch_fails_closed() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "symbolic_branch",
+            0x1000,
+        ),
         member: None,
         name: "symbolic_branch".to_owned(),
         address: 0x1000,
@@ -715,6 +829,12 @@ fn symbolic_conditional_branch_fails_closed() {
 #[test]
 fn bounded_symbolic_cfg_becomes_structured_reference_flow() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "symbolic_branch_reference",
+            0x1000,
+        ),
         member: None,
         name: "symbolic_branch_reference".to_owned(),
         address: 0x1000,
@@ -785,6 +905,12 @@ fn bounded_symbolic_cfg_becomes_structured_reference_flow() {
 #[test]
 fn loop_invariant_symbolic_branch_is_one_structured_decision() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "loop_invariant_symbolic_branch",
+            0x1000,
+        ),
         member: None,
         name: "loop_invariant_symbolic_branch".to_owned(),
         address: 0x1000,
@@ -838,6 +964,12 @@ fn loop_invariant_symbolic_branch_is_one_structured_decision() {
 #[test]
 fn constant_call_argument_specializes_a_child_branch() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "constant_wrapper",
+            0x1000,
+        ),
         member: None,
         name: "constant_wrapper".to_owned(),
         address: 0x1000,
@@ -850,6 +982,12 @@ fn constant_call_argument_specializes_a_child_branch() {
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "conditional_child",
+            0x1008,
+        ),
         member: None,
         name: "conditional_child".to_owned(),
         address: 0x1008,

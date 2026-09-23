@@ -229,10 +229,9 @@ pub(super) fn run_code_workspace_command(
 
 pub(super) fn run_register_command(
     command: RegisterWorkspaceCommand,
-    project: &crate::project::ProjectSpec,
-    memory_map: Option<&crate::MemoryMap>,
+    session: &crate::application::ProjectSession,
 ) -> Result<bool> {
-    registers::run(command, project, memory_map)
+    registers::run(command, session)
 }
 
 pub(super) fn run_ir_build(

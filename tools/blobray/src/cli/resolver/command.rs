@@ -1,10 +1,10 @@
 //! Conversion of a loaded environment into the exact command payload.
 
-use std::{path::PathBuf, sync::OnceLock};
+use std::path::PathBuf;
 
 use crate::{
     MemoryMap, MmioMap, ProjectSpec, Result, TargetSpec,
-    application::{ExplicitProjectContext, ProjectSession},
+    application::{ExplicitProjectContext, ProjectSession, ProjectSessionInputs},
     cli::args::Command,
     run_spec::RunSpec,
 };
@@ -30,7 +30,7 @@ pub(super) struct ResolvedEnvironment {
 
 impl ResolvedEnvironment {
     fn into_project_session(self) -> Result<ProjectSession> {
-        Ok(ProjectSession {
+        Ok(ProjectSession::from_inputs(ProjectSessionInputs {
             manifest: self
                 .project_path
                 .ok_or_else(|| crate::Error::invalid("resolved project command has no manifest"))?,
@@ -46,12 +46,7 @@ impl ResolvedEnvironment {
             mmio: self.svd,
             explicit_context: self.explicit_context,
             invocation_directory: self.invocation_directory,
-            function_workspace: OnceLock::new(),
-            code_workspace: OnceLock::new(),
-            register_workspace: OnceLock::new(),
-            interface_workspace: OnceLock::new(),
-            artifacts: Default::default(),
-        })
+        }))
     }
 
     fn into_project_target(self) -> Result<(ProjectSpec, TargetSpec)> {
@@ -59,14 +54,6 @@ impl ResolvedEnvironment {
             self.project
                 .ok_or_else(|| crate::Error::invalid("workspace command has no project"))?,
             self.target,
-        ))
-    }
-
-    fn into_project_registers(self) -> Result<(ProjectSpec, Option<MemoryMap>)> {
-        Ok((
-            self.project
-                .ok_or_else(|| crate::Error::invalid("register command has no project"))?,
-            self.memory_map,
         ))
     }
 
@@ -182,94 +169,50 @@ pub(super) fn resolve_command(
             command: CodeWorkspaceCommand::Review(arguments),
             project: environment.into_project()?,
         },
-        Command::RegisterInitModel(arguments) => {
-            let (project, memory_map) = environment.into_project_registers()?;
-            ResolvedInvocation::RegisterWorkspace {
-                command: RegisterWorkspaceCommand::InitModel(arguments),
-                project,
-                memory_map,
-            }
-        }
-        Command::RegisterImportSvd(arguments) => {
-            let (project, memory_map) = environment.into_project_registers()?;
-            ResolvedInvocation::RegisterWorkspace {
-                command: RegisterWorkspaceCommand::ImportSvd(arguments),
-                project,
-                memory_map,
-            }
-        }
-        Command::RegisterValidate(arguments) => {
-            let (project, memory_map) = environment.into_project_registers()?;
-            ResolvedInvocation::RegisterWorkspace {
-                command: RegisterWorkspaceCommand::Validate(arguments),
-                project,
-                memory_map,
-            }
-        }
-        Command::RegisterList(arguments) => {
-            let (project, memory_map) = environment.into_project_registers()?;
-            ResolvedInvocation::RegisterWorkspace {
-                command: RegisterWorkspaceCommand::List(arguments),
-                project,
-                memory_map,
-            }
-        }
-        Command::RegisterCoverage(arguments) => {
-            let (project, memory_map) = environment.into_project_registers()?;
-            ResolvedInvocation::RegisterWorkspace {
-                command: RegisterWorkspaceCommand::Coverage(arguments),
-                project,
-                memory_map,
-            }
-        }
-        Command::RegisterEvidence(arguments) => {
-            let (project, memory_map) = environment.into_project_registers()?;
-            ResolvedInvocation::RegisterWorkspace {
-                command: RegisterWorkspaceCommand::Evidence(arguments),
-                project,
-                memory_map,
-            }
-        }
-        Command::RegisterReview(arguments) => {
-            let (project, memory_map) = environment.into_project_registers()?;
-            ResolvedInvocation::RegisterWorkspace {
-                command: RegisterWorkspaceCommand::Review(arguments),
-                project,
-                memory_map,
-            }
-        }
-        Command::RegisterExportSvd(arguments) => {
-            let (project, memory_map) = environment.into_project_registers()?;
-            ResolvedInvocation::RegisterWorkspace {
-                command: RegisterWorkspaceCommand::ExportSvd(arguments),
-                project,
-                memory_map,
-            }
-        }
-        Command::RegisterGeneratePacRaw(arguments) => {
-            let (project, memory_map) = environment.into_project_registers()?;
-            ResolvedInvocation::RegisterWorkspace {
-                command: RegisterWorkspaceCommand::GeneratePacRaw(arguments),
-                project,
-                memory_map,
-            }
-        }
-        Command::RegisterGeneratePacApi(arguments) => {
-            let (project, memory_map) = environment.into_project_registers()?;
-            ResolvedInvocation::RegisterWorkspace {
-                command: RegisterWorkspaceCommand::GeneratePacApi(arguments),
-                project,
-                memory_map,
-            }
-        }
-        Command::RegisterGenerateBindings(arguments) => {
-            let (project, memory_map) = environment.into_project_registers()?;
-            ResolvedInvocation::RegisterWorkspace {
-                command: RegisterWorkspaceCommand::GenerateBindings(arguments),
-                project,
-                memory_map,
-            }
-        }
+        Command::RegisterInitModel(arguments) => ResolvedInvocation::RegisterWorkspace {
+            command: RegisterWorkspaceCommand::InitModel(arguments),
+            session: Box::new(environment.into_project_session()?),
+        },
+        Command::RegisterImportSvd(arguments) => ResolvedInvocation::RegisterWorkspace {
+            command: RegisterWorkspaceCommand::ImportSvd(arguments),
+            session: Box::new(environment.into_project_session()?),
+        },
+        Command::RegisterValidate(arguments) => ResolvedInvocation::RegisterWorkspace {
+            command: RegisterWorkspaceCommand::Validate(arguments),
+            session: Box::new(environment.into_project_session()?),
+        },
+        Command::RegisterList(arguments) => ResolvedInvocation::RegisterWorkspace {
+            command: RegisterWorkspaceCommand::List(arguments),
+            session: Box::new(environment.into_project_session()?),
+        },
+        Command::RegisterCoverage(arguments) => ResolvedInvocation::RegisterWorkspace {
+            command: RegisterWorkspaceCommand::Coverage(arguments),
+            session: Box::new(environment.into_project_session()?),
+        },
+        Command::RegisterEvidence(arguments) => ResolvedInvocation::RegisterWorkspace {
+            command: RegisterWorkspaceCommand::Evidence(arguments),
+            session: Box::new(environment.into_project_session()?),
+        },
+        Command::RegisterReview(arguments) => ResolvedInvocation::RegisterWorkspace {
+            command: RegisterWorkspaceCommand::Review(arguments),
+            session: Box::new(environment.into_project_session()?),
+        },
+        Command::RegisterExportSvd(arguments) => ResolvedInvocation::RegisterWorkspace {
+            command: RegisterWorkspaceCommand::ExportSvd(arguments),
+            session: Box::new(environment.into_project_session()?),
+        },
+        Command::RegisterGeneratePacRaw(arguments) => ResolvedInvocation::RegisterWorkspace {
+            command: RegisterWorkspaceCommand::GeneratePacRaw(arguments),
+            session: Box::new(environment.into_project_session()?),
+        },
+        Command::RegisterGeneratePacApi(arguments) => ResolvedInvocation::RegisterWorkspace {
+            command: RegisterWorkspaceCommand::GeneratePacApi(arguments),
+            session: Box::new(environment.into_project_session()?),
+        },
+        Command::RegisterGenerateBindings(arguments) => ResolvedInvocation::RegisterWorkspace {
+            command: RegisterWorkspaceCommand::GenerateBindings(arguments),
+            session: Box::new(environment.into_project_session()?),
+        },
         Command::InterfaceInitPack(arguments) => {
             let (project, target) = environment.into_project_target()?;
             ResolvedInvocation::InterfaceWorkspace {

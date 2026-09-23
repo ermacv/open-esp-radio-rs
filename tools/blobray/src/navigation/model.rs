@@ -10,15 +10,76 @@ use sha2::{Digest, Sha256};
 
 use crate::{Result, artifact_path_sha256, parse_u32};
 
-pub(super) const SCHEMA_VERSION: u32 = 3;
-pub(super) const IDENTITY_SCHEME: &str = "artifact-sha256-member-symbol-object-address-v1";
+pub(super) const SCHEMA_VERSION: u32 = 7;
+pub(super) const IDENTITY_SCHEME: &str = "physical-occurrence-v2";
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+/// A symbol-table entry or a code boundary that has no symbol-table entry.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub(super) enum NavigationIdentity {
+    Symbol {
+        artifact_sha256: String,
+        location: crate::SymbolLocation,
+    },
+    CodeBody {
+        artifact_sha256: String,
+        identity: crate::artifact::CodeIdentity,
+    },
+}
+
+impl NavigationIdentity {
+    pub(super) fn from_code(identity: crate::artifact::CodeIdentity, digest: &str) -> Self {
+        match identity {
+            crate::artifact::CodeIdentity::Symbol {
+                artifact_sha256,
+                location,
+            } => Self::Symbol {
+                artifact_sha256,
+                location,
+            },
+            identity => Self::CodeBody {
+                artifact_sha256: digest.to_owned(),
+                identity,
+            },
+        }
+    }
+
+    pub(super) fn digest(&self) -> &str {
+        match self {
+            Self::Symbol {
+                artifact_sha256, ..
+            }
+            | Self::CodeBody {
+                artifact_sha256, ..
+            } => artifact_sha256,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(super) struct SymbolKey {
+    pub(super) occurrence: NavigationIdentity,
     pub(super) artifact_sha256: String,
     pub(super) member: Option<String>,
     pub(super) name: String,
     pub(super) object_address: u32,
+}
+
+impl PartialEq for SymbolKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.occurrence == other.occurrence
+    }
+}
+impl Eq for SymbolKey {}
+impl PartialOrd for SymbolKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for SymbolKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.occurrence.cmp(&other.occurrence)
+    }
 }
 
 impl SymbolKey {
@@ -26,15 +87,28 @@ impl SymbolKey {
         let mut digest = Sha256::new();
         digest.update(IDENTITY_SCHEME.as_bytes());
         digest.update([0]);
-        digest.update(self.artifact_sha256.as_bytes());
-        digest.update([0]);
-        digest.update(self.member.as_deref().unwrap_or("").as_bytes());
-        digest.update([0]);
-        digest.update(self.name.as_bytes());
-        digest.update([0]);
-        digest.update(self.object_address.to_le_bytes());
-        format!("symbol-v1:{:x}", digest.finalize())
+        digest.update(
+            serde_json::to_vec(&self.occurrence)
+                .expect("typed navigation identity is serializable"),
+        );
+        format!("symbol-v2:{:x}", digest.finalize())
     }
+
+    pub(super) fn label(&self) -> SymbolLabel {
+        SymbolLabel {
+            member: self.member.clone(),
+            name: self.name.clone(),
+            object_address: format!("{:#x}", self.object_address),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct SymbolLabel {
+    pub(super) member: Option<String>,
+    pub(super) name: String,
+    pub(super) object_address: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -74,6 +148,7 @@ pub(super) struct IrObservation {
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct InterfaceCallObservation {
+    pub(super) owner: crate::artifact::CodeIdentity,
     pub(super) site: String,
     pub(super) kind: String,
 }
@@ -81,14 +156,18 @@ pub(super) struct InterfaceCallObservation {
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct InterfaceRootObservation {
+    pub(super) owner: crate::artifact::CodeIdentity,
+    pub(super) data_address: Option<open_radio_vendor_contracts::DataAddressResolution>,
     pub(super) function: String,
     pub(super) site: String,
     pub(super) kind: String,
 }
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct SymbolDocument {
+    pub(super) occurrence: NavigationIdentity,
+    pub(super) labels: BTreeSet<SymbolLabel>,
     pub(super) id: String,
     pub(super) artifact_sha256: String,
     pub(super) member: Option<String>,
@@ -104,12 +183,18 @@ pub(super) struct SymbolDocument {
 impl SymbolDocument {
     pub(super) fn from_key(key: &SymbolKey) -> Self {
         Self {
+            occurrence: key.occurrence.clone(),
+            labels: BTreeSet::from([key.label()]),
             id: key.id(),
             artifact_sha256: key.artifact_sha256.clone(),
             member: key.member.clone(),
             name: key.name.clone(),
             object_address: format!("{:#x}", key.object_address),
-            ..Self::default()
+            sources: BTreeSet::new(),
+            inventory: BTreeSet::new(),
+            linked_ir: BTreeSet::new(),
+            interface_calls: BTreeSet::new(),
+            interface_roots: BTreeSet::new(),
         }
     }
 }
@@ -146,6 +231,7 @@ pub(super) struct ProjectCallLinkDocument {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct NavigationDocument {
+    pub(super) interface_observations: Option<crate::interfaces::InterfaceFacts>,
     pub(super) schema_version: u32,
     pub(super) command: String,
     pub(super) identity_scheme: String,
@@ -230,9 +316,11 @@ pub(super) fn symbol<'a>(
     symbols: &'a mut BTreeMap<SymbolKey, SymbolDocument>,
     key: &SymbolKey,
 ) -> &'a mut SymbolDocument {
-    symbols
+    let document = symbols
         .entry(key.clone())
-        .or_insert_with(|| SymbolDocument::from_key(key))
+        .or_insert_with(|| SymbolDocument::from_key(key));
+    document.labels.insert(key.label());
+    document
 }
 
 #[cfg(test)]
@@ -240,8 +328,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn symbol_id_is_stable_and_uses_every_location_dimension() {
+    fn symbol_id_uses_physical_occurrence_and_retains_display_alternatives() {
         let base = SymbolKey {
+            occurrence: NavigationIdentity::Symbol {
+                artifact_sha256: "11".repeat(32),
+                location: crate::SymbolLocation {
+                    object: crate::ObjectLocation::Standalone,
+                    table: crate::ArtifactSymbolTable::Static,
+                    index: 1,
+                },
+            },
             artifact_sha256: "11".repeat(32),
             member: Some("member.o".to_owned()),
             name: "function".to_owned(),
@@ -250,12 +346,23 @@ mod tests {
         assert_eq!(base.id(), base.clone().id());
         let mut changed = base.clone();
         changed.object_address += 4;
-        assert_ne!(base.id(), changed.id());
+        assert_eq!(base.id(), changed.id());
         changed = base.clone();
         changed.member = Some("other.o".to_owned());
-        assert_ne!(base.id(), changed.id());
+        assert_eq!(base.id(), changed.id());
         changed = base.clone();
         changed.name.push_str("_other");
+        assert_eq!(base.id(), changed.id());
+        let mut documents = BTreeMap::new();
+        symbol(&mut documents, &base);
+        symbol(&mut documents, &changed);
+        assert_eq!(documents.len(), 1);
+        assert_eq!(documents.values().next().unwrap().labels.len(), 2);
+        if let NavigationIdentity::Symbol { location, .. } = &mut changed.occurrence {
+            location.object = crate::ObjectLocation::ArchiveMember { ordinal: 1 };
+        }
         assert_ne!(base.id(), changed.id());
+        symbol(&mut documents, &changed);
+        assert_eq!(documents.len(), 2);
     }
 }

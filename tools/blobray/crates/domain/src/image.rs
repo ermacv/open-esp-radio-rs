@@ -1,0 +1,195 @@
+//! Portable synthetic image recipes and retained evidence. No tool discovery or I/O.
+use crate::*;
+
+/// ELF-declared floating-point calling convention, separate from instruction
+/// coverage and from the integer analysis profile. No execution support implied.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RiscvAbi {
+    Ilp32,
+    Ilp32f,
+    Ilp32d,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EntrySelection {
+    pub input: u64,
+    pub symbol: SymbolId,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImageRegion {
+    pub start: u32,
+    pub length: u64,
+}
+impl ImageRegion {
+    pub fn end(&self) -> Option<u64> {
+        u64::from(self.start)
+            .checked_add(self.length)
+            .filter(|end| *end <= 1u64 << 32)
+    }
+    pub fn contains(&self, start: u64, length: u64) -> bool {
+        start >= u64::from(self.start)
+            && start
+                .checked_add(length)
+                .zip(self.end())
+                .is_some_and(|(end, limit)| end <= limit)
+    }
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImageLayout {
+    pub code: ImageRegion,
+    pub data: ImageRegion,
+}
+impl ImageLayout {
+    pub fn validate(&self) -> Result<()> {
+        for region in [self.code, self.data] {
+            if region.length == 0 || region.start % 4096 != 0 || region.end().is_none() {
+                return Err(Error::new(
+                    ErrorCode::InvalidRequest,
+                    "image regions must be nonempty, page-aligned and within RV32",
+                ));
+            }
+        }
+        if u64::from(self.code.start) < self.data.end().unwrap()
+            && u64::from(self.data.start) < self.code.end().unwrap()
+        {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "image regions overlap",
+            ));
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkRequest {
+    #[serde(default)]
+    pub companions: Vec<EntrySelection>,
+    pub revision: Option<RevisionId>,
+    /// Zero-based captured input occurrences, in linker order. No implicit inputs.
+    pub inputs: Vec<u64>,
+    pub entry: EntrySelection,
+    #[serde(default)]
+    pub roots: Vec<EntrySelection>,
+    pub layout: ImageLayout,
+}
+/// Native convenience selection. Only one defined entry in the explicit input
+/// qualifies; ambiguity returns candidates, never a preferred definition.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NamedLinkRequest {
+    #[serde(default)]
+    pub companions: Vec<NamedCompanion>,
+    pub revision: Option<RevisionId>,
+    pub inputs: Vec<u64>,
+    pub entry_input: u64,
+    pub entry_name: Vec<u8>,
+    pub layout: ImageLayout,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkerIdentity {
+    pub implementation: String,
+    pub version: String,
+    pub executable: ArtifactId,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkRecipe {
+    pub companions: Vec<EntrySelection>,
+    pub schema: u32,
+    pub policy: u32,
+    pub project: ProjectId,
+    pub revision: RevisionId,
+    pub inputs: Vec<u64>,
+    pub entry: EntrySelection,
+    pub roots: Vec<EntrySelection>,
+    pub layout: ImageLayout,
+    pub linker: LinkerIdentity,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkBlocker {
+    pub input: Option<u64>,
+    pub code: ErrorCode,
+    pub message: String,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkPlanDescription {
+    pub id: LinkPlanId,
+    pub recipe: LinkRecipe,
+    pub blockers: Vec<LinkBlocker>,
+}
+impl LinkPlanDescription {
+    pub fn ready(&self) -> bool {
+        self.blockers.is_empty()
+    }
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImageSegment {
+    pub address: u64,
+    pub file_offset: u64,
+    pub file_size: u64,
+    pub memory_size: u64,
+    pub flags: u32,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResolvedRoot {
+    pub selection: EntrySelection,
+    pub address: u64,
+    pub size: u64,
+    pub name: Vec<u8>,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImageManifest {
+    pub abi: RiscvAbi,
+    /// Bounded observations from the successful linker process.
+    pub linker_diagnostics: LinkerDiagnostics,
+    pub schema: u32,
+    pub synthetic: bool,
+    pub plan: LinkPlanDescription,
+    pub elf: ArtifactId,
+    pub map: ArtifactId,
+    pub extraction: ArtifactId,
+    pub provenance: ArtifactId,
+    pub entry: u64,
+    pub roots: Vec<ResolvedRoot>,
+    pub segments: Vec<ImageSegment>,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImageMapping {
+    pub input: u64,
+    pub object: ObjectId,
+    pub payload: ArtifactId,
+    pub section: Vec<u8>,
+    pub address: u64,
+    pub size: u64,
+    /// Exact only when one original section is identified and its extent is unchanged.
+    pub exact: bool,
+}
+
+/// The successful tool exit and the last 8192 stderr bytes; never an unbounded log.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkerDiagnostics {
+    pub exit_code: Option<i32>,
+    pub signal: Option<i32>,
+    pub stderr_tail: Vec<u8>,
+    pub stderr_truncated: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NamedCompanion {
+    pub input: u64,
+    pub name: String,
+}

@@ -207,6 +207,12 @@ mod tests {
 
     fn body(blocks: Vec<FunctionBasicBlock>) -> FunctionBody {
         FunctionBody {
+            code_identity: crate::artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &None,
+                "body",
+                u64::from(line!()),
+            ),
             artifact: "fixture".to_owned(),
             member: None,
             symbol: "fixture".to_owned(),

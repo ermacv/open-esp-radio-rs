@@ -3,7 +3,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fs,
-    io::{BufRead, Read, Seek, SeekFrom},
+    io::BufRead,
     path::{Path, PathBuf},
     sync::OnceLock,
 };
@@ -101,6 +101,7 @@ struct RegisterIndexDocument {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct DataObjectIndexRecord {
+    data_identity: crate::artifact::DataIdentity,
     source: String,
     artifact_sha256: String,
     locator: String,
@@ -125,6 +126,7 @@ struct DataObjectIndexDocument {
 
 pub(crate) struct LinkedIrReader {
     root: PathBuf,
+    files: BTreeMap<&'static str, crate::file_view::FileView>,
     manifest: super::LinkedIrStoredDocument,
     index: Vec<FunctionIndexRecord>,
     data_object_index: Vec<DataObjectIndexRecord>,
@@ -217,10 +219,30 @@ impl LinkedIrReader {
                 )));
             }
         }
-        let manifest_input = fs::read_to_string(path.join(MANIFEST))?;
+        let files = BUNDLE_FILES
+            .into_iter()
+            .map(|name| crate::file_view::FileView::open(&path.join(name)).map(|file| (name, file)))
+            .collect::<Result<BTreeMap<_, _>>>()?;
+        Self::from_files(path, files)
+    }
+
+    /// Decode one bound bundle. Every lazy query uses the same file capabilities
+    /// as the indexes; the root path is a logical locator and diagnostic only.
+    pub(crate) fn from_files(
+        path: &Path,
+        files: BTreeMap<&'static str, crate::file_view::FileView>,
+    ) -> Result<Self> {
+        if files.len() != BUNDLE_FILES.len()
+            || BUNDLE_FILES.iter().any(|name| !files.contains_key(name))
+        {
+            return Err(crate::Error::invalid(
+                "linked-IR bundle has incomplete file bindings",
+            ));
+        }
+        let manifest_input = files[MANIFEST].read_to_string()?;
         let manifest = super::parse_linked_ir(&manifest_input)?;
         let index: FunctionIndexDocument =
-            serde_json::from_str(&fs::read_to_string(path.join(FUNCTION_INDEX))?)?;
+            serde_json::from_str(&files[FUNCTION_INDEX].read_to_string()?)?;
         if index.schema_version != super::LINKED_IR.version || index.command != "ir function index"
         {
             return Err(crate::Error::invalid(format!(
@@ -228,15 +250,12 @@ impl LinkedIrReader {
                 path.display()
             )));
         }
-        let source_artifacts = manifest
-            .artifacts
-            .iter()
-            .map(|artifact| (artifact.source.as_str(), artifact.artifact.sha256.as_str()))
-            .collect::<BTreeSet<_>>();
         for record in &index.records {
-            if !source_artifacts
-                .contains(&(record.source.as_str(), record.artifact_sha256.as_str()))
-            {
+            if !super::linked_ir_read::declares_source_artifact(
+                &manifest,
+                &record.source,
+                &record.artifact_sha256,
+            ) {
                 return Err(crate::Error::invalid(format!(
                     "linked-IR function index record {:?} refers to an undeclared source artifact {}@{}",
                     record.identity, record.source, record.artifact_sha256
@@ -252,7 +271,7 @@ impl LinkedIrReader {
             )?;
         }
         let data_object_index: DataObjectIndexDocument =
-            serde_json::from_str(&fs::read_to_string(path.join(DATA_OBJECT_INDEX))?)?;
+            serde_json::from_str(&files[DATA_OBJECT_INDEX].read_to_string()?)?;
         if data_object_index.schema_version != super::LINKED_IR.version
             || data_object_index.command != "ir data object index"
         {
@@ -286,17 +305,25 @@ impl LinkedIrReader {
                 )));
             }
         }
+        let mut data_identities = BTreeSet::new();
         for record in &data_object_index.records {
-            if !source_artifacts
-                .contains(&(record.source.as_str(), record.artifact_sha256.as_str()))
-            {
+            if !data_identities.insert((&record.source, &record.data_identity)) {
+                return Err(crate::Error::invalid(
+                    "duplicate linked-IR data object identity",
+                ));
+            }
+            if !super::linked_ir_read::declares_source_artifact(
+                &manifest,
+                &record.source,
+                &record.artifact_sha256,
+            ) {
                 return Err(crate::Error::invalid(format!(
                     "linked-IR data object index record {}:{} refers to an undeclared source artifact {}@{}",
                     record.source, record.symbol, record.source, record.artifact_sha256
                 )));
             }
-            crate::artifact_occurrence::validate(
-                open_radio_vendor_contracts::EntityDomain::MemoryObject,
+            crate::artifact_occurrence::validate_data(
+                &record.data_identity,
                 &record.source,
                 &record.artifact_sha256,
                 &record.locator,
@@ -306,6 +333,7 @@ impl LinkedIrReader {
         }
         Ok(Self {
             root: path.to_owned(),
+            files,
             manifest,
             index: index.records,
             data_object_index: data_object_index.records,
@@ -731,7 +759,7 @@ impl LinkedIrReader {
     }
 
     pub(crate) fn read_all_functions(&self) -> Result<Vec<StoredFunction>> {
-        let file = fs::File::open(self.root.join(FUNCTIONS))?;
+        let file = self.files[FUNCTIONS].cursor();
         let mut functions: Vec<StoredFunction> = Vec::with_capacity(self.index.len());
         for line in std::io::BufReader::new(file).lines() {
             let line = line?;
@@ -790,13 +818,21 @@ impl LinkedIrReader {
     }
 
     pub(crate) fn read_review_projection(&self) -> Result<LinkedIrReviewProjection> {
-        let file = fs::File::open(self.root.join(FUNCTION_OVERVIEW))?;
+        let file = self.files[FUNCTION_OVERVIEW].cursor();
         let mut functions: Vec<StoredFunctionReviewProjection> =
             Vec::with_capacity(self.index.len());
         for line in std::io::BufReader::new(file).lines() {
             let line = line?;
             if !line.is_empty() {
                 let function: StoredFunctionReviewProjection = super::json::from_str(&line)?;
+                crate::artifact_occurrence::validate_function(
+                    &function.code_identity,
+                    &function.source,
+                    &function.artifact_sha256,
+                    &function.locator,
+                    &function.occurrence,
+                    function.semantic.as_deref(),
+                )?;
                 super::linked_ir_read::schema::validate_function_loops(
                     &function.identity,
                     &function.loops,
@@ -901,7 +937,7 @@ impl LinkedIrReader {
 
     pub(crate) fn read_registers(&self) -> Result<Vec<StoredMmioRegister>> {
         let registers: RegisterIndexDocument =
-            serde_json::from_str(&fs::read_to_string(self.root.join(REGISTER_INDEX))?)?;
+            serde_json::from_str(&self.files[REGISTER_INDEX].read_to_string()?)?;
         if registers.schema_version != super::LINKED_IR.version
             || registers.command != "ir register index"
         {
@@ -916,27 +952,23 @@ impl LinkedIrReader {
     pub(crate) fn get_data_object(
         &self,
         source: &str,
-        symbol: &str,
+        selector: &str,
     ) -> Result<Vec<StoredDataObject>> {
         self.data_object_index
             .iter()
             .filter(|record| {
                 record.source == source
-                    && (record.symbol == symbol
-                        || record.aliases.iter().any(|alias| alias == symbol)
-                        || record.semantic.as_deref() == Some(symbol))
+                    && (record.occurrence == selector
+                        || record.symbol == selector
+                        || record.aliases.iter().any(|alias| alias == selector)
+                        || record.semantic.as_deref() == Some(selector))
             })
             .map(|record| self.read_data_object(record))
             .collect()
     }
 
     fn read_function(&self, record: &FunctionIndexRecord) -> Result<StoredFunction> {
-        let mut file = fs::File::open(self.root.join(FUNCTIONS))?;
-        file.seek(SeekFrom::Start(record.offset))?;
-        let size = usize::try_from(record.length)
-            .map_err(|_| crate::Error::invalid("linked-IR function record exceeds host size"))?;
-        let mut bytes = vec![0; size];
-        file.read_exact(&mut bytes)?;
+        let bytes = self.files[FUNCTIONS].read_range(record.offset, record.length)?;
         let function: StoredFunction = super::json::from_slice(&bytes)?;
         super::linked_ir_read::schema::validate_function_loops(
             &function.identity,
@@ -962,8 +994,8 @@ impl LinkedIrReader {
                 record.identity
             )));
         }
-        crate::artifact_occurrence::validate(
-            open_radio_vendor_contracts::EntityDomain::Function,
+        crate::artifact_occurrence::validate_function(
+            &function.code_identity,
             &function.source,
             &function.artifact_sha256,
             &function.locator,
@@ -974,14 +1006,10 @@ impl LinkedIrReader {
     }
 
     fn read_data_object(&self, record: &DataObjectIndexRecord) -> Result<StoredDataObject> {
-        let mut file = fs::File::open(self.root.join(DATA_OBJECTS))?;
-        file.seek(SeekFrom::Start(record.offset))?;
-        let size = usize::try_from(record.length)
-            .map_err(|_| crate::Error::invalid("linked-IR data object record exceeds host size"))?;
-        let mut bytes = vec![0; size];
-        file.read_exact(&mut bytes)?;
+        let bytes = self.files[DATA_OBJECTS].read_range(record.offset, record.length)?;
         let object: StoredDataObject = super::json::from_slice(&bytes)?;
-        if object.source != record.source
+        if object.data_identity != record.data_identity
+            || object.source != record.source
             || object.artifact_sha256 != record.artifact_sha256
             || object.locator != record.locator
             || object.occurrence != record.occurrence
@@ -996,8 +1024,8 @@ impl LinkedIrReader {
                 record.source, record.symbol
             )));
         }
-        crate::artifact_occurrence::validate(
-            open_radio_vendor_contracts::EntityDomain::MemoryObject,
+        crate::artifact_occurrence::validate_data(
+            &object.data_identity,
             &object.source,
             &object.artifact_sha256,
             &object.locator,
@@ -1011,8 +1039,7 @@ impl LinkedIrReader {
         if let Some(graph) = self.graph.get() {
             return Ok(graph);
         }
-        let document: GraphDocument =
-            serde_json::from_str(&fs::read_to_string(self.root.join(GRAPH))?)?;
+        let document: GraphDocument = serde_json::from_str(&self.files[GRAPH].read_to_string()?)?;
         if document.schema_version != super::LINKED_IR.version
             || document.command != "ir graph index"
         {
@@ -1155,6 +1182,7 @@ pub(crate) fn write_fixture_bundle(path: &Path, input: &str) -> Result<()> {
         object_lines.push_str(&encoded);
         object_lines.push('\n');
         object_records.push(DataObjectIndexRecord {
+            data_identity: object.data_identity,
             source: object.source,
             artifact_sha256: object.artifact_sha256,
             locator: object.locator,
@@ -1247,6 +1275,7 @@ fn fixture_function_overview(encoded: &str) -> Result<String> {
     })
     .collect::<Vec<_>>();
     let overview = serde_json::json!({
+        "code_identity": full["code_identity"],
         "source": full["source"],
         "artifact_sha256": full["artifact_sha256"],
         "locator": full["locator"],

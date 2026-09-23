@@ -3,10 +3,7 @@
 use serde::Serialize;
 
 use super::SYMBOL_INVENTORY;
-use crate::{
-    analysis::{LinkageSymbol, ProjectLinkageInventory},
-    artifact_sha256,
-};
+use crate::analysis::{LinkageSymbol, ProjectLinkageInventory};
 
 mod read;
 
@@ -15,7 +12,7 @@ pub(crate) use read::CodeBoundaryInputFact;
 pub(crate) use read::{
     CodeBoundaryCandidateFact, CodeBoundaryFacts, LinkUnitOriginFact, StoredSymbolInventory,
     inspect_symbol_inventory, load_code_boundary_facts, load_link_unit_origins,
-    parse_symbol_inventory,
+    parse_code_boundary_facts, parse_symbol_inventory,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -39,6 +36,7 @@ struct ArtifactDocument {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct CandidateDocument {
     artifact: usize,
+    location: crate::SymbolLocation,
     member: Option<String>,
     address: String,
     kind: &'static str,
@@ -47,6 +45,7 @@ struct CandidateDocument {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct SymbolDocument {
     artifact: usize,
+    location: crate::SymbolLocation,
     member: Option<String>,
     object_kind: &'static str,
     table: &'static str,
@@ -56,6 +55,7 @@ struct SymbolDocument {
     kind: &'static str,
     definition: &'static str,
     section: Option<String>,
+    section_index: Option<u64>,
     address: String,
     size: u64,
     scope: &'static str,
@@ -146,7 +146,7 @@ pub(crate) struct SymbolInventoryDocument {
 pub(crate) fn build_symbol_inventory_document(
     inventory: &ProjectLinkageInventory,
     include: impl Fn(&LinkageSymbol) -> bool,
-) -> crate::Result<SymbolInventoryDocument> {
+) -> SymbolInventoryDocument {
     let symbols = inventory
         .symbols
         .iter()
@@ -169,7 +169,7 @@ pub(crate) fn build_symbol_inventory_document(
         .iter()
         .filter(|symbol| symbol.resolution.is_unresolved())
         .count();
-    Ok(SymbolInventoryDocument {
+    SymbolInventoryDocument {
         schema_version: SYMBOL_INVENTORY.version,
         command: SYMBOL_INVENTORY.command,
         linkage_mode: "association-only",
@@ -178,22 +178,20 @@ pub(crate) fn build_symbol_inventory_document(
             .artifacts
             .iter()
             .enumerate()
-            .map(|(index, artifact)| {
-                Ok(ArtifactDocument {
-                    index,
-                    artifact: ArtifactIdentity {
-                        path: artifact.path.display().to_string(),
-                        sha256: artifact_sha256(&artifact.path)?,
-                    },
-                    roles: artifact.roles.clone(),
-                    sources: artifact.sources.clone(),
-                    container: artifact.container.label(),
-                    objects: artifact.objects,
-                    skipped_members: artifact.skipped_members,
-                    members: artifact.members.clone(),
-                })
+            .map(|(index, artifact)| ArtifactDocument {
+                index,
+                artifact: ArtifactIdentity {
+                    path: artifact.path.display().to_string(),
+                    sha256: artifact.sha256.clone(),
+                },
+                roles: artifact.roles.clone(),
+                sources: artifact.sources.clone(),
+                container: artifact.container.label(),
+                objects: artifact.objects,
+                skipped_members: artifact.skipped_members,
+                members: artifact.members.clone(),
             })
-            .collect::<crate::Result<Vec<_>>>()?,
+            .collect(),
         code_sections: inventory
             .artifacts
             .iter()
@@ -255,6 +253,7 @@ pub(crate) fn build_symbol_inventory_document(
             .iter()
             .map(|symbol| SymbolDocument {
                 artifact: symbol.artifact,
+                location: symbol.location,
                 member: symbol.member.clone(),
                 object_kind: symbol.object_kind.label(),
                 table: symbol.fact.table.label(),
@@ -264,6 +263,7 @@ pub(crate) fn build_symbol_inventory_document(
                 kind: symbol.fact.kind.label(),
                 definition: symbol.fact.definition.label(),
                 section: symbol.fact.section.clone(),
+                section_index: symbol.fact.section_index,
                 address: format!("{:#x}", symbol.fact.address),
                 size: symbol.fact.size,
                 scope: symbol.fact.scope.label(),
@@ -273,6 +273,7 @@ pub(crate) fn build_symbol_inventory_document(
                     .iter()
                     .map(|candidate| CandidateDocument {
                         artifact: candidate.artifact,
+                        location: candidate.location,
                         member: candidate.member.clone(),
                         address: format!("{:#x}", candidate.address),
                         kind: candidate.kind.label(),
@@ -284,6 +285,7 @@ pub(crate) fn build_symbol_inventory_document(
                     .iter()
                     .map(|candidate| CandidateDocument {
                         artifact: candidate.artifact,
+                        location: candidate.location,
                         member: candidate.member.clone(),
                         address: format!("{:#x}", candidate.address),
                         kind: candidate.kind.label(),
@@ -371,5 +373,5 @@ pub(crate) fn build_symbol_inventory_document(
                 })
                 .count(),
         },
-    })
+    }
 }

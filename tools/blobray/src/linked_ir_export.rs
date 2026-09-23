@@ -37,6 +37,7 @@ pub(crate) struct ProjectIrDocuments {
 }
 
 pub(crate) struct ProjectProfileRequest<'a, 'cache> {
+    pub(crate) captures: &'a crate::source_set::CapturedSourceSet,
     pub(crate) inputs: Vec<(String, PathBuf)>,
     pub(crate) inventories: Vec<(String, PathBuf)>,
     pub(crate) companions: Vec<PathBuf>,
@@ -57,6 +58,7 @@ pub(crate) fn generate_project_profile(
     request: ProjectProfileRequest<'_, '_>,
 ) -> Result<ProjectIrDocuments> {
     let ProjectProfileRequest {
+        captures,
         inputs,
         inventories,
         companions,
@@ -83,11 +85,15 @@ pub(crate) fn generate_project_profile(
             .filter(|(source, _)| source == &artifact.source)
             .map(|(_, path)| path.clone())
             .collect();
-        artifact.reviewed_code =
-            effective_code.reviewed_ranges(&artifact.source, &artifact.path)?;
+        artifact.reviewed_code = effective_code.reviewed_ranges(
+            &artifact.source,
+            &artifact.path,
+            captures.artifact(&artifact.path)?,
+        )?;
     }
     let (entry_contract, report) = analyze(
         LinkedIrAnalysisRequest {
+            captures,
             artifacts: &artifacts,
             inventories: &inventories,
             companions: &companions,
@@ -114,21 +120,18 @@ pub(crate) fn generate_project_profile(
     let document = crate::artifacts::build_linked_ir_document(
         &artifacts,
         &inventories,
-        &companions
-            .iter()
-            .chain(source_companions.iter().map(|(_, path)| path))
-            .cloned()
-            .collect::<Vec<_>>(),
+        &companions,
         profile.roots.symbol_prefix(),
         entry_contract,
         crate::artifacts::LinkedIrPublication {
+            captures,
             report: &report,
             reviewed_bindings,
         },
         profile.include_reachable,
     )?;
     let mut bundle = crate::artifacts::stage_linked_ir_bundle(&profile.output, &document)?;
-    let coverage = crate::application::coverage::build(profile, run_spec, &report)?;
+    let coverage = crate::application::coverage::build(captures, profile, run_spec, &report)?;
     let coverage = crate::application::coverage::seal(coverage, bundle.path())?;
     bundle.attach_coverage(&coverage)?;
     tracing::debug!(
@@ -149,6 +152,7 @@ pub(crate) fn generate_project_profile(
 }
 
 pub(crate) struct LinkedIrAnalysisRequest<'a> {
+    pub(crate) captures: &'a crate::source_set::CapturedSourceSet,
     pub(crate) artifacts: &'a [IrArtifactInput],
     pub(crate) inventories: &'a [(String, PathBuf)],
     pub(crate) companions: &'a [PathBuf],
@@ -171,6 +175,7 @@ pub(crate) fn analyze(
     mut function_fact_store: Option<&mut dyn crate::analysis::FunctionFactStore>,
 ) -> Result<(EntryContractRef, LinkedIrReport)> {
     let LinkedIrAnalysisRequest {
+        captures,
         artifacts,
         inventories,
         companions,
@@ -190,7 +195,8 @@ pub(crate) fn analyze(
     validate_artifact_inputs(artifacts, companions)?;
     let mut reports = Vec::with_capacity(artifacts.len());
     for artifact in artifacts {
-        let artifact_sha256 = crate::artifact_sha256(&artifact.path)?;
+        let capture = captures.artifact(&artifact.path)?;
+        let artifact_sha256 = capture.sha256();
         let source_inventories = inventories
             .iter()
             .filter(|(source, _)| source == &artifact.source)
@@ -201,11 +207,16 @@ pub(crate) fn analyze(
             .chain(&artifact.companions)
             .cloned()
             .collect::<Vec<_>>();
-        let mut resolver = ReferenceResolver::load_all_code_with_reviewed_ranges(
-            &artifact.path,
-            &resolver_companions,
+        let companion_captures = resolver_companions
+            .iter()
+            .map(|path| captures.artifact(path))
+            .collect::<Result<Vec<_>>>()?;
+        let mut resolver = ReferenceResolver::from_captured(
+            capture,
+            &companion_captures,
             riscv_harness,
             entry_contract,
+            crate::artifact::CodeSymbolSelection::All,
             &artifact.reviewed_code,
         )?;
         tracing::debug!(
@@ -213,17 +224,10 @@ pub(crate) fn analyze(
             rss_kib = ?crate::resource_usage::resident_set_kib(),
             "loaded linked-IR resolver"
         );
-        register_projected_direct_semantics(
-            &mut resolver,
-            &artifact.source,
-            &artifact.path,
-            &source_inventories,
-            interface_origins,
-        )?;
         register_projected_origins(
+            captures,
             &mut resolver,
             &artifact.source,
-            &artifact.path,
             &source_inventories,
             interface_origins,
         )?;
@@ -238,7 +242,7 @@ pub(crate) fn analyze(
                 interfaces,
                 &artifact.source,
                 interface_origins,
-            );
+            )?;
             tracing::debug!(
                 source = artifact.source,
                 rss_kib = ?crate::resource_usage::resident_set_kib(),
@@ -254,7 +258,7 @@ pub(crate) fn analyze(
             LinkedIrSourceOptions {
                 symbol_prefix,
                 source: &artifact.source,
-                artifact_sha256: &artifact_sha256,
+                artifact_sha256,
                 namespace_identities: true,
                 include_reachable,
                 jobs,
@@ -278,32 +282,18 @@ pub(crate) fn analyze(
 }
 
 fn register_projected_origins(
+    captures: &crate::source_set::CapturedSourceSet,
     resolver: &mut ReferenceResolver,
     source: &str,
-    linked_artifact: &Path,
     inventories: &[&Path],
     origins: &[LinkUnitOriginFact],
 ) -> Result<()> {
-    let linked_digest = crate::artifact_sha256(linked_artifact)?;
     let mut registered = 0usize;
     for inventory in inventories {
-        let inventory_digest = crate::artifact_sha256(inventory)?;
-        let candidates = crate::artifact::load_code_symbols(
-            inventory,
-            "",
-            crate::artifact::CodeSymbolSelection::All,
-        )?
-        .into_iter()
-        .map(|symbol| {
-            (
-                (symbol.member.clone(), symbol.name.clone(), symbol.address),
-                symbol,
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
+        let capture = captures.artifact(inventory)?;
+        let inventory_digest = capture.sha256();
         for origin in origins.iter().filter(|origin| {
             origin.kind == "text"
-                && origin.linked_artifact_sha256 == linked_digest
                 && origin.origin_artifact_sha256 == inventory_digest
                 && origin
                     .linked_sources
@@ -314,22 +304,38 @@ fn register_projected_origins(
                     .iter()
                     .any(|candidate| candidate == source)
         }) {
-            let Some(linked) = resolver.symbols.iter().find(|symbol| {
-                symbol.name == origin.symbol
-                    && symbol.member == origin.linked_member
-                    && symbol.address == origin.linked_address
-            }) else {
+            let Some(linked) = resolver
+                .symbols
+                .iter()
+                .find(|symbol| symbol.identity == origin.linked_identity())
+            else {
                 continue;
             };
-            let key = (
-                origin.origin_member.clone(),
-                origin.symbol.clone(),
-                origin.origin_address,
-            );
-            let Some(archive) = candidates.get(&key) else {
-                continue;
+            let Some(candidate) = capture.code_symbol(origin.origin_location)? else {
+                return Err(crate::Error::invalid(format!(
+                    "origin {:?} is not a code definition in {}",
+                    origin.origin_location,
+                    inventory.display()
+                )));
             };
+            let archive = &candidate.definition;
+            if archive.name != origin.symbol
+                || archive.member != origin.origin_member
+                || archive.address != origin.origin_address
+            {
+                return Err(crate::Error::invalid(
+                    "origin location disagrees with symbol metadata",
+                ));
+            }
             let linked = linked.clone();
+            if let Some(status) = resolver.review_projected_direct_semantic(&linked, archive) {
+                tracing::debug!(
+                    source,
+                    symbol = origin.symbol,
+                    ?status,
+                    "checked reviewed semantic projection from archive candidate"
+                );
+            }
             register_projected_relocations(resolver, &linked, archive)?;
             resolver.register_projected_origin(&linked, archive.clone());
             registered += 1;
@@ -387,6 +393,7 @@ fn register_projected_relocations(
                     );
                 }
                 let projected = StructuralProjectedRelocation {
+                    reference: relocation.reference.clone(),
                     origin_member: origin.member.clone(),
                     origin_symbol: origin.name.clone(),
                     origin_offsets: origin_offsets.clone(),
@@ -404,69 +411,6 @@ fn register_projected_relocations(
                     candidates.push(projected);
                 }
             }
-        }
-    }
-    Ok(())
-}
-
-fn register_projected_direct_semantics(
-    resolver: &mut ReferenceResolver,
-    source: &str,
-    linked_artifact: &Path,
-    inventories: &[&Path],
-    origins: &[LinkUnitOriginFact],
-) -> Result<()> {
-    let Some(hooks) = resolver.pointer_context.summary_hooks else {
-        return Ok(());
-    };
-    let linked_digest = crate::artifact_sha256(linked_artifact)?;
-    for inventory in inventories {
-        let inventory_digest = crate::artifact_sha256(inventory)?;
-        for origin in origins.iter().filter(|origin| {
-            origin.kind == "text"
-                && origin.linked_artifact_sha256 == linked_digest
-                && origin.origin_artifact_sha256 == inventory_digest
-                && origin
-                    .linked_sources
-                    .iter()
-                    .any(|candidate| candidate == source)
-                && origin
-                    .origin_sources
-                    .iter()
-                    .any(|candidate| candidate == source)
-        }) {
-            let Some(linked) = resolver
-                .symbols
-                .iter()
-                .find(|symbol| {
-                    symbol.name == origin.symbol
-                        && symbol.member == origin.linked_member
-                        && symbol.address == origin.linked_address
-                })
-                .cloned()
-            else {
-                continue;
-            };
-            let Some(archive) = crate::artifact::load_code_symbol_exact(
-                inventory,
-                origin.origin_member.as_deref(),
-                &origin.symbol,
-                origin.origin_address,
-            )?
-            else {
-                continue;
-            };
-            let Some(semantic) = (hooks.direct_semantic)(&archive) else {
-                continue;
-            };
-            resolver.register_projected_direct_semantic(&linked, semantic);
-            tracing::debug!(
-                source,
-                symbol = origin.symbol,
-                member = ?origin.origin_member,
-                semantic = semantic.id,
-                "projected exact reviewed semantic from unique archive origin"
-            );
         }
     }
     Ok(())
@@ -566,7 +510,7 @@ pub(crate) fn register_reviewed_external_calls(
     interfaces: &InterfaceWorkspace,
     source: &str,
     origins: &[LinkUnitOriginFact],
-) {
+) -> Result<()> {
     let addresses_by_name = observed_symbol_addresses(&resolver.symbols);
     let internal_targets = interfaces
         .bindings()
@@ -673,16 +617,23 @@ pub(crate) fn register_reviewed_external_calls(
             }
         }
         for call in &slot.calls {
+            let owner = resolver
+                .select_symbol(
+                    call.observation.member.as_deref(),
+                    &call.observation.function,
+                    Some(u64::from(call.observation.function_address)),
+                )?
+                .identity
+                .clone();
             let mut reviewed = reviewed.clone();
-            reviewed.tail = call.kind == "tail-jump";
-            reviewed.slot_load_site = call.slot_load_site;
+            reviewed.tail = call.observation.kind == "tail-jump";
+            reviewed.slot_load_site = call.observation.slot_load_site;
             let candidates = resolver
                 .pointer_context
                 .reviewed_external_calls
                 .entry(StructuralCallSite::from_identity(
-                    call.member.clone(),
-                    call.function.clone(),
-                    call.site,
+                    owner.clone(),
+                    call.observation.site,
                 ))
                 .or_default();
             if !candidates.contains(&reviewed) {
@@ -691,11 +642,7 @@ pub(crate) fn register_reviewed_external_calls(
             }
             if let Some(target) = internal_target {
                 resolver.pointer_context.reviewed_internal_calls.insert(
-                    StructuralCallSite::from_identity(
-                        call.member.clone(),
-                        call.function.clone(),
-                        call.site,
-                    ),
+                    StructuralCallSite::from_identity(owner.clone(), call.observation.site),
                     target,
                 );
             }
@@ -740,8 +687,7 @@ pub(crate) fn register_reviewed_external_calls(
             evidence: ReviewedExternalCallEvidence::ArchiveOriginProjection,
             slot_load_site: projected.slot_load_site,
         };
-        let call_site =
-            StructuralCallSite::from_identity(projected.member, projected.function, projected.site);
+        let call_site = StructuralCallSite::from_identity(projected.owner, projected.site);
         let candidates = resolver
             .pointer_context
             .reviewed_external_calls
@@ -758,6 +704,7 @@ pub(crate) fn register_reviewed_external_calls(
                 .insert(call_site, target);
         }
     }
+    Ok(())
 }
 
 pub(crate) fn provenance_summary(report: &LinkedIrReport) -> (usize, usize, usize, usize, usize) {
@@ -838,6 +785,12 @@ mod observed_internal_target_tests {
 
     fn symbol(name: &str, address: u64) -> crate::artifact::ArtifactSymbolDefinition {
         crate::artifact::ArtifactSymbolDefinition {
+            identity: crate::artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                name,
+                address,
+            ),
             member: None,
             name: name.to_owned(),
             address,
@@ -850,9 +803,38 @@ mod observed_internal_target_tests {
 
     fn assignment(target: &str) -> crate::interfaces::ResolvedInterfaceAssignment {
         crate::interfaces::ResolvedInterfaceAssignment {
-            member: Some("initializer.o".to_owned()),
-            producer: "install_callbacks".to_owned(),
-            site: 0x20,
+            observation: crate::interfaces::InterfaceAssignmentFact {
+                owner: crate::artifact::CodeIdentity::Synthetic {
+                    namespace: module_path!().into(),
+                    key: format!("fixture:{}", line!()),
+                },
+                artifact: 0,
+                member: Some("initializer.o".into()),
+                function: "install_callbacks".into(),
+                function_address: 0,
+                site: 0x20,
+                root: crate::interfaces::InterfaceFactRoot::FunctionArgument {
+                    owner: crate::artifact::CodeIdentity::Synthetic {
+                        namespace: module_path!().into(),
+                        key: "root-fixture".into(),
+                    },
+                    argument: 0,
+                },
+                container_path: vec![],
+                offset: 0,
+                width: 32,
+                target: crate::interfaces::InterfaceFactRoot::RelocatedSymbol {
+                    reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                        reason: "fixture lacks captured relocation".into(),
+                    },
+                    member: Some("implementation.o".into()),
+                    symbol: target.into(),
+                    addend: 0,
+                    addressing: "absolute".into(),
+                },
+                target_loads: vec![],
+                target_offset: 0,
+            },
             target_member: Some("implementation.o".to_owned()),
             target_symbol: target.to_owned(),
             target_addend: 0,

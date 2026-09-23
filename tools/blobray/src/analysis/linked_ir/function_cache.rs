@@ -354,6 +354,7 @@ fn function_fact_key(
     hash.update(mmio_fingerprint);
     hash.update(resolver_fingerprint);
     hash.update([u8::from(namespace_identities)]);
+    hash_debug_projection(&mut hash, "code-identity", &symbol.identity);
     hash_optional_str(&mut hash, symbol.member.as_deref());
     hash_str(&mut hash, &symbol.name);
     hash.update(symbol.address.to_le_bytes());
@@ -361,6 +362,7 @@ fn function_fact_key(
     hash_bytes(&mut hash, &symbol.bytes);
     hash.update((symbol.relocations.len() as u64).to_le_bytes());
     for relocation in &symbol.relocations {
+        hash_debug_projection(&mut hash, "relocation-reference", &relocation.reference);
         hash.update(relocation.address.to_le_bytes());
         hash_str(&mut hash, relocation_kind(relocation.kind));
         hash_str(&mut hash, &relocation.symbol);
@@ -383,6 +385,7 @@ fn resolver_fingerprint(resolver: &ReferenceResolver) -> [u8; 32] {
         .chain(resolver.symbols_by_address.values())
         .map(|symbol| {
             (
+                &symbol.identity,
                 symbol.member.as_deref(),
                 symbol.name.as_str(),
                 symbol.address,
@@ -390,9 +393,10 @@ fn resolver_fingerprint(resolver: &ReferenceResolver) -> [u8; 32] {
         })
         .collect::<BTreeSet<_>>();
     let mut hash = Sha256::new();
-    hash.update(b"blobray/resolver-semantic-layout/v3\0");
+    hash.update(b"blobray/resolver-semantic-layout/v4\0");
     hash.update((symbols.len() as u64).to_le_bytes());
-    for (member, name, address) in symbols {
+    for (identity, member, name, address) in symbols {
+        hash_debug_projection(&mut hash, "code-identity", identity);
         hash_optional_str(&mut hash, member);
         hash_str(&mut hash, name);
         hash.update(address.to_le_bytes());
@@ -404,10 +408,10 @@ fn resolver_fingerprint(resolver: &ReferenceResolver) -> [u8; 32] {
         hash_symbol_identity(&mut hash, symbol);
     }
 
-    // data_symbol_location intentionally observes the ordered narrowest-first
-    // projection. Preserve that order rather than treating aliases as a set.
+    // Address lookup retains every physically distinct definition.
     hash.update((resolver.data_symbols.len() as u64).to_le_bytes());
     for symbol in &resolver.data_symbols {
+        hash_debug_projection(&mut hash, "data-identity", &symbol.identity);
         hash_optional_str(&mut hash, symbol.member.as_deref());
         hash_str(&mut hash, &symbol.name);
         hash.update(symbol.address.to_le_bytes());
@@ -420,6 +424,12 @@ fn resolver_fingerprint(resolver: &ReferenceResolver) -> [u8; 32] {
     // framing that deterministic representation gives this build-local cache
     // a conservative projection without ever hashing raw summary fn pointers.
     hash_debug_projection(&mut hash, "relocated-calls", &resolver.relocated_calls);
+    hash_debug_projection(&mut hash, "projected-origins", &resolver.projected_origins);
+    hash_debug_projection(
+        &mut hash,
+        "verified-semantic-projections",
+        &resolver.projected_direct_semantics,
+    );
     let context = &resolver.pointer_context;
     hash_str(&mut hash, context.semantic_cache_domain);
     hash.update([u8::from(context.summary_hooks.is_some())]);
@@ -484,6 +494,7 @@ fn resolver_fingerprint(resolver: &ReferenceResolver) -> [u8; 32] {
 }
 
 fn hash_symbol_identity(hash: &mut Sha256, symbol: &artifact::ArtifactSymbolDefinition) {
+    hash_debug_projection(hash, "code-identity", &symbol.identity);
     hash_optional_str(hash, symbol.member.as_deref());
     hash_str(hash, &symbol.name);
     hash.update(symbol.address.to_le_bytes());
@@ -1217,6 +1228,7 @@ impl PortableEffect {
                 Self::Mmio(PortableMmioEffect::capture(base, effect)?)
             }
             LinkedInstructionEffect::Memory {
+                data_address,
                 site,
                 access,
                 width,
@@ -1231,6 +1243,7 @@ impl PortableEffect {
                 forced_one_mask,
                 ..
             } => Self::Memory(PortableMemoryEffect {
+                data_address: data_address.clone(),
                 site_offset: site.checked_sub(base)?,
                 access: (*access).to_owned(),
                 width: *width,
@@ -1274,6 +1287,7 @@ struct PortableMmioEffect {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct PortableMemoryEffect {
+    data_address: open_radio_vendor_contracts::DataAddressResolution,
     site_offset: u32,
     access: String,
     width: u8,
@@ -1291,6 +1305,7 @@ struct PortableMemoryEffect {
 impl PortableMemoryEffect {
     fn materialize(&self, base: u32) -> Option<LinkedInstructionEffect> {
         Some(LinkedInstructionEffect::Memory {
+            data_address: self.data_address.clone(),
             site: base.checked_add(self.site_offset)?,
             block: None,
             access: static_vocabulary(&self.access)?,
@@ -1601,6 +1616,12 @@ mod tests {
         bytes: Vec<u8>,
     ) -> artifact::ArtifactSymbolDefinition {
         artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(member.map(str::to_owned)),
+                name,
+                address,
+            ),
             member: member.map(str::to_owned),
             name: name.to_owned(),
             address,
@@ -1625,7 +1646,7 @@ mod tests {
             pointer_context: direct::StructuralPointerContext::default(),
             data_symbols: Vec::new(),
             data_objects: Vec::new(),
-            projected_direct_semantics: BTreeMap::new(),
+            projected_direct_semantics: Default::default(),
             projected_origins: BTreeMap::new(),
         }
     }
@@ -1773,6 +1794,49 @@ mod tests {
     }
 
     #[test]
+    fn semantic_projection_proofs_are_part_of_the_resolver_key() {
+        static SEMANTIC: crate::DirectSemanticFunctionSpec = crate::DirectSemanticFunctionSpec {
+            id: "cache-proof-fixture",
+            source: "test",
+            c_name: "leaf",
+            argument_count: 0,
+            body_policy: crate::SemanticFunctionBodyPolicy::OpaqueBoundary,
+            return_model: crate::ExternalReturnModel::Unmodeled,
+            semantic: crate::ExternalSemanticSpec {
+                operation: "test.return",
+                arguments: &[],
+                return_type: "void",
+                replacement: None,
+                event_dispatch: None,
+            },
+            evidence: "synthetic return instruction",
+        };
+        static HOOKS: crate::RiscvSummaryHooks = crate::RiscvSummaryHooks {
+            secondary_return_target: |_| false,
+            direct_semantic: |symbol| {
+                (!symbol.addresses_resolved && symbol.bytes == [0x67, 0x80, 0, 0])
+                    .then_some(&SEMANTIC)
+            },
+            direct_external_semantic: |_| None,
+            direct_external_intrinsic: |_, _| None,
+            reference_intrinsic: |_, _, _| None,
+            caller_memory_input_domain: |_, _, _| None,
+            standard_memory_function: |_| None,
+            wide_signed_divide: |_, _| None,
+        };
+        let linked = named_symbol(None, "leaf", 0x4000, vec![0x67, 0x80, 0, 0]);
+        let mut origin = linked.clone();
+        origin.address = 0;
+        origin.addresses_resolved = false;
+        let mut resolver = resolver(vec![linked.clone()]);
+        resolver.pointer_context.summary_hooks = Some(&HOOKS);
+        let before = resolver_fingerprint(&resolver);
+        resolver.review_projected_direct_semantic(&linked, &origin);
+        assert_ne!(before, resolver_fingerprint(&resolver));
+        assert!(super::super::opaque_semantic_boundary(&resolver, &linked));
+    }
+
+    #[test]
     fn unrelated_symbol_body_bytes_do_not_change_the_resolver_projection() {
         let owner = symbol(0x4000);
         let unrelated = named_symbol(Some("other.o"), "unrelated", 0x8000, vec![0x13, 0, 0, 0]);
@@ -1815,6 +1879,38 @@ mod tests {
     }
 
     #[test]
+    fn physical_relocation_target_changes_the_function_key_without_renaming() {
+        use open_radio_vendor_contracts::{
+            ArtifactSymbolTable, ObjectLocation, SymbolBinding, SymbolLocation, SymbolReference,
+        };
+        let mut owner = symbol(0x4000);
+        owner.relocations.push(artifact::SymbolRelocation {
+            reference: SymbolReference::Captured {
+                artifact_sha256: "1".repeat(64),
+                location: SymbolLocation {
+                    object: ObjectLocation::Standalone,
+                    table: ArtifactSymbolTable::Static,
+                    index: 1,
+                },
+                binding: SymbolBinding::LocalDefinition,
+            },
+            address: 0x4000,
+            kind: artifact::RelocationKind::Hi20,
+            symbol: "state".to_owned(),
+            addend: 0,
+        });
+        let baseline = function_fact_key(&owner, &[0; 32], &[0; 32], true);
+        let SymbolReference::Captured { location, .. } = &mut owner.relocations[0].reference else {
+            unreachable!()
+        };
+        location.index += 1;
+        assert_ne!(
+            baseline,
+            function_fact_key(&owner, &[0; 32], &[0; 32], true)
+        );
+    }
+
+    #[test]
     fn resolver_semantic_inputs_change_the_projection() {
         let owner = symbol(0x4000);
         let baseline = resolver_fingerprint(&resolver(vec![owner.clone()]));
@@ -1830,6 +1926,10 @@ mod tests {
         data_symbol
             .data_symbols
             .push(artifact::ArtifactDataSymbolDefinition {
+                identity: open_radio_vendor_contracts::DataIdentity::Synthetic {
+                    namespace: module_path!().to_owned(),
+                    key: "state".to_owned(),
+                },
                 member: Some("data.o".to_owned()),
                 name: "state".to_owned(),
                 address: 0x1000_8000,
@@ -1837,6 +1937,13 @@ mod tests {
                 exported: true,
             });
         assert_ne!(baseline, resolver_fingerprint(&data_symbol));
+        let original_data = resolver_fingerprint(&data_symbol);
+        data_symbol.data_symbols[0].identity =
+            open_radio_vendor_contracts::DataIdentity::Synthetic {
+                namespace: module_path!().to_owned(),
+                key: "other-physical-owner".to_owned(),
+            };
+        assert_ne!(original_data, resolver_fingerprint(&data_symbol));
 
         let mut relocated_call = resolver(vec![owner.clone()]);
         relocated_call.relocated_calls.insert(

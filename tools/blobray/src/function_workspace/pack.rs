@@ -428,11 +428,7 @@ impl FunctionWorkspace {
         })
     }
 
-    pub(crate) fn load_summary(
-        reports: &[(String, std::path::PathBuf)],
-        pack_path: &Path,
-    ) -> Result<Self> {
-        let facts = FunctionFacts::load_summary(reports)?;
+    pub(crate) fn from_summary_facts(facts: FunctionFacts, pack_path: &Path) -> Result<Self> {
         let pack = FunctionPack::load(pack_path)?;
         let summary =
             super::pack_validate::validate_summary(&pack.value, &facts).map_err(|error| {

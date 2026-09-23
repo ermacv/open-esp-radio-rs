@@ -109,12 +109,12 @@ fn review(
     let workspace = FunctionWorkspace::load(&reports, &paths.pack)?;
     let interface_links = reviewed_interface_links(project, target, &workspace)?;
     let contents = render_function_review(&workspace, interface_links.as_deref())?;
-    crate::application::generated_file::write_or_check(
+    crate::application::generated_file::GeneratedOutput::new(
         output,
-        &contents,
         arguments.check,
         "function review",
-    )?;
+    )
+    .text(&contents)?;
     let summary = workspace.summary();
     let report = FunctionReviewDocument {
         schema: 2,

@@ -5,6 +5,7 @@ mod flow;
 mod inline;
 mod intrinsics;
 mod resolver;
+mod semantic_projection;
 use flatten::flatten_reference_trace;
 use flow::{
     ReferenceCalleeContext, compose_calls_in_reference_flow, explore_reference_flow,
@@ -13,6 +14,9 @@ use flow::{
 pub use inline::inline_reference_summary;
 use intrinsics::standard_memory_intrinsic_trace;
 pub use resolver::{ReferenceResolver, ReferenceSymbolKey};
+pub use semantic_projection::{
+    SemanticProjectionCatalog, SemanticProjectionGap, SemanticProjectionStatus,
+};
 
 use std::{
     cell::{Cell, RefCell},

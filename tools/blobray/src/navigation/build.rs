@@ -7,15 +7,15 @@ use std::{
 
 use super::model::{
     ArtifactDocument, IDENTITY_SCHEME, InterfaceCallObservation, InterfaceRootObservation,
-    InventoryObservation, IrObservation, NavigationDocument, ProjectCallLinkDocument,
-    SCHEMA_VERSION, SummaryDocument, SymbolDocument, SymbolKey, address, artifact, input, symbol,
+    InventoryObservation, IrObservation, NavigationDocument, NavigationIdentity,
+    ProjectCallLinkDocument, SCHEMA_VERSION, SummaryDocument, SymbolDocument, SymbolKey, address,
+    artifact, input, symbol,
 };
 use crate::{
     Result,
-    artifacts::{
-        LinkedIrStoredDocument, StoredInterfaceFacts, StoredInterfaceRoot, StoredSymbolInventory,
-    },
+    artifacts::{LinkedIrStoredDocument, StoredInterfaceFacts, StoredSymbolInventory},
     error::BlobrayError,
+    interfaces::{InterfaceFactRoot, InterfaceFacts},
     project::ProjectSpec,
 };
 
@@ -64,6 +64,10 @@ pub(crate) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
             })
             .map_err(crate::Error::invalid)?;
         let key = SymbolKey {
+            occurrence: NavigationIdentity::Symbol {
+                artifact_sha256: sha256.clone(),
+                location: fact.location,
+            },
             artifact_sha256: sha256.clone(),
             member: fact.member,
             name: fact.name,
@@ -91,7 +95,7 @@ pub(crate) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
         &mut pending_project_calls,
     )?;
     let project_calls = project_call_links(&project_definitions, pending_project_calls);
-    let unmatched_interface_roots = add_interfaces(
+    let (unmatched_interface_roots, interface_observations) = add_interfaces(
         project,
         navigation_output,
         &mut inputs,
@@ -137,6 +141,7 @@ pub(crate) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
             .count(),
     };
     Ok(NavigationDocument {
+        interface_observations,
         schema_version: SCHEMA_VERSION,
         command: "project navigation".to_owned(),
         identity_scheme: IDENTITY_SCHEME.to_owned(),
@@ -170,12 +175,18 @@ fn add_linked_ir(
             &profile.output,
             navigation_output,
         )?);
-        let mut source_artifacts = BTreeMap::new();
+        let mut source_artifacts = BTreeSet::new();
         for item in report.artifacts {
             let document = artifact(artifacts, &item.artifact.sha256);
             document.paths.insert(item.artifact.path);
             document.sources.insert(item.source.clone());
-            source_artifacts.insert(item.source, item.artifact.sha256);
+            source_artifacts.insert((item.source.clone(), item.artifact.sha256));
+            for companion in item.companions {
+                let document = artifact(artifacts, &companion.sha256);
+                document.paths.insert(companion.path);
+                document.sources.insert(item.source.clone());
+                source_artifacts.insert((item.source.clone(), companion.sha256));
+            }
         }
         for function in report.functions {
             if function.is_exported() {
@@ -193,17 +204,19 @@ fn add_linked_ir(
                     ));
                 }
             }
-            let sha256 = source_artifacts
-                .get(&function.source)
-                .ok_or_else(|| {
-                    format!(
-                        "linked-IR function {:?} refers to unknown source {:?}",
-                        function.identity, function.source
-                    )
-                })
-                .map_err(crate::Error::invalid)?;
+            if !source_artifacts
+                .contains(&(function.source.clone(), function.artifact_sha256.clone()))
+            {
+                return Err(crate::Error::invalid(
+                    "navigation function belongs to an undeclared source artifact",
+                ));
+            }
             let key = SymbolKey {
-                artifact_sha256: sha256.clone(),
+                occurrence: NavigationIdentity::from_code(
+                    function.code_identity,
+                    &function.artifact_sha256,
+                ),
+                artifact_sha256: function.artifact_sha256,
                 member: function.member,
                 name: function.symbol,
                 object_address: function.object_offset,
@@ -254,9 +267,9 @@ fn add_interfaces(
     inputs: &mut Vec<super::model::InputDocument>,
     artifacts: &mut BTreeMap<String, ArtifactDocument>,
     symbols: &mut BTreeMap<SymbolKey, SymbolDocument>,
-) -> Result<usize> {
+) -> Result<(usize, Option<InterfaceFacts>)> {
     let Some(paths) = &project.interfaces else {
-        return Ok(0);
+        return Ok((0, None));
     };
     let report: StoredInterfaceFacts = read_artifact(
         &paths.facts,
@@ -270,15 +283,16 @@ fn add_interfaces(
         navigation_output,
     )?);
     let mut interface_artifacts = BTreeMap::new();
-    for item in report.artifacts {
+    for item in &report.artifacts {
         let document = artifact(artifacts, &item.sha256);
-        document.paths.insert(item.path);
+        document.paths.insert(item.path.clone());
         document.sources.extend(item.sources.iter().cloned());
-        interface_artifacts.insert(item.index, (item.sha256, item.sources));
+        interface_artifacts.insert(item.index, (item.sha256.clone(), item.sources.clone()));
     }
+    let observations = InterfaceFacts::from_document(report)?;
     let mut root_index = InterfaceRootIndex::new(symbols.keys());
     let mut unmatched_roots = 0;
-    for call in report.calls {
+    for call in &observations.calls {
         let (sha256, sources) = interface_artifacts
             .get(&call.artifact)
             .ok_or_else(|| {
@@ -289,6 +303,7 @@ fn add_interfaces(
             })
             .map_err(crate::Error::invalid)?;
         let caller_key = SymbolKey {
+            occurrence: NavigationIdentity::from_code(call.owner.clone(), sha256),
             artifact_sha256: sha256.clone(),
             member: call.member.clone(),
             name: call.function.clone(),
@@ -298,6 +313,7 @@ fn add_interfaces(
             let caller = symbol(symbols, &caller_key);
             caller.sources.extend(sources.iter().cloned());
             caller.interface_calls.insert(InterfaceCallObservation {
+                owner: call.owner.clone(),
                 site: format!("{:#x}", call.site),
                 kind: call.kind.clone(),
             });
@@ -307,12 +323,9 @@ fn add_interfaces(
         // available to later interface-root lookups too.
         root_index.insert(&caller_key);
 
-        let root_matches = root_index.matches(sha256, &call.target.root);
+        let root_matches = root_index.matches(sha256, &call.root);
         if root_matches.is_empty()
-            && !matches!(
-                call.target.root,
-                StoredInterfaceRoot::FunctionArgument { .. }
-            )
+            && !matches!(call.root, InterfaceFactRoot::FunctionArgument { .. })
         {
             unmatched_roots += 1;
         }
@@ -320,30 +333,33 @@ fn add_interfaces(
             symbol(symbols, &key)
                 .interface_roots
                 .insert(InterfaceRootObservation {
+                    owner: call.owner.clone(),
+                    data_address: match &call.root {
+                        InterfaceFactRoot::AbsoluteAddress { data_address, .. } => {
+                            Some(data_address.clone())
+                        }
+                        _ => None,
+                    },
                     function: call.function.clone(),
                     site: format!("{:#x}", call.site),
-                    kind: interface_root_kind(&call.target.root).to_owned(),
+                    kind: interface_root_kind(&call.root).to_owned(),
                 });
         }
     }
-    Ok(unmatched_roots)
+    Ok((unmatched_roots, Some(observations)))
 }
 
-/// Indexed view of the two exact root identities used by interface facts.
-///
-/// Navigation used to scan every accumulated symbol for every interface call.
-/// Real projects have tens of thousands of symbols and thousands of calls,
-/// making that join quadratic. These indexes retain the same `BTreeSet`
-/// ordering while reducing each lookup to logarithmic map access.
+/// Physical lookup for captured relocation entries and data range candidates.
+/// Numeric-address lookups remain explicit associations when no range evidence exists.
 struct InterfaceRootIndex {
-    relocated: BTreeMap<(String, Option<String>, String), BTreeSet<SymbolKey>>,
+    physical: BTreeMap<NavigationIdentity, SymbolKey>,
     absolute: BTreeMap<(String, u32), BTreeSet<SymbolKey>>,
 }
 
 impl InterfaceRootIndex {
     fn new<'a>(symbols: impl Iterator<Item = &'a SymbolKey>) -> Self {
         let mut index = Self {
-            relocated: BTreeMap::new(),
+            physical: BTreeMap::new(),
             absolute: BTreeMap::new(),
         };
         for symbol in symbols {
@@ -353,53 +369,66 @@ impl InterfaceRootIndex {
     }
 
     fn insert(&mut self, symbol: &SymbolKey) {
-        self.relocated
-            .entry((
-                symbol.artifact_sha256.clone(),
-                symbol.member.clone(),
-                symbol.name.clone(),
-            ))
-            .or_default()
-            .insert(symbol.clone());
+        self.physical
+            .insert(symbol.occurrence.clone(), symbol.clone());
         self.absolute
             .entry((symbol.artifact_sha256.clone(), symbol.object_address))
             .or_default()
             .insert(symbol.clone());
     }
 
-    fn matches(&self, artifact_sha256: &str, root: &StoredInterfaceRoot) -> Vec<SymbolKey> {
+    fn matches(&self, artifact_sha256: &str, root: &InterfaceFactRoot) -> Vec<SymbolKey> {
+        let mut matches = BTreeSet::new();
         match root {
-            StoredInterfaceRoot::RelocatedSymbol { member, symbol, .. } => {
-                self.relocated
-                    .get(&(artifact_sha256.to_owned(), member.clone(), symbol.clone()))
+            InterfaceFactRoot::RelocatedSymbol { reference, .. } => {
+                if let open_radio_vendor_contracts::SymbolReference::Captured {
+                    artifact_sha256,
+                    location,
+                    ..
+                } = reference
+                    && let Some(found) = self.physical.get(&NavigationIdentity::Symbol {
+                        artifact_sha256: artifact_sha256.clone(),
+                        location: *location,
+                    })
+                {
+                    matches.insert(found.clone());
+                }
             }
-            StoredInterfaceRoot::AbsoluteAddress { address, .. } => {
-                // Zero is the fail-closed unknown pointer value emitted by
-                // interface discovery, not a usable runtime symbol identity.
-                // Joining it to every undefined/section-relative symbol at
-                // object offset zero created hundreds of thousands of false
-                // navigation edges in real linked-library projects.
-                (*address != 0)
-                    .then(|| self.absolute.get(&(artifact_sha256.to_owned(), *address)))
-                    .flatten()
+            InterfaceFactRoot::AbsoluteAddress {
+                address,
+                data_address,
+            } => {
+                for candidate in data_address.candidates() {
+                    if let open_radio_vendor_contracts::DataIdentity::Symbol {
+                        artifact_sha256,
+                        location,
+                    } = &candidate.identity
+                        && let Some(found) = self.physical.get(&NavigationIdentity::Symbol {
+                            artifact_sha256: artifact_sha256.clone(),
+                            location: *location,
+                        })
+                    {
+                        matches.insert(found.clone());
+                    }
+                }
+                if data_address.candidates().is_empty()
+                    && *address != 0
+                    && let Some(found) = self.absolute.get(&(artifact_sha256.to_owned(), *address))
+                {
+                    matches.extend(found.iter().cloned());
+                }
             }
-            StoredInterfaceRoot::BoundedDataAddress { member, symbol, .. } => self
-                .relocated
-                .get(&(artifact_sha256.to_owned(), member.clone(), symbol.clone())),
-            StoredInterfaceRoot::FunctionArgument { .. } => None,
+            InterfaceFactRoot::FunctionArgument { .. } => {}
         }
-        .into_iter()
-        .flat_map(|matches| matches.iter().cloned())
-        .collect()
+        matches.into_iter().collect()
     }
 }
 
-fn interface_root_kind(root: &StoredInterfaceRoot) -> &'static str {
+fn interface_root_kind(root: &InterfaceFactRoot) -> &'static str {
     match root {
-        StoredInterfaceRoot::RelocatedSymbol { .. } => "relocated-symbol",
-        StoredInterfaceRoot::FunctionArgument { .. } => "function-argument",
-        StoredInterfaceRoot::BoundedDataAddress { .. } => "bounded-data-address",
-        StoredInterfaceRoot::AbsoluteAddress { .. } => "absolute-address",
+        InterfaceFactRoot::RelocatedSymbol { .. } => "relocated-symbol",
+        InterfaceFactRoot::FunctionArgument { .. } => "function-argument",
+        InterfaceFactRoot::AbsoluteAddress { .. } => "absolute-address",
     }
 }
 
@@ -443,6 +472,14 @@ mod index_tests {
     #[test]
     fn unknown_zero_absolute_root_never_joins_zero_offset_symbols() {
         let key = SymbolKey {
+            occurrence: NavigationIdentity::Symbol {
+                artifact_sha256: "11".repeat(32),
+                location: crate::SymbolLocation {
+                    object: crate::ObjectLocation::Standalone,
+                    table: crate::ArtifactSymbolTable::Static,
+                    index: 1,
+                },
+            },
             artifact_sha256: "11".repeat(32),
             member: None,
             name: "undefined".to_owned(),
@@ -454,8 +491,11 @@ mod index_tests {
             index
                 .matches(
                     &key.artifact_sha256,
-                    &StoredInterfaceRoot::AbsoluteAddress {
-                        canonical: "0x00000000".to_owned(),
+                    &InterfaceFactRoot::AbsoluteAddress {
+                        data_address: open_radio_vendor_contracts::DataAddressResolution::Unknown {
+                            reason:
+                                open_radio_vendor_contracts::DataAddressGap::NoContainingDefinition
+                        },
                         address: 0,
                     },
                 )

@@ -2516,6 +2516,9 @@ mod tests {
     #[test]
     fn callback_store_must_target_the_subscribed_object() {
         let effect = artifacts::StoredInstructionEffect::Memory {
+            data_address: open_radio_vendor_contracts::DataAddressResolution::Unknown {
+                reason: open_radio_vendor_contracts::DataAddressGap::NotAnalyzed,
+            },
             site: 0x1000,
             block: Some(1),
             access: "write".to_owned(),

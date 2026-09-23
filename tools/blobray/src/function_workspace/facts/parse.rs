@@ -42,6 +42,7 @@ pub(super) fn parse_function(
 ) -> FunctionFact {
     let summary = function.effect_summary;
     FunctionFact {
+        code_identity: function.code_identity,
         profile: profile.to_owned(),
         source: function.source,
         identity: function.identity,
@@ -206,6 +207,7 @@ pub(super) fn parse_review_projection(
         .map(|function| {
             let summary = function.effect_summary;
             Ok(FunctionFact {
+                code_identity: function.code_identity,
                 profile: profile.to_owned(),
                 source: function.source,
                 identity: function.identity,
@@ -376,9 +378,15 @@ fn call_fact(call: crate::artifacts::StoredCall) -> FunctionCallFact {
 fn memory_object_fact(object: StoredMemoryObject) -> FunctionMemoryObjectFact {
     match object {
         StoredMemoryObject::Argument { index } => FunctionMemoryObjectFact::Argument { index },
-        StoredMemoryObject::Global { member, symbol } => {
-            FunctionMemoryObjectFact::Global { member, symbol }
-        }
+        StoredMemoryObject::Global {
+            reference,
+            member,
+            symbol,
+        } => FunctionMemoryObjectFact::Global {
+            reference,
+            member,
+            symbol,
+        },
         StoredMemoryObject::Dereferenced {
             pointer,
             pointer_offset,

@@ -9,11 +9,20 @@ pub use open_radio_vendor_execution_model::admission as model_admission;
 
 use std::cmp::Ordering;
 
+mod artifact_location;
+mod data_address;
+pub use data_address::{
+    DataAddressBasis, DataAddressCandidate, DataAddressGap, DataAddressResolution,
+};
 mod fact;
 mod identity;
 mod model_provider;
 pub mod register_inventory;
 
+pub use artifact_location::{
+    ArtifactSymbolTable, CodeIdentity, DataIdentity, ObjectLocation, SymbolBinding, SymbolLocation,
+    SymbolReference,
+};
 pub use model_provider::{ExecutionModelKind, ExecutionModelProviderSpec};
 
 pub use fact::{

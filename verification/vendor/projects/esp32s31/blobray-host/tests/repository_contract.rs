@@ -339,11 +339,21 @@ fn ieee802154_vendor_scaffold_is_fail_closed_and_source_scoped() {
         controller["symbol-prefix"].as_str(),
         Some("esp_ieee802154_")
     );
-    assert_eq!(controller["disposition"].as_str(), Some("required"));
-    assert_eq!(
-        controller["profile"].as_str(),
-        Some("ieee802154-controller")
+    assert_eq!(controller["disposition"].as_str(), Some("excluded"));
+    assert!(controller.get("profile").is_none());
+    assert!(
+        controller["reason"]
+            .as_str()
+            .unwrap()
+            .contains("ported from source")
     );
+    assert!(!ir_profiles.iter().any(|profile| {
+        profile["sources"].as_array().is_some_and(|sources| {
+            sources
+                .iter()
+                .any(|source| source.as_str() == Some("ieee802154"))
+        })
+    }));
 
     let scopes = project["review"]["scopes"]
         .as_array_of_tables()

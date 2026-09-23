@@ -7,6 +7,24 @@ impl BrowserState {
         if self.section == Section::Comparisons {
             return self.begin_compare();
         }
+        if self.section == Section::Functions
+            && let Some(function) = self.snapshot.functions.get(self.selected())
+        {
+            let ambiguous = function.registers.iter().find_map(|address| {
+                let candidates = self
+                    .snapshot
+                    .registers
+                    .registers()
+                    .filter(|register| register.subject.address == u64::from(*address))
+                    .map(|register| register.id.as_str())
+                    .collect::<Vec<_>>();
+                (candidates.len() > 1).then(|| candidates.join(", "))
+            });
+            if let Some(candidates) = ambiguous {
+                self.operation_failed(format!("MMIO address matches several physical subjects; select one in Registers: {candidates}"));
+                return Action::Continue;
+            }
+        }
         let target = match self.section {
             Section::Scopes => self
                 .snapshot
@@ -28,9 +46,14 @@ impl BrowserState {
                     .and_then(|function| {
                         self.snapshot
                             .registers
-                            .registers
-                            .iter()
-                            .position(|register| function.registers.contains(&register.address))
+                            .registers()
+                            .position(|register| {
+                                register.subject.route == "mmio"
+                                    && register.subject.bank.is_none()
+                                    && function.registers.iter().any(|address| {
+                                        u64::from(*address) == register.subject.address
+                                    })
+                            })
                             .map(|index| (Section::Registers, index, "MMIO register"))
                             .or_else(|| {
                                 self.snapshot
@@ -50,18 +73,31 @@ impl BrowserState {
                             })
                     })
             }
-            Section::Registers => self
-                .snapshot
-                .registers
-                .registers
-                .get(self.selected())
-                .and_then(|register| {
-                    self.snapshot
-                        .functions
-                        .iter()
-                        .position(|function| function.registers.contains(&register.address))
-                })
-                .map(|index| (Section::Functions, index, "register user")),
+            Section::Registers => {
+                self.snapshot
+                    .registers
+                    .register_at(self.selected())
+                    .and_then(|register| {
+                        self.snapshot.functions.iter().position(|function| {
+                            register.functions.contains(&function.identity)
+                                || (register.subject.route == "mmio"
+                                    && register.subject.bank.is_none()
+                                    && self
+                                        .snapshot
+                                        .registers
+                                        .registers()
+                                        .filter(|other| {
+                                            other.subject.address == register.subject.address
+                                        })
+                                        .count()
+                                        == 1
+                                    && function.registers.iter().any(|address| {
+                                        u64::from(*address) == register.subject.address
+                                    }))
+                        })
+                    })
+                    .map(|index| (Section::Functions, index, "register user"))
+            }
             Section::Blockers => self
                 .snapshot
                 .review_queue

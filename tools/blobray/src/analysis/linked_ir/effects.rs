@@ -59,6 +59,9 @@ fn collect_memory_object_access_from_event(
                     return;
                 };
                 output.push(MemoryObjectAccess {
+                    data_address: open_radio_vendor_contracts::DataAddressResolution::Unknown {
+                        reason: open_radio_vendor_contracts::DataAddressGap::NotAnalyzed,
+                    },
                     object,
                     offset: location.offset,
                     access: match access {
@@ -188,74 +191,43 @@ pub(super) fn memory_object_accesses_for_trace(
     output
 }
 
-/// Rebase statically known linked-image addresses onto the narrowest sized
-/// ELF data symbol. This turns accesses such as `0x1000828c + 0xf8` into
-/// reviewable `phy_param + 0xf8` evidence without inferring a nominal type.
-pub(super) fn attribute_data_symbols(
+/// Attach all range candidates without changing the observed root or offset.
+/// Numeric argument offsets remain hints rather than inferred global objects.
+pub(super) fn annotate_data_addresses(
     accesses: &mut [MemoryObjectAccess],
     resolver: &ReferenceResolver,
 ) {
+    use open_radio_vendor_contracts::{DataAddressBasis, DataAddressGap, DataAddressResolution};
     for access in accesses {
-        let indexed_absolute = match &access.object {
-            LinkedMemoryObject::Indexed { object, .. } => match object.as_ref() {
-                LinkedMemoryObject::Absolute { address, .. } => Some(*address),
-                _ => None,
-            },
-            _ => None,
-        };
-        if let Some(address) = indexed_absolute
-            && let Some((member, symbol, offset)) =
-                resolver.data_symbol_location(address, access.width)
-        {
-            let LinkedMemoryObject::Indexed { object, .. } = &mut access.object else {
-                unreachable!();
-            };
-            **object = LinkedMemoryObject::Global {
-                member: member.map(str::to_owned),
-                symbol: symbol.to_owned(),
-            };
-            access.offset = access.offset.wrapping_add(offset);
-            continue;
-        }
-        match &access.object {
+        let (base, basis) = match &access.object {
             LinkedMemoryObject::Absolute { address, .. } => {
-                let Some((member, symbol, offset)) =
-                    resolver.data_symbol_location(*address, access.width)
-                else {
-                    continue;
-                };
-                access.object = LinkedMemoryObject::Global {
-                    member: member.map(str::to_owned),
-                    symbol: symbol.to_owned(),
-                };
-                access.offset = access.offset.wrapping_add(offset);
+                (Some(*address), DataAddressBasis::AccessAddress)
             }
-            // A linked image has already resolved `symbol + argument`, so the
-            // structural value can look like `argument + absolute-address`.
-            // Promote it only when that apparent offset is contained by a
-            // sized ELF data symbol. This removes a false giant context field
-            // without guessing from the numerical address alone.
-            LinkedMemoryObject::Argument { index } => {
-                let Ok(address) = u32::try_from(access.offset) else {
-                    continue;
-                };
-                let Some((member, symbol, offset)) =
-                    resolver.data_symbol_location(address, access.width)
-                else {
-                    continue;
-                };
-                access.object = LinkedMemoryObject::Indexed {
-                    object: Box::new(LinkedMemoryObject::Global {
-                        member: member.map(str::to_owned),
-                        symbol: symbol.to_owned(),
-                    }),
-                    argument: *index,
-                    stride: 1,
-                };
-                access.offset = offset;
-            }
-            _ => {}
-        }
+            LinkedMemoryObject::Indexed { object, .. } => match object.as_ref() {
+                LinkedMemoryObject::Absolute { address, .. } => {
+                    (Some(*address), DataAddressBasis::IndexedBase)
+                }
+                _ => (None, DataAddressBasis::IndexedBase),
+            },
+            LinkedMemoryObject::Argument { .. } => (Some(0), DataAddressBasis::ArgumentOffsetHint),
+            _ => (None, DataAddressBasis::AccessAddress),
+        };
+        access.data_address = match base {
+            Some(base) => match i64::from(base)
+                .checked_add(access.offset)
+                .and_then(|value| u32::try_from(value).ok())
+            {
+                Some(address) => resolver
+                    .data_address_resolution(address, access.width)
+                    .with_basis(basis),
+                None => DataAddressResolution::Unknown {
+                    reason: DataAddressGap::AddressOverflow,
+                },
+            },
+            None => DataAddressResolution::Unknown {
+                reason: DataAddressGap::NonConcreteAddress,
+            },
+        };
     }
 }
 
@@ -967,10 +939,11 @@ pub(super) fn instruction_effects_for_trace(
                     &read_sources,
                     &mut effects,
                 );
-                attribute_data_symbols(&mut effects, resolver);
+                annotate_data_addresses(&mut effects, resolver);
                 for effect in effects {
                     let paths = matching_memory_paths(memory_accesses, &effect);
                     output.push(LinkedInstructionEffect::Memory {
+                        data_address: effect.data_address,
                         site: located.site,
                         block: None,
                         access: effect.access,

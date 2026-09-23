@@ -80,11 +80,9 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
         ResolvedInvocation::CodeWorkspace { command, project } => {
             commands::run_code_workspace_command(command, &project)
         }
-        ResolvedInvocation::RegisterWorkspace {
-            command,
-            project,
-            memory_map,
-        } => commands::run_register_command(command, &project, memory_map.as_ref()),
+        ResolvedInvocation::RegisterWorkspace { command, session } => {
+            commands::run_register_command(command, &session)
+        }
         ResolvedInvocation::InterfaceWorkspace {
             command,
             project,

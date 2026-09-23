@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v69.
+//! Complete owned DTO for linked-IR schema v73.
 
 #![allow(
     dead_code,
@@ -20,7 +20,20 @@ pub(crate) use mmio::*;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct StoredRootBlocker {
+    pub(crate) code_identity: crate::artifact::CodeIdentity,
+    pub(crate) source: String,
+    pub(crate) artifact_sha256: String,
+    pub(crate) member: Option<String>,
+    pub(crate) symbol: String,
+    pub(crate) address: u64,
+    pub(crate) reason: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct LinkedIrStoredDocument {
+    pub(crate) root_blockers: Vec<StoredRootBlocker>,
     schema_version: u32,
     command: String,
     analysis_mode: String,
@@ -62,6 +75,7 @@ pub(crate) struct LinkedIrStoredDocument {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredSourceArtifact {
+    pub(crate) companions: Vec<StoredArtifactIdentity>,
     pub(crate) source: String,
     pub(crate) artifact: StoredArtifactIdentity,
     reviewed_code_boundaries: Vec<StoredReviewedCodeBoundary>,
@@ -159,6 +173,7 @@ pub(crate) struct StoredReportSummary {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredDataObject {
+    pub(crate) data_identity: crate::artifact::DataIdentity,
     pub(crate) source: String,
     pub(crate) artifact_sha256: String,
     pub(crate) locator: String,
@@ -193,16 +208,57 @@ struct StoredDataObjectRelocation {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredDataObjectXref {
+    pub(crate) association: DataObjectAssociation,
     pub(crate) function: String,
+    pub(crate) evidence: DataObjectXrefEvidence,
     pub(crate) reads: usize,
     pub(crate) writes: usize,
     pub(crate) offsets: Vec<String>,
     indexed_by: Vec<String>,
 }
 
+/// Reference traces and instruction sites are separate observation channels.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum DataObjectXrefEvidence {
+    ReferenceTrace,
+    Instruction,
+}
+
+/// Authority of a data-object cross-reference, independent of its display name.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum DataObjectAssociation {
+    PhysicalLocalDefinition,
+    PhysicalDefinitionCandidate,
+    MemberNameAndSymbolCandidate,
+    AddressRangeCandidate,
+}
+
+impl DataObjectAssociation {
+    pub(crate) fn for_reference(
+        reference: &open_radio_vendor_contracts::SymbolReference,
+        identity: &crate::artifact::DataIdentity,
+        names_match: bool,
+    ) -> Option<Self> {
+        if let Some(definition) = reference.definition_identity() {
+            if reference.is_local_definition()
+                && definition.artifact_sha256() == identity.artifact_sha256()
+            {
+                return (definition == *identity).then_some(Self::PhysicalLocalDefinition);
+            }
+            if definition == *identity {
+                return Some(Self::PhysicalDefinitionCandidate);
+            }
+        }
+        names_match.then_some(Self::MemberNameAndSymbolCandidate)
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredFunction {
+    pub(crate) code_identity: crate::artifact::CodeIdentity,
     pub(crate) source: String,
     pub(crate) artifact_sha256: String,
     pub(crate) locator: String,
@@ -475,6 +531,7 @@ pub(crate) struct StoredFlowValue {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredFunctionReviewProjection {
+    pub(crate) code_identity: crate::artifact::CodeIdentity,
     pub(crate) source: String,
     pub(crate) artifact_sha256: String,
     pub(crate) locator: String,
@@ -1953,6 +2010,7 @@ pub(crate) enum StoredInstructionEffect {
         forced_one_mask: Option<u32>,
     },
     Memory {
+        data_address: open_radio_vendor_contracts::DataAddressResolution,
         site: u32,
         block: Option<usize>,
         access: String,
@@ -2089,6 +2147,7 @@ struct StoredFunctionContextField {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredMemoryAccess {
+    data_address: open_radio_vendor_contracts::DataAddressResolution,
     object: StoredMemoryObject,
     offset: i64,
     access: String,
@@ -2115,13 +2174,14 @@ struct StoredFunctionMemoryField {
     write_values: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum StoredMemoryObject {
     Argument {
         index: u8,
     },
     Global {
+        reference: open_radio_vendor_contracts::SymbolReference,
         member: Option<String>,
         symbol: String,
     },
@@ -2153,7 +2213,7 @@ impl StoredMemoryObject {
     fn display_name(&self) -> String {
         match self {
             Self::Argument { index } => format!("arg{index}"),
-            Self::Global { member, symbol } => member
+            Self::Global { member, symbol, .. } => member
                 .as_deref()
                 .map_or_else(|| symbol.clone(), |member| format!("{member}::{symbol}")),
             Self::Dereferenced {
@@ -2429,5 +2489,76 @@ mod instruction_effect_tests {
         assert_eq!(decoded.site(), 0x4008_1234);
         assert_eq!(decoded.block(), Some(7));
         assert_eq!(serde_json::to_value(decoded).unwrap(), encoded);
+    }
+}
+
+#[cfg(test)]
+mod data_reference_tests {
+    use super::*;
+    use open_radio_vendor_contracts::{
+        ArtifactSymbolTable, DataIdentity, ObjectLocation, SymbolBinding, SymbolLocation,
+        SymbolReference,
+    };
+
+    #[test]
+    fn local_references_are_exact_but_non_local_and_foreign_references_remain_candidates() {
+        let location = SymbolLocation {
+            object: ObjectLocation::ArchiveMember { ordinal: 0 },
+            table: ArtifactSymbolTable::Static,
+            index: 1,
+        };
+        let identity = DataIdentity::Symbol {
+            artifact_sha256: "1".repeat(64),
+            location,
+        };
+        let sibling = DataIdentity::Symbol {
+            artifact_sha256: "1".repeat(64),
+            location: SymbolLocation {
+                object: ObjectLocation::ArchiveMember { ordinal: 1 },
+                ..location
+            },
+        };
+        let reference = |binding| SymbolReference::Captured {
+            artifact_sha256: "1".repeat(64),
+            location,
+            binding,
+        };
+        let local = reference(SymbolBinding::LocalDefinition);
+        assert!(matches!(
+            DataObjectAssociation::for_reference(&local, &identity, false),
+            Some(DataObjectAssociation::PhysicalLocalDefinition)
+        ));
+        assert!(DataObjectAssociation::for_reference(&local, &sibling, true).is_none());
+        for binding in [
+            SymbolBinding::GlobalDefinition,
+            SymbolBinding::WeakDefinition,
+        ] {
+            assert!(matches!(
+                DataObjectAssociation::for_reference(&reference(binding), &identity, true),
+                Some(DataObjectAssociation::PhysicalDefinitionCandidate)
+            ));
+            assert!(matches!(
+                DataObjectAssociation::for_reference(&reference(binding), &sibling, true),
+                Some(DataObjectAssociation::MemberNameAndSymbolCandidate)
+            ));
+        }
+        assert!(matches!(
+            DataObjectAssociation::for_reference(
+                &reference(SymbolBinding::Undefined),
+                &identity,
+                true
+            ),
+            Some(DataObjectAssociation::MemberNameAndSymbolCandidate)
+        ));
+        // An archive-origin reference is not proof that a linked image selected
+        // or preserved that storage. Keep its name association as a candidate.
+        let linked = DataIdentity::Symbol {
+            artifact_sha256: "2".repeat(64),
+            location,
+        };
+        assert!(matches!(
+            DataObjectAssociation::for_reference(&local, &linked, true),
+            Some(DataObjectAssociation::MemberNameAndSymbolCandidate)
+        ));
     }
 }

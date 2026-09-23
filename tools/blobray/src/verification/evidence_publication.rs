@@ -145,13 +145,8 @@ impl Publication {
             )
         });
         self.archive(&index)?;
-        generated_file::write_or_check_json(
-            &self.path,
-            &index,
-            false,
-            "incremental vendor evidence",
-            true,
-        )
+        generated_file::GeneratedOutput::new(&self.path, false, "incremental vendor evidence")
+            .json(&index, true)
     }
     fn archive(&self, index: &Value) -> Result<()> {
         let bytes = serde_json::to_vec(index)?;
@@ -160,12 +155,8 @@ impl Publication {
             .path
             .with_extension("history")
             .join(format!("{hash}.json"));
-        generated_file::write_or_check_bytes(
-            &history,
-            &bytes,
-            history.exists(),
-            "vendor evidence history",
-        )
+        generated_file::GeneratedOutput::new(&history, history.exists(), "vendor evidence history")
+            .bytes(&bytes)
     }
 }
 

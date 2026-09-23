@@ -15,6 +15,11 @@ const WORKSPACE: &str = r#"
 [workspace]
 members = [
     ".",
+    "next",
+    "crates/domain",
+    "crates/artifacts",
+    "crates/store",
+    "crates/application",
     "crates/analysis-model",
     "crates/backend-riscv",
     "crates/contracts",
@@ -83,6 +88,59 @@ pub fn run(context: &Context) -> Result<()> {
         "--locked",
     ]))?;
     eprintln!("standalone Blobray workspace is self-contained");
+    Ok(())
+}
+
+/// Extract only the new core; legacy failures cannot mask this boundary check.
+pub fn run_next(context: &Context) -> Result<()> {
+    let toolchain = selected_toolchain(context, std::env::var_os("RUSTUP_TOOLCHAIN"))?;
+    let scratch = tempfile::Builder::new()
+        .prefix("blobray-next-standalone-")
+        .tempdir()?;
+    let root = scratch.path().canonicalize()?;
+    let source = context.root.join("tools/blobray");
+    let members = [
+        "next",
+        "crates/domain",
+        "crates/artifacts",
+        "crates/store",
+        "crates/application",
+        "crates/analysis",
+        "crates/knowledge",
+        "crates/verification",
+        "crates/riscv",
+    ];
+    let files = paths::source_files(context)?;
+    for member in members {
+        extract(&source.join(member), &root.join(member), files.clone())?;
+    }
+    let mut workspace: toml::Value = toml::from_str(WORKSPACE)?;
+    workspace["workspace"]["members"] = toml::Value::Array(
+        members
+            .iter()
+            .map(|s| toml::Value::String((*s).into()))
+            .collect(),
+    );
+    fs::write(root.join("Cargo.toml"), toml::to_string(&workspace)?)?;
+    let output = process::capture(command(context, &root, &toolchain).args([
+        "metadata",
+        "--no-deps",
+        "--format-version",
+        "1",
+        "--offline",
+    ]))?;
+    let metadata: cargo_metadata::Metadata = serde_json::from_slice(&output.stdout)?;
+    require_contained_dependencies(
+        &root,
+        metadata.packages.iter().flat_map(|package| {
+            package
+                .dependencies
+                .iter()
+                .filter_map(|d| d.path.as_ref().map(|p| p.as_std_path()))
+        }),
+    )?;
+    process::run(command(context, &root, &toolchain).args(["test", "--workspace", "--offline"]))?;
+    eprintln!("standalone Blobray Next core and tests are self-contained");
     Ok(())
 }
 

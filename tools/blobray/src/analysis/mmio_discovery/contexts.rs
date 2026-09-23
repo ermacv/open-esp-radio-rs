@@ -139,6 +139,12 @@ mod tests {
     #[test]
     fn pointer_accessor_discovers_read_and_write_with_caller_arguments() {
         let symbol = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "accessor",
+                0x100c,
+            ),
             member: None,
             name: "accessor".to_owned(),
             address: 0x100c,
@@ -166,6 +172,12 @@ mod tests {
             symbol: "caller".to_owned(),
         };
         let caller = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "caller",
+                0x1000,
+            ),
             member: None,
             name: "caller".to_owned(),
             address: 0x1000,

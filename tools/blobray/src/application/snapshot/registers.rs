@@ -8,34 +8,34 @@ pub(super) fn collect(
     resolved: &ProjectSession,
     diagnostics: &mut Vec<DiagnosticRecord>,
 ) -> RegisterWorkspaceReport {
-    let summary = match resolved
-        .register_workspace()
-        .and_then(|workspace| workspace.map(|workspace| workspace.summary()).transpose())
-    {
-        Ok(summary) => summary,
-        Err(error) => {
-            push_error(diagnostics, "registers", error, None);
-            None
+    let (inventory, publication) = match resolved.register_query() {
+        Ok(query) => {
+            let publication = match &query.publication.summary {
+                Ok(summary) => *summary,
+                Err(reason) => {
+                    push_error(
+                        diagnostics,
+                        "registers",
+                        crate::Error::invalid(reason.clone()),
+                        None,
+                    );
+                    None
+                }
+            };
+            (
+                RegisterInventoryState::Available {
+                    snapshot: query.snapshot.clone(),
+                },
+                publication,
+            )
         }
-    };
-    let registers = match register_inventory::load(&resolved.project, &resolved.mmio) {
-        Ok(inventory) => inventory
-            .registers
-            .values()
-            .filter_map(|register| {
-                u32::try_from(register.subject.address)
-                    .ok()
-                    .map(|address| RegisterSummary {
-                        address,
-                        name: register.label(),
-                    })
-            })
-            .collect(),
         Err(error) => {
+            let reason = error.to_string();
             push_error(diagnostics, "register-inventory", error, None);
-            Vec::new()
+            (RegisterInventoryState::Failed { reason }, None)
         }
     };
+    let graph = inventory.snapshot().map(|snapshot| snapshot.inventory());
     RegisterWorkspaceReport {
         configured: resolved.project.registers.is_some(),
         model: resolved
@@ -43,15 +43,23 @@ pub(super) fn collect(
             .registers
             .as_ref()
             .map(|paths| paths.model.clone()),
-        ranges: summary.map_or(0, |s| s.ranges),
-        observed: summary.map_or(0, |s| s.observed),
-        reviewed: summary.map_or(0, |s| s.reviewed),
-        ignored: summary.map_or(0, |s| s.ignored),
-        non_operational: summary.map_or(0, |s| s.non_operational),
-        manual: summary.map_or(0, |s| s.manual),
-        unreviewed: summary.map_or(0, |s| s.unreviewed),
-        fields: summary.map_or(0, |s| s.fields),
-        registers,
+        ranges: graph.map_or(0, |graph| graph.regions.len()),
+        observed: graph.map_or(0, |graph| {
+            graph
+                .registers
+                .values()
+                .filter(|register| !register.access_widths.is_empty())
+                .count()
+        }),
+        fields: graph.map_or(0, |graph| {
+            graph
+                .registers
+                .values()
+                .map(|register| register.fields.len())
+                .sum()
+        }),
+        publication,
+        inventory,
     }
 }
 
@@ -76,39 +84,66 @@ fn strings(value: &serde_json::Value) -> Vec<String> {
 }
 
 pub(crate) fn detail(
-    project: &crate::ProjectSpec,
-    catalog: &crate::MmioMap,
-    address: u32,
+    session: &crate::application::ProjectSession,
+    selector: &register_inventory::RegisterSelector,
 ) -> crate::Result<Option<RegisterDetailSummary>> {
-    detail_from_inventory(
-        project,
-        register_inventory::load(project, catalog)?,
-        address,
+    let query = session.register_query()?;
+    detail_from_capture(
+        &session.project,
+        query.snapshot.inventory(),
+        &query.publication,
+        query.snapshot.id(),
+        selector,
     )
 }
 
+#[cfg(test)]
 pub(crate) fn detail_from_inventory(
     project: &crate::ProjectSpec,
     inventory: register_inventory::RegisterInventory,
-    address: u32,
+    selector: &register_inventory::RegisterSelector,
+) -> crate::Result<Option<RegisterDetailSummary>> {
+    let snapshot = crate::RegisterInventorySnapshot::new(inventory)?;
+    let facts = project
+        .registers
+        .as_ref()
+        .filter(|paths| paths.facts.is_file())
+        .map(|paths| crate::registers::RegisterFacts::load(&paths.facts))
+        .transpose()
+        .map_err(|error| error.to_string());
+    let publication =
+        crate::application::register_query::PublicationInputs::capture(project, facts);
+    detail_from_capture(
+        project,
+        snapshot.inventory(),
+        &publication,
+        snapshot.id(),
+        selector,
+    )
+}
+
+fn detail_from_capture(
+    project: &crate::ProjectSpec,
+    inventory: &register_inventory::RegisterInventory,
+    publication: &crate::application::register_query::PublicationInputs,
+    snapshot_id: &str,
+    selector: &register_inventory::RegisterSelector,
 ) -> crate::Result<Option<RegisterDetailSummary>> {
     let subjects = inventory
-        .at_address(u64::from(address))
+        .resolve_selector(selector)
         .into_iter()
         .cloned()
         .collect::<Vec<_>>();
     if subjects.is_empty() {
         return Ok(None);
     }
-    let width = if subjects.len() == 1 {
-        subjects[0]
-            .width()
-            .and_then(|width| u8::try_from(width).ok())
-    } else {
-        None
+    let address = match selector {
+        register_inventory::RegisterSelector::Address(address) => *address,
+        register_inventory::RegisterSelector::Subject(_) => subjects[0].subject.address,
     };
+    let width = (subjects.len() == 1).then(|| subjects[0].width()).flatten();
     let physical_address = if subjects.len() == 1 {
-        u32::try_from(subjects[0].subject.address).unwrap_or(address)
+        subjects[0].subject.address
     } else {
         address
     };
@@ -123,7 +158,7 @@ pub(crate) fn detail_from_inventory(
     };
     let ids = subjects
         .iter()
-        .flat_map(|subject| subject.evidence.iter().cloned())
+        .flat_map(|subject| subject.evidence_ids().into_iter().cloned())
         .collect::<BTreeSet<_>>();
     let evidence = ids
         .iter()
@@ -169,10 +204,10 @@ pub(crate) fn detail_from_inventory(
                 sites.push(RegisterAccessSiteSummary {
                     evidence: BTreeSet::from([item.id.clone()]),
                     source_identity: item.identity.to_string(),
-                    address: address as u32,
-                    width: number(&effect["width"]) as u8,
+                    address,
+                    width: number(&effect["width"]) as u32,
                     function: function.to_owned(),
-                    pc: number(&effect["site"]) as u32,
+                    pc: number(&effect["site"]),
                 });
             }
             continue;
@@ -189,10 +224,10 @@ pub(crate) fn detail_from_inventory(
             sites.push(RegisterAccessSiteSummary {
                 evidence: BTreeSet::from([item.id.clone()]),
                 source_identity: item.identity.to_string(),
-                address: number(&payload["address"]) as u32,
-                width: number(&payload["width"]) as u8,
+                address: number(&payload["address"]),
+                width: number(&payload["width"]) as u32,
                 function: function.to_owned(),
-                pc: number(&payload["site"]) as u32,
+                pc: number(&payload["site"]),
             });
             continue;
         }
@@ -211,10 +246,10 @@ pub(crate) fn detail_from_inventory(
                 sites.push(RegisterAccessSiteSummary {
                     evidence: BTreeSet::from([item.id.clone()]),
                     source_identity: item.identity.to_string(),
-                    address: number(&fact["address"]) as u32,
-                    width: number(&fact["width"]) as u8,
+                    address: number(&fact["address"]),
+                    width: number(&fact["width"]) as u32,
                     function: site["function"].as_str().unwrap_or("unknown").to_owned(),
-                    pc: number(&site["pc"]) as u32,
+                    pc: number(&site["pc"]),
                 });
             }
         }
@@ -282,11 +317,11 @@ pub(crate) fn detail_from_inventory(
         .unwrap_or_default();
     let fields: Vec<_> = subjects
         .iter()
-        .flat_map(|subject| subject.fields.values())
-        .filter_map(|field| {
+        .flat_map(|subject| subject.fields.values().map(move |field| (subject, field)))
+        .map(|(subject, field)| {
             let linked = field
-                .evidence
-                .iter()
+                .evidence_ids()
+                .into_iter()
                 .filter_map(|id| inventory.evidence.get(id))
                 .filter(|record| record.kind == "linked-register")
                 .flat_map(|record| {
@@ -295,7 +330,11 @@ pub(crate) fn detail_from_inventory(
                         .into_iter()
                         .flatten()
                 })
-                .filter(|candidate| number(&candidate["mask"]) as u32 == field.mask.unwrap_or(0))
+                .filter(|candidate| {
+                    field
+                        .mask
+                        .is_some_and(|mask| number(&candidate["mask"]) == u64::from(mask))
+                })
                 .collect::<Vec<_>>();
             let union = |key: &str| {
                 linked
@@ -305,13 +344,9 @@ pub(crate) fn detail_from_inventory(
                     .into_iter()
                     .collect::<Vec<_>>()
             };
-            Some(RegisterFieldSummary {
-                mask: field.mask?,
-                names: field.names.values().into_iter().cloned().collect(),
-                kind: field.kind.clone(),
-                evidence: field.evidence.iter().cloned().collect(),
-                least_significant_bit: field.offset as u8,
-                most_significant_bit: (field.offset + field.width - 1) as u8,
+            RegisterFieldSummary {
+                subject: subject.id.clone(),
+                field: field.clone(),
                 write_shapes: linked
                     .iter()
                     .map(|candidate| number(&candidate["write_shapes"]) as usize)
@@ -359,47 +394,74 @@ pub(crate) fn detail_from_inventory(
                         transitive: strings(&predicate["producer_path"]).len() > 1,
                     })
                     .collect(),
-            })
+            }
         })
         .collect();
+    let mut coverage_gaps = inventory.gaps.iter().cloned().collect::<Vec<_>>();
     let mut review_sources = Vec::new();
     let mut review_classification = None;
     let mut reviewed = false;
-    if let Some(paths) = &project.registers
-        && let Ok(model) = crate::registers::load_effective_register_model(paths)
-    {
-        let maps = crate::registers::register_identity_maps(&model)?;
-        if let Some(width) = width {
-            let key = (u64::from(physical_address), u32::from(width));
-            reviewed = maps.reviewed.contains_key(&key);
-            if let Some(annotation) = maps.annotations.get(&key) {
-                review_sources = annotation.sources.clone();
-                review_classification = Some(format!(
-                    "provenance={:?}, accuracy={:?}, completeness={:?}",
-                    annotation.provenance, annotation.accuracy, annotation.completeness
+    let mut ownership_unknown = true;
+    let mut external = false;
+    let mut project_location = false;
+    if let Some(paths) = &project.registers {
+        let review = (|| -> crate::Result<()> {
+            let model = publication.model()?;
+            let [register] = subjects.as_slice() else {
+                return Err(crate::Error::invalid(
+                    "address query matches multiple physical subjects; select an exact subject for publication status",
+                ));
+            };
+            let location = &register.subject;
+            if location.chip != model.chip()
+                || location.address_space != model.address_space()
+                || location.route != "mmio"
+                || location.bank.is_some()
+            {
+                return Err(crate::Error::invalid(
+                    "selected physical subject is outside the register model's chip/address-space/MMIO domain",
                 ));
             }
-        }
-    }
-
-    let mut ownership_unknown = false;
-    let mut external = false;
-    if let Some(paths) = &project.registers {
-        if let Some(width) = width {
-            match crate::registers::RegisterFacts::load(&paths.facts).and_then(|facts| {
-                crate::registers::classify_register_publication(
-                    &facts,
-                    &paths.owned_ranges,
-                    physical_address,
-                    width,
-                )
-                .map(|ownership| !ownership.is_owned())
-            }) {
-                Ok(is_external) => external = is_external,
-                Err(_) => ownership_unknown = true,
+            project_location = true;
+            if let Some(width) = width {
+                let maps = crate::registers::register_identity_maps(model)?;
+                let key = (physical_address, width);
+                reviewed = maps.reviewed.contains_key(&key);
+                if let Some(annotation) = maps.annotations.get(&key) {
+                    review_sources = annotation.sources.clone();
+                    review_classification = Some(format!(
+                        "provenance={:?}, accuracy={:?}, completeness={:?}",
+                        annotation.provenance, annotation.accuracy, annotation.completeness
+                    ));
+                }
             }
-        } else {
-            ownership_unknown = true;
+            let address = u32::try_from(physical_address).map_err(|_| crate::Error::invalid(
+                "publication ownership facts support only 32-bit addresses; ownership is unknown for this subject"))?;
+            let width = width.and_then(|width| u8::try_from(width).ok()).ok_or_else(|| crate::Error::invalid(
+                "publication ownership requires known geometry representable by discovery facts"))?;
+            let facts = publication.facts()?.ok_or_else(|| {
+                crate::Error::invalid(
+                    "MMIO discovery facts are unavailable in this register snapshot",
+                )
+            })?;
+            external = !crate::registers::classify_register_publication(
+                facts,
+                &paths.owned_ranges,
+                address,
+                width,
+            )?
+            .is_owned();
+            ownership_unknown = false;
+            Ok(())
+        })();
+        if let Err(error) = review {
+            coverage_gaps.push(
+                open_radio_vendor_contracts::register_inventory::CoverageGap {
+                    source: "register-workspace".to_owned(),
+                    scope: "publication-status".to_owned(),
+                    reason: error.to_string(),
+                },
+            );
         }
     }
     let non_operational = !accessed.is_empty() && accessed.is_subset(&configured);
@@ -416,30 +478,38 @@ pub(crate) fn detail_from_inventory(
     } else {
         RegisterReviewState::Unreviewed
     };
-    let range = inventory
+    let regions = inventory
         .regions
         .iter()
-        .find(|region| {
-            region.start <= u64::from(address) && u64::from(address) < region.end_exclusive
+        .filter(|region| {
+            region.start <= address
+                && address < region.end_exclusive
+                && subjects.iter().any(|register| {
+                    register.subject.address_space == region.address_space
+                        && register.subject.route == "mmio"
+                        && register.subject.bank.is_none()
+                })
         })
-        .map(|region| region.name.clone());
-    let mut coverage_gaps = inventory.gaps.into_iter().collect::<Vec<_>>();
+        .cloned()
+        .collect();
     let mut publication_scopes = Vec::new();
-    if project.review.is_some() {
-        match crate::review_scopes::load_for_project(project) {
-            Ok(report) => {
+    if project.review.is_some() && project_location {
+        match publication.scopes() {
+            Ok(Some(report)) => {
                 publication_scopes = report
                     .scopes
-                    .into_iter()
+                    .iter()
                     .filter(|scope| {
                         scope.publication
                             && scope.mmio.iter().any(|item| {
-                                item.address == address || item.address == physical_address
+                                u64::from(item.address) == address
+                                    || u64::from(item.address) == physical_address
                             })
                     })
-                    .map(|scope| scope.id)
+                    .map(|scope| scope.id.clone())
                     .collect()
             }
+            Ok(None) => {}
             Err(error) => coverage_gaps.push(
                 open_radio_vendor_contracts::register_inventory::CoverageGap {
                     source: "review-scopes".to_owned(),
@@ -450,15 +520,12 @@ pub(crate) fn detail_from_inventory(
         }
     }
     Ok(Some(RegisterDetailSummary {
+        inventory_snapshot: snapshot_id.to_owned(),
+        selection: selector.clone(),
         address: physical_address,
         width,
-        range,
+        regions,
         name,
-        name_source: if evidence.iter().any(|item| item.kind == "model-geometry") {
-            RegisterNameSource::Model
-        } else {
-            RegisterNameSource::Address
-        },
         review_status,
         publication_debt: if ownership_unknown
             || coverage_gaps
@@ -496,7 +563,7 @@ pub(crate) fn detail_from_inventory(
         fields,
         subjects,
         evidence,
-        sources: inventory.sources,
+        sources: inventory.sources.clone(),
         coverage_gaps,
     }))
 }

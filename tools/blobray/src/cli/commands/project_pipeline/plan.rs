@@ -82,12 +82,45 @@ fn print_human(document: &ProjectAnalysisPlanReport) {
         )
     );
 
+    let inputs = document
+        .stages
+        .iter()
+        .flat_map(|stage| {
+            stage.work_items.iter().flat_map(move |item| {
+                item.inputs.iter().map(move |input| {
+                    [
+                        stage.name.clone(),
+                        item.name.clone(),
+                        input.requirement.label().to_owned(),
+                        input.path.display().to_string(),
+                    ]
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    if !inputs.is_empty() {
+        outputln!("\n{}", output::heading("Declared inputs"));
+        outputln!(
+            "{}",
+            table::render(["Stage", "Work item", "Requirement", "Input"], inputs)
+        );
+    }
+
     let awaiting = awaiting_input_rows(document);
     if !awaiting.is_empty() {
         outputln!("\n{}", output::heading("Awaiting generated inputs"));
         outputln!(
             "{}",
-            table::render(["Stage", "Work item", "Producer", "Input"], awaiting,)
+            table::render(
+                [
+                    "Stage",
+                    "Work item",
+                    "Producer stage",
+                    "Producer work",
+                    "Input"
+                ],
+                awaiting,
+            )
         );
     }
 }
@@ -135,7 +168,7 @@ fn work_item_rows(document: &ProjectAnalysisPlanReport) -> Vec<[String; 6]> {
         .collect()
 }
 
-fn awaiting_input_rows(document: &ProjectAnalysisPlanReport) -> Vec<[String; 4]> {
+fn awaiting_input_rows(document: &ProjectAnalysisPlanReport) -> Vec<[String; 5]> {
     document
         .stages
         .iter()
@@ -146,6 +179,7 @@ fn awaiting_input_rows(document: &ProjectAnalysisPlanReport) -> Vec<[String; 4]>
                         stage.name.clone(),
                         item.name.clone(),
                         input.producer_stage.clone(),
+                        input.producer_work.clone(),
                         input.path.display().to_string(),
                     ]
                 })
@@ -166,7 +200,7 @@ mod tests {
     fn plan_document_keeps_order_dependencies_and_actions_typed() {
         let document = ProjectAnalysisPlanReport {
             coverage: Vec::new(),
-            schema: 3,
+            schema: 5,
             command: "project analyze --plan",
             mode: "write",
             read_only: true,
@@ -203,7 +237,7 @@ mod tests {
     fn detail_rows_keep_every_profile_and_all_work_item_fields() {
         let document = ProjectAnalysisPlanReport {
             coverage: Vec::new(),
-            schema: 3,
+            schema: 5,
             command: "project analyze --plan",
             mode: "write",
             read_only: true,
@@ -220,6 +254,7 @@ mod tests {
                         name: "linked-ir:release".to_owned(),
                         action: ProjectAnalysisPlanAction::Current,
                         signature: Some("sha256:release".to_owned()),
+                        inputs: Vec::new(),
                         outputs: vec![PathBuf::from("generated/release/linked-ir.json")],
                         cause: None,
                         awaiting_inputs: Vec::new(),
@@ -228,6 +263,7 @@ mod tests {
                         name: "linked-ir:debug".to_owned(),
                         action: ProjectAnalysisPlanAction::Failed,
                         signature: None,
+                        inputs: Vec::new(),
                         outputs: vec![
                             PathBuf::from("generated/debug/linked-ir.json"),
                             PathBuf::from("generated/debug/calls.json"),

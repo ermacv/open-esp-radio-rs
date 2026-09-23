@@ -1,0 +1,464 @@
+#![cfg(target_os = "linux")]
+use blobray_application as app;
+use blobray_domain::*;
+use blobray_next_host::linux::LinuxHost;
+use std::{fs, path::PathBuf, process::Command, sync::Arc};
+fn budget() -> ResourceBudget {
+    ResourceBudget {
+        mode: LimitMode::Watchdog,
+        poll_ms: 5,
+        grace_ms: 100,
+        timeout_ms: 30000,
+        working_memory_bytes: Some(32 * 1024 * 1024),
+        ..Default::default()
+    }
+}
+fn elf(code: &[u32]) -> Vec<u8> {
+    let mut bytes = vec![0; 256];
+    bytes[..7].copy_from_slice(b"\x7fELF\x01\x01\x01");
+    for (offset, value) in [(16, 2u16), (18, 243), (40, 52), (42, 32), (44, 1)] {
+        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    for (offset, value) in [
+        (20, 1u32),
+        (24, 0x1000),
+        (28, 52),
+        (52, 1),
+        (56, 256),
+        (60, 0x1000),
+        (64, 0x1000),
+        (68, (code.len() * 4) as u32),
+        (72, (code.len() * 4) as u32),
+        (76, 5),
+        (80, 4),
+    ] {
+        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    for op in code {
+        bytes.extend_from_slice(&op.to_le_bytes());
+    }
+    bytes
+}
+struct Fixture {
+    _dir: tempfile::TempDir,
+    project: PathBuf,
+    app: app::Application,
+    target: ExecutionTarget,
+}
+impl Fixture {
+    fn new(code: &[u32]) -> Self {
+        Self::from_inputs(vec![elf(code)])
+    }
+    fn from_inputs(inputs: Vec<Vec<u8>>) -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        app::create_project(&project).unwrap();
+        let paths: Vec<_> = inputs
+            .iter()
+            .enumerate()
+            .map(|(i, bytes)| {
+                let path = dir.path().join(format!("input-{i}.elf"));
+                fs::write(&path, bytes).unwrap();
+                path
+            })
+            .collect();
+        let app = app::Application::with_temporary_storage(
+            Arc::new(LinuxHost::new(
+                env!("CARGO_BIN_EXE_blobray-next").into(),
+                None,
+            )),
+            app::ApplicationLimits::default(),
+            app::TemporaryStoragePolicy {
+                root: Some(dir.path().join("runtime")),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let run = app
+            .import(
+                &project,
+                paths
+                    .iter()
+                    .map(|path| app::ImportInput {
+                        role: "code".into(),
+                        path: path.clone(),
+                        expected: None,
+                    })
+                    .collect(),
+                Target::Riscv32Ilp32,
+                budget(),
+            )
+            .unwrap();
+        assert_eq!(run.state, RunState::Completed, "{run:?}");
+        for path in paths {
+            fs::remove_file(path).unwrap();
+        }
+        let target = ExecutionTarget {
+            revision: run.revision.unwrap(),
+            source: FunctionSource::Input { input: 0 },
+            entry: 0x1000,
+            companions: vec![],
+            abi: CallAbi::RiscvInteger,
+            stack: MemorySeed {
+                address: 0x8000,
+                length: 4096,
+                fill: None,
+                bytes: vec![],
+            },
+        };
+        Self {
+            _dir: dir,
+            project,
+            app,
+            target,
+        }
+    }
+    fn request(&self) -> ExecutionRequest {
+        let invocation = Invocation {
+            arguments: [0; 8],
+            memory: vec![],
+            mmio: vec![],
+        };
+        ExecutionRequest {
+            schema: 1,
+            vendor: self.target.clone(),
+            replacement: Some(self.target.clone()),
+            binding: Some(CompiledBinding::SharedCore),
+            cases: vec![ExecutionCase {
+                name: "case".into(),
+                vendor: invocation.clone(),
+                replacement: Some(invocation),
+            }],
+            case_execution: CaseExecution::Independent,
+            max_events: 16,
+            compare_return: true,
+        }
+    }
+    fn run(&self, r: ExecutionRequest, b: ResourceBudget) -> app::RunRecord {
+        self.app
+            .start_execution(&self.project, r, &blobray_backend_riscv::RiscvExecutor, b)
+            .unwrap()
+            .wait()
+    }
+    fn read(&self, id: &ArtifactId) -> serde_json::Value {
+        let output = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+            .args(["--format", "json", "execution", "--project"])
+            .arg(&self.project)
+            .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
+    }
+}
+#[test]
+fn comparison_replay_and_preservation_use_captured_bytes() {
+    let f = Fixture::new(&[0x00150513, 0x00008067]);
+    let request = f.request();
+    let run = f.run(request.clone(), budget());
+    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    let id = run.execution.unwrap();
+    let result = f.read(&id);
+    assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
+    let replay = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+        .args(["--format", "json", "replay", "--project"])
+        .arg(&f.project)
+        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
+        .output()
+        .unwrap();
+    assert!(
+        replay.status.success(),
+        "{}",
+        String::from_utf8_lossy(&replay.stderr)
+    );
+    let r: serde_json::Value = serde_json::from_slice(&replay.stdout).unwrap();
+    assert_eq!(r["run"]["execution"], id.as_str());
+    let mut different = request;
+    different.cases[0].replacement.as_mut().unwrap().arguments[0] = 9;
+    let run = f.run(different, budget());
+    assert_eq!(
+        f.read(&run.execution.unwrap())["summary"]["manifest"]["verdict"],
+        "DIFF"
+    );
+    let backup = f._dir.path().join("backup.blobray");
+    let restored = f._dir.path().join("restored");
+    for (cmd, path, args) in [
+        (
+            "backup",
+            &f.project,
+            vec!["--output", backup.to_str().unwrap()],
+        ),
+        (
+            "restore",
+            &restored,
+            vec!["--backup", backup.to_str().unwrap()],
+        ),
+    ] {
+        let status = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+            .args([cmd, "--project"])
+            .arg(path)
+            .args(["--limit-mode", "watchdog"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            status.status.success(),
+            "{}",
+            String::from_utf8_lossy(&status.stderr)
+        );
+    }
+    let moved = f._dir.path().join("moved");
+    fs::rename(&restored, &moved).unwrap();
+    let status = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+        .args(["execution", "--project"])
+        .arg(&moved)
+        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
+        .output()
+        .unwrap();
+    assert!(status.status.success());
+}
+#[test]
+fn concrete_memory_state_and_unknowns_are_not_invented() {
+    let f = Fixture::new(&[0x00052283, 0x00128293, 0x00552023, 0x00028513, 0x00008067]);
+    let mut r = f.request();
+    r.replacement = None;
+    r.binding = None;
+    r.case_execution = CaseExecution::Stateful;
+    r.cases[0].replacement = None;
+    r.cases[0].vendor.arguments[0] = 0x3000;
+    r.cases[0].vendor.memory.push(MemorySeed {
+        address: 0x3000,
+        length: 4,
+        fill: Some(0),
+        bytes: vec![],
+    });
+    let mut second = r.cases[0].clone();
+    second.name = "second".into();
+    second.vendor.memory.clear();
+    r.cases.push(second);
+    let run = f.run(r.clone(), budget());
+    let facts = f.read(&run.execution.unwrap());
+    let low: Vec<_> = facts["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|r| r["value"]["stop"]["low"].as_u64())
+        .collect();
+    assert_eq!(low, vec![1, 2]);
+    r.case_execution = CaseExecution::Independent;
+    let run = f.run(r.clone(), budget());
+    assert_eq!(run.complete, Some(false));
+    r.case_execution = CaseExecution::Stateful;
+    r.cases[0].vendor.memory.clear();
+    let run = f.run(r, budget());
+    let facts = f.read(&run.execution.unwrap());
+    assert_eq!(
+        facts["records"][1]["value"]["stop"]["kind"],
+        "blocked-by-prior-phase"
+    );
+}
+#[test]
+fn mmio_fence_and_capacity_are_observable() {
+    let f = Fixture::new(&[0x00b52023, 0x00052503, 0x0330000f, 0x00008067]);
+    let mut r = f.request();
+    {
+        let i = &mut r.cases[0].vendor;
+        i.arguments[0] = 0x3000;
+        i.arguments[1] = 123;
+        i.mmio.push(RegisterCell {
+            address: 0x3000,
+            width: 4,
+            value: 0,
+        });
+    }
+    r.cases[0].replacement = Some(r.cases[0].vendor.clone());
+    let run = f.run(r.clone(), budget());
+    let facts = f.read(&run.execution.unwrap());
+    assert_eq!(facts["summary"]["manifest"]["verdict"], "MATCH");
+    assert_eq!(facts["records"][0]["value"]["event"]["kind"], "write");
+    assert_eq!(facts["records"][1]["value"]["event"]["value"], 123);
+    assert_eq!(facts["records"][2]["value"]["event"]["kind"], "fence");
+    r.max_events = 1;
+    let run = f.run(r, budget());
+    assert_eq!(run.error.unwrap().code, ErrorCode::ResourceLimited);
+    assert!(run.execution.is_none());
+}
+#[test]
+fn invalid_memory_and_unsupported_code_stay_incomplete() {
+    for code in [
+        &[0x00b52023, 0x00008067][..],
+        &[0x00012503, 0x00008067][..],
+        &[0x00000073][..],
+    ] {
+        let f = Fixture::new(code);
+        let mut r = f.request();
+        r.cases[0].vendor.arguments[0] = 0x1000;
+        r.cases[0].replacement = Some(r.cases[0].vendor.clone());
+        let run = f.run(r, budget());
+        assert_eq!(run.state, RunState::Completed);
+        assert_eq!(
+            f.read(&run.execution.unwrap())["summary"]["manifest"]["verdict"],
+            "INCOMPLETE"
+        );
+    }
+}
+#[test]
+fn loops_memory_limits_and_cancellation_publish_nothing() {
+    let f = Fixture::new(&[0x0000006f]);
+    let r = f.request();
+    let mut b = budget();
+    b.max_work_units = Some(100000);
+    let run = f.run(r.clone(), b);
+    assert_eq!(run.error.unwrap().code, ErrorCode::ResourceLimited);
+    assert!(run.execution.is_none());
+    let mut b = budget();
+    b.working_memory_bytes = Some(1024 * 1024);
+    let run = f.run(r.clone(), b);
+    assert_eq!(run.error.unwrap().code, ErrorCode::ResourceLimited);
+    let mut b = budget();
+    b.timeout_ms = 200;
+    let run = f.run(r.clone(), b);
+    assert_eq!(run.error.unwrap().code, ErrorCode::TimedOut);
+    let handle = f
+        .app
+        .start_execution(
+            &f.project,
+            r,
+            &blobray_backend_riscv::RiscvExecutor,
+            budget(),
+        )
+        .unwrap();
+    handle.cancel();
+    let run = handle.wait();
+    assert_eq!(run.state, RunState::Cancelled);
+    assert!(run.execution.is_none());
+}
+
+#[test]
+fn rv32_arithmetic_edges_and_machine_calls_execute_instructions() {
+    for (instruction, a, b, expected) in [
+        (0x02b54533, 123, 0, u32::MAX), // div by zero
+        (0x02b54533, 0x80000000, u32::MAX, 0x80000000),
+        (0x02b56533, 0x80000000, u32::MAX, 0), // signed remainder overflow
+        (0x02b51533, u32::MAX, 2, u32::MAX),   // signed multiply high
+        (0x40b55533, 0x80000000, 33, 0xc0000000), // masked shift amount
+    ] {
+        let f = Fixture::new(&[instruction, 0x00008067]);
+        let mut r = f.request();
+        r.replacement = None;
+        r.binding = None;
+        r.cases[0].replacement = None;
+        r.cases[0].vendor.arguments[0] = a;
+        r.cases[0].vendor.arguments[1] = b;
+        let run = f.run(r, budget());
+        let facts = f.read(&run.execution.unwrap());
+        assert_eq!(facts["records"][0]["value"]["stop"]["low"], expected);
+    }
+    let f = Fixture::new(&[
+        0x00008293, 0x00c000ef, 0x00028067, 0x00000013, 0x00750513, 0x00008067,
+    ]);
+    let run = f.run(f.request(), budget());
+    let facts = f.read(&run.execution.unwrap());
+    assert_eq!(facts["records"][0]["value"]["stop"]["low"], 7);
+}
+#[test]
+fn signed_loads_and_phase_stack_reset_are_explicit() {
+    let f = Fixture::new(&[0x00050503, 0x00008067]);
+    let mut r = f.request();
+    r.replacement = None;
+    r.binding = None;
+    r.cases[0].replacement = None;
+    r.cases[0].vendor.arguments[0] = 0x3000;
+    r.cases[0].vendor.memory.push(MemorySeed {
+        address: 0x3000,
+        length: 1,
+        fill: Some(0x80),
+        bytes: vec![],
+    });
+    let run = f.run(r, budget());
+    assert_eq!(
+        f.read(&run.execution.unwrap())["records"][0]["value"]["stop"]["low"],
+        0xffffff80u32
+    );
+    // First phase writes the fresh stack, second phase reads the reset unknown byte.
+    let f = Fixture::new(&[0x00050663, 0xfea12e23, 0x00008067, 0xffc12503, 0x00008067]);
+    let mut r = f.request();
+    r.case_execution = CaseExecution::Stateful;
+    r.replacement = None;
+    r.binding = None;
+    r.cases[0].replacement = None;
+    r.cases[0].vendor.arguments[0] = 7;
+    let mut second = r.cases[0].clone();
+    second.name = "read-stack".into();
+    second.vendor.arguments[0] = 0;
+    r.cases.push(second);
+    let run = f.run(r, budget());
+    let facts = f.read(&run.execution.unwrap());
+    assert_eq!(facts["records"][0]["value"]["stop"]["kind"], "returned");
+    assert_eq!(facts["records"][1]["value"]["stop"]["kind"], "incomplete");
+}
+
+#[test]
+fn selected_companion_code_and_elf_zero_fill_obey_session_ownership() {
+    let main = elf(&[0x000022b7, 0x00028067]);
+    let mut companion = elf(&[0x00900513, 0x00008067]);
+    for offset in [24, 60, 64] {
+        companion[offset..offset + 4].copy_from_slice(&0x2000u32.to_le_bytes());
+    }
+    let f = Fixture::from_inputs(vec![main, companion]);
+    let mut r = f.request();
+    r.replacement = None;
+    r.binding = None;
+    r.cases[0].replacement = None;
+    let run = f.run(r.clone(), budget());
+    assert_eq!(run.complete, Some(false));
+    r.vendor.companions = vec![1];
+    let run = f.run(r.clone(), budget());
+    assert_eq!(
+        f.read(&run.execution.unwrap())["records"][0]["value"]["stop"]["low"],
+        9
+    );
+    r.vendor.companions = vec![0];
+    let run = f.run(r, budget());
+    assert_eq!(run.error.unwrap().code, ErrorCode::Conflict);
+    assert!(run.execution.is_none());
+    let mut image = elf(&[0x00052283, 0x00128293, 0x00552023, 0x00028513, 0x00008067]);
+    image[44..46].copy_from_slice(&2u16.to_le_bytes());
+    for (offset, value) in [
+        (84, 1u32),
+        (92, 0x3000),
+        (96, 0x3000),
+        (104, 4),
+        (108, 6),
+        (112, 4),
+    ] {
+        image[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    let f = Fixture::from_inputs(vec![image]);
+    let mut r = f.request();
+    r.replacement = None;
+    r.binding = None;
+    r.case_execution = CaseExecution::Stateful;
+    r.cases[0].replacement = None;
+    r.cases[0].vendor.arguments[0] = 0x3000;
+    r.cases.push(r.cases[0].clone());
+    for (mode, expected) in [
+        (CaseExecution::Stateful, vec![1, 2]),
+        (CaseExecution::Independent, vec![1, 1]),
+    ] {
+        r.case_execution = mode;
+        let run = f.run(r.clone(), budget());
+        let facts = f.read(&run.execution.unwrap());
+        let values: Vec<_> = facts["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["value"]["stop"]["low"].as_u64().unwrap())
+            .collect();
+        assert_eq!(values, expected);
+    }
+}

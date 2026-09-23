@@ -1,10 +1,15 @@
 //! Public facts produced by artifact loading and decoding.
 
+use open_radio_vendor_analysis_model::ObjectLocation;
+pub use open_radio_vendor_analysis_model::{
+    ArtifactSymbolTable, CodeIdentity, DataIdentity, SymbolReference,
+};
 use rv_asm::Inst;
 use std::sync::Arc;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArtifactSymbolDefinition {
+    pub identity: CodeIdentity,
     pub member: Option<String>,
     pub name: String,
     pub address: u64,
@@ -23,6 +28,7 @@ pub struct ArtifactSymbolDefinition {
 /// object-relative memory provenance; it makes no nominal-type claim.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArtifactDataSymbolDefinition {
+    pub identity: DataIdentity,
     pub member: Option<String>,
     pub name: String,
     pub address: u32,
@@ -33,12 +39,13 @@ pub struct ArtifactDataSymbolDefinition {
 /// Named static data object from an ELF image or relocatable archive member.
 ///
 /// Archive members do not have a runtime address, so their stable identity is
-/// the member/section/symbol tuple plus the section-relative object offset.
+/// the captured artifact and physical symbol-table occurrence.
 /// Initializer bytes are the uninterpreted object representation; relocations
 /// retain symbolic targets instead of pretending that archive layout is link
 /// truth.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArtifactDataObjectDefinition {
+    pub identity: DataIdentity,
     pub member: Option<String>,
     pub section: String,
     pub name: String,
@@ -50,8 +57,8 @@ pub struct ArtifactDataObjectDefinition {
     pub size: u64,
     pub writable: bool,
     pub initialized: bool,
-    /// True when a zero-sized ELF anchor is the only identity for the
-    /// remaining section bytes.
+    /// True when the byte extent is inferred from a zero-sized ELF anchor
+    /// to the next definition or section end, rather than a declared size.
     pub synthetic_from_anchor: bool,
     pub exported: bool,
     pub initializer: Vec<u8>,
@@ -167,21 +174,6 @@ impl ArtifactObjectKind {
             Self::Dynamic => "dynamic",
             Self::Core => "core",
             Self::Unknown => "unknown",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum ArtifactSymbolTable {
-    Static,
-    Dynamic,
-}
-
-impl ArtifactSymbolTable {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Static => "static",
-            Self::Dynamic => "dynamic",
         }
     }
 }
@@ -309,6 +301,8 @@ impl ArtifactSymbolDefinitionState {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArtifactSymbolFact {
+    /// Exact index in `table`, including unnamed symbols.
+    pub index: u64,
     pub table: ArtifactSymbolTable,
     pub name: String,
     pub address: u64,
@@ -318,6 +312,8 @@ pub struct ArtifactSymbolFact {
     pub kind: ArtifactSymbolKind,
     pub definition: ArtifactSymbolDefinitionState,
     pub section: Option<String>,
+    /// Section identity remains available when section names repeat.
+    pub section_index: Option<u64>,
     pub scope: ArtifactSymbolScope,
 }
 
@@ -393,6 +389,7 @@ impl ArtifactSymbolFact {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArtifactObjectInventory {
+    pub location: ObjectLocation,
     pub member: Option<String>,
     pub kind: ArtifactObjectKind,
     pub code_sections: Vec<ArtifactCodeSectionCoverage>,
@@ -455,6 +452,7 @@ pub(super) fn riscv_relocation_kind(r_type: u32) -> Option<RelocationKind> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SymbolRelocation {
+    pub reference: open_radio_vendor_analysis_model::SymbolReference,
     pub address: u32,
     pub kind: RelocationKind,
     pub symbol: String,
@@ -488,6 +486,20 @@ impl MemoryRegion {
 }
 
 impl ArtifactSymbolDefinition {
+    /// Explicit identity for caller-owned synthetic code (for example fixtures).
+    /// This never asserts membership in an artifact or authenticates semantics.
+    pub fn synthetic_identity(
+        namespace: &str,
+        member: &Option<String>,
+        name: &str,
+        address: u64,
+    ) -> CodeIdentity {
+        CodeIdentity::Synthetic {
+            namespace: namespace.to_owned(),
+            key: format!("{member:?}/{name:?}/{address:x}"),
+        }
+    }
+
     pub fn memory_region(&self, address: u32, width: u8) -> Option<&MemoryRegion> {
         self.memory_regions
             .iter()

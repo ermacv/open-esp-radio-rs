@@ -421,6 +421,55 @@ dependencies = [
 ]
 
 [[package]]
+name = "blobray-analysis"
+version = "0.1.0"
+dependencies = [
+ "blobray-domain",
+]
+
+[[package]]
+name = "blobray-application"
+version = "0.1.0"
+dependencies = [
+ "blobray-analysis",
+ "blobray-artifacts",
+ "blobray-domain",
+ "blobray-knowledge",
+ "blobray-store",
+ "blobray-verification",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml_edit",
+]
+
+[[package]]
+name = "blobray-artifacts"
+version = "0.1.0"
+dependencies = [
+ "blobray-domain",
+ "object 0.39.1",
+]
+
+[[package]]
+name = "blobray-backend-riscv"
+version = "0.1.0"
+dependencies = [
+ "blobray-domain",
+ "object 0.39.1",
+ "rv-asm",
+]
+
+[[package]]
+name = "blobray-domain"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "sha2",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "blobray-esp32s31"
 version = "0.1.0"
 dependencies = [
@@ -432,6 +481,50 @@ dependencies = [
  "serde_json",
  "sha2",
  "toml_edit",
+]
+
+[[package]]
+name = "blobray-knowledge"
+version = "0.1.0"
+dependencies = [
+ "blobray-domain",
+]
+
+[[package]]
+name = "blobray-next"
+version = "0.1.0"
+dependencies = [
+ "blobray-application",
+ "blobray-backend-riscv",
+ "blobray-domain",
+ "cargo_metadata",
+ "clap",
+ "libc",
+ "object 0.39.1",
+ "serde",
+ "serde_json",
+ "sha2",
+ "signal-hook",
+ "tempfile",
+]
+
+[[package]]
+name = "blobray-store"
+version = "0.1.0"
+dependencies = [
+ "blobray-domain",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
+name = "blobray-verification"
+version = "0.1.0"
+dependencies = [
+ "blobray-domain",
 ]
 
 [[package]]
@@ -3457,6 +3550,7 @@ dependencies = [
  "rv-asm",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.19",
  "tracing",

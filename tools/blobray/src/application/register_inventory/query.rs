@@ -1,6 +1,35 @@
 //! Common filters and explicit pagination for every presentation layer.
 use super::*;
 
+/// Exact physical identity or an address query across all address domains.
+/// Address queries retain every containing subject, including ambiguities.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "kebab-case",
+    deny_unknown_fields
+)]
+pub enum RegisterSelector {
+    Subject(String),
+    Address(u64),
+}
+
+impl std::str::FromStr for RegisterSelector {
+    type Err = String;
+
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        if value.starts_with("register-location/") {
+            return Ok(Self::Subject(value.to_owned()));
+        }
+        value
+            .strip_prefix("0x")
+            .map_or_else(|| value.parse(), |digits| u64::from_str_radix(digits, 16))
+            .map(Self::Address)
+            .map_err(|_| format!("invalid register subject or address {value:?}"))
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InventoryQuery {
@@ -16,6 +45,13 @@ pub struct InventoryQuery {
 }
 
 impl RegisterInventory {
+    pub fn resolve_selector(&self, selector: &RegisterSelector) -> Vec<&InventoryRegister> {
+        match selector {
+            RegisterSelector::Subject(id) => self.registers.get(id).into_iter().collect(),
+            RegisterSelector::Address(address) => self.at_address(*address),
+        }
+    }
+
     pub fn select(&self, query: &InventoryQuery) -> Vec<&InventoryRegister> {
         self.registers
             .values()
@@ -60,8 +96,8 @@ impl RegisterInventory {
                         }))
                     && query.source.as_ref().is_none_or(|source| {
                         register
-                            .evidence
-                            .iter()
+                            .evidence_ids()
+                            .into_iter()
                             .filter_map(|id| self.evidence.get(id))
                             .any(|evidence| {
                                 evidence.sources.iter().any(|candidate| {
@@ -87,8 +123,8 @@ impl RegisterInventory {
                                     .any(|name| name.contains(text))
                             })
                             || register
-                                .evidence
-                                .iter()
+                                .evidence_ids()
+                                .into_iter()
                                 .filter_map(|id| self.evidence.get(id))
                                 .any(|evidence| evidence.payload.to_string().contains(text))
                     })
@@ -123,7 +159,10 @@ impl RegisterInventory {
                     field: field_id,
                     dimension: dimension.to_owned(),
                     evidence: field
-                        .map_or_else(|| register.evidence.clone(), |field| field.evidence.clone()),
+                        .map_or_else(|| register.evidence_ids(), InventoryField::evidence_ids)
+                        .into_iter()
+                        .cloned()
+                        .collect(),
                 });
             };
             if register.names.is_unknown() {

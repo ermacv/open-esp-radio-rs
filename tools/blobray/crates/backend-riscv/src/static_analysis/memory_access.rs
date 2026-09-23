@@ -100,6 +100,7 @@ fn projected_relocation(
 
 fn projected_symbol_address(relocation: &StructuralProjectedRelocation) -> SymbolicValue {
     SymbolicValue::SymbolAddress {
+        reference: relocation.reference.clone(),
         member: relocation.origin_member.clone(),
         symbol: relocation.symbol.clone(),
         hi_addend: relocation.addend,

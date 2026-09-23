@@ -12,16 +12,17 @@ use report::*;
 
 pub(super) fn run(
     command: RegisterWorkspaceCommand,
-    project: &ProjectSpec,
-    memory_map: Option<&MemoryMap>,
+    session: &crate::application::ProjectSession,
 ) -> Result<bool> {
+    let project = &session.project;
+    let memory_map = session.memory_map.as_ref();
     if matches!(
         command,
         RegisterWorkspaceCommand::List(_)
             | RegisterWorkspaceCommand::Coverage(_)
             | RegisterWorkspaceCommand::Evidence(_)
     ) {
-        return query::run(command, project);
+        return query::run(command, session);
     }
     let paths = project
         .registers
@@ -81,12 +82,12 @@ fn review(
         &paths.facts,
         &paths.model,
     )?;
-    crate::application::generated_file::write_or_check(
+    crate::application::generated_file::GeneratedOutput::new(
         output,
-        &contents,
         arguments.check,
         "register review",
-    )?;
+    )
+    .text(&contents)?;
     let report = RegisterReviewDocument {
         schema: 1,
         command: "registers review",

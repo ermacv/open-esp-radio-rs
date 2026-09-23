@@ -25,16 +25,17 @@ struct ArtifactIdentity {
 }
 
 impl ArtifactIdentity {
-    fn load(path: &Path) -> Result<Self> {
+    fn from_capture(captures: &crate::source_set::CapturedSourceSet, path: &Path) -> Result<Self> {
         Ok(Self {
             path: path.display().to_string(),
-            sha256: crate::artifact_sha256(path)?,
+            sha256: captures.sha256(path)?.to_owned(),
         })
     }
 }
 
 #[derive(Clone, Serialize)]
 struct SourceArtifact<'a> {
+    companions: Vec<ArtifactIdentity>,
     source: &'a str,
     artifact: ArtifactIdentity,
     reviewed_code_boundaries: Vec<ReviewedCodeBoundaryDocument<'a>>,
@@ -239,6 +240,8 @@ struct DataObjectRelocationDocument {
 
 #[derive(Clone, Serialize)]
 struct DataObjectXrefDocument {
+    association: super::DataObjectAssociation,
+    evidence: super::linked_ir_read::schema::DataObjectXrefEvidence,
     function: String,
     reads: usize,
     writes: usize,
@@ -248,6 +251,7 @@ struct DataObjectXrefDocument {
 
 #[derive(Clone, Serialize)]
 struct DataObjectDocument {
+    data_identity: crate::artifact::DataIdentity,
     source: String,
     artifact_sha256: String,
     locator: String,
@@ -269,19 +273,27 @@ struct DataObjectDocument {
     xrefs: Vec<DataObjectXrefDocument>,
 }
 
-type GlobalAccess<'a> = (Option<&'a str>, &'a str, Option<(u8, i64)>);
+type GlobalAccess<'a> = (
+    &'a open_radio_vendor_contracts::SymbolReference,
+    Option<&'a str>,
+    &'a str,
+    Option<(u8, i64)>,
+);
 
 fn global_access(object: &crate::LinkedMemoryObject) -> Option<GlobalAccess<'_>> {
     match object {
-        crate::LinkedMemoryObject::Global { member, symbol } => {
-            Some((member.as_deref(), symbol.as_str(), None))
-        }
+        crate::LinkedMemoryObject::Global {
+            reference,
+            member,
+            symbol,
+        } => Some((reference, member.as_deref(), symbol.as_str(), None)),
         crate::LinkedMemoryObject::Indexed {
             object,
             argument,
             stride,
-        } => global_access(object)
-            .map(|(member, symbol, _)| (member, symbol, Some((*argument, *stride)))),
+        } => global_access(object).map(|(reference, member, symbol, _)| {
+            (reference, member, symbol, Some((*argument, *stride)))
+        }),
         _ => None,
     }
 }
@@ -296,111 +308,219 @@ fn encode_hex(bytes: &[u8]) -> String {
     output
 }
 
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+enum DataXrefTarget {
+    Relocation {
+        reference: open_radio_vendor_contracts::SymbolReference,
+        member: Option<String>,
+        symbol: String,
+    },
+    AddressCandidate(crate::artifact::DataIdentity),
+}
+
+struct DataXrefAccess {
+    target: DataXrefTarget,
+    offset: i64,
+    index: Option<(u8, i64)>,
+}
+
+fn data_xref_targets(
+    object: &crate::LinkedMemoryObject,
+    offset: i64,
+    resolution: &open_radio_vendor_contracts::DataAddressResolution,
+) -> Vec<DataXrefAccess> {
+    let index = match object {
+        crate::LinkedMemoryObject::Indexed {
+            argument, stride, ..
+        } => Some((*argument, *stride)),
+        crate::LinkedMemoryObject::Argument { index } => Some((*index, 1)),
+        _ => None,
+    };
+    let mut targets = Vec::new();
+    if let Some((reference, member, symbol, index)) = global_access(object) {
+        targets.push(DataXrefAccess {
+            target: DataXrefTarget::Relocation {
+                reference: reference.clone(),
+                member: member.map(str::to_owned),
+                symbol: symbol.to_owned(),
+            },
+            offset,
+            index,
+        });
+    }
+    targets.extend(
+        resolution
+            .candidates()
+            .iter()
+            .map(|candidate| DataXrefAccess {
+                target: DataXrefTarget::AddressCandidate(candidate.identity.clone()),
+                offset: candidate.offset,
+                index,
+            }),
+    );
+    targets
+}
+
 fn load_data_objects(
+    captures: &crate::source_set::CapturedSourceSet,
     artifacts: &[IrArtifactInput],
     report: &LinkedIrReport,
     reviewed_bindings: &BTreeMap<RevisionOccurrenceId, SemanticEntityId>,
 ) -> Result<Vec<DataObjectDocument>> {
+    use super::linked_ir_read::schema::DataObjectXrefEvidence;
     let mut xrefs = BTreeMap::<
-        (String, Option<String>, String, String),
+        (String, DataXrefTarget, String, DataObjectXrefEvidence),
         (usize, usize, BTreeSet<i64>, BTreeSet<String>),
     >::new();
     for function in &report.functions {
-        for access in &function.memory_accesses {
-            let Some((member, symbol, index)) = global_access(&access.object) else {
-                continue;
-            };
-            let entry = xrefs
-                .entry((
-                    function.source.clone(),
-                    member.map(str::to_owned),
-                    symbol.to_owned(),
-                    function.identity.clone(),
-                ))
-                .or_default();
-            match access.access {
-                "read" => entry.0 += 1,
-                "write" => entry.1 += 1,
-                _ => {}
-            }
-            entry.2.insert(access.offset);
-            if let Some((argument, stride)) = index {
-                entry.3.insert(format!("arg{argument} * {stride:+#x}"));
+        let traces = function.memory_accesses.iter().map(|access| {
+            (
+                &access.object,
+                access.offset,
+                &access.data_address,
+                access.access,
+                DataObjectXrefEvidence::ReferenceTrace,
+            )
+        });
+        let instructions = function
+            .instruction_effects
+            .iter()
+            .filter_map(|effect| match effect {
+                crate::LinkedInstructionEffect::Memory {
+                    object,
+                    offset,
+                    data_address,
+                    access,
+                    ..
+                } => Some((
+                    object,
+                    *offset,
+                    data_address,
+                    *access,
+                    DataObjectXrefEvidence::Instruction,
+                )),
+                _ => None,
+            });
+        for (object, offset, resolution, access, evidence) in traces.chain(instructions) {
+            for DataXrefAccess {
+                target,
+                offset,
+                index,
+            } in data_xref_targets(object, offset, resolution)
+            {
+                let entry = xrefs
+                    .entry((
+                        function.source.clone(),
+                        target,
+                        function.identity.clone(),
+                        evidence,
+                    ))
+                    .or_default();
+                match access {
+                    "read" => entry.0 += 1,
+                    "write" => entry.1 += 1,
+                    _ => {}
+                }
+                entry.2.insert(offset);
+                if let Some((argument, stride)) = index {
+                    entry.3.insert(format!("arg{argument} * {stride:+#x}"));
+                }
             }
         }
     }
 
     let mut output = Vec::new();
     for artifact in artifacts {
-        let artifact_sha256 = crate::artifact_sha256(&artifact.path)?;
-        for object in crate::artifact::load_data_objects(&artifact.path)? {
-            let locator = crate::artifact_occurrence::memory_object_locator(
-                object.member.as_deref(),
-                &object.section,
-                &object.name,
-                object.object_offset,
-                object.address,
-                object.size,
-            );
-            let occurrence = crate::artifact_occurrence::derive(
-                open_radio_vendor_contracts::EntityDomain::MemoryObject,
-                &artifact.source,
-                &artifact_sha256,
-                &locator,
-            )?;
-            let semantic = reviewed_bindings.get(&occurrence).map(ToString::to_string);
-            let object_xrefs = xrefs
-                .iter()
-                .filter(|((source, member, symbol, _), _)| {
-                    source == &artifact.source
-                        && member == &object.member
-                        && (symbol == &object.name || object.aliases.contains(symbol))
-                })
-                .map(
-                    |((_, _, _, function), (reads, writes, offsets, indexed_by))| {
-                        DataObjectXrefDocument {
-                            function: function.clone(),
-                            reads: *reads,
-                            writes: *writes,
-                            offsets: offsets
-                                .iter()
-                                .map(|offset| format!("{offset:+#x}"))
-                                .collect(),
-                            indexed_by: indexed_by.iter().cloned().collect(),
-                        }
-                    },
-                )
-                .collect();
-            output.push(DataObjectDocument {
-                source: artifact.source.clone(),
-                artifact_sha256: artifact_sha256.clone(),
-                locator,
-                occurrence: occurrence.to_string(),
-                semantic,
-                member: object.member,
-                section: object.section,
-                symbol: object.name,
-                aliases: object.aliases,
-                address: object.address.map(|address| format!("{address:#010x}")),
-                object_offset: format!("{:#x}", object.object_offset),
-                size: object.size,
-                writable: object.writable,
-                initialized: object.initialized,
-                synthetic_from_anchor: object.synthetic_from_anchor,
-                exported: object.exported,
-                initializer_hex: object.initialized.then(|| encode_hex(&object.initializer)),
-                relocations: object
-                    .relocations
-                    .into_iter()
-                    .map(|relocation| DataObjectRelocationDocument {
-                        offset: format!("{:#x}", relocation.offset),
-                        elf_type: relocation.elf_type,
-                        target: relocation.target,
-                        addend: relocation.addend,
-                    })
-                    .collect(),
-                xrefs: object_xrefs,
-            });
+        let mut captured_artifacts = BTreeSet::new();
+        for path in std::iter::once(&artifact.path).chain(&artifact.companions) {
+            let capture = captures.artifact(path)?;
+            // Multiple declarations of identical bytes share physical occurrences.
+            if !captured_artifacts.insert(capture.sha256().to_owned()) {
+                continue;
+            }
+            let artifact_sha256 = capture.sha256().to_owned();
+            for object in capture.data_objects()?.iter().cloned() {
+                let locator = crate::artifact_occurrence::memory_object_locator(&object.identity);
+                let occurrence = crate::artifact_occurrence::derive(
+                    open_radio_vendor_contracts::EntityDomain::MemoryObject,
+                    &artifact.source,
+                    &artifact_sha256,
+                    &locator,
+                )?;
+                let semantic = reviewed_bindings.get(&occurrence).map(ToString::to_string);
+                let object_xrefs = xrefs
+                    .iter()
+                    .filter_map(
+                        |(
+                            (source, target, function, evidence),
+                            (reads, writes, offsets, indexed_by),
+                        )| {
+                            if source != &artifact.source {
+                                return None;
+                            }
+                            let association = match target {
+                                DataXrefTarget::Relocation {
+                                    reference,
+                                    member,
+                                    symbol,
+                                } => super::DataObjectAssociation::for_reference(
+                                    reference,
+                                    &object.identity,
+                                    member == &object.member
+                                        && (symbol == &object.name
+                                            || object.aliases.contains(symbol)),
+                                ),
+                                DataXrefTarget::AddressCandidate(identity) => (identity
+                                    == &object.identity)
+                                    .then_some(super::DataObjectAssociation::AddressRangeCandidate),
+                            }?;
+                            Some(DataObjectXrefDocument {
+                                association,
+                                evidence: *evidence,
+                                function: function.clone(),
+                                reads: *reads,
+                                writes: *writes,
+                                offsets: offsets
+                                    .iter()
+                                    .map(|offset| format!("{offset:+#x}"))
+                                    .collect(),
+                                indexed_by: indexed_by.iter().cloned().collect(),
+                            })
+                        },
+                    )
+                    .collect();
+                output.push(DataObjectDocument {
+                    data_identity: object.identity,
+                    source: artifact.source.clone(),
+                    artifact_sha256: artifact_sha256.clone(),
+                    locator,
+                    occurrence: occurrence.to_string(),
+                    semantic,
+                    member: object.member,
+                    section: object.section,
+                    symbol: object.name,
+                    aliases: object.aliases,
+                    address: object.address.map(|address| format!("{address:#010x}")),
+                    object_offset: format!("{:#x}", object.object_offset),
+                    size: object.size,
+                    writable: object.writable,
+                    initialized: object.initialized,
+                    synthetic_from_anchor: object.synthetic_from_anchor,
+                    exported: object.exported,
+                    initializer_hex: object.initialized.then(|| encode_hex(&object.initializer)),
+                    relocations: object
+                        .relocations
+                        .into_iter()
+                        .map(|relocation| DataObjectRelocationDocument {
+                            offset: format!("{:#x}", relocation.offset),
+                            elf_type: relocation.elf_type,
+                            target: relocation.target,
+                            addend: relocation.addend,
+                        })
+                        .collect(),
+                    xrefs: object_xrefs,
+                });
+            }
         }
     }
     Ok(output)
@@ -425,6 +545,7 @@ impl Deref for FunctionDocument<'_> {
 
 #[derive(Serialize)]
 pub(crate) struct LinkedIrDocument<'a> {
+    root_blockers: &'a [crate::analysis::LinkedIrRootBlocker],
     schema_version: u32,
     command: &'static str,
     analysis_mode: &'static str,
@@ -479,6 +600,21 @@ pub(crate) struct StagedLinkedIrBundle {
 }
 
 impl StagedLinkedIrBundle {
+    #[cfg(test)]
+    pub(crate) fn fixture(root: PathBuf) -> Self {
+        fs::create_dir_all(&root).unwrap();
+        for name in super::linked_ir_bundle::BUNDLE_FILES
+            .into_iter()
+            .chain([super::COVERAGE_FILE])
+        {
+            fs::write(root.join(name), "fixture\n").unwrap();
+        }
+        Self {
+            root: Some(root),
+            bytes: 72,
+        }
+    }
+
     pub(crate) fn path(&self) -> &Path {
         self.root.as_deref().expect("unpublished bundle stage")
     }
@@ -642,6 +778,7 @@ fn budget_writer<'a>(root: &Path, name: &str, total: &'a mut u64) -> Result<Budg
 
 fn manifest_projection<'a>(document: &'a LinkedIrDocument<'a>) -> LinkedIrDocument<'a> {
     LinkedIrDocument {
+        root_blockers: document.root_blockers,
         schema_version: document.schema_version,
         command: document.command,
         analysis_mode: document.analysis_mode,
@@ -687,6 +824,7 @@ fn manifest_projection<'a>(document: &'a LinkedIrDocument<'a>) -> LinkedIrDocume
 /// build an index.
 #[derive(Serialize)]
 struct FunctionOverviewDocument<'a> {
+    code_identity: &'a crate::artifact::CodeIdentity,
     source: &'a str,
     artifact_sha256: &'a str,
     locator: &'a str,
@@ -811,7 +949,7 @@ struct FunctionOverviewEventBinding<'a> {
 impl<'a> FunctionOverviewDocument<'a> {
     fn new(
         function: &'a FunctionDocument<'a>,
-        memory_semantics: &BTreeMap<(String, Option<String>, String), String>,
+        memory_semantics: &BTreeMap<(String, crate::artifact::DataIdentity), String>,
     ) -> Self {
         let summary = &function.effect_summary;
         let mut direct_effects = function
@@ -949,6 +1087,7 @@ impl<'a> FunctionOverviewDocument<'a> {
         }));
         deduplicate_observable_effects(&mut direct_effects);
         Self {
+            code_identity: &function.code_identity,
             source: &function.source,
             artifact_sha256: &function.artifact_sha256,
             locator: &function.locator,
@@ -1081,12 +1220,14 @@ impl<'a> FunctionOverviewDocument<'a> {
 fn semantic_memory_object_name(
     source: &str,
     object: &crate::LinkedMemoryObject,
-    semantics: &BTreeMap<(String, Option<String>, String), String>,
+    semantics: &BTreeMap<(String, crate::artifact::DataIdentity), String>,
 ) -> Option<String> {
     match object {
-        crate::LinkedMemoryObject::Global { member, symbol } => semantics
-            .get(&(source.to_owned(), member.clone(), symbol.clone()))
-            .cloned(),
+        crate::LinkedMemoryObject::Global { reference, .. } if reference.is_local_definition() => {
+            semantics
+                .get(&(source.to_owned(), reference.definition_identity()?))
+                .cloned()
+        }
         crate::LinkedMemoryObject::Dereferenced {
             pointer,
             pointer_offset,
@@ -1133,6 +1274,7 @@ struct DataObjectIndexDocument<'a> {
 
 #[derive(Serialize)]
 struct DataObjectIndexRecord<'a> {
+    data_identity: &'a crate::artifact::DataIdentity,
     source: &'a str,
     artifact_sha256: &'a str,
     locator: &'a str,
@@ -1146,7 +1288,8 @@ struct DataObjectIndexRecord<'a> {
     length: u64,
 }
 
-pub(crate) struct LinkedIrPublication<'a> {
+pub(crate) struct LinkedIrPublication<'a, 'capture> {
+    pub(crate) captures: &'capture crate::source_set::CapturedSourceSet,
     pub(crate) report: &'a LinkedIrReport,
     pub(crate) reviewed_bindings: &'a BTreeMap<RevisionOccurrenceId, SemanticEntityId>,
 }
@@ -1179,26 +1322,20 @@ pub(crate) fn build_linked_ir_document<'a>(
     companions: &[PathBuf],
     symbol_prefix: &'a str,
     entry_contract: EntryContractRef,
-    publication: LinkedIrPublication<'a>,
+    publication: LinkedIrPublication<'a, '_>,
     include_reachable: bool,
 ) -> Result<LinkedIrDocument<'a>> {
     let LinkedIrPublication {
+        captures,
         report,
         reviewed_bindings,
     } = publication;
-    let data_objects = load_data_objects(artifacts, report, reviewed_bindings)?;
+    let data_objects = load_data_objects(captures, artifacts, report, reviewed_bindings)?;
     let functions = report
         .functions
         .iter()
         .map(|function| {
-            let locator = crate::artifact_occurrence::function_locator(
-                function.member.as_deref(),
-                &function.symbol,
-                function
-                    .address
-                    .map(u64::from)
-                    .unwrap_or(u64::from(function.object_offset)),
-            );
+            let locator = crate::artifact_occurrence::function_locator(&function.code_identity);
             let occurrence = crate::artifact_occurrence::derive(
                 open_radio_vendor_contracts::EntityDomain::Function,
                 &function.source,
@@ -1216,6 +1353,7 @@ pub(crate) fn build_linked_ir_document<'a>(
         .collect::<Result<Vec<_>>>()?;
     validate_semantic_collisions(&functions, &data_objects)?;
     Ok(LinkedIrDocument {
+        root_blockers: &report.root_blockers,
         schema_version: crate::artifacts::LINKED_IR.version,
         command: crate::artifacts::LINKED_IR.command,
         analysis_mode: "best-effort",
@@ -1274,8 +1412,13 @@ pub(crate) fn build_linked_ir_document<'a>(
             .iter()
             .map(|artifact| {
                 Ok(SourceArtifact {
+                    companions: companions
+                        .iter()
+                        .chain(&artifact.companions)
+                        .map(|path| ArtifactIdentity::from_capture(captures, path))
+                        .collect::<Result<Vec<_>>>()?,
                     source: &artifact.source,
-                    artifact: ArtifactIdentity::load(&artifact.path)?,
+                    artifact: ArtifactIdentity::from_capture(captures, &artifact.path)?,
                     reviewed_code_boundaries: artifact
                         .reviewed_code
                         .iter()
@@ -1295,13 +1438,16 @@ pub(crate) fn build_linked_ir_document<'a>(
             .map(|(source, path)| {
                 Ok(SourceInputArtifact {
                     source,
-                    artifact: ArtifactIdentity::load(path)?,
+                    artifact: ArtifactIdentity::from_capture(captures, path)?,
                 })
             })
             .collect::<Result<Vec<_>>>()?,
         companions: companions
             .iter()
-            .map(|path| ArtifactIdentity::load(path))
+            .chain(artifacts.iter().flat_map(|artifact| &artifact.companions))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(|path| ArtifactIdentity::from_capture(captures, path))
             .collect::<Result<Vec<_>>>()?,
         symbol_prefix,
         entry_contract: entry_contract.id(),
@@ -1415,21 +1561,13 @@ pub(crate) fn stage_linked_ir_bundle(
             let Some(semantic) = &object.semantic else {
                 continue;
             };
-            for symbol in std::iter::once(object.symbol.as_str())
-                .chain(object.aliases.iter().map(String::as_str))
+            let key = (object.source.clone(), object.data_identity.clone());
+            if let Some(previous) = memory_semantics.insert(key, semantic.clone())
+                && previous != *semantic
             {
-                let key = (
-                    object.source.clone(),
-                    object.member.clone(),
-                    symbol.to_owned(),
-                );
-                if let Some(previous) = memory_semantics.insert(key, semantic.clone())
-                    && previous != *semantic
-                {
-                    return Err(crate::Error::invalid(format!(
-                        "linked-IR data symbol {symbol:?} resolves to conflicting reviewed semantic identities {previous} and {semantic}"
-                    )));
-                }
+                return Err(crate::Error::invalid(
+                    "linked-IR data occurrence has conflicting reviewed identities",
+                ));
             }
         }
         for function in &document.functions {
@@ -1467,6 +1605,7 @@ pub(crate) fn stage_linked_ir_bundle(
             let length = record.written;
             record.write_all(b"\n")?;
             data_object_records.push(DataObjectIndexRecord {
+                data_identity: &object.data_identity,
                 source: &object.source,
                 artifact_sha256: &object.artifact_sha256,
                 locator: &object.locator,
@@ -1551,6 +1690,16 @@ pub(crate) fn render_linked_ir_fixture_with_bindings(
     mmio_registers: Vec<LinkedMmioRegister>,
     reviewed_bindings: &BTreeMap<RevisionOccurrenceId, SemanticEntityId>,
 ) -> String {
+    render_linked_ir_fixture_with_blockers(functions, mmio_registers, Vec::new(), reviewed_bindings)
+}
+
+#[cfg(test)]
+pub(crate) fn render_linked_ir_fixture_with_blockers(
+    functions: Vec<LinkedIrFunction>,
+    mmio_registers: Vec<LinkedMmioRegister>,
+    root_blockers: Vec<crate::analysis::LinkedIrRootBlocker>,
+    reviewed_bindings: &BTreeMap<RevisionOccurrenceId, SemanticEntityId>,
+) -> String {
     use crate::EntryContractSpec;
 
     static ENTRY: EntryContractSpec = EntryContractSpec {
@@ -1560,7 +1709,7 @@ pub(crate) fn render_linked_ir_fixture_with_bindings(
         data_pointer_binding: None,
     };
     let report = LinkedIrReport {
-        root_blockers: Vec::new(),
+        root_blockers,
         functions,
         mmio_registers,
         mmio_functions: 0,
@@ -1609,6 +1758,7 @@ pub(crate) fn render_linked_ir_fixture_with_bindings(
         "",
         crate::EntryContractRef::new(&ENTRY),
         LinkedIrPublication {
+            captures: &crate::source_set::CapturedSourceSet::capture([]),
             report: &report,
             reviewed_bindings,
         },
@@ -1619,9 +1769,16 @@ pub(crate) fn render_linked_ir_fixture_with_bindings(
         .functions
         .iter()
         .map(|function| (function.source.as_str(), function.artifact_sha256.as_str()))
+        .chain(
+            report
+                .root_blockers
+                .iter()
+                .map(|blocker| (blocker.source.as_str(), blocker.artifact_sha256.as_str())),
+        )
         .collect::<BTreeSet<_>>()
         .into_iter()
         .map(|(source, sha256)| SourceArtifact {
+            companions: Vec::new(),
             source,
             artifact: ArtifactIdentity {
                 path: "<fixture>".to_owned(),
@@ -1702,8 +1859,18 @@ mod bundle_write_tests {
 
     #[test]
     fn reviewed_memory_object_identity_stabilizes_nested_effect_targets() {
+        let reference = open_radio_vendor_contracts::SymbolReference::Captured {
+            artifact_sha256: "1".repeat(64),
+            location: open_radio_vendor_contracts::SymbolLocation {
+                object: open_radio_vendor_contracts::ObjectLocation::ArchiveMember { ordinal: 0 },
+                table: open_radio_vendor_contracts::ArtifactSymbolTable::Static,
+                index: 7,
+            },
+            binding: open_radio_vendor_contracts::SymbolBinding::LocalDefinition,
+        };
         let object = crate::LinkedMemoryObject::Indexed {
             object: Box::new(crate::LinkedMemoryObject::Global {
+                reference: reference.clone(),
                 member: Some("55.o".to_owned()),
                 symbol: "r_data_ble".to_owned(),
             }),
@@ -1711,11 +1878,7 @@ mod bundle_write_tests {
             stride: 4,
         };
         let semantics = BTreeMap::from([(
-            (
-                "ble".to_owned(),
-                Some("55.o".to_owned()),
-                "r_data_ble".to_owned(),
-            ),
+            ("ble".to_owned(), reference.definition_identity().unwrap()),
             "memory-object:esp-idf/ble/controller-state".to_owned(),
         )]);
 

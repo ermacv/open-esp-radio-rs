@@ -201,7 +201,7 @@ pub(super) fn anchor_matches_without_digest(
         .artifact(fact.artifact)
         .is_some_and(|artifact| artifact.sources.contains(&anchor.source))
         && selector_matches(&anchor.root, &fact.root)
-        && anchor.container_path == fact.container_path
+        && crate::interfaces::facts::same_step_shape(&anchor.container_path, &fact.container_path)
 }
 
 pub(super) fn anchor_digest_matches(
@@ -235,6 +235,7 @@ fn selector_matches(selector: &InterfaceRootSelector, root: &InterfaceFactRoot) 
                 symbol: fact_symbol,
                 addend: fact_addend,
                 addressing: fact_addressing,
+                ..
             },
         ) => {
             member
@@ -248,17 +249,12 @@ fn selector_matches(selector: &InterfaceRootSelector, root: &InterfaceFactRoot) 
             InterfaceRootSelector::FunctionArgument { argument },
             InterfaceFactRoot::FunctionArgument {
                 argument: fact_argument,
+                ..
             },
         ) => argument == fact_argument,
         (
             InterfaceRootSelector::AbsoluteAddress { address },
             InterfaceFactRoot::AbsoluteAddress {
-                address: fact_address,
-            },
-        ) => address == fact_address,
-        (
-            InterfaceRootSelector::AbsoluteAddress { address },
-            InterfaceFactRoot::BoundedDataAddress {
                 address: fact_address,
                 ..
             },
@@ -449,7 +445,10 @@ fn build_unreviewed_observations(
                     };
                     call.artifact == fact.artifact
                         && call.root == fact.root
-                        && container == fact.container_path
+                        && crate::interfaces::facts::same_step_shape(
+                            container,
+                            &fact.container_path,
+                        )
                         && call_slot.offset == observed.offset
                         && call_slot.width == observed.width
                         && call_slot.selector == observed.selector
@@ -494,7 +493,8 @@ fn build_unreviewed_observations(
 /// Associate a linked ELF data symbol with the reviewed relocated-symbol
 /// contract already proven against its source inventory.
 ///
-/// Linking turns an archive relocation root into a bounded data address. The
+/// A unique numeric-range candidate can be associated with an archive root.
+/// An ambiguous range is left in the research backlog. The
 /// address and member are deliberately not stable, but the exported symbol,
 /// logical source, container path, and addend survive. This association only
 /// classifies research backlog; the reviewed contract remains guarded by its
@@ -505,16 +505,14 @@ fn linked_view_anchor<'a>(
     fact: &super::InterfaceTableFact,
     matches_by_anchor: &[Vec<usize>],
 ) -> Option<&'a InterfaceAnchor> {
-    let InterfaceFactRoot::BoundedDataAddress {
-        symbol,
-        address,
-        symbol_address,
-        ..
-    } = &fact.root
-    else {
+    let InterfaceFactRoot::AbsoluteAddress { data_address, .. } = &fact.root else {
         return None;
     };
-    let addend = i64::from(address.checked_sub(*symbol_address)?);
+    let [candidate] = data_address.candidates() else {
+        return None;
+    };
+    let symbol = &candidate.symbol;
+    let addend = candidate.offset;
     let artifact = facts.artifact(fact.artifact)?;
     let mut candidates = pack
         .anchors
@@ -524,7 +522,10 @@ fn linked_view_anchor<'a>(
             !matches.is_empty()
                 && anchor.origin == PackOrigin::Observed
                 && artifact.sources.contains(&anchor.source)
-                && anchor.container_path == fact.container_path
+                && crate::interfaces::facts::same_step_shape(
+                    &anchor.container_path,
+                    &fact.container_path,
+                )
                 && matches!(
                     &anchor.root,
                     InterfaceRootSelector::RelocatedSymbol {
@@ -567,13 +568,19 @@ fn build_bindings(
                 .filter(|assignment| {
                     assignment.width == slot.width
                         && assignment.offset == slot.offset
-                        && assignment.container_path == anchor.container_path
+                        && crate::interfaces::facts::same_step_shape(
+                            &assignment.container_path,
+                            &anchor.container_path,
+                        )
                         && selector_matches(&anchor.root, &assignment.root)
                         && facts
                             .artifact(assignment.artifact)
                             .is_some_and(|artifact| artifact.sources.contains(&anchor.source))
                 })
                 .filter_map(|assignment| {
+                    if !assignment.target_loads.is_empty() {
+                        return None;
+                    }
                     let super::InterfaceFactRoot::RelocatedSymbol {
                         member,
                         symbol,
@@ -584,12 +591,10 @@ fn build_bindings(
                         return None;
                     };
                     Some(super::ResolvedInterfaceAssignment {
-                        member: assignment.member.clone(),
-                        producer: assignment.function.clone(),
-                        site: assignment.site,
+                        observation: assignment.clone(),
                         target_member: member.clone(),
                         target_symbol: symbol.clone(),
-                        target_addend: *addend,
+                        target_addend: addend.checked_add(i64::from(assignment.target_offset))?,
                     })
                 })
                 .collect::<BTreeSet<_>>()
@@ -618,9 +623,13 @@ fn build_bindings(
                         let Some((call_slot, container)) = call.loads.split_last() else {
                             return false;
                         };
-                        call.artifact == table.artifact
+                        call.target_offset.wrapping_add(call.jalr_offset) == 0
+                            && call.artifact == table.artifact
                             && call.root == table.root
-                            && container == table.container_path
+                            && crate::interfaces::facts::same_step_shape(
+                                container,
+                                &table.container_path,
+                            )
                             && call_slot.width == slot.width
                             && call_slot.selector.map_or_else(
                                 || call_slot.offset == slot.offset,
@@ -658,26 +667,10 @@ fn build_bindings(
                             evidence: domain.evidence.clone(),
                         });
                     super::ResolvedInterfaceCall {
-                        artifact: call.artifact,
-                        member: call.member.clone(),
-                        function: call.function.clone(),
-                        function_address: call.function_address,
-                        site: call.site,
-                        slot_load_site: call.slot_load_site,
-                        kind: call.kind.clone(),
-                        jalr_offset: call.jalr_offset,
+                        observation: call.clone(),
                         slot_selector: selector.map(super::InterfaceFactSelector::canonical),
                         slot_index,
                         slot_index_domain,
-                        arguments: call
-                            .arguments
-                            .iter()
-                            .map(|argument| super::ResolvedInterfaceArgument {
-                                index: argument.index,
-                                kind: argument.kind.clone(),
-                                expression: argument.expression.clone(),
-                            })
-                            .collect(),
                     }
                 })
                 .collect::<BTreeSet<_>>()

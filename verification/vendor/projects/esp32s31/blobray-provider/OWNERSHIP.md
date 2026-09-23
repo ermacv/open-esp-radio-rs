@@ -76,11 +76,12 @@ override mechanism.
 
 ## Body applicability and caller facts
 
-The ROM reconstruction bindings use symbol-body digests extracted by
-`artifact::load_code_symbol_exact` from the complete ROM whose SHA-256 is
+The ROM reconstruction bindings use exact symbol-body digests from a
+`CapturedArtifact` catalog of the complete ROM whose SHA-256 is
 `a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`,
-as recorded in `registers/esp32s31/evidence/vendor-rom.toml`. The extraction checked
-that whole-image digest first. Only digest metadata is retained in source.
+as recorded in `registers/esp32s31/evidence/vendor-rom.toml`. The binding check
+authenticates the captured bytes before selecting a unique physical symbol;
+it does not reopen a possibly changed path. Only digest metadata is retained in source.
 Unresolved objects, relocations, archive members, changed bytes or changed
 symbol boundaries reject these models and fall back to structural analysis.
 The optional `authenticated_rom_bindings_accept_reviewed_bodies_and_reject_every_byte_mutation`

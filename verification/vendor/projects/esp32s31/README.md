@@ -55,6 +55,19 @@ production source with provenance and consuming-code verification, as defined
 by the [source policy](../../../../docs/source-policy.md).
 `project files` lists every required role.
 
+The open ESP-IDF IEEE 802.15.4 controller is ported from source. Its public
+`esp_ieee802154_` family has an explicit binary-coverage exclusion and requires
+no controller archive or ELF. The `ieee802154-btbb`, `ieee802154-zb` and
+`ieee802154-coex` profiles retain binary analysis of the closed baseband and
+coexistence functions. This exclusion does not claim controller qualification.
+
+Only artifacts bound in the run spec participate in analysis. Archives are not
+discovered automatically. A `source-inventory` binding preserves original
+symbols and provenance; it does not link that archive into a `source-artifact`
+ELF. Cross-archive execution requires a composed linked image. Static IR also
+accepts ordered primary archive sets and records unresolved or ambiguous
+references. Project-wide symbol associations alone are not linker resolution.
+
 Build the three Rust comparison inputs with
 `cargo xtask build vendor-probes --chip esp32s31`. Its `--list-roles`
 option lists the declared roles without building. Normal builds use Cargo's

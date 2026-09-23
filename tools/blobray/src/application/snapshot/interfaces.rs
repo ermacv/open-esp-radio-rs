@@ -13,25 +13,42 @@ pub(super) fn collect(
     let Some(paths) = resolved.project.interfaces.as_ref() else {
         return empty(false, None, None);
     };
-    let Some(pack) = paths.pack.as_ref().filter(|pack| pack.is_file()) else {
-        return empty(true, Some(paths.facts.clone()), paths.pack.clone());
+    let mut report = empty(true, Some(paths.facts.clone()), paths.pack.clone());
+    let facts = match resolved.interface_facts() {
+        Ok(Some(facts)) => facts.clone(),
+        Ok(None) => return report,
+        Err(error) => {
+            report.observation_state = crate::InterfaceObservationState::Failed {
+                reason: error.to_string(),
+            };
+            push_error(
+                diagnostics,
+                "interface-observations",
+                error,
+                Some(paths.facts.clone()),
+            );
+            return report;
+        }
     };
-    if !paths.facts.is_file() {
-        return empty(true, Some(paths.facts.clone()), Some(pack.clone()));
-    }
+    report.observed_slots = facts.observed_slots();
+    report.unreviewed_slots = report.observed_slots;
+    report.observation_state = crate::InterfaceObservationState::Available;
+    report.observations = Some(facts);
     let workspace = match resolved.interface_workspace() {
         Ok(Some(workspace)) => workspace,
-        Ok(None) => return empty(true, Some(paths.facts.clone()), Some(pack.clone())),
+        Ok(None) => return report,
         Err(error) => {
-            push_error(diagnostics, "interfaces", error, Some(pack.clone()));
-            return empty(true, Some(paths.facts.clone()), Some(pack.clone()));
+            push_error(diagnostics, "interface-review", error, paths.pack.clone());
+            return report;
         }
     };
     let summary = workspace.summary();
     InterfaceWorkspaceReport {
+        observations: report.observations,
+        observation_state: report.observation_state,
         configured: true,
         facts: Some(paths.facts.clone()),
-        pack: Some(pack.clone()),
+        pack: paths.pack.clone(),
         observed_slots: summary.observed_slots,
         reviewed_slots: summary.reviewed_slots,
         unreviewed_slots: summary.unreviewed_slots,
@@ -78,7 +95,11 @@ pub(super) fn collect(
                     .and_then(|semantic| semantic.replacement.clone()),
                 execution_model: slot.execution_model.as_ref().map(|model| model.id.clone()),
                 functions: slot.functions.iter().cloned().collect(),
-                call_sites: slot.calls.iter().map(|call| call.site).collect(),
+                call_sites: slot
+                    .calls
+                    .iter()
+                    .map(|call| call.observation.site)
+                    .collect(),
             })
             .chain(
                 workspace
@@ -116,6 +137,12 @@ fn empty(
     pack: Option<std::path::PathBuf>,
 ) -> InterfaceWorkspaceReport {
     InterfaceWorkspaceReport {
+        observations: None,
+        observation_state: if configured {
+            crate::InterfaceObservationState::Missing
+        } else {
+            crate::InterfaceObservationState::NotConfigured
+        },
         configured,
         facts,
         pack,
@@ -126,3 +153,6 @@ fn empty(
         slots: Vec::new(),
     }
 }
+
+#[cfg(test)]
+mod tests;

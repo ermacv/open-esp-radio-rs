@@ -60,6 +60,7 @@ impl<'a> CompactFunctionInvestigation<'a> {
 
 #[derive(Serialize)]
 struct FunctionBodySummary<'a> {
+    code_identity: &'a crate::artifact::CodeIdentity,
     artifact: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     member: Option<&'a str>,
@@ -79,6 +80,7 @@ struct FunctionBodySummary<'a> {
 impl<'a> FunctionBodySummary<'a> {
     fn from_body(body: &'a FunctionBody) -> Self {
         Self {
+            code_identity: &body.code_identity,
             artifact: &body.artifact,
             member: body.member.as_deref(),
             symbol: &body.symbol,
@@ -146,6 +148,12 @@ mod tests {
 
     fn body() -> FunctionBody {
         FunctionBody {
+            code_identity: crate::artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &None,
+                "body",
+                u64::from(line!()),
+            ),
             artifact: "fixture.elf".to_owned(),
             member: None,
             symbol: "entry".to_owned(),
@@ -166,6 +174,9 @@ mod tests {
                     target: None,
                 },
                 relocations: vec![FunctionInstructionRelocation {
+                    reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                        reason: "synthetic fixture".to_owned(),
+                    },
                     kind: "call".to_owned(),
                     symbol: "dependency".to_owned(),
                     addend: 0,
@@ -194,7 +205,7 @@ mod tests {
     #[test]
     fn compact_document_counts_the_body_without_serializing_instructions() {
         let report = FunctionInvestigationReport {
-            schema_version: 18,
+            schema_version: 20,
             command: "inspect function",
             source: "fixture".to_owned(),
             symbol: "entry".to_owned(),

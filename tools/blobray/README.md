@@ -11,6 +11,15 @@ low-level analysis commands before using a project.
 
 ## Start here
 
+The independent [Blobray Next implementation](next/README.md)
+provides supervised imports, immutable revisions, object and linked-image
+research, reviewed knowledge and project preservation through `blobray-next`.
+Its independent extraction check is
+`cargo xtask check blobray-next-standalone`.
+Its crate boundaries and persisted schema implement the initial portion of the
+[target redesign](docs/design/architecture.md). Commands below describe the
+existing engine.
+
 The standalone Blobray build is target-neutral. A product repository may
 link one reviewed compiled-analysis descriptor in a thin host. In this repository,
 `cargo blobray` selects the ESP32-S31 host under
@@ -283,6 +292,7 @@ format is human or JSON.
 - [Verification policy and evidence](docs/verification.md)
 - [Register discovery, SVD and PAC generation](docs/registers-and-pac.md)
 - [Architecture and responsibility boundaries](docs/architecture.md)
+- [Target redesign architecture and implemented import boundary](docs/design/architecture.md)
 - [Persistent formats and schemas](docs/formats.md)
 - [Read-only TUI](docs/tui.md)
 - [CLI automation and host selection](docs/automation.md)

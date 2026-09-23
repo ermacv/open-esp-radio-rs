@@ -10,6 +10,7 @@ use crate::{Result, artifact};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LinkageArtifact {
     pub(crate) path: PathBuf,
+    pub(crate) sha256: String,
     pub(crate) roles: Vec<String>,
     pub(crate) sources: Vec<String>,
     pub(crate) container: artifact::ArtifactContainerKind,
@@ -29,6 +30,7 @@ pub(crate) struct LinkageCodeSection {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct LinkageSymbolLocation {
     pub(crate) artifact: usize,
+    pub(crate) location: crate::SymbolLocation,
     pub(crate) member: Option<String>,
     pub(crate) address: u64,
     pub(crate) kind: artifact::ArtifactSymbolKind,
@@ -131,6 +133,7 @@ impl LinkageResolution {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LinkageSymbol {
     pub(crate) artifact: usize,
+    pub(crate) location: crate::SymbolLocation,
     pub(crate) member: Option<String>,
     pub(crate) object_kind: artifact::ArtifactObjectKind,
     pub(crate) fact: artifact::ArtifactSymbolFact,
@@ -231,6 +234,7 @@ fn undefined_resolution(
 }
 
 pub(crate) fn build_project_linkage_inventory(
+    sources: &crate::source_set::CapturedSourceSet,
     inputs: &[(String, PathBuf)],
 ) -> Result<ProjectLinkageInventory> {
     let mut grouped = BTreeMap::<PathBuf, BTreeSet<String>>::new();
@@ -244,7 +248,8 @@ pub(crate) fn build_project_linkage_inventory(
     let mut artifacts = Vec::new();
     let mut inventories = Vec::new();
     for (path, roles) in grouped {
-        let inventory = artifact::inspect_artifact(&path)?;
+        let capture = sources.artifact(&path)?;
+        let inventory = capture.inventory()?;
         let roles = roles.into_iter().collect::<Vec<_>>();
         let sources = roles
             .iter()
@@ -254,6 +259,7 @@ pub(crate) fn build_project_linkage_inventory(
             .collect();
         artifacts.push(LinkageArtifact {
             path,
+            sha256: capture.sha256().to_owned(),
             roles,
             sources,
             container: inventory.container,
@@ -276,7 +282,7 @@ pub(crate) fn build_project_linkage_inventory(
                 })
                 .collect(),
         });
-        inventories.push(inventory);
+        inventories.push(inventory.clone());
     }
 
     let domains = artifacts
@@ -295,6 +301,11 @@ pub(crate) fn build_project_linkage_inventory(
                 .or_default()
                 .insert(LinkageSymbolLocation {
                     artifact: artifact_index,
+                    location: crate::SymbolLocation {
+                        object: object.location,
+                        table: fact.table,
+                        index: fact.index,
+                    },
                     member: object.member.clone(),
                     address: fact.address,
                     kind: fact.kind,
@@ -342,6 +353,11 @@ pub(crate) fn build_project_linkage_inventory(
                     .or_default()
                     .insert(LinkageSymbolLocation {
                         artifact: artifact_index,
+                        location: crate::SymbolLocation {
+                            object: object.location,
+                            table: fact.table,
+                            index: fact.index,
+                        },
                         member: object.member.clone(),
                         address: fact.address,
                         kind: fact.kind,
@@ -389,6 +405,11 @@ pub(crate) fn build_project_linkage_inventory(
             };
             symbols.push(LinkageSymbol {
                 artifact: artifact_index,
+                location: crate::SymbolLocation {
+                    object: object.location,
+                    table: fact.table,
+                    index: fact.index,
+                },
                 member: object.member.clone(),
                 object_kind: object.kind,
                 fact: fact.clone(),
@@ -429,6 +450,7 @@ mod tests {
         kind: artifact::ArtifactSymbolKind,
     ) -> artifact::ArtifactSymbolFact {
         artifact::ArtifactSymbolFact {
+            index: 1,
             table: artifact::ArtifactSymbolTable::Static,
             name: name.to_owned(),
             address: 0,
@@ -438,6 +460,7 @@ mod tests {
             kind,
             definition: artifact::ArtifactSymbolDefinitionState::Section,
             section: Some(".text.local".to_owned()),
+            section_index: Some(1),
             scope: artifact::ArtifactSymbolScope::Compilation,
         }
     }
@@ -445,10 +468,95 @@ mod tests {
     fn location(artifact: usize) -> LinkageSymbolLocation {
         LinkageSymbolLocation {
             artifact,
+            location: crate::SymbolLocation {
+                object: crate::ObjectLocation::ArchiveMember { ordinal: 0 },
+                table: artifact::ArtifactSymbolTable::Static,
+                index: 1,
+            },
             member: Some("member.o".to_owned()),
             address: 0,
             kind: artifact::ArtifactSymbolKind::Text,
         }
+    }
+
+    #[test]
+    fn repeated_member_occurrences_remain_ambiguous_through_serialization() {
+        use std::io::Write as _;
+        let hex = include_str!("../../tests/fixtures/generic-e2e-rv32.hex")
+            .chars()
+            .filter(|character| !character.is_ascii_whitespace())
+            .collect::<String>();
+        let bytes = hex
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect::<Vec<_>>();
+        let directory = tempfile::tempdir().unwrap();
+        let linked = directory.path().join("linked.elf");
+        std::fs::write(&linked, &bytes).unwrap();
+        let mut archive = b"!<arch>\n".to_vec();
+        for _ in 0..2 {
+            writeln!(
+                archive,
+                "{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`",
+                "same.o/",
+                0,
+                0,
+                0,
+                "100644",
+                bytes.len()
+            )
+            .unwrap();
+            archive.extend_from_slice(&bytes);
+            if !bytes.len().is_multiple_of(2) {
+                archive.push(b'\n');
+            }
+        }
+        let raw = directory.path().join("raw.a");
+        std::fs::write(&raw, archive).unwrap();
+        let captures = crate::source_set::CapturedSourceSet::capture([linked.clone(), raw.clone()]);
+        let inventory = build_project_linkage_inventory(
+            &captures,
+            &[
+                ("source-artifact:fixture".into(), linked),
+                ("source-inventory:fixture".into(), raw),
+            ],
+        )
+        .unwrap();
+        let function = inventory
+            .symbols
+            .iter()
+            .find(|symbol| symbol.member.is_none() && symbol.fact.name == "fixture_callback")
+            .unwrap();
+        assert_eq!(
+            function.origin_association,
+            LinkUnitOriginAssociation::AmbiguousNameAndKind
+        );
+        assert_eq!(function.origin_candidates.len(), 2);
+        assert_eq!(
+            function.origin_candidates[0].member,
+            function.origin_candidates[1].member
+        );
+        assert_ne!(
+            function.origin_candidates[0].location,
+            function.origin_candidates[1].location
+        );
+        for artifact in &inventory.artifacts {
+            std::fs::remove_file(&artifact.path).unwrap();
+        }
+        // Rendering cannot relabel old facts with a newly read file's digest.
+        let document = crate::artifacts::build_symbol_inventory_document(&inventory, |_| true);
+        let text = serde_json::to_string(&document).unwrap();
+        let stored = crate::artifacts::parse_symbol_inventory(&text).unwrap();
+        assert_eq!(stored.symbols.len(), inventory.symbols.len());
+        let path = directory.path().join("symbols.json");
+        std::fs::write(&path, text).unwrap();
+        assert!(
+            crate::artifacts::load_link_unit_origins(&path)
+                .unwrap()
+                .is_empty(),
+            "two physical occurrences cannot become a unique semantic origin"
+        );
     }
 
     #[test]

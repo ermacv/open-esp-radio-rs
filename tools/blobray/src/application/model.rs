@@ -4,6 +4,13 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
+pub use crate::interfaces::observations::{
+    InterfaceArgumentFact, InterfaceAssignmentFact, InterfaceCallFact, InterfaceDecodeBlockerFact,
+    InterfaceDecodeFailureFact, InterfaceFactArtifact, InterfaceFactRoot, InterfaceFactSelector,
+    InterfaceFactSlot, InterfaceFactStep, InterfaceFacts, InterfaceGapFact,
+    InterfaceRootLinkageFact, InterfaceSymbolLocationFact, InterfaceTableFact,
+};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiagnosticSeverity {
@@ -131,6 +138,7 @@ pub struct FunctionContextSummary {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FunctionSummary {
+    pub code_identity: crate::artifact::CodeIdentity,
     pub profile: String,
     pub source: String,
     pub identity: String,
@@ -173,6 +181,8 @@ pub struct FunctionDecodeBlockerSummary {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FunctionDetailSummary {
     pub identity: String,
+    /// Published epoch owning this function's generated IR evidence.
+    pub analysis_epoch: String,
     pub registers: Vec<u32>,
     pub contexts: Vec<FunctionContextSummary>,
     pub memory_fields: Vec<FunctionMemoryFieldSummary>,
@@ -268,12 +278,6 @@ pub struct LogicalTypeSummary {
     pub fields: Vec<LogicalTypeFieldSummary>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct RegisterSummary {
-    pub address: u32,
-    pub name: String,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RegisterReviewState {
@@ -292,26 +296,6 @@ impl RegisterReviewState {
             Self::Ignored => "ignored",
             Self::NonOperational => "non-operational-only",
             Self::Unreviewed => "unreviewed",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum RegisterNameSource {
-    Model,
-    Catalog,
-    Discovery,
-    Address,
-}
-
-impl RegisterNameSource {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Model => "model",
-            Self::Catalog => "catalog/SVD",
-            Self::Discovery => "discovery",
-            Self::Address => "address",
         }
     }
 }
@@ -342,12 +326,8 @@ pub struct RegisterPredicateSummary {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RegisterFieldSummary {
-    pub names: Vec<String>,
-    pub kind: String,
-    pub evidence: Vec<String>,
-    pub least_significant_bit: u8,
-    pub most_significant_bit: u8,
-    pub mask: u32,
+    pub subject: String,
+    pub field: super::register_inventory::InventoryField,
     pub write_shapes: usize,
     pub predicate_shapes: usize,
     pub poll_shapes: usize,
@@ -362,23 +342,24 @@ pub struct RegisterFieldSummary {
 pub struct RegisterAccessSiteSummary {
     pub evidence: std::collections::BTreeSet<String>,
     pub source_identity: String,
-    pub address: u32,
-    pub width: u8,
+    pub address: u64,
+    pub width: u32,
     pub function: String,
-    pub pc: u32,
+    pub pc: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RegisterDetailSummary {
+    pub inventory_snapshot: String,
+    pub selection: super::register_inventory::RegisterSelector,
     pub subjects: Vec<super::register_inventory::InventoryRegister>,
     pub evidence: Vec<super::register_inventory::RegisterEvidence>,
     pub sources: Vec<super::register_inventory::InventorySource>,
     pub coverage_gaps: Vec<open_radio_vendor_contracts::register_inventory::CoverageGap>,
-    pub address: u32,
-    pub width: Option<u8>,
-    pub range: Option<String>,
+    pub address: u64,
+    pub width: Option<u32>,
+    pub regions: Vec<super::register_inventory::AddressCoverage>,
     pub name: String,
-    pub name_source: RegisterNameSource,
     pub review_status: RegisterReviewState,
     pub publication_scopes: Vec<String>,
     pub publication_debt: Option<bool>,
@@ -403,19 +384,81 @@ pub struct RegisterDetailSummary {
     pub semantic_operations: Vec<String>,
 }
 
+impl RegisterDetailSummary {
+    pub(crate) fn semantic_subject(
+        &self,
+    ) -> crate::Result<Option<open_radio_vendor_contracts::SemanticEntityId>> {
+        let [register] = self.subjects.as_slice() else {
+            return Ok(None);
+        };
+        let Some(width) = register.width() else {
+            return Ok(None);
+        };
+        let subject = &register.subject;
+        if subject.route != "mmio" || subject.bank.is_some() {
+            return Err(crate::Error::invalid(
+                "reviewed semantic register identities cannot represent this route or bank; the physical subject and evidence remain available",
+            ));
+        }
+        open_radio_vendor_contracts::SemanticEntityId::register(
+            &subject.chip,
+            &subject.address_space,
+            subject.address,
+            width,
+        )
+        .map(Some)
+        .map_err(|error| crate::Error::invalid(error.to_string()))
+    }
+}
+
+/// Availability of the session-owned register graph, including an empty graph.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "state", rename_all = "kebab-case")]
+pub enum RegisterInventoryState {
+    Available {
+        snapshot: std::sync::Arc<super::RegisterInventorySnapshot>,
+    },
+    Failed {
+        reason: String,
+    },
+}
+
+impl RegisterInventoryState {
+    pub fn snapshot(&self) -> Option<&super::RegisterInventorySnapshot> {
+        match self {
+            Self::Available { snapshot } => Some(snapshot),
+            Self::Failed { .. } => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RegisterWorkspaceReport {
     pub configured: bool,
     pub model: Option<PathBuf>,
     pub ranges: usize,
     pub observed: usize,
-    pub reviewed: usize,
-    pub ignored: usize,
-    pub non_operational: usize,
-    pub manual: usize,
-    pub unreviewed: usize,
+    /// Unavailable or unconfigured publication review is explicit, not zero.
+    pub publication: Option<super::RegisterWorkspaceSummary>,
     pub fields: usize,
-    pub registers: Vec<RegisterSummary>,
+    pub inventory: RegisterInventoryState,
+}
+
+impl RegisterWorkspaceReport {
+    pub fn register_count(&self) -> usize {
+        self.inventory
+            .snapshot()
+            .map_or(0, |snapshot| snapshot.inventory().registers.len())
+    }
+    pub fn registers(&self) -> impl Iterator<Item = &super::InventoryRegister> {
+        self.inventory
+            .snapshot()
+            .into_iter()
+            .flat_map(|snapshot| snapshot.inventory().registers.values())
+    }
+    pub fn register_at(&self, index: usize) -> Option<&super::InventoryRegister> {
+        self.inventory.snapshot()?.register_at(index)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -468,7 +511,21 @@ pub struct InterfaceSlotSummary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+/// Availability of the session's interface observation capture, independent of review.
+pub enum InterfaceObservationState {
+    NotConfigured,
+    Missing,
+    Available,
+    Failed { reason: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+/// Shared immutable observations with optional reviewed interface projections.
 pub struct InterfaceWorkspaceReport {
+    /// The same capture used by session queries and reviewed bindings.
+    pub observations: Option<std::sync::Arc<InterfaceFacts>>,
+    pub observation_state: InterfaceObservationState,
     pub configured: bool,
     pub facts: Option<PathBuf>,
     pub pack: Option<PathBuf>,
@@ -546,6 +603,11 @@ pub struct VerificationSurfaceSummary {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct WorkspaceSnapshot {
     pub generation: u64,
+    /// Epoch selected for generated function/IR, static MMIO annotations,
+    /// interface observations, code-boundary facts and register MMIO/IR inputs.
+    /// Reviewed/model/trace inputs, status and other domains have separate
+    /// capture lifetimes; this does not identify the entire register graph.
+    pub generated_analysis_epoch: Option<String>,
     pub project_status: crate::ProjectStatusReport,
     pub code: CodeWorkspaceReport,
     pub functions: Vec<FunctionSummary>,

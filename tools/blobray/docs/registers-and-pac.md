@@ -92,12 +92,45 @@ cargo blobray registers evidence evidence:SHA256 --project path/to/vendor-projec
 
 List and coverage accept `--subject`, `--source`, `--function`, `--text`,
 `--start`, `--end-exclusive`, `--mask`, `--unknown`, `--conflicted`, `--offset`
-and `--limit`. JSON reports include total and next offset. Address-domain
+and `--limit`. Range endpoints accept decimal or hexadecimal 64-bit addresses;
+`--mask` accepts a 32-bit mask and rejects larger values. JSON reports include
+total, next offset and the inventory content ID as `snapshot_id`. Address-domain
 IDs open through the evidence command. Missing or failed sources remain in
 `coverage_gaps`; absence of generated discovery does not hide model fields.
 The TUI uses the same inventory for its register list and detail views.
+Discovery and IR inputs are read from the session's selected published analysis,
+requiring `project analyze` to publish them. Standalone exported files cannot
+substitute for that publication. Removing exports preserves the published data;
+missing publication or a missing member produces an explicit coverage gap.
+Inventory construction does not acquire a writer or recreate an absent cache.
+Models, reviewed inputs and external traces/hints retain separate capture lifetimes.
+`inspect register` accepts either an exact `register-location/...` ID from
+that inventory or a decimal/hexadecimal 64-bit address. Address selection
+retains every containing subject, including different address spaces, routes
+and banks. Exact selection preserves the chosen domain for neighbors and
+review lookup. Unsupported reviewed routes/banks remain queryable with explicit
+review diagnostics. Lists and detail retain wide fields and unknown geometry;
+a null 32-bit mask does not remove a field or its offset/width.
 Research keeps name, geometry, semantics, field semantics, coverage and
 conflict questions separate from publication identity debt.
+
+Register queries consume the resolved project context. Explicit `--svd` paths
+replace the project's default SVD selection for list, coverage, evidence and
+inspection queries; they do not modify the project or reviewed model. An unreadable
+or invalid explicitly selected SVD is an error. Unavailable configured sources
+remain coverage gaps. Initial inventory capture reads the selected SVD bytes once
+and uses those same bytes for its cache identity and imported evidence. Changes to
+the selection or contents cannot reuse another selection's inventory. Application
+snapshot, register detail, research and revision retain the same graph until
+reload. Publication inspection retains its model, facts, scopes and assertions
+for that session too. External edits do not silently replace these captured
+values; a successful reload starts a new capture. Failed session resolution
+preserves the existing capture. `register.inventory_snapshot` in inspection
+identifies the graph, independently of publication review data.
+Cache hits use a read-only WAL snapshot and can run while another analysis holds
+the writer. Cache misses still publish derived results through the existing
+writer. Initial capture reads configured evidence sequentially; it does not yet
+provide an atomic capture across files or whole-project snapshot isolation.
 
 The inventory retains complete declarations (including descriptions, enums,
 reset/access properties and side effects) and source documents. Bit masks
@@ -134,7 +167,7 @@ SQLite/CAS store. Cache keys hash every source, model fragment and linked
 bundle member, including missing-input state. Source documents and reviewed
 packs remain authoritative. Stale replay inputs retain their observations
 and expose their freshness failure; they cannot certify current execution.
-MMIO schema 6, linked IR schema 69, replay schema 4 and inspect schema 8 are
+MMIO schema 6, linked IR schema 73, replay schema 4 and inspect schema 9 are
 breaking formats: regenerate older generated outputs. Reviewed schema-2
 packs and model schema-3 inputs retain their original evidence and applicability;
 query import does not rewrite them or guess meaning from placeholder names.
@@ -155,7 +188,7 @@ cargo blobray project publish --project path/to/vendor-project.toml
 ```
 
 `research next` ranks blockers by transitive benefit and co-blocking structure.
-`inspect register` schema 8 prints the stable sparse-fact subject, configured
+`inspect register` schema 9 prints the stable sparse-fact subject, configured
 review pack and supported assertion kinds. It also lists every selected
 reviewed assertion for the exact physical subject, including its pack, ID,
 kind, value and evidence; that list has `completion_claim = false`. For an owned, unreviewed discovery

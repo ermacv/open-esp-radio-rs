@@ -221,6 +221,7 @@ fn matches_object(
                 symbol: left_symbol,
             },
             FunctionMemoryObjectFact::Global {
+                reference: _,
                 member: right_member,
                 symbol: right_symbol,
             },
@@ -261,6 +262,9 @@ mod tests {
         };
         let observed = FunctionMemoryObjectFact::Indexed {
             object: Box::new(FunctionMemoryObjectFact::Global {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 member: Some("coexist_core.o".to_owned()),
                 symbol: ".LANCHOR1".to_owned(),
             }),
@@ -268,6 +272,10 @@ mod tests {
             stride: 1,
         };
         let function = FunctionFact {
+            code_identity: crate::artifact::CodeIdentity::Synthetic {
+                namespace: module_path!().into(),
+                key: format!("fixture:{}", line!()),
+            },
             profile: "coex".to_owned(),
             source: "libcoexist".to_owned(),
             identity: "libcoexist::coex_core_pti_get".to_owned(),

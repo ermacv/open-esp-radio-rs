@@ -2,9 +2,7 @@
 
 use std::{collections::BTreeMap, fmt::Write as _, sync::Arc};
 
-use open_radio_vendor_analysis_model::{
-    FloatingPointOperation, MemoryObjectLocation, MemoryObjectRoot,
-};
+use open_radio_vendor_analysis_model::{FloatingPointOperation, MemoryObjectRoot};
 
 use super::*;
 
@@ -195,6 +193,7 @@ pub(super) fn pseudo_value(value: &SymbolicValue) -> String {
         }
         SymbolicValue::StackAddress(offset) => format!("stack.ptr({offset:+#x})"),
         SymbolicValue::SymbolAddress {
+            reference: _,
             member,
             symbol,
             hi_addend,
@@ -404,49 +403,34 @@ impl RenderState {
             .unwrap_or_else(|| format!("unresolved_call_{target:08x}"))
     }
 
-    fn indexed_global(
-        &self,
-        address: &SymbolicValue,
-        width: u8,
-    ) -> Option<(u8, i64, &artifact::ArtifactDataSymbolDefinition, u32)> {
-        let affine = address.memory_object_location_with_reads(&BTreeMap::new());
-        let (argument, stride, address) = match affine {
-            Some(MemoryObjectLocation {
-                root:
-                    MemoryObjectRoot::Indexed {
-                        root,
-                        argument,
-                        stride,
-                    },
-                offset,
-            }) => {
-                let MemoryObjectRoot::Absolute { address } = root.as_ref() else {
-                    return None;
-                };
-                let address = i64::from(*address).checked_add(offset)?;
-                (argument, stride, u32::try_from(address).ok()?)
-            }
-            _ => {
-                // Keep accepting the historical `arg + linked-address` form.
-                // It predates explicit indexed-object provenance in the IR.
-                let (argument, offset) = address.caller_memory_location()?;
-                (argument, 1, u32::try_from(offset).ok()?)
-            }
+    fn data_address_hint(&self, address: &SymbolicValue, width: u8) -> String {
+        use open_radio_vendor_contracts::DataAddressBasis;
+        let Some(location) = address.memory_object_location_with_reads(&BTreeMap::new()) else {
+            return String::new();
         };
-        let bytes = u32::from(width.checked_div(8)?);
-        let end = address.checked_add(bytes)?;
-        let symbol = self.data_symbols.iter().find(|symbol| {
-            address >= symbol.address && end <= symbol.address.saturating_add(symbol.size)
-        })?;
-        Some((argument, stride, symbol, address - symbol.address))
-    }
-}
-
-fn indexed_global_element(argument: u8, stride: i64, offset: u32) -> String {
-    if stride == 1 {
-        format!("arg{argument} + {offset:#x}")
-    } else {
-        format!("arg{argument} * {stride:#x} + {offset:#x}")
+        let (base, basis) = match &location.root {
+            MemoryObjectRoot::Absolute { address } => (*address, DataAddressBasis::AccessAddress),
+            MemoryObjectRoot::Indexed { root, .. } => match root.as_ref() {
+                MemoryObjectRoot::Absolute { address } => (*address, DataAddressBasis::IndexedBase),
+                _ => return String::new(),
+            },
+            MemoryObjectRoot::Argument { .. } => (0, DataAddressBasis::ArgumentOffsetHint),
+            _ => return String::new(),
+        };
+        let Some(address) = i64::from(base)
+            .checked_add(location.offset)
+            .and_then(|value| u32::try_from(value).ok())
+        else {
+            return String::new();
+        };
+        let resolution =
+            ReferenceResolver::resolve_data_address(&self.data_symbols, address, Some(width))
+                .with_basis(basis);
+        if resolution.candidates().is_empty() {
+            String::new()
+        } else {
+            format!("; data-address: {resolution:?}")
+        }
     }
 }
 
@@ -653,23 +637,11 @@ pub(super) fn render_event(
             address,
             region,
             value,
-        } => match access {
+        } => {
+            let region = format!("{region}{}", state.data_address_hint(address, *width));
+            match access {
             MemoryAccess::Read => {
-                if let Some((argument, stride, symbol, offset)) =
-                    state.indexed_global(address, *width)
-                {
-                    let symbol = symbol.member.as_deref().map_or_else(
-                        || symbol.name.clone(),
-                        |member| format!("{member}::{}", symbol.name),
-                    );
-                    let element = indexed_global_element(argument, stride, offset);
-                    writeln!(
-                        output,
-                        "{prefix}let ramread{} = {symbol}[{element}].read{width}(); // {region}",
-                        state.memory_reads,
-                    )
-                    .unwrap();
-                } else if let Some((argument, offset)) = address.caller_memory_location() {
+                if let Some((argument, offset)) = address.caller_memory_location() {
                     writeln!(
                         output,
                         "{prefix}let ramread{} = ctx{argument}.read{width}({offset:+#x}); // {region}",
@@ -689,20 +661,7 @@ pub(super) fn render_event(
             }
             MemoryAccess::Write => {
                 let value = value.as_ref().map_or_else(|| "unknown".to_owned(), pseudo_value);
-                if let Some((argument, stride, symbol, offset)) =
-                    state.indexed_global(address, *width)
-                {
-                    let symbol = symbol.member.as_deref().map_or_else(
-                        || symbol.name.clone(),
-                        |member| format!("{member}::{}", symbol.name),
-                    );
-                    let element = indexed_global_element(argument, stride, offset);
-                    writeln!(
-                        output,
-                        "{prefix}{symbol}[{element}].write{width}({value}); // {region}"
-                    )
-                    .unwrap();
-                } else if let Some((argument, offset)) = address.caller_memory_location() {
+                if let Some((argument, offset)) = address.caller_memory_location() {
                     writeln!(
                         output,
                         "{prefix}ctx{argument}.write{width}({offset:+#x}, {value}); // {region}"
@@ -717,6 +676,7 @@ pub(super) fn render_event(
                     .unwrap();
                 }
             }
+        }
         },
         DraftReferenceEvent::PrivateStackLoad {
             token,

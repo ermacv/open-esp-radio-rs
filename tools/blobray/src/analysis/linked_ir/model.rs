@@ -315,6 +315,7 @@ pub(crate) enum LinkedMemoryObject {
         index: u8,
     },
     Global {
+        reference: open_radio_vendor_contracts::SymbolReference,
         member: Option<String>,
         symbol: String,
     },
@@ -346,7 +347,7 @@ impl LinkedMemoryObject {
     pub(crate) fn display_name(&self) -> String {
         match self {
             Self::Argument { index } => format!("arg{index}"),
-            Self::Global { member, symbol } => member
+            Self::Global { member, symbol, .. } => member
                 .as_deref()
                 .map_or_else(|| symbol.clone(), |member| format!("{member}::{symbol}")),
             Self::Dereferenced {
@@ -388,7 +389,12 @@ impl LinkedMemoryObject {
         }
         Some(match value {
             MemoryObjectRoot::Argument { index } => Self::Argument { index: *index },
-            MemoryObjectRoot::RelocatedSymbol { member, symbol } => Self::Global {
+            MemoryObjectRoot::RelocatedSymbol {
+                reference,
+                member,
+                symbol,
+            } => Self::Global {
+                reference: reference.clone(),
                 member: member.clone(),
                 symbol: symbol.clone(),
             },
@@ -427,6 +433,7 @@ impl LinkedMemoryObject {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct MemoryObjectAccess {
+    pub(crate) data_address: open_radio_vendor_contracts::DataAddressResolution,
     pub(crate) object: LinkedMemoryObject,
     pub(crate) offset: i64,
     pub(crate) access: &'static str,
@@ -513,6 +520,7 @@ pub(crate) enum LinkedInstructionEffect {
         forced_one_mask: Option<u32>,
     },
     Memory {
+        data_address: open_radio_vendor_contracts::DataAddressResolution,
         site: u32,
         block: Option<usize>,
         access: &'static str,
@@ -1031,6 +1039,7 @@ pub(crate) struct LinkedIndexedDispatch {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedIrFunction {
+    pub(crate) code_identity: artifact::CodeIdentity,
     pub(crate) source: String,
     /// Digest of the exact input artifact that owns this function.
     ///
@@ -1078,6 +1087,7 @@ pub(crate) struct LinkedIrFunction {
 /// A selected root retained as an explicit analysis boundary rather than a body.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedIrRootBlocker {
+    pub(crate) code_identity: artifact::CodeIdentity,
     pub(crate) source: String,
     pub(crate) artifact_sha256: String,
     pub(crate) member: Option<String>,

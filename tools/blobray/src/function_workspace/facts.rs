@@ -33,6 +33,7 @@ pub(crate) enum FunctionMemoryObjectFact {
         index: u8,
     },
     Global {
+        reference: open_radio_vendor_contracts::SymbolReference,
         member: Option<String>,
         symbol: String,
     },
@@ -159,6 +160,7 @@ pub(crate) struct FunctionDecodeBlockerFact {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FunctionFact {
+    pub(crate) code_identity: crate::artifact::CodeIdentity,
     pub(crate) profile: String,
     pub(crate) source: String,
     pub(crate) identity: String,
@@ -244,11 +246,19 @@ impl FunctionFacts {
         fields(reports = reports.len())
     )]
     pub(crate) fn load_summary(reports: &[(String, PathBuf)]) -> Result<Self> {
+        Self::load_summary_with(reports, |path| {
+            crate::artifacts::LinkedIrReader::open(path)?.read_review_projection()
+        })
+    }
+
+    pub(crate) fn load_summary_with(
+        reports: &[(String, PathBuf)],
+        mut load: impl FnMut(&std::path::Path) -> Result<crate::artifacts::LinkedIrReviewProjection>,
+    ) -> Result<Self> {
         let mut inputs = Vec::new();
         let mut functions = Vec::new();
         for (profile, path) in reports {
-            let projection =
-                crate::artifacts::LinkedIrReader::open(path)?.read_review_projection()?;
+            let projection = load(path)?;
             let (report_inputs, report_functions) =
                 parse::parse_review_projection(profile, projection)?;
             inputs.extend(report_inputs);

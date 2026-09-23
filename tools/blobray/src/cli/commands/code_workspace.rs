@@ -221,12 +221,12 @@ fn review(
     let facts = load_code_boundary_facts(inventory)?;
     let workspace = CodeWorkspace::load(&facts, &paths.pack, &project.id)?;
     let contents = render_code_boundary_review(&workspace, inventory)?;
-    crate::application::generated_file::write_or_check(
+    crate::application::generated_file::GeneratedOutput::new(
         output,
-        &contents,
         arguments.check,
         "code-boundary review",
-    )?;
+    )
+    .text(&contents)?;
     let summary = workspace.summary();
     let report = CodeReviewReport {
         schema: 1,

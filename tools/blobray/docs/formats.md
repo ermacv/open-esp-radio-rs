@@ -127,10 +127,13 @@ provenance, never executable semantics.
 
 ## Durable revision state
 
-- immutable schema-5 revision snapshots (`revisions/snapshots/NAME.json.gz`)
-  contain only typed vendor artifact/inventory/companion digests and normalized
-  vendor-derived features, never vendor payloads, disassembly, or local Rust
-  verification ELF identities. They also bind every reviewed record to the
+- immutable schema-6 revision snapshots (`revisions/snapshots/NAME.json.gz`)
+  contain typed vendor artifact/inventory/companion digests, normalized function
+  features and the common register inventory graph with evidence digests.
+  Evidence payloads and captured input bytes are not copied into snapshots.
+  Function artifact scope excludes local Rust verification ELF identities;
+  register observations retain their individual source provenance. Snapshots
+  also bind every reviewed record to the
   full authenticated ecosystem/chip/revision/lineage/artifact context;
 - `revisions/state.blobray` is the tracked custom revision-state DSL. Its first
   line is `blobray-revision-state 1`; the remaining typed directives store only
@@ -139,31 +142,179 @@ provenance, never executable semantics.
   `snapshot-sha256` identifies normalized logical snapshot content, not the
   encoded `.json.gz` bytes; gzip is a replaceable storage codec.
 
+The register graph uses the same physical subject IDs, unknown/conflicted
+properties, alternative fields, access widths, bit/address coverage, source
+states and gaps as register queries. Access width is not part of subject
+identity. Each evidence reference stores its ID, kind, source identities and
+SHA-256 of the complete query record. Full payloads remain available through
+the inventory query and its original inputs; a revision file alone cannot
+recover their bytes from those hashes. Snapshot validation checks graph
+references and recomputes comparison fingerprints from the stored records.
+
+Register diffs include payload-hash changes as well as changes to subjects and
+fields. The `register-coverage` domain reports source, region, indexed-domain,
+opaque-evidence and gap changes even when no concrete register exists. Rebase
+maps reviewed register/field anchors to physical locations and requires an
+unchanged graph plus known matching physical width; an unknown or conflicted
+width cannot authorize an automatic carry. SVD selection uses the resolved
+query context, including explicit overrides.
+
 Snapshots are tool-written correspondence maps rather than manually reviewed
 facts. Unlike ordinary generated output, they and their state must survive a
 vendor update; commit them or place them in equivalent durable,
 access-controlled storage. Snapshot names are immutable.
 
-Linked-IR schema 69 records the primary artifacts, symbol inventories and
+Linked-IR schema 73 records the primary artifacts, symbol inventories and
 companions that affected each generated bundle. Revision capture compares all
 three dependency classes with the current typed run-spec and rejects stale
 generated evidence. Function records retain artifact-bound occurrence and
 reviewed semantic identities; a symbol name alone is not revision identity.
+Each function also carries `code_identity`, including the artifact digest,
+object ordinal and symbol-table index (or explicit reviewed section range).
+Function locators and revision occurrences derive from that physical identity.
+Readers validate it in full records, random-access records and overview streams.
+Root blockers, including rejected semantic transfers and ambiguous origins,
+remain in the bundle manifest even when no body was analyzed. Function
+investigation schema 20 includes the same code identity in full and compact
+body views; symbol correspondence schema 11 uses physical function and data
+locators and exposes each data candidate's `data_identity`.
+Data objects and their bundle index carry `data_identity`: artifact digest,
+object ordinal, symbol table and index. Co-located anchors and static/dynamic
+symbol occurrences remain distinct; names and inferred extents are metadata.
+Full and indexed readers reject inconsistent data identities. Global memory
+expressions retain a mandatory `reference`: captured symbol location and
+binding, or an explicit `unknown` reason. Data-object cross-references use
+`physical-local-definition` for a local target in the same captured artifact,
+`physical-definition-candidate` for a non-local definition, and
+`member-name-and-symbol-candidate` for name associations. A captured global or
+weak definition does not prove linker selection. Function-body relocation
+records expose the same reference, including the target of normalized HI/LO
+pairs. Unnamed relocation targets remain physically identifiable.
+Memory accesses and instruction effects also retain mandatory `data_address`
+evidence: an explicit unknown reason, one range candidate, or all ambiguous
+candidates with physical data identities. Numeric range matching never rewrites
+the original memory object or offset and does not prefer smaller or exported
+symbols. Its basis distinguishes a complete access address, an indexed base and
+an argument-offset hint. Read-location hints without an access width expose
+`width: null`; they do not claim that a complete load fits the candidate.
+Pseudocode retains the original address expression and displays candidate hints.
+Data-object cross-references include `address-range-candidate` associations and
+separate `reference-trace` and `instruction` evidence channels; counts from
+these channels must not be added as distinct dynamic accesses. Companion data
+objects are exported under their actual artifact digest and source context.
+`inspect object` schema 3 preserves this association on access evidence and
+accepts `SOURCE:occurrence:memory-object:sha256:DIGEST` for exact selection,
+including unnamed objects. A symbol selector returns all matching occurrences.
+Access evidence includes the original object, `observed_offset`, all address
+candidates, and the candidate-relative `offset` used by the offset filter.
+Pointer-storage and pointee accesses remain distinct.
+Reviewed names on overview memory effects require an exact local reference;
+name collisions cannot copy one data occurrence's reviewed binding to another.
+Each primary artifact lists the ordered companions used in its own analysis
+context. The bundle-wide companion inventory does not grant another source
+access to those definitions.
 
-Only schema-5 snapshots and revision-state DSL version 1 are accepted. TOML,
-older state and migration maps are not parsed or upgraded. Remove invalid
-state and capture a fresh baseline from the live typed vendor bindings.
+Only schema-6 snapshots and revision-state DSL version 1 are accepted. TOML,
+older state and migration maps are not parsed or upgraded. Preserve durable
+snapshots and reviewed bindings when a schema is rejected; cache invalidation
+is not permission to discard that evidence.
 
 ## Generated outputs
 
-- symbol and interface observations; MMIO schema 6 preserves instruction-local
+- `inspect analyze` schema 4 captures primary and companion bytes before
+  constructing the resolver. Direct and reference analysis use that resolver's
+  context and exact physical definitions. Every function row carries
+  `code_identity`; blocker impacts, callee hotspots and unmapped-MMIO users
+  refer to these identities rather than display names, so repeated archive
+  member and symbol names remain distinct. Artifact hashes describe the captured
+  bytes, including when paths change before rendering. `--details` text output
+  includes the physical function identities. A target without a configured
+  knowledge provider uses the neutral RV32 context, as linked-IR analysis does;
+- symbol inventory schema 7 records object ordinals, symbol-table indices and
+  section indices. Names and addresses are metadata; repeated archive members
+  remain distinct candidates. Unnamed symbol entries are retained. Artifact
+  digests come from the captured bytes and are not recomputed during rendering;
+- interface observations schema 11 retains each numeric base, original load/store
+  offsets and mandatory `data_address` evidence. All overlapping, alias and
+  static/dynamic data definitions remain candidates; missing ranges are explicit
+  unknowns. Numeric store assignments are possible pointer evidence and may also
+  represent scalars. Review backlog association requires a unique range candidate.
+  Revision keeps the address subject stable while merging all range evidence into
+  its fingerprint. Navigation schema 7 retains the shared typed interface observations, including
+  unresolved calls, assignments, gaps, decode blockers and analysis failures,
+  independently of symbol matches. Its reader validates these observations
+  against the authenticated interface input. Root links also retain the same
+  address resolution. Arguments use a mandatory typed `value` (including alternatives,
+  unknown, selectors, indexed pointers and GOT addresses). Calls retain every
+  load site, link register and target post-offset; assignments retain target
+  loads and post-offsets. Table aggregates compare layout independently of
+  instruction sites. `limits` records propagation budgets; `gaps` retains the
+  physical code owner, instruction site, reason and all 32 input register
+  values. Interface revision includes call, assignment and gap evidence even
+  without a table candidate. Old argument and bounded-data-address records
+  are rejected;
+- `interfaces validate` schema 4 exposes the shared `observations` query result
+  independently of reviewed bindings. Resolved calls and assignments wrap their
+  full observation; slot selection and reviewed target association are separate
+  fields. Argument kinds and text are derived from typed values at rendering
+  time. Validation does not claim complete analysis. Function review includes
+  the same typed call observation alongside its human-readable table; distinct
+  load sites remain distinct even when rendered argument expressions coincide.
+  Calls, assignments, decode blockers and analysis failures require a physical
+  `owner` code identity; the reader checks its artifact digest. Same-name members
+  and equal instruction addresses do not merge observations. Instruction-level
+  revision subjects use owner and site; display-name changes do not replace them.
+  Full and compact function queries retain `code_identity`, and reviewed interface
+  caller joins use that identity. Relocated roots require a physical symbol
+  reference or an explicit unknown reason. Function-argument roots include their
+  owning code identity; calls, assignments and gap arguments reject a different
+  owner. Linkage candidates retain their physical symbol locations.
+  Navigation groups symbols by captured artifact and physical occurrence using
+  `physical-occurrence-v2`; names, member paths and addresses are retained as
+  labels without changing identity. Companion functions retain their own artifact
+  digest. Captured relocated roots associate only with their physical occurrence;
+  an unknown reference does not fall back to its display name. Numeric ranges
+  retain all candidate associations. Reviewed root selectors and project-call
+  reachability remain separate metadata associations. These records do not prove
+  linker selection or body equivalence;
+
+- application workspace snapshots expose the same typed interface query as
+  `interfaces.observations`, independently of reviewed slots. The tagged
+  `observation_state` distinguishes `not-configured`, `missing`, `available` and
+  `failed` (with a reason). Review diagnostics leave available observations
+  intact. The TUI Interfaces section lists raw table candidates, calls,
+  assignments, propagation gaps, decode blockers and analysis failures alongside
+  reviewed slot projections. Search includes typed evidence; raw details retain
+  argument alternatives, load sites and gap register values. Raw observations
+  alone leave behavior unknown. Reviewed slot navigation remains separate from
+  these raw evidence rows;
+- MMIO schema 6 preserves instruction-local
   value provenance and unresolved/indexed address observations as well as
   aggregate discovery statistics;
 - register inventory schema 1 joins declarations, observations and hypotheses
   with source digests and evidence IDs. Physical subjects include chip,
   address space, route, bank and address; load/store width is independent.
   Queries retain unknown and conflicting properties, full input records,
-  conditional address domains and explicit coverage gaps;
+  conditional address domains and explicit coverage gaps. Application register
+  reports carry `inventory.state`: `available` contains the snapshot's `id` and
+  full `inventory` graph; `failed` contains a `reason`. Sources, domains and gaps
+  remain available even with no concrete registers. Rows are queried from this
+  graph, with no second register projection; field/region totals describe this
+  inventory. List/coverage JSON schema 2 includes its content ID as `snapshot_id`.
+  The optional `publication` summary retains the separate configured
+  model/discovery review counts, with null for unavailable review;
+- `inspect register` schema 10 accepts a `register-location/...` subject ID or
+  a 64-bit address. `register.selection` preserves that choice; an address
+  query includes every containing physical subject across domains.
+  `register.inventory_snapshot` identifies the captured inventory used for detail.
+  Detail
+  `fields` retain the full inventory field under `field` and its parent ID
+  under `subject`, including fields without a representable 32-bit mask.
+  `regions` contains all matching MMIO ranges. Evidence includes references
+  owned by property claims and fields as well as direct register references.
+  Name provenance is retained in each subject's property claims and referenced
+  evidence; there is no single guessed `name_source` for mixed inputs. An
+  ambiguous selection has no single width or reviewed recording subject;
 - replay evidence schema 4 includes ordered MMIO observations per concrete
   phase. Their PC is explicitly unknown when the execution event does not
   carry one. Replay coverage applies to the recorded scenario only;
@@ -181,11 +332,16 @@ state and capture a fresh baseline from the live typed vendor bindings.
 - canonical derived linked-IR bundles and indexes, including structural loop
   regions, explicitly non-proving counted-loop candidates, and raw-bit
   floating value-flow nodes whose operation and rounding mode remain explicit.
-  Schema 69 records width-alternative bindings, full-word field hypotheses,
+  Schema 71 records width-alternative bindings, full-word field hypotheses,
   call-argument bit provenance, typed guarded-return frontiers and full call-result
   producer identities. `structurally_complete` means only that every terminal
   was enumerated within bounded traversal; it does not assert expression
   exactness, path feasibility, event delivery, or mutable-object lifetime;
+- linked-IR source coverage schema 2 binds every symbol root to `code_identity`
+  and uses the analysis source set for its inventory and input hashes. Equal
+  member names, symbol names and addresses cannot account for an omitted
+  physical occurrence. Coverage validation separately checks current inputs
+  and the sealed bundle products;
 - navigation and review-scope indexes; project-wide call associations retain
   source-qualified candidates and a unique/ambiguous/unresolved status without
   claiming linker resolution. Review-scope schema 12 persists the mandatory
@@ -195,7 +351,7 @@ state and capture a fresh baseline from the live typed vendor bindings.
 - verification reports and evidence index;
 - SVD, raw PAC, bindings index, and restricted API output;
 - revision diff and rebase plans. Diff reports use their own schema 2,
-  independently of schema-5 stored snapshots, and include a typed function
+  independently of schema-6 stored snapshots, and include a typed function
   delta (`changed`, `added`, `removed`, `{ before, after }` remaps and uncertain
   identities) plus research invalidation areas with affected subjects and
   reviewed-record IDs. `@live` is a read-only operand for validating and
@@ -293,7 +449,7 @@ identity remain historical; only the selected comparison needs a new publication
 `retired-objects` or `retired-epochs` scope and eligible epoch/query/object
 counts. `--retired-epochs` requires `--retention-days`; the ordinary GC scope is
 unchanged. See [retention policy](cache-policy.md) for protected roots and the
-atomic publication contract. This report change does not change cache schema 10.
+atomic publication contract. This report change does not change cache schema 11.
 
 `generated/.blobray-cache/queries.sqlite3` and `objects-*.pack` are
 disposable local implementation state, not project formats and not evidence.

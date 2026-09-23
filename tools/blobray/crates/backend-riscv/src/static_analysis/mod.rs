@@ -991,6 +991,12 @@ mod exploration_tests {
     #[test]
     fn bounded_exploration_visits_every_discovered_path() {
         let symbol = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "branched",
+                0x1000,
+            ),
             member: None,
             name: "branched".to_owned(),
             address: 0x1000,
@@ -1037,6 +1043,12 @@ mod exploration_tests {
     #[test]
     fn bounded_exploration_resumes_after_the_latest_branch() {
         let symbol = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "sequential_branches",
+                0x1000,
+            ),
             member: None,
             name: "sequential_branches".to_owned(),
             address: 0x1000,
@@ -1084,6 +1096,12 @@ mod exploration_tests {
     #[test]
     fn symbolic_list_loop_stops_at_the_first_recurrent_backedge() {
         let symbol = artifact::ArtifactSymbolDefinition {
+            identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &(None),
+                "symbolic_list_loop",
+                0x1000,
+            ),
             member: None,
             name: "symbolic_list_loop".to_owned(),
             address: 0x1000,

@@ -26,12 +26,16 @@ struct ObjectObservation {
 
 #[derive(Serialize)]
 struct ObjectAccessEvidence {
+    association: crate::artifacts::DataObjectAssociation,
     function: String,
     site: u32,
     block: Option<usize>,
     access: String,
     width: u8,
     offset: i64,
+    observed_offset: i64,
+    object: crate::artifacts::StoredMemoryObject,
+    data_address: open_radio_vendor_contracts::DataAddressResolution,
     paths: Vec<String>,
     value: Option<String>,
     constant: Option<u32>,
@@ -74,7 +78,11 @@ pub(super) fn run(arguments: InspectObjectArgs, project: &ProjectSpec) -> Result
                 .map(|selector| reader.matching_function_identities(selector))
                 .unwrap_or_default();
             let mut accesses = Vec::new();
+            let mut visited_functions = std::collections::BTreeSet::new();
             for xref in &object.xrefs {
+                if !visited_functions.insert(&xref.function) {
+                    continue;
+                }
                 let Some(function) = reader.get_function_by_identity(&xref.function)? else {
                     continue;
                 };
@@ -104,6 +112,7 @@ pub(super) fn run(arguments: InspectObjectArgs, project: &ProjectSpec) -> Result
                         width,
                         object: accessed_object,
                         offset: accessed_offset,
+                        data_address,
                         paths,
                         value,
                         value_pseudo,
@@ -112,13 +121,27 @@ pub(super) fn run(arguments: InspectObjectArgs, project: &ProjectSpec) -> Result
                     else {
                         continue;
                     };
-                    if !matches_object(
-                        accessed_object,
-                        object.member.as_deref(),
-                        &object.symbol,
-                        &object.aliases,
-                    ) || offset.is_some_and(|expected| expected != *accessed_offset)
-                    {
+                    let candidate = data_address
+                        .candidates()
+                        .iter()
+                        .find(|candidate| candidate.identity == object.data_identity);
+                    let association = candidate
+                        .map(|_| crate::artifacts::DataObjectAssociation::AddressRangeCandidate)
+                        .or_else(|| {
+                            object_association(
+                                accessed_object,
+                                &object.data_identity,
+                                object.member.as_deref(),
+                                &object.symbol,
+                                &object.aliases,
+                            )
+                        });
+                    let Some(association) = association else {
+                        continue;
+                    };
+                    let object_offset =
+                        candidate.map_or(*accessed_offset, |candidate| candidate.offset);
+                    if offset.is_some_and(|expected| expected != object_offset) {
                         continue;
                     }
                     let rendered_value = value_pseudo.clone().or_else(|| value.clone());
@@ -134,12 +157,16 @@ pub(super) fn run(arguments: InspectObjectArgs, project: &ProjectSpec) -> Result
                         continue;
                     }
                     accesses.push(ObjectAccessEvidence {
+                        association,
                         function: function.identity.clone(),
                         site: *site,
                         block: *block,
                         access: access.clone(),
                         width: *width,
-                        offset: *accessed_offset,
+                        offset: object_offset,
+                        observed_offset: *accessed_offset,
+                        object: accessed_object.clone(),
+                        data_address: data_address.clone(),
                         paths: paths.clone(),
                         value: rendered_value,
                         constant,
@@ -149,13 +176,6 @@ pub(super) fn run(arguments: InspectObjectArgs, project: &ProjectSpec) -> Result
                 }
             }
             accesses.sort_by_key(|access| (access.function.clone(), access.site));
-            accesses.dedup_by(|left, right| {
-                left.function == right.function
-                    && left.site == right.site
-                    && left.access == right.access
-                    && left.offset == right.offset
-                    && left.value == right.value
-            });
             observations.push(ObjectObservation {
                 profile: profile.id.clone(),
                 report: profile.output.display().to_string(),
@@ -165,7 +185,7 @@ pub(super) fn run(arguments: InspectObjectArgs, project: &ProjectSpec) -> Result
         }
     }
     let report = ObjectInvestigationReport {
-        schema_version: 1,
+        schema_version: 3,
         command: "inspect object",
         source: source.to_owned(),
         symbol: symbol.to_owned(),
@@ -180,6 +200,17 @@ pub(super) fn run(arguments: InspectObjectArgs, project: &ProjectSpec) -> Result
 
 fn validate_object_selector(symbol: &str) -> Result<()> {
     if !symbol.contains(':') {
+        return Ok(());
+    }
+    if symbol.starts_with("occurrence:") {
+        let occurrence = symbol
+            .parse::<open_radio_vendor_contracts::RevisionOccurrenceId>()
+            .map_err(|error| crate::Error::invalid(error.to_string()))?;
+        if occurrence.domain() != open_radio_vendor_contracts::EntityDomain::MemoryObject {
+            return Err(crate::Error::invalid(
+                "inspect object requires a memory-object occurrence",
+            ));
+        }
         return Ok(());
     }
     let semantic = symbol
@@ -213,6 +244,8 @@ fn render_human(report: &ObjectInvestigationReport) {
     for observation in &report.observations {
         let object = &observation.object;
         outputln!("\n{}", crate::cli::output::heading(&observation.profile));
+        outputln!("Occurrence: {}", object.occurrence);
+        outputln!("Data identity: {}", object.data_identity);
         outputln!(
             "Member:  {}",
             object.member.as_deref().unwrap_or("<linked-image>")
@@ -239,9 +272,18 @@ fn render_human(report: &ObjectInvestigationReport) {
             outputln!(
                 "{}",
                 crate::cli::table::render(
-                    ["Function", "Reads", "Writes", "Offsets"],
+                    [
+                        "Function",
+                        "Association",
+                        "Evidence",
+                        "Reads",
+                        "Writes",
+                        "Offsets"
+                    ],
                     object.xrefs.iter().take(50).map(|xref| [
                         xref.function.clone(),
+                        format!("{:?}", xref.association),
+                        format!("{:?}", xref.evidence),
                         xref.reads.to_string(),
                         xref.writes.to_string(),
                         xref.offsets.join(", "),
@@ -315,6 +357,15 @@ fn render_access_group(heading: &str, accesses: &[&ObjectAccessEvidence]) {
             access.site
         );
         outputln!("   Function: {}", access.function);
+        outputln!("   Association: {:?}", access.association);
+        if !access.data_address.candidates().is_empty() {
+            outputln!("   Address evidence: {:?}", access.data_address);
+            outputln!(
+                "   Observed object: {:?}, offset {:+#x}",
+                access.object,
+                access.observed_offset
+            );
+        }
         if let Some(value) = &access.value {
             outputln!("   Value:    {value}");
         }
@@ -432,26 +483,31 @@ fn short_identity(identity: &str) -> &str {
     identity.rsplit("::").next().unwrap_or(identity)
 }
 
-fn matches_object(
+fn object_association(
     object: &crate::artifacts::StoredMemoryObject,
+    identity: &crate::artifact::DataIdentity,
     member: Option<&str>,
     symbol: &str,
     aliases: &[String],
-) -> bool {
+) -> Option<crate::artifacts::DataObjectAssociation> {
     match object {
         crate::artifacts::StoredMemoryObject::Global {
+            reference,
             member: candidate_member,
             symbol: candidate_symbol,
-        } => {
+        } => crate::artifacts::DataObjectAssociation::for_reference(
+            reference,
+            identity,
             member.is_none_or(|member| candidate_member.as_deref() == Some(member))
                 && (candidate_symbol == symbol
-                    || aliases.iter().any(|alias| alias == candidate_symbol))
+                    || aliases.iter().any(|alias| alias == candidate_symbol)),
+        ),
+        crate::artifacts::StoredMemoryObject::Indexed { object, .. } => {
+            object_association(object, identity, member, symbol, aliases)
         }
-        crate::artifacts::StoredMemoryObject::Indexed { object, .. }
-        | crate::artifacts::StoredMemoryObject::Dereferenced {
-            pointer: object, ..
-        } => matches_object(object, member, symbol, aliases),
-        _ => false,
+        // Dereferencing a pointer stored in an object accesses its pointee, not
+        // the pointer's storage. The pointer load has its own memory evidence.
+        _ => None,
     }
 }
 
@@ -460,10 +516,44 @@ mod tests {
     use super::validate_object_selector;
 
     #[test]
+    fn object_association_does_not_treat_pointee_as_pointer_storage() {
+        use crate::artifacts::StoredMemoryObject;
+        let identity = crate::artifact::DataIdentity::Synthetic {
+            namespace: module_path!().to_owned(),
+            key: "pointer-cell".to_owned(),
+        };
+        let pointer = StoredMemoryObject::Global {
+            reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                reason: "fixture".to_owned(),
+            },
+            member: None,
+            symbol: "pointer".to_owned(),
+        };
+        assert!(super::object_association(&pointer, &identity, None, "pointer", &[]).is_some());
+        let pointee = StoredMemoryObject::Dereferenced {
+            pointer: Box::new(pointer),
+            pointer_offset: 0,
+        };
+        assert!(super::object_association(&pointee, &identity, None, "pointer", &[]).is_none());
+    }
+
+    #[test]
     fn object_selector_accepts_only_memory_object_identities() {
         assert!(validate_object_selector("raw_symbol").is_ok());
         assert!(validate_object_selector("memory-object:esp-idf/ble/state").is_ok());
         assert!(validate_object_selector("function:esp-idf/ble/start").is_err());
         assert!(validate_object_selector("memory-object:").is_err());
+        assert!(
+            validate_object_selector(&format!(
+                "occurrence:memory-object:sha256:{}",
+                "1".repeat(64)
+            ))
+            .is_ok()
+        );
+        assert!(
+            validate_object_selector(&format!("occurrence:function:sha256:{}", "1".repeat(64)))
+                .is_err()
+        );
+        assert!(validate_object_selector("occurrence:memory-object:sha256:bad").is_err());
     }
 }

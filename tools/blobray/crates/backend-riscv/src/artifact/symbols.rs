@@ -2,22 +2,20 @@
 
 use std::{collections::HashMap, path::Path, sync::Arc};
 
-use object::{
-    FileKind, Object, ObjectKind, ObjectSection, ObjectSymbol, SectionKind, SymbolKind,
-    read::archive::ArchiveFile,
-};
+use object::{FileKind, Object, ObjectKind, ObjectSection, ObjectSymbol, SectionKind, SymbolKind};
 
 use crate::Result;
 
-use super::{model::*, relocations};
+use super::{CapturedArtifact, CapturedCodeSymbol, model::*, relocations};
+use open_radio_vendor_analysis_model::{ObjectLocation, SymbolLocation};
 
-fn collect_object_symbols(
+pub(super) fn collect_object_symbols(
     data: &[u8],
     member: Option<&str>,
-    prefix: &str,
-    selection: CodeSymbolSelection,
-    output: &mut Vec<ArtifactSymbolDefinition>,
-) -> Result<()> {
+    location: ObjectLocation,
+    artifact_sha256: &str,
+) -> Result<Vec<CapturedCodeSymbol>> {
+    let mut output = Vec::new();
     let file = object::File::parse(data)?;
     if file.architecture() != object::Architecture::Riscv32 {
         return Err(format!("artifact member {member:?} is not RISC-V 32-bit").into());
@@ -59,18 +57,18 @@ fn collect_object_symbols(
     };
     let mut section_relocations = HashMap::new();
 
-    for symbol in file.symbols() {
-        if symbol.kind() != SymbolKind::Text
-            || !symbol.is_definition()
-            || (!selection.includes_local() && !(symbol.is_global() || symbol.is_weak()))
-            || symbol.size() == 0
-        {
+    for (table, symbol) in file
+        .symbols()
+        .map(|symbol| (ArtifactSymbolTable::Static, symbol))
+        .chain(
+            file.dynamic_symbols()
+                .map(|symbol| (ArtifactSymbolTable::Dynamic, symbol)),
+        )
+    {
+        if symbol.kind() != SymbolKind::Text || !symbol.is_definition() || symbol.size() == 0 {
             continue;
         }
         let name = symbol.name()?;
-        if !name.starts_with(prefix) {
-            continue;
-        }
         let section_index = symbol
             .section_index()
             .ok_or_else(|| format!("text symbol {name} has no section"))?;
@@ -107,6 +105,7 @@ fn collect_object_symbols(
             }
             let addend = relocation.addend();
             relocations.push(SymbolRelocation {
+                reference: relocation.reference(artifact_sha256, location),
                 address: u32::try_from(relocation.address)
                     .map_err(|_| format!("relocation in {name} exceeds RV32 address space"))?,
                 kind: relocation.kind,
@@ -115,17 +114,33 @@ fn collect_object_symbols(
             });
         }
         relocations.sort_by_key(|relocation| (relocation.address, relocation.kind as u8));
-        output.push(ArtifactSymbolDefinition {
-            member: member.map(str::to_owned),
-            name: name.to_owned(),
-            address: symbol.address(),
-            bytes,
-            addresses_resolved,
-            memory_regions: memory_regions.clone(),
-            relocations,
+        output.push(CapturedCodeSymbol {
+            location: SymbolLocation {
+                object: location,
+                table,
+                index: symbol.index().0 as u64,
+            },
+            exported: symbol.is_global() || symbol.is_weak(),
+            definition: ArtifactSymbolDefinition {
+                identity: CodeIdentity::Symbol {
+                    artifact_sha256: artifact_sha256.to_owned(),
+                    location: SymbolLocation {
+                        object: location,
+                        table,
+                        index: symbol.index().0 as u64,
+                    },
+                },
+                member: member.map(str::to_owned),
+                name: name.to_owned(),
+                address: symbol.address(),
+                bytes,
+                addresses_resolved,
+                memory_regions: memory_regions.clone(),
+                relocations,
+            },
         });
     }
-    Ok(())
+    Ok(output)
 }
 
 #[tracing::instrument(
@@ -138,113 +153,45 @@ pub fn load_code_symbols(
     prefix: &str,
     selection: CodeSymbolSelection,
 ) -> Result<Vec<ArtifactSymbolDefinition>> {
-    let data = crate::read_artifact(path)?;
-    load_code_symbols_from_data(&data, prefix, selection)
+    let capture = CapturedArtifact::open(path)?;
+    selected_code_symbols(&capture, prefix, selection)
 }
 
-/// Return the physical member names of a relocatable archive in container
-/// order. Linked ELF inputs have no archive-member layer and return `None`.
+/// Return physical member names in container order; names need not be unique.
 pub fn load_archive_member_names(path: &Path) -> Result<Option<Vec<String>>> {
-    let data = crate::read_artifact(path)?;
-    match FileKind::parse(data.as_slice())? {
-        FileKind::Archive => {
-            let archive = ArchiveFile::parse(data.as_slice())?;
-            let mut names = Vec::new();
-            for member in archive.members() {
-                names.push(String::from_utf8_lossy(member?.name()).into_owned());
-            }
-            Ok(Some(names))
-        }
-        FileKind::Elf32 => Ok(None),
-        kind => Err(format!("unsupported artifact kind: {kind:?}").into()),
-    }
+    let capture = CapturedArtifact::open(path)?;
+    Ok(
+        (capture.container() == ArtifactContainerKind::Archive).then(|| {
+            capture
+                .objects()
+                .iter()
+                .map(|object| object.name().unwrap_or_default().to_owned())
+                .collect()
+        }),
+    )
 }
 
-pub(super) fn load_code_symbols_from_data(
-    data: &[u8],
+fn selected_code_symbols(
+    capture: &CapturedArtifact<'_>,
     prefix: &str,
     selection: CodeSymbolSelection,
 ) -> Result<Vec<ArtifactSymbolDefinition>> {
-    let mut symbols = Vec::new();
-    match FileKind::parse(data)? {
-        FileKind::Archive => {
-            let archive = ArchiveFile::parse(data)?;
-            for member in archive.members() {
-                let member = member?;
-                let name = String::from_utf8_lossy(member.name()).into_owned();
-                let member_data = member.data(data)?;
-                if matches!(FileKind::parse(member_data), Ok(FileKind::Elf32)) {
-                    collect_object_symbols(
-                        member_data,
-                        Some(&name),
-                        prefix,
-                        selection,
-                        &mut symbols,
-                    )
-                    .map_err(|error| format!("archive member {name:?}: {error}"))?;
-                }
-            }
-        }
-        FileKind::Elf32 => collect_object_symbols(data, None, prefix, selection, &mut symbols)?,
-        kind => return Err(format!("unsupported artifact kind: {kind:?}").into()),
-    }
+    let mut symbols = capture
+        .code_symbols(prefix, selection)?
+        .into_iter()
+        .map(|symbol| symbol.definition.clone())
+        .collect::<Vec<_>>();
     symbols.sort_by(|left, right| {
         (&left.member, &left.name, left.address).cmp(&(&right.member, &right.name, right.address))
     });
     Ok(symbols)
 }
 
-/// Load one exact symbol from one known object/member.
-///
-/// Origin projection already has a reviewed member identity. Avoiding a full
-/// archive symbol catalog here keeps semantic projection proportional to the
-/// number of projected functions rather than total archive size.
-pub fn load_code_symbol_exact(
-    path: &Path,
-    member: Option<&str>,
-    name: &str,
-    address: u64,
-) -> Result<Option<ArtifactSymbolDefinition>> {
-    let data = crate::read_artifact(path)?;
-    let mut symbols = Vec::new();
-    match FileKind::parse(data.as_slice())? {
-        FileKind::Archive => {
-            let Some(expected_member) = member else {
-                return Ok(None);
-            };
-            let archive = ArchiveFile::parse(data.as_slice())?;
-            for entry in archive.members() {
-                let entry = entry?;
-                if entry.name() != expected_member.as_bytes() {
-                    continue;
-                }
-                let member_data = entry.data(data.as_slice())?;
-                if matches!(FileKind::parse(member_data), Ok(FileKind::Elf32)) {
-                    collect_object_symbols(
-                        member_data,
-                        Some(expected_member),
-                        name,
-                        CodeSymbolSelection::All,
-                        &mut symbols,
-                    )?;
-                }
-                break;
-            }
-        }
-        FileKind::Elf32 if member.is_none() => {
-            collect_object_symbols(&data, None, name, CodeSymbolSelection::All, &mut symbols)?
-        }
-        FileKind::Elf32 => return Ok(None),
-        kind => return Err(format!("unsupported artifact kind: {kind:?}").into()),
-    }
-    Ok(symbols
-        .into_iter()
-        .find(|symbol| symbol.name == name && symbol.address == address))
-}
-
 fn collect_data_symbols(
     data: &[u8],
     member: Option<&str>,
+    artifact_sha256: &str,
+    object_location: ObjectLocation,
     output: &mut Vec<ArtifactDataSymbolDefinition>,
 ) -> Result<()> {
     let file = object::File::parse(data)?;
@@ -256,7 +203,14 @@ fn collect_data_symbols(
     if file.kind() == ObjectKind::Relocatable {
         return Ok(());
     }
-    for symbol in file.symbols() {
+    for (table, symbol) in file
+        .symbols()
+        .map(|symbol| (ArtifactSymbolTable::Static, symbol))
+        .chain(
+            file.dynamic_symbols()
+                .map(|symbol| (ArtifactSymbolTable::Dynamic, symbol)),
+        )
+    {
         if symbol.kind() != SymbolKind::Data || !symbol.is_definition() || symbol.size() == 0 {
             continue;
         }
@@ -270,6 +224,14 @@ fn collect_data_symbols(
             continue;
         }
         output.push(ArtifactDataSymbolDefinition {
+            identity: DataIdentity::Symbol {
+                artifact_sha256: artifact_sha256.to_owned(),
+                location: SymbolLocation {
+                    object: object_location,
+                    table,
+                    index: symbol.index().0 as u64,
+                },
+            },
             member: member.map(str::to_owned),
             name: symbol.name()?.to_owned(),
             address,
@@ -284,22 +246,26 @@ fn collect_data_symbols(
 /// coverage analysis. Relocatable members are skipped because their section
 /// relative addresses are not runtime identities.
 pub fn load_data_symbols(path: &Path) -> Result<Vec<ArtifactDataSymbolDefinition>> {
-    let data = crate::read_artifact(path)?;
+    Ok(CapturedArtifact::open(path)?.data_symbols()?.to_vec())
+}
+
+pub(super) fn captured_data_symbols(
+    capture: &CapturedArtifact<'_>,
+) -> Result<Vec<ArtifactDataSymbolDefinition>> {
     let mut symbols = Vec::new();
-    match FileKind::parse(data.as_slice())? {
-        FileKind::Archive => {
-            let archive = ArchiveFile::parse(data.as_slice())?;
-            for member in archive.members() {
-                let member = member?;
-                let name = String::from_utf8_lossy(member.name()).into_owned();
-                let member_data = member.data(data.as_slice())?;
-                if matches!(FileKind::parse(member_data), Ok(FileKind::Elf32)) {
-                    collect_data_symbols(member_data, Some(&name), &mut symbols)?;
-                }
-            }
+    for object in capture.objects() {
+        let data = capture
+            .object_bytes(object.location())?
+            .ok_or("missing captured object")?;
+        if matches!(FileKind::parse(data), Ok(FileKind::Elf32)) {
+            collect_data_symbols(
+                data,
+                object.name(),
+                capture.sha256(),
+                object.location(),
+                &mut symbols,
+            )?;
         }
-        FileKind::Elf32 => collect_data_symbols(&data, None, &mut symbols)?,
-        kind => return Err(format!("unsupported artifact kind: {kind:?}").into()),
     }
     symbols.sort_by(|left, right| {
         (
@@ -317,18 +283,14 @@ pub fn load_data_symbols(path: &Path) -> Result<Vec<ArtifactDataSymbolDefinition
                 &right.name,
             ))
     });
-    symbols.dedup_by(|left, right| {
-        left.address == right.address
-            && left.size == right.size
-            && left.member == right.member
-            && left.name == right.name
-    });
     Ok(symbols)
 }
 
 fn collect_reviewed_ranges(
     data: &[u8],
     member: Option<&str>,
+    object: ObjectLocation,
+    artifact_sha256: &str,
     ranges: &[ReviewedCodeRange],
     output: &mut Vec<ArtifactSymbolDefinition>,
 ) -> Result<()> {
@@ -379,15 +341,22 @@ fn collect_reviewed_ranges(
     };
     let mut section_relocations = HashMap::new();
     for range in matching {
-        let section = file
+        let mut sections = file
             .sections()
-            .find(|section| section.name().ok() == Some(range.section.as_str()))
-            .ok_or_else(|| {
-                format!(
-                    "reviewed code range {} refers to missing section {:?} in member {member:?}",
-                    range.name, range.section
-                )
-            })?;
+            .filter(|section| section.name().ok() == Some(range.section.as_str()));
+        let section = sections.next().ok_or_else(|| {
+            format!(
+                "reviewed code range {} refers to missing section {:?} in member {member:?}",
+                range.name, range.section
+            )
+        })?;
+        if sections.next().is_some() {
+            return Err(format!(
+                "reviewed code range {} refers to ambiguous section {:?} in member {member:?}",
+                range.name, range.section
+            )
+            .into());
+        }
         if section.kind() != SectionKind::Text {
             return Err(format!(
                 "reviewed code range {} refers to non-executable section {:?}",
@@ -433,6 +402,7 @@ fn collect_reviewed_ranges(
             .map(|relocation| {
                 let addend = relocation.addend();
                 Ok(SymbolRelocation {
+                    reference: relocation.reference(artifact_sha256, object),
                     address: u32::try_from(relocation.address).map_err(|_| {
                         format!("relocation in {} exceeds RV32 address space", range.name)
                     })?,
@@ -444,6 +414,13 @@ fn collect_reviewed_ranges(
             .collect::<Result<Vec<_>>>()?;
         relocations.sort_by_key(|relocation| (relocation.address, relocation.kind as u8));
         output.push(ArtifactSymbolDefinition {
+            identity: CodeIdentity::SectionRange {
+                artifact_sha256: artifact_sha256.to_owned(),
+                object,
+                section_index: section.index().0 as u64,
+                start_offset: range.start_offset,
+                end_offset: range.end_offset,
+            },
             member: range.member.clone(),
             name: range.name.clone(),
             address,
@@ -461,38 +438,42 @@ pub fn load_reviewed_code_ranges(
     path: &Path,
     ranges: &[ReviewedCodeRange],
 ) -> Result<Vec<ArtifactSymbolDefinition>> {
-    let data = crate::read_artifact(path)?;
+    let capture = CapturedArtifact::open(path)?;
+    reviewed_code_ranges(&capture, ranges)
+}
+
+pub(super) fn reviewed_code_ranges(
+    capture: &CapturedArtifact<'_>,
+    ranges: &[ReviewedCodeRange],
+) -> Result<Vec<ArtifactSymbolDefinition>> {
     let mut symbols = Vec::new();
-    match FileKind::parse(data.as_slice())? {
-        FileKind::Archive => {
-            let archive = ArchiveFile::parse(data.as_slice())?;
-            for member in archive.members() {
-                let member = member?;
-                let name = String::from_utf8_lossy(member.name()).into_owned();
-                if !ranges
-                    .iter()
-                    .any(|range| range.member.as_deref() == Some(name.as_str()))
-                {
-                    continue;
-                }
-                let member_data = member.data(data.as_slice())?;
-                collect_reviewed_ranges(member_data, Some(&name), ranges, &mut symbols)?;
-            }
+    for object in capture.objects() {
+        if !ranges
+            .iter()
+            .any(|range| range.member.as_deref() == object.name())
+        {
+            continue;
         }
-        FileKind::Elf32 => collect_reviewed_ranges(&data, None, ranges, &mut symbols)?,
-        kind => return Err(format!("unsupported artifact kind: {kind:?}").into()),
+        let data = capture
+            .object_bytes(object.location())?
+            .ok_or("missing captured object")?;
+        collect_reviewed_ranges(
+            data,
+            object.name(),
+            object.location(),
+            capture.sha256(),
+            ranges,
+            &mut symbols,
+        )?;
     }
     if symbols.len() != ranges.len() {
         return Err(format!(
-            "loaded {} of {} reviewed code ranges from {}",
+            "loaded {} of {} reviewed code ranges; member selection must be unambiguous",
             symbols.len(),
             ranges.len(),
-            path.display()
         )
         .into());
     }
-    symbols.sort_by(|left, right| {
-        (&left.member, &left.name, left.address).cmp(&(&right.member, &right.name, right.address))
-    });
+    symbols.sort_by(|left, right| left.identity.cmp(&right.identity));
     Ok(symbols)
 }

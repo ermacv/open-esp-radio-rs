@@ -16,6 +16,12 @@ fn structural_loop_pseudo_folds_nested_counted_regions_without_proof_claims() {
         execution_proof: false,
     };
     let body = artifact::FunctionBody {
+        code_identity: crate::artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &None,
+            "body",
+            u64::from(line!()),
+        ),
         artifact: "fixture.elf".to_owned(),
         member: None,
         symbol: "nested".to_owned(),
@@ -81,6 +87,12 @@ fn structural_loop_pseudo_distinguishes_lifted_float_from_unknown_code() {
         relocations: Vec::new(),
     };
     let body = artifact::FunctionBody {
+        code_identity: crate::artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &None,
+            "body",
+            u64::from(line!()),
+        ),
         artifact: "fixture.elf".to_owned(),
         member: None,
         symbol: "floating_loop".to_owned(),
@@ -535,6 +547,9 @@ fn memory_object_map_keeps_relocated_global_symbol_identity() {
             access: MemoryAccess::Write,
             width: 16,
             address: SymbolicValue::SymbolAddress {
+                reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 member: Some("state.o".to_owned()),
                 symbol: "phy_state".to_owned(),
                 hi_addend: 4,
@@ -558,7 +573,7 @@ fn memory_object_map_keeps_relocated_global_symbol_identity() {
     assert_eq!(accesses[0].offset, 12);
     assert!(matches!(
         &accesses[0].object,
-        LinkedMemoryObject::Global { member, symbol }
+        LinkedMemoryObject::Global { member, symbol, .. }
             if member.as_deref() == Some("state.o") && symbol == "phy_state"
     ));
     assert_eq!(fields[0].writes, 1);
@@ -568,6 +583,9 @@ fn memory_object_map_keeps_relocated_global_symbol_identity() {
 #[test]
 fn memory_object_map_distinguishes_global_pointer_from_its_runtime_pointee() {
     let global_address = SymbolicValue::SymbolAddress {
+        reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+            reason: "synthetic fixture".to_owned(),
+        },
         member: Some("state.o".to_owned()),
         symbol: "g_state".to_owned(),
         hi_addend: 0,
@@ -619,7 +637,7 @@ fn memory_object_map_distinguishes_global_pointer_from_its_runtime_pointee() {
         LinkedMemoryObject::Dereferenced {
             pointer,
             pointer_offset: 0,
-        } if matches!(pointer.as_ref(), LinkedMemoryObject::Global { member, symbol }
+        } if matches!(pointer.as_ref(), LinkedMemoryObject::Global { member, symbol, .. }
             if member.as_deref() == Some("state.o") && symbol == "g_state")
     ));
     assert_eq!(pointee.offset, 0x1c);
@@ -658,8 +676,11 @@ fn memory_object_map_keeps_absolute_address_space() {
 }
 
 #[test]
-fn linked_absolute_table_base_is_not_reported_as_a_giant_context_offset() {
+fn argument_offset_data_hint_preserves_the_original_expression() {
     let mut accesses = vec![MemoryObjectAccess {
+        data_address: open_radio_vendor_contracts::DataAddressResolution::Unknown {
+            reason: open_radio_vendor_contracts::DataAddressGap::NotAnalyzed,
+        },
         object: LinkedMemoryObject::Argument { index: 0 },
         offset: 0x1000_299c,
         access: "read",
@@ -680,6 +701,10 @@ fn linked_absolute_table_base_is_not_reported_as_a_giant_context_offset() {
         relocated_calls: direct::StructuralRelocatedCalls::new(),
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: vec![artifact::ArtifactDataSymbolDefinition {
+            identity: open_radio_vendor_contracts::DataIdentity::Synthetic {
+                namespace: module_path!().to_owned(),
+                key: "coex_pti_tab".to_owned(),
+            },
             member: None,
             name: "coex_pti_tab".to_owned(),
             address: 0x1000_299c,
@@ -687,23 +712,26 @@ fn linked_absolute_table_base_is_not_reported_as_a_giant_context_offset() {
             exported: true,
         }],
         data_objects: Vec::new(),
-        projected_direct_semantics: BTreeMap::new(),
+        projected_direct_semantics: Default::default(),
         projected_origins: BTreeMap::new(),
     };
 
-    attribute_data_symbols(&mut accesses, &resolver);
+    annotate_data_addresses(&mut accesses, &resolver);
 
-    assert_eq!(accesses[0].offset, 0);
+    assert_eq!(accesses[0].offset, 0x1000_299c);
     assert!(matches!(
-        &accesses[0].object,
-        LinkedMemoryObject::Indexed {
-            object,
-            argument: 0,
-            stride: 1,
-        } if matches!(object.as_ref(), LinkedMemoryObject::Global { member: None, symbol }
-            if symbol == "coex_pti_tab")
+        accesses[0].object,
+        LinkedMemoryObject::Argument { index: 0 }
     ));
-    assert!(context_accesses_for_memory_objects(&accesses).is_empty());
+    assert!(matches!(
+        accesses[0].data_address,
+        open_radio_vendor_contracts::DataAddressResolution::Candidate {
+            basis: open_radio_vendor_contracts::DataAddressBasis::ArgumentOffsetHint,
+            ..
+        }
+    ));
+    assert_eq!(accesses[0].data_address.candidates()[0].offset, 0);
+    assert_eq!(context_accesses_for_memory_objects(&accesses).len(), 1);
 
     let trace = FunctionAnalysis {
         symbol: "coex_core_pti_get".to_owned(),
@@ -733,12 +761,19 @@ fn linked_absolute_table_base_is_not_reported_as_a_giant_context_offset() {
         &[],
         Some(&resolver),
     );
-    assert!(pseudo.contains("coex_pti_tab[arg0 + 0x0].read8()"));
+    assert!(pseudo.contains("ctx0.read8(+0x1000299c)"), "{pseudo}");
+    assert!(
+        pseudo.contains("ArgumentOffsetHint") && pseudo.contains("coex_pti_tab"),
+        "{pseudo}"
+    );
 }
 
 #[test]
-fn linked_indexed_absolute_table_base_uses_the_sized_data_symbol() {
+fn indexed_absolute_data_hint_preserves_the_original_expression() {
     let mut accesses = vec![MemoryObjectAccess {
+        data_address: open_radio_vendor_contracts::DataAddressResolution::Unknown {
+            reason: open_radio_vendor_contracts::DataAddressGap::NotAnalyzed,
+        },
         object: LinkedMemoryObject::Indexed {
             object: Box::new(LinkedMemoryObject::Absolute {
                 address_space: "dram".to_owned(),
@@ -766,6 +801,10 @@ fn linked_indexed_absolute_table_base_uses_the_sized_data_symbol() {
         relocated_calls: direct::StructuralRelocatedCalls::new(),
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: vec![artifact::ArtifactDataSymbolDefinition {
+            identity: open_radio_vendor_contracts::DataIdentity::Synthetic {
+                namespace: module_path!().to_owned(),
+                key: "rate_limit_table".to_owned(),
+            },
             member: None,
             name: "rate_limit_table".to_owned(),
             address: 0x1002_eec8,
@@ -773,21 +812,23 @@ fn linked_indexed_absolute_table_base_uses_the_sized_data_symbol() {
             exported: true,
         }],
         data_objects: Vec::new(),
-        projected_direct_semantics: BTreeMap::new(),
+        projected_direct_semantics: Default::default(),
         projected_origins: BTreeMap::new(),
     };
 
-    attribute_data_symbols(&mut accesses, &resolver);
+    annotate_data_addresses(&mut accesses, &resolver);
 
     assert_eq!(accesses[0].offset, 0);
+    assert!(
+        matches!(&accesses[0].object, LinkedMemoryObject::Indexed { object, argument: 0, stride: 2 }
+        if matches!(object.as_ref(), LinkedMemoryObject::Absolute { address: 0x1002_eec8, .. }))
+    );
     assert!(matches!(
-        &accesses[0].object,
-        LinkedMemoryObject::Indexed {
-            object,
-            argument: 0,
-            stride: 2,
-        } if matches!(object.as_ref(), LinkedMemoryObject::Global { member: None, symbol }
-            if symbol == "rate_limit_table")
+        accesses[0].data_address,
+        open_radio_vendor_contracts::DataAddressResolution::Candidate {
+            basis: open_radio_vendor_contracts::DataAddressBasis::IndexedBase,
+            ..
+        }
     ));
 
     let trace = FunctionAnalysis {
@@ -822,7 +863,14 @@ fn linked_indexed_absolute_table_base_uses_the_sized_data_symbol() {
         &[],
         Some(&resolver),
     );
-    assert!(pseudo.contains("rate_limit_table[arg0 * 0x2 + 0x0].read16()"));
+    assert!(
+        pseudo.contains("memory.read16(") && pseudo.contains("0x1002eec8"),
+        "{pseudo}"
+    );
+    assert!(
+        pseudo.contains("IndexedBase") && pseudo.contains("rate_limit_table"),
+        "{pseudo}"
+    );
 }
 
 #[test]
@@ -872,7 +920,7 @@ fn instruction_effects_keep_exact_mmio_and_memory_sites() {
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: Vec::new(),
         data_objects: Vec::new(),
-        projected_direct_semantics: BTreeMap::new(),
+        projected_direct_semantics: Default::default(),
         projected_origins: BTreeMap::new(),
     };
     let memory_accesses = memory_object_accesses_for_trace(&trace);
@@ -883,6 +931,9 @@ fn instruction_effects_keep_exact_mmio_and_memory_sites() {
     assert!(effects.iter().any(|effect| matches!(
         effect,
         LinkedInstructionEffect::Memory {
+            data_address: open_radio_vendor_contracts::DataAddressResolution::Unknown {
+                reason: open_radio_vendor_contracts::DataAddressGap::NoContainingDefinition
+            },
             site: 0x1004,
             object: LinkedMemoryObject::Argument { index: 0 },
             offset: 4,
@@ -902,11 +953,17 @@ fn instruction_effects_keep_exact_mmio_and_memory_sites() {
 #[test]
 fn instruction_memory_fields_survive_incomplete_path_reconstruction() {
     let object = LinkedMemoryObject::Global {
+        reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+            reason: "synthetic fixture".to_owned(),
+        },
         member: None,
         symbol: "g_parameters".to_owned(),
     };
     let effects = vec![
         LinkedInstructionEffect::Memory {
+            data_address: open_radio_vendor_contracts::DataAddressResolution::Unknown {
+                reason: open_radio_vendor_contracts::DataAddressGap::NotAnalyzed,
+            },
             site: 0x1000,
             block: Some(1),
             access: "read",
@@ -922,6 +979,9 @@ fn instruction_memory_fields_survive_incomplete_path_reconstruction() {
             forced_one_mask: None,
         },
         LinkedInstructionEffect::Memory {
+            data_address: open_radio_vendor_contracts::DataAddressResolution::Unknown {
+                reason: open_radio_vendor_contracts::DataAddressGap::NotAnalyzed,
+            },
             site: 0x1004,
             block: Some(1),
             access: "write",

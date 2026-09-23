@@ -8,6 +8,12 @@ use crate::*;
 
 fn symbol(bytes: Vec<u8>) -> artifact::ArtifactSymbolDefinition {
     artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "phy_get_i2c_hostid_new",
+            0x1000_732a,
+        ),
         member: None,
         name: "phy_get_i2c_hostid_new".to_owned(),
         address: 0x1000_732a,
@@ -20,6 +26,12 @@ fn symbol(bytes: Vec<u8>) -> artifact::ArtifactSymbolDefinition {
 
 fn pp_post_symbol() -> artifact::ArtifactSymbolDefinition {
     artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("pp.o".to_owned())),
+            "pp_post",
+            0,
+        ),
         member: Some("pp.o".to_owned()),
         name: "pp_post".to_owned(),
         address: 0,
@@ -29,6 +41,9 @@ fn pp_post_symbol() -> artifact::ArtifactSymbolDefinition {
         relocations: PP_POST_RELOCATIONS
             .iter()
             .map(|&(address, kind, symbol)| artifact::SymbolRelocation {
+                reference: artifact::SymbolReference::Unknown {
+                    reason: "synthetic fixture".to_owned(),
+                },
                 address,
                 kind,
                 symbol: symbol.to_owned(),
@@ -40,6 +55,12 @@ fn pp_post_symbol() -> artifact::ArtifactSymbolDefinition {
 
 fn btdm_assert_symbol(address: u64) -> artifact::ArtifactSymbolDefinition {
     artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "wr_btdm_assert",
+            address,
+        ),
         member: None,
         name: "wr_btdm_assert".to_owned(),
         address,
@@ -176,6 +197,12 @@ fn changed_btdm_assert_body_is_not_treated_as_a_fail_stop() {
 #[test]
 fn exact_i2c_poll_body_generates_an_explicit_busy_loop() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "phy_chip_i2c_readReg_org",
+            0x2f82_9ffa,
+        ),
         member: None,
         name: "phy_chip_i2c_readReg_org".to_owned(),
         address: 0x2f82_9ffa,
@@ -207,6 +234,12 @@ fn changed_i2c_poll_body_does_not_receive_the_reviewed_summary() {
     let mut bytes = PHY_CHIP_I2C_READ_REG_ORG_BODY.to_vec();
     bytes[0] ^= 1;
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "phy_chip_i2c_readReg_org",
+            0x2f82_9ffa,
+        ),
         member: None,
         name: "phy_chip_i2c_readReg_org".to_owned(),
         address: 0x2f82_9ffa,
@@ -224,6 +257,12 @@ fn changed_i2c_poll_body_does_not_receive_the_reviewed_summary() {
 #[test]
 fn i2c_write_summary_requires_exact_body_and_phy_entry_contract() {
     let make_symbol = |bytes| artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "phy_chip_i2c_writeReg",
+            0x2f82_a30e,
+        ),
         member: None,
         name: "phy_chip_i2c_writeReg".to_owned(),
         address: 0x2f82_a30e,
@@ -277,6 +316,9 @@ fn linked_body_binding_rejects_same_size_mutations_and_unresolved_context() {
     assert!(!binding.matches(&member));
     let mut relocated = exact.clone();
     relocated.relocations.push(artifact::SymbolRelocation {
+        reference: artifact::SymbolReference::Unknown {
+            reason: "synthetic fixture".to_owned(),
+        },
         address: 0x1000,
         kind: artifact::RelocationKind::Call,
         symbol: "other".to_owned(),
@@ -353,12 +395,24 @@ fn authenticated_rom_bindings_accept_reviewed_bodies_and_reject_every_byte_mutat
         format!("{:x}", Sha256::digest(&image)),
         "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87"
     );
+    let capture = artifact::CapturedArtifact::from_data(&image).unwrap();
     for &(name, address, size) in ROM_SUMMARY_BODIES {
-        let exact = artifact::load_code_symbol_exact(&path, None, name, address)
+        let candidates = capture
+            .code_symbols(name, artifact::CodeSymbolSelection::All)
             .unwrap()
-            .unwrap();
+            .into_iter()
+            .filter(|symbol| {
+                symbol.definition.name == name
+                    && symbol.definition.address == address
+                    && symbol.definition.member.is_none()
+            })
+            .collect::<Vec<_>>();
+        let [candidate] = candidates.as_slice() else {
+            panic!("reviewed ROM symbol {name} must have exactly one physical occurrence");
+        };
+        let exact = &candidate.definition;
         assert_eq!(exact.bytes.len(), size);
-        assert!(accepts_reviewed_rom_body(&exact), "{name}");
+        assert!(accepts_reviewed_rom_body(exact), "{name}");
         for index in 0..exact.bytes.len() {
             let mut changed = exact.clone();
             changed.bytes[index] ^= 1;

@@ -6,30 +6,21 @@ mod compressed_pointer;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct StructuralCallSite {
-    member: Option<String>,
-    symbol: String,
+    owner: artifact::CodeIdentity,
     address: u32,
 }
 
 impl StructuralCallSite {
     pub fn new(owner: &artifact::ArtifactSymbolDefinition, address: u32) -> Self {
-        Self {
-            member: owner.member.clone(),
-            symbol: owner.name.clone(),
-            address,
-        }
+        Self::from_identity(owner.identity.clone(), address)
     }
 
-    pub fn from_identity(member: Option<String>, symbol: String, address: u32) -> Self {
-        Self {
-            member,
-            symbol,
-            address,
-        }
+    pub fn from_identity(owner: artifact::CodeIdentity, address: u32) -> Self {
+        Self { owner, address }
     }
 
     pub fn belongs_to(&self, owner: &artifact::ArtifactSymbolDefinition) -> bool {
-        self.member == owner.member && self.symbol == owner.name
+        self.owner == owner.identity
     }
 
     pub const fn address(&self) -> u32 {
@@ -38,24 +29,15 @@ impl StructuralCallSite {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct StructuralCallOwner {
-    member: Option<String>,
-    symbol: String,
-}
+struct StructuralCallOwner(artifact::CodeIdentity);
 
 impl StructuralCallOwner {
     fn from_site(site: &StructuralCallSite) -> Self {
-        Self {
-            member: site.member.clone(),
-            symbol: site.symbol.clone(),
-        }
+        Self(site.owner.clone())
     }
 
     fn new(owner: &artifact::ArtifactSymbolDefinition) -> Self {
-        Self {
-            member: owner.member.clone(),
-            symbol: owner.name.clone(),
-        }
+        Self(owner.identity.clone())
     }
 }
 
@@ -146,6 +128,7 @@ impl<'a> StructuralRelocatedCallView<'a> {
 /// function-relative offsets are stable across linking.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StructuralProjectedRelocation {
+    pub reference: crate::SymbolReference,
     pub origin_member: Option<String>,
     pub origin_symbol: String,
     pub origin_offsets: Vec<u32>,

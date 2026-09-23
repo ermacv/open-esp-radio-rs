@@ -228,6 +228,7 @@ impl SymbolicValue {
             return Self::StackAddress(offset.wrapping_add(constant as i32));
         }
         if let Self::SymbolAddress {
+            reference,
             member,
             symbol,
             hi_addend,
@@ -236,6 +237,7 @@ impl SymbolicValue {
         } = self
         {
             return Self::SymbolAddress {
+                reference,
                 member,
                 symbol,
                 hi_addend,

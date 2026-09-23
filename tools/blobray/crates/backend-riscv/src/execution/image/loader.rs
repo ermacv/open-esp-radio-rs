@@ -15,8 +15,17 @@ use crate::Result;
 
 impl ExecutableImage {
     pub fn load(path: &Path) -> Result<Self> {
-        let bytes = crate::read_artifact(path)?;
-        let file = object::File::parse(bytes.as_slice())?;
+        Self::from_captured(&crate::artifact::CapturedArtifact::open(path)?)
+    }
+
+    /// Build a private execution image from immutable, already captured bytes.
+    /// No file is opened; mutations of the resulting machine image cannot alter
+    /// the capture or the evidence used by other analysis domains.
+    pub fn from_captured(capture: &crate::artifact::CapturedArtifact<'_>) -> Result<Self> {
+        let bytes = capture
+            .object_bytes(crate::ObjectLocation::Standalone)?
+            .ok_or("execution image requires a standalone captured ELF")?;
+        let file = object::File::parse(bytes)?;
         if file.architecture() != object::Architecture::Riscv32 || !file.is_little_endian() {
             return Err("execution requires a little-endian RISC-V 32-bit ELF".into());
         }
@@ -207,7 +216,15 @@ impl ExecutableImage {
     }
 
     pub fn add_companion(&mut self, path: &Path) -> Result<()> {
-        let companion = Self::load(path)?;
+        self.add_captured_companion(&crate::artifact::CapturedArtifact::open(path)?)
+    }
+
+    /// Attach an image from the same captured input set as the code catalog.
+    pub fn add_captured_companion(
+        &mut self,
+        capture: &crate::artifact::CapturedArtifact<'_>,
+    ) -> Result<()> {
+        let companion = Self::from_captured(capture)?;
         self.segments.extend(companion.segments);
         self.segments.sort_by_key(|segment| segment.address);
         for (name, address) in companion.symbols_by_name {

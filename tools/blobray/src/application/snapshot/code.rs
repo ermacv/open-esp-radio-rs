@@ -29,14 +29,6 @@ pub(super) fn collect(
             paths.review_output.clone(),
         );
     };
-    if !facts_path.is_file() || !paths.pack.is_file() {
-        return empty(
-            true,
-            Some(facts_path),
-            Some(paths.pack.clone()),
-            paths.review_output.clone(),
-        );
-    }
     let workspace = match resolved.code_workspace() {
         Ok(Some(workspace)) => workspace,
         Ok(None) => {

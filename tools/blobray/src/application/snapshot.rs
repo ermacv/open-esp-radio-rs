@@ -66,12 +66,20 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
     let verification_policy = self::policy::collect(resolved, &mut diagnostics);
     let review_queue = self::review_queue::collect(resolved, &mut diagnostics);
     let comparisons = self::comparisons::collect(resolved, &mut diagnostics);
+    let generated_analysis_epoch = match resolved.artifacts.selected_epoch() {
+        Ok(epoch) => epoch,
+        Err(error) => {
+            push_error(&mut diagnostics, "analysis-epoch", error, None);
+            None
+        }
+    };
     diagnostics.sort_by(|left, right| {
         (&left.component, &left.message).cmp(&(&right.component, &right.message))
     });
     diagnostics.dedup();
     WorkspaceSnapshot {
         generation,
+        generated_analysis_epoch,
         project_status,
         code,
         functions,
@@ -132,20 +140,17 @@ pub(super) fn function_detail(
             && function.source == fact.source
             && function.identity == fact.identity
     });
-    let investigation = function_investigation(resolved, &fact)?;
+    let investigation = function_investigation(resolved, &fact, &workspace.pack)?;
+    let analysis_epoch = resolved.artifacts.selected_epoch()?.ok_or_else(|| {
+        crate::Error::invalid("function evidence has no selected published epoch")
+    })?;
     Ok(Some(function_detail_summary(
         &fact,
         reviewed,
         &workspace.pack.types,
         investigation,
+        analysis_epoch,
     )))
-}
-
-pub(super) fn register_detail(
-    resolved: &ProjectSession,
-    address: u32,
-) -> crate::Result<Option<RegisterDetailSummary>> {
-    self::registers::detail(&resolved.project, &resolved.mmio, address)
 }
 
 fn function_detail_summary(
@@ -153,6 +158,7 @@ fn function_detail_summary(
     reviewed: Option<&ReviewedFunction>,
     logical_types: &[ReviewedLogicalType],
     investigation: Option<crate::FunctionInvestigationReport>,
+    analysis_epoch: String,
 ) -> FunctionDetailSummary {
     let arguments = fact
         .context_fields
@@ -240,6 +246,7 @@ fn function_detail_summary(
         .collect::<Vec<_>>();
     FunctionDetailSummary {
         identity: fact.identity.clone(),
+        analysis_epoch,
         registers: fact.mmio_addresses.clone(),
         contexts,
         memory_fields: fact
@@ -299,6 +306,7 @@ fn function_detail_summary(
 fn function_investigation(
     resolved: &ProjectSession,
     fact: &FunctionFact,
+    pack: &crate::function_workspace::FunctionPack,
 ) -> crate::Result<Option<crate::FunctionInvestigationReport>> {
     let Some(run_spec) = resolved.run_spec.as_ref() else {
         return Ok(None);
@@ -329,7 +337,8 @@ fn function_investigation(
             _ => None,
         })
         .collect::<Vec<_>>();
-    crate::function_investigation::investigate(
+    let load = |path: &std::path::Path| resolved.linked_ir(path).map(Some);
+    let investigation = crate::function_investigation::investigate_with_inputs(
         crate::function_investigation::FunctionInvestigationRequest {
             source: &fact.source,
             symbol: &fact.symbol,
@@ -346,9 +355,19 @@ fn function_investigation(
             cfg_path: None,
             include_linked_ir_record: false,
         },
-        &resolved.project,
-    )
-    .map(Some)
+        crate::function_investigation::InvestigationInputs {
+            project: &resolved.project,
+            function_pack: Some(pack),
+            ir: &load,
+        },
+    )?;
+    if investigation.runtime.code_identity.artifact_sha256() != fact.code_identity.artifact_sha256()
+    {
+        return Err(crate::Error::invalid(
+            "live function artifact does not match the published function evidence; analyze the changed inputs and reload",
+        ));
+    }
+    Ok(Some(investigation))
 }
 
 fn profile_draft(fact: &FunctionFact, suggestions: &[ScenarioSuggestionSummary]) -> Option<String> {
@@ -526,8 +545,12 @@ fn reviewed_pseudo(
 fn memory_fact_label(object: &FunctionMemoryObjectFact) -> String {
     match object {
         FunctionMemoryObjectFact::Argument { index } => format!("argument:{index}"),
-        FunctionMemoryObjectFact::Global { member, symbol } => format!(
-            "global:{}::{symbol}",
+        FunctionMemoryObjectFact::Global {
+            reference,
+            member,
+            symbol,
+        } => format!(
+            "global:{}::{symbol}:reference={reference:?}",
             member.as_deref().unwrap_or("<linked>")
         ),
         FunctionMemoryObjectFact::Dereferenced {
@@ -579,6 +602,7 @@ mod tests {
 
     fn fact() -> FunctionFact {
         FunctionFact {
+            code_identity: crate::artifact::CodeIdentity::Synthetic { namespace: module_path!().into(), key: format!("fixture:{}", line!()) },
             profile: "radio".to_owned(),
             source: "rom".to_owned(),
             identity: "rom::init".to_owned(),

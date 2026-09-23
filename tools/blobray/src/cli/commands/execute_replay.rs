@@ -38,7 +38,14 @@ pub(super) fn run(
         .as_deref()
         .map(|path| crate::cli::output::Publication::new(path, "written"));
     if let Some(path) = arguments.output.as_deref() {
-        crate::application::event_replay::publish(&evidence, path, false)?;
+        crate::application::event_replay::publish(
+            &evidence,
+            crate::application::generated_file::GeneratedOutput::new(
+                path,
+                false,
+                "execution replay evidence",
+            ),
+        )?;
     }
     let document = CommandDocument {
         artifact: &evidence,

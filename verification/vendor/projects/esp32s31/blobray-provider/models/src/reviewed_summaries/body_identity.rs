@@ -1,7 +1,7 @@
 //! Applicability of temporary executable reconstructions to a linked ROM body.
 //!
-//! Digests were extracted with `artifact::load_code_symbol_exact` after checking
-//! the whole ROM SHA-256 against the reviewed register evidence in
+//! The authenticated `CapturedArtifact` catalog checks exact bodies against
+//! the whole ROM SHA-256 recorded in the reviewed register evidence in
 //! `registers/esp32s31/evidence/vendor-rom.toml`:
 //! `a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`.
 //! They identify reviewed bytes; they do not establish caller preconditions or

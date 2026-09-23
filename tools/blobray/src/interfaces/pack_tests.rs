@@ -1,5 +1,6 @@
 //! Interface workspace validation tests.
 
+use std::collections::BTreeSet;
 use std::{
     path::{Path, PathBuf},
     sync::atomic::{AtomicUsize, Ordering},
@@ -83,8 +84,10 @@ fn write_facts(path: &Path, digest: &str) {
         path,
         format!(
             r#"{{
-  "schema_version": 7,
+  "schema_version": 11,
   "command": "interfaces discover",
+  "limits": {{"max_state_updates":4096,"max_value_alternatives":64}},
+  "gaps": [],
   "analysis_scope": {{
     "architecture":"riscv32",
     "calling_convention":"riscv-ilp32",
@@ -97,6 +100,7 @@ fn write_facts(path: &Path, digest: &str) {
   }},
   "artifacts": [{{"index":0,"path":"libpp.a","roles":[],"sources":["libpp"],"sha256":"{digest}","container":"archive","functions":1,"reviewed_boundaries":0}}],
   "calls": [{{
+    "owner":{{"kind":"symbol","artifact_sha256":"{digest}","location":{{"object":{{"kind":"archive-member","ordinal":0}},"table":"static","index":1}}}},
     "artifact":0,
     "member":"event.o",
     "function":"post_event",
@@ -108,6 +112,7 @@ fn write_facts(path: &Path, digest: &str) {
       "canonical":"event.o::g_services[0][16]",
       "root":{{
         "kind":"relocated-symbol",
+        "reference":{{"kind":"captured","artifact_sha256":"{digest}","location":{{"object":{{"kind":"archive-member","ordinal":0}},"table":"static","index":3}},"binding":"local-definition"}},
         "canonical":"event.o::g_services",
         "member":"event.o",
         "symbol":"g_services",
@@ -120,6 +125,7 @@ fn write_facts(path: &Path, digest: &str) {
       ],
       "container_depth":1,
       "slot_offset":16,
+      "post_offset":0,
       "jalr_offset":0
     }},
     "root_linkage":{{
@@ -129,19 +135,16 @@ fn write_facts(path: &Path, digest: &str) {
       "candidates":[]
     }},
     "arguments":[
-      {{"index":0,"kind":"unknown"}},
-      {{"index":1,"kind":"constant","value":"0x0000002a"}},
-      {{
-        "index":2,
-        "kind":"pointer-provenance",
-        "canonical":"arg0+4",
-        "root":{{"kind":"function-argument","canonical":"arg0","argument":0}},
-        "loads":[],
-        "post_offset":4
-      }}
+      {{"index":0,"value":{{"kind":"unknown"}}}},
+      {{"index":1,"value":{{"kind":"constant","value":42}}}},
+      {{"index":2,"value":{{"kind":"pointer","value":{{
+        "root":{{"kind":"function-argument","owner":{{"kind":"symbol","artifact_sha256":"{digest}","location":{{"object":{{"kind":"archive-member","ordinal":0}},"table":"static","index":1}}}},"index":0}},
+        "loads":[],"post_offset":4
+      }}}}}}
     ]
   }}],
   "assignments": [{{
+    "owner":{{"kind":"symbol","artifact_sha256":"{digest}","location":{{"object":{{"kind":"archive-member","ordinal":0}},"table":"static","index":2}}}},
     "artifact":0,
     "member":"event.o",
     "function":"init_services",
@@ -149,17 +152,21 @@ fn write_facts(path: &Path, digest: &str) {
     "site":"0x98",
     "root":{{
       "kind":"relocated-symbol",
+        "reference":{{"kind":"captured","artifact_sha256":"{digest}","location":{{"object":{{"kind":"archive-member","ordinal":0}},"table":"static","index":3}},"binding":"local-definition"}},
       "canonical":"event.o::g_services",
       "member":"event.o",
       "symbol":"g_services",
       "addend":0,
       "addressing":"absolute"
     }},
+    "target_loads":[],
+    "target_offset":0,
     "container_path":[{{"site":"0x90","offset":0,"width":32}}],
     "offset":16,
     "width":32,
     "target":{{
       "kind":"relocated-symbol",
+        "reference":{{"kind":"captured","artifact_sha256":"{digest}","location":{{"object":{{"kind":"archive-member","ordinal":0}},"table":"static","index":3}},"binding":"local-definition"}},
       "canonical":"init.o::queue_send_from_isr",
       "member":"init.o",
       "symbol":"queue_send_from_isr",
@@ -171,6 +178,7 @@ fn write_facts(path: &Path, digest: &str) {
     "artifact": 0,
     "root": {{
       "kind":"relocated-symbol",
+        "reference":{{"kind":"captured","artifact_sha256":"{digest}","location":{{"object":{{"kind":"archive-member","ordinal":0}},"table":"static","index":3}},"binding":"local-definition"}},
       "canonical":"event.o::g_services",
       "member":"event.o",
       "symbol":"g_services",
@@ -190,13 +198,26 @@ fn write_facts(path: &Path, digest: &str) {
     .unwrap();
 }
 
-fn bounded_data_root(symbol: &str, address: u32, size: u32) -> InterfaceRoot {
-    InterfaceRoot::BoundedDataAddress {
-        member: None,
-        symbol: symbol.to_owned(),
-        symbol_address: address,
-        symbol_size: size,
+fn bounded_data_root(symbol: &str, address: u32, size: u32, width: Option<u8>) -> InterfaceRoot {
+    use open_radio_vendor_contracts::{DataAddressCandidate, DataAddressResolution, DataIdentity};
+    InterfaceRoot::AbsoluteAddress {
         address,
+        data_address: DataAddressResolution::from_candidates(
+            address,
+            width,
+            vec![DataAddressCandidate {
+                identity: DataIdentity::Synthetic {
+                    namespace: module_path!().to_owned(),
+                    key: symbol.to_owned(),
+                },
+                member: None,
+                symbol: symbol.to_owned(),
+                symbol_address: address,
+                symbol_size: size,
+                exported: true,
+                offset: 0,
+            }],
+        ),
     }
 }
 
@@ -204,8 +225,11 @@ fn bounded_assignment_document(directory: &Path) -> serde_json::Value {
     let artifact_path = directory.join("bounded-assignment.elf");
     std::fs::write(&artifact_path, b"bounded assignment fixture").unwrap();
     let discovery = ProjectInterfaceDiscovery {
+        limits: Default::default(),
+        gaps: Vec::new(),
         linkage: ProjectLinkageInventory {
             artifacts: vec![LinkageArtifact {
+                sha256: crate::artifact_sha256(&artifact_path).unwrap(),
                 path: artifact_path,
                 roles: Vec::new(),
                 sources: vec!["fixture".to_owned()],
@@ -223,15 +247,21 @@ fn bounded_assignment_document(directory: &Path) -> serde_json::Value {
         assignments: vec![DiscoveredInterfaceAssignment {
             artifact: 0,
             assignment: InterfaceSlotAssignment {
+                owner: crate::artifact::CodeIdentity::Synthetic {
+                    namespace: module_path!().into(),
+                    key: format!("fixture:{}", line!()),
+                },
+                target_loads: Vec::new(),
+                target_offset: 0,
                 member: None,
                 function: "install_static_table".to_owned(),
                 function_address: 0x1000,
                 site: 0x1010,
-                root: bounded_data_root("table_cell", 0x2000, 4),
+                root: bounded_data_root("table_cell", 0x2000, 4, Some(32)),
                 container_loads: Vec::new(),
                 offset: 0,
                 width: 32,
-                target: bounded_data_root("static_table", 0x3000, 0x20),
+                target: bounded_data_root("static_table", 0x3000, 0x20, None),
             },
         }],
         decode_blockers: Vec::new(),
@@ -278,6 +308,113 @@ replacement = "async.channel.try-send"
 }
 
 #[test]
+fn interface_roots_require_captured_reference_or_explicit_unknown_and_scoped_arguments() {
+    let directory = fixture_directory();
+    let path = directory.join("facts.json");
+    write_facts(&path, &fake_digest('a'));
+    let original: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let mut missing = original.clone();
+    missing["calls"][0]["target"]["root"]
+        .as_object_mut()
+        .unwrap()
+        .remove("reference");
+    std::fs::write(&path, missing.to_string()).unwrap();
+    assert!(InterfaceFacts::load(&path).is_err());
+    let mut foreign = original.clone();
+    foreign["calls"][0]["target"]["root"]["reference"]["artifact_sha256"] =
+        serde_json::json!(fake_digest('b'));
+    std::fs::write(&path, foreign.to_string()).unwrap();
+    assert!(
+        InterfaceFacts::load(&path)
+            .unwrap_err()
+            .to_string()
+            .contains("reference belongs to another artifact")
+    );
+    let mut foreign_argument = original.clone();
+    foreign_argument["calls"][0]["arguments"][2]["value"]["value"]["root"]["owner"]["location"]["index"] =
+        serde_json::json!(99);
+    std::fs::write(&path, foreign_argument.to_string()).unwrap();
+    assert!(
+        InterfaceFacts::load(&path)
+            .unwrap_err()
+            .to_string()
+            .contains("root belongs to another function")
+    );
+    let mut unknown = original;
+    let reference =
+        serde_json::json!({"kind":"unknown","reason":"source supplied no physical relocation"});
+    unknown["calls"][0]["target"]["root"]["reference"] = reference.clone();
+    unknown["table_candidates"][0]["root"]["reference"] = reference.clone();
+    std::fs::write(&path, unknown.to_string()).unwrap();
+    let facts = InterfaceFacts::load(&path).unwrap();
+    let InterfaceFactRoot::RelocatedSymbol {
+        reference: retained,
+        ..
+    } = &facts.calls[0].root
+    else {
+        panic!("relocated root")
+    };
+    assert_eq!(serde_json::to_value(retained).unwrap(), reference);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn physical_owners_keep_identical_display_sites_distinct_and_reject_foreign_artifacts() {
+    let directory = fixture_directory();
+    let path = directory.join("facts.json");
+    write_facts(&path, &fake_digest('a'));
+    let mut document: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    for group in ["calls", "assignments"] {
+        let mut other = document[group][0].clone();
+        other["owner"]["location"]["object"]["ordinal"] = serde_json::json!(1);
+        if group == "calls" {
+            other["arguments"][2]["value"]["value"]["root"]["owner"] = other["owner"].clone();
+        }
+        document[group].as_array_mut().unwrap().push(other);
+    }
+    document["decode_blockers"] = serde_json::json!([{
+        "owner":document["calls"][0]["owner"], "artifact":0, "member":"event.o", "function":"post_event",
+        "address":"0x124", "width":32, "raw":"0", "class":"unsupported", "linear_control_flow":false
+    }]);
+    document["analysis_failures"] = serde_json::json!([{
+        "owner":document["calls"][1]["owner"], "artifact":0, "member":"event.o", "function":"post_event", "error":"incomplete body"
+    }]);
+    std::fs::write(&path, document.to_string()).unwrap();
+    let facts = InterfaceFacts::load(&path).unwrap();
+    assert_eq!(facts.calls.len(), 2);
+    assert_eq!(facts.assignments.len(), 2);
+    assert_ne!(facts.calls[0].owner, facts.calls[1].owner);
+    assert_eq!(facts.calls[0].site, facts.calls[1].site);
+    assert_eq!(facts.calls[0].function, facts.calls[1].function);
+    for group in [
+        "calls",
+        "assignments",
+        "decode_blockers",
+        "analysis_failures",
+    ] {
+        let mut foreign = document.clone();
+        foreign[group][0]["owner"]["artifact_sha256"] = serde_json::json!(fake_digest('b'));
+        std::fs::write(&path, foreign.to_string()).unwrap();
+        assert!(
+            InterfaceFacts::load(&path)
+                .unwrap_err()
+                .to_string()
+                .contains("owner belongs to another artifact")
+        );
+        let mut missing = document.clone();
+        missing[group][0].as_object_mut().unwrap().remove("owner");
+        std::fs::write(&path, missing.to_string()).unwrap();
+        assert!(InterfaceFacts::load(&path).is_err());
+    }
+    document["schema_version"] = serde_json::json!(9);
+    std::fs::write(&path, document.to_string()).unwrap();
+    assert!(InterfaceFacts::load(&path).is_err());
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn stored_interface_facts_reject_unknown_and_missing_fields() {
     let directory = fixture_directory();
     let facts = directory.join("facts.json");
@@ -300,11 +437,11 @@ fn stored_interface_facts_reject_unknown_and_missing_fields() {
 }
 
 #[test]
-fn bounded_data_assignment_round_trips_through_schema_v7() {
+fn bounded_data_assignment_round_trips_through_schema_v11() {
     let directory = fixture_directory();
     let document = bounded_assignment_document(&directory);
 
-    assert_eq!(document["schema_version"], serde_json::json!(7));
+    assert_eq!(document["schema_version"], serde_json::json!(11));
     crate::artifacts::parse_interface_facts(&document.to_string()).unwrap();
     let facts = load_bounded_assignment_document(&directory, &document).unwrap();
     std::fs::remove_dir_all(directory).unwrap();
@@ -313,28 +450,21 @@ fn bounded_data_assignment_round_trips_through_schema_v7() {
     let assignment = &facts.assignments[0];
     assert_eq!(assignment.offset, 0);
     assert_eq!(assignment.width, 32);
-    assert!(matches!(
-        &assignment.root,
-        InterfaceFactRoot::BoundedDataAddress {
-            canonical,
-            member: None,
-            symbol,
-            address: 0x2000,
-            symbol_address: 0x2000,
-            symbol_size: 4,
-        } if canonical == "<elf>::table_cell+0x0" && symbol == "table_cell"
-    ));
-    assert!(matches!(
-        &assignment.target,
-        InterfaceFactRoot::BoundedDataAddress {
-            canonical,
-            member: None,
-            symbol,
-            address: 0x3000,
-            symbol_address: 0x3000,
-            symbol_size: 0x20,
-        } if canonical == "<elf>::static_table+0x0" && symbol == "static_table"
-    ));
+    for (root, name, expected) in [
+        (&assignment.root, "table_cell", 0x2000),
+        (&assignment.target, "static_table", 0x3000),
+    ] {
+        let InterfaceFactRoot::AbsoluteAddress {
+            address,
+            data_address,
+        } = root
+        else {
+            panic!("numeric root");
+        };
+        assert_eq!(*address, expected);
+        assert_eq!(data_address.candidates().len(), 1);
+        assert_eq!(data_address.candidates()[0].symbol, name);
+    }
 }
 
 #[test]
@@ -343,7 +473,9 @@ fn bounded_data_assignment_rejects_out_of_bounds_address() {
         document["assignments"][0]["target"]["address"] = serde_json::json!("0x00003020");
     });
     assert!(
-        error.contains("interface assignment target address lies outside its data-symbol range"),
+        error.contains(
+            "interface assignment target: data-address evidence does not match the observed access"
+        ),
         "{error}"
     );
 }
@@ -353,11 +485,12 @@ fn bounded_data_assignment_rejects_overflowing_symbol_range() {
     let error = bounded_assignment_error(|document| {
         let root = &mut document["assignments"][0]["root"];
         root["address"] = serde_json::json!("0xfffffffc");
-        root["symbol_address"] = serde_json::json!("0xfffffffc");
-        root["symbol_size"] = serde_json::json!(8);
+        root["data_address"]["address"] = serde_json::json!(0xfffffffc_u32);
+        root["data_address"]["candidate"]["symbol_address"] = serde_json::json!(0xfffffffc_u32);
+        root["data_address"]["candidate"]["symbol_size"] = serde_json::json!(8);
     });
     assert!(
-        error.contains("interface assignment root data-symbol range overflows"),
+        error.contains("interface assignment root: data-address access overflows"),
         "{error}"
     );
 }
@@ -368,7 +501,9 @@ fn bounded_data_assignment_rejects_nonzero_root_offset() {
         document["assignments"][0]["offset"] = serde_json::json!(4);
     });
     assert!(
-        error.contains("bounded interface assignment root is not normalized to offset zero"),
+        error.contains(
+            "interface assignment root: data-address evidence does not match the observed access"
+        ),
         "{error}"
     );
 }
@@ -393,16 +528,19 @@ fn bounded_data_pointer_cell_retains_an_indirect_object_field_offset() {
 #[test]
 fn bounded_data_assignment_rejects_store_crossing_symbol_end() {
     let error = bounded_assignment_error(|document| {
-        document["assignments"][0]["root"]["symbol_size"] = serde_json::json!(2);
+        document["assignments"][0]["root"]["data_address"]["candidate"]["symbol_size"] =
+            serde_json::json!(2);
     });
     assert!(
-        error.contains("bounded interface assignment store exceeds its data symbol"),
+        error.contains(
+            "interface assignment root: data-address access lies outside its data-symbol range"
+        ),
         "{error}"
     );
 }
 
 #[test]
-fn interface_assignment_rejects_plain_absolute_address_target() {
+fn interface_assignment_requires_explicit_address_evidence() {
     let error = bounded_assignment_error(|document| {
         document["assignments"][0]["target"] = serde_json::json!({
             "kind": "absolute-address",
@@ -410,10 +548,7 @@ fn interface_assignment_rejects_plain_absolute_address_target() {
             "address": "0x00003000"
         });
     });
-    assert!(
-        error.contains("interface assignment target lacks function-pointer provenance"),
-        "{error}"
-    );
+    assert!(error.contains("missing field `data_address`"), "{error}");
 }
 
 fn reviewed_pack(digest: &str, semantic: &str) -> String {
@@ -1003,9 +1138,11 @@ fn reviewed_slot_links_observed_layout_to_reusable_semantics() {
         workspace.bindings()[0].assignments[0].target_symbol,
         "queue_send_from_isr"
     );
-    assert_eq!(workspace.bindings()[0].calls[0].site, 0x120);
+    assert_eq!(workspace.bindings()[0].calls[0].observation.site, 0x120);
     assert_eq!(
-        workspace.bindings()[0].calls[0].arguments[1].expression,
+        workspace.bindings()[0].calls[0].observation.arguments[1]
+            .value
+            .canonical(),
         "0x0000002a"
     );
     assert_eq!(
@@ -1049,7 +1186,7 @@ fn one_site_may_preserve_multiple_argument_provenance_variants() {
             .unwrap();
     let calls = document["calls"].as_array_mut().unwrap();
     let mut alternate = calls[0].clone();
-    alternate["arguments"][1]["value"] = serde_json::json!("0x0000002b");
+    alternate["arguments"][1]["value"]["value"] = serde_json::json!(43);
     calls.push(alternate);
     std::fs::write(&facts, serde_json::to_string(&document).unwrap()).unwrap();
 
@@ -1137,40 +1274,41 @@ fn sparse_pack_keeps_generated_backlog_outside_reviewed_toml() {
 
 #[test]
 fn linked_view_reuses_the_reviewed_source_inventory_anchor() {
-    let directory = fixture_directory();
-    let facts_path = directory.join("facts.json");
-    let pack_path = directory.join("pack.toml");
-    let catalog_path = directory.join("semantics.toml");
-    let digest = fake_digest('a');
-    write_facts(&facts_path, &digest);
-    let mut facts: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&facts_path).unwrap()).unwrap();
-    facts["artifacts"]
-        .as_array_mut()
-        .unwrap()
-        .push(serde_json::json!({
-            "index": 1,
-            "path": "linked.elf",
-            "roles": [],
-            "sources": ["libpp"],
-            "sha256": fake_digest('b'),
-            "container": "elf32",
-            "functions": 1,
-            "reviewed_boundaries": 0
-        }));
-    facts["table_candidates"]
+    for ambiguous in [false, true] {
+        let directory = fixture_directory();
+        let facts_path = directory.join("facts.json");
+        let pack_path = directory.join("pack.toml");
+        let catalog_path = directory.join("semantics.toml");
+        let digest = fake_digest('a');
+        write_facts(&facts_path, &digest);
+        let mut facts: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&facts_path).unwrap()).unwrap();
+        facts["artifacts"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "index": 1,
+                "path": "linked.elf",
+                "roles": [],
+                "sources": ["libpp"],
+                "sha256": fake_digest('b'),
+                "container": "elf32",
+                "functions": 1,
+                "reviewed_boundaries": 0
+            }));
+        facts["table_candidates"]
         .as_array_mut()
         .unwrap()
         .push(serde_json::json!({
             "artifact": 1,
             "root": {
-                "kind": "bounded-data-address",
-                "canonical": "<elf>::g_services+0x0",
-                "member": null,
-                "symbol": "g_services",
+                "kind": "absolute-address",
+                "canonical": "synthetic linked-view address",
                 "address": "0x00002000",
-                "symbol_address": "0x00002000",
-                "symbol_size": 4
+                "data_address": match bounded_data_root("g_services", 0x2000, 4, Some(32)) {
+                    InterfaceRoot::AbsoluteAddress { data_address, .. } => data_address,
+                    _ => unreachable!(),
+                }
             },
             "container_path": [{"offset": 0, "width": 32}],
             "slots": [
@@ -1180,31 +1318,56 @@ fn linked_view_reuses_the_reviewed_source_inventory_anchor() {
             "functions": ["linked_post_event"],
             "call_sites": 2
         }));
-    std::fs::write(&facts_path, facts.to_string()).unwrap();
-    write_catalog(&catalog_path);
-    std::fs::write(
-        &pack_path,
-        reviewed_pack(&digest, "rtos.queue.send-from-isr"),
-    )
-    .unwrap();
+        if ambiguous {
+            let resolution = &mut facts["table_candidates"][1]["root"]["data_address"];
+            let first = resolution["candidate"].clone();
+            let mut other = first.clone();
+            other["identity"]["key"] = serde_json::json!("other-physical-owner");
+            other["symbol"] = serde_json::json!("other_table");
+            resolution.as_object_mut().unwrap().remove("candidate");
+            resolution["status"] = serde_json::json!("ambiguous");
+            resolution["candidates"] = serde_json::json!([first, other]);
+        }
+        std::fs::write(&facts_path, facts.to_string()).unwrap();
+        write_catalog(&catalog_path);
+        std::fs::write(
+            &pack_path,
+            reviewed_pack(&digest, "rtos.queue.send-from-isr"),
+        )
+        .unwrap();
 
-    let workspace = InterfaceWorkspace::load(
-        &facts_path,
-        &pack_path,
-        std::slice::from_ref(&catalog_path),
-        "riscv-ilp32",
-        None,
-    )
-    .unwrap();
-    std::fs::remove_dir_all(directory).unwrap();
+        let workspace = InterfaceWorkspace::load(
+            &facts_path,
+            &pack_path,
+            std::slice::from_ref(&catalog_path),
+            "riscv-ilp32",
+            None,
+        )
+        .unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
 
-    assert_eq!(workspace.summary().reviewed_slots, 2);
-    assert_eq!(workspace.summary().unreviewed_slots, 1);
-    assert_eq!(workspace.unreviewed_observations().len(), 1);
-    let observation = &workspace.unreviewed_observations()[0];
-    assert_eq!(observation.contract, "fixture::wifi-osi");
-    assert_eq!(observation.offset, 20);
-    assert_eq!(observation.functions, ["linked_post_event"]);
+        if ambiguous {
+            assert_eq!(workspace.summary().reviewed_slots, 1);
+            assert_eq!(workspace.summary().unreviewed_slots, 2);
+            assert_eq!(workspace.unreviewed_observations().len(), 2);
+            assert_eq!(
+                workspace
+                    .unreviewed_observations()
+                    .iter()
+                    .map(|observation| observation.offset)
+                    .collect::<BTreeSet<_>>(),
+                BTreeSet::from([16, 20])
+            );
+        } else {
+            assert_eq!(workspace.summary().reviewed_slots, 2);
+            assert_eq!(workspace.summary().unreviewed_slots, 1);
+            assert_eq!(workspace.unreviewed_observations().len(), 1);
+            let observation = &workspace.unreviewed_observations()[0];
+            assert_eq!(observation.contract, "fixture::wifi-osi");
+            assert_eq!(observation.offset, 20);
+            assert_eq!(observation.functions, ["linked_post_event"]);
+        }
+    }
 }
 
 #[test]
@@ -1272,4 +1435,184 @@ fn shipped_catalog_covers_the_initial_cross_platform_domains() {
     ] {
         assert!(catalogs.get(operation).is_some(), "missing {operation}");
     }
+}
+
+#[test]
+fn stored_interface_evidence_keeps_alternatives_sites_offsets_and_gaps() {
+    use crate::interface_discovery::{
+        InterfaceAnalysisGap, InterfaceArgumentValue as V, InterfaceGapReason, InterfaceLoad,
+        InterfacePointer, InterfaceRegisterValue, InterfaceRoot,
+    };
+    let directory = fixture_directory();
+    let path = directory.join("facts.json");
+    write_facts(&path, &fake_digest('a'));
+    let mut document: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let argument_owner: crate::artifact::CodeIdentity =
+        serde_json::from_value(document["calls"][0]["owner"].clone()).unwrap();
+    let pointer = InterfacePointer {
+        root: InterfaceRoot::FunctionArgument {
+            owner: argument_owner.clone(),
+            index: 0,
+        },
+        loads: vec![InterfaceLoad {
+            site: 0x108,
+            offset: 4,
+            width: 32,
+            selector: None,
+        }],
+        post_offset: 8,
+    };
+    let argument = V::Alternatives(vec![V::Unknown, V::Pointer(pointer.clone())]);
+    document["calls"][0]["arguments"][0]["value"] = serde_json::to_value(&argument).unwrap();
+    document["calls"][0]["target"]["post_offset"] = serde_json::json!(4);
+    let mut other = document["calls"][0].clone();
+    other["target"]["loads"][0]["site"] = serde_json::json!("0x10c");
+    document["calls"].as_array_mut().unwrap().push(other);
+    document["assignments"][0]["target_loads"] =
+        serde_json::json!([{"site":"0x88","offset":4,"width":32}]);
+    document["assignments"][0]["target_offset"] = serde_json::json!(8);
+    let gap = InterfaceAnalysisGap {
+        owner: argument_owner.clone(),
+        member: Some("event.o".into()),
+        function: "post_event".into(),
+        site: 0x120,
+        reason: InterfaceGapReason::UnresolvedCallTarget,
+        registers: (0..32)
+            .map(|register| InterfaceRegisterValue {
+                register,
+                value: if register == 10 {
+                    argument.clone()
+                } else {
+                    V::Unknown
+                },
+            })
+            .collect(),
+    };
+    document["gaps"] = serde_json::json!([{"artifact":0,"evidence":gap}]);
+    std::fs::write(&path, document.to_string()).unwrap();
+    let facts = InterfaceFacts::load(&path).unwrap();
+    assert_eq!(facts.calls.len(), 2);
+    assert_eq!(facts.calls[0].loads[0].site, Some(0x110));
+    assert_eq!(facts.calls[1].loads[0].site, Some(0x10c));
+    assert_eq!(facts.calls[0].arguments[0].value, argument);
+    assert_eq!(facts.calls[0].target_offset, 4);
+    assert_eq!(facts.assignments[0].target_loads[0].site, Some(0x88));
+    assert_eq!(facts.assignments[0].target_offset, 8);
+    assert_eq!(facts.gaps[0].evidence, gap);
+    document["calls"][0]["target"]["loads"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("site");
+    std::fs::write(&path, document.to_string()).unwrap();
+    assert!(
+        InterfaceFacts::load(&path)
+            .unwrap_err()
+            .to_string()
+            .contains("site")
+    );
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn shifted_call_and_loaded_assignment_remain_evidence_without_direct_review_binding() {
+    let directory = fixture_directory();
+    let facts_path = directory.join("facts.json");
+    let pack_path = directory.join("pack.toml");
+    let catalog = directory.join("semantics.toml");
+    let digest = fake_digest('a');
+    write_facts(&facts_path, &digest);
+    write_catalog(&catalog);
+    std::fs::write(
+        &pack_path,
+        reviewed_pack(&digest, "rtos.queue.send-from-isr"),
+    )
+    .unwrap();
+    let mut document: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&facts_path).unwrap()).unwrap();
+    document["calls"][0]["target"]["post_offset"] = serde_json::json!(4);
+    document["assignments"][0]["target_loads"] =
+        serde_json::json!([{"site":"0x88","offset":0,"width":32}]);
+    std::fs::write(&facts_path, document.to_string()).unwrap();
+    let facts = InterfaceFacts::load(&facts_path).unwrap();
+    assert_eq!(facts.calls.len(), 1);
+    assert_eq!(facts.assignments.len(), 1);
+    let workspace =
+        InterfaceWorkspace::load(&facts_path, &pack_path, &[catalog], "riscv-ilp32", None).unwrap();
+    assert_eq!(workspace.bindings().len(), 1);
+    assert!(workspace.bindings()[0].calls.is_empty());
+    assert!(workspace.bindings()[0].assignments.is_empty());
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn reviewed_calls_keep_distinct_load_sites_and_typed_unknown_alternatives() {
+    use crate::interface_discovery::{
+        InterfaceArgumentValue as V, InterfaceLoad, InterfacePointer, InterfaceRoot,
+    };
+    let directory = fixture_directory();
+    let facts_path = directory.join("facts.json");
+    let pack_path = directory.join("pack.toml");
+    let catalog = directory.join("semantics.toml");
+    let digest = fake_digest('a');
+    write_facts(&facts_path, &digest);
+    write_catalog(&catalog);
+    std::fs::write(
+        &pack_path,
+        reviewed_pack(&digest, "rtos.queue.send-from-isr"),
+    )
+    .unwrap();
+    let mut document: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&facts_path).unwrap()).unwrap();
+    let argument_owner: crate::artifact::CodeIdentity =
+        serde_json::from_value(document["calls"][0]["owner"].clone()).unwrap();
+    let value = |site| {
+        V::Alternatives(vec![
+            V::Unknown,
+            V::Pointer(InterfacePointer {
+                root: InterfaceRoot::FunctionArgument {
+                    owner: argument_owner.clone(),
+                    index: 0,
+                },
+                loads: vec![InterfaceLoad {
+                    site,
+                    offset: 4,
+                    width: 32,
+                    selector: None,
+                }],
+                post_offset: 8,
+            }),
+        ])
+    };
+    assert_eq!(value(0x104).canonical(), value(0x108).canonical());
+    document["calls"][0]["arguments"][0]["value"] = serde_json::to_value(value(0x104)).unwrap();
+    let mut alternate = document["calls"][0].clone();
+    alternate["target"]["loads"][0]["site"] = serde_json::json!("0x10c");
+    alternate["arguments"][0]["value"] = serde_json::to_value(value(0x108)).unwrap();
+    document["calls"].as_array_mut().unwrap().push(alternate);
+    document["decode_blockers"] = serde_json::json!([{"owner":document["calls"][0]["owner"],"artifact":0,"member":"event.o","function":"post_event","address":"0x10e","width":16,"raw":"0x0000","class":"zero-fill-or-illegal-trap","linear_control_flow":false}]);
+    document["analysis_failures"] = serde_json::json!([{"owner":document["calls"][0]["owner"],"artifact":0,"member":"other.o","function":"unknown_body","error":"fixture decode failure"}]);
+    std::fs::write(&facts_path, document.to_string()).unwrap();
+    let workspace =
+        InterfaceWorkspace::load(&facts_path, &pack_path, &[catalog], "riscv-ilp32", None).unwrap();
+    let calls = &workspace.bindings()[0].calls;
+    assert_eq!(calls.len(), 2);
+    for call in calls {
+        assert!(workspace.facts().calls.contains(&call.observation));
+    }
+    assert_eq!(workspace.facts().decode_blockers[0].address, 0x10e);
+    assert_eq!(
+        workspace.facts().analysis_failures[0].function,
+        "unknown_body"
+    );
+    let encoded = serde_json::to_value(calls).unwrap();
+    assert_ne!(
+        encoded[0]["observation"]["arguments"],
+        encoded[1]["observation"]["arguments"]
+    );
+    let query = serde_json::to_string(workspace.facts()).unwrap();
+    let restored: InterfaceFacts = serde_json::from_str(&query).unwrap();
+    restored.validate().unwrap();
+    assert_eq!(&restored, workspace.facts());
+    std::fs::remove_dir_all(directory).unwrap();
 }

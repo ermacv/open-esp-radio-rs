@@ -1,0 +1,38 @@
+[package]
+name = "blobray-next"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Blobray bounded binary research and retained evidence CLI"
+
+[lib]
+name = "blobray_next_host"
+
+[dependencies]
+blobray-backend-riscv = { path = "../crates/riscv" }
+blobray-application = { path = "../crates/application" }
+blobray-domain = { path = "../crates/domain" }
+clap = { version = "=4.5.48", features = ["derive"] }
+serde_json = "=1.0.151"
+serde = { version = "=1.0.229", features = ["derive"] }
+
+sha2 = "=0.10.9"
+libc = "=0.2.189"
+signal-hook = "=0.3.18"
+
+tempfile = "=3.27.0"
+
+[dev-dependencies]
+object = { version = "=0.39.1", default-features = false, features = ["elf", "std", "write"] }
+cargo_metadata = "=0.23.1"
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "tool"
+platform = "host"

@@ -34,32 +34,49 @@ impl BrowserState {
         }
     }
 
-    pub(in crate::tui) fn request_register_detail(&mut self) -> Option<u32> {
+    pub(in crate::tui) fn request_register_detail(&mut self) -> Option<String> {
         if self.section != Section::Registers {
             return None;
         }
-        let address = self
+        let subject = self
             .snapshot
             .registers
-            .registers
-            .get(self.selected())?
-            .address;
+            .register_at(self.selected())?
+            .id
+            .clone();
         self.requested_register_details
-            .insert(address)
-            .then_some(address)
+            .insert(subject.clone())
+            .then_some(subject)
     }
 
-    pub(in crate::tui) fn register_detail(&self, address: u32) -> Option<&RegisterDetailSummary> {
-        self.register_details.get(&address).map(Box::as_ref)
+    pub(in crate::tui) fn register_detail(&self, subject: &str) -> Option<&RegisterDetailSummary> {
+        self.register_details.get(subject).map(Box::as_ref)
     }
 
     pub(in crate::tui) fn register_detail_finished(
         &mut self,
-        address: u32,
+        subject: String,
+        generation: u64,
         detail: Option<RegisterDetailSummary>,
     ) {
+        if generation != self.snapshot.generation {
+            self.requested_register_details.remove(&subject);
+            self.message = Some("Register detail belongs to an earlier workspace generation; requesting current evidence".to_owned());
+            return;
+        }
         if let Some(detail) = detail {
-            self.register_details.insert(address, Box::new(detail));
+            if self
+                .snapshot
+                .registers
+                .inventory
+                .snapshot()
+                .is_none_or(|snapshot| snapshot.id() != detail.inventory_snapshot)
+            {
+                self.requested_register_details.remove(&subject);
+                self.message = Some("Register detail belongs to a different inventory snapshot; requesting current evidence".to_owned());
+                return;
+            }
+            self.register_details.insert(subject, Box::new(detail));
         }
     }
 }

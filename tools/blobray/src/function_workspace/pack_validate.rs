@@ -1026,6 +1026,10 @@ mod tests {
             functions: edges
                 .iter()
                 .map(|(identity, targets)| super::super::FunctionFact {
+                    code_identity: crate::artifact::CodeIdentity::Synthetic {
+                        namespace: module_path!().into(),
+                        key: format!("fixture:{}", line!()),
+                    },
                     profile: "fixture".to_owned(),
                     source: "vendor".to_owned(),
                     identity: (*identity).to_owned(),

@@ -77,8 +77,8 @@ pub(super) struct BrowserState {
     pub(super) comparisons: BTreeMap<String, Box<ExecutionComparisonReport>>,
     function_details: BTreeMap<String, Box<FunctionDetailSummary>>,
     requested_function_details: BTreeSet<String>,
-    register_details: BTreeMap<u32, Box<RegisterDetailSummary>>,
-    requested_register_details: BTreeSet<u32>,
+    register_details: BTreeMap<String, Box<RegisterDetailSummary>>,
+    requested_register_details: BTreeSet<String>,
 }
 
 impl BrowserState {
@@ -293,13 +293,14 @@ mod tests {
     use crate::{
         CodeWorkspaceReport, DiagnosticRecord, DiagnosticSeverity, FunctionReviewState,
         FunctionSelection, FunctionSummary, InterfaceSlotSummary, InterfaceWorkspaceReport,
-        ProjectStatusPhase, ProjectStatusReport, ProjectTargetIdentity, Readiness, RegisterSummary,
+        ProjectStatusPhase, ProjectStatusReport, ProjectTargetIdentity, Readiness,
         RegisterWorkspaceReport, ResearchCompleteness, ResearchProgress, ReviewScopeSummary,
     };
 
     fn snapshot(generation: u64, phases: usize, diagnostics: usize) -> WorkspaceSnapshot {
         WorkspaceSnapshot {
             generation,
+            generated_analysis_epoch: None,
             project_status: ProjectStatusReport {
                 project_id: "fixture".to_owned(),
                 manifest: "vendor-project.toml".to_owned(),
@@ -349,15 +350,13 @@ mod tests {
                 model: None,
                 ranges: 0,
                 observed: 0,
-                reviewed: 0,
-                ignored: 0,
-                non_operational: 0,
-                manual: 0,
-                unreviewed: 0,
+                publication: None,
                 fields: 0,
-                registers: Vec::new(),
+                inventory: crate::tui::register_snapshot(Default::default()),
             },
             interfaces: InterfaceWorkspaceReport {
+                observations: None,
+                observation_state: crate::InterfaceObservationState::NotConfigured,
                 configured: false,
                 facts: None,
                 pack: None,
@@ -381,6 +380,101 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[test]
+    fn interface_observations_are_searchable_without_review_and_empty_search_hides_detail() {
+        use crate::interface_discovery::{
+            InterfaceAnalysisGap, InterfaceArgumentValue, InterfaceGapReason,
+            InterfaceRegisterValue,
+        };
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let mut snapshot = snapshot(1, 0, 0);
+        snapshot.interfaces.configured = true;
+        snapshot.interfaces.observation_state = crate::InterfaceObservationState::Available;
+        snapshot.interfaces.observations = Some(std::sync::Arc::new(crate::InterfaceFacts {
+            artifacts: vec![crate::InterfaceFactArtifact {
+                index: 0,
+                sources: ["fixture".into()].into(),
+                sha256: Some("a".repeat(64)),
+            }],
+            limits: Default::default(),
+            tables: vec![],
+            calls: vec![],
+            assignments: vec![],
+            decode_blockers: vec![],
+            gaps: vec![crate::InterfaceGapFact {
+                artifact: 0,
+                evidence: InterfaceAnalysisGap {
+                    owner: crate::artifact::ArtifactSymbolDefinition::synthetic_identity(
+                        module_path!(),
+                        &None,
+                        "dispatch",
+                        0,
+                    ),
+                    member: None,
+                    function: "dispatch".into(),
+                    site: 4,
+                    reason: InterfaceGapReason::UnresolvedCallTarget,
+                    registers: (0..32)
+                        .map(|register| InterfaceRegisterValue {
+                            register,
+                            value: InterfaceArgumentValue::Unknown,
+                        })
+                        .collect(),
+                },
+            }],
+            analysis_failures: vec![crate::InterfaceDecodeFailureFact {
+                owner: crate::artifact::CodeIdentity::Synthetic {
+                    namespace: module_path!().into(),
+                    key: format!("fixture:{}", line!()),
+                },
+                artifact: 0,
+                member: None,
+                function: "unparsed".into(),
+                error: "malformed instruction span".into(),
+            }],
+        }));
+        let mut state = BrowserState::new(snapshot);
+        state.section = Section::Interfaces;
+        assert_eq!(state.visible_count(), 2);
+        state.select_last();
+        assert_eq!(state.selected(), 1);
+        state.begin_search();
+        for character in "unresolved-call-target".chars() {
+            state.push_search(character);
+        }
+        state.finish_search();
+        assert_eq!(state.visible_count(), 1);
+        assert_eq!(state.selected(), 0);
+        let mut terminal = Terminal::new(TestBackend::new(160, 48)).unwrap();
+        let mut render = |state: &BrowserState| {
+            terminal
+                .draw(|frame| crate::tui::view::render(frame, state))
+                .unwrap();
+            terminal
+                .backend()
+                .buffer()
+                .content()
+                .iter()
+                .map(ratatui::buffer::Cell::symbol)
+                .collect::<String>()
+        };
+        let rendered = render(&state);
+        assert!(rendered.contains("Interface evidence (1/2)"));
+        assert!(rendered.contains("gap: dispatch"));
+        assert!(rendered.contains("unknown from this observation alone"));
+        assert!(rendered.contains("unresolved-call-target"));
+        assert!(rendered.contains("\"registers\""));
+        state.search_query = "unknown".into();
+        assert_eq!(state.visible_count(), 2);
+        state.search_query = "no-such-observation".into();
+        assert_eq!(state.visible_count(), 0);
+        let rendered = render(&state);
+        assert!(rendered.contains("No observations match the current view"));
+        assert!(!rendered.contains("gap: dispatch"));
+        assert!(!rendered.contains("\"registers\""));
     }
 
     #[test]
@@ -442,6 +536,10 @@ mod tests {
     fn activation_follows_reviewed_function_interface_links_in_both_directions() {
         let mut workspace = snapshot(1, 0, 0);
         workspace.functions.push(FunctionSummary {
+            code_identity: crate::artifact::CodeIdentity::Synthetic {
+                namespace: module_path!().into(),
+                key: format!("fixture:{}", line!()),
+            },
             profile: "radio".to_owned(),
             source: "rom".to_owned(),
             identity: "rom:init".to_owned(),
@@ -511,6 +609,10 @@ mod tests {
     fn activation_follows_function_register_usage_in_both_directions() {
         let mut workspace = snapshot(1, 0, 0);
         let function = FunctionSummary {
+            code_identity: crate::artifact::CodeIdentity::Synthetic {
+                namespace: module_path!().into(),
+                key: format!("fixture:{}", line!()),
+            },
             profile: "radio".to_owned(),
             source: "rom".to_owned(),
             identity: "rom:init".to_owned(),
@@ -532,10 +634,10 @@ mod tests {
             calls: 0,
         };
         workspace.functions.push(function);
-        workspace.registers.registers.push(RegisterSummary {
-            address: 0x4000,
-            name: "RADIO.STATUS".to_owned(),
-        });
+        crate::tui::append_register(
+            &mut workspace.registers,
+            crate::tui::register_fixture(0x4000, "RADIO.STATUS"),
+        );
         let mut state = BrowserState::new(workspace);
         state.section = Section::Functions;
 
@@ -543,12 +645,64 @@ mod tests {
         assert_eq!(state.section, Section::Registers);
         assert_eq!(state.activate(), Action::Continue);
         assert_eq!(state.section, Section::Functions);
+        let mut bank = state.snapshot.registers.register_at(0).unwrap().clone();
+        bank.subject.bank = Some("second".into());
+        bank.id = bank.subject.id();
+        crate::tui::append_register(&mut state.snapshot.registers, bank);
+        assert_eq!(state.activate(), Action::Continue);
+        assert_eq!(state.section, Section::Functions);
+        assert!(
+            state
+                .message
+                .as_deref()
+                .unwrap()
+                .contains("several physical subjects")
+        );
+        state.section = Section::Registers;
+        assert_eq!(state.activate(), Action::Continue);
+        assert_eq!(
+            state.section,
+            Section::Registers,
+            "numeric ambiguity cannot establish a user"
+        );
+        let mut registers = state
+            .snapshot
+            .registers
+            .registers()
+            .cloned()
+            .collect::<Vec<_>>();
+        registers[0].functions.insert("rom:init".into());
+        crate::tui::replace_registers(&mut state.snapshot.registers, registers);
+        assert_eq!(state.activate(), Action::Continue);
+        assert_eq!(
+            state.section,
+            Section::Functions,
+            "explicit subject relation remains navigable"
+        );
+        let remaining = state
+            .snapshot
+            .registers
+            .registers()
+            .filter(|register| register.subject.bank.is_some())
+            .cloned()
+            .collect();
+        crate::tui::replace_registers(&mut state.snapshot.registers, remaining);
+        assert_eq!(state.activate(), Action::Continue);
+        assert_eq!(
+            state.section,
+            Section::Functions,
+            "a lone banked address is not an MMIO location"
+        );
     }
 
     #[test]
     fn activation_opens_the_first_function_in_a_publication_scope() {
         let mut workspace = snapshot(1, 0, 0);
         workspace.functions.push(FunctionSummary {
+            code_identity: crate::artifact::CodeIdentity::Synthetic {
+                namespace: module_path!().into(),
+                key: format!("fixture:{}", line!()),
+            },
             profile: "radio".to_owned(),
             source: "rom".to_owned(),
             identity: "rom:init".to_owned(),
@@ -604,6 +758,10 @@ mod tests {
     fn function_detail_is_requested_once_per_snapshot_generation() {
         let mut workspace = snapshot(1, 0, 0);
         workspace.functions.push(FunctionSummary {
+            code_identity: crate::artifact::CodeIdentity::Synthetic {
+                namespace: module_path!().into(),
+                key: format!("fixture:{}", line!()),
+            },
             profile: "radio".to_owned(),
             source: "rom".to_owned(),
             identity: "rom:init".to_owned(),
@@ -636,16 +794,260 @@ mod tests {
     #[test]
     fn register_detail_is_requested_once_per_snapshot_generation() {
         let mut workspace = snapshot(1, 0, 0);
-        workspace.registers.registers.push(RegisterSummary {
-            address: 0x4000,
-            name: "RADIO.STATUS".to_owned(),
-        });
+        crate::tui::append_register(
+            &mut workspace.registers,
+            crate::tui::register_fixture(0x4000, "RADIO.STATUS"),
+        );
         let mut state = BrowserState::new(workspace);
         state.section = Section::Registers;
 
-        assert_eq!(state.request_register_detail(), Some(0x4000));
+        assert_eq!(
+            state.request_register_detail(),
+            Some(state.snapshot.registers.register_at(0).unwrap().id.clone())
+        );
         assert_eq!(state.request_register_detail(), None);
         state.replace_snapshot(snapshot(2, 0, 0));
         assert!(state.requested_register_details.is_empty());
+    }
+
+    #[test]
+    fn register_details_are_cached_by_subject_and_large_addresses_are_searchable() {
+        use open_radio_vendor_contracts::register_inventory::KnowledgeProperty;
+        let mut workspace = snapshot(1, 0, 0);
+        let first = crate::tui::register_fixture(0x1_0000_4000, "FIRST");
+        let mut second = first.clone();
+        second.subject.bank = Some("second".into());
+        second.id = second.subject.id();
+        second.names = KnowledgeProperty::Unknown;
+        second.fields.insert(
+            "high".into(),
+            crate::InventoryField {
+                id: "high".into(),
+                offset: 300,
+                width: 64,
+                mask: None,
+                names: KnowledgeProperty::Unknown,
+                kind: "declared".into(),
+                semantics: KnowledgeProperty::Unknown,
+                evidence: Default::default(),
+            },
+        );
+        crate::tui::replace_registers(
+            &mut workspace.registers,
+            vec![first.clone(), second.clone()],
+        );
+        let mut state = BrowserState::new(workspace);
+        state.section = Section::Registers;
+        let section = state.section_index();
+        state.selections[section] = state
+            .snapshot
+            .registers
+            .registers()
+            .position(|r| r.id == first.id)
+            .unwrap();
+        assert_eq!(state.request_register_detail(), Some(first.id.clone()));
+        state.selections[section] = state
+            .snapshot
+            .registers
+            .registers()
+            .position(|r| r.id == second.id)
+            .unwrap();
+        assert_eq!(state.request_register_detail(), Some(second.id.clone()));
+        assert_eq!(state.request_register_detail(), None);
+        let project = crate::ProjectSpec::load(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/generic-project/vendor-project.toml"),
+        )
+        .unwrap();
+        let inventory = crate::RegisterInventory {
+            registers: [
+                (first.id.clone(), first.clone()),
+                (second.id.clone(), second.clone()),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        for register in [&first, &second] {
+            let detail = crate::application::register_detail_from_inventory(
+                &project,
+                inventory.clone(),
+                &crate::RegisterSelector::Subject(register.id.clone()),
+            )
+            .unwrap();
+            state.register_detail_finished(register.id.clone(), state.snapshot.generation, detail);
+        }
+        assert_eq!(
+            state.register_detail(&first.id).unwrap().subjects,
+            vec![first.clone()]
+        );
+        assert_eq!(
+            state.register_detail(&second.id).unwrap().subjects,
+            vec![second.clone()]
+        );
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(280, 90)).unwrap();
+        terminal
+            .draw(|frame| crate::tui::view::render(frame, &state))
+            .unwrap();
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect::<String>();
+        assert!(rendered.contains("0x100004000"));
+        assert!(rendered.contains("bits 363..300 mask=unknown"));
+        assert!(rendered.contains("field semantics=Unknown"));
+        for (query, count) in [("100004000", 2), (second.id.as_str(), 1)] {
+            state.clear_search();
+            state.begin_search();
+            for character in query.chars() {
+                state.push_search(character);
+            }
+            state.finish_search();
+            assert_eq!(state.visible_count(), count);
+        }
+        let stale = state.register_detail(&second.id).unwrap().clone();
+        let mut replacement = state.snapshot.clone();
+        replacement.generation += 1;
+        let mut updated = second.clone();
+        updated
+            .names
+            .insert("new evidence".into(), "new-source".into());
+        crate::tui::replace_registers(&mut replacement.registers, vec![first.clone(), updated]);
+        state.replace_snapshot(replacement);
+        state.section = Section::Registers;
+        state.clear_search();
+        let section = state.section_index();
+        state.selections[section] = state
+            .snapshot
+            .registers
+            .registers()
+            .position(|r| r.id == second.id)
+            .unwrap();
+        assert_eq!(state.request_register_detail(), Some(second.id.clone()));
+        state.register_detail_finished(second.id.clone(), state.snapshot.generation, Some(stale));
+        assert!(state.register_detail(&second.id).is_none());
+        assert_eq!(
+            state.request_register_detail(),
+            Some(second.id.clone()),
+            "stale completion must not suppress a fresh request"
+        );
+        let current_graph = state
+            .snapshot
+            .registers
+            .inventory
+            .snapshot()
+            .unwrap()
+            .inventory()
+            .clone();
+        let current_detail = crate::application::register_detail_from_inventory(
+            &project,
+            current_graph,
+            &crate::RegisterSelector::Subject(second.id.clone()),
+        )
+        .unwrap();
+        state.register_detail_finished(
+            second.id.clone(),
+            state.snapshot.generation - 1,
+            current_detail,
+        );
+        assert!(
+            state.register_detail(&second.id).is_none(),
+            "matching graph content cannot authorize a stale review generation"
+        );
+        assert_eq!(state.request_register_detail(), Some(second.id.clone()));
+        state.replace_snapshot(snapshot(3, 0, 0));
+        assert!(state.register_detail(&first.id).is_none());
+        assert!(state.register_detail(&second.id).is_none());
+    }
+    #[test]
+    fn empty_register_view_exposes_sources_domains_gaps_and_load_failures() {
+        use open_radio_vendor_contracts::register_inventory::{CoverageGap, SourceState};
+        let mut graph = crate::RegisterInventory::default();
+        graph.sources.push(crate::InventorySource {
+            path: "missing.svd".into(),
+            kind: "svd".into(),
+            digest: None,
+            evidence: Default::default(),
+            state: SourceState::Missing,
+        });
+        graph.gaps.insert(CoverageGap {
+            source: "capture".into(),
+            scope: "indexed-access".into(),
+            reason: "unknown upper bound".into(),
+        });
+        graph.address_domains.insert("domain:unbounded".into());
+        graph.evidence.insert(
+            "domain:unbounded".into(),
+            crate::RegisterEvidence {
+                id: "domain:unbounded".into(),
+                kind: "indexed-mmio".into(),
+                sources: Default::default(),
+                identity: serde_json::json!("loop"),
+                payload: serde_json::json!({"expression":"base + arg0 * 4","upper_bound":null}),
+            },
+        );
+        graph.regions.push(crate::AddressCoverage {
+            name: "peripheral".into(),
+            address_space: "cpu".into(),
+            alias_of: None,
+            evidence: Default::default(),
+            start: 0x1000,
+            end_exclusive: 0x1100,
+            boundary: "declared".into(),
+            known_geometry: vec![],
+            observed_extents: vec![],
+            geometry_gaps: vec![(0x1000, 0x1100)],
+            observation_gaps: vec![(0x1000, 0x1100)],
+        });
+        let mut workspace = snapshot(1, 0, 0);
+        workspace.registers.inventory = crate::tui::register_snapshot(graph);
+        let mut state = BrowserState::new(workspace);
+        state.section = Section::Registers;
+        assert_eq!(state.visible_count(), 0);
+        assert_eq!(state.request_register_detail(), None);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(240, 70)).unwrap();
+        terminal
+            .draw(|frame| crate::tui::view::render(frame, &state))
+            .unwrap();
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect::<String>();
+        for expected in [
+            "missing.svd",
+            "Missing",
+            "unknown upper bound",
+            "domain:unbounded",
+            "base + arg0 * 4",
+            "unknown geometry",
+            "unobserved-in-scope",
+        ] {
+            assert!(
+                rendered.contains(expected),
+                "{expected} absent from {rendered}"
+            );
+        }
+        state.snapshot.registers.inventory = crate::RegisterInventoryState::Failed {
+            reason: "explicit SVD capture failed".into(),
+        };
+        terminal
+            .draw(|frame| crate::tui::view::render(frame, &state))
+            .unwrap();
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect::<String>();
+        assert!(rendered.contains("Inventory failed"));
+        assert!(rendered.contains("explicit SVD capture failed"));
     }
 }

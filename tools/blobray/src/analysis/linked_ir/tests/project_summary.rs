@@ -21,6 +21,9 @@ fn compact_summary_retains_direct_context_and_global_fields() {
     function.context_fields = context_fields_for_accesses(&function.context_accesses);
     function.memory_fields.push(MemoryObjectField {
         object: LinkedMemoryObject::Global {
+            reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                reason: "synthetic fixture".to_owned(),
+            },
             member: None,
             symbol: "state".to_owned(),
         },
@@ -42,7 +45,7 @@ fn compact_summary_retains_direct_context_and_global_fields() {
     assert!(summary.memory_fields.iter().any(|field| {
         matches!(
             &field.object,
-            LinkedMemoryObject::Global { member: None, symbol } if symbol == "state"
+            LinkedMemoryObject::Global { member: None, symbol, .. } if symbol == "state"
         ) && field.offset == 8
     }));
 }
@@ -163,6 +166,12 @@ fn context_projection_bounds_scheduled_simple_paths() {
 #[test]
 fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
     let first = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "private_helper",
+            0x1000,
+        ),
         member: None,
         name: "private_helper".to_owned(),
         address: 0x1000,
@@ -172,6 +181,12 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
         relocations: Vec::new(),
     };
     let second = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &None,
+            "private_helper",
+            0x2000,
+        ),
         address: 0x2000,
         ..first.clone()
     };
@@ -182,21 +197,15 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
             (second.address as u32, second.clone()),
         ]),
         symbol_ids: BTreeMap::from([
-            (
-                (None, first.name.clone(), first.address),
-                first.address as u32,
-            ),
-            (
-                (None, second.name.clone(), second.address),
-                second.address as u32,
-            ),
+            (first.identity.clone(), first.address as u32),
+            (second.identity.clone(), second.address as u32),
         ]),
         exported_symbol_keys: BTreeSet::new(),
         relocated_calls: direct::StructuralRelocatedCalls::new(),
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: Vec::new(),
         data_objects: Vec::new(),
-        projected_direct_semantics: BTreeMap::new(),
+        projected_direct_semantics: Default::default(),
         projected_origins: BTreeMap::new(),
     };
     let map = MmioMap {
@@ -340,6 +349,12 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
 #[test]
 fn decode_blockers_only_include_cfg_reachable_instructions() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "entry",
+            0x1000,
+        ),
         member: None,
         name: "entry".to_owned(),
         address: 0x1000,
@@ -356,16 +371,13 @@ fn decode_blockers_only_include_cfg_reachable_instructions() {
     let resolver = ReferenceResolver {
         symbols: vec![symbol.clone()],
         symbols_by_address: BTreeMap::from([(symbol.address as u32, symbol.clone())]),
-        symbol_ids: BTreeMap::from([(
-            (None, symbol.name.clone(), symbol.address),
-            symbol.address as u32,
-        )]),
+        symbol_ids: BTreeMap::from([(symbol.identity.clone(), symbol.address as u32)]),
         exported_symbol_keys: BTreeSet::new(),
         relocated_calls: direct::StructuralRelocatedCalls::new(),
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: Vec::new(),
         data_objects: Vec::new(),
-        projected_direct_semantics: BTreeMap::new(),
+        projected_direct_semantics: Default::default(),
         projected_origins: BTreeMap::new(),
     };
 

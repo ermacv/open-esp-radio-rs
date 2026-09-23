@@ -1,0 +1,26 @@
+[package]
+name = "blobray-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Private imports and durable investigation revisions for Blobray"
+
+[dependencies]
+blobray-domain = { path = "../domain" }
+rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled", "blob", "backup"] }
+serde_json = "=1.0.151"
+sha2 = "=0.10.9"
+tempfile = "=3.27.0"
+
+serde = { version = "=1.0.229", features = ["derive"] }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "tool"
+platform = "host"

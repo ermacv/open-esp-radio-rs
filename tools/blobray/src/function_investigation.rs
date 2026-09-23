@@ -22,10 +22,47 @@ pub(crate) use replacement::{replacement_evidence, reviewed_effect_rules};
 const MAX_GRAPH_NODES: usize = 4_096;
 const MAX_GRAPH_EDGES: usize = 32_768;
 
+type IrLookup<'a> =
+    dyn Fn(&std::path::Path) -> Result<Option<std::sync::Arc<artifacts::LinkedIrReader>>> + 'a;
+
+pub(crate) struct InvestigationInputs<'a> {
+    pub(crate) project: &'a ProjectSpec,
+    pub(crate) function_pack: Option<&'a crate::function_workspace::FunctionPack>,
+    pub(crate) ir: &'a IrLookup<'a>,
+}
+
 pub(crate) fn investigate(
     request: FunctionInvestigationRequest<'_>,
     project: &ProjectSpec,
 ) -> Result<FunctionInvestigationReport> {
+    let pack = project
+        .functions
+        .as_ref()
+        .map(|workspace| crate::function_workspace::FunctionPack::load_reviewed(&workspace.pack))
+        .transpose()?;
+    // Explicit standalone directory input. Project sessions supply their own
+    // epoch-bound reader authority to the same investigation implementation.
+    let load = |path: &std::path::Path| {
+        if !path.is_dir() {
+            return Ok(None);
+        }
+        artifacts::LinkedIrReader::open(path).map(|reader| Some(std::sync::Arc::new(reader)))
+    };
+    investigate_with_inputs(
+        request,
+        InvestigationInputs {
+            project,
+            function_pack: pack.as_ref(),
+            ir: &load,
+        },
+    )
+}
+
+pub(crate) fn investigate_with_inputs(
+    request: FunctionInvestigationRequest<'_>,
+    inputs: InvestigationInputs<'_>,
+) -> Result<FunctionInvestigationReport> {
+    let project = inputs.project;
     let runtime = artifact::inspect_function_body_at(
         request.artifact,
         request.member,
@@ -33,22 +70,28 @@ pub(crate) fn investigate(
         request.runtime_address,
     )?;
     let (origin, origin_ledger) = origin_evidence(&request, &runtime, project)?;
-    let semantics = semantic_evidence(SemanticEvidenceRequest {
-        source: request.source,
-        symbol: request.symbol,
-        runtime: &runtime,
-        graph_depth: request.graph_depth,
-        include_callers: request.include_callers,
-        include_linked_ir_record: request.include_linked_ir_record,
-        origin: origin.as_ref(),
-        project,
-    })?;
+    let semantics = semantic_evidence(
+        SemanticEvidenceRequest {
+            source: request.source,
+            symbol: request.symbol,
+            runtime: &runtime,
+            graph_depth: request.graph_depth,
+            include_callers: request.include_callers,
+            include_linked_ir_record: request.include_linked_ir_record,
+            origin: origin.as_ref(),
+        },
+        &inputs,
+    )?;
     let reviewed_address = origin
         .as_ref()
         .and_then(|origin| origin.linked_address)
         .unwrap_or(runtime.address);
-    let (reviewed_preconditions, reviewed_paths) =
-        reviewed_path_knowledge(request.source, &runtime.symbol, reviewed_address, project)?;
+    let (reviewed_preconditions, reviewed_paths) = reviewed_path_knowledge(
+        request.source,
+        &runtime.symbol,
+        reviewed_address,
+        inputs.function_pack,
+    )?;
     let replacements = replacement_evidence(request.source, request.symbol, project)?;
     let cfg_path = request
         .cfg_path
@@ -87,7 +130,7 @@ pub(crate) fn investigate(
         }
     };
     let report = FunctionInvestigationReport {
-        schema_version: 18,
+        schema_version: 20,
         command: "inspect function",
         source: request.source.to_owned(),
         symbol: request.symbol.to_owned(),
@@ -143,7 +186,7 @@ pub(crate) fn investigate(
 }
 
 fn validate_report(report: &FunctionInvestigationReport) -> Result<()> {
-    if report.schema_version != 18 || report.command != "inspect function" {
+    if report.schema_version != 20 || report.command != "inspect function" {
         return Err(crate::Error::invalid(
             "function investigation report uses an unsupported schema or command",
         ));
@@ -249,12 +292,11 @@ fn reviewed_path_knowledge(
     source: &str,
     symbol: &str,
     address: u64,
-    project: &ProjectSpec,
+    pack: Option<&crate::function_workspace::FunctionPack>,
 ) -> Result<(Vec<ReviewedPreconditionEvidence>, Vec<ReviewedPathEvidence>)> {
-    let Some(workspace) = &project.functions else {
+    let Some(pack) = pack else {
         return Ok((Vec::new(), Vec::new()));
     };
-    let pack = crate::function_workspace::FunctionPack::load_reviewed(&workspace.pack)?;
     let identity = format!("{source}::{symbol}@{address:#010x}");
     let Some(function) = pack
         .functions
@@ -294,11 +336,11 @@ struct SemanticEvidenceRequest<'a> {
     include_callers: bool,
     include_linked_ir_record: bool,
     origin: Option<&'a OriginFunctionEvidence>,
-    project: &'a ProjectSpec,
 }
 
 fn semantic_evidence(
     request: SemanticEvidenceRequest<'_>,
+    inputs: &InvestigationInputs<'_>,
 ) -> Result<Vec<SemanticFunctionEvidence>> {
     let SemanticEvidenceRequest {
         source,
@@ -308,23 +350,18 @@ fn semantic_evidence(
         include_callers,
         include_linked_ir_record,
         origin,
-        project,
     } = request;
+    let project = inputs.project;
     let mut evidence = Vec::new();
-    let function_pack = project
-        .functions
-        .as_ref()
-        .map(|workspace| crate::function_workspace::FunctionPack::load_reviewed(&workspace.pack))
-        .transpose()?;
+    let function_pack = inputs.function_pack;
     for profile in project
         .ir_profiles
         .iter()
         .filter(|profile| profile.sources.iter().any(|candidate| candidate == source))
     {
-        if !profile.output.is_dir() {
+        let Some(reader) = (inputs.ir)(&profile.output)? else {
             continue;
-        }
-        let reader = artifacts::LinkedIrReader::open(&profile.output)?;
+        };
         let (member, address) =
             origin.map_or((runtime.member.as_deref(), runtime.address), |origin| {
                 (
@@ -514,7 +551,7 @@ fn semantic_evidence(
                     && route.dispatcher == function.identity
             })
         {
-            reviewed_event_routes.push(event_route_evidence(route, &event_dispatches, project)?);
+            reviewed_event_routes.push(event_route_evidence(route, &event_dispatches, inputs)?);
         }
         let reviewed_callback_routes = function_pack
             .as_ref()
@@ -964,7 +1001,7 @@ fn compact_argument_value(value: &str) -> String {
 fn event_route_evidence(
     route: &crate::function_workspace::ReviewedSelectorEventRoute,
     dispatches: &[EventDispatchEvidence],
-    project: &ProjectSpec,
+    inputs: &InvestigationInputs<'_>,
 ) -> Result<ReviewedEventRouteEvidence> {
     let selector = format!("const:{:#010x}", route.selector_value);
     let dispatch_constraint_matched = dispatches.iter().any(|dispatch| {
@@ -990,7 +1027,7 @@ fn event_route_evidence(
     let consumer_analysis = dispatch_constraint_matched
         .then(|| {
             event_function_analysis(
-                project,
+                inputs,
                 &route.consumer_profile,
                 &route.consumer_source,
                 &route.consumer_entry,
@@ -1006,7 +1043,7 @@ fn event_route_evidence(
             .as_ref()
             .map(|handler| {
                 event_function_analysis(
-                    project,
+                    inputs,
                     &handler.profile,
                     &handler.source,
                     &handler.function,
@@ -1029,14 +1066,15 @@ fn event_route_evidence(
 }
 
 fn event_function_analysis(
-    project: &ProjectSpec,
+    inputs: &InvestigationInputs<'_>,
     profile_id: &str,
     source: &str,
     identity: &str,
     role: &str,
     blockers: &mut Vec<String>,
 ) -> Result<Option<EventHandlerAnalysisEvidence>> {
-    let Some(profile) = project
+    let Some(profile) = inputs
+        .project
         .ir_profiles
         .iter()
         .find(|profile| profile.id == profile_id)
@@ -1044,13 +1082,12 @@ fn event_function_analysis(
         blockers.push(format!("{role} profile {profile_id:?} is not configured"));
         return Ok(None);
     };
-    if !profile.output.is_dir() {
+    let Some(reader) = (inputs.ir)(&profile.output)? else {
         blockers.push(format!(
-            "{role} profile {profile_id:?} has not been generated"
+            "{role} profile {profile_id:?} has no available IR input"
         ));
         return Ok(None);
-    }
-    let reader = artifacts::LinkedIrReader::open(&profile.output)?;
+    };
     match reader.get_function_by_identity(identity)? {
         Some(function) if function.source == source => {
             let function_blockers = function.blockers().map(str::to_owned).collect();
@@ -1230,6 +1267,12 @@ mod tests {
     #[test]
     fn structural_cfg_path_is_explicitly_not_an_execution_claim() {
         let runtime = artifact::FunctionBody {
+            code_identity: crate::artifact::ArtifactSymbolDefinition::synthetic_identity(
+                module_path!(),
+                &None,
+                "body",
+                u64::from(line!()),
+            ),
             artifact: "fixture.elf".to_owned(),
             member: None,
             symbol: "root".to_owned(),

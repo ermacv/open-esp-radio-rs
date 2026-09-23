@@ -70,11 +70,30 @@ Selecting a function also loads the same project-aware report as
 visible after pseudo-Rust becomes incomplete, together with the proof ledger,
 raw archive origin, and reviewed preconditions/path classes.
 Register rows and heavyweight detail use the same arrangement. Selecting a
-register asks the worker for `register_detail(address)` once per snapshot
-generation. The detail pane shows name provenance, owning range, publication
+register asks the worker for `register_detail(&RegisterSelector::Subject(id))`
+once per snapshot generation. The cache uses the complete physical subject ID,
+so equal addresses in different domains cannot overwrite each other's detail.
+Worker replies carry the workspace generation and inventory content ID. A reply
+from an older generation is discarded even if its register graph is unchanged,
+because publication review data may have changed on reload.
+Search accepts the subject ID and full 64-bit address. Numeric function-to-register
+navigation reports ambiguity when several subjects share the address; explicit
+subject-to-function relations remain navigable. The detail pane shows name
+provenance, matching ranges, publication
 scope/debt, operational and non-operational users, width, review state,
 read/write/RMW counts, write masks, field candidates,
 direct/transitive predicates, polls and linked semantic operations.
+Inventory field and region counts cover the complete query. Publication review
+counts have their own optional summary; unavailable review is displayed as
+unknown rather than zero.
+The view also exposes source availability, indexed domains and global coverage
+gaps when no concrete register rows exist. An empty available inventory and a
+failed inventory load are displayed separately.
+Wide fields remain visible even when their mask cannot fit in the 32-bit
+summary; their geometry and unknown semantics are displayed explicitly.
+Opening the browser does not construct the 32-bit analysis catalog. Execution
+prepares its backend models separately and reports unsupported geometry as an
+execution error, leaving the query session available.
 The Interfaces view includes every discovered slot that remains unreviewed,
 not only semantic bindings already accepted by the interface pack. Such rows
 are explicitly labelled `unreviewed`, show their offset, optional indexed

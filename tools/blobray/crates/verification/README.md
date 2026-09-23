@@ -1,0 +1,25 @@
+# Blobray verification
+
+`blobray-verification` compares concrete observations through domain values. It
+has no filesystem, store, executor, provider-selection or publication authority.
+Application supplies the two observations and the shared operation control.
+
+The `ordered-mmio-fence-u32/1` relation compares the exact ordered MMIO reads,
+writes and fence events, and optionally the low 32-bit return value. Ordinary
+RAM, call boundaries, elapsed time and the high return register are outside this
+relation. No events are normalized away. A completed shorter trace contradicts
+an observed extra event on the other side even if that other execution stopped
+incomplete. An incomplete shorter prefix cannot prove a length difference.
+Unknown required returns and unfinished executions cannot yield `MATCH`.
+
+`DIFF` retains the first differing event index or a return mismatch. `INCOMPLETE`
+retains the execution gaps in the adjacent observations. The caller preserves
+those observations; the verifier neither mutates nor substitutes them. Every
+compared event consumes the same run's work budget. Exhaustion is an error, never
+a verdict. Application aggregates cases with `DIFF` taking precedence over
+`INCOMPLETE`, and publishes through the ordinary durable job lifecycle.
+
+The result applies to the explicitly enumerated cases and caller-declared
+compiled binding. It is neither whole-domain equivalence nor qualification.
+See [concrete execution](../../next/README.md#concrete-execution-and-comparison)
+for the recipe, session lifetime and supported environment.

@@ -571,7 +571,7 @@ fn memory_root_name(root: &open_radio_vendor_analysis_model::MemoryObjectRoot) -
     use open_radio_vendor_analysis_model::MemoryObjectRoot;
     match root {
         MemoryObjectRoot::Argument { index } => format!("arg{index}"),
-        MemoryObjectRoot::RelocatedSymbol { member, symbol } => {
+        MemoryObjectRoot::RelocatedSymbol { member, symbol, .. } => {
             format!("{}::{symbol}", member.as_deref().unwrap_or("linked"))
         }
         MemoryObjectRoot::Dereferenced {
@@ -620,17 +620,23 @@ pub(super) fn name_memory_reads(
         let token = remainder[token_start..token_end].parse::<u32>().ok();
         if let Some(location) = token.and_then(|token| read_sources.get(&token)) {
             output.push_str("memory:");
-            let mut offset = location.offset;
+            let offset = location.offset;
             if let open_radio_vendor_analysis_model::MemoryObjectRoot::Absolute { address } =
                 &location.root
-                && let Ok(resolved_address) = u32::try_from(i64::from(*address) + location.offset)
-                && let Some((member, symbol, symbol_offset)) =
-                    resolver.data_symbol_location(resolved_address, 32)
+                && let Some(resolved_address) = i64::from(*address)
+                    .checked_add(location.offset)
+                    .and_then(|value| u32::try_from(value).ok())
             {
-                output.push_str(member.unwrap_or("linked"));
-                output.push_str("::");
-                output.push_str(symbol);
-                offset = symbol_offset;
+                output.push_str(&memory_root_name(&location.root));
+                let resolution = ReferenceResolver::resolve_data_address(
+                    &resolver.data_symbols,
+                    resolved_address,
+                    None,
+                )
+                .with_basis(open_radio_vendor_contracts::DataAddressBasis::ReadLocationHint);
+                if !resolution.candidates().is_empty() {
+                    output.push_str(&format!(" [data-address:{resolution:?}]"));
+                }
             } else {
                 output.push_str(&memory_root_name(&location.root));
             }
@@ -924,7 +930,7 @@ mod tests {
     use open_radio_vendor_analysis_model::{MemoryObjectLocation, MemoryObjectRoot};
 
     #[test]
-    fn ram_read_argument_uses_the_containing_linked_data_symbol() {
+    fn ram_read_argument_preserves_absolute_address_and_candidate() {
         let resolver = ReferenceResolver {
             symbols: Vec::new(),
             symbols_by_address: BTreeMap::new(),
@@ -933,6 +939,10 @@ mod tests {
             relocated_calls: direct::StructuralRelocatedCalls::new(),
             pointer_context: direct::StructuralPointerContext::default(),
             data_symbols: vec![artifact::ArtifactDataSymbolDefinition {
+                identity: open_radio_vendor_contracts::DataIdentity::Synthetic {
+                    namespace: module_path!().to_owned(),
+                    key: "g_wifi_menuconfig".to_owned(),
+                },
                 member: None,
                 name: "g_wifi_menuconfig".to_owned(),
                 address: 0x1008_9a20,
@@ -940,7 +950,7 @@ mod tests {
                 exported: true,
             }],
             data_objects: Vec::new(),
-            projected_direct_semantics: BTreeMap::new(),
+            projected_direct_semantics: Default::default(),
             projected_origins: BTreeMap::new(),
         };
         let sources = BTreeMap::from([(
@@ -953,9 +963,16 @@ mod tests {
             },
         )]);
 
-        assert_eq!(
-            name_memory_reads("ram:read7", &sources, &resolver),
-            "memory:linked::g_wifi_menuconfig+0x34"
+        let rendered = name_memory_reads("ram:read7", &sources, &resolver);
+        assert!(rendered.contains("0x10089a54"), "{rendered}");
+        assert!(
+            rendered.contains("Candidate") && rendered.contains("g_wifi_menuconfig"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("offset: 52"), "{rendered}");
+        assert!(
+            rendered.contains("ReadLocationHint") && rendered.contains("width: None"),
+            "{rendered}"
         );
     }
 }

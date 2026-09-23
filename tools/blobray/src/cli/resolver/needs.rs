@@ -187,9 +187,10 @@ impl ResolutionNeeds {
                 Self::new(true, false, false, false, false, false, false)
             }
             Command::InspectScope(_) => Self::new(true, false, false, false, false, false, false),
-            Command::GenerateReference(_)
-            | Command::GenerateReferenceBatch(_)
-            | Command::InspectAnalyze(_) => {
+            Command::InspectAnalyze(_) => Self::new(true, true, false, true, true, true, true)
+                .with_review_context()
+                .with_configured_knowledge_provider(),
+            Command::GenerateReference(_) | Command::GenerateReferenceBatch(_) => {
                 Self::new(true, true, true, true, true, true, true).with_review_context()
             }
             Command::VerifyInventory(_) | Command::VerifySource(_) => {

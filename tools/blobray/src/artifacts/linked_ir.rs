@@ -68,9 +68,55 @@ mod tests {
             inspect_linked_ir(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("expected schema_version 69")
+                .contains("expected schema_version 73")
         );
         std::fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn lazy_bundle_reads_keep_captured_files_after_directory_replacement() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("bundle");
+        super::super::write_fixture_bundle(&path, &document().to_string()).unwrap();
+        std::fs::write(
+            path.join("graph.json"),
+            serde_json::json!({
+                "schema_version": super::super::LINKED_IR.version,
+                "command": "ir graph index",
+                "edges": [{"caller": "root", "callee": "child", "site": 1, "kind": "internal"}]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let reader = super::super::LinkedIrReader::open(&path).unwrap();
+        let retired = directory.path().join("retired");
+        std::fs::rename(&path, &retired).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        for member in super::super::BUNDLE_FILES {
+            std::fs::write(path.join(member), "different generation").unwrap();
+        }
+        std::fs::remove_dir_all(retired).unwrap();
+        assert!(reader.read_registers().unwrap().is_empty());
+        assert!(
+            reader
+                .read_review_projection()
+                .unwrap()
+                .functions
+                .is_empty()
+        );
+        assert!(reader.get_function_by_identity("absent").unwrap().is_none());
+        let graph = reader
+            .reachable_from(
+                "root",
+                super::super::GraphSearchLimits {
+                    max_depth: 2,
+                    max_visited_nodes: 4,
+                    max_examined_edges: 4,
+                },
+            )
+            .unwrap();
+        assert!(graph.identities.contains("child"));
+        assert!(super::super::LinkedIrReader::open(&path).is_err());
     }
 
     #[test]

@@ -24,6 +24,13 @@ use sha2::{Digest, Sha256};
 
 use crate::Result;
 
+mod read_view;
+use read_view::{PackAccess, ReadView};
+
+mod reader;
+pub(crate) use reader::QueryReader;
+mod publication;
+
 mod access_lock;
 use access_lock::AccessLock;
 
@@ -46,8 +53,8 @@ const COMPACT_MIN_PACK_BYTES: u64 = 256 * 1024 * 1024;
 const COMPACT_MIN_RECLAIMABLE_BYTES: u64 = 64 * 1024 * 1024;
 const COMPACT_MIN_RECLAIMABLE_PERCENT: u8 = 25;
 const COMPACT_FREE_SPACE_RESERVE_BYTES: u64 = 8 * 1024 * 1024;
-static NEXT_RESTORE_ID: AtomicU64 = AtomicU64::new(0);
 static NEXT_ANALYSIS_EPOCH_ID: AtomicU64 = AtomicU64::new(0);
+static NEXT_COMPACTION_ID: AtomicU64 = AtomicU64::new(0);
 
 struct PreparedFunctionFact<'a> {
     query_key: &'a str,
@@ -506,6 +513,7 @@ impl CacheTreeFingerprint {
 
 pub(crate) struct QueryStore {
     connection: PinnedConnection,
+    project_manifest: PathBuf,
     /// Stable user-facing path. Blobray's direct filesystem and pack access
     /// goes through `storage_root`; on Linux that root is held by a directory
     /// descriptor. SQLite is opened there but may canonicalize it internally.
@@ -519,8 +527,8 @@ pub(crate) struct QueryStore {
     /// analysis replaces this with a fresh, unpublished epoch.
     active_epoch: Option<String>,
     /// Fresh epoch owned by one complete project-analysis run. This remains
-    /// absent for focused writers and read-only snapshots, making activation
-    /// impossible outside the coordinator success boundary.
+    /// absent for focused writers, making activation impossible outside the
+    /// coordinator success boundary.
     publishing_epoch: Option<String>,
     /// Last atomically published complete project-analysis epoch. Reads are
     /// restricted to this snapshot plus the standalone focused scope and the
@@ -533,6 +541,7 @@ pub(crate) struct QueryStore {
     _root_pin: PinnedCacheRoot,
     // Declared after the connection: SQLite closes before the final unlock.
     _access_lock: Arc<AccessLock>,
+    database_file: File,
 }
 
 struct StageFunctionQueries {
@@ -729,32 +738,18 @@ impl QueryStore {
         }
         validate_epoch_id(&active_epoch)?;
         validate_published_epoch(&connection, &active_epoch)?;
-        let root_pin = guard.pinned_root.try_clone()?;
-        let storage_root = root_pin.storage_root.clone();
-        let store = Self {
-            connection: PinnedConnection::read_only(connection),
-            root: guard.root.clone(),
-            root_identity: guard.root_identity.clone(),
-            storage_root,
-            pack_path: guard.root.join(active_pack),
-            next_pack_generation: next_pack_generation as u64,
-            active_epoch: None,
+        let view = ReadView {
+            connection: &connection,
+            root: &guard.root,
+            root_identity: &guard.root_identity,
+            storage_root: &guard.pinned_root.storage_root,
+            database_file: guard.access_lock.file(),
+            published_epoch: Some(&active_epoch),
             publishing_epoch: None,
-            published_epoch: Some(active_epoch),
-            stage_function_queries: BTreeMap::new(),
-            active_function_query_stage: None,
-            _root_pin: root_pin,
-            _access_lock: Arc::clone(&guard.access_lock),
+            packs: PackAccess::Directory(&guard.pinned_root.storage_root),
         };
-        let result = store.stage_output_digests(query_key)?;
-        if validate_payloads && let Some(digests) = result.as_ref() {
-            // A cache record is restorable only when every generated output
-            // still has a complete payload matching its content digest.
-            for digest in digests {
-                store.validate_object_payload(digest)?;
-            }
-        }
-        drop(store);
+        let result = view.validated_stage_output_digests(query_key, validate_payloads)?;
+        drop(connection);
 
         let postflight = fingerprint_cache_tree(&guard.pinned_root.storage_root)?;
         reject_nonempty_wal(&postflight, &guard.database_path)?;
@@ -1625,6 +1620,7 @@ impl QueryStore {
         validate_published_epoch(&connection, &active_epoch)?;
         let mut store = Self {
             connection,
+            project_manifest: super::published_outputs::project_locator(project_manifest)?,
             pack_path: root.join(active_pack),
             root,
             root_identity,
@@ -1639,6 +1635,7 @@ impl QueryStore {
             stage_function_queries: BTreeMap::new(),
             active_function_query_stage: None,
             _root_pin: root_pin,
+            database_file: access_lock.file().try_clone()?,
             _access_lock: access_lock,
         };
         if cleanup_orphan_packs {
@@ -1893,14 +1890,21 @@ impl QueryStore {
         Ok(plan)
     }
 
+    fn read_view(&self) -> ReadView<'_> {
+        ReadView {
+            connection: &self.connection,
+            root: &self.root,
+            root_identity: &self.root_identity,
+            storage_root: &self.storage_root,
+            database_file: &self.database_file,
+            published_epoch: self.published_epoch.as_deref(),
+            publishing_epoch: self.publishing_epoch.as_deref(),
+            packs: PackAccess::Directory(&self.storage_root),
+        }
+    }
+
     fn validate_root_identity(&self) -> Result<()> {
-        self.root_identity.validate(&self.root)?;
-        verify_open_file_path(
-            self._access_lock.file(),
-            &self.storage_root.join("queries.sqlite3"),
-            "query cache database",
-        )?;
-        self.root_identity.validate(&self.root)
+        self.read_view().validate_root_identity()
     }
 
     fn writable_active_epoch(&self) -> Result<&str> {
@@ -1910,20 +1914,7 @@ impl QueryStore {
     }
 
     fn visible_epoch_sql_list(&self) -> Result<String> {
-        let mut epochs = BTreeSet::from([standalone_epoch_id()]);
-        if let Some(epoch) = self.published_epoch.as_deref() {
-            validate_epoch_id(epoch)?;
-            epochs.insert(epoch.to_owned());
-        }
-        if let Some(epoch) = self.publishing_epoch.as_deref() {
-            validate_epoch_id(epoch)?;
-            epochs.insert(epoch.to_owned());
-        }
-        Ok(epochs
-            .into_iter()
-            .map(|epoch| format!("'{epoch}'"))
-            .collect::<Vec<_>>()
-            .join(", "))
+        self.read_view().visible_epoch_sql_list()
     }
 
     fn active_storage_pack_path(&self) -> Result<PathBuf> {
@@ -1942,36 +1933,7 @@ impl QueryStore {
     }
 
     pub(crate) fn stage_output_digests(&self, query_key: &str) -> Result<Option<Vec<String>>> {
-        self.validate_root_identity()?;
-        let visible_epochs = self.visible_epoch_sql_list()?;
-        let kind = self
-            .connection
-            .query_row(
-                &format!(
-                    "SELECT result.kind FROM query_results AS result
-                     WHERE result.query_key = ?1
-                       AND EXISTS (
-                           SELECT 1 FROM query_epoch_members AS member
-                           WHERE member.query_key = result.query_key
-                             AND member.epoch_id IN ({visible_epochs})
-                       )"
-                ),
-                [query_key],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(|error| store_error("read cached stage result kind", error))?;
-        let Some(kind) = kind else {
-            return Ok(None);
-        };
-        if kind != "project-stage" {
-            return Err(crate::Error::invalid(format!(
-                "query {query_key:?} is {kind:?}, not a project-stage result"
-            )));
-        }
-        self.get(query_key)?
-            .map(|value| serde_json::from_slice(&value).map_err(Into::into))
-            .transpose()
+        self.read_view().stage_output_digests(query_key)
     }
 
     /// Start a stage's dependency scope. Completed scopes remain available for
@@ -2249,69 +2211,14 @@ impl QueryStore {
         self.validate_root_identity()
     }
 
-    pub(crate) fn restore_output(&self, digest: &str, destination: &Path) -> Result<()> {
+    pub(crate) fn restore_output(
+        &self,
+        digest: &str,
+        output: super::generated_file::GeneratedOutput<'_>,
+    ) -> Result<()> {
         self.validate_root_identity()?;
         let (mut pack, length) = self.open_object(digest)?;
-        let parent = destination.parent().unwrap_or_else(|| Path::new("."));
-        fs::create_dir_all(parent)?;
-        let name = destination
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("output");
-        let restore_id = NEXT_RESTORE_ID.fetch_add(1, Ordering::Relaxed);
-        let temporary = parent.join(format!(
-            ".{name}.blobray-restore-{}-{restore_id}",
-            std::process::id()
-        ));
-        let result = (|| -> Result<()> {
-            let mut output = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temporary)?;
-            let mut remaining = length;
-            let mut hasher = Sha256::new();
-            let mut buffer = [0_u8; 64 * 1024];
-            while remaining != 0 {
-                let requested = usize::try_from(remaining.min(buffer.len() as u64))
-                    .expect("bounded restore read");
-                pack.read_exact(&mut buffer[..requested])?;
-                output.write_all(&buffer[..requested])?;
-                hasher.update(&buffer[..requested]);
-                remaining -= requested as u64;
-            }
-            if format!("{:x}", hasher.finalize()) != digest {
-                return Err(crate::Error::invalid(format!(
-                    "query cache object {digest} failed its content digest"
-                )));
-            }
-            output.flush()?;
-            output.sync_data()?;
-            fs::rename(&temporary, destination)?;
-            Ok(())
-        })();
-        if result.is_err() && temporary.is_file() {
-            let _ = fs::remove_file(temporary);
-        }
-        result
-    }
-
-    fn validate_object_payload(&self, digest: &str) -> Result<()> {
-        let (mut pack, mut remaining) = self.open_object(digest)?;
-        let mut hasher = Sha256::new();
-        let mut buffer = [0_u8; 64 * 1024];
-        while remaining != 0 {
-            let requested = usize::try_from(remaining.min(buffer.len() as u64))
-                .expect("bounded cache validation read");
-            pack.read_exact(&mut buffer[..requested])?;
-            hasher.update(&buffer[..requested]);
-            remaining -= requested as u64;
-        }
-        if format!("{:x}", hasher.finalize()) != digest {
-            return Err(crate::Error::invalid(format!(
-                "query cache object {digest} failed its content digest"
-            )));
-        }
-        Ok(())
+        output.verified_stream(&mut pack, length, digest)
     }
 
     /// Store one completed immutable query value and its direct query edges.
@@ -2432,54 +2339,6 @@ impl QueryStore {
             .map_err(|error| store_error("commit query-result transaction", error))?;
         self.validate_root_identity()?;
         Ok(result_digest)
-    }
-
-    pub(crate) fn get(&self, query_key: &str) -> Result<Option<Vec<u8>>> {
-        self.validate_root_identity()?;
-        let visible_epochs = self.visible_epoch_sql_list()?;
-        let location = self
-            .connection
-            .query_row(
-                &format!(
-                    "SELECT result.result_digest, result.inline_value, result.object_digest
-                     FROM query_results AS result
-                     WHERE result.query_key = ?1
-                       AND EXISTS (
-                           SELECT 1 FROM query_epoch_members AS member
-                           WHERE member.query_key = result.query_key
-                             AND member.epoch_id IN ({visible_epochs})
-                       )"
-                ),
-                [query_key],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, Option<Vec<u8>>>(1)?,
-                        row.get::<_, Option<String>>(2)?,
-                    ))
-                },
-            )
-            .optional()
-            .map_err(|error| store_error("read query result", error))?;
-        let Some((expected_digest, inline, object)) = location else {
-            return Ok(None);
-        };
-        let value = match (inline, object) {
-            (Some(value), None) => value,
-            (None, Some(digest)) => self.read_object(&digest)?,
-            _ => {
-                return Err(crate::Error::invalid(format!(
-                    "query cache entry {query_key:?} has an invalid value location"
-                )));
-            }
-        };
-        if sha256_hex(&value) != expected_digest {
-            return Err(crate::Error::invalid(format!(
-                "query cache entry {query_key:?} failed its content digest"
-            )));
-        }
-        self.validate_root_identity()?;
-        Ok(Some(value))
     }
 
     /// Store many small immutable function facts in one SQLite transaction.
@@ -2800,95 +2659,11 @@ impl QueryStore {
     }
 
     fn read_object(&self, digest: &str) -> Result<Vec<u8>> {
-        let (mut pack, length) = self.open_object(digest)?;
-        let mut value = vec![
-            0_u8;
-            usize::try_from(length).map_err(|_| {
-                crate::Error::invalid(format!("query cache object {digest} is too large"))
-            })?
-        ];
-        pack.read_exact(&mut value)?;
-        Ok(value)
+        self.read_view().read_object(digest)
     }
 
-    fn open_object(&self, digest: &str) -> Result<(File, u64)> {
-        self.validate_root_identity()?;
-        let (pack_name, offset, length) = self
-            .connection
-            .query_row(
-                "SELECT pack_name, pack_offset, payload_length FROM objects WHERE digest = ?1",
-                [digest],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, i64>(1)?,
-                        row.get::<_, i64>(2)?,
-                    ))
-                },
-            )
-            .optional()
-            .map_err(|error| store_error("locate cached object", error))?
-            .ok_or_else(|| {
-                crate::Error::invalid(format!("query cache object {digest} is missing"))
-            })?;
-        let offset = u64::try_from(offset).map_err(|_| {
-            crate::Error::invalid(format!("query cache object {digest} has a negative offset"))
-        })?;
-        let length = u64::try_from(length).map_err(|_| {
-            crate::Error::invalid(format!("query cache object {digest} has a negative length"))
-        })?;
-        if !is_pack_name(&pack_name) {
-            return Err(crate::Error::invalid(format!(
-                "query cache object {digest} references invalid pack name {pack_name:?}"
-            )));
-        }
-        let pack_path = self.root.join(&pack_name);
-        let storage_pack_path = self.storage_root.join(&pack_name);
-        let metadata = fs::symlink_metadata(&storage_pack_path).map_err(|error| {
-            crate::Error::invalid(format!(
-                "cannot inspect query cache pack {}: {error}",
-                pack_path.display()
-            ))
-        })?;
-        if metadata.file_type().is_symlink() || !metadata.is_file() {
-            return Err(crate::Error::invalid(format!(
-                "query cache indexed pack {} is not a regular file",
-                pack_path.display()
-            )));
-        }
-        let required = offset
-            .checked_add(PACK_HEADER_BYTES)
-            .and_then(|end| end.checked_add(length))
-            .ok_or_else(|| {
-                crate::Error::invalid(format!(
-                    "query cache object {digest} has an overflowing pack extent"
-                ))
-            })?;
-        if metadata.len() < required {
-            return Err(crate::Error::invalid(format!(
-                "query cache pack {} has {} bytes but object {digest} requires {required}",
-                pack_path.display(),
-                metadata.len()
-            )));
-        }
-        let mut pack = open_cache_file_read_only(&storage_pack_path)?;
-        pack.seek(SeekFrom::Start(offset))?;
-        let mut magic = [0_u8; 8];
-        let mut stored_digest = [0_u8; 32];
-        let mut stored_length = [0_u8; 8];
-        pack.read_exact(&mut magic)?;
-        pack.read_exact(&mut stored_digest)?;
-        pack.read_exact(&mut stored_length)?;
-        if &magic != PACK_RECORD_MAGIC
-            || stored_digest != hex_digest(digest)?
-            || u64::from_le_bytes(stored_length) != length
-        {
-            return Err(crate::Error::invalid(format!(
-                "query cache object {digest} has an invalid pack header"
-            )));
-        }
-        pack.seek(SeekFrom::Start(offset + PACK_HEADER_BYTES))?;
-        Ok((pack, length))
+    fn open_object(&self, digest: &str) -> Result<(crate::file_view::FileCursor, u64)> {
+        self.read_view().open_object(digest)
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -2973,7 +2748,7 @@ impl QueryStore {
         let temporary = self.storage_root.join(format!(
             ".{pack_name}.compact-{}-{}",
             std::process::id(),
-            NEXT_RESTORE_ID.fetch_add(1, Ordering::Relaxed)
+            NEXT_COMPACTION_ID.fetch_add(1, Ordering::Relaxed)
         ));
         let write_result = (|| -> Result<(PackedObjectLocations, File)> {
             let mut output = OpenOptions::new()
@@ -3085,6 +2860,16 @@ impl QueryStore {
     #[cfg(target_os = "linux")]
     fn remove_unreferenced_pack_files(&mut self) -> Result<()> {
         self.validate_root_identity()?;
+        // Readers hold this short guard only while pinning pack descriptors.
+        // Appends and SQLite publication do not require it. A later cleanup
+        // can reclaim names if a snapshot is currently being opened.
+        let directory = File::open(&self.storage_root)?;
+        match directory.try_lock() {
+            Ok(()) => {}
+            Err(std::fs::TryLockError::WouldBlock) => return Ok(()),
+            Err(error) => return Err(std::io::Error::from(error).into()),
+        }
+        let _pack_guard = AccessLock::new(directory);
         let mut referenced = BTreeSet::new();
         referenced.insert(
             self.pack_path
@@ -4126,26 +3911,6 @@ impl PinnedCacheRoot {
         }
     }
 
-    fn try_clone(&self) -> Result<Self> {
-        #[cfg(target_os = "linux")]
-        {
-            use std::os::fd::AsRawFd;
-
-            let directory = self.directory.try_clone()?;
-            let storage_root = PathBuf::from(format!("/proc/self/fd/{}/.", directory.as_raw_fd()));
-            Ok(Self {
-                storage_root,
-                directory,
-            })
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            Ok(Self {
-                storage_root: self.storage_root.clone(),
-            })
-        }
-    }
-
     fn sync_directory(&self) -> Result<()> {
         #[cfg(target_os = "linux")]
         self.directory.sync_all()?;
@@ -4233,6 +3998,11 @@ impl Drop for PinnedConnection {
 }
 
 fn truncate_wal_if_unblocked(connection: &Connection) -> bool {
+    // A live reader legitimately pins older WAL frames. Writer shutdown must
+    // leave them to SQLite, not wait for the writer busy timeout to expire.
+    if connection.busy_timeout(Duration::ZERO).is_err() {
+        return false;
+    }
     connection
         .query_row("PRAGMA wal_checkpoint(TRUNCATE);", [], |row| {
             Ok(WalCheckpointStatus {
@@ -4506,8 +4276,14 @@ mod tests {
             store.complete_analysis_epoch().unwrap();
         }
         let store = QueryStore::open_analysis_epoch(&manifest).unwrap();
-        assert_eq!(store.get("leaf").unwrap(), Some(b"leaf".to_vec()));
-        assert_eq!(store.get("middle").unwrap(), Some(b"middle".to_vec()));
+        assert_eq!(
+            store.read_view().get("leaf").unwrap(),
+            Some(b"leaf".to_vec())
+        );
+        assert_eq!(
+            store.read_view().get("middle").unwrap(),
+            Some(b"middle".to_vec())
+        );
     }
 
     #[test]
@@ -4643,7 +4419,7 @@ mod tests {
             store.stage_output_digests("stage").unwrap(),
             Some(Vec::new())
         );
-        assert!(store.get("hidden").unwrap().is_none());
+        assert!(store.read_view().get("hidden").unwrap().is_none());
 
         let error = store
             .bind_restored_stage("linked-ir", "stage", &[], &[])
@@ -4654,7 +4430,7 @@ mod tests {
                 .to_string()
                 .contains("outside the visible analysis snapshot")
         );
-        assert!(store.get("hidden").unwrap().is_none());
+        assert!(store.read_view().get("hidden").unwrap().is_none());
         assert_eq!(
             store
                 .connection
@@ -5165,7 +4941,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            failed.get("shared-query").unwrap(),
+            failed.read_view().get("shared-query").unwrap(),
             Some(serde_json::to_vec(&[digest]).unwrap())
         );
         assert_eq!(
@@ -5373,7 +5149,7 @@ mod tests {
                 .unwrap(),
             1
         );
-        assert_eq!(successful.get("pinned-only").unwrap(), None);
+        assert_eq!(successful.read_view().get("pinned-only").unwrap(), None);
         assert_eq!(
             successful
                 .connection
@@ -5858,8 +5634,14 @@ mod tests {
         drop(external);
 
         let store = QueryStore::open(&manifest).unwrap();
-        assert_eq!(store.get("first").unwrap().unwrap(), b"first result");
-        assert_eq!(store.get("second").unwrap().unwrap(), b"second result");
+        assert_eq!(
+            store.read_view().get("first").unwrap().unwrap(),
+            b"first result"
+        );
+        assert_eq!(
+            store.read_view().get("second").unwrap().unwrap(),
+            b"second result"
+        );
     }
 
     #[test]
@@ -6030,9 +5812,9 @@ mod tests {
             .put("large-b", "function", "inputs-c", &[], &large)
             .unwrap();
 
-        assert_eq!(store.get("small").unwrap().unwrap(), small);
-        assert_eq!(store.get("large-a").unwrap().unwrap(), large);
-        assert_eq!(store.get("large-b").unwrap().unwrap(), large);
+        assert_eq!(store.read_view().get("small").unwrap().unwrap(), small);
+        assert_eq!(store.read_view().get("large-a").unwrap().unwrap(), large);
+        assert_eq!(store.read_view().get("large-b").unwrap().unwrap(), large);
         assert_eq!(
             fs::metadata(&store.pack_path).unwrap().len(),
             first_pack_length
@@ -6456,9 +6238,54 @@ mod tests {
             .unwrap();
         let destination = manifest.parent().unwrap().join("full/functions.jsonl");
 
-        store.restore_output(&digest, &destination).unwrap();
+        store
+            .restore_output(
+                &digest,
+                super::super::generated_file::GeneratedOutput::new(
+                    &destination,
+                    false,
+                    "cached output",
+                ),
+            )
+            .unwrap();
 
-        assert_eq!(fs::read(destination).unwrap(), b"function-facts");
+        assert_eq!(fs::read(&destination).unwrap(), b"function-facts");
+
+        // A corrupt CAS frame must not replace a previously published file.
+        let offset: i64 = store
+            .connection
+            .query_row(
+                "SELECT pack_offset FROM objects WHERE digest = ?1",
+                [&digest],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let mut pack = OpenOptions::new()
+            .write(true)
+            .open(&store.pack_path)
+            .unwrap();
+        pack.seek(SeekFrom::Start(
+            u64::try_from(offset).unwrap() + PACK_HEADER_BYTES,
+        ))
+        .unwrap();
+        pack.write_all(b"corrupt").unwrap();
+        pack.sync_all().unwrap();
+        let error = store
+            .restore_output(
+                &digest,
+                super::super::generated_file::GeneratedOutput::new(
+                    &destination,
+                    false,
+                    "cached output",
+                ),
+            )
+            .unwrap_err();
+        assert!(error.to_string().contains("failed content identity"));
+        assert_eq!(fs::read(&destination).unwrap(), b"function-facts");
+        assert_eq!(
+            fs::read_dir(destination.parent().unwrap()).unwrap().count(),
+            1
+        );
     }
 
     #[test]
@@ -6472,7 +6299,10 @@ mod tests {
             .put("function-key", "function", "inputs", &[], b"result-b")
             .unwrap_err();
         assert!(error.to_string().contains("different immutable result"));
-        assert_eq!(store.get("function-key").unwrap().unwrap(), b"result-a");
+        assert_eq!(
+            store.read_view().get("function-key").unwrap().unwrap(),
+            b"result-a"
+        );
     }
 
     #[test]
@@ -6491,8 +6321,14 @@ mod tests {
         store.put_function_fact_batch(&facts).unwrap();
         store.put_function_fact_batch(&facts).unwrap();
 
-        assert_eq!(store.get("function-direct:a").unwrap().unwrap(), b"fact-a");
-        assert_eq!(store.get("function-direct:b").unwrap().unwrap(), b"fact-b");
+        assert_eq!(
+            store.read_view().get("function-direct:a").unwrap().unwrap(),
+            b"fact-a"
+        );
+        assert_eq!(
+            store.read_view().get("function-direct:b").unwrap().unwrap(),
+            b"fact-b"
+        );
         assert_eq!(
             <QueryStore as crate::analysis::FunctionFactStore>::load_function_facts(
                 &store,
@@ -6546,9 +6382,16 @@ mod tests {
                 .unwrap(),
             facts.len() as i64
         );
-        assert_eq!(store.get(&facts[0].0).unwrap().unwrap(), facts[0].1);
         assert_eq!(
-            store.get(&facts.last().unwrap().0).unwrap().unwrap(),
+            store.read_view().get(&facts[0].0).unwrap().unwrap(),
+            facts[0].1
+        );
+        assert_eq!(
+            store
+                .read_view()
+                .get(&facts.last().unwrap().0)
+                .unwrap()
+                .unwrap(),
             facts.last().unwrap().1
         );
     }
@@ -6834,7 +6677,10 @@ mod tests {
 
         assert_ne!(store.pack_path, old_pack);
         assert!(!old_pack.exists());
-        assert_eq!(store.get("live-function").unwrap().unwrap(), live);
+        assert_eq!(
+            store.read_view().get("live-function").unwrap().unwrap(),
+            live
+        );
         assert!(store.open_object(&retired_digest).is_ok());
         assert_eq!(pack_files(&store.root).unwrap(), vec![store.pack_path]);
     }
@@ -6873,7 +6719,10 @@ mod tests {
         assert!(result.reclaimed_bytes > 0);
         assert_eq!(result.final_root_bytes, plan.projected_root_bytes);
         let store = QueryStore::open(&manifest).unwrap();
-        assert_eq!(store.get("live-function").unwrap().unwrap(), live);
+        assert_eq!(
+            store.read_view().get("live-function").unwrap().unwrap(),
+            live
+        );
         assert!(store.stage_output_digests("old-query").unwrap().is_none());
     }
 
@@ -6904,7 +6753,10 @@ mod tests {
         assert!(error.to_string().contains("over --max-size"));
         assert_eq!(snapshot_tree(project_root), before);
         let store = QueryStore::open(&manifest).unwrap();
-        assert_eq!(store.get("live-function").unwrap().unwrap(), live);
+        assert_eq!(
+            store.read_view().get("live-function").unwrap().unwrap(),
+            live
+        );
     }
 
     #[cfg(target_os = "linux")]
@@ -6956,7 +6808,10 @@ mod tests {
         assert_eq!(result.pruned_objects, 1);
         assert!(result.reclaimed_bytes > 0);
         let store = QueryStore::open(&manifest).unwrap();
-        assert_eq!(store.get("live-function").unwrap().unwrap(), live);
+        assert_eq!(
+            store.read_view().get("live-function").unwrap().unwrap(),
+            live
+        );
         assert!(store.open_object(&retired_digest).is_err());
         assert_eq!(
             store
@@ -7003,7 +6858,10 @@ mod tests {
         assert!(error.to_string().contains("over --max-size"));
         assert_eq!(snapshot_tree(project_root), before);
         let store = QueryStore::open(&manifest).unwrap();
-        assert_eq!(store.get("live-function").unwrap().unwrap(), live);
+        assert_eq!(
+            store.read_view().get("live-function").unwrap().unwrap(),
+            live
+        );
         assert_eq!(
             store
                 .connection
@@ -7050,7 +6908,10 @@ mod tests {
         assert!(error.to_string().contains("over --max-size"));
         assert_eq!(snapshot_tree(project_root), before);
         let store = QueryStore::open(&manifest).unwrap();
-        assert_eq!(store.get("live-function").unwrap().unwrap(), live);
+        assert_eq!(
+            store.read_view().get("live-function").unwrap().unwrap(),
+            live
+        );
     }
 
     #[test]

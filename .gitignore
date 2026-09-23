@@ -1,5 +1,7 @@
 /target/
 **/target/
+**/.blobray-next/
+**/.blobray-next-init-*/
 crates/composition/**/Cargo.lock
 !crates/composition/esp32s31/embassy/ieee80211/Cargo.lock
 **/*.swp

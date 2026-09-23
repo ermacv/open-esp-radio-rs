@@ -199,6 +199,12 @@ fn call_summary_substitutes_caller_owned_memory_addresses() {
 #[test]
 fn exact_callee_pointer_return_preserves_global_object_provenance_in_parent() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "returned_pointer_parent",
+            0x1000,
+        ),
         member: None,
         name: "returned_pointer_parent".to_owned(),
         address: 0x1000,
@@ -215,6 +221,12 @@ fn exact_callee_pointer_return_preserves_global_object_provenance_in_parent() {
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(Some("pointer_owner.o".to_owned())),
+            "return_global_pointer",
+            0x2000,
+        ),
         member: Some("pointer_owner.o".to_owned()),
         name: "return_global_pointer".to_owned(),
         address: 0x2000,
@@ -231,6 +243,9 @@ fn exact_callee_pointer_return_preserves_global_object_provenance_in_parent() {
     context.projected_relocations.insert(
         StructuralCallSite::new(&child, 0x2000),
         vec![StructuralProjectedRelocation {
+            reference: open_radio_vendor_contracts::SymbolReference::Unknown {
+                reason: "synthetic fixture".to_owned(),
+            },
             origin_member: Some("pointer_owner.o".to_owned()),
             origin_symbol: "return_global_pointer".to_owned(),
             origin_offsets: vec![0],
@@ -323,6 +338,12 @@ fn exact_callee_pointer_return_preserves_global_object_provenance_in_parent() {
 #[test]
 fn unresolved_callee_result_does_not_authorize_parent_memory_access() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "opaque_pointer_parent",
+            0x1000,
+        ),
         member: None,
         name: "opaque_pointer_parent".to_owned(),
         address: 0x1000,
@@ -379,6 +400,12 @@ fn private_stack_round_trips_symbolic_values_and_sign_extension() {
 #[test]
 fn unused_callee_write_to_caller_private_stack_is_internal_scratch() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "private_stack_parent",
+            0x1000,
+        ),
         member: None,
         name: "private_stack_parent".to_owned(),
         address: 0x1000,
@@ -393,6 +420,12 @@ fn unused_callee_write_to_caller_private_stack_is_internal_scratch() {
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "private_stack_writer",
+            0x2000,
+        ),
         member: None,
         name: "private_stack_writer".to_owned(),
         address: 0x2000,
@@ -429,6 +462,12 @@ fn unused_callee_write_to_caller_private_stack_is_internal_scratch() {
 #[test]
 fn consumed_callee_write_to_caller_private_stack_is_composed() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "private_stack_reader",
+            0x1000,
+        ),
         member: None,
         name: "private_stack_reader".to_owned(),
         address: 0x1000,
@@ -443,6 +482,12 @@ fn consumed_callee_write_to_caller_private_stack_is_composed() {
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "private_stack_writer",
+            0x2000,
+        ),
         member: None,
         name: "private_stack_writer".to_owned(),
         address: 0x2000,
@@ -478,6 +523,12 @@ fn consumed_callee_write_to_caller_private_stack_is_composed() {
 #[test]
 fn callee_read_from_initialized_caller_private_stack_is_composed() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "private_stack_input_parent",
+            0x1000,
+        ),
         member: None,
         name: "private_stack_input_parent".to_owned(),
         address: 0x1000,
@@ -493,6 +544,12 @@ fn callee_read_from_initialized_caller_private_stack_is_composed() {
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "private_stack_reader",
+            0x2000,
+        ),
         member: None,
         name: "private_stack_reader".to_owned(),
         address: 0x2000,
@@ -526,6 +583,12 @@ fn callee_read_from_initialized_caller_private_stack_is_composed() {
 #[test]
 fn entry_stack_argument_is_a_distinct_rv32_abi_input() {
     let symbol = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "stack_argument_reader",
+            0x1000,
+        ),
         member: None,
         name: "stack_argument_reader".to_owned(),
         address: 0x1000,
@@ -569,6 +632,12 @@ fn entry_stack_argument_is_a_distinct_rv32_abi_input() {
 #[test]
 fn outgoing_stack_argument_is_substituted_into_a_direct_callee() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "stack_argument_parent",
+            0x1000,
+        ),
         member: None,
         name: "stack_argument_parent".to_owned(),
         address: 0x1000,
@@ -583,6 +652,12 @@ fn outgoing_stack_argument_is_substituted_into_a_direct_callee() {
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "stack_argument_child",
+            0x2004,
+        ),
         member: None,
         name: "stack_argument_child".to_owned(),
         address: 0x2004,
@@ -616,6 +691,12 @@ fn outgoing_stack_argument_is_substituted_into_a_direct_callee() {
 #[test]
 fn incoming_stack_argument_survives_an_unrelated_callee_stack_write() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "stack_argument_after_output_call",
+            0x1000,
+        ),
         member: None,
         name: "stack_argument_after_output_call".to_owned(),
         address: 0x1000,
@@ -630,6 +711,12 @@ fn incoming_stack_argument_survives_an_unrelated_callee_stack_write() {
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "unrelated_stack_writer",
+            0x2000,
+        ),
         member: None,
         name: "unrelated_stack_writer".to_owned(),
         address: 0x2000,
@@ -664,6 +751,12 @@ fn incoming_stack_argument_survives_an_unrelated_callee_stack_write() {
 #[test]
 fn pointer_reloaded_after_a_call_recovers_caller_memory_provenance() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "deferred_pointer_parent",
+            0x1000,
+        ),
         member: None,
         name: "deferred_pointer_parent".to_owned(),
         address: 0x1000,
@@ -681,6 +774,12 @@ fn pointer_reloaded_after_a_call_recovers_caller_memory_provenance() {
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "unrelated_stack_output",
+            0x2000,
+        ),
         member: None,
         name: "unrelated_stack_output".to_owned(),
         address: 0x2000,
@@ -728,6 +827,12 @@ fn pointer_reloaded_after_a_call_recovers_caller_memory_provenance() {
 #[test]
 fn deferred_pointer_without_caller_memory_provenance_fails_closed() {
     let parent = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "invalid_deferred_pointer_parent",
+            0x1000,
+        ),
         member: None,
         name: "invalid_deferred_pointer_parent".to_owned(),
         address: 0x1000,
@@ -747,6 +852,12 @@ fn deferred_pointer_without_caller_memory_provenance_fails_closed() {
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
+        identity: artifact::ArtifactSymbolDefinition::synthetic_identity(
+            module_path!(),
+            &(None),
+            "unrelated_stack_output",
+            0x2000,
+        ),
         member: None,
         name: "unrelated_stack_output".to_owned(),
         address: 0x2000,

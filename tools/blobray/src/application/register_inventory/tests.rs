@@ -1,5 +1,436 @@
 use super::*;
 
+fn query_project(root: &Path) -> std::path::PathBuf {
+    let target =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/generic-project/target.toml");
+    let manifest = root.join("project.toml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "schema = 4\nid = \"query-fixture\"\ntarget-spec = {:?}\nchip-pack = \"chip.toml\"\n",
+            target.display().to_string()
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("chip.toml"),
+        "schema = 3\nid = \"fixture\"\nsvd = [\"base.svd\"]\nknowledge-packs = []\n",
+    )
+    .unwrap();
+    manifest
+}
+
+fn wide_svd(address: u64) -> String {
+    format!(
+        r#"<device schemaVersion="1.3"><name>Test</name><version>1</version><description>fixture</description><addressUnitBits>8</addressUnitBits><width>32</width><peripherals><peripheral><name>DEV</name><baseAddress>{address}</baseAddress><registers><register><name>WIDE</name><addressOffset>0</addressOffset><size>512</size><fields><field><name>HIGH</name><bitOffset>300</bitOffset><bitWidth>64</bitWidth></field></fields></register></registers></peripheral></peripherals></device>"#
+    )
+}
+
+#[test]
+fn public_application_preserves_wide_geometry_without_preparing_backend_models() {
+    use crate::{AnalyzeRequest, BlobrayApplication};
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let manifest = query_project(root);
+    let address = 0x1_0000_1000;
+    std::fs::write(
+        root.join("chip.toml"),
+        r#"schema = 3
+id = "fixture"
+svd = ["base.svd"]
+knowledge-packs = []
+memory-map = "memory.toml"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("memory.toml"),
+        r#"schema = 1
+default-address-space = "cpu"
+[[address-spaces]]
+id = "cpu"
+address-width = 64
+endianness = "little"
+[[regions]]
+name = "wide-peripheral"
+address-space = "cpu"
+kind = "mmio"
+start = 0x100001000
+end-exclusive = 0x100002000
+permissions = "rw"
+"#,
+    )
+    .unwrap();
+    std::fs::write(root.join("base.svd"), wide_svd(address)).unwrap();
+    let mut app = BlobrayApplication::open(&manifest).unwrap();
+    assert!(app.analysis_session.is_none());
+    assert!(app.resolved.memory_map.is_some());
+    assert!(app.resolved.mmio.regions.is_empty());
+    let inventory = app.register_inventory().unwrap().inventory().clone();
+    let register = inventory.at_address(address)[0];
+    let selector = RegisterSelector::Subject(register.id.clone());
+    let detail = app.register_detail(&selector).unwrap().unwrap();
+    assert_eq!(detail.subjects, vec![register.clone()]);
+    assert_eq!(detail.width, Some(512));
+    assert_eq!(detail.address, address);
+    let high = detail
+        .fields
+        .iter()
+        .find(|field| field.field.offset == 300)
+        .unwrap();
+    assert_eq!(high.field.width, 64);
+    assert_eq!(high.field.mask, None);
+    assert!(high.field.semantics.is_unknown());
+    assert_eq!(detail.fields.len(), register.fields.len());
+    let snapshot = app.snapshot().unwrap();
+    assert_eq!(snapshot.registers.fields, register.fields.len());
+    assert_eq!(snapshot.registers.ranges, inventory.regions.len());
+    assert!(snapshot.registers.publication.is_none());
+    assert_eq!(
+        snapshot.registers.registers().cloned().collect::<Vec<_>>(),
+        inventory.registers.values().cloned().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        app.register_detail(&RegisterSelector::Address(address + 40))
+            .unwrap()
+            .unwrap()
+            .subjects,
+        detail.subjects
+    );
+    assert!(
+        app.analysis_session.is_none(),
+        "queries cannot prepare backend models"
+    );
+    let error = app
+        .analyze(AnalyzeRequest {
+            artifact: root.join("absent.o"),
+            member: None,
+            symbol: "probe".into(),
+        })
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("32-bit analysis backend"), "{error}");
+    assert!(
+        app.analysis_session.is_none(),
+        "failed preparation cannot install a fallback"
+    );
+    assert_eq!(app.register_detail(&selector).unwrap().unwrap(), detail);
+    assert_eq!(
+        app.reload()
+            .unwrap()
+            .registers
+            .registers()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![register.clone()]
+    );
+}
+
+#[test]
+fn selectors_keep_domains_and_property_evidence_without_address_merging() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = crate::ProjectSpec::load(&query_project(directory.path())).unwrap();
+    let mut inventory = modeled();
+    let original = inventory.registers.values().next().unwrap().clone();
+    for (space, route, bank) in [("debug", "mmio", None), ("cpu", "indexed", Some("bank1"))] {
+        let mut sibling = original.clone();
+        sibling.subject.address_space = space.into();
+        sibling.subject.route = route.into();
+        sibling.subject.bank = bank.map(str::to_owned);
+        sibling.id = sibling.subject.id();
+        sibling.fields.clear();
+        sibling.names = KnowledgeProperty::Unknown;
+        inventory.registers.insert(sibling.id.clone(), sibling);
+    }
+    // Property claims can own evidence that is not repeated on the register.
+    let evidence_id = inventory.record(
+        "hint",
+        "hint",
+        &json!("high-field"),
+        json!({"note":"specific hint"}),
+    );
+    let register = inventory.registers.get_mut(&original.id).unwrap();
+    let field = register.fields.values_mut().next().unwrap();
+    field
+        .semantics
+        .insert("opaque operation".into(), evidence_id.clone());
+    let expected_field = field.clone();
+    for query in [
+        InventoryQuery {
+            source: Some("hint".into()),
+            ..Default::default()
+        },
+        InventoryQuery {
+            text: Some("specific hint".into()),
+            ..Default::default()
+        },
+    ] {
+        assert_eq!(
+            inventory
+                .select(&query)
+                .iter()
+                .map(|r| &r.id)
+                .collect::<Vec<_>>(),
+            vec![&original.id]
+        );
+    }
+    let exact = RegisterSelector::Subject(original.id.clone());
+    assert_eq!(
+        inventory
+            .resolve_selector(&RegisterSelector::Address(0x1000))
+            .len(),
+        3
+    );
+    assert_eq!(inventory.resolve_selector(&exact).len(), 1);
+    let detail =
+        crate::application::register_detail_from_inventory(&project, inventory.clone(), &exact)
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        detail
+            .fields
+            .iter()
+            .find(|f| f.field.id == expected_field.id)
+            .unwrap()
+            .field,
+        expected_field
+    );
+    assert!(detail.evidence.iter().any(|e| e.id == evidence_id));
+    assert_eq!(
+        detail.semantic_subject().unwrap().unwrap().to_string(),
+        "register:chip/cpu/0x1000/32"
+    );
+    let all = crate::application::register_detail_from_inventory(
+        &project,
+        inventory.clone(),
+        &RegisterSelector::Address(0x1000),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(all.subjects.len(), 3);
+    assert_eq!(all.width, None);
+    assert_eq!(all.semantic_subject().unwrap(), None);
+    let bank = inventory
+        .registers
+        .values()
+        .find(|r| r.subject.bank.is_some())
+        .unwrap();
+    let detail = crate::application::register_detail_from_inventory(
+        &project,
+        inventory.clone(),
+        &RegisterSelector::Subject(bank.id.clone()),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(
+        detail
+            .semantic_subject()
+            .unwrap_err()
+            .to_string()
+            .contains("route or bank")
+    );
+    assert_eq!(detail.subjects, vec![bank.clone()]);
+    assert!(detail.fields.is_empty());
+    assert!(detail.regions.is_empty());
+    assert_eq!(detail.publication_debt, None);
+    assert_eq!(
+        "0x100000001".parse::<RegisterSelector>().unwrap(),
+        RegisterSelector::Address(0x1_0000_0001)
+    );
+    assert_eq!(original.id.parse::<RegisterSelector>().unwrap(), exact);
+    assert!("0x10000000000000000".parse::<RegisterSelector>().is_err());
+}
+
+#[test]
+fn resolved_svd_selection_reaches_inventory_snapshot_and_detail() {
+    use crate::application::{BlobrayApplication, ProjectSession, ProjectSessionOptions};
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let target =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/generic-project/target.toml");
+    let manifest = root.join("project.toml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "schema = 4\nid = \"svd-context\"\ntarget-spec = {:?}\nchip-pack = \"chip.toml\"\n",
+            target.display().to_string()
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("chip.toml"),
+        "schema = 3\nid = \"fixture\"\nsvd = [\"base.svd\"]\nknowledge-packs = []\n",
+    )
+    .unwrap();
+    let svd = |address: u32| {
+        format!(
+            r#"<device schemaVersion="1.3"><name>Test</name><version>1</version><description>fixture</description><addressUnitBits>8</addressUnitBits><width>32</width><peripherals><peripheral><name>DEV</name><baseAddress>{address}</baseAddress><registers><register><name>CONTROL</name><description>unknown behavior</description><addressOffset>0</addressOffset><size>32</size></register></registers></peripheral></peripherals></device>"#
+        )
+    };
+    std::fs::write(root.join("base.svd"), svd(0x1000)).unwrap();
+    let selected = root.join("selected.svd");
+    std::fs::write(&selected, svd(0x2000)).unwrap();
+    let base = ProjectSession::open_with(&manifest, Default::default()).unwrap();
+    assert!(!load(&base).unwrap().at_address(0x1000).is_empty());
+    let session = ProjectSession::open_with(
+        &manifest,
+        ProjectSessionOptions {
+            svd_paths: vec![selected.clone()],
+            // Queries must work without the lossy name catalog used by binary analysis.
+            load_register_catalog: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut app = BlobrayApplication {
+        resolved: session,
+        generation: 1,
+        analysis_session: None,
+        analysis_cache: BTreeMap::new(),
+    };
+    let inventory = app.register_inventory().unwrap().inventory().clone();
+    assert!(inventory.at_address(0x1000).is_empty());
+    assert_eq!(inventory.at_address(0x2000).len(), 1);
+    assert_eq!(
+        inventory,
+        app.register_inventory().unwrap().inventory().clone()
+    );
+    let writer =
+        crate::application::query_store::QueryStore::open_analysis_epoch(&manifest).unwrap();
+    assert_eq!(
+        inventory,
+        app.register_inventory().unwrap().inventory().clone(),
+        "retained query must remain readable while another analysis owns the writer"
+    );
+    drop(writer);
+    assert_eq!(
+        app.snapshot()
+            .unwrap()
+            .registers
+            .register_at(0)
+            .unwrap()
+            .subject
+            .address,
+        0x2000
+    );
+    assert!(
+        app.register_detail(&RegisterSelector::Address(0x1000))
+            .unwrap()
+            .is_none()
+    );
+    let detail = app
+        .register_detail(&RegisterSelector::Address(0x2000))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        app.analysis_session().unwrap().svd_paths,
+        vec![selected.clone()]
+    );
+    assert!(
+        app.analysis_session()
+            .unwrap()
+            .mmio
+            .registers
+            .iter()
+            .any(|r| r.address == 0x2000)
+    );
+    let manifest_bytes = std::fs::read(&manifest).unwrap();
+    std::fs::write(&manifest, "invalid manifest").unwrap();
+    assert!(app.reload().is_err());
+    assert_eq!(app.generation, 1);
+    assert!(
+        app.analysis_session.is_some(),
+        "failed reload preserves the active generation"
+    );
+    std::fs::write(&manifest, manifest_bytes).unwrap();
+    assert_eq!(detail.sources, inventory.sources);
+    assert!(
+        inventory
+            .sources
+            .iter()
+            .all(|source| source.path != root.join("base.svd").display().to_string())
+    );
+
+    std::fs::write(&selected, svd(0x3000)).unwrap();
+    // Prepared models belong to the old generation until explicit reload.
+    assert!(
+        app.analysis_session()
+            .unwrap()
+            .mmio
+            .registers
+            .iter()
+            .any(|r| r.address == 0x2000)
+    );
+    assert_eq!(app.reload().unwrap().generation, 2);
+    assert!(app.analysis_session.is_none());
+    assert_eq!(
+        app.analysis_session().unwrap().svd_paths,
+        vec![selected.clone()]
+    );
+    assert!(
+        app.analysis_session()
+            .unwrap()
+            .mmio
+            .registers
+            .iter()
+            .any(|r| r.address == 0x3000)
+    );
+    let changed = app.register_inventory().unwrap().inventory().clone();
+    assert!(changed.at_address(0x2000).is_empty());
+    assert_eq!(changed.at_address(0x3000).len(), 1);
+    assert_eq!(load(&base).unwrap().at_address(0x1000).len(), 1);
+
+    std::fs::remove_file(&selected).unwrap();
+    assert_eq!(app.register_inventory().unwrap().inventory(), &changed);
+    assert!(matches!(
+        app.reload().unwrap().registers.inventory,
+        crate::RegisterInventoryState::Failed { .. }
+    ));
+    assert!(
+        app.register_inventory()
+            .unwrap_err()
+            .to_string()
+            .contains("explicitly selected SVD")
+    );
+    std::fs::write(&selected, "invalid XML").unwrap();
+    assert!(matches!(
+        app.reload().unwrap().registers.inventory,
+        crate::RegisterInventoryState::Failed { .. }
+    ));
+    assert!(
+        app.register_inventory()
+            .unwrap_err()
+            .to_string()
+            .contains("invalid explicitly selected SVD")
+    );
+
+    // Unavailable declared defaults retain distinct missing/failed states;
+    // invalid UTF-8 remains recoverable as opaque source bytes.
+    std::fs::remove_file(root.join("base.svd")).unwrap();
+    let missing = load(&base).unwrap();
+    assert!(
+        missing
+            .sources
+            .iter()
+            .any(|source| source.kind == "svd" && source.state == SourceState::Missing)
+    );
+    let opaque = [0xff, 0x80, 0x42];
+    std::fs::write(root.join("base.svd"), opaque).unwrap();
+    let failed = load(&base).unwrap();
+    assert!(
+        failed.sources.iter().any(
+            |source| source.kind == "svd" && matches!(source.state, SourceState::Failed { .. })
+        )
+    );
+    assert!(
+        failed
+            .evidence
+            .values()
+            .any(|evidence| evidence.kind == "opaque-source"
+                && evidence.payload["bytes"] == json!(opaque))
+    );
+}
+
 fn geometry(width: u32) -> Vec<open_esp_radio_register_model::RegisterGeometry> {
     open_esp_radio_register_model::svd_geometry(&format!(r#"<device schemaVersion="1.3"><name>Test</name><version>1</version><description>fixture</description><addressUnitBits>8</addressUnitBits><width>32</width><peripherals><peripheral><name>DEV</name><baseAddress>4096</baseAddress><registers><register><name>CONTROL</name><description>opaque behavior</description><addressOffset>0</addressOffset><size>{width}</size><fields><field><name>FLAG</name><description>unknown behavior</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field></fields></register></registers></peripheral></peripherals></device>"#)).unwrap()
 }
@@ -29,7 +460,9 @@ fn import(inventory: &mut RegisterInventory, document: Value) {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("facts.json");
     std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
-    inventory.import_facts("chip", "cpu", &path).unwrap();
+    inventory
+        .import_facts("chip", "cpu", &path, &std::fs::read(&path).unwrap())
+        .unwrap();
 }
 
 #[test]
@@ -465,10 +898,46 @@ fn ir_and_discovery_union_is_idempotent_and_preserves_disjoint_masks() {
         &mut inventory,
         facts(vec![access(4096, 32, "discovery", 3, 0)]),
     );
-    inventory.import_ir("chip", "cpu", &path).unwrap();
+    inventory
+        .import_ir(
+            "chip",
+            "cpu",
+            &path,
+            &crate::application::artifact_store::PublishedIrEvidence {
+                reader: std::sync::Arc::new(crate::artifacts::LinkedIrReader::open(&path).unwrap()),
+                manifest: std::fs::read(path.join("manifest.json")).unwrap(),
+                members: crate::artifacts::bundle_files(&path)
+                    .map(|input| {
+                        (
+                            input.file_name().unwrap().to_string_lossy().into_owned(),
+                            format!("{:x}", Sha256::digest(std::fs::read(&input).unwrap())),
+                        )
+                    })
+                    .collect(),
+            },
+        )
+        .unwrap();
     inventory.finish();
     let first = inventory.clone();
-    inventory.import_ir("chip", "cpu", &path).unwrap();
+    inventory
+        .import_ir(
+            "chip",
+            "cpu",
+            &path,
+            &crate::application::artifact_store::PublishedIrEvidence {
+                reader: std::sync::Arc::new(crate::artifacts::LinkedIrReader::open(&path).unwrap()),
+                manifest: std::fs::read(path.join("manifest.json")).unwrap(),
+                members: crate::artifacts::bundle_files(&path)
+                    .map(|input| {
+                        (
+                            input.file_name().unwrap().to_string_lossy().into_owned(),
+                            format!("{:x}", Sha256::digest(std::fs::read(&input).unwrap())),
+                        )
+                    })
+                    .collect(),
+            },
+        )
+        .unwrap();
     inventory.finish();
     assert_eq!(first, inventory);
     let register = inventory.at_address(4096)[0];
@@ -563,4 +1032,121 @@ fn svd_without_physical_size_keeps_address_and_declared_fields() {
         wide_register.coverage.unobserved_intervals,
         Some(vec![(0, 64)])
     );
+}
+
+fn published_facts_project(root: &Path) -> std::path::PathBuf {
+    let manifest = query_project(root);
+    let mut config = std::fs::read_to_string(&manifest).unwrap();
+    config.push_str(
+        "\n[registers]\nmodel = \"model.toml\"\nfacts = \"facts.json\"\nowned-ranges = [\"dev\"]\n",
+    );
+    std::fs::write(&manifest, config).unwrap();
+    manifest
+}
+
+fn publish_facts(manifest: &Path, bytes: &[u8]) {
+    use crate::application::{output_set::OutputSet, query_store::QueryStore};
+    let paths = [manifest.parent().unwrap().join("facts.json")];
+    let outputs = OutputSet::new(&paths, false).unwrap();
+    outputs
+        .file(0, "fixture MMIO")
+        .unwrap()
+        .bytes(bytes)
+        .unwrap();
+    QueryStore::open_analysis_epoch(manifest)
+        .unwrap()
+        .publish_analysis_outputs(&outputs.receipts().unwrap())
+        .unwrap();
+}
+
+#[test]
+fn register_discovery_uses_selected_epoch_before_first_inventory_query() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let manifest = published_facts_project(root);
+    let before = facts(vec![access(0x1000, 32, "before", 1, 0)]);
+    publish_facts(&manifest, &serde_json::to_vec(&before).unwrap());
+    let old = crate::BlobrayApplication::open(&manifest).unwrap();
+    old.resolved
+        .artifacts
+        .read_output(&root.join("facts.json"))
+        .unwrap()
+        .unwrap();
+    let after = facts(vec![access(0x1004, 32, "after", 2, 0)]);
+    publish_facts(&manifest, &serde_json::to_vec(&after).unwrap());
+    std::fs::remove_file(root.join("facts.json")).unwrap();
+    let retained = old.register_inventory().unwrap();
+    assert_eq!(retained.inventory().at_address(0x1000).len(), 1);
+    assert!(retained.inventory().at_address(0x1004).is_empty());
+    assert!(
+        retained.inventory().at_address(0x1000)[0]
+            .functions
+            .contains("before")
+    );
+    let fresh = crate::BlobrayApplication::open(&manifest).unwrap();
+    let current = fresh.register_inventory().unwrap();
+    assert_eq!(current.inventory().at_address(0x1004).len(), 1);
+    assert!(current.inventory().at_address(0x1000).is_empty());
+    assert_ne!(retained.id(), current.id());
+}
+
+#[test]
+fn invalid_published_discovery_retains_opaque_bytes_without_reading_repaired_export() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let manifest = published_facts_project(root);
+    publish_facts(&manifest, b"broken published evidence");
+    let repair = facts(vec![access(0x1000, 32, "unpublished", 1, 0)]);
+    std::fs::write(
+        root.join("facts.json"),
+        serde_json::to_vec(&repair).unwrap(),
+    )
+    .unwrap();
+    let app = crate::BlobrayApplication::open(&manifest).unwrap();
+    let snapshot = app.register_inventory().unwrap();
+    let inventory = snapshot.inventory();
+    assert!(inventory.at_address(0x1000).is_empty());
+    assert!(
+        inventory
+            .sources
+            .iter()
+            .any(|source| source.kind == "discovery"
+                && matches!(source.state, SourceState::Failed { .. }))
+    );
+    assert!(
+        inventory
+            .evidence
+            .values()
+            .any(|evidence| evidence.kind == "opaque-source"
+                && evidence.payload["text"] == "broken published evidence")
+    );
+}
+
+#[test]
+fn cold_register_query_neither_creates_cache_nor_requires_analysis_writer() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let manifest = query_project(root);
+    std::fs::write(root.join("base.svd"), wide_svd(0x1000)).unwrap();
+    let entries = || {
+        std::fs::read_dir(root)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<BTreeSet<_>>()
+    };
+    let before = entries();
+    let first = crate::BlobrayApplication::open(&manifest)
+        .unwrap()
+        .register_inventory()
+        .unwrap();
+    assert_eq!(
+        entries(),
+        before,
+        "query must not create a generated/cache directory"
+    );
+    let writer =
+        crate::application::query_store::QueryStore::open_analysis_epoch(&manifest).unwrap();
+    let fresh = crate::BlobrayApplication::open(&manifest).unwrap();
+    assert_eq!(fresh.register_inventory().unwrap().id(), first.id());
+    drop(writer);
 }

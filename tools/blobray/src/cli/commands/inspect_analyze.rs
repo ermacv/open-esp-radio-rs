@@ -1,13 +1,16 @@
 //! Artifact inventory analysis command.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Serialize;
+
+use crate::artifact::CodeIdentity;
 
 use super::super::*;
 
 #[derive(Debug)]
 struct FunctionReport {
+    code_identity: CodeIdentity,
     symbol: String,
     owner: Option<String>,
     direct_trace_exact: bool,
@@ -27,7 +30,7 @@ struct FunctionReport {
 #[derive(Debug, Default)]
 struct BlockerImpact {
     occurrences: usize,
-    functions: BTreeSet<String>,
+    functions: BTreeSet<CodeIdentity>,
 }
 
 fn blocker_kind(blocker: &str) -> &str {
@@ -62,7 +65,7 @@ fn record_impact(
     impacts: &mut BTreeMap<(String, String), BlockerImpact>,
     scope: &str,
     blocker: &str,
-    symbol: &str,
+    identity: &CodeIdentity,
 ) {
     let kind = if scope == "reference-transitive" {
         "callee-ineligible"
@@ -73,7 +76,7 @@ fn record_impact(
         .entry((scope.to_owned(), kind.to_owned()))
         .or_default();
     impact.occurrences += 1;
-    impact.functions.insert(symbol.to_owned());
+    impact.functions.insert(identity.clone());
 }
 
 #[derive(Serialize)]
@@ -83,11 +86,11 @@ struct ArtifactIdentity {
 }
 
 impl ArtifactIdentity {
-    fn load(path: &Path) -> Result<Self> {
-        Ok(Self {
+    fn from_capture(path: &Path, capture: &crate::artifact::CapturedArtifact<'_>) -> Self {
+        Self {
             path: path.display().to_string(),
-            sha256: crate::artifact_sha256(path)?,
-        })
+            sha256: capture.sha256().to_owned(),
+        }
     }
 }
 
@@ -106,25 +109,26 @@ struct BlockerImpactDocument<'a> {
     kind: &'a str,
     occurrences: usize,
     affected_functions: usize,
-    functions: &'a BTreeSet<String>,
+    functions: &'a BTreeSet<CodeIdentity>,
 }
 
 #[derive(Serialize)]
 struct CalleeHotspotDocument<'a> {
     callee: &'a str,
     affected_functions: usize,
-    functions: &'a BTreeSet<String>,
+    functions: &'a BTreeSet<CodeIdentity>,
 }
 
 #[derive(Serialize)]
 struct UnmappedMmioDocument<'a> {
     address: String,
     affected_functions: usize,
-    functions: &'a BTreeSet<String>,
+    functions: &'a BTreeSet<CodeIdentity>,
 }
 
 #[derive(Serialize)]
 struct FunctionDocument<'a> {
+    code_identity: &'a CodeIdentity,
     symbol: &'a str,
     owner: &'a Option<String>,
     direct_trace_exact: bool,
@@ -144,6 +148,7 @@ struct FunctionDocument<'a> {
 impl<'a> From<&'a FunctionReport> for FunctionDocument<'a> {
     fn from(function: &'a FunctionReport) -> Self {
         Self {
+            code_identity: &function.code_identity,
             symbol: &function.symbol,
             owner: &function.owner,
             direct_trace_exact: function.direct_trace_exact,
@@ -188,20 +193,20 @@ pub(super) struct AnalysisDocument<'a> {
 }
 
 struct AnalysisInputs<'a> {
-    artifact: &'a Path,
-    companions: &'a [PathBuf],
+    artifact: ArtifactIdentity,
+    companions: Vec<ArtifactIdentity>,
     prefix: &'a str,
     entry_contract: EntryContractRef,
     functions: &'a [FunctionReport],
     impacts: &'a BTreeMap<(String, String), BlockerImpact>,
-    callee_callers: &'a BTreeMap<String, BTreeSet<String>>,
-    unmapped_users: &'a BTreeMap<u32, BTreeSet<String>>,
+    callee_callers: &'a BTreeMap<String, BTreeSet<CodeIdentity>>,
+    unmapped_users: &'a BTreeMap<u32, BTreeSet<CodeIdentity>>,
     direct_exact: usize,
     reference_eligible: usize,
     publication: Option<crate::cli::output::Publication>,
 }
 
-fn analysis_document(inputs: AnalysisInputs<'_>) -> Result<AnalysisDocument<'_>> {
+fn analysis_document(inputs: AnalysisInputs<'_>) -> AnalysisDocument<'_> {
     let AnalysisInputs {
         artifact,
         companions,
@@ -222,14 +227,11 @@ fn analysis_document(inputs: AnalysisInputs<'_>) -> Result<AnalysisDocument<'_>>
             .cmp(&left_callers.len())
             .then_with(|| left_name.cmp(right_name))
     });
-    Ok(AnalysisDocument {
-        schema_version: 3,
+    AnalysisDocument {
+        schema_version: 4,
         command: "inspect analyze",
-        artifact: ArtifactIdentity::load(artifact)?,
-        companions: companions
-            .iter()
-            .map(|path| ArtifactIdentity::load(path))
-            .collect::<Result<Vec<_>>>()?,
+        artifact,
+        companions,
         symbol_prefix: prefix,
         entry_contract: entry_contract.id(),
         summary: AnalysisSummary {
@@ -267,7 +269,7 @@ fn analysis_document(inputs: AnalysisInputs<'_>) -> Result<AnalysisDocument<'_>>
             .collect(),
         functions: functions.iter().map(Into::into).collect(),
         publication,
-    })
+    }
 }
 
 fn write_analysis_output(path: &Path, document: &AnalysisDocument<'_>) -> Result<()> {
@@ -334,6 +336,11 @@ fn print_analysis_report(
     if crate::cli::output::details() {
         outputln!("\n{}", crate::cli::output::heading("Function blockers"));
         for function in functions {
+            outputln!(
+                "- {} occurrence: {}",
+                function.symbol,
+                function.code_identity
+            );
             for blocker in &function.direct_blockers {
                 outputln!("- {}: {blocker}", function.symbol);
             }
@@ -352,26 +359,41 @@ pub(super) fn run(
     svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    let harness = target.require_available_knowledge_provider()?;
-    let riscv_harness = providers::riscv(harness)?;
-    let entry_contract = providers::entry_contract(harness, &arguments.entry_contract)?;
+    let harness = target.knowledge_provider.as_deref();
+    let riscv_harness = providers::riscv_or_neutral(harness)?;
+    let entry_contract = providers::entry_contract_or_neutral(harness, &arguments.entry_contract)?;
     let artifact = arguments
         .artifact
         .ok_or("missing --artifact")
         .map_err(crate::Error::invalid)?;
-    let symbols = list_code_symbols(&artifact, &arguments.symbol_prefix)?;
+    let captures = crate::source_set::CapturedSourceSet::capture(
+        std::iter::once(artifact.clone()).chain(arguments.companion.iter().cloned()),
+    );
+    let capture = captures.artifact(&artifact)?;
+    let companions = arguments
+        .companion
+        .iter()
+        .map(|path| captures.artifact(path))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let reference_catalog = ReferenceResolver::from_captured(
+        capture,
+        &companions,
+        riscv_harness,
+        entry_contract,
+        crate::artifact::CodeSymbolSelection::Exported,
+        &[],
+    )?;
+    let symbols = reference_catalog
+        .symbols
+        .iter()
+        .filter(|symbol| symbol.name.starts_with(&arguments.symbol_prefix))
+        .collect::<Vec<_>>();
     if symbols.is_empty() {
         return Err(crate::Error::invalid(format!(
             "no external code symbols start with {:?}",
             arguments.symbol_prefix
         )));
     }
-    let reference_catalog = ReferenceResolver::load_with_entry_contract(
-        &artifact,
-        &arguments.companion,
-        riscv_harness,
-        entry_contract,
-    )?;
 
     let mut exact = 0usize;
     let mut incomplete = 0usize;
@@ -379,18 +401,13 @@ pub(super) fn run(
     let mut reasons = BTreeMap::<String, usize>::new();
     let mut reference_reasons = BTreeMap::<String, usize>::new();
     let mut impacts = BTreeMap::<(String, String), BlockerImpact>::new();
-    let mut callee_callers = BTreeMap::<String, BTreeSet<String>>::new();
-    let mut unmapped_users = BTreeMap::<u32, BTreeSet<String>>::new();
+    let mut callee_callers = BTreeMap::<String, BTreeSet<CodeIdentity>>::new();
+    let mut unmapped_users = BTreeMap::<u32, BTreeSet<CodeIdentity>>::new();
     let mut function_reports = Vec::with_capacity(symbols.len());
     for symbol in &symbols {
-        let input = ArtifactSymbolSelector {
-            artifact: artifact.clone(),
-            member: symbol.member.clone(),
-            symbol: symbol.name.clone(),
-        };
-        let trace = extract(&input, svd)?;
-        let reference_trace =
-            reference_catalog.trace(symbol.member.as_deref(), &symbol.name, svd)?;
+        let occurrence = &symbol.identity;
+        let trace = reference_catalog.trace_direct_symbol(symbol, svd)?;
+        let reference_trace = reference_catalog.trace_symbol(symbol, svd)?;
         let reference_eligible = reference_trace.is_reference_eligible();
         if reference_eligible {
             reference_codegen_eligible += 1;
@@ -406,11 +423,11 @@ pub(super) fn run(
             incomplete += 1;
             for blocker in &trace.blockers {
                 *reasons.entry(blocker_kind(blocker).to_owned()).or_default() += 1;
-                record_impact(&mut impacts, "direct", blocker, &symbol.name);
+                record_impact(&mut impacts, "direct", blocker, occurrence);
             }
             for _address in &direct_unmapped_mmio {
                 *reasons.entry("unmapped-register".to_owned()).or_default() += 1;
-                record_impact(&mut impacts, "direct", "unmapped-register", &symbol.name);
+                record_impact(&mut impacts, "direct", "unmapped-register", occurrence);
             }
         }
         for blocker in &reference_trace.reference_blockers {
@@ -427,7 +444,7 @@ pub(super) fn run(
             unmapped_users
                 .entry(*address)
                 .or_default()
-                .insert(symbol.name.clone());
+                .insert(occurrence.clone());
         }
         let mut local_reference_blockers = Vec::new();
         let mut transitive_reference_blockers = Vec::new();
@@ -436,10 +453,10 @@ pub(super) fn run(
             for blocker in reference_trace.reference_failure_reasons() {
                 let blocker_callees = blocking_callees(&blocker);
                 if blocker_callees.is_empty() {
-                    record_impact(&mut impacts, "reference-local", &blocker, &symbol.name);
+                    record_impact(&mut impacts, "reference-local", &blocker, occurrence);
                     local_reference_blockers.push(blocker);
                 } else {
-                    record_impact(&mut impacts, "reference-transitive", &blocker, &symbol.name);
+                    record_impact(&mut impacts, "reference-transitive", &blocker, occurrence);
                     callees.extend(blocker_callees);
                     transitive_reference_blockers.push(blocker);
                 }
@@ -449,9 +466,10 @@ pub(super) fn run(
             callee_callers
                 .entry(callee.clone())
                 .or_default()
-                .insert(symbol.name.clone());
+                .insert(occurrence.clone());
         }
         function_reports.push(FunctionReport {
+            code_identity: symbol.identity.clone(),
             symbol: symbol.name.clone(),
             owner: symbol.member.clone(),
             direct_trace_exact: trace.is_exact(),
@@ -473,8 +491,13 @@ pub(super) fn run(
         .as_deref()
         .map(|path| crate::cli::output::Publication::new(path, "written"));
     let document = analysis_document(AnalysisInputs {
-        artifact: &artifact,
-        companions: &arguments.companion,
+        artifact: ArtifactIdentity::from_capture(&artifact, capture),
+        companions: arguments
+            .companion
+            .iter()
+            .zip(&companions)
+            .map(|(path, capture)| ArtifactIdentity::from_capture(path, capture))
+            .collect(),
         prefix: &arguments.symbol_prefix,
         entry_contract,
         functions: &function_reports,
@@ -484,7 +507,7 @@ pub(super) fn run(
         direct_exact: exact,
         reference_eligible: reference_codegen_eligible,
         publication: publication.clone(),
-    })?;
+    });
     if let Some(path) = arguments.output.as_deref() {
         write_analysis_output(path, &document)?;
     }

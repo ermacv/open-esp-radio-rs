@@ -31,17 +31,32 @@ pub(super) fn collect(
         .project
         .registers
         .as_ref()
-        .filter(|paths| paths.facts.is_file())
-        .and_then(|paths| match RegisterFacts::load(&paths.facts) {
-            Ok(facts) => Some(static_mmio_by_function(&facts)),
-            Err(error) => {
-                push_error(
-                    diagnostics,
-                    "function-static-mmio",
-                    error,
-                    Some(paths.facts.clone()),
-                );
-                None
+        .and_then(|paths| {
+            let result = (|| {
+                let bytes = resolved
+                    .artifacts
+                    .read_output(&paths.facts)?
+                    .ok_or_else(|| {
+                        crate::Error::invalid(
+                            "published analysis has no MMIO facts for function annotations",
+                        )
+                    })?;
+                let text = std::str::from_utf8(&bytes).map_err(|error| {
+                    crate::Error::invalid(format!("published MMIO facts are not UTF-8: {error}"))
+                })?;
+                RegisterFacts::parse(text).map(|facts| static_mmio_by_function(&facts))
+            })();
+            match result {
+                Ok(facts) => Some(facts),
+                Err(error) => {
+                    push_error(
+                        diagnostics,
+                        "function-static-mmio",
+                        error,
+                        Some(paths.facts.clone()),
+                    );
+                    None
+                }
             }
         })
         .unwrap_or_default();
@@ -84,6 +99,7 @@ pub(super) fn collect(
                 .into_iter()
                 .collect();
             FunctionSummary {
+                code_identity: fact.code_identity.clone(),
                 profile: fact.profile.clone(),
                 source: fact.source.clone(),
                 identity: fact.identity.clone(),

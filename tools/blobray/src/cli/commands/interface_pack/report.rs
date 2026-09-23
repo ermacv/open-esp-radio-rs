@@ -22,6 +22,8 @@ pub(super) struct InterfacePackDocument<'a> {
 
 #[derive(Serialize)]
 pub(super) struct InterfaceWorkspaceDocument<'a> {
+    pub(super) observations: &'a crate::interfaces::InterfaceFacts,
+    pub(super) analysis_completeness_claim: bool,
     pub(super) schema: u32,
     pub(super) command: &'static str,
     pub(super) status: &'static str,
@@ -136,7 +138,8 @@ pub(super) struct InterfaceBindingDocument<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) execution_model: Option<InterfaceExecutionModelDocument<'a>>,
     pub(super) functions: Vec<&'a str>,
-    pub(super) calls: Vec<InterfaceCallDocument<'a>>,
+    pub(super) calls: &'a [crate::interfaces::ResolvedInterfaceCall],
+    pub(super) assignments: &'a [crate::interfaces::ResolvedInterfaceAssignment],
 }
 
 #[derive(Serialize)]
@@ -145,40 +148,6 @@ pub(super) struct InterfaceExecutionModelDocument<'a> {
     pub(super) set: &'a str,
     pub(super) model: &'a str,
     pub(super) return_model: String,
-}
-
-#[derive(Serialize)]
-pub(super) struct InterfaceCallDocument<'a> {
-    pub(super) artifact: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) member: Option<&'a str>,
-    pub(super) function: &'a str,
-    pub(super) function_address: u32,
-    pub(super) site: u32,
-    pub(super) kind: &'a str,
-    pub(super) jalr_offset: i32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) slot_selector: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) slot_index: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) slot_index_domain: Option<InterfaceIndexDomainDocument<'a>>,
-    pub(super) arguments: Vec<InterfaceArgumentDocument<'a>>,
-}
-
-#[derive(Serialize)]
-pub(super) struct InterfaceIndexDomainDocument<'a> {
-    pub(super) argument: u8,
-    pub(super) min: u32,
-    pub(super) max: u32,
-    pub(super) evidence: &'a str,
-}
-
-#[derive(Serialize)]
-pub(super) struct InterfaceArgumentDocument<'a> {
-    pub(super) index: usize,
-    pub(super) kind: &'a str,
-    pub(super) expression: &'a str,
 }
 
 pub(super) fn print_pack_human(report: &InterfacePackDocument<'_>) {
@@ -201,6 +170,12 @@ pub(super) fn print_pack_human(report: &InterfacePackDocument<'_>) {
 }
 
 pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
+    outputln!(
+        "Evidence: {} calls, {} assignments, {} analysis gaps; full typed observations: --format json",
+        report.observations.calls.len(),
+        report.observations.assignments.len(),
+        report.observations.gaps.len()
+    );
     outputln!(
         "Interface workspace: {} — {}",
         report.status,
@@ -325,6 +300,7 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
             .flat_map(|binding| {
                 binding.calls.iter().map(move |call| {
                     let mut arguments = call
+                        .observation
                         .arguments
                         .iter()
                         .take(HUMAN_ARGUMENT_LIMIT)
@@ -332,27 +308,27 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
                             format!(
                                 "a{}:{}={}",
                                 argument.index,
-                                argument.kind,
-                                compact_text(argument.expression, HUMAN_EXPRESSION_LIMIT)
+                                argument.value.kind(),
+                                compact_text(&argument.value.canonical(), HUMAN_EXPRESSION_LIMIT)
                             )
                         })
                         .collect::<Vec<_>>();
-                    if call.arguments.len() > HUMAN_ARGUMENT_LIMIT {
+                    if call.observation.arguments.len() > HUMAN_ARGUMENT_LIMIT {
                         arguments.push(format!(
                             "+{} arg(s)",
-                            call.arguments.len() - HUMAN_ARGUMENT_LIMIT
+                            call.observation.arguments.len() - HUMAN_ARGUMENT_LIMIT
                         ));
                     }
                     [
                         binding.anchor.to_owned(),
-                        call.function.to_owned(),
-                        format!("{:#010x}", call.site),
-                        call.slot_selector.map_or_else(
-                            || call.kind.to_owned(),
+                        call.observation.function.to_owned(),
+                        format!("{:#010x}", call.observation.site),
+                        call.slot_selector.as_deref().map_or_else(
+                            || call.observation.kind.to_owned(),
                             |selector| {
                                 format!(
                                     "{} indexed({selector}) index={} domain={}",
-                                    call.kind,
+                                    call.observation.kind,
                                     call.slot_index
                                         .map_or_else(|| "?".to_owned(), |index| index.to_string()),
                                     call.slot_index_domain.as_ref().map_or_else(

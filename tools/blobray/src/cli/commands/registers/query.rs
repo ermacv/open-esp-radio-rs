@@ -3,9 +3,12 @@
 use super::*;
 use serde_json::json;
 
-pub(super) fn run(command: RegisterWorkspaceCommand, project: &ProjectSpec) -> Result<bool> {
-    let catalog = crate::MmioMap::load_all(&[])?;
-    let inventory = crate::application::register_inventory::load(project, &catalog)?;
+pub(super) fn run(
+    command: RegisterWorkspaceCommand,
+    session: &crate::application::ProjectSession,
+) -> Result<bool> {
+    let snapshot = &session.register_query()?.snapshot;
+    let inventory = snapshot.inventory();
     let coverage = matches!(command, RegisterWorkspaceCommand::Coverage(_));
     match command {
         RegisterWorkspaceCommand::List(arguments)
@@ -16,9 +19,15 @@ pub(super) fn run(command: RegisterWorkspaceCommand, project: &ProjectSpec) -> R
             let address = |value: Option<&str>| {
                 value
                     .map(|value| {
-                        crate::parse_u32(value).ok_or_else(|| {
-                            crate::Error::invalid(format!("invalid integer {value:?}"))
-                        })
+                        value
+                            .strip_prefix("0x")
+                            .map_or_else(
+                                || value.parse::<u64>(),
+                                |value| u64::from_str_radix(value, 16),
+                            )
+                            .map_err(|_| {
+                                crate::Error::invalid(format!("invalid integer {value:?}"))
+                            })
                     })
                     .transpose()
             };
@@ -27,9 +36,14 @@ pub(super) fn run(command: RegisterWorkspaceCommand, project: &ProjectSpec) -> R
                 source: arguments.source.clone(),
                 text: arguments.text.clone(),
                 subject: arguments.subject.clone(),
-                start: address(arguments.start.as_deref())?.map(u64::from),
-                end_exclusive: address(arguments.end_exclusive.as_deref())?.map(u64::from),
-                mask: address(arguments.mask.as_deref())?,
+                start: address(arguments.start.as_deref())?,
+                end_exclusive: address(arguments.end_exclusive.as_deref())?,
+                mask: address(arguments.mask.as_deref())?
+                    .map(u32::try_from)
+                    .transpose()
+                    .map_err(|_| {
+                        crate::Error::invalid("--mask exceeds the supported 32-bit mask")
+                    })?,
                 unknown: arguments.unknown,
                 conflicted: arguments.conflicted,
             };
@@ -50,7 +64,7 @@ pub(super) fn run(command: RegisterWorkspaceCommand, project: &ProjectSpec) -> R
                         .any(|register| register.id == question.subject)
                 })
                 .collect::<Vec<_>>();
-            let document = json!({"schema_version":1,"command":if coverage { "registers coverage" } else { "registers list" },"total":total,"next_offset":(next < total).then_some(next),"registers":selected,"questions":questions,"sources":inventory.sources,"coverage_gaps":inventory.gaps,"regions":if coverage { Some(&inventory.regions) } else { None },"address_domains":inventory.address_domains});
+            let document = json!({"schema_version":2,"snapshot_id":snapshot.id(),"command":if coverage { "registers coverage" } else { "registers list" },"total":total,"next_offset":(next < total).then_some(next),"registers":selected,"questions":questions,"sources":inventory.sources,"coverage_gaps":inventory.gaps,"regions":if coverage { Some(&inventory.regions) } else { None },"address_domains":inventory.address_domains});
             crate::cli::output::render_report(&document, || {
                 outputln!(
                     "Registers: {} of {total}; offset={}",

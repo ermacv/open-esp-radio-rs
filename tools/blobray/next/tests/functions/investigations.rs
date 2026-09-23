@@ -1,5 +1,5 @@
 use super::*;
-fn plan(f: &Fixture, request: InvestigationRequest) -> InvestigationPlan {
+pub(super) fn plan(f: &Fixture, request: InvestigationRequest) -> InvestigationPlan {
     let decoder = blobray_backend_riscv::RiscvDecoder;
     let output = f
         .app
@@ -20,7 +20,7 @@ fn plan(f: &Fixture, request: InvestigationRequest) -> InvestigationPlan {
     };
     (**plan).clone()
 }
-fn publish(f: &Fixture, plan: &InvestigationPlan) -> app::RunRecord {
+pub(super) fn publish(f: &Fixture, plan: &InvestigationPlan) -> app::RunRecord {
     f.app
         .start_analyze_project(
             &f.project,
@@ -138,8 +138,8 @@ fn library_results_equal_single_function_and_survive_move_and_deleted_origins() 
     );
     assert_eq!(found.findings.len(), 2);
     assert_ne!(
-        found.findings[0].request.symbol,
-        found.findings[1].request.symbol
+        found.findings[0].request.selector.symbol().unwrap().clone(),
+        found.findings[1].request.selector.symbol().unwrap().clone()
     );
     assert!(
         found
@@ -192,7 +192,7 @@ fn zero_size_functions_remain_blocked_unless_exact_occurrence_has_extent() {
         InvestigationRequest {
             extents: vec![FunctionExtent {
                 source: FunctionSource::Input { input: 0 },
-                symbol: f.request.symbol.clone(),
+                symbol: f.request.selector.symbol().unwrap().clone(),
                 extent: CodeRange {
                     start: 0,
                     length: BRANCH.len() as u64,
@@ -368,7 +368,7 @@ fn gaps_for_missing_thin_members_unsupported_objects_and_stripped_code_are_expli
     assert_eq!(m.coverage.inputs, 3);
     assert!(m.coverage.gaps >= 3);
     assert!(r.members.iter().any(
-        |m| matches!(&m.entry,PlanEntry::Gap{reason,..} if reason.contains("no defined static"))
+        |m| matches!(&m.entry,PlanEntry::Gap{reason,..} if reason.contains("no selected function"))
     ));
 }
 #[test]
@@ -439,7 +439,7 @@ fn plan_rejects_unused_selections_and_extent_overrides() {
         InvestigationRequest {
             extents: vec![FunctionExtent {
                 source: FunctionSource::Input { input: 9 },
-                symbol: f.request.symbol.clone(),
+                symbol: f.request.selector.symbol().unwrap().clone(),
                 extent: CodeRange {
                     start: 0,
                     length: 2,
@@ -957,7 +957,7 @@ fn dynamic_and_static_function_aliases_remain_distinct_in_saved_publication() {
         false,
     );
     let p = plan(&f, InvestigationRequest::default());
-    assert_eq!(p.recipe.policy, 3);
+    assert_eq!(p.recipe.policy, 4);
     assert_eq!(p.recipe.functions, 4); // two tables in each of two physical members
     fs::remove_file(f.dir.path().join("entry.a")).unwrap();
     fs::remove_file(f.dir.path().join("entry.o")).unwrap();
@@ -970,8 +970,8 @@ fn dynamic_and_static_function_aliases_remain_distinct_in_saved_publication() {
     let mut analyses = Vec::new();
     for member in records.members {
         if let PlanEntry::Function { request, .. } = member.entry {
-            assert!(!identities.contains(&request.symbol));
-            identities.push(request.symbol);
+            assert!(!identities.contains(&request.selector.symbol().unwrap().clone()));
+            identities.push(request.selector.symbol().unwrap().clone());
             let InvestigationOutcome::Analyzed { analysis, .. } = member.outcome else {
                 panic!("missing analysis")
             };

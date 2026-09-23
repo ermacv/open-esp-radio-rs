@@ -62,7 +62,7 @@ pub fn investigation_plan(recipe: InvestigationRecipe) -> Result<InvestigationPl
 }
 pub fn validate_investigation_plan(plan: &InvestigationPlan) -> Result<()> {
     let r = &plan.recipe;
-    if r.schema != 2 || r.policy != 3 {
+    if r.schema != 3 || r.policy != 4 {
         return Err(Error::new(
             ErrorCode::Incompatible,
             "unsupported investigation recipe",
@@ -257,12 +257,12 @@ fn verify_child(
         || Some(&r.revision) != plan.recipe.request.revision.as_ref()
         || request.revision.as_ref() != Some(&r.revision)
         || r.source != request.source
-        || r.symbol != request.symbol
+        || r.selector != request.selector
         || &r.payload != payload
         || r.decoder != plan.recipe.producer.decoder
         || r.semantics.as_ref() != Some(&plan.recipe.producer.semantics)
-        || r.user_extent != request.extent.is_some()
-        || request.extent.is_some_and(|e| e != r.extent)
+        || r.user_extent != request.explicit_extent().is_some()
+        || request.explicit_extent().is_some_and(|e| e != r.extent)
         || complete
             != (manifest.coverage.complete() && manifest.semantics.is_some_and(|s| s.complete))
     {
@@ -356,7 +356,10 @@ impl Project {
         for reference in &manifest.plan.recipe.request.reviewed_extents {
             let entry = self.knowledge_entry(&reference.revision, &reference.assertion, control)?;
             if entry.state != AssertionState::Accepted
-                || !matches!(entry.proposal.claim, KnowledgeClaim::FunctionExtent { .. })
+                || !matches!(
+                    entry.proposal.claim,
+                    KnowledgeClaim::FunctionExtent { .. } | KnowledgeClaim::ExecutableRange { .. }
+                )
                 || manifest.plan.recipe.request.revision.as_ref()
                     != Some(&entry.proposal.occurrence.revision)
             {

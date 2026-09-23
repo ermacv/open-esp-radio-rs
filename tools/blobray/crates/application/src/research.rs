@@ -142,7 +142,7 @@ pub(crate) fn enrich(
                 };
                 if publication_index == 0
                     && request.source == manifest.recipe.source
-                    && request.symbol == manifest.recipe.symbol
+                    && request.selector == manifest.recipe.selector
                 {
                     root = analysis.clone();
                 }
@@ -154,7 +154,7 @@ pub(crate) fn enrich(
                         (
                             declared_extent.start,
                             request.source,
-                            request.symbol,
+                            request.selector,
                             analysis,
                             capacity,
                         ),
@@ -176,7 +176,7 @@ pub(crate) fn enrich(
         if entry.state != AssertionState::Accepted
             || p.occurrence.revision != manifest.recipe.revision
             || p.occurrence.source != manifest.recipe.source
-            || p.occurrence.object != manifest.recipe.symbol.object
+            || p.occurrence.object != *manifest.recipe.selector.object()
         {
             continue;
         }
@@ -269,10 +269,10 @@ pub(crate) fn enrich(
                 {
                     c.checkpoint(1)?;
                     if (*source == nodes[cursor].recipe.source
-                        && symbol.object == nodes[cursor].recipe.symbol.object)
-                        || external
-                            .iter()
-                            .any(|e| source.input() == Some(e.input) && *symbol == e.symbol)
+                        && symbol.object() == nodes[cursor].recipe.selector.object())
+                        || external.iter().any(|e| {
+                            source.input() == Some(e.input) && symbol.symbol() == Some(&e.symbol)
+                        })
                     {
                         if let Some(analysis) = analysis {
                             if candidate.as_ref() != Some(analysis) {
@@ -361,7 +361,7 @@ pub(crate) fn enrich(
                             offset: *offset,
                             analysis: &nodes[i].id,
                             source: &nodes[i].recipe.source,
-                            object: &nodes[i].recipe.symbol.object,
+                            object: nodes[i].recipe.selector.object(),
                             records: nodes[i].facts(),
                         },
                         c.position(),

@@ -11,8 +11,19 @@ pub struct InvestigationRequest {
     pub inputs: Option<Vec<u64>>,
     #[serde(default)]
     pub extents: Vec<FunctionExtent>,
+    /// Explicit physical code ranges added to symbol enumeration.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ranges: Vec<FunctionRange>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reviewed_extents: Vec<ReviewedExtent>,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FunctionRange {
+    pub source: FunctionSource,
+    pub object: ObjectId,
+    pub section: u32,
+    pub extent: CodeRange,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -48,6 +59,8 @@ pub struct InvestigationPlan {
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+// Streamed one record at a time; keep the admitted request inline instead of adding a hidden allocation.
+#[allow(clippy::large_enum_variant)]
 pub enum PlanEntry {
     Image {
         image: PreparedImageId,

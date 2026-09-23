@@ -38,7 +38,7 @@ impl FunctionRecipe {
             + self.project.allocated_bytes()
             + self.revision.allocated_bytes()
             + self.source.allocated_bytes()
-            + self.symbol.object.artifact.allocated_bytes()
+            + self.selector.object().artifact.allocated_bytes()
             + self.payload.allocated_bytes()
             + self.research.as_ref().map_or(0, |r| {
                 r.publication.allocated_bytes()

@@ -98,9 +98,6 @@ pub fn with_prepared_object<T>(
     if static_tables > 1 || dynamic_tables > 1 {
         return Err(invalid("ambiguous physical symbol tables"));
     }
-    if static_tables + dynamic_tables == 0 {
-        return Err(invalid("missing symbol table"));
-    }
     let image = if file.kind() == object::ObjectKind::Executable {
         Some(crate::program::ProgramView::new(
             &bytes, &file, memory, control,
@@ -403,41 +400,60 @@ impl<'data> PreparedObject<'data, '_> {
         control: &mut dyn RunControl,
         consume: impl FnOnce(FunctionView<'_>, &mut dyn RunControl) -> Result<T>,
     ) -> Result<T> {
-        if self
-            .occurrence
-            .as_ref()
-            .is_some_and(|id| id != &request.symbol.object)
-        {
+        let occurrence = request.selector.object();
+        if self.occurrence.as_ref().is_some_and(|id| id != occurrence) {
             return Err(invalid("prepared object belongs to another occurrence"));
         }
-        if self.occurrence.is_none() {
-            self.occurrence = Some(request.symbol.object.clone());
-        }
+        self.occurrence = Some(occurrence.clone());
         let file = &self.file;
-        let symbol = self.selected_symbol(&request.symbol.object, &request.symbol)?;
-        let section_index = symbol
-            .section_index()
-            .ok_or_else(|| invalid("function symbol has no defined section"))?;
+        let (section_index, extent, required_start, user_extent) = match &request.selector {
+            FunctionSelector::Symbol { symbol } => {
+                let symbol = self.selected_symbol(occurrence, symbol)?;
+                let section = symbol
+                    .section_index()
+                    .ok_or_else(|| invalid("function symbol has no defined section"))?;
+                if request.extent.is_none() && symbol.size() == 0 {
+                    return Err(Error::new(
+                        ErrorCode::NeedsExtent,
+                        "symbol size is unknown; supply an explicit extent starting at the selected symbol",
+                    ));
+                }
+                (
+                    section,
+                    request.extent.unwrap_or(CodeRange {
+                        start: symbol.address(),
+                        length: symbol.size(),
+                    }),
+                    symbol.address(),
+                    request.extent.is_some(),
+                )
+            }
+            FunctionSelector::Range {
+                section, extent, ..
+            } => {
+                if request.extent.is_some() {
+                    return Err(invalid(
+                        "range selection cannot have a symbol extent override",
+                    ));
+                }
+                (
+                    object::SectionIndex(*section as usize),
+                    *extent,
+                    extent.start,
+                    true,
+                )
+            }
+        };
         let section = file.section_by_index(section_index).map_err(parse)?;
         if !matches!(section.flags(),object::SectionFlags::Elf{sh_flags} if sh_flags&u64::from(object::elf::SHF_EXECINSTR)!=0)
         {
-            return Err(invalid("function symbol is not in executable code"));
+            return Err(invalid("function selection is not in executable code"));
         }
-        if request.extent.is_none() && symbol.size() == 0 {
-            return Err(Error::new(
-                ErrorCode::NeedsExtent,
-                "symbol size is unknown; supply an explicit extent starting at the selected symbol",
-            ));
-        }
-        let extent = request.extent.unwrap_or(CodeRange {
-            start: symbol.address(),
-            length: symbol.size(),
-        });
         let end = extent
             .start
             .checked_add(extent.length)
             .ok_or_else(|| invalid("function extent overflow"))?;
-        if extent.start != symbol.address()
+        if extent.start != required_start
             || !extent.start.is_multiple_of(2)
             || extent.length == 0
             || extent.start < section.address()
@@ -447,10 +463,10 @@ impl<'data> PreparedObject<'data, '_> {
                 .is_none_or(|limit| end > limit)
         {
             return Err(invalid(
-                "function extent must start at the selected aligned symbol and stay in its section",
+                "function extent must start at the selected aligned address and stay in its section",
             ));
         }
-        self.prepare_section(section_index, &request.symbol.object, control)?;
+        self.prepare_section(section_index, occurrence, control)?;
         let section = self.file.section_by_index(section_index).map_err(parse)?;
         let image = &self.image;
         let data = section.data().map_err(parse)?;
@@ -478,7 +494,7 @@ impl<'data> PreparedObject<'data, '_> {
                 image: image.as_ref().map(|v| v as &dyn ImageMemory),
                 section: section_index.0 as u32,
                 extent,
-                user_extent: request.extent.is_some(),
+                user_extent,
                 code,
                 relocations: &prepared.relocations,
                 data_ranges: &prepared.mappings.ranges,

@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 9
-and database schema 8 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 10
+and database schema 9 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -807,8 +807,33 @@ relocation referencing another table is explicitly outside the current profile.
 Whole-object enumeration preserves both static and dynamic STT_FUNC occurrences,
 including aliases, as separate physical requests and results. Coverage unions
 selected byte intervals without turning duplicate symbols into additional bytes.
-Function selection policy 5 and investigation policy 3 record this interpretation;
+Function selection policy 6 and investigation policy 4 record this interpretation;
 reading does not convert older policies. Regression coverage lives in Next
 `functions` tests `dynamic_occurrences_keep_physical_indices_through_review_export_and_reopen`,
 `dynamic_function_selection_keeps_static_relocation_target_identity` and
 `dynamic_and_static_function_aliases_remain_distinct_in_saved_publication`.
+
+### Explicit executable ranges
+
+`FunctionSelector` distinguishes physical symbols from `{object, section, extent}`
+code ranges. The latter require no symbol table and reject a separate symbol-size
+override. Artifacts owns section/type/alignment/bounds/backing validation; the
+application's shared occurrence acquisition owns source/image/revision identity.
+No range is inferred from neighbors, padding or disassembly. Prepared views keep
+the existing callback lifetime and admitted memory owner.
+
+`KnowledgeClaim::ExecutableRange` uses a symbol-independent occurrence and exact
+section/extent. Proposal and acceptance validate the same captured bytes as
+analysis. Overlapping differing ranges in the same section conflict. Reviewed
+boundaries supply native `InvestigationRequest.ranges`; unused or duplicate
+selections fail planning, invalid bytes produce blocked function outcomes. Store
+validates selector/section/extent against the admitted request before publishing
+and when reopening retained results. Coverage joins explicit ranges to section
+metadata and unions them with symbol extents, leaving other bytes unclassified.
+
+Function schema 5 / policy 6, investigation schema 3 / policy 4, database schema 9
+and journal schema 10 carry these identities. Old formats are rejected without
+mutation or conversion. `functions::ranges` regressions cover table-free ordinary
+and thin archives, generic review, invalid ranges, source-free export and coverage;
+`reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
+prepared-image review and virtual addresses.

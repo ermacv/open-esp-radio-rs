@@ -440,7 +440,9 @@ fn proposal_heap_bytes(p: &KnowledgeProposal) -> u64 {
         KnowledgeClaim::MmioRegion { region } => region.name.len(),
         KnowledgeClaim::Name { name } => name.len(),
         KnowledgeClaim::Hypothesis { text } => text.len(),
-        KnowledgeClaim::Binding | KnowledgeClaim::FunctionExtent { .. } => 0,
+        KnowledgeClaim::Binding
+        | KnowledgeClaim::FunctionExtent { .. }
+        | KnowledgeClaim::ExecutableRange { .. } => 0,
     };
     (p.subject.as_str().len()
         + 2 * 64

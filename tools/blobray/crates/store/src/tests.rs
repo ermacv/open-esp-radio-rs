@@ -306,7 +306,7 @@ fn incompatible_journals_are_rejected_by_all_readers_without_mutation() {
     let mut writer = project.writer().unwrap();
     let (run, _) = writer.register(ResourceBudget::default(), owner()).unwrap();
     let connection = open_connection(&project.root, true).unwrap();
-    for schema in [1, 2, 3, 4, 5, 6, 7, 8, 10, 999] {
+    for schema in [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 999] {
         let mut value = serde_json::to_value(&run).unwrap();
         value["schema"] = schema.into();
         let raw = value.to_string();
@@ -664,7 +664,7 @@ fn check_function_publication(decoding: bool) {
         research: None,
         revision: Some(snapshot.revision_id.clone()),
         source: FunctionSource::Input { input: 0 },
-        symbol: symbol.clone(),
+        selector: (symbol.clone()).into(),
         extent: Some(CodeRange {
             start: 0,
             length: 4,
@@ -686,7 +686,7 @@ fn check_function_publication(decoding: bool) {
     file.write_all(b"retained typed records").unwrap();
     let records = stage.retain_temporary(file, &mut || Ok(())).unwrap();
     let manifest = FunctionManifest {
-        schema: 4,
+        schema: 5,
         semantics: Some(SemanticSummary {
             complete: false,
             gaps: 1,
@@ -696,14 +696,14 @@ fn check_function_publication(decoding: bool) {
             research: None,
             abi: RiscvAbi::Ilp32,
             address_space: CodeAddressSpace::Section,
-            schema: 4,
-            policy: 5,
+            schema: 5,
+            policy: 6,
             semantics: Some("fixture-values/1".into()),
             decoder: "fixture/1".into(),
             project: project.id().clone(),
             revision: snapshot.revision_id.clone(),
             source: FunctionSource::Input { input: 0 },
-            symbol,
+            selector: (symbol).into(),
             payload: ArtifactId::of_bytes(b"payload"),
             section: 2,
             extent: request.extent.unwrap(),
@@ -790,7 +790,7 @@ fn staged_investigation(
         research: None,
         revision: Some(revision.clone()),
         source: FunctionSource::Input { input: 0 },
-        symbol: symbol.clone(),
+        selector: (symbol.clone()).into(),
         extent: None,
     };
     let entry = PlanEntry::Function {
@@ -806,8 +806,8 @@ fn staged_investigation(
     let mut digest = EntryDigest::default();
     digest.include(&entry).unwrap();
     let plan = investigation_plan(InvestigationRecipe {
-        schema: 2,
-        policy: 3,
+        schema: 3,
+        policy: 4,
         project: writer.project.id.clone(),
         request: InvestigationRequest {
             revision: Some(revision.clone()),
@@ -847,17 +847,17 @@ fn staged_investigation(
     let child = stage
         .function_receipt(
             &FunctionManifest {
-                schema: 4,
+                schema: 5,
                 recipe: FunctionRecipe {
                     research: None,
                     abi: RiscvAbi::Ilp32,
                     address_space: CodeAddressSpace::Section,
-                    schema: 4,
-                    policy: 5,
+                    schema: 5,
+                    policy: 6,
                     project: writer.project.id.clone(),
                     revision: revision.clone(),
                     source: FunctionSource::Input { input: 0 },
-                    symbol,
+                    selector: (symbol).into(),
                     payload: ArtifactId::of_bytes(b"object"),
                     section: 1,
                     extent: CodeRange {
@@ -1359,7 +1359,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
 
 #[test]
 fn older_project_formats_are_rejected_without_mutation() {
-    for schema in 1..8 {
+    for schema in 1..9 {
         let temp = tempfile::tempdir().unwrap();
         Project::create(temp.path()).unwrap();
         let db = temp.path().join(STATE).join("project.sqlite3");

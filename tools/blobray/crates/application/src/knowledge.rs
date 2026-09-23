@@ -54,6 +54,21 @@ fn validate_evidence(
                         crate::data::validate_table(capture.payload, &view, proposal)
                     })
                 })?;
+            } else if let KnowledgeClaim::ExecutableRange { section, extent } = proposal.claim {
+                let request = FunctionRequest {
+                    research: None,
+                    revision: Some(occurrence.revision.clone()),
+                    source: occurrence.source.clone(),
+                    extent: None,
+                    selector: FunctionSelector::Range {
+                        object: occurrence.object.clone(),
+                        section,
+                        extent,
+                    },
+                };
+                capture.with_prepared(memory, c, |object, c| {
+                    object.with_function(&request, c, |_, _| Ok(()))
+                })?;
             } else if extent.is_some()
                 || matches!(occurrence.source, FunctionSource::Image { .. })
                     && occurrence.symbol.is_some()
@@ -62,10 +77,11 @@ fn validate_evidence(
                     research: None,
                     revision: Some(occurrence.revision.clone()),
                     source: occurrence.source.clone(),
-                    symbol: occurrence
+                    selector: (occurrence
                         .symbol
                         .clone()
-                        .ok_or_else(|| invalid("boundary requires symbol"))?,
+                        .ok_or_else(|| invalid("boundary requires symbol"))?)
+                    .into(),
                     extent,
                 };
                 capture.with_prepared(memory, c, |object, c| {
@@ -90,11 +106,11 @@ fn validate_evidence(
                 let recipe = &lease.manifest.recipe;
                 if recipe.revision != occurrence.revision
                     || recipe.source != occurrence.source
-                    || recipe.symbol.object != occurrence.object
+                    || *recipe.selector.object() != occurrence.object
                     || occurrence
                         .symbol
                         .as_ref()
-                        .is_some_and(|s| s != &recipe.symbol)
+                        .is_some_and(|s| Some(s) != recipe.selector.symbol())
                     || recipe.payload != payload
                 {
                     return Err(invalid("analysis evidence belongs to another occurrence"));
@@ -141,11 +157,11 @@ fn validate_evidence(
                             }
                             PlanEntry::Function { request, .. } => {
                                 request.source == occurrence.source
-                                    && request.symbol.object == occurrence.object
+                                    && *request.selector.object() == occurrence.object
                                     && occurrence
                                         .symbol
                                         .as_ref()
-                                        .is_none_or(|s| s == &request.symbol)
+                                        .is_none_or(|s| Some(s) == request.selector.symbol())
                             }
                             _ => false,
                         };

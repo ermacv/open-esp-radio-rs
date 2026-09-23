@@ -111,7 +111,7 @@ pub(crate) fn resolve(
             source: FunctionSource::Input {
                 input: selection.input,
             },
-            symbol: selection.symbol.clone(),
+            selector: (selection.symbol.clone()).into(),
             extent: None,
         };
         let address = blobray_artifacts::with_function(

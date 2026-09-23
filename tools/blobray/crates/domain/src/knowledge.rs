@@ -65,6 +65,11 @@ pub enum KnowledgeClaim {
     FunctionExtent {
         extent: CodeRange,
     },
+    /// Reviewed explicit code bytes independent of symbol metadata.
+    ExecutableRange {
+        section: u32,
+        extent: CodeRange,
+    },
     Hypothesis {
         text: String,
     },

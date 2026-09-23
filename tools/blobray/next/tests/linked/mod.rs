@@ -1486,7 +1486,7 @@ fn static_executable_with_only_dynamic_symbols_analyzes_captured_bytes() {
     let request = FunctionRequest {
         revision: Some(inventory.revision_id),
         source: FunctionSource::Input { input: 0 },
-        symbol: symbol.clone(),
+        selector: (symbol.clone()).into(),
         extent: None,
         research: None,
     };
@@ -1514,7 +1514,176 @@ fn static_executable_with_only_dynamic_symbols_analyzes_captured_bytes() {
     let app::QuerySummary::Analysis { manifest, .. } = output.summary() else {
         panic!("analysis")
     };
-    assert_eq!(manifest.recipe.symbol, symbol);
+    assert_eq!(manifest.recipe.selector.symbol().unwrap().clone(), symbol);
     assert_eq!(manifest.recipe.address_space, CodeAddressSpace::Image);
     assert_eq!(manifest.instructions, 1);
+}
+
+#[test]
+fn reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage() {
+    use object::ObjectSection as _;
+    let f = fixture(false, true);
+    let image = prepared(&f);
+    let bytes = export(&f, image.clone());
+    let elf = object::File::parse(bytes.as_slice()).unwrap();
+    let helper = elf
+        .symbols()
+        .find(|s| s.name().ok() == Some("helper"))
+        .unwrap();
+    let section = elf
+        .section_by_index(helper.section_index().unwrap())
+        .unwrap();
+    let extent = CodeRange {
+        start: helper.address(),
+        length: helper.size(),
+    };
+    let file_range = CodeRange {
+        start: section.file_range().unwrap().0 + helper.address() - section.address(),
+        length: helper.size(),
+    };
+    let object = ObjectId {
+        artifact: ArtifactId::of_bytes(&bytes),
+        location: ObjectLocation::Standalone,
+    };
+    let selector = FunctionSelector::Range {
+        object: object.clone(),
+        section: section.index().0 as u32,
+        extent,
+    };
+    let source = FunctionSource::Image {
+        image: image.clone(),
+    };
+    let run = f
+        .app
+        .start_analyze_function(
+            &f.project,
+            FunctionRequest {
+                revision: Some(f.revision.clone()),
+                source: source.clone(),
+                selector: selector.clone(),
+                research: None,
+                extent: None,
+            },
+            budget(),
+        )
+        .unwrap()
+        .wait();
+    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    let analysis = run.analysis.unwrap();
+    let proposed = f
+        .app
+        .start_knowledge(
+            &f.project,
+            &KnowledgeChange {
+                expected_base: None,
+                actor: "test".into(),
+                reason: "exact image code".into(),
+                action: KnowledgeAction::Propose {
+                    proposal: KnowledgeProposal {
+                        subject: "helper-boundary".to_owned().try_into().unwrap(),
+                        occurrence: KnowledgeOccurrence {
+                            revision: f.revision.clone(),
+                            source,
+                            object: object.clone(),
+                            symbol: None,
+                        },
+                        claim: KnowledgeClaim::ExecutableRange {
+                            section: section.index().0 as u32,
+                            extent,
+                        },
+                        evidence: vec![
+                            EvidenceRef::Source {
+                                payload: object.artifact,
+                                range: file_range,
+                            },
+                            EvidenceRef::Analysis {
+                                analysis: analysis.clone(),
+                                record: None,
+                            },
+                        ],
+                        note: None,
+                    },
+                },
+            },
+            budget(),
+        )
+        .unwrap()
+        .wait();
+    assert_eq!(proposed.state, RunState::Completed, "{proposed:?}");
+    let entries = cli(&f, &["knowledge", "show"]);
+    let assertion: AssertionId = entries["records"][0]["value"]["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let accepted = f
+        .app
+        .start_knowledge(
+            &f.project,
+            &KnowledgeChange {
+                expected_base: proposed.knowledge,
+                actor: "test".into(),
+                reason: "reviewed image bytes".into(),
+                action: KnowledgeAction::Review {
+                    assertion: assertion.clone(),
+                    decision: ReviewDecision::Accept,
+                    supersedes: None,
+                },
+            },
+            budget(),
+        )
+        .unwrap()
+        .wait();
+    assert_eq!(accepted.state, RunState::Completed, "{accepted:?}");
+    let baseline = analyze(&f, Some(image.clone()));
+    let baseline_coverage = cli(&f, &["coverage", "--id", baseline.as_str()]);
+    let decoder = blobray_backend_riscv::RiscvDecoder;
+    let run = f
+        .app
+        .start_analyze_project(
+            &f.project,
+            InvestigationInput::Automatic {
+                request: InvestigationRequest {
+                    image: Some(image),
+                    reviewed_extents: vec![ReviewedExtent {
+                        revision: accepted.knowledge.unwrap(),
+                        assertion,
+                    }],
+                    ..Default::default()
+                },
+                producer: FunctionProducer {
+                    decoder: decoder.identity().into(),
+                    semantics: decoder.semantic_identity().into(),
+                },
+            },
+            budget(),
+        )
+        .unwrap()
+        .wait();
+    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    let coverage = cli(&f, &["coverage", "--id", run.publication.unwrap().as_str()]);
+    assert_eq!(
+        coverage["summary"]["extents"]["selected_extent_bytes"],
+        baseline_coverage["summary"]["extents"]["selected_extent_bytes"]
+    );
+    assert_eq!(coverage["summary"]["extents"]["unknowns"], 0);
+    fs::remove_file(f.dir.path().join("entry.a")).unwrap();
+    fs::remove_file(f.dir.path().join("helper.a")).unwrap();
+    let output = f
+        .app
+        .query(
+            &f.project,
+            app::ReadQuery::Analysis {
+                id: analysis,
+                export: false,
+            },
+            budget(),
+        )
+        .unwrap();
+    let app::QuerySummary::Analysis { manifest, .. } = output.summary() else {
+        panic!("analysis")
+    };
+    assert_eq!(manifest.recipe.selector, selector);
+    assert_eq!(manifest.recipe.extent, extent);
+    assert_eq!(manifest.recipe.address_space, CodeAddressSpace::Image);
 }

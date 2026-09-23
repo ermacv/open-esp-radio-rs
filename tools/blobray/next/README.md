@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 8 and journal schema 9. Earlier and future
+Projects require metadata schema 9 and journal schema 10. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,8 +712,8 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 9 for every durable and read operation. Storage metadata
-uses schema 8; revision manifests use schema 1 and execution manifests use schema
+Run records use schema 10 for every durable and read operation. Storage metadata
+uses schema 9; revision manifests use schema 1 and execution manifests use schema
 1. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-9 run; an envelope version is not a journal
+execution 7) wrap the same schema-10 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -796,16 +796,27 @@ imported executable results retain their input occurrence and payload identity.
 ### Analyze and reopen a function
 
 `analyze-function --request request.json` accepts `FunctionRequest` with `revision`
-(ID or null to freeze selection at admission), `source`, full `symbol`, and
-optional `extent: {"start": 0, "length": 64}`. Source is
-`{"kind":"input","input":0}` for captured inputs or
-`{"kind":"image","image":"IMAGE_ID"}` for a prepared image. Image selection
-freezes the image's original revision, independently of current. Its symbol
-identifies the retained ELF, not a symbol from an original archive. Extents use
-section offsets for ET_REL and virtual addresses for ET_EXEC. Nonempty
-extents must start at the selected symbol, on a halfword boundary, and remain in
-its file-backed executable section. Selection names enumerate candidates,
-including undefined references; choose the exact defined occurrence. Physical static/dynamic table kind, section and entry index are validated, and physical input/member identities never collapse by name.
+(ID or null to freeze selection at admission), `source`, `selector`, optional
+`extent` and optional `research`. Source is `{"kind":"input","input":0}` for
+captured inputs or `{"kind":"image","image":"IMAGE_ID"}` for a prepared image.
+Image selection freezes the image's original revision independently of current;
+its object identity addresses the retained ELF.
+
+- `selector: {"kind":"symbol","symbol": SYMBOL_ID}` selects an exact physical
+  static/dynamic table occurrence. Optional `extent: {"start": 0, "length": 64}`
+  overrides its declared size, starts at that symbol and is mandatory for zero
+  size. Names enumerate candidates, including undefined references; they never
+  choose an occurrence implicitly.
+- `selector: {"kind":"range","object": OBJECT_ID,"section": 1,"extent":
+  {"start": 8,"length": 16}}` selects explicit code bytes without a symbol.
+  The outer `extent` must be null or absent. No symbol is fabricated and an ELF
+  without either symbol table is valid for this selection.
+
+Extents use section offsets for ET_REL and virtual addresses for ET_EXEC. They
+must be nonempty, start at a halfword boundary and stay in the selected
+file-backed executable section. Captured archive/member identity, ELF section
+and exact extent survive analysis and export. Unselected executable bytes do
+not acquire boundaries or semantic coverage.
 
 ```console
 cargo blobray analyze-function --project /path/to/investigation \
@@ -946,12 +957,13 @@ prohibit dependencies on the legacy backend. Format support is defined once in
 
 ### Values and memory effects
 
-Function recipe/manifest version 4 records the semantic producer, typed source,
+Function recipe/manifest version 5 records the semantic producer, typed source,
 address space, register values, memory accesses, transfers and semantic gaps.
 Older function schemas are unsupported; reading never converts or recomputes
 a result. Captured inputs are unchanged. Function manifests are independent
-of storage metadata version. Function selection policy 5 validates physical static/dynamic tables.
-Investigation recipes use version 2 / policy 3 and enumerate both tables; older
+of storage metadata version. Function selection policy 6 validates physical static/dynamic tables.
+Investigation recipes use version 3 / policy 4 and enumerate both tables plus
+explicit ranges; older
 selection policies are unsupported.
 
 The domain `FunctionSemantics` port extends decoding with typed operations and
@@ -1100,7 +1112,8 @@ An investigation freezes a revision, selected input ordinals (all by default),
 explicit per-function extents and the selected function producer. Its saved plan
 binds the digest and counts of deterministic streamed inventory entries. Planning
 is read-only; execution revalidates the same selection before publication.
-Defined static function symbols remain separate occurrences, including aliases.
+Defined static/dynamic function symbols and explicit code ranges remain separate
+occurrences, including aliases.
 Unsupported objects, absent thin members, unknown code coverage and missing
 extents remain visible. No neighboring-symbol extent or name-based binding is
 invented. Inventory-only data objects are recorded without inventing functions.
@@ -1155,8 +1168,18 @@ Enumeration selects static and dynamic `STT_FUNC` symbols defined in nonempty ex
 sections. Aliases and occurrences in different tables remain separate selections
 even when their names, addresses and bytes match. Every input and object is
 accounted for, including data-only objects.
-An executable object without such symbols is a gap; no function boundaries are
-inferred from disassembly. Complete coverage means complete outcomes for this
+An executable object with neither selected symbols nor explicit ranges is a gap;
+no function boundaries are inferred from disassembly. `InvestigationRequest.ranges`
+adds `{ "source": SOURCE, "object": OBJECT_ID, "section": 1, "extent":
+{"start":8,"length":16} }` selections. Duplicate or unused selections fail
+planning; invalid selected extents become blocked outcomes. A reviewed
+`KnowledgeClaim::ExecutableRange` uses `section` and `extent` with an occurrence
+whose `symbol` is null. Generic proposal/review checks executable backing and
+physical identity. Accepted references in `reviewed_extents` supply ranges for
+input or prepared-image research. Different overlapping boundary proposals in
+the same section conflict; review does not assert semantic completeness.
+Symbol and explicit-range aliases remain separate results; coverage counts their
+byte union once. Complete coverage means complete outcomes for this
 selected symbol scope, not proof that every executable byte has a function or
 that the library has been verified. `analyzed` includes structurally or
 semantically partial results; `complete_functions` requires both coverages.
@@ -1521,8 +1544,8 @@ Each range uses one of these selectors:
 | `symbol` | `symbol`, `length` (integer or null) | Exact static or dynamic SymbolId; null uses its declared size |
 | `image` | `address`, `length` | Virtual address in a file-backed load mapping of an executable ELF |
 
-The prepared-object profile requires little-endian RV32 ET_REL/ET_EXEC with at least one
-physical symbol table and at most one each of SHT_SYMTAB and SHT_DYNSYM; names
+The prepared-object profile requires little-endian RV32 ET_REL/ET_EXEC with at most one each
+of SHT_SYMTAB and SHT_DYNSYM; table-free section/range selection is supported; names
 such as `.symtab` are not table identity. Dynamic symbol selection does not enable
 dynamic loading, TLS or relocation application. Section relocations must reference
 the static table through `sh_link`; a different table is an explicit unsupported

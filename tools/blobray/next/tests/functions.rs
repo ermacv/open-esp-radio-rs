@@ -143,7 +143,7 @@ fn fixture(bytes: Vec<u8>, thin: bool) -> Fixture {
         research: None,
         revision: Some(revision.clone()),
         source: FunctionSource::Input { input: 0 },
-        symbol,
+        selector: (symbol).into(),
         extent: None,
     };
     Fixture {
@@ -195,7 +195,10 @@ fn function_graph_is_retained_for_exact_thin_occurrence_and_reopens_without_sour
     );
     let id = run.analysis.unwrap();
     let (manifest, records) = export(&f, id.clone());
-    assert_eq!(manifest.recipe.symbol, f.request.symbol);
+    assert_eq!(
+        manifest.recipe.selector.symbol().unwrap().clone(),
+        f.request.selector.symbol().unwrap().clone()
+    );
     assert_eq!(manifest.instructions, 4);
     assert_eq!(manifest.blocks, 3);
     assert!(records.iter().any(|r| matches!(
@@ -600,7 +603,7 @@ fn values_and_memory_effects_survive_export_without_origins() {
     );
     let id = run.analysis.unwrap();
     let (manifest, records) = export(&f, id.clone());
-    assert_eq!(manifest.schema, 4);
+    assert_eq!(manifest.schema, 5);
     assert!(manifest.recipe.semantics.is_some());
     let s = manifest.semantics.unwrap();
     assert_eq!(s.accesses, 3);
@@ -960,3 +963,6 @@ fn ten_thousand_section_relocations_fit_small_function_capacity() {
 
 #[path = "functions/reports.rs"]
 mod reports;
+
+#[path = "functions/ranges.rs"]
+mod ranges;

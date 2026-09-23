@@ -87,7 +87,7 @@ fn request(f: &Fixture, names: &[&[u8]]) -> DataRequest {
         occurrence: KnowledgeOccurrence {
             revision: f.revision.clone(),
             source: f.request.source.clone(),
-            object: f.request.symbol.object.clone(),
+            object: f.request.selector.object().clone(),
             symbol: None,
         },
         ranges: names
@@ -176,7 +176,7 @@ fn proposal(f: &Fixture) -> DataProposalRequest {
         reason: "verified bytes".into(),
     }
 }
-fn review(
+pub(super) fn review(
     f: &Fixture,
     proposed: app::RunRecord,
     decision: ReviewDecision,
@@ -954,15 +954,15 @@ fn dynamic_occurrences_keep_physical_indices_through_review_export_and_reopen() 
             .find(|s| s.id.table == SymbolTableKind::Dynamic && s.name.as_deref() == Some(b"table"))
             .unwrap();
         let table = table.id.clone();
-        f.request.symbol = entry.id.clone();
-        let entry_id = f.request.symbol.clone();
+        f.request.selector = entry.id.clone().into();
+        let entry_id = f.request.selector.symbol().unwrap().clone();
         fs::remove_file(f.dir.path().join("entry.a")).unwrap();
         fs::remove_file(f.dir.path().join("entry.o")).unwrap();
         let result = analyze(&f);
         assert_eq!(result.state, RunState::Completed, "{result:?}");
         let analysis_id = result.analysis.unwrap();
         let (manifest, _) = export(&f, analysis_id.clone());
-        assert_eq!(manifest.recipe.symbol, entry_id);
+        assert_eq!(manifest.recipe.selector.symbol().unwrap().clone(), entry_id);
         assert_eq!(manifest.instructions, 2);
         let mut p = proposal(&f);
         p.selector = DataSelector::Symbol {
@@ -1077,12 +1077,15 @@ fn dynamic_function_selection_keeps_static_relocation_target_identity() {
         .unwrap()
         .id
         .clone();
-    assert_ne!(dynamic.index, f.request.symbol.index);
-    f.request.symbol = dynamic.clone();
+    assert_ne!(
+        dynamic.index,
+        f.request.selector.symbol().unwrap().clone().index
+    );
+    f.request.selector = dynamic.clone().into();
     let run = analyze(&f);
     assert_eq!(run.state, RunState::Completed, "{run:?}");
     let (manifest, records) = export(&f, run.analysis.unwrap());
-    assert_eq!(manifest.recipe.symbol, dynamic);
+    assert_eq!(manifest.recipe.selector.symbol().unwrap().clone(), dynamic);
     let references: Vec<_> = records
         .iter()
         .filter_map(|r| match r {

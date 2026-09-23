@@ -61,49 +61,12 @@ pub(crate) fn prepare_function_worker_in(
             work.request.revision.as_ref().ok_or_else(|| {
                 Error::new(ErrorCode::InvalidRequest, "function revision not frozen")
             })?;
-        if let FunctionSource::Image { image } = &work.request.source {
-            let image = project.image(image, &mut control)?;
-            if &image.manifest.plan.recipe.revision != revision
-                || work.request.symbol.object
-                    != (ObjectId {
-                        artifact: image.manifest.elf.clone(),
-                        location: ObjectLocation::Standalone,
-                    })
-            {
-                return Err(Error::new(
-                    ErrorCode::InvalidRequest,
-                    "image function does not belong to the selected image/revision",
-                ));
-            }
-            return FunctionEngine {
-                project: &project,
-                stage,
-                disk,
-                memory,
-                decoder,
-            }
-            .analyze(&image.elf, &work.request, &image.manifest.elf, &mut control);
-        }
-        let scope =
-            InspectionScope::Symbol {
-                input: work.request.source.input().ok_or_else(|| {
-                    Error::new(ErrorCode::InvalidRequest, "expected captured input")
-                })?,
-                symbol: work.request.symbol.clone(),
-            };
-        let mut probe = crate::selection::Probe::new(&scope);
-        project.read_inventory(Some(revision), memory, &mut control, &mut probe)?;
-        if !probe.found {
-            return Err(Error::new(
-                ErrorCode::NotFound,
-                "function occurrence absent from revision",
-            ));
-        }
-        let payload = probe
-            .binding
-            .and_then(|b| b.payload)
-            .ok_or_else(|| Error::new(ErrorCode::Unavailable, "function payload not captured"))?;
-        let source = project.open_payload(&work.request.symbol.object.artifact, &mut control)?;
+        let occurrence = KnowledgeOccurrence {
+            revision: revision.clone(),
+            source: work.request.source.clone(),
+            object: work.request.selector.object().clone(),
+            symbol: work.request.selector.symbol().cloned(),
+        };
         let engine = FunctionEngine {
             project: &project,
             stage,
@@ -111,28 +74,9 @@ pub(crate) fn prepare_function_worker_in(
             memory,
             decoder,
         };
-        let consume = |source: &dyn ByteSource, control: &mut dyn RunControl| {
-            engine.analyze(source, &work.request, &payload, control)
-        };
-        match work.request.symbol.object.location {
-            ObjectLocation::Standalone => consume(&source, &mut control),
-            ObjectLocation::ArchiveMember { ordinal } => {
-                let mut cursor = MemberCursor::new(&source, &mut control)?;
-                while let Some(member) = cursor.next(memory, &mut control)? {
-                    if member.ordinal != ordinal {
-                        continue;
-                    }
-                    if let Some((offset, length)) = member.payload {
-                        return consume(&SourceRange::new(&source, offset, length)?, &mut control);
-                    }
-                    return consume(&project.open_payload(&payload, &mut control)?, &mut control);
-                }
-                Err(Error::new(
-                    ErrorCode::Integrity,
-                    "captured archive occurrence missing",
-                ))
-            }
-        }
+        crate::occurrence::with_source(&project, &occurrence, memory, &mut control, |capture, c| {
+            engine.analyze(capture.bytes, &work.request, capture.payload, c)
+        })
     })();
     control.memory_phases(&memory.phase_observations());
     control.working_memory(memory.observation());
@@ -206,7 +150,7 @@ impl<'m> FunctionEngine<'m> {
         let mut position = RunPosition {
             phase: RunPhase::AnalyzeFunction,
             input: request.source.input(),
-            member: match request.symbol.object.location {
+            member: match request.selector.object().location {
                 ObjectLocation::Standalone => None,
                 ObjectLocation::ArchiveMember { ordinal } => Some(ordinal),
             },
@@ -220,8 +164,8 @@ impl<'m> FunctionEngine<'m> {
                 research: request.research.clone(),
                 abi: view.abi,
                 address_space: view.address_space,
-                schema: 4,
-                policy: 5,
+                schema: 5,
+                policy: 6,
                 decoder: self.decoder.identity().into(),
                 semantics: Some(self.decoder.semantic_identity().into()),
                 project: self.project.id().clone(),
@@ -229,7 +173,7 @@ impl<'m> FunctionEngine<'m> {
                     Error::new(ErrorCode::InvalidRequest, "function revision not frozen")
                 })?,
                 source: request.source.clone(),
-                symbol: request.symbol.clone(),
+                selector: request.selector.clone(),
                 payload: payload.clone(),
                 section: view.section,
                 extent: view.extent,
@@ -272,7 +216,7 @@ impl<'m> FunctionEngine<'m> {
             let staging = Staging::with_temporary_budget(self.stage, self.disk.clone())?;
             let records = staging.retain_temporary(records.file, control)?;
             let manifest = FunctionManifest {
-                schema: 4,
+                schema: 5,
                 recipe,
                 records,
                 coverage: summary.coverage,

@@ -43,7 +43,7 @@ them and never chooses a different source definition. Successful validation prov
 the synthetic image contract, not firmware placement or execution readiness.
 
 [Function views](src/function.rs) lend one admitted captured ELF object's selected
-code range, physical relocation targets and ELF data/code mapping ranges to a
+code range selected by physical symbol or explicit object/section/extent, physical relocation targets and ELF data/code mapping ranges to a
 callback. The borrowed view cannot outlive its reservations. A missing symbol
 extent requires an explicit caller range; this module does not infer function
 boundaries or interpret ISA relocations. Reserved null symbols remain explicit
@@ -87,3 +87,8 @@ supported. A selected dynamic symbol never changes the table used to interpret
 static relocations: their targets retain the `sh_link` table identity. Relocations
 using another table are explicitly unsupported by this static profile. Mapping
 markers from both tables share the same validation and admitted interval owner.
+
+Explicit code ranges do not require a symbol table. They reject an additional
+symbol extent override and share executable-section/backing checks with symbol
+views. Empty, unaligned, overflowing, non-executable and unbacked selections fail;
+no neighboring symbol is consulted.

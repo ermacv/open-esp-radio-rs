@@ -27,7 +27,7 @@ pub(crate) fn decode(
     if serde_json::from_slice::<Version>(&bytes)
         .map_err(jobs::json)?
         .schema
-        != 4
+        != 5
     {
         return Err(Error::new(
             ErrorCode::Incompatible,
@@ -35,9 +35,9 @@ pub(crate) fn decode(
         ));
     }
     let manifest: FunctionManifest = serde_json::from_slice(&bytes).map_err(jobs::json)?;
-    let supported = manifest.schema == 4
-        && manifest.recipe.schema == 4
-        && manifest.recipe.policy == 5
+    let supported = manifest.schema == 5
+        && manifest.recipe.schema == 5
+        && manifest.recipe.policy == 6
         && manifest.semantics.is_some()
         && manifest
             .recipe
@@ -48,6 +48,17 @@ pub(crate) fn decode(
         return Err(Error::new(
             ErrorCode::Incompatible,
             "unsupported function analysis schema",
+        ));
+    }
+    if let FunctionSelector::Range {
+        section, extent, ..
+    } = manifest.recipe.selector
+        && (section != manifest.recipe.section
+            || extent != manifest.recipe.extent
+            || !manifest.recipe.user_extent)
+    {
+        return Err(integrity(
+            "retained explicit code selection differs from analyzed extent",
         ));
     }
     if manifest.recipe.extent.length == 0
@@ -190,11 +201,13 @@ impl Writer {
         let recipe = &manifest.recipe;
         if recipe.project != receipt.project
             || recipe.revision != receipt.revision
-            || recipe.symbol != request.symbol
+            || recipe.selector != request.selector
             || recipe.research != request.research
             || recipe.source != request.source
-            || recipe.user_extent != request.extent.is_some()
-            || request.extent.is_some_and(|e| e != recipe.extent)
+            || recipe.user_extent != request.explicit_extent().is_some()
+            || request
+                .explicit_extent()
+                .is_some_and(|e| e != recipe.extent)
         {
             return Err(integrity("function recipe differs from admitted request"));
         }

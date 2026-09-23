@@ -5,7 +5,8 @@ use blobray_store::JsonlCursor;
 
 type Emit<'a> = dyn FnMut(&ExtentCoverageRecord, &mut dyn RunControl) -> Result<()> + 'a;
 struct Selected<'a> {
-    symbol: SymbolId,
+    symbol: Option<SymbolId>,
+    explicit_section: Option<u32>,
     extent: CodeRange,
     space: CodeAddressSpace,
     seen: bool,
@@ -122,12 +123,16 @@ impl Scan<'_> {
                     ..
                 } => {
                     let charge = self.memory.reserve(
-                        request.symbol.object.artifact.allocated_bytes(),
+                        request.selector.object().artifact.allocated_bytes(),
                         c.position(),
                     )?;
                     self.selected.push(
                         Selected {
-                            symbol: request.symbol.clone(),
+                            symbol: request.selector.symbol().cloned(),
+                            explicit_section: match request.selector {
+                                FunctionSelector::Range { section, .. } => Some(section),
+                                _ => None,
+                            },
                             extent: *declared_extent,
                             space: *address_space,
                             seen: false,
@@ -183,13 +188,61 @@ impl Scan<'_> {
             c,
         )
     }
+    fn add_range(
+        &mut self,
+        i: usize,
+        section: u32,
+        address: u64,
+        size: u64,
+        c: &mut dyn RunControl,
+    ) -> Result<()> {
+        let selected = &self.selected[i];
+        let base = if selected.space == CodeAddressSpace::Image {
+            address
+        } else {
+            0
+        };
+        let range = selected.extent.start.checked_sub(base).and_then(|start| {
+            selected
+                .extent
+                .length
+                .checked_add(start)
+                .map(|end| (start, end))
+        });
+        if let Some((start, end)) = range.filter(|(a, b)| a < b && *b <= size) {
+            self.ranges.push((section, start, end), c.position())?;
+        } else {
+            self.unknown(
+                "selected extent is empty or outside its executable section",
+                c,
+            )?;
+        }
+        Ok(())
+    }
     fn finish(&mut self, c: &mut dyn RunControl) -> Result<()> {
         if self.object.is_none() {
             return Ok(());
         }
+        if !self.sections_sorted {
+            c.checkpoint(
+                self.sections.len() as u64 * (self.sections.len().max(1).ilog2() as u64 + 1),
+            )?;
+            self.sections.sort_unstable_by_key(|s| s.0);
+            self.sections_sorted = true;
+        }
+        for i in 0..self.selected.len() {
+            if let Some(section) = self.selected[i].explicit_section {
+                c.checkpoint(self.sections.len().max(1).ilog2() as u64 + 1)?;
+                if let Ok(index) = self.sections.binary_search_by_key(&section, |s| s.0) {
+                    let (_, address, size, _) = self.sections[index];
+                    self.selected[i].seen = true;
+                    self.add_range(i, section, address, size, c)?;
+                }
+            }
+        }
         if self.selected.iter().any(|s| !s.seen) {
             self.unknown(
-                "selected symbols missing from captured section inventory",
+                "selected code occurrences missing from captured executable inventory",
                 c,
             )?;
         }
@@ -279,9 +332,11 @@ impl ElfSink for Scan<'_> {
             self.sections.sort_unstable_by_key(|s| s.0);
             self.sections_sorted = true;
         }
-        let first = self.selected.partition_point(|r| r.symbol < s.id);
+        let first = self
+            .selected
+            .partition_point(|r| r.symbol.as_ref() < Some(&s.id));
         for i in first..self.selected.len() {
-            if self.selected[i].symbol != s.id {
+            if self.selected[i].symbol.as_ref() != Some(&s.id) {
                 break;
             }
             self.selected[i].seen = true;
@@ -296,27 +351,7 @@ impl ElfSink for Scan<'_> {
                 self.unknown("selected function has no executable section", c)?;
                 continue;
             };
-            let selected = &self.selected[i];
-            let base = if selected.space == CodeAddressSpace::Image {
-                address
-            } else {
-                0
-            };
-            let range = selected.extent.start.checked_sub(base).and_then(|start| {
-                selected
-                    .extent
-                    .length
-                    .checked_add(start)
-                    .map(|end| (start, end))
-            });
-            if let Some((start, end)) = range.filter(|(a, b)| a < b && *b <= size) {
-                self.ranges.push((section, start, end), c.position())?;
-            } else {
-                self.unknown(
-                    "selected extent is empty or outside its executable section",
-                    c,
-                )?;
-            }
+            self.add_range(i, section, address, size, c)?;
         }
         Ok(())
     }

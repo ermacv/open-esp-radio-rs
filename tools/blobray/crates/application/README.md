@@ -71,7 +71,7 @@ retains structured allocation context and prevents publication.
 `Plan` owns an immutable inspection recipe and captured manifest; it exposes no
 store project, writer or recovery capability. `planning` owns creation, bounded
 serialization, reopening and execution admission. `selection` filters the common
-store stream and retains only bounded recipe metadata or one selected symbol's
+store stream and retains only bounded recipe metadata or one selected code occurrence's
 section index. Domain supplies revision-local selectors; names only enumerate
 candidates. No scheduling graph or analysis engine is introduced for inspection.
 
@@ -210,3 +210,9 @@ to a new directory. Review state and analysis coverage remain separate.
 `storage-usage` observes persistent file sizes without a writer or recovery.
 Single-function enrichment starts after the prepared ELF and references end;
 research records retain capacity only until their last composition consumer.
+
+Function requests carry `FunctionSelector::Symbol` or an explicit
+`FunctionSelector::Range`; both use shared captured-occurrence acquisition.
+Reviewed executable ranges and symbol-size overrides enter one investigation
+enumeration and one function engine. Coverage joins ranges directly to section
+metadata and symbols to their physical table records before counting the union.

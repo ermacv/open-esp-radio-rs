@@ -121,8 +121,8 @@ fn resolve(
                         occurrence: KnowledgeOccurrence {
                             revision: recipe.revision,
                             source: recipe.source,
-                            object: recipe.symbol.object.clone(),
-                            symbol: Some(recipe.symbol),
+                            object: recipe.selector.object().clone(),
+                            symbol: recipe.selector.symbol().cloned(),
                         },
                         claim: KnowledgeClaim::MmioRegister {
                             register: request.register.clone(),

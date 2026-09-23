@@ -59,7 +59,8 @@ values. `LinkPlanId` and `PreparedImageId` are distinct from inspection-plan,
 revision and run IDs. Recipe identity excludes local emergency budgets; image
 lifecycle and publication belong to application/store.
 
-[Function values](src/function.rs) define exact requests, extent authority,
+[Function values](src/function.rs) define physical symbol or explicit
+object/section/range selectors, exact requests, extent authority,
 typed input/image sources, address spaces, per-obligation coverage and the `FunctionDecoder` / `FunctionSemantics` ports. Typed operations and
 abstract values describe local effects without granting access to machine state.
 `FunctionAnalysisId` identifies a retained manifest. Dynamic execution, inferred

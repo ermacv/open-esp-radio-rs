@@ -86,8 +86,8 @@ fn change(f: &Fixture, base: Option<KnowledgeRevisionId>, name: &str) -> Knowled
                     source: FunctionSource::Input {
                         input: f.request.source.input().unwrap(),
                     },
-                    object: f.request.symbol.object.clone(),
-                    symbol: Some(f.request.symbol.clone()),
+                    object: f.request.selector.object().clone(),
+                    symbol: Some(f.request.selector.symbol().unwrap().clone()),
                 },
                 claim: KnowledgeClaim::Name { name: name.into() },
                 evidence: vec![EvidenceRef::Analysis {

@@ -104,6 +104,17 @@ pub fn validate_proposal(p: &KnowledgeProposal) -> Result<()> {
         KnowledgeClaim::Hypothesis { text } if text.trim().is_empty() => {
             return Err(invalid("hypothesis text is empty"));
         }
+        KnowledgeClaim::ExecutableRange { section, extent }
+            if p.occurrence.symbol.is_some()
+                || *section == 0
+                || extent.length == 0
+                || !extent.start.is_multiple_of(2)
+                || extent.start.checked_add(extent.length).is_none() =>
+        {
+            return Err(invalid(
+                "executable boundary requires a symbol-independent occurrence and valid aligned section range",
+            ));
+        }
         KnowledgeClaim::FunctionExtent { extent }
             if p.occurrence.symbol.is_none()
                 || extent.length == 0
@@ -204,6 +215,23 @@ pub fn conflicts(a: &KnowledgeProposal, b: &KnowledgeProposal) -> bool {
         }
         (KnowledgeClaim::Name { name: a_name }, KnowledgeClaim::Name { name: b_name }) => {
             a.subject == b.subject && a_name != b_name
+        }
+        (
+            KnowledgeClaim::ExecutableRange {
+                section: a_section,
+                extent: a_extent,
+            },
+            KnowledgeClaim::ExecutableRange {
+                section: b_section,
+                extent: b_extent,
+            },
+        ) => {
+            a.occurrence == b.occurrence
+                && a_section == b_section
+                && a_extent != b_extent
+                && (a.subject == b.subject
+                    || (a_extent.start < b_extent.start.saturating_add(b_extent.length)
+                        && b_extent.start < a_extent.start.saturating_add(a_extent.length)))
         }
         (
             KnowledgeClaim::FunctionExtent { extent: a_extent },
@@ -330,5 +358,51 @@ mod tests {
             },
         };
         assert!(validate_proposal(&a).is_err());
+    }
+    #[test]
+    fn executable_boundaries_conflict_only_with_differing_overlapping_section_claims() {
+        let mut a = proposal();
+        a.claim = KnowledgeClaim::ExecutableRange {
+            section: 1,
+            extent: CodeRange {
+                start: 8,
+                length: 8,
+            },
+        };
+        validate_proposal(&a).unwrap();
+        let mut b = a.clone();
+        assert!(!conflicts(&a, &b));
+        b.subject = "second".to_owned().try_into().unwrap();
+        b.claim = KnowledgeClaim::ExecutableRange {
+            section: 1,
+            extent: CodeRange {
+                start: 12,
+                length: 8,
+            },
+        };
+        assert!(conflicts(&a, &b));
+        b.claim = KnowledgeClaim::ExecutableRange {
+            section: 1,
+            extent: CodeRange {
+                start: 16,
+                length: 8,
+            },
+        };
+        assert!(!conflicts(&a, &b));
+        b.claim = KnowledgeClaim::ExecutableRange {
+            section: 2,
+            extent: CodeRange {
+                start: 8,
+                length: 8,
+            },
+        };
+        assert!(!conflicts(&a, &b));
+        b.occurrence.symbol = Some(SymbolId {
+            object: b.occurrence.object.clone(),
+            table: SymbolTableKind::Static,
+            table_section: 3,
+            index: 1,
+        });
+        assert!(validate_proposal(&b).is_err());
     }
 }

@@ -19,7 +19,7 @@ fn publication(f: &Fixture) -> PublicationId {
     assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
     run.publication.unwrap()
 }
-fn cli(f: &Fixture, args: &[&str]) -> serde_json::Value {
+pub(super) fn cli(f: &Fixture, args: &[&str]) -> serde_json::Value {
     let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["--format", "json", args[0], "--project"])
         .arg(&f.project)

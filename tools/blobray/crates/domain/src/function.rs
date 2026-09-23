@@ -39,6 +39,39 @@ pub struct CodeRange {
     pub start: u64,
     pub length: u64,
 }
+/// Physical code selection. Explicit ranges never fabricate a symbol identity.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum FunctionSelector {
+    Symbol {
+        symbol: SymbolId,
+    },
+    /// Extent uses section offsets for ET_REL and virtual addresses for ET_EXEC.
+    Range {
+        object: ObjectId,
+        section: u32,
+        extent: CodeRange,
+    },
+}
+impl FunctionSelector {
+    pub fn object(&self) -> &ObjectId {
+        match self {
+            Self::Symbol { symbol } => &symbol.object,
+            Self::Range { object, .. } => object,
+        }
+    }
+    pub fn symbol(&self) -> Option<&SymbolId> {
+        match self {
+            Self::Symbol { symbol } => Some(symbol),
+            Self::Range { .. } => None,
+        }
+    }
+}
+impl From<SymbolId> for FunctionSelector {
+    fn from(symbol: SymbolId) -> Self {
+        Self::Symbol { symbol }
+    }
+}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FunctionRequest {
@@ -46,9 +79,18 @@ pub struct FunctionRequest {
     pub research: Option<ResearchOptions>,
     pub revision: Option<RevisionId>,
     pub source: FunctionSource,
-    pub symbol: SymbolId,
+    pub selector: FunctionSelector,
+    /// Optional size override for a symbol. A Range selector rejects this field.
     #[serde(default)]
     pub extent: Option<CodeRange>,
+}
+impl FunctionRequest {
+    pub fn explicit_extent(&self) -> Option<CodeRange> {
+        match self.selector {
+            FunctionSelector::Range { extent, .. } => Some(extent),
+            _ => self.extent,
+        }
+    }
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -64,7 +106,7 @@ pub struct FunctionRecipe {
     pub revision: RevisionId,
     pub source: FunctionSource,
     pub address_space: CodeAddressSpace,
-    pub symbol: SymbolId,
+    pub selector: FunctionSelector,
     pub payload: ArtifactId,
     pub section: u32,
     pub extent: CodeRange,

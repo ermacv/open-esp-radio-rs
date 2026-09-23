@@ -98,8 +98,8 @@ pub(crate) fn propose_constant(
                 occurrence: KnowledgeOccurrence {
                     revision: recipe.revision,
                     source: recipe.source,
-                    object: recipe.symbol.object.clone(),
-                    symbol: Some(recipe.symbol),
+                    object: recipe.selector.object().clone(),
+                    symbol: recipe.selector.symbol().cloned(),
                 },
                 claim: KnowledgeClaim::Constant {
                     analysis: request.analysis.clone(),
@@ -269,7 +269,7 @@ pub(crate) fn prepare(
         let recipe = &lease.manifest.recipe;
         if recipe.revision != request.occurrence.revision
             || recipe.source != request.occurrence.source
-            || recipe.symbol.object != request.occurrence.object
+            || *recipe.selector.object() != request.occurrence.object
             || recipe.payload != payload
         {
             return Err(invalid(

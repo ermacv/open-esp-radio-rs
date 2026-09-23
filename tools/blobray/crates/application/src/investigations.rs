@@ -24,6 +24,7 @@ struct Enumeration<'a> {
     selected: bool,
     seen_inputs: Vec<bool>,
     used_extents: Vec<bool>,
+    used_ranges: Vec<bool>,
     object: Option<ObjectInventory>,
     executable: Vec<u32>,
     functions: u64,
@@ -55,6 +56,54 @@ impl Enumeration<'_> {
     }
     fn finish_object(&mut self, c: &mut dyn RunControl) -> Result<()> {
         if self.selected
+            && let Some(object) = self.object.clone()
+        {
+            let source = self.request.image.as_ref().map_or(
+                FunctionSource::Input { input: self.input },
+                |image| FunctionSource::Image {
+                    image: image.clone(),
+                },
+            );
+            for (i, range) in self.request.ranges.iter().enumerate() {
+                c.checkpoint(1)?;
+                if range.object != object.id || range.source != source {
+                    continue;
+                }
+                self.used_ranges[i] = true;
+                self.functions += 1;
+                let Some(payload) = object.content.clone() else {
+                    self.gap("explicit code range payload unavailable", c)?;
+                    continue;
+                };
+                self.emit(
+                    PlanEntry::Function {
+                        request: FunctionRequest {
+                            revision: self.request.revision.clone(),
+                            source: source.clone(),
+                            selector: FunctionSelector::Range {
+                                object: range.object.clone(),
+                                section: range.section,
+                                extent: range.extent,
+                            },
+                            extent: None,
+                            research: None,
+                        },
+                        name: None,
+                        payload,
+                        address_space: if self.request.image.is_some()
+                            || object.elf.as_ref().is_some_and(|e| e.object_type == 2)
+                        {
+                            CodeAddressSpace::Image
+                        } else {
+                            CodeAddressSpace::Section
+                        },
+                        declared_extent: range.extent,
+                    },
+                    c,
+                )?;
+            }
+        }
+        if self.selected
             && self.functions == 0
             && (!self.executable.is_empty()
                 || self.request.image.is_some()
@@ -65,7 +114,7 @@ impl Enumeration<'_> {
                     .is_some_and(|elf| elf.object_type == 2))
         {
             self.gap(
-                "executable sections have no defined static function symbols",
+                "executable sections have no selected function symbols or explicit ranges",
                 c,
             )?;
         }
@@ -216,7 +265,7 @@ impl ElfSink for Enumeration<'_> {
                     research: None,
                     revision: self.request.revision.clone(),
                     source,
-                    symbol: r.id.clone(),
+                    selector: (r.id.clone()).into(),
                     extent,
                 },
                 name: r.name.clone(),
@@ -263,22 +312,33 @@ pub(crate) fn enumerate(
                 "reviewed extent must be accepted at the selected knowledge revision and match the source revision",
             ));
         }
-        let KnowledgeClaim::FunctionExtent { extent } = entry.proposal.claim else {
-            return Err(Error::new(
-                ErrorCode::InvalidRequest,
-                "review reference is not a function extent",
-            ));
-        };
-        let symbol = entry
-            .proposal
-            .occurrence
-            .symbol
-            .ok_or_else(|| Error::new(ErrorCode::Integrity, "reviewed extent has no symbol"))?;
-        resolved.extents.push(FunctionExtent {
-            source: entry.proposal.occurrence.source,
-            symbol,
-            extent,
-        });
+        let occurrence = entry.proposal.occurrence;
+        match entry.proposal.claim {
+            KnowledgeClaim::FunctionExtent { extent } => {
+                let symbol = occurrence.symbol.ok_or_else(|| {
+                    Error::new(ErrorCode::Integrity, "reviewed extent has no symbol")
+                })?;
+                resolved.extents.push(FunctionExtent {
+                    source: occurrence.source,
+                    symbol,
+                    extent,
+                });
+            }
+            KnowledgeClaim::ExecutableRange { section, extent } => {
+                resolved.ranges.push(FunctionRange {
+                    source: occurrence.source,
+                    object: occurrence.object,
+                    section,
+                    extent,
+                });
+            }
+            _ => {
+                return Err(Error::new(
+                    ErrorCode::InvalidRequest,
+                    "review reference is not a code boundary",
+                ));
+            }
+        }
     }
     write_control_message(std::io::sink(), &resolved)?;
     let request = &resolved;
@@ -312,6 +372,15 @@ pub(crate) fn enumerate(
             ));
         }
     }
+    for (i, range) in request.ranges.iter().enumerate() {
+        control.checkpoint(i as u64 + 1)?;
+        if request.ranges[..i].iter().any(|r| r == range) {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "repeated explicit code range",
+            ));
+        }
+    }
     let _fixed = memory.reserve(1024 * 1024, control.position())?;
     let mut executable = Vec::new();
     executable.try_reserve_exact(16384).map_err(|_| {
@@ -328,6 +397,7 @@ pub(crate) fn enumerate(
         selected: false,
         seen_inputs: vec![false; request.inputs.as_ref().map_or(0, Vec::len)],
         used_extents: vec![false; request.extents.len()],
+        used_ranges: vec![false; request.ranges.len()],
         object: None,
         executable,
         functions: 0,
@@ -365,18 +435,21 @@ pub(crate) fn enumerate(
         project.read_inventory(Some(revision), memory, control, &mut scan)?;
     }
     scan.finish_object(control)?;
-    if scan.seen_inputs.contains(&false) || scan.used_extents.contains(&false) {
+    if scan.seen_inputs.contains(&false)
+        || scan.used_extents.contains(&false)
+        || scan.used_ranges.contains(&false)
+    {
         return Err(Error::new(
             ErrorCode::InvalidRequest,
-            "selected input or extent override does not identify an enumerated function",
+            "selected input, symbol override or explicit range does not identify an enumerated occurrence",
         ));
     }
     let count = scan.digest.count;
     let functions = scan.digest.functions;
     let entries = scan.digest.finish()?;
     investigation_plan(InvestigationRecipe {
-        schema: 2,
-        policy: 3,
+        schema: 3,
+        policy: 4,
         project: project.id().clone(),
         request: original_request.clone(),
         producer: producer.clone(),
@@ -490,7 +563,7 @@ pub(crate) fn prepare_investigation_worker_in(
                 pending = cursor.next(c)?;
                 continue;
             };
-            let id = request.symbol.object.clone();
+            let id = request.selector.object().clone();
             let function_source = request.source.clone();
             let payload = payload.clone();
             if container.as_ref().is_none_or(|(a, _)| a != &id.artifact) {
@@ -573,7 +646,7 @@ pub(crate) fn prepare_investigation_worker_in(
                     write_control_message(&mut members, &member)?;
                     members.write_all(b"\n").map_err(storage_io)?;
                     pending = cursor.next(c)?;
-                    if !matches!(&pending, Some(PlanEntry::Function { request, .. }) if request.symbol.object == id && request.source == function_source)
+                    if !matches!(&pending, Some(PlanEntry::Function { request, .. }) if *request.selector.object() == id && request.source == function_source)
                     {
                         break;
                     }

@@ -31,6 +31,32 @@ fn in_frame(
             object: callee.object.clone(),
             address: *address,
         }),
+        AbstractValue::Alternatives { values } => {
+            let mut imported = Vec::with_capacity(values.values().len());
+            for v in values.values() {
+                // A callee-local stack possibility cannot be silently removed.
+                if matches!(v, ValueAlternative::EntryStack { .. }) {
+                    return Ok(AbstractValue::Unknown);
+                }
+                imported.push(match v {
+                    ValueAlternative::ImageAddress { address } => ValueAlternative::ScopedAddress {
+                        source: callee.source.clone(),
+                        object: callee.object.clone(),
+                        address: *address,
+                    },
+                    v => v.clone(),
+                });
+            }
+            imported.sort_unstable();
+            imported.dedup();
+            if imported.len() == 1 {
+                Ok(imported[0].as_value())
+            } else {
+                Ok(AbstractValue::Alternatives {
+                    values: ValueAlternatives::new(imported)?,
+                })
+            }
+        }
         // Stack storage belongs to the callee frame; do not alias it with its caller.
         AbstractValue::EntryStack { .. } => Ok(AbstractValue::Unknown),
         _ => substitute(v, map),
@@ -131,8 +157,8 @@ pub fn compose<'a>(
     control: &mut dyn RunControl,
 ) -> Result<Composed<'a>> {
     control.phase(RunPhase::ComposeResearch)?;
-    // Values contain at most two cloned 64-byte identities. Account concrete
-    // mapping/return capacities and one record-construction workspace up front.
+    // Admit cloned mapping/return values and image-to-callee identity growth.
+    // Bounded alternatives do not turn composition into recursive object graphs.
     let largest_callee = callees.iter().map(|c| c.records.len()).max().unwrap_or(0);
     let largest_args = records
         .iter()
@@ -148,8 +174,63 @@ pub fn compose<'a>(
         .and_then(|n| n.checked_add(largest_args))
         .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "summary workspace overflow"))?;
     let mut temporary_bytes = 512u64;
+    let scope_bytes = callees
+        .iter()
+        .map(|c| c.source.allocated_bytes() + c.object.artifact.allocated_bytes())
+        .max()
+        .unwrap_or(0);
+    let mut value_bytes = 0u64;
     for record in records.iter().chain(callees.iter().flat_map(|c| c.records)) {
         control.checkpoint(1)?;
+        let mut account = |v: &AbstractValue| {
+            let growth = match v {
+                AbstractValue::ImageAddress { .. } => scope_bytes,
+                AbstractValue::Alternatives { values } => {
+                    values
+                        .values()
+                        .iter()
+                        .filter(|v| matches!(v, ValueAlternative::ImageAddress { .. }))
+                        .count() as u64
+                        * scope_bytes
+                }
+                _ => 0,
+            };
+            value_bytes = value_bytes.max(v.allocated_bytes() + growth);
+        };
+        match record {
+            FunctionRecord::Expression { expression, .. } => match expression {
+                Expression::Integer { left, right, .. } => {
+                    account(left);
+                    account(right);
+                }
+                Expression::Load { address, .. } => account(address),
+                _ => (),
+            },
+            FunctionRecord::Condition { left, right, .. }
+            | FunctionRecord::ReturnValue {
+                low: left,
+                high: right,
+                ..
+            } => {
+                account(left);
+                account(right);
+            }
+            FunctionRecord::CallInputs { registers, .. } => {
+                for v in registers {
+                    account(v);
+                }
+            }
+            FunctionRecord::MemoryAccess { address, value, .. }
+            | FunctionRecord::CalleeEffect { address, value, .. } => {
+                account(address);
+                if let Some(v) = value {
+                    account(v);
+                }
+            }
+            FunctionRecord::Value { value, .. }
+            | FunctionRecord::Transfer { target: value, .. } => account(value),
+            _ => (),
+        }
         let values = match record {
             FunctionRecord::CallInputs { registers, .. } => registers.len() as u64,
             _ => 0,
@@ -167,15 +248,17 @@ pub fn compose<'a>(
             .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "record workspace overflow"))?;
         temporary_bytes = temporary_bytes.max(bytes);
     }
-    let workspace =
-        value_slots
-            .checked_mul(std::mem::size_of::<AbstractValue>() + 128)
-            .and_then(|n| {
-                n.checked_add(records.len().checked_mul(
-                    std::mem::size_of::<(u64, AbstractValue, AbstractValue)>() + 256,
-                )?)
-            })
-            .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "summary workspace overflow"))?;
+    temporary_bytes =
+        temporary_bytes.max(32 * (std::mem::size_of::<AbstractValue>() as u64 + value_bytes));
+    let workspace = value_slots
+        .checked_mul(std::mem::size_of::<AbstractValue>() + value_bytes as usize)
+        .and_then(|n| {
+            n.checked_add(records.len().checked_mul(
+                std::mem::size_of::<(u64, AbstractValue, AbstractValue)>()
+                    + 2 * value_bytes as usize,
+            )?)
+        })
+        .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "summary workspace overflow"))?;
     let workspace = (workspace as u64)
         .checked_add(temporary_bytes)
         .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "summary workspace overflow"))?;
@@ -447,6 +530,58 @@ mod tests {
             origin: None,
             expression,
         }
+    }
+    #[test]
+    fn callee_alternatives_keep_every_source_and_cannot_alias_caller_stack() {
+        let artifact = ArtifactId::of_bytes(b"callee");
+        let id: FunctionAnalysisId = artifact.as_str().parse().unwrap();
+        let source = FunctionSource::Image {
+            image: artifact.as_str().parse().unwrap(),
+        };
+        let object = ObjectId {
+            artifact,
+            location: ObjectLocation::Standalone,
+        };
+        let callee = Callee {
+            offset: 4,
+            analysis: &id,
+            source: &source,
+            object: &object,
+            records: &[],
+        };
+        let value = AbstractValue::Alternatives {
+            values: ValueAlternatives::new(vec![
+                ValueAlternative::ImageAddress { address: 16 },
+                ValueAlternative::ImageAddress { address: 32 },
+            ])
+            .unwrap(),
+        };
+        let imported = in_frame(&value, &[], &callee).unwrap();
+        let expected = AbstractValue::Alternatives {
+            values: ValueAlternatives::new(
+                [16, 32]
+                    .into_iter()
+                    .map(|address| ValueAlternative::ScopedAddress {
+                        source: source.clone(),
+                        object: object.clone(),
+                        address,
+                    })
+                    .collect(),
+            )
+            .unwrap(),
+        };
+        assert_eq!(imported, expected);
+        let stack = AbstractValue::Alternatives {
+            values: ValueAlternatives::new(vec![
+                ValueAlternative::ImageAddress { address: 16 },
+                ValueAlternative::EntryStack { offset: 0 },
+            ])
+            .unwrap(),
+        };
+        assert_eq!(
+            in_frame(&stack, &[], &callee).unwrap(),
+            AbstractValue::Unknown
+        );
     }
     #[test]
     fn arguments_returns_and_may_writes_keep_callee_provenance_and_budget() {

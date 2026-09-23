@@ -1423,3 +1423,37 @@ fn invalid_pointer_layouts_and_budget_exhaustion_publish_nothing() {
         .is_empty()
     );
 }
+
+#[cfg(test)]
+mod alternative_tests {
+    use blobray_domain::*;
+    #[test]
+    fn persisted_alternatives_are_flat_bounded_and_canonical() {
+        let good = r#"{"kind":"alternatives","values":[{"kind":"constant","value":1},{"kind":"constant","value":2}]}"#;
+        let parsed: AbstractValue = serde_json::from_str(good).unwrap();
+        assert!(parsed.contains_address(1));
+        assert!(parsed.contains_address(2));
+        assert!(!parsed.contains_address(3));
+        assert_eq!(serde_json::to_string(&parsed).unwrap(), good);
+        for bad in [
+            r#"[]"#,
+            r#"[{"kind":"constant","value":1}]"#,
+            r#"[{"kind":"constant","value":2},{"kind":"constant","value":1}]"#,
+            r#"[{"kind":"constant","value":1},{"kind":"constant","value":1}]"#,
+            r#"[{"kind":"unknown"},{"kind":"constant","value":1}]"#,
+            r#"[{"kind":"alternatives","values":[]},{"kind":"constant","value":1}]"#,
+        ] {
+            assert!(
+                serde_json::from_str::<ValueAlternatives>(bad).is_err(),
+                "{bad}"
+            );
+        }
+        let too_many = serde_json::to_string(
+            &(0..9)
+                .map(|value| ValueAlternative::Constant { value })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        assert!(serde_json::from_str::<ValueAlternatives>(&too_many).is_err());
+    }
+}

@@ -4,13 +4,17 @@
 
 [phy_research.py](phy_research.py) exercises the current Next application using
 explicit private inputs and its built-in resource supervisor. It authenticates
-the PHY artifact, imports PHY/ROM, deletes the source copies, analyzes functions,
+the PHY and ROM artifacts, imports PHY/ROM, deletes the source copies, analyzes functions,
 links the I2C command initializer with exact ROM companions, verifies composed
 write effects and repeated phase measurements, reports extent coverage/storage,
 reviews independently hashed table bytes and an instruction
 constant, exports provenance, then moves and restores the project. Research runs
 retain phase diagnostics; the scenario does not qualify hardware or interpret
-unresolved pointers. Outputs must stay in ignored storage.
+unresolved pointers. It independently checks the four ROM address alternatives in
+`tsf_hal_set_tbtt_rf_ctrl_disable` and the unresolved mutable-table callback in
+`phy_get_i2c_mst0_mask`, including source-free reading/export after restore. This
+callback has no reviewed binding; its unknown target cannot acquire callee effects.
+Outputs must stay in ignored storage.
 
 ```console
 cargo build --profile blobray -p blobray-next --bin blobray

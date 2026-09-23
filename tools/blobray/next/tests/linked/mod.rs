@@ -1740,3 +1740,182 @@ fn reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage() {
     assert_eq!(manifest.recipe.extent, extent);
     assert_eq!(manifest.recipe.address_space, CodeAddressSpace::Image);
 }
+
+#[test]
+fn finite_pointer_loads_keep_both_callback_targets_in_queries_research_and_reopening() {
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let code = obj.add_section(Vec::new(), b".text.entry".to_vec(), SectionKind::Text);
+    let data = obj.add_section(
+        Vec::new(),
+        b".rodata.callbacks".to_vec(),
+        SectionKind::ReadOnlyData,
+    );
+    // Branch selects offset 0 or 4, reads a captured immutable pointer, then calls it.
+    let words = [
+        0x00050663u32,
+        0x00000313,
+        0x0080006f,
+        0x00400313,
+        0x000002b7,
+        0x00028293,
+        0x006282b3,
+        0x0002a283,
+        0x000280e7,
+        0x00008067,
+    ];
+    obj.append_section_data(
+        code,
+        &words
+            .iter()
+            .flat_map(|w| w.to_le_bytes())
+            .collect::<Vec<_>>(),
+        4,
+    );
+    obj.add_symbol(symbol(
+        b"entry",
+        SymbolSection::Section(code),
+        40,
+        SymbolKind::Text,
+    ));
+    obj.append_section_data(data, &[0; 8], 4);
+    let table = obj.add_symbol(symbol(
+        b"callbacks",
+        SymbolSection::Section(data),
+        8,
+        SymbolKind::Data,
+    ));
+    for (i, name) in ["left", "right"].iter().enumerate() {
+        let section = obj.add_section(
+            Vec::new(),
+            format!(".text.{name}").into_bytes(),
+            SectionKind::Text,
+        );
+        obj.append_section_data(section, &0x00008067u32.to_le_bytes(), 4);
+        let target = obj.add_symbol(symbol(
+            name.as_bytes(),
+            SymbolSection::Section(section),
+            4,
+            SymbolKind::Text,
+        ));
+        obj.add_relocation(
+            data,
+            Relocation {
+                offset: i as u64 * 4,
+                symbol: target,
+                addend: 0,
+                flags: RelocationFlags::Elf {
+                    r_type: object::elf::R_RISCV_32,
+                },
+            },
+        )
+        .unwrap();
+    }
+    for (offset, r_type) in [
+        (16, object::elf::R_RISCV_HI20),
+        (20, object::elf::R_RISCV_LO12_I),
+    ] {
+        obj.add_relocation(
+            code,
+            Relocation {
+                offset,
+                symbol: table,
+                addend: 0,
+                flags: RelocationFlags::Elf { r_type },
+            },
+        )
+        .unwrap();
+    }
+    let f = custom_fixture(vec![("callbacks.o", obj.write().unwrap())], 0, 0);
+    let image = prepared(&f);
+    let raw = export(&f, image.clone());
+    let elf = object::File::parse(raw.as_slice()).unwrap();
+    let mut targets: Vec<u32> = ["left", "right"]
+        .iter()
+        .map(|name| elf.symbol_by_name(name).unwrap().address() as u32)
+        .collect();
+    targets.sort_unstable();
+    let publication = analyze(&f, Some(image));
+    for target in &targets {
+        let calls = cli(
+            &f,
+            &[
+                "calls",
+                "--id",
+                publication.as_str(),
+                "--callee",
+                &format!("0x{target:x}"),
+            ],
+        );
+        assert_eq!(calls["records"].as_array().unwrap().len(), 1, "{calls}");
+    }
+    let unknown = cli(
+        &f,
+        &["calls", "--id", publication.as_str(), "--unresolved-only"],
+    );
+    assert_eq!(unknown["records"].as_array().unwrap().len(), 1, "{unknown}");
+    let research = cli(
+        &f,
+        &[
+            "research",
+            "--id",
+            publication.as_str(),
+            "--name",
+            "entry",
+            "--abi-contract",
+            "riscv-integer",
+        ],
+    );
+    let id = research["run"]["analysis"].as_str().unwrap();
+    let before = cli(&f, &["analysis", "--id", id]);
+    let records = before["records"].as_array().unwrap();
+    let transfer = records
+        .iter()
+        .map(|r| &r["value"])
+        .find(|r| r["kind"] == "transfer" && r["call"] == true)
+        .unwrap();
+    let expected: Vec<_> = targets
+        .iter()
+        .map(|address| serde_json::json!({"kind":"image-address","address":address}))
+        .collect();
+    assert_eq!(
+        transfer["target"],
+        serde_json::json!({"kind":"alternatives","values":expected})
+    );
+    assert!(
+        records
+            .iter()
+            .any(|r| r["value"]["kind"] == "call-resolution" && r["value"]["analysis"].is_null())
+    );
+    assert!(
+        !records
+            .iter()
+            .any(|r| r["value"]["kind"] == "callee-effect")
+    );
+    fs::remove_file(f.dir.path().join("callbacks.o")).unwrap();
+    let output = f.dir.path().join("saved-alternatives");
+    cli(
+        &f,
+        &[
+            "export-analysis",
+            "--id",
+            id,
+            "--output",
+            output.to_str().unwrap(),
+        ],
+    );
+    let reopened = cli(&f, &["analysis", "--id", id]);
+    assert_eq!(before["records"], reopened["records"]);
+    let saved = fs::read_to_string(output.join("records.jsonl")).unwrap();
+    assert!(
+        saved
+            .lines()
+            .map(|line| serde_json::from_str::<FunctionRecord>(line).unwrap())
+            .any(|r| matches!(
+                r,
+                FunctionRecord::Transfer {
+                    target: AbstractValue::Alternatives { .. },
+                    ..
+                }
+            ))
+    );
+}

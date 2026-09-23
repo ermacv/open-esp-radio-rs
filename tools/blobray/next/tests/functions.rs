@@ -603,7 +603,7 @@ fn values_and_memory_effects_survive_export_without_origins() {
     );
     let id = run.analysis.unwrap();
     let (manifest, records) = export(&f, id.clone());
-    assert_eq!(manifest.schema, 5);
+    assert_eq!(manifest.schema, FUNCTION_SCHEMA);
     assert!(manifest.recipe.semantics.is_some());
     let s = manifest.semantics.unwrap();
     assert_eq!(s.accesses, 3);

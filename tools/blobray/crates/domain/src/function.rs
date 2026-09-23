@@ -1,7 +1,11 @@
 //! Function analysis values and ISA port, with explicit source/address identity.
 use crate::*;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+/// Native function facts and interpretation contract; no compatibility reader.
+pub const FUNCTION_SCHEMA: u32 = 6;
+pub const FUNCTION_POLICY: u32 = 7;
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum FunctionSource {
     Input { input: u64 },

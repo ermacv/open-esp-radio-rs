@@ -182,7 +182,7 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stages 00, 01, 02 and 03.1 are complete. Stage 03.2 is active with the partitions below.
+Stages 00, 01, 02, 03.1 and 03.2 are complete. Stage 03.3 is active with the partitions below.
 Stage 01 acceptance is covered by `record_memory` regressions, application
 `research::lifetime_tests`, Next `functions`/`images` tests, and the real
 `phy_research.py` linked/review/export/reopen scenario. All nine Next packages,
@@ -218,8 +218,16 @@ reader. Runtime device/service execution remains owned by stages 08/09.
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
 | 03.1 | done | Captured pointer tables: explicit layout and RV32 pointer profile, physical relocation target/addend or image address, null/external/ambiguous/unsupported distinctions. Discovery/data query → proposal → acceptance → export/reopen on synthetic and authenticated real bytes. Preserve initialization and relocation evidence; invalid/overlapping relocation extents, overflow, budget failure and unsupported encodings cannot yield a complete resolved table. |
-| 03.2 | active | Bounded alternatives for addresses/call targets: stable finite join, operation-scoped admitted storage, cycles/convergence and explicit overflow-to-unknown/incomplete evidence. Read-only analyses and exported facts preserve all retained alternatives and provenance; no arbitrary target chosen. Real and synthetic callbacks plus budget/cancellation checks pass. |
-| 03.3 | pending | Native interface contracts and discovery: physical table/argument/address roots, access paths and slots, layout/ABI, guards, finite index domains and semantic bindings. Observation → proposal → review → query/export/reopen is one application workflow. Missing/rejected bindings, invalid guards/index domains, overlapping/conflicting layouts and unsupported ABI remain explicit; no model execution or hardware qualification is implied. |
+| 03.2 | done | Bounded alternatives for addresses/call targets: stable finite join, operation-scoped admitted storage, cycles/convergence and explicit overflow-to-unknown/incomplete evidence. Read-only analyses and exported facts preserve all retained alternatives and provenance; no arbitrary target chosen. Real and synthetic callbacks plus budget/cancellation checks pass. |
+| 03.3 | active | Native interface contracts and discovery: physical table/argument/address roots, access paths and slots, layout/ABI, guards, finite index domains and semantic bindings. Observation → proposal → review → query/export/reopen is one application workflow. Missing/rejected bindings, invalid guards/index domains, overlapping/conflicting layouts and unsupported ABI remain explicit; no model execution or hardware qualification is implied. |
+
+Stage 03.2 implementation contract: domain exposes bounded nonrecursive exact
+alternatives; the existing analysis phase owns interned sets and its admitted
+index. Joins and candidate arithmetic have a fixed cardinality bound of eight,
+with explicit overflow gaps. Public query/export retains all alternatives and
+source provenance; multiple call targets remain ambiguous rather than selecting
+a callee. Existing application/research ownership is retained. Symbolic expressions
+remain a flat DAG; this stage does not add path correlation or hidden analysis.
 
 Stage 03.1 implementation contract: keep the existing captured-data/review/export
 workflow. Domain owns a tagged integer/pointer table layout and pointer observation

@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 11
-and database schema 10 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 12
+and database schema 11 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -807,7 +807,7 @@ relocation referencing another table is explicitly outside the current profile.
 Whole-object enumeration preserves both static and dynamic STT_FUNC occurrences,
 including aliases, as separate physical requests and results. Coverage unions
 selected byte intervals without turning duplicate symbols into additional bytes.
-Function selection policy 6 and investigation policy 4 record this interpretation;
+Function selection policy 7 and investigation policy 4 record this interpretation;
 reading does not convert older policies. Regression coverage lives in Next
 `functions` tests `dynamic_occurrences_keep_physical_indices_through_review_export_and_reopen`,
 `dynamic_function_selection_keeps_static_relocation_target_identity` and
@@ -831,8 +831,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 5 / policy 6, investigation schema 3 / policy 4, database schema 10
-and journal schema 11 carry these identities. Old formats are rejected without
+Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 11
+and journal schema 12 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -869,3 +869,33 @@ partial writes, unknown/wider relocations, raw addresses, generic review and sha
 budget exhaustion. The real PHY scenario checks all eleven physical relocation
 targets and an independently established digest for `phy_i2c.o` `.rodata`, then
 reviews, exports and reopens the table after project restore.
+
+## Finite value alternatives
+
+The current RV32 values profile and function policy 7 preserve at most eight
+canonical exact alternatives at a register join. Domain owns nonrecursive leaves
+and validates 2..=8 sorted distinct entries when decoding saved values. Analysis
+owns the finite lattice and admitted, operation-local set/index storage. Values
+and expression outputs borrow no set owner after analysis. No global cache or
+additional allocator authority is introduced.
+
+Joins retain a may-set; arithmetic applies to each bounded operand pair and
+immutable image loads require all candidate reads to be modeled. Unknown inputs
+absorb exact information. Distinct expression IDs and incomplete relocation
+uppers are not exact alternative leaves. Overflow emits `SemanticGap::AlternativeLimit`
+and unknown, never a truncated set or a chosen target. Work/cancellation admission
+includes set lookup/growth and each candidate evaluation. Cycles converge under
+the finite-height lattice; resource exhaustion creates no published partial result.
+
+Read queries match each possible address/symbol without changing or recomputing
+the saved facts. Call filters include ambiguous finite targets as unresolved.
+Research keeps their transfer records and does not compose an arbitrarily selected
+callee. Callee image alternatives become source/object-qualified addresses; callee
+stack alternatives cannot be treated as caller storage. CFG edges and original
+instruction/relocation records remain provenance; sets do not encode path
+correlation, prove reachability or expand indirect control flow.
+
+Contract regressions: analysis `value_sets::tests` and
+`values::tests::joins_and_loops_converge_independently_of_visit_order`; Next
+`finite_pointer_loads_keep_both_callback_targets_in_queries_research_and_reopening`
+and `persisted_alternatives_are_flat_bounded_and_canonical`.

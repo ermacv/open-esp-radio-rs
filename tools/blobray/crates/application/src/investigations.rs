@@ -688,8 +688,20 @@ pub(crate) fn prepare_investigation_worker_in(
 }
 pub(crate) fn matches_filter(filter: &InvestigationFilter, r: &FunctionRecord) -> bool {
     match (filter, r) {
-        (InvestigationFilter::Calls { callee, unresolved_only, .. }, FunctionRecord::Transfer { target, .. }) => {
-            (!*unresolved_only || matches!(target, AbstractValue::Unknown)) && callee.is_none_or(|a| matches!(target, AbstractValue::ImageAddress { address } if *address == a))
+        (
+            InvestigationFilter::Calls {
+                callee,
+                unresolved_only,
+                ..
+            },
+            FunctionRecord::Transfer { target, .. },
+        ) => {
+            (!*unresolved_only
+                || matches!(
+                    target,
+                    AbstractValue::Unknown | AbstractValue::Alternatives { .. }
+                ))
+                && callee.is_none_or(|a| target.contains_address(a))
         }
         (
             InvestigationFilter::Accesses {
@@ -701,22 +713,51 @@ pub(crate) fn matches_filter(filter: &InvestigationFilter, r: &FunctionRecord) -
                 address: actual, ..
             },
         ) => {
-            (!*unknown_only || matches!(actual, AbstractValue::Unknown | AbstractValue::Expression { .. }))
-                && address
-                    .is_none_or(|a| matches!(actual,AbstractValue::Constant{value} | AbstractValue::ImageAddress { address: value } if *value==a))
-                && symbol
-                    .as_ref()
-                    .is_none_or(|s| matches!(actual,AbstractValue::Symbol{symbol,..} if symbol==s))
+            (!*unknown_only
+                || matches!(
+                    actual,
+                    AbstractValue::Unknown | AbstractValue::Expression { .. }
+                ))
+                && address.is_none_or(|a| actual.contains_address(a))
+                && symbol.as_ref().is_none_or(|s| actual.contains_symbol(s))
         }
         (
             InvestigationFilter::References { symbol, address },
-            FunctionRecord::Reference { raw, target, addend, known, .. },
-        ) => symbol
-            .as_ref()
-            .is_none_or(|s| &target.symbol == s || &raw.target.symbol == s)
-            && address.is_none_or(|a| *known && matches!(target.definition, SymbolDefinition::Section | SymbolDefinition::Absolute) && addend.and_then(|v| target.offset.checked_add_signed(v)) == Some(u64::from(a))),
-        (InvestigationFilter::References { symbol: None, address: Some(a) }, FunctionRecord::MemoryAccess { address, .. }) => matches!(address, AbstractValue::Constant { value } | AbstractValue::ImageAddress { address: value } if value == a),
-        (InvestigationFilter::References { symbol: None, address: Some(a) }, FunctionRecord::Value { value: AbstractValue::ImageAddress { address }, .. }) => address == a,
+            FunctionRecord::Reference {
+                raw,
+                target,
+                addend,
+                known,
+                ..
+            },
+        ) => {
+            symbol
+                .as_ref()
+                .is_none_or(|s| &target.symbol == s || &raw.target.symbol == s)
+                && address.is_none_or(|a| {
+                    *known
+                        && matches!(
+                            target.definition,
+                            SymbolDefinition::Section | SymbolDefinition::Absolute
+                        )
+                        && addend.and_then(|v| target.offset.checked_add_signed(v))
+                            == Some(u64::from(a))
+                })
+        }
+        (
+            InvestigationFilter::References {
+                symbol: None,
+                address: Some(a),
+            },
+            FunctionRecord::MemoryAccess { address, .. },
+        ) => address.contains_address(*a),
+        (
+            InvestigationFilter::References {
+                symbol: None,
+                address: Some(a),
+            },
+            FunctionRecord::Value { value, .. },
+        ) => value.contains_address(*a),
         _ => false,
     }
 }

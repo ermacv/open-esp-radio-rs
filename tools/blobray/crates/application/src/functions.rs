@@ -164,8 +164,8 @@ impl<'m> FunctionEngine<'m> {
                 research: request.research.clone(),
                 abi: view.abi,
                 address_space: view.address_space,
-                schema: 5,
-                policy: 6,
+                schema: FUNCTION_SCHEMA,
+                policy: FUNCTION_POLICY,
                 decoder: self.decoder.identity().into(),
                 semantics: Some(self.decoder.semantic_identity().into()),
                 project: self.project.id().clone(),
@@ -216,7 +216,7 @@ impl<'m> FunctionEngine<'m> {
             let staging = Staging::with_temporary_budget(self.stage, self.disk.clone())?;
             let records = staging.retain_temporary(records.file, control)?;
             let manifest = FunctionManifest {
-                schema: 5,
+                schema: FUNCTION_SCHEMA,
                 recipe,
                 records,
                 coverage: summary.coverage,

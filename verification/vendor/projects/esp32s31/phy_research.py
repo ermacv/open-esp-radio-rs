@@ -63,6 +63,7 @@ assert (
     hashlib.sha256(sources[0].read_bytes()).hexdigest()
     == "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580"
 )
+assert hashlib.sha256(sources[1].read_bytes()).hexdigest() == "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
 local = []
 for i, p in enumerate(sources):
     q = run / ("input-" + str(i))
@@ -78,6 +79,34 @@ for p in local:
 inventory = call("inventory", ["inventory"])["snapshot"]["revision"]
 objects = inventory["inputs"][0]["inventory"]["objects"]
 publication = call("whole", ["analyze-project"])["run"]["publication"]
+# Independent ROM instruction reading: four branches form base 0x2010e000
+# plus -0x7a8/-0x7a0/-0x798/-0x790, then one shared load/store pair.
+rom_rows = call("finite-address-function", ["functions", "--id", publication,
+    "--name", "tsf_hal_set_tbtt_rf_ctrl_disable"])["records"]
+assert len(rom_rows) == 1
+finite_analysis = rom_rows[0]["value"]["outcome"]["analysis"]
+finite_records = call("finite-address-facts", ["analysis", "--id", finite_analysis])["records"]
+expected_addresses = {"kind": "alternatives", "values": [
+    {"kind": "constant", "value": address}
+    for address in (0x2010D858, 0x2010D860, 0x2010D868, 0x2010D870)]}
+for offset, access in ((0x2F82BCB6, "load"), (0x2F82BCC0, "store")):
+    assert any(r["value"].get("kind") == "memory-access"
+        and r["value"]["offset"] == offset and r["value"]["access"] == access
+        and r["value"]["width"] == 4 and r["value"]["address"] == expected_addresses
+        for r in finite_records)
+call("finite-export", ["export-analysis", "--id", finite_analysis, "--output", str(run / "finite-export")])
+# This real callback loads the table from mutable memory at 0x2f07fc3c,
+# then calls slot +8. Without a reviewed binding the destination stays unknown.
+callback = call("real-callback", ["research", "--id", publication,
+    "--address", "0x2f829fa8", "--abi-contract", "riscv-integer"])
+callback_analysis = callback["run"]["analysis"]
+callback_records = call("real-callback-facts", ["analysis", "--id", callback_analysis])["records"]
+assert any(r["value"].get("kind") == "transfer" and r["value"]["offset"] == 0x2F829FB6
+    and r["value"]["call"] and r["value"]["target"] == {"kind": "unknown"}
+    for r in callback_records)
+assert any(r["value"].get("kind") == "call-resolution" and r["value"]["offset"] == 0x2F829FB6
+    and r["value"]["analysis"] is None for r in callback_records)
+assert not any(r["value"].get("kind") == "callee-effect" for r in callback_records)
 coverage = call("coverage", ["coverage", "--id", publication])
 assert coverage["assessment"]["coverage"]["scope"] == "selected-function-extents"
 assert coverage["summary"]["extents"]["objects"] > 0
@@ -477,3 +506,9 @@ print(run, flush=True)
 # Reading restored composed evidence must not need linking, original files or replay.
 restored = call("restored-research", ["analysis", "--id", linked_analysis])
 assert [r["value"] for r in restored["records"]] == linked_facts
+
+assert call("restored-finite-facts", ["analysis", "--id", finite_analysis])["records"] == finite_records
+assert call("restored-callback-facts", ["analysis", "--id", callback_analysis])["records"] == callback_records
+call("restored-finite-export", ["export-analysis", "--id", finite_analysis, "--output", str(run / "restored-finite-export")])
+for file in ("manifest.json", "records.jsonl"):
+    assert (run / "finite-export" / file).read_bytes() == (run / "restored-finite-export" / file).read_bytes()

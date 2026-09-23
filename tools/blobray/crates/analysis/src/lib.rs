@@ -3,6 +3,7 @@ use blobray_domain::*;
 pub mod pointers;
 mod references;
 pub mod summaries;
+mod value_sets;
 mod values;
 pub use references::PreparedReferences;
 

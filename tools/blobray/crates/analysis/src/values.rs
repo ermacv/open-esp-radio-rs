@@ -1,10 +1,13 @@
-//! Finite-height flat lattice: unreachable -> one value -> unknown.
+//! Finite-height lattice: unreachable -> bounded exact alternatives -> unknown.
 //! Queue membership is bounded by the graph; no expression trees or memory state.
+use super::value_sets::Sets;
 use super::*;
 use std::collections::VecDeque;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Value {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) enum Value {
+    Set(u32),
+    Widened,
     Unknown,
     Expr(u32),
     Constant(u32),
@@ -301,6 +304,7 @@ fn transfer(
     input: &FunctionInput<'_>,
     incoming: State,
     control: &mut dyn RunControl,
+    sets: &mut Sets<'_>,
 ) -> Result<(State, Effects)> {
     let mut state = incoming;
     let mut effects = Effects::default();
@@ -373,9 +377,14 @@ fn transfer(
             right,
         } => {
             let value = if let Some(r) = rel {
-                lower(operand(&state, left), r)
+                sets.map(operand(&state, left), control, |v, _| Ok(lower(v, r)))?
             } else {
-                integer(op, operand(&state, left), operand(&state, right))
+                sets.binary(
+                    operand(&state, left),
+                    operand(&state, right),
+                    control,
+                    |a, b| integer(op, a, b),
+                )?
             };
             effects.register = Some((dest, value));
             if rel.is_some() && value == Value::Unknown {
@@ -432,47 +441,56 @@ fn transfer(
             signed,
         } => {
             let address = if let Some(r) = rel {
-                lower(operand(&state, Operand::Register(base)), r)
+                sets.map(operand(&state, Operand::Register(base)), control, |v, _| {
+                    Ok(lower(v, r))
+                })?
             } else {
-                offset(
-                    operand(&state, Operand::Register(base)),
-                    i64::from(displacement),
-                )
+                sets.map(operand(&state, Operand::Register(base)), control, |v, _| {
+                    Ok(offset(v, i64::from(displacement)))
+                })?
             };
             if rel.is_some() && address == Value::Unknown {
                 effects.gap = Some(SemanticGapReason::UnresolvedRelocation);
             }
-            let value = source.map(|r| {
-                let v = operand(&state, Operand::Register(r));
-                if kind == MemoryKind::Atomic && !swap {
-                    Value::Unknown
-                } else if let Value::Constant(n) = v {
-                    Value::Constant(match width {
-                        1 => n & 255,
-                        2 => n & 65535,
-                        _ => n,
-                    })
-                } else if width == 4 {
-                    v
-                } else {
-                    Value::Unknown
-                }
-            });
+            let value = source
+                .map(|r| {
+                    let v = operand(&state, Operand::Register(r));
+                    if kind == MemoryKind::Atomic && !swap {
+                        Ok(Value::Unknown)
+                    } else {
+                        sets.map(v, control, |v, _| {
+                            Ok(match v {
+                                Value::Constant(n) => Value::Constant(match width {
+                                    1 => n & 255,
+                                    2 => n & 65535,
+                                    _ => n,
+                                }),
+                                v if width == 4 => v,
+                                _ => Value::Unknown,
+                            })
+                        })
+                    }
+                })
+                .transpose()?;
             effects.memory = Some((kind, width, address, value));
             let mut loaded = Value::Unknown;
             if kind == MemoryKind::Load
                 && let Some(image) = input.image
-                && let Value::Constant(address) | Value::Image(address) = address
             {
-                let mut bytes = [0; 4];
-                if image.read_constant(address, &mut bytes[..width as usize], control)? {
-                    let value = u32::from_le_bytes(bytes);
-                    loaded = Value::Constant(match (width, signed) {
-                        (1, true) => value as i8 as i32 as u32,
-                        (2, true) => value as i16 as i32 as u32,
-                        _ => value,
-                    });
-                }
+                loaded = sets.map(address, control, |address, control| {
+                    if let Value::Constant(address) | Value::Image(address) = address {
+                        let mut bytes = [0; 4];
+                        if image.read_constant(address, &mut bytes[..width as usize], control)? {
+                            let value = u32::from_le_bytes(bytes);
+                            return Ok(Value::Constant(match (width, signed) {
+                                (1, true) => value as i8 as i32 as u32,
+                                (2, true) => value as i16 as i32 as u32,
+                                _ => value,
+                            }));
+                        }
+                    }
+                    Ok(Value::Unknown)
+                })?;
             }
             effects.register = dest.map(|r| (r, loaded));
         }
@@ -494,9 +512,29 @@ fn transfer(
     }
     Ok((state, effects))
 }
-fn public(v: Value, input: &FunctionInput<'_>) -> AbstractValue {
+fn public(v: Value, input: &FunctionInput<'_>, sets: &Sets<'_>) -> AbstractValue {
     match v {
-        Value::Unknown | Value::Upper { .. } => AbstractValue::Unknown,
+        Value::Unknown | Value::Widened | Value::Upper { .. } => AbstractValue::Unknown,
+        Value::Set(_) => {
+            let set = sets.get(v);
+            let mut values: Vec<_> = set.values[..set.len]
+                .iter()
+                .map(|v| {
+                    ValueAlternative::from_value(&public(*v, input, sets))
+                        .expect("sets contain exact leaves")
+                })
+                .collect();
+            values.sort_unstable();
+            values.dedup();
+            if values.len() == 1 {
+                values[0].as_value()
+            } else {
+                AbstractValue::Alternatives {
+                    values: ValueAlternatives::new(values)
+                        .expect("canonical nontrivial internal set"),
+                }
+            }
+        }
         Value::Expr(id) => AbstractValue::Expression { id },
         Value::Constant(value) => AbstractValue::Constant { value },
         Value::Image(address) => AbstractValue::ImageAddress { address },
@@ -546,6 +584,17 @@ pub(super) fn analyze_with(
         .checked_mul(bytes_per_node)
         .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "value state capacity overflow"))?;
     let _reservation = memory.reserve(bytes as u64, control.position())?;
+    // All section references use this captured object's fixed-size artifact ID.
+    let symbol_bytes = input
+        .relocations
+        .first()
+        .map_or(0, |r| r.target.symbol.object.artifact.allocated_bytes());
+    let public_value_bytes = MAX_VALUE_ALTERNATIVES as u64
+        * (std::mem::size_of::<ValueAlternative>() as u64 + symbol_bytes);
+    let _public_workspace = memory.reserve(
+        32 * (std::mem::size_of::<AbstractValue>() as u64 + public_value_bytes),
+        control.position(),
+    )?;
     let mut symbols = Symbols::new(if symbolic { nodes.len() } else { 0 }, memory, control)?;
     let mut states = reserve_vec::<Option<State>>(nodes.len())?;
     states.resize(nodes.len(), None);
@@ -616,10 +665,9 @@ pub(super) fn analyze_with(
                 Some(old) => {
                     let mut changed = false;
                     for (a, b) in old.iter_mut().zip(out) {
-                        if *a != b && *a != Value::Unknown {
-                            *a = Value::Unknown;
-                            changed = true;
-                        }
+                        let joined = symbols.sets.join(*a, b, control)?;
+                        changed |= *a != joined;
+                        *a = joined;
                     }
                     changed
                 }
@@ -667,8 +715,8 @@ pub(super) fn analyze_with(
                     &FunctionRecord::Condition {
                         offset: node.offset,
                         test,
-                        left: public(operand(&state, left), input),
-                        right: public(operand(&state, right), input),
+                        left: public(operand(&state, left), input, &symbols.sets),
+                        right: public(operand(&state, right), input, &symbols.sets),
                     },
                     control,
                 )?;
@@ -677,7 +725,10 @@ pub(super) fn analyze_with(
                 sink.record(
                     &FunctionRecord::CallInputs {
                         offset: node.offset,
-                        registers: state.iter().map(|v| public(*v, input)).collect(),
+                        registers: state
+                            .iter()
+                            .map(|v| public(*v, input, &symbols.sets))
+                            .collect(),
                     },
                     control,
                 )?;
@@ -693,8 +744,8 @@ pub(super) fn analyze_with(
                 sink.record(
                     &FunctionRecord::ReturnValue {
                         offset: node.offset,
-                        low: public(state[10], input),
-                        high: public(state[11], input),
+                        low: public(state[10], input, &symbols.sets),
+                        high: public(state[11], input, &symbols.sets),
                     },
                     control,
                 )?;
@@ -727,14 +778,18 @@ pub(super) fn analyze_with(
                     offset: displacement,
                     link,
                 } => {
-                    let target = match offset(state[base as usize], i64::from(displacement)) {
-                        Value::Constant(n) | Value::Image(n) => Value::Image(n & !1),
-                        _ => Value::Unknown,
-                    };
+                    let target = symbols.sets.map(state[base as usize], control, |v, _| {
+                        Ok(match offset(v, i64::from(displacement)) {
+                            Value::Constant(n) | Value::Image(n) => Value::Image(n & !1),
+                            _ => Value::Unknown,
+                        })
+                    })?;
                     let return_pattern =
                         matches!(base, 1 | 5) && displacement == 0 && target == Value::Unknown;
-                    let local = matches!(target, Value::Image(a) if u64::from(a) >= input.extent.start && u64::from(a) < input.extent.start + input.extent.length);
-                    if !link && local {
+                    let targets = symbols.sets.get(target);
+                    let is_local = |v: &Value| matches!(v, Value::Image(a) if u64::from(*a) >= input.extent.start && u64::from(*a) < input.extent.start + input.extent.length);
+                    let local = targets.values[..targets.len].iter().all(is_local);
+                    if !link && targets.values[..targets.len].iter().any(is_local) {
                         effects
                             .gap
                             .get_or_insert(SemanticGapReason::UnexpandedControlFlow);
@@ -755,7 +810,7 @@ pub(super) fn analyze_with(
                         target: if node.conflict {
                             AbstractValue::Unknown
                         } else {
-                            public(target, input)
+                            public(target, input, &symbols.sets)
                         },
                         call,
                     },
@@ -771,7 +826,7 @@ pub(super) fn analyze_with(
             }
         });
         if let Some((register, v)) = effects.register {
-            let value = public(v, input);
+            let value = public(v, input, &symbols.sets);
             summary.values += 1;
             summary.known_values += u64::from(known(&value));
             sink.record(
@@ -785,7 +840,7 @@ pub(super) fn analyze_with(
             )?;
         }
         if let Some((access, width, addr, v)) = effects.memory {
-            let address = public(addr, input);
+            let address = public(addr, input, &symbols.sets);
             summary.accesses += 1;
             summary.known_addresses += u64::from(known(&address));
             sink.record(
@@ -794,8 +849,24 @@ pub(super) fn analyze_with(
                     access,
                     width,
                     address,
-                    value: v.map(|v| public(v, input)),
+                    value: v.map(|v| public(v, input, &symbols.sets)),
                     relocation,
+                },
+                control,
+            )?;
+        }
+        if state.contains(&Value::Widened)
+            || effects.register.is_some_and(|(_, v)| v == Value::Widened)
+            || effects
+                .memory
+                .is_some_and(|(_, _, a, v)| a == Value::Widened || v == Some(Value::Widened))
+        {
+            summary.complete = false;
+            summary.gaps += 1;
+            sink.record(
+                &FunctionRecord::SemanticGap {
+                    offset: node.offset,
+                    reason: SemanticGapReason::AlternativeLimit,
                 },
                 control,
             )?;
@@ -816,14 +887,14 @@ pub(super) fn analyze_with(
 }
 
 struct Symbols<'a> {
-    records: Vec<(u64, Expression)>,
+    sets: Sets<'a>,
+    records: AdmittedVec<'a, (u64, Expression)>,
+    payloads: AdmittedVec<'a, MemoryReservation<'a>>,
     memory: &'a WorkingMemory,
-    reservations: Vec<MemoryReservation<'a>>,
-    _index: MemoryReservation<'a>,
     limit: usize,
 }
 impl<'a> Symbols<'a> {
-    fn new(nodes: usize, memory: &'a WorkingMemory, c: &mut dyn RunControl) -> Result<Self> {
+    fn new(nodes: usize, memory: &'a WorkingMemory, _c: &mut dyn RunControl) -> Result<Self> {
         let limit = if nodes == 0 {
             0
         } else {
@@ -834,16 +905,11 @@ impl<'a> Symbols<'a> {
                     Error::new(ErrorCode::ResourceLimited, "expression capacity overflow")
                 })?
         };
-        let chunks = limit.div_ceil(64);
-        let index = memory.reserve(
-            (chunks as u64) * std::mem::size_of::<MemoryReservation<'_>>() as u64,
-            c.position(),
-        )?;
         Ok(Self {
-            records: Vec::new(),
+            sets: Sets::new(memory),
+            records: AdmittedVec::new(memory),
+            payloads: AdmittedVec::new(memory),
             memory,
-            reservations: reserve_vec(chunks)?,
-            _index: index,
             limit,
         })
     }
@@ -865,17 +931,14 @@ impl<'a> Symbols<'a> {
                 "expression capacity exhausted",
             ));
         }
-        if self.records.len() == self.records.capacity() {
-            let count = (self.limit - self.records.len()).min(64);
-            let capacity = self.memory.reserve(count as u64 * 1024, c.position())?;
-            self.records.try_reserve_exact(count).map_err(|_| {
-                Error::new(ErrorCode::ResourceLimited, "expression allocation refused")
-            })?;
-            self.reservations.push(capacity);
-        }
         let id = u32::try_from(self.records.len())
             .map_err(|_| Error::new(ErrorCode::ResourceLimited, "expression ID overflow"))?;
-        self.records.push((offset, expr));
+        let payload = self.memory.reserve(expr.allocated_bytes(), c.position())?;
+        self.payloads.push(payload, c.position())?;
+        if let Err(error) = self.records.push((offset, expr), c.position()) {
+            self.payloads.pop();
+            return Err(error);
+        }
         Ok(Value::Expr(id))
     }
     fn binary(
@@ -887,7 +950,7 @@ impl<'a> Symbols<'a> {
         input: &FunctionInput<'_>,
         c: &mut dyn RunControl,
     ) -> Result<Value> {
-        let simple = integer(op, a, b);
+        let simple = self.sets.binary(a, b, c, |a, b| integer(op, a, b))?;
         if simple != Value::Unknown {
             return Ok(simple);
         }
@@ -898,8 +961,8 @@ impl<'a> Symbols<'a> {
             site,
             Expression::Integer {
                 op,
-                left: public(a, input),
-                right: public(b, input),
+                left: public(a, input, &self.sets),
+                right: public(b, input, &self.sets),
             },
             c,
         )
@@ -916,7 +979,7 @@ fn evaluate(
     enabled: bool,
     abi: Option<CallAbi>,
 ) -> Result<(State, Effects)> {
-    let (mut state, mut effects) = transfer(op, node, input, incoming, c)?;
+    let (mut state, mut effects) = transfer(op, node, input, incoming, c, &mut symbols.sets)?;
     if !enabled || op.gap.is_some() {
         return Ok((state, effects));
     }
@@ -982,7 +1045,7 @@ fn evaluate(
                 let v = symbols.expression(
                     node.offset,
                     Expression::Load {
-                        address: public(address, input),
+                        address: public(address, input, &symbols.sets),
                         width,
                         signed,
                     },
@@ -1175,7 +1238,16 @@ mod tests {
     fn joins_and_loops_converge_independently_of_visit_order() {
         for (right, expected) in [
             (7, AbstractValue::Constant { value: 7 }),
-            (8, AbstractValue::Unknown),
+            (
+                8,
+                AbstractValue::Alternatives {
+                    values: ValueAlternatives::new(vec![
+                        ValueAlternative::Constant { value: 7 },
+                        ValueAlternative::Constant { value: 8 },
+                    ])
+                    .unwrap(),
+                },
+            ),
         ] {
             let ops = vec![SemanticOp::None, set(5, 7), set(5, right), read(5)];
             let links = [(0, 1), (0, 2), (1, 3), (2, 3)];
@@ -1198,11 +1270,94 @@ mod tests {
         let records = calculate(ops, &[(0, 1), (1, 1), (1, 2)], false);
         assert!(records.iter().any(|r| matches!(
             r,
+            FunctionRecord::SemanticGap {
+                reason: SemanticGapReason::AlternativeLimit,
+                ..
+            }
+        )));
+        assert!(records.iter().any(|r| matches!(
+            r,
             FunctionRecord::MemoryAccess {
                 address: AbstractValue::Unknown,
                 ..
             }
         )));
+    }
+    #[test]
+    fn finite_local_jump_targets_do_not_silently_expand_control_flow() {
+        struct Image;
+        impl ImageMemory for Image {
+            fn read_constant(&self, _: u32, _: &mut [u8], _: &mut dyn RunControl) -> Result<bool> {
+                Ok(false)
+            }
+        }
+        let ops = vec![SemanticOp::None, set(5, 2), set(5, 4), SemanticOp::None];
+        let bytes = [0, 0, 1, 0, 2, 0, 3, 0];
+        let nodes: Vec<_> = (0..4)
+            .map(|i| Node {
+                offset: i * 2,
+                decoded: DecodedOp {
+                    length: 2,
+                    text: String::new(),
+                    flow: if i == 3 {
+                        InstructionFlow::Indirect {
+                            base: 5,
+                            offset: 0,
+                            link: false,
+                        }
+                    } else {
+                        InstructionFlow::Next
+                    },
+                },
+                conflict: false,
+            })
+            .collect();
+        let edges: Vec<_> = [(0, 1), (0, 2), (1, 3), (2, 3)]
+            .into_iter()
+            .map(|(a, b)| Edge {
+                from: a * 2,
+                target: Some(b * 2),
+                relation: EdgeKind::Jump,
+                external: false,
+            })
+            .collect();
+        let input = FunctionInput {
+            image: Some(&Image),
+            section: 1,
+            extent: CodeRange {
+                start: 0,
+                length: 8,
+            },
+            bytes: &bytes,
+            relocations: &PreparedReferences::empty(),
+            data_ranges: &[],
+        };
+        let memory = WorkingMemory::new(1024 * 1024).unwrap();
+        let mut sink = Records::default();
+        let summary = analyze(
+            &input,
+            &nodes,
+            &edges,
+            &Isa(ops),
+            &memory,
+            &mut || Ok(()),
+            &mut sink,
+        )
+        .unwrap();
+        assert!(!summary.complete);
+        assert!(sink.0.iter().any(|r| matches!(
+            r,
+            FunctionRecord::SemanticGap {
+                offset: 6,
+                reason: SemanticGapReason::UnexpandedControlFlow
+            }
+        )));
+        assert!(
+            !sink
+                .0
+                .iter()
+                .any(|r| matches!(r, FunctionRecord::Transfer { .. }))
+        );
     }
     #[test]
     fn conflicts_and_calls_cannot_propagate_stale_values() {
@@ -1243,6 +1398,7 @@ mod tests {
             &input,
             state,
             &mut || Ok(()),
+            &mut Sets::new(&WorkingMemory::new(1024 * 1024).unwrap()),
         )
         .unwrap();
         assert_eq!(out, unknown_state());
@@ -1259,6 +1415,7 @@ mod tests {
             &input,
             state,
             &mut || Ok(()),
+            &mut Sets::new(&WorkingMemory::new(1024 * 1024).unwrap()),
         )
         .unwrap();
         assert_eq!(out, unknown_state());

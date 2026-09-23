@@ -47,7 +47,7 @@ use std::{
 };
 
 const STATE: &str = ".blobray-next";
-const SCHEMA: i64 = 10;
+const SCHEMA: i64 = 11;
 
 /// A project handle owns no source-file handles or mutable inventory cache.
 #[derive(Clone)]
@@ -97,7 +97,7 @@ pub(crate) fn sync_dir(path: &Path) -> Result<()> {
 }
 
 impl Project {
-    /// Initialize private schema-10 metadata with schema-1 revision manifests. An existing state directory is never reset.
+    /// Initialize private schema-11 metadata with schema-1 revision manifests. An existing state directory is never reset.
     pub fn create(path: &Path) -> Result<Self> {
         fs::create_dir_all(path).map_err(io)?;
         let destination = path.join(STATE);
@@ -128,7 +128,7 @@ impl Project {
         let connection = Connection::open(stage.path().join("project.sqlite3")).map_err(db)?;
         connection.execute_batch("PRAGMA synchronous=EXTRA;
             BEGIN IMMEDIATE;
-            PRAGMA user_version=10;
+            PRAGMA user_version=11;
             CREATE TABLE legacy_imports (id TEXT PRIMARY KEY);
             CREATE TABLE knowledge_revisions (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, parent TEXT, assertion TEXT NOT NULL, action TEXT NOT NULL, supersedes TEXT);
             CREATE INDEX knowledge_assertion ON knowledge_revisions(assertion, sequence);

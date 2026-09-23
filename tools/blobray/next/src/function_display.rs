@@ -3,6 +3,17 @@ use blobray_domain::*;
 use std::io::{self, Write};
 fn value(w: &mut dyn Write, v: &AbstractValue) -> io::Result<()> {
     match v {
+        AbstractValue::Alternatives { values } => {
+            write!(w, "one-of{{")?;
+            for (index, alternative) in values.values().iter().enumerate() {
+                if index > 0 {
+                    write!(w, " | ")?;
+                }
+                // Nonrecursive leaves bound this call depth to two.
+                value(w, &alternative.as_value())?;
+            }
+            write!(w, "}}")
+        }
         AbstractValue::Expression { id } => write!(w, "v{id}"),
         AbstractValue::Unknown => write!(w, "unknown"),
         AbstractValue::Constant { value } => write!(w, "0x{value:08x}"),

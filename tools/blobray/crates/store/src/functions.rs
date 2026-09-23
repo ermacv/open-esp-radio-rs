@@ -27,7 +27,7 @@ pub(crate) fn decode(
     if serde_json::from_slice::<Version>(&bytes)
         .map_err(jobs::json)?
         .schema
-        != 5
+        != FUNCTION_SCHEMA
     {
         return Err(Error::new(
             ErrorCode::Incompatible,
@@ -35,9 +35,9 @@ pub(crate) fn decode(
         ));
     }
     let manifest: FunctionManifest = serde_json::from_slice(&bytes).map_err(jobs::json)?;
-    let supported = manifest.schema == 5
-        && manifest.recipe.schema == 5
-        && manifest.recipe.policy == 6
+    let supported = manifest.schema == FUNCTION_SCHEMA
+        && manifest.recipe.schema == FUNCTION_SCHEMA
+        && manifest.recipe.policy == FUNCTION_POLICY
         && manifest.semantics.is_some()
         && manifest
             .recipe

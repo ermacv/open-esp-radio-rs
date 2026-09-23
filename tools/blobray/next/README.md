@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 10 and journal schema 11. Earlier and future
+Projects require metadata schema 11 and journal schema 12. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,8 +712,8 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 11 for every durable and read operation. Storage metadata
-uses schema 10; revision manifests use schema 1 and execution manifests use schema
+Run records use schema 12 for every durable and read operation. Storage metadata
+uses schema 11; revision manifests use schema 1 and execution manifests use schema
 1. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-11 run; an envelope version is not a journal
+execution 7) wrap the same schema-12 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -957,11 +957,11 @@ prohibit dependencies on the legacy backend. Format support is defined once in
 
 ### Values and memory effects
 
-Function recipe/manifest version 5 records the semantic producer, typed source,
+Function recipe/manifest version 6 records the semantic producer, typed source,
 address space, register values, memory accesses, transfers and semantic gaps.
 Older function schemas are unsupported; reading never converts or recomputes
 a result. Captured inputs are unchanged. Function manifests are independent
-of storage metadata version. Function selection policy 6 validates physical static/dynamic tables.
+of storage metadata version. Function selection policy 7 validates physical static/dynamic tables.
 Investigation recipes use version 3 / policy 4 and enumerate both tables plus
 explicit ranges; older
 selection policies are unsupported.
@@ -977,9 +977,24 @@ Register values are unknown, RV32 constants, image virtual addresses, section-re
 symbol references with addends, offsets from the entry stack pointer, or flat expression IDs. Entry
 `x0` is zero, `sp` denotes its entry value, and other registers have symbolic entry values.
 Stack-relative values express provenance, not allocated or accessible memory.
-Equal incoming values survive a join; differing values become unknown. There
-are no alternative-value sets or recursively allocated expression trees. Branches are not
-pruned and computed indirect destinations do not extend the CFG.
+Exact incoming values join into canonical sets of at most eight alternatives.
+The leaves are constants, image/section addresses, physical symbols and entry-stack
+offsets; sets cannot contain other sets, expressions or unknown leaves. Arithmetic
+uses bounded Cartesian products and immutable loads read every candidate. These
+are may-values: branch correlation is not retained and membership does not prove
+that a runtime path selects that value. A ninth distinct result widens to unknown
+and emits `alternative-limit`, making semantic completeness false. Unequal
+symbolic expressions and incomplete relocation uppers still join to unknown.
+
+Alternative storage and its lookup index belong to the analysis phase and consume
+admitted memory and work; failures publish no analysis. JSON uses
+`{"kind":"alternatives","values":[{"kind":"image-address","address":4096},{"kind":"image-address","address":8192}]}`;
+human output uses `one-of{... | ...}`. Saved access/reference/call filters match
+membership and preserve the complete set. `calls --unresolved-only` includes
+multiple-target transfers. Research never selects one of these callees or composes
+it as a definite call. Expressions and callee effects retain alternative operands;
+imported image addresses remain qualified by their callee source/object.
+Branches are not pruned and computed indirect destinations do not extend the CFG.
 
 Loads retain address and width. In the static ELF image profile, file-backed
 bytes in readable, non-writable PT_LOAD segments supply constants, with signed

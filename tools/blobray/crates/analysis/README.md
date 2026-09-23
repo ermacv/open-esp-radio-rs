@@ -6,7 +6,7 @@ receives borrowed captured code, structural relocation records, an injected ISA
 port, working capacity, control and a result sink. It has no store or filesystem
 authority. Edges to callees never schedule analysis of another function.
 
-The private `values` module owns flat-lattice register states and a bounded
+The private `values` module owns finite-lattice register states and a bounded
 fixed-point queue. It emits values and accesses only after convergence, through
 the same borrowed sink as the CFG. Input-dependent allocations share the caller's
 working capacity, and all repeated visits share its work/deadline budget.
@@ -19,7 +19,7 @@ resolved and unresolved calls/outgoing jumps without expanding the local CFG.
 No second analyzer or machine executor is selected for linked code.
 
 The same value solver can emit a flat expression DAG, entry-register values,
-symbolic loads, conditions and returns. Chunk reservations live with the DAG;
+symbolic loads, conditions and returns. Record and payload reservations live with the DAG;
 loops use the bounded monotone state queue. Explicit ABI context controls only
 integer call preservation. ELF ABI flags never select that assumption.
 
@@ -39,3 +39,11 @@ write bounds and the injected `PointerDecoder`. It performs no name lookup,
 relocation application, project I/O or table-sized result allocation. Physical
 symbol references, numeric addresses, null and unresolved transformations remain
 distinct; the caller owns the prepared bytes and output stream.
+
+`value_sets` interns canonical sets of at most eight exact leaves in admitted
+operation-local vectors and a bounded-load lookup index. It does not enlarge each
+register state with an inline array. Joins and Cartesian arithmetic widen explicitly
+on a ninth result; stored `alternative-limit` gaps distinguish this loss from a
+resolved singleton. Public alternatives are nonrecursive and validated on decode.
+Callee composition qualifies every retained image-address alternative; it never
+silently removes an unknown callee stack possibility or chooses one callback.

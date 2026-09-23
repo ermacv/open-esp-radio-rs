@@ -103,6 +103,14 @@ outputs. Capability matrices may describe source coverage and hardware limits;
 qualification remains the readiness authority. Preserve reviewed machine
 provenance and schema inputs when removing narrative history.
 
+The user-authorized exception is [the Blobray completion plan](tools/blobray/PLAN.md).
+It is the sole tracked work plan: maintain its stage obligations and status when
+working on Blobray. Complete an active stage, including acceptance checks, before
+advancing. Do not request confirmation between authorized stages. An infeasible
+stage requires an explicit `needs-replan` entry preserving every unmet obligation;
+partial implementation is not completion. Logs, measurements and private inputs
+remain in ignored outputs. This exception does not authorize other work logs.
+
 ## Commit & Pull Request Guidelines
 
 History follows Conventional Commit-style subjects such as

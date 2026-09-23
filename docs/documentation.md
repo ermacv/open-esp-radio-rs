@@ -75,6 +75,9 @@ Do not track audit reports, work plans, migration histories, experiment diaries,
 test-run summaries or generated inventory snapshots. Git retains source
 history. Review discussions and task tracking belong outside the current
 documentation; run artifacts stay in owner-specific ignored output storage.
+The sole user-authorized work-plan exception is
+[Blobray completion](../tools/blobray/PLAN.md). It owns stage scope, acceptance
+criteria and status, not architecture contracts or generated run reports.
 Reviewed provenance packs, baseline identities and test fixtures used as
 machine inputs are code/data contracts, not substitutes for a narrative log.
 

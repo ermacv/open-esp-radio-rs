@@ -101,3 +101,5 @@ coverage remain separate; file offsets and executable VMAs are distinct values.
 retained function records and their admitted variable capacities. Phase memory
 observations describe admission, not RSS. Extent and storage reports are typed
 observations without discovery, pruning or hardware claims.
+
+Native interface declarations retain exact symbol/function/address roots, explicit pointer paths, index preconditions, conditional guards and typed slot signatures. Their semantic keys are labels, not runtime models; function range roots need no fabricated symbol.

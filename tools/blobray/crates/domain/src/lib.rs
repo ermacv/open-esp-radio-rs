@@ -409,6 +409,8 @@ pub use semantics::*;
 mod investigation;
 pub use investigation::*;
 
+mod interfaces;
+pub use interfaces::*;
 mod knowledge;
 pub use knowledge::*;
 

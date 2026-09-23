@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 12
-and database schema 11 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 13
+and database schema 12 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -831,8 +831,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 11
-and journal schema 12 carry these identities. Old formats are rejected without
+Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 12
+and journal schema 13 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -899,3 +899,34 @@ Contract regressions: analysis `value_sets::tests` and
 `values::tests::joins_and_loops_converge_independently_of_visit_order`; Next
 `finite_pointer_loads_keep_both_callback_targets_in_queries_research_and_reopening`
 and `persisted_alternatives_are_flat_bounded_and_canonical`.
+
+## Conditional interface declarations
+
+`KnowledgeClaim::Interface` owns one bounded boxed `InterfaceContract`. Domain
+owns roots, paths, layout/slot signatures, index domains, guards and semantic keys.
+Knowledge performs pure layout/ABI/domain/guard validation and acceptance conflict
+checks. Application uses the shared captured-occurrence owner for all proposals
+and reviews: symbol roots are physical data-symbol identities, argument roots
+validate a real symbol or explicit function range, and payload guards match the
+actual captured object bytes. Optional occurrence symbols have the same validation
+as data export. No caller reopens a live path or guesses a symbol by name.
+
+Accepted interface declarations are conditional assertions. Runtime guards and
+index ranges are preconditions, never observed execution facts. `semantic` is a
+reviewed subject key, not a model/callee resolver. Literal-root bounds and static
+range overlap are checked; different dynamic dereference paths do not establish
+runtime non-aliasing. Slot ABI support is an explicit RV32 integer/pointer,
+nonvariadic profile. Declaration of an argument position does not imply that an
+execution engine supports its ABI placement.
+
+The existing knowledge lifecycle supplies expected-base admission, review states,
+immutable revisions, query/export and atomic publication. Store accounts the
+boxed contract and variable capacities when retaining knowledge snapshots. The
+same 64 KiB event bound applies; no new catalog, compatibility format or execution
+workflow is introduced. Source-free reopening retains exact interface/evidence
+identities; knowledge JSON export remains a reference export, not a binary backup.
+
+Regressions: knowledge `interfaces::tests` checks guards/domains/ABI and physical
+static overlap; Next `native_interface_roots_validate_review_and_export_without_sources`
+checks generic admission, every root kind, symbol-less arguments, thin members,
+resource failure and source-free CLI review/export.

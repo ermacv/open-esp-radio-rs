@@ -2,7 +2,7 @@ use super::*;
 fn data_object(relocations: bool) -> Vec<u8> {
     data_object_bytes(relocations, &[0xfb, 0xff, 3, 0])
 }
-fn data_object_bytes(relocations: bool, table_bytes: &[u8]) -> Vec<u8> {
+pub(super) fn data_object_bytes(relocations: bool, table_bytes: &[u8]) -> Vec<u8> {
     data_object_relocation(
         table_bytes,
         relocations.then_some((0, object::elf::R_RISCV_32)),
@@ -73,7 +73,7 @@ fn data_object_relocation(table_bytes: &[u8], relocation: Option<(u64, u32)>) ->
     }
     obj.write().unwrap()
 }
-fn request(f: &Fixture, names: &[&[u8]]) -> DataRequest {
+pub(super) fn request(f: &Fixture, names: &[&[u8]]) -> DataRequest {
     let inventory = app::inventory(&f.project, Some(&f.revision)).unwrap();
     let elf = inventory.revision.inputs[0]
         .inventory

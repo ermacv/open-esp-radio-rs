@@ -35,3 +35,5 @@ Pointer-table claims validate a canonical byte range, count/stride, purpose and
 applicability. Their overlap conflicts with differing accepted integer/pointer
 interpretations. Acceptance concerns the captured layout, not resolved callback
 semantics or hardware behavior; application validates physical bytes/evidence.
+
+The private `interfaces` validator admits bounded RV32 interface declarations and rejects malformed/contradictory guards, unsupported slot signatures and conflicting static layouts. Runtime conditions remain declared preconditions after review; this crate cannot assert their satisfaction.

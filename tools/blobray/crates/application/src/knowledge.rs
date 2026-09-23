@@ -48,7 +48,37 @@ fn validate_evidence(
                 KnowledgeClaim::FunctionExtent { extent } => Some(extent),
                 _ => None,
             };
-            if let KnowledgeClaim::IntegerTable { selector, .. }
+            if let KnowledgeClaim::Interface { contract } = &proposal.claim {
+                capture.with_prepared(memory, c, |object, c| {
+                    for guard in &contract.guards {
+                        c.checkpoint(1)?;
+                        if let InterfaceGuard::CapturedPayload { payload } = guard
+                            && payload != capture.payload
+                        {
+                            return Err(invalid(
+                                "interface payload guard differs from captured object bytes",
+                            ));
+                        }
+                    }
+                    match &contract.root {
+                        InterfaceRoot::Symbol { symbol, .. } => {
+                            object.validate_data_symbol(&occurrence.object, symbol)?
+                        }
+                        InterfaceRoot::FunctionArgument { function, .. } => {
+                            let request = FunctionRequest {
+                                research: None,
+                                revision: Some(occurrence.revision.clone()),
+                                source: occurrence.source.clone(),
+                                selector: function.clone(),
+                                extent: None,
+                            };
+                            object.with_function(&request, c, |_, _| Ok(()))?;
+                        }
+                        InterfaceRoot::Address { .. } => (),
+                    }
+                    Ok(())
+                })?;
+            } else if let KnowledgeClaim::IntegerTable { selector, .. }
             | KnowledgeClaim::PointerTable { selector, .. } = &proposal.claim
             {
                 capture.with_prepared(memory, c, |object, c| {

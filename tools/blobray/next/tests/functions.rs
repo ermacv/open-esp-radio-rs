@@ -912,6 +912,8 @@ mod investigations;
 
 #[path = "functions/data.rs"]
 mod data;
+#[path = "functions/interfaces.rs"]
+mod interfaces;
 #[path = "functions/knowledge.rs"]
 mod knowledge;
 

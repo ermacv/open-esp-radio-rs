@@ -23,6 +23,9 @@ impl From<SubjectId> for String {
     }
 }
 impl SubjectId {
+    pub fn allocated_bytes(&self) -> u64 {
+        self.0.capacity() as u64
+    }
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -38,6 +41,9 @@ pub struct KnowledgeOccurrence {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum KnowledgeClaim {
+    Interface {
+        contract: Box<InterfaceContract>,
+    },
     PointerTable {
         selector: DataSelector,
         layout: PointerTable,

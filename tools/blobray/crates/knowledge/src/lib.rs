@@ -1,6 +1,7 @@
 //! Pure semantic admission. The application supplies verified evidence and
 //! streams accepted assertions; this crate cannot read, publish or run analysis.
 use blobray_domain::*;
+mod interfaces;
 fn invalid(message: &str) -> Error {
     Error::new(ErrorCode::InvalidRequest, message)
 }
@@ -16,6 +17,7 @@ pub fn validate_proposal(p: &KnowledgeProposal) -> Result<()> {
         return Err(invalid("symbol and object occurrence differ"));
     }
     match &p.claim {
+        KnowledgeClaim::Interface { contract } => interfaces::validate(p, contract)?,
         KnowledgeClaim::IntegerTable {
             selector,
             layout,
@@ -177,6 +179,12 @@ pub fn conflicts(a: &KnowledgeProposal, b: &KnowledgeProposal) -> bool {
         return false;
     }
     match (&a.claim, &b.claim) {
+        (KnowledgeClaim::Interface { contract: x }, KnowledgeClaim::Interface { contract: y }) => {
+            a.occurrence.source == b.occurrence.source
+                && a.occurrence.object == b.occurrence.object
+                && (a.subject == b.subject || interfaces::overlap(x, y))
+                && x != y
+        }
         (
             KnowledgeClaim::IntegerTable { selector: x, .. }
             | KnowledgeClaim::PointerTable { selector: x, .. },

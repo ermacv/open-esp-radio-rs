@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 11 and journal schema 12. Earlier and future
+Projects require metadata schema 12 and journal schema 13. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,8 +712,8 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 12 for every durable and read operation. Storage metadata
-uses schema 11; revision manifests use schema 1 and execution manifests use schema
+Run records use schema 13 for every durable and read operation. Storage metadata
+uses schema 12; revision manifests use schema 1 and execution manifests use schema
 1. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-12 run; an envelope version is not a journal
+execution 7) wrap the same schema-13 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1663,3 +1663,65 @@ A data export contains the selected object and explicitly selected analyses.
 Interprocedural provenance may reference analyses outside that bundle; IDs do not
 include their payloads implicitly. Use project backup/restore to preserve the full
 research closure in the supported format.
+
+### Reviewed interface declarations
+
+`knowledge validate/apply/accept/show/export` also accepts the native `interface`
+claim. It declares a conditional table contract; it neither discovers callbacks
+nor supplies a runtime model. Existing evidence, expected-base review and physical
+occurrence checks apply. Example `claim` within a `KnowledgeChange` proposal:
+
+```json
+{
+  "kind": "interface",
+  "contract": {
+    "root": {"kind": "address", "address": 4096},
+    "path": [{"kind": "load-pointer", "offset": 0}],
+    "layout_version": "reviewed-layout/1",
+    "layout_bytes": 16,
+    "pointer_bytes": 4,
+    "abi": "riscv-integer",
+    "index_domains": [],
+    "guards": [{"kind": "runtime-value", "offset": 0, "width": 1,
+                "mask": 255, "value": 1, "purpose": "required runtime layout tag"}],
+    "slots": [{
+      "offset": 4,
+      "name": "callback",
+      "semantic": "project.callback",
+      "signature": {
+        "arguments": [{"role": "project.argument", "value_type": {"kind": "integer", "bits": 32, "signed": false}}],
+        "result": {"kind": "integer", "bits": 32, "signed": false},
+        "variadic": false
+      }
+    }],
+    "purpose": "Explicit conditional callback interface",
+    "applicability": "Selected captured occurrence with the declared runtime tag"
+  }
+}
+```
+
+Roots can instead be `symbol` with a physical `SymbolId` and signed `addend`, or
+`function-argument` with an exact `FunctionSelector` and zero-based `argument`.
+Symbol-less function ranges are valid argument contexts. An address root is a
+literal RV32 address scoped by the occurrence, not an offset into the ELF file.
+Paths contain explicit `offset`, `load-pointer` and `index` steps. Each index
+names an argument and byte stride and requires a unique inclusive `min`/`max`
+domain with a reason. Domains are declared caller preconditions, not inferred
+values. Argument positions 0..31 can be declared; this does not assert execution
+support for all stack arguments or signatures.
+
+The declaration profile has four-byte pointers, aligned nonoverlapping slots,
+RV32 integer ABI, nonvariadic signatures, 8/16/32/64-bit integers, pointers and a
+void result. At most 64 slots, 32 arguments per signature, 16 path steps, 16 guards
+and eight index domains fit within the existing 64 KiB knowledge-event limit.
+A `captured-payload` guard must match the exact object digest (including detached
+thin-member identity). Runtime byte/halfword/word guards are bounds/mask checked;
+contradictory overlapping bits fail validation. Their acceptance never means the
+runtime condition was observed or satisfied. Semantic keys are reviewed labels;
+they select neither machine-code callees nor external execution models.
+
+Changed declarations for the same subject/path or provably overlapping static
+root ranges conflict during acceptance. Different dynamic dereference paths are
+distinct declared identities; static validation does not prove runtime non-aliasing.
+Export retains review events and evidence references, not a transitive binary
+backup. Use project backup/restore to preserve the captured research.

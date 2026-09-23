@@ -1919,3 +1919,100 @@ fn finite_pointer_loads_keep_both_callback_targets_in_queries_research_and_reope
             ))
     );
 }
+
+#[test]
+fn image_interface_data_roots_use_the_same_physical_validation_during_review() {
+    use object::ObjectSection as _;
+    let f = fixture(true, true);
+    let image = prepared(&f);
+    let bytes = export(&f, image.clone());
+    let elf = object::File::parse(bytes.as_slice()).unwrap();
+    let value = elf.symbol_by_name("value").unwrap();
+    let payload = ArtifactId::of_bytes(&bytes);
+    let object = ObjectId {
+        artifact: payload.clone(),
+        location: ObjectLocation::Standalone,
+    };
+    let symbol = SymbolId {
+        object: object.clone(),
+        table: SymbolTableKind::Static,
+        table_section: elf.section_by_name(".symtab").unwrap().index().0 as u32,
+        index: value.index().0 as u64,
+    };
+    let proposal:KnowledgeProposal=serde_json::from_value(serde_json::json!({
+        "subject":"image.interface", "occurrence":{"revision":f.revision,"source":{"kind":"image","image":image},"object":object,"symbol":symbol},
+        "claim":{"kind":"interface","contract":{
+            "root":{"kind":"symbol","symbol":symbol,"addend":0},"path":[],"layout_version":"fixture/1","layout_bytes":4,"pointer_bytes":4,"abi":"riscv-integer","index_domains":[],"guards":[{"kind":"captured-payload","payload":payload}],
+            "slots":[{"offset":0,"name":"slot","semantic":null,"signature":{"arguments":[],"result":{"kind":"void"},"variadic":false}}],"purpose":"physical data root","applicability":"declared interpretation only"
+        }}, "evidence":[{"kind":"source","payload":payload,"range":{"start":0,"length":bytes.len()}}],"note":null
+    })).unwrap();
+    let change = |proposal| KnowledgeChange {
+        expected_base: None,
+        actor: "test".into(),
+        reason: "physical identity".into(),
+        action: KnowledgeAction::Propose { proposal },
+    };
+    for which in 0..3 {
+        let mut bad = proposal.clone();
+        bad.occurrence.symbol = None;
+        let KnowledgeClaim::Interface { contract } = &mut bad.claim else {
+            panic!()
+        };
+        let InterfaceRoot::Symbol { symbol, .. } = &mut contract.root else {
+            panic!()
+        };
+        match which {
+            0 => symbol.index = u64::MAX,
+            1 => symbol.table = SymbolTableKind::Dynamic,
+            _ => symbol.table_section = u32::MAX,
+        }
+        let failed = f
+            .app
+            .start_knowledge(&f.project, &change(bad), budget())
+            .unwrap()
+            .wait();
+        assert_eq!(failed.state, RunState::Failed, "{failed:?}");
+        assert!(failed.knowledge.is_none());
+        assert!(
+            cli(&f, &["knowledge", "show"])["records"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+    let proposed = f
+        .app
+        .start_knowledge(&f.project, &change(proposal), budget())
+        .unwrap()
+        .wait();
+    assert_eq!(proposed.state, RunState::Completed, "{proposed:?}");
+    let entries = cli(&f, &["knowledge", "show"]);
+    let assertion = entries["records"][0]["value"]["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let accepted = f
+        .app
+        .start_knowledge(
+            &f.project,
+            &KnowledgeChange {
+                expected_base: proposed.knowledge,
+                actor: "test".into(),
+                reason: "captured data identity".into(),
+                action: KnowledgeAction::Review {
+                    assertion,
+                    decision: ReviewDecision::Accept,
+                    supersedes: None,
+                },
+            },
+            budget(),
+        )
+        .unwrap()
+        .wait();
+    assert_eq!(accepted.state, RunState::Completed, "{accepted:?}");
+    assert_eq!(
+        cli(&f, &["knowledge", "show"])["records"][0]["value"]["state"],
+        "accepted"
+    );
+}

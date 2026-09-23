@@ -33,7 +33,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum KnowledgeCommand {
-    /// Propose an integer interpretation of exact captured bytes.
+    /// Propose an integer or pointer layout for exact captured bytes.
     ProposeData {
         #[arg(long)]
         request: PathBuf,

@@ -222,3 +222,5 @@ select one captured range and a count/stride profile; the application injects
 backend relocation semantics into the streaming analysis port. Accepted exports
 preserve the profile, raw bytes, physical relocation identities and classification
 counters without promoting external symbols or numeric addresses to callees.
+
+Interface proposals and reviews use the existing knowledge lifecycle and captured-occurrence helper. Exact symbol and function-range roots and captured-payload guards are checked against retained bytes. Runtime guards are conditional metadata and do not resolve callbacks or grant execution authority.

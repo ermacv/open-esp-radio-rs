@@ -182,7 +182,7 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stages 00, 01, 02, 03.1 and 03.2 are complete. Stage 03.3 is active with the partitions below.
+Stages 00, 01, 02, 03.1, 03.2 and 03.3.1 are complete. Stage 03.3.2 is active with the partitions below.
 Stage 01 acceptance is covered by `record_memory` regressions, application
 `research::lifetime_tests`, Next `functions`/`images` tests, and the real
 `phy_research.py` linked/review/export/reopen scenario. All nine Next packages,
@@ -220,6 +220,17 @@ reader. Runtime device/service execution remains owned by stages 08/09.
 | 03.1 | done | Captured pointer tables: explicit layout and RV32 pointer profile, physical relocation target/addend or image address, null/external/ambiguous/unsupported distinctions. Discovery/data query → proposal → acceptance → export/reopen on synthetic and authenticated real bytes. Preserve initialization and relocation evidence; invalid/overlapping relocation extents, overflow, budget failure and unsupported encodings cannot yield a complete resolved table. |
 | 03.2 | done | Bounded alternatives for addresses/call targets: stable finite join, operation-scoped admitted storage, cycles/convergence and explicit overflow-to-unknown/incomplete evidence. Read-only analyses and exported facts preserve all retained alternatives and provenance; no arbitrary target chosen. Real and synthetic callbacks plus budget/cancellation checks pass. |
 | 03.3 | active | Native interface contracts and discovery: physical table/argument/address roots, access paths and slots, layout/ABI, guards, finite index domains and semantic bindings. Observation → proposal → review → query/export/reopen is one application workflow. Missing/rejected bindings, invalid guards/index domains, overlapping/conflicting layouts and unsupported ABI remain explicit; no model execution or hardware qualification is implied. |
+
+Stage 03.3 refinement: `needs-replan` resolved before implementation. The parent
+acceptance combined a new reviewed declaration format with discovery over saved
+expression/call records. Neither native declaration nor discovery interface exists;
+shipping one does not close the other. Keep the existing knowledge lifecycle and
+separate these independently testable scenarios, preserving every parent criterion:
+
+| Sub-stage | Status | Acceptance |
+| --- | --- | --- |
+| 03.3.1 | done | Native interface declaration → physical/pure validation → proposal/review → knowledge query/export/source-free reopening. Table/argument/address roots, explicit paths, layout/slot ABI, guards, finite index domains and semantic bindings have bounded typed contracts. Bad identities, invalid guards/domains, unsupported ABI and conflicting accepted layouts fail without publication. No declaration claims runtime guard satisfaction or executes a model. |
+| 03.3.2 | active | Discover table/callback observations from captured data and saved function facts; match only explicitly selected accepted contracts. Export exact slot/path/evidence, bindings and guard applicability; missing/rejected/ambiguous/unsupported cases remain explicit. Synthetic and authenticated real observation→review→query/export/reopen scenarios pass without hidden analysis, legacy resolution or runtime-model execution. |
 
 Stage 03.2 implementation contract: domain exposes bounded nonrecursive exact
 alternatives; the existing analysis phase owns interned sets and its admitted

@@ -9,6 +9,17 @@ use std::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum QuerySummary {
+    Coverage {
+        id: PublicationId,
+        selected_functions: InvestigationCoverage,
+        extents: ExtentCoverageSummary,
+    },
+    StorageUsage {
+        usage: StorageUsage,
+    },
+    Data {
+        manifest: Box<DataManifest>,
+    },
     TargetAudit {
         artifact: ArtifactId,
         decoder: String,
@@ -99,6 +110,14 @@ pub enum QuerySummary {
 impl QuerySummary {
     pub fn assessment(&self) -> ResultAssessment {
         match self {
+            Self::Coverage {
+                id,
+                selected_functions,
+                ..
+            } => ResultAssessment::covered(
+                CoverageSubject::Investigation(id.clone()),
+                selected_functions.complete(),
+            ),
             Self::Inventory {
                 revision_id,
                 complete,
@@ -143,6 +162,18 @@ impl QuerySummary {
 }
 /// Borrowed callbacks. Retaining records requires the consumer's own capacity.
 pub trait QuerySink: InventorySink + DoctorSink {
+    fn coverage(&mut self, _: &ExtentCoverageRecord, _: &mut dyn RunControl) -> Result<()> {
+        Err(Error::new(
+            ErrorCode::InvalidRequest,
+            "consumer does not support extent coverage",
+        ))
+    }
+    fn data(&mut self, _: &DataRecord, _: &mut dyn RunControl) -> Result<()> {
+        Err(Error::new(
+            ErrorCode::InvalidRequest,
+            "consumer does not support data research",
+        ))
+    }
     fn target_audit(&mut self, _: &TargetAuditRecord, _: &mut dyn RunControl) -> Result<()> {
         Err(Error::new(
             ErrorCode::InvalidRequest,
@@ -240,6 +271,8 @@ pub trait QuerySink: InventorySink + DoctorSink {
 }
 #[derive(Serialize)]
 enum RecordRef<'a> {
+    Coverage(&'a ExtentCoverageRecord),
+    Data(&'a DataRecord),
     TargetAudit(&'a TargetAuditRecord),
     Execution(&'a ExecutionEvidence),
     Legacy(&'a LegacyRecord),
@@ -267,6 +300,8 @@ enum RecordRef<'a> {
 }
 #[derive(Deserialize)]
 enum Record {
+    Coverage(ExtentCoverageRecord),
+    Data(DataRecord),
     TargetAudit(TargetAuditRecord),
     Execution(ExecutionEvidence),
     Legacy(LegacyRecord),
@@ -428,6 +463,59 @@ pub fn prepare_query_with_tools(
             file: disk.create(&stage.join("query-records"))?,
         };
         let summary = match &work.query {
+            ReadQuery::Coverage { id } => {
+                let project = Project::open(&work.project.to_path()?)?;
+                let (selected_functions, extents) =
+                    crate::coverage::report(&project, id, &memory, control, &mut |r, c| {
+                        spool.push(RecordRef::Coverage(r), c)
+                    })?;
+                QuerySummary::Coverage {
+                    id: id.clone(),
+                    selected_functions,
+                    extents,
+                }
+            }
+            ReadQuery::StorageUsage => QuerySummary::StorageUsage {
+                usage: ReadView::open(&work.project.to_path()?)?.storage_usage(&memory, control)?,
+            },
+            ReadQuery::Data { request } => {
+                let project = Project::open(&work.project.to_path()?)?;
+                let manifest = crate::data::prepare(
+                    stage,
+                    &project,
+                    request,
+                    None,
+                    &memory,
+                    &disk,
+                    control,
+                    &mut |r, c| spool.push(RecordRef::Data(r), c),
+                )?;
+                QuerySummary::Data {
+                    manifest: Box::new(manifest),
+                }
+            }
+            ReadQuery::ReviewedData {
+                revision,
+                assertion,
+            } => {
+                let project = Project::open(&work.project.to_path()?)?;
+                let _envelope = memory.reserve(2 * 1024 * 1024, control.position())?;
+                let (request, entry) =
+                    crate::data::accepted_request(&project, revision, assertion, &memory, control)?;
+                let manifest = crate::data::prepare(
+                    stage,
+                    &project,
+                    &request,
+                    Some((revision.clone(), entry)),
+                    &memory,
+                    &disk,
+                    control,
+                    &mut |r, c| spool.push(RecordRef::Data(r), c),
+                )?;
+                QuerySummary::Data {
+                    manifest: Box::new(manifest),
+                }
+            }
             ReadQuery::AuditTargets { artifact, ranges } => {
                 let decoder = decoder.ok_or_else(|| {
                     Error::new(ErrorCode::Incompatible, "target audit decoder unavailable")
@@ -940,6 +1028,7 @@ pub fn prepare_query_with_tools(
         spool.file.sync_all().map_err(io)?;
         crate::protocol::write_request(disk.create(&stage.join("query-summary.json"))?, &summary)
     })();
+    control.memory_phases(&memory.phase_observations());
     control.working_memory(memory.observation());
     result
 }
@@ -1006,6 +1095,8 @@ pub(crate) fn visit(
             Record::ImageMapping(mapping) => sink.image_mapping(&mapping, control)?,
             Record::Analysis(id) => sink.analysis(&id, control)?,
             Record::Execution(record) => sink.execution_evidence(&record, control)?,
+            Record::Data(record) => sink.data(&record, control)?,
+            Record::Coverage(record) => sink.coverage(&record, control)?,
             Record::Function(record) => sink.function_record(&record, control)?,
             Record::Revision(r) => sink.revision(&r, control)?,
             Record::Candidate(r) => sink.candidate(&r, control)?,
@@ -1053,7 +1144,7 @@ mod assessment_tests {
     fn checks_are_not_coverage_and_comparison_is_not_a_check() {
         let summary = QuerySummary::Doctor {
             project: ArtifactId::of_bytes(b"p").as_str().parse().unwrap(),
-            storage_schema: 7,
+            storage_schema: 8,
             checked_revisions: 1,
             checked_images: 0,
             checked_analyses: 0,

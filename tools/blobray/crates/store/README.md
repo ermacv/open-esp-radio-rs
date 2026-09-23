@@ -4,7 +4,7 @@
 Its only internal dependency is [domain](../domain/README.md). It does not parse
 ELF/AR, select targets, resolve thin paths or install a process supervisor.
 
-Projects require metadata schema 7 and journal schema 8; earlier/future formats
+Projects require metadata schema 8 and journal schema 9; earlier/future formats
 are rejected without conversion or mutation. Revision manifests retain schema 1.
 See [storage diagnosis](../../next/README.md#diagnosis-and-recovery).
 
@@ -63,7 +63,7 @@ does not inspect procfs or implement the worker transport. The application wraps
 store readers in restricted capabilities instead of exposing `Project` to read
 consumers.
 
-Run schema 8 carries the admitted operation, optional concrete scenario
+Run schema 9 carries the admitted operation, optional concrete scenario
 resolution and scoped `ResultAssessment`. Readers validate one published result,
 its assessment identity and scenario shape. Earlier journal formats are rejected.
 Recovery records the last valid stage checkpoint before cleanup, while
@@ -113,7 +113,7 @@ ELF ABI and a semantic producer/value-effect summary. Earlier derived schemas
 are unsupported; existing CAS bytes are never rewritten. Function assessment coverage is complete only
 when structural coverage and semantic
 coverage are both complete; unknown values alone do not imply missing semantics.
-The analyses table and publication transaction remain metadata schema 7.
+The analyses table and publication transaction remain metadata schema 8.
 
 
 `investigations` owns `InvestigationLease`, `PreparedInvestigationReceipt` and the
@@ -164,3 +164,7 @@ verdicts. See [concrete execution](../../next/README.md#concrete-execution-and-c
 `knowledge_snapshot` verifies a selected immutable event history and evidence
 roots once. Its admitted owned entries preserve proposal, review and supersession
 states for repeated lookups within one operation; it is not a persistent cache.
+
+`storage_usage` walks logical CAS/metadata/staging sizes under read-only authority.
+It includes unreachable objects, does not follow symlinks or run recovery, and
+provides no reclaimability estimate or atomic filesystem snapshot guarantee.

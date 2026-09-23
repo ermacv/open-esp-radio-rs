@@ -422,6 +422,16 @@ impl KnowledgeSnapshot<'_> {
 }
 fn proposal_heap_bytes(p: &KnowledgeProposal) -> u64 {
     let claim = match &p.claim {
+        KnowledgeClaim::IntegerTable {
+            purpose,
+            applicability,
+            ..
+        } => purpose.len() + applicability.len() + 64,
+        KnowledgeClaim::Constant {
+            purpose,
+            applicability,
+            ..
+        } => purpose.len() + applicability.len() + 64,
         KnowledgeClaim::MmioRegister { register } => {
             register.name.len()
                 + register.fields.len() * std::mem::size_of::<MmioField>()

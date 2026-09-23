@@ -134,6 +134,7 @@ pub(crate) fn prepare_function_worker_in(
             }
         }
     })();
+    control.memory_phases(&memory.phase_observations());
     control.working_memory(memory.observation());
     result
 }
@@ -154,14 +155,27 @@ impl<'m> FunctionEngine<'m> {
         payload: &ArtifactId,
         control: &mut dyn RunControl,
     ) -> Result<PreparedFunctionReceipt> {
-        let mut references = AdmittedVec::new(self.memory);
-        blobray_artifacts::with_prepared_object(
-            source,
-            payload,
+        let mut manifest = {
+            let mut references = AdmittedVec::new(self.memory);
+            blobray_artifacts::with_prepared_object(
+                source,
+                payload,
+                self.memory,
+                control,
+                |object, c| self.analyze_local(object, &mut references, request, payload, c),
+            )?
+        }; // Both the prepared ELF and its reference indexes end before enrichment.
+        let staging = Staging::with_temporary_budget(self.stage, self.disk.clone())?;
+        crate::research::enrich(
+            self.project,
+            &staging,
+            &mut manifest,
             self.memory,
+            self.disk,
+            self.stage,
             control,
-            |object, c| self.analyze_prepared(object, &mut references, request, payload, c),
-        )
+        )?;
+        staging.function_receipt(&manifest, control)
     }
     pub fn analyze_prepared(
         &self,
@@ -171,6 +185,24 @@ impl<'m> FunctionEngine<'m> {
         payload: &ArtifactId,
         control: &mut dyn RunControl,
     ) -> Result<PreparedFunctionReceipt> {
+        if request.research.is_some() {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "enrichment requires ending the prepared-object scope",
+            ));
+        }
+        let manifest = self.analyze_local(object, references, request, payload, control)?;
+        Staging::with_temporary_budget(self.stage, self.disk.clone())?
+            .function_receipt(&manifest, control)
+    }
+    fn analyze_local(
+        &self,
+        object: &mut blobray_artifacts::PreparedObject<'_, '_>,
+        references: &mut AdmittedVec<'m, (u32, blobray_analysis::PreparedReferences<'m>)>,
+        request: &FunctionRequest,
+        payload: &ArtifactId,
+        control: &mut dyn RunControl,
+    ) -> Result<FunctionManifest> {
         let mut position = RunPosition {
             phase: RunPhase::AnalyzeFunction,
             input: request.source.input(),
@@ -183,7 +215,7 @@ impl<'m> FunctionEngine<'m> {
         position.artifact(payload);
         control.set_position(position);
         control.checkpoint(0)?;
-        let mut manifest = object.with_function(request, control, |view, control| {
+        object.with_function(request, control, |view, control| {
             let recipe = FunctionRecipe {
                 research: request.research.clone(),
                 abi: view.abi,
@@ -252,18 +284,6 @@ impl<'m> FunctionEngine<'m> {
                 semantics: Some(summary.semantics),
             };
             Ok(manifest)
-        })?;
-        // End the ELF/code borrow and local graph phase before retaining summaries.
-        let staging = Staging::with_temporary_budget(self.stage, self.disk.clone())?;
-        crate::research::enrich(
-            self.project,
-            &staging,
-            &mut manifest,
-            self.memory,
-            self.disk,
-            self.stage,
-            control,
-        )?;
-        staging.function_receipt(&manifest, control)
+        })
     }
 }

@@ -16,6 +16,41 @@ pub fn validate_proposal(p: &KnowledgeProposal) -> Result<()> {
         return Err(invalid("symbol and object occurrence differ"));
     }
     match &p.claim {
+        KnowledgeClaim::IntegerTable {
+            selector,
+            layout,
+            purpose,
+            applicability,
+        } => {
+            if !matches!(selector, DataSelector::Section { offset, length, .. } if *length > 0 && offset.checked_add(*length).is_some())
+                || layout.byte_length().is_none()
+                || purpose.trim().is_empty()
+                || applicability.trim().is_empty()
+            {
+                return Err(invalid(
+                    "table requires valid integer layout, purpose and applicability",
+                ));
+            }
+        }
+        KnowledgeClaim::Constant {
+            analysis,
+            record,
+            purpose,
+            applicability,
+            ..
+        } => {
+            if purpose.trim().is_empty()
+                || applicability.trim().is_empty()
+                || !p.evidence.contains(&EvidenceRef::Analysis {
+                    analysis: analysis.clone(),
+                    record: Some(*record),
+                })
+            {
+                return Err(invalid(
+                    "constant requires exact analysis record, purpose and applicability",
+                ));
+            }
+        }
         KnowledgeClaim::MmioRegion { region } => {
             if region.name.trim().is_empty()
                 || region.name.len() > 256
@@ -115,6 +150,33 @@ pub fn conflicts(a: &KnowledgeProposal, b: &KnowledgeProposal) -> bool {
         return false;
     }
     match (&a.claim, &b.claim) {
+        (
+            KnowledgeClaim::IntegerTable { selector: x, .. },
+            KnowledgeClaim::IntegerTable { selector: y, .. },
+        ) => {
+            let overlapping = match (x, y) {
+                (
+                    DataSelector::Section {
+                        section: a,
+                        offset: x,
+                        length: nx,
+                    },
+                    DataSelector::Section {
+                        section: b,
+                        offset: y,
+                        length: ny,
+                    },
+                ) => a == b && *x < y.saturating_add(*ny) && *y < x.saturating_add(*nx),
+                _ => false,
+            };
+            a.occurrence.source == b.occurrence.source
+                && a.occurrence.object == b.occurrence.object
+                && (overlapping || a.subject == b.subject)
+                && a.claim != b.claim
+        }
+        (KnowledgeClaim::Constant { .. }, KnowledgeClaim::Constant { .. }) => {
+            a.occurrence == b.occurrence && a.subject == b.subject && a.claim != b.claim
+        }
         (KnowledgeClaim::MmioRegion { region: x }, KnowledgeClaim::MmioRegion { region: y }) => {
             a.occurrence.source == b.occurrence.source
                 && a.occurrence.object == b.occurrence.object

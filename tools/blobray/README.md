@@ -17,6 +17,8 @@ Kernel enforcement requires a delegated cgroup. `--limit-mode watchdog` explicit
 selects sampled process-tree RSS enforcement when that is the desired policy;
 there is no automatic fallback. See the [operator reference](next/README.md) for
 linking, research, knowledge review, execution/comparison, replay and preservation.
+Exact data ranges, integer-table review and instruction-derived constants can be
+exported with captured bytes and provenance; see the operator reference.
 CLI/JSON share the [application](crates/application/README.md) operations.
 
 Register source publication belongs to the independent

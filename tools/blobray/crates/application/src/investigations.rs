@@ -609,6 +609,7 @@ pub(crate) fn prepare_investigation_worker_in(
             c,
         )
     })();
+    c.memory_phases(&memory.phase_observations());
     c.working_memory(memory.observation());
     result
 }

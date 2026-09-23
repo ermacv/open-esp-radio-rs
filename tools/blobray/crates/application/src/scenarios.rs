@@ -1,4 +1,4 @@
-//! Four concrete user actions under one supervisor, worker, budget and publication.
+//! Concrete user actions under one supervisor, worker, budget and publication.
 use crate::*;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -30,6 +30,12 @@ fn resolve(
     c: &mut dyn RunControl,
 ) -> Result<Resolution> {
     let operation = match action {
+        ScenarioRequest::ProposeData { request } => RunOperation::Knowledge {
+            change: crate::data::propose_data(project, request, memory, c)?,
+        },
+        ScenarioRequest::ProposeConstant { request } => RunOperation::Knowledge {
+            change: crate::data::propose_constant(project, request, c)?,
+        },
         ScenarioRequest::Investigate { request, producer } => {
             c.phase(RunPhase::PlanInvestigation)?;
             let plan = crate::investigations::enumerate(
@@ -301,6 +307,7 @@ pub fn prepare_scenario_worker(
         )?;
         Ok(result)
     })();
+    c.memory_phases(&memory.phase_observations());
     c.working_memory(memory.observation());
     result
 }

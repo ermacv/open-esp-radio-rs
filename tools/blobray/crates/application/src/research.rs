@@ -5,10 +5,10 @@ use std::io::Write;
 struct Node<'a> {
     id: FunctionAnalysisId,
     recipe: FunctionRecipe,
-    records: Vec<FunctionRecord>,
-    calls: Vec<(u64, Option<usize>)>,
+    records: RecordBuffer<'a>,
+    calls: AdmittedVec<'a, (u64, Option<usize>)>,
     done: bool,
-    _capacity: MemoryReservation<'a>,
+    _metadata: MemoryReservation<'a>,
     composed: Option<blobray_analysis::summaries::Composed<'a>>,
 }
 impl Node<'_> {
@@ -23,35 +23,36 @@ fn load<'a>(
     memory: &'a WorkingMemory,
     c: &mut dyn RunControl,
 ) -> Result<Node<'a>> {
-    let capacity = memory.reserve(
-        source
-            .len()
-            .checked_mul(32)
-            .and_then(|n| n.checked_add(65536))
-            .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "research capacity overflow"))?,
+    let metadata = memory.reserve(
+        id.allocated_bytes() + manifest.recipe.allocated_bytes(),
         c.position(),
     )?;
-    let mut records = Vec::new();
-    blobray_store::visit_jsonl(source, c, |r, c| {
-        c.checkpoint(1)?;
-        records.try_reserve(1).map_err(|_| {
-            Error::new(
-                ErrorCode::ResourceLimited,
-                "research records allocation refused",
-            )
-        })?;
-        records.push(r);
-        Ok(())
-    })?;
+    let records = load_records(source, memory, c)?;
     Ok(Node {
         id,
         recipe: manifest.recipe,
         records,
-        calls: Vec::new(),
+        calls: AdmittedVec::new(memory),
         done: false,
-        _capacity: capacity,
+        _metadata: metadata,
         composed: None,
     })
+}
+fn load_records<'a>(
+    source: &dyn ByteSource,
+    memory: &'a WorkingMemory,
+    c: &mut dyn RunControl,
+) -> Result<RecordBuffer<'a>> {
+    c.phase(RunPhase::LoadResearch)?;
+    // Covers decoding before ownership transfers to the admitted record buffer.
+    let _decode = memory.reserve(1024 * 1024, c.position())?;
+    let mut records = RecordBuffer::new(memory);
+    blobray_store::visit_jsonl(source, c, |r, c| {
+        c.checkpoint(1)?;
+        records.push(r, c.position())?;
+        Ok(())
+    })?;
+    Ok(records)
 }
 pub(crate) fn enrich(
     project: &Project,
@@ -199,32 +200,37 @@ pub(crate) fn enrich(
         )
     })?;
     let source = staging.open_payload(&manifest.records, c)?;
-    let mut nodes = vec![load(root, manifest.clone(), &source, memory, c)?];
+    let mut nodes = AdmittedVec::new(memory);
+    nodes.push(
+        load(root, manifest.clone(), &source, memory, c)?,
+        c.position(),
+    )?;
     let mut cursor = 0;
     while cursor < nodes.len() {
         c.checkpoint(1)?;
-        let transfers: Vec<_> = nodes[cursor]
-            .records
-            .iter()
-            .filter_map(|r| {
-                if let FunctionRecord::Transfer {
-                    offset,
-                    target,
-                    call: true,
-                } = r
-                {
-                    Some((*offset, target.clone()))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        for (offset, target) in transfers {
+        // Copy only scalar transfer coordinates, never clone a target graph.
+        let mut transfers = AdmittedVec::new(memory);
+        for r in nodes[cursor].records.iter() {
+            c.checkpoint(1)?;
+            if let FunctionRecord::Transfer {
+                offset,
+                target,
+                call: true,
+            } = r
+            {
+                let address = match target {
+                    AbstractValue::ImageAddress { address } => Some(*address),
+                    _ => None,
+                };
+                transfers.push((*offset, address), c.position())?;
+            }
+        }
+        for &(offset, target) in transfers.iter() {
             c.checkpoint(1)?;
             let mut candidate = None;
             let mut matches = 0;
             if options.abi.is_some()
-                && let AbstractValue::ImageAddress { address } = target
+                && let Some(address) = target
             {
                 let external = if let FunctionSource::Image { image } = &nodes[cursor].recipe.source
                 {
@@ -278,19 +284,37 @@ pub(crate) fn enrich(
                         ));
                     }
                     let lease = project.analysis(&id, c)?;
-                    nodes.push(load(id, lease.manifest, &lease.records, memory, c)?);
+                    nodes.push(
+                        load(id, lease.manifest, &lease.records, memory, c)?,
+                        c.position(),
+                    )?;
                     Some(nodes.len() - 1)
                 }
             } else {
                 None
             };
-            nodes[cursor].calls.push((offset, resolved));
+            nodes[cursor].calls.push((offset, resolved), c.position())?;
         }
         cursor += 1;
+    }
+    let mut consumers = AdmittedVec::new(memory);
+    for _ in 0..nodes.len() {
+        consumers.push(0usize, c.position())?;
+    }
+    let mut edges = 0u64;
+    for node in nodes.iter() {
+        for (_, target) in node.calls.iter() {
+            c.checkpoint(1)?;
+            edges += 1;
+            if let Some(i) = target {
+                consumers[*i] += 1;
+            }
+        }
     }
     let mut remaining = nodes.len();
     while remaining != 0 {
         c.checkpoint(1)?;
+        c.checkpoint(nodes.len() as u64 + edges)?;
         let ready = nodes.iter().position(|n| {
             !n.done
                 && n.calls
@@ -300,50 +324,70 @@ pub(crate) fn enrich(
         let Some(index) = ready else {
             // Recursive components and their dependent summaries stay local/partial.
             for node in nodes.iter_mut().filter(|n| !n.done) {
-                for (offset, _) in &node.calls {
-                    node.records.push(FunctionRecord::CallResolution {
-                        offset: *offset,
-                        analysis: None,
-                        reason: Some("recursive component or dependency on it".into()),
-                    });
+                for (offset, _) in node.calls.iter() {
+                    node.records.push(
+                        FunctionRecord::CallResolution {
+                            offset: *offset,
+                            analysis: None,
+                            reason: Some("recursive component or dependency on it".into()),
+                        },
+                        c.position(),
+                    )?;
                 }
                 node.done = true;
             }
             break;
         };
         let mut result = {
-            let calls: Vec<_> = nodes[index]
-                .calls
-                .iter()
-                .filter_map(|(offset, target)| {
-                    target.map(|i| blobray_analysis::summaries::Callee {
-                        offset: *offset,
-                        analysis: &nodes[i].id,
-                        source: &nodes[i].recipe.source,
-                        object: &nodes[i].recipe.symbol.object,
-                        records: nodes[i].facts(),
-                    })
-                })
-                .collect();
+            let mut calls = AdmittedVec::new(memory);
+            for (offset, target) in nodes[index].calls.iter() {
+                if let Some(i) = *target {
+                    calls.push(
+                        blobray_analysis::summaries::Callee {
+                            offset: *offset,
+                            analysis: &nodes[i].id,
+                            source: &nodes[i].recipe.source,
+                            object: &nodes[i].recipe.symbol.object,
+                            records: nodes[i].facts(),
+                        },
+                        c.position(),
+                    )?;
+                }
+            }
             blobray_analysis::summaries::compose(&nodes[index].records, &calls, memory, c)?
         };
-        for (offset, target) in &nodes[index].calls {
-            result.records.push(FunctionRecord::CallResolution {
-                offset: *offset,
-                analysis: target.map(|i| nodes[i].id.clone()),
-                reason: target.is_none().then(|| {
-                    if options.abi.is_none() {
-                        "explicit ABI contract required"
-                    } else {
-                        "target unresolved, ambiguous, or outside selected publication"
-                    }
-                    .into()
-                }),
-            });
+        for (offset, target) in nodes[index].calls.iter() {
+            result.records.push(
+                FunctionRecord::CallResolution {
+                    offset: *offset,
+                    analysis: target.map(|i| nodes[i].id.clone()),
+                    reason: target.is_none().then(|| {
+                        if options.abi.is_none() {
+                            "explicit ABI contract required"
+                        } else {
+                            "target unresolved, ambiguous, or outside selected publication"
+                        }
+                        .into()
+                    }),
+                },
+                c.position(),
+            )?;
         }
+        nodes[index].records = RecordBuffer::new(memory);
         nodes[index].composed = Some(result);
         nodes[index].done = true;
         remaining -= 1;
+        // Retain identities for provenance, release facts after the final parent.
+        for call in 0..nodes[index].calls.len() {
+            c.checkpoint(1)?;
+            if let Some(child) = nodes[index].calls[call].1 {
+                consumers[child] -= 1;
+                if child != 0 && consumers[child] == 0 {
+                    nodes[child].records = RecordBuffer::new(memory);
+                    nodes[child].composed = None;
+                }
+            }
+        }
     }
     let mut output = disk.temporary(&directory.join("staging"))?;
     let mut gaps = 0u64;
@@ -421,4 +465,62 @@ pub(crate) fn enrich(
         summary.complete = gaps == 0 && manifest.coverage.complete();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    struct Bytes(Vec<u8>);
+    impl ByteSource for Bytes {
+        fn len(&self) -> u64 {
+            self.0.len() as u64
+        }
+        fn read_at(&self, offset: u64, bytes: &mut [u8], c: &mut dyn RunControl) -> Result<()> {
+            c.bytes(bytes.len())?;
+            bytes.copy_from_slice(&self.0[offset as usize..offset as usize + bytes.len()]);
+            Ok(())
+        }
+    }
+    #[test]
+    fn jsonl_loading_admits_records_instead_of_encoded_size_multiplier() {
+        let memory = WorkingMemory::new(8 * 1024 * 1024).unwrap();
+        let record = FunctionRecord::Instruction {
+            offset: 0,
+            bytes: vec![1, 0],
+            decoded: DecodedOp {
+                length: 2,
+                text: "x".repeat(4096),
+                flow: InstructionFlow::Next,
+            },
+        };
+        let mut bytes = Vec::new();
+        for _ in 0..512 {
+            serde_json::to_writer(&mut bytes, &record).unwrap();
+            bytes.push(b'\n');
+        }
+        assert!(bytes.len() as u64 * 32 > 8 * 1024 * 1024);
+        let source = Bytes(bytes);
+        let records = load_records(&source, &memory, &mut || Ok(())).unwrap();
+        assert_eq!(records.len(), 512);
+        assert!(memory.peak() < 8 * 1024 * 1024);
+        drop(records);
+        assert_eq!(memory.used(), 0);
+        let small = WorkingMemory::new(2 * 1024 * 1024).unwrap();
+        let error = load_records(&source, &small, &mut || Ok(())).err().unwrap();
+        assert_eq!(error.code, ErrorCode::ResourceLimited);
+        assert_eq!(small.used(), 0);
+        let mut steps = 0;
+        let error = load_records(&source, &memory, &mut || {
+            steps += 1;
+            if steps > 20 {
+                Err(Error::new(ErrorCode::Cancelled, "cancelled"))
+            } else {
+                Ok(())
+            }
+        })
+        .err()
+        .unwrap();
+        assert_eq!(error.code, ErrorCode::Cancelled);
+        assert_eq!(memory.used(), 0);
+    }
 }

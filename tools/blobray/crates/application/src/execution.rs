@@ -252,6 +252,7 @@ pub(crate) fn prepare_execution_worker_in(
             &mut control,
         )
     })();
+    control.memory_phases(&memory.phase_observations());
     control.working_memory(memory.observation());
     result
 }

@@ -38,12 +38,36 @@ pub struct KnowledgeOccurrence {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum KnowledgeClaim {
-    MmioRegion { region: MmioRegion },
-    MmioRegister { register: MmioRegister },
-    Name { name: String },
+    IntegerTable {
+        selector: DataSelector,
+        layout: IntegerTable,
+        purpose: String,
+        applicability: String,
+    },
+    Constant {
+        analysis: FunctionAnalysisId,
+        record: u64,
+        operand: ConstantOperand,
+        value: u32,
+        purpose: String,
+        applicability: String,
+    },
+    MmioRegion {
+        region: MmioRegion,
+    },
+    MmioRegister {
+        register: MmioRegister,
+    },
+    Name {
+        name: String,
+    },
     Binding,
-    FunctionExtent { extent: CodeRange },
-    Hypothesis { text: String },
+    FunctionExtent {
+        extent: CodeRange,
+    },
+    Hypothesis {
+        text: String,
+    },
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]

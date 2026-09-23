@@ -32,6 +32,8 @@ pub struct WorkingMemory {
     limit: u64,
     used: Cell<u64>,
     peak: Cell<u64>,
+    phases: Cell<PhaseMeasurements>,
+    phase: Cell<RunPhase>,
 }
 impl WorkingMemory {
     pub fn new(limit: u64) -> Result<Self> {
@@ -45,7 +47,18 @@ impl WorkingMemory {
             limit,
             used: Cell::new(0),
             peak: Cell::new(0),
+            phases: Cell::new(PhaseMeasurements::default()),
+            phase: Cell::new(RunPhase::Starting),
         })
+    }
+    pub fn phase_observations(&self) -> PhaseMeasurements {
+        self.phases.get()
+    }
+    fn observe_phase(&self, phase: RunPhase) {
+        self.phase.set(phase);
+        let mut phases = self.phases.get();
+        phases.observe_memory(phase, self.used());
+        self.phases.set(phases);
     }
     pub fn used(&self) -> u64 {
         self.used.get()
@@ -61,6 +74,7 @@ impl WorkingMemory {
         }
     }
     pub fn reserve(&self, bytes: u64, position: RunPosition) -> Result<MemoryReservation<'_>> {
+        self.observe_phase(position.phase);
         let available = self.limit - self.used.get();
         if bytes > available {
             let mut error = Error::new(
@@ -83,6 +97,7 @@ impl WorkingMemory {
         let used = self.used.get() + bytes;
         self.used.set(used);
         self.peak.set(self.peak.get().max(used));
+        self.observe_phase(position.phase);
         Ok(MemoryReservation {
             memory: self,
             bytes,
@@ -114,6 +129,7 @@ pub struct MemoryReservation<'a> {
 impl Drop for MemoryReservation<'_> {
     fn drop(&mut self) {
         self.memory.used.set(self.memory.used.get() - self.bytes);
+        self.memory.observe_phase(self.memory.phase.get());
     }
 }
 
@@ -222,6 +238,9 @@ impl<'a, T> AdmittedVec<'a, T> {
             memory,
             capacity: None,
         }
+    }
+    pub fn pop(&mut self) -> Option<T> {
+        self.values.pop()
     }
     pub fn push(&mut self, value: T, position: RunPosition) -> Result<()> {
         if self.values.len() == self.values.capacity() {

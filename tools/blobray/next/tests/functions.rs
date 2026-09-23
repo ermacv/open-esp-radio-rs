@@ -907,6 +907,8 @@ fn relocated_tail_call_is_an_opaque_effect_not_an_unknown_address_pair() {
 #[path = "functions/investigations.rs"]
 mod investigations;
 
+#[path = "functions/data.rs"]
+mod data;
 #[path = "functions/knowledge.rs"]
 mod knowledge;
 
@@ -955,3 +957,6 @@ fn ten_thousand_section_relocations_fit_small_function_capacity() {
     assert_eq!(progress.measurements.sections_prepared, 1);
     assert!(progress.working_memory.unwrap().peak_reserved_bytes < 16 * 1024 * 1024);
 }
+
+#[path = "functions/reports.rs"]
+mod reports;

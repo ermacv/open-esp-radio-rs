@@ -275,6 +275,9 @@ impl RunControl for TemporaryControl<'_> {
         self.budget.position(p);
         self.control.set_position(p)
     }
+    fn memory_phases(&mut self, phases: &PhaseMeasurements) {
+        self.control.memory_phases(phases);
+    }
     fn working_memory(&mut self, o: WorkingMemoryObservation) {
         self.control.working_memory(o)
     }

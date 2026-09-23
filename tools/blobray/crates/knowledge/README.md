@@ -25,3 +25,8 @@ validators are outside the implemented claim vocabulary.
 
 See the [application commands and wire contracts](../../next/README.md#knowledge-and-preservation)
 for evidence verification, revision selection and backup/restore ownership.
+
+Integer tables and instruction-derived constants use the same explicit review
+transactions. Shape validation requires purpose/applicability and bounded integer
+layout or exact analysis evidence; application validates the physical bytes and
+known operand. Accepting a layout does not resolve relocations or runtime state.

@@ -74,7 +74,10 @@ pub(super) fn render(
 ) -> Result<()> {
     if matches!(
         result.summary(),
-        app::QuerySummary::TargetAudit { .. }
+        app::QuerySummary::Coverage { .. }
+            | app::QuerySummary::StorageUsage { .. }
+            | app::QuerySummary::Data { .. }
+            | app::QuerySummary::TargetAudit { .. }
             | app::QuerySummary::KnowledgeValidation { .. }
             | app::QuerySummary::RetainedPayload { .. }
             | app::QuerySummary::Legacy { .. }
@@ -486,6 +489,28 @@ impl app::DoctorSink for Records<'_> {
     }
 }
 impl app::QuerySink for Records<'_> {
+    fn coverage(&mut self, r: &ExtentCoverageRecord, c: &mut dyn RunControl) -> Result<()> {
+        self.record("coverage", r, c)
+    }
+    fn data(&mut self, r: &DataRecord, c: &mut dyn RunControl) -> Result<()> {
+        if matches!(self.format, super::Format::Human)
+            && let DataRecord::Analysis {
+                analysis,
+                ordinal,
+                record,
+                ranges,
+            } = r
+        {
+            return output(self.file, c, |w| {
+                writeln!(
+                    w,
+                    "analysis={analysis} record={ordinal} data-ranges={ranges:?}"
+                )?;
+                super::function_display::record(w, record)
+            });
+        }
+        self.record("data", r, c)
+    }
     fn legacy(&mut self, r: &LegacyRecord, c: &mut dyn RunControl) -> Result<()> {
         self.record("legacy-record", r, c)
     }

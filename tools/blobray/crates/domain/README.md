@@ -91,3 +91,12 @@ validation bounds control cardinalities. Host admission also bounds serializatio
 before copying requests. See the [execution contract](../../next/README.md#concrete-execution-and-comparison).
 
 `ResultAssessment` separates scoped coverage from policy checks and comparison verdicts. `ScenarioRequest` defines four concrete application actions. `AdmittedVec` admits overlapping buffers before growth. Fixed `WorkMeasurements` and phase costs report resource work independently of result identity.
+
+Data contracts identify exact captured ranges, integer table encodings and constants
+selected from retained analysis operands. Observations, review state and function
+coverage remain separate; file offsets and executable VMAs are distinct values.
+
+`CoverageScope` makes the completeness universe explicit. `RecordBuffer` owns
+retained function records and their admitted variable capacities. Phase memory
+observations describe admission, not RSS. Extent and storage reports are typed
+observations without discovery, pruning or hardware claims.

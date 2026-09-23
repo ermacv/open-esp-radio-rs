@@ -1,5 +1,33 @@
 # ESP32-S31 vendor-analysis project
 
+## Captured PHY research with Next
+
+[phy_research.py](phy_research.py) exercises the current Next application using
+explicit private inputs and its built-in resource supervisor. It authenticates
+the PHY artifact, imports PHY/ROM, deletes the source copies, analyzes functions,
+reports extent coverage/storage, reviews exact table bytes and an instruction
+constant, exports provenance, then moves and restores the project. Research runs
+retain phase diagnostics; the scenario does not qualify hardware or interpret
+unresolved pointers. Outputs must stay in ignored storage.
+
+```console
+cargo build --profile blobray -p blobray-next --bin blobray
+python3 verification/vendor/projects/esp32s31/phy_research.py \
+  --binary target/blobray/blobray --library /private/libphy.a \
+  --rom /private/esp32s31_rev0_rom.elf --limit-mode watchdog \
+  --output target/blobray-phy-research
+```
+
+The script uses 256 MiB working capacity, a 600-second deadline and a shared work
+budget per operation. Select kernel mode only in an environment with delegated
+cgroup memory control; watchdog is an explicit sampled-RSS policy. Run JSON files
+are the measurement authority, not this documentation.
+
+## Legacy configuration reference
+
+The configuration and command vocabulary below describe retained legacy inputs;
+they are not supported commands or a compatibility path of `cargo blobray` Next.
+
 This directory is the reviewed ESP32-S31 configuration for Vendor Binary
 Blobray. `vendor-project.toml` is the entry point. The target host links the
 generic Blobray with ESP32-S31 knowledge contracts. Target addresses and

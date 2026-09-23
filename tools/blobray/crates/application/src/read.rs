@@ -21,6 +21,13 @@ impl ReadView {
             project: Project::open(path)?,
         })
     }
+    pub fn storage_usage(
+        &self,
+        memory: &WorkingMemory,
+        control: &mut dyn RunControl,
+    ) -> Result<StorageUsage> {
+        self.project.storage_usage(memory, control)
+    }
     pub fn current(&self) -> Result<Option<RevisionId>> {
         self.project.current()
     }

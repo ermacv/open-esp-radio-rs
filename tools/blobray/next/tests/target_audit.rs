@@ -80,6 +80,11 @@ fn scans_symbol_less_code_and_resolves_local_jalr() {
     );
     let result: serde_json::Value = serde_json::from_slice(&clean.stdout).unwrap();
     assert_eq!(result["summary"]["summary"]["unresolved_indirect"], 1);
+    assert_eq!(
+        result["assessment"]["coverage"]["scope"],
+        "static-resolved-transfers"
+    );
+    assert_eq!(result["assessment"]["check"], "pass");
     let bad = run(&elf(&[0x000032b7, 0x00028067]), &[]);
     assert!(!bad.status.success());
     let result: serde_json::Value = serde_json::from_slice(&bad.stdout).unwrap();

@@ -29,7 +29,7 @@ fn diagnostic(
 mod function;
 mod mapping;
 mod program;
-pub use function::{FunctionView, PreparedObject, with_function, with_prepared_object};
+pub use function::{DataView, FunctionView, PreparedObject, with_function, with_prepared_object};
 
 pub use program::executable_sections;
 pub use program::execution_segments;

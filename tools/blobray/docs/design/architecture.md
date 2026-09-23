@@ -70,7 +70,7 @@ association, not an automatic transfer of all previous assertions.
 
 Crate boundaries enforce independent dependency and authority rules. Modules
 inside each crate divide implementation without acquiring extra capabilities.
-The shipping host package is `blobray-next` and its executable is `blobray`. Modules within existing crates own prepared objects, reference indexes and concrete scenarios; these responsibilities do not require another runtime crate.
+The shipping host package is `blobray-next` and its executable is `blobray`. Modules within existing crates own prepared objects, borrowed data views, reference indexes and concrete scenarios; these responsibilities do not require another runtime crate.
 
 | Crate | Principal modules | Owns | Allowed local dependencies |
 | --- | --- | --- | --- |
@@ -143,8 +143,6 @@ flowchart TD
     App --> Knowledge[Knowledge]
     App --> Verify[Verification]
     App --> Artifacts[Artifacts]
-    Analysis --> Artifacts
-    RV --> Artifacts
     App --> Domain[Domain values and ports]
     Store --> Domain
     Analysis --> Domain
@@ -159,7 +157,11 @@ do not add a reverse crate dependency.
 
 ## Authority and extension boundaries
 
-The application owns a `ProviderSet` for its lifetime. Creating another
+**Target extension contract:** a general `ProviderSet` is not a callable Next
+registry. The current host injects the decoder/executor and operation host.
+The broader provider contract below does not require a new runtime crate.
+
+In that target contract, the application owns a `ProviderSet` for its lifetime. Creating another
 application with different providers is supported in the same process. Library
 code does not install a process-global registry, inspect CLI flags, or read
 environment variables to select a provider.

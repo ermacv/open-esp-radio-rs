@@ -35,6 +35,28 @@ pub enum CoverageSubject {
 pub struct ResultCoverage {
     pub subject: CoverageSubject,
     pub status: CoverageStatus,
+    pub scope: CoverageScope,
+}
+/// The universe to which completeness applies, never an unqualified proof.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CoverageScope {
+    InventoryOccurrences,
+    SelectedFunctionExtents,
+    FunctionExtent,
+    ExecutionScenario,
+    StaticResolvedTransfers,
+}
+impl CoverageSubject {
+    pub fn scope(&self) -> CoverageScope {
+        match self {
+            Self::Inventory(_) => CoverageScope::InventoryOccurrences,
+            Self::Investigation(_) => CoverageScope::SelectedFunctionExtents,
+            Self::Function(_) => CoverageScope::FunctionExtent,
+            Self::Execution(_) => CoverageScope::ExecutionScenario,
+            Self::StaticTargetAudit(_) => CoverageScope::StaticResolvedTransfers,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -54,6 +76,7 @@ impl ResultAssessment {
     pub fn covered(subject: CoverageSubject, complete: bool) -> Self {
         Self {
             coverage: Some(ResultCoverage {
+                scope: subject.scope(),
                 subject,
                 status: CoverageStatus::from_complete(complete),
             }),
@@ -92,6 +115,7 @@ impl ResultAssessment {
             coverage: Some(ResultCoverage {
                 subject: CoverageSubject::Function(id),
                 status,
+                scope: CoverageScope::FunctionExtent,
             }),
             ..Self::default()
         }

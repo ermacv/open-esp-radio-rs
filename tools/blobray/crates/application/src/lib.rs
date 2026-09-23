@@ -3,6 +3,7 @@
 //! This layer owns import ordering, external-member resolution and publication.
 //! Inventory receives captured bytes only; storage never interprets ELF or AR.
 
+mod data;
 use blobray_artifacts::{INVENTORY_PRODUCER, MemberCursor, inspect_source};
 use blobray_domain::*;
 use blobray_store::{ObjectHeader, Project, Staging};
@@ -104,6 +105,7 @@ pub fn prepare_import(
         },
         disk.clone(),
     );
+    control.memory_phases(&memory.phase_observations());
     control.working_memory(memory.observation());
     result
 }
@@ -372,3 +374,5 @@ pub fn doctor_stream(
 pub use blobray_verification::VERIFIER as EXECUTION_VERIFIER;
 
 mod audit;
+
+mod coverage;

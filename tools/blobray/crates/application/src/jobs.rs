@@ -578,6 +578,26 @@ impl Application {
     ) -> Result<RunHandle> {
         self.start_scenario(project, ScenarioRequest::Research { request }, budget)
     }
+    pub fn start_propose_data(
+        &self,
+        project: &Path,
+        request: DataProposalRequest,
+        budget: ResourceBudget,
+    ) -> Result<RunHandle> {
+        self.start_scenario(project, ScenarioRequest::ProposeData { request }, budget)
+    }
+    pub fn start_propose_constant(
+        &self,
+        project: &Path,
+        request: ConstantProposalRequest,
+        budget: ResourceBudget,
+    ) -> Result<RunHandle> {
+        self.start_scenario(
+            project,
+            ScenarioRequest::ProposeConstant { request },
+            budget,
+        )
+    }
     pub fn start_propose_register(
         &self,
         project: &Path,
@@ -650,6 +670,16 @@ impl Application {
                         Error::new(ErrorCode::NotFound, "project has no revision")
                     })?);
             }
+        }
+        if let ScenarioRequest::ProposeData { request } = &request {
+            writer
+                .project()
+                .check_knowledge_base(&request.expected_base)?;
+        }
+        if let ScenarioRequest::ProposeConstant { request } = &request {
+            writer
+                .project()
+                .check_knowledge_base(&request.expected_base)?;
         }
         if let ScenarioRequest::ProposeRegister { request } = &request {
             writer
@@ -908,7 +938,7 @@ impl Application {
             &work,
         )?;
         let record = RunRecord {
-            schema: 8,
+            schema: 9,
             operation: blobray_store::RunOperation::Query,
             resolved_operation: None,
             image: None,

@@ -75,3 +75,8 @@ conflicting, misaligned code or out-of-section markers fail closed.
 `with_prepared_object` owns one captured buffer, ELF/program view and lazily prepared sections. Callback-borrowed function views share target names and section metadata; object scope releases their admitted capacity. `MemberIndex` traverses an archive once and preserves ordinal payload identity, including thin-member markers.
 
 An ordinal index retains valid prefix entries when a later archive header is malformed and exposes the terminal integrity error. Selecting an unavailable later ordinal returns that error. Inventory/publication coverage owns the incomplete-membership claim; an index never asserts archive completeness. Resource, I/O and cancellation failures abort indexing.
+
+`PreparedObject::with_data` lends exact file-backed section, symbol or executable
+VMA ranges from the same verified buffer and prepared sections as function views.
+It preserves raw relocations and writable-initialization metadata, rejects missing
+or ambiguous backing, and gives no runtime-value or semantic-layout guarantee.

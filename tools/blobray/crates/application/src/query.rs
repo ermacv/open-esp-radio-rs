@@ -55,6 +55,33 @@ impl QueryOutput {
         let summary: QuerySummary = serde_json::from_slice(&bytes)
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         let manifest = match (&work.query, &summary) {
+            (ReadQuery::Coverage { id }, QuerySummary::Coverage { id: actual, .. })
+                if id == actual =>
+            {
+                None
+            }
+            (ReadQuery::StorageUsage, QuerySummary::StorageUsage { .. }) => None,
+            (ReadQuery::Data { request }, QuerySummary::Data { manifest })
+                if request == &manifest.request
+                    && manifest.knowledge.is_none()
+                    && manifest.accepted.is_none() =>
+            {
+                None
+            }
+            (
+                ReadQuery::ReviewedData {
+                    revision,
+                    assertion,
+                },
+                QuerySummary::Data { manifest },
+            ) if manifest.knowledge.as_ref() == Some(revision)
+                && manifest
+                    .accepted
+                    .as_ref()
+                    .is_some_and(|e| &e.id == assertion && e.state == AssertionState::Accepted) =>
+            {
+                None
+            }
             (
                 ReadQuery::AuditTargets { ranges, .. },
                 QuerySummary::TargetAudit { ranges: actual, .. },
@@ -182,6 +209,14 @@ impl QueryOutput {
             }
         };
         let mut bundle = Vec::new();
+        if matches!(
+            &work.query,
+            ReadQuery::Data { .. } | ReadQuery::ReviewedData { .. }
+        ) {
+            for name in ["data.bin", "object.elf", "records.jsonl", "manifest.json"] {
+                bundle.push((name, File::open(stage.join(name)).map_err(io)?));
+            }
+        }
         if matches!(&work.query, ReadQuery::Image { export: true, .. }) {
             for name in [
                 "image.elf",
@@ -424,6 +459,17 @@ impl QueryOutput {
         }
         self.export_bundle(destination, cancelled)
     }
+    /// Export already captured observations and selected accepted interpretation.
+    /// Destination must not exist; failure may leave a prefix and is never retried.
+    pub fn export_data(&mut self, destination: &Path, cancelled: &dyn Fn() -> bool) -> Result<()> {
+        if !matches!(self.summary, QuerySummary::Data { .. }) {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "query has no data bundle",
+            ));
+        }
+        self.export_bundle(destination, cancelled)
+    }
     fn export_bundle(&mut self, destination: &Path, cancelled: &dyn Fn() -> bool) -> Result<()> {
         self.deliver(cancelled, |this, _, control| {
             if this.bundle.is_empty() {
@@ -503,6 +549,7 @@ impl QueryOutput {
             control.phase(RunPhase::Serialize)?;
             f(self, &memory, &mut control)
         })();
+        control.memory_phases(&memory.phase_observations());
         control.working_memory(memory.observation());
         self.report.diagnostics.progress = Some(control.snapshot());
         result

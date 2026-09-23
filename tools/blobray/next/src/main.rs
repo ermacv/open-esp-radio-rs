@@ -33,6 +33,16 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum KnowledgeCommand {
+    /// Propose an integer interpretation of exact captured bytes.
+    ProposeData {
+        #[arg(long)]
+        request: PathBuf,
+    },
+    /// Propose a constant supported by an exact retained analysis record.
+    ProposeConstant {
+        #[arg(long)]
+        request: PathBuf,
+    },
     /// Propose a reviewed register interpretation supported by a retained analysis.
     ProposeRegister {
         #[arg(long)]
@@ -97,6 +107,46 @@ enum KnowledgeCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Report executable intervals inside and outside selected function extents.
+    Coverage {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        id: blobray_domain::PublicationId,
+        #[command(flatten)]
+        limits: ResourceOptions,
+    },
+    /// Observe project logical file sizes without recovery or pruning.
+    StorageUsage {
+        #[arg(long)]
+        project: PathBuf,
+        #[command(flatten)]
+        limits: ResourceOptions,
+    },
+    /// Inspect exact data ranges and supporting analyses; optionally export captured observations.
+    Data {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        request: PathBuf,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[command(flatten)]
+        limits: ResourceOptions,
+    },
+    /// Export one accepted table or constant at an explicit knowledge revision.
+    ExportData {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        revision: blobray_domain::KnowledgeRevisionId,
+        #[arg(long)]
+        assertion: blobray_domain::AssertionId,
+        #[arg(long)]
+        output: PathBuf,
+        #[command(flatten)]
+        limits: ResourceOptions,
+    },
     /// Audit all executable ELF sections for statically resolved forbidden transfers.
     AuditTargets {
         #[arg(long)]
@@ -645,6 +695,38 @@ fn main() -> ExitCode {
 
 fn run(command: Command, format: Format) -> Result<ExitCode> {
     match command {
+        Command::Data {
+            project,
+            request,
+            output,
+            limits,
+        } => {
+            let query = ReadQuery::Data {
+                request: read_json_file(&request)?,
+            };
+            if let Some(output) = output {
+                return export_data_query(project, query, output, limits, format);
+            }
+            return read_query(project, query, limits, format);
+        }
+        Command::ExportData {
+            project,
+            revision,
+            assertion,
+            output,
+            limits,
+        } => {
+            return export_data_query(
+                project,
+                ReadQuery::ReviewedData {
+                    revision,
+                    assertion,
+                },
+                output,
+                limits,
+                format,
+            );
+        }
         Command::AuditTargets {
             artifact,
             forbid,
@@ -762,6 +844,12 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             command,
             limits,
         } => match command {
+            KnowledgeCommand::ProposeData { request } => {
+                return propose_data_command(project, request, limits, format, false);
+            }
+            KnowledgeCommand::ProposeConstant { request } => {
+                return propose_data_command(project, request, limits, format, true);
+            }
             KnowledgeCommand::Accept {
                 assertion,
                 base,
@@ -1662,6 +1750,16 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
         } => {
             return read_query(project, ReadQuery::Inventory { revision }, limits, format);
         }
+        Command::Coverage {
+            project,
+            id,
+            limits,
+        } => {
+            return read_query(project, ReadQuery::Coverage { id }, limits, format);
+        }
+        Command::StorageUsage { project, limits } => {
+            return read_query(project, ReadQuery::StorageUsage, limits, format);
+        }
         Command::Doctor { project, limits } => {
             return read_query(project, ReadQuery::Doctor, limits, format);
         }
@@ -2318,6 +2416,58 @@ fn apply_native_knowledge(
     let _diagnostics = TemporaryDiagnostics(&application, format);
     let signals = Signals::new()?;
     let handle = application.start_knowledge(project, change, budget)?;
+    if !wait_handle(&handle, &signals, format) {
+        return Ok(ExitCode::FAILURE);
+    }
+    let run = handle.wait();
+    match format {
+        Format::Json => println!("{}", serde_json::json!({"schema":6,"run":run})),
+        Format::Human => println!("Knowledge revision {}", run.knowledge.unwrap()),
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn export_data_query(
+    project: PathBuf,
+    query: ReadQuery,
+    output: PathBuf,
+    limits: ResourceOptions,
+    format: Format,
+) -> Result<ExitCode> {
+    let application = limits.application()?;
+    let _diagnostics = TemporaryDiagnostics(&application, format);
+    let signals = Signals::new()?;
+    let handle = application.start_query(&project, query, limits.budget()?)?;
+    if !wait_handle(&handle, &signals, format) {
+        return Ok(ExitCode::FAILURE);
+    }
+    let mut result = handle.take_output()?;
+    result.export_data(&output, &|| signals.cancelled())?;
+    match format {
+        Format::Json => println!(
+            "{}",
+            serde_json::json!({"schema":1,"summary":result.summary(),"output":output})
+        ),
+        Format::Human => println!("Data exported to {}", output.display()),
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn propose_data_command(
+    project: PathBuf,
+    request: PathBuf,
+    limits: ResourceOptions,
+    format: Format,
+    constant: bool,
+) -> Result<ExitCode> {
+    let application = limits.application()?;
+    let _diagnostics = TemporaryDiagnostics(&application, format);
+    let signals = Signals::new()?;
+    let handle = if constant {
+        application.start_propose_constant(&project, read_json_file(&request)?, limits.budget()?)?
+    } else {
+        application.start_propose_data(&project, read_json_file(&request)?, limits.budget()?)?
+    };
     if !wait_handle(&handle, &signals, format) {
         return Ok(ExitCode::FAILURE);
     }

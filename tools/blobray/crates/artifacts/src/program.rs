@@ -126,6 +126,40 @@ impl<'a> ProgramView<'a> {
             _capacity: capacity,
         })
     }
+    /// Verify that a section's captured bytes are the file-backed bytes loaded at its VMA.
+    pub fn data_range(
+        &self,
+        address: u64,
+        file_offset: u64,
+        length: u64,
+        c: &mut dyn RunControl,
+    ) -> Result<bool> {
+        let mut consumed = 0;
+        let mut writable = false;
+        while consumed < length {
+            c.checkpoint(1)?;
+            let at = address
+                .checked_add(consumed)
+                .ok_or_else(|| invalid("data address overflow"))?;
+            let mut found = None;
+            for segment in &self.segments {
+                c.checkpoint(1)?;
+                if at >= segment.address && at - segment.address < segment.file_size {
+                    found = Some(segment);
+                    break;
+                }
+            }
+            let segment =
+                found.ok_or_else(|| invalid("data range has no file-backed load mapping"))?;
+            writable |= segment.flags & object::elf::PF_W != 0;
+            let offset = at - segment.address;
+            if segment.file_offset.checked_add(offset) != file_offset.checked_add(consumed) {
+                return Err(invalid("section data differs from loaded segment mapping"));
+            }
+            consumed += (segment.file_size - offset).min(length - consumed);
+        }
+        Ok(writable)
+    }
     pub fn code(&self, address: u64, code: &[u8], c: &mut dyn RunControl) -> Result<()> {
         for segment in &self.segments {
             c.checkpoint(1)?;

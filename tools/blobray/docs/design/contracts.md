@@ -15,8 +15,8 @@ comparison. `ResultAssessment` is shared by `QuerySummary::assessment`,
 
 | Field | Meaning | Applicable operations |
 | --- | --- | --- |
-| `coverage: {subject, status}` | `complete`, `partial` or `unknown` for the identified result, never an unscoped boolean | Inventory revision, function analysis, investigation publication, execution evidence or static-target audit |
-| `check` | `pass`, `fail` or `inconclusive` policy decision | Doctor, link-plan and knowledge validation |
+| `coverage: {subject, status, scope}` | `complete`, `partial` or `unknown` for the identified result, never an unscoped boolean | Inventory revision, function analysis, investigation publication, execution evidence or static-target audit |
+| `check` | `pass`, `fail` or `inconclusive` policy decision | Doctor, link-plan, knowledge validation and static-target audit |
 | `comparison` | `MATCH`, `DIFF` or `INCOMPLETE` under the retained relation | Concrete comparison only |
 
 A failed/cancelled/limited attempt has no assessment. Successful listings,
@@ -29,9 +29,28 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 8
-and database schema 7 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 9
+and database schema 8 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
+
+`coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
+`selected-function-extents`, `execution-scenario` or `static-resolved-transfers`.
+Whole-library completeness does not quantify over every executable byte. The
+`coverage` query reports section-relative intervals outside the union of selected
+extents separately; these intervals are neither inferred functions nor padding.
+Unknown structure remains explicit and does not become a zero-byte observation.
+`PASS` for target auditing covers resolved static transfers only. Unknown indirect
+transfers remain separately counted. Comparison retains its explicit relation:
+ordered MMIO/fence events and, when selected, low u32 return values; RAM, call
+observations and the high return register are outside that relation.
+
+### Durable and ephemeral acquisition
+
+Import captures live inputs for durable research. `audit-targets` is an explicit
+exception: the supervised read operation captures one external ELF into admitted
+memory, checks detectable file changes and returns the digest of bytes actually
+analyzed. It does not create a project revision or claim an atomic filesystem
+snapshot. Durable operations never use this path to reopen missing source files.
 
 ## Concrete application scenarios
 
@@ -51,6 +70,37 @@ no resolution/result/assessment. Resolution is not a nested run or a generic
 workflow framework. Saved-plan investigation uses the same execution path with
 its selection independently verified. Automatic planning passes its temporary
 entry stream directly into execution under the original budget.
+
+## Research memory and read-only observations
+
+Single-function local analysis returns an owned staged manifest. Its prepared
+ELF, section views and reference indexes end before enrichment starts. Library
+analysis keeps one prepared object across its local functions; enrichment cannot
+run inside that owner. No global object cache is introduced.
+
+Research loading admits a bounded JSONL decoding workspace before deserialization,
+then transfers records into `RecordBuffer`: vector capacities, boxes, names,
+identities and nested value collections remain charged with their owners. Shared
+reference targets are conservatively charged per reference. Composition admits
+mapping/return workspaces from type sizes and maximum resident counts; output
+grows through admitted containers, charging old/new buffers simultaneously.
+Original records end after replacement; callee facts end after their last parent.
+Cyclic components keep explicit partial local facts. This is capacity admission,
+not a no-heap or whole-process RSS guarantee.
+
+Phase diagnostics contain `reserved_bytes` at the last admission/release
+observation and `peak_reserved_bytes` at such observations, alongside work/time.
+They include allocations carried into that phase; phase peaks must not be added.
+`load-research` and `compose-research` distinguish retained facts from ELF
+preparation. These measurements are diagnostic and do not enter result identity.
+
+`storage-usage` is a supervised read query. It counts logical file sizes in CAS,
+metadata and staging, including unreachable CAS files. Metadata row counts share
+a read transaction; filesystem sizes are observations over the traversal interval.
+A disappearing entry fails explicitly. Symlinks are counted as non-regular entries
+and never followed. No reachability, reclaimable-space, physical allocation or
+project-wide disk quota is claimed. Neither this query nor `coverage` acquires a
+writer, recovers staging or prunes results.
 
 ## Prepared data ownership
 
@@ -148,7 +198,7 @@ implementation. Human output is a renderer of those results.
 
 | Operation | Inputs | Result and authority |
 | --- | --- | --- |
-| `import` | Explicit file bindings, order, target context and optional expected digests | Staged import followed by a new revision; the only operation that acquires live binary paths |
+| `import` | Explicit file bindings, order, target context and optional expected digests | Staged import followed by a new revision; the only operation that acquires live binary paths for durable project research |
 | `snapshot` | Project and explicit revision/publication selection or current selection | Read-only retained snapshot with resolved identities |
 | `plan` | Snapshot, operation request and resource budget | Immutable plan, dependencies, obligations, cache decisions and missing prerequisites; no analysis publication |
 | `start_run` | Plan and application capabilities | `RunHandle`; executes the recorded plan rather than resolving new inputs |
@@ -713,3 +763,29 @@ MMIO/fence events and optionally one 32-bit return, with a caller-declared compi
 binding ceiling. It cannot claim arbitrary-domain or hardware equivalence. See
 [concrete execution](../../next/README.md#concrete-execution-and-comparison) for
 request limits, memory initialization, schemas and unsupported behavior.
+
+
+### Captured data interpretations
+
+`DataRequest` binds a `KnowledgeOccurrence`, explicit ranges and retained analysis
+IDs. Artifacts owns the verified ELF buffer and prepared section metadata; each
+`DataView` borrows them for one callback. Application resolves the occurrence
+once, owns the query budget and streams observations. Store neither parses ELF
+nor interprets a table. Query delivery owns its private exported files until
+transfer or drop, and does not publish knowledge as a side effect.
+
+`KnowledgeClaim::IntegerTable` describes integer encoding/count/stride over exact
+captured bytes. Proposal and review require matching Source evidence for the
+whole selected file range. A `Constant` claim requires a known selected operand
+at an exact Analysis record ordinal. Both require purpose and applicability and
+use the existing expected-base/review/supersession transaction. Source revisions
+remain separate from knowledge revisions. A constant's value is an RV32 bit
+pattern, not a fabricated data payload.
+
+Data exports retain the captured object, selected bytes, analysis coverage and
+optional accepted assertion at a fixed knowledge revision. Original paths are
+provenance only. Image VMAs are checked against file-backed load mappings;
+section-relative and file-relative offsets are separate fields. Mutable section
+bytes are initialization only. Relocations are retained, never implicitly applied;
+this integer profile explicitly withholds numeric decoding for sections containing
+relocations. Successful export makes no general completeness or comparison claim.

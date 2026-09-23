@@ -12,6 +12,7 @@ qualification examples below are target contracts unless listed here. The
 | Propose register from analysis → explicit review → research with selected knowledge | Implemented; proposal, review and observation remain distinct |
 | Execute / compare / replay captured implementations | Limited explicit integer scenario profile, scoped MATCH/DIFF/INCOMPLETE |
 | Move / backup / restore / recovery | Implemented for supported formats; no conversion or GC |
+| Exact data ranges → integer table/constant proposal → review → provenance export | Implemented for captured RV32 ELF bytes; unresolved relocations and analysis gaps remain explicit |
 | General equivalence, broader ISA/model support, TUI and cache reclamation | Target, not currently provided |
 
 Concrete scenario orchestration belongs to application. Selection/planning and
@@ -22,6 +23,7 @@ publication leaves prior results and current selections intact.
 
 | Contract | Implementation | Regression coverage |
 | --- | --- | --- |
+| Captured data, known constants and explicit review survive source removal | [data operations](../../crates/application/src/data.rs) | [data regression tests](../../next/tests/functions/data.rs) |
 | Partial inventory is partial in summary and handle | [query](../../crates/application/src/query.rs) | `partial_inventory_has_the_same_assessment_in_handle_and_output` in [memory tests](../../next/tests/memory.rs) |
 | One object preparation for multiple functions; linear archive indexing | [investigations](../../crates/application/src/investigations.rs) | `automatic_investigation_prepares_each_object_once_and_publishes_one_run`, `archive_lookup_work_grows_with_members_without_restarting_the_cursor` in [investigation tests](../../next/tests/functions/investigations.rs) |
 | Section relocation admission supports small extents | [prepared object](../../crates/artifacts/src/function.rs) | `ten_thousand_section_relocations_fit_small_function_capacity` in [function tests](../../next/tests/functions.rs) |
@@ -147,6 +149,26 @@ coefficients retain source identity, purpose, representation and applicability
 under the [source policy](../../../../docs/source-policy.md). Their binary origin
 does not justify dropping them or substituting another profile.
 
+## Recover a table or coefficient
+
+The researcher selects an exact occurrence and sized symbol or explicit section/
+image range. Application borrows all ranges from one artifacts-owned prepared
+object and streams captured bytes, relocations and supporting analysis records.
+The selected analyses retain their original scope and gaps. No hidden analysis
+or preferred resolution of duplicate names occurs.
+
+A table proposal supplies integer encoding, count, stride, purpose and applicability.
+A coefficient proposal instead names an exact known operand in a saved analysis.
+Knowledge validates the claim shape; application checks the physical evidence on
+proposal and review. Only explicit review produces an accepted interpretation.
+A table with relocations can have a reviewed layout while numeric values remain
+unresolved. Writable bytes describe initialization, not runtime state.
+
+Success means an export at the selected knowledge revision preserves the exact
+object, data ranges or instruction evidence, layout/constant interpretation and
+provenance after source deletion, move and restore. The export never presents
+an instruction-derived coefficient as a contiguous table in the binary.
+
 ## Compare a Rust replacement
 
 The caller selects identified compiled vendor and Rust artifacts, their entry
@@ -173,8 +195,10 @@ requirements.
 ## Update a vendor library or interpretation input
 
 Importing changed libraries creates a new revision with its own physical
-identities. Changing a chip pack, ABI declaration or model selection also creates
-a new revision even when binary bytes are unchanged.
+identities. Reviewed interpretation changes create a separate knowledge revision.
+ABI/model selections belong to analysis or execution recipes; changing them does
+not manufacture a new source revision when captured inputs are unchanged.
+Correspondence and automatic transfer below remain target behavior.
 
 Correspondence analysis proposes associations between old and new occurrences.
 Lineage composes supported relationships across several revisions. The result
@@ -332,6 +356,26 @@ layout or generated register constants.
 | B2 | Attempt a forbidden dependency or mutation through a read handle | Dependency checks or type boundary reject it | architecture and API checks |
 | B3 | Pass a snapshot/analysis port to code attempting writer acquisition, tool discovery or provider installation | Public capabilities do not expose those operations; compile-fail API checks reject authority escalation | application, domain, store |
 | B4 | Start a planned operation after inputs/providers/current selection change | It uses retained inputs and identified implementations or returns explicit unavailability; no implicit replanning or fallback | application, host |
+
+## Current inspection reports
+
+**Implemented:** `coverage --id PUBLICATION` joins the immutable membership stream
+with captured inventory, retaining only one object's ranges at a time. Aliases and
+overlapping extents count once. The publication's selected-function completeness
+and executable intervals outside that selection are separate observations.
+`storage-usage` reports accumulated logical storage without changing the project.
+
+**Implemented within the current format:** backup/restore, project move, reopening
+without source files, and recreating accepted-data exports. Other database or
+journal versions are rejected unchanged. No old-reader packaging, upgrade or
+compatibility reader is provided. Exports retain bytes and provenance; they do not
+promise automatic import into another format.
+
+**Target extensions:** cross-revision correspondence/rebase, cache invalidation,
+pruning with transitive retention pins, general provider sets and TUI remain
+unsupported. Acceptance rows referring to those capabilities are target
+obligations, not prerequisites of the current PHY workflow. In particular K1–K3,
+P2–P3 and I2 do not describe current callable maintenance/planning operations.
 
 ## Contract enforcement
 

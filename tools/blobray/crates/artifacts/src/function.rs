@@ -157,100 +157,19 @@ pub fn with_function<T>(
     })
 }
 impl PreparedObject<'_, '_> {
-    pub fn with_function<T>(
+    fn prepare_section(
         &mut self,
-        request: &FunctionRequest,
+        section_index: object::SectionIndex,
+        occurrence: &ObjectId,
+        table_section: u32,
         control: &mut dyn RunControl,
-        consume: impl FnOnce(FunctionView<'_>, &mut dyn RunControl) -> Result<T>,
-    ) -> Result<T> {
-        if self
-            .occurrence
-            .as_ref()
-            .is_some_and(|id| id != &request.symbol.object)
-        {
-            return Err(invalid("prepared object belongs to another occurrence"));
-        }
-        if self.occurrence.is_none() {
-            self.occurrence = Some(request.symbol.object.clone());
-        }
+    ) -> Result<()> {
         let file = &self.file;
-        let image = &self.image;
         let memory = self.memory;
-        if request.symbol.table != SymbolTableKind::Static {
-            return Err(invalid("function selector requires static symbol table"));
-        }
-        let table = file
-            .section_by_index(object::SectionIndex(request.symbol.table_section as usize))
-            .map_err(parse)?;
-        if table.name_bytes().map_err(parse)? != b".symtab" {
-            return Err(invalid("function selector does not identify .symtab"));
-        }
+        let section = file.section_by_index(section_index).map_err(parse)?;
         let object::File::Elf32(elf) = file else {
             unreachable!()
         };
-        use object::read::elf::SectionHeader;
-        if elf
-            .elf_section_table()
-            .section(table.index())
-            .map_err(parse)?
-            .sh_type(elf.endian())
-            != object::elf::SHT_SYMTAB
-        {
-            return Err(invalid("selected table is not SHT_SYMTAB"));
-        }
-        let symbol = file
-            .symbol_by_index(object::SymbolIndex(
-                usize::try_from(request.symbol.index)
-                    .map_err(|_| invalid("symbol index overflow"))?,
-            ))
-            .map_err(parse)?;
-        let section_index = symbol
-            .section_index()
-            .ok_or_else(|| invalid("function symbol has no defined section"))?;
-        let section = file.section_by_index(section_index).map_err(parse)?;
-        if !matches!(section.flags(),object::SectionFlags::Elf{sh_flags} if sh_flags&u64::from(object::elf::SHF_EXECINSTR)!=0)
-        {
-            return Err(invalid("function symbol is not in executable code"));
-        }
-        if request.extent.is_none() && symbol.size() == 0 {
-            return Err(Error::new(
-                ErrorCode::NeedsExtent,
-                "symbol size is unknown; supply an explicit extent starting at the selected symbol",
-            ));
-        }
-        let extent = request.extent.unwrap_or(CodeRange {
-            start: symbol.address(),
-            length: symbol.size(),
-        });
-        let end = extent
-            .start
-            .checked_add(extent.length)
-            .ok_or_else(|| invalid("function extent overflow"))?;
-        if extent.start != symbol.address()
-            || !extent.start.is_multiple_of(2)
-            || extent.length == 0
-            || extent.start < section.address()
-            || section
-                .address()
-                .checked_add(section.size())
-                .is_none_or(|limit| end > limit)
-        {
-            return Err(invalid(
-                "function extent must start at the selected aligned symbol and stay in its section",
-            ));
-        }
-        let data = section.data().map_err(parse)?;
-        let code = data
-            .get(
-                usize::try_from(extent.start - section.address())
-                    .map_err(|_| invalid("extent overflow"))?
-                    ..usize::try_from(end - section.address())
-                        .map_err(|_| invalid("extent overflow"))?,
-            )
-            .ok_or_else(|| invalid("function has no file-backed bytes"))?;
-        if let Some(image) = &image {
-            image.code(extent.start, code, control)?;
-        }
         if self.sections[section_index.0].is_none() {
             control.phase(RunPhase::PrepareSection)?;
             let mut count = 0usize;
@@ -287,7 +206,7 @@ impl PreparedObject<'_, '_> {
                     if matches!(hdr.0, object::elf::SHT_RELA | object::elf::SHT_REL)
                         && hdr.2 == section_index.0 as u32
                     {
-                        if hdr.1 != request.symbol.table_section {
+                        if hdr.1 != table_section {
                             return Err(invalid("relocation uses another symbol table"));
                         }
                         if relocation_section
@@ -329,9 +248,9 @@ impl PreparedObject<'_, '_> {
                         control.position(),
                     )?;
                     let symbol_id = SymbolId {
-                        object: request.symbol.object.clone(),
+                        object: occurrence.clone(),
                         table: SymbolTableKind::Static,
-                        table_section: request.symbol.table_section,
+                        table_section,
                         index: target.0 as u64,
                     };
                     let target_info = if target.0 == 0 {
@@ -429,6 +348,109 @@ impl PreparedObject<'_, '_> {
             });
             control.measure(WorkMetric::SectionsPrepared, 1);
         }
+        Ok(())
+    }
+
+    pub fn with_function<T>(
+        &mut self,
+        request: &FunctionRequest,
+        control: &mut dyn RunControl,
+        consume: impl FnOnce(FunctionView<'_>, &mut dyn RunControl) -> Result<T>,
+    ) -> Result<T> {
+        if self
+            .occurrence
+            .as_ref()
+            .is_some_and(|id| id != &request.symbol.object)
+        {
+            return Err(invalid("prepared object belongs to another occurrence"));
+        }
+        if self.occurrence.is_none() {
+            self.occurrence = Some(request.symbol.object.clone());
+        }
+        let file = &self.file;
+        if request.symbol.table != SymbolTableKind::Static {
+            return Err(invalid("function selector requires static symbol table"));
+        }
+        let table = file
+            .section_by_index(object::SectionIndex(request.symbol.table_section as usize))
+            .map_err(parse)?;
+        if table.name_bytes().map_err(parse)? != b".symtab" {
+            return Err(invalid("function selector does not identify .symtab"));
+        }
+        let object::File::Elf32(elf) = file else {
+            unreachable!()
+        };
+        use object::read::elf::SectionHeader;
+        if elf
+            .elf_section_table()
+            .section(table.index())
+            .map_err(parse)?
+            .sh_type(elf.endian())
+            != object::elf::SHT_SYMTAB
+        {
+            return Err(invalid("selected table is not SHT_SYMTAB"));
+        }
+        let symbol = file
+            .symbol_by_index(object::SymbolIndex(
+                usize::try_from(request.symbol.index)
+                    .map_err(|_| invalid("symbol index overflow"))?,
+            ))
+            .map_err(parse)?;
+        let section_index = symbol
+            .section_index()
+            .ok_or_else(|| invalid("function symbol has no defined section"))?;
+        let section = file.section_by_index(section_index).map_err(parse)?;
+        if !matches!(section.flags(),object::SectionFlags::Elf{sh_flags} if sh_flags&u64::from(object::elf::SHF_EXECINSTR)!=0)
+        {
+            return Err(invalid("function symbol is not in executable code"));
+        }
+        if request.extent.is_none() && symbol.size() == 0 {
+            return Err(Error::new(
+                ErrorCode::NeedsExtent,
+                "symbol size is unknown; supply an explicit extent starting at the selected symbol",
+            ));
+        }
+        let extent = request.extent.unwrap_or(CodeRange {
+            start: symbol.address(),
+            length: symbol.size(),
+        });
+        let end = extent
+            .start
+            .checked_add(extent.length)
+            .ok_or_else(|| invalid("function extent overflow"))?;
+        if extent.start != symbol.address()
+            || !extent.start.is_multiple_of(2)
+            || extent.length == 0
+            || extent.start < section.address()
+            || section
+                .address()
+                .checked_add(section.size())
+                .is_none_or(|limit| end > limit)
+        {
+            return Err(invalid(
+                "function extent must start at the selected aligned symbol and stay in its section",
+            ));
+        }
+        self.prepare_section(
+            section_index,
+            &request.symbol.object,
+            request.symbol.table_section,
+            control,
+        )?;
+        let section = self.file.section_by_index(section_index).map_err(parse)?;
+        let image = &self.image;
+        let data = section.data().map_err(parse)?;
+        let code = data
+            .get(
+                usize::try_from(extent.start - section.address())
+                    .map_err(|_| invalid("extent overflow"))?
+                    ..usize::try_from(end - section.address())
+                        .map_err(|_| invalid("extent overflow"))?,
+            )
+            .ok_or_else(|| invalid("function has no file-backed bytes"))?;
+        if let Some(image) = &image {
+            image.code(extent.start, code, control)?;
+        }
         let prepared = self.sections[section_index.0].as_ref().unwrap();
         control.phase(RunPhase::AnalyzeFunction)?;
         consume(
@@ -451,3 +473,7 @@ impl PreparedObject<'_, '_> {
         )
     }
 }
+
+#[path = "data.rs"]
+mod data;
+pub use data::DataView;

@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{fmt, str::FromStr};
 
+mod data;
+pub use data::*;
 mod execution;
 pub use execution::*;
 mod function;
@@ -88,6 +90,9 @@ macro_rules! identity {
         pub struct $name(String);
 
         impl $name {
+            pub fn allocated_bytes(&self) -> u64 {
+                self.0.capacity() as u64
+            }
             pub fn as_str(&self) -> &str {
                 &self.0
             }
@@ -418,3 +423,9 @@ pub use measurements::*;
 
 mod scenarios;
 pub use scenarios::*;
+
+mod record_memory;
+pub use record_memory::*;
+
+mod reports;
+pub use reports::*;

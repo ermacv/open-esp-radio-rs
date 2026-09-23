@@ -75,6 +75,25 @@ unavailable inputs retain their unfulfilled expectations and diagnostics.
 Old inventory remains identical after another import, source deletion or moving
 the entire project. Reading never imports changed files or reruns the parser.
 
+## Coverage and storage observations
+
+```console
+cargo blobray coverage --project /path/to/research --id PUBLICATION --limit-mode watchdog --format json
+cargo blobray storage-usage --project /path/to/research --limit-mode watchdog --format json
+```
+
+`coverage` preserves the publication's assessment and reports executable sections,
+selected extent unions and outside intervals in section-relative coordinates.
+Aliases count once; malformed/unavailable structure and invalid extents produce
+explicit unknowns. These intervals do not establish which bytes are code or
+whether an unselected region accesses a register. `storage-usage` returns CAS,
+metadata and staging logical sizes and metadata row counts; it neither follows
+symlinks nor estimates reclaimable space. Filesystem sizes are not an atomic
+snapshot. Both operations use the common read-query lifecycle and budgets.
+
+See [resource and ownership contracts](../docs/design/contracts.md#research-memory-and-read-only-observations)
+for research phase lifetimes, admitted memory diagnostics and storage semantics.
+
 ## Owners and interfaces
 
 | Crate | Responsibility | Internal dependencies |
@@ -655,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 7 and journal schema 8. Earlier and future
+Projects require metadata schema 8 and journal schema 9. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -693,8 +712,8 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 8 for every durable and read operation. Storage metadata
-uses schema 7; revision manifests use schema 1 and execution manifests use schema
+Run records use schema 9 for every durable and read operation. Storage metadata
+uses schema 8; revision manifests use schema 1 and execution manifests use schema
 1. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
@@ -714,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-8 run; an envelope version is not a journal
+execution 7) wrap the same schema-9 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -910,8 +929,8 @@ Emergency memory/time/work/disk limits remain in run records, outside the semant
 recipe. The recipe includes extent authority, policy and decoder identity.
 
 Memory admission includes one full ELF object, a 1 MiB operation envelope,
-24 KiB per code-section relocation (bounded names and emitted copies), 32 bytes
-per ELF mapping symbol for mapping indexes, and 512 bytes per possible instruction
+the concrete relocation/symbol structure sizes and retained name capacities,
+32 bytes per ELF mapping symbol for mapping indexes, and 512 bytes per possible instruction
 halfword for graph state. Value analysis additionally admits the actual type sizes
 of 32 register values, operation metadata, a queue index and membership flag per
 decoded instruction. These conservative reservations bound retained buffers;
@@ -989,8 +1008,8 @@ is not a resolved address or an unknown relocation diagnostic.
 
 `research` selects exactly one function from a retained publication and saves a
 new function analysis. It uses the same decoder, local CFG/value engine, staging
-and supervisor as `analyze-function`. Selection time and work, including result
-delivery, are deducted before computation. Missing or ambiguous names fail with
+and supervisor as `analyze-function`. Selection, computation and retention share
+one application run and the original deadline, work, memory and disk budgets. Missing or ambiguous names fail with
 no preferred candidate; `functions` lists candidates and exact addresses.
 
 ```console
@@ -1464,3 +1483,96 @@ Findings stream through the normal query spool. Limits, timeout, cancellation an
 output delivery follow the same supervisor as other reads. A policy violation or
 coverage gap exits nonzero; resource/integrity failures publish no success output.
 Ranges are half-open and the request accepts 1–64 named ranges.
+
+
+## Captured data, tables and coefficients
+
+`data` reads exact ranges and selected saved analyses from one captured object.
+It does not run an analyzer or infer a table boundary. `export-data` selects a
+reviewed integer table or constant at an explicit knowledge revision. Both use
+the same application-owned query, supervision and delivery budget as other reads.
+
+```console
+blobray data --project research --request data-request.json --limit-mode watchdog
+blobray data --project research --request data-request.json --output observations --limit-mode watchdog
+blobray knowledge --project research --limit-mode watchdog propose-data --request table-proposal.json
+blobray knowledge --project research --limit-mode watchdog propose-constant --request constant-proposal.json
+blobray knowledge --project research --limit-mode watchdog show
+blobray knowledge --project research --limit-mode watchdog accept --base PROPOSAL_REVISION --assertion ASSERTION_ID --actor researcher --reason "Checked exact source evidence"
+blobray export-data --project research --revision ACCEPTED_REVISION --assertion ASSERTION_ID --output accepted-data --limit-mode watchdog
+```
+
+The `DataRequest` JSON has `occurrence`, `ranges` and `analyses`. Copy the exact
+revision, source and object identity from inventory or an analysis recipe;
+`occurrence.symbol` is optional. Object identity retains the archive member
+ordinal even when names and bytes repeat. `analyses` is an array of analysis IDs
+from that same revision/source/object. All their records are retained, including
+call inputs, unknown targets, MMIO, expression definitions and semantic gaps.
+Record ordinals address that retained stream, not instruction offsets.
+
+Each range uses one of these selectors:
+
+| Selector | JSON fields in addition to `kind` | Meaning |
+| --- | --- | --- |
+| `section` | `section`, `offset`, `length` | Explicit section-relative bytes |
+| `symbol` | `symbol`, `length` (integer or null) | Exact static SymbolId; null uses its declared size |
+| `image` | `address`, `length` | Virtual address in a file-backed load mapping of an executable ELF |
+
+The prepared-object profile requires little-endian RV32 ET_REL/ET_EXEC with one
+static `.symtab`. There are at most 32 ranges and 32 analysis IDs per request; at
+least one is required. A zero-sized symbol needs an explicit length. A sized symbol cannot
+be expanded past its declared size. Overflow, out-of-range, ambiguous addresses,
+compressed sections and NOBITS are explicit errors. Requests never guess length
+from the next symbol. Several ranges share one prepared ELF owner and section
+metadata; borrowed views cannot escape its callback.
+
+A `DataProposalRequest` contains `occurrence`, `analyses`, `subject`, `selector`,
+`layout`, `purpose`, `applicability`, `expected_base`, `actor` and `reason`.
+For example, a signed little-endian array of 100 contiguous 16-bit elements has:
+
+```json
+{"encoding":{"width":2,"signed":true,"byte_order":"little"},"count":100,"stride":2}
+```
+
+Widths are 1, 2, 4 or 8 bytes; byte order is `little` or `big`. Stride is in bytes
+and cannot be less than element width. The layout must cover exactly the selected
+range, including internal padding. The application canonicalizes symbol/image selectors to exact section ranges,
+adds matching payload/range evidence and validates it again during review.
+This also detects conflicts between physical aliases of the same table. `purpose` and `applicability`
+record the proposed meaning; their presence is not automatic semantic acceptance.
+
+A `ConstantProposalRequest` contains `analysis`, `record`, `operand`, `value`,
+`subject`, `purpose`, `applicability`, `expected_base`, `actor` and `reason`.
+`value` is an RV32 unsigned bit pattern. The operand is a tagged object such as
+`{"kind":"value"}`, `{"kind":"write-value"}`, `{"kind":"address"}`,
+`{"kind":"call-argument","index":0}`, `{"kind":"return-low"}` or
+`{"kind":"return-high"}`. It must match a known constant in that exact saved
+record. Unknown values and expressions are not accepted as numeric constants.
+Instruction-derived coefficients retain their analysis evidence; no fictitious
+contiguous data table is created for them.
+
+Export creates a new directory containing `manifest.json`, `object.elf`,
+`data.bin` and `records.jsonl`. The object is the exact captured ELF member/image,
+not its enclosing archive. The manifest records its digest, occurrence, source
+file and section ranges, optional image addresses, per-range digests and offsets
+into concatenated `data.bin`. The records preserve analysis IDs and ordinals;
+`ranges` links known relocation references into the selected ranges. Empty links
+do not assert absence of other uses. The source object's byte order is distinct
+from a reviewed table's explicit interpretation.
+
+For tables, integer records decode captured bytes. Writable sections are marked
+as initialization data, never current runtime state. Sections with relocations
+retain raw bytes and all their relocations; integer decoding is withheld with an
+explicit `unresolved` record, even if a layout has been accepted. This profile does
+not resolve pointer tables. For constants, `data.bin` is empty; the object and
+analysis instruction/value records are the evidence. Analysis coverage remains
+in each retained function manifest and is not promoted by successful export.
+
+Unreviewed observation exports have no accepted assertion. Reviewed exports
+include the assertion and selected knowledge revision; pending, rejected and
+superseded assertions are refused at that revision. Historical acceptance can
+still be read at its original revision. The output remains available after
+source removal, project move and backup/restore. Review/export does not generate
+Rust, publish register definitions or claim qualification. Export never overwrites
+an existing directory; a failed delivery may leave a prefix and cannot be retried
+implicitly.

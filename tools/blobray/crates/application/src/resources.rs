@@ -57,6 +57,9 @@ impl<'a> RunContext<'a> {
     }
 }
 impl RunControl for RunContext<'_> {
+    fn memory_phases(&mut self, phases: &PhaseMeasurements) {
+        self.progress.phases.merge_memory(phases);
+    }
     fn measure(&mut self, metric: WorkMetric, amount: u64) {
         self.progress.measurements.add(metric, amount);
     }
@@ -186,21 +189,24 @@ mod tests {
             p.phases.prepare_object,
             PhaseCost {
                 elapsed_ms: 20,
-                work_units: 7
+                work_units: 7,
+                ..Default::default()
             }
         );
         assert_eq!(
             p.phases.analyze_function,
             PhaseCost {
                 elapsed_ms: 30,
-                work_units: 3
+                work_units: 3,
+                ..Default::default()
             }
         );
         assert_eq!(
             p.phases.retain,
             PhaseCost {
                 elapsed_ms: 10,
-                work_units: 5
+                work_units: 5,
+                ..Default::default()
             }
         );
         assert_eq!(p.elapsed_ms, 60);

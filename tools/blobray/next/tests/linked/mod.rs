@@ -114,6 +114,18 @@ fn prepared_and_imported_images_share_analysis_and_cli_navigation() {
     fs::remove_file(f.dir.path().join("entry.a")).unwrap();
     fs::remove_file(f.dir.path().join("helper.a")).unwrap();
     let publication = analyze(&f, Some(image.clone()));
+    let coverage = cli(&f, &["coverage", "--id", publication.as_str()]);
+    assert_eq!(coverage["summary"]["extents"]["objects"], 1);
+    assert!(
+        coverage["summary"]["extents"]["executable_bytes"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_eq!(
+        coverage["assessment"]["coverage"]["scope"],
+        "selected-function-extents"
+    );
     let functions = cli(
         &f,
         &["functions", "--id", publication.as_str(), "--name", "entry"],
@@ -933,4 +945,120 @@ fn recursive_research_retains_partial_local_facts_without_recursing() {
             .as_str()
             .is_some_and(|s| s.contains("recursive component"))
     }));
+}
+
+#[test]
+fn data_image_addresses_export_file_backing_and_reject_unmapped_ranges() {
+    let f = fixture(false, true);
+    let image = prepared(&f);
+    let description = f
+        .app
+        .query(
+            &f.project,
+            app::ReadQuery::Image {
+                id: image.clone(),
+                export: false,
+            },
+            budget(),
+        )
+        .unwrap();
+    let app::QuerySummary::Image { manifest, .. } = description.summary() else {
+        panic!()
+    };
+    let mut request = DataRequest {
+        occurrence: KnowledgeOccurrence {
+            revision: manifest.plan.recipe.revision.clone(),
+            source: FunctionSource::Image {
+                image: image.clone(),
+            },
+            object: ObjectId {
+                artifact: manifest.elf.clone(),
+                location: ObjectLocation::Standalone,
+            },
+            symbol: None,
+        },
+        ranges: vec![DataSelector::Image {
+            address: manifest.entry,
+            length: 4,
+        }],
+        analyses: Vec::new(),
+    };
+    let request_file = f.dir.path().join("data.json");
+    fs::write(&request_file, serde_json::to_vec(&request).unwrap()).unwrap();
+    let destination = f.dir.path().join("data-export");
+    cli(
+        &f,
+        &[
+            "data",
+            "--request",
+            request_file.to_str().unwrap(),
+            "--output",
+            destination.to_str().unwrap(),
+        ],
+    );
+    let exported: DataManifest =
+        serde_json::from_slice(&fs::read(destination.join("manifest.json")).unwrap()).unwrap();
+    let span = &exported.spans[0];
+    assert_eq!(span.image_address, Some(manifest.entry));
+    assert_ne!(span.image_address, Some(span.file_range.start));
+    let raw = fs::read(destination.join("object.elf")).unwrap();
+    assert_eq!(ArtifactId::of_bytes(&raw), manifest.elf);
+    assert_eq!(
+        fs::read(destination.join("data.bin")).unwrap(),
+        &raw[span.file_range.start as usize..span.file_range.start as usize + 4]
+    );
+    // A read-only section inside a writable PT_LOAD is initialization, too.
+    let mut writable = raw.clone();
+    let phoff = u32::from_le_bytes(raw[28..32].try_into().unwrap()) as usize;
+    let stride = u16::from_le_bytes(raw[42..44].try_into().unwrap()) as usize;
+    let count = u16::from_le_bytes(raw[44..46].try_into().unwrap()) as usize;
+    for index in 0..count {
+        let at = phoff + index * stride;
+        let kind = u32::from_le_bytes(raw[at..at + 4].try_into().unwrap());
+        let flags = u32::from_le_bytes(raw[at + 24..at + 28].try_into().unwrap());
+        if kind == object::elf::PT_LOAD && flags & object::elf::PF_X != 0 {
+            writable[at + 24..at + 28]
+                .copy_from_slice(&(object::elf::PF_R | object::elf::PF_W).to_le_bytes());
+        }
+    }
+    let imported = f.dir.path().join("writable.elf");
+    fs::write(&imported, &writable).unwrap();
+    f.app
+        .import(
+            &f.project,
+            vec![app::ImportInput {
+                role: "initial".into(),
+                path: imported,
+                expected: None,
+            }],
+            Target::Riscv32Ilp32,
+            budget(),
+        )
+        .unwrap();
+    let revision = app::inventory(&f.project, None).unwrap().revision_id;
+    let mut initial = request.clone();
+    initial.occurrence.revision = revision;
+    initial.occurrence.source = FunctionSource::Input { input: 0 };
+    initial.occurrence.object.artifact = ArtifactId::of_bytes(&writable);
+    let out = f
+        .app
+        .query(
+            &f.project,
+            app::ReadQuery::Data { request: initial },
+            budget(),
+        )
+        .unwrap();
+    let app::QuerySummary::Data { manifest: initial } = out.summary() else {
+        panic!()
+    };
+    assert!(initial.spans[0].writable);
+    request.ranges = vec![DataSelector::Image {
+        address: 0xffff_f000,
+        length: 4,
+    }];
+    assert!(
+        f.app
+            .query(&f.project, app::ReadQuery::Data { request }, budget())
+            .is_err()
+    );
 }

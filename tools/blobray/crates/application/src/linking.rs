@@ -556,6 +556,7 @@ pub fn prepare_image_worker(
         &mut temporary_control,
         diagnostics,
     );
+    temporary_control.memory_phases(&memory.phase_observations());
     temporary_control.working_memory(memory.observation());
     result
 }

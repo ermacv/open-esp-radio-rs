@@ -58,7 +58,9 @@ fn validate_evidence(
             {
                 return Err(invalid("knowledge image and occurrence differ"));
             }
-            if let Some(symbol) = &occurrence.symbol {
+            if let Some(symbol) = &occurrence.symbol
+                && !matches!(proposal.claim, KnowledgeClaim::IntegerTable { .. })
+            {
                 let request = FunctionRequest {
                     research: None,
                     revision: Some(occurrence.revision.clone()),
@@ -105,6 +107,19 @@ fn validate_evidence(
                     "source evidence does not address the selected captured object",
                 ));
             }
+        }
+        if let KnowledgeClaim::IntegerTable { selector, .. } = &proposal.claim {
+            blobray_artifacts::with_prepared_object(
+                source,
+                &payload,
+                memory,
+                control,
+                |object, c| {
+                    object.with_data(&occurrence.object, selector, c, |view, _| {
+                        crate::data::validate_table(&payload, &view, proposal)
+                    })
+                },
+            )?;
         }
         if let KnowledgeClaim::FunctionExtent { extent } = proposal.claim {
             let request = FunctionRequest {
@@ -177,7 +192,8 @@ fn validate_evidence(
                     return Err(invalid("analysis evidence belongs to another occurrence"));
                 }
                 let mut count = 0u64;
-                blobray_store::visit_jsonl::<FunctionRecord>(&lease.records, control, |_, c| {
+                blobray_store::visit_jsonl::<FunctionRecord>(&lease.records, control, |r, c| {
+                    crate::data::validate_constant(proposal, analysis, count, &r)?;
                     c.checkpoint(1)?;
                     count += 1;
                     Ok(())
@@ -265,6 +281,7 @@ pub fn prepare_knowledge_worker(
         budget: &disk,
     };
     let result = prepare_with(stage, work, &memory, &disk, &mut control);
+    control.memory_phases(&memory.phase_observations());
     control.working_memory(memory.observation());
     result
 }

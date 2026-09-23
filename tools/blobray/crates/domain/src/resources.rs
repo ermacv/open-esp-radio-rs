@@ -12,6 +12,8 @@ pub enum RunPhase {
     PrepareSection,
     PlanInvestigation,
     IndexResearch,
+    LoadResearch,
+    ComposeResearch,
     Execute,
     Compare,
     Materialize,
@@ -99,6 +101,7 @@ pub trait RunControl {
     }
     fn checkpoint(&mut self, units: u64) -> Result<()>;
     fn working_memory(&mut self, _observation: WorkingMemoryObservation) {}
+    fn memory_phases(&mut self, _phases: &PhaseMeasurements) {}
     fn temporary_storage(&mut self, _observation: TemporaryUsage) {}
     fn position(&self) -> RunPosition {
         RunPosition::default()

@@ -41,12 +41,23 @@ impl WorkMeasurements {
 pub struct PhaseCost {
     pub elapsed_ms: u64,
     pub work_units: u64,
+    pub reserved_bytes: u64,
+    pub peak_reserved_bytes: u64,
 }
 macro_rules! phases {
     ($($field:ident : $variant:ident),+ $(,)?) => {
         #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
         pub struct PhaseMeasurements { $(pub $field: PhaseCost),+ }
         impl PhaseMeasurements {
+            pub fn observe_memory(&mut self, phase: RunPhase, bytes: u64) {
+                let cost = match phase { $(RunPhase::$variant => &mut self.$field),+ };
+                cost.reserved_bytes = bytes;
+                cost.peak_reserved_bytes = cost.peak_reserved_bytes.max(bytes);
+            }
+            pub fn merge_memory(&mut self, other: &Self) {
+                $(self.$field.reserved_bytes = other.$field.reserved_bytes;
+                  self.$field.peak_reserved_bytes = self.$field.peak_reserved_bytes.max(other.$field.peak_reserved_bytes);)+
+            }
             pub fn add(&mut self, phase: RunPhase, elapsed: u64, work: u64) {
                 let cost = match phase { $(RunPhase::$variant => &mut self.$field),+ };
                 cost.elapsed_ms = cost.elapsed_ms.saturating_add(elapsed);
@@ -56,6 +67,7 @@ macro_rules! phases {
     };
 }
 phases! {
+    load_research: LoadResearch, compose_research: ComposeResearch,
     starting: Starting, capture: Capture, read_captured: ReadCaptured, members: Members,
     elf: Elf, validate_revision: ValidateRevision, serialize: Serialize, retain: Retain,
     publish: Publish, execute: Execute, compare: Compare, materialize: Materialize,

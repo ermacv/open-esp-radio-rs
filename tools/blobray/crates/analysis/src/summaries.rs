@@ -79,7 +79,8 @@ fn rewrite(expr: &Expression, map: &[AbstractValue]) -> Result<Expression> {
     })
 }
 fn push_expression(
-    out: &mut Vec<FunctionRecord>,
+    out: &mut RecordBuffer<'_>,
+    position: RunPosition,
     next: &mut u32,
     offset: u64,
     origin: Option<FunctionAnalysisId>,
@@ -107,19 +108,21 @@ fn push_expression(
     *next = next
         .checked_add(1)
         .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "expression ID overflow"))?;
-    out.push(FunctionRecord::Expression {
-        id,
-        offset,
-        origin,
-        expression,
-    });
+    out.push(
+        FunctionRecord::Expression {
+            id,
+            offset,
+            origin,
+            expression,
+        },
+        position,
+    )?;
     Ok(AbstractValue::Expression { id })
 }
 /// Input/output capacity is owned by the application; every loop consumes its control.
 /// Callee effects are may-effects, never a claim of unconditional execution/order.
 pub struct Composed<'a> {
-    pub records: Vec<FunctionRecord>,
-    _capacity: MemoryReservation<'a>,
+    pub records: RecordBuffer<'a>,
 }
 pub fn compose<'a>(
     records: &[FunctionRecord],
@@ -127,22 +130,60 @@ pub fn compose<'a>(
     memory: &'a WorkingMemory,
     control: &mut dyn RunControl,
 ) -> Result<Composed<'a>> {
-    let count = callees
+    control.phase(RunPhase::ComposeResearch)?;
+    // Values contain at most two cloned 64-byte identities. Account concrete
+    // mapping/return capacities and one record-construction workspace up front.
+    let largest_callee = callees.iter().map(|c| c.records.len()).max().unwrap_or(0);
+    let largest_args = records
         .iter()
-        .try_fold(records.len(), |n, c| {
-            n.checked_add(c.records.len().checked_mul(2)?)
+        .filter_map(|r| match r {
+            FunctionRecord::CallInputs { registers, .. } => Some(registers.len()),
+            _ => None,
         })
-        .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "summary capacity overflow"))?;
-    let capacity = memory.reserve(
-        (count as u64)
-            .checked_mul(2048)
-            .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "summary bytes overflow"))?,
-        control.position(),
-    )?;
-    let mut out = reserve_vec(count)?;
-    let mut mapping = Vec::new();
+        .max()
+        .unwrap_or(0);
+    let value_slots = records
+        .len()
+        .checked_add(largest_callee)
+        .and_then(|n| n.checked_add(largest_args))
+        .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "summary workspace overflow"))?;
+    let mut temporary_bytes = 512u64;
+    for record in records.iter().chain(callees.iter().flat_map(|c| c.records)) {
+        control.checkpoint(1)?;
+        let values = match record {
+            FunctionRecord::CallInputs { registers, .. } => registers.len() as u64,
+            _ => 0,
+        };
+        let bytes = record
+            .allocated_bytes()
+            .checked_add(
+                values
+                    .checked_mul(128)
+                    .and_then(|n| n.checked_add(512))
+                    .ok_or_else(|| {
+                        Error::new(ErrorCode::ResourceLimited, "record workspace overflow")
+                    })?,
+            )
+            .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "record workspace overflow"))?;
+        temporary_bytes = temporary_bytes.max(bytes);
+    }
+    let workspace =
+        value_slots
+            .checked_mul(std::mem::size_of::<AbstractValue>() + 128)
+            .and_then(|n| {
+                n.checked_add(records.len().checked_mul(
+                    std::mem::size_of::<(u64, AbstractValue, AbstractValue)>() + 256,
+                )?)
+            })
+            .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "summary workspace overflow"))?;
+    let workspace = (workspace as u64)
+        .checked_add(temporary_bytes)
+        .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "summary workspace overflow"))?;
+    let _workspace = memory.reserve(workspace, control.position())?;
+    let mut out = RecordBuffer::new(memory);
+    let mut mapping = reserve_vec(records.len())?;
     let mut next = 0;
-    let mut returns: Vec<(u64, AbstractValue, AbstractValue)> = Vec::new();
+    let mut returns: Vec<(u64, AbstractValue, AbstractValue)> = reserve_vec(records.len())?;
     // Local expressions are topological, including arguments to earlier calls.
     for record in records {
         control.checkpoint(1)?;
@@ -174,7 +215,7 @@ pub fn compose<'a>(
                             .iter()
                             .map(|v| substitute(v, &mapping))
                             .collect::<Result<_>>()?;
-                        let mut imported = Vec::new();
+                        let mut imported = reserve_vec(callee.records.len())?;
                         let mut low = None;
                         let mut high = None;
                         let mut complete = true;
@@ -200,6 +241,7 @@ pub fn compose<'a>(
                                             .unwrap_or(AbstractValue::Unknown),
                                         _ => push_expression(
                                             &mut out,
+                                            control.position(),
                                             &mut next,
                                             *offset,
                                             Some(
@@ -230,18 +272,21 @@ pub fn compose<'a>(
                                     value,
                                     ..
                                 } => {
-                                    out.push(FunctionRecord::CalleeEffect {
-                                        callsite: *callsite,
-                                        analysis: callee.analysis.clone(),
-                                        offset: *offset,
-                                        access: *access,
-                                        width: *width,
-                                        address: in_frame(address, &imported, callee)?,
-                                        value: value
-                                            .as_ref()
-                                            .map(|v| in_frame(v, &imported, callee))
-                                            .transpose()?,
-                                    });
+                                    out.push(
+                                        FunctionRecord::CalleeEffect {
+                                            callsite: *callsite,
+                                            analysis: callee.analysis.clone(),
+                                            offset: *offset,
+                                            access: *access,
+                                            width: *width,
+                                            address: in_frame(address, &imported, callee)?,
+                                            value: value
+                                                .as_ref()
+                                                .map(|v| in_frame(v, &imported, callee))
+                                                .transpose()?,
+                                        },
+                                        control.position(),
+                                    )?;
                                 }
                                 FunctionRecord::CalleeEffect {
                                     analysis,
@@ -252,18 +297,21 @@ pub fn compose<'a>(
                                     value,
                                     ..
                                 } => {
-                                    out.push(FunctionRecord::CalleeEffect {
-                                        callsite: *callsite,
-                                        analysis: analysis.clone(),
-                                        offset: *offset,
-                                        access: *access,
-                                        width: *width,
-                                        address: in_frame(address, &imported, callee)?,
-                                        value: value
-                                            .as_ref()
-                                            .map(|v| in_frame(v, &imported, callee))
-                                            .transpose()?,
-                                    });
+                                    out.push(
+                                        FunctionRecord::CalleeEffect {
+                                            callsite: *callsite,
+                                            analysis: analysis.clone(),
+                                            offset: *offset,
+                                            access: *access,
+                                            width: *width,
+                                            address: in_frame(address, &imported, callee)?,
+                                            value: value
+                                                .as_ref()
+                                                .map(|v| in_frame(v, &imported, callee))
+                                                .transpose()?,
+                                        },
+                                        control.position(),
+                                    )?;
                                 }
                                 FunctionRecord::SemanticGap { .. } | FunctionRecord::Gap { .. } => {
                                     complete = false
@@ -298,6 +346,7 @@ pub fn compose<'a>(
             } else {
                 push_expression(
                     &mut out,
+                    control.position(),
                     &mut next,
                     *offset,
                     origin.clone(),
@@ -383,12 +432,9 @@ pub fn compose<'a>(
             }
             r => r.clone(),
         };
-        out.push(r);
+        out.push(r, control.position())?;
     }
-    Ok(Composed {
-        records: out,
-        _capacity: capacity,
-    })
+    Ok(Composed { records: out })
 }
 
 #[cfg(test)]

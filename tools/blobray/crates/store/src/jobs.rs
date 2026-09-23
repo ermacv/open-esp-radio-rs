@@ -308,7 +308,7 @@ impl Writer {
             .map_err(db)?;
         budget.validate()?;
         let record = RunRecord {
-            schema: 8,
+            schema: 9,
             operation,
             resolved_operation: None,
             image: None,
@@ -705,12 +705,12 @@ fn verify_file(
     Ok(())
 }
 
-/// Shared decoder for single-run, listing and recovery paths. Old records retain
-/// unknown work budgets/measurements; they are not upgraded by a read.
+/// Shared current-format decoder for single-run, listing and recovery paths.
+/// Other journal versions are rejected without conversion.
 pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
     let value: serde_json::Value = serde_json::from_str(raw).map_err(json)?;
     let schema = value.get("schema").and_then(serde_json::Value::as_u64);
-    if schema != Some(8) {
+    if schema != Some(9) {
         return Err(Error::new(
             ErrorCode::Incompatible,
             "unsupported run record schema",
@@ -737,6 +737,18 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
         && let Some(resolved) = &record.resolved_operation
     {
         let valid = match (request, &**resolved) {
+            (ScenarioRequest::ProposeData { request }, RunOperation::Knowledge { change }) => {
+                change.expected_base == request.expected_base
+                    && change.actor == request.actor
+                    && change.reason == request.reason
+                    && matches!(&change.action, KnowledgeAction::Propose { proposal } if proposal.occurrence == request.occurrence && proposal.subject == request.subject && matches!(&proposal.claim, KnowledgeClaim::IntegerTable { selector: DataSelector::Section { .. }, layout, purpose, applicability } if layout == &request.layout && purpose == &request.purpose && applicability == &request.applicability))
+            }
+            (ScenarioRequest::ProposeConstant { request }, RunOperation::Knowledge { change }) => {
+                change.expected_base == request.expected_base
+                    && change.actor == request.actor
+                    && change.reason == request.reason
+                    && matches!(&change.action, KnowledgeAction::Propose { proposal } if proposal.subject == request.subject && proposal.claim == (KnowledgeClaim::Constant { analysis: request.analysis.clone(), record: request.record, operand: request.operand.clone(), value: request.value, purpose: request.purpose.clone(), applicability: request.applicability.clone() }) && proposal.evidence == vec![EvidenceRef::Analysis { analysis: request.analysis.clone(), record: Some(request.record) }])
+            }
             (
                 ScenarioRequest::Investigate { request, .. },
                 RunOperation::Investigate { revision, .. },

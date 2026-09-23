@@ -83,7 +83,20 @@ pub trait OperationHost: Send + Sync {
 /// the project. No journal row or writer capability is acquired.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
+// One bounded control message, never a resident collection of requests.
+#[allow(clippy::large_enum_variant)]
 pub enum ReadQuery {
+    Coverage {
+        id: PublicationId,
+    },
+    StorageUsage,
+    Data {
+        request: DataRequest,
+    },
+    ReviewedData {
+        revision: KnowledgeRevisionId,
+        assertion: AssertionId,
+    },
     AuditTargets {
         artifact: OriginPath,
         ranges: Vec<ForbiddenTargetRange>,

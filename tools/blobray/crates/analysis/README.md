@@ -24,8 +24,8 @@ loops use the bounded monotone state queue. Explicit ABI context controls only
 integer call preservation. ELF ABI flags never select that assumption.
 
 The `summaries` module composes supplied acyclic callees and substitutes arguments
-without acquiring source-selection authority. Its owned output retains a memory
-reservation. Imported expressions retain analysis provenance; transitive memory
+without acquiring source-selection authority. Its owned output uses a capacity-admitted `RecordBuffer`; mapping/return
+workspaces end when composition returns. Imported expressions retain analysis provenance; transitive memory
 records are may-effects, not unconditional traces. Unknown callees retain gaps.
 
 The `audit` module scans all supplied executable ranges linearly for direct and

@@ -306,7 +306,7 @@ fn incompatible_journals_are_rejected_by_all_readers_without_mutation() {
     let mut writer = project.writer().unwrap();
     let (run, _) = writer.register(ResourceBudget::default(), owner()).unwrap();
     let connection = open_connection(&project.root, true).unwrap();
-    for schema in [1, 2, 3, 4, 5, 6, 7, 9, 999] {
+    for schema in [1, 2, 3, 4, 5, 6, 7, 8, 10, 999] {
         let mut value = serde_json::to_value(&run).unwrap();
         value["schema"] = schema.into();
         let raw = value.to_string();
@@ -1359,7 +1359,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
 
 #[test]
 fn older_project_formats_are_rejected_without_mutation() {
-    for schema in 1..7 {
+    for schema in 1..8 {
         let temp = tempfile::tempdir().unwrap();
         Project::create(temp.path()).unwrap();
         let db = temp.path().join(STATE).join("project.sqlite3");

@@ -193,3 +193,15 @@ are separate. See [contracts](../../docs/design/contracts.md#result-assessment).
 Whole-library execution shares a prepared object/section across its function
 views. Research uses admitted publication/MMIO indexes and one frozen knowledge
 snapshot. Fixed phase costs and work counters survive coordinator retention.
+
+Data research resolves an exact occurrence once and borrows ranges from one prepared
+object. `ReadQuery::Data` and `ReviewedData` share the query/delivery budget;
+`start_propose_data` and `start_propose_constant` resolve exact evidence within one
+supervised scenario and publish through existing knowledge transactions.
+`QueryOutput::export_data` transfers captured object/bytes/records and provenance
+to a new directory. Review state and analysis coverage remain separate.
+
+`coverage` streams selected extent unions against captured inventory, while
+`storage-usage` observes persistent file sizes without a writer or recovery.
+Single-function enrichment starts after the prepared ELF and references end;
+research records retain capacity only until their last composition consumer.

@@ -1,4 +1,6 @@
-# Architecture (normative)
+# Legacy engine architecture
+
+This document describes the retained legacy engine only. [Next architecture](design/architecture.md), [contracts](design/contracts.md) and [workflows](design/workflows.md) define the shipping Next host.
 
 Blobray records evidence and derives explicitly qualified hypotheses.
 It extracts, links, and presents observations from caller-supplied

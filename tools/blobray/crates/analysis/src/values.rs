@@ -72,7 +72,11 @@ fn prepare(
     if input.image.is_some() {
         return Ok(result);
     }
-    for (site, raw) in input.relocations.iter().enumerate() {
+    for site in input.relocations.first_at(node.offset.saturating_sub(4))
+        ..input.relocations.first_at(node.offset.saturating_add(1))
+    {
+        let raw = &input.relocations[site];
+        control.measure(WorkMetric::RelocationLookups, 1);
         control.checkpoint(1)?;
         if raw.offset.checked_add(4) == Some(node.offset)
             && raw.offset >= input.extent.start
@@ -96,7 +100,7 @@ fn prepare(
             result.gap = Some(SemanticGapReason::UnresolvedRelocation);
             continue;
         }
-        let normalized = isa.reference(raw, input.relocations, input.section, control)?;
+        let normalized = input.relocations.normalized(site);
         let compatible = matches!(
             (role, op),
             (
@@ -124,17 +128,8 @@ fn prepare(
             result.gap = Some(SemanticGapReason::UnresolvedRelocation);
             continue;
         }
-        let mut symbol = None;
-        let mut pair = None;
-        for (i, other) in input.relocations.iter().enumerate() {
-            control.checkpoint(1)?;
-            if symbol.is_none() && other.target.symbol == normalized.target.symbol {
-                symbol = Some(i);
-            }
-            if normalized.paired == Some((other.section, other.index)) {
-                pair = Some(i);
-            }
-        }
+        let symbol = input.relocations.symbol(site);
+        let pair = input.relocations.pair(site);
         let (Some(symbol), Some(addend)) = (symbol, normalized.addend) else {
             result.gap = Some(SemanticGapReason::UnresolvedRelocation);
             continue;
@@ -1138,7 +1133,7 @@ mod tests {
                 length: bytes.len() as u64,
             },
             bytes: &bytes,
-            relocations: &[],
+            relocations: &PreparedReferences::empty(),
             data_ranges: &[],
         };
         let memory = WorkingMemory::new(1024 * 1024).unwrap();
@@ -1218,7 +1213,7 @@ mod tests {
                 length: 4,
             },
             bytes: &[0; 4],
-            relocations: &[],
+            relocations: &PreparedReferences::empty(),
             data_ranges: &[],
         };
         let mut node = Node {
@@ -1279,7 +1274,7 @@ mod tests {
                 length: 4,
             },
             bytes: &bytes,
-            relocations: &[],
+            relocations: &PreparedReferences::empty(),
             data_ranges: &[],
         };
         let nodes: Vec<_> = [0, 2]
@@ -1345,7 +1340,7 @@ mod tests {
                 length: 4,
             },
             bytes: &[0; 4],
-            relocations: &[],
+            relocations: &PreparedReferences::empty(),
             data_ranges: &[],
         };
         let node = Node {

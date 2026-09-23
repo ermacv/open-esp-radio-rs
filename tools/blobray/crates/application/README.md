@@ -30,7 +30,7 @@ one writer, validates/promotes the closure, linearizes cancellation against comm
 and publishes the revision and completed run together. Signals and process-tree
 mechanics belong to the injected host, not this library.
 
-`create_project`, `inventory`, `revisions`, `runs`, `doctor` and `upgrade` expose
+`create_project`, `inventory`, `revisions`, `runs`, `doctor` expose
 project operations. `Application::recover` combines store ownership checks with
 host process-identity and containment checks. Read operations do not migrate,
 repair or schedule analysis. `inventory_stream` and `doctor_stream` receive explicit memory/control ports
@@ -176,3 +176,20 @@ comparison. All cases share the ordinary durable supervisor, budget, staging and
 publication boundary. Read/replay clients use `ReadQuery::Execution`.
 See [execution and comparison](../../next/README.md#concrete-execution-and-comparison)
 for stateful lifetimes, resource obligations and claim limits.
+
+`ReadQuery::AuditTargets` reads an explicitly selected ELF outside a project under
+the same ephemeral supervisor. `prepare_query_with_tools` injects its decoder and
+linker capabilities. The artifact owner validates executable sections; analysis
+owns target policy evaluation. Findings are streamed and no project is opened.
+
+Concrete compound operations (`start_analyze_project` with automatic/saved input,
+`start_research`, `start_propose_register`, `start_replay`) belong to application.
+They retain one supervisor, worker and original budget through resolution and
+publication. CLI does not carry budgets between separate operations.
+`QueryOutput::assessment` and `QuerySummary::assessment` use the same scoped
+assessment as `RunRecord`; lifecycle, research coverage, policy and comparison
+are separate. See [contracts](../../docs/design/contracts.md#result-assessment).
+
+Whole-library execution shares a prepared object/section across its function
+views. Research uses admitted publication/MMIO indexes and one frozen knowledge
+snapshot. Fixed phase costs and work counters survive coordinator retention.

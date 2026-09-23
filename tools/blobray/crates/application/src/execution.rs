@@ -124,6 +124,22 @@ pub fn prepare_execution_worker(
     executor: &dyn Executor,
     c: &mut dyn RunControl,
 ) -> Result<blobray_store::PreparedExecutionReceipt> {
+    let memory = WorkingMemory::new(
+        work.budget
+            .working_memory_bytes
+            .ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "working memory missing"))?,
+    )?;
+    let disk = blobray_store::TemporaryBudget::open(stage)?;
+    prepare_execution_worker_in(stage, work, executor, &memory, &disk, c)
+}
+pub(crate) fn prepare_execution_worker_in(
+    stage: &Path,
+    work: &ExecutionWork,
+    executor: &dyn Executor,
+    memory: &WorkingMemory,
+    disk: &blobray_store::TemporaryBudget,
+    c: &mut dyn RunControl,
+) -> Result<blobray_store::PreparedExecutionReceipt> {
     if work.schema != 1
         || (work.producer.executor != executor.identity()
             || work.producer.environment != EXECUTION_ENVIRONMENT
@@ -135,15 +151,9 @@ pub fn prepare_execution_worker(
         ));
     }
     work.request.validate()?;
-    let memory = WorkingMemory::new(
-        work.budget
-            .working_memory_bytes
-            .ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "working memory missing"))?,
-    )?;
-    let disk = blobray_store::TemporaryBudget::open(stage)?;
     let mut control = blobray_store::TemporaryControl {
         control: c,
-        budget: &disk,
+        budget: disk,
     };
     let result = (|| {
         let _control = memory.reserve(2 * 1024 * 1024, control.position())?;
@@ -166,7 +176,7 @@ pub fn prepare_execution_worker(
             let engine = Engine {
                 project: &project,
                 request,
-                memory: &memory,
+                memory,
                 executor,
             };
             let left = engine.invoke(

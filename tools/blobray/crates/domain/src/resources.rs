@@ -8,6 +8,10 @@ pub const WORK_BLOCK: usize = 4096;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RunPhase {
+    PrepareObject,
+    PrepareSection,
+    PlanInvestigation,
+    IndexResearch,
     Execute,
     Compare,
     Materialize,
@@ -69,6 +73,10 @@ pub struct ControlStop {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunProgress {
+    #[serde(default)]
+    pub measurements: WorkMeasurements,
+    #[serde(default)]
+    pub phases: PhaseMeasurements,
     pub sequence: u64,
     pub position: RunPosition,
     pub work_used: u64,
@@ -84,6 +92,7 @@ pub struct RunProgress {
 /// Closures adapt existing low-level callers; application operations supply a
 /// metered implementation. Byte work is charged in bounded blocks per operation.
 pub trait RunControl {
+    fn measure(&mut self, _metric: WorkMetric, _amount: u64) {}
     /// Current accounting, when supplied by an application-owned run context.
     fn progress(&self) -> Option<RunProgress> {
         None

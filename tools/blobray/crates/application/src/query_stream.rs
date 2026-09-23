@@ -9,6 +9,13 @@ use std::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum QuerySummary {
+    TargetAudit {
+        artifact: ArtifactId,
+        decoder: String,
+        semantics: String,
+        ranges: Vec<ForbiddenTargetRange>,
+        summary: TargetAuditSummary,
+    },
     Execution {
         id: ArtifactId,
         manifest: Box<ExecutionManifest>,
@@ -90,37 +97,58 @@ pub enum QuerySummary {
     },
 }
 impl QuerySummary {
-    pub fn clean(&self) -> bool {
+    pub fn assessment(&self) -> ResultAssessment {
         match self {
-            Self::Execution { .. }
-            | Self::KnowledgeValidation { .. }
-            | Self::RetainedPayload { .. }
-            | Self::Legacy { .. }
-            | Self::Preservation { .. }
-            | Self::Knowledge { .. } => true,
-            Self::LinkPlan { description } => description.ready(),
-            Self::InvestigationPlan { .. }
-            | Self::Publications { .. }
-            | Self::Publication { .. }
-            | Self::InvestigationStatus { .. }
-            | Self::Analyses { .. }
-            | Self::Analysis { .. }
-            | Self::Images { .. }
-            | Self::Image { .. }
-            | Self::Inventory { .. }
-            | Self::Plan { .. }
-            | Self::Inspection { .. }
-            | Self::Selection { .. } => true,
+            Self::Inventory {
+                revision_id,
+                complete,
+            } => ResultAssessment::covered(
+                CoverageSubject::Inventory(revision_id.clone()),
+                *complete,
+            ),
+            Self::Analysis { id, manifest } => ResultAssessment::function(id.clone(), manifest),
+            Self::Publication { id, manifest } => ResultAssessment::covered(
+                CoverageSubject::Investigation(id.clone()),
+                manifest.coverage.complete(),
+            ),
+            Self::Execution { id, manifest } => {
+                ResultAssessment::execution(id.clone(), manifest.complete, manifest.verdict)
+            }
+            Self::TargetAudit {
+                artifact, summary, ..
+            } => {
+                let mut a = ResultAssessment::covered(
+                    CoverageSubject::StaticTargetAudit(artifact.clone()),
+                    summary.coverage_gaps == 0,
+                );
+                a.check = Some(if summary.forbidden_targets != 0 {
+                    CheckVerdict::Fail
+                } else if summary.coverage_gaps != 0 {
+                    CheckVerdict::Inconclusive
+                } else {
+                    CheckVerdict::Pass
+                });
+                a
+            }
             Self::Doctor {
                 errors,
                 unfinished_runs,
                 ..
-            } => *errors == 0 && *unfinished_runs == 0,
+            } => ResultAssessment::checked(*errors == 0 && *unfinished_runs == 0),
+            Self::KnowledgeValidation { .. } => ResultAssessment::checked(true),
+            Self::LinkPlan { description } => ResultAssessment::checked(description.ready()),
+            _ => ResultAssessment::default(),
         }
     }
 }
 /// Borrowed callbacks. Retaining records requires the consumer's own capacity.
 pub trait QuerySink: InventorySink + DoctorSink {
+    fn target_audit(&mut self, _: &TargetAuditRecord, _: &mut dyn RunControl) -> Result<()> {
+        Err(Error::new(
+            ErrorCode::InvalidRequest,
+            "consumer does not support audit findings",
+        ))
+    }
     fn legacy(&mut self, _: &LegacyRecord, _: &mut dyn RunControl) -> Result<()> {
         Err(Error::new(
             ErrorCode::InvalidRequest,
@@ -212,6 +240,7 @@ pub trait QuerySink: InventorySink + DoctorSink {
 }
 #[derive(Serialize)]
 enum RecordRef<'a> {
+    TargetAudit(&'a TargetAuditRecord),
     Execution(&'a ExecutionEvidence),
     Legacy(&'a LegacyRecord),
     KnowledgeEntry(&'a KnowledgeEntry),
@@ -238,6 +267,7 @@ enum RecordRef<'a> {
 }
 #[derive(Deserialize)]
 enum Record {
+    TargetAudit(TargetAuditRecord),
     Execution(ExecutionEvidence),
     Legacy(LegacyRecord),
     KnowledgeEntry(KnowledgeEntry),
@@ -365,13 +395,14 @@ impl QuerySink for Spool {
 }
 /// Worker entry: immutable semantic request, read capability and private output.
 pub fn prepare_query(stage: &Path, work: &QueryWork, control: &mut dyn RunControl) -> Result<()> {
-    prepare_query_with_linker(stage, work, control, &crate::linking::NoLinker)
+    prepare_query_with_tools(stage, work, control, &crate::linking::NoLinker, None)
 }
-pub fn prepare_query_with_linker(
+pub fn prepare_query_with_tools(
     stage: &Path,
     work: &QueryWork,
     control: &mut dyn RunControl,
     linker: &dyn LinkerHost,
+    decoder: Option<&dyn FunctionSemantics>,
 ) -> Result<()> {
     if work.schema != 2 {
         return Err(Error::new(
@@ -397,6 +428,26 @@ pub fn prepare_query_with_linker(
             file: disk.create(&stage.join("query-records"))?,
         };
         let summary = match &work.query {
+            ReadQuery::AuditTargets { artifact, ranges } => {
+                let decoder = decoder.ok_or_else(|| {
+                    Error::new(ErrorCode::Incompatible, "target audit decoder unavailable")
+                })?;
+                let (artifact, summary) = crate::audit::audit_targets(
+                    artifact,
+                    ranges,
+                    decoder,
+                    &memory,
+                    control,
+                    &mut |r, c| spool.push(RecordRef::TargetAudit(r), c),
+                )?;
+                QuerySummary::TargetAudit {
+                    artifact,
+                    decoder: decoder.identity().into(),
+                    semantics: decoder.semantic_identity().into(),
+                    ranges: ranges.clone(),
+                    summary,
+                }
+            }
             ReadQuery::ValidateKnowledge { change } => {
                 std::fs::create_dir(stage.join("objects")).map_err(storage_io)?;
                 std::fs::create_dir(stage.join("staging")).map_err(storage_io)?;
@@ -943,6 +994,7 @@ pub(crate) fn visit(
         let record: Record = serde_json::from_slice(&bytes)
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         match record {
+            Record::TargetAudit(r) => sink.target_audit(&r, control)?,
             Record::Legacy(r) => sink.legacy(&r, control)?,
             Record::KnowledgeEntry(r) => sink.knowledge_entry(&r, control)?,
             Record::KnowledgeEvent(r) => sink.knowledge_event(&r, control)?,
@@ -992,4 +1044,44 @@ fn make_plan(
     copy_source(inventory.manifest(), &mut output, control)?;
     output.sync_all().map_err(io)?;
     Ok(description)
+}
+
+#[cfg(test)]
+mod assessment_tests {
+    use super::*;
+    #[test]
+    fn checks_are_not_coverage_and_comparison_is_not_a_check() {
+        let summary = QuerySummary::Doctor {
+            project: ArtifactId::of_bytes(b"p").as_str().parse().unwrap(),
+            storage_schema: 7,
+            checked_revisions: 1,
+            checked_images: 0,
+            checked_analyses: 0,
+            checked_publications: 0,
+            errors: 1,
+            unfinished_runs: 0,
+        };
+        let assessment = summary.assessment();
+        assert_eq!(assessment.check, Some(CheckVerdict::Fail));
+        assert!(assessment.coverage.is_none());
+        assert!(!assessment.check_passed());
+        for verdict in [
+            ComparisonVerdict::Match,
+            ComparisonVerdict::Diff,
+            ComparisonVerdict::Incomplete,
+        ] {
+            let assessment = ResultAssessment::execution(
+                ArtifactId::of_bytes(b"evidence"),
+                false,
+                Some(verdict),
+            );
+            assert!(!assessment.is_complete());
+            assert!(assessment.check_passed());
+            assert_eq!(assessment.comparison, Some(verdict));
+        }
+        assert_eq!(
+            QuerySummary::Analyses { count: 1 }.assessment(),
+            ResultAssessment::default()
+        );
+    }
 }

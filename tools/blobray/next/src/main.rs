@@ -21,7 +21,7 @@ enum Format {
 
 #[derive(Parser)]
 #[command(
-    name = "blobray-next",
+    name = "blobray",
     about = "Captured binary investigations, synthetic images and retained function analysis"
 )]
 struct Cli {
@@ -97,6 +97,16 @@ enum KnowledgeCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Audit all executable ELF sections for statically resolved forbidden transfers.
+    AuditTargets {
+        #[arg(long)]
+        artifact: PathBuf,
+        /// NAME=START..END (half-open RV32 address range).
+        #[arg(long, required=true, value_parser=parse_forbidden)]
+        forbid: Vec<blobray_domain::ForbiddenTargetRange>,
+        #[command(flatten)]
+        limits: ResourceOptions,
+    },
     /// Execute a captured compiled entry with an explicit scenario.
     Execute {
         #[arg(long)]
@@ -481,11 +491,6 @@ enum Command {
         #[command(flatten)]
         limits: ResourceOptions,
     },
-    /// Upgrade metadata explicitly; existing revision identities remain unchanged.
-    Upgrade {
-        #[arg(long)]
-        project: PathBuf,
-    },
     /// Verify retained revisions without writes or repairs.
     Doctor {
         #[arg(long)]
@@ -630,7 +635,7 @@ fn main() -> ExitCode {
         Ok(status) => status,
         Err(error) => {
             match cli.format {
-                Format::Human => eprintln!("blobray-next: {error}"),
+                Format::Human => eprintln!("blobray: {error}"),
                 Format::Json => eprintln!("{}", serde_json::json!({"schema": 1, "error": error})),
             }
             ExitCode::FAILURE
@@ -640,6 +645,22 @@ fn main() -> ExitCode {
 
 fn run(command: Command, format: Format) -> Result<ExitCode> {
     match command {
+        Command::AuditTargets {
+            artifact,
+            forbid,
+            limits,
+        } => {
+            let artifact = std::path::absolute(artifact).map_err(io_error)?;
+            return read_query(
+                PathBuf::from("."),
+                ReadQuery::AuditTargets {
+                    artifact: blobray_domain::OriginPath::from_path(&artifact),
+                    ranges: forbid,
+                },
+                limits,
+                format,
+            );
+        }
         Command::ExportPayload {
             project,
             id,
@@ -776,26 +797,6 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 actor,
                 reason,
             } => {
-                let application = limits.application()?;
-                let signals = Signals::new()?;
-                let started = std::time::Instant::now();
-                let mut budget = limits.budget()?;
-                let handle = application.start_query(
-                    &project,
-                    ReadQuery::Analysis {
-                        id: analysis.clone(),
-                        export: false,
-                    },
-                    budget.clone(),
-                )?;
-                if !wait_handle(&handle, &signals, format) {
-                    return Ok(ExitCode::FAILURE);
-                }
-                let output = handle.take_output()?;
-                let app::QuerySummary::Analysis { manifest, .. } = output.summary() else {
-                    return Err(invalid("unexpected analysis summary"));
-                };
-                let recipe = &manifest.recipe;
                 let fields = field
                     .iter()
                     .map(|s| {
@@ -812,57 +813,35 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                         })
                     })
                     .collect::<Result<_>>()?;
-                let change = blobray_domain::KnowledgeChange {
-                    expected_base: base,
-                    actor,
-                    reason,
-                    action: blobray_domain::KnowledgeAction::Propose {
-                        proposal: blobray_domain::KnowledgeProposal {
-                            subject: subject.try_into()?,
-                            occurrence: blobray_domain::KnowledgeOccurrence {
-                                revision: recipe.revision.clone(),
-                                source: recipe.source.clone(),
-                                object: recipe.symbol.object.clone(),
-                                symbol: Some(recipe.symbol.clone()),
-                            },
-                            claim: blobray_domain::KnowledgeClaim::MmioRegister {
-                                register: blobray_domain::MmioRegister {
-                                    name,
-                                    address,
-                                    width,
-                                    fields,
-                                },
-                            },
-                            evidence: vec![blobray_domain::EvidenceRef::Analysis {
-                                analysis,
-                                record: None,
-                            }],
-                            note: None,
+                let application = limits.application()?;
+                let _diagnostics = TemporaryDiagnostics(&application, format);
+                let signals = Signals::new()?;
+                let handle = application.start_propose_register(
+                    &project,
+                    blobray_domain::RegisterProposalRequest {
+                        analysis,
+                        subject: subject.try_into()?,
+                        register: blobray_domain::MmioRegister {
+                            name,
+                            address,
+                            width,
+                            fields,
                         },
+                        expected_base: base,
+                        actor,
+                        reason,
                     },
-                };
-                if let Some(limit) = budget.max_work_units {
-                    let used = handle
-                        .status()
-                        .diagnostics
-                        .and_then(|d| d.progress)
-                        .ok_or_else(|| invalid("selection lacks accounting"))?
-                        .work_used;
-                    budget.max_work_units = Some(
-                        limit
-                            .checked_sub(used)
-                            .filter(|n| *n != 0)
-                            .ok_or_else(|| invalid("work budget exhausted"))?,
-                    );
+                    limits.budget()?,
+                )?;
+                if !wait_handle(&handle, &signals, format) {
+                    return Ok(ExitCode::FAILURE);
                 }
-                budget.timeout_ms = budget
-                    .timeout_ms
-                    .checked_sub(started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64)
-                    .filter(|n| *n != 0)
-                    .ok_or_else(|| invalid("deadline exhausted"))?;
-                drop(output);
-                drop(application);
-                return apply_native_knowledge(&project, &change, &limits, format, budget);
+                let run = handle.wait();
+                match format {
+                    Format::Json => println!("{}", serde_json::json!({"schema":6,"run":run})),
+                    Format::Human => println!("Knowledge revision {}", run.knowledge.unwrap()),
+                }
+                return Ok(ExitCode::SUCCESS);
             }
             KnowledgeCommand::Validate { change } => {
                 return read_query(
@@ -1003,62 +982,25 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             let application = limits.application()?;
             let _diagnostics = TemporaryDiagnostics(&application, format);
             let signals = Signals::new()?;
-            let started = std::time::Instant::now();
-            let mut execution_budget = limits.budget()?;
-            let plan = if let Some(plan) = plan {
-                read_json_file(&plan)?
+            let input = if let Some(plan) = plan {
+                blobray_domain::InvestigationInput::Plan {
+                    plan: read_json_file(&plan)?,
+                }
             } else {
                 use blobray_domain::{FunctionDecoder, FunctionSemantics};
                 let decoder = blobray_backend_riscv::RiscvDecoder;
-                let handle = application.start_query(
-                    &project,
-                    ReadQuery::PlanInvestigation {
-                        request: blobray_domain::InvestigationRequest {
-                            image,
-                            ..Default::default()
-                        },
-                        producer: blobray_domain::FunctionProducer {
-                            decoder: decoder.identity().into(),
-                            semantics: decoder.semantic_identity().into(),
-                        },
+                blobray_domain::InvestigationInput::Automatic {
+                    request: blobray_domain::InvestigationRequest {
+                        image,
+                        ..Default::default()
                     },
-                    limits.budget()?,
-                )?;
-                if !wait_handle(&handle, &signals, format) {
-                    return Ok(ExitCode::FAILURE);
+                    producer: blobray_domain::FunctionProducer {
+                        decoder: decoder.identity().into(),
+                        semantics: decoder.semantic_identity().into(),
+                    },
                 }
-                if let Some(limit) = execution_budget.max_work_units {
-                    let used = handle
-                        .status()
-                        .diagnostics
-                        .and_then(|d| d.progress)
-                        .ok_or_else(|| invalid("completed planning has no work accounting"))?
-                        .work_used;
-                    execution_budget.max_work_units =
-                        Some(limit.checked_sub(used).filter(|n| *n > 0).ok_or_else(|| {
-                            blobray_domain::Error::new(
-                                ErrorCode::ResourceLimited,
-                                "planning exhausted the command work budget",
-                            )
-                        })?);
-                }
-                let output = handle.take_output()?;
-                let app::QuerySummary::InvestigationPlan { plan } = output.summary() else {
-                    return Err(invalid("unexpected investigation plan"));
-                };
-                (**plan).clone()
             };
-            execution_budget.timeout_ms = execution_budget
-                .timeout_ms
-                .checked_sub(started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64)
-                .filter(|n| *n > 0)
-                .ok_or_else(|| {
-                    blobray_domain::Error::new(
-                        ErrorCode::TimedOut,
-                        "planning exhausted the command deadline",
-                    )
-                })?;
-            let handle = application.start_analyze_project(&project, &plan, execution_budget)?;
+            let handle = application.start_analyze_project(&project, input, limits.budget()?)?;
             while !handle.status().state.terminal() {
                 if signals.cancelled() {
                     handle.cancel();
@@ -1073,7 +1015,7 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                     "{}\nPublication: {} ({})",
                     render_run(&record),
                     record.publication.as_ref().map_or("none", |p| p.as_str()),
-                    if record.complete == Some(true) {
+                    if record.assessment.as_ref().is_some_and(|a| a.is_complete()) {
                         "complete"
                     } else {
                         "partial"
@@ -1205,58 +1147,18 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             let application = limits.application()?;
             let _diagnostics = TemporaryDiagnostics(&application, format);
             let signals = Signals::new()?;
-            let started = std::time::Instant::now();
-            let mut budget = limits.budget()?;
-            let selection = application.start_query(
-                &project,
-                ReadQuery::Publication {
-                    id: id.clone(),
-                    filter: blobray_domain::InvestigationFilter::Functions { name, address },
+            let request = blobray_domain::ResearchRequest {
+                publication: id.clone(),
+                name,
+                address,
+                options: blobray_domain::ResearchOptions {
+                    companions: companion_publication,
+                    publication: id,
+                    abi: abi_contract.map(|_| blobray_domain::CallAbi::RiscvInteger),
+                    knowledge,
                 },
-                budget.clone(),
-            )?;
-            if !wait_handle(&selection, &signals, format) {
-                return Ok(ExitCode::FAILURE);
-            }
-            let mut output = selection.take_output()?;
-            let mut selected = ResearchSelection::default();
-            output.records(&|| signals.cancelled(), &mut selected)?;
-            if selected.count != 1 {
-                return Err(invalid(&format!(
-                    "research requires one exact function; {} candidates (use functions to inspect)",
-                    selected.count
-                )));
-            }
-            let mut request = selected
-                .request
-                .ok_or_else(|| invalid("selected function unavailable"))?;
-            request.research = Some(blobray_domain::ResearchOptions {
-                companions: companion_publication,
-                publication: id,
-                abi: abi_contract.map(|_| blobray_domain::CallAbi::RiscvInteger),
-                knowledge,
-            });
-            if let Some(limit) = budget.max_work_units {
-                let used = output
-                    .report
-                    .diagnostics
-                    .progress
-                    .ok_or_else(|| invalid("selection has no work accounting"))?
-                    .work_used;
-                budget.max_work_units = Some(
-                    limit
-                        .checked_sub(used)
-                        .filter(|n| *n != 0)
-                        .ok_or_else(|| invalid("selection exhausted work budget"))?,
-                );
-            }
-            budget.timeout_ms = budget
-                .timeout_ms
-                .checked_sub(started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64)
-                .filter(|n| *n != 0)
-                .ok_or_else(|| invalid("selection exhausted deadline"))?;
-            drop(output);
-            let handle = application.start_analyze_function(&project, request, budget)?;
+            };
+            let handle = application.start_research(&project, request, limits.budget()?)?;
             if !wait_handle(&handle, &signals, format) {
                 return Ok(ExitCode::FAILURE);
             }
@@ -1266,7 +1168,7 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 Format::Human => println!(
                     "Research saved: {} ({})",
                     run.analysis.as_ref().map_or("", |id| id.as_str()),
-                    if run.complete == Some(true) {
+                    if run.assessment.as_ref().is_some_and(|a| a.is_complete()) {
                         "complete in selected static profile"
                     } else {
                         "partial; inspect retained gaps"
@@ -1307,60 +1209,14 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             id,
             limits,
         } => {
-            use blobray_domain::Executor;
-            let started = std::time::Instant::now();
             let application = limits.application()?;
             let _diagnostics = TemporaryDiagnostics(&application, format);
             let signals = Signals::new()?;
-            let handle =
-                application.start_query(&project, ReadQuery::Execution { id }, limits.budget()?)?;
-            if !wait_handle(&handle, &signals, format) {
-                return Ok(ExitCode::FAILURE);
-            }
-            let output = handle.take_output()?;
-            let app::QuerySummary::Execution { manifest, .. } = output.summary() else {
-                return Err(invalid("unexpected replay result"));
-            };
-            if manifest.producer.executor != blobray_backend_riscv::RiscvExecutor.identity()
-                || manifest.producer.environment != app::EXECUTION_ENVIRONMENT
-                || manifest.producer.verifier != app::EXECUTION_VERIFIER
-            {
-                return Err(Error::new(
-                    ErrorCode::Incompatible,
-                    "replay implementation unavailable",
-                ));
-            }
-            let request = manifest.request.clone();
-            let mut budget = limits.budget()?;
-            if let Some(units) = budget.max_work_units {
-                let used = output
-                    .report
-                    .diagnostics
-                    .progress
-                    .ok_or_else(|| invalid("query omitted accounting"))?
-                    .work_used;
-                budget.max_work_units =
-                    Some(units.checked_sub(used).filter(|n| *n > 0).ok_or_else(|| {
-                        Error::new(
-                            ErrorCode::ResourceLimited,
-                            "replay selection exhausted work budget",
-                        )
-                    })?);
-            }
-            drop(output);
-            drop(handle);
-            budget.timeout_ms = budget
-                .timeout_ms
-                .checked_sub(started.elapsed().as_millis() as u64)
-                .filter(|n| *n > 0)
-                .ok_or_else(|| {
-                    Error::new(ErrorCode::TimedOut, "replay selection exhausted deadline")
-                })?;
-            let handle = application.start_execution(
+            let handle = application.start_replay(
                 &project,
-                request,
+                id,
                 &blobray_backend_riscv::RiscvExecutor,
-                budget,
+                limits.budget()?,
             )?;
             return Ok(finish_execution(&handle, &signals, format));
         }
@@ -1387,11 +1243,12 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 Format::Human => {
                     let mut text = format!("Function analysis {:?}", record.state);
                     if let Some(id) = &record.analysis {
-                        let coverage = if record.complete == Some(true) {
-                            "complete"
-                        } else {
-                            "partial"
-                        };
+                        let coverage =
+                            if record.assessment.as_ref().is_some_and(|a| a.is_complete()) {
+                                "complete"
+                            } else {
+                                "partial"
+                            };
                         text.push_str(&format!(": {} ({coverage})", id.as_str()));
                     }
                     if let Some(error) = &record.error {
@@ -1805,10 +1662,6 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
         } => {
             return read_query(project, ReadQuery::Inventory { revision }, limits, format);
         }
-        Command::Upgrade { project } => {
-            app::upgrade(&project)?;
-            println!("{}", serde_json::json!({"schema": 1, "storage_schema": 6}));
-        }
         Command::Doctor { project, limits } => {
             return read_query(project, ReadQuery::Doctor, limits, format);
         }
@@ -1885,7 +1738,9 @@ fn finish_execution(handle: &app::RunHandle, signals: &Signals, format: Format) 
             "Execution {:?}{}: {}",
             record.state,
             record
-                .verdict
+                .assessment
+                .as_ref()
+                .and_then(|a| a.comparison)
                 .map(|v| format!(" / {v:?}"))
                 .unwrap_or_default(),
             record
@@ -2079,6 +1934,28 @@ impl Drop for Signals {
         }
     }
 }
+fn parse_forbidden(
+    value: &str,
+) -> std::result::Result<blobray_domain::ForbiddenTargetRange, String> {
+    let (name, bounds) = value.split_once('=').ok_or("expected NAME=START..END")?;
+    let (start, end) = bounds.split_once("..").ok_or("expected START..END")?;
+    let parse = |v: &str| {
+        if let Some(hex) = v.strip_prefix("0x") {
+            u64::from_str_radix(hex, 16)
+        } else {
+            v.parse::<u64>()
+        }
+        .map_err(|e| e.to_string())
+    };
+    let range = blobray_domain::ForbiddenTargetRange {
+        name: name.into(),
+        start: u32::try_from(parse(start)?).map_err(|e| e.to_string())?,
+        end: parse(end)?,
+    };
+    range.validate().map_err(|e| e.message)?;
+    Ok(range)
+}
+
 fn read_query(
     project: PathBuf,
     query: ReadQuery,
@@ -2097,7 +1974,7 @@ fn read_query(
     queries::render(&mut result, format, &mut std::io::stdout().lock(), &|| {
         signals.cancelled()
     })?;
-    Ok(if result.clean {
+    Ok(if result.assessment().check_passed() {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
@@ -2231,6 +2108,11 @@ fn internal(args: &[OsString]) -> Result<()> {
         }
         serde_json::from_slice(&bytes).map_err(|e| invalid(&e.to_string()))
     }
+    let scenario: Option<app::ScenarioWork> = if stage.join("scenario.json").exists() {
+        Some(request(&stage.join("scenario.json"))?)
+    } else {
+        None
+    };
     let execution: Option<app::ExecutionWork> = if stage.join("execution.json").exists() {
         Some(request(&stage.join("execution.json"))?)
     } else {
@@ -2268,12 +2150,15 @@ fn internal(args: &[OsString]) -> Result<()> {
         && investigation.is_none()
         && knowledge.is_none()
         && execution.is_none()
+        && scenario.is_none()
     {
         Some(request(&stage.join("request.json"))?)
     } else {
         None
     };
-    let (run, started, deadline, budget) = if let Some(w) = &execution {
+    let (run, started, deadline, budget) = if let Some(w) = &scenario {
+        (&w.run, w.started_ms, w.deadline_ms, &w.budget)
+    } else if let Some(w) = &execution {
         (&w.run, w.started_ms, w.deadline_ms, &w.budget)
     } else {
         match (
@@ -2308,7 +2193,16 @@ fn internal(args: &[OsString]) -> Result<()> {
     let environment = blobray_next_host::linux::WorkerEnvironment::new(&stage, run.clone())?;
     let mut context = app::RunContext::new(&environment, started, deadline, budget, None)?;
     let mut linker_diagnostics = None;
-    let result = if let Some(work) = execution {
+    let result = if let Some(work) = scenario {
+        app::prepare_scenario_worker(
+            &stage,
+            &work,
+            &blobray_backend_riscv::RiscvDecoder,
+            &blobray_backend_riscv::RiscvExecutor,
+            &mut context,
+        )
+        .map(Some)
+    } else if let Some(work) = execution {
         app::prepare_execution_worker(
             &stage,
             &work,
@@ -2318,11 +2212,12 @@ fn internal(args: &[OsString]) -> Result<()> {
         .map(|p| Some(app::PreparedReceipt::Execution(p)))
     } else {
         match (query, import, image, function, investigation, knowledge) {
-            (Some(work), _, _, _, _, _) => app::prepare_query_with_linker(
+            (Some(work), _, _, _, _, _) => app::prepare_query_with_tools(
                 &stage,
                 &work,
                 &mut context,
                 &blobray_next_host::linux::Lld22,
+                Some(&blobray_backend_riscv::RiscvDecoder),
             )
             .map(|_| None),
             (_, Some(work), _, _, _, _) => app::prepare_import(&stage, work, &mut context)
@@ -2361,7 +2256,10 @@ fn internal(args: &[OsString]) -> Result<()> {
         progress: Some(context.snapshot()),
         ..Default::default()
     };
-    let observed = environment.finish(&context.snapshot());
+    let observed = context
+        .flush()
+        .and_then(|()| environment.finish(&context.snapshot()));
+    diagnostics.progress = Some(context.snapshot());
     let result = match (result, observed) {
         (Err(error), Err(secondary)) => {
             diagnostics.secondary(secondary);
@@ -2407,81 +2305,6 @@ fn parse_address(text: &str) -> std::result::Result<u32, String> {
         text.parse()
     }
     .map_err(|e| e.to_string())
-}
-
-#[derive(Default)]
-struct ResearchSelection {
-    count: u64,
-    request: Option<blobray_domain::FunctionRequest>,
-}
-impl app::QuerySink for ResearchSelection {
-    fn investigation_member(
-        &mut self,
-        member: &blobray_domain::InvestigationMember,
-        c: &mut dyn blobray_domain::RunControl,
-    ) -> Result<()> {
-        c.checkpoint(1)?;
-        if let blobray_domain::PlanEntry::Function { request, .. } = &member.entry {
-            self.count += 1;
-            if self.count == 1 {
-                self.request = Some(request.clone());
-            } else {
-                self.request = None;
-            }
-        }
-        Ok(())
-    }
-    fn summary(
-        &mut self,
-        _: &app::QuerySummary,
-        c: &mut dyn blobray_domain::RunControl,
-    ) -> Result<()> {
-        c.checkpoint(1)
-    }
-}
-
-impl blobray_domain::InventorySink for ResearchSelection {}
-impl blobray_domain::ElfSink for ResearchSelection {
-    fn section(
-        &mut self,
-        _: &blobray_domain::SectionRecord,
-        _: &mut dyn blobray_domain::RunControl,
-    ) -> Result<()> {
-        Err(invalid("unexpected section"))
-    }
-    fn symbol(
-        &mut self,
-        _: &blobray_domain::SymbolRecord,
-        _: &mut dyn blobray_domain::RunControl,
-    ) -> Result<()> {
-        Err(invalid("unexpected symbol"))
-    }
-    fn relocation(
-        &mut self,
-        _: &blobray_domain::RelocationRecord,
-        _: &mut dyn blobray_domain::RunControl,
-    ) -> Result<()> {
-        Err(invalid("unexpected relocation"))
-    }
-    fn diagnostic(
-        &mut self,
-        _: &blobray_domain::Diagnostic,
-        _: &mut dyn blobray_domain::RunControl,
-    ) -> Result<()> {
-        Err(invalid("unexpected diagnostic"))
-    }
-}
-impl app::DoctorSink for ResearchSelection {
-    fn error(&mut self, e: &Error, _: &mut dyn blobray_domain::RunControl) -> Result<()> {
-        Err(e.clone())
-    }
-    fn unfinished(
-        &mut self,
-        _: &blobray_domain::RunId,
-        _: &mut dyn blobray_domain::RunControl,
-    ) -> Result<()> {
-        Err(invalid("unexpected unfinished run"))
-    }
 }
 
 fn apply_native_knowledge(

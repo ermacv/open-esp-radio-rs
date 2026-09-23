@@ -3,7 +3,6 @@
 use std::{
     ffi::{OsStr, OsString},
     fs,
-    io::Write as _,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -13,20 +12,7 @@ use crate::{Context, Result, paths, process};
 const WORKSPACE: &str = r#"
 
 [workspace]
-members = [
-    ".",
-    "next",
-    "crates/domain",
-    "crates/artifacts",
-    "crates/store",
-    "crates/application",
-    "crates/analysis-model",
-    "crates/backend-riscv",
-    "crates/contracts",
-    "crates/execution-model",
-    "crates/register-model",
-    "crates/semantics",
-]
+members = []
 resolver = "3"
 
 [workspace.package]
@@ -48,51 +34,6 @@ opt-level = 3
 "#;
 
 pub fn run(context: &Context) -> Result<()> {
-    let toolchain = selected_toolchain(context, std::env::var_os("RUSTUP_TOOLCHAIN"))?;
-    let scratch = tempfile::Builder::new()
-        .prefix("blobray-standalone-")
-        .tempdir()?;
-    let root = scratch.path().canonicalize()?;
-    extract(
-        &context.root.join("tools/blobray"),
-        &root,
-        paths::source_files(context)?,
-    )?;
-    let mut manifest = fs::OpenOptions::new()
-        .append(true)
-        .open(root.join("Cargo.toml"))?;
-    manifest.write_all(WORKSPACE.as_bytes())?;
-    drop(manifest);
-
-    let output = process::capture(command(context, &root, &toolchain).args([
-        "metadata",
-        "--no-deps",
-        "--format-version",
-        "1",
-    ]))?;
-    let metadata: cargo_metadata::Metadata = serde_json::from_slice(&output.stdout)?;
-    require_contained_dependencies(
-        &root,
-        metadata.packages.iter().flat_map(|package| {
-            package
-                .dependencies
-                .iter()
-                .filter_map(|dependency| dependency.path.as_ref().map(|path| path.as_std_path()))
-        }),
-    )?;
-    process::run(command(context, &root, &toolchain).arg("generate-lockfile"))?;
-    process::run(command(context, &root, &toolchain).args([
-        "check",
-        "--workspace",
-        "--all-targets",
-        "--locked",
-    ]))?;
-    eprintln!("standalone Blobray workspace is self-contained");
-    Ok(())
-}
-
-/// Extract only the new core; legacy failures cannot mask this boundary check.
-pub fn run_next(context: &Context) -> Result<()> {
     let toolchain = selected_toolchain(context, std::env::var_os("RUSTUP_TOOLCHAIN"))?;
     let scratch = tempfile::Builder::new()
         .prefix("blobray-next-standalone-")
@@ -140,7 +81,7 @@ pub fn run_next(context: &Context) -> Result<()> {
         }),
     )?;
     process::run(command(context, &root, &toolchain).args(["test", "--workspace", "--offline"]))?;
-    eprintln!("standalone Blobray Next core and tests are self-contained");
+    eprintln!("standalone Blobray core and tests are self-contained");
     Ok(())
 }
 

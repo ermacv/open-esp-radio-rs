@@ -133,53 +133,8 @@ impl Staging {
 pub(crate) fn json(error: serde_json::Error) -> Error {
     integrity(error.to_string())
 }
-fn raw_connection(root: &Path) -> Result<Connection> {
-    Connection::open_with_flags(
-        root.join("project.sqlite3"),
-        OpenFlags::SQLITE_OPEN_READ_WRITE,
-    )
-    .map_err(db)
-}
 
 impl Project {
-    pub fn upgrade(path: &Path) -> Result<()> {
-        let root = path.join(STATE);
-        let _lock = writer_lock(&root)?;
-        let mut connection = raw_connection(&root)?;
-        let schema: u32 = connection
-            .pragma_query_value(None, "user_version", |r| r.get(0))
-            .map_err(db)?;
-        if schema == 6 {
-            return Ok(());
-        }
-        if !matches!(schema, 1..=5) {
-            return Err(Error::new(
-                ErrorCode::Incompatible,
-                "unsupported storage upgrade",
-            ));
-        }
-        connection
-            .pragma_update(None, "synchronous", "EXTRA")
-            .map_err(db)?;
-        let tx = connection
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(db)?;
-        if schema == 1 {
-            tx.execute_batch("CREATE TABLE runs (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, record TEXT NOT NULL);").map_err(db)?;
-        }
-        if schema < 3 {
-            tx.execute_batch("CREATE TABLE images (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, revision TEXT NOT NULL, plan TEXT NOT NULL);").map_err(db)?;
-        }
-        if schema < 4 {
-            tx.execute_batch("CREATE TABLE analyses (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, revision TEXT NOT NULL);").map_err(db)?;
-        }
-        if schema < 5 {
-            tx.execute_batch("CREATE TABLE publications (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, revision TEXT NOT NULL); CREATE TABLE current_publication (singleton INTEGER PRIMARY KEY CHECK(singleton=1), id TEXT NOT NULL); PRAGMA user_version=5;").map_err(db)?;
-        }
-        tx.execute_batch("CREATE TABLE legacy_imports (id TEXT PRIMARY KEY); CREATE TABLE knowledge_revisions (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, parent TEXT, assertion TEXT NOT NULL, action TEXT NOT NULL, supersedes TEXT); CREATE INDEX knowledge_assertion ON knowledge_revisions(assertion, sequence); CREATE INDEX knowledge_replacement ON knowledge_revisions(supersedes, sequence); PRAGMA user_version=6;").map_err(db)?;
-        tx.commit().map_err(db)
-    }
-
     pub fn run(&self, id: &RunId) -> Result<RunRecord> {
         let connection = open_connection(&self.root, false)?;
         let raw: String = connection
@@ -353,25 +308,21 @@ impl Writer {
             .map_err(db)?;
         budget.validate()?;
         let record = RunRecord {
-            schema: if matches!(operation, RunOperation::Execute { .. }) {
-                7
-            } else {
-                6
-            },
+            schema: 8,
             operation,
+            resolved_operation: None,
             image: None,
             analysis: None,
             publication: None,
             knowledge: None,
             execution: None,
-            verdict: None,
+            assessment: None,
             id: raw.parse()?,
             state: RunState::Registered,
             owner,
             budget,
             base: self.project.current()?,
             revision: None,
-            complete: None,
             error: None,
             diagnostics: Some(RunDiagnostics::default()),
         };
@@ -427,7 +378,9 @@ impl Writer {
             || previous.knowledge != record.knowledge
             || previous.schema != record.schema
             || previous.revision != record.revision
-            || previous.complete != record.complete
+            || previous.assessment != record.assessment
+            || previous.execution != record.execution
+            || previous.resolved_operation != record.resolved_operation
         {
             return Err(integrity(
                 "run update changed immutable admission or publication fields",
@@ -630,7 +583,10 @@ impl Writer {
         let mut completed = record.clone();
         completed.state = RunState::Completed;
         completed.revision = Some(prepared.revision.clone());
-        completed.complete = Some(prepared.complete);
+        completed.assessment = Some(ResultAssessment::covered(
+            CoverageSubject::Inventory(prepared.revision.clone()),
+            prepared.complete,
+        ));
         tx.execute(
             "INSERT INTO revisions(id) VALUES(?1)",
             [prepared.revision.as_str()],
@@ -754,52 +710,104 @@ fn verify_file(
 pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
     let value: serde_json::Value = serde_json::from_str(raw).map_err(json)?;
     let schema = value.get("schema").and_then(serde_json::Value::as_u64);
-    if !matches!(schema, Some(1..=7)) {
+    if schema != Some(8) {
         return Err(Error::new(
             ErrorCode::Incompatible,
             "unsupported run record schema",
         ));
     }
     let record: RunRecord = serde_json::from_value(value).map_err(json)?;
-    if record.schema >= 2 {
-        record.budget.validate()?;
-        if record.diagnostics.is_none() {
-            return Err(integrity("schema-2 run omitted diagnostics"));
+    record.budget.validate()?;
+    if record.diagnostics.is_none()
+        || (record.state == RunState::Completed) != record.assessment.is_some()
+    {
+        return Err(integrity("invalid run assessment or diagnostics"));
+    }
+    if matches!(record.operation, RunOperation::Scenario { .. }) {
+        if (record.state == RunState::Completed) != record.resolved_operation.is_some()
+            || matches!(record.effective_operation(), RunOperation::Scenario { .. })
+                && record.state == RunState::Completed
+        {
+            return Err(integrity("invalid scenario resolution"));
+        }
+    } else if record.resolved_operation.is_some() {
+        return Err(integrity("unexpected scenario resolution"));
+    }
+    if let RunOperation::Scenario { request } = &record.operation
+        && let Some(resolved) = &record.resolved_operation
+    {
+        let valid = match (request, &**resolved) {
+            (
+                ScenarioRequest::Investigate { request, .. },
+                RunOperation::Investigate { revision, .. },
+            ) => request.revision.as_ref() == Some(revision),
+            (
+                ScenarioRequest::Research { request },
+                RunOperation::AnalyzeFunction { request: function },
+            ) => {
+                function.research.as_ref() == Some(&request.options)
+                    && request.publication == request.options.publication
+            }
+            (ScenarioRequest::ProposeRegister { request }, RunOperation::Knowledge { change }) => {
+                change.expected_base == request.expected_base
+                    && change.actor == request.actor
+                    && change.reason == request.reason
+                    && matches!(&change.action, KnowledgeAction::Propose { proposal } if proposal.subject == request.subject && proposal.claim == (KnowledgeClaim::MmioRegister { register: request.register.clone() }) && proposal.evidence == vec![EvidenceRef::Analysis { analysis: request.analysis.clone(), record: None }])
+            }
+            (
+                ScenarioRequest::Replay { producer, .. },
+                RunOperation::Execute {
+                    producer: resolved, ..
+                },
+            ) => producer == resolved,
+            _ => false,
+        };
+        if !valid {
+            return Err(integrity(
+                "scenario resolution differs from admitted action",
+            ));
         }
     }
-    if record.schema < 3 && (record.operation != RunOperation::Import || record.image.is_some()) {
-        return Err(integrity("legacy run has new operation fields"));
+    let published = [
+        record.revision.is_some(),
+        record.image.is_some(),
+        record.analysis.is_some(),
+        record.publication.is_some(),
+        record.knowledge.is_some(),
+        record.execution.is_some(),
+    ]
+    .into_iter()
+    .filter(|v| *v)
+    .count();
+    if published != usize::from(record.state == RunState::Completed) {
+        return Err(integrity("invalid durable result cardinality"));
     }
-    if record.schema < 4
-        && (record.analysis.is_some()
-            || matches!(record.operation, RunOperation::AnalyzeFunction { .. }))
-    {
-        return Err(integrity("legacy run has analysis fields"));
+    if let Some(assessment) = &record.assessment {
+        let subject = match record.effective_operation() {
+            RunOperation::Import => record.revision.clone().map(CoverageSubject::Inventory),
+            RunOperation::AnalyzeFunction { .. } => {
+                record.analysis.clone().map(CoverageSubject::Function)
+            }
+            RunOperation::Investigate { .. } => record
+                .publication
+                .clone()
+                .map(CoverageSubject::Investigation),
+            RunOperation::Execute { .. } => {
+                record.execution.clone().map(CoverageSubject::Execution)
+            }
+            _ => None,
+        };
+        if assessment.coverage.as_ref().map(|c| &c.subject) != subject.as_ref()
+            || assessment.check.is_some()
+            || (!matches!(record.effective_operation(), RunOperation::Execute { .. })
+                && assessment.comparison.is_some())
+        {
+            return Err(integrity(
+                "assessment does not describe the published result",
+            ));
+        }
     }
-    if !matches!(record.operation, RunOperation::AnalyzeFunction { .. })
-        && record.analysis.is_some()
-    {
-        return Err(integrity("non-analysis run carries analysis result"));
-    }
-    if (record.schema < 5 && matches!(record.operation, RunOperation::Investigate { .. }))
-        || (record.publication.is_some()
-            && (record.schema < 5 || !matches!(record.operation, RunOperation::Investigate { .. })))
-    {
-        return Err(integrity("invalid publication fields"));
-    }
-    if (record.schema < 6 && matches!(record.operation, RunOperation::Knowledge { .. }))
-        || (record.knowledge.is_some()
-            && (record.schema < 6 || !matches!(record.operation, RunOperation::Knowledge { .. })))
-    {
-        return Err(integrity("invalid knowledge fields"));
-    }
-    if ((record.execution.is_some() || record.verdict.is_some())
-        && !matches!(record.operation, RunOperation::Execute { .. }))
-        || (record.schema < 7 && matches!(record.operation, RunOperation::Execute { .. }))
-    {
-        return Err(integrity("invalid execution journal fields"));
-    }
-    match &record.operation {
+    match record.effective_operation() {
         RunOperation::Execute { request, producer } => {
             request.validate()?;
             if producer.executor.is_empty()
@@ -812,7 +820,10 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
                 || record.knowledge.is_some()
                 || (record.state == RunState::Completed) != record.execution.is_some()
                 || (record.state == RunState::Completed && request.replacement.is_some())
-                    != record.verdict.is_some()
+                    != record
+                        .assessment
+                        .as_ref()
+                        .is_some_and(|a| a.comparison.is_some())
             {
                 return Err(integrity("invalid execution outcome"));
             }

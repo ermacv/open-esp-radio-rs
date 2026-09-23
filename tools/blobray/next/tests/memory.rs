@@ -9,7 +9,7 @@ use std::{fs, path::Path, process::Command, sync::Arc};
 
 fn application() -> app::Application {
     app::Application::new(Arc::new(LinuxHost::new(
-        env!("CARGO_BIN_EXE_blobray-next").into(),
+        env!("CARGO_BIN_EXE_blobray").into(),
         None,
     )))
 }
@@ -38,7 +38,7 @@ fn import(project: &Path, source: &Path) -> RunRecord {
         .wait()
 }
 fn query(project: &Path, operation: &str, extra: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args([
             operation,
             "--limit-mode",
@@ -243,12 +243,7 @@ fn read_query_cancellation_deadline_and_delivery_keep_project_read_only() {
     fs::write(&source, support::elf()).unwrap();
     assert_eq!(import(temp.path(), &source).state, RunState::Completed);
     let before = project_bytes(temp.path());
-    let host = || {
-        Arc::new(LinuxHost::new(
-            env!("CARGO_BIN_EXE_blobray-next").into(),
-            None,
-        ))
-    };
+    let host = || Arc::new(LinuxHost::new(env!("CARGO_BIN_EXE_blobray").into(), None));
     for (cancelled, timeout, expected) in [
         (true, 900_000, RunState::Cancelled),
         (false, 1, RunState::TimedOut),
@@ -296,4 +291,56 @@ fn read_query_cancellation_deadline_and_delivery_keep_project_read_only() {
         ErrorCode::InvalidRequest
     );
     assert_eq!(before, project_bytes(temp.path()));
+}
+
+#[test]
+fn partial_inventory_has_the_same_assessment_in_handle_and_output() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    app::create_project(&project).unwrap();
+    let source = temp.path().join("mixed.a");
+    fs::write(
+        &source,
+        support::archive(
+            &[(b"valid.o", &support::elf()), (b"unknown", b"unsupported")],
+            false,
+        ),
+    )
+    .unwrap();
+    let imported = import(&project, &source);
+    assert_eq!(imported.state, RunState::Completed);
+    assert_eq!(
+        imported
+            .assessment
+            .as_ref()
+            .unwrap()
+            .coverage
+            .as_ref()
+            .unwrap()
+            .status,
+        CoverageStatus::Partial
+    );
+    let app = application();
+    let handle = app
+        .start_query(&project, ReadQuery::Inventory { revision: None }, budget())
+        .unwrap();
+    let run = handle.wait();
+    assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
+    let output = handle.take_output().unwrap();
+    assert_eq!(run.assessment.as_ref(), Some(output.assessment()));
+    assert_eq!(run.assessment, imported.assessment);
+    assert!(matches!(
+        output.summary(),
+        app::QuerySummary::Inventory {
+            complete: false,
+            ..
+        }
+    ));
+    let value: serde_json::Value =
+        serde_json::from_slice(&query(&project, "inventory", &[]).stdout).unwrap();
+    assert_eq!(value["assessment"]["coverage"]["status"], "partial");
+    assert_eq!(
+        value["assessment"]["coverage"]["subject"]["id"],
+        imported.revision.unwrap().as_str()
+    );
 }

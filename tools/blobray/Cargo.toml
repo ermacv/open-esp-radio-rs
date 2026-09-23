@@ -29,10 +29,10 @@ indicatif = { version = "=0.18.6", default-features = false, features = ["unicod
 miette = { version = "=7.6.0", features = ["fancy"] }
 open-radio-vendor-backend-riscv = { path = "crates/backend-riscv" }
 open-radio-vendor-execution-model = { path = "crates/execution-model" }
-open-esp-radio-register-model = { path = "crates/register-model" }
+open-esp-radio-register-model = { path = "../registers/model" }
 open-radio-vendor-analysis-model = { path = "crates/analysis-model" }
 open-radio-vendor-contracts = { path = "crates/contracts" }
-open-radio-vendor-review = { path = "crates/review-model" }
+open-radio-vendor-review = { path = "../registers/review" }
 open-radio-vendor-semantics = { path = "crates/semantics" }
 petgraph = { version = "=0.8.3", default-features = false }
 ratatui = { version = "=0.30.2", default-features = false, features = ["crossterm"] }

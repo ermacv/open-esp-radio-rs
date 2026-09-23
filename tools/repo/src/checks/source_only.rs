@@ -21,8 +21,7 @@ use crate::{
 };
 
 const PHY: &str = "crates/hardware/esp32s31/phy/Cargo.toml";
-const INVESTIGATION: &str = "verification/vendor/projects/esp32s31/vendor-project.toml";
-const PUBLICATION: &str = "registers/esp32s31/publication/vendor-project.toml";
+const PUBLICATION: &str = "registers/esp32s31/publication/registers.toml";
 const PHY_PACKAGES: &[&str] = &[
     "critical-section",
     "oer-memory",
@@ -106,52 +105,17 @@ fn production_lints(ctx: &Context) -> Result<()> {
 }
 
 fn publication(ctx: &Context) -> Result<()> {
-    process::run(ctx.cargo().args([
-        "blobray",
-        "project",
-        "configure",
-        "--project",
-        INVESTIGATION,
-        "--check",
-    ]))?;
     process::run(
         ctx.cargo()
-            .args(["blobray", "registers", "validate", "--project", PUBLICATION]),
+            .args(["registers", "validate", "--manifest", PUBLICATION]),
     )?;
-    for generator in [
-        "export-svd",
-        "generate-pac-raw",
-        "generate-pac-api",
-        "generate-bindings",
-    ] {
-        process::run(ctx.cargo().args([
-            "blobray",
-            "registers",
-            generator,
-            "--project",
-            PUBLICATION,
-            "--check",
-        ]))?;
-    }
-    if ctx
-        .root
-        .join("verification/vendor/projects/esp32s31/generated/findings/review-scopes.json")
-        .is_file()
-    {
-        process::run(ctx.cargo().args([
-            "blobray",
-            "project",
-            "publish",
-            "--project",
-            INVESTIGATION,
-            "--check",
-        ]))?;
-    } else {
-        println!(
-            "source-only: optional review-scope report absent; artifact-scoped publication not selected"
-        );
-    }
-    Ok(())
+    process::run(ctx.cargo().args([
+        "registers",
+        "generate",
+        "--manifest",
+        PUBLICATION,
+        "--check",
+    ]))
 }
 
 fn phy_artifact(messages: &[u8]) -> Result<PathBuf> {
@@ -213,39 +177,28 @@ fn phy(ctx: &Context) -> Result<PathBuf> {
 }
 
 fn final_image_audit(ctx: &Context, runtime: &Path) -> Result<()> {
-    // Select the exact binaries just built, regardless of caller target/binary overrides.
-    for (package, binary) in [("blobray-esp32s31", "blobray"), ("blobray", "blobray-run")] {
-        process::run(
-            ctx.cargo()
-                .env("CARGO_TARGET_DIR", ctx.root.join("target"))
-                .args([
-                    "build",
-                    "--locked",
-                    "--offline",
-                    "--profile",
-                    "blobray",
-                    "-p",
-                    package,
-                    "--bin",
-                    binary,
-                ]),
-        )?;
-    }
-    // The launcher owns a separate session or systemd service and needs its
-    // full shutdown grace before this outer owner may force termination.
-    process::run_with_shutdown_grace(
-        ctx.command(ctx.root.join("target/blobray/blobray-run"))
-            .env("BLOBRAY_BINARY", ctx.root.join("target/blobray/blobray"))
+    process::run(
+        ctx.cargo()
+            .env("CARGO_TARGET_DIR", ctx.root.join("target"))
             .args([
-                "advanced",
-                "image",
-                "audit-targets",
-                "--target-spec",
-                "verification/vendor/projects/esp32s31/target.toml",
-                "--artifact",
-            ])
+                "build",
+                "--locked",
+                "--offline",
+                "--profile",
+                "blobray",
+                "-p",
+                "blobray-next",
+                "--bin",
+                "blobray",
+            ]),
+    )?;
+    process::run_with_shutdown_grace(
+        ctx.command(ctx.root.join("target/blobray/blobray"))
+            .args(["audit-targets", "--artifact"])
             .arg(runtime)
             .args([
+                "--limit-mode",
+                "watchdog",
                 "--forbid",
                 "esp32s31-eco0-radio-api=0x2f800bf0..0x2f8016bc",
                 "--forbid",
@@ -258,8 +211,8 @@ fn final_image_audit(ctx: &Context, runtime: &Path) -> Result<()> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PreImageStage {
     RepositoryTests,
-    BlobrayLibraryTests,
-    BlobrayLauncherTests,
+    BlobrayCoreTests,
+    RegisterPublicationTests,
     Metadata,
     NetworkDependencies,
     Examples,
@@ -270,8 +223,8 @@ impl PreImageStage {
     const fn label(self) -> &'static str {
         match self {
             Self::RepositoryTests => "repository-tests",
-            Self::BlobrayLibraryTests => "blobray-library-tests",
-            Self::BlobrayLauncherTests => "blobray-launcher-tests",
+            Self::BlobrayCoreTests => "blobray-core-tests",
+            Self::RegisterPublicationTests => "register-publication-tests",
             Self::Metadata => "metadata",
             Self::NetworkDependencies => "network-dependencies",
             Self::Examples => "examples",
@@ -282,8 +235,8 @@ impl PreImageStage {
 
 const PRE_IMAGE_STAGES: &[PreImageStage] = &[
     PreImageStage::RepositoryTests,
-    PreImageStage::BlobrayLibraryTests,
-    PreImageStage::BlobrayLauncherTests,
+    PreImageStage::BlobrayCoreTests,
+    PreImageStage::RegisterPublicationTests,
     PreImageStage::Metadata,
     PreImageStage::NetworkDependencies,
     PreImageStage::Examples,
@@ -310,23 +263,41 @@ fn execute_pre_image_stage(ctx: &Context, stage: PreImageStage) -> Result<()> {
             "-p",
             "oer-firmware",
         ])),
-        PreImageStage::BlobrayLibraryTests => process::run(ctx.cargo().args([
+        PreImageStage::BlobrayCoreTests => process::run(ctx.cargo().args([
             "test",
             "--locked",
             "--offline",
             "-p",
-            "blobray",
-            "--lib",
-            "launcher::",
+            "blobray-next",
+            "-p",
+            "blobray-application",
+            "-p",
+            "blobray-analysis",
+            "-p",
+            "blobray-artifacts",
+            "-p",
+            "blobray-store",
+            "-p",
+            "blobray-domain",
+            "-p",
+            "blobray-backend-riscv",
+            "-p",
+            "blobray-knowledge",
+            "-p",
+            "blobray-verification",
         ])),
-        PreImageStage::BlobrayLauncherTests => process::run(ctx.cargo().args([
+        PreImageStage::RegisterPublicationTests => process::run(ctx.cargo().args([
             "test",
             "--locked",
             "--offline",
             "-p",
-            "blobray",
-            "--test",
-            "launcher",
+            "oer-register-tool",
+            "-p",
+            "open-esp-radio-register-model",
+            "-p",
+            "open-radio-vendor-review",
+            "-p",
+            "oer-reviewed-contracts",
         ])),
         PreImageStage::Metadata => metadata::run(ctx).map(|_| ()),
         PreImageStage::NetworkDependencies => network::run(ctx, true),

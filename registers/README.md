@@ -11,7 +11,7 @@ register owners and both generated Rust outputs remain in
 [`crates/hardware/esp32s31/pac`](../crates/hardware/esp32s31/pac/README.md).
 
 Generic loading, validation and generation remain in
-[`tools/blobray`](../tools/blobray/README.md). A vendor project references the
+[register tool](../tools/registers/README.md). A vendor project references the
 same reviewed model while selecting its own artifact context and comparison
 policy. Neither source generation nor binary analysis decides product readiness;
 that authority remains with [qualification](../qualification/README.md).

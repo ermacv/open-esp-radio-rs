@@ -4,11 +4,9 @@
 Its only internal dependency is [domain](../domain/README.md). It does not parse
 ELF/AR, select targets, resolve thin paths or install a process supervisor.
 
-New projects use metadata schema 6; schema-1 revision manifests remain unchanged.
-`Project::open` permits read-only schema-1/schema-2/schema-3/schema-4/schema-5 access. `Project::upgrade` explicitly
-adds missing job/image/analysis/publication/review/preservation metadata transactionally. `doctor` verifies retained revisions without
-repair. See the [storage contract](../../next/README.md#upgrade-diagnosis-and-recovery)
-for layout, compatibility and durability limits.
+Projects require metadata schema 7 and journal schema 8; earlier/future formats
+are rejected without conversion or mutation. Revision manifests retain schema 1.
+See [storage diagnosis](../../next/README.md#diagnosis-and-recovery).
 
 `Writer` owns the exclusive import/publication lock. `register` creates a run
 identity and owned staging. `register_with_stage_owner` assigns the path to its
@@ -65,10 +63,10 @@ does not inspect procfs or implement the worker transport. The application wraps
 store readers in restricted capabilities instead of exposing `Project` to read
 consumers.
 
-Run schema 6 includes operation identity and image/function/investigation publication;
-schemas 1/2/3/4 retain their original operation meaning. Accounting and diagnostics remain in the metadata table;
-all run-reading paths share version validation. Schema-1 runs retain unknown work
-fields. Recovery records the last valid stage checkpoint before cleanup, while
+Run schema 8 carries the admitted operation, optional concrete scenario
+resolution and scoped `ResultAssessment`. Readers validate one published result,
+its assessment identity and scenario shape. Earlier journal formats are rejected.
+Recovery records the last valid stage checkpoint before cleanup, while
 holding the lease that excludes a live worker. Atomic checkpoint files are
 transient diagnostics, not an alternative publication authority.
 
@@ -112,10 +110,10 @@ Store neither interprets instructions nor silently recomputes corrupt results.
 
 Function manifests accept version 4 with typed source, address space, declared
 ELF ABI and a semantic producer/value-effect summary. Earlier derived schemas
-are unsupported; existing CAS bytes are never rewritten. A run is complete only
+are unsupported; existing CAS bytes are never rewritten. Function assessment coverage is complete only
 when structural coverage and semantic
 coverage are both complete; unknown values alone do not imply missing semantics.
-The analyses table and publication transaction remain metadata schema 6.
+The analyses table and publication transaction remain metadata schema 7.
 
 
 `investigations` owns `InvestigationLease`, `PreparedInvestigationReceipt` and the
@@ -162,3 +160,7 @@ then `publish_execution` commits the result and terminal run atomically. Reads
 verify the reference, immutable manifest and payload digests; doctor also checks
 stream ordering and summaries. Store does not execute or compute comparison
 verdicts. See [concrete execution](../../next/README.md#concrete-execution-and-comparison).
+
+`knowledge_snapshot` verifies a selected immutable event history and evidence
+roots once. Its admitted owned entries preserve proposal, review and supersession
+states for repeated lookups within one operation; it is not a persistent cache.

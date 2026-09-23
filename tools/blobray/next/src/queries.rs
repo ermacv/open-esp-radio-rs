@@ -74,7 +74,8 @@ pub(super) fn render(
 ) -> Result<()> {
     if matches!(
         result.summary(),
-        app::QuerySummary::KnowledgeValidation { .. }
+        app::QuerySummary::TargetAudit { .. }
+            | app::QuerySummary::KnowledgeValidation { .. }
             | app::QuerySummary::RetainedPayload { .. }
             | app::QuerySummary::Legacy { .. }
             | app::QuerySummary::Preservation { .. }
@@ -112,7 +113,9 @@ pub(super) fn render(
                 else {
                     unreachable!()
                 };
-                raw(writer, b"{\"schema\":1,\"complete\":", control)?;
+                raw(writer, b"{\"schema\":2,\"assessment\":", control)?;
+                json(writer, &summary.assessment(), control)?;
+                raw(writer, b",\"complete\":", control)?;
                 json(writer, complete, control)?;
                 raw(writer, b",\"snapshot\":{\"revision_id\":", control)?;
                 json(writer, revision_id, control)?;
@@ -227,7 +230,7 @@ impl Doctor<'_> {
     fn begin(&mut self, control: &mut dyn RunControl) -> Result<()> {
         if !self.started {
             if matches!(self.format, super::Format::Json) {
-                raw(self.file, b"{\"schema\":1,\"errors\":[", control)?;
+                raw(self.file, b"{\"schema\":2,\"errors\":[", control)?;
             }
             self.started = true;
         }
@@ -379,6 +382,8 @@ impl app::QuerySink for Doctor<'_> {
             json(self.file, checked_analyses, control)?;
             raw(self.file, b",\"checked_publications\":", control)?;
             json(self.file, checked_publications, control)?;
+            raw(self.file, b",\"assessment\":", control)?;
+            json(self.file, &summary.assessment(), control)?;
             raw(self.file, b"}\n", control)
         } else {
             output(self.file, control, |writer| {
@@ -408,7 +413,7 @@ impl Records<'_> {
     fn begin(&mut self, c: &mut dyn RunControl) -> Result<()> {
         if !self.started {
             if matches!(self.format, super::Format::Json) {
-                raw(self.file, b"{\"schema\":1,\"records\":[", c)?;
+                raw(self.file, b"{\"schema\":2,\"records\":[", c)?;
             }
             self.started = true;
         }
@@ -566,6 +571,9 @@ impl app::QuerySink for Records<'_> {
     fn image_mapping(&mut self, mapping: &ImageMapping, c: &mut dyn RunControl) -> Result<()> {
         self.record("mapping", mapping, c)
     }
+    fn target_audit(&mut self, r: &TargetAuditRecord, c: &mut dyn RunControl) -> Result<()> {
+        self.record("target-audit", r, c)
+    }
     fn candidate(&mut self, r: &SelectionCandidate, c: &mut dyn RunControl) -> Result<()> {
         self.record("candidate", r, c)
     }
@@ -650,6 +658,8 @@ impl app::QuerySink for Records<'_> {
         if matches!(self.format, super::Format::Json) {
             raw(self.file, b"],\"summary\":", c)?;
             json(self.file, r, c)?;
+            raw(self.file, b",\"assessment\":", c)?;
+            json(self.file, &r.assessment(), c)?;
             raw(self.file, b"}\n", c)
         } else {
             self.record("summary", r, c)

@@ -43,14 +43,20 @@ fn analyze(f: &Fixture, image: Option<PreparedImageId>) -> PublicationId {
     };
     let run = f
         .app
-        .start_analyze_project(&f.project, plan, budget())
+        .start_analyze_project(
+            &f.project,
+            blobray_domain::InvestigationInput::Plan {
+                plan: (**plan).clone(),
+            },
+            budget(),
+        )
         .unwrap()
         .wait();
     assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
     run.publication.unwrap()
 }
 fn cli(f: &Fixture, args: &[&str]) -> serde_json::Value {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_blobray-next"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_blobray"));
     command.args(["--format", "json"]);
     command
         .arg(args[0])
@@ -208,7 +214,7 @@ fn native_link_selection_requires_one_defined_candidate_and_keeps_order() {
             budget(),
         )
         .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args([
             "--format",
             "json",
@@ -345,7 +351,13 @@ fn overlapping_image_segments_fail_without_publication_and_low_memory_is_diagnos
     };
     let run = f
         .app
-        .start_analyze_project(&f.project, plan, budget())
+        .start_analyze_project(
+            &f.project,
+            blobray_domain::InvestigationInput::Plan {
+                plan: (**plan).clone(),
+            },
+            budget(),
+        )
         .unwrap()
         .wait();
     assert_eq!(run.state, RunState::Failed);
@@ -727,6 +739,12 @@ fn image_mmio_knowledge_round_trip_has_native_commands_and_retained_evidence() {
             knowledge,
         ],
     );
+    let metrics = &r["run"]["diagnostics"]["progress"]["measurements"];
+    assert_eq!(metrics["knowledge_history_passes"], 1);
+    // One selection pass in the worker, one indexed membership pass, and
+    // one independent coordinator verification of the frozen selection.
+    assert_eq!(metrics["publication_passes"], 3);
+    assert_eq!(r["run"]["operation"]["kind"], "scenario");
     let id = r["run"]["analysis"].as_str().unwrap();
     let facts = cli(&f, &["analysis", "--id", id]);
     assert_eq!(
@@ -745,7 +763,7 @@ fn image_mmio_knowledge_round_trip_has_native_commands_and_retained_evidence() {
     let backup = f.dir.path().join("research.blobray");
     cli(&f, &["backup", "--output", backup.to_str().unwrap()]);
     let moved = f.dir.path().join("restored");
-    let output = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args([
             "restore",
             "--backup",
@@ -762,7 +780,7 @@ fn image_mmio_knowledge_round_trip_has_native_commands_and_retained_evidence() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let output = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args([
             "analysis",
             "--id",
@@ -905,7 +923,7 @@ fn recursive_research_retains_partial_local_facts_without_recursing() {
             "riscv-integer",
         ],
     );
-    assert_eq!(r["run"]["complete"], false);
+    assert_eq!(r["run"]["assessment"]["coverage"]["status"], "partial");
     let facts = cli(
         &f,
         &["analysis", "--id", r["run"]["analysis"].as_str().unwrap()],

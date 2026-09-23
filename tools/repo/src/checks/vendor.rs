@@ -43,9 +43,8 @@ pub fn run(context: &Context, chip: &str, list_roles: bool) -> Result<()> {
         return Ok(());
     }
     build(context, std::env::var_os(JOBS).as_deref(), process::run)?;
-    eprintln!("Rust analysis inputs are ready. Bind caller-owned source artifacts, then run:");
     eprintln!(
-        "  cargo blobray --project {PROJECT}/vendor-project.toml --run-spec {PROJECT}/local.toml project status"
+        "Rust analysis inputs are ready. Capture the ELF inputs with cargo blobray import, then select an explicit comparison request; see tools/blobray/next/README.md."
     );
     Ok(())
 }

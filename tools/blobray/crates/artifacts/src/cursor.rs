@@ -320,6 +320,58 @@ impl<'a> MemberCursor<'a> {
     }
 }
 
+/// One container's ephemeral ordinal index; thin members have no container range.
+pub struct MemberIndex<'a> {
+    ranges: AdmittedVec<'a, Option<(u64, u64)>>,
+    terminal_error: Option<Error>,
+}
+impl<'a> MemberIndex<'a> {
+    pub fn new(
+        source: &dyn ByteSource,
+        memory: &'a WorkingMemory,
+        c: &mut dyn RunControl,
+    ) -> Result<Self> {
+        let mut cursor = MemberCursor::new(source, c)?;
+        let mut ranges = AdmittedVec::new(memory);
+        let mut terminal_error = None;
+        loop {
+            let member = match cursor.next(memory, c) {
+                Ok(Some(member)) => member,
+                Ok(None) => break,
+                Err(error) if error.code == ErrorCode::Integrity => {
+                    terminal_error = Some(error);
+                    break;
+                }
+                Err(error) => return Err(error),
+            };
+            if member.ordinal != ranges.len() as u64 {
+                return Err(malformed("archive ordinal discontinuity"));
+            }
+            c.measure(WorkMetric::ArchiveEntries, 1);
+            ranges.push(member.payload, c.position())?;
+        }
+        Ok(Self {
+            ranges,
+            terminal_error,
+        })
+    }
+    /// A malformed suffix does not erase valid captured occurrences. This index
+    /// cannot assert archive completeness: inventory owns that explicit coverage.
+    pub fn terminal_error(&self) -> Option<&Error> {
+        self.terminal_error.as_ref()
+    }
+    pub fn get(&self, ordinal: u64) -> Result<Option<(u64, u64)>> {
+        self.ranges
+            .get(usize::try_from(ordinal).map_err(|_| malformed("member ordinal overflow"))?)
+            .copied()
+            .ok_or_else(|| {
+                self.terminal_error
+                    .clone()
+                    .unwrap_or_else(|| malformed("captured archive member missing"))
+            })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

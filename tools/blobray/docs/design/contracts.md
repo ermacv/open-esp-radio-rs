@@ -1,11 +1,75 @@
-# Target interfaces and ownership contracts
+# Interfaces and ownership contracts
 
-**Status: target design; streaming inventory, supervised operations, inspection plans, synthetic image preparation, local function analysis and bounded concrete execution/comparison implemented.** Names
-in this document identify target interfaces and states. The
-[current implementation](../../next/README.md) specifies the currently callable
-APIs, CLI commands and the narrower implemented lifecycle.
-The [target architecture](architecture.md) owns component boundaries;
-[workflows](workflows.md) defines their user-visible acceptance scenarios.
+This is the contract authority for Blobray Next. Implemented boundaries are
+identified below; broader interfaces explicitly marked target describe unsupported
+capabilities. The [command reference](../../next/README.md) owns CLI syntax.
+[Architecture](architecture.md) owns components and [workflows](workflows.md)
+owns supported use cases.
+
+## Result assessment
+
+`RunState` describes lifecycle only. `Completed` means a valid result was delivered
+or atomically published; it does not promise complete research or a matching
+comparison. `ResultAssessment` is shared by `QuerySummary::assessment`,
+`QueryOutput::assessment` and `RunHandle::wait().assessment`:
+
+| Field | Meaning | Applicable operations |
+| --- | --- | --- |
+| `coverage: {subject, status}` | `complete`, `partial` or `unknown` for the identified result, never an unscoped boolean | Inventory revision, function analysis, investigation publication, execution evidence or static-target audit |
+| `check` | `pass`, `fail` or `inconclusive` policy decision | Doctor, link-plan and knowledge validation |
+| `comparison` | `MATCH`, `DIFF` or `INCOMPLETE` under the retained relation | Concrete comparison only |
+
+A failed/cancelled/limited attempt has no assessment. Successful listings,
+selection, inspection, image preparation, knowledge mutation and exports have an
+empty assessment unless a specific result contract supplies one. A function
+without semantic analysis has unknown semantic coverage even if decoding is
+complete. A partial inventory returns partial coverage in both query summary and
+handle. CLI returns success for valid partial research and comparison evidence;
+a failed/inconclusive check command returns failure. No `clean` alias or generic
+run-level `complete` field exists.
+
+Store validates assessment subject against the published result identity. A
+completed durable run contains exactly one result reference. Journal schema 8
+and database schema 7 are mandatory; incompatible projects/journals are rejected
+without conversion. Execution and revision manifests keep independent versions.
+
+## Concrete application scenarios
+
+`start_analyze_project(InvestigationInput)`, `start_research`,
+`start_propose_register` and `start_replay` each own one admission, run, writer,
+worker, deadline, work counter, working-capacity authority and disk budget.
+Automatic investigation freezes the source revision at admission and retains its
+plan. Research resolves an exact function from the selected immutable publication.
+Register proposal derives occurrence/evidence from the selected analysis. Replay
+requires the original executor/environment/verifier identities and exact request.
+CLI parses parameters and renders outcomes; it performs none of these resolutions.
+
+A `Scenario` journal operation retains original intent. `resolved_operation`
+records the concrete operation only in the successful publication transaction;
+coordinator validation binds it back to immutable inputs. Failed attempts retain
+no resolution/result/assessment. Resolution is not a nested run or a generic
+workflow framework. Saved-plan investigation uses the same execution path with
+its selection independently verified. Automatic planning passes its temporary
+entry stream directly into execution under the original budget.
+
+## Prepared data ownership
+
+Artifacts owns `with_prepared_object`: captured bytes, parsed ELF/program view,
+shared symbol targets and prepared section metadata live in one callback scope.
+Borrowed function views cannot escape; IDs preserve exact occurrences and physical
+relocation records. Application owns grouping, captured leases and archive ordinal
+indexes. Analysis owns normalized section references and logarithmic offset,
+symbol and physical-pair lookup. Whole-section HI/LO resolution preserves missing
+and ambiguous outcomes. Memory admission uses element sizes and owned name bytes;
+it does not reserve a fixed large allowance for each relocation.
+
+`AdmittedVec` admits simultaneous old/new buffers before growth, fails without
+changing existing contents and releases its reservation on drop. Research indexes
+are local to one run. Store's `knowledge_snapshot` verifies every selected event
+and evidence root once, then folds review/supersession into admitted owned entries.
+No global cache, scheduler or allocator is introduced. `WorkingMemory` remains
+capacity admission, not an RSS meter or a claim of zero system allocations.
+Fixed phase/counter diagnostics continue across worker/coordinator handoff.
 
 ## Identity and provenance
 
@@ -16,15 +80,16 @@ identity at a subsystem boundary.
 | Identity | Meaning and scope |
 | --- | --- |
 | `ProjectId` | Persistent investigation identity, independent of directory name |
-| `ArtifactId` | SHA-256 identity of the exact imported container bytes |
+| `ArtifactId` | SHA-256 identity of exact captured or derived payload bytes |
 | `ObjectId` | Artifact identity plus standalone-object or archive payload ordinal |
 | `SymbolId` | Object identity plus symbol-table kind, table section and entry index |
-| `CodeRangeId` | Object, section and byte range for code without a symbol; boundary justification is a separate fact |
-| `RevisionId` | Immutable manifest of input roles, ordered artifact bindings, configuration, accepted knowledge and selected interpretation inputs |
+| `CodeRangeId` (target) | Object, section and byte range for code without a symbol; boundary justification is a separate fact |
+| `RevisionId` | Immutable source manifest: ordered input roles/bindings, captured occurrences, target and inventory producer |
+| `KnowledgeRevisionId` | Immutable review event chain, independently selected by analysis recipes; does not change a source revision |
 | `PublicationId` | Immutable completed result root for an identified revision; independent of the mutable current-publication reference |
 | `PlanId` | Immutable operation recipe bound to a revision and requested obligations |
 | `RunId` | One execution attempt of a plan; retries have separate run identities |
-| `EvidenceId` | Immutable evidence record and its recorded dependency closure |
+| `EvidenceId` (target) | Immutable evidence record and its recorded dependency closure |
 | `SubjectId` | Reviewed semantic subject; association with physical occurrences is explicit |
 
 Archive payload ordinals preserve independent occurrences even when names and
@@ -422,7 +487,7 @@ known version/ownership, a dead process identity, an exclusive lease and empty
 containment; unknown or active entries are preserved. Durable project recovery
 remains a separate explicit authority. Next's [temporary storage contract](../../next/README.md#temporary-storage-and-crash-cleanup)
 specifies implemented defaults, control reserve, accounting and reconciliation
-bounds; reconstructed archives and linked images remain target obligations.
+bounds, including materialized link inputs and prepared images.
 
 Application shutdown stops admission, cancels owned jobs, terminates/reaps
 remaining children within the configured shutdown grace, and releases leases.
@@ -593,11 +658,11 @@ retain their exact source occurrence and typed evidence references. Accepted
 hypotheses do not become observations or proof. Selection of an accepted function
 extent is explicit in an investigation plan.
 
-Storage schema 6 adds review and legacy-capture roots through explicit upgrade.
+Storage metadata and journal format support follow the result-assessment contract above.
 Backup/restore preserve source, analysis, publication and knowledge identities.
 The legacy adapter preserves bytes and records unsupported semantics; it does
 not import the legacy engine or qualify old comparison results. Existing target
-executable ABI/interface validators, register-publication policies and comparison/replay workflows remain outside
+executable ABI/interface validators and register-publication policies remain outside
 this implemented review vocabulary. Reviewed MMIO region/register interpretation is implemented.
 
 ### Implemented PHY/ROM research boundary

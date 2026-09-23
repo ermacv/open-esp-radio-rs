@@ -13,10 +13,7 @@ use std::{
 
 fn application(root: &Path, limit: u64) -> app::Application {
     app::Application::with_temporary_storage(
-        Arc::new(LinuxHost::new(
-            env!("CARGO_BIN_EXE_blobray-next").into(),
-            None,
-        )),
+        Arc::new(LinuxHost::new(env!("CARGO_BIN_EXE_blobray").into(), None)),
         app::ApplicationLimits::default(),
         app::TemporaryStoragePolicy {
             root: Some(root.into()),
@@ -78,7 +75,7 @@ fn cli_disk_exhaustion_is_structured_and_queries_do_not_modify_project() {
     let dir = tempfile::tempdir().unwrap();
     let project = seed(dir.path());
     let before = contents(&project);
-    let output = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args([
             "inventory",
             "--format",

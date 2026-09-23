@@ -8,7 +8,7 @@ use std::{
 
 pub struct QueryOutput {
     pub report: WorkerReport,
-    pub clean: bool,
+    assessment: ResultAssessment,
     summary: QuerySummary,
     records: File,
     bundle: Vec<(&'static str, File)>,
@@ -25,6 +25,9 @@ pub struct QueryOutput {
 impl QueryOutput {
     pub(crate) fn manifest_path(&self) -> &Path {
         &self.manifest_path
+    }
+    pub fn assessment(&self) -> &ResultAssessment {
+        &self.assessment
     }
     pub fn summary(&self) -> &QuerySummary {
         &self.summary
@@ -52,6 +55,10 @@ impl QueryOutput {
         let summary: QuerySummary = serde_json::from_slice(&bytes)
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         let manifest = match (&work.query, &summary) {
+            (
+                ReadQuery::AuditTargets { ranges, .. },
+                QuerySummary::TargetAudit { ranges: actual, .. },
+            ) if ranges == actual => None,
             (
                 ReadQuery::ValidateKnowledge { change },
                 QuerySummary::KnowledgeValidation { expected_base },
@@ -211,7 +218,7 @@ impl QueryOutput {
         }
         Ok(Self {
             _temporary: temporary,
-            clean: summary.clean(),
+            assessment: summary.assessment(),
             summary,
             bundle,
             records: File::open(stage.join("query-records")).map_err(io)?,

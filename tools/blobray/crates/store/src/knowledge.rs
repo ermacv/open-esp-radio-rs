@@ -176,6 +176,84 @@ impl Project {
         }
         Ok(entry)
     }
+    /// Materialize a frozen review history once. Every event and evidence root is
+    /// verified before the snapshot can be used, including superseded proposals.
+    pub fn knowledge_snapshot<'a>(
+        &self,
+        at: Option<&KnowledgeRevisionId>,
+        memory: &'a WorkingMemory,
+        control: &mut dyn RunControl,
+    ) -> Result<KnowledgeSnapshot<'a>> {
+        let _scratch = memory.reserve(1024 * 1024, control.position())?;
+        let mut slots = AdmittedVec::new(memory);
+        if let Some(at) = at {
+            let connection = open_connection(&self.root, false)?;
+            let cutoff = sequence(&connection, at)?;
+            let mut query = connection.prepare("SELECT assertion FROM knowledge_revisions WHERE action='propose' AND sequence<=?1 ORDER BY assertion").map_err(db)?;
+            let mut rows = query.query([cutoff]).map_err(db)?;
+            while let Some(row) = rows.next().map_err(db)? {
+                control.checkpoint(1)?;
+                let capacity = memory.reserve(64, control.position())?;
+                let id: AssertionId = row.get::<_, String>(0).map_err(db)?.parse()?;
+                slots.push((id, None, capacity), control.position())?;
+            }
+        }
+        control.measure(WorkMetric::KnowledgeHistoryPasses, 1);
+        self.knowledge_history(at, control, &mut |revision, manifest, control| {
+            control.checkpoint((slots.len().max(1).ilog2() + 1) as u64)?;
+            let index = slots
+                .binary_search_by(|(id, _, _)| id.cmp(&manifest.assertion))
+                .map_err(|_| integrity("history refers to an absent proposal"))?;
+            match &manifest.change.action {
+                KnowledgeAction::Propose { proposal } => {
+                    if slots[index].1.is_some() {
+                        return Err(integrity("duplicate assertion proposal"));
+                    }
+                    let capacity = memory
+                        .reserve(proposal_heap_bytes(proposal) + 3 * 64, control.position())?;
+                    slots[index].1 = Some((
+                        KnowledgeEntry {
+                            id: manifest.assertion.clone(),
+                            proposal: proposal.clone(),
+                            proposed_in: revision.clone(),
+                            last_revision: revision.clone(),
+                            state: AssertionState::Proposed,
+                        },
+                        capacity,
+                    ));
+                }
+                KnowledgeAction::Review {
+                    decision,
+                    supersedes,
+                    ..
+                } => {
+                    let (entry, _) = slots[index]
+                        .1
+                        .as_mut()
+                        .ok_or_else(|| integrity("review precedes proposal"))?;
+                    entry.last_revision = revision.clone();
+                    entry.state = match decision {
+                        ReviewDecision::Accept => AssertionState::Accepted,
+                        ReviewDecision::Reject => AssertionState::Rejected,
+                    };
+                    if let Some(replaced) = supersedes {
+                        control.checkpoint((slots.len().max(1).ilog2() + 1) as u64)?;
+                        let index = slots
+                            .binary_search_by(|(id, _, _)| id.cmp(replaced))
+                            .map_err(|_| integrity("superseded assertion missing"))?;
+                        let (entry, _) = slots[index]
+                            .1
+                            .as_mut()
+                            .ok_or_else(|| integrity("supersession precedes proposal"))?;
+                        entry.last_revision = revision.clone();
+                        entry.state = AssertionState::Superseded;
+                    }
+                }
+            }
+            Ok(())
+        })?;
+        Ok(KnowledgeSnapshot { slots })
+    }
     pub fn knowledge_entries(
         &self,
         at: Option<&KnowledgeRevisionId>,
@@ -252,7 +330,7 @@ impl Writer {
         receipt: &PreparedKnowledgeReceipt,
         control: &mut dyn RunControl,
     ) -> Result<RetainedKnowledge> {
-        let RunOperation::Knowledge { change } = &run.operation else {
+        let RunOperation::Knowledge { change } = run.effective_operation() else {
             return Err(integrity("knowledge receipt belongs to another operation"));
         };
         self.project.check_knowledge_base(&change.expected_base)?;
@@ -308,7 +386,7 @@ impl Writer {
         let mut completed = run.clone();
         completed.state = RunState::Completed;
         completed.knowledge = Some(retained.receipt.revision);
-        completed.complete = Some(true);
+        completed.assessment = Some(ResultAssessment::default());
         if let Some(progress) = control.progress() {
             completed.diagnostics.as_mut().unwrap().progress = Some(progress);
         }
@@ -324,4 +402,41 @@ impl Writer {
         *run = completed;
         Ok(())
     }
+}
+
+/// Operation-local materialization; reservations live as long as the owned entries.
+type KnowledgeSlot<'a> = (
+    AssertionId,
+    Option<(KnowledgeEntry, MemoryReservation<'a>)>,
+    MemoryReservation<'a>,
+);
+pub struct KnowledgeSnapshot<'a> {
+    slots: AdmittedVec<'a, KnowledgeSlot<'a>>,
+}
+impl KnowledgeSnapshot<'_> {
+    pub fn entries(&self) -> impl Iterator<Item = &KnowledgeEntry> {
+        self.slots
+            .iter()
+            .filter_map(|(_, entry, _)| entry.as_ref().map(|(entry, _)| entry))
+    }
+}
+fn proposal_heap_bytes(p: &KnowledgeProposal) -> u64 {
+    let claim = match &p.claim {
+        KnowledgeClaim::MmioRegister { register } => {
+            register.name.len()
+                + register.fields.len() * std::mem::size_of::<MmioField>()
+                + register.fields.iter().map(|f| f.name.len()).sum::<usize>()
+        }
+        KnowledgeClaim::MmioRegion { region } => region.name.len(),
+        KnowledgeClaim::Name { name } => name.len(),
+        KnowledgeClaim::Hypothesis { text } => text.len(),
+        KnowledgeClaim::Binding | KnowledgeClaim::FunctionExtent { .. } => 0,
+    };
+    (p.subject.as_str().len()
+        + 2 * 64
+        + usize::from(matches!(p.occurrence.source, FunctionSource::Image { .. })) * 64
+        + usize::from(p.occurrence.symbol.is_some()) * 64
+        + claim
+        + p.evidence.len() * (std::mem::size_of::<EvidenceRef>() + 64)
+        + p.note.as_ref().map_or(0, String::len)) as u64
 }

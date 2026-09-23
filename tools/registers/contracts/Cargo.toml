@@ -1,20 +1,19 @@
 [package]
-name = "open-radio-vendor-review"
+name = "oer-reviewed-contracts"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "Sparse reviewed assertions, applicability and vendor-bug records for vendor-binary research"
+description = "Reviewed knowledge identity and applicability contracts"
 
 [dependencies]
-open-radio-vendor-contracts = { path = "../contracts" }
 serde = { version = "=1.0.229", features = ["derive"] }
-serde_json = "=1.0.151"
 sha2 = "=0.10.9"
-toml_edit = { version = "=0.25.13", features = ["serde"] }
-thiserror = "=2.0.19"
+
+[dev-dependencies]
+serde_json = "=1.0.151"
 
 [lints]
 workspace = true

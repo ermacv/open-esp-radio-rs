@@ -7,10 +7,10 @@ polling, delay, recovery and lifecycle policy.
 
 ## Sources and generated outputs
 
-The [source-only publication configuration](../../../../registers/esp32s31/publication/vendor-project.toml)
+The [source-only publication configuration](../../../../registers/esp32s31/publication/registers.toml)
 declares the outputs below. Generation belongs to the host-side
 [Blobray publisher](../../../../tools/blobray/README.md), with shared schemas
-and invariants in `tools/blobray/crates/register-model`. Reviewed model, ownership policy and provenance live together under
+and invariants in `tools/registers/model`. Reviewed model, ownership policy and provenance live together under
 [`registers/esp32s31`](../../../../registers/esp32s31/README.md). There is no runtime
 `pac-gen` dependency or additional generator crate in the production dependency graph.
 

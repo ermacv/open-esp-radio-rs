@@ -8,6 +8,10 @@ repository.workspace = true
 publish = false
 description = "Blobray bounded binary research and retained evidence CLI"
 
+[[bin]]
+name = "blobray"
+path = "src/main.rs"
+
 [lib]
 name = "blobray_next_host"
 

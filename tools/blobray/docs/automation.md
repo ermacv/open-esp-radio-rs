@@ -1,5 +1,11 @@
 # CLI automation
 
+This document describes unported facade responsibilities. Its command examples are
+not supported by the primary `cargo blobray` command. Use the
+[current operator reference](../next/README.md) for implemented operations and
+[register publication](../../registers/README.md) for SVD/PAC generation.
+
+
 Use one typed result on stdout and opt into runtime error diagnostics on stderr:
 
 ```console

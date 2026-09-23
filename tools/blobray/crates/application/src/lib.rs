@@ -6,6 +6,8 @@
 use blobray_artifacts::{INVENTORY_PRODUCER, MemberCursor, inspect_source};
 use blobray_domain::*;
 use blobray_store::{ObjectHeader, Project, Staging};
+mod scenarios;
+pub use scenarios::{ScenarioWork, prepare_scenario_worker};
 mod temporary;
 pub use temporary::{TemporaryStoragePolicy, TemporaryStorageStatus};
 mod investigations;
@@ -48,7 +50,7 @@ pub use query::QueryOutput;
 mod read;
 pub use read::{InventoryView, ReadView};
 mod query_stream;
-pub use query_stream::{QuerySink, QuerySummary, prepare_query, prepare_query_with_linker};
+pub use query_stream::{QuerySink, QuerySummary, prepare_query, prepare_query_with_tools};
 pub use resources::RunContext;
 use std::path::{Path, PathBuf};
 
@@ -334,9 +336,6 @@ fn member_path(name: &[u8]) -> std::result::Result<PathBuf, Diagnostic> {
     }
 }
 
-pub fn upgrade(path: &Path) -> Result<()> {
-    Project::upgrade(path)
-}
 pub fn doctor(path: &Path) -> Result<DoctorReport> {
     Project::doctor(path)
 }
@@ -371,3 +370,5 @@ pub fn doctor_stream(
 }
 
 pub use blobray_verification::VERIFIER as EXECUTION_VERIFIER;
+
+mod audit;

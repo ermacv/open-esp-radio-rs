@@ -470,20 +470,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "blobray-esp32s31"
-version = "0.1.0"
-dependencies = [
- "blobray",
- "open-radio-vendor-chip-knowledge-esp32s31-rev0",
- "open-radio-vendor-chip-models-esp32s31-rev0",
- "open-radio-vendor-knowledge-esp32s31",
- "open-radio-vendor-models-esp32s31",
- "serde_json",
- "sha2",
- "toml_edit",
-]
-
-[[package]]
 name = "blobray-knowledge"
 version = "0.1.0"
 dependencies = [
@@ -3271,6 +3257,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-register-tool"
+version = "0.1.0"
+dependencies = [
+ "cargo_metadata",
+ "clap",
+ "oer-process",
+ "oer-reviewed-contracts",
+ "open-esp-radio-register-model",
+ "open-radio-vendor-review",
+ "serde",
+ "svd2rust",
+ "tempfile",
+ "toml_edit",
+]
+
+[[package]]
+name = "oer-reviewed-contracts"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "oer-wifi-ap"
 version = "0.1.0"
 dependencies = [
@@ -3501,7 +3512,7 @@ dependencies = [
 name = "open-esp-radio-register-model"
 version = "0.1.0"
 dependencies = [
- "open-radio-vendor-contracts",
+ "oer-reviewed-contracts",
  "open-radio-vendor-review",
  "serde",
  "svd-encoder",
@@ -3589,6 +3600,7 @@ dependencies = [
 name = "open-radio-vendor-contracts"
 version = "0.1.0"
 dependencies = [
+ "oer-reviewed-contracts",
  "open-radio-vendor-execution-model",
  "serde",
  "serde_json",
@@ -3638,7 +3650,7 @@ dependencies = [
 name = "open-radio-vendor-review"
 version = "0.1.0"
 dependencies = [
- "open-radio-vendor-contracts",
+ "oer-reviewed-contracts",
  "serde",
  "serde_json",
  "sha2",

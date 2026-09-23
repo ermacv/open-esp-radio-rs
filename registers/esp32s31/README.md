@@ -19,10 +19,10 @@ analysis read this model; neither owns a second copy.
 | `upstream/platform-radio-deps.svd` | Reviewed upstream platform PAC input for analysis |
 | `published/radio.svd` | Generated portable CMSIS-SVD representation |
 | `published/radio.bindings.toml` | Generated binding index |
-| `publication/vendor-project.toml` | Source-only publication composition |
+| `publication/registers.toml` | Source-only publication composition |
 
 The generic generator is
-[`tools/blobray/crates/register-model`](../../tools/blobray/crates/register-model/README.md).
+[`tools/registers/model`](../../tools/registers/model/README.md).
 Its other two checked outputs are
 [`pac/raw/src/lib.rs`](../../crates/hardware/esp32s31/pac/raw/src/lib.rs) and
 [`pac/src/generated.rs`](../../crates/hardware/esp32s31/pac/src/generated.rs).
@@ -49,11 +49,8 @@ scope. Neither spelling has merge or override precedence.
 From the repository root:
 
 ```console
-cargo blobray registers validate --project registers/esp32s31/publication/vendor-project.toml
-cargo blobray registers export-svd --check --project registers/esp32s31/publication/vendor-project.toml
-cargo blobray registers generate-pac-raw --check --project registers/esp32s31/publication/vendor-project.toml
-cargo blobray registers generate-pac-api --check --project registers/esp32s31/publication/vendor-project.toml
-cargo blobray registers generate-bindings --check --project registers/esp32s31/publication/vendor-project.toml
+cargo registers validate --manifest registers/esp32s31/publication/registers.toml
+cargo registers generate --check --manifest registers/esp32s31/publication/registers.toml
 ```
 
 Omit `--check` only when publishing an intentionally reviewed source change.

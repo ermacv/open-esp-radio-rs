@@ -103,34 +103,74 @@ pub fn visit_jsonl<T: serde::de::DeserializeOwned>(
     control: &mut dyn RunControl,
     mut sink: impl FnMut(T, &mut dyn RunControl) -> Result<()>,
 ) -> Result<()> {
-    let mut line = Vec::new();
-    line.try_reserve_exact(65536)
-        .map_err(|_| Error::new(ErrorCode::ResourceLimited, "JSONL buffer allocation failed"))?;
-    let mut offset = 0;
-    let mut chunk = [0; WORK_BLOCK];
-    while offset < source.len() {
-        control.checkpoint(1)?;
-        let n = (source.len() - offset).min(chunk.len() as u64) as usize;
-        source.read_at(offset, &mut chunk[..n], control)?;
-        offset += n as u64;
-        for byte in &chunk[..n] {
-            if *byte == b'\n' {
-                let value = serde_json::from_slice(&line).map_err(jobs::json)?;
-                sink(value, control)?;
-                line.clear();
-            } else {
-                if line.len() == 65535 {
-                    return Err(integrity("JSONL record exceeds 64 KiB"));
-                }
-                line.push(*byte);
-            }
-        }
-    }
-    if !line.is_empty() {
-        sink(serde_json::from_slice(&line).map_err(jobs::json)?, control)?;
+    let mut cursor = JsonlCursor::new(source)?;
+    while let Some(value) = cursor.next(control)? {
+        sink(value, control)?;
     }
     Ok(())
 }
+/// Pull reader for scoped object groups; same record bound as `visit_jsonl`.
+pub struct JsonlCursor<'a> {
+    source: &'a dyn ByteSource,
+    offset: u64,
+    chunk: [u8; WORK_BLOCK],
+    start: usize,
+    end: usize,
+    line: Vec<u8>,
+}
+impl<'a> JsonlCursor<'a> {
+    pub fn new(source: &'a dyn ByteSource) -> Result<Self> {
+        let mut line = Vec::new();
+        line.try_reserve_exact(65536).map_err(|_| {
+            Error::new(ErrorCode::ResourceLimited, "JSONL buffer allocation failed")
+        })?;
+        Ok(Self {
+            source,
+            offset: 0,
+            chunk: [0; WORK_BLOCK],
+            start: 0,
+            end: 0,
+            line,
+        })
+    }
+    pub fn next<T: serde::de::DeserializeOwned>(
+        &mut self,
+        c: &mut dyn RunControl,
+    ) -> Result<Option<T>> {
+        self.line.clear();
+        loop {
+            if self.start == self.end {
+                if self.offset == self.source.len() {
+                    return if self.line.is_empty() {
+                        Ok(None)
+                    } else {
+                        serde_json::from_slice(&self.line)
+                            .map(Some)
+                            .map_err(jobs::json)
+                    };
+                }
+                c.checkpoint(1)?;
+                self.end = (self.source.len() - self.offset).min(WORK_BLOCK as u64) as usize;
+                self.source
+                    .read_at(self.offset, &mut self.chunk[..self.end], c)?;
+                self.offset += self.end as u64;
+                self.start = 0;
+            }
+            let byte = self.chunk[self.start];
+            self.start += 1;
+            if byte == b'\n' {
+                return serde_json::from_slice(&self.line)
+                    .map(Some)
+                    .map_err(jobs::json);
+            }
+            if self.line.len() == 65535 {
+                return Err(integrity("JSONL record exceeds 64 KiB"));
+            }
+            self.line.push(byte);
+        }
+    }
+}
+
 pub(crate) fn decode(
     source: &dyn ByteSource,
     control: &mut dyn RunControl,
@@ -408,7 +448,7 @@ impl Writer {
         let RunOperation::Investigate {
             revision,
             plan: admitted,
-        } = &run.operation
+        } = run.effective_operation()
         else {
             return Err(integrity("publication belongs to another operation"));
         };
@@ -461,7 +501,7 @@ impl Writer {
     ) -> Result<()> {
         if retained.run != run.id
             || retained.receipt.project != self.project.id
-            || !matches!(&run.operation,RunOperation::Investigate{revision,plan} if revision==&retained.receipt.revision && plan==&retained.receipt.plan)
+            || !matches!(run.effective_operation(),RunOperation::Investigate{revision,plan} if revision==&retained.receipt.revision && plan==&retained.receipt.plan)
             || run.state != RunState::Validating
         {
             return Err(integrity("retained publication belongs to another run"));
@@ -496,7 +536,10 @@ impl Writer {
         let mut completed = run.clone();
         completed.state = RunState::Completed;
         completed.publication = Some(retained.receipt.publication);
-        completed.complete = Some(retained.manifest.coverage.complete());
+        completed.assessment = Some(ResultAssessment::covered(
+            CoverageSubject::Investigation(completed.publication.clone().unwrap()),
+            retained.manifest.coverage.complete(),
+        ));
         control.checkpoint(0)?;
         if let Some(progress) = control.progress() {
             completed

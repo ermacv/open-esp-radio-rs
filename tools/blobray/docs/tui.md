@@ -1,5 +1,11 @@
 # Read-only project browser
 
+This document describes unported facade responsibilities. Its command examples are
+not supported by the primary `cargo blobray` command. Use the
+[current operator reference](../next/README.md) for implemented operations and
+[register publication](../../registers/README.md) for SVD/PAC generation.
+
+
 `project browse` opens a full-screen view of the same typed project state used
 by the application API:
 

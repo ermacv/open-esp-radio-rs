@@ -393,6 +393,23 @@ pub fn prepare_investigation_worker(
     decoder: &dyn FunctionSemantics,
     control: &mut dyn RunControl,
 ) -> Result<PreparedInvestigationReceipt> {
+    let memory = WorkingMemory::new(
+        work.budget
+            .working_memory_bytes
+            .ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "working capacity missing"))?,
+    )?;
+    let disk = blobray_store::TemporaryBudget::open(stage)?;
+    prepare_investigation_worker_in(stage, work, decoder, &memory, &disk, None, control)
+}
+pub(crate) fn prepare_investigation_worker_in(
+    stage: &Path,
+    work: &InvestigationWork,
+    decoder: &dyn FunctionSemantics,
+    memory: &WorkingMemory,
+    disk: &blobray_store::TemporaryBudget,
+    planned_entries: Option<blobray_store::TemporaryFile>,
+    control: &mut dyn RunControl,
+) -> Result<PreparedInvestigationReceipt> {
     validate_investigation_plan(&work.plan)?;
     if work.schema != 1
         || work.plan.recipe.producer.decoder != decoder.identity()
@@ -403,19 +420,13 @@ pub fn prepare_investigation_worker(
             "investigation producer differs from plan",
         ));
     }
-    let memory = WorkingMemory::new(
-        work.budget
-            .working_memory_bytes
-            .ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "working capacity missing"))?,
-    )?;
-    let disk = blobray_store::TemporaryBudget::open(stage)?;
     let mut metered = blobray_store::TemporaryControl {
         control,
-        budget: &disk,
+        budget: disk,
     };
     let c: &mut dyn RunControl = &mut metered;
     let result = (|| {
-        let _fixed = memory.reserve(1024 * 1024, c.position())?;
+        let _fixed = memory.reserve(2 * 1024 * 1024, c.position())?;
         let project = Project::open(&work.project.to_path()?)?;
         if project.id() != &work.plan.recipe.project {
             return Err(Error::new(
@@ -426,113 +437,167 @@ pub fn prepare_investigation_worker(
         // Selection is verified before analyzing any function. The stream is a
         // quota-owned temporary artifact, not a second in-memory work queue.
         let staging = Staging::with_temporary_budget(stage, disk.clone())?;
-        let mut entries = disk.temporary(&stage.join("staging"))?;
-        let actual = enumerate(
-            &project,
-            &work.plan.recipe.request,
-            &work.plan.recipe.producer,
-            &memory,
-            c,
-            &mut |e, _| {
-                write_control_message(&mut entries, e)?;
-                entries.write_all(b"\n").map_err(storage_io)
-            },
-        )?;
-        if actual != work.plan {
-            return Err(Error::new(
-                ErrorCode::Integrity,
-                "saved plan differs from captured inventory",
-            ));
-        }
+        let entries = if let Some(entries) = planned_entries {
+            entries
+        } else {
+            let mut entries = disk.temporary(&stage.join("staging"))?;
+            let actual = enumerate(
+                &project,
+                &work.plan.recipe.request,
+                &work.plan.recipe.producer,
+                memory,
+                c,
+                &mut |e, _| {
+                    write_control_message(&mut entries, e)?;
+                    entries.write_all(b"\n").map_err(storage_io)
+                },
+            )?;
+            if actual != work.plan {
+                return Err(Error::new(
+                    ErrorCode::Integrity,
+                    "saved plan differs from captured inventory",
+                ));
+            }
+            entries
+        };
         let entries = staging.retain_temporary(entries, c)?;
         let entries = staging.open_payload(&entries, c)?;
         let engine = crate::functions::FunctionEngine {
             project: &project,
             stage,
-            disk: &disk,
-            memory: &memory,
+            disk,
+            memory,
             decoder,
         };
         let mut members = disk.temporary(&stage.join("staging"))?;
         let mut coverage = InvestigationCoverage::default();
         let mut container: Option<(ArtifactId, blobray_store::FileLease)> = None;
-        let mut object: Option<(ObjectId, Option<(u64, u64)>)> = None;
-        let mut thin: Option<blobray_store::FileLease> = None;
-        blobray_store::visit_jsonl(&entries, c, |entry: PlanEntry, c| {
-            let outcome = if let PlanEntry::Function {
+        let mut index = None;
+        let mut cursor = blobray_store::JsonlCursor::new(&entries)?;
+        let mut pending: Option<PlanEntry> = cursor.next(c)?;
+        while let Some(entry) = pending.as_ref() {
+            let PlanEntry::Function {
                 request, payload, ..
-            } = &entry
-            {
-                let id = &request.symbol.object;
-                if container.as_ref().is_none_or(|(a, _)| a != &id.artifact) {
-                    container = Some((id.artifact.clone(), project.open_payload(&id.artifact, c)?));
-                    object = None;
-                    thin = None;
-                }
-                let source = &container.as_ref().unwrap().1;
-                if object.as_ref().is_none_or(|(o, _)| o != id) {
-                    thin = None;
-                    let range = match id.location {
-                        ObjectLocation::Standalone => Some((0, source.len())),
-                        ObjectLocation::ArchiveMember { ordinal } => {
-                            let mut cursor = MemberCursor::new(source, c)?;
-                            let mut found = None;
-                            while let Some(member) = cursor.next(&memory, c)? {
-                                if member.ordinal == ordinal {
-                                    found = Some(member.payload);
-                                    break;
-                                }
-                            }
-                            found.ok_or_else(|| {
-                                Error::new(ErrorCode::Integrity, "captured member missing")
-                            })?
-                        }
-                    };
-                    if range.is_none() {
-                        thin = Some(project.open_payload(payload, c)?);
-                    }
-                    object = Some((id.clone(), range));
-                }
-                let analyzed = if let Some((offset, length)) = object.as_ref().unwrap().1 {
-                    engine.analyze(
-                        &SourceRange::new(source, offset, length)?,
-                        request,
-                        payload,
-                        c,
-                    )
-                } else {
-                    engine.analyze(thin.as_ref().unwrap(), request, payload, c)
+            } = entry
+            else {
+                let member = InvestigationMember {
+                    entry: pending.take().unwrap(),
+                    outcome: InvestigationOutcome::Recorded,
                 };
-                match analyzed {
-                    Ok(receipt) => {
-                        let m = staging.staged_function(&receipt.analysis, c)?;
-                        InvestigationOutcome::Analyzed {
-                            analysis: receipt.analysis,
-                            complete: m.coverage.complete()
-                                && m.semantics.is_some_and(|s| s.complete),
-                        }
-                    }
-                    Err(error)
-                        if matches!(
-                            error.code,
-                            ErrorCode::NeedsExtent
-                                | ErrorCode::Incompatible
-                                | ErrorCode::InvalidRequest
-                                | ErrorCode::Unavailable
-                        ) =>
-                    {
-                        InvestigationOutcome::Blocked { error }
-                    }
-                    Err(error) => return Err(error),
-                }
-            } else {
-                InvestigationOutcome::Recorded
+                coverage.include(&member);
+                write_control_message(&mut members, &member)?;
+                members.write_all(b"\n").map_err(storage_io)?;
+                pending = cursor.next(c)?;
+                continue;
             };
-            let member = InvestigationMember { entry, outcome };
-            coverage.include(&member);
-            write_control_message(&mut members, &member)?;
-            members.write_all(b"\n").map_err(storage_io)
-        })?;
+            let id = request.symbol.object.clone();
+            let function_source = request.source.clone();
+            let payload = payload.clone();
+            if container.as_ref().is_none_or(|(a, _)| a != &id.artifact) {
+                container = Some((id.artifact.clone(), project.open_payload(&id.artifact, c)?));
+                index = None;
+            }
+            let source = &container.as_ref().unwrap().1;
+            let range = match id.location {
+                ObjectLocation::Standalone => Some((0, source.len())),
+                ObjectLocation::ArchiveMember { ordinal } => {
+                    if index.is_none() {
+                        index = Some(blobray_artifacts::MemberIndex::new(source, memory, c)?);
+                    }
+                    index.as_ref().unwrap().get(ordinal)?
+                }
+            };
+            let thin = if range.is_none() {
+                Some(project.open_payload(&payload, c)?)
+            } else {
+                None
+            };
+            let range_source = range
+                .map(|(offset, length)| SourceRange::new(source, offset, length))
+                .transpose()?;
+            let object_source: &dyn ByteSource = if let Some(source) = &range_source {
+                source
+            } else {
+                thin.as_ref().unwrap()
+            };
+            let mut references = AdmittedVec::new(memory);
+            let mut process = |mut prepared: Option<
+                &mut blobray_artifacts::PreparedObject<'_, '_>,
+            >,
+                               blocked: Option<&Error>,
+                               c: &mut dyn RunControl|
+             -> Result<()> {
+                loop {
+                    let entry = pending.take().unwrap();
+                    let PlanEntry::Function {
+                        request,
+                        payload: expected,
+                        ..
+                    } = &entry
+                    else {
+                        unreachable!()
+                    };
+                    if expected != &payload {
+                        return Err(Error::new(
+                            ErrorCode::Integrity,
+                            "object group has conflicting payloads",
+                        ));
+                    }
+                    let analyzed = if let Some(error) = blocked {
+                        Err(error.clone())
+                    } else {
+                        engine.analyze_prepared(
+                            prepared.as_deref_mut().unwrap(),
+                            &mut references,
+                            request,
+                            &payload,
+                            c,
+                        )
+                    };
+                    let outcome = match analyzed {
+                        Ok(receipt) => {
+                            let m = staging.staged_function(&receipt.analysis, c)?;
+                            InvestigationOutcome::Analyzed {
+                                analysis: receipt.analysis,
+                                complete: m.coverage.complete()
+                                    && m.semantics.is_some_and(|s| s.complete),
+                            }
+                        }
+                        Err(error) if blocked_function(&error) => {
+                            InvestigationOutcome::Blocked { error }
+                        }
+                        Err(error) => return Err(error),
+                    };
+                    let member = InvestigationMember { entry, outcome };
+                    coverage.include(&member);
+                    write_control_message(&mut members, &member)?;
+                    members.write_all(b"\n").map_err(storage_io)?;
+                    pending = cursor.next(c)?;
+                    if !matches!(&pending, Some(PlanEntry::Function { request, .. }) if request.symbol.object == id && request.source == function_source)
+                    {
+                        break;
+                    }
+                }
+                Ok(())
+            };
+            let mut entered = false;
+            let result = blobray_artifacts::with_prepared_object(
+                object_source,
+                &payload,
+                memory,
+                c,
+                |object, c| {
+                    entered = true;
+                    process(Some(object), None, c)
+                },
+            );
+            match result {
+                Err(error) if !entered && blocked_function(&error) => {
+                    process(None, Some(&error), c)?
+                }
+                other => other?,
+            }
+        }
         let members = staging.retain_temporary(members, c)?;
         staging.investigation_receipt(
             &InvestigationManifest {
@@ -580,4 +645,14 @@ pub(crate) fn matches_filter(filter: &InvestigationFilter, r: &FunctionRecord) -
         (InvestigationFilter::References { symbol: None, address: Some(a) }, FunctionRecord::Value { value: AbstractValue::ImageAddress { address }, .. }) => address == a,
         _ => false,
     }
+}
+
+fn blocked_function(error: &Error) -> bool {
+    matches!(
+        error.code,
+        ErrorCode::NeedsExtent
+            | ErrorCode::Incompatible
+            | ErrorCode::InvalidRequest
+            | ErrorCode::Unavailable
+    )
 }

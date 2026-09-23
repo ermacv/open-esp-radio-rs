@@ -5,23 +5,37 @@ whole libraries, prepares synthetic images, executes explicit RV32 scenarios,
 compares compiled observations, retains reviewed knowledge and
 preserves projects through backup/restore and phased legacy capture. The API and
 CLI share supervised work, cancellation, publication and recovery. It is
-independent of the legacy engine; `cargo blobray` still selects the old host.
-See the [target architecture](../docs/design/architecture.md) for the broader
-broader interfaces and supported boundaries.
+independent of the legacy engine; `cargo blobray` selects this host.
+The [architecture](../docs/design/architecture.md) owns module authority;
+[contracts](../docs/design/contracts.md) owns identities, assessment, lifetime and
+resource rules; [workflows](../docs/design/workflows.md) distinguishes implemented
+scenarios from target capabilities. This README is the command reference.
+
+The current data model separates captured source revisions, selected analysis
+recipes, reviewed knowledge revisions and immutable result publications. A run
+records termination independently of scoped result coverage, policy checks and
+comparison verdicts. `Completed` can legitimately describe partial research or a
+`DIFF`/`INCOMPLETE` comparison. See [result assessment](../docs/design/contracts.md#result-assessment).
+
+Implemented profiles include archive/thin-archive inventory, RV32 ELF inspection,
+local and whole-library static analysis, linked-image PHY/ROM research, explicit
+MMIO review, bounded integer execution/comparison/replay, target auditing and
+project preservation. Unsupported ISA semantics remain explicit gaps. There is
+no general equivalence proof, TUI, CAS pruning or allocation-free core.
 
 ## Use
 
 Run from the repository root with the pinned Rust toolchain:
 
 ```console
-cargo run -p blobray-next -- init --project /path/to/investigation
-cargo run -p blobray-next -- import --project /path/to/investigation \
+cargo blobray init --project /path/to/investigation
+cargo blobray import --project /path/to/investigation \
   --cgroup-root /sys/fs/cgroup/path/to/delegated-parent \
   --input vendor=/path/to/libvendor.a --input companion=/path/to/companion.o
-cargo run -p blobray-next -- inventory --project /path/to/investigation \
+cargo blobray inventory --project /path/to/investigation \
   --cgroup-root /sys/fs/cgroup/path/to/delegated-parent --format json
-cargo run -p blobray-next -- runs --project /path/to/investigation
-cargo run -p blobray-next -- revisions --project /path/to/investigation
+cargo blobray runs --project /path/to/investigation
+cargo blobray revisions --project /path/to/investigation
 ```
 
 `import`, `inventory`, `doctor`, `select`, `plan`, `run`, `link-plan`,
@@ -130,7 +144,7 @@ borrowed records or the captured manifest without loading the complete result.
 which Next does not implement. Inspection `Plan`, synthetic `LinkPlan` and retained
 prepared images, bounded review and concrete comparison are implemented. General
 pass planning and extended model/review policies remain outside this profile. Metadata listing,
-initialization, upgrade and recovery do not use the supervised worker path.
+initialization and recovery do not use the supervised worker path.
 
 ## Synthetic prepared images
 
@@ -151,16 +165,16 @@ The layout has `code` and `data`, each with numeric `start` and `length`, for ex
 Regions must be nonempty, start on 4096-byte boundaries, fit RV32 and not overlap.
 
 ```console
-cargo run -p blobray-next -- link-plan --project /path/to/investigation \
+cargo blobray link-plan --project /path/to/investigation \
   --request /path/to/link-request.json --linker /usr/bin/ld.lld \
   --output /path/to/link-plan.json --limit-mode watchdog
-cargo run -p blobray-next -- prepare-image --project /path/to/investigation \
+cargo blobray prepare-image --project /path/to/investigation \
   --plan /path/to/link-plan.json --linker /usr/bin/ld.lld --limit-mode watchdog
-cargo run -p blobray-next -- images --project /path/to/investigation \
+cargo blobray images --project /path/to/investigation \
   --limit-mode watchdog --format json
-cargo run -p blobray-next -- image --project /path/to/investigation \
+cargo blobray image --project /path/to/investigation \
   --id <prepared-image-id> --limit-mode watchdog --format json
-cargo run -p blobray-next -- export-image --project /path/to/investigation \
+cargo blobray export-image --project /path/to/investigation \
   --id <prepared-image-id> --output /path/to/new-directory --limit-mode watchdog
 ```
 
@@ -250,18 +264,17 @@ map lines at most 64 KiB, saved plan metadata at most 60 KiB, image manifest at
 most 56 KiB and successful stderr tail at most 8192 bytes. Capacity exhaustion
 fails explicitly, without partial publication.
 
-Durable schema-6 runs distinguish `import`, `prepare-image`, `analyze-function`, `investigate` and `knowledge`; query status stays
-in memory. Payload promotion precedes one transaction for image plus completed
-run. Failures may leave unreferenced CAS objects, never a listed partial image.
-Cancellation is linearized before commit; a committed result remains successful
-even if response delivery is lost. Recovery abandons interrupted attempts and
-never converts staged ELF into success. Doctor checks retained image closures.
-Explicit upgrade from storage schema 1/2 adds the image table without changing
-revision manifests, inspection plans, old runs or current selection.
+Durable run records identify the admitted operation and its published result;
+query status stays in memory. Payload promotion precedes one transaction for
+image plus completed run. Failures may leave unreferenced CAS objects, never a
+listed partial image. Cancellation is linearized before commit; a committed
+result remains successful even if response delivery is lost. Recovery abandons
+interrupted attempts and never converts staged ELF into success. Doctor checks
+retained image closures. See [JSON and checks](#json-and-checks) for versions.
 
 Real-link integration tests require LLD 22 at `/usr/bin/ld.lld`, or an explicit
 `BLOBRAY_TEST_LLD` executable. This dependency is mandatory, including for
-`cargo xtask check blobray-next-standalone`; absence is a test failure. These tests
+`cargo xtask check blobray-standalone`; absence is a test failure. These tests
 exercise synthetic RV32 bytes, not private vendor binaries or execution readiness.
 
 ## Selection and inspection plans
@@ -273,13 +286,13 @@ its revision, complete `scope` selector and captured payload digest when known.
 Names, roles and source paths are not identities. Empty names are permitted.
 
 ```console
-cargo run -p blobray-next -- select --project /path/to/investigation \
+cargo blobray select --project /path/to/investigation \
   --kind symbol --name same --limit-mode watchdog --format json
-cargo run -p blobray-next -- select --project /path/to/investigation \
+cargo blobray select --project /path/to/investigation \
   --kind symbol --name-hex 6c6f63616cff --input 0 --limit-mode watchdog
-cargo run -p blobray-next -- plan --project /path/to/investigation \
+cargo blobray plan --project /path/to/investigation \
   --request /path/to/request.json --output /path/to/plan.json --limit-mode watchdog
-cargo run -p blobray-next -- run --project /path/to/investigation \
+cargo blobray run --project /path/to/investigation \
   --plan /path/to/plan.json --limit-mode watchdog --format json
 ```
 
@@ -358,7 +371,7 @@ budget requests watchdog, so select watchdog explicitly where delegation is abse
 Within each operation, work/deadline accounting continues through output delivery.
 Planning, reopening, selection and inspection do not create durable run journals.
 
-`select` and `run` JSON output use `{schema:1,records:[...],summary:{...}}`. Records
+`select` and `run` JSON output use `{schema:2,records:[...],summary:{...},assessment:{...}}`. Records
 carry `kind` and `value`; candidates carry complete selectors. Both the records
 array and human records are streamed. Zero matches is a successful search with
 coverage reported; precise planning of an absent occurrence fails. Consumer
@@ -415,6 +428,31 @@ covers coordinator verification before commit. Final commit and durable sync are
 not interruptible halfway. Kernel uninterruptible I/O can delay teardown; these
 host deadlines are not hard real-time guarantees. Read-only inventory/doctor use owned query workers under the same host guard.
 They create no project journal row and never acquire a project writer.
+
+## Preparation and measurements
+
+Whole-library execution groups consecutive functions by exact captured occurrence.
+Application owns a bounded ordinal-to-payload index for each archive and borrows
+function views from one prepared object. Artifact preparation reads, hashes and
+parses the object once, shares target names and prepares each selected section
+once. Analysis owns sorted relocation/normalization indexes; physical relocation
+identities and nonadjacent HI/LO pairing remain intact. Every object scope releases
+its buffers before the next object. There is no process-wide cache.
+
+Research reads each selected publication once into an admitted address index,
+loads each image's companion bindings once, and verifies the frozen knowledge
+history once. Exact registers and overlapping MMIO regions use local indexes;
+blocked/ambiguous call targets remain unresolved. Temporary data cannot outlive
+the operation's `WorkingMemory` authority.
+
+`run.diagnostics.progress.measurements` contains fixed counters for archive
+entries, prepared objects/sections, object bytes read/hashed, relocation lookups,
+publication passes and knowledge-history passes. `phases` records cumulative
+elapsed milliseconds and work units by phase, including coordinator retention.
+Independent coordinator validation counts as work; counters are not result
+identity. `working_memory` reports admitted requested capacity, not RSS.
+Host RSS and cgroup observations remain separate. Default working capacity is
+256 MiB; no automatic limit increase or reduced scope occurs on exhaustion.
 
 ## Cooperative control and failure diagnostics
 
@@ -609,19 +647,18 @@ including failures during final result cleanup. Import staging remains inside
 the project and requires explicit `recover`; runtime reconciliation does not
 acquire project writer authority or delete retained evidence. These ownership rules also cover the supervised analysis and execution operations.
 
-## Upgrade, diagnosis and recovery
+## Diagnosis and recovery
 
 ```console
-cargo run -p blobray-next -- upgrade --project /path/to/investigation
-cargo run -p blobray-next -- doctor --project /path/to/investigation \
+cargo blobray doctor --project /path/to/investigation \
   --limit-mode watchdog --format json
-cargo run -p blobray-next -- recover --project /path/to/investigation
+cargo blobray recover --project /path/to/investigation
 ```
 
-New projects use storage metadata schema 6. Schema-1/2/3/4/5 projects remain readable;
-new writes require explicit `upgrade`. Upgrade is transactional and idempotent:
-revision manifests, bytes, identities and current selection are preserved.
-Unsupported storage versions fail without a fallback or automatic migration.
+Projects require metadata schema 7 and journal schema 8. Earlier and future
+formats are rejected without conversion or mutation. There is no `upgrade`
+command or compatibility reader. Keep older projects intact; new investigations
+use a new project directory. Revision manifests keep their own schema 1.
 
 `doctor` verifies saved revisions, prepared-image and function-analysis closures and reports unfinished runs without acquiring a
 writer, repairing SQLite or changing current. A hot rollback journal can prevent
@@ -647,7 +684,7 @@ objects. Recovery cleans owned temporary work, not retained objects. Source
 metadata detects ordinary capture mutation; without expected digests or an
 external filesystem snapshot, several mutable inputs are not an atomic source
 snapshot. Instruction decoding and local function graphs are implemented;
-machine-code execution, verification and TUI remain outside the scope.
+bounded concrete machine-code execution and comparison use the profile below. TUI and general equivalence proofs remain outside the implemented scope.
 
 ## JSON and checks
 
@@ -656,33 +693,40 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 6, including operation identity and optional image, analysis, publication or knowledge ID.
-The reader accepts old schema-1/schema-2 import runs and schema-3 import/image and schema-4 function and schema-5 investigation runs without inventing work budgets or observations;
-missing legacy values stay unknown. Unsupported run versions are rejected equally
-by single-run, list and recovery readers. Storage metadata uses schema 6 and
-revision manifests remain schema 1; reading old records does not migrate them.
-The private import and read-query requests use schema 2; image requests use
-schema 1, as do function, investigation and knowledge requests. Worker reports use schema 6 with a tagged
-import/image/function/investigation receipt. They are not interchange APIs for independently
-versioned workers. Import and query requests enforce a 64 KiB encoded limit
-during serialization, before a larger message can accumulate in memory. Working-capacity and observation fields are optional when
-reading historical records; new operation admission requires a capacity.
+Run records use schema 8 for every durable and read operation. Storage metadata
+uses schema 7; revision manifests use schema 1 and execution manifests use schema
+1. These are independent formats. Earlier journals are rejected by single-run,
+list, recovery and restore readers. `assessment` replaces generic run-level
+`complete`/`verdict`; its scoped coverage, optional policy check and optional
+comparison are independent of `state`. Empty assessment means the operation has
+no research coverage or verdict to assert. A non-completed run has no assessment.
 
-`runs` and `recover` use envelope schema 2 and return records in their recorded
-schema. Other command envelopes retain schema 1: `init` returns `project`,
-`inventory` returns `complete` and `snapshot`, `revisions` returns IDs and
-`upgrade` returns `storage_schema`.
-Doctor reports its schema, checked revision/image/analysis counts and problems, with nonzero exit
-for problems. Request/admission errors use `{schema:1,error:{code,message}}` on
-stderr. Worker failures in inventory/doctor/select/plan/run use `{schema:1,query:WorkerReport}`
-on stderr; successful read output keeps schema 1. Codes are machine interfaces; descriptive prose is not a parsing key.
+The private import/read-query requests use schema 2; image, function,
+investigation, knowledge, execution and concrete scenario requests use schema 1.
+Worker reports use schema 6 with tagged receipts and fixed progress counters.
+These private protocols require the matching worker binary. Request/control
+messages have a 64 KiB encoded limit before allocation can expand the message.
+Admission requires working capacity and work policy; diagnostics cannot be
+invented while reading unsupported old records.
+
+`runs`/`recover` retain envelope schema 2; `init` uses schema 1. Successful
+inventory and doctor output use schema 2 and include `assessment`; inventory
+also retains `complete` within its inventory-specific contract and `snapshot`.
+Record streams use schema 2 with `records`, `summary` and `assessment`.
+Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
+execution 7) wrap the same schema-8 run; an envelope version is not a journal
+version. Partial research and valid comparison verdicts exit 0. Failed or
+inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
+Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
+query failures use `{schema:1,query:WorkerReport}`. Codes are machine interfaces;
+descriptive prose is not a parsing key.
 
 ```console
 cargo test -p blobray-domain -p blobray-artifacts -p blobray-store \
   -p blobray-application -p blobray-next
 cargo clippy -p blobray-domain -p blobray-artifacts -p blobray-store \
   -p blobray-application -p blobray-next --all-targets -- -D warnings
-cargo xtask check blobray-next-standalone
+cargo xtask check blobray-standalone
 ```
 
 Tests use synthetic binaries and isolated fixture processes. The cgroup allocation
@@ -698,9 +742,8 @@ systemd-run --user --pipe --wait --collect \
 ```
 
 This needs a systemd version supporting `DelegateSubgroup`. The standalone check
-extracts only the new core and runs its tests. The separate `blobray-standalone`
-check still covers the combined legacy/new tool; a failure there is not masked by
-success of the new-core check.
+extracts only the shipping core and runs its tests. It excludes legacy execution
+and the independent register source-publication tool.
 
 ## Function analysis contract
 
@@ -747,13 +790,13 @@ including undefined references; choose the exact defined occurrence. Static-tabl
 identity is validated, and physical input/member identities never collapse by name.
 
 ```console
-cargo run -p blobray-next -- analyze-function --project /path/to/investigation \
+cargo blobray analyze-function --project /path/to/investigation \
   --request /path/to/function.json --limit-mode watchdog --format json
-cargo run -p blobray-next -- analyses --project /path/to/investigation \
+cargo blobray analyses --project /path/to/investigation \
   --limit-mode watchdog --format json
-cargo run -p blobray-next -- analysis --project /path/to/investigation \
+cargo blobray analysis --project /path/to/investigation \
   --id <analysis-id> --limit-mode watchdog --format json
-cargo run -p blobray-next -- export-analysis --project /path/to/investigation \
+cargo blobray export-analysis --project /path/to/investigation \
   --id <analysis-id> --output /path/to/new-directory --limit-mode watchdog
 ```
 
@@ -770,22 +813,22 @@ source revisions; there is no pruning or automatic analysis cache lookup.
 ### Research a linked image
 
 From the repository root, build `cargo build --profile blobray -p blobray-next`.
-Use `target/blobray/blobray-next` as `blobray-next` below. Linking requires the
+Use `target/blobray/blobray` as `blobray` below. Linking requires the
 explicit LLD 22 executable; reading and analysis do not require a linker.
 
 ```console
-blobray-next init --project research
-blobray-next import --project research --input vendor=/absolute/path/to/library.a --limit-mode watchdog
-blobray-next link-plan --project research --entry entry_function --entry-input 0 --inputs 0 --code-start 0x10000000 --data-start 0x20000000 --linker /usr/bin/ld.lld --output research/link-plan.json --limit-mode watchdog
-blobray-next prepare-image --project research --plan research/link-plan.json --linker /usr/bin/ld.lld --limit-mode watchdog
-blobray-next analyze-project --project research --image IMAGE_ID --limit-mode watchdog
-blobray-next functions --project research --id PUBLICATION_ID --name entry_function --limit-mode watchdog
-blobray-next analysis --project research --id ANALYSIS_ID --limit-mode watchdog
-blobray-next calls --project research --id PUBLICATION_ID --caller 0x10000000 --limit-mode watchdog
-blobray-next calls --project research --id PUBLICATION_ID --callee 0x10000100 --limit-mode watchdog
-blobray-next find-accesses --project research --id PUBLICATION_ID --address 0x20000000 --limit-mode watchdog
-blobray-next find-references --project research --id PUBLICATION_ID --address 0x10000100 --limit-mode watchdog
-blobray-next image --project research --id IMAGE_ID --limit-mode watchdog
+blobray init --project research
+blobray import --project research --input vendor=/absolute/path/to/library.a --limit-mode watchdog
+blobray link-plan --project research --entry entry_function --entry-input 0 --inputs 0 --code-start 0x10000000 --data-start 0x20000000 --linker /usr/bin/ld.lld --output research/link-plan.json --limit-mode watchdog
+blobray prepare-image --project research --plan research/link-plan.json --linker /usr/bin/ld.lld --limit-mode watchdog
+blobray analyze-project --project research --image IMAGE_ID --limit-mode watchdog
+blobray functions --project research --id PUBLICATION_ID --name entry_function --limit-mode watchdog
+blobray analysis --project research --id ANALYSIS_ID --limit-mode watchdog
+blobray calls --project research --id PUBLICATION_ID --caller 0x10000000 --limit-mode watchdog
+blobray calls --project research --id PUBLICATION_ID --callee 0x10000100 --limit-mode watchdog
+blobray find-accesses --project research --id PUBLICATION_ID --address 0x20000000 --limit-mode watchdog
+blobray find-references --project research --id PUBLICATION_ID --address 0x10000100 --limit-mode watchdog
+blobray image --project research --id IMAGE_ID --limit-mode watchdog
 ```
 
 The virtual placements above are synthetic choices, not recovered hardware
@@ -803,7 +846,7 @@ No legacy configuration reader participates.
 
 For an existing static linked ELF, import it and run `analyze-project --project
 research` without `--image`. With no `--plan`, the command creates a frozen plan
-and executes it, carrying remaining work/time into execution. Its publication
+and executes it within one application operation, worker and original budget. Its publication
 retains that plan. `plan-investigation --image IMAGE_ID --output study.json`
 also produces an explicit reusable selection. Existing saved plans remain
 immutable; callers choose them with `analyze-project --plan`.
@@ -859,7 +902,7 @@ other relocation types remain uninterpreted rather than being filled with zero.
 Named external references need no chosen implementation or final address.
 
 Coverage has independent `decoding`, `control_flow` and `references` fields for
-this local scope. A completed run can have `complete: false` and a retained
+this local scope. A completed run can have assessment coverage `partial` and a retained
 partial result; CLI returns that successful publication with exit 0. Failed
 admission/execution returns nonzero. Missing extents are `needs-extent`; missing
 captures, integrity failures, cancellation and exhausted limits publish no result.
@@ -868,7 +911,7 @@ recipe. The recipe includes extent authority, policy and decoder identity.
 
 Memory admission includes one full ELF object, a 1 MiB operation envelope,
 24 KiB per code-section relocation (bounded names and emitted copies), 32 bytes
-per static symbol for mapping indexes, and 512 bytes per possible instruction
+per ELF mapping symbol for mapping indexes, and 512 bytes per possible instruction
 halfword for graph state. Value analysis additionally admits the actual type sizes
 of 32 register values, operation metadata, a queue index and membership flag per
 decoded instruction. These conservative reservations bound retained buffers;
@@ -879,10 +922,9 @@ Records are streamed to quota-admitted staging files. Publication of manifest,
 record closure and completed run uses one transaction and does not change current
 revision. Recovery never promotes loose function output to success.
 
-Storage upgrade to schema 6 adds missing analysis, investigation, knowledge and preservation metadata without
-rewriting existing revision/image/inspection-plan bytes or historical runs. The worker report version
-changes independently. The standalone workspace and crate-boundary tests include
-both new crates and prohibit dependencies on the legacy backend.
+The standalone workspace and crate-boundary tests include these components and
+prohibit dependencies on the legacy backend. Format support is defined once in
+[JSON and checks](#json-and-checks).
 
 ### Values and memory effects
 
@@ -952,12 +994,12 @@ delivery, are deducted before computation. Missing or ambiguous names fail with
 no preferred candidate; `functions` lists candidates and exact addresses.
 
 ```console
-blobray-next research --project research --id PUBLICATION_ID --name phy_force_dig_gain --abi-contract riscv-integer --limit-mode watchdog
-blobray-next analysis --project research --id ANALYSIS_ID --limit-mode watchdog
-blobray-next knowledge --project research --limit-mode watchdog propose-register --analysis ANALYSIS_ID --subject phy.force-dig-gain --name FORCE_DIG_GAIN --address 0x20100408 --field ENABLE:16:1 --field GAIN_0:0:8 --field GAIN_1:8:8 --actor researcher --reason "Reviewed register evidence"
-blobray-next knowledge --project research --limit-mode watchdog show
-blobray-next knowledge --project research --limit-mode watchdog accept --base PROPOSAL_REVISION --assertion ASSERTION_ID --actor researcher --reason "Accepted interpretation"
-blobray-next research --project research --id PUBLICATION_ID --name phy_force_dig_gain --abi-contract riscv-integer --knowledge ACCEPTED_REVISION --limit-mode watchdog
+blobray research --project research --id PUBLICATION_ID --name phy_force_dig_gain --abi-contract riscv-integer --limit-mode watchdog
+blobray analysis --project research --id ANALYSIS_ID --limit-mode watchdog
+blobray knowledge --project research --limit-mode watchdog propose-register --analysis ANALYSIS_ID --subject phy.force-dig-gain --name FORCE_DIG_GAIN --address 0x20100408 --field ENABLE:16:1 --field GAIN_0:0:8 --field GAIN_1:8:8 --actor researcher --reason "Reviewed register evidence"
+blobray knowledge --project research --limit-mode watchdog show
+blobray knowledge --project research --limit-mode watchdog accept --base PROPOSAL_REVISION --assertion ASSERTION_ID --actor researcher --reason "Accepted interpretation"
+blobray research --project research --id PUBLICATION_ID --name phy_force_dig_gain --abi-contract riscv-integer --knowledge ACCEPTED_REVISION --limit-mode watchdog
 ```
 
 The register example is scoped to the exact selected function's source/object
@@ -1006,10 +1048,10 @@ to obtain a ROM/source publication. Synthetic linking does not treat ET_EXEC as
 a relocatable input. Instead select exact ROM functions as external definitions:
 
 ```console
-blobray-next link-plan --project research --entry phy_set_ftm_en --entry-input 0 --inputs 0 --companion 1:ets_delay_us --companion 1:phy_wait_i2c_sdm_stable --code-start 0x10000000 --data-start 0x20000000 --linker /usr/bin/ld.lld --output ftm.json --limit-mode watchdog
-blobray-next prepare-image --project research --plan ftm.json --linker /usr/bin/ld.lld --limit-mode watchdog
-blobray-next analyze-project --project research --image IMAGE_ID --limit-mode watchdog
-blobray-next research --project research --id IMAGE_PUBLICATION --name phy_set_ftm_en --abi-contract riscv-integer --companion-publication SOURCE_PUBLICATION --limit-mode watchdog
+blobray link-plan --project research --entry phy_set_ftm_en --entry-input 0 --inputs 0 --companion 1:ets_delay_us --companion 1:phy_wait_i2c_sdm_stable --code-start 0x10000000 --data-start 0x20000000 --linker /usr/bin/ld.lld --output ftm.json --limit-mode watchdog
+blobray prepare-image --project research --plan ftm.json --linker /usr/bin/ld.lld --limit-mode watchdog
+blobray analyze-project --project research --image IMAGE_ID --limit-mode watchdog
+blobray research --project research --id IMAGE_PUBLICATION --name phy_set_ftm_en --abi-contract riscv-integer --companion-publication SOURCE_PUBLICATION --limit-mode watchdog
 ```
 
 `LinkRequest.companions` and `LinkRecipe.companions` contain exact input/symbol
@@ -1061,14 +1103,14 @@ are research scope and coverage, not review acceptance or verification verdicts.
 ### Library workflow and query contract
 
 ```console
-blobray-next plan-investigation --project research --output library-plan.json
-blobray-next analyze-project --project research --plan library-plan.json
-blobray-next status --project research
-blobray-next investigations --project research
-blobray-next investigation --project research --id PUBLICATION
-blobray-next find-accesses --project research --id PUBLICATION --address 0x60000124
-blobray-next find-accesses --project research --id PUBLICATION --unknown-only
-blobray-next find-references --project research --id PUBLICATION --symbol symbol-id.json
+blobray plan-investigation --project research --output library-plan.json
+blobray analyze-project --project research --plan library-plan.json
+blobray status --project research
+blobray investigations --project research
+blobray investigation --project research --id PUBLICATION
+blobray find-accesses --project research --id PUBLICATION --address 0x60000124
+blobray find-accesses --project research --id PUBLICATION --unknown-only
+blobray find-references --project research --id PUBLICATION --symbol symbol-id.json
 ```
 
 These commands accept the same resource options as function analysis. Choose
@@ -1154,16 +1196,16 @@ only supplies the same typed requests used by API clients. Accepted hypotheses
 remain hypotheses; review does not authenticate a legacy proof.
 
 ```console
-blobray-next knowledge --project PROJECT --limit-mode watchdog validate --change change.json
-blobray-next knowledge --project PROJECT --limit-mode watchdog apply --change change.json
-blobray-next knowledge --project PROJECT --limit-mode watchdog show
-blobray-next knowledge --project PROJECT --limit-mode watchdog history --revision KNOWLEDGE_SHA
-blobray-next knowledge --project PROJECT --limit-mode watchdog export --output knowledge.json
-blobray-next backup --project PROJECT --output project.blobray --limit-mode watchdog
-blobray-next restore --backup project.blobray --project NEW_PROJECT --limit-mode watchdog
-blobray-next import-legacy --request legacy.json --project NEW_PROJECT --limit-mode watchdog
-blobray-next legacy --project NEW_PROJECT --format json --limit-mode watchdog
-blobray-next export-payload --project NEW_PROJECT --id PAYLOAD_SHA --output retained.bin --limit-mode watchdog
+blobray knowledge --project PROJECT --limit-mode watchdog validate --change change.json
+blobray knowledge --project PROJECT --limit-mode watchdog apply --change change.json
+blobray knowledge --project PROJECT --limit-mode watchdog show
+blobray knowledge --project PROJECT --limit-mode watchdog history --revision KNOWLEDGE_SHA
+blobray knowledge --project PROJECT --limit-mode watchdog export --output knowledge.json
+blobray backup --project PROJECT --output project.blobray --limit-mode watchdog
+blobray restore --backup project.blobray --project NEW_PROJECT --limit-mode watchdog
+blobray import-legacy --request legacy.json --project NEW_PROJECT --limit-mode watchdog
+blobray legacy --project NEW_PROJECT --format json --limit-mode watchdog
+blobray export-payload --project NEW_PROJECT --id PAYLOAD_SHA --output retained.bin --limit-mode watchdog
 ```
 
 `Application::start_knowledge` takes a `KnowledgeChange`. `expected_base` is
@@ -1209,8 +1251,7 @@ an entry length and SHA-256 for the database and every payload. Restore verifies
 entry identities, rejects duplicate entries, trailing bytes and path substitutions,
 and runs doctor before delivery. Restored unfinished runs become `abandoned`;
 the original database bytes remain in CAS. Imported revisions, completed results
-and review events retain their identities. Restoring schema 1–5 does not upgrade
-it implicitly; use `upgrade` before new writes.
+and review events retain their identities. Restore rejects unsupported metadata and journal formats without converting them.
 
 Backup and new-project preparation run in the common supervised query lifecycle.
 The caller owns one result slot through delivery. Delivery copies to a private
@@ -1265,15 +1306,14 @@ claim a single mmap arena or a process-wide no-allocation guarantee.
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
 operation/query paths. No legacy engine or external limiter participates.
-Execution manifests use schema 1; execution journal records use schema 7 in the
-existing schema-6 database. The completed journal record is the publication
+Execution manifests use schema 1; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 
 ```console
-blobray-next execute --project research --request execution.json --limit-mode watchdog
-blobray-next compare --project research --request comparison.json --limit-mode watchdog
-blobray-next execution --project research --id EXECUTION_SHA --limit-mode watchdog --format json
-blobray-next replay --project research --id EXECUTION_SHA --limit-mode watchdog
+blobray execute --project research --request execution.json --limit-mode watchdog
+blobray compare --project research --request comparison.json --limit-mode watchdog
+blobray execution --project research --id EXECUTION_SHA --limit-mode watchdog --format json
+blobray replay --project research --id EXECUTION_SHA --limit-mode watchdog
 ```
 
 `execute` requires one implementation; `compare` requires both and an explicit
@@ -1381,8 +1421,46 @@ opaque dependency containment retain the existing host guarantees.
 
 `execution` only reads retained evidence. `replay` checks the executor,
 environment and verifier identities, reuses the exact request, and charges
-selection against the command's remaining work/time budget. Missing implementations
+selection and execution against one application run, original deadline and work budget. Missing implementations
 are reported, never replaced. Doctor validates execution references, record order
 and CAS integrity. Backup/restore includes the journal, evidence and captured
 inputs; reopening evidence does not require replay tools. There is no converter
 for an incompatible execution schema.
+
+## Final-image target audit
+
+```console
+cargo blobray audit-targets --artifact firmware.elf --forbid radio=0x2f800bf0..0x2f8016bc --limit-mode watchdog --format json
+```
+
+`audit-targets` is an ephemeral supervised operation with no project writer. It
+reads one regular RV32 static ELF into admitted memory, detects observed capture
+changes and identifies the inspected bytes by SHA-256. The artifact owner visits
+every executable section, including code without function symbols. A section-less
+ELF cannot produce a vacuous pass. The shared artifact mapping parser validates
+local, zero-sized `$d`/`$x` symbols (including `$xrv32…` ISA-qualified code),
+rejects conflicting/out-of-section mappings and non-RV32 code markers,
+and separates embedded data from instructions. Ordinary labels never authorize
+skipping bytes. Every section must match its executable file-backed load range.
+The common RV32 decoder/lifter and integer
+constant evaluator provide the analysis; no legacy backend participates.
+
+The linear scan records direct branch/jump targets and locally resolved JALR
+targets, resetting values at data intervals, control transfers and unknown instructions. Unresolved
+indirect transfers are counted separately: a clean result only answers the declared
+statically resolved target policy, not absence of all dynamic calls. Unknown major
+opcodes that might conceal a transfer, unsupported instruction lengths and missing
+coverage make the result unclean. Recognized non-control opcode classes can be
+skipped with a counter and a full value reset. CSR accesses are non-control; trap
+returns count as unresolved indirect transfers. This classification does not add
+CSR or privileged execution semantics. Truncation is an integrity error.
+
+Each finding retains section, site, target and selected forbidden range. The summary
+records decoder/semantics identity, captured digest, policy ranges and coverage.
+`executable_bytes` counts the whole executable section; `embedded_data_bytes`
+separately counts bytes excluded by validated mapping symbols. Coverage-gap
+records retain the site, reason and at most four encoding bytes.
+Findings stream through the normal query spool. Limits, timeout, cancellation and
+output delivery follow the same supervisor as other reads. A policy violation or
+coverage gap exits nonzero; resource/integrity failures publish no success output.
+Ranges are half-open and the request accepts 1–64 named ranges.

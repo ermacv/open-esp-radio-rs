@@ -217,3 +217,62 @@ pub fn execution_segments(
     }
     Ok(())
 }
+
+/// Visit every executable section, including code without function symbols.
+/// Section-less files fail rather than reporting a vacuous clean result.
+pub fn executable_sections(
+    bytes: &[u8],
+    memory: &WorkingMemory,
+    control: &mut dyn RunControl,
+    consume: &mut impl FnMut(ExecutableSectionView<'_>, &mut dyn RunControl) -> Result<()>,
+) -> Result<()> {
+    let file = object::File::parse(bytes).map_err(|_| invalid("invalid executable ELF"))?;
+    if file.kind() != object::ObjectKind::Executable
+        || file.architecture() != object::Architecture::Riscv32
+        || !file.is_little_endian()
+        || file.is_64()
+    {
+        return Err(invalid("audit requires static little-endian RV32 ELF"));
+    }
+    let _view = ProgramView::new(bytes, &file, memory, control)?;
+    let mut found = false;
+    for section in file.sections() {
+        control.checkpoint(1)?;
+        if !matches!(section.flags(), object::SectionFlags::Elf { sh_flags } if sh_flags & u64::from(object::elf::SHF_EXECINSTR) != 0)
+        {
+            continue;
+        }
+        let data = section
+            .data()
+            .map_err(|_| invalid("invalid executable section bytes"))?;
+        if data.is_empty() {
+            continue;
+        }
+        let address = u32::try_from(section.address())
+            .map_err(|_| invalid("section address exceeds RV32"))?;
+        if section
+            .address()
+            .checked_add(data.len() as u64)
+            .is_none_or(|v| v > 1u64 << 32)
+            || address & 1 != 0
+        {
+            return Err(invalid("invalid executable section extent"));
+        }
+        found = true;
+        _view.code(u64::from(address), data, control)?;
+        let mappings = crate::mapping::data_ranges(&file, section.index(), memory, control)?;
+        consume(
+            ExecutableSectionView {
+                section: section.index().0 as u32,
+                address,
+                bytes: data,
+                data_ranges: &mappings.ranges,
+            },
+            control,
+        )?;
+    }
+    if !found {
+        return Err(invalid("no executable sections: target audit unavailable"));
+    }
+    Ok(())
+}

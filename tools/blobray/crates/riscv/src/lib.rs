@@ -9,6 +9,47 @@ impl FunctionDecoder for RiscvDecoder {
     fn identity(&self) -> &'static str {
         "rv32imac/rv-asm-0.2.1/policy-1"
     }
+    fn unsupported_flow(&self, bytes: &[u8]) -> UnsupportedFlow {
+        // ISA structure only, not CSR/privileged execution support. Zicsr:
+        // https://docs.riscv.org/reference/isa/unpriv/zicsr.html
+        // Trap returns transfer through architectural CSR state, not a static target.
+        if let Ok(raw) = <[u8; 4]>::try_from(bytes) {
+            let word = u32::from_le_bytes(raw);
+            if matches!(word, 0x30200073 | 0x10200073) {
+                return UnsupportedFlow::Indirect;
+            }
+            if word == 0x10500073
+                || ((word & 0x7f) == 0x73 && matches!((word >> 12) & 7, 1 | 2 | 3 | 5 | 6 | 7))
+            {
+                return UnsupportedFlow::NonControl;
+            }
+            if matches!(
+                word & 0x7f,
+                0x03 | 0x07
+                    | 0x0f
+                    | 0x13
+                    | 0x17
+                    | 0x23
+                    | 0x27
+                    | 0x2f
+                    | 0x33
+                    | 0x37
+                    | 0x43
+                    | 0x47
+                    | 0x4b
+                    | 0x4f
+                    | 0x53
+            ) {
+                return UnsupportedFlow::NonControl;
+            }
+        } else if let Ok(raw) = <[u8; 2]>::try_from(bytes) {
+            let half = u16::from_le_bytes(raw);
+            if half == 0 || matches!((half & 3, half >> 13), (0, _) | (2, 0..=3) | (2, 5..=7)) {
+                return UnsupportedFlow::NonControl;
+            }
+        }
+        UnsupportedFlow::Unknown
+    }
     fn decode(&self, bytes: &[u8]) -> Option<DecodedOp> {
         let (inst, width) = decode_instruction(bytes)?;
         let flow = match inst {
@@ -61,7 +102,11 @@ impl FunctionDecoder for RiscvDecoder {
                 let mut found = None;
                 let mut count = 0;
                 if r.target.section == Some(section) && r.addend == Some(0) {
-                    for hi in all {
+                    let start = all.partition_point(|hi| hi.offset < r.target.offset);
+                    for hi in all[start..]
+                        .iter()
+                        .take_while(|hi| hi.offset == r.target.offset)
+                    {
                         control.checkpoint(1)?;
                         if hi.offset == r.target.offset && hi.relocation_type == R_RISCV_PCREL_HI20
                         {
@@ -106,7 +151,7 @@ mod tests {
             offset,
             relocation_type: kind,
             addend: Some(0),
-            target: ReferenceTarget {
+            target: std::sync::Arc::new(ReferenceTarget {
                 binding: 1,
                 definition: SymbolDefinition::Section,
                 symbol: SymbolId {
@@ -122,17 +167,17 @@ mod tests {
                 section: Some(1),
                 offset: target_offset,
                 symbol_type: 0,
-            },
+            }),
         }
     }
     #[test]
     fn pcrel_lo_uses_label_identity_not_adjacency_or_symbol_name() {
         let lo = relocation(24, R_RISCV_PCREL_LO12_I, 0);
         let mut hi = relocation(0, R_RISCV_PCREL_HI20, 128);
-        hi.target.name = b"actual_data".to_vec();
+        std::sync::Arc::make_mut(&mut hi.target).name = b"actual_data".to_vec();
         hi.addend = Some(4);
         let other = relocation(20, R_RISCV_PCREL_HI20, 256);
-        let all = [lo.clone(), other, hi.clone()];
+        let all = [hi.clone(), other, lo.clone()];
         let r = RiscvDecoder
             .reference(&lo, &all, 1, &mut || Ok(()))
             .unwrap();

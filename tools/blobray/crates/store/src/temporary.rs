@@ -257,6 +257,9 @@ pub struct TemporaryControl<'a> {
     pub budget: &'a TemporaryBudget,
 }
 impl RunControl for TemporaryControl<'_> {
+    fn measure(&mut self, metric: WorkMetric, amount: u64) {
+        self.control.measure(metric, amount);
+    }
     fn progress(&self) -> Option<RunProgress> {
         self.control.progress()
     }

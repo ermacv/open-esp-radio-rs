@@ -7,7 +7,7 @@ use std::{fs, path::Path, process::Command, sync::Arc};
 
 fn application() -> app::Application {
     app::Application::new(Arc::new(LinuxHost::new(
-        env!("CARGO_BIN_EXE_blobray-next").into(),
+        env!("CARGO_BIN_EXE_blobray").into(),
         None,
     )))
 }
@@ -369,7 +369,7 @@ fn cli_plan_and_run_share_api_results_and_saved_plan_is_not_overwritten() {
     )
     .unwrap();
     let invoke = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+        Command::new(env!("CARGO_BIN_EXE_blobray"))
             .args(args)
             .arg("--project")
             .arg(&project)
@@ -553,10 +553,7 @@ fn plan_and_run_limits_fail_without_writes_and_plans_hold_admission() {
     import(&seed, &project, &[&source]);
     let before = project_bytes(&project);
     let application = app::Application::with_limits(
-        Arc::new(LinuxHost::new(
-            env!("CARGO_BIN_EXE_blobray-next").into(),
-            None,
-        )),
+        Arc::new(LinuxHost::new(env!("CARGO_BIN_EXE_blobray").into(), None)),
         app::ApplicationLimits {
             max_operations: 1,
             event_capacity: 4,

@@ -47,7 +47,7 @@ use std::{
 };
 
 const STATE: &str = ".blobray-next";
-const SCHEMA: i64 = 6;
+const SCHEMA: i64 = 7;
 
 /// A project handle owns no source-file handles or mutable inventory cache.
 #[derive(Clone)]
@@ -128,7 +128,7 @@ impl Project {
         let connection = Connection::open(stage.path().join("project.sqlite3")).map_err(db)?;
         connection.execute_batch("PRAGMA synchronous=EXTRA;
             BEGIN IMMEDIATE;
-            PRAGMA user_version=6;
+            PRAGMA user_version=7;
             CREATE TABLE legacy_imports (id TEXT PRIMARY KEY);
             CREATE TABLE knowledge_revisions (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, parent TEXT, assertion TEXT NOT NULL, action TEXT NOT NULL, supersedes TEXT);
             CREATE INDEX knowledge_assertion ON knowledge_revisions(assertion, sequence);
@@ -358,16 +358,10 @@ fn open_connection(root: &Path, writable: bool) -> Result<Connection> {
     let schema: i64 = connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .map_err(db)?;
-    if !matches!(schema, 1..=SCHEMA) {
+    if schema != SCHEMA {
         return Err(Error::new(
             ErrorCode::Incompatible,
             format!("unsupported project schema {schema}"),
-        ));
-    }
-    if writable && schema != SCHEMA {
-        return Err(Error::new(
-            ErrorCode::Incompatible,
-            "older storage schema requires explicit upgrade",
         ));
     }
     if writable {

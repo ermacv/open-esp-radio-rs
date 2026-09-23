@@ -1,5 +1,11 @@
 # Verification
 
+This document describes unported facade responsibilities. Its command examples are
+not supported by the primary `cargo blobray` command. Use the
+[current operator reference](../next/README.md) for implemented operations and
+[register publication](../../registers/README.md) for SVD/PAC generation.
+
+
 Verification answers whether observed vendor behavior agrees with a named
 Rust binding under an explicit contract. It is supporting evidence. Product
 readiness is decided only by the repository qualification evaluator.

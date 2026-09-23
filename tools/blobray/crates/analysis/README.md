@@ -27,3 +27,9 @@ The `summaries` module composes supplied acyclic callees and substitutes argumen
 without acquiring source-selection authority. Its owned output retains a memory
 reservation. Imported expressions retain analysis provenance; transitive memory
 records are may-effects, not unconditional traces. Unknown callees retain gaps.
+
+The `audit` module scans all supplied executable ranges linearly for direct and
+locally resolved transfers. It shares the ISA port and integer folding with value
+analysis; it does not obtain filesystem access or claim dynamic-target completeness.
+
+`PreparedReferences` retains one normalized reference table per prepared section. Sorted offset, symbol and physical-pair indexes replace repeated whole-table scans while preserving nonadjacent HI/LO ambiguity and exact physical identities.

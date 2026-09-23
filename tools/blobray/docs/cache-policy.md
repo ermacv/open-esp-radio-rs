@@ -1,5 +1,11 @@
 # Project cache storage and retention policy
 
+This document describes unported facade responsibilities. Its command examples are
+not supported by the primary `cargo blobray` command. Use the
+[current operator reference](../next/README.md) for implemented operations and
+[register publication](../../registers/README.md) for SVD/PAC generation.
+
+
 The project cache is disposable derived state. SQLite stores immutable query
 identity, dependencies, analysis-epoch membership and current stage bindings.
 The append-only CAS pack stores generated outputs and large query values.

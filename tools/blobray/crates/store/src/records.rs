@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum RunOperation {
+    Scenario {
+        request: ScenarioRequest,
+    },
     #[default]
     Import,
     PrepareImage {
@@ -43,6 +46,7 @@ pub struct RunRecord {
     pub schema: u32,
     #[serde(default)]
     pub operation: RunOperation,
+    pub resolved_operation: Option<Box<RunOperation>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image: Option<PreparedImageId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -53,15 +57,13 @@ pub struct RunRecord {
     pub knowledge: Option<KnowledgeRevisionId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution: Option<ArtifactId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub verdict: Option<ComparisonVerdict>,
+    pub assessment: Option<ResultAssessment>,
     pub id: RunId,
     pub state: RunState,
     pub owner: OwnerIdentity,
     pub budget: ResourceBudget,
     pub base: Option<RevisionId>,
     pub revision: Option<RevisionId>,
-    pub complete: Option<bool>,
     pub error: Option<Error>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diagnostics: Option<RunDiagnostics>,
@@ -123,4 +125,14 @@ pub struct PreparedExecutionReceipt {
     pub schema: u32,
     pub project: ProjectId,
     pub execution: ArtifactId,
+}
+
+impl RunRecord {
+    /// Publication validators consume the exact resolved request. The original
+    /// scenario remains in `operation`; resolution is committed with its result.
+    pub fn effective_operation(&self) -> &RunOperation {
+        self.resolved_operation
+            .as_deref()
+            .unwrap_or(&self.operation)
+    }
 }

@@ -556,6 +556,139 @@ impl Application {
     pub fn start_analyze_project(
         &self,
         project: &Path,
+        input: InvestigationInput,
+        budget: ResourceBudget,
+    ) -> Result<RunHandle> {
+        match input {
+            InvestigationInput::Plan { plan } => {
+                self.start_investigation_plan(project, &plan, budget)
+            }
+            InvestigationInput::Automatic { request, producer } => self.start_scenario(
+                project,
+                ScenarioRequest::Investigate { request, producer },
+                budget,
+            ),
+        }
+    }
+    pub fn start_research(
+        &self,
+        project: &Path,
+        request: ResearchRequest,
+        budget: ResourceBudget,
+    ) -> Result<RunHandle> {
+        self.start_scenario(project, ScenarioRequest::Research { request }, budget)
+    }
+    pub fn start_propose_register(
+        &self,
+        project: &Path,
+        request: RegisterProposalRequest,
+        budget: ResourceBudget,
+    ) -> Result<RunHandle> {
+        self.start_scenario(
+            project,
+            ScenarioRequest::ProposeRegister { request },
+            budget,
+        )
+    }
+    pub fn start_replay(
+        &self,
+        project: &Path,
+        execution: ArtifactId,
+        executor: &dyn Executor,
+        budget: ResourceBudget,
+    ) -> Result<RunHandle> {
+        self.start_scenario(
+            project,
+            ScenarioRequest::Replay {
+                execution,
+                producer: ExecutionProducer {
+                    executor: executor.identity().into(),
+                    environment: EXECUTION_ENVIRONMENT.into(),
+                    verifier: blobray_verification::VERIFIER.into(),
+                },
+            },
+            budget,
+        )
+    }
+    fn start_scenario(
+        &self,
+        project: &Path,
+        mut request: ScenarioRequest,
+        budget: ResourceBudget,
+    ) -> Result<RunHandle> {
+        let mut jobs = self.jobs.lock().unwrap();
+        let permit = self.admit(&mut jobs)?;
+        budget.validate()?;
+        if budget.working_memory_bytes.is_none() {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "working capacity missing",
+            ));
+        }
+        let project = std::path::absolute(project).map_err(storage_io)?;
+        let started_ms = self.host.now_ms();
+        let deadline_ms = started_ms
+            .checked_add(budget.timeout_ms)
+            .ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "deadline overflow"))?;
+        self.temporary.root(&*self.host)?;
+        let mut reservation = self.temporary.reserve()?;
+        let mut writer = Writer::open(&project)?;
+        if let ScenarioRequest::Investigate { request, .. } = &mut request {
+            if let Some(image) = &request.image {
+                let revision = writer.project().image_revision(image)?;
+                if request.revision.as_ref().is_some_and(|id| id != &revision) {
+                    return Err(Error::new(
+                        ErrorCode::InvalidRequest,
+                        "image belongs to another revision",
+                    ));
+                }
+                request.revision = Some(revision);
+            }
+            if request.revision.is_none() {
+                request.revision =
+                    Some(writer.project().current()?.ok_or_else(|| {
+                        Error::new(ErrorCode::NotFound, "project has no revision")
+                    })?);
+            }
+        }
+        if let ScenarioRequest::ProposeRegister { request } = &request {
+            writer
+                .project()
+                .check_knowledge_base(&request.expected_base)?;
+        }
+        let mut work = ScenarioWork {
+            schema: 1,
+            run: ArtifactId::of_bytes(b"admission").as_str().parse()?,
+            project: OriginPath::from_path(&project),
+            request: request.clone(),
+            budget: budget.clone(),
+            started_ms,
+            deadline_ms,
+        };
+        write_control_message(std::io::sink(), &work)?;
+        let (record, stage) = writer.register_operation(
+            budget,
+            self.host.owner()?,
+            RunOperation::Scenario { request },
+            |stage| reservation.attach(stage),
+        )?;
+        work.run = record.id.clone();
+        self.launch_durable(
+            &mut jobs,
+            project,
+            DurableAdmission {
+                writer,
+                record,
+                stage,
+                work: DurableWork::Scenario(Box::new(work)),
+                permit,
+                reservation,
+            },
+        )
+    }
+    fn start_investigation_plan(
+        &self,
+        project: &Path,
         plan: &InvestigationPlan,
         budget: ResourceBudget,
     ) -> Result<RunHandle> {
@@ -714,6 +847,7 @@ impl Application {
         if !matches!(
             query,
             ReadQuery::ExecutePlan { .. }
+                | ReadQuery::AuditTargets { .. }
                 | ReadQuery::Restore { .. }
                 | ReadQuery::ImportLegacy { .. }
         ) {
@@ -774,20 +908,20 @@ impl Application {
             &work,
         )?;
         let record = RunRecord {
-            schema: 6,
+            schema: 8,
             operation: blobray_store::RunOperation::Query,
+            resolved_operation: None,
             image: None,
             analysis: None,
             publication: None,
             knowledge: None,
             execution: None,
-            verdict: None,
+            assessment: None,
             id: run,
             owner: self.host.owner()?,
             budget,
             base: None,
             revision: None,
-            complete: None,
             state: RunState::Registered,
             error: None,
             diagnostics: Some(RunDiagnostics::default()),
@@ -862,7 +996,7 @@ impl Application {
                         } else {
                             state.committing = true;
                             record.state = RunState::Completed;
-                            record.complete = Some(output.clean);
+                            record.assessment = Some(output.assessment().clone());
                             Some(output)
                         }
                     }
@@ -966,6 +1100,7 @@ struct DurableAdmission {
     reservation: crate::temporary::TemporaryReservation,
 }
 enum DurableWork {
+    Scenario(Box<ScenarioWork>),
     Execution(Box<ExecutionWork>),
     Knowledge(Box<KnowledgeWork>),
     Import(ImportWork),
@@ -976,6 +1111,7 @@ enum DurableWork {
 impl DurableWork {
     fn started_ms(&self) -> u64 {
         match self {
+            Self::Scenario(w) => w.started_ms,
             Self::Execution(w) => w.started_ms,
             Self::Knowledge(w) => w.started_ms,
             Self::Import(w) => w.started_ms,
@@ -986,6 +1122,7 @@ impl DurableWork {
     }
     fn deadline_ms(&self) -> u64 {
         match self {
+            Self::Scenario(w) => w.deadline_ms,
             Self::Execution(w) => w.deadline_ms,
             Self::Knowledge(w) => w.deadline_ms,
             Self::Import(w) => w.deadline_ms,
@@ -1015,6 +1152,10 @@ fn supervise(
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         crate::temporary::configure(&stage, &record.id, reservation.capacity())?;
         match &work {
+            DurableWork::Scenario(work) => crate::protocol::write_request(
+                std::fs::File::create(stage.join("scenario.json")).map_err(storage_io)?,
+                work,
+            )?,
             DurableWork::Execution(work) => crate::protocol::write_request(
                 std::fs::File::create(stage.join("execution.json")).map_err(storage_io)?,
                 work,
@@ -1083,7 +1224,10 @@ fn supervise(
         let publication_memory = WorkingMemory::new(record.budget.working_memory_bytes.unwrap())?;
         let publication_reservation = if matches!(
             work,
-            DurableWork::Investigation(_) | DurableWork::Knowledge(_) | DurableWork::Execution(_)
+            DurableWork::Investigation(_)
+                | DurableWork::Knowledge(_)
+                | DurableWork::Execution(_)
+                | DurableWork::Scenario(_)
         ) {
             Some(publication_memory.reserve(2 * 1024 * 1024, context.position())?)
         } else {
@@ -1095,7 +1239,82 @@ fn supervise(
                 ..Default::default()
             });
             context.checkpoint(0)?;
+            let resolution = if let DurableWork::Scenario(work) = &work {
+                use std::io::Read;
+                let mut bytes = Vec::new();
+                std::fs::File::open(stage.join("resolved.json"))
+                    .map_err(storage_io)?
+                    .take(65537)
+                    .read_to_end(&mut bytes)
+                    .map_err(storage_io)?;
+                if bytes.len() > 65536 {
+                    return Err(Error::new(
+                        ErrorCode::WorkerProtocol,
+                        "scenario resolution exceeds bound",
+                    ));
+                }
+                let resolved: crate::scenarios::Resolution = serde_json::from_slice(&bytes)
+                    .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
+                crate::scenarios::validate_resolution(
+                    writer.project(),
+                    &work.request,
+                    &resolved,
+                    &publication_memory,
+                    &mut context,
+                )?;
+                record.resolved_operation = Some(Box::new(resolved.operation.clone()));
+                Some(resolved)
+            } else {
+                None
+            };
             let retained = match (&work, prepared) {
+                (DurableWork::Scenario(_), PreparedReceipt::Execution(p))
+                    if matches!(record.effective_operation(), RunOperation::Execute { .. }) =>
+                {
+                    Retained::Execution(writer.retain_execution(
+                        &record,
+                        &p,
+                        &publication_memory,
+                        &mut context,
+                    )?)
+                }
+                (DurableWork::Scenario(_), PreparedReceipt::Knowledge(p))
+                    if matches!(record.effective_operation(), RunOperation::Knowledge { .. }) =>
+                {
+                    Retained::Knowledge(Box::new(writer.retain_knowledge(
+                        &record,
+                        &p,
+                        &mut context,
+                    )?))
+                }
+                (DurableWork::Scenario(_), PreparedReceipt::Function(p))
+                    if matches!(
+                        record.effective_operation(),
+                        RunOperation::AnalyzeFunction { .. }
+                    ) =>
+                {
+                    Retained::Function(writer.retain_function(&record, &p, &mut context)?)
+                }
+                (DurableWork::Scenario(_), PreparedReceipt::Investigation(p))
+                    if matches!(
+                        record.effective_operation(),
+                        RunOperation::Investigate { .. }
+                    ) =>
+                {
+                    Retained::Investigation(Box::new(
+                        writer.retain_investigation(
+                            &record,
+                            &p,
+                            resolution
+                                .as_ref()
+                                .and_then(|r| r.plan.as_ref())
+                                .ok_or_else(|| {
+                                    Error::new(ErrorCode::WorkerProtocol, "scenario omitted plan")
+                                })?,
+                            &mut context,
+                        )?,
+                    ))
+                }
                 (DurableWork::Execution(_), PreparedReceipt::Execution(p)) => Retained::Execution(
                     writer.retain_execution(&record, &p, &publication_memory, &mut context)?,
                 ),
@@ -1189,6 +1408,7 @@ fn supervise(
             _ => RunState::Failed,
         };
         record.error = Some(error);
+        record.resolved_operation = None;
         if let Ok(committed) = writer.project().run(&record.id)
             && committed.state == RunState::Completed
         {

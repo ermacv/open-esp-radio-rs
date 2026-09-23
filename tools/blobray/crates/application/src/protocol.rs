@@ -84,6 +84,10 @@ pub trait OperationHost: Send + Sync {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ReadQuery {
+    AuditTargets {
+        artifact: OriginPath,
+        ranges: Vec<ForbiddenTargetRange>,
+    },
     Execution {
         id: ArtifactId,
     },

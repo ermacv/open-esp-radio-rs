@@ -10,7 +10,7 @@ use std::{
 };
 
 fn cli(project: &Path, args: &[&str]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_blobray-next"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_blobray"));
     if args
         .first()
         .is_some_and(|arg| matches!(*arg, "import" | "inventory" | "doctor"))
@@ -68,7 +68,7 @@ fn processes_reopen_identical_inventory_without_sources_and_after_project_move()
             &format!("vendor={}", source.display()),
         ],
     ));
-    assert_eq!(first["run"]["complete"], true);
+    assert_eq!(first["run"]["assessment"]["coverage"]["status"], "complete");
     let first = json(cli(&project, &["inventory"]));
     let api = app::inventory(&project, None).unwrap();
     assert_eq!(first["snapshot"], serde_json::to_value(&api).unwrap());
@@ -342,7 +342,7 @@ fn non_utf8_source_paths_round_trip_without_loss() {
     app::create_project(&project).unwrap();
     let mut binding = std::ffi::OsString::from("vendor=");
     binding.push(&source);
-    let output = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args([
             "import",
             "--limit-mode",
@@ -370,7 +370,7 @@ fn non_utf8_source_paths_round_trip_without_loss() {
 
 fn app_import(path: &Path, inputs: Vec<ImportInput>, target: Target) -> Result<Snapshot> {
     let app = app::Application::new(std::sync::Arc::new(
-        blobray_next_host::linux::LinuxHost::new(env!("CARGO_BIN_EXE_blobray-next").into(), None),
+        blobray_next_host::linux::LinuxHost::new(env!("CARGO_BIN_EXE_blobray").into(), None),
     ));
     let budget = ResourceBudget {
         mode: LimitMode::Watchdog,

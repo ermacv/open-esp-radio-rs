@@ -9,7 +9,7 @@ pub struct FunctionLease {
 pub struct RetainedFunction {
     run: RunId,
     receipt: PreparedFunctionReceipt,
-    complete: bool,
+    assessment: ResultAssessment,
 }
 pub(crate) fn decode(
     source: &dyn ByteSource,
@@ -175,7 +175,7 @@ impl Writer {
         receipt: &PreparedFunctionReceipt,
         control: &mut dyn RunControl,
     ) -> Result<RetainedFunction> {
-        let RunOperation::AnalyzeFunction { request } = &run.operation else {
+        let RunOperation::AnalyzeFunction { request } = run.effective_operation() else {
             return Err(integrity("function receipt belongs to another operation"));
         };
         if receipt.schema != 1
@@ -207,8 +207,7 @@ impl Writer {
         Ok(RetainedFunction {
             run: run.id.clone(),
             receipt: receipt.clone(),
-            complete: manifest.coverage.complete()
-                && manifest.semantics.is_some_and(|s| s.complete),
+            assessment: ResultAssessment::function(receipt.analysis.clone(), &manifest),
         })
     }
     pub fn publish_function(
@@ -216,7 +215,11 @@ impl Writer {
         run: &mut RunRecord,
         retained: RetainedFunction,
     ) -> Result<()> {
-        if retained.run != run.id || !matches!(run.operation, RunOperation::AnalyzeFunction { .. })
+        if retained.run != run.id
+            || !matches!(
+                run.effective_operation(),
+                RunOperation::AnalyzeFunction { .. }
+            )
         {
             return Err(integrity("retained analysis belongs to another run"));
         }
@@ -227,7 +230,7 @@ impl Writer {
         let mut completed = run.clone();
         completed.state = RunState::Completed;
         completed.analysis = Some(retained.receipt.analysis.clone());
-        completed.complete = Some(retained.complete);
+        completed.assessment = Some(retained.assessment);
         tx.execute(
             "INSERT INTO analyses(id,revision) VALUES(?1,?2) ON CONFLICT(id) DO NOTHING",
             params![

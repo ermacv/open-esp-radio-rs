@@ -89,3 +89,5 @@ identities, observations and comparison evidence. `Executor` and `ExecutionMemor
 are injected ports; domain selects neither an ISA nor an environment. Request
 validation bounds control cardinalities. Host admission also bounds serialization
 before copying requests. See the [execution contract](../../next/README.md#concrete-execution-and-comparison).
+
+`ResultAssessment` separates scoped coverage from policy checks and comparison verdicts. `ScenarioRequest` defines four concrete application actions. `AdmittedVec` admits overlapping buffers before growth. Fixed `WorkMeasurements` and phase costs report resource work independently of result identity.

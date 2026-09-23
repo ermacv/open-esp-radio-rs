@@ -1,5 +1,11 @@
 # Research action selection
 
+This document describes unported facade responsibilities. Its command examples are
+not supported by the primary `cargo blobray` command. Use the
+[current operator reference](../next/README.md) for implemented operations and
+[register publication](../../registers/README.md) for SVD/PAC generation.
+
+
 `project research next` turns the current project's review queues, linked IR,
 register facts and reviewed interface observations into copyable, project-bound
 research actions. It does not infer capability evidence or mutate reviewed

@@ -9,7 +9,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use open_radio_vendor_contracts::SemanticEntityId;
+use oer_reviewed_contracts::SemanticEntityId;
 use open_radio_vendor_review::{AssertionValue, EffectiveAssertion, ReviewKnowledge};
 use serde::{Deserialize, Serialize};
 use svd_rs::{
@@ -176,11 +176,11 @@ pub struct ReviewAnnotation {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provenance: Option<open_radio_vendor_contracts::FactProvenance>,
+    pub provenance: Option<oer_reviewed_contracts::FactProvenance>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub accuracy: Option<open_radio_vendor_contracts::FactAccuracy>,
+    pub accuracy: Option<oer_reviewed_contracts::FactAccuracy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub completeness: Option<open_radio_vendor_contracts::FactCompleteness>,
+    pub completeness: Option<oer_reviewed_contracts::FactCompleteness>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1618,9 +1618,9 @@ fn validate_review_annotations(fragments: &[RegisterModelFragment]) -> Result<()
 
 fn review_annotation_is_assertion(annotation: &ReviewAnnotation) -> bool {
     !annotation.sources.is_empty()
-        && annotation.provenance.is_some_and(|provenance| {
-            provenance != open_radio_vendor_contracts::FactProvenance::Hint
-        })
+        && annotation
+            .provenance
+            .is_some_and(|provenance| provenance != oer_reviewed_contracts::FactProvenance::Hint)
         && annotation.accuracy.is_some()
         && annotation.completeness.is_some()
 }
@@ -2108,7 +2108,7 @@ locator = "function"
         );
         assert!(model.reviewed_register_facts().iter().all(|assertion| {
             assertion.metadata.classification.provenance
-                == open_radio_vendor_contracts::FactProvenance::Reviewed
+                == oer_reviewed_contracts::FactProvenance::Reviewed
                 && assertion.metadata.evidence.len() == 1
         }));
         assert_eq!(
@@ -2152,9 +2152,9 @@ locator = "function"
         model.review = vec![ReviewAnnotation {
             entity: "RADIO.STATUS%s".to_owned(),
             sources: vec!["fixture-array".to_owned()],
-            provenance: Some(open_radio_vendor_contracts::FactProvenance::Reviewed),
-            accuracy: Some(open_radio_vendor_contracts::FactAccuracy::Exact),
-            completeness: Some(open_radio_vendor_contracts::FactCompleteness::Complete),
+            provenance: Some(oer_reviewed_contracts::FactProvenance::Reviewed),
+            accuracy: Some(oer_reviewed_contracts::FactAccuracy::Exact),
+            completeness: Some(oer_reviewed_contracts::FactCompleteness::Complete),
         }];
 
         let identities = model.register_identities().unwrap();
@@ -2230,9 +2230,9 @@ locator = "manual"
         assert!(error.to_string().contains("explicit applicability context"));
 
         let selected = knowledge
-            .select_for(&open_radio_vendor_contracts::ApplicabilityContext {
+            .select_for(&oer_reviewed_contracts::ApplicabilityContext {
                 chip_revisions: vec!["rev0".to_owned()],
-                ..open_radio_vendor_contracts::ApplicabilityContext::default()
+                ..oer_reviewed_contracts::ApplicabilityContext::default()
             })
             .unwrap();
         model.apply_review_knowledge(&selected).unwrap();
@@ -2340,7 +2340,7 @@ locator = "identity"
         assert_eq!(annotation.sources, ["fixture"]);
         assert_eq!(
             annotation.provenance,
-            Some(open_radio_vendor_contracts::FactProvenance::Reviewed)
+            Some(oer_reviewed_contracts::FactProvenance::Reviewed)
         );
     }
 

@@ -27,10 +27,7 @@ fn budget() -> ResourceBudget {
 }
 fn application(root: &Path) -> app::Application {
     app::Application::with_temporary_storage(
-        Arc::new(LinuxHost::new(
-            env!("CARGO_BIN_EXE_blobray-next").into(),
-            None,
-        )),
+        Arc::new(LinuxHost::new(env!("CARGO_BIN_EXE_blobray").into(), None)),
         app::ApplicationLimits::default(),
         app::TemporaryStoragePolicy {
             root: Some(root.into()),
@@ -189,7 +186,13 @@ fn function_graph_is_retained_for_exact_thin_occurrence_and_reopens_without_sour
     fs::remove_file(f.dir.path().join("entry.o")).unwrap();
     let run = analyze(&f);
     assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
-    assert_eq!(run.complete, Some(true));
+    assert_eq!(
+        run.assessment
+            .as_ref()
+            .and_then(|a| a.coverage.as_ref())
+            .map(|c| c.status == CoverageStatus::Complete),
+        Some(true)
+    );
     let id = run.analysis.unwrap();
     let (manifest, records) = export(&f, id.clone());
     assert_eq!(manifest.recipe.symbol, f.request.symbol);
@@ -286,7 +289,13 @@ fn unknown_instructions_and_indirect_jump_retain_partial_results() {
         let f = fixture(object(bytes, bytes.len() as u64, false), false);
         let run = analyze(&f);
         assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
-        assert_eq!(run.complete, Some(false));
+        assert_eq!(
+            run.assessment
+                .as_ref()
+                .and_then(|a| a.coverage.as_ref())
+                .map(|c| c.status == CoverageStatus::Complete),
+            Some(false)
+        );
         let (manifest, records) = export(&f, run.analysis.unwrap());
         assert!(!manifest.coverage.control_flow);
         assert!(!records.is_empty());
@@ -318,7 +327,7 @@ fn cli_analyzes_lists_reads_and_exports() {
     let f = fixture(object(BRANCH, BRANCH.len() as u64, false), false);
     let request = f.dir.path().join("request.json");
     fs::write(&request, serde_json::to_vec(&f.request).unwrap()).unwrap();
-    let run = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let run = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["analyze-function", "--project"])
         .arg(&f.project)
         .arg("--request")
@@ -334,7 +343,7 @@ fn cli_analyzes_lists_reads_and_exports() {
     let report: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
     let id = report["run"]["analysis"].as_str().unwrap();
     for command in ["analyses", "analysis", "export-analysis"] {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_blobray-next"));
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_blobray"));
         cmd.arg(command).arg("--project").arg(&f.project).args([
             "--limit-mode",
             "watchdog",
@@ -366,7 +375,7 @@ fn human_cli_reports_extent_failure_and_partial_coverage() {
         let f = fixture(object(bytes, size, false), false);
         let request = f.dir.path().join("request.json");
         fs::write(&request, serde_json::to_vec(&f.request).unwrap()).unwrap();
-        let output = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+        let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
             .args(["analyze-function", "--project"])
             .arg(&f.project)
             .arg("--request")
@@ -394,7 +403,13 @@ fn target_inside_instruction_and_truncation_are_visible_gaps() {
         let f = fixture(object(bytes, bytes.len() as u64, false), false);
         let run = analyze(&f);
         assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
-        assert_eq!(run.complete, Some(false));
+        assert_eq!(
+            run.assessment
+                .as_ref()
+                .and_then(|a| a.coverage.as_ref())
+                .map(|c| c.status == CoverageStatus::Complete),
+            Some(false)
+        );
         let (_, records) = export(&f, run.analysis.unwrap());
         assert!(records.iter().any(|r| matches!(
             r,
@@ -478,10 +493,7 @@ fn function_cancellation_timeout_and_disk_limit_never_publish() {
         .wait();
     assert_eq!(run.state, RunState::TimedOut);
     let limited = app::Application::with_temporary_storage(
-        Arc::new(LinuxHost::new(
-            env!("CARGO_BIN_EXE_blobray-next").into(),
-            None,
-        )),
+        Arc::new(LinuxHost::new(env!("CARGO_BIN_EXE_blobray").into(), None)),
         app::ApplicationLimits::default(),
         app::TemporaryStoragePolicy {
             root: Some(f.dir.path().join("limited")),
@@ -519,7 +531,7 @@ fn killed_function_coordinator_requires_explicit_recovery() {
     let f = fixture(object(&code, code.len() as u64, false), false);
     let request = f.dir.path().join("request.json");
     fs::write(&request, serde_json::to_vec(&f.request).unwrap()).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["analyze-function", "--project"])
         .arg(&f.project)
         .arg("--request")
@@ -577,7 +589,15 @@ fn values_and_memory_effects_survive_export_without_origins() {
     fs::remove_file(f.dir.path().join("entry.a")).unwrap();
     fs::remove_file(f.dir.path().join("entry.o")).unwrap();
     let run = analyze(&f);
-    assert_eq!(run.complete, Some(true), "{:?}", run.error);
+    assert_eq!(
+        run.assessment
+            .as_ref()
+            .and_then(|a| a.coverage.as_ref())
+            .map(|c| c.status == CoverageStatus::Complete),
+        Some(true),
+        "{:?}",
+        run.error
+    );
     let id = run.analysis.unwrap();
     let (manifest, records) = export(&f, id.clone());
     assert_eq!(manifest.schema, 4);
@@ -630,7 +650,7 @@ fn values_and_memory_effects_survive_export_without_origins() {
             ..
         }
     )));
-    let human = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let human = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["analysis", "--project"])
         .arg(&f.project)
         .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
@@ -655,7 +675,13 @@ fn opaque_calls_and_atomic_accesses_preserve_unknowns() {
     let f = fixture(object(&code, code.len() as u64, false), false);
     let run = analyze(&f);
     assert_eq!(run.state, RunState::Completed);
-    assert_eq!(run.complete, Some(false));
+    assert_eq!(
+        run.assessment
+            .as_ref()
+            .and_then(|a| a.coverage.as_ref())
+            .map(|c| c.status == CoverageStatus::Complete),
+        Some(false)
+    );
     let (m, records) = export(&f, run.analysis.unwrap());
     assert!(!m.semantics.unwrap().complete);
     for kind in [
@@ -853,7 +879,13 @@ fn relocated_tail_call_is_an_opaque_effect_not_an_unknown_address_pair() {
     .unwrap();
     let f = fixture(obj.write().unwrap(), false);
     let run = analyze(&f);
-    assert_eq!(run.complete, Some(false));
+    assert_eq!(
+        run.assessment
+            .as_ref()
+            .and_then(|a| a.coverage.as_ref())
+            .map(|c| c.status == CoverageStatus::Complete),
+        Some(false)
+    );
     let (manifest, records) = export(&f, run.analysis.unwrap());
     assert_eq!(manifest.semantics.unwrap().gaps, 1);
     assert!(records.iter().any(|r| matches!(
@@ -877,3 +909,49 @@ mod investigations;
 
 #[path = "functions/knowledge.rs"]
 mod knowledge;
+
+#[test]
+fn ten_thousand_section_relocations_fit_small_function_capacity() {
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let text = obj.add_section(Vec::new(), b".text.entry".to_vec(), SectionKind::Text);
+    obj.append_section_data(text, &words(&vec![0x00008067; 10001]), 4);
+    obj.add_symbol(symbol(
+        b"entry",
+        SymbolSection::Section(text),
+        4,
+        SymbolKind::Text,
+    ));
+    let external = obj.add_symbol(symbol(
+        b"external",
+        SymbolSection::Undefined,
+        0,
+        SymbolKind::Data,
+    ));
+    for i in 1..=10000 {
+        obj.add_relocation(
+            text,
+            Relocation {
+                offset: i * 4,
+                symbol: external,
+                addend: 0,
+                flags: RelocationFlags::Elf {
+                    r_type: object::elf::R_RISCV_32,
+                },
+            },
+        )
+        .unwrap();
+    }
+    let f = fixture(obj.write().unwrap(), false);
+    let mut limits = budget();
+    limits.working_memory_bytes = Some(16 * 1024 * 1024);
+    let run = f
+        .app
+        .start_analyze_function(&f.project, f.request.clone(), limits)
+        .unwrap()
+        .wait();
+    assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
+    let progress = run.diagnostics.unwrap().progress.unwrap();
+    assert_eq!(progress.measurements.objects_prepared, 1);
+    assert_eq!(progress.measurements.sections_prepared, 1);
+    assert!(progress.working_memory.unwrap().peak_reserved_bytes < 16 * 1024 * 1024);
+}

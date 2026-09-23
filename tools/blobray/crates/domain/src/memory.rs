@@ -145,6 +145,29 @@ impl DerefMut for ScratchBytes<'_> {
 mod tests {
     use super::*;
     #[test]
+    fn index_growth_admits_both_buffers_and_preserves_data_on_failure() {
+        let memory = WorkingMemory::new(23).unwrap();
+        let mut index = AdmittedVec::new(&memory);
+        for n in 0u8..8 {
+            index.push(n, RunPosition::default()).unwrap();
+        }
+        assert_eq!(
+            index.push(8, RunPosition::default()).unwrap_err().code,
+            ErrorCode::ResourceLimited
+        );
+        assert_eq!(&*index, &[0, 1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(memory.used(), 8);
+        drop(index);
+        assert_eq!(memory.used(), 0);
+        let memory = WorkingMemory::new(24).unwrap();
+        let mut index = AdmittedVec::new(&memory);
+        for n in 0u8..9 {
+            index.push(n, RunPosition::default()).unwrap();
+        }
+        assert_eq!(memory.peak(), 24);
+        assert_eq!(memory.used(), 16);
+    }
+    #[test]
     fn overlapping_scopes_are_bounded_and_errors_release_capacity() {
         let memory = WorkingMemory::new(16).unwrap();
         let a = memory.bytes(10, RunPosition::default()).unwrap();
@@ -183,5 +206,50 @@ mod unwind_tests {
                 .requested_bytes,
             u64::MAX
         );
+    }
+}
+
+/// Operation-local vector with fallible growth and explicit old/new overlap admission.
+pub struct AdmittedVec<'a, T> {
+    values: Vec<T>,
+    memory: &'a WorkingMemory,
+    capacity: Option<MemoryReservation<'a>>,
+}
+impl<'a, T> AdmittedVec<'a, T> {
+    pub fn new(memory: &'a WorkingMemory) -> Self {
+        Self {
+            values: Vec::new(),
+            memory,
+            capacity: None,
+        }
+    }
+    pub fn push(&mut self, value: T, position: RunPosition) -> Result<()> {
+        if self.values.len() == self.values.capacity() {
+            let count = self.values.len().saturating_mul(2).max(8);
+            let bytes = count
+                .checked_mul(std::mem::size_of::<T>())
+                .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "index capacity overflow"))?;
+            let reservation = self.memory.reserve(bytes as u64, position)?;
+            let mut replacement = Vec::new();
+            replacement
+                .try_reserve_exact(count)
+                .map_err(|_| Error::new(ErrorCode::ResourceLimited, "index allocation refused"))?;
+            replacement.append(&mut self.values);
+            self.values = replacement;
+            self.capacity = Some(reservation);
+        }
+        self.values.push(value);
+        Ok(())
+    }
+}
+impl<T> Deref for AdmittedVec<'_, T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        &self.values
+    }
+}
+impl<T> DerefMut for AdmittedVec<'_, T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        &mut self.values
     }
 }

@@ -16,7 +16,7 @@ use std::{
 
 fn application() -> Application {
     Application::new(Arc::new(LinuxHost::new(
-        env!("CARGO_BIN_EXE_blobray-next").into(),
+        env!("CARGO_BIN_EXE_blobray").into(),
         None,
     )))
 }
@@ -76,7 +76,7 @@ fn sigint_returns_cancelled_without_replacing_current() {
     let before = seed(temp.path());
     let source = temp.path().join("large");
     large(&source);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args([
             "import",
             "--limit-mode",
@@ -112,7 +112,7 @@ fn killed_coordinator_is_recovered_without_reimport_or_revision_loss() {
     let before = seed(temp.path());
     let source = temp.path().join("large");
     large(&source);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["import", "--limit-mode", "watchdog", "--project"])
         .arg(temp.path())
         .arg("--input")
@@ -180,7 +180,7 @@ fn unavailable_kernel_backend_is_a_persisted_failure_with_no_fallback() {
     let before = seed(temp.path());
     let root = tempfile::tempdir().unwrap();
     let app = Application::new(Arc::new(LinuxHost::new(
-        env!("CARGO_BIN_EXE_blobray-next").into(),
+        env!("CARGO_BIN_EXE_blobray").into(),
         Some(root.path().into()),
     )));
     let run = app
@@ -203,7 +203,7 @@ fn work_exhaustion_is_durable_and_cli_preserves_the_selected_snapshot() {
     let temp = tempfile::tempdir().unwrap();
     let before = seed(temp.path());
     let source = temp.path().join("source.o");
-    let output = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args([
             "import",
             "--limit-mode",
@@ -223,7 +223,7 @@ fn work_exhaustion_is_durable_and_cli_preserves_the_selected_snapshot() {
     let value: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(value["schema"], 3);
     let record: RunRecord = serde_json::from_value(value["run"].clone()).unwrap();
-    assert_eq!(record.schema, 6);
+    assert_eq!(record.schema, 8);
     assert_eq!(record.state, RunState::ResourceLimited);
     assert_eq!(
         record.error.as_ref().unwrap().code,

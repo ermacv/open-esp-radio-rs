@@ -63,10 +63,7 @@ impl Fixture {
             })
             .collect();
         let app = app::Application::with_temporary_storage(
-            Arc::new(LinuxHost::new(
-                env!("CARGO_BIN_EXE_blobray-next").into(),
-                None,
-            )),
+            Arc::new(LinuxHost::new(env!("CARGO_BIN_EXE_blobray").into(), None)),
             app::ApplicationLimits::default(),
             app::TemporaryStoragePolicy {
                 root: Some(dir.path().join("runtime")),
@@ -141,7 +138,7 @@ impl Fixture {
             .wait()
     }
     fn read(&self, id: &ArtifactId) -> serde_json::Value {
-        let output = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+        let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
             .args(["--format", "json", "execution", "--project"])
             .arg(&self.project)
             .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
@@ -164,7 +161,7 @@ fn comparison_replay_and_preservation_use_captured_bytes() {
     let id = run.execution.unwrap();
     let result = f.read(&id);
     assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
-    let replay = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let replay = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["--format", "json", "replay", "--project"])
         .arg(&f.project)
         .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
@@ -198,7 +195,7 @@ fn comparison_replay_and_preservation_use_captured_bytes() {
             vec!["--backup", backup.to_str().unwrap()],
         ),
     ] {
-        let status = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+        let status = Command::new(env!("CARGO_BIN_EXE_blobray"))
             .args([cmd, "--project"])
             .arg(path)
             .args(["--limit-mode", "watchdog"])
@@ -213,7 +210,7 @@ fn comparison_replay_and_preservation_use_captured_bytes() {
     }
     let moved = f._dir.path().join("moved");
     fs::rename(&restored, &moved).unwrap();
-    let status = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let status = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["execution", "--project"])
         .arg(&moved)
         .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
@@ -251,7 +248,13 @@ fn concrete_memory_state_and_unknowns_are_not_invented() {
     assert_eq!(low, vec![1, 2]);
     r.case_execution = CaseExecution::Independent;
     let run = f.run(r.clone(), budget());
-    assert_eq!(run.complete, Some(false));
+    assert_eq!(
+        run.assessment
+            .as_ref()
+            .and_then(|a| a.coverage.as_ref())
+            .map(|c| c.status == CoverageStatus::Complete),
+        Some(false)
+    );
     r.case_execution = CaseExecution::Stateful;
     r.cases[0].vendor.memory.clear();
     let run = f.run(r, budget());
@@ -415,7 +418,13 @@ fn selected_companion_code_and_elf_zero_fill_obey_session_ownership() {
     r.binding = None;
     r.cases[0].replacement = None;
     let run = f.run(r.clone(), budget());
-    assert_eq!(run.complete, Some(false));
+    assert_eq!(
+        run.assessment
+            .as_ref()
+            .and_then(|a| a.coverage.as_ref())
+            .map(|c| c.status == CoverageStatus::Complete),
+        Some(false)
+    );
     r.vendor.companions = vec![1];
     let run = f.run(r.clone(), budget());
     assert_eq!(

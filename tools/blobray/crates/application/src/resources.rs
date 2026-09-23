@@ -38,8 +38,17 @@ impl<'a> RunContext<'a> {
     pub fn snapshot(&self) -> RunProgress {
         self.progress
     }
+    fn account_time(&mut self) {
+        let elapsed = self.environment.now_ms().saturating_sub(self.started_ms);
+        self.progress.phases.add(
+            self.progress.position.phase,
+            elapsed.saturating_sub(self.progress.elapsed_ms),
+            0,
+        );
+        self.progress.elapsed_ms = elapsed;
+    }
     pub fn flush(&mut self) -> Result<()> {
-        self.progress.elapsed_ms = self.environment.now_ms().saturating_sub(self.started_ms);
+        self.account_time();
         let result = self.environment.observe(&self.progress);
         if let Err(error) = &result {
             self.failure = Some(error.clone());
@@ -48,6 +57,9 @@ impl<'a> RunContext<'a> {
     }
 }
 impl RunControl for RunContext<'_> {
+    fn measure(&mut self, metric: WorkMetric, amount: u64) {
+        self.progress.measurements.add(metric, amount);
+    }
     fn progress(&self) -> Option<RunProgress> {
         Some(self.snapshot())
     }
@@ -66,6 +78,9 @@ impl RunControl for RunContext<'_> {
         self.progress.position
     }
     fn set_position(&mut self, position: RunPosition) {
+        if self.progress.position.phase != position.phase {
+            self.account_time();
+        }
         self.progress.position = position;
     }
     fn checkpoint(&mut self, units: u64) -> Result<()> {
@@ -73,7 +88,7 @@ impl RunControl for RunContext<'_> {
             return Err(error.clone());
         }
         let now = self.environment.now_ms();
-        self.progress.elapsed_ms = now.saturating_sub(self.started_ms);
+        self.account_time();
         self.progress.sequence = self.progress.sequence.saturating_add(1);
         let stop = if self.environment.cancelled() {
             Some((StopReason::Cancelled, ErrorCode::Cancelled))
@@ -103,6 +118,9 @@ impl RunControl for RunContext<'_> {
             return Err(error);
         }
         self.progress.work_used += units;
+        self.progress
+            .phases
+            .add(self.progress.position.phase, 0, units);
         let result = self.environment.observe(&self.progress);
         if let Err(error) = &result {
             self.failure = Some(error.clone());
@@ -141,6 +159,51 @@ mod tests {
             cancelled: Cell::new(false),
             fail_observer: false,
         }
+    }
+    #[test]
+    fn fixed_measurements_and_phase_costs_survive_worker_handoff() {
+        let env = environment();
+        let budget = ResourceBudget::default();
+        let mut worker = RunContext::new(&env, 100, 1000, &budget, None).unwrap();
+        worker.phase(RunPhase::PrepareObject).unwrap();
+        worker.measure(WorkMetric::ObjectsPrepared, 1);
+        worker.checkpoint(7).unwrap();
+        env.time.set(120);
+        worker.phase(RunPhase::AnalyzeFunction).unwrap();
+        worker.checkpoint(3).unwrap();
+        env.time.set(150);
+        worker.flush().unwrap();
+        let mut coordinator =
+            RunContext::new(&env, 100, 1000, &budget, Some(worker.snapshot())).unwrap();
+        coordinator.phase(RunPhase::Retain).unwrap();
+        coordinator.checkpoint(5).unwrap();
+        env.time.set(160);
+        coordinator.flush().unwrap();
+        let p = coordinator.snapshot();
+        assert_eq!(p.work_used, 15);
+        assert_eq!(p.measurements.objects_prepared, 1);
+        assert_eq!(
+            p.phases.prepare_object,
+            PhaseCost {
+                elapsed_ms: 20,
+                work_units: 7
+            }
+        );
+        assert_eq!(
+            p.phases.analyze_function,
+            PhaseCost {
+                elapsed_ms: 30,
+                work_units: 3
+            }
+        );
+        assert_eq!(
+            p.phases.retain,
+            PhaseCost {
+                elapsed_ms: 10,
+                work_units: 5
+            }
+        );
+        assert_eq!(p.elapsed_ms, 60);
     }
     #[test]
     fn exact_budget_boundary_and_overflow_are_sticky() {

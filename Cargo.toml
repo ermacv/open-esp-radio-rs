@@ -53,7 +53,9 @@ members = [
     "hil/host/runner",
     "qualification/evaluator",
     "tools/memory-report",
-    "tools/blobray/crates/register-model",
+    "tools/registers",
+    "tools/registers/contracts",
+    "tools/registers/model",
     "tools/blobray",
     "tools/blobray/next",
     "tools/blobray/crates/domain",
@@ -66,7 +68,7 @@ members = [
     "tools/blobray/crates/riscv",
     "tools/blobray/crates/backend-riscv",
     "tools/blobray/crates/contracts",
-    "tools/blobray/crates/review-model",
+    "tools/registers/review",
     "tools/blobray/crates/execution-model",
     "verification/vendor/chips/esp32s31/blobray-provider/contracts",
     "verification/vendor/chips/esp32s31/blobray-provider/knowledge",
@@ -78,7 +80,6 @@ members = [
     "tools/blobray/crates/semantics",
     "tools/blobray/addons/c",
     "tools/blobray/addons/esp-idf",
-    "verification/vendor/projects/esp32s31/blobray-host",
 ]
 exclude = [
     "platform/esp32s31",

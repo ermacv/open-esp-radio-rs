@@ -110,7 +110,7 @@ impl Project {
             c.position(),
         )?;
         let manifest = decode(&source, c)?;
-        let RunOperation::Execute { request, producer } = &record.operation else {
+        let RunOperation::Execute { request, producer } = record.effective_operation() else {
             return Err(integrity("execution row has another operation"));
         };
         if record.state != RunState::Completed
@@ -119,8 +119,12 @@ impl Project {
             || producer.executor != manifest.producer.executor
             || producer.environment != manifest.producer.environment
             || producer.verifier != manifest.producer.verifier
-            || record.complete != Some(manifest.complete)
-            || record.verdict != manifest.verdict
+            || record.assessment
+                != Some(ResultAssessment::execution(
+                    id.clone(),
+                    manifest.complete,
+                    manifest.verdict,
+                ))
         {
             return Err(integrity("execution manifest and admitted run differ"));
         }
@@ -167,7 +171,7 @@ impl Writer {
         memory: &WorkingMemory,
         c: &mut dyn RunControl,
     ) -> Result<RetainedExecution> {
-        let RunOperation::Execute { request, producer } = &run.operation else {
+        let RunOperation::Execute { request, producer } = run.effective_operation() else {
             return Err(integrity("execution receipt belongs to another operation"));
         };
         let stage = Staging::open(&self.stage_path(&run.id))?;
@@ -208,7 +212,9 @@ impl Writer {
         run: &mut RunRecord,
         retained: RetainedExecution,
     ) -> Result<()> {
-        if run.id != retained.run || !matches!(run.operation, RunOperation::Execute { .. }) {
+        if run.id != retained.run
+            || !matches!(run.effective_operation(), RunOperation::Execute { .. })
+        {
             return Err(integrity("execution retained for another run"));
         }
         let mut connection = open_connection(&self.project.root, true)?;
@@ -218,8 +224,11 @@ impl Writer {
         let mut completed = run.clone();
         completed.state = RunState::Completed;
         completed.execution = Some(retained.id);
-        completed.verdict = retained.verdict;
-        completed.complete = Some(retained.complete);
+        completed.assessment = Some(ResultAssessment::execution(
+            completed.execution.clone().unwrap(),
+            retained.complete,
+            retained.verdict,
+        ));
         tx.execute(
             "UPDATE runs SET record=?2 WHERE id=?1",
             params![

@@ -165,28 +165,28 @@ impl RevisionId {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ObjectLocation {
     Standalone,
     ArchiveMember { ordinal: u64 },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ObjectId {
     pub artifact: ArtifactId,
     pub location: ObjectLocation,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SymbolTableKind {
     Static,
     Dynamic,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SymbolId {
     pub object: ObjectId,
@@ -406,3 +406,15 @@ pub use investigation::*;
 
 mod knowledge;
 pub use knowledge::*;
+
+mod audit;
+pub use audit::*;
+
+mod assessment;
+pub use assessment::*;
+
+mod measurements;
+pub use measurements::*;
+
+mod scenarios;
+pub use scenarios::*;

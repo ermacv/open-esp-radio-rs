@@ -20,8 +20,8 @@ closed `pac` crate.
 Regenerate it from the reviewed source-only composition:
 
 ```console
-cargo blobray registers generate-pac-raw \
-  --project registers/esp32s31/publication/vendor-project.toml
+cargo registers generate \
+  --manifest registers/esp32s31/publication/registers.toml
 ```
 
 Use `--check` to validate reproducibility without overwriting the output.

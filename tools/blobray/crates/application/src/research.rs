@@ -97,17 +97,101 @@ pub(crate) fn enrich(
         ));
     }
     let _index_capacity = memory.reserve(1024 * 1024, c.position())?;
+    c.phase(RunPhase::IndexResearch)?;
     let mut root = None;
-    blobray_store::visit_jsonl(&publication.members, c, |member: InvestigationMember, _| {
-        if let PlanEntry::Function { request, .. } = &member.entry
-            && request.source == manifest.recipe.source
-            && request.symbol == manifest.recipe.symbol
-            && let InvestigationOutcome::Analyzed { analysis, .. } = member.outcome
+    let mut functions = AdmittedVec::new(memory);
+    let mut images = AdmittedVec::new(memory);
+    for (publication_index, publication) in publications.iter().enumerate() {
+        if let Some(id) = &publication.manifest.plan.recipe.request.image
+            && !images.iter().any(|(image, _, _)| image == id)
         {
-            root = Some(analysis);
+            let capacity = memory.reserve(4 * 1024 * 1024, c.position())?;
+            let image = project.image(id, c)?;
+            images.push(
+                (id.clone(), image.manifest.plan.recipe.companions, capacity),
+                c.position(),
+            )?;
         }
-        Ok(())
-    })?;
+        c.measure(WorkMetric::PublicationPasses, 1);
+        blobray_store::visit_jsonl(&publication.members, c, |member: InvestigationMember, c| {
+            if let PlanEntry::Function {
+                request,
+                declared_extent,
+                address_space,
+                ..
+            } = member.entry
+            {
+                let analysis = match member.outcome {
+                    InvestigationOutcome::Analyzed { analysis, .. } => Some(analysis),
+                    _ => None,
+                };
+                if publication_index == 0
+                    && request.source == manifest.recipe.source
+                    && request.symbol == manifest.recipe.symbol
+                {
+                    root = analysis.clone();
+                }
+                if address_space == CodeAddressSpace::Image {
+                    // Three content identities at most; fixed structural bytes are
+                    // admitted by the vector separately. No names or full plans retained.
+                    let capacity = memory.reserve(3 * 64, c.position())?;
+                    functions.push(
+                        (
+                            declared_extent.start,
+                            request.source,
+                            request.symbol,
+                            analysis,
+                            capacity,
+                        ),
+                        c.position(),
+                    )?;
+                }
+            }
+            Ok(())
+        })?;
+    }
+    c.checkpoint(functions.len() as u64 * (functions.len().max(1).ilog2() as u64 + 1))?;
+    functions.sort_unstable_by_key(|f| f.0);
+    let knowledge = project.knowledge_snapshot(options.knowledge.as_ref(), memory, c)?;
+    let mut registers = AdmittedVec::new(memory);
+    let mut regions = AdmittedVec::new(memory);
+    for entry in knowledge.entries() {
+        c.checkpoint(1)?;
+        let p = &entry.proposal;
+        if entry.state != AssertionState::Accepted
+            || p.occurrence.revision != manifest.recipe.revision
+            || p.occurrence.source != manifest.recipe.source
+            || p.occurrence.object != manifest.recipe.symbol.object
+        {
+            continue;
+        }
+        match &p.claim {
+            KnowledgeClaim::MmioRegister { register } => registers.push(
+                (register.address, register.width, entry, register),
+                c.position(),
+            )?,
+            KnowledgeClaim::MmioRegion { region } => {
+                regions.push((u64::from(region.range.start), entry, region), c.position())?
+            }
+            _ => (),
+        }
+    }
+    c.checkpoint(
+        (registers.len() + regions.len()) as u64
+            * ((registers.len() + regions.len()).max(1).ilog2() as u64 + 1),
+    )?;
+    registers.sort_unstable_by_key(|r| (r.0, r.1));
+    regions.sort_unstable_by_key(|r| r.0);
+    let mut region_ends = AdmittedVec::new(memory);
+    let mut end = 0;
+    for (start, _, region) in regions.iter() {
+        end = end.max(
+            start
+                .checked_add(region.range.length)
+                .ok_or_else(|| Error::new(ErrorCode::Integrity, "knowledge range overflow"))?,
+        );
+        region_ends.push(end, c.position())?;
+    }
     let root = root.ok_or_else(|| {
         Error::new(
             ErrorCode::InvalidRequest,
@@ -144,44 +228,41 @@ pub(crate) fn enrich(
             {
                 let external = if let FunctionSource::Image { image } = &nodes[cursor].recipe.source
                 {
-                    project.image(image, c)?.manifest.plan.recipe.companions
+                    images
+                        .iter()
+                        .find(|(id, _, _)| id == image)
+                        .map(|(_, companions, _)| companions.as_slice())
+                        .ok_or_else(|| {
+                            Error::new(
+                                ErrorCode::Integrity,
+                                "research image absent from selected publications",
+                            )
+                        })?
                 } else {
-                    Vec::new()
+                    &[]
                 };
-                for publication in &publications {
-                    blobray_store::visit_jsonl(
-                        &publication.members,
-                        c,
-                        |member: InvestigationMember, c| {
-                            c.checkpoint(1)?;
-                            if let PlanEntry::Function {
-                                request,
-                                declared_extent,
-                                address_space: CodeAddressSpace::Image,
-                                ..
-                            } = &member.entry
-                                && ((request.source == nodes[cursor].recipe.source
-                                    && request.symbol.object == nodes[cursor].recipe.symbol.object)
-                                    || external.iter().any(|e| {
-                                        request.source.input() == Some(e.input)
-                                            && request.symbol == e.symbol
-                                    }))
-                                && declared_extent.start == u64::from(address)
-                            {
-                                if let InvestigationOutcome::Analyzed { analysis, .. } =
-                                    member.outcome
-                                {
-                                    if candidate.as_ref() != Some(&analysis) {
-                                        matches += 1;
-                                        candidate = Some(analysis);
-                                    }
-                                } else {
-                                    matches += 1;
-                                }
+                c.checkpoint(functions.len().max(1).ilog2() as u64 + 1)?;
+                let first = functions.partition_point(|f| f.0 < u64::from(address));
+                for (_, source, symbol, analysis, _) in functions[first..]
+                    .iter()
+                    .take_while(|f| f.0 == u64::from(address))
+                {
+                    c.checkpoint(1)?;
+                    if (*source == nodes[cursor].recipe.source
+                        && symbol.object == nodes[cursor].recipe.symbol.object)
+                        || external
+                            .iter()
+                            .any(|e| source.input() == Some(e.input) && *symbol == e.symbol)
+                    {
+                        if let Some(analysis) = analysis {
+                            if candidate.as_ref() != Some(analysis) {
+                                matches += 1;
+                                candidate = Some(analysis.clone());
                             }
-                            Ok(())
-                        },
-                    )?;
+                        } else {
+                            matches += 1;
+                        }
+                    }
                 }
             }
             let resolved = if matches == 1
@@ -283,62 +364,54 @@ pub(crate) fn enrich(
         }
         write_control_message(&mut output, record)?;
         output.write_all(b"\n").map_err(storage_io)?;
-        if let Some(knowledge) = &options.knowledge
-            && let FunctionRecord::MemoryAccess {
-                offset,
-                address:
-                    AbstractValue::Constant { value: address } | AbstractValue::ImageAddress { address },
-                width,
-                ..
-            } = record
+        if let FunctionRecord::MemoryAccess {
+            offset,
+            address:
+                AbstractValue::Constant { value: address } | AbstractValue::ImageAddress { address },
+            width,
+            ..
+        } = record
         {
-            project.knowledge_entries(Some(knowledge), c, &mut |entry, c| {
-                let p = &entry.proposal;
-                if entry.state == AssertionState::Accepted
-                    && p.occurrence.revision == manifest.recipe.revision
-                    && p.occurrence.source == manifest.recipe.source
-                    && p.occurrence.object == manifest.recipe.symbol.object
-                    && let KnowledgeClaim::MmioRegion { region } = &p.claim
-                    && region
-                        .range
-                        .contains(u64::from(*address), u64::from(*width))
+            c.checkpoint(
+                registers.len().max(1).ilog2() as u64 + regions.len().max(1).ilog2() as u64 + 2,
+            )?;
+            let first = registers.partition_point(|r| (r.0, r.1) < (*address, *width));
+            for (_, _, entry, register) in registers[first..]
+                .iter()
+                .take_while(|r| (r.0, r.1) == (*address, *width))
+            {
+                c.checkpoint(1)?;
+                write_control_message(
+                    &mut output,
+                    &FunctionRecord::Mmio {
+                        offset: *offset,
+                        assertion: entry.id.clone(),
+                        register: (*register).clone(),
+                    },
+                )?;
+                output.write_all(b"\n").map_err(storage_io)?;
+            }
+            let mut index = regions.partition_point(|r| r.0 <= u64::from(*address));
+            while index > 0 && region_ends[index - 1] > u64::from(*address) {
+                index -= 1;
+                c.checkpoint(1)?;
+                let (_, entry, region) = &regions[index];
+                if region
+                    .range
+                    .contains(u64::from(*address), u64::from(*width))
                 {
                     write_control_message(
                         &mut output,
                         &FunctionRecord::MmioRange {
                             offset: *offset,
                             assertion: entry.id.clone(),
-                            region: region.clone(),
+                            region: (*region).clone(),
                         },
                     )?;
                     output.write_all(b"\n").map_err(storage_io)?;
                 }
-
-                if entry.state == AssertionState::Accepted
-                    && p.occurrence.revision == manifest.recipe.revision
-                    && p.occurrence.source == manifest.recipe.source
-                    && p.occurrence.object == manifest.recipe.symbol.object
-                    && let KnowledgeClaim::MmioRegister { register } = &p.claim
-                    && register.address == *address
-                    && register.width == *width
-                {
-                    write_control_message(
-                        &mut output,
-                        &FunctionRecord::Mmio {
-                            offset: *offset,
-                            assertion: entry.id.clone(),
-                            register: register.clone(),
-                        },
-                    )?;
-                    output.write_all(b"\n").map_err(storage_io)?;
-                }
-                c.checkpoint(1)
-            })?;
+            }
         }
-    }
-    // Validate even when this function has no MMIO accesses.
-    if let Some(knowledge) = &options.knowledge {
-        project.knowledge_entries(Some(knowledge), c, &mut |_, c| c.checkpoint(1))?;
     }
     manifest.records = staging.retain_temporary(output, c)?;
     if let Some(summary) = &mut manifest.semantics {

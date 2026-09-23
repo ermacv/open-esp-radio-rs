@@ -488,7 +488,13 @@ fn reviewed_extent_is_selected_explicitly_and_names_do_not_change_function_compu
     assert_eq!(again, &plan);
     let analyzed = f
         .app
-        .start_analyze_project(&f.project, &plan, budget())
+        .start_analyze_project(
+            &f.project,
+            blobray_domain::InvestigationInput::Plan {
+                plan: (*plan).clone(),
+            },
+            budget(),
+        )
         .unwrap()
         .wait();
     assert_eq!(analyzed.state, RunState::Completed, "{analyzed:?}");

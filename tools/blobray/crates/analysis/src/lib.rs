@@ -1,14 +1,16 @@
 //! Bounded local control-flow exploration. No filesystem, project or ISA implementation.
 use blobray_domain::*;
+mod references;
 pub mod summaries;
 mod values;
+pub use references::PreparedReferences;
 
 pub struct FunctionInput<'a> {
     pub image: Option<&'a dyn ImageMemory>,
     pub section: u32,
     pub extent: CodeRange,
     pub bytes: &'a [u8],
-    pub relocations: &'a [FunctionRelocation],
+    pub relocations: &'a PreparedReferences<'a>,
     pub data_ranges: &'a [CodeRange],
 }
 #[derive(Default)]
@@ -111,19 +113,20 @@ fn analyze_with(
     leaders[0] = true;
     work.push(input.extent.start);
     let in_scope = |address: u64| address >= input.extent.start && address < end;
-    for raw in input.relocations {
+    for site in input.relocations.first_at(input.extent.start)..input.relocations.first_at(end) {
+        let raw = &input.relocations[site];
         control.checkpoint(1)?;
         if !in_scope(raw.offset) {
             continue;
         }
-        let r = decoder.reference(raw, input.relocations, input.section, control)?;
+        let r = input.relocations.normalized(site);
         summary.coverage.references &= r.known;
         emit(
             sink,
             FunctionRecord::Reference {
                 raw: Box::new(raw.clone()),
                 reference_kind: r.kind,
-                target: r.target,
+                target: r.target.clone(),
                 addend: r.addend,
                 paired: r.paired,
                 known: r.known,
@@ -233,7 +236,11 @@ fn analyze_with(
         let mut relocated = None;
         let mut relevant = 0;
         let mut unknown = false;
-        for r in input.relocations {
+        for site in input.relocations.first_at(offset.saturating_sub(4))
+            ..input.relocations.first_at(offset.saturating_add(1))
+        {
+            let r = &input.relocations[site];
+            control.measure(WorkMetric::RelocationLookups, 1);
             control.checkpoint(1)?;
             if input.image.is_some() {
                 break;
@@ -245,7 +252,7 @@ fn analyze_with(
             if !exact && !call_pair {
                 continue;
             }
-            let normalized = decoder.reference(r, input.relocations, input.section, control)?;
+            let normalized = input.relocations.normalized(site);
             if call_pair && normalized.kind == ReferenceKind::Call {
                 let position = (r.offset - input.extent.start) as usize;
                 let first =
@@ -485,3 +492,4 @@ fn emit(
     }
     sink.record(&record, control)
 }
+pub mod audit;

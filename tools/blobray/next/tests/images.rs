@@ -32,10 +32,7 @@ fn budget() -> ResourceBudget {
 }
 fn application(root: &Path) -> app::Application {
     app::Application::with_temporary_storage(
-        Arc::new(LinuxHost::new(
-            env!("CARGO_BIN_EXE_blobray-next").into(),
-            None,
-        )),
+        Arc::new(LinuxHost::new(env!("CARGO_BIN_EXE_blobray").into(), None)),
         app::ApplicationLimits::default(),
         app::TemporaryStoragePolicy {
             root: Some(root.into()),
@@ -340,7 +337,7 @@ fn cli_plan_prepare_inspect_and_export_use_the_same_application_contract() {
     let request = f.dir.path().join("request.json");
     let plan = f.dir.path().join("plan.json");
     fs::write(&request, serde_json::to_vec(&f.request).unwrap()).unwrap();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_blobray-next"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_blobray"));
     command
         .args(["link-plan", "--project"])
         .arg(&f.project)
@@ -357,7 +354,7 @@ fn cli_plan_prepare_inspect_and_export_use_the_same_application_contract() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let output = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["prepare-image", "--project"])
         .arg(&f.project)
         .arg("--plan")
@@ -374,7 +371,7 @@ fn cli_plan_prepare_inspect_and_export_use_the_same_application_contract() {
     );
     let record: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let id = record["run"]["image"].as_str().unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["image", "--project"])
         .arg(&f.project)
         .args(["--id", id, "--limit-mode", "watchdog", "--format", "json"])
@@ -386,7 +383,7 @@ fn cli_plan_prepare_inspect_and_export_use_the_same_application_contract() {
         String::from_utf8_lossy(&output.stderr)
     );
     let export = f.dir.path().join("cli-export");
-    let output = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["export-image", "--project"])
         .arg(&f.project)
         .args(["--id", id, "--limit-mode", "watchdog"])
@@ -629,10 +626,7 @@ fn streaming_linker_output_obeys_disk_quota() {
         .link_plan(&f.project, f.request.clone(), &tool, budget())
         .unwrap();
     let limited = app::Application::with_temporary_storage(
-        Arc::new(LinuxHost::new(
-            env!("CARGO_BIN_EXE_blobray-next").into(),
-            None,
-        )),
+        Arc::new(LinuxHost::new(env!("CARGO_BIN_EXE_blobray").into(), None)),
         app::ApplicationLimits::default(),
         app::TemporaryStoragePolicy {
             root: Some(f.dir.path().join("limited")),
@@ -720,7 +714,7 @@ fn killed_image_coordinator_is_abandoned_without_publication() {
         .unwrap();
     let path = f.dir.path().join("plan.json");
     fs::write(&path, serde_json::to_vec(plan.description()).unwrap()).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["prepare-image", "--project"])
         .arg(&f.project)
         .arg("--plan")

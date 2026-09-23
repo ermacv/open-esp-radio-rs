@@ -33,7 +33,7 @@ facts, the project memory map and target-owned reviewed packs. RTOS, NVS,
 logging and delay semantics remain outside this crate.
 
 The format and editing workflow are documented in
-[`../../docs/registers-and-pac.md`](../../docs/registers-and-pac.md).
+[`../../blobray/docs/registers-and-pac.md`](../../blobray/docs/registers-and-pac.md).
 An absent physical register is created only by one reviewed
 `register-identity = "REGION.NAME"` assertion. The removed
 `register-declaration` and `register-name` kinds are explicit errors. The

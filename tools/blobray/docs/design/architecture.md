@@ -1,12 +1,10 @@
-# Blobray target architecture
+# Blobray architecture
 
-**Status: target design; streaming inventory, supervised operations, inspection plans, synthetic image preparation, object/linked-image investigation, bounded PHY/ROM research, reviewed knowledge, bounded concrete RV32 execution/comparison and project preservation implemented.**
-[Blobray Next](../../next/README.md) documents the concrete crates, schema and
-commands currently available. The remaining interfaces and workflows in this
-directory describe the target system. The
-[current architecture](../architecture.md) and [operator workflow](../project-workflow.md)
-remain the references for the executable tool. This directory defines the
-architecture before implementation; it does not claim compatibility or readiness.
+This directory is the architecture authority for Blobray Next. Implemented
+profiles and remaining target interfaces are distinguished in
+[workflows](workflows.md); the [operator reference](../../next/README.md)
+owns CLI syntax and current format versions. Legacy architecture documents govern
+only the retained legacy engine and do not define Next behavior.
 
 This document owns purpose, component boundaries and dependency direction.
 [Contracts](contracts.md) owns identities, interfaces, persistence and resource
@@ -72,14 +70,14 @@ association, not an automatic transfer of all previous assertions.
 
 Crate boundaries enforce independent dependency and authority rules. Modules
 inside each crate divide implementation without acquiring extra capabilities.
-These are target names, not instructions to rename existing directories.
+The shipping host package is `blobray-next` and its executable is `blobray`. Modules within existing crates own prepared objects, reference indexes and concrete scenarios; these responsibilities do not require another runtime crate.
 
 | Crate | Principal modules | Owns | Allowed local dependencies |
 | --- | --- | --- | --- |
 | `blobray-domain` | identity, provenance, applicability, observations, effects, ports | Shared values and narrow extension interfaces | None |
 | `blobray-artifacts` | containers, objects, symbols, relocations, mappings | Structural inspection of supplied immutable bytes | domain |
-| `blobray-analysis` | passes, IR, relationships, correspondence, lineage | Derived analysis and computation dependency declarations | domain, artifacts |
-| `blobray-backend-riscv` | decode, lift, ABI, execution | RV32 semantics and concrete machine state | domain, artifacts |
+| `blobray-analysis` | passes, IR, relationships, correspondence, lineage | Derived analysis and computation dependency declarations | domain |
+| `blobray-backend-riscv` | decode, lift, ABI, execution | RV32 semantics and concrete machine state | domain |
 | `blobray-knowledge` | code, functions, interfaces, registers, review | Assertion validation and explicit acceptance/rebase decisions | domain |
 | `blobray-verification` | scenarios, comparison, evidence | Comparison relations and verdict construction | domain |
 | `blobray-store` | imports, objects, revisions, transactions, cache, retention | Durable storage and separately authorized cache operations | domain |
@@ -297,3 +295,8 @@ is selected here.
 Reuse decisions for external engines require a separate fit evaluation against
 the [acceptance scenarios](workflows.md#acceptance-scenarios). No engine is adopted
 solely because it already parses archives or stores an analysis database.
+
+Register source publication is owned by [the register tool](../../../registers/README.md),
+with separate reviewed contracts/model/review modules and no legacy execution dependency.
+The primary `cargo blobray` command selects Next. Final-image target auditing uses
+the ordinary ephemeral supervisor and injected ISA port; it has no project writer.

@@ -62,3 +62,16 @@ admitted loader. It shares `ProgramView` validation with static image research,
 including overlapping mappings, permissions, dynamic/TLS rejection and input
 capacity. Borrowed bytes expire after the callback; application owns any copied
 mutable memory. This port performs no relocation, model selection or execution.
+
+`executable_sections` lends validated static RV32 executable sections independently
+of function symbols. Missing section coverage fails the final-image audit instead
+of being interpreted as a clean empty program.
+
+Function analysis and final-image audit share mapping-symbol validation and
+admitted interval storage. Only local zero-sized `$d`/`$x` markers authorize data
+intervals. ISA-qualified `$xrv32…` markers also end data intervals; other XLENs,
+conflicting, misaligned code or out-of-section markers fail closed.
+
+`with_prepared_object` owns one captured buffer, ELF/program view and lazily prepared sections. Callback-borrowed function views share target names and section metadata; object scope releases their admitted capacity. `MemberIndex` traverses an archive once and preserves ordinal payload identity, including thin-member markers.
+
+An ordinal index retains valid prefix entries when a later archive header is malformed and exposes the terminal integrity error. Selecting an unavailable later ordinal returns that error. Inventory/publication coverage owns the incomplete-membership claim; an index never asserts archive completeness. Resource, I/O and cancellation failures abort indexing.

@@ -124,7 +124,7 @@ pub struct FunctionRelocation {
     pub offset: u64,
     pub relocation_type: u32,
     pub addend: Option<i64>,
-    pub target: ReferenceTarget,
+    pub target: std::sync::Arc<ReferenceTarget>,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -138,7 +138,7 @@ pub enum ReferenceKind {
 #[derive(Clone, Debug)]
 pub struct NormalizedReference {
     pub kind: ReferenceKind,
-    pub target: ReferenceTarget,
+    pub target: std::sync::Arc<ReferenceTarget>,
     pub addend: Option<i64>,
     pub paired: Option<(u32, u64)>,
     pub known: bool,
@@ -159,10 +159,22 @@ pub struct DecodedOp {
     pub text: String,
     pub flow: InstructionFlow,
 }
+/// Structural classification when the semantic decoder does not model an encoding.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnsupportedFlow {
+    NonControl,
+    Indirect,
+    Unknown,
+}
 /// Receives captured bytes/structural records only. No project, filesystem or discovery authority.
 pub trait FunctionDecoder {
     fn identity(&self) -> &'static str;
+    /// Unknown is mandatory unless the ISA proves the encoding's control class.
+    fn unsupported_flow(&self, _bytes: &[u8]) -> UnsupportedFlow {
+        UnsupportedFlow::Unknown
+    }
     fn decode(&self, bytes: &[u8]) -> Option<DecodedOp>;
+    /// `all` is the complete section table sorted by offset, preserving physical IDs.
     fn reference(
         &self,
         relocation: &FunctionRelocation,
@@ -265,7 +277,7 @@ pub enum FunctionRecord {
     Reference {
         raw: Box<FunctionRelocation>,
         reference_kind: ReferenceKind,
-        target: ReferenceTarget,
+        target: std::sync::Arc<ReferenceTarget>,
         addend: Option<i64>,
         paired: Option<(u32, u64)>,
         known: bool,

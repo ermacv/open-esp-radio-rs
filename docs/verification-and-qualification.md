@@ -275,13 +275,8 @@ The commands below produce and assess evidence for an explicitly selected
 checkpoint. They are not prerequisites for reading project status.
 
 ```console
-cargo build --profile blobray -p blobray-esp32s31 --bin blobray
-cargo build --profile blobray -p blobray --bin blobray-run
-
-target/blobray/blobray-run \
-  project verify \
-  --project verification/vendor/projects/esp32s31/vendor-project.toml \
-  --run-spec verification/vendor/projects/esp32s31/local.toml
+cargo build --profile blobray -p blobray-next --bin blobray
+cargo blobray compare --project /path/to/research --request /path/to/comparison.json --limit-mode watchdog
 
 cargo qualification evaluate \
   --manifest qualification/targets/esp32s31/wifi-sta.toml \

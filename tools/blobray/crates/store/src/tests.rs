@@ -160,39 +160,6 @@ fn owner() -> OwnerIdentity {
 }
 
 #[test]
-fn upgrade_preserves_schema_one_manifests_and_is_explicit_and_idempotent() {
-    let temp = tempfile::tempdir().unwrap();
-    let project = Project::create(temp.path()).unwrap();
-    let before = project
-        .writer()
-        .unwrap()
-        .commit(revision(&project))
-        .unwrap();
-    let connection = open_connection(&project.root, true).unwrap();
-    connection
-        .execute_batch(
-            "DROP TABLE legacy_imports; DROP TABLE knowledge_revisions; DROP TABLE publications; DROP TABLE current_publication; DROP TABLE analyses; DROP TABLE images; DROP TABLE runs; PRAGMA user_version=1;",
-        )
-        .unwrap();
-    assert_eq!(
-        Project::open(temp.path()).unwrap().snapshot(None).unwrap(),
-        before
-    );
-    assert!(matches!(
-        Writer::open(temp.path()),
-        Err(Error {
-            code: ErrorCode::Incompatible,
-            ..
-        })
-    ));
-    Project::upgrade(temp.path()).unwrap();
-    Project::upgrade(temp.path()).unwrap();
-    let after = Project::open(temp.path()).unwrap();
-    assert_eq!(after.snapshot(None).unwrap(), before);
-    assert!(after.runs().unwrap().is_empty());
-}
-
-#[test]
 fn recovery_requires_dead_owner_and_free_stage_lease() {
     let temp = tempfile::tempdir().unwrap();
     let project = Project::create(temp.path()).unwrap();
@@ -333,52 +300,36 @@ fn ordinary_update_cannot_fabricate_completion() {
 }
 
 #[test]
-fn old_run_unknown_metrics_and_future_versions_use_one_decoder() {
+fn incompatible_journals_are_rejected_by_all_readers_without_mutation() {
     let temp = tempfile::tempdir().unwrap();
     let project = Project::create(temp.path()).unwrap();
     let mut writer = project.writer().unwrap();
     let (run, _) = writer.register(ResourceBudget::default(), owner()).unwrap();
-    let mut value = serde_json::to_value(&run).unwrap();
-    value["schema"] = 1.into();
-    value["budget"]
-        .as_object_mut()
-        .unwrap()
-        .remove("working_memory_bytes");
-    value.as_object_mut().unwrap().remove("diagnostics");
-    value["budget"]
-        .as_object_mut()
-        .unwrap()
-        .remove("max_work_units");
-    value["budget"]
-        .as_object_mut()
-        .unwrap()
-        .remove("work_policy");
     let connection = open_connection(&project.root, true).unwrap();
-    connection
-        .execute("UPDATE runs SET record=?1", [value.to_string()])
-        .unwrap();
-    let old = project.run(&run.id).unwrap();
-    assert_eq!(old, project.runs().unwrap()[0]);
-    assert!(old.budget.max_work_units.is_none());
-    assert!(old.budget.work_policy.is_none());
-    assert!(old.budget.working_memory_bytes.is_none());
-    assert!(old.diagnostics.is_none());
-    value["schema"] = 999.into();
-    connection
-        .execute("UPDATE runs SET record=?1", [value.to_string()])
-        .unwrap();
-    assert_eq!(
-        project.run(&run.id).unwrap_err().code,
-        ErrorCode::Incompatible
-    );
-    assert_eq!(project.runs().unwrap_err().code, ErrorCode::Incompatible);
-    assert_eq!(
-        writer
-            .recover(&|_| Ok(false), &|_| Ok(()))
-            .unwrap_err()
-            .code,
-        ErrorCode::Incompatible
-    );
+    for schema in [1, 2, 3, 4, 5, 6, 7, 9, 999] {
+        let mut value = serde_json::to_value(&run).unwrap();
+        value["schema"] = schema.into();
+        let raw = value.to_string();
+        connection
+            .execute("UPDATE runs SET record=?1", [&raw])
+            .unwrap();
+        assert_eq!(
+            project.run(&run.id).unwrap_err().code,
+            ErrorCode::Incompatible
+        );
+        assert_eq!(project.runs().unwrap_err().code, ErrorCode::Incompatible);
+        assert_eq!(
+            writer
+                .recover(&|_| Ok(false), &|_| Ok(()))
+                .unwrap_err()
+                .code,
+            ErrorCode::Incompatible
+        );
+        let after: String = connection
+            .query_row("SELECT record FROM runs", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(after, raw);
+    }
 }
 
 #[test]
@@ -686,42 +637,6 @@ fn image_and_completed_run_publish_atomically_without_advancing_current() {
 }
 
 #[test]
-fn schema_two_upgrade_adds_images_without_rewriting_revision_or_runs() {
-    let temp = tempfile::tempdir().unwrap();
-    let project = Project::create(temp.path()).unwrap();
-    let snapshot = project
-        .writer()
-        .unwrap()
-        .commit(revision(&project))
-        .unwrap();
-    let bytes =
-        fs::read(project.object_path(&snapshot.revision_id.as_str().parse().unwrap())).unwrap();
-    let connection = open_connection(&project.root, true).unwrap();
-    connection
-        .execute_batch("DROP TABLE legacy_imports; DROP TABLE knowledge_revisions; DROP TABLE publications; DROP TABLE current_publication; DROP TABLE analyses; DROP TABLE images; PRAGMA user_version=2;")
-        .unwrap();
-    drop(connection);
-    let old = Project::open(temp.path()).unwrap();
-    let mut count = 0;
-    old.images(&mut || Ok(()), &mut |_, _| {
-        count += 1;
-        Ok(())
-    })
-    .unwrap();
-    assert_eq!(count, 0);
-    assert!(old.writer().is_err());
-    Project::upgrade(temp.path()).unwrap();
-    Project::upgrade(temp.path()).unwrap();
-    let reopened = Project::open(temp.path()).unwrap();
-    assert_eq!(reopened.snapshot(None).unwrap(), snapshot);
-    assert_eq!(
-        fs::read(reopened.object_path(&snapshot.revision_id.as_str().parse().unwrap())).unwrap(),
-        bytes
-    );
-    assert!(reopened.runs().unwrap().is_empty());
-}
-
-#[test]
 fn function_publication_is_atomic_and_preserves_semantic_incompleteness() {
     for decoding in [false, true] {
         check_function_publication(decoding);
@@ -834,7 +749,14 @@ fn check_function_publication(decoding: bool) {
     assert_eq!(reopened.current().unwrap(), Some(snapshot.revision_id));
     let record = reopened.run(&run.id).unwrap();
     assert_eq!(record.state, RunState::Completed);
-    assert_eq!(record.complete, Some(false));
+    assert_eq!(
+        record
+            .assessment
+            .as_ref()
+            .and_then(|a| a.coverage.as_ref())
+            .map(|c| c.status == CoverageStatus::Complete),
+        Some(false)
+    );
     assert_eq!(
         reopened
             .analysis(record.analysis.as_ref().unwrap(), &mut || Ok(()))
@@ -842,40 +764,6 @@ fn check_function_publication(decoding: bool) {
             .manifest,
         manifest
     );
-}
-#[test]
-fn schema_three_upgrade_keeps_image_metadata_and_all_existing_bytes() {
-    let temp = tempfile::tempdir().unwrap();
-    let project = Project::create(temp.path()).unwrap();
-    let snapshot = project
-        .writer()
-        .unwrap()
-        .commit(revision(&project))
-        .unwrap();
-    let connection = open_connection(&project.root, true).unwrap();
-    connection
-        .execute_batch("DROP TABLE legacy_imports; DROP TABLE knowledge_revisions; DROP TABLE publications; DROP TABLE current_publication; DROP TABLE analyses; PRAGMA user_version=3;")
-        .unwrap();
-    drop(connection);
-    assert!(Project::open(temp.path()).unwrap().writer().is_err());
-    Project::upgrade(temp.path()).unwrap();
-    Project::upgrade(temp.path()).unwrap();
-    let reopened = Project::open(temp.path()).unwrap();
-    assert_eq!(reopened.snapshot(None).unwrap(), snapshot);
-    let mut count = 0;
-    reopened
-        .images(&mut || Ok(()), &mut |_, _| {
-            count += 1;
-            Ok(())
-        })
-        .unwrap();
-    reopened
-        .analyses(&mut || Ok(()), &mut |_, _| {
-            count += 1;
-            Ok(())
-        })
-        .unwrap();
-    assert_eq!(count, 0);
 }
 
 fn staged_investigation(
@@ -1112,81 +1000,6 @@ fn investigation_commit_failure_and_work_exhaustion_rollback_children_pointer_an
     assert!(project.analysis(&child, &mut || Ok(())).is_ok());
     writer.cleanup_stage(&run.id).unwrap();
     drop(writer);
-}
-#[test]
-fn schema_four_upgrade_preserves_function_and_journal_bytes() {
-    let temp = tempfile::tempdir().unwrap();
-    let project = Project::create(temp.path()).unwrap();
-    let revision = project
-        .writer()
-        .unwrap()
-        .commit(revision(&project))
-        .unwrap();
-    let mut writer = project.writer().unwrap();
-    let (mut run, plan, receipt, child) = staged_investigation(&mut writer, &revision.revision_id);
-    let retained = writer
-        .retain_investigation(&run, &receipt, &plan, &mut || Ok(()))
-        .unwrap();
-    writer
-        .publish_investigation(&mut run, retained, &mut || Ok(()))
-        .unwrap();
-    writer.cleanup_stage(&run.id).unwrap();
-    drop(writer);
-    let manifest = project.analysis(&child, &mut || Ok(())).unwrap().manifest;
-    // Encode a valid schema-4 function run and remove only v5 metadata.
-    run.schema = 4;
-    run.publication = None;
-    run.analysis = Some(child.clone());
-    run.operation = RunOperation::AnalyzeFunction {
-        request: FunctionRequest {
-            research: None,
-            revision: Some(revision.revision_id.clone()),
-            source: FunctionSource::Input { input: 0 },
-            symbol: manifest.recipe.symbol.clone(),
-            extent: None,
-        },
-    };
-    let raw = serde_json::to_string(&run).unwrap();
-    let conn = open_connection(&project.root, true).unwrap();
-    conn.execute(
-        "UPDATE runs SET record=?2 WHERE id=?1",
-        params![run.id.as_str(), &raw],
-    )
-    .unwrap();
-    conn.execute_batch(
-        "DROP TABLE legacy_imports; DROP TABLE knowledge_revisions; DROP TABLE publications; DROP TABLE current_publication; PRAGMA user_version=4;",
-    )
-    .unwrap();
-    assert!(Project::open(temp.path()).unwrap().writer().is_err());
-    assert_eq!(project.run(&run.id).unwrap(), run);
-    assert!(
-        project
-            .investigation_status(&mut || Ok(()))
-            .unwrap()
-            .publication
-            .is_none()
-    );
-    Project::upgrade(temp.path()).unwrap();
-    Project::upgrade(temp.path()).unwrap();
-    assert_eq!(project.snapshot(None).unwrap(), revision);
-    assert_eq!(
-        project.analysis(&child, &mut || Ok(())).unwrap().manifest,
-        manifest
-    );
-    assert_eq!(
-        conn.query_row(
-            "SELECT record FROM runs WHERE id=?1",
-            [run.id.as_str()],
-            |r| r.get::<_, String>(0)
-        )
-        .unwrap(),
-        raw
-    );
-    assert_eq!(
-        conn.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
-            .unwrap(),
-        6
-    );
 }
 
 #[test]
@@ -1542,4 +1355,221 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
             .execution(&receipt.execution, &memory, &mut || Ok(()))
             .is_err()
     );
+}
+
+#[test]
+fn older_project_formats_are_rejected_without_mutation() {
+    for schema in 1..7 {
+        let temp = tempfile::tempdir().unwrap();
+        Project::create(temp.path()).unwrap();
+        let db = temp.path().join(STATE).join("project.sqlite3");
+        let connection = rusqlite::Connection::open(&db).unwrap();
+        connection
+            .pragma_update(None, "user_version", schema)
+            .unwrap();
+        drop(connection);
+        let before = fs::read(&db).unwrap();
+        assert!(matches!(
+            Project::open(temp.path()),
+            Err(Error {
+                code: ErrorCode::Incompatible,
+                ..
+            })
+        ));
+        assert!(Writer::open(temp.path()).is_err());
+        assert_eq!(fs::read(&db).unwrap(), before);
+    }
+}
+
+#[test]
+fn durable_assessment_cannot_describe_another_result_or_fabricate_a_verdict() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = Project::create(temp.path()).unwrap();
+    let mut writer = project.writer().unwrap();
+    let (mut run, _) = writer.register(ResourceBudget::default(), owner()).unwrap();
+    let revision: RevisionId = ArtifactId::of_bytes(b"result").as_str().parse().unwrap();
+    run.state = RunState::Completed;
+    run.revision = Some(revision.clone());
+    run.assessment = Some(ResultAssessment::covered(
+        CoverageSubject::Inventory(revision),
+        false,
+    ));
+    let decode = |run: &RunRecord| jobs::decode_run(&serde_json::to_string(run).unwrap());
+    assert_eq!(decode(&run).unwrap(), run);
+    let mut forged = run.clone();
+    forged
+        .assessment
+        .as_mut()
+        .unwrap()
+        .coverage
+        .as_mut()
+        .unwrap()
+        .subject =
+        CoverageSubject::Inventory(ArtifactId::of_bytes(b"other").as_str().parse().unwrap());
+    assert_eq!(decode(&forged).unwrap_err().code, ErrorCode::Integrity);
+    forged = run.clone();
+    forged.assessment.as_mut().unwrap().comparison = Some(ComparisonVerdict::Match);
+    assert_eq!(decode(&forged).unwrap_err().code, ErrorCode::Integrity);
+    forged = run.clone();
+    forged.state = RunState::ResourceLimited;
+    assert_eq!(decode(&forged).unwrap_err().code, ErrorCode::Integrity);
+    forged = run;
+    forged.execution = Some(ArtifactId::of_bytes(b"unexpected"));
+    assert_eq!(decode(&forged).unwrap_err().code, ErrorCode::Integrity);
+}
+
+#[test]
+fn frozen_knowledge_snapshot_preserves_review_history_and_checks_superseded_events() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = Project::create(temp.path()).unwrap();
+    let mut writer = project.writer().unwrap();
+    let payload = ArtifactId::of_bytes(b"source");
+    let proposal = KnowledgeProposal {
+        subject: "register".to_owned().try_into().unwrap(),
+        occurrence: KnowledgeOccurrence {
+            revision: payload.as_str().parse().unwrap(),
+            source: FunctionSource::Input { input: 0 },
+            object: ObjectId {
+                artifact: payload.clone(),
+                location: ObjectLocation::Standalone,
+            },
+            symbol: None,
+        },
+        claim: KnowledgeClaim::Hypothesis {
+            text: "reviewed proposal".into(),
+        },
+        evidence: vec![],
+        note: None,
+    };
+    let first: AssertionId = ArtifactId::of_bytes(b"first").as_str().parse().unwrap();
+    let second: AssertionId = ArtifactId::of_bytes(b"second").as_str().parse().unwrap();
+    let mut revisions = Vec::new();
+    for (assertion, action) in [
+        (
+            first.clone(),
+            KnowledgeAction::Propose {
+                proposal: proposal.clone(),
+            },
+        ),
+        (
+            first.clone(),
+            KnowledgeAction::Review {
+                assertion: first.clone(),
+                decision: ReviewDecision::Accept,
+                supersedes: None,
+            },
+        ),
+        (second.clone(), KnowledgeAction::Propose { proposal }),
+        (
+            second.clone(),
+            KnowledgeAction::Review {
+                assertion: second.clone(),
+                decision: ReviewDecision::Reject,
+                supersedes: None,
+            },
+        ),
+        (
+            second.clone(),
+            KnowledgeAction::Review {
+                assertion: second.clone(),
+                decision: ReviewDecision::Accept,
+                supersedes: Some(first.clone()),
+            },
+        ),
+    ] {
+        let change = KnowledgeChange {
+            expected_base: revisions.last().cloned(),
+            actor: "fixture".into(),
+            reason: "review".into(),
+            action,
+        };
+        let (mut run, path) = writer
+            .register_operation(
+                ResourceBudget::default(),
+                owner(),
+                RunOperation::Knowledge {
+                    change: change.clone(),
+                },
+                |_| {},
+            )
+            .unwrap();
+        let stage = Staging::open(&path).unwrap();
+        let receipt = stage
+            .knowledge_receipt(
+                &KnowledgeManifest {
+                    schema: 2,
+                    project: project.id().clone(),
+                    change,
+                    assertion,
+                    evidence_roots: vec![],
+                },
+                &mut || Ok(()),
+            )
+            .unwrap();
+        run.state = RunState::Running;
+        writer.update_run(&run).unwrap();
+        run.state = RunState::Validating;
+        writer.update_run(&run).unwrap();
+        let retained = writer
+            .retain_knowledge(&run, &receipt, &mut || Ok(()))
+            .unwrap();
+        writer
+            .publish_knowledge(&mut run, retained, &mut || Ok(()))
+            .unwrap();
+        revisions.push(receipt.revision);
+    }
+    struct Control(u64);
+    impl RunControl for Control {
+        fn checkpoint(&mut self, _: u64) -> Result<()> {
+            Ok(())
+        }
+        fn measure(&mut self, metric: WorkMetric, amount: u64) {
+            if matches!(metric, WorkMetric::KnowledgeHistoryPasses) {
+                self.0 += amount;
+            }
+        }
+    }
+    let memory = WorkingMemory::new(2 * 1024 * 1024).unwrap();
+    for at in &revisions {
+        let mut control = Control(0);
+        let snapshot = project
+            .knowledge_snapshot(Some(at), &memory, &mut control)
+            .unwrap();
+        assert_eq!(control.0, 1);
+        for entry in snapshot.entries() {
+            assert_eq!(
+                *entry,
+                project
+                    .knowledge_entry(at, &entry.id, &mut || Ok(()))
+                    .unwrap()
+            );
+        }
+        drop(snapshot);
+        assert_eq!(memory.used(), 0);
+    }
+    let snapshot = project
+        .knowledge_snapshot(revisions.last(), &memory, &mut Control(0))
+        .unwrap();
+    assert_eq!(
+        snapshot.entries().find(|e| e.id == first).unwrap().state,
+        AssertionState::Superseded
+    );
+    assert_eq!(
+        snapshot.entries().find(|e| e.id == second).unwrap().state,
+        AssertionState::Accepted
+    );
+    drop(snapshot);
+    fs::write(
+        project.root.join("objects").join(revisions[0].as_str()),
+        b"corrupt old event",
+    )
+    .unwrap();
+    assert!(matches!(
+        project.knowledge_snapshot(revisions.last(), &memory, &mut Control(0)),
+        Err(Error {
+            code: ErrorCode::Integrity,
+            ..
+        })
+    ));
+    assert_eq!(memory.used(), 0);
 }

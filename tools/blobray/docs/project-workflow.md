@@ -1,5 +1,11 @@
 # Project workflow
 
+This document describes unported facade responsibilities. Its command examples are
+not supported by the primary `cargo blobray` command. Use the
+[current operator reference](../next/README.md) for implemented operations and
+[register publication](../../registers/README.md) for SVD/PAC generation.
+
+
 The Blobray is project-oriented. A `vendor-project.toml` names reviewed
 configuration and generated outputs; private binary paths belong in the
 ignored local run specification, never in the reviewed manifest.

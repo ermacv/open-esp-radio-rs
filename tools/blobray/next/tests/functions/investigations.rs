@@ -22,7 +22,13 @@ fn plan(f: &Fixture, request: InvestigationRequest) -> InvestigationPlan {
 }
 fn publish(f: &Fixture, plan: &InvestigationPlan) -> app::RunRecord {
     f.app
-        .start_analyze_project(&f.project, plan, budget())
+        .start_analyze_project(
+            &f.project,
+            blobray_domain::InvestigationInput::Plan {
+                plan: (plan).clone(),
+            },
+            budget(),
+        )
         .unwrap()
         .wait()
 }
@@ -197,7 +203,13 @@ fn zero_size_functions_remain_blocked_unless_exact_occurrence_has_extent() {
     );
     let run = publish(&f, &p);
     assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
-    assert_eq!(run.complete, Some(false));
+    assert_eq!(
+        run.assessment
+            .as_ref()
+            .and_then(|a| a.coverage.as_ref())
+            .map(|c| c.status == CoverageStatus::Complete),
+        Some(false)
+    );
     let (m, r) = read(&f, &run.publication.unwrap(), InvestigationFilter::Members);
     assert_eq!(
         (
@@ -256,7 +268,11 @@ fn exhaustion_cancel_and_changed_plan_never_publish_children() {
     low.working_memory_bytes = Some(1024 * 1024);
     let run = f
         .app
-        .start_analyze_project(&f.project, &p, low)
+        .start_analyze_project(
+            &f.project,
+            blobray_domain::InvestigationInput::Plan { plan: (p).clone() },
+            low,
+        )
         .unwrap()
         .wait();
     assert_eq!(run.state, RunState::ResourceLimited);
@@ -264,13 +280,21 @@ fn exhaustion_cancel_and_changed_plan_never_publish_children() {
     low.max_work_units = Some(1);
     let run = f
         .app
-        .start_analyze_project(&f.project, &p, low)
+        .start_analyze_project(
+            &f.project,
+            blobray_domain::InvestigationInput::Plan { plan: (p).clone() },
+            low,
+        )
         .unwrap()
         .wait();
     assert_eq!(run.state, RunState::ResourceLimited);
     let handle = f
         .app
-        .start_analyze_project(&f.project, &p, budget())
+        .start_analyze_project(
+            &f.project,
+            blobray_domain::InvestigationInput::Plan { plan: (p).clone() },
+            budget(),
+        )
         .unwrap();
     handle.cancel();
     assert_eq!(handle.wait().state, RunState::Cancelled);
@@ -278,7 +302,13 @@ fn exhaustion_cancel_and_changed_plan_never_publish_children() {
     changed.recipe.functions += 1;
     assert!(
         f.app
-            .start_analyze_project(&f.project, &changed, budget())
+            .start_analyze_project(
+                &f.project,
+                blobray_domain::InvestigationInput::Plan {
+                    plan: (changed).clone()
+                },
+                budget()
+            )
             .is_err()
     );
     assert!(matches!(
@@ -327,7 +357,13 @@ fn gaps_for_missing_thin_members_unsupported_objects_and_stripped_code_are_expli
     let p = plan(&f, InvestigationRequest::default());
     let run = publish(&f, &p);
     assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
-    assert_eq!(run.complete, Some(false));
+    assert_eq!(
+        run.assessment
+            .as_ref()
+            .and_then(|a| a.coverage.as_ref())
+            .map(|c| c.status == CoverageStatus::Complete),
+        Some(false)
+    );
     let (m, r) = read(&f, &run.publication.unwrap(), InvestigationFilter::Members);
     assert_eq!(m.coverage.inputs, 3);
     assert!(m.coverage.gaps >= 3);
@@ -442,7 +478,7 @@ fn killed_library_coordinator_leaves_no_publication_and_recovery_never_promotes_
     let plan = plan(&f, InvestigationRequest::default());
     let request = f.dir.path().join("plan.json");
     fs::write(&request, serde_json::to_vec(&plan).unwrap()).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_blobray-next"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["analyze-project", "--project"])
         .arg(&f.project)
         .arg("--plan")
@@ -515,7 +551,11 @@ fn whole_run_budget_failure_after_analysis_keeps_previous_publication() {
     limited.max_work_units = Some(used - 1);
     let failed = f
         .app
-        .start_analyze_project(&f.project, &p, limited)
+        .start_analyze_project(
+            &f.project,
+            blobray_domain::InvestigationInput::Plan { plan: (p).clone() },
+            limited,
+        )
         .unwrap()
         .wait();
     assert_eq!(
@@ -548,10 +588,7 @@ fn library_staging_quota_and_deadline_fail_without_visible_children() {
     let f = fixture(object(&code, code.len() as u64, false), false);
     let p = plan(&f, InvestigationRequest::default());
     let limited = app::Application::with_temporary_storage(
-        Arc::new(LinuxHost::new(
-            env!("CARGO_BIN_EXE_blobray-next").into(),
-            None,
-        )),
+        Arc::new(LinuxHost::new(env!("CARGO_BIN_EXE_blobray").into(), None)),
         app::ApplicationLimits::default(),
         app::TemporaryStoragePolicy {
             root: Some(f.dir.path().join("limited")),
@@ -561,7 +598,11 @@ fn library_staging_quota_and_deadline_fail_without_visible_children() {
     )
     .unwrap();
     let run = limited
-        .start_analyze_project(&f.project, &p, budget())
+        .start_analyze_project(
+            &f.project,
+            blobray_domain::InvestigationInput::Plan { plan: (p).clone() },
+            budget(),
+        )
         .unwrap()
         .wait();
     assert_eq!(run.state, RunState::ResourceLimited, "{:?}", run.error);
@@ -570,7 +611,11 @@ fn library_staging_quota_and_deadline_fail_without_visible_children() {
     short.timeout_ms = 1;
     let run = f
         .app
-        .start_analyze_project(&f.project, &p, short)
+        .start_analyze_project(
+            &f.project,
+            blobray_domain::InvestigationInput::Plan { plan: (p).clone() },
+            short,
+        )
         .unwrap()
         .wait();
     assert_eq!(run.state, RunState::TimedOut, "{:?}", run.error);
@@ -619,7 +664,13 @@ fn selected_inputs_define_coverage_without_hiding_unselected_scope() {
     );
     let run = publish(&f, &p);
     assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
-    assert_eq!(run.complete, Some(true));
+    assert_eq!(
+        run.assessment
+            .as_ref()
+            .and_then(|a| a.coverage.as_ref())
+            .map(|c| c.status == CoverageStatus::Complete),
+        Some(true)
+    );
     let (manifest, records) = read(&f, &run.publication.unwrap(), InvestigationFilter::Members);
     assert_eq!(manifest.plan.recipe.request.inputs, Some(vec![1]));
     assert_eq!(manifest.coverage.inputs, 1);
@@ -686,4 +737,215 @@ fn missing_child_is_integrity_failure_and_reads_never_recompute() {
     assert!(
         matches!(f.app.query(&f.project,app::ReadQuery::Doctor,budget()).unwrap().summary(),app::QuerySummary::Doctor{errors,..} if *errors>0)
     );
+}
+
+fn many_functions(count: usize) -> Vec<u8> {
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let text = obj.add_section(Vec::new(), b".text.entry".to_vec(), SectionKind::Text);
+    obj.append_section_data(text, &words(&vec![0x00008067; count]), 4);
+    for i in 0..count {
+        let mut s = symbol(
+            if i == 0 { b"entry" } else { b"other" },
+            SymbolSection::Section(text),
+            4,
+            SymbolKind::Text,
+        );
+        s.value = i as u64 * 4;
+        obj.add_symbol(s);
+    }
+    obj.write().unwrap()
+}
+fn automatic(f: &Fixture, budget: ResourceBudget) -> app::RunRecord {
+    let decoder = blobray_backend_riscv::RiscvDecoder;
+    f.app
+        .start_analyze_project(
+            &f.project,
+            InvestigationInput::Automatic {
+                request: InvestigationRequest::default(),
+                producer: FunctionProducer {
+                    decoder: decoder.identity().into(),
+                    semantics: decoder.semantic_identity().into(),
+                },
+            },
+            budget,
+        )
+        .unwrap()
+        .wait()
+}
+#[test]
+fn automatic_investigation_prepares_each_object_once_and_publishes_one_run() {
+    for functions in [4, 16] {
+        let bytes = many_functions(functions);
+        let f = fixture(bytes.clone(), false);
+        let run = automatic(&f, budget());
+        assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
+        let metrics = run
+            .diagnostics
+            .as_ref()
+            .unwrap()
+            .progress
+            .unwrap()
+            .measurements;
+        assert_eq!(metrics.archive_entries, 2);
+        assert_eq!(metrics.objects_prepared, 2);
+        assert_eq!(metrics.sections_prepared, 2);
+        assert_eq!(metrics.object_read_bytes, bytes.len() as u64 * 2);
+        assert_eq!(metrics.object_hash_bytes, metrics.object_read_bytes);
+        assert!(matches!(run.operation, app::RunOperation::Scenario { .. }));
+        assert!(matches!(
+            run.effective_operation(),
+            app::RunOperation::Investigate { .. }
+        ));
+        assert_eq!(app::runs(&f.project).unwrap().len(), 2);
+        let (manifest, results) = read(
+            &f,
+            run.publication.as_ref().unwrap(),
+            InvestigationFilter::Members,
+        );
+        assert_eq!(manifest.coverage.functions, functions as u64 * 2);
+        assert_eq!(
+            results
+                .members
+                .iter()
+                .filter(|m| matches!(m.outcome, InvestigationOutcome::Analyzed { .. }))
+                .count(),
+            functions * 2
+        );
+    }
+}
+#[test]
+fn archive_lookup_work_grows_with_members_without_restarting_the_cursor() {
+    let bytes = many_functions(1);
+    let mut observations = Vec::new();
+    for count in [16, 32] {
+        let f = fixture(bytes.clone(), false);
+        let archive = f.dir.path().join("many.a");
+        fs::write(
+            &archive,
+            support::archive(
+                &vec![(b"same.o".as_slice(), bytes.as_slice()); count],
+                false,
+            ),
+        )
+        .unwrap();
+        f.app
+            .import(
+                &f.project,
+                vec![app::ImportInput {
+                    role: "library".into(),
+                    path: archive,
+                    expected: None,
+                }],
+                Target::Riscv32Ilp32,
+                budget(),
+            )
+            .unwrap();
+        let run = automatic(&f, budget());
+        assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
+        let progress = run.diagnostics.unwrap().progress.unwrap();
+        assert_eq!(progress.measurements.archive_entries, count as u64);
+        assert_eq!(progress.measurements.objects_prepared, count as u64);
+        observations.push(progress.work_used);
+    }
+    assert!(observations[1] < observations[0] * 3, "{observations:?}");
+}
+#[test]
+fn automatic_planning_and_execution_share_exhaustion_and_publication_boundary() {
+    let f = fixture(many_functions(4), false);
+    let previous = automatic(&f, budget());
+    assert_eq!(previous.state, RunState::Completed);
+    let progress = previous.diagnostics.as_ref().unwrap().progress.unwrap();
+    let mut low = budget();
+    low.max_work_units = Some(progress.work_used / 2);
+    let failed = automatic(&f, low);
+    assert_eq!(failed.state, RunState::ResourceLimited);
+    assert!(failed.assessment.is_none());
+    assert!(failed.publication.is_none());
+    assert!(failed.resolved_operation.is_none());
+    let output = f
+        .app
+        .query(&f.project, app::ReadQuery::InvestigationStatus, budget())
+        .unwrap();
+    let app::QuerySummary::InvestigationStatus { status } = output.summary() else {
+        panic!("status");
+    };
+    assert_eq!(status.publication.as_ref(), previous.publication.as_ref());
+}
+
+#[test]
+fn automatic_scenario_disk_quota_covers_planning_and_analysis_together() {
+    let mut f = fixture(many_functions(32), false);
+    let first = automatic(&f, budget());
+    assert_eq!(first.state, RunState::Completed);
+    let peak = first
+        .diagnostics
+        .unwrap()
+        .progress
+        .unwrap()
+        .temporary_storage
+        .unwrap()
+        .peak_bytes;
+    assert!(peak > TEMPORARY_CONTROL_BYTES);
+    let limit = TEMPORARY_CONTROL_BYTES + (peak - TEMPORARY_CONTROL_BYTES) * 3 / 4;
+    f.app = app::Application::with_temporary_storage(
+        Arc::new(LinuxHost::new(env!("CARGO_BIN_EXE_blobray").into(), None)),
+        app::ApplicationLimits::default(),
+        app::TemporaryStoragePolicy {
+            root: Some(f.dir.path().join("limited-runtime")),
+            operation_bytes: limit,
+            total_bytes: limit,
+        },
+    )
+    .unwrap();
+    let run = automatic(&f, budget());
+    assert_eq!(run.state, RunState::ResourceLimited, "{:?}", run.error);
+    assert!(run.error.as_ref().unwrap().storage.is_some());
+    assert!(run.publication.is_none());
+    assert!(run.resolved_operation.is_none());
+    assert!(
+        run.diagnostics
+            .unwrap()
+            .progress
+            .unwrap()
+            .temporary_storage
+            .unwrap()
+            .peak_bytes
+            <= limit
+    );
+}
+
+#[test]
+fn malformed_archive_suffix_preserves_captured_functions_as_partial_results() {
+    let bytes = many_functions(1);
+    let f = fixture(bytes.clone(), false);
+    let source = f.dir.path().join("partial.a");
+    let mut archive = support::archive(&[(b"valid.o", &bytes)], false);
+    archive.extend_from_slice(b"truncated member header");
+    fs::write(&source, archive).unwrap();
+    let imported = f
+        .app
+        .start_import(
+            &f.project,
+            vec![app::ImportInput {
+                role: "partial".into(),
+                path: source,
+                expected: None,
+            }],
+            Target::Riscv32Ilp32,
+            budget(),
+        )
+        .unwrap()
+        .wait();
+    assert_eq!(imported.state, RunState::Completed);
+    assert!(!imported.assessment.unwrap().is_complete());
+    let run = automatic(&f, budget());
+    assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
+    assert!(!run.assessment.unwrap().is_complete());
+    let (manifest, _) = read(
+        &f,
+        run.publication.as_ref().unwrap(),
+        InvestigationFilter::Members,
+    );
+    assert_eq!(manifest.coverage.analyzed, 1);
+    assert!(manifest.coverage.gaps > 0);
 }

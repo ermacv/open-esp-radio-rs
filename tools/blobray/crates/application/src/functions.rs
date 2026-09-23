@@ -28,21 +28,31 @@ pub fn prepare_function_worker(
     decoder: &dyn FunctionSemantics,
     control: &mut dyn RunControl,
 ) -> Result<blobray_store::PreparedFunctionReceipt> {
-    if work.schema != 1 {
-        return Err(Error::new(
-            ErrorCode::Incompatible,
-            "unsupported function worker request",
-        ));
-    }
     let memory = WorkingMemory::new(
         work.budget
             .working_memory_bytes
             .ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "working capacity missing"))?,
     )?;
     let disk = blobray_store::TemporaryBudget::open(stage)?;
+    prepare_function_worker_in(stage, work, decoder, &memory, &disk, control)
+}
+pub(crate) fn prepare_function_worker_in(
+    stage: &Path,
+    work: &FunctionWork,
+    decoder: &dyn FunctionSemantics,
+    memory: &WorkingMemory,
+    disk: &blobray_store::TemporaryBudget,
+    control: &mut dyn RunControl,
+) -> Result<blobray_store::PreparedFunctionReceipt> {
+    if work.schema != 1 {
+        return Err(Error::new(
+            ErrorCode::Incompatible,
+            "unsupported function worker request",
+        ));
+    }
     let mut control = blobray_store::TemporaryControl {
         control,
-        budget: &disk,
+        budget: disk,
     };
     let result = (|| {
         let _fixed = memory.reserve(1024 * 1024, control.position())?;
@@ -68,8 +78,8 @@ pub fn prepare_function_worker(
             return FunctionEngine {
                 project: &project,
                 stage,
-                disk: &disk,
-                memory: &memory,
+                disk,
+                memory,
                 decoder,
             }
             .analyze(&image.elf, &work.request, &image.manifest.elf, &mut control);
@@ -82,7 +92,7 @@ pub fn prepare_function_worker(
                 symbol: work.request.symbol.clone(),
             };
         let mut probe = crate::selection::Probe::new(&scope);
-        project.read_inventory(Some(revision), &memory, &mut control, &mut probe)?;
+        project.read_inventory(Some(revision), memory, &mut control, &mut probe)?;
         if !probe.found {
             return Err(Error::new(
                 ErrorCode::NotFound,
@@ -97,8 +107,8 @@ pub fn prepare_function_worker(
         let engine = FunctionEngine {
             project: &project,
             stage,
-            disk: &disk,
-            memory: &memory,
+            disk,
+            memory,
             decoder,
         };
         let consume = |source: &dyn ByteSource, control: &mut dyn RunControl| {
@@ -108,7 +118,7 @@ pub fn prepare_function_worker(
             ObjectLocation::Standalone => consume(&source, &mut control),
             ObjectLocation::ArchiveMember { ordinal } => {
                 let mut cursor = MemberCursor::new(&source, &mut control)?;
-                while let Some(member) = cursor.next(&memory, &mut control)? {
+                while let Some(member) = cursor.next(memory, &mut control)? {
                     if member.ordinal != ordinal {
                         continue;
                     }
@@ -136,10 +146,27 @@ pub(crate) struct FunctionEngine<'a> {
     pub memory: &'a WorkingMemory,
     pub decoder: &'a dyn FunctionSemantics,
 }
-impl FunctionEngine<'_> {
+impl<'m> FunctionEngine<'m> {
     pub fn analyze(
         &self,
         source: &dyn ByteSource,
+        request: &FunctionRequest,
+        payload: &ArtifactId,
+        control: &mut dyn RunControl,
+    ) -> Result<PreparedFunctionReceipt> {
+        let mut references = AdmittedVec::new(self.memory);
+        blobray_artifacts::with_prepared_object(
+            source,
+            payload,
+            self.memory,
+            control,
+            |object, c| self.analyze_prepared(object, &mut references, request, payload, c),
+        )
+    }
+    pub fn analyze_prepared(
+        &self,
+        object: &mut blobray_artifacts::PreparedObject<'_, '_>,
+        references: &mut AdmittedVec<'m, (u32, blobray_analysis::PreparedReferences<'m>)>,
         request: &FunctionRequest,
         payload: &ArtifactId,
         control: &mut dyn RunControl,
@@ -156,67 +183,76 @@ impl FunctionEngine<'_> {
         position.artifact(payload);
         control.set_position(position);
         control.checkpoint(0)?;
-        let mut manifest = blobray_artifacts::with_function(
-            source,
-            payload,
-            request,
-            self.memory,
-            control,
-            |view, control| {
-                let recipe = FunctionRecipe {
-                    research: request.research.clone(),
-                    abi: view.abi,
-                    address_space: view.address_space,
-                    schema: 4,
-                    policy: 4,
-                    decoder: self.decoder.identity().into(),
-                    semantics: Some(self.decoder.semantic_identity().into()),
-                    project: self.project.id().clone(),
-                    revision: request.revision.clone().ok_or_else(|| {
-                        Error::new(ErrorCode::InvalidRequest, "function revision not frozen")
-                    })?,
-                    source: request.source.clone(),
-                    symbol: request.symbol.clone(),
-                    payload: payload.clone(),
-                    section: view.section,
-                    extent: view.extent,
-                    user_extent: view.user_extent,
-                };
-                let mut records = Records {
-                    file: self.disk.temporary(&self.stage.join("staging"))?,
-                };
-                let summary = blobray_analysis::research(
-                    blobray_analysis::FunctionInput {
-                        image: view.image,
-                        section: view.section,
-                        extent: view.extent,
-                        bytes: view.code,
-                        relocations: view.relocations,
-                        data_ranges: view.data_ranges,
-                    },
+        let mut manifest = object.with_function(request, control, |view, control| {
+            let recipe = FunctionRecipe {
+                research: request.research.clone(),
+                abi: view.abi,
+                address_space: view.address_space,
+                schema: 4,
+                policy: 4,
+                decoder: self.decoder.identity().into(),
+                semantics: Some(self.decoder.semantic_identity().into()),
+                project: self.project.id().clone(),
+                revision: request.revision.clone().ok_or_else(|| {
+                    Error::new(ErrorCode::InvalidRequest, "function revision not frozen")
+                })?,
+                source: request.source.clone(),
+                symbol: request.symbol.clone(),
+                payload: payload.clone(),
+                section: view.section,
+                extent: view.extent,
+                user_extent: view.user_extent,
+            };
+            let mut records = Records {
+                file: self.disk.temporary(&self.stage.join("staging"))?,
+            };
+            let index = if let Some(index) = references
+                .iter()
+                .position(|(section, _)| *section == view.section)
+            {
+                index
+            } else {
+                let prepared = blobray_analysis::PreparedReferences::new(
+                    view.relocations,
+                    view.section,
                     self.decoder,
                     self.memory,
                     control,
-                    &mut records,
-                    request.research.as_ref().and_then(|r| r.abi),
                 )?;
-                let staging = Staging::with_temporary_budget(self.stage, self.disk.clone())?;
-                let records = staging.retain_temporary(records.file, control)?;
-                let manifest = FunctionManifest {
-                    schema: 4,
-                    recipe,
-                    records,
-                    coverage: summary.coverage,
-                    instructions: summary.instructions,
-                    blocks: summary.blocks,
-                    edges: summary.edges,
-                    references: summary.references,
-                    gaps: summary.gaps,
-                    semantics: Some(summary.semantics),
-                };
-                Ok(manifest)
-            },
-        )?;
+                references.push((view.section, prepared), control.position())?;
+                references.len() - 1
+            };
+            let summary = blobray_analysis::research(
+                blobray_analysis::FunctionInput {
+                    image: view.image,
+                    section: view.section,
+                    extent: view.extent,
+                    bytes: view.code,
+                    relocations: &references[index].1,
+                    data_ranges: view.data_ranges,
+                },
+                self.decoder,
+                self.memory,
+                control,
+                &mut records,
+                request.research.as_ref().and_then(|r| r.abi),
+            )?;
+            let staging = Staging::with_temporary_budget(self.stage, self.disk.clone())?;
+            let records = staging.retain_temporary(records.file, control)?;
+            let manifest = FunctionManifest {
+                schema: 4,
+                recipe,
+                records,
+                coverage: summary.coverage,
+                instructions: summary.instructions,
+                blocks: summary.blocks,
+                edges: summary.edges,
+                references: summary.references,
+                gaps: summary.gaps,
+                semantics: Some(summary.semantics),
+            };
+            Ok(manifest)
+        })?;
         // End the ELF/code borrow and local graph phase before retaining summaries.
         let staging = Staging::with_temporary_budget(self.stage, self.disk.clone())?;
         crate::research::enrich(

@@ -1,5 +1,11 @@
 # Registers, SVD and PAC
 
+This document describes unported facade responsibilities. Its command examples are
+not supported by the primary `cargo blobray` command. Use the
+[current operator reference](../next/README.md) for implemented operations and
+[register publication](../../registers/README.md) for SVD/PAC generation.
+
+
 MMIO discovery, the reviewed register model, SVD publication and PAC
 generation are one pipeline with explicit trust boundaries.
 

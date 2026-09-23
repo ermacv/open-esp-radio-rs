@@ -20,14 +20,12 @@
         "verification/vendor/projects/esp32s31/blobray-provider/models/src/reviewed_summaries.rs",
         "verification/vendor/projects/esp32s31/blobray-provider/models/src/reviewed_summaries/body_identity.rs",
         "verification/vendor/projects/esp32s31/blobray-provider/models/src/reviewed_summaries/direct_semantic.rs",
-        "verification/vendor/projects/esp32s31/blobray-host/Cargo.toml",
-        "verification/vendor/projects/esp32s31/blobray-host/build.rs",
-        "verification/vendor/projects/esp32s31/blobray-host/src/main.rs",
         "tools/blobray/src/providers/mod.rs",
         "tools/blobray/src/target.rs",
         "tools/blobray/src/cli/commands/project_model_admission.rs",
         "tools/blobray/src/cli/commands/project_verification.rs",
-        "tools/blobray/src/analysis/linked_ir/function_cache.rs"
+        "tools/blobray/src/analysis/linked_ir/function_cache.rs",
+        "tools/registers/contracts"
       ],
       "contracts": [
         "registers/esp32s31/upstream/platform-radio-deps.svd",
@@ -60,10 +58,11 @@
       "implementation": [
         "tools/blobray/src/register_catalog.rs",
         "tools/blobray/src/registers/workspace.rs",
-        "tools/blobray/crates/register-model/Cargo.toml",
-        "tools/blobray/crates/register-model/src/lib.rs",
-        "tools/blobray/crates/register-model/src/model_validation.rs",
-        "tools/blobray/crates/review-model"
+        "tools/registers/model/Cargo.toml",
+        "tools/registers/model/src/lib.rs",
+        "tools/registers/model/src/model_validation.rs",
+        "tools/registers/review",
+        "tools/registers/contracts"
       ],
       "contracts": [
         "registers/esp32s31/model/peripherals/wifi-mac-internal-tx-block-ack.toml",
@@ -126,10 +125,11 @@
       "implementation": [
         "tools/blobray/src/register_catalog.rs",
         "tools/blobray/src/registers/workspace.rs",
-        "tools/blobray/crates/register-model/Cargo.toml",
-        "tools/blobray/crates/register-model/src/lib.rs",
-        "tools/blobray/crates/register-model/src/model_validation.rs",
-        "tools/blobray/crates/review-model"
+        "tools/registers/model/Cargo.toml",
+        "tools/registers/model/src/lib.rs",
+        "tools/registers/model/src/model_validation.rs",
+        "tools/registers/review",
+        "tools/registers/contracts"
       ],
       "contracts": [
         "registers/esp32s31/model/peripherals/btmac-ble-phy-init.toml",
@@ -160,10 +160,11 @@
       "implementation": [
         "tools/blobray/src/register_catalog.rs",
         "tools/blobray/src/registers/workspace.rs",
-        "tools/blobray/crates/register-model/Cargo.toml",
-        "tools/blobray/crates/register-model/src/lib.rs",
-        "tools/blobray/crates/register-model/src/model_validation.rs",
-        "tools/blobray/crates/review-model"
+        "tools/registers/model/Cargo.toml",
+        "tools/registers/model/src/lib.rs",
+        "tools/registers/model/src/model_validation.rs",
+        "tools/registers/review",
+        "tools/registers/contracts"
       ],
       "contracts": [
         "registers/esp32s31/model/peripherals/phy-memory.toml",
@@ -192,10 +193,11 @@
       "implementation": [
         "tools/blobray/src/register_catalog.rs",
         "tools/blobray/src/registers/workspace.rs",
-        "tools/blobray/crates/register-model/Cargo.toml",
-        "tools/blobray/crates/register-model/src/lib.rs",
-        "tools/blobray/crates/register-model/src/model_validation.rs",
-        "tools/blobray/crates/review-model"
+        "tools/registers/model/Cargo.toml",
+        "tools/registers/model/src/lib.rs",
+        "tools/registers/model/src/model_validation.rs",
+        "tools/registers/review",
+        "tools/registers/contracts"
       ],
       "contracts": [
         "registers/esp32s31/model/peripherals/pmu-radio.toml",

@@ -7,7 +7,7 @@ pub use image::{LinkRootFacts, ValidatedImage, inspect_link_input, validate_imag
 mod cursor;
 mod meter;
 mod stream;
-pub use cursor::{MemberCursor, MemberRange};
+pub use cursor::{MemberCursor, MemberIndex, MemberRange};
 use object::endian::Endian;
 use object::read::elf::{FileHeader, Rel, Rela, SectionHeader, Sym};
 use object::{Endianness, FileKind, elf};
@@ -27,7 +27,9 @@ fn diagnostic(
 }
 
 mod function;
+mod mapping;
 mod program;
-pub use function::{FunctionView, with_function};
+pub use function::{FunctionView, PreparedObject, with_function, with_prepared_object};
 
+pub use program::executable_sections;
 pub use program::execution_segments;

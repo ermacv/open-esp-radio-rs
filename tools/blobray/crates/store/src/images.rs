@@ -235,7 +235,7 @@ impl Writer {
         let mut completed = run.clone();
         completed.state = RunState::Completed;
         completed.image = Some(receipt.image.clone());
-        completed.complete = Some(true);
+        completed.assessment = Some(ResultAssessment::default());
         tx.execute(
             "INSERT INTO images(id,revision,plan) VALUES(?1,?2,?3) ON CONFLICT(id) DO NOTHING",
             params![

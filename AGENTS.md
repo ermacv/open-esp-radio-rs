@@ -65,10 +65,11 @@ checks when changing their ownership boundaries; a partial check is not full
 repository coverage.
 
 Use `cargo test -p <package> <test_name>` for focused iteration. Build the
-Blobray host with `cargo build --profile blobray -p blobray-esp32s31 --bin
-blobray` and its limiter with `cargo build --profile blobray -p blobray --bin
-blobray-run`. Run real analyses through `target/blobray/blobray-run`
-to enforce its memory and time limits. HIL commands require attached hardware;
+Blobray host with `cargo build --profile blobray -p blobray-next --bin
+blobray`. Real analyses use its built-in supervisor; select `--limit-mode
+watchdog` explicitly when kernel cgroup delegation is unavailable. Register
+publication uses `cargo registers generate --manifest
+registers/esp32s31/publication/registers.toml --check`. HIL commands require attached hardware;
 follow `hil/targets/esp32s31/README.md`.
 
 ## Coding Style & Naming Conventions

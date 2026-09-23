@@ -1,14 +1,34 @@
 # Target investigation workflows
 
-**Status: target design; streaming inventory, supervised operations, inspection plans, synthetic image preparation, object/linked-image investigation, limited reviewed knowledge, concrete RV32 execution/comparison and preservation implemented.**
-[Blobray Next](../../next/README.md) documents implemented commands, including function/call/data queries and native PHY/ROM research with explicit ABI, ROM companions and MMIO review. Bounded concrete execution/replay/comparison is implemented for the
-[explicit integer scenario profile](../../next/README.md#concrete-execution-and-comparison).
-The general model and comparison policies below remain target contracts. Operation names below refer to the target
-[application interface](contracts.md#application-interface). Use the
-[current project workflow](../project-workflow.md) to operate the
-existing tool. The [target architecture](architecture.md) defines responsibility;
-[contracts](contracts.md) defines the ownership and persistence rules exercised
-here.
+The following profiles define current support; broader pass composition and
+qualification examples below are target contracts unless listed here. The
+[command reference](../../next/README.md) owns syntax and format versions.
+
+| Scenario | Status and boundary |
+| --- | --- |
+| Import → inventory → reopen without originals | Implemented, partial inventory remains explicit |
+| Automatic whole-library or saved-plan investigation | Implemented, one application run and atomic publication |
+| Link PHY entry with explicit ROM companions → research | Limited RV32 integer static profile, unsupported semantics remain gaps |
+| Propose register from analysis → explicit review → research with selected knowledge | Implemented; proposal, review and observation remain distinct |
+| Execute / compare / replay captured implementations | Limited explicit integer scenario profile, scoped MATCH/DIFF/INCOMPLETE |
+| Move / backup / restore / recovery | Implemented for supported formats; no conversion or GC |
+| General equivalence, broader ISA/model support, TUI and cache reclamation | Target, not currently provided |
+
+Concrete scenario orchestration belongs to application. Selection/planning and
+execution share one original deadline and work/memory/disk budget. Failure before
+publication leaves prior results and current selections intact.
+
+### Contract verification links
+
+| Contract | Implementation | Regression coverage |
+| --- | --- | --- |
+| Partial inventory is partial in summary and handle | [query](../../crates/application/src/query.rs) | `partial_inventory_has_the_same_assessment_in_handle_and_output` in [memory tests](../../next/tests/memory.rs) |
+| One object preparation for multiple functions; linear archive indexing | [investigations](../../crates/application/src/investigations.rs) | `automatic_investigation_prepares_each_object_once_and_publishes_one_run`, `archive_lookup_work_grows_with_members_without_restarting_the_cursor` in [investigation tests](../../next/tests/functions/investigations.rs) |
+| Section relocation admission supports small extents | [prepared object](../../crates/artifacts/src/function.rs) | `ten_thousand_section_relocations_fit_small_function_capacity` in [function tests](../../next/tests/functions.rs) |
+| Original budget and atomic publication span automatic planning | [scenarios](../../crates/application/src/scenarios.rs), [supervisor](../../crates/application/src/jobs.rs) | `automatic_planning_and_execution_share_exhaustion_and_publication_boundary` in [investigation tests](../../next/tests/functions/investigations.rs) |
+| One knowledge-history materialization per research | [research](../../crates/application/src/research.rs) | `image_mmio_knowledge_round_trip_has_native_commands_and_retained_evidence` in [linked tests](../../next/tests/linked/mod.rs) |
+| Unsupported journal and project formats remain untouched | [store](../../crates/store/src/jobs.rs) | `incompatible_journals_are_rejected_by_all_readers_without_mutation`, `older_project_formats_are_rejected_without_mutation` in [store tests](../../crates/store/src/tests.rs) |
+| Phase/counter accounting continues through retention | [resources](../../crates/application/src/resources.rs) | `fixed_measurements_and_phase_costs_survive_worker_handoff` in the same module |
 
 ## Workflow contract map
 

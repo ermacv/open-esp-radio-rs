@@ -1343,3 +1343,95 @@ fn diamond_research_keeps_shared_leaf_effects_for_both_parents_and_repeated_call
         );
     }
 }
+
+#[test]
+fn image_data_relocation_overlap_uses_section_relative_coordinates() {
+    use object::ObjectSection as _;
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let code = obj.add_section(Vec::new(), b".text.entry".to_vec(), SectionKind::Text);
+    let data = obj.add_section(
+        Vec::new(),
+        b".rodata.values".to_vec(),
+        SectionKind::ReadOnlyData,
+    );
+    obj.append_section_data(
+        code,
+        &[0x37, 0x05, 0, 0, 0x13, 0x05, 0x05, 0, 0x67, 0x80, 0, 0],
+        4,
+    );
+    obj.append_section_data(data, &[0, 0, 0, 0, 0xfb, 0xff, 3, 0], 4);
+    let entry = obj.add_symbol(symbol(
+        b"entry",
+        SymbolSection::Section(code),
+        12,
+        SymbolKind::Text,
+    ));
+    let table = obj.add_symbol(symbol(
+        b"table",
+        SymbolSection::Section(data),
+        8,
+        SymbolKind::Data,
+    ));
+    for (section, offset, target, r_type) in [
+        (code, 0, table, object::elf::R_RISCV_HI20),
+        (code, 4, table, object::elf::R_RISCV_LO12_I),
+        (data, 0, entry, object::elf::R_RISCV_32),
+    ] {
+        obj.add_relocation(
+            section,
+            Relocation {
+                offset,
+                symbol: target,
+                addend: 0,
+                flags: RelocationFlags::Elf { r_type },
+            },
+        )
+        .unwrap();
+    }
+    let f = custom_fixture(vec![("data.o", obj.write().unwrap())], 0, 0);
+    let image = prepared(&f);
+    let bytes = export(&f, image.clone());
+    let elf = object::File::parse(bytes.as_slice()).unwrap();
+    let symbol = elf.symbol_by_name("table").unwrap();
+    let section = elf
+        .section_by_index(symbol.section_index().unwrap())
+        .unwrap();
+    assert!(section.address() > section.size());
+    for offset in [0, 4] {
+        let request = DataRequest {
+            occurrence: KnowledgeOccurrence {
+                revision: f.revision.clone(),
+                source: FunctionSource::Image {
+                    image: image.clone(),
+                },
+                object: ObjectId {
+                    artifact: ArtifactId::of_bytes(&bytes),
+                    location: ObjectLocation::Standalone,
+                },
+                symbol: None,
+            },
+            ranges: vec![DataSelector::Image {
+                address: symbol.address() + offset,
+                length: 4,
+            }],
+            analyses: vec![],
+        };
+        let mut output = f
+            .app
+            .query(&f.project, app::ReadQuery::Data { request }, budget())
+            .unwrap();
+        let path = f.dir.path().join(format!("data-{offset}"));
+        output.export_data(&path, &|| false).unwrap();
+        let manifest: DataManifest =
+            serde_json::from_slice(&fs::read(path.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(
+            manifest.spans[0].overlapping_relocations,
+            u64::from(offset == 0)
+        );
+        assert_eq!(manifest.spans[0].unknown_relocation_extents, 0);
+        assert_eq!(manifest.spans[0].section_relocations, 1);
+        if offset == 4 {
+            assert_eq!(fs::read(path.join("data.bin")).unwrap(), [0xfb, 0xff, 3, 0]);
+        }
+    }
+}

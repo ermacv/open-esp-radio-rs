@@ -170,6 +170,32 @@ impl PreparedObject<'_, '_> {
                 control,
             )?;
         }
+        let mut overlapping_relocations = 0;
+        let mut unknown_relocation_extents = 0;
+        // Use structural widths supplied by the pinned ELF parser. Unknown
+        // transformations may affect layout; their offset cannot prove exclusion.
+        for (site, relocation) in section.relocations() {
+            control.checkpoint(1)?;
+            if relocation.kind() == object::RelocationKind::None {
+                continue;
+            }
+            let width = relocation.size();
+            if width == 0 || !width.is_multiple_of(8) {
+                unknown_relocation_extents += 1;
+                continue;
+            }
+            let start = if self.file.kind() == object::ObjectKind::Executable {
+                site.checked_sub(section.address())
+                    .ok_or_else(|| invalid("relocation precedes target section"))?
+            } else {
+                site
+            };
+            let write_end = start
+                .checked_add(u64::from(width / 8))
+                .filter(|end| *end <= section.size())
+                .ok_or_else(|| invalid("relocation write exceeds target section"))?;
+            overlapping_relocations += u64::from(start < end && offset < write_end);
+        }
         let span = DataSpan {
             selector: selector.clone(),
             section: index.0 as u32,
@@ -195,6 +221,8 @@ impl PreparedObject<'_, '_> {
             digest: ArtifactId::of_bytes_controlled(bytes, control)?,
             export_offset: 0,
             section_relocations: prepared.relocations.len() as u64,
+            overlapping_relocations,
+            unknown_relocation_extents,
         };
         consume(
             DataView {

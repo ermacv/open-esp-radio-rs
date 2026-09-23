@@ -787,5 +787,8 @@ optional accepted assertion at a fixed knowledge revision. Original paths are
 provenance only. Image VMAs are checked against file-backed load mappings;
 section-relative and file-relative offsets are separate fields. Mutable section
 bytes are initialization only. Relocations are retained, never implicitly applied;
-this integer profile explicitly withholds numeric decoding for sections containing
-relocations. Successful export makes no general completeness or comparison claim.
+this integer profile withholds numeric decoding when a known relocation write
+intersects the selected range or any section relocation has unknown write extent.
+Proven disjoint fixed-width writes do not block unrelated integer data. The
+manifest retains total, overlapping and unknown-extent counts. Unknown transforms
+are never excluded merely by their offset, and invalid known extents are rejected. Successful export makes no general completeness or comparison claim.

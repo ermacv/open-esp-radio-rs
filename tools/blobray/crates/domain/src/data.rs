@@ -98,6 +98,11 @@ pub struct DataSpan {
     pub export_offset: u64,
     /// All relocations in this section are supplied; none are silently applied.
     pub section_relocations: u64,
+    /// Known relocation write extents intersecting the selected byte range.
+    pub overlapping_relocations: u64,
+    /// Section relocations whose write extent the parser cannot establish.
+    /// Such relocations prevent numeric interpretation even outside the range.
+    pub unknown_relocation_extents: u64,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -3,6 +3,12 @@ fn data_object(relocations: bool) -> Vec<u8> {
     data_object_bytes(relocations, &[0xfb, 0xff, 3, 0])
 }
 fn data_object_bytes(relocations: bool, table_bytes: &[u8]) -> Vec<u8> {
+    data_object_relocation(
+        table_bytes,
+        relocations.then_some((0, object::elf::R_RISCV_32)),
+    )
+}
+fn data_object_relocation(table_bytes: &[u8], relocation: Option<(u64, u32)>) -> Vec<u8> {
     let mut obj = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
     let text = obj.add_section(Vec::new(), b".text.entry".to_vec(), SectionKind::Text);
     let code = [0x13, 0x05, 0xa0, 0x02, 0x67, 0x80, 0, 0]; // a0=42; return
@@ -45,7 +51,7 @@ fn data_object_bytes(relocations: bool, table_bytes: &[u8]) -> Vec<u8> {
         16,
         SymbolKind::Data,
     ));
-    if relocations {
+    if let Some((offset, relocation_type)) = relocation {
         let external = obj.add_symbol(symbol(
             b"outside",
             SymbolSection::Undefined,
@@ -55,11 +61,11 @@ fn data_object_bytes(relocations: bool, table_bytes: &[u8]) -> Vec<u8> {
         obj.add_relocation(
             data,
             Relocation {
-                offset: 0,
+                offset,
                 symbol: external,
                 addend: 0,
                 flags: RelocationFlags::Elf {
-                    r_type: object::elf::R_RISCV_32,
+                    r_type: relocation_type,
                 },
             },
         )
@@ -799,4 +805,128 @@ fn generic_captured_table_occurrences_match_specialized_review_and_export() {
             [0xfb, 0xff, 3, 0]
         );
     }
+}
+
+#[test]
+fn integer_ranges_require_known_nonoverlapping_relocation_writes() {
+    use object::{Object as _, ObjectSection as _};
+    // R_RISCV_32 ends exactly at the range start, starts exactly at its end,
+    // or intersects it; R_RISCV_64 crosses the start. Unknown widths never
+    // establish disjointness. NONE supplies no write at all.
+    for (site, kind, overlap, unknown) in [
+        (0, object::elf::R_RISCV_32, 0, 0),
+        (8, object::elf::R_RISCV_32, 0, 0),
+        (4, object::elf::R_RISCV_32, 1, 0),
+        (0, object::elf::R_RISCV_64, 1, 0),
+        (0, object::elf::R_RISCV_HI20, 0, 1),
+        (0, object::elf::R_RISCV_NONE, 0, 0),
+    ] {
+        let raw = data_object_relocation(
+            &[0, 0, 0, 0, 0xfb, 0xff, 3, 0, 0, 0, 0, 0],
+            Some((site, kind)),
+        );
+        let elf = object::File::parse(raw.as_slice()).unwrap();
+        let index = elf.section_by_name(".rodata.table").unwrap().index().0 as u32;
+        let f = fixture(raw.clone(), false);
+        let mut request = proposal(&f);
+        request.selector = DataSelector::Section {
+            section: index,
+            offset: 4,
+            length: 4,
+        };
+        let proposed = f
+            .app
+            .start_propose_data(&f.project, request, budget())
+            .unwrap()
+            .wait();
+        let (revision, assertion) = review(&f, proposed, ReviewDecision::Accept, None);
+        fs::remove_file(f.dir.path().join("entry.o")).unwrap();
+        fs::remove_file(f.dir.path().join("entry.a")).unwrap();
+        let query = app::ReadQuery::ReviewedData {
+            revision,
+            assertion,
+        };
+        let records = collect(&f, query.clone()).data;
+        assert_eq!(
+            records
+                .iter()
+                .filter(|r| matches!(r, DataRecord::Relocation { .. }))
+                .count(),
+            1
+        );
+        let values: Vec<_> = records
+            .iter()
+            .filter_map(|r| match r {
+                DataRecord::Integer { signed, .. } => *signed,
+                _ => None,
+            })
+            .collect();
+        if overlap == 0 && unknown == 0 {
+            assert_eq!(values, [-5, 3]);
+            assert!(
+                !records
+                    .iter()
+                    .any(|r| matches!(r, DataRecord::Unresolved { .. }))
+            );
+        } else {
+            assert!(values.is_empty());
+            assert!(
+                records
+                    .iter()
+                    .any(|r| matches!(r, DataRecord::Unresolved { .. }))
+            );
+        }
+        let mut output = f.app.query(&f.project, query, budget()).unwrap();
+        let destination = f.dir.path().join("range-export");
+        output.export_data(&destination, &|| false).unwrap();
+        let manifest: DataManifest =
+            serde_json::from_slice(&fs::read(destination.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest.schema, 2);
+        assert_eq!(manifest.spans[0].section_relocations, 1);
+        assert_eq!(manifest.spans[0].overlapping_relocations, overlap);
+        assert_eq!(manifest.spans[0].unknown_relocation_extents, unknown);
+        assert_eq!(
+            fs::read(destination.join("data.bin")).unwrap(),
+            [0xfb, 0xff, 3, 0]
+        );
+    }
+}
+
+#[test]
+fn invalid_relocation_write_extent_cannot_publish_an_unaffected_table() {
+    use object::{Object as _, ObjectSection as _};
+    let raw = data_object_relocation(&[0; 12], Some((10, object::elf::R_RISCV_32)));
+    let elf = object::File::parse(raw.as_slice()).unwrap();
+    let section = elf.section_by_name(".rodata.table").unwrap().index().0 as u32;
+    let f = fixture(raw.clone(), false);
+    let mut p = proposal(&f);
+    p.selector = DataSelector::Section {
+        section,
+        offset: 0,
+        length: 4,
+    };
+    let run = f
+        .app
+        .start_propose_data(&f.project, p, budget())
+        .unwrap()
+        .wait();
+    assert_eq!(run.state, RunState::Failed, "{run:?}");
+    assert!(run.knowledge.is_none());
+    assert!(
+        run.error
+            .unwrap()
+            .message
+            .contains("relocation write exceeds")
+    );
+    assert!(
+        collect(
+            &f,
+            app::ReadQuery::Knowledge {
+                revision: None,
+                history: false
+            }
+        )
+        .knowledge
+        .is_empty()
+    );
 }

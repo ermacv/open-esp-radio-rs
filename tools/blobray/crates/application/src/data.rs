@@ -231,9 +231,11 @@ pub(crate) fn prepare(
                     && let KnowledgeClaim::IntegerTable { layout, .. } = &entry.proposal.claim {
                     validate_table(payload, &view, &entry.proposal)?;
                     // Values decode *file initialization bytes*. Their classification is
-                    // explicit; a section with relocations supplies bytes and relocations only.
-                    if !view.relocations.is_empty() {
-                        emit(&DataRecord::Unresolved { range: index as u32, reason: "section contains unapplied relocations; integer values are not resolved".into() }, c)?;
+                    // explicit; only proven unaffected ranges supply numeric values.
+                    if view.span.unknown_relocation_extents != 0 {
+                        emit(&DataRecord::Unresolved { range: index as u32, reason: "section contains relocations with unknown write extents; integer values are not resolved".into() }, c)?;
+                    } else if view.span.overlapping_relocations != 0 {
+                        emit(&DataRecord::Unresolved { range: index as u32, reason: "relocation writes intersect the selected range; integer values are not resolved".into() }, c)?;
                     } else {
                         for i in 0..layout.count {
                             c.checkpoint(1)?;
@@ -322,7 +324,7 @@ pub(crate) fn prepare(
         (Some(revision), Some(entry))
     });
     let manifest = DataManifest {
-        schema: 1,
+        schema: 2,
         request: request.clone(),
         payload,
         spans,

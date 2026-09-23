@@ -1565,10 +1565,17 @@ do not assert absence of other uses. The source object's byte order is distinct
 from a reviewed table's explicit interpretation.
 
 For tables, integer records decode captured bytes. Writable sections are marked
-as initialization data, never current runtime state. Sections with relocations
-retain raw bytes and all their relocations; integer decoding is withheld with an
-explicit `unresolved` record, even if a layout has been accepted. This profile does
-not resolve pointer tables. For constants, `data.bin` is empty; the object and
+as initialization data, never current runtime state. All section relocations are
+retained. Data manifest schema 2 reports `overlapping_relocations` for the selected
+byte range and `unknown_relocation_extents` for the section. Integer decoding is
+withheld with an explicit `unresolved` record if either count is nonzero, even
+when the layout is accepted. Known fixed-width writes ending at the range start
+or starting at its end do not overlap. Unknown transformations cannot establish
+nonoverlap from their offset alone. The pinned structural parser currently
+supplies RV32 NONE/32/64 classifications; other types retain unknown extents.
+Known writes beyond the section are rejected. ET_EXEC relocation sites are
+normalized from virtual to section-relative coordinates. No relocation is
+applied by data export, and this profile does not resolve pointer tables. For constants, `data.bin` is empty; the object and
 analysis instruction/value records are the evidence. Analysis coverage remains
 in each retained function manifest and is not promoted by successful export.
 

@@ -130,6 +130,11 @@ adds no scheduler, backend dependency or subprocess per function. See the
 
 ## Knowledge and preservation
 
+`occurrence` acquires exact captured objects for both data delivery and knowledge
+admission. Prepared callbacks validate optional physical symbols once and keep
+source/range checks under the same owner. Thin-member payload roots remain
+explicit; the helper grants no publication or review authority.
+
 `start_knowledge` admits proposals and review changes through the durable job
 supervisor. The worker resolves exact retained occurrences, verifies evidence
 and uses `blobray-knowledge` for conflicts/transitions. Store atomically publishes

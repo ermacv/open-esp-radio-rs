@@ -1062,3 +1062,284 @@ fn data_image_addresses_export_file_backing_and_reject_unmapped_ranges() {
             .is_err()
     );
 }
+
+#[test]
+fn generic_image_table_review_and_export_validate_the_same_physical_symbol() {
+    use object::ObjectSection as _;
+    let f = fixture(true, true);
+    let image = prepared(&f);
+    let raw = export(&f, image.clone());
+    let elf = object::File::parse(raw.as_slice()).unwrap();
+    let symbol = elf.symbol_by_name("value").unwrap();
+    let section = elf
+        .section_by_index(symbol.section_index().unwrap())
+        .unwrap();
+    let offset = symbol.address() - section.address();
+    let payload = ArtifactId::of_bytes(&raw);
+    let object = ObjectId {
+        artifact: payload.clone(),
+        location: ObjectLocation::Standalone,
+    };
+    let occurrence = KnowledgeOccurrence {
+        revision: f.revision.clone(),
+        source: FunctionSource::Image { image },
+        object: object.clone(),
+        symbol: Some(SymbolId {
+            object,
+            table: SymbolTableKind::Static,
+            table_section: elf.section_by_name(".symtab").unwrap().index().0 as u32,
+            index: symbol.index().0 as u64,
+        }),
+    };
+    let selector = DataSelector::Section {
+        section: section.index().0 as u32,
+        offset,
+        length: 4,
+    };
+    let layout = IntegerTable {
+        encoding: IntegerEncoding {
+            width: 4,
+            signed: false,
+            byte_order: DataByteOrder::Little,
+        },
+        count: 1,
+        stride: 4,
+    };
+    let proposal = KnowledgeProposal {
+        subject: "data.value".to_owned().try_into().unwrap(),
+        occurrence: occurrence.clone(),
+        claim: KnowledgeClaim::IntegerTable {
+            selector: selector.clone(),
+            layout: layout.clone(),
+            purpose: "fixture".into(),
+            applicability: "exact image".into(),
+        },
+        evidence: vec![EvidenceRef::Source {
+            payload,
+            range: CodeRange {
+                start: section.file_range().unwrap().0 + offset,
+                length: 4,
+            },
+        }],
+        note: None,
+    };
+    for kind in 0..4 {
+        let mut bad = proposal.clone();
+        let sym = bad.occurrence.symbol.as_mut().unwrap();
+        match kind {
+            0 => sym.index = u64::MAX,
+            1 => sym.table = SymbolTableKind::Dynamic,
+            2 => sym.table_section = u32::MAX,
+            _ => sym.object.artifact = ArtifactId::of_bytes(b"another object"),
+        }
+        let change = KnowledgeChange {
+            expected_base: None,
+            actor: "test".into(),
+            reason: "invalid physical identity".into(),
+            action: KnowledgeAction::Propose {
+                proposal: bad.clone(),
+            },
+        };
+        assert!(
+            f.app
+                .query(
+                    &f.project,
+                    app::ReadQuery::ValidateKnowledge {
+                        change: change.clone()
+                    },
+                    budget()
+                )
+                .is_err()
+        );
+        match f.app.start_knowledge(&f.project, &change, budget()) {
+            Ok(handle) => {
+                let run = handle.wait();
+                assert_eq!(run.state, RunState::Failed, "{run:?}");
+                assert!(run.knowledge.is_none());
+            }
+            Err(error) => assert_eq!(error.code, ErrorCode::InvalidRequest),
+        }
+        let specialized = f
+            .app
+            .start_propose_data(
+                &f.project,
+                DataProposalRequest {
+                    occurrence: bad.occurrence,
+                    analyses: vec![],
+                    subject: bad.subject,
+                    selector: selector.clone(),
+                    layout: layout.clone(),
+                    purpose: "fixture".into(),
+                    applicability: "exact image".into(),
+                    expected_base: None,
+                    actor: "test".into(),
+                    reason: "invalid identity".into(),
+                },
+                budget(),
+            )
+            .unwrap()
+            .wait();
+        assert_eq!(specialized.state, RunState::Failed, "{specialized:?}");
+        assert!(specialized.knowledge.is_none());
+        assert!(
+            cli(&f, &["knowledge", "show"])["records"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+    let proposed = f
+        .app
+        .start_knowledge(
+            &f.project,
+            &KnowledgeChange {
+                expected_base: None,
+                actor: "test".into(),
+                reason: "valid data symbol".into(),
+                action: KnowledgeAction::Propose { proposal },
+            },
+            budget(),
+        )
+        .unwrap()
+        .wait();
+    assert_eq!(proposed.state, RunState::Completed, "{proposed:?}");
+    let entries = cli(&f, &["knowledge", "show"]);
+    let assertion: AssertionId = entries["records"][0]["value"]["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let reviewed = f
+        .app
+        .start_knowledge(
+            &f.project,
+            &KnowledgeChange {
+                expected_base: proposed.knowledge,
+                actor: "test".into(),
+                reason: "checked data identity".into(),
+                action: KnowledgeAction::Review {
+                    assertion: assertion.clone(),
+                    decision: ReviewDecision::Accept,
+                    supersedes: None,
+                },
+            },
+            budget(),
+        )
+        .unwrap()
+        .wait();
+    assert_eq!(reviewed.state, RunState::Completed, "{reviewed:?}");
+    let mut output = f
+        .app
+        .query(
+            &f.project,
+            app::ReadQuery::ReviewedData {
+                revision: reviewed.knowledge.unwrap(),
+                assertion,
+            },
+            budget(),
+        )
+        .unwrap();
+    let destination = f.dir.path().join("reviewed-table");
+    output.export_data(&destination, &|| false).unwrap();
+    assert_eq!(
+        fs::read(destination.join("data.bin")).unwrap(),
+        [0x78, 0x56, 0x34, 0x12]
+    );
+}
+
+#[test]
+fn diamond_research_keeps_shared_leaf_effects_for_both_parents_and_repeated_calls() {
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let definitions: &[(&str, &[u32])] = &[
+        (
+            "entry",
+            &[
+                0x60000537, 0x00b00593, 0x000000ef, 0x60000537, 0x01050513, 0x01600593, 0x000000ef,
+                0x00008067,
+            ],
+        ),
+        ("left", &[0x000000ef, 0x000000ef, 0x00008067]),
+        ("right", &[0x000000ef, 0x00008067]),
+        ("leaf", &[0x00b52023, 0x00008067]),
+    ];
+    let mut sections = Vec::new();
+    let mut symbols = Vec::new();
+    for (name, words) in definitions {
+        let section = obj.add_section(
+            Vec::new(),
+            format!(".text.{name}").into_bytes(),
+            SectionKind::Text,
+        );
+        let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        obj.append_section_data(section, &bytes, 4);
+        symbols.push(obj.add_symbol(symbol(
+            name.as_bytes(),
+            SymbolSection::Section(section),
+            bytes.len() as u64,
+            SymbolKind::Text,
+        )));
+        sections.push(section);
+    }
+    for (from, offset, to) in [(0, 8, 1), (0, 24, 2), (1, 0, 3), (1, 4, 3), (2, 0, 3)] {
+        obj.add_relocation(
+            sections[from],
+            Relocation {
+                offset,
+                symbol: symbols[to],
+                addend: 0,
+                flags: RelocationFlags::Elf {
+                    r_type: object::elf::R_RISCV_JAL,
+                },
+            },
+        )
+        .unwrap();
+    }
+    let f = custom_fixture(vec![("diamond.o", obj.write().unwrap())], 0, 0);
+    let image = prepared(&f);
+    let publication = analyze(&f, Some(image));
+    let leaf = cli(
+        &f,
+        &["functions", "--id", publication.as_str(), "--name", "leaf"],
+    );
+    let leaf_id = leaf["records"][0]["value"]["outcome"]["analysis"]
+        .as_str()
+        .unwrap();
+    let research = cli(
+        &f,
+        &[
+            "research",
+            "--id",
+            publication.as_str(),
+            "--name",
+            "entry",
+            "--abi-contract",
+            "riscv-integer",
+        ],
+    );
+    let facts = cli(
+        &f,
+        &[
+            "analysis",
+            "--id",
+            research["run"]["analysis"].as_str().unwrap(),
+        ],
+    );
+    let effects: Vec<_> = facts["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| &r["value"])
+        .filter(|r| r["kind"] == "callee-effect" && r["analysis"] == leaf_id)
+        .collect();
+    assert_eq!(effects.len(), 3, "{facts}");
+    for (address, value, count) in [(0x60000000u32, 11, 2), (0x60000010, 22, 1)] {
+        assert_eq!(
+            effects
+                .iter()
+                .filter(|r| r["address"]["value"] == address && r["value"]["value"] == value)
+                .count(),
+            count,
+            "{facts}"
+        );
+    }
+}

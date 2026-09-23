@@ -16,6 +16,20 @@ impl Node<'_> {
         self.composed.as_ref().map_or(&self.records, |c| &c.records)
     }
 }
+// One decrement per resolved edge, including repeated calls by one parent.
+fn release_consumed_facts<'a>(
+    records: &mut RecordBuffer<'a>,
+    composed: &mut Option<blobray_analysis::summaries::Composed<'a>>,
+    remaining: &mut usize,
+    memory: &'a WorkingMemory,
+) {
+    *remaining -= 1;
+    if *remaining == 0 {
+        *records = RecordBuffer::new(memory);
+        *composed = None;
+    }
+}
+
 fn load<'a>(
     id: FunctionAnalysisId,
     manifest: FunctionManifest,
@@ -380,12 +394,16 @@ pub(crate) fn enrich(
         // Retain identities for provenance, release facts after the final parent.
         for call in 0..nodes[index].calls.len() {
             c.checkpoint(1)?;
-            if let Some(child) = nodes[index].calls[call].1 {
-                consumers[child] -= 1;
-                if child != 0 && consumers[child] == 0 {
-                    nodes[child].records = RecordBuffer::new(memory);
-                    nodes[child].composed = None;
-                }
+            if let Some(child) = nodes[index].calls[call].1
+                && child != 0
+            {
+                let node = &mut nodes[child];
+                release_consumed_facts(
+                    &mut node.records,
+                    &mut node.composed,
+                    &mut consumers[child],
+                    memory,
+                );
             }
         }
     }
@@ -522,5 +540,43 @@ mod tests {
         .unwrap();
         assert_eq!(error.code, ErrorCode::Cancelled);
         assert_eq!(memory.used(), 0);
+    }
+}
+
+#[cfg(test)]
+mod lifetime_tests {
+    use super::*;
+    #[test]
+    fn shared_callee_facts_live_until_the_last_edge_then_release_capacity() {
+        let memory = WorkingMemory::new(64 * 1024).unwrap();
+        let mut local = RecordBuffer::new(&memory);
+        let mut facts = RecordBuffer::new(&memory);
+        facts
+            .push(
+                FunctionRecord::CallResolution {
+                    offset: 0,
+                    analysis: None,
+                    reason: Some("e".repeat(8192)),
+                },
+                RunPosition::default(),
+            )
+            .unwrap();
+        let mut composed = Some(blobray_analysis::summaries::Composed { records: facts });
+        let mut consumers = 3; // first parent calls twice, second once
+        let live = memory.used();
+        for remaining in [2, 1] {
+            release_consumed_facts(&mut local, &mut composed, &mut consumers, &memory);
+            assert_eq!(consumers, remaining);
+            assert_eq!(composed.as_ref().unwrap().records.len(), 1);
+            assert_eq!(memory.used(), live);
+        }
+        release_consumed_facts(&mut local, &mut composed, &mut consumers, &memory);
+        assert_eq!(consumers, 0);
+        assert!(composed.is_none());
+        assert_eq!(memory.used(), 0);
+        // Released capacity is immediately available to the parent, before the
+        // graph owner is dropped.
+        let all = memory.reserve(64 * 1024, RunPosition::default()).unwrap();
+        drop(all);
     }
 }

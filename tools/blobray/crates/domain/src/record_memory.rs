@@ -141,6 +141,8 @@ impl FunctionRecord {
 }
 /// Each incoming record must already be covered by the producer's transient
 /// workspace. Admission transfers it into retained ownership before the next record.
+/// A failed push preserves existing records and releases the incoming payload's
+/// reservation. Admitted vector capacity may remain available for a later push.
 pub struct RecordBuffer<'a> {
     records: AdmittedVec<'a, FunctionRecord>,
     payloads: AdmittedVec<'a, MemoryReservation<'a>>,
@@ -157,7 +159,11 @@ impl<'a> RecordBuffer<'a> {
     pub fn push(&mut self, record: FunctionRecord, position: RunPosition) -> Result<()> {
         let payload = self.memory.reserve(record.allocated_bytes(), position)?;
         self.payloads.push(payload, position)?;
-        self.records.push(record, position)
+        if let Err(error) = self.records.push(record, position) {
+            self.payloads.pop();
+            return Err(error);
+        }
+        Ok(())
     }
 }
 impl std::ops::Deref for RecordBuffer<'_> {
@@ -170,6 +176,53 @@ impl std::ops::Deref for RecordBuffer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_record_growth_rolls_back_payload_and_allows_reuse() {
+        let position = RunPosition::default();
+        let memory = WorkingMemory::new(64 * 1024).unwrap();
+        let make = |text: String| FunctionRecord::Instruction {
+            offset: 0,
+            bytes: Vec::new(),
+            decoded: DecodedOp {
+                length: 2,
+                text,
+                flow: InstructionFlow::Next,
+            },
+        };
+        let mut records = RecordBuffer::new(&memory);
+        for _ in 0..8 {
+            records.push(make(String::new()), position).unwrap();
+        }
+        let payload = "x".repeat(1024);
+        // Permit the payload and reservation-array growth, but no record-array
+        // growth. Existing arrays remain charged during replacement admission.
+        let reservation_bytes = size_of::<MemoryReservation<'_>>() as u64;
+        let allowance = payload.capacity() as u64 + 16 * reservation_bytes;
+        let blocker = memory
+            .reserve(
+                memory.observation().limit_bytes - memory.used() - allowance,
+                position,
+            )
+            .unwrap();
+        let before = memory.used();
+        let error = records.push(make(payload), position).unwrap_err();
+        assert_eq!(error.code, ErrorCode::ResourceLimited);
+        assert_eq!(
+            error.memory.unwrap().requested_bytes,
+            16 * size_of::<FunctionRecord>() as u64
+        );
+        assert_eq!(records.len(), 8);
+        assert_eq!(records.payloads.len(), records.len());
+        // Only the enlarged reservation array remains, not the failed payload.
+        assert_eq!(memory.used(), before + 8 * reservation_bytes);
+        drop(blocker);
+        records.push(make("retry".into()), position).unwrap();
+        assert_eq!(records.len(), 9);
+        assert_eq!(records.payloads.len(), records.len());
+        drop(records);
+        assert_eq!(memory.used(), 0);
+    }
+
     #[test]
     fn retained_payloads_consume_capacity_and_release_on_failure() {
         let memory = WorkingMemory::new(24 * 1024).unwrap();

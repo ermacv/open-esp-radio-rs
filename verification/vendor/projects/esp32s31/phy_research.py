@@ -17,6 +17,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--binary", type=pathlib.Path, required=True)
 parser.add_argument("--library", type=pathlib.Path, required=True)
 parser.add_argument("--rom", type=pathlib.Path, required=True)
+parser.add_argument("--linker", type=pathlib.Path, required=True)
 parser.add_argument("--output", type=pathlib.Path, required=True)
 parser.add_argument("--limit-mode", choices=["kernel", "watchdog"], required=True)
 options = parser.parse_args()
@@ -80,19 +81,55 @@ publication = call("whole", ["analyze-project"])["run"]["publication"]
 coverage = call("coverage", ["coverage", "--id", publication])
 assert coverage["assessment"]["coverage"]["scope"] == "selected-function-extents"
 assert coverage["summary"]["extents"]["objects"] > 0
+# Unlike archive-local research, this image resolves ordinary calls to exact
+# captured ROM definitions. Its final tail transfer retains the profile's limits.
+plan = run / "linked-plan.json"
+call("link-plan", ["link-plan", "--entry", "phy_i2c_master_cmd_mem_init",
+    "--entry-input", "0", "--inputs", "0", "--code-start", "0x10000000",
+    "--data-start", "0x20000000", "--linker", str(options.linker.resolve()),
+    "--companion", "1:phy_encode_i2c_master", "--companion", "1:phy_i2c_master_fill", "--companion", "1:phy_get_data_sat",
+    "--output", str(plan)])
+image = call("prepare-image", ["prepare-image", "--plan", str(plan),
+    "--linker", str(options.linker.resolve())])["run"]["image"]
+linked_publication = call("linked-analysis", ["analyze-project", "--image", image])["run"]["publication"]
+callees = {}
+for name in ("phy_encode_i2c_master", "phy_i2c_master_fill", "phy_get_data_sat"):
+    rows = call(name, ["functions", "--id", publication, "--name", name])["records"]
+    matches = [r["value"] for r in rows if r["value"]["entry"]["request"]["source"] == {"kind": "input", "input": 1}]
+    assert len(matches) == 1
+    callees[name] = matches[0]["outcome"]["analysis"]
+linked_facts = None
+phase_samples = []
 for sample in range(3):
-    call(
-        "research-" + str(sample),
-        [
-            "research",
-            "--id",
-            publication,
-            "--name",
-            "phy_txgain_comp_pacfg_new",
-            "--abi-contract",
-            "riscv-integer",
-        ],
-    )
+    result = call("research-" + str(sample), ["research", "--id", linked_publication,
+        "--name", "phy_i2c_master_cmd_mem_init", "--abi-contract", "riscv-integer",
+        "--companion-publication", publication])
+    linked_analysis = result["run"]["analysis"]
+    facts = call("research-facts-" + str(sample), ["analysis", "--id", linked_analysis])["records"]
+    records = [r["value"] for r in facts]
+    resolved = [r for r in records if r["kind"] == "call-resolution" and r["analysis"]]
+    assert {r["analysis"] for r in resolved} == set(callees.values())
+    # The authenticated root has 45 encode calls, 44 ordinary fill calls,
+    # three saturation calls, and one final fill tail transfer (not composed).
+    for name, count in (("phy_encode_i2c_master", 45), ("phy_i2c_master_fill", 44), ("phy_get_data_sat", 3)):
+        assert sum(r["analysis"] == callees[name] for r in resolved) == count
+    effects = [r for r in records if r["kind"] == "callee-effect"
+        and r["analysis"] == callees["phy_i2c_master_fill"]]
+    assert len(effects) == 44
+    # Independent instruction interpretation: encode(0x67, 2, 7), then fill(0,...).
+    assert any(r["address"] == {"kind": "constant", "value": 0x2010FC00}
+        and r["value"] == {"kind": "constant", "value": 0x70267}
+        and r["width"] == 4 for r in effects)
+    if linked_facts is not None:
+        assert records == linked_facts
+    linked_facts = records
+    progress = result["run"]["diagnostics"]["progress"]
+    phases = progress["phases"]
+    for phase in ("load_research", "compose_research"):
+        assert phases[phase]["work_units"] > 0
+        assert 0 < phases[phase]["peak_reserved_bytes"] <= 256 * 1024 * 1024
+    phase_samples.append({k: phases[k] for k in ("load_research", "compose_research")})
+(run / "linked-phase-measurements.json").write_text(json.dumps(phase_samples, indent=2))
 usage = call("storage-usage", ["storage-usage"])
 assert usage["summary"]["usage"]["cas"]["logical_bytes"] > 0
 assert not usage["summary"]["usage"]["reachability_assessed"]
@@ -176,6 +213,9 @@ call(
     ],
 )
 assert len((run / "i2c-observations/data.bin").read_bytes()) == 200
+# Established independently from the authenticated archive, not from Blobray's manifest.
+assert hashlib.sha256((run / "i2c-observations/object.elf").read_bytes()).hexdigest() == "7e6ebb1353d1bd2c53b4b5b1176bbf795c57d899c3f07a26ce56e74b5803e9d9"
+assert hashlib.sha256((run / "i2c-observations/data.bin").read_bytes()).hexdigest() == "927b3305a35468bb52f3de4e3305f4b4d0674831014376a094ceb00022bab183"
 p = {
     "occurrence": q["occurrence"],
     "analyses": q["analyses"],
@@ -395,3 +435,7 @@ for name in ["manifest.json", "object.elf", "data.bin", "records.jsonl"]:
     )
 )
 print(run, flush=True)
+
+# Reading restored composed evidence must not need linking, original files or replay.
+restored = call("restored-research", ["analysis", "--id", linked_analysis])
+assert [r["value"] for r in restored["records"]] == linked_facts

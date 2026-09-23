@@ -17,68 +17,9 @@ pub(crate) fn with_object<T>(
         &mut dyn RunControl,
     ) -> Result<T>,
 ) -> Result<T> {
-    let payload = match &occurrence.source {
-        FunctionSource::Input { input } => {
-            let scope = if let Some(symbol) = &occurrence.symbol {
-                InspectionScope::Symbol {
-                    input: *input,
-                    symbol: symbol.clone(),
-                }
-            } else {
-                InspectionScope::Object {
-                    input: *input,
-                    object: occurrence.object.clone(),
-                }
-            };
-            let mut probe = crate::selection::Probe::new(&scope);
-            project.read_inventory(Some(&occurrence.revision), memory, c, &mut probe)?;
-            if !probe.found {
-                return Err(invalid("data occurrence absent from selected revision"));
-            }
-            probe
-                .binding
-                .and_then(|b| b.payload)
-                .ok_or_else(|| invalid("data object bytes unavailable"))?
-        }
-        FunctionSource::Image { image } => {
-            let image = project.image(image, c)?;
-            if image.manifest.plan.recipe.revision != occurrence.revision
-                || occurrence.object
-                    != (ObjectId {
-                        artifact: image.manifest.elf.clone(),
-                        location: ObjectLocation::Standalone,
-                    })
-            {
-                return Err(invalid("data image and occurrence differ"));
-            }
-            image.manifest.elf
-        }
-    };
-    let container = project.open_payload(&occurrence.object.artifact, c)?;
-    let run = |source: &dyn ByteSource, c: &mut dyn RunControl| {
-        blobray_artifacts::with_prepared_object(source, &payload, memory, c, |object, c| {
-            if let Some(symbol) = &occurrence.symbol {
-                object.validate_data_symbol(&occurrence.object, symbol)?;
-            }
-            consume(&payload, object, c)
-        })
-    };
-    match occurrence.object.location {
-        ObjectLocation::Standalone => run(&container, c),
-        ObjectLocation::ArchiveMember { ordinal } => {
-            let mut cursor = MemberCursor::new(&container, c)?;
-            while let Some(member) = cursor.next(memory, c)? {
-                if member.ordinal == ordinal {
-                    return if let Some((offset, length)) = member.payload {
-                        run(&SourceRange::new(&container, offset, length)?, c)
-                    } else {
-                        run(&project.open_payload(&payload, c)?, c)
-                    };
-                }
-            }
-            Err(invalid("captured data member missing"))
-        }
-    }
+    crate::occurrence::with_source(project, occurrence, memory, c, |capture, c| {
+        capture.with_prepared(memory, c, |object, c| consume(capture.payload, object, c))
+    })
 }
 
 pub(crate) fn propose_data(

@@ -692,3 +692,111 @@ fn reviewed_integer_width_byte_order_and_stride_preserve_signed_values() {
         }
     }
 }
+
+#[test]
+fn generic_captured_table_occurrences_match_specialized_review_and_export() {
+    use object::{Object as _, ObjectSection as _};
+    for thin in [false, true] {
+        let raw = data_object(false);
+        let f = fixture(raw.clone(), thin);
+        let req = request(&f, &[b"table"]);
+        let DataSelector::Symbol { symbol, .. } = &req.ranges[0] else {
+            panic!()
+        };
+        let elf = object::File::parse(raw.as_slice()).unwrap();
+        let section = elf.section_by_name(".rodata.table").unwrap();
+        let layout = proposal(&f).layout;
+        let mut occurrence = req.occurrence;
+        occurrence.symbol = Some(symbol.clone());
+        let selector = DataSelector::Section {
+            section: section.index().0 as u32,
+            offset: 0,
+            length: 4,
+        };
+        let valid = KnowledgeProposal {
+            subject: "captured.table".to_owned().try_into().unwrap(),
+            occurrence,
+            claim: KnowledgeClaim::IntegerTable {
+                selector: selector.clone(),
+                layout: layout.clone(),
+                purpose: "fixture coefficients".into(),
+                applicability: "exact object".into(),
+            },
+            evidence: vec![EvidenceRef::Source {
+                payload: ArtifactId::of_bytes(&raw),
+                range: CodeRange {
+                    start: section.file_range().unwrap().0,
+                    length: 4,
+                },
+            }],
+            note: None,
+        };
+        for table in [SymbolTableKind::Static, SymbolTableKind::Dynamic] {
+            let mut invalid = valid.clone();
+            let sym = invalid.occurrence.symbol.as_mut().unwrap();
+            sym.index = u64::MAX;
+            sym.table = table;
+            let failed = f
+                .app
+                .start_knowledge(
+                    &f.project,
+                    &KnowledgeChange {
+                        expected_base: None,
+                        actor: "test".into(),
+                        reason: "absent symbol".into(),
+                        action: KnowledgeAction::Propose { proposal: invalid },
+                    },
+                    budget(),
+                )
+                .unwrap()
+                .wait();
+            assert_eq!(failed.state, RunState::Failed, "{failed:?}");
+            assert!(failed.knowledge.is_none());
+            assert!(
+                collect(
+                    &f,
+                    app::ReadQuery::Knowledge {
+                        revision: None,
+                        history: false
+                    }
+                )
+                .knowledge
+                .is_empty()
+            );
+        }
+        let proposed = f
+            .app
+            .start_knowledge(
+                &f.project,
+                &KnowledgeChange {
+                    expected_base: None,
+                    actor: "test".into(),
+                    reason: "exact source evidence".into(),
+                    action: KnowledgeAction::Propose { proposal: valid },
+                },
+                budget(),
+            )
+            .unwrap()
+            .wait();
+        let (revision, assertion) = review(&f, proposed, ReviewDecision::Accept, None);
+        fs::remove_file(f.dir.path().join("entry.o")).unwrap();
+        fs::remove_file(f.dir.path().join("entry.a")).unwrap();
+        let mut output = f
+            .app
+            .query(
+                &f.project,
+                app::ReadQuery::ReviewedData {
+                    revision,
+                    assertion,
+                },
+                budget(),
+            )
+            .unwrap();
+        let destination = f.dir.path().join("generic-export");
+        output.export_data(&destination, &|| false).unwrap();
+        assert_eq!(
+            fs::read(destination.join("data.bin")).unwrap(),
+            [0xfb, 0xff, 3, 0]
+        );
+    }
+}

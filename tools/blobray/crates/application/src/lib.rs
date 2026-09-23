@@ -4,6 +4,7 @@
 //! Inventory receives captured bytes only; storage never interprets ELF or AR.
 
 mod data;
+mod occurrence;
 use blobray_artifacts::{INVENTORY_PRODUCER, MemberCursor, inspect_source};
 use blobray_domain::*;
 use blobray_store::{ObjectHeader, Project, Staging};

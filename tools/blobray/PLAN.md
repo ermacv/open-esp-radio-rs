@@ -46,8 +46,8 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
 | Stage | Status | Delivered scenario and required acceptance |
 | --- | --- | --- |
 | 00 | done | Establish this plan, its repository exception, all feature assignments and first-stage prerequisites. Every legacy leaf and internal mechanism has an owner; required tools and real inputs are identified. |
-| 01 | active | Close existing capture/analysis/research/data/review/export/coverage/storage/execution/preservation promises. All detailed criteria below pass, including a real linked graph and source-free restore. |
-| 02 | pending | Exact code/data addressing: reviewed symbol-less executable ranges; physical static/dynamic symbol selection; zero-sized/alias occurrences; initialization bytes and range-local relocation effects. Accepted selectors survive analysis/export/reopen; only affecting relocations block integer interpretation; coverage does not infer code in unselected bytes. |
+| 01 | done | Close existing capture/analysis/research/data/review/export/coverage/storage/execution/preservation promises. All detailed criteria below pass, including a real linked graph and source-free restore. |
+| 02 | active | Exact code/data addressing: reviewed symbol-less executable ranges; physical static/dynamic symbol selection; zero-sized/alias occurrences; initialization bytes and range-local relocation effects. Accepted selectors survive analysis/export/reopen; only affecting relocations block integer interpretation; coverage does not infer code in unselected bytes. |
 | 03 | pending | Pointer tables and interfaces: exact relocated targets, bounded alternatives, roots/slots, layout/ABI/guards/index domains and semantic bindings. Discovery → proposal → review → query/export works on synthetic and real inputs; ambiguity/unsupported/null/external targets stay distinct; invalid guards and conflicting layouts fail. |
 | 04 | pending | Function/context contracts and research navigation: signatures, argument roles, fields, preconditions, reviewed paths/event routes; function/callers/callees, object readers/writers, field accesses, flow/effect slices. Answers retain evidence paths and distinguish structural from executable paths; cycles, ambiguous callbacks and partial results are tested; reads never schedule hidden analysis. |
 | 05 | pending | Register lifecycle: MMIO/field discovery, physical catalog, evidence/conflicts/coverage, applicability/review. Independent register tool owns model initialization/SVD import and existing publication. Observation → reviewed source model → validate → four generated outputs works; observed access width is not physical width; generic Blobray gains no production/chip dependency. |
@@ -82,8 +82,9 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
    payload, subsequent successful use and complete release on drop. Vector
    capacity retained for reuse is distinct from record-owned payload.
 3. Extend the real PHY scenario with a prepared linked image and
-   `phy_bias_reg_set` → `phy_i2c_writeReg` (ordinary and tail call). Check resolved
-   physical targets, call arguments and composed-fact provenance, not exit code.
+   `phy_i2c_master_cmd_mem_init` → `phy_encode_i2c_master`/`phy_i2c_master_fill`/`phy_get_data_sat`.
+   Check resolved physical targets, call arguments and composed-fact provenance,
+   not exit code. Tail transfers retain their separately documented limits.
    Add a diamond graph whose child remains available for both parents and is
    released after the last consumer. Cover repeated edges, cycles and unknown
    targets without promoting incomplete analysis. Three repeats must preserve
@@ -181,11 +182,28 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stage 00 is complete; stage 01 is active. Its entry points and regressions are identified.
-The workspace provides LLVM tools and retained authenticated PHY/ROM captures
-under ignored `target/blobray-research/real/`. Source bytes are not committed.
-Stage 00 prerequisites: LLVM LLD 22.1.8, retained captures, and documentation checks.
-No product acceptance check has yet been credited by this plan.
+Stages 00 and 01 are complete. Stage 02 is active with the partitions below.
+Stage 01 acceptance is covered by `record_memory` regressions, application
+`research::lifetime_tests`, Next `functions`/`images` tests, and the real
+`phy_research.py` linked/review/export/reopen scenario. All nine Next packages,
+Clippy, application/domain public/private docs, standalone extraction and
+source-only checks passed. Kernel integration remains explicitly environment-gated.
+The workspace provides LLVM LLD 22.1.8 and retained authenticated PHY/ROM captures
+under ignored `target/blobray-research/real/`; source bytes are not committed.
+
+### Stage 02 refinement
+
+The original stage combines independent data-range work with a cross-cutting
+change to function identity in API, saved plans, knowledge and persistence.
+`FunctionRequest`/`FunctionRecipe` currently require `SymbolId`; inventing a fake
+symbol for a range is forbidden. Split these scopes before implementation,
+retaining the parent acceptance criteria and native source-free workflows:
+
+| Sub-stage | Status | Acceptance |
+| --- | --- | --- |
+| 02.1 | ready | Range-local relocation effects: unaffected integer bytes decode; intersecting/unknown transformations remain explicitly unresolved; preserve all source relocations and initialization classification; boundary/width/unknown cases and review/export/reopen pass. |
+| 02.2 | pending | Exact dynamic-symbol occurrences: selected physical tables/indices are validated, data/functions use the correct table, duplicates and aliases do not merge, malformed/unsupported ELF is explicit; ordinary static-symbol scenarios remain correct. |
+| 02.3 | pending | Native symbol-less executable identities and reviewed boundaries across request/recipe/knowledge/planning/query/coverage. No synthetic SymbolId, no inference from neighboring symbols, no dual legacy resolver. Analyze/export/reopen retains exact ranges and explicit claim scope. |
 
 ### Stage 14 partitions fixed before activation
 
@@ -198,3 +216,9 @@ new qualification scope. PHY suites belong to stages 11/12.
 | 14.1 | pending | `libpp-interrupt`, `libpp-power-interrupt`, `wifi-ap-tsf-stop`, `wifi-ap-tsf-start`, `rom-sta-tsf-snapshot`, `libpp-tx-dma`, `libpp-rx-dma`, `libpp-tx-retry`, `wifi-interface-context`, `wifi-sta-ap-receive`, `wifi-sta-beacon-filter`, `ordinary-tx-ownership`, `tx-protection-control` |
 | 14.2 | pending | `ble-interrupt-prefix`, `ble-scheduler-table-prefix`, `btbb-v2-init-arg-one`, `ble-memory-list-selector-one`, `ble-phy-register-init`, `ble-memory-list-selector-two`, `ble-memory-list-selector-three` |
 | 14.3 | pending | `ieee802154-btbb`, `ieee802154-zb`, `ieee802154-coex`, `coex-timer-control`, `coex-timer-set`, `coex-core` |
+
+Stage 01 fixture correction: the originally planned `phy_bias_reg_set` callee
+is a four-byte ROM tail trampoline. Current call composition does not expand
+that transfer, so it cannot meet the composed-effect acceptance criterion. The
+replacement root above has ordinary calls to two concrete, small ROM bodies;
+no acceptance obligation was removed.

@@ -1538,6 +1538,10 @@ Widths are 1, 2, 4 or 8 bytes; byte order is `little` or `big`. Stride is in byt
 and cannot be less than element width. The layout must cover exactly the selected
 range, including internal padding. The application canonicalizes symbol/image selectors to exact section ranges,
 adds matching payload/range evidence and validates it again during review.
+Generic knowledge changes, specialized proposals, review and export share physical
+occurrence validation. An optional image data symbol must exist in its declared
+object/table even when the selector is a canonical section range. Source evidence
+and the selected range are validated against that same prepared object.
 This also detects conflicts between physical aliases of the same table. `purpose` and `applicability`
 record the proposed meaning; their presence is not automatic semantic acceptance.
 
@@ -1576,3 +1580,8 @@ source removal, project move and backup/restore. Review/export does not generate
 Rust, publish register definitions or claim qualification. Export never overwrites
 an existing directory; a failed delivery may leave a prefix and cannot be retried
 implicitly.
+
+A data export contains the selected object and explicitly selected analyses.
+Interprocedural provenance may reference analyses outside that bundle; IDs do not
+include their payloads implicitly. Use project backup/restore to preserve the full
+research closure in the supported format.

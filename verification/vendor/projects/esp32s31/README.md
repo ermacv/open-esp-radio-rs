@@ -5,7 +5,9 @@
 [phy_research.py](phy_research.py) exercises the current Next application using
 explicit private inputs and its built-in resource supervisor. It authenticates
 the PHY artifact, imports PHY/ROM, deletes the source copies, analyzes functions,
-reports extent coverage/storage, reviews exact table bytes and an instruction
+links the I2C command initializer with exact ROM companions, verifies composed
+write effects and repeated phase measurements, reports extent coverage/storage,
+reviews independently hashed table bytes and an instruction
 constant, exports provenance, then moves and restores the project. Research runs
 retain phase diagnostics; the scenario does not qualify hardware or interpret
 unresolved pointers. Outputs must stay in ignored storage.
@@ -14,7 +16,7 @@ unresolved pointers. Outputs must stay in ignored storage.
 cargo build --profile blobray -p blobray-next --bin blobray
 python3 verification/vendor/projects/esp32s31/phy_research.py \
   --binary target/blobray/blobray --library /private/libphy.a \
-  --rom /private/esp32s31_rev0_rom.elf --limit-mode watchdog \
+  --rom /private/esp32s31_rev0_rom.elf --linker /usr/bin/ld.lld --limit-mode watchdog \
   --output target/blobray-phy-research
 ```
 

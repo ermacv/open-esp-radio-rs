@@ -23,6 +23,9 @@ publication leaves prior results and current selections intact.
 
 | Contract | Implementation | Regression coverage |
 | --- | --- | --- |
+| Image data symbols agree across generic proposal, review and export | [shared occurrence](../../crates/application/src/occurrence.rs) | `generic_image_table_review_and_export_validate_the_same_physical_symbol` in [linked tests](../../next/tests/linked/mod.rs) |
+| Shared child facts survive repeated consumers and release after the final edge | [research](../../crates/application/src/research.rs) | `shared_callee_facts_live_until_the_last_edge_then_release_capacity`; `diamond_research_keeps_shared_leaf_effects_for_both_parents_and_repeated_calls` in [linked tests](../../next/tests/linked/mod.rs) |
+| Failed record growth releases the incoming payload without losing old records | [record memory](../../crates/domain/src/record_memory.rs) | `failed_record_growth_rolls_back_payload_and_allows_reuse` in the same module |
 | Captured data, known constants and explicit review survive source removal | [data operations](../../crates/application/src/data.rs) | [data regression tests](../../next/tests/functions/data.rs) |
 | Partial inventory is partial in summary and handle | [query](../../crates/application/src/query.rs) | `partial_inventory_has_the_same_assessment_in_handle_and_output` in [memory tests](../../next/tests/memory.rs) |
 | One object preparation for multiple functions; linear archive indexing | [investigations](../../crates/application/src/investigations.rs) | `automatic_investigation_prepares_each_object_once_and_publishes_one_run`, `archive_lookup_work_grows_with_members_without_restarting_the_cursor` in [investigation tests](../../next/tests/functions/investigations.rs) |

@@ -431,3 +431,9 @@ disposition is a reference to supporting evidence, not a substitute for an
 authenticated run or a qualification result.
 
 For CLI concepts and schemas, see [Blobray](../../../../tools/blobray/README.md).
+
+The PHY research scenario also checks the eleven absolute relocation entries in
+`phy_i2c.o` `.rodata` against independently established physical symbol indices
+and a captured-byte digest. It reviews that pointer layout, exports it and checks
+identical output after restore. These local code-label references do not establish
+callback ABI or new function boundaries.

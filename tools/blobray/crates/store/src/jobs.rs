@@ -308,7 +308,7 @@ impl Writer {
             .map_err(db)?;
         budget.validate()?;
         let record = RunRecord {
-            schema: 10,
+            schema: 11,
             operation,
             resolved_operation: None,
             image: None,
@@ -710,7 +710,7 @@ fn verify_file(
 pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
     let value: serde_json::Value = serde_json::from_str(raw).map_err(json)?;
     let schema = value.get("schema").and_then(serde_json::Value::as_u64);
-    if schema != Some(10) {
+    if schema != Some(11) {
         return Err(Error::new(
             ErrorCode::Incompatible,
             "unsupported run record schema",
@@ -741,7 +741,7 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
                 change.expected_base == request.expected_base
                     && change.actor == request.actor
                     && change.reason == request.reason
-                    && matches!(&change.action, KnowledgeAction::Propose { proposal } if proposal.occurrence == request.occurrence && proposal.subject == request.subject && matches!(&proposal.claim, KnowledgeClaim::IntegerTable { selector: DataSelector::Section { .. }, layout, purpose, applicability } if layout == &request.layout && purpose == &request.purpose && applicability == &request.applicability))
+                    && matches!(&change.action, KnowledgeAction::Propose { proposal } if proposal.occurrence == request.occurrence && proposal.subject == request.subject && matches!(&proposal.claim, KnowledgeClaim::IntegerTable { selector: DataSelector::Section { .. }, purpose, applicability, .. } | KnowledgeClaim::PointerTable { selector: DataSelector::Section { .. }, purpose, applicability, .. } if proposal.claim.table_layout().as_ref() == Some(&request.layout) && purpose == &request.purpose && applicability == &request.applicability))
             }
             (ScenarioRequest::ProposeConstant { request }, RunOperation::Knowledge { change }) => {
                 change.expected_base == request.expected_base

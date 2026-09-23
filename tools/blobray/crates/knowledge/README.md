@@ -30,3 +30,8 @@ Integer tables and instruction-derived constants use the same explicit review
 transactions. Shape validation requires purpose/applicability and bounded integer
 layout or exact analysis evidence; application validates the physical bytes and
 known operand. Accepting a layout does not resolve relocations or runtime state.
+
+Pointer-table claims validate a canonical byte range, count/stride, purpose and
+applicability. Their overlap conflicts with differing accepted integer/pointer
+interpretations. Acceptance concerns the captured layout, not resolved callback
+semantics or hardware behavior; application validates physical bytes/evidence.

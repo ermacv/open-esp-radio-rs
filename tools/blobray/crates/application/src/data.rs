@@ -69,11 +69,19 @@ pub(crate) fn propose_data(
             proposal: KnowledgeProposal {
                 subject: request.subject.clone(),
                 occurrence: request.occurrence.clone(),
-                claim: KnowledgeClaim::IntegerTable {
-                    selector,
-                    layout: request.layout.clone(),
-                    purpose: request.purpose.clone(),
-                    applicability: request.applicability.clone(),
+                claim: match &request.layout {
+                    DataLayout::Integer(layout) => KnowledgeClaim::IntegerTable {
+                        selector,
+                        layout: layout.clone(),
+                        purpose: request.purpose.clone(),
+                        applicability: request.applicability.clone(),
+                    },
+                    DataLayout::Pointers(layout) => KnowledgeClaim::PointerTable {
+                        selector,
+                        layout: layout.clone(),
+                        purpose: request.purpose.clone(),
+                        applicability: request.applicability.clone(),
+                    },
                 },
                 evidence,
                 note: None,
@@ -125,7 +133,7 @@ pub(crate) fn validate_table(
     view: &blobray_artifacts::DataView<'_>,
     proposal: &KnowledgeProposal,
 ) -> Result<()> {
-    let KnowledgeClaim::IntegerTable { layout, .. } = &proposal.claim else {
+    let Some(layout) = proposal.claim.table_layout() else {
         return Ok(());
     };
     if layout.byte_length() != Some(view.span.file_range.length) {
@@ -182,6 +190,7 @@ pub(crate) fn prepare(
     project: &Project,
     request: &DataRequest,
     accepted: Option<(KnowledgeRevisionId, KnowledgeEntry)>,
+    decoder: Option<&dyn FunctionSemantics>,
     memory: &WorkingMemory,
     disk: &blobray_store::TemporaryBudget,
     c: &mut dyn RunControl,
@@ -195,6 +204,22 @@ pub(crate) fn prepare(
             "data research requires 1..32 ranges or analyses (at most 32 of each)",
         ));
     }
+    if request.pointer_table.is_some() && request.ranges.len() != 1 {
+        return Err(invalid(
+            "pointer observations require exactly one selected range",
+        ));
+    }
+    let pointer_producer = if request.pointer_table.is_some() {
+        Some(decoder.and_then(|d| d.pointer_identity()).ok_or_else(|| {
+            Error::new(
+                ErrorCode::Incompatible,
+                "pointer relocation profile unavailable",
+            )
+        })?)
+    } else {
+        None
+    };
+    let mut pointers = None;
     // Bounded request, summary and one JSON record. Payloads stream in WORK_BLOCK chunks.
     let _envelope = memory.reserve(4 * 1024 * 1024, c.position())?;
     let mut bytes_out = disk.create(&stage.join("data.bin"))?;
@@ -252,6 +277,19 @@ pub(crate) fn prepare(
                             emit(&DataRecord::Integer { index: i, offset, bits, signed }, c)?;
                         }
                     }
+                }
+                if let Some(layout) = &request.pointer_table {
+                    if let Some((_, entry)) = &accepted { validate_table(payload, &view, &entry.proposal)?; }
+                    let image = view.address_space == CodeAddressSpace::Image;
+                    let start = view.span.section_range.start.checked_add(if image { view.section_address } else { 0 })
+                        .ok_or_else(|| invalid("pointer range address overflow"))?;
+                    pointers = Some(blobray_analysis::pointers::analyze(
+                        blobray_analysis::pointers::PointerInput {
+                            bytes: view.bytes, start, image,
+                            unknown_write_extents: view.span.unknown_relocation_extents != 0,
+                            max_write_bytes: view.max_relocation_width, relocations: view.relocations,
+                        }, layout, decoder.unwrap(), c, &mut emit,
+                    )?);
                 }
                 let mut span = view.span;
                 span.export_offset = export_offset;
@@ -324,13 +362,15 @@ pub(crate) fn prepare(
         (Some(revision), Some(entry))
     });
     let manifest = DataManifest {
-        schema: 2,
+        schema: 3,
         request: request.clone(),
         payload,
         spans,
         analyses,
         knowledge,
         accepted,
+        pointer_producer: pointer_producer.map(str::to_owned),
+        pointers,
     };
     let mut out = disk.create(&stage.join("manifest.json"))?;
     write_control_message(&mut out, &manifest)?;
@@ -356,7 +396,8 @@ pub(crate) fn accepted_request(
         ));
     }
     let ranges = match &entry.proposal.claim {
-        KnowledgeClaim::IntegerTable { selector, .. } => vec![selector.clone()],
+        KnowledgeClaim::IntegerTable { selector, .. }
+        | KnowledgeClaim::PointerTable { selector, .. } => vec![selector.clone()],
         KnowledgeClaim::Constant { .. } => Vec::new(),
         _ => return Err(invalid("assertion is not a table or constant")),
     };
@@ -373,6 +414,10 @@ pub(crate) fn accepted_request(
             occurrence: entry.proposal.occurrence.clone(),
             ranges,
             analyses,
+            pointer_table: match &entry.proposal.claim {
+                KnowledgeClaim::PointerTable { layout, .. } => Some(layout.clone()),
+                _ => None,
+            },
         },
         entry.clone(),
     ))

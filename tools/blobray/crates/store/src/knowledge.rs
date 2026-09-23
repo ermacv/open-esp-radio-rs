@@ -426,6 +426,11 @@ fn proposal_heap_bytes(p: &KnowledgeProposal) -> u64 {
             purpose,
             applicability,
             ..
+        }
+        | KnowledgeClaim::PointerTable {
+            purpose,
+            applicability,
+            ..
         } => purpose.len() + applicability.len() + 64,
         KnowledgeClaim::Constant {
             purpose,

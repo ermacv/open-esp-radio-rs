@@ -48,7 +48,9 @@ fn validate_evidence(
                 KnowledgeClaim::FunctionExtent { extent } => Some(extent),
                 _ => None,
             };
-            if let KnowledgeClaim::IntegerTable { selector, .. } = &proposal.claim {
+            if let KnowledgeClaim::IntegerTable { selector, .. }
+            | KnowledgeClaim::PointerTable { selector, .. } = &proposal.claim
+            {
                 capture.with_prepared(memory, c, |object, c| {
                     object.with_data(&occurrence.object, selector, c, |view, _| {
                         crate::data::validate_table(capture.payload, &view, proposal)

@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 10
-and database schema 9 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 11
+and database schema 10 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -831,9 +831,41 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 5 / policy 6, investigation schema 3 / policy 4, database schema 9
-and journal schema 10 carry these identities. Old formats are rejected without
+Function schema 5 / policy 6, investigation schema 3 / policy 4, database schema 10
+and journal schema 11 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
 prepared-image review and virtual addresses.
+
+### Captured pointer-table observations
+
+`DataLayout` distinguishes integer and pointer table proposals. `PointerTable`
+specifies count/stride for captured little-endian RV32 four-byte slots. Raw
+`DataRequest.pointer_table` is an explicit observation request over one range;
+accepted exports derive that request from `KnowledgeClaim::PointerTable`. Generic
+and specialized proposals, review and export share physical occurrence and exact
+byte-evidence validation. Conflicting overlapping integer/pointer interpretations
+cannot coexist as accepted assertions.
+
+Artifacts supplies borrowed bytes, sorted physical relocations and structural
+write bounds. `analysis::pointers` streams individual slots with work accounting;
+`PointerDecoder` supplies backend-owned relocation semantics. The RISC-V profile
+is `rv32-absolute-rela/1`; unavailable profiles fail explicitly. No new owner holds
+a table-sized result vector. Lookup is logarithmic plus a bounded candidate-write window. Transient owned
+record metadata uses the admitted output envelope; no table-sized value array is
+retained.
+
+Pointer values distinguish null, numeric address, defined symbol plus addend,
+external symbol plus addend and a typed unresolved transformation. Linked words
+must agree with known R_RISCV_32 results; captured bytes are never patched. Address
+values establish neither executable mappings nor function/ABI boundaries. An
+accepted layout is not a claim that every target is executable or resolved.
+Data manifest schema 3 includes producer identity and classification counters;
+resource failure aborts the query/proposal, never truncates a successful table.
+
+Next pointer regressions cover source-free ordinary/thin exports, overlapping and
+partial writes, unknown/wider relocations, raw addresses, generic review and shared
+budget exhaustion. The real PHY scenario checks all eleven physical relocation
+targets and an independently established digest for `phy_i2c.o` `.rodata`, then
+reviews, exports and reopens the table after project restore.

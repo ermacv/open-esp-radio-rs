@@ -33,3 +33,9 @@ locally resolved transfers. It shares the ISA port and integer folding with valu
 analysis; it does not obtain filesystem access or claim dynamic-target completeness.
 
 `PreparedReferences` retains one normalized reference table per prepared section. Sorted offset, symbol and physical-pair indexes replace repeated whole-table scans while preserving nonadjacent HI/LO ambiguity and exact physical identities.
+
+`pointers` streams explicitly selected captured pointer slots using structural
+write bounds and the injected `PointerDecoder`. It performs no name lookup,
+relocation application, project I/O or table-sized result allocation. Physical
+symbol references, numeric addresses, null and unresolved transformations remain
+distinct; the caller owns the prepared bytes and output stream.

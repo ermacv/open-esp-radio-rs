@@ -190,6 +190,7 @@ fn symbol_less_code_review_plan_coverage_and_exports_survive_source_removal() {
                 &f.project,
                 app::ReadQuery::Data {
                     request: DataRequest {
+                        pointer_table: None,
                         occurrence: KnowledgeOccurrence {
                             revision: f.revision.clone(),
                             source: f.request.source.clone(),

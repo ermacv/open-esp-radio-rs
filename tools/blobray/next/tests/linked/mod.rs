@@ -966,6 +966,7 @@ fn data_image_addresses_export_file_backing_and_reject_unmapped_ranges() {
         panic!()
     };
     let mut request = DataRequest {
+        pointer_table: None,
         occurrence: KnowledgeOccurrence {
             revision: manifest.plan.recipe.revision.clone(),
             source: FunctionSource::Image {
@@ -1066,185 +1067,206 @@ fn data_image_addresses_export_file_backing_and_reject_unmapped_ranges() {
 #[test]
 fn generic_image_table_review_and_export_validate_the_same_physical_symbol() {
     use object::ObjectSection as _;
-    let f = fixture(true, true);
-    let image = prepared(&f);
-    let raw = export(&f, image.clone());
-    let elf = object::File::parse(raw.as_slice()).unwrap();
-    let symbol = elf.symbol_by_name("value").unwrap();
-    let section = elf
-        .section_by_index(symbol.section_index().unwrap())
-        .unwrap();
-    let offset = symbol.address() - section.address();
-    let payload = ArtifactId::of_bytes(&raw);
-    let object = ObjectId {
-        artifact: payload.clone(),
-        location: ObjectLocation::Standalone,
-    };
-    let occurrence = KnowledgeOccurrence {
-        revision: f.revision.clone(),
-        source: FunctionSource::Image { image },
-        object: object.clone(),
-        symbol: Some(SymbolId {
-            object,
-            table: SymbolTableKind::Static,
-            table_section: elf.section_by_name(".symtab").unwrap().index().0 as u32,
-            index: symbol.index().0 as u64,
-        }),
-    };
-    let selector = DataSelector::Section {
-        section: section.index().0 as u32,
-        offset,
-        length: 4,
-    };
-    let layout = IntegerTable {
-        encoding: IntegerEncoding {
-            width: 4,
-            signed: false,
-            byte_order: DataByteOrder::Little,
-        },
-        count: 1,
-        stride: 4,
-    };
-    let proposal = KnowledgeProposal {
-        subject: "data.value".to_owned().try_into().unwrap(),
-        occurrence: occurrence.clone(),
-        claim: KnowledgeClaim::IntegerTable {
-            selector: selector.clone(),
-            layout: layout.clone(),
-            purpose: "fixture".into(),
-            applicability: "exact image".into(),
-        },
-        evidence: vec![EvidenceRef::Source {
-            payload,
-            range: CodeRange {
-                start: section.file_range().unwrap().0 + offset,
-                length: 4,
-            },
-        }],
-        note: None,
-    };
-    for kind in 0..4 {
-        let mut bad = proposal.clone();
-        let sym = bad.occurrence.symbol.as_mut().unwrap();
-        match kind {
-            0 => sym.index = u64::MAX,
-            1 => sym.table = SymbolTableKind::Dynamic,
-            2 => sym.table_section = u32::MAX,
-            _ => sym.object.artifact = ArtifactId::of_bytes(b"another object"),
-        }
-        let change = KnowledgeChange {
-            expected_base: None,
-            actor: "test".into(),
-            reason: "invalid physical identity".into(),
-            action: KnowledgeAction::Propose {
-                proposal: bad.clone(),
-            },
+    for pointers in [false, true] {
+        let f = fixture(true, true);
+        let image = prepared(&f);
+        let raw = export(&f, image.clone());
+        let elf = object::File::parse(raw.as_slice()).unwrap();
+        let symbol = elf.symbol_by_name("value").unwrap();
+        let section = elf
+            .section_by_index(symbol.section_index().unwrap())
+            .unwrap();
+        let offset = symbol.address() - section.address();
+        let payload = ArtifactId::of_bytes(&raw);
+        let object = ObjectId {
+            artifact: payload.clone(),
+            location: ObjectLocation::Standalone,
         };
-        assert!(
-            f.app
-                .query(
-                    &f.project,
-                    app::ReadQuery::ValidateKnowledge {
-                        change: change.clone()
+        let occurrence = KnowledgeOccurrence {
+            revision: f.revision.clone(),
+            source: FunctionSource::Image { image },
+            object: object.clone(),
+            symbol: Some(SymbolId {
+                object,
+                table: SymbolTableKind::Static,
+                table_section: elf.section_by_name(".symtab").unwrap().index().0 as u32,
+                index: symbol.index().0 as u64,
+            }),
+        };
+        let selector = DataSelector::Section {
+            section: section.index().0 as u32,
+            offset,
+            length: 4,
+        };
+        let layout = IntegerTable {
+            encoding: IntegerEncoding {
+                width: 4,
+                signed: false,
+                byte_order: DataByteOrder::Little,
+            },
+            count: 1,
+            stride: 4,
+        };
+        let proposal = KnowledgeProposal {
+            subject: "data.value".to_owned().try_into().unwrap(),
+            occurrence: occurrence.clone(),
+            claim: if pointers {
+                KnowledgeClaim::PointerTable {
+                    selector: selector.clone(),
+                    layout: PointerTable {
+                        count: 1,
+                        stride: 4,
                     },
-                    budget()
-                )
-                .is_err()
-        );
-        match f.app.start_knowledge(&f.project, &change, budget()) {
-            Ok(handle) => {
-                let run = handle.wait();
-                assert_eq!(run.state, RunState::Failed, "{run:?}");
-                assert!(run.knowledge.is_none());
-            }
-            Err(error) => assert_eq!(error.code, ErrorCode::InvalidRequest),
-        }
-        let specialized = f
-            .app
-            .start_propose_data(
-                &f.project,
-                DataProposalRequest {
-                    occurrence: bad.occurrence,
-                    analyses: vec![],
-                    subject: bad.subject,
+                    purpose: "fixture".into(),
+                    applicability: "exact image".into(),
+                }
+            } else {
+                KnowledgeClaim::IntegerTable {
                     selector: selector.clone(),
                     layout: layout.clone(),
                     purpose: "fixture".into(),
                     applicability: "exact image".into(),
+                }
+            },
+            evidence: vec![EvidenceRef::Source {
+                payload,
+                range: CodeRange {
+                    start: section.file_range().unwrap().0 + offset,
+                    length: 4,
+                },
+            }],
+            note: None,
+        };
+        for kind in 0..4 {
+            let mut bad = proposal.clone();
+            let sym = bad.occurrence.symbol.as_mut().unwrap();
+            match kind {
+                0 => sym.index = u64::MAX,
+                1 => sym.table = SymbolTableKind::Dynamic,
+                2 => sym.table_section = u32::MAX,
+                _ => sym.object.artifact = ArtifactId::of_bytes(b"another object"),
+            }
+            let change = KnowledgeChange {
+                expected_base: None,
+                actor: "test".into(),
+                reason: "invalid physical identity".into(),
+                action: KnowledgeAction::Propose {
+                    proposal: bad.clone(),
+                },
+            };
+            assert!(
+                f.app
+                    .query(
+                        &f.project,
+                        app::ReadQuery::ValidateKnowledge {
+                            change: change.clone()
+                        },
+                        budget()
+                    )
+                    .is_err()
+            );
+            match f.app.start_knowledge(&f.project, &change, budget()) {
+                Ok(handle) => {
+                    let run = handle.wait();
+                    assert_eq!(run.state, RunState::Failed, "{run:?}");
+                    assert!(run.knowledge.is_none());
+                }
+                Err(error) => assert_eq!(error.code, ErrorCode::InvalidRequest),
+            }
+            let specialized = f
+                .app
+                .start_propose_data(
+                    &f.project,
+                    DataProposalRequest {
+                        occurrence: bad.occurrence,
+                        analyses: vec![],
+                        subject: bad.subject,
+                        selector: selector.clone(),
+                        layout: if pointers {
+                            DataLayout::Pointers(PointerTable {
+                                count: 1,
+                                stride: 4,
+                            })
+                        } else {
+                            layout.clone().into()
+                        },
+                        purpose: "fixture".into(),
+                        applicability: "exact image".into(),
+                        expected_base: None,
+                        actor: "test".into(),
+                        reason: "invalid identity".into(),
+                    },
+                    budget(),
+                )
+                .unwrap()
+                .wait();
+            assert_eq!(specialized.state, RunState::Failed, "{specialized:?}");
+            assert!(specialized.knowledge.is_none());
+            assert!(
+                cli(&f, &["knowledge", "show"])["records"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        let proposed = f
+            .app
+            .start_knowledge(
+                &f.project,
+                &KnowledgeChange {
                     expected_base: None,
                     actor: "test".into(),
-                    reason: "invalid identity".into(),
+                    reason: "valid data symbol".into(),
+                    action: KnowledgeAction::Propose { proposal },
                 },
                 budget(),
             )
             .unwrap()
             .wait();
-        assert_eq!(specialized.state, RunState::Failed, "{specialized:?}");
-        assert!(specialized.knowledge.is_none());
-        assert!(
-            cli(&f, &["knowledge", "show"])["records"]
-                .as_array()
-                .unwrap()
-                .is_empty()
+        assert_eq!(proposed.state, RunState::Completed, "{proposed:?}");
+        let entries = cli(&f, &["knowledge", "show"]);
+        let assertion: AssertionId = entries["records"][0]["value"]["id"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let reviewed = f
+            .app
+            .start_knowledge(
+                &f.project,
+                &KnowledgeChange {
+                    expected_base: proposed.knowledge,
+                    actor: "test".into(),
+                    reason: "checked data identity".into(),
+                    action: KnowledgeAction::Review {
+                        assertion: assertion.clone(),
+                        decision: ReviewDecision::Accept,
+                        supersedes: None,
+                    },
+                },
+                budget(),
+            )
+            .unwrap()
+            .wait();
+        assert_eq!(reviewed.state, RunState::Completed, "{reviewed:?}");
+        let mut output = f
+            .app
+            .query(
+                &f.project,
+                app::ReadQuery::ReviewedData {
+                    revision: reviewed.knowledge.unwrap(),
+                    assertion,
+                },
+                budget(),
+            )
+            .unwrap();
+        let destination = f.dir.path().join("reviewed-table");
+        output.export_data(&destination, &|| false).unwrap();
+        assert_eq!(
+            fs::read(destination.join("data.bin")).unwrap(),
+            [0x78, 0x56, 0x34, 0x12]
         );
     }
-    let proposed = f
-        .app
-        .start_knowledge(
-            &f.project,
-            &KnowledgeChange {
-                expected_base: None,
-                actor: "test".into(),
-                reason: "valid data symbol".into(),
-                action: KnowledgeAction::Propose { proposal },
-            },
-            budget(),
-        )
-        .unwrap()
-        .wait();
-    assert_eq!(proposed.state, RunState::Completed, "{proposed:?}");
-    let entries = cli(&f, &["knowledge", "show"]);
-    let assertion: AssertionId = entries["records"][0]["value"]["id"]
-        .as_str()
-        .unwrap()
-        .parse()
-        .unwrap();
-    let reviewed = f
-        .app
-        .start_knowledge(
-            &f.project,
-            &KnowledgeChange {
-                expected_base: proposed.knowledge,
-                actor: "test".into(),
-                reason: "checked data identity".into(),
-                action: KnowledgeAction::Review {
-                    assertion: assertion.clone(),
-                    decision: ReviewDecision::Accept,
-                    supersedes: None,
-                },
-            },
-            budget(),
-        )
-        .unwrap()
-        .wait();
-    assert_eq!(reviewed.state, RunState::Completed, "{reviewed:?}");
-    let mut output = f
-        .app
-        .query(
-            &f.project,
-            app::ReadQuery::ReviewedData {
-                revision: reviewed.knowledge.unwrap(),
-                assertion,
-            },
-            budget(),
-        )
-        .unwrap();
-    let destination = f.dir.path().join("reviewed-table");
-    output.export_data(&destination, &|| false).unwrap();
-    assert_eq!(
-        fs::read(destination.join("data.bin")).unwrap(),
-        [0x78, 0x56, 0x34, 0x12]
-    );
 }
 
 #[test]
@@ -1399,6 +1421,10 @@ fn image_data_relocation_overlap_uses_section_relative_coordinates() {
     assert!(section.address() > section.size());
     for offset in [0, 4] {
         let request = DataRequest {
+            pointer_table: Some(PointerTable {
+                count: 1,
+                stride: 4,
+            }),
             occurrence: KnowledgeOccurrence {
                 revision: f.revision.clone(),
                 source: FunctionSource::Image {
@@ -1430,6 +1456,33 @@ fn image_data_relocation_overlap_uses_section_relative_coordinates() {
         );
         assert_eq!(manifest.spans[0].unknown_relocation_extents, 0);
         assert_eq!(manifest.spans[0].section_relocations, 1);
+        let records: Vec<DataRecord> = fs::read_to_string(path.join("records.jsonl"))
+            .unwrap()
+            .lines()
+            .map(|s| serde_json::from_str(s).unwrap())
+            .collect();
+        let value = records
+            .iter()
+            .find_map(|r| match r {
+                DataRecord::Pointer { value, .. } => Some(value),
+                _ => None,
+            })
+            .unwrap();
+        if offset == 0 {
+            assert!(
+                matches!(value, PointerValue::DefinedSymbol { symbol, addend: 0 } if symbol.index == elf.symbol_by_name("entry").unwrap().index().0 as u64)
+            );
+            assert_eq!(manifest.pointers.as_ref().unwrap().defined_symbols, 1);
+        } else {
+            assert_eq!(
+                value,
+                &PointerValue::Address {
+                    value: 0x0003fffb,
+                    image_address: true
+                }
+            );
+            assert_eq!(manifest.pointers.as_ref().unwrap().addresses, 1);
+        }
         if offset == 4 {
             assert_eq!(fs::read(path.join("data.bin")).unwrap(), [0xfb, 0xff, 3, 0]);
         }

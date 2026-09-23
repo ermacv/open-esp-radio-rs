@@ -209,7 +209,7 @@ pub enum UnsupportedFlow {
     Unknown,
 }
 /// Receives captured bytes/structural records only. No project, filesystem or discovery authority.
-pub trait FunctionDecoder {
+pub trait FunctionDecoder: PointerDecoder {
     fn identity(&self) -> &'static str;
     /// Unknown is mandatory unless the ISA proves the encoding's control class.
     fn unsupported_flow(&self, _bytes: &[u8]) -> UnsupportedFlow {

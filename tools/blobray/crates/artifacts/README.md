@@ -92,3 +92,7 @@ Explicit code ranges do not require a symbol table. They reject an additional
 symbol extent override and share executable-section/backing checks with symbol
 views. Empty, unaligned, overflowing, non-executable and unbacked selections fail;
 no neighboring symbol is consulted.
+
+Data views expose their relocation coordinate space and maximum known write
+width beside the borrowed records. These are structural facts for pointer-slot
+interpretation; artifacts neither applies RISC-V relocations nor chooses targets.

@@ -32,6 +32,22 @@ pub fn validate_proposal(p: &KnowledgeProposal) -> Result<()> {
                 ));
             }
         }
+        KnowledgeClaim::PointerTable {
+            selector,
+            layout,
+            purpose,
+            applicability,
+        } => {
+            if !matches!(selector, DataSelector::Section { offset, length, .. } if *length > 0 && offset.checked_add(*length).is_some())
+                || layout.byte_length().is_none()
+                || purpose.trim().is_empty()
+                || applicability.trim().is_empty()
+            {
+                return Err(invalid(
+                    "pointer table requires a valid captured range, layout, purpose and applicability",
+                ));
+            }
+        }
         KnowledgeClaim::Constant {
             analysis,
             record,
@@ -162,8 +178,10 @@ pub fn conflicts(a: &KnowledgeProposal, b: &KnowledgeProposal) -> bool {
     }
     match (&a.claim, &b.claim) {
         (
-            KnowledgeClaim::IntegerTable { selector: x, .. },
-            KnowledgeClaim::IntegerTable { selector: y, .. },
+            KnowledgeClaim::IntegerTable { selector: x, .. }
+            | KnowledgeClaim::PointerTable { selector: x, .. },
+            KnowledgeClaim::IntegerTable { selector: y, .. }
+            | KnowledgeClaim::PointerTable { selector: y, .. },
         ) => {
             let overlapping = match (x, y) {
                 (
@@ -404,5 +422,43 @@ mod tests {
             index: 1,
         });
         assert!(validate_proposal(&b).is_err());
+    }
+    #[test]
+    fn differing_pointer_and_integer_layouts_conflict_on_the_same_captured_bytes() {
+        let mut a = proposal();
+        let selector = DataSelector::Section {
+            section: 1,
+            offset: 0,
+            length: 8,
+        };
+        a.claim = KnowledgeClaim::PointerTable {
+            selector: selector.clone(),
+            layout: PointerTable {
+                count: 2,
+                stride: 4,
+            },
+            purpose: "pointers".into(),
+            applicability: "fixture".into(),
+        };
+        validate_proposal(&a).unwrap();
+        let mut b = a.clone();
+        b.subject = "integer-view".to_owned().try_into().unwrap();
+        b.claim = KnowledgeClaim::IntegerTable {
+            selector,
+            layout: IntegerTable {
+                encoding: IntegerEncoding {
+                    width: 4,
+                    signed: false,
+                    byte_order: DataByteOrder::Little,
+                },
+                count: 2,
+                stride: 4,
+            },
+            purpose: "raw words".into(),
+            applicability: "fixture".into(),
+        };
+        validate_proposal(&b).unwrap();
+        assert!(conflicts(&a, &b));
+        assert!(conflicts(&b, &a));
     }
 }

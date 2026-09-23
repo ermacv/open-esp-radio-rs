@@ -222,6 +222,7 @@ p = {
     "subject": "phy.captured-i2c-table",
     "selector": selector,
     "layout": {
+        "kind": "integer",
         "encoding": {"width": 1, "signed": False, "byte_order": "little"},
         "count": 200,
         "stride": 1,
@@ -348,7 +349,41 @@ call(
     ],
 )
 assert (run / "accepted-constant/data.bin").read_bytes() == b""
-for directory in ["i2c-observations", "accepted-table", "initial", "accepted-constant"]:
+constant_revision = base
+# Authenticated ELF32 .rela.rodata records independently establish eleven
+# absolute references to local code labels. These are pointer observations,
+# not discovered function boundaries or reviewed callback ABI contracts.
+pointer_obj = obj("phy_i2c.o")
+pointer_section = section(pointer_obj, ".rodata")
+pointer_layout = {"count": 11, "stride": 4}
+pointer_request = {
+    "occurrence": occurrence(pointer_obj), "analyses": [],
+    "ranges": [{"kind": "section", "section": pointer_section["index"], "offset": 0, "length": 44}],
+    "pointer_table": pointer_layout,
+}
+pointer_data = call("pointer-observations", ["data", "--request", doc("pointers", pointer_request), "--output", str(run / "pointer-observations")])
+expected_targets = [36, 36, 36, 34, 34, 34, 36, 34, 34, 36, 36]
+pointer_values = [r for r in map(json.loads, (run / "pointer-observations/records.jsonl").read_text().splitlines()) if r["kind"] == "pointer"]
+assert pointer_data["summary"]["manifest"]["pointers"]["defined_symbols"] == 11
+assert len(pointer_values) == 11
+for i, r in enumerate(pointer_values):
+    assert r["index"] == i and r["offset"] == i * 4
+    assert r["value"] == {"kind": "defined-symbol", "symbol": {
+        "object": pointer_obj["id"], "table": "static", "table_section": 17, "index": expected_targets[i]}, "addend": 0}
+assert hashlib.sha256((run / "pointer-observations/data.bin").read_bytes()).hexdigest() == "85759b3811ff7dc47b03792ac85317be51431a3f9e01dcafce317ed736a391b0"
+p = {
+    "occurrence": pointer_request["occurrence"], "analyses": [], "subject": "phy.captured-code-pointer-table",
+    "selector": pointer_request["ranges"][0], "layout": {"kind": "pointers", **pointer_layout},
+    "purpose": "Captured absolute relocation targets; no inferred function boundaries",
+    "applicability": "Authenticated phy_i2c.o table only", "expected_base": base,
+    "actor": "source-byte-review", "reason": "Independent ELF relocation identities and table digest",
+}
+proposal = call("propose-pointers", ["knowledge", "propose-data", "--request", doc("pointer-proposal", p)])["run"]["knowledge"]
+entries = call("pointer-claims", ["knowledge", "show"])["records"]
+pointer_id = next(r["value"]["id"] for r in entries if r["value"]["state"] == "proposed")
+base = call("accept-pointers", ["knowledge", "accept", "--base", proposal, "--assertion", pointer_id, "--actor", "source-byte-review", "--reason", "Exact captured representation only"])["run"]["knowledge"]
+call("export-pointers", ["export-data", "--revision", base, "--assertion", pointer_id, "--output", str(run / "accepted-pointers")])
+for directory in ["i2c-observations", "accepted-table", "initial", "accepted-constant", "accepted-pointers"]:
     d = run / directory
     m = json.loads((d / "manifest.json").read_text())
     assert hashlib.sha256((d / "object.elf").read_bytes()).hexdigest() == m["payload"]
@@ -398,13 +433,16 @@ call(
     [
         "export-data",
         "--revision",
-        base,
+        constant_revision,
         "--assertion",
         constant_id,
         "--output",
         str(run / "restored-constant"),
     ],
 )
+call("restored-pointers", ["export-data", "--revision", base, "--assertion", pointer_id, "--output", str(run / "restored-pointers")])
+for name in ["object.elf", "data.bin", "records.jsonl", "manifest.json"]:
+    assert (run / "restored-pointers" / name).read_bytes() == (run / "accepted-pointers" / name).read_bytes()
 call("restored-doctor", ["doctor"])
 for name in ["object.elf", "data.bin", "records.jsonl"]:
     assert (run / "accepted-table" / name).read_bytes() == (

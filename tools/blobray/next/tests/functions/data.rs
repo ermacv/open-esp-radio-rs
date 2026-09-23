@@ -84,6 +84,7 @@ fn request(f: &Fixture, names: &[&[u8]]) -> DataRequest {
         .as_ref()
         .unwrap();
     DataRequest {
+        pointer_table: None,
         occurrence: KnowledgeOccurrence {
             revision: f.revision.clone(),
             source: f.request.source.clone(),
@@ -160,7 +161,7 @@ fn proposal(f: &Fixture) -> DataProposalRequest {
         analyses: Vec::new(),
         subject: "table".to_owned().try_into().unwrap(),
         selector: req.ranges[0].clone(),
-        layout: IntegerTable {
+        layout: (IntegerTable {
             encoding: IntegerEncoding {
                 width: 2,
                 signed: true,
@@ -168,7 +169,8 @@ fn proposal(f: &Fixture) -> DataProposalRequest {
             },
             count: 2,
             stride: 2,
-        },
+        })
+        .into(),
         purpose: "test coefficients".into(),
         applicability: "exact captured fixture only".into(),
         expected_base: None,
@@ -345,7 +347,10 @@ fn table_review_supersession_rejection_and_source_free_export() {
     )));
     let mut replacement = p;
     replacement.expected_base = Some(base.clone());
-    replacement.layout.encoding.signed = false;
+    let DataLayout::Integer(layout) = &mut replacement.layout else {
+        panic!("integer layout")
+    };
+    layout.encoding.signed = false;
     let entry = collect(
         &f,
         app::ReadQuery::Knowledge {
@@ -459,7 +464,10 @@ fn data_rejects_nobits_overflow_and_exhaustion_without_changing_current() {
             .is_err()
     );
     let mut bad = proposal(&f);
-    bad.layout.count = 3;
+    let DataLayout::Integer(layout) = &mut bad.layout else {
+        panic!("integer layout")
+    };
+    layout.count = 3;
     let run = f
         .app
         .start_propose_data(&f.project, bad, budget())
@@ -667,9 +675,12 @@ fn reviewed_integer_width_byte_order_and_stride_preserve_signed_values() {
             }
             let f = fixture(data_object_bytes(false, &bytes), false);
             let mut p = proposal(&f);
-            p.layout.encoding.width = width as u8;
-            p.layout.encoding.byte_order = order;
-            p.layout.stride = width as u64 + 1;
+            let DataLayout::Integer(layout) = &mut p.layout else {
+                panic!("integer layout")
+            };
+            layout.encoding.width = width as u8;
+            layout.encoding.byte_order = order;
+            layout.stride = width as u64 + 1;
             let proposed = f
                 .app
                 .start_propose_data(&f.project, p, budget())
@@ -711,7 +722,9 @@ fn generic_captured_table_occurrences_match_specialized_review_and_export() {
         };
         let elf = object::File::parse(raw.as_slice()).unwrap();
         let section = elf.section_by_name(".rodata.table").unwrap();
-        let layout = proposal(&f).layout;
+        let DataLayout::Integer(layout) = proposal(&f).layout else {
+            panic!("integer layout")
+        };
         let mut occurrence = req.occurrence;
         occurrence.symbol = Some(symbol.clone());
         let selector = DataSelector::Section {
@@ -881,7 +894,7 @@ fn integer_ranges_require_known_nonoverlapping_relocation_writes() {
         output.export_data(&destination, &|| false).unwrap();
         let manifest: DataManifest =
             serde_json::from_slice(&fs::read(destination.join("manifest.json")).unwrap()).unwrap();
-        assert_eq!(manifest.schema, 2);
+        assert_eq!(manifest.schema, 3);
         assert_eq!(manifest.spans[0].section_relocations, 1);
         assert_eq!(manifest.spans[0].overlapping_relocations, overlap);
         assert_eq!(manifest.spans[0].unknown_relocation_extents, unknown);
@@ -1140,4 +1153,273 @@ fn ambiguous_symbol_tables_and_dynamic_relocations_fail_explicitly() {
             f.revision
         );
     }
+}
+
+fn pointer_object(extra: &[(u64, u32)]) -> Vec<u8> {
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let code = obj.add_section(vec![], b".text.entry".to_vec(), SectionKind::Text);
+    obj.append_section_data(code, &[0x67, 0x80, 0, 0], 2);
+    let entry = obj.add_symbol(symbol(
+        b"entry",
+        SymbolSection::Section(code),
+        4,
+        SymbolKind::Text,
+    ));
+    let external = obj.add_symbol(symbol(
+        b"outside",
+        SymbolSection::Undefined,
+        0,
+        SymbolKind::Text,
+    ));
+    let table = obj.add_section(vec![], b".rodata.table".to_vec(), SectionKind::ReadOnlyData);
+    obj.append_section_data(
+        table,
+        &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x60],
+        4,
+    );
+    obj.add_symbol(symbol(
+        b"table",
+        SymbolSection::Section(table),
+        16,
+        SymbolKind::Data,
+    ));
+    for (offset, target, addend, r_type) in [
+        (0, entry, 0, object::elf::R_RISCV_32),
+        (4, external, 4, object::elf::R_RISCV_32),
+    ] {
+        obj.add_relocation(
+            table,
+            Relocation {
+                offset,
+                symbol: target,
+                addend,
+                flags: RelocationFlags::Elf { r_type },
+            },
+        )
+        .unwrap();
+    }
+    for &(offset, r_type) in extra {
+        obj.add_relocation(
+            table,
+            Relocation {
+                offset,
+                symbol: entry,
+                addend: 0,
+                flags: RelocationFlags::Elf { r_type },
+            },
+        )
+        .unwrap();
+    }
+    obj.write().unwrap()
+}
+fn pointers(records: &[DataRecord]) -> Vec<&PointerValue> {
+    records
+        .iter()
+        .filter_map(|r| match r {
+            DataRecord::Pointer { value, .. } => Some(value),
+            _ => None,
+        })
+        .collect()
+}
+#[test]
+fn pointer_tables_keep_null_addresses_defined_and_external_symbols_through_review_and_export() {
+    for thin in [false, true] {
+        let f = fixture(pointer_object(&[]), thin);
+        let mut req = request(&f, &[b"table"]);
+        req.pointer_table = Some(PointerTable {
+            count: 4,
+            stride: 4,
+        });
+        let observations = collect(
+            &f,
+            app::ReadQuery::Data {
+                request: req.clone(),
+            },
+        )
+        .data;
+        let values = pointers(&observations);
+        assert_eq!(values.len(), 4);
+        assert!(
+            matches!(values[0], PointerValue::DefinedSymbol { symbol, addend: 0 } if symbol == f.request.selector.symbol().unwrap())
+        );
+        assert!(
+            matches!(values[1], PointerValue::ExternalSymbol { symbol, addend: 4 } if &symbol.object == f.request.selector.object())
+        );
+        assert_eq!(values[2], &PointerValue::Null);
+        assert_eq!(
+            values[3],
+            &PointerValue::Address {
+                value: 0x60000000,
+                image_address: false
+            }
+        );
+        let mut p = proposal(&f);
+        p.layout = DataLayout::Pointers(req.pointer_table.unwrap());
+        let proposed = f
+            .app
+            .start_propose_data(&f.project, p, budget())
+            .unwrap()
+            .wait();
+        let (base, assertion) = review(&f, proposed, ReviewDecision::Accept, None);
+        fs::remove_file(f.dir.path().join("entry.a")).unwrap();
+        fs::remove_file(f.dir.path().join("entry.o")).unwrap();
+        let mut output = application(&f.dir.path().join("reader"))
+            .query(
+                &f.project,
+                app::ReadQuery::ReviewedData {
+                    revision: base,
+                    assertion,
+                },
+                budget(),
+            )
+            .unwrap();
+        let destination = f.dir.path().join("pointer-export");
+        output.export_data(&destination, &|| false).unwrap();
+        let manifest: DataManifest =
+            serde_json::from_slice(&fs::read(destination.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(
+            manifest.pointer_producer.as_deref(),
+            Some("rv32-absolute-rela/1")
+        );
+        assert_eq!(
+            manifest.pointers.unwrap(),
+            PointerSummary {
+                entries: 4,
+                nulls: 1,
+                addresses: 1,
+                defined_symbols: 1,
+                external_symbols: 1,
+                unresolved: 0
+            }
+        );
+        let exported: Vec<DataRecord> = fs::read_to_string(destination.join("records.jsonl"))
+            .unwrap()
+            .lines()
+            .map(|s| serde_json::from_str(s).unwrap())
+            .collect();
+        assert_eq!(pointers(&exported), values);
+        assert_eq!(
+            exported
+                .iter()
+                .filter(|r| matches!(r, DataRecord::Relocation { .. }))
+                .count(),
+            2
+        );
+        assert_eq!(
+            fs::read(destination.join("data.bin")).unwrap(),
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x60]
+        );
+    }
+}
+#[test]
+fn unsupported_overlapping_and_partial_pointer_writes_remain_unresolved() {
+    for (extra, issues) in [
+        (
+            vec![(0, object::elf::R_RISCV_32)],
+            vec![Some(PointerIssue::OverlappingRelocations), None, None, None],
+        ),
+        (
+            vec![(8, object::elf::R_RISCV_64)],
+            vec![
+                None,
+                None,
+                Some(PointerIssue::UnsupportedRelocation),
+                Some(PointerIssue::UnsupportedRelocation),
+            ],
+        ),
+        (
+            vec![(10, object::elf::R_RISCV_32)],
+            vec![
+                None,
+                None,
+                Some(PointerIssue::PartialSlotWrite),
+                Some(PointerIssue::PartialSlotWrite),
+            ],
+        ),
+        (
+            vec![(12, object::elf::R_RISCV_HI20)],
+            vec![Some(PointerIssue::UnknownWriteExtent); 4],
+        ),
+        (vec![(8, object::elf::R_RISCV_NONE)], vec![None; 4]),
+    ] {
+        let f = fixture(pointer_object(&extra), false);
+        let mut req = request(&f, &[b"table"]);
+        req.pointer_table = Some(PointerTable {
+            count: 4,
+            stride: 4,
+        });
+        let observations = collect(&f, app::ReadQuery::Data { request: req }).data;
+        for (value, expected) in pointers(&observations).iter().zip(issues) {
+            let issue = match value {
+                PointerValue::Unresolved { issue } => Some(*issue),
+                _ => None,
+            };
+            assert_eq!(issue, expected, "{value:?}");
+        }
+    }
+}
+#[test]
+fn invalid_pointer_layouts_and_budget_exhaustion_publish_nothing() {
+    let f = fixture(pointer_object(&[]), false);
+    for layout in [
+        PointerTable {
+            count: 0,
+            stride: 4,
+        },
+        PointerTable {
+            count: 4,
+            stride: 3,
+        },
+        PointerTable {
+            count: u64::MAX,
+            stride: 4,
+        },
+        PointerTable {
+            count: 3,
+            stride: 4,
+        },
+    ] {
+        let mut p = proposal(&f);
+        p.layout = DataLayout::Pointers(layout.clone());
+        let run = f
+            .app
+            .start_propose_data(&f.project, p, budget())
+            .unwrap()
+            .wait();
+        assert_eq!(run.state, RunState::Failed, "{run:?}");
+        assert!(run.knowledge.is_none());
+        let mut req = request(&f, &[b"table"]);
+        req.pointer_table = Some(layout);
+        assert!(
+            f.app
+                .query(&f.project, app::ReadQuery::Data { request: req }, budget())
+                .is_err()
+        );
+    }
+    let mut req = request(&f, &[b"table"]);
+    req.pointer_table = Some(PointerTable {
+        count: 4,
+        stride: 4,
+    });
+    let mut limited = budget();
+    limited.max_work_units = Some(1);
+    let result = f
+        .app
+        .query(&f.project, app::ReadQuery::Data { request: req }, limited);
+    assert_eq!(result.err().unwrap().code, ErrorCode::ResourceLimited);
+    assert_eq!(
+        app::inventory(&f.project, None).unwrap().revision_id,
+        f.revision
+    );
+    assert!(
+        collect(
+            &f,
+            app::ReadQuery::Knowledge {
+                revision: None,
+                history: false
+            }
+        )
+        .knowledge
+        .is_empty()
+    );
 }

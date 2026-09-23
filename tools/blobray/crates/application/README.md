@@ -216,3 +216,9 @@ Function requests carry `FunctionSelector::Symbol` or an explicit
 Reviewed executable ranges and symbol-size overrides enter one investigation
 enumeration and one function engine. Coverage joins ranges directly to section
 metadata and symbols to their physical table records before counting the union.
+
+Data observation/review/export also owns pointer tables. Requests explicitly
+select one captured range and a count/stride profile; the application injects
+backend relocation semantics into the streaming analysis port. Accepted exports
+preserve the profile, raw bytes, physical relocation identities and classification
+counters without promoting external symbols or numeric addresses to callees.

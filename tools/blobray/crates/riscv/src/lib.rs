@@ -5,6 +5,19 @@ pub use execution::RiscvExecutor;
 use object::elf::*;
 use rv_asm::{Inst, IsCompressed, Xlen};
 pub struct RiscvDecoder;
+impl PointerDecoder for RiscvDecoder {
+    fn pointer_identity(&self) -> Option<&'static str> {
+        Some("rv32-absolute-rela/1")
+    }
+    fn pointer_relocation(&self, r: &FunctionRelocation) -> PointerRelocation {
+        match r.relocation_type {
+            object::elf::R_RISCV_NONE => PointerRelocation::None,
+            object::elf::R_RISCV_32 => PointerRelocation::Absolute32,
+            object::elf::R_RISCV_64 => PointerRelocation::Unsupported { width: Some(8) },
+            _ => PointerRelocation::Unsupported { width: None },
+        }
+    }
+}
 impl FunctionDecoder for RiscvDecoder {
     fn identity(&self) -> &'static str {
         "rv32imac/rv-asm-0.2.1/policy-1"

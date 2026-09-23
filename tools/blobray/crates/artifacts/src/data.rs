@@ -4,6 +4,9 @@ pub struct DataView<'a> {
     pub span: DataSpan,
     pub bytes: &'a [u8],
     pub relocations: &'a [FunctionRelocation],
+    pub address_space: CodeAddressSpace,
+    pub section_address: u64,
+    pub max_relocation_width: u8,
 }
 impl PreparedObject<'_, '_> {
     /// Exact verified object bytes, borrowed until this prepared owner is released.
@@ -126,6 +129,7 @@ impl PreparedObject<'_, '_> {
                 control,
             )?;
         }
+        let mut max_relocation_width = 0;
         let mut overlapping_relocations = 0;
         let mut unknown_relocation_extents = 0;
         // Use structural widths supplied by the pinned ELF parser. Unknown
@@ -140,6 +144,7 @@ impl PreparedObject<'_, '_> {
                 unknown_relocation_extents += 1;
                 continue;
             }
+            max_relocation_width = max_relocation_width.max(width / 8);
             let start = if self.file.kind() == object::ObjectKind::Executable {
                 site.checked_sub(section.address())
                     .ok_or_else(|| invalid("relocation precedes target section"))?
@@ -185,6 +190,13 @@ impl PreparedObject<'_, '_> {
                 span,
                 bytes,
                 relocations: &prepared.relocations,
+                address_space: if self.file.kind() == object::ObjectKind::Executable {
+                    CodeAddressSpace::Image
+                } else {
+                    CodeAddressSpace::Section
+                },
+                section_address: section.address(),
+                max_relocation_width,
             },
             control,
         )

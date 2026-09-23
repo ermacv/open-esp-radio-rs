@@ -1053,6 +1053,7 @@ mod tests {
         assert_eq!(offset(Value::Stack(i64::MAX), 1), Value::Unknown);
     }
     struct Isa(Vec<SemanticOp>);
+    impl PointerDecoder for Isa {}
     impl FunctionDecoder for Isa {
         fn identity(&self) -> &'static str {
             "test"

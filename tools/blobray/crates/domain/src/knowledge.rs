@@ -38,6 +38,12 @@ pub struct KnowledgeOccurrence {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum KnowledgeClaim {
+    PointerTable {
+        selector: DataSelector,
+        layout: PointerTable,
+        purpose: String,
+        applicability: String,
+    },
     IntegerTable {
         selector: DataSelector,
         layout: IntegerTable,

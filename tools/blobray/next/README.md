@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 9 and journal schema 10. Earlier and future
+Projects require metadata schema 10 and journal schema 11. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,8 +712,8 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 10 for every durable and read operation. Storage metadata
-uses schema 9; revision manifests use schema 1 and execution manifests use schema
+Run records use schema 11 for every durable and read operation. Storage metadata
+uses schema 10; revision manifests use schema 1 and execution manifests use schema
 1. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-10 run; an envelope version is not a journal
+execution 7) wrap the same schema-11 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1528,7 +1528,8 @@ blobray knowledge --project research --limit-mode watchdog accept --base PROPOSA
 blobray export-data --project research --revision ACCEPTED_REVISION --assertion ASSERTION_ID --output accepted-data --limit-mode watchdog
 ```
 
-The `DataRequest` JSON has `occurrence`, `ranges` and `analyses`. Copy the exact
+The `DataRequest` JSON has `occurrence`, `ranges`, `analyses` and optional
+`pointer_table` (null/absent for ordinary byte observations). Copy the exact
 revision, source and object identity from inventory or an analysis recipe;
 `occurrence.symbol` is optional. Object identity retains the archive member
 ordinal even when names and bytes repeat. `analyses` is an array of analysis IDs
@@ -1561,7 +1562,7 @@ A `DataProposalRequest` contains `occurrence`, `analyses`, `subject`, `selector`
 For example, a signed little-endian array of 100 contiguous 16-bit elements has:
 
 ```json
-{"encoding":{"width":2,"signed":true,"byte_order":"little"},"count":100,"stride":2}
+{"kind":"integer","encoding":{"width":2,"signed":true,"byte_order":"little"},"count":100,"stride":2}
 ```
 
 Widths are 1, 2, 4 or 8 bytes; byte order is `little` or `big`. Stride is in bytes
@@ -1596,7 +1597,7 @@ from a reviewed table's explicit interpretation.
 
 For tables, integer records decode captured bytes. Writable sections are marked
 as initialization data, never current runtime state. All section relocations are
-retained. Data manifest schema 2 reports `overlapping_relocations` for the selected
+retained. Data manifest schema 3 reports `overlapping_relocations` for the selected
 byte range and `unknown_relocation_extents` for the section. Integer decoding is
 withheld with an explicit `unresolved` record if either count is nonzero, even
 when the layout is accepted. Known fixed-width writes ending at the range start
@@ -1605,9 +1606,34 @@ nonoverlap from their offset alone. The pinned structural parser currently
 supplies RV32 NONE/32/64 classifications; other types retain unknown extents.
 Known writes beyond the section are rejected. ET_EXEC relocation sites are
 normalized from virtual to section-relative coordinates. No relocation is
-applied by data export, and this profile does not resolve pointer tables. For constants, `data.bin` is empty; the object and
+applied by data export. For constants, `data.bin` is empty; the object and
 analysis instruction/value records are the evidence. Analysis coverage remains
 in each retained function manifest and is not promoted by successful export.
+
+Pointer observations use `pointer_table: {"count":11,"stride":4}` in a `DataRequest`
+with exactly one selected range. The captured RV32 little-endian profile reads
+four-byte slots; count/stride must cover that range exactly. For proposal through
+the same `knowledge propose-data` command, use
+`layout: {"kind":"pointers","count":11,"stride":4}`. Acceptance records this
+layout and exact source evidence; it does not accept inferred callback signatures
+or manufacture resolved external definitions.
+
+The injected RISC-V profile `rv32-absolute-rela/1` interprets `R_RISCV_32` RELA
+as a physical symbol plus addend. Defined and external symbols remain distinct.
+Absolute/null symbol arithmetic is modulo 2³². A retained ET_EXEC relocation must
+agree with the captured linked word; an ET_REL observation leaves the original
+bytes unchanged. NONE relocations do not write. Other transformations, unknown
+write extents, partial/multiple writes, unsupported symbols or implicit addends
+produce a typed unresolved pointer. Invalid structural bounds fail the operation.
+
+Each `pointer` record contains index, byte offset, captured bits and a value:
+`null`, `address`, `defined-symbol`, `external-symbol` or `unresolved`. A numeric
+address's `image_address` flag identifies an executable ELF address domain; it
+proves neither a load mapping nor an executable target. A defined symbol may be
+an internal label, not a function boundary. `pointers` summary counts each class;
+there is no blanket resolved/complete verdict. `pointer_producer` identifies the
+interpretation. Slot lookup uses the sorted section relocation index and bounded
+write widths; it does not restart a whole-section scan for every slot.
 
 Unreviewed observation exports have no accepted assertion. Reviewed exports
 include the assertion and selected knowledge revision; pending, rejected and

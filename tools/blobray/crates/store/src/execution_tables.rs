@@ -289,24 +289,23 @@ impl Project {
             {
                 for table in &input.tables {
                     c.checkpoint(1)?;
-                    selected.push((table, target), c.position())?;
+                    selected.push((table, target, selected.len()), c.position())?;
                 }
             }
         }
-        for (index, (table, _)) in selected.iter().enumerate() {
-            c.checkpoint(index as u64 + 1)?;
-            if selected[..index]
-                .iter()
-                .any(|(t, _)| t.review.knowledge == table.review.knowledge)
-            {
-                continue;
-            }
-            let snapshot = self.knowledge_snapshot(Some(&table.review.knowledge), memory, c)?;
-            for (t, target) in &*selected {
+        c.checkpoint(selected.len() as u64 * (selected.len().max(1).ilog2() as u64 + 1))?;
+        // The ordinal preserves declaration order within each frozen review.
+        selected.sort_unstable_by(|(a, _, i), (b, _, j)| {
+            (&a.review.knowledge, i).cmp(&(&b.review.knowledge, j))
+        });
+        c.checkpoint(selected.len() as u64)?;
+        for group in
+            selected.chunk_by(|(a, _, _), (b, _, _)| a.review.knowledge == b.review.knowledge)
+        {
+            let snapshot =
+                self.knowledge_snapshot(Some(&group[0].0.review.knowledge), memory, c)?;
+            for (t, target, _) in group {
                 c.checkpoint(1)?;
-                if t.review.knowledge != table.review.knowledge {
-                    continue;
-                }
                 let entry = snapshot
                     .get(&t.review.assertion, c)?
                     .ok_or_else(|| integrity("execution interface assertion missing"))?;
@@ -375,6 +374,317 @@ mod tests {
             }],
             pointer_cells: vec![0x4000],
         }
+    }
+    struct Count {
+        work: u64,
+        histories: u64,
+        stop: Option<u64>,
+    }
+    impl RunControl for Count {
+        fn checkpoint(&mut self, work: u64) -> Result<()> {
+            self.work += work;
+            if self.stop.is_some_and(|stop| self.work >= stop) {
+                return Err(Error::new(ErrorCode::Cancelled, "test cancellation"));
+            }
+            Ok(())
+        }
+        fn measure(&mut self, metric: WorkMetric, amount: u64) {
+            if matches!(metric, WorkMetric::KnowledgeHistoryPasses) {
+                self.histories += amount;
+            }
+        }
+    }
+    fn counter() -> Count {
+        Count {
+            work: 0,
+            histories: 0,
+            stop: None,
+        }
+    }
+
+    fn reviewed(
+        project: &Project,
+    ) -> (
+        RuntimeTable,
+        ExecutionTarget,
+        KnowledgeRevisionId,
+        KnowledgeRevisionId,
+    ) {
+        let mut writer = project.writer().unwrap();
+        let payload = ArtifactId::of_bytes(b"source");
+        let mut table = declaration();
+        let target = ExecutionTarget {
+            revision: payload.as_str().parse().unwrap(),
+            source: FunctionSource::Input { input: 0 },
+            companions: vec![],
+            abi: CallAbi::RiscvInteger,
+            stack: MemorySeed {
+                address: 0x8000,
+                length: 4096,
+                fill: None,
+                bytes: vec![],
+            },
+        };
+        let proposal = KnowledgeProposal {
+            subject: "fixture.interface".to_owned().try_into().unwrap(),
+            occurrence: KnowledgeOccurrence {
+                revision: target.revision.clone(),
+                source: target.source.clone(),
+                object: ObjectId {
+                    artifact: payload,
+                    location: ObjectLocation::Standalone,
+                },
+                symbol: None,
+            },
+            claim: KnowledgeClaim::Interface {
+                contract: Box::new(InterfaceContract {
+                    root: AccessRoot::Address { address: 0x3000 },
+                    path: vec![],
+                    layout_version: "fixture/1".into(),
+                    layout_bytes: 16,
+                    pointer_bytes: 4,
+                    abi: CallAbi::RiscvInteger,
+                    index_domains: vec![],
+                    guards: vec![],
+                    slots: vec![InterfaceSlot {
+                        offset: 4,
+                        name: "callback".into(),
+                        semantic: None,
+                        signature: None,
+                    }],
+                    purpose: "fixture".into(),
+                    applicability: "fixture".into(),
+                }),
+            },
+            evidence: vec![],
+            note: None,
+        };
+        let mut base = None;
+        let mut first_accepted = None;
+        for action in [
+            KnowledgeAction::Propose { proposal },
+            KnowledgeAction::Review {
+                assertion: table.review.assertion.clone(),
+                decision: ReviewDecision::Accept,
+                supersedes: None,
+            },
+            KnowledgeAction::Review {
+                assertion: table.review.assertion.clone(),
+                decision: ReviewDecision::Accept,
+                supersedes: None,
+            },
+            KnowledgeAction::Review {
+                assertion: table.review.assertion.clone(),
+                decision: ReviewDecision::Reject,
+                supersedes: None,
+            },
+        ] {
+            let accepted = matches!(
+                action,
+                KnowledgeAction::Review {
+                    decision: ReviewDecision::Accept,
+                    ..
+                }
+            );
+            let change = KnowledgeChange {
+                expected_base: base,
+                actor: "fixture".into(),
+                reason: "fixture".into(),
+                action,
+            };
+            let (mut run, path) = writer
+                .register_operation(
+                    ResourceBudget::default(),
+                    OwnerIdentity {
+                        pid: 123,
+                        start_ticks: 42,
+                        boot_id: "test".into(),
+                    },
+                    RunOperation::Knowledge {
+                        change: change.clone(),
+                    },
+                    |_| {},
+                )
+                .unwrap();
+            let stage = Staging::open(&path).unwrap();
+            let receipt = stage
+                .knowledge_receipt(
+                    &KnowledgeManifest {
+                        schema: 2,
+                        project: project.id().clone(),
+                        change,
+                        assertion: table.review.assertion.clone(),
+                        evidence_roots: vec![],
+                    },
+                    &mut || Ok(()),
+                )
+                .unwrap();
+            run.state = RunState::Running;
+            writer.update_run(&run).unwrap();
+            run.state = RunState::Validating;
+            writer.update_run(&run).unwrap();
+            let retained = writer
+                .retain_knowledge(&run, &receipt, &mut || Ok(()))
+                .unwrap();
+            writer
+                .publish_knowledge(&mut run, retained, &mut || Ok(()))
+                .unwrap();
+            if accepted {
+                first_accepted.get_or_insert_with(|| receipt.revision.clone());
+                table.review.knowledge = receipt.revision.clone();
+            }
+            base = Some(receipt.revision);
+        }
+        (table, target, first_accepted.unwrap(), base.unwrap())
+    }
+    fn interface_request(
+        table: RuntimeTable,
+        target: ExecutionTarget,
+        count: usize,
+    ) -> ExecutionRequest {
+        let invocation = Invocation {
+            observe_calls: None,
+            observe_timeline: TimelineCapture::default(),
+            observe_memory: vec![],
+            goal: ExecutionGoal::Return,
+            entry: 0x1000,
+            arguments: vec![],
+            memory: vec![],
+            models: vec![],
+            calls: vec![],
+            tables: vec![table],
+            services: vec![],
+        };
+        ExecutionRequest {
+            schema: EXECUTION_SCHEMA,
+            vendor: target,
+            replacement: None,
+            binding: None,
+            cases: (0..count)
+                .map(|n| ExecutionCase {
+                    relation: None,
+                    reset: if n == 0 {
+                        SessionReset::Cold
+                    } else {
+                        SessionReset::Warm
+                    },
+                    name: format!("phase-{n}"),
+                    vendor: invocation.clone(),
+                    replacement: None,
+                })
+                .collect(),
+            max_events: 16,
+        }
+    }
+    #[test]
+    fn retained_interfaces_scale_without_repeated_snapshot_scans() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = Project::create(dir.path()).unwrap();
+        let (table, target, _, _) = reviewed(&project);
+        let memory = WorkingMemory::new(2 * 1024 * 1024).unwrap();
+        let mut history = counter();
+        drop(
+            project
+                .knowledge_snapshot(Some(&table.review.knowledge), &memory, &mut history)
+                .unwrap(),
+        );
+        let mut previous = None;
+        for count in [16, 32, 64] {
+            let request = interface_request(table.clone(), target.clone(), count);
+            let mut c = counter();
+            project
+                .validate_execution_interfaces(&request, &memory, &mut c)
+                .unwrap();
+            assert_eq!(c.histories, 1);
+            assert_eq!(memory.used(), 0);
+            // Remove the fixed history verification cost, so it cannot mask quadratic grouping.
+            let work = c.work - history.work;
+            if let Some(previous) = previous {
+                assert!(work < previous * 3, "{count}: {work}/{previous}");
+            }
+            eprintln!("retained interfaces={count}, validation work excluding history={work}");
+            previous = Some(work);
+        }
+    }
+    #[test]
+    fn retained_interfaces_check_late_declarations_frozen_reviews_and_release_capacity() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = Project::create(dir.path()).unwrap();
+        let (table, target, first, rejected) = reviewed(&project);
+        let memory = WorkingMemory::new(2 * 1024 * 1024).unwrap();
+        let request = interface_request(table, target, 16);
+        let mut complete = counter();
+        project
+            .validate_execution_interfaces(&request, &memory, &mut complete)
+            .unwrap();
+        for variant in 0..4 {
+            let mut bad = request.clone();
+            let late = &mut bad.cases.last_mut().unwrap().vendor.tables[0];
+            match variant {
+                0 => late.seed.length += 4,
+                1 => late.review.knowledge = rejected.clone(),
+                2 => late.review.assertion = "3".repeat(64).parse().unwrap(),
+                _ => bad.vendor.source = FunctionSource::Input { input: 1 },
+            }
+            assert_eq!(
+                project
+                    .validate_execution_interfaces(&bad, &memory, &mut counter())
+                    .unwrap_err()
+                    .code,
+                ErrorCode::Integrity
+            );
+            assert_eq!(memory.used(), 0);
+        }
+        for stop in [1, 32, complete.work - 1] {
+            let mut c = counter();
+            c.stop = Some(stop);
+            assert_eq!(
+                project
+                    .validate_execution_interfaces(&request, &memory, &mut c)
+                    .unwrap_err()
+                    .code,
+                ErrorCode::Cancelled
+            );
+            assert_eq!(memory.used(), 0);
+        }
+        // Both sides and interleaved frozen snapshots remain independently checked,
+        // even though the latest review rejected the assertion.
+        let mut mixed = request.clone();
+        mixed.replacement = Some(mixed.vendor.clone());
+        for (n, case) in mixed.cases.iter_mut().enumerate() {
+            case.replacement = Some(case.vendor.clone());
+            if n % 2 == 0 {
+                case.vendor.tables[0].review.knowledge = first.clone();
+            } else {
+                case.replacement.as_mut().unwrap().tables[0]
+                    .review
+                    .knowledge = first.clone();
+            }
+        }
+        let mut c = counter();
+        project
+            .validate_execution_interfaces(&mixed, &memory, &mut c)
+            .unwrap();
+        assert_eq!(c.histories, 2);
+        assert_eq!(memory.used(), 0);
+        mixed.replacement.as_mut().unwrap().revision = "9".repeat(64).parse().unwrap();
+        assert_eq!(
+            project
+                .validate_execution_interfaces(&mixed, &memory, &mut counter())
+                .unwrap_err()
+                .code,
+            ErrorCode::Integrity
+        );
+        assert_eq!(memory.used(), 0);
+        let small = WorkingMemory::new(1024).unwrap();
+        assert_eq!(
+            project
+                .validate_execution_interfaces(&request, &small, &mut counter())
+                .unwrap_err()
+                .code,
+            ErrorCode::ResourceLimited
+        );
+        assert_eq!(small.used(), 0);
     }
     fn initialize<'a>(d: &'a RuntimeTable) -> Tables<'a> {
         let mut t = Tables::new();

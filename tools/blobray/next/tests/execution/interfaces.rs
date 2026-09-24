@@ -917,6 +917,8 @@ fn shared_snapshot_preparation_scales_and_restores_phase_order() {
     base.cases[0].replacement = None;
     base.cases[0].relation = None;
     let mut previous = None;
+    let mut previous_total = None;
+    let mut previous_read = None;
     for count in [16, 32, 64] {
         let mut request = base.clone();
         request.cases = (0..count)
@@ -939,8 +941,33 @@ fn shared_snapshot_preparation_scales_and_restores_phase_order() {
             assert!(work < previous * 3, "{count}: {work}/{previous}");
         }
         previous = Some(work);
-        eprintln!("runtime phases={count}, preparation work={work}");
-        let saved = f.read(&record.execution.unwrap());
+        let total = progress.work_used;
+        if let Some(previous) = previous_total {
+            assert!(
+                total < previous * 3,
+                "publication {count}: {total}/{previous}"
+            );
+        }
+        previous_total = Some(total);
+        let id = record.execution.unwrap();
+        let output = f
+            .app
+            .query(
+                &f.project,
+                app::ReadQuery::Execution { id: id.clone() },
+                budget(),
+            )
+            .unwrap();
+        let read = output.report.diagnostics.progress.as_ref().unwrap();
+        assert_eq!(read.measurements.knowledge_history_passes, 1);
+        let read = read.work_used;
+        if let Some(previous) = previous_read {
+            assert!(read < previous * 3, "reopen {count}: {read}/{previous}");
+        }
+        previous_read = Some(read);
+        drop(output);
+        eprintln!("runtime phases={count}, preparation={work}, publication={total}, reopen={read}");
+        let saved = f.read(&id);
         let manifest: ExecutionManifest =
             serde_json::from_value(saved["summary"]["manifest"].clone()).unwrap();
         assert!(manifest.complete);

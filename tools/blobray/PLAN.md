@@ -694,5 +694,17 @@ executor.
 | Correction | Status | Required acceptance |
 | --- | --- | --- |
 | Static trace prefixes | done | Known differences in observed prefixes yield DIFF despite later blockers. Length differences require a completed shorter side; symbolic uncertainty alone cannot prove DIFF and incomplete paths cannot MATCH. Summary validation and trace policy agree. ELF-to-IR API/CLI, empty/unequal prefixes, symbolic values, source removal and backup/restore pass. |
-| Retained interface validation | active | Store groups selected tables by frozen snapshot with admitted O(n log n) sorting and linear group traversal, retaining every per-declaration check. Grouping, publication and reopening work-growth tests, one history load per selected snapshot, cancellation/capacity release, invalid late entries and source-free replay pass without raising budgets. |
-| Review correction acceptance | active | Both corrections pass core/Next tests, strict Clippy, formatting, owned public/private docs, standalone, authenticated PHY/ROM watchdog trace/restore and the final source-only checkpoint. Integration with the selected parallel snapshot is checked before closure; missing inputs or gates remain open obligations. |
+| Retained interface validation | done | Store groups selected tables by frozen snapshot with admitted O(n log n) sorting and linear group traversal, retaining every per-declaration check. Grouping, publication and reopening work-growth tests, one history load per selected snapshot, cancellation/capacity release, invalid late entries and source-free replay pass without raising budgets. |
+| Review correction acceptance | isolated done; combined pending stage-10 WIP | Both corrections pass core/Next tests, strict Clippy, formatting, owned public/private docs, standalone, authenticated PHY/ROM watchdog trace/restore and the final source-only checkpoint. Integration with the selected parallel snapshot is checked before closure; missing inputs or gates remain open obligations. |
+
+The isolated corrections pass every listed gate, including authenticated PHY/ROM
+watchdog trace/restore and the complete source-only checkpoint. The selected WIP
+also passes the affected domain, analysis and store unit suites. Its combined
+checkpoint is still open: the effect-contract change leaves calls to
+`verification::compare` without the new argument in
+[application execution](crates/application/src/execution.rs) and the
+[projection regression](crates/verification/src/projection.rs); its Clippy and
+formatting gates also fail. Complete these stage-10 obligations under their current
+owner, then rerun combined core/Next, strict Clippy, formatting, public/private docs,
+standalone, PHY/ROM trace/restore and source-only before closing this acceptance row.
+The corrections do not complete or advance stage 10.

@@ -184,7 +184,12 @@ Execution validation checks model definition identity, cumulative participation,
 
 External-call trace validation checks binding/response identity, ordered ABI arguments, outputs/allocation/delay/return, consumption counts and lifetime closure. It does not execute code or grant hardware validity to modeled effects.
 
-`execution_tables` validates selected accepted interface snapshots and bounded table
+`execution_tables` groups admitted declarations by frozen knowledge snapshot with
+O(n log n) charged sorting and one history load per snapshot per validation call.
+It preserves declaration order within each group, validates every selected contract
+and target independently, and releases each snapshot before loading the next.
+Retention and reopening both use these checks without a persistent cache.
+It also validates bounded table
 lifecycle evidence: placement identity, initialization/pointer writes, current target
 association, counters, conditions and phase/session closure. Reading never resolves
 live paths or re-executes callbacks; captured reviews and objects remain project roots.

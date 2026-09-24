@@ -218,18 +218,15 @@ interrupted attempts and never converts staged ELF into success. Doctor checks
 retained image closures. See [JSON and checks](../interfaces-formats/README.md#json-and-checks) for versions.
 
 Real-link acceptance requires both LLD (reference 22.1.8) and GNU ld (reference
-2.47 with RV32). Set `BLOBRAY_TEST_LLD` to override `/usr/bin/ld.lld` and
-`BLOBRAY_TEST_GNU_LD` to select the GNU executable. The local GNU default is
-`target/blobray-tools/gnu/bin/riscv32-unknown-elf-ld`; standalone checks need an
-absolute `BLOBRAY_TEST_GNU_LD` because they build in an extracted tree. Missing
-tools fail tests. Tests use synthetic RV32 inputs, not hardware qualification.
-
-For a local GNU test provider, unpack the official GNU binutils 2.47 source into
-ignored `target/blobray-tools/`, configure an out-of-tree build with
-`--target=riscv32-unknown-elf --prefix=<absolute-repo>/target/blobray-tools/gnu
---disable-nls --disable-werror --disable-gdb --disable-gprofng --disable-gas
---disable-binutils`, then run `make all-ld` and `make install-ld`. A system GNU ld
-with only x86 emulations does not satisfy the contract.
+2.47 with RV32), installed on the host. Set `BLOBRAY_TEST_LLD` to override
+`/usr/bin/ld.lld`. `BLOBRAY_TEST_GNU_LD` selects the GNU executable; without it,
+tests use the first of `riscv-none-elf-ld`, `riscv32-unknown-elf-ld`, `riscv32-esp-elf-ld`,
+`riscv64-unknown-elf-ld`, `riscv64-elf-ld` and `riscv64-linux-gnu-ld` on `PATH`.
+The adapter always selects `elf32lriscv` and passes archive inputs with
+`--start-lib`/`--end-lib`, so any RISC-V cross GNU ld from binutils 2.47 or later
+qualifies. Earlier releases, including ESP-IDF's binutils 2.46 toolchain, and a
+GNU ld with only x86 emulations fail the capability probe. Missing tools fail
+tests. Tests use synthetic RV32 inputs, not hardware qualification.
 
 ## Selection and inspection plans
 

@@ -217,14 +217,38 @@ fn real_lld_publishes_closed_image_and_reopens_after_source_deletion() {
 fn real_gnu_publishes_closed_image_and_reopens_after_source_deletion() {
     closed_image(&gnu_linker());
 }
+/// System GNU ld names whose builds include the `elf32lriscv` emulation; the
+/// adapter selects that emulation explicitly and probes capabilities itself.
+const GNU_LINKER_NAMES: [&str; 6] = [
+    "riscv-none-elf-ld",
+    "riscv32-unknown-elf-ld",
+    "riscv32-esp-elf-ld",
+    "riscv64-unknown-elf-ld",
+    "riscv64-elf-ld",
+    "riscv64-linux-gnu-ld",
+];
+
 fn gnu_linker() -> PathBuf {
-    std::env::var_os("BLOBRAY_TEST_GNU_LD")
-        .map(PathBuf::from)
+    if let Some(path) = std::env::var_os("BLOBRAY_TEST_GNU_LD").map(PathBuf::from) {
+        assert!(
+            path.is_file(),
+            "GNU RV32 linker is mandatory: BLOBRAY_TEST_GNU_LD={} is not a file",
+            path.display()
+        );
+        return path;
+    }
+    let search = std::env::var_os("PATH").unwrap_or_default();
+    GNU_LINKER_NAMES
+        .iter()
+        .find_map(|name| {
+            std::env::split_paths(&search)
+                .map(|directory| directory.join(name))
+                .find(|path| path.is_file())
+        })
         .unwrap_or_else(|| {
-            PathBuf::from(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../target/blobray-tools/gnu/bin/riscv32-unknown-elf-ld"
-            ))
+            panic!(
+                "GNU RV32 linker is mandatory: none of {GNU_LINKER_NAMES:?} is on PATH; install RISC-V GNU binutils 2.47+ or set BLOBRAY_TEST_GNU_LD"
+            )
         })
 }
 fn closed_image(tool: &Path) {

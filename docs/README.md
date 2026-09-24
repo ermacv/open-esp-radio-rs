@@ -3,6 +3,22 @@
 Documents describe the current implementation and its boundaries. Component
 details live beside their owner; this directory contains shared contracts.
 
+## Choose a route
+
+| Goal | Start | Continue |
+| --- | --- | --- |
+| Understand the architecture | [From binary evidence to a Wi-Fi station](binary-to-station.md) | [Responsibility and dependency reference](architecture.md), [protocol vocabulary](protocol-naming.md) |
+| Make a first contribution | [Host tutorial](first-contribution.md) | [Contribution workflow](../CONTRIBUTING.md) |
+| Investigate hardware | [Blobray task map](../tools/blobray/README.md#choose-a-task) | [Reviewed models and publication](../registers/README.md), [PHY research](phy/README.md) |
+| Build and validate a station | [ESP32-S31 route](station-hardware.md) | [Application example](../examples/esp32s31-station/README.md), [HIL](../hil/README.md), [qualification](../qualification/README.md) |
+
+These routes assume Rust and embedded basics. The host route needs no board or
+private binary; the hardware route names additional prerequisites at each step.
+The [portal](https://ermacv.github.io/open-esp-radio-rs/) adds searchable guides,
+public/private API snapshots labeled by target/features, and generated static
+capability views. Its [build instructions](../tools/docs/README.md) describe
+local preview and manual publication.
+
 ## Architecture and reference
 
 - [Repository ownership](architecture.md): production, tooling, register,

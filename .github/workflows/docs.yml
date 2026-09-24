@@ -1,0 +1,121 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_RELEASE_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Make room for the complete documentation matrix
+        run: |
+          # This fresh hosted runner does not need mobile, .NET or Haskell SDKs.
+          # Keep the system toolchain and install the selected Node version below.
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/share/swift /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache
+          df -h .
+      - name: Require main for publication
+        if: github.event_name == 'workflow_dispatch'
+        run: test "$GITHUB_REF" = refs/heads/main
+      - name: Read pinned Node version
+        id: node
+        run: /usr/bin/python3 -c 'import json, os; open(os.environ["GITHUB_OUTPUT"], "a").write("version=" + json.load(open("tools/docs/portal.json"))["node"] + "\n")'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+          cache: npm
+          cache-dependency-path: tools/docs/package-lock.json
+      - name: Cache documentation tools and Cargo downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/docs/tooling
+          key: docs-tools-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', 'tools/docs/portal.json') }}
+          restore-keys: docs-tools-${{ runner.os }}-
+      - name: Install portal dependencies
+        run: npm ci --prefix tools/docs
+      - name: Prepare toolchain, tools, browser and locked public dependencies
+        run: node tools/docs/setup.mjs
+      - name: Install browser system libraries
+        run: npx --prefix tools/docs playwright install-deps chromium
+      - name: Portal regression tests
+        run: npm --prefix tools/docs test
+      - name: Documentation exporter regressions
+        run: cargo test -p oer-xtask --lib checks::docs::tests --locked --offline
+      - name: Host tutorials
+        run: node tools/docs/tutorials.mjs
+      - name: Build guides and static status
+        if: github.event_name != 'workflow_dispatch'
+        run: node tools/docs/build.mjs
+      - name: Check affected APIs
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE: ${{ github.event.before }}
+        run: |
+          base_commit="${PR_BASE:-$PUSH_BASE}"
+          if [ -z "$base_commit" ] || [ "$base_commit" = 0000000000000000000000000000000000000000 ]; then
+            cargo xtask check docs --full
+          else
+            node tools/docs/check-changes.mjs "$base_commit"
+          fi
+      - name: Build complete public/private API portal
+        if: github.event_name == 'workflow_dispatch'
+        run: node tools/docs/build.mjs --full
+      - name: Validate rendered links, diagrams and search
+        run: node tools/docs/check.mjs
+      - name: Retain preview and validation artifacts
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: documentation-${{ github.sha }}
+          path: |
+            target/docs/portal/site
+            target/docs/portal/build.json
+            target/docs/portal/check.json
+            target/docs/portal/api-plan.log
+            target/docs/static/report.json
+            target/docs/packages/report.json
+            target/docs/gate/report.json
+          retention-days: 7
+      - name: Package complete Pages site
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: target/docs/portal/site
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

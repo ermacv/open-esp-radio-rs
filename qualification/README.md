@@ -74,8 +74,11 @@ repeat an experiment. Existing gaps may carry a reviewed work classification;
 unclassified HIL gaps require review rather than interpretation of their names.
 Actions are deterministic candidates with reasons, not a priority ranking or an
 automatic execution plan. Choose the goal first, then inspect its owners and
-checks. Detailed research priorities stay in Blobray's existing `project status`
-and `project research next` views, linked through the selected verification projects.
+checks. Current captured-input research is described in the
+[Blobray task map](../tools/blobray/README.md#choose-a-task). The selected
+verification projects also retain legacy `project status` and `project research
+next` contracts; these commands are unavailable in current `cargo blobray` and
+are not replaced by the declarations-only qualification map.
 
 ### Linking knowledge and focused checks
 

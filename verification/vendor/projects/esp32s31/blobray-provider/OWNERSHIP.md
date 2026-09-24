@@ -24,8 +24,9 @@ classification/encoding records remains in knowledge.
 `KnowledgeProviderDescriptor.execution_models` records the separately selected
 implementation, including its kind, applicability description and review source.
 These are implementation provenance fields, not facts proving equivalence.
-`project doctor` lists both selected executable providers, so agents can see
-when temporary manual reconstructions are installed. Function-level hook
+The legacy `project doctor` view lists both selected executable providers.
+That command is unavailable in current `cargo blobray`; the retained provider
+descriptors still identify installed manual reconstructions. Function-level hook
 applicability remains enforced in executable code.
 The optional descriptor field supports neutral/legacy harnesses: `None` does
 not prove arbitrary hook code is declarative. This ESP32-S31 split enforces

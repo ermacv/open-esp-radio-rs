@@ -14,10 +14,22 @@ See [driver architecture](crates/README.md) for ownership and supported
 composition, and the [ESP32-S31 radio capability map](crates/hardware/esp32s31/driver/FEATURES.md)
 for shared lifecycle, PHY, coexistence and all three protocol inventories.
 
+The project connects open radio implementation with typed resource ownership and
+checks against compiled production code. Contributors can improve portable
+protocols, research tools and documentation without a board. Start with the
+[contribution guide](CONTRIBUTING.md) and the
+[documentation routes](docs/README.md). The
+[documentation portal](https://ermacv.github.io/open-esp-radio-rs/) also presents
+API configurations and a declarations-only capability map.
+
 ## Start here
 
 | Task | Documentation |
 | --- | --- |
+| Understand the architecture | [From binary evidence to a Wi-Fi station](docs/binary-to-station.md) |
+| Make a first contribution | [Host tutorial](docs/first-contribution.md), [contribution guide](CONTRIBUTING.md) |
+| Investigate hardware | [Blobray task map](tools/blobray/README.md#choose-a-task), [review and publication](registers/README.md) |
+| Build and validate a station | [ESP32-S31 route](docs/station-hardware.md) |
 | Use the public `oer` API | [Radio facade](crates/oer/README.md) |
 | Choose a network stack and understand its patches | [Network implementations](docs/network-implementations.md) |
 | Build a station application | [Station example](examples/esp32s31-station/README.md) |

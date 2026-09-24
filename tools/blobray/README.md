@@ -5,6 +5,41 @@ reviewed knowledge and concrete comparison evidence. `cargo blobray` runs the
 new application directly; its Linux supervisor owns memory/time limits and child
 process cleanup. No external limiter is required.
 
+## Choose a task
+
+Start with [the host tutorial](../../docs/first-contribution.md) for a synthetic
+exercise, or [the hardware route](../../docs/station-hardware.md) for real input
+and board prerequisites. Commands below name current families; follow each
+reference for required selectors, request files and supported subcommands.
+
+| Task | Current command families | Reference |
+| --- | --- | --- |
+| Capture and inspect inputs | `init`, `import`, `inventory`, `select`, `doctor` | [Capture](next/README.md#use), [selection](next/README.md#selection-and-inspection-plans), [diagnosis](next/README.md#diagnosis-and-recovery) |
+| Investigate code | `analyze-function`, `analyze-project`, `research` | [Function analysis](next/README.md#function-analysis-contract), [library research](next/README.md#library-investigations) |
+| Find accesses and relationships | `find-accesses`, `find-references`, `navigate`, `flow`, `memory-slice` | [Navigation](next/README.md#navigation-over-saved-research), [flow](next/README.md#structural-flow-and-effect-inventory), [memory](next/README.md#memory-definitions-at-a-publication-point) |
+| Investigate registers and data | `registers`, `data`, `export-data`, `knowledge` | [Register research](next/README.md#saved-register-research), [tables and coefficients](next/README.md#captured-data-tables-and-coefficients) |
+| Prepare a linked image | `link-plan`, `prepare-image`, `images` | [Prepared images](next/README.md#synthetic-prepared-images) |
+| Inspect static representations | `ir`, `trace` | [Semantic IR](next/README.md#saved-semantic-ir-profiles), [static traces](next/README.md#static-observable-traces) |
+| Execute and compare | `execute`, `compare`, `replay` | [Execution and comparison](next/README.md#concrete-execution-and-comparison), [effect contracts](next/README.md#reviewed-effect-comparison) |
+| Preserve research | `backup`, `restore`, explicit export commands | [Knowledge and preservation](next/README.md#knowledge-and-preservation) |
+
+## Three different choices
+
+- **Research method:** static analysis, concrete scenario execution or comparison.
+  A static trace is not an executed trace or an equivalence proof.
+- **Output format:** `--format human` or `--format json`; this changes presentation,
+  not the research method or verdict.
+- **Resource enforcement:** `--limit-mode kernel` requires delegated cgroups;
+  `--limit-mode watchdog` explicitly chooses sampled process-tree enforcement.
+  There is no automatic fallback.
+
+Related tools have different owners: `cargo registers` publishes reviewed
+hardware interfaces; `cargo xtask` checks and builds repository compositions;
+`cargo hil` obtains device observations; `cargo qualification` evaluates a
+selected set of requirements. Blobray does not decide product readiness.
+
+## Start an investigation
+
 ```console
 cargo build --profile blobray -p blobray-next --bin blobray
 cargo blobray init --project /path/to/research
@@ -46,7 +81,8 @@ positions while preserving unknowns and raw physical evidence.
 Unknown selected values and unmet goals/model obligations cannot MATCH. Results
 remain conditional on the selected cases and explicit modeling assumptions.
 
-Effect contracts, cross-revision
+[Reviewed effect contracts](next/README.md#reviewed-effect-comparison) are
+implemented and retain their conditional claim ceiling. Cross-revision
 correspondence/rebase, retention GC, reference-code generation and TUI remain
 pending. Unsupported execution remains `INCOMPLETE`; these limitations do not
 enable the old engine implicitly.

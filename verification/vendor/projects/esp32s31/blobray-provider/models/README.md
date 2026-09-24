@@ -7,7 +7,8 @@ contracts remain in sibling knowledge/contracts crates; dependency direction
 is models → knowledge, with no dependency in reverse.
 
 `PROVIDER.kind = ManualReconstruction` makes this implementation's nature
-explicit to the host and `project doctor`. Its applicability/evidence fields
+explicit to the host and the legacy `project doctor` view (unavailable in
+current `cargo blobray`). Its applicability/evidence fields
 are provenance metadata, not accepted facts or an equivalence verdict. Hooks
 must independently check the exact body and required context before returning
 a reconstruction. A mismatch preserves structural analysis fallback.

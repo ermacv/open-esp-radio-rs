@@ -18,10 +18,18 @@ changes.
 | `qualification/catalog/` and source declarations | Canonical capability identities, dependencies and source facts |
 | `qualification/targets/` | Programs that select required capabilities and evidence policy for an evaluation target |
 | Owner-specific ignored output directories | Generated API docs, run reports, measurements and verification output |
+| `tools/docs/` and `book.toml` | Portal navigation, assembly and publication; original documents remain with their owners |
 
 The documentation tree follows code ownership. A subsystem's detailed contract
 has one canonical location; other documents link to it. Root navigation does
 not repeat a complete crate inventory or a second capability matrix.
+
+The [documentation portal](../tools/docs/README.md) assembles Markdown, isolated
+public/private rustdoc and static qualification views. Its generated sources and
+HTML stay below `target/docs/portal/`. Source/code links retain the build commit;
+edit links lead to the original owner document. Static status means
+`not-evaluated`, not a hardware readiness verdict. Guide previews explicitly omit
+API exports; publication requires the complete successful matrix for one commit.
 
 ## Write for a specific task
 
@@ -109,8 +117,15 @@ These commands do not query external links, load runtime evidence, evaluate
 readiness, flash a device or install fixtures. Documentation checks establish
 consistency within their stated scope, not radio behavior or qualification.
 
-The checked Markdown surface consists of tracked documents plus owner
-documents under `docs/`, package `README.md` files and Cargo `readme` targets,
+For portal changes, also run its HTML link/resource checks and browser checks.
+Mermaid must render successfully; Markdown link validation alone does not check
+diagram syntax. Full HTML exports isolate the selected crate/configuration from
+other cached rustdoc output and preserve search and dynamic implementation data.
+Private HTML exports include hidden items so the portal can link to their full
+contracts without changing the public view.
+
+The checked Markdown surface consists of tracked documents plus the root
+`CONTRIBUTING.md`, owner documents under `docs/`, package `README.md` files and Cargo `readme` targets,
 including newly created files before they are staged. Arbitrary untracked task
 notes are outside that surface. Local relative links, images, references,
 directory targets, percent-encoded paths and supported anchors are checked;

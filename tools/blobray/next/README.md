@@ -23,6 +23,29 @@ MMIO review, bounded integer execution/comparison/replay, target auditing and
 project preservation. Unsupported ISA semantics remain explicit gaps. There is
 no general equivalence proof, TUI, CAS pruning or allocation-free core.
 
+## Reference navigation
+
+For task selection and the three meanings of mode, start with the
+[Blobray task map](../README.md#choose-a-task). This page owns the detailed
+current command contracts; existing section anchors remain stable.
+
+- Inputs and resources: [use](#use), [selection](#selection-and-inspection-plans),
+  [diagnosis](#diagnosis-and-recovery), [temporary storage](#temporary-storage-and-crash-cleanup).
+- Code research: [functions](#function-analysis-contract), [PHY/ROM](#phyrom-research),
+  [libraries](#library-investigations), [navigation](#navigation-over-saved-research),
+  [flow](#structural-flow-and-effect-inventory), [memory slices](#memory-definitions-at-a-publication-point).
+- Knowledge and data: [review/preservation](#knowledge-and-preservation),
+  [tables](#captured-data-tables-and-coefficients), [interfaces](#reviewed-interface-declarations),
+  [registers](#saved-register-research).
+- Linked/static representations: [images](#synthetic-prepared-images),
+  [IR](#saved-semantic-ir-profiles), [traces](#static-observable-traces).
+- Execution and comparison: [scenarios](#concrete-execution-and-comparison),
+  [calls](#physical-call-capture-and-comparison), [timeline](#internal-physical-timeline),
+  [layout/ABI](#reviewed-layout-and-abi-comparison), [effects](#reviewed-effect-comparison).
+- Operating contracts: [owners](#owners-and-interfaces), [identities](#identity-and-schema-1),
+  [outcomes](#job-outcomes-and-publication), [JSON](#json-and-checks),
+  [target audit](#final-image-target-audit), [coverage](#coverage-and-storage-observations).
+
 ## Use
 
 Run from the repository root with the pinned Rust toolchain:

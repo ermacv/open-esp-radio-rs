@@ -30,9 +30,12 @@ those inputs independently of binary investigation. Probes retain compiled
 production entry points for comparison; they do not implement driver behavior
 or execute [HIL scenarios](../hil/README.md).
 
-```console
-cargo blobray project doctor --project verification/vendor/projects/esp32s31/vendor-project.toml
-```
+For current investigations start with the
+[Blobray task map](../tools/blobray/README.md#choose-a-task) and
+[captured PHY workflow](vendor/projects/esp32s31/README.md#captured-phy-research-with-next).
+The legacy `project doctor` command is unavailable in current `cargo blobray`.
+The current `doctor` inspects a captured-input project; it does not replace the
+legacy provider/project verification lifecycle.
 
 Artifact paths and authentication remain caller-owned. Checked configuration
 must not select private input through hard-coded local paths. Generated analysis and machine-local bindings remain ignored and separate

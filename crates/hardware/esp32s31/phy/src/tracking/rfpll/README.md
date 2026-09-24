@@ -70,7 +70,7 @@ sequenceDiagram
         PHY->>HAL: Restore hardware frequency control (baseband mode 0)
         PHY-->>Owner: Correction outcome
     else Hardware failure
-        PHY-->>Owner: Error; no restoration write
+        PHY-->>Owner: Error, no restoration write
         Note over Owner: Retain/quarantine physical owner
     end
 ```

@@ -1147,6 +1147,14 @@ fn run_rustdoc_measured(
         .join(job.purpose.label())
         .join(workspace_cache_id(ctx, configuration)?);
     let staging = cache.join(&configuration.target).join("doc");
+    if export_html {
+        // Cargo shares compiled dependencies across these jobs, but rustdoc's
+        // output also accumulates crate lists, search shards and implementors.
+        // An exported snapshot must contain only this exact configuration.
+        // Removing the documentation output makes Cargo regenerate the crate
+        // while retaining the expensive compiled dependency cache.
+        owned_remove_dir(output, &staging)?;
+    }
     let mut command = ctx.cargo();
     command
         .args(["doc", "--no-deps", "--target-dir"])
@@ -1157,6 +1165,19 @@ fn run_rustdoc_measured(
         command.arg("--document-private-items");
     }
     strict_rustdoc(&mut command);
+    if export_html && job.purpose == Purpose::PrivateRustdoc {
+        // The pinned stable rustdoc still gates hidden-item rendering. Limit
+        // this opt-in to the private HTML export command; normal checks and
+        // production builds retain their existing compiler environment.
+        command.env("RUSTC_BOOTSTRAP", "1");
+        command.env(
+            "CARGO_ENCODED_RUSTDOCFLAGS",
+            format!(
+                "{}\u{1f}-Z\u{1f}unstable-options\u{1f}--document-hidden-items",
+                STRICT_RUSTDOC_FLAGS.join("\u{1f}")
+            ),
+        );
+    }
     let metadata_us = elapsed_us(metadata_start);
     let cargo_start = Instant::now();
     run_checked(&mut command)?;
@@ -1176,6 +1197,10 @@ fn run_rustdoc_measured(
         (Some(snapshot), elapsed_us(snapshot_start))
     } else {
         (None, 0)
+    };
+    let verified = match &snapshot {
+        Some(snapshot) => snapshot.join(target_crate_name(&configuration.cargo_target)?),
+        None => verified,
     };
     Ok((
         RustdocOutput { verified, snapshot },
@@ -1221,6 +1246,14 @@ fn snapshot_rustdoc(
     let source = staging.join("src").join(&crate_name);
     if source.is_dir() {
         copy_tree(&source, &snapshot.join("src").join(&crate_name))?;
+    }
+    for name in ["search.index", "trait.impl", "type.impl"] {
+        let resources = staging.join(name);
+        if resources.is_dir() {
+            // These files may be rewritten by a later rustdoc invocation;
+            // unlike hashed static assets, they must not be hard-linked.
+            copy_tree(&resources, &snapshot.join(name))?;
+        }
     }
     for entry in fs::read_dir(staging)? {
         let entry = entry?;
@@ -1516,7 +1549,11 @@ fn owned_documents(ctx: &Context, packages: &[common::SourcePackage]) -> Result<
         let owner_name = path.file_name().is_some_and(|name| {
             name == "README.md" || name == "FEATURES.md" || name == "OWNERSHIP.md"
         });
-        if tracked.contains(&path) || relative.starts_with("docs") || owner_name {
+        if tracked.contains(&path)
+            || relative.starts_with("docs")
+            || relative == Path::new("CONTRIBUTING.md")
+            || owner_name
+        {
             documents.insert(path);
         }
     }

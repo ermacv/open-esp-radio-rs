@@ -4,6 +4,9 @@ This document defines the boundaries between production code, hardware
 descriptions, analysis tools, experiments and qualification. Detailed APIs and
 commands belong to each component's README and Rust documentation.
 
+Start with [the binary-to-station explanation](binary-to-station.md) for a
+reading route through these boundaries.
+
 ## Owners
 
 | Owner | Responsibility | Boundary |
@@ -11,7 +14,7 @@ commands belong to each component's README and Rust documentation.
 | [Radio libraries](../crates/README.md) | Portable protocols, typed hardware access, adapters, execution and final composition | Internal libraries depend on specific contracts; only applications depend on the public facade |
 | [Network experiments](../experiments/network-engine/README.md) | Experimental synchronous networking and ownership models | Allowed in host test composition; excluded from production dependencies |
 | [Registers](../registers/README.md) | Reviewed hardware model, API/ownership policy, provenance and publication inputs | Defines what may enter the production PAC |
-| [Blobray](../tools/blobray/README.md) | Binary analysis, bounded comparisons and register publication | Generic engine; target facts are selected through providers and projects |
+| [Blobray](../tools/blobray/README.md) | Binary analysis, reviewed research and bounded comparisons | Generic engine; target facts are selected through providers and projects |
 | [Memory tools](../tools/memory-report/README.md) | ELF memory and stack analysis | The consumer chooses the image budget and acceptance policy |
 | [Repository tooling](../tools/repo/README.md) | Cargo graphs, source checks and build orchestration | Calls domain tools; does not duplicate their validators |
 | [Verification](../verification/README.md) | Reusable chip knowledge and concrete vendor comparison projects | Private artifacts are caller inputs, never production dependencies |
@@ -115,7 +118,7 @@ module and facade. The encoder never depends on the station policy or facade.
 
 ```mermaid
 flowchart LR
-    R[Reviewed register model and policy] --> P[Blobray publication]
+    R[Reviewed register model and policy] --> P[cargo registers publication]
     P --> G[Published SVD / PAC / bindings]
     G --> D[Production driver]
     D --> C[Compiled comparison probes]

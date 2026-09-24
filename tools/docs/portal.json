@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/ermacv/open-esp-radio-rs",
+  "basePath": "/open-esp-radio-rs/",
+  "mdbook": "0.5.4",
+  "mermaid": "0.17.1",
+  "node": "24.14.0",
+  "sourceOnly": ["AGENTS.md", "tools/blobray/PLAN.md", "hil/tests/fixtures/catalog/README.md"],
+  "navigation": [
+    { "title": "Understand the architecture", "sources": ["docs/README.md", "docs/binary-to-station.md", "docs/architecture.md", "docs/protocol-naming.md", "crates/README.md", "docs/source-policy.md"] },
+    { "title": "Make a first contribution", "sources": ["docs/first-contribution.md", "CONTRIBUTING.md", "docs/documentation.md", "tools/docs/README.md"] },
+    { "title": "Investigate hardware", "sources": ["tools/blobray/README.md", "tools/blobray/next/README.md", "registers/README.md", "registers/esp32s31/publication/README.md", "docs/phy/README.md", "verification/README.md"] },
+    { "title": "Build and validate a station", "sources": ["docs/station-hardware.md", "examples/esp32s31-station/README.md", "docs/network-implementations.md", "docs/wifi-egress.md", "hil/README.md", "hil/targets/esp32s31/README.md", "docs/verification-and-qualification.md", "qualification/README.md"] }
+  ]
+}

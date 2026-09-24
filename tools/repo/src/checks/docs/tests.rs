@@ -72,7 +72,7 @@ fn tiny_bin_crate(source: &str) -> (tempfile::TempDir, Context, common::CargoCon
 #[test]
 fn public_private_rustdoc_are_distinct_and_broken_links_fail_with_diagnostics() {
     let (_repository, context, configuration) =
-        tiny_crate("//! A valid crate.\npub struct Item;\n");
+        tiny_crate("//! A valid crate.\npub struct Item;\n#[doc(hidden)] pub struct Hidden;\n");
     let output = acquire_output(&context).unwrap();
     let public = run_rustdoc(
         &context,
@@ -97,6 +97,10 @@ fn public_private_rustdoc_are_distinct_and_broken_links_fail_with_diagnostics() 
     assert!(private.join("doc_fixture/index.html").is_file());
     assert!(public.join("static.files").is_dir());
     assert!(private.join("static.files").is_dir());
+    assert!(public.join("search.index/root.js").is_file());
+    assert!(private.join("search.index/root.js").is_file());
+    assert!(!public.join("doc_fixture/struct.Hidden.html").exists());
+    assert!(private.join("doc_fixture/struct.Hidden.html").is_file());
 
     fs::write(
         context.root.join("src/lib.rs"),
@@ -118,6 +122,37 @@ fn public_private_rustdoc_are_distinct_and_broken_links_fail_with_diagnostics() 
 }
 
 #[test]
+fn exported_rustdoc_keeps_search_and_removes_stale_configuration_pages() {
+    let (_repository, context, configuration) =
+        tiny_crate("pub mod old_profile { pub struct OldItem; }\n");
+    let output = acquire_output(&context).unwrap();
+    let job = Job {
+        purpose: Purpose::PublicRustdoc,
+        configuration,
+    };
+    let first = run_rustdoc(&context, &output, &job).unwrap();
+    assert!(
+        first
+            .join("doc_fixture/old_profile/struct.OldItem.html")
+            .is_file()
+    );
+    assert!(first.join("search.index/root.js").is_file());
+    fs::write(context.root.join("src/lib.rs"), "pub struct CurrentItem;\n").unwrap();
+    let second = run_rustdoc(&context, &output, &job).unwrap();
+    assert!(second.join("doc_fixture/struct.CurrentItem.html").is_file());
+    assert!(!second.join("doc_fixture/old_profile").exists());
+    assert!(second.join("search.index/root.js").is_file());
+    // A cache hit must also regenerate the removed documentation output.
+    let repeated = run_rustdoc(&context, &output, &job).unwrap();
+    assert!(
+        repeated
+            .join("doc_fixture/struct.CurrentItem.html")
+            .is_file()
+    );
+    assert!(repeated.join("src/doc_fixture/lib.rs.html").is_file());
+}
+
+#[test]
 fn rustdoc_job_timing_separates_cargo_from_metadata_and_snapshot() {
     let (_repository, context, configuration) = tiny_crate("pub struct Item;\n");
     let output = acquire_output(&context).unwrap();
@@ -130,6 +165,10 @@ fn rustdoc_job_timing_separates_cargo_from_metadata_and_snapshot() {
     assert!(required.snapshot.is_none());
     assert_eq!(required_timing.snapshot_us, 0);
     let (exported, timing) = run_rustdoc_measured(&context, &output, &job, true).unwrap();
+    assert_eq!(
+        exported.verified,
+        exported.snapshot.as_ref().unwrap().join("doc_fixture")
+    );
     assert!(
         exported
             .snapshot
@@ -318,12 +357,22 @@ fn owned_document_discovery_excludes_arbitrary_untracked_markdown() {
     .unwrap();
     fs::create_dir_all(repository.path().join("docs")).unwrap();
     fs::write(repository.path().join("docs/new.md"), "# New\n").unwrap();
+    fs::write(
+        repository.path().join("CONTRIBUTING.md"),
+        "# Contributing\n",
+    )
+    .unwrap();
     fs::create_dir_all(repository.path().join("crate")).unwrap();
     fs::write(repository.path().join("crate/README.md"), "# Owner\n").unwrap();
     let context = Context::new(repository.path()).unwrap();
     let documents = owned_documents(&context, &[]).unwrap();
     assert!(documents.iter().any(|path| path.ends_with("README.md")));
     assert!(documents.iter().any(|path| path.ends_with("docs/new.md")));
+    assert!(
+        documents
+            .iter()
+            .any(|path| path.ends_with("CONTRIBUTING.md"))
+    );
     assert!(
         documents
             .iter()

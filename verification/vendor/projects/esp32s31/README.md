@@ -525,10 +525,13 @@ serve as run results or operational readiness declarations.
 
 ## Register publication
 
+Register review and publication now belong to the independent
+[register tool](../../../../tools/registers/README.md). The legacy
+`cargo blobray registers review/validate` and `project publish` command grammar
+is unavailable in current Blobray. For source-owned publication use:
+
 ```console
-cargo blobray registers review --project verification/vendor/projects/esp32s31/vendor-project.toml
-cargo blobray registers validate --project verification/vendor/projects/esp32s31/vendor-project.toml
-cargo blobray project publish --project verification/vendor/projects/esp32s31/vendor-project.toml
+cargo registers generate --manifest registers/esp32s31/publication/registers.toml --check
 ```
 
 Discovery observations feed the shared reviewed register model. Publication

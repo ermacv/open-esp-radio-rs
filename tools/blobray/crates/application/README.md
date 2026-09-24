@@ -266,3 +266,9 @@ preserve the distinction between selected callees and evidence-only dependencies
 The build owns one supervised budget/publication. `ReadQuery::SemanticIr` expands
 original function facts through `QuerySink::semantic_ir`; no hidden analysis or
 live-origin access occurs. See [IR profiles](../../next/README.md#saved-semantic-ir-profiles).
+
+`ReadQuery::Trace` selects original local members of retained IR profiles and exposes
+`QuerySink::trace` evidence and a scoped static comparison verdict. Each side's saved
+facts are loaded once and released before the next side. Only ordered observables
+and an admitted canonical expression index overlap. Unknowns and composition-only
+facts never trigger an implicit analysis or execution workflow.

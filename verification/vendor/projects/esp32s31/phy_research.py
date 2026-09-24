@@ -139,6 +139,33 @@ for name in ("phy_encode_i2c_master", "phy_i2c_master_fill", "phy_get_data_sat")
     matches = [r["value"] for r in rows if r["value"]["entry"]["request"]["source"] == {"kind": "input", "input": 1}]
     assert len(matches) == 1
     callees[name] = matches[0]["outcome"]["analysis"]
+# Exact static trace on authenticated ROM bytes: fill(index, value) writes one u32
+# to 0x2010fc00 + index*4. This expectation is independent of the trace exporter.
+ir_request = {"scope": {"revision": revision, "publications": [],
+    "analyses": [callees["phy_i2c_master_fill"]], "knowledge": None},
+    "profiles": [{"name": "fill", "roots": {"kind": "all"}, "include_reachable": True}]}
+saved_ir = call("build-semantic-ir", ["ir", "build", "--request", doc("ir-build", ir_request)])["run"]["semantic_ir"]
+call("export-semantic-ir", ["ir", "show", saved_ir, "--output", str(run / "semantic-ir-export.json")])
+trace_target = {"ir": saved_ir, "profile": "fill", "entry": callees["phy_i2c_master_fill"],
+    "abi": "riscv-integer", "registers": [{"register": 10, "value": 0}, {"register": 11, "value": 0x70267}]}
+trace_request = {"left": trace_target, "right": trace_target,
+    "observation": {"ranges": [{"start": 0x2010FC00, "length": 256}], "fences": True}}
+static_trace = call("static-fill-trace", ["trace", "--request", doc("static-fill-trace", trace_request)])
+assert static_trace["summary"]["summary"]["verdict"] == "MATCH"
+assert static_trace["summary"]["summary"]["left"] == {"exact": True, "events": 1, "invocations": 1}
+static_events = [r["value"]["event"] for r in static_trace["records"]
+    if r["value"]["kind"] == "event" and r["value"]["side"] == "left"]
+assert static_events == [{"kind": "memory", "access": "store", "address": 0x2010FC00,
+    "width": 4, "value": {"kind": "constant", "value": 0x70267}}]
+changed = json.loads(json.dumps(trace_request))
+changed["right"]["registers"][1]["value"] = 0x70268
+assert call("static-fill-diff", ["trace", "--request", doc("static-fill-diff", changed)])["summary"]["summary"]["verdict"] == "DIFF"
+unknown = json.loads(json.dumps(trace_request))
+unknown["right"]["registers"] = [{"register": 11, "value": 0x70267}]
+assert call("static-fill-incomplete", ["trace", "--request", doc("static-fill-incomplete", unknown)])["summary"]["summary"]["verdict"] == "INCOMPLETE"
+call("save-static-trace", ["trace", "--request", doc("static-trace-export", trace_request),
+    "--output", str(run / "static-trace-export.json")])
+
 linked_facts = None
 phase_samples = []
 for sample in range(3):
@@ -675,3 +702,10 @@ assert (run / "restored-memory-slice-export.json").read_bytes() == (run / "memor
 call("save-restored-flow", ["flow", "--request", doc("restored-flow-export", flow_request),
     "--output", str(run / "restored-flow-export.json")])
 assert (run / "flow-export.json").read_bytes() == (run / "restored-flow-export.json").read_bytes()
+
+assert call("restored-static-trace", ["trace", "--request", doc("restored-static-trace", trace_request)]) == static_trace
+call("save-restored-static-trace", ["trace", "--request", doc("restore-static-trace-export", trace_request),
+    "--output", str(run / "restored-static-trace-export.json")])
+assert (run / "static-trace-export.json").read_bytes() == (run / "restored-static-trace-export.json").read_bytes()
+call("save-restored-semantic-ir", ["ir", "show", saved_ir, "--output", str(run / "restored-semantic-ir-export.json")])
+assert (run / "semantic-ir-export.json").read_bytes() == (run / "restored-semantic-ir-export.json").read_bytes()

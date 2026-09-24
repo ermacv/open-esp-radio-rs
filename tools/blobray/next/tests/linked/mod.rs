@@ -2310,3 +2310,161 @@ fn image_function_contracts_reject_data_symbols_and_preserve_review_after_source
 mod navigation;
 
 mod flow;
+
+#[test]
+fn saved_trace_follows_a_linked_call_and_tail_without_promoting_may_effects() {
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    // Preserve this entry's return link in s0; the supplied leaf does not modify it.
+    let definitions: [(&str, &[u32]); 3] = [
+        (
+            "entry",
+            &[
+                0x00008413, 0x60000537, 0x00700593, 0x000000ef, 0x60000637, 0x00a62223, 0x00040093,
+                0x00008067,
+            ],
+        ),
+        ("tail", &[0x60000537, 0x00700593, 0x0000006f]),
+        ("leaf", &[0x00b52023, 0x00158513, 0x00008067]),
+    ];
+    let mut sections = Vec::new();
+    let mut symbols = Vec::new();
+    for (name, code) in definitions {
+        let section = obj.add_section(
+            vec![],
+            format!(".text.{name}").into_bytes(),
+            SectionKind::Text,
+        );
+        obj.append_section_data(
+            section,
+            &code
+                .iter()
+                .flat_map(|w| w.to_le_bytes())
+                .collect::<Vec<_>>(),
+            4,
+        );
+        symbols.push(obj.add_symbol(symbol(
+            name.as_bytes(),
+            SymbolSection::Section(section),
+            (code.len() * 4) as u64,
+            SymbolKind::Text,
+        )));
+        sections.push(section);
+    }
+    for (from, offset) in [(0, 12), (1, 8)] {
+        obj.add_relocation(
+            sections[from],
+            Relocation {
+                offset,
+                symbol: symbols[2],
+                addend: 0,
+                flags: RelocationFlags::Elf {
+                    r_type: object::elf::R_RISCV_JAL,
+                },
+            },
+        )
+        .unwrap();
+    }
+    let mut f = custom_fixture(vec![("trace.o", obj.write().unwrap())], 0, 0);
+    let snapshot = app::inventory(&f.project, None).unwrap();
+    let tail = snapshot.revision.inputs[0]
+        .inventory
+        .as_ref()
+        .unwrap()
+        .objects[0]
+        .elf
+        .as_ref()
+        .unwrap()
+        .symbols
+        .iter()
+        .find(|s| s.name.as_deref() == Some(b"tail"))
+        .unwrap()
+        .id
+        .clone();
+    f.request.roots.push(EntrySelection {
+        input: 0,
+        symbol: tail,
+    });
+    let image = prepared(&f);
+    let publication = analyze(&f, Some(image));
+    let entries = cli(&f, &["functions", "--id", publication.as_str()]);
+    let find = |name: &str| -> FunctionAnalysisId {
+        entries["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["value"]["entry"]["name"] == serde_json::json!(name.as_bytes()))
+            .unwrap()["value"]["outcome"]["analysis"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap()
+    };
+    let entry = find("entry");
+    let build = IrBuildRequest {
+        scope: NavigationScope {
+            revision: app::inventory(&f.project, None).unwrap().revision_id,
+            publications: vec![publication.clone()],
+            analyses: vec![],
+            knowledge: None,
+        },
+        profiles: vec![IrProfile {
+            name: "calls".into(),
+            roots: IrRoots::All,
+            include_reachable: true,
+        }],
+    };
+    let built = f
+        .app
+        .start_build_ir(&f.project, build, budget())
+        .unwrap()
+        .wait();
+    assert_eq!(built.state, RunState::Completed, "{built:?}");
+    let target = TraceTarget {
+        ir: built.semantic_ir.unwrap(),
+        profile: "calls".into(),
+        entry,
+        abi: CallAbi::RiscvInteger,
+        registers: vec![],
+    };
+    let mut q = TraceRequest {
+        left: target.clone(),
+        right: Some(target),
+        observation: TraceObservation {
+            ranges: vec![ImageRegion {
+                start: 0x60000000,
+                length: 16,
+            }],
+            fences: true,
+        },
+    };
+    let path = f.dir.path().join("trace-request.json");
+    fs::write(&path, serde_json::to_vec(&q).unwrap()).unwrap();
+    let output = cli(&f, &["trace", "--request", path.to_str().unwrap()]);
+    assert_eq!(output["summary"]["summary"]["verdict"], "MATCH", "{output}");
+    assert_eq!(output["summary"]["summary"]["left"]["invocations"], 2);
+    let events: Vec<_> = output["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| &r["value"])
+        .filter(|r| r["kind"] == "event" && r["side"] == "left")
+        .map(|r| r["event"].clone())
+        .collect();
+    assert_eq!(events.len(), 2, "{output}");
+    assert_eq!(events[0]["address"], 0x60000000u32);
+    assert_eq!(events[0]["value"]["value"], 7);
+    assert_eq!(events[1]["address"], 0x60000004u32);
+    assert_eq!(events[1]["value"]["value"], 8);
+    q.left.entry = find("tail");
+    q.right = Some(q.left.clone());
+    fs::write(&path, serde_json::to_vec(&q).unwrap()).unwrap();
+    let tail = cli(&f, &["trace", "--request", path.to_str().unwrap()]);
+    assert_eq!(tail["summary"]["summary"]["verdict"], "MATCH", "{tail}");
+    assert_eq!(tail["summary"]["summary"]["left"]["invocations"], 2);
+    assert_eq!(tail["summary"]["summary"]["left"]["events"], 1);
+    fs::remove_file(f.dir.path().join("trace.o")).unwrap();
+    assert_eq!(
+        cli(&f, &["trace", "--request", path.to_str().unwrap()]),
+        tail
+    );
+}

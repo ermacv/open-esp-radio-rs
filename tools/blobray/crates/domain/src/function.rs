@@ -2,8 +2,8 @@
 use crate::*;
 
 /// Native function facts and interpretation contract; no compatibility reader.
-pub const FUNCTION_SCHEMA: u32 = 6;
-pub const FUNCTION_POLICY: u32 = 7;
+pub const FUNCTION_SCHEMA: u32 = 7;
+pub const FUNCTION_POLICY: u32 = 8;
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
@@ -232,6 +232,12 @@ pub trait FunctionDecoder: PointerDecoder {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum FunctionRecord {
+    Fence {
+        offset: u64,
+        fm: u8,
+        predecessor: u8,
+        successor: u8,
+    },
     MmioRange {
         offset: u64,
         assertion: AssertionId,

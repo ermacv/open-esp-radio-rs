@@ -533,3 +533,14 @@ Deleting origins, moving the project and restoring a backup preserve that identi
 A successful build means the configured bundle was retained; static-trace exactness
 and concrete execution are separate consumer claims. Details and commands:
 [IR profiles](../../next/README.md#saved-semantic-ir-profiles).
+
+## Static trace comparison (implemented, bounded profile)
+
+Build an IR profile from original local publications, select exact function entries,
+supply explicit register inputs and physical observation ranges, then query `trace`.
+Read the path blockers and exactness independently from operation completion. Compare
+ordered MMIO/fence events only; return/RAM/call relations belong to other profiles.
+Export the result and retain its project backup to reproduce the same trace without
+source binaries. [Static trace scope and assumptions](../../next/README.md#static-observable-traces)
+define MATCH/DIFF/INCOMPLETE and the distinction from composed research and concrete
+execution.

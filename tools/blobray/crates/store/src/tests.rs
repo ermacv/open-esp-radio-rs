@@ -694,7 +694,7 @@ fn check_function_publication(decoding: bool) {
     file.write_all(b"\n").unwrap();
     let records = stage.retain_temporary(file, &mut || Ok(())).unwrap();
     let manifest = FunctionManifest {
-        schema: 6,
+        schema: FUNCTION_SCHEMA,
         semantics: Some(SemanticSummary {
             complete: false,
             gaps: 1,
@@ -704,8 +704,8 @@ fn check_function_publication(decoding: bool) {
             research: None,
             abi: RiscvAbi::Ilp32,
             address_space: CodeAddressSpace::Section,
-            schema: 6,
-            policy: 7,
+            schema: FUNCTION_SCHEMA,
+            policy: FUNCTION_POLICY,
             semantics: Some("fixture-values/1".into()),
             decoder: "fixture/1".into(),
             project: project.id().clone(),
@@ -905,13 +905,13 @@ fn staged_investigation(
     let child = stage
         .function_receipt(
             &FunctionManifest {
-                schema: 6,
+                schema: FUNCTION_SCHEMA,
                 recipe: FunctionRecipe {
                     research: None,
                     abi: RiscvAbi::Ilp32,
                     address_space: CodeAddressSpace::Section,
-                    schema: 6,
-                    policy: 7,
+                    schema: FUNCTION_SCHEMA,
+                    policy: FUNCTION_POLICY,
                     project: writer.project.id.clone(),
                     revision: revision.clone(),
                     source: FunctionSource::Input { input: 0 },

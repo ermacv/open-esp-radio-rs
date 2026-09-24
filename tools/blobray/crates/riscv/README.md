@@ -23,3 +23,8 @@ memory regions, choose models or publish a verdict. See the
 R_RISCV_32 RELA supplies absolute 32-bit symbol-plus-addend semantics. Other
 relocations remain unsupported for pointer interpretation. This port grants no
 loader, project, artifact or allocator authority.
+
+The `values-5` semantic identity includes typed fence mode/predecessor/successor
+sets. Static trace extraction consumes the saved fence record; it never parses
+instruction display strings. Concrete execution retains its own supported fence-mode
+check and reports unsupported modes explicitly.

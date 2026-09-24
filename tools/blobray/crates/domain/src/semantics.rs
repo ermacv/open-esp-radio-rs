@@ -7,7 +7,7 @@ pub enum Operand {
     Register(u8),
     Immediate(u32),
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum IntegerOp {
     Add,
@@ -41,6 +41,11 @@ pub enum MemoryKind {
 /// An instruction's bounded local effect, before abstract interpretation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SemanticOp {
+    Fence {
+        fm: u8,
+        predecessor: u8,
+        successor: u8,
+    },
     Integer {
         op: IntegerOp,
         dest: u8,

@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 19
-and database schema 18 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 20
+and database schema 19 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -807,7 +807,7 @@ relocation referencing another table is explicitly outside the current profile.
 Whole-object enumeration preserves both static and dynamic STT_FUNC occurrences,
 including aliases, as separate physical requests and results. Coverage unions
 selected byte intervals without turning duplicate symbols into additional bytes.
-Function selection policy 7 and investigation policy 4 record this interpretation;
+Function selection policy 8 and investigation policy 4 record this interpretation;
 reading does not convert older policies. Regression coverage lives in Next
 `functions` tests `dynamic_occurrences_keep_physical_indices_through_review_export_and_reopen`,
 `dynamic_function_selection_keeps_static_relocation_target_identity` and
@@ -831,8 +831,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 18
-and journal schema 19 carry these identities. Old formats are rejected without
+Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 19
+and journal schema 20 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -872,7 +872,7 @@ reviews, exports and reopens the table after project restore.
 
 ## Finite value alternatives
 
-The current RV32 values profile and function policy 7 preserve at most eight
+The current RV32 values profile and function policy 8 preserve at most eight
 canonical exact alternatives at a register join. Domain owns nonrecursive leaves
 and validates 2..=8 sorted distinct entries when decoding saved values. Analysis
 owns the finite lattice and admitted, operation-local set/index storage. Values
@@ -1300,3 +1300,24 @@ capacity, cancellation or validation failure cannot publish an incomplete bundle
 Read/export expands original facts with exact analysis and record identities,
 preserving local effects, composed may-effects and their original coverage. Trace
 extraction is a separate consumer responsible for its explicit exactness claim.
+
+## Static trace relation
+
+The implemented static trace profile is defined in the
+[operator reference](../../next/README.md#static-observable-traces). Domain owns the
+request, observable values, blockers and result schema. The RV32 semantic producer
+emits typed fences and outgoing tail-call inputs. Analysis owns per-function borrowed
+indexes, canonical symbolic expressions and iterative invocation/path traversal;
+application acquires the explicitly selected saved profile and releases one side's
+facts before loading the other. Only compact observable events and the shared admitted
+expression index survive between sides. Store remains unaware of trace semantics.
+
+A trace is conditional on explicit inputs, original immutable-image assumptions and
+ordinary integer ABI call/return behavior. Composed may-effects are never treated as
+an ordered execution. Unknowns are blockers, not zeroes; all incomplete paths prevent
+MATCH. Canonical symbolic equality can prove the selected relation, while undecidable
+symbolic inequality remains INCOMPLETE. Return rows/call sites are provenance and are
+excluded from the physical MMIO/fence relation. A successful query denotes delivery,
+not exactness or termination proof. The same frozen IR and request reproduce the
+result after source-free backup/restore. Regression owners are Next
+`functions::trace`, linked call/tail tests and the authenticated PHY research scenario.

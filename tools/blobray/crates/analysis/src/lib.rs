@@ -7,6 +7,7 @@ pub mod pointers;
 mod references;
 pub mod registers;
 pub mod summaries;
+pub mod trace;
 mod value_sets;
 mod values;
 pub use references::PreparedReferences;

@@ -451,3 +451,6 @@ mod memory_slice;
 pub use memory_slice::*;
 mod event_route;
 pub use event_route::*;
+
+mod trace;
+pub use trace::*;

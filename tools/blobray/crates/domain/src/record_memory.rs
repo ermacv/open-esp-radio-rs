@@ -136,7 +136,8 @@ impl FunctionRecord {
             Self::SemanticGap { .. }
             | Self::Block { .. }
             | Self::Edge { .. }
-            | Self::Gap { .. } => 0,
+            | Self::Gap { .. }
+            | Self::Fence { .. } => 0,
         }
     }
 }

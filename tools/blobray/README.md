@@ -24,6 +24,9 @@ CLI/JSON share the [application](crates/application/README.md) operations.
 Saved interface discovery, function/context review, structural paths, memory slices
 and conditional event routes retain their evidence. The register catalogue reports
 MMIO candidates and masks separately from reviewed physical declarations.
+Configured semantic IR profiles retain original facts and provenance. Static trace
+queries compare explicitly selected physical MMIO/fence observations with visible
+path blockers and assumptions; they are distinct from concrete execution.
 
 Register source publication belongs to the independent
 [register tool](../registers/README.md). It consumes reviewed hardware models and

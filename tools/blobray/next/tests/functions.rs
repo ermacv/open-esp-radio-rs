@@ -985,3 +985,6 @@ mod registers;
 
 #[path = "functions/semantic_ir.rs"]
 mod semantic_ir;
+
+#[path = "functions/trace.rs"]
+mod trace;

@@ -9,6 +9,9 @@ use std::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum QuerySummary {
+    Trace {
+        summary: Box<TraceSummary>,
+    },
     SemanticIr {
         id: ArtifactId,
         manifest: Box<SemanticIrManifest>,
@@ -132,6 +135,10 @@ pub enum QuerySummary {
 impl QuerySummary {
     pub fn assessment(&self) -> ResultAssessment {
         match self {
+            Self::Trace { summary } => ResultAssessment {
+                comparison: summary.verdict,
+                ..Default::default()
+            },
             Self::Coverage {
                 id,
                 selected_functions,
@@ -184,6 +191,12 @@ impl QuerySummary {
 }
 /// Borrowed callbacks. Retaining records requires the consumer's own capacity.
 pub trait QuerySink: InventorySink + DoctorSink {
+    fn trace(&mut self, _: &TraceRecord, _: &mut dyn RunControl) -> Result<()> {
+        Err(Error::new(
+            ErrorCode::InvalidRequest,
+            "consumer does not support static traces",
+        ))
+    }
     fn semantic_ir(&mut self, _: &SemanticIrRecord, _: &mut dyn RunControl) -> Result<()> {
         Err(Error::new(
             ErrorCode::InvalidRequest,
@@ -335,6 +348,7 @@ pub trait QuerySink: InventorySink + DoctorSink {
 }
 #[derive(Serialize)]
 enum RecordRef<'a> {
+    Trace(&'a TraceRecord),
     SemanticIr(&'a SemanticIrRecord),
     Register(&'a RegisterRecord),
     EventRoute(&'a EventRouteRecord),
@@ -371,6 +385,7 @@ enum RecordRef<'a> {
 }
 #[derive(Deserialize)]
 enum Record {
+    Trace(TraceRecord),
     SemanticIr(SemanticIrRecord),
     Register(RegisterRecord),
     EventRoute(EventRouteRecord),
@@ -541,6 +556,18 @@ pub fn prepare_query_with_tools(
             file: disk.create(&stage.join("query-records"))?,
         };
         let summary = match &work.query {
+            ReadQuery::Trace { request } => {
+                let project = Project::open(&work.project.to_path()?)?;
+                QuerySummary::Trace {
+                    summary: Box::new(crate::trace::query(
+                        &project,
+                        request,
+                        &memory,
+                        control,
+                        &mut |r, c| spool.push(RecordRef::Trace(r), c),
+                    )?),
+                }
+            }
             ReadQuery::SemanticIr { id } => {
                 let project = Project::open(&work.project.to_path()?)?;
                 QuerySummary::SemanticIr {
@@ -1251,6 +1278,7 @@ pub(crate) fn visit(
         let record: Record = serde_json::from_slice(&bytes)
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         match record {
+            Record::Trace(r) => sink.trace(&r, control)?,
             Record::SemanticIr(r) => sink.semantic_ir(&r, control)?,
             Record::Register(r) => sink.register(&r, control)?,
             Record::EventRoute(r) => sink.event_route(&r, control)?,

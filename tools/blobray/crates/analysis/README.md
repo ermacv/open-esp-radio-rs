@@ -77,3 +77,10 @@ before the next location. It performs no I/O, execution or callee expansion.
 navigation index. It interprets required ABI values, local field coordinates and
 selector predicates, and shares the memory-slice owner for callback-store checks.
 Only owned admitted observations survive that borrowed preparation.
+
+`trace` consumes supplied original local IR and physical call links. Borrowed
+per-function indexes are reused across invocations; admitted expression memoization,
+path visitation and call frames are iterative. Canonical symbolic equality can prove
+a selected observable relation; unsupported paths and undecided inequality remain
+incomplete. It neither schedules analysis nor models RAM/peripheral state. Typed
+fences come from the semantic producer, not parsed disassembly text.

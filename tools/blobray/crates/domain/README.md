@@ -113,3 +113,10 @@ IDs scope pointer identity to one analysis; witnesses are structural evidence.
 `ReviewedEventRoute` defines three finite conditional mechanisms; `EventRouteQuery`
 and its output separate exact saved evidence, structural check outcomes and runtime
 conditions. No schema field promotes static bindings to completed delivery.
+
+[Saved IR values](src/semantic_ir.rs) define configured profile selection and original
+fact/provenance membership. [Static traces](src/trace.rs) define explicit physical
+observation scope, ABI/register inputs, symbolic values and MATCH/DIFF/INCOMPLETE
+results independently from operation completion. Their evaluation belongs to analysis
+and application. Function schema 7 / policy 8 includes typed fences and outgoing tail
+inputs; display strings have no semantic authority.

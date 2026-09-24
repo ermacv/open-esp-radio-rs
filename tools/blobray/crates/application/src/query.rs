@@ -55,6 +55,15 @@ impl QueryOutput {
         let summary: QuerySummary = serde_json::from_slice(&bytes)
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         let manifest = match (&work.query, &summary) {
+            (ReadQuery::Trace { request }, QuerySummary::Trace { summary })
+                if summary.validate().is_ok()
+                    && summary.policy == STATIC_TRACE_POLICY
+                    && summary.request == *request
+                    && summary.right.is_some() == request.right.is_some()
+                    && summary.verdict.is_some() == request.right.is_some() =>
+            {
+                None
+            }
             (
                 ReadQuery::SemanticIr { id },
                 QuerySummary::SemanticIr {

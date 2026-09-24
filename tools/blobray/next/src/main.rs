@@ -122,6 +122,17 @@ enum IrCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Extract or compare exact static observable traces from saved IR profiles.
+    Trace {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        request: PathBuf,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[command(flatten)]
+        limits: ResourceOptions,
+    },
     /// Build and read immutable profiles over saved semantic facts.
     Ir {
         #[arg(long)]
@@ -930,6 +941,22 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 ),
                 Format::Human => println!("Project preserved at {}", project.display()),
             }
+        }
+        Command::Trace {
+            project,
+            request,
+            output,
+            limits,
+        } => {
+            return read_query_output(
+                project,
+                ReadQuery::Trace {
+                    request: read_json_file(&request)?,
+                },
+                limits,
+                format,
+                output,
+            );
         }
         Command::Ir {
             project,

@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 18 and journal schema 19. Earlier and future
+Projects require metadata schema 19 and journal schema 20. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,8 +712,8 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 19 for every durable and read operation. Storage metadata
-uses schema 18; revision manifests use schema 1 and execution manifests use schema
+Run records use schema 20 for every durable and read operation. Storage metadata
+uses schema 19; revision manifests use schema 1 and execution manifests use schema
 1. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-19 run; an envelope version is not a journal
+execution 7) wrap the same schema-20 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -957,11 +957,11 @@ prohibit dependencies on the legacy backend. Format support is defined once in
 
 ### Values and memory effects
 
-Function recipe/manifest version 6 records the semantic producer, typed source,
+Function recipe/manifest version 7 records the semantic producer, typed source,
 address space, register values, memory accesses, transfers and semantic gaps.
 Older function schemas are unsupported; reading never converts or recomputes
 a result. Captured inputs are unchanged. Function manifests are independent
-of storage metadata version. Function selection policy 7 validates physical static/dynamic tables.
+of storage metadata version. Function selection policy 8 validates physical static/dynamic tables.
 Investigation recipes use version 3 / policy 4 and enumerate both tables plus
 explicit ranges; older
 selection policies are unsupported.
@@ -2152,4 +2152,58 @@ aggregate coverage, execution verdict, hardware claim or proof that every execut
 byte is classified. Composed may-effects retain that meaning. IR exports contain
 semantic facts, not captured ELF payloads or every evidence document; a project
 backup remains the preservation unit. Source-free reading and backup/restore use
-native database 18 / journal 19, without converters for previous formats.
+native database 19 / journal 20, without converters for previous formats.
+
+## Static observable traces
+
+`trace --project research --request trace.json [--output trace-export.json]`
+extracts a static trace, or compares two when `right` is supplied. It uses
+`ReadQuery::Trace` / `QuerySink::trace` under the same supervisor and atomic JSON
+export contract. Reads never schedule binary analysis or machine execution.
+
+The request has `left`, optional `right`, and `observation`. Each target selects
+`ir`, `profile`, exact `entry` analysis, `abi: "riscv-integer"`, and `registers`
+(`[{"register":10,"value":0}]` supplies a u32 entry input). Unspecified nonzero
+registers are symbolic inputs; x0 cannot be overridden. Observation contains sorted,
+disjoint physical `ranges` (`start`, `length`) and a `fences` boolean. At least one
+range or fences must be selected. Range/address overflow and duplicate register
+inputs fail. A profile member is required; provenance-only functions do not become
+implicit entry points or callees.
+
+Policy 1 traces original local function streams. It follows a path only when its
+branch predicates are decidable from saved values and supplied inputs. Resolved
+calls and tail transfers use the saved physical link index, per-invocation argument
+substitution and return values. Function/call loops use admitted iterative worklists
+and stop as incomplete. Every event carries its original analysis/record/site and
+invocation; invocations identify parent call sites. Fences are typed saved facts
+in function schema 7 / policy 8 (`values-5`); their display text is never reparsed.
+
+This is a conditional static relation: `abi` explicitly assumes ordinary integer
+ABI call/return behavior, including the saved x1/x5 return patterns. It does not
+prove that arbitrary code obeys that ABI or terminates on hardware. It also retains
+the selected analysis's immutable-image-load assumptions. It is not a peripheral
+model or a concrete machine run. Final RAM, return registers, timing and call traces
+are excluded from the comparison; invocation/return rows are evidence only.
+
+Selected physical reads/writes and fences remain ordered. Unknown addresses,
+accesses crossing a selected range boundary, unknown branch/value facts, unsupported
+effects/fences, unresolved/out-of-profile calls and loops retain an explicit blocker
+and cannot yield MATCH. There is no RAM state model: an unobserved mutable load
+cannot silently supply a value used by the trace. Supplied SP can resolve saved
+entry-stack addresses; lost saved values after calls remain unknown. A successful
+query may therefore carry an incomplete trace. Query exit status describes delivery;
+clients must inspect `left/right.exact` and `verdict`.
+
+Composed research facts remain may-effects. A target whose recipe requested
+composition returns `composed-interpretation`; select its original local publication
+in an IR build to trace the saved call graph. No implicit reinterpretation or second
+analysis engine runs. Exactness concerns the chosen path and observation scope,
+not whole-image semantic coverage.
+
+MATCH requires two exact paths and equal ordered observable expressions. A known
+address/width/order/fence/constant-value difference yields DIFF. Nonidentical symbolic
+value expressions whose inequality is not established yield INCOMPLETE; different
+expression IDs alone are not proof of different behavior. Canonical expressions
+retain entry-register and observed-read identities. Traces/exports are reproducible
+after source removal and project restore; preserving the whole project retains their
+IR and original facts. This comparison grants no hardware qualification.

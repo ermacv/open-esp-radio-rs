@@ -51,8 +51,8 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
 | 03 | done | Pointer tables and interfaces: exact relocated targets, bounded alternatives, roots/slots, layout/ABI/guards/index domains and semantic bindings. Discovery → proposal → review → query/export works on synthetic and real inputs; ambiguity/unsupported/null/external targets stay distinct; invalid guards and conflicting layouts fail. |
 | 04 | done | Function/context contracts and research navigation: signatures, argument roles, fields, preconditions, reviewed paths/event routes; function/callers/callees, object readers/writers, field accesses, flow/effect slices. Answers retain evidence paths and distinguish structural from executable paths; cycles, ambiguous callbacks and partial results are tested; reads never schedule hidden analysis. |
 | 05 | done | Register lifecycle: MMIO/field discovery, physical catalog, evidence/conflicts/coverage, applicability/review. Independent register tool owns model initialization/SVD import and existing publication. Observation → reviewed source model → validate → four generated outputs works; observed access width is not physical width; generic Blobray gains no production/chip dependency. |
-| 06 | active | Saved linked semantic IR, configured builds/exports and static observable trace comparison. May-effects, exact static traces and concrete observations remain distinct; incomplete traces cannot MATCH; known differences DIFF; provenance and source-free reading survive composition. |
-| 07 | pending | Integer execution sessions: stack ABI arguments, RV32 atomics, multiple entry points/setup phases, ownership/persistent regions, cold/warm resets and return/reach-symbol/observe-call goals. State transitions, unknown data, unsupported instructions, dependent-phase blocking and exact replay are tested. |
+| 06 | done | Saved linked semantic IR, configured builds/exports and static observable trace comparison. May-effects, exact static traces and concrete observations remain distinct; incomplete traces cannot MATCH; known differences DIFF; provenance and source-free reading survive composition. |
+| 07 | active | Integer execution sessions: stack ABI arguments, RV32 atomics, multiple entry points/setup phases, ownership/persistent regions, cold/warm resets and return/reach-symbol/observe-call goals. State transitions, unknown data, unsupported instructions, dependent-phase blocking and exact replay are tested. |
 | 08 | pending | External-call returns/outputs/bounded allocation, delay events and standard constant/sequence/W1C/read-clear/self-clearing/FIFO/indexed-bank models. Every mechanism has positive/negative cases; no implicit response/fallback; model identity/applicability/participation is evidence; code and modeled boundaries stay distinct. |
 | 09 | pending | Stateful FIFO services and interface tables: enqueue/dequeue/length, wake/output, table lifecycle, service-event completion. Full/empty/order/isolation and cross-phase state are tested; only selected reviewed bindings resolve calls; failed phases cannot imply workflow completion. |
 | 10 | pending | Comparison relations: selected final RAM, ordered calls/reviewed argument pairs, RAM/branch timeline, ABI/layout projections and effect contracts. Explicit relation selects returns/memory/events; RAM-only and call-only differences are caught; invalid projections fail; all three verdicts and retained excluded observations are tested. |
@@ -182,7 +182,7 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stages 00–05 are complete. Stage 06 is active.
+Stages 00–06 are complete. Stage 07 is active.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
 interface review/discovery, ambiguous bindings and authenticated ROM query/export
 reopening. All standalone Next packages/tests, Clippy, formatting and affected
@@ -387,7 +387,7 @@ captured research scopes and named IR build profiles.
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
 | 06.1 | done | Native configured semantic IR build from explicit saved publications/analyses: named profiles, all/prefix/exact roots and optional resolved call closure; original function facts, exact/ambiguous links, coverage and transitive saved provenance. One supervised build owns memory/work/disk, stages and atomically publishes one immutable bundle. API/CLI show/export, duplicate/missing profiles, ambiguity/cycles, capacity/cancellation, source removal and restore pass. No hidden binary analysis, second semantic engine or legacy adapter. |
-| 06.2 | active | Static observable trace extraction/comparison over saved IR with explicit physical observation scope. Ordered exact traces, symbolic/may-effects and concrete execution remain distinct. Unknown branches/addresses/calls, loops and unsupported effects retain blockers and cannot MATCH; exact equal/different cases yield MATCH/DIFF. Trace evidence/conditions/provenance and exports survive source removal/restore; real saved scope plus full source-only checkpoint close stage 06. |
+| 06.2 | done | Static observable trace extraction/comparison over saved IR with explicit physical observation scope. Ordered exact traces, symbolic/may-effects and concrete execution remain distinct. Unknown branches/addresses/calls, loops and unsupported effects retain blockers and cannot MATCH; exact equal/different cases yield MATCH/DIFF. Trace evidence/conditions/provenance and exports survive source removal/restore; real saved scope plus full source-only checkpoint close stage 06. |
 
 The IR build owns a result, not an alternate analysis cache. Root selection and
 call closure use the existing application navigation resolver; the bundle retains
@@ -409,3 +409,31 @@ formatting, public/private API docs and standalone checks pass. Native database 
 and journal 19 identify IR results; no compatibility reader or second analyzer is
 introduced. Stage 06.2 remains active and owns static-trace exactness and the full
 source-only checkpoint.
+
+
+Stage 06.2 acceptance closes native saved-IR trace extraction/comparison with
+ordered MMIO/fence observations, explicit input/ABI assumptions and exact physical
+scope. Linked calls and tails, symbolic reads, known differences, unknown branches,
+addresses and value equality, cycles, unsupported effects, malformed requests,
+capacity/work/cancellation and source-free exports pass. May-effects are never
+promoted to traces. The authenticated ROM fill case independently checks the store
+at 0x2010fc00, and MATCH/DIFF/INCOMPLETE survive source removal and restore.
+Full affected/Next tests, Clippy, formatting, public/private docs, standalone and
+the complete source-only checkpoint pass. Native database/journal are 19/20;
+function schema/policy are 7/8. Exactness is conditional on the selected ABI and
+immutable-code assumptions; neither trace comparison nor source-only checks claim
+hardware qualification. Stage 06 is closed.
+
+### Stage 07 execution boundaries
+
+The existing executor accepts eight concrete register words and one entry with
+independent/stateful cases. Stack placement, atomic memory transactions and session
+phase/goal transitions change distinct contracts. Split these before activation,
+preserving all parent acceptance and sharing the existing execution lifecycle:
+
+| Sub-stage | Status | Acceptance |
+| --- | --- | --- |
+| 07.1 | active | Explicit known/unknown RV32 integer argument words, register/stack ABI placement and bounded stack capacity. Shared request/backend/memory contracts, API/CLI execution/comparison/replay, source-free restore, more than eight arguments, unknown consumption and malformed/resource failures pass. No implicit zero arguments or stack initialization. |
+| 07.2 | pending | RV32 LR/SC/AMO through an explicit atomic memory port with owned reservation state. Single-hart ordering, reservation invalidation, unknown/unaligned/unsupported locations and all supported operations are tested; no nonatomic fallback or invented peripheral behavior. |
+| 07.3 | pending | Multiple exact entry/setup phases, explicit region ownership/persistence and cold/warm reset transitions. One application budget and publication; dependent-phase blocking, isolated/stateful data and exact source-free replay pass. |
+| 07.4 | pending | Explicit return, reach-symbol and observe-call completion goals over physical captured identities. Goals, premature returns, unresolved targets and phase failure have distinct evidence; API/CLI/comparison/replay and negative cases close stage 07 without claiming unobserved completion. |

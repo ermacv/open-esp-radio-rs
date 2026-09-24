@@ -184,6 +184,11 @@ fn validate(op: SemanticOp) -> Result<()> {
                     }
                 }
         }
+        SemanticOp::Fence {
+            fm,
+            predecessor,
+            successor,
+        } => fm < 16 && predecessor < 16 && successor < 16,
         SemanticOp::None | SemanticOp::Unsupported => true,
     };
     if valid {
@@ -494,7 +499,7 @@ fn transfer(
             }
             effects.register = dest.map(|r| (r, loaded));
         }
-        SemanticOp::None => {}
+        SemanticOp::None | SemanticOp::Fence { .. } => {}
         SemanticOp::Unsupported => unreachable!("unsupported operation carries a gap"),
     }
     if let Some((r, v)) = effects.register {
@@ -697,6 +702,22 @@ pub(super) fn analyze_with(
             control,
         )?;
         let Some(state) = states[i] else { continue };
+        if let SemanticOp::Fence {
+            fm,
+            predecessor,
+            successor,
+        } = operations[i].op
+        {
+            sink.record(
+                &FunctionRecord::Fence {
+                    offset: node.offset,
+                    fm,
+                    predecessor,
+                    successor,
+                },
+                control,
+            )?;
+        }
         let (_, mut effects) = evaluate(
             operations[i],
             node,
@@ -803,6 +824,18 @@ pub(super) fn analyze_with(
                 _ => None,
             };
             if let Some((target, call)) = transfer {
+                if !call && !operations[i].opaque_call {
+                    sink.record(
+                        &FunctionRecord::CallInputs {
+                            offset: node.offset,
+                            registers: state
+                                .iter()
+                                .map(|v| public(*v, input, &symbols.sets))
+                                .collect(),
+                        },
+                        control,
+                    )?;
+                }
                 effects.gap.get_or_insert(SemanticGapReason::OpaqueCall);
                 sink.record(
                     &FunctionRecord::Transfer {

@@ -16,7 +16,7 @@ impl FunctionSemantics for RiscvDecoder {
     }
 
     fn semantic_identity(&self) -> &'static str {
-        "rv32imac/values-4/rv-asm-0.2.1"
+        "rv32imac/values-5/rv-asm-0.2.1"
     }
     fn lift(&self, bytes: &[u8]) -> SemanticOp {
         let Some((inst, _)) = decode_instruction(bytes) else {
@@ -320,8 +320,20 @@ impl FunctionSemantics for RiscvDecoder {
             | Inst::Blt { .. }
             | Inst::Bge { .. }
             | Inst::Bltu { .. }
-            | Inst::Bgeu { .. }
-            | Inst::Fence { .. } => SemanticOp::None,
+            | Inst::Bgeu { .. } => SemanticOp::None,
+            Inst::Fence { fence } => {
+                let bits = |s: rv_asm::FenceSet| {
+                    u8::from(s.device_input) * 8
+                        + u8::from(s.device_output) * 4
+                        + u8::from(s.memory_read) * 2
+                        + u8::from(s.memory_write)
+                };
+                SemanticOp::Fence {
+                    fm: fence.fm,
+                    predecessor: bits(fence.pred),
+                    successor: bits(fence.succ),
+                }
+            }
             _ => SemanticOp::Unsupported,
         }
     }

@@ -459,5 +459,17 @@ select an accepted context declaration and inspect observed field accesses; expo
 and reopen the same query after source removal. `navigate` shares the application
 read lifecycle and resource budget. Missing/partial facts and ambiguous addresses
 remain visible. No read performs hidden planning, linking or analysis, and no empty
-selection proves that the entire firmware lacks an effect. Reviewed routes and
-flow/effect slicing remain separate target capabilities until implemented.
+selection proves that the entire firmware lacks an effect. Structural flow/effect inventory and ordered path review use `flow` and the native
+path claim. Reaching RAM definitions at publication and asynchronous event-route
+validation remain separate target capabilities until implemented.
+
+
+### Saved structural path review
+
+Implemented: select a root and target analysis; inspect the returned structural
+predecessor hops and frontiers; propose an exact native path with root evidence;
+validate/review every selected physical call; export the accepted knowledge and
+flow query. Review rejects an ambiguous selected step instead of choosing an
+interpretation. The same source-free project can produce a reachable memory-effect
+inventory with original local/composed provenance and explicit unknown addresses.
+These results do not establish event delivery, feasible execution or comparison.

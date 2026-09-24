@@ -56,3 +56,7 @@ loads knowledge nor chooses an accepted binding; application owns those decision
 Saved navigation indexes one flat function record stream and interprets calls and
 physical access paths without storage, linking or binding authority. Cycles are
 reported as structural edges; unknown addresses remain explicit.
+
+The flow module computes bounded iterative reachability over caller-selected
+unambiguous arcs. It returns predecessor indexes and depths; storage and reviewed
+path authority stay with application/knowledge.

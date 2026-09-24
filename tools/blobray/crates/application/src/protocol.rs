@@ -86,6 +86,9 @@ pub trait OperationHost: Send + Sync {
 // One bounded control message, never a resident collection of requests.
 #[allow(clippy::large_enum_variant)]
 pub enum ReadQuery {
+    Flow {
+        request: FlowQuery,
+    },
     Navigate {
         request: NavigationQuery,
     },

@@ -74,7 +74,8 @@ pub(super) fn render(
 ) -> Result<()> {
     if matches!(
         result.summary(),
-        app::QuerySummary::Navigation { .. }
+        app::QuerySummary::Flow { .. }
+            | app::QuerySummary::Navigation { .. }
             | app::QuerySummary::Interfaces { .. }
             | app::QuerySummary::Coverage { .. }
             | app::QuerySummary::StorageUsage { .. }
@@ -491,6 +492,9 @@ impl app::DoctorSink for Records<'_> {
     }
 }
 impl app::QuerySink for Records<'_> {
+    fn flow(&mut self, r: &FlowRecord, c: &mut dyn RunControl) -> Result<()> {
+        self.record("flow", r, c)
+    }
     fn navigation(&mut self, r: &NavigationRecord, c: &mut dyn RunControl) -> Result<()> {
         self.record("navigation", r, c)
     }

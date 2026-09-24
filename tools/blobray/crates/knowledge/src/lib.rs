@@ -4,6 +4,7 @@ use blobray_domain::*;
 mod calls;
 mod functions;
 mod interfaces;
+mod paths;
 fn invalid(message: &str) -> Error {
     Error::new(ErrorCode::InvalidRequest, message)
 }
@@ -19,6 +20,7 @@ pub fn validate_proposal(p: &KnowledgeProposal) -> Result<()> {
         return Err(invalid("symbol and object occurrence differ"));
     }
     match &p.claim {
+        KnowledgeClaim::Path { path } => paths::validate(p, path)?,
         KnowledgeClaim::Function { contract } => functions::validate(p, contract)?,
         KnowledgeClaim::Interface { contract } => interfaces::validate(p, contract)?,
         KnowledgeClaim::IntegerTable {
@@ -182,6 +184,9 @@ pub fn conflicts(a: &KnowledgeProposal, b: &KnowledgeProposal) -> bool {
         return false;
     }
     match (&a.claim, &b.claim) {
+        (KnowledgeClaim::Path { path: x }, KnowledgeClaim::Path { path: y }) => {
+            a.subject == b.subject && x != y
+        }
         (KnowledgeClaim::Function { contract: x }, KnowledgeClaim::Function { contract: y }) => {
             a.occurrence.source == b.occurrence.source
                 && a.occurrence.object == b.occurrence.object

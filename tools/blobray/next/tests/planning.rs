@@ -401,7 +401,13 @@ fn cli_plan_and_run_share_api_results_and_saved_plan_is_not_overwritten() {
     let failed = invoke(&["run", "--plan", tiny_saved.to_str().unwrap()]);
     assert!(!failed.status.success());
     assert!(failed.stdout.is_empty());
-    let diagnostic: serde_json::Value = serde_json::from_slice(&failed.stderr).unwrap();
+    let diagnostic: serde_json::Value =
+        serde_json::from_slice(&failed.stderr).unwrap_or_else(|error| {
+            panic!(
+                "invalid failure diagnostic ({error}): {}",
+                String::from_utf8_lossy(&failed.stderr)
+            )
+        });
     assert_eq!(diagnostic["query"]["state"], "resource-limited");
     assert!(diagnostic["query"]["diagnostics"]["progress"].is_object());
     let bytes = fs::read(&saved).unwrap();

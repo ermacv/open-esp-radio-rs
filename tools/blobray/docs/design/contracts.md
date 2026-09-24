@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 16
-and database schema 15 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 17
+and database schema 16 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -831,8 +831,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 15
-and journal schema 16 carry these identities. Old formats are rejected without
+Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 16
+and journal schema 17 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -1088,3 +1088,56 @@ Regressions: Next `selected_navigation_keeps_call_evidence_deduplicates_scope_an
 application `navigation::tests`; domain scalar ABI placement and store function
 publication reader tests. The authenticated PHY scenario checks saved linked callees
 and byte-identical navigation export after source removal and backup/restore.
+
+
+### Structural flow and path review
+
+A flow request chooses an explicit navigation scope, one exact root analysis and a
+selected target analysis or effect profile. It never substitutes a different saved
+interpretation of an entry. Application builds a bounded operation-local graph from
+retained calls; analysis owns iterative reachability. Unknown/ambiguous transfers,
+missing selected targets, partial analyses and depth boundaries remain frontiers.
+The graph can return a representative structural path, never an executable witness
+or absence proof outside the selection. A callee requires an unambiguous selected
+physical edge; a reviewed interface label does not create one.
+
+Graph construction releases each function's decoded facts. Effect delivery may
+make a second linear pass over reached functions after graph construction; it does
+not load a function for each caller or retain all function record buffers. Each
+emitted effect refers to a source record and a predecessor path in the returned
+selected graph. Local facts and composed facts retain their distinct origin IDs.
+No source ELF preparation or new analysis occurs during flow reading.
+
+A native ordered path assertion stores exact caller-analysis/record/callee-analysis
+hops, purpose and applicability. Proposal and review recheck all participating
+analyses in the same revision, require contiguous unambiguous edges, retain their
+manifest/fact roots and reject missing/mismatched steps before publication. The
+assertion is conditional reviewed structural navigation; it supplies no runtime
+precondition satisfaction, event delivery or executable comparison claim.
+
+
+`ReadQuery::Flow` shares navigation's selection/edge resolver and observed-manifest
+callback; no second physical resolver or graph cache exists. Reachability accepts
+only uniquely resolved selected edges. Parent links identify one deterministic
+shortest call path; a depth bound reports a frontier for an unreached destination.
+Effects retain source analysis/record and original `MemoryAccess` or `CalleeEffect`
+values. They are evidence rows, not a deduplicated trace: a local callee effect and
+its composed caller instances remain distinct. Address filters match access spans;
+unknown or partly matching finite addresses remain visible with unknown match state.
+
+`FlowSummary.target_reached` refers only to the selected structural graph, and is
+null for an effect query. Frontiers/unavailable entries are separate counts; no
+summary has an overall complete/PASS/executable claim. `facts_passes` counts decoded
+function streams: one per selected analysis for the graph and, for memory effects,
+one additional pass per reached analysis. The original ELF is never prepared.
+Path assertions allow 1..64 contiguous acyclic hops and require exact root analysis
+evidence. Changed paths for the same subject conflict until explicitly superseded.
+
+Regressions: analysis `flow::tests` covers diamond/cycle/depth and failed admission;
+application `flow::tests` checks unknown/alternative address filtering; knowledge
+`paths::tests` checks finite declaration shape. Next
+`selected_flow_paths_review_exact_hops_and_reopen_without_sources` covers review,
+ambiguous physical interpretations, wrong records/occurrences, work failure and
+CLI/API export after source removal. The PHY workflow checks a linked target,
+44 composed fill records and the independently expected first encoded write, then
+reopens identical flow exports after project backup/restore.

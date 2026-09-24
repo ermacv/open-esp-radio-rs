@@ -148,24 +148,30 @@ impl TemporaryRuntime {
             reservation,
             host,
         };
-        fs::create_dir(&workspace.stage).map_err(storage_io)?;
-        let lease = OpenOptions::new()
-            .create_new(true)
-            .read(true)
-            .write(true)
-            .open(workspace.stage.join("lease.lock"))
-            .map_err(storage_io)?;
-        lease.lock_shared().map_err(storage_io)?;
-        workspace._lease = Some(lease);
-        let record = RuntimeRecord {
-            schema: 1,
-            owner: workspace.host.owner()?,
-            run: workspace.run.clone(),
-        };
-        crate::protocol::write_request(
-            File::create(workspace.path.join("owner.json")).map_err(storage_io)?,
-            &record,
-        )?;
+        let initialized = (|| -> Result<()> {
+            fs::create_dir(&workspace.stage).map_err(storage_io)?;
+            let lease = OpenOptions::new()
+                .create_new(true)
+                .read(true)
+                .write(true)
+                .open(workspace.stage.join("lease.lock"))
+                .map_err(storage_io)?;
+            lease.lock_shared().map_err(storage_io)?;
+            workspace._lease = Some(lease);
+            let record = RuntimeRecord {
+                schema: 1,
+                owner: workspace.host.owner()?,
+                run: workspace.run.clone(),
+            };
+            crate::protocol::write_request(
+                File::create(workspace.path.join("owner.json")).map_err(storage_io)?,
+                &record,
+            )?;
+            Ok(())
+        })();
+        // Workspace::drop also takes this lock; release it before propagating init failure.
+        drop(_root_lock);
+        initialized?;
         Ok(workspace)
     }
 }
@@ -245,6 +251,11 @@ impl Workspace {
         self.reservation.shrink(bytes)
     }
     pub fn cleanup(&mut self) -> Result<()> {
+        let root = self
+            .path
+            .parent()
+            .ok_or_else(|| Error::new(ErrorCode::Integrity, "runtime workspace has no parent"))?;
+        let _root_lock = root_lock(root)?;
         self.host.reclaim(&self.stage)?;
         fs::remove_dir_all(&self.path).map_err(storage_io)?;
         self.reservation.released();
@@ -606,5 +617,36 @@ mod tests {
         assert!(!path.exists());
         drop(runtime.reserve().unwrap());
         assert_eq!(runtime.status().reserved_bytes, 0);
+    }
+    #[test]
+    fn cleanup_waits_for_runtime_scan_and_releases_capacity_after_removal() {
+        use std::{sync::mpsc, time::Duration};
+        let (dir, runtime, host) = setup();
+        let workspace = runtime
+            .workspace(host.clone(), dir.path(), runtime.reserve().unwrap())
+            .unwrap();
+        let path = workspace.path.clone();
+        let scan = root_lock(dir.path()).unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let cleaner = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            drop(workspace);
+            done_tx.send(()).unwrap();
+        });
+        started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(matches!(
+            done_rx.recv_timeout(Duration::from_millis(100)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        assert!(path.join("owner.json").is_file());
+        assert_eq!(host.reclaims.load(Ordering::SeqCst), 0);
+        assert!(runtime.status().reserved_bytes > 0);
+        drop(scan);
+        done_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        cleaner.join().unwrap();
+        assert!(!path.exists());
+        assert_eq!(runtime.status().reserved_bytes, 0);
+        assert!(runtime.status().diagnostics.is_empty());
     }
 }

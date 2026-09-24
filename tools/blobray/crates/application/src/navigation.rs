@@ -38,6 +38,21 @@ pub(crate) fn query(
     c: &mut dyn RunControl,
     emit: &mut dyn FnMut(&NavigationRecord, &mut dyn RunControl) -> Result<()>,
 ) -> Result<NavigationSummary> {
+    query_observed(project, request, memory, c, &mut |_, _, _| Ok(()), emit)
+}
+/// Same selection and single fact pass, with a scoped descriptor consumer for flow.
+pub(crate) fn query_observed(
+    project: &Project,
+    request: &NavigationQuery,
+    memory: &WorkingMemory,
+    c: &mut dyn RunControl,
+    observe: &mut dyn FnMut(
+        &NavigationFunction,
+        &FunctionManifest,
+        &mut dyn RunControl,
+    ) -> Result<()>,
+    emit: &mut dyn FnMut(&NavigationRecord, &mut dyn RunControl) -> Result<()>,
+) -> Result<NavigationSummary> {
     let scope = &request.scope;
     if scope.publications.len() > 64
         || scope.analyses.len() > 4096
@@ -181,6 +196,7 @@ pub(crate) fn query(
             user_extent: recipe.user_extent,
             _capacity: capacity,
         };
+        observe(&node.function, &lease.manifest, c)?;
         summary.selected_analyses += 1;
         summary.partial_analyses += u64::from(
             !lease.manifest.coverage.complete()

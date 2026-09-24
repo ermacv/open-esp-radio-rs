@@ -9,6 +9,9 @@ use std::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum QuerySummary {
+    Flow {
+        summary: Box<FlowSummary>,
+    },
     Navigation {
         summary: Box<NavigationSummary>,
     },
@@ -263,6 +266,12 @@ pub trait QuerySink: InventorySink + DoctorSink {
         ))
     }
 
+    fn flow(&mut self, _: &FlowRecord, _: &mut dyn RunControl) -> Result<()> {
+        Err(Error::new(
+            ErrorCode::InvalidRequest,
+            "consumer does not support flow records",
+        ))
+    }
     fn navigation(&mut self, _: &NavigationRecord, _: &mut dyn RunControl) -> Result<()> {
         Err(Error::new(
             ErrorCode::InvalidRequest,
@@ -289,6 +298,7 @@ pub trait QuerySink: InventorySink + DoctorSink {
 }
 #[derive(Serialize)]
 enum RecordRef<'a> {
+    Flow(&'a FlowRecord),
     Navigation(&'a NavigationRecord),
     Interface(&'a InterfaceObservation),
     Coverage(&'a ExtentCoverageRecord),
@@ -320,6 +330,7 @@ enum RecordRef<'a> {
 }
 #[derive(Deserialize)]
 enum Record {
+    Flow(FlowRecord),
     Navigation(NavigationRecord),
     Interface(InterfaceObservation),
     Coverage(ExtentCoverageRecord),
@@ -485,6 +496,16 @@ pub fn prepare_query_with_tools(
             file: disk.create(&stage.join("query-records"))?,
         };
         let summary = match &work.query {
+            ReadQuery::Flow { request } => {
+                let project = Project::open(&work.project.to_path()?)?;
+                let summary =
+                    crate::flow::query(&project, request, &memory, control, &mut |r, c| {
+                        spool.push(RecordRef::Flow(r), c)
+                    })?;
+                QuerySummary::Flow {
+                    summary: Box::new(summary),
+                }
+            }
             ReadQuery::Navigate { request } => {
                 let project = Project::open(&work.project.to_path()?)?;
                 let summary =
@@ -1131,6 +1152,7 @@ pub(crate) fn visit(
         let record: Record = serde_json::from_slice(&bytes)
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         match record {
+            Record::Flow(r) => sink.flow(&r, control)?,
             Record::Navigation(r) => sink.navigation(&r, control)?,
             Record::Interface(r) => sink.interface(&r, control)?,
             Record::TargetAudit(r) => sink.target_audit(&r, control)?,

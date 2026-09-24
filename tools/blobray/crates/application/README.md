@@ -235,3 +235,8 @@ execution. CLI and API share this query; JSON export retains reference identitie
 operation-local physical indexes, context argument mapping and streamed evidence.
 It releases each function record owner before reading the next; shared dependency
 handles belong to one store reader. Navigation never starts analysis implicitly.
+
+`ReadQuery::Flow` reuses navigation selection and edge resolution, owns compact
+call graph metadata, and streams reached effects in a second linear pass. Native
+path proposal/review rechecks exact immutable hops through this shared resolver.
+No path query invokes analysis, and review is not executable reachability.

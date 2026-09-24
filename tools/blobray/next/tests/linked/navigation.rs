@@ -1,5 +1,5 @@
 use super::*;
-fn navigate(f: &Fixture, request: &NavigationQuery) -> serde_json::Value {
+pub(super) fn navigate(f: &Fixture, request: &NavigationQuery) -> serde_json::Value {
     let path = f.dir.path().join("navigation-request.json");
     fs::write(&path, serde_json::to_vec(request).unwrap()).unwrap();
     cli(f, &["navigate", "--request", path.to_str().unwrap()])

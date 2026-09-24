@@ -41,6 +41,9 @@ pub struct KnowledgeOccurrence {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum KnowledgeClaim {
+    Path {
+        path: Box<ReviewedPath>,
+    },
     Function {
         contract: Box<FunctionContract>,
     },

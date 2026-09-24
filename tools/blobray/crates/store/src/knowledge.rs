@@ -422,6 +422,9 @@ impl KnowledgeSnapshot<'_> {
 }
 fn proposal_heap_bytes(p: &KnowledgeProposal) -> u64 {
     let claim = match &p.claim {
+        KnowledgeClaim::Path { path } => {
+            std::mem::size_of::<ReviewedPath>() + path.allocated_bytes() as usize
+        }
         KnowledgeClaim::Function { contract } => {
             std::mem::size_of::<FunctionContract>() + contract.allocated_bytes() as usize
         }

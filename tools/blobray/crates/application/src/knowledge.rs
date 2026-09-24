@@ -139,6 +139,11 @@ fn validate_evidence(
             }
             Ok(capture.payload.clone())
         })?;
+    if let KnowledgeClaim::Path { path } = &proposal.claim {
+        roots.extend(crate::flow::validate_path(
+            project, proposal, path, memory, control,
+        )?);
+    }
     for evidence in &proposal.evidence {
         control.checkpoint(1)?;
         match evidence {

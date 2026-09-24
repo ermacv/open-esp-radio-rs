@@ -652,7 +652,7 @@ and a shared lease held through computation, delivery and retained Plan lifetime
 Opening that runtime for admission automatically reclaims only known-version
 workspaces with a dead owner and an exclusively acquired lease. The host first
 confirms/removes empty containment, then application removes owned files.
-Runtime creation and reconciliation share a root lock. Files from an active
+Runtime creation, reconciliation and owned cleanup share a root lock. Files from an active
 owner or lease remain untouched. Unknown/corrupt metadata, symlinks, special
 files and unexpected nesting remain in place with diagnostics; initialization
 interrupted before a valid owner record also requires inspection. Cleanup never
@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 15 and journal schema 16. Earlier and future
+Projects require metadata schema 16 and journal schema 17. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,8 +712,8 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 16 for every durable and read operation. Storage metadata
-uses schema 15; revision manifests use schema 1 and execution manifests use schema
+Run records use schema 17 for every durable and read operation. Storage metadata
+uses schema 16; revision manifests use schema 1 and execution manifests use schema
 1. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-16 run; an envelope version is not a journal
+execution 7) wrap the same schema-17 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1898,3 +1898,60 @@ partial analyses, unresolved and ambiguous observations remain explicit. There i
 no general `complete`, PASS or proof of absence: neither unselected functions nor
 unclassified executable intervals are silently analyzed. Source removal, project
 move and backup/restore preserve this read/export scenario.
+
+
+### Structural flow and effect inventory
+
+`flow --request query.json [--output observations.json]` uses the same explicit
+scope and resource options as `navigate`. For a saved root and target:
+
+```json
+{
+  "scope": {"revision":"<revision>", "publications":["<publication>"],
+            "analyses":[], "knowledge":null},
+  "root":"<root-analysis>",
+  "goal":{"kind":"function", "analysis":"<target-analysis>"},
+  "max_depth":8
+}
+```
+
+Both IDs must belong to the selection. `function` rows provide one shortest
+structural predecessor path using exact caller analysis, call record and callee
+analysis. Call rows retain the original navigation observation. Unknown/ambiguous
+calls do not create traversable edges. Partial analyses, missing selected callees
+and the depth boundary remain frontier rows. `target_reached` describes this graph;
+false is not a firmware-wide absence proof, and true asserts no path feasibility.
+The depth range is 0..4096; zero includes the root and exposes outgoing frontiers.
+
+For effects, use `{"kind":"effects","profile":"memory","address":null}`.
+Profiles are `calls`, `memory` and `all`. An optional numeric address filters memory
+access spans, including partial overlap; calls-only rejects an address filter.
+`address_match: null` means no filter or an unknown/partly matching address, with
+the request distinguishing these cases. Unknown accesses remain in the output.
+`effect` rows preserve their analysis ID, record ordinal and original fact, including
+callee origin. Local and composed instances are separate evidence rows. Counts do
+not represent deduplicated hardware events or a runtime sequence.
+
+Graph construction decodes each selected function once. Memory-effect delivery
+makes another pass per reached function, releasing each record buffer before the
+next. `facts_passes` counts those function decodes. There is no implicit linking,
+research or current-head selection. The result and optional atomic JSON export
+can be reopened from a moved/restored project without source files.
+
+To review an exact path, use the ordinary `knowledge validate/apply/accept/show/export`
+lifecycle with this claim and an `analysis` evidence reference to its root:
+
+```json
+{"kind":"path", "path":{
+  "hops":[{"caller":"<analysis>", "record":42, "callee":"<analysis>"}],
+  "purpose":"Selected captured call path",
+  "applicability":"Conditional structural navigation for these saved analyses"
+}}
+```
+
+The proposal occurrence must match the root. Every hop is rechecked through the
+same selected edge resolver during proposal and review. Missing records, different
+targets, ambiguous interpretations, disconnected hops and cycles fail before
+knowledge publication. The path holds at most 64 hops and retains participant
+manifest/fact roots. Acceptance records a reviewed structural relationship;
+preconditions, asynchronous delivery and executable equivalence remain unproved.

@@ -193,6 +193,33 @@ for name, count in (("phy_encode_i2c_master",45), ("phy_i2c_master_fill",44), ("
     assert all(linked_facts[r["record"]]["offset"] == r["offset"] for r in matched)
 call("save-navigation", ["navigate", "--request", doc("navigation-export", nav_request),
     "--output", str(run / "navigation-export.json")])
+flow_request = {"scope": nav_request["scope"], "root": linked_analysis,
+    "goal": {"kind": "function", "analysis": callees["phy_encode_i2c_master"]}, "max_depth": 8}
+flow_path = call("flow-target", ["flow", "--request", doc("flow-target", flow_request)])
+assert flow_path["summary"]["summary"]["target_reached"] is True
+assert any(r["value"]["kind"] == "function" and r["value"]["parent"] is not None
+    and r["value"]["parent"]["caller"] == linked_analysis
+    and r["value"]["parent"]["callee"] == callees["phy_encode_i2c_master"] for r in flow_path["records"])
+flow_request["goal"] = {"kind": "effects", "profile": "memory", "address": None}
+flow_effects = call("flow-effects", ["flow", "--request", doc("flow-effects", flow_request)])
+assert flow_effects["summary"]["summary"]["facts_passes"] == 8
+flow_writes = [r["value"] for r in flow_effects["records"] if r["value"]["kind"] == "effect"
+    and r["value"]["analysis"] == linked_analysis
+    and r["value"]["fact"]["kind"] == "callee-effect"
+    and r["value"]["fact"]["analysis"] == callees["phy_i2c_master_fill"]]
+assert len(flow_writes) == 44
+assert all(linked_facts[r["record"]] == r["fact"] for r in flow_writes)
+assert any(r["fact"]["value"] == {"kind": "constant", "value": 0x70267} for r in flow_writes)
+address_request = {**flow_request, "goal": {"kind": "effects", "profile": "memory", "address": 0x2010FC00}}
+address_effects = call("flow-address", ["flow", "--request", doc("flow-address", address_request)])
+address_writes = [r["value"] for r in address_effects["records"]
+    if r["value"]["kind"] == "effect" and r["value"]["address_match"] is True]
+assert len(address_writes) == 1
+assert address_writes[0]["fact"]["value"] == {"kind": "constant", "value": 0x70267}
+# Other unknown-address facts remain visible; a focused query cannot prove absence.
+assert any(r["value"]["kind"] == "effect" and r["value"]["address_match"] is None for r in address_effects["records"])
+call("save-flow", ["flow", "--request", doc("flow-export", flow_request),
+    "--output", str(run / "flow-export.json")])
 usage = call("storage-usage", ["storage-usage"])
 assert usage["summary"]["usage"]["cas"]["logical_bytes"] > 0
 assert not usage["summary"]["usage"]["reachability_assessed"]
@@ -594,3 +621,8 @@ assert call("restored-navigation", ["navigate", "--request", doc("restored-navig
 call("save-restored-navigation", ["navigate", "--request", doc("restored-navigation-export", nav_request),
     "--output", str(run / "restored-navigation-export.json")])
 assert (run / "navigation-export.json").read_bytes() == (run / "restored-navigation-export.json").read_bytes()
+
+assert call("restored-flow", ["flow", "--request", doc("restored-flow", flow_request)]) == flow_effects
+call("save-restored-flow", ["flow", "--request", doc("restored-flow-export", flow_request),
+    "--output", str(run / "restored-flow-export.json")])
+assert (run / "flow-export.json").read_bytes() == (run / "restored-flow-export.json").read_bytes()

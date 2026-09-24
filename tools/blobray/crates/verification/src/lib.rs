@@ -1,6 +1,6 @@
 //! Comparison of concrete ordered observations; no execution or repository authority.
 use blobray_domain::*;
-pub const VERIFIER: &str = "ordered-mmio-fence-u32/1";
+pub const VERIFIER: &str = "ordered-mmio-fence-u32/goal-2";
 pub fn compare(
     left: &ExecutionObservation,
     right: &ExecutionObservation,
@@ -20,14 +20,22 @@ pub fn compare(
             return Ok(result);
         }
     }
-    let l = matches!(left.stop, ExecutionStop::Returned { .. });
-    let r = matches!(right.stop, ExecutionStop::Returned { .. });
+    let l = left.stop.completed();
+    let r = right.stop.completed();
     // A finished shorter side cannot acquire the extra event observed on the other.
     if (l && left.events.len() < right.events.len())
         || (r && right.events.len() < left.events.len())
     {
         result.verdict = ComparisonVerdict::Diff;
         result.event = Some(left.events.len().min(right.events.len()) as u32);
+        return Ok(result);
+    }
+    if !compare_return
+        && l
+        && r
+        && std::mem::discriminant(&left.stop) == std::mem::discriminant(&right.stop)
+    {
+        result.verdict = ComparisonVerdict::Match;
         return Ok(result);
     }
     if let (ExecutionStop::Returned { low: a, .. }, ExecutionStop::Returned { low: b, .. }) =

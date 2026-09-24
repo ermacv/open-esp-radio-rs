@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 4;
+pub const EXECUTION_SCHEMA: u32 = 5;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 
@@ -37,6 +37,7 @@ pub struct RegisterCell {
 pub struct Invocation {
     /// Exact guest PC in this target's captured address space.
     pub entry: u32,
+    pub goal: ExecutionGoal,
     /// Already lowered RV32 integer ABI words: a0..a7, then ascending stack words.
     /// `None` and omitted register words remain unknown, including on a filled stack.
     /// Clients lower multiword/variadic arguments and insert ABI padding explicitly.
@@ -74,6 +75,41 @@ pub struct ExecutionRegion {
     pub seed: MemorySeed,
     pub lifetime: RegionLifetime,
 }
+/// Physical code boundary in a source explicitly mapped by the execution target.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionSymbol {
+    pub source: FunctionSource,
+    pub symbol: SymbolId,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum ExecutionGoal {
+    Return,
+    ReachSymbol {
+        target: ExecutionSymbol,
+    },
+    /// Stop at transfer, before executing the callee. Ordinary calls use x1/x5;
+    /// optionally include x0 tail transfers, excluding canonical ABI returns.
+    ObserveCall {
+        target: ExecutionSymbol,
+        include_tail: bool,
+    },
+}
+/// Validated physical boundary supplied by application; backend never resolves symbols.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResolvedExecutionGoal {
+    Return,
+    ReachSymbol { address: u32 },
+    ObserveCall { address: u32, include_tail: bool },
+}
+#[derive(Clone, Copy, Debug)]
+pub struct ExecutionStart {
+    pub entry: u32,
+    pub stack: u32,
+    pub arguments: [Option<u32>; 8],
+    pub goal: ResolvedExecutionGoal,
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CompiledBinding {
@@ -102,9 +138,37 @@ pub enum ExecutionEvent {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ExecutionStop {
-    Returned { low: Option<u32>, high: Option<u32> },
-    Incomplete { pc: u32, reason: ExecutionGap },
+    Returned {
+        low: Option<u32>,
+        high: Option<u32>,
+    },
+    ReachedSymbol {
+        pc: u32,
+    },
+    ObservedCall {
+        pc: u32,
+        target: u32,
+        tail: bool,
+    },
+    /// Entry returned before reaching the requested non-return goal.
+    GoalNotReached {
+        low: Option<u32>,
+        high: Option<u32>,
+    },
+    Incomplete {
+        pc: u32,
+        reason: ExecutionGap,
+    },
     BlockedByPriorPhase,
+}
+impl ExecutionStop {
+    /// Completion of the declared phase goal, independent of comparison verdict.
+    pub fn completed(&self) -> bool {
+        matches!(
+            self,
+            Self::Returned { .. } | Self::ReachedSymbol { .. } | Self::ObservedCall { .. }
+        )
+    }
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
@@ -222,9 +286,7 @@ pub trait Executor {
     fn identity(&self) -> &'static str;
     fn execute(
         &self,
-        entry: u32,
-        stack: u32,
-        arguments: &[Option<u32>; 8],
+        start: &ExecutionStart,
         memory: &mut dyn ExecutionMemory,
         control: &mut dyn RunControl,
     ) -> Result<(ExecutionStop, u64)>;
@@ -268,11 +330,30 @@ impl ExecutionRequest {
             {
                 return Err(bad());
             }
+            if let Some(other) = &case.replacement
+                && std::mem::discriminant(&case.vendor.goal) != std::mem::discriminant(&other.goal)
+            {
+                return Err(bad());
+            }
             for (input, target) in std::iter::once((&case.vendor, &self.vendor))
                 .chain(case.replacement.as_ref().zip(self.replacement.as_ref()))
             {
                 if input.entry & 1 != 0 || input.entry >= u32::MAX - 1 {
                     return Err(bad());
+                }
+                match &input.goal {
+                    ExecutionGoal::Return => {}
+                    ExecutionGoal::ReachSymbol { target: point }
+                    | ExecutionGoal::ObserveCall { target: point, .. } => {
+                        if self.compare_return
+                            || point.symbol.object.location != ObjectLocation::Standalone
+                            || (point.source != target.source
+                                && !matches!(&point.source,
+                                FunctionSource::Input { input } if target.companions.contains(input)))
+                        {
+                            return Err(bad());
+                        }
+                    }
                 }
                 input.entry_stack(&target.stack)?;
                 if input.memory.len() > 128 || input.mmio.len() > 1024 {

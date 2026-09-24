@@ -52,8 +52,8 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
 | 04 | done | Function/context contracts and research navigation: signatures, argument roles, fields, preconditions, reviewed paths/event routes; function/callers/callees, object readers/writers, field accesses, flow/effect slices. Answers retain evidence paths and distinguish structural from executable paths; cycles, ambiguous callbacks and partial results are tested; reads never schedule hidden analysis. |
 | 05 | done | Register lifecycle: MMIO/field discovery, physical catalog, evidence/conflicts/coverage, applicability/review. Independent register tool owns model initialization/SVD import and existing publication. Observation → reviewed source model → validate → four generated outputs works; observed access width is not physical width; generic Blobray gains no production/chip dependency. |
 | 06 | done | Saved linked semantic IR, configured builds/exports and static observable trace comparison. May-effects, exact static traces and concrete observations remain distinct; incomplete traces cannot MATCH; known differences DIFF; provenance and source-free reading survive composition. |
-| 07 | active | Integer execution sessions: stack ABI arguments, RV32 atomics, multiple entry points/setup phases, ownership/persistent regions, cold/warm resets and return/reach-symbol/observe-call goals. State transitions, unknown data, unsupported instructions, dependent-phase blocking and exact replay are tested. |
-| 08 | pending | External-call returns/outputs/bounded allocation, delay events and standard constant/sequence/W1C/read-clear/self-clearing/FIFO/indexed-bank models. Every mechanism has positive/negative cases; no implicit response/fallback; model identity/applicability/participation is evidence; code and modeled boundaries stay distinct. |
+| 07 | done | Integer execution sessions: stack ABI arguments, RV32 atomics, multiple entry points/setup phases, ownership/persistent regions, cold/warm resets and return/reach-symbol/observe-call goals. State transitions, unknown data, unsupported instructions, dependent-phase blocking and exact replay are tested. |
+| 08 | active | External-call returns/outputs/bounded allocation, delay events and standard constant/sequence/W1C/read-clear/self-clearing/FIFO/indexed-bank models. Every mechanism has positive/negative cases; no implicit response/fallback; model identity/applicability/participation is evidence; code and modeled boundaries stay distinct. |
 | 09 | pending | Stateful FIFO services and interface tables: enqueue/dequeue/length, wake/output, table lifecycle, service-event completion. Full/empty/order/isolation and cross-phase state are tested; only selected reviewed bindings resolve calls; failed phases cannot imply workflow completion. |
 | 10 | pending | Comparison relations: selected final RAM, ordered calls/reviewed argument pairs, RAM/branch timeline, ABI/layout projections and effect contracts. Explicit relation selects returns/memory/events; RAM-only and call-only differences are caught; invalid projections fail; all three verdicts and retained excluded observations are tested. |
 | 11 | pending | Real PHY I2C workflow from authenticated capture and tables through linked execution/models and compiled-production comparison. Independent expectations, model boundaries, source removal and backup/restore are required; no model hides absent production/vendor code or grants hardware qualification. |
@@ -182,7 +182,7 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stages 00–06 are complete. Stage 07 is active.
+Stages 00–07 are complete. Stage 08 is active.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
 interface review/discovery, ambiguous bindings and authenticated ROM query/export
 reopening. All standalone Next packages/tests, Clippy, formatting and affected
@@ -436,7 +436,7 @@ preserving all parent acceptance and sharing the existing execution lifecycle:
 | 07.1 | done | Explicit known/unknown RV32 integer argument words, register/stack ABI placement and bounded stack capacity. Shared request/backend/memory contracts, API/CLI execution/comparison/replay, source-free restore, more than eight arguments, unknown consumption and malformed/resource failures pass. No implicit zero arguments or stack initialization. |
 | 07.2 | done | RV32 LR/SC/AMO through an explicit atomic memory port with owned reservation state. Single-hart ordering, reservation invalidation, unknown/unaligned/unsupported locations and all supported operations are tested; no nonatomic fallback or invented peripheral behavior. |
 | 07.3 | done | Multiple exact entry/setup phases, explicit region ownership/persistence and cold/warm reset transitions. One application budget and publication; dependent-phase blocking, isolated/stateful data and exact source-free replay pass. |
-| 07.4 | active | Explicit return, reach-symbol and observe-call completion goals over physical captured identities. Goals, premature returns, unresolved targets and phase failure have distinct evidence; API/CLI/comparison/replay and negative cases close stage 07 without claiming unobserved completion. |
+| 07.4 | done | Explicit return, reach-symbol and observe-call completion goals over physical captured identities. Goals, premature returns, unresolved targets and phase failure have distinct evidence; API/CLI/comparison/replay and negative cases close stage 07 without claiming unobserved completion. |
 
 
 Stage 07.1 acceptance closes explicit optional integer words and bounded aligned
@@ -480,3 +480,37 @@ chain replays identically after source removal and backup/restore. All affected
 packages/Next tests, Clippy, formatting, public/private docs and standalone pass.
 Execution schema 4, database 22 and journal 23 identify these native transitions.
 Stage 07.4 owns explicit goal completion; phase execution currently requires return.
+
+
+Stage 07.4 closes return/reach-symbol/observe-call completion. Physical static/dynamic
+symbol identities are validated against captured executable load mappings; zero-sized
+FUNC/NOTYPE boundaries and aliases need no inferred function extent. Goal preparation
+groups all phase/side requests by object and releases prepared ELF before sessions;
+a regression asserts one preparation across different goals and both implementations.
+Direct/indirect/x5 calls, explicit tails, canonical returns, premature return, starting
+at a boundary, companion mapping, invalid symbols/relations and resource/cancellation
+cases pass. MATCH/DIFF/INCOMPLETE remain scoped to the observed prefix; early goals
+never claim target-body execution. Source-free backup/restore/replay is identical.
+Store rejects incompatible outcome kinds and invented dependency blocking. All
+seven affected packages/Next tests, Clippy, formatting, public/private docs and
+standalone pass. Execution schema 5, database 23 and journal 24 identify this boundary.
+Stage 07 is complete.
+
+### Stage 08 execution boundaries
+
+Inspection confirms two distinct legacy ownership mechanisms: peripheral instances
+with end-of-lifetime coverage (`execution-model/device`) and ABI call responses with
+normal-memory outputs/allocation (`backend-riscv/execution/model`). They require
+separate complete scenarios but share native model provenance/lifetime/coverage.
+Keep every listed standard model; do not import either legacy runtime or add a
+compatibility model alongside the current register bank.
+
+| Sub-stage | Status | Acceptance |
+| --- | --- | --- |
+| 08.1 | active | Native register-bank, constant/sequence read, W1C, read-clear, self-clearing, FIFO and indexed-bank mechanisms with explicit identity/applicability and phase/session lifetime. One supervised execution owns state, resource admission and model participation/closure evidence. Missing/extra/mismatched accesses, exhausted/unconsumed sequences, invalid geometry/overlap and cold/warm closure are tested; unmet model obligations cannot MATCH even if the entry returned. All mechanisms work through API/CLI/query/replay/source-free restore, with code outcomes distinct from model coverage. |
+| 08.2 | pending | Explicit external-call return words, private-stack/normal-memory outputs, bounded allocation and delay events. Exact selected bindings, ABI clobbers/stack words, consumed responses, modeled/code boundaries and provenance are checked. No implicit return, MMIO output fallback or hidden allocator. Unknown pointers, wrong ownership, capacity/exhaustion and unconsumed obligations remain explicit. A composed call/device/phase scenario, all mechanisms' positive/negative regressions and source-free restore/replay close stage 08. |
+
+Hardware-specific mechanisms and calibrated expectations remain their assigned
+stages 11/12/14. A model declaration is an explicit execution assumption, never an
+automatic scientific review or hardware qualification. Shared FIFO services and
+reviewed interface dispatch remain stage 09 rather than a second device implementation.

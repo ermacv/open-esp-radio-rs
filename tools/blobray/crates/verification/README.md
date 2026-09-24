@@ -4,7 +4,7 @@
 has no filesystem, store, executor, provider-selection or publication authority.
 Application supplies the two observations and the shared operation control.
 
-The `ordered-mmio-fence-u32/1` relation compares the exact ordered MMIO reads,
+The `ordered-mmio-fence-u32/goal-2` relation compares the exact ordered MMIO reads,
 writes and fence events, and optionally the low 32-bit return value. Ordinary
 RAM, call boundaries, elapsed time and the high return register are outside this
 relation. No events are normalized away. A completed shorter trace contradicts
@@ -23,3 +23,9 @@ The result applies to the explicitly enumerated cases and caller-declared
 compiled binding. It is neither whole-domain equivalence nor qualification.
 See [concrete execution](../../next/README.md#concrete-execution-and-comparison)
 for the recipe, session lifetime and supported environment.
+
+The relation accepts explicitly completed symbol/call
+goals when return comparison is disabled and both outcome kinds agree. An early
+return before a goal remains incomplete. Event-prefix differences remain evidence;
+equal incomplete prefixes cannot match. No target body or suspended continuation is
+inferred from reaching an early boundary.

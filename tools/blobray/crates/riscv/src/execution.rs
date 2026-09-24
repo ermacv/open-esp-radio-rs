@@ -3,16 +3,20 @@ use super::*;
 pub struct RiscvExecutor;
 impl Executor for RiscvExecutor {
     fn identity(&self) -> &'static str {
-        "rv32imac/execution-3/rv-asm-0.2.1"
+        "rv32imac/execution-4/rv-asm-0.2.1"
     }
     fn execute(
         &self,
-        entry: u32,
-        stack: u32,
-        arguments: &[Option<u32>; 8],
+        start: &ExecutionStart,
         memory: &mut dyn ExecutionMemory,
         control: &mut dyn RunControl,
     ) -> Result<(ExecutionStop, u64)> {
+        let ExecutionStart {
+            entry,
+            stack,
+            arguments,
+            goal,
+        } = *start;
         let mut regs = [None; 32];
         regs[0] = Some(0);
         regs[1] = Some(u32::MAX - 1);
@@ -48,9 +52,16 @@ impl Executor for RiscvExecutor {
             control.checkpoint(1)?;
             if pc == u32::MAX - 1 {
                 return Ok((
-                    ExecutionStop::Returned {
-                        low: regs[10],
-                        high: regs[11],
+                    if goal == ResolvedExecutionGoal::Return {
+                        ExecutionStop::Returned {
+                            low: regs[10],
+                            high: regs[11],
+                        }
+                    } else {
+                        ExecutionStop::GoalNotReached {
+                            low: regs[10],
+                            high: regs[11],
+                        }
                     },
                     steps,
                 ));
@@ -67,6 +78,9 @@ impl Executor for RiscvExecutor {
                     access: MemoryAccess::Fetch
                 });
             };
+            if goal == (ResolvedExecutionGoal::ReachSymbol { address: pc }) {
+                return Ok((ExecutionStop::ReachedSymbol { pc }, steps));
+            }
             let mut bytes = [0; 4];
             bytes[..2].copy_from_slice(&(lo as u16).to_le_bytes());
             let width = if lo & 3 == 3 {
@@ -145,11 +159,32 @@ impl Executor for RiscvExecutor {
                 Inst::Jal { dest, offset } => {
                     regs[dest.0 as usize] = Some(next);
                     next = pc.wrapping_add_signed(offset.as_i32());
+                    if let Some(tail) = observed_call(goal, dest.0, next, false) {
+                        return Ok((
+                            ExecutionStop::ObservedCall {
+                                pc,
+                                target: next,
+                                tail,
+                            },
+                            steps,
+                        ));
+                    }
                 }
                 Inst::Jalr { dest, base, offset } => {
                     let target = reg!(base.0).wrapping_add_signed(offset.as_i32()) & !1;
                     regs[dest.0 as usize] = Some(next);
                     next = target;
+                    let is_return = dest.0 == 0 && matches!(base.0, 1 | 5) && offset.as_i32() == 0;
+                    if let Some(tail) = observed_call(goal, dest.0, next, is_return) {
+                        return Ok((
+                            ExecutionStop::ObservedCall {
+                                pc,
+                                target: next,
+                                tail,
+                            },
+                            steps,
+                        ));
+                    }
                 }
                 Inst::Beq { offset, .. }
                 | Inst::Bne { offset, .. }
@@ -327,5 +362,30 @@ fn atomic(op: rv_asm::AmoOp, old: u32, value: u32) -> u32 {
         AmoOp::Max => (old as i32).max(value as i32) as u32,
         AmoOp::Minu => old.min(value),
         AmoOp::Maxu => old.max(value),
+    }
+}
+
+fn observed_call(
+    goal: ResolvedExecutionGoal,
+    dest: u8,
+    target: u32,
+    is_return: bool,
+) -> Option<bool> {
+    let ResolvedExecutionGoal::ObserveCall {
+        address,
+        include_tail,
+    } = goal
+    else {
+        return None;
+    };
+    if address != target || is_return {
+        return None;
+    }
+    if matches!(dest, 1 | 5) {
+        Some(false)
+    } else if dest == 0 && include_tail {
+        Some(true)
+    } else {
+        None
     }
 }

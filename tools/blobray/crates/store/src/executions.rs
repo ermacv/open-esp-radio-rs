@@ -248,11 +248,14 @@ pub fn validate_execution_records(
     source: &dyn ByteSource,
     c: &mut dyn RunControl,
 ) -> Result<()> {
+    manifest.request.validate()?;
     let mut case = 0u32;
     let mut side = false;
     let mut events = 0u32;
     let mut outcome = false;
     let mut complete = true;
+    let mut blocked = false;
+    let mut phase_complete = true;
     let mut verdict = manifest.verdict.map(|_| ComparisonVerdict::Match);
     visit_jsonl::<ExecutionEvidence>(source, c, |record, _| {
         if case as usize >= manifest.request.cases.len() {
@@ -276,13 +279,54 @@ pub fn validate_execution_records(
                 case: i,
                 replacement,
                 stop,
-                ..
+                steps,
             } => {
                 if i != case || replacement != side || outcome {
                     return Err(integrity("execution outcome order differs"));
                 }
-                complete &= matches!(stop, ExecutionStop::Returned { .. });
+                let phase = &manifest.request.cases[case as usize];
+                let input = if side {
+                    phase
+                        .replacement
+                        .as_ref()
+                        .ok_or_else(|| integrity("outcome has no replacement input"))?
+                } else {
+                    &phase.vendor
+                };
+                let must_block = phase.reset == SessionReset::Warm && blocked;
+                if matches!(stop, ExecutionStop::BlockedByPriorPhase) != must_block
+                    || (must_block && (steps != 0 || events != 0))
+                {
+                    return Err(integrity("execution dependency blocking differs"));
+                }
+                let address_valid = |pc: u32| pc & 1 == 0 && pc < u32::MAX - 1;
+                let goal_valid = match (&stop, &input.goal) {
+                    (ExecutionStop::Returned { .. }, ExecutionGoal::Return) => true,
+                    (ExecutionStop::ReachedSymbol { pc }, ExecutionGoal::ReachSymbol { .. }) => {
+                        address_valid(*pc)
+                    }
+                    (
+                        ExecutionStop::ObservedCall { pc, target, tail },
+                        ExecutionGoal::ObserveCall { include_tail, .. },
+                    ) => address_valid(*pc) && address_valid(*target) && (!tail || *include_tail),
+                    (ExecutionStop::GoalNotReached { .. }, goal) => {
+                        !matches!(goal, ExecutionGoal::Return)
+                    }
+                    (ExecutionStop::Incomplete { .. } | ExecutionStop::BlockedByPriorPhase, _) => {
+                        true
+                    }
+                    _ => false,
+                };
+                if !goal_valid {
+                    return Err(integrity(
+                        "execution outcome does not match its declared goal",
+                    ));
+                }
+                complete &= stop.completed();
+                phase_complete &= stop.completed();
                 if manifest.request.replacement.is_none() {
+                    blocked = !phase_complete;
+                    phase_complete = true;
                     case += 1;
                     events = 0;
                 } else if !side {
@@ -305,6 +349,8 @@ pub fn validate_execution_records(
                     }
                     _ => ComparisonVerdict::Match,
                 });
+                blocked = !phase_complete;
+                phase_complete = true;
                 case += 1;
                 side = false;
                 events = 0;

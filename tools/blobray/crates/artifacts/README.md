@@ -96,3 +96,8 @@ no neighboring symbol is consulted.
 Data views expose their relocation coordinate space and maximum known write
 width beside the borrowed records. These are structural facts for pointer-slot
 interpretation; artifacts neither applies RISC-V relocations nor chooses targets.
+
+`PreparedObject::code_symbol_address` validates an exact physical FUNC/NOTYPE
+entry in ET_EXEC executable file-backed bytes and their load mapping. It permits
+zero-sized symbols as addresses, without inferring an extent or decoding a body.
+Application alone decides whether that source belongs to an execution scenario.

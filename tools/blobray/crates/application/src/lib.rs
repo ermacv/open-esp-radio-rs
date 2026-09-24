@@ -27,6 +27,7 @@ pub use knowledge::{KnowledgeWork, prepare_knowledge_worker};
 pub use semantic_ir::{IrWork, prepare_ir_worker};
 mod companions;
 mod execution;
+mod execution_goals;
 mod execution_memory;
 pub use execution::{EXECUTION_ENVIRONMENT, ExecutionWork, prepare_execution_worker};
 mod functions;

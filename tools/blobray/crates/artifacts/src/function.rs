@@ -164,6 +164,54 @@ pub fn with_function<T>(
     })
 }
 impl<'data> PreparedObject<'data, '_> {
+    /// Resolve a physical FUNC/NOTYPE symbol at an executable ET_EXEC boundary.
+    /// Zero-sized symbols are allowed: this identifies an address, not an extent
+    /// or a claim that the following instruction/body is supported.
+    pub fn code_symbol_address(
+        &self,
+        occurrence: &ObjectId,
+        id: &SymbolId,
+        control: &mut dyn RunControl,
+    ) -> Result<u32> {
+        if self.file.kind() != object::ObjectKind::Executable {
+            return Err(invalid("execution boundary requires a linked executable"));
+        }
+        let symbol = self.selected_symbol(occurrence, id)?;
+        if !matches!(symbol.flags(), object::SymbolFlags::Elf { st_info, .. } if matches!(st_info & 15, 0 | 2))
+        {
+            return Err(invalid("execution boundary is not a code symbol"));
+        }
+        let section = self
+            .file
+            .section_by_index(
+                symbol
+                    .section_index()
+                    .ok_or_else(|| invalid("execution boundary is undefined/absolute"))?,
+            )
+            .map_err(parse)?;
+        let address = symbol.address();
+        if !matches!(section.flags(), object::SectionFlags::Elf { sh_flags } if sh_flags & 4 != 0)
+            || section.file_range().is_none()
+            || address < section.address()
+            || address
+                .checked_sub(section.address())
+                .is_none_or(|offset| offset >= section.size())
+            || address & 1 != 0
+            || address >= u64::from(u32::MAX - 1)
+        {
+            return Err(invalid("execution symbol is outside executable bytes"));
+        }
+        let start = (address - section.address()) as usize;
+        let data = section.data().map_err(parse)?;
+        let prefix = data
+            .get(start..start + 2)
+            .ok_or_else(|| invalid("execution boundary has no captured halfword"))?;
+        self.image
+            .as_ref()
+            .ok_or_else(|| invalid("execution boundary has no static mappings"))?
+            .code(address, prefix, control)?;
+        Ok(address as u32)
+    }
     /// Validate physical table kind, section and index without a name lookup or
     /// interpreting one table's index in another table.
     fn selected_symbol(

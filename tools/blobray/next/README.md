@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 22 and journal schema 23. Earlier and future
+Projects require metadata schema 23 and journal schema 24. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,9 +712,9 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 23 for every durable and read operation. Storage metadata
-uses schema 22; revision manifests use schema 1 and execution manifests use schema
-4. These are independent formats. Earlier journals are rejected by single-run,
+Run records use schema 24 for every durable and read operation. Storage metadata
+uses schema 23; revision manifests use schema 1 and execution manifests use schema
+5. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-23 run; an envelope version is not a journal
+execution 7) wrap the same schema-24 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1366,7 +1366,7 @@ claim a single mmap arena or a process-wide no-allocation guarantee.
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
 operation/query paths. No legacy engine or external limiter participates.
-Execution requests and manifests use schema 4; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
+Execution requests and manifests use schema 5; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 
 ```console
@@ -1382,7 +1382,7 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 4,
+  "schema": 5,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -1395,7 +1395,7 @@ with an exact captured occurrence):
   "cases": [{
     "name": "one-explicit-case",
     "reset": "cold",
-    "vendor": { "entry": 268435456, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "mmio": [] },
+    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "mmio": [] },
     "replacement": null
   }],
   "max_events": 4096,
@@ -1462,7 +1462,7 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 comparison relation still excludes final RAM itself.
 
-The `static-elf/phased-regions-1/stack-words-1/single-hart-atomics-1/register-bank-1` environment maps validated ELF
+The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/register-bank-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
@@ -1500,13 +1500,60 @@ incompleteness remains in the aggregate result; a completed difference does not
 block later phases. All chains share one operation, work/deadline/disk budget and
 atomic publication. Resource failure publishes no successful prefix.
 
+Each invocation declares `goal`: `{"kind":"return"}`, `reach-symbol`, or
+`observe-call`. Symbol goals contain a `target` with the mapped `source` and exact
+physical `symbol` identity (object, static/dynamic table kind, table section and
+index). For example:
+
+```json
+{
+  "kind": "observe-call",
+  "target": {
+    "source": {"kind":"input","input":0},
+    "symbol": {
+      "object":{"artifact":"CAPTURED_ELF_SHA","location":{"kind":"standalone"}},
+      "table":"static","table_section":3,"index":2
+    }
+  },
+  "include_tail": false
+}
+```
+
+`reach-symbol` uses the same target without `include_tail`. The source must be the
+target's primary image/input or an explicitly mapped companion. The physical symbol
+must be defined FUNC/NOTYPE in captured executable bytes with a matching load mapping;
+zero-sized symbols and aliases are valid address identities. Data, undefined,
+absolute, mismatched or unavailable symbols fail the operation before execution.
+No name lookup, extent inference or code analysis resolves these goals. Each distinct
+selected object is prepared once for all phase/side goals and released before mutable
+sessions are created.
+
+`reached-symbol` stops at the selected PC before decoding/executing its instruction,
+after verifying fetchable bytes. `observed-call` stops after a matching direct or
+resolved indirect transfer, before the callee body. Ordinary calls use link register
+x1/x5; `include_tail:true` also selects x0 transfers except canonical ABI returns.
+The outcome records transfer PC, target and whether this was a tail. Reaching a
+symbol does not prove that it is a function, and observing a call does not prove
+execution of its body. Early goals do not synthesize a return value. Returning first
+produces `goal-not-reached`, retaining the observed return registers; unknown control
+flow and unsupported instructions retain their ordinary gaps. Warm successors may
+follow a completed early goal with a fresh entry/register/stack state and retained
+session RAM, never a suspended continuation.
+
+Comparison requires the same goal kind on both sides of each phase. Non-return goals
+require `compare_return:false`; the relation compares their observed event prefixes,
+not unexecuted bodies. Equal prefixes with unmet goals remain `INCOMPLETE`; known
+prefix differences remain `DIFF`. Store checks that outcome kind and dependency
+blocking match the declared goals before publication.
+
 The [verifier](../crates/verification/README.md) compares ordered MMIO and fence
 events plus the low 32-bit return when `compare_return` is true. It does not
 compare RAM contents, calls or the high return register. `MATCH` applies only to
 the listed concrete scenarios, not all possible arguments or paths. `DIFF`
 retains the first differing event/return; `INCOMPLETE` retains missing execution
 obligations. Across cases, a known difference survives other incomplete coverage.
-`manifest.complete` means all phases returned, independently of the verdict.
+`manifest.complete` means every phase reached its declared goal, independently of
+the verdict. Only a `returned` outcome proves the entry returned.
 A completed operation, including `DIFF` or `INCOMPLETE`, exits 0; admission,
 resource, integrity and execution infrastructure failures exit nonzero.
 
@@ -2201,7 +2248,7 @@ aggregate coverage, execution verdict, hardware claim or proof that every execut
 byte is classified. Composed may-effects retain that meaning. IR exports contain
 semantic facts, not captured ELF payloads or every evidence document; a project
 backup remains the preservation unit. Source-free reading and backup/restore use
-native database 22 / journal 23, without converters for previous formats.
+native database 23 / journal 24, without converters for previous formats.
 
 ## Static observable traces
 

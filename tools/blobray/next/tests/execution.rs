@@ -111,6 +111,7 @@ impl Fixture {
     }
     fn request(&self) -> ExecutionRequest {
         let invocation = Invocation {
+            goal: ExecutionGoal::Return,
             entry: 0x1000,
             arguments: vec![Some(0); 8],
             memory: vec![],
@@ -498,5 +499,7 @@ fn ram(seed: MemorySeed) -> ExecutionRegion {
         lifetime: RegionLifetime::Session,
     }
 }
+#[path = "execution/goals.rs"]
+mod goals;
 #[path = "execution/sessions.rs"]
 mod sessions;

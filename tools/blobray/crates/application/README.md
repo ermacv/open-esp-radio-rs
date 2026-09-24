@@ -288,3 +288,9 @@ Execution cold phases recreate captured mappings; warm phases retain writable EL
 and session RAM. Phase RAM and stack release after evidence serialization/comparison.
 An incomplete phase blocks warm successors; a cold phase starts another independent
 chain within the same budget and publication. Live RAM lifetime changes conflict.
+
+All execution goals resolve through exact captured occurrences before sessions are
+allocated. Borrowed operation indexes group phase/side goals by object, prepare it
+once and release ELF bytes immediately after address validation. Early goals close
+a phase without claiming return or callee-body execution; warm successors start
+their own entry with only session-owned memory retained.

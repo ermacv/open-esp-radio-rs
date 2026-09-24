@@ -1319,6 +1319,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
             reset: SessionReset::Cold,
             name: "one".into(),
             vendor: Invocation {
+                goal: ExecutionGoal::Return,
                 entry: 4096,
                 arguments: vec![Some(0); 8],
                 memory: vec![],
@@ -1373,6 +1374,62 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
         verdict: None,
         complete: true,
     };
+    // Receipt validation must not confuse reaching a boundary with returning,
+    // or accept a blocked outcome without a failed warm predecessor.
+    let mut goal_manifest = manifest.clone();
+    goal_manifest.complete = false;
+    goal_manifest.request.cases[0].vendor.goal = ExecutionGoal::ReachSymbol {
+        target: ExecutionSymbol {
+            source: FunctionSource::Input { input: 0 },
+            symbol: SymbolId {
+                object: ObjectId {
+                    artifact: ArtifactId::of_bytes(b"goal"),
+                    location: ObjectLocation::Standalone,
+                },
+                table: SymbolTableKind::Static,
+                table_section: 3,
+                index: 1,
+            },
+        },
+    };
+    for stop in [
+        ExecutionStop::Returned {
+            low: Some(0),
+            high: None,
+        },
+        ExecutionStop::BlockedByPriorPhase,
+        ExecutionStop::ObservedCall {
+            pc: 0x1000,
+            target: 0x1004,
+            tail: false,
+        },
+    ] {
+        let bytes = serde_json::to_vec(&ExecutionEvidence::Outcome {
+            case: 0,
+            replacement: false,
+            stop,
+            steps: 1,
+        })
+        .unwrap();
+        let error = validate_execution_records(&goal_manifest, &bytes.as_slice(), &mut || Ok(()))
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::Integrity);
+        assert!(
+            error.message.contains("goal") || error.message.contains("blocking"),
+            "{error:?}"
+        );
+    }
+    let bytes = serde_json::to_vec(&ExecutionEvidence::Outcome {
+        case: 0,
+        replacement: false,
+        stop: ExecutionStop::GoalNotReached {
+            low: Some(0),
+            high: None,
+        },
+        steps: 1,
+    })
+    .unwrap();
+    validate_execution_records(&goal_manifest, &bytes.as_slice(), &mut || Ok(())).unwrap();
     manifest.complete = false;
     let invalid = stage.execution_receipt(&manifest, &mut || Ok(())).unwrap();
     assert!(

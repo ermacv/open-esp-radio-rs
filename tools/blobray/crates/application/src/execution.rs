@@ -2,8 +2,7 @@
 use crate::execution_memory::Session;
 use crate::*;
 use std::io::Write;
-pub const EXECUTION_ENVIRONMENT: &str =
-    "static-elf/phased-regions-1/stack-words-1/single-hart-atomics-1/register-bank-1";
+pub const EXECUTION_ENVIRONMENT: &str = "static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/register-bank-1";
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionWork {
@@ -160,6 +159,7 @@ pub(crate) fn prepare_execution_worker_in(
         let _control = memory.reserve(2 * 1024 * 1024, control.position())?;
         let project = Project::open(&work.project.to_path()?)?;
         let request = &work.request;
+        let goals = crate::execution_goals::prepare(&project, request, memory, &mut control)?;
         let mut vendor = None;
         let mut replacement = None;
         let mut blocked = false;
@@ -190,14 +190,23 @@ pub(crate) fn prepare_execution_worker_in(
             let left = engine.invoke(
                 &request.vendor,
                 &case.vendor,
+                goals[index][0]
+                    .ok_or_else(|| Error::new(ErrorCode::Integrity, "vendor goal unresolved"))?,
                 &mut vendor,
                 blocked,
                 &mut control,
             )?;
             let right = match (&request.replacement, &case.replacement) {
-                (Some(t), Some(i)) => {
-                    Some(engine.invoke(t, i, &mut replacement, blocked, &mut control)?)
-                }
+                (Some(t), Some(i)) => Some(engine.invoke(
+                    t,
+                    i,
+                    goals[index][1].ok_or_else(|| {
+                        Error::new(ErrorCode::Integrity, "replacement goal unresolved")
+                    })?,
+                    &mut replacement,
+                    blocked,
+                    &mut control,
+                )?),
                 _ => None,
             };
             evidence(&mut file, index as u32, false, &left, &mut control)?;
@@ -228,10 +237,8 @@ pub(crate) fn prepare_execution_worker_in(
                 )?;
                 file.write_all(b"\n").map_err(storage_io)?;
             }
-            let phase_complete = matches!(left.stop, ExecutionStop::Returned { .. })
-                && right
-                    .as_ref()
-                    .is_none_or(|r| matches!(r.stop, ExecutionStop::Returned { .. }));
+            let phase_complete =
+                left.stop.completed() && right.as_ref().is_none_or(|r| r.stop.completed());
             complete &= phase_complete;
             if !phase_complete {
                 blocked = true;
@@ -277,6 +284,7 @@ impl<'a> Engine<'a> {
         &self,
         target: &ExecutionTarget,
         invocation: &Invocation,
+        goal: ResolvedExecutionGoal,
         slot: &mut Option<Session<'a>>,
         blocked: bool,
         c: &mut dyn RunControl,
@@ -313,9 +321,12 @@ impl<'a> Engine<'a> {
         });
         c.checkpoint(0)?;
         let (stop, steps) = self.executor.execute(
-            invocation.entry,
-            stack,
-            &invocation.register_arguments(),
+            &ExecutionStart {
+                entry: invocation.entry,
+                stack,
+                arguments: invocation.register_arguments(),
+                goal,
+            },
             machine,
             c,
         )?;

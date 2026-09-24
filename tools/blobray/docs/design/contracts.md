@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 23
-and database schema 22 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 24
+and database schema 23 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -752,7 +752,7 @@ Domain validates stack geometry and computes entry SP; application initializes
 stack arguments in its freshly owned stack, and passes eight optional register
 words to the backend. Unknown argument slots override stack seeds. No register or
 stack word becomes zero by omission, and setup emits no guest events. The caller
-owns type/variadic lowering. Request and manifest schema 4 pin this interpretation;
+owns type/variadic lowering. Request and manifest schema 5 pin this interpretation;
 producer identity pins both backend unknown-value semantics and stack environment.
 
 `ExecutionMemory` also owns LR/SC reservation state, permission checks and indivisible
@@ -774,6 +774,20 @@ comparison/staged serialization. A warm successor to incomplete execution is blo
 a cold case discards prior state/dependencies and starts a fresh chain without
 erasing earlier incompleteness. All chains share one control, memory/disk authority
 and publication, never separate CLI operations.
+Physical execution goals belong to each invocation. Application validates that
+symbols belong to mapped sources in the target revision; artifacts resolves exact
+FUNC/NOTYPE table entries against executable file-backed mappings. Operation-local
+borrowed goal indexes group all requests by captured object, with one prepared owner
+per group released before sessions. Backend receives only a resolved goal and initial
+register/stack state; it never resolves symbols or retains ELF metadata.
+
+Returned, reached-symbol and observed-call are distinct completed outcomes. An early
+return before a non-return goal is incomplete; a completed early goal permits a warm
+successor but never promises the callee body ran. `complete` means all declared goals
+were met, not that every phase returned. Verification compares only the declared
+observable prefixes; non-return goals cannot compare return registers. Store validates
+outcome/goal kind and cold/warm dependency blocking without owning ISA interpretation.
+
 Reading execution evidence owns decoded-manifest capacity through its lease;
 SQLite journal cells are admitted before incremental loading. Querying does not
 execute or repair anything.
@@ -853,8 +867,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 22
-and journal schema 23 carry these identities. Old formats are rejected without
+Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 23
+and journal schema 24 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers

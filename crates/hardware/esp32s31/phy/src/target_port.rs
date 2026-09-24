@@ -137,6 +137,8 @@ use crate::{
 };
 
 mod radio_lifecycle;
+#[cfg(all(target_arch = "riscv32", feature = "validation-probes"))]
+pub(crate) use radio_lifecycle::reset_wake_i2c_master;
 pub(crate) use radio_lifecycle::{
     PhyRfCloseTemperatureFailure, execute_rf_close, execute_rf_wake,
     observe_temperature_before_rf_close,

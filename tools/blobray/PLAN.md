@@ -57,7 +57,7 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
 | 09 | done | Stateful FIFO services and interface tables: enqueue/dequeue/length, wake/output, table lifecycle, service-event completion. Full/empty/order/isolation and cross-phase state are tested; only selected reviewed bindings resolve calls; failed phases cannot imply workflow completion. |
 | 10 | done | Comparison relations: selected final RAM, ordered calls/reviewed argument pairs, RAM/branch timeline, ABI/layout projections and effect contracts. Explicit relation selects returns/memory/events; RAM-only and call-only differences are caught; invalid projections fail; all three verdicts and retained excluded observations are tested. |
 | 10.L linker capabilities | done | After completed 10.4, deliver ElfAnalysisLinkV1 through LLD and GNU ld adapters: capability probes, semantic requests, normalized placement/extraction/exit evidence with raw provenance, exact root validation, quota-admitted seekable GNU output, retained closure/query/export/restore, and distinct tool identities/archive semantics. Both real RV32 toolchains, parser/application/resource regressions, affected suites, strict Clippy, formatting, public/private docs, standalone and source-only checks are mandatory. Commit only after full acceptance; this checkpoint does not include stage 11. |
-| 11 | active | Real PHY I2C workflow from authenticated capture and tables through linked execution/models and compiled-production comparison. Independent expectations, model boundaries, source removal and backup/restore are required; no model hides absent production/vendor code or grants hardware qualification. |
+| 11 | done | Real PHY I2C workflow from authenticated capture and tables through linked execution/models and compiled-production comparison. Independent expectations, model boundaries, source removal and backup/restore are required; no model hides absent production/vendor code or grants hardware qualification. |
 | 12 | pending | Real PHY calibration/RF workflow, required intrinsics and reviewed summaries. Each declared calibration case has explicit conditions and expected outcome; coefficients/models/production changes alter dependency identity; reconstruction never impersonates captured execution. |
 | 13 | pending | Project verification: native roles/scopes/models/suites/policies, profile domains/coverage, production bindings/dispositions/audit, baselines/status/check/files/doctor and ranked next actions. One application lifecycle executes suites; auxiliary inputs do not inflate coverage; stale/unreviewed evidence cannot satisfy gates; no CLI-only orchestration. |
 | 14 | pending | Remaining declared Wi-Fi/Bluetooth/coexistence/radio-leaf suites. Every original suite has a native scenario and checked expected MATCH/DIFF/INCOMPLETE; preserve exclusions/claim strength; compiled production paths are required. Split independent large groups into separately accepted sub-stages before activation, without dropping suite obligations. |
@@ -185,8 +185,9 @@ Aliases/old grammar are not portability requirements.
 
 Stages 00–10 and both corrective checkpoints below are complete, including all
 four stage-10 comparison profiles and their combined acceptance. The 10.L linker-capability checkpoint is complete after 10.4. Execution has
-resumed at stage 11 on explicit user instruction. Sub-stage 11.1 is complete;
-11.2 is next. Complete it before advancing to stage 12.
+resumed on explicit user instruction. Stage 11 is complete, including both
+command-memory and transport acceptance. Stage 12 is next; its calibration/RF
+obligations must be split into executable acceptance units before activation.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -755,7 +756,7 @@ must be independent of the other compared output.
 | Sub-stage | Status | Required acceptance |
 | --- | --- | --- |
 | 11.1 | done | Authenticate archive/ROM and exact PHY object/table; link the real command-memory root with captured ROM callees. Execute all 45 command-RAM stores and descriptor/no-op leaves against freshly compiled production on zero, mixed and boundary parameters, with independent expected RAM/MMIO values. Retain source/probe identities, explicit ABI/layout/observation scope, known differences and unknown/resource outcomes. Source removal, move, backup/restore and replay reproduce records. Native API/CLI, focused regressions, documentation and required gates pass. |
-| 11.2 | pending | Bounded explicit packed-command peripheral responses for both hosts over a shared seeded analog bank, retained/scripted reads, completion and pending/busy ownership. Model identity and unused/pending obligations survive warm/cold lifetimes. Unknown registers/commands, widths, overwrites, exhausted samples, cancellation and capacity fail closed. Captured host-selection/read/write/masked/reset paths execute against compiled production under explicit observation scopes, including immediate/delayed completion and timeout cases with independently checked MATCH/DIFF/INCOMPLETE expectations. No peripheral model substitutes for code or RF/calibration algorithms. Native API/CLI, retained evidence, source-free restore/replay, real acceptance and gates close stage 11. |
+| 11.2 | done | Bounded explicit packed-command peripheral responses for both hosts over a shared seeded analog bank, retained/scripted reads, completion and pending/busy ownership. Model identity and unused/pending obligations survive warm/cold lifetimes. Unknown registers/commands, widths, overwrites, exhausted samples, cancellation and capacity fail closed. Captured host-selection/read/write/masked/reset paths execute against compiled production under explicit observation scopes, including immediate/delayed completion and timeout cases with independently checked MATCH/DIFF/INCOMPLETE expectations. No peripheral model substitutes for code or RF/calibration algorithms. Native API/CLI, retained evidence, source-free restore/replay, real acceptance and gates close stage 11. |
 
 RFPLL/calibration algorithms and measurement policies remain in stage 12; stage
 11.2 supplies reusable peripheral responses, not physical timing or qualification.
@@ -772,3 +773,20 @@ and probe-library Clippy, both workspace formatting checks, static docs and prob
 public/private API docs pass. The probe doctest target is inapplicable, not passed.
 Real execution uses watchdog; no kernel containment or hardware qualification is
 claimed. Generic contracts/storage formats remain unchanged at this checkpoint.
+
+
+11.2 acceptance: native packed-command declarations, admitted shared-bank state
+and retained pending/sample accounting cover both ports, delayed commit, reset,
+warm/cold ownership, invalid accesses, cancellation and capacity failures. Store
+regressions reject forged accounting. The authenticated runner checks forty
+transport cases against independent writes/read returns and freshly compiled
+production, plus exhausted replies, out-of-field DIFF and two explicit timeout
+INCOMPLETE cases. The full command-memory/transport route passes source removal,
+move, backup/restore and exact positive/negative replay. All nine Next package
+suites, 121 execution regressions, strict affected Next all-target Clippy, target
+PHY/probe library Clippy, both formatting checks, owned public/private docs and
+standalone extraction/tests pass. Standalone uses the documented absolute GNU
+linker selection. Target-only doctests are inapplicable; the kernel cgroup test
+remains environment-gated. Real execution uses watchdog and claims no hardware
+qualification. Execution schema 16, database schema 35 and journal schema 36
+retain the new model evidence; unsupported formats are rejected without conversion.

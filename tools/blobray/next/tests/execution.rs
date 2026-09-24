@@ -572,3 +572,6 @@ mod effects;
 mod projections;
 #[path = "execution/static_trace.rs"]
 mod static_trace;
+
+#[path = "execution/command_bank.rs"]
+mod command_bank;

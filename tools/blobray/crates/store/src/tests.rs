@@ -1916,6 +1916,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
             case: 0,
             replacement,
             observation: ModelObservation {
+                commands: None,
                 id: declaration.id.clone(),
                 definition: declaration.identity(&mut || Ok(())).unwrap(),
                 lifetime: RegionLifetime::Phase,

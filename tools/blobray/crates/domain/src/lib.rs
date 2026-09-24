@@ -16,6 +16,8 @@ mod semantic_ir;
 pub use semantic_ir::*;
 mod execution;
 pub use execution::*;
+mod command_bank;
+pub use command_bank::*;
 mod function;
 pub use function::*;
 mod image;

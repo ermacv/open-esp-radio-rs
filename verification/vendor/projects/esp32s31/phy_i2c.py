@@ -143,7 +143,7 @@ def main():
     leaves = ["phy_i2c_master_mem_cfg", "phy_i2c_master_command_mem_cfg",
               "phy_get_i2c_data", "phy_i2c_enter_critical", "phy_i2c_exit_critical"]
     link = dict(revision=revision, inputs=[0], entry=entry("phy_i2c_master_cmd_mem_init"),
-                roots=[entry(name) for name in leaves],
+                roots=[entry(name) for name in leaves + ["phy_get_i2c_read_mask_new", "phy_get_i2c_hostid_new"]],
                 companions=[dict(input=1, symbol=symbol(1, name)["id"]) for name in
                     ("phy_encode_i2c_master", "phy_i2c_master_fill", "phy_get_data_sat",
                      "phy_i2c_writeReg", "memset", "phy_get_i2c_mst0_mask", "phy_i2c_paral_write_num")],
@@ -213,7 +213,7 @@ def main():
                 invocation(symbol(2, "open_phy_trace_"+name)["value"], args, mem, observe=observe), memory=True))
     for name in leaves[2:]:
         cases.append(case(name, invocation(roots[name]), invocation(symbol(2, "open_phy_trace_"+name)["value"])))
-    request = dict(schema=15, vendor=vendor, replacement=replacement, binding="shared-core", cases=cases, max_events=512)
+    request = dict(schema=16, vendor=vendor, replacement=replacement, binding="shared-core", cases=cases, max_events=512)
     execution = call("compare", ["compare", "--request", doc("compare", request)])["run"]["execution"]
     evidence = call("evidence", ["execution", "--id", execution])
     assert evidence["summary"]["manifest"]["verdict"] == "MATCH"
@@ -264,6 +264,8 @@ def main():
     failed = call("capacity", ["compare", "--request", doc("capacity", limited)], expected=1)
     assert failed["run"].get("execution") is None and failed["run"].get("publication") is None
     assert failed["run"]["error"]["code"] == "resource-limited"
+    from phy_i2c_transport import exercise
+    transport = exercise(call, doc, symbol, roots, vendor, replacement)
     # All original source copies were deleted before linking/execution. Preserve
     # the full project closure, including probe/ROM bytes and negative evidence.
     call("backup", ["backup", "--output", run/"backup.blobray"])
@@ -281,7 +283,12 @@ def main():
         assert restored["summary"]["manifest"] == before["summary"]["manifest"]
         replay = call("replay-"+name, ["replay", "--id", identity], expected=0)
         assert replay["run"]["execution"] == identity
-    print("authenticated command-memory comparison and source-free replay passed", run, flush=True)
+    for name, identity, before in transport:
+        restored = call("restored-"+name, ["execution", "--id", identity])
+        assert restored["records"] == before["records"]
+        assert restored["summary"]["manifest"] == before["summary"]["manifest"]
+        assert call("replay-"+name, ["replay", "--id", identity])["run"]["execution"] == identity
+    print("authenticated command-memory and transport comparison and source-free replay passed", run, flush=True)
 
 
 if __name__ == "__main__":

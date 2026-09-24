@@ -162,7 +162,7 @@ async fn drive_wake_i2c_configuration<D: PhyAsyncDelay>(
 }
 
 #[cfg(target_arch = "riscv32")]
-fn reset_wake_i2c_master(
+pub(crate) fn reset_wake_i2c_master(
     registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
 ) -> Result<(), PhyTargetPortError> {
     use oer_esp32s31_hal::phy::i2c::{PhyI2cHost, pulse_master_reset, sample_master_reset_busy};

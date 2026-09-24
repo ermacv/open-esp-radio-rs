@@ -36,8 +36,9 @@ and its descriptor/no-op leaves with a freshly built production probe ELF. It
 checks all 45 ordered command writes against independent instruction-derived
 expectations on zero, mixed, lower and upper parameter profiles. Descriptor
 outputs are checked byte for byte from both zero and filled initial memory.
-The command bank is an explicit passive register model; analog bus transactions,
-completion timing and RF behavior are outside this scenario.
+Command-memory writes use an explicit passive register model. The runner also
+executes the [transport scenarios](phy_i2c_transport.py) below with bounded
+packed-command responses; neither model claims physical timing or RF behavior.
 
 ```console
 cargo xtask build vendor-probes --chip esp32s31
@@ -75,6 +76,41 @@ also checks moved and restored projects and exact replay of positive and negativ
 evidence. Whole-project backup preserves the full closure; the exported table alone
 does not. Operation JSON records carry phase/resource diagnostics. There is no
 hardware or kernel-enforcement claim from a watchdog run.
+
+### Captured I2C transport
+
+The same runner links captured byte/field read/write, host selection and reset
+paths with their exact ROM callbacks. An explicit guest interface table points to
+captured code; it supplies no replacement callback semantics. The production
+probe calls the shipping cold-I2C transaction state machine, host configuration
+and bounded wake-reset helper. Its finite harness only supplies arguments,
+capabilities and completion edges. A retained entry shim supplies all eight
+integer arguments and explicit callee-saved register values.
+
+The generic [packed-command model](../../../../tools/blobray/next/README.md#packed-command-bank)
+owns two ports over one seeded bank. Scenario declarations select register
+geometry, initial values, optional scripted replies and busy poll counts. These
+are environmental assumptions. Bank writes commit on a ready read; pending
+commands and unused scripted samples prevent a complete closed result. Reset
+aborts the selected pending command without restoring bank values or samples.
+
+The positive matrix checks thirteen host selectors, byte and masked read/write
+on both hosts with immediate and delayed completion, and idle/busy reset. Each
+of its forty cases checks independent expected command writes and applicable
+read returns, not just equality between implementations. Cases use independent
+cold instances and are batched to fit the ordinary request-size limit. The
+relation selects all writes, fences and delays, plus read-operation returns.
+Raw MMIO reads remain retained but are excluded from equality because production
+performs a pre-issue readiness check. Void returns are explicitly excluded.
+
+Exhausted scripted replies must produce INCOMPLETE without retained-value
+fallback. An out-of-field write must produce DIFF: captured code spills the
+value into an adjacent bit while the typed production path clips it. Limited
+completion edges and the shipping reset polling bound must leave pending-model
+INCOMPLETE on timeout; they cannot become MATCH merely because a CPU returned.
+All positive and negative artifacts are checked after source removal and
+backup/restore, including exact replay. This establishes the selected software
+relation under declared peripheral responses, not analog-bus or RF qualification.
 
 ## Legacy configuration reference
 

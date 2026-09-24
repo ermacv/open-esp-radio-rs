@@ -12,7 +12,7 @@ qualification examples below are target contracts unless listed here. The
 | Propose register from analysis → explicit review → research with selected knowledge | Implemented; proposal, review and observation remain distinct |
 | Saved MMIO/mask discovery → physical catalogue → review → source-model publication | Implemented; Next evidence and source-owned hardware acceptance remain separate |
 | Execute / compare / replay captured implementations | Limited explicit integer scenario profile, scoped MATCH/DIFF/INCOMPLETE |
-| Captured PHY I2C command memory → compiled-production comparison → replay | [Native real scenario](../../../../verification/vendor/projects/esp32s31/README.md#captured-i2c-command-memory-comparison); 45 writes and descriptor/no-op leaves under explicit inputs and a passive command bank; no analog transaction or RF claim |
+| Captured PHY I2C → compiled-production comparison → replay | [Native real scenario](../../../../verification/vendor/projects/esp32s31/README.md#captured-i2c-command-memory-comparison); 45 command-memory writes, descriptor/no-op leaves and both-host byte/field/reset transport under explicit bounded peripheral responses; independent MATCH/DIFF/INCOMPLETE expectations, no physical timing or RF claim |
 | Move / backup / restore / recovery | Implemented for supported formats; no conversion or GC |
 | Exact data ranges → integer table/constant proposal → review → provenance export | Implemented for captured RV32 ELF bytes; unresolved relocations and analysis gaps remain explicit |
 | General equivalence, broader ISA/model support, TUI and cache reclamation | Target, not currently provided |

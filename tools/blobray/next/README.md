@@ -758,9 +758,9 @@ write the run envelope to stderr. Inventory coverage is not a verification verdi
 
 ### Current formats
 
-Run records use journal schema 35 for every durable and read operation. Storage metadata
-uses schema 34; revision manifests use schema 1 and execution manifests use schema
-15. These are independent formats. Earlier journals are rejected by single-run,
+Run records use journal schema 36 for every durable and read operation. Storage metadata
+uses schema 35; revision manifests use schema 1 and execution manifests use schema
+16. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -779,7 +779,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-34 run; an envelope version is not a journal
+execution 7) wrap the same schema-36 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1428,7 +1428,7 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 15,
+  "schema": 16,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -1506,9 +1506,9 @@ the register-bank MMIO cells. Unknown data, inaccessible/misaligned addresses an
 unsupported peripheral atomics stop with `memory` / `access: atomic`; missing source
 registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
-comparison relation still excludes final RAM itself.
+selected final-RAM and normal-memory timeline relations can observe their updates.
 
-The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1` environment maps validated ELF
+The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-2/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
@@ -1544,6 +1544,7 @@ For example:
 | `self-clearing` | address/width/initial/store_mask/command_mask; writes replace store-mask bits, command bits clear immediately, other bits retain state. Masks cannot overlap and initial command bits must be clear. No timing is simulated. |
 | `fifo` | address/width/reads/writes; independent ordered input/output transcripts. Reads consume inputs; writes must match the next output. Both lists must be consumed. This is not a loopback queue service. |
 | `indexed-bank` | index_address/data_address/width/index/values; index-port accesses select/report a slot, data-port accesses read/write it. `index:null` is unknown until explicitly written; invalid indices fail. Gaps between the two ports remain unclaimed. |
+| `command-bank` | Packed 32-bit command ports over a shared bounded bank. Exact field/control bits, initial state, samples and completion-read counts are caller inputs; details below. |
 
 Widths are bytes (1, 2 or 4); values and masks must fit. Exact ports must be aligned,
 disjoint and outside mapped code/RAM/stack. Missing ports remain inaccessible;
@@ -1567,6 +1568,49 @@ live declaration on warm continuation; redeclaring its id conflicts, even if ide
 An expired phase model's id/ports can be assigned anew. Both implementations own
 separate instances. A blocked warm phase performs no model accesses but still emits
 participation/closure evidence for existing instances.
+
+### Packed-command bank
+
+`command-bank` declares `selector_mask`, `data_mask`, `read_command`,
+`write_command`, `busy_mask`, optional `reset_command`, `ports` and `cells`.
+Selector/data masks are disjoint contiguous fields of at most sixteen bits each.
+Read/write words specify distinct exact fixed bits outside those fields. The
+single busy bit is disjoint and clear in every issued command. No other command
+bits are ignored, and read commands must carry zero input data.
+
+Ports are strictly ordered by aligned `address`, with a maximum of 64 per bank.
+Each declares an idle `initial` response (busy clear), `initial_busy_reads` and
+`busy_reads` for each new command. Cells are strictly ordered by unique unshifted
+`selector`, with `initial` data and `reads:null` for retained state or an explicit
+sample list. An empty sample list is exhausted. At most 4096 cells and 4096 total
+samples are admitted per bank. Gaps between ports remain unclaimed.
+
+An issue selects a cell exactly. A read samples retained state or consumes one
+scripted value at issue; polling never consumes another sample. A write stages
+its value. Each pending command returns busy for the declared count, then one
+ready read observes completion and commits a staged write to the shared bank.
+Even zero busy reads requires that ready observation. Other ports see only
+committed writes. Subsequent idle reads repeat the last response. Initial busy
+state is an explicit completion obligation, independent of issued commands.
+
+Ordinary overwrite of a pending command fails. An explicitly declared reset
+word may abort that port's pending command and discard its staged write; reset
+itself still needs completion. It never resets cells or sample cursors. A reset
+word cannot also select a declared cell as an ordinary command. There is no
+implicit reset opcode or hardware timing assumption.
+
+`model.commands` is present only for these banks. It records cumulative issued,
+completed, reset, aborted and scripted-read counts, plus currently pending
+commands. CPU `reads`/`writes` remain separate. `remaining_reads` counts unused
+samples; pending commands separately block closure. Store checks declaration
+identity, conservation (initial pending + issued = completed + aborted + pending),
+sample totals and monotonic progress backed by new port operations. These checks
+validate evidence structure; they do not re-execute guest code or qualify a
+peripheral model. Both hosts use the same native API/CLI lifecycle and retained
+definition. Unknown selectors/commands, widths, exhausted samples and pending
+overwrites remain explicit gaps; capacity/cancellation fails the operation.
+
+### External-call responses
 
 An invocation's `calls` declares ABI boundary models separately from its device
 `models`. IDs are unique within each category; call targets are also unique among

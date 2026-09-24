@@ -2,6 +2,7 @@
 use crate::*;
 struct Instance<'m> {
     declaration: DeviceDeclaration,
+    commands: Option<crate::command_bank::CommandState<'m>>,
     definition: ArtifactId,
     _payload: MemoryReservation<'m>,
     cells: AdmittedVec<'m, RegisterCell>,
@@ -108,6 +109,11 @@ impl<'m> Devices<'m> {
                 )
             };
             match &instance.declaration.behavior {
+                DeviceBehavior::CommandBank(bank) => {
+                    for (slot, port) in bank.ports.iter().enumerate() {
+                        push(port.address, 4, slot)?;
+                    }
+                }
                 DeviceBehavior::RegisterBank { cells } => {
                     for (slot, cell) in cells.iter().enumerate() {
                         push(cell.address, cell.width, slot)?;
@@ -218,6 +224,7 @@ impl<'m> Instance<'m> {
         let definition = declaration.identity(c)?;
         let mut instance = Self {
             declaration: declaration.clone(),
+            commands: None,
             definition,
             _payload: payload,
             cells: AdmittedVec::new(memory),
@@ -231,6 +238,9 @@ impl<'m> Instance<'m> {
             issue: None,
         };
         match &declaration.behavior {
+            DeviceBehavior::CommandBank(bank) => {
+                instance.commands = Some(crate::command_bank::CommandState::new(bank, memory, c)?);
+            }
             DeviceBehavior::RegisterBank { cells } => {
                 for cell in cells {
                     instance.cells.push(cell.clone(), c.position())?;
@@ -255,6 +265,9 @@ impl<'m> Instance<'m> {
             Error::new(ErrorCode::ResourceLimited, "model read counter exhausted")
         })?;
         let value = match &self.declaration.behavior {
+            DeviceBehavior::CommandBank(bank) => {
+                Ok(self.commands.as_mut().unwrap().read(bank, slot)?)
+            }
             DeviceBehavior::RegisterBank { .. } => Ok(self.cells[slot].value),
             DeviceBehavior::ConstantRead { value, .. } => Ok(*value),
             DeviceBehavior::SequenceRead { values, .. }
@@ -303,6 +316,11 @@ impl<'m> Instance<'m> {
             Error::new(ErrorCode::ResourceLimited, "model write counter exhausted")
         })?;
         let result = match &self.declaration.behavior {
+            DeviceBehavior::CommandBank(bank) => self
+                .commands
+                .as_mut()
+                .unwrap()
+                .write(bank, slot, value, c)?,
             DeviceBehavior::RegisterBank { .. } => {
                 self.cells[slot].value = value;
                 Ok(())
@@ -363,12 +381,16 @@ impl<'m> Instance<'m> {
             _ => (0, 0),
         };
         let mut result = ModelObservation {
+            commands: self.commands.as_ref().map(|c| c.observation()),
             id: self.declaration.id.clone(),
             definition: self.definition.clone(),
             lifetime: self.declaration.lifetime,
             reads: self.reads,
             writes: self.writes,
-            remaining_reads: (reads - self.read_cursor) as u32,
+            remaining_reads: self
+                .commands
+                .as_ref()
+                .map_or((reads - self.read_cursor) as u32, |c| c.remaining()),
             remaining_writes: (writes - self.write_cursor) as u32,
             closed,
             issue: self.issue,

@@ -17,6 +17,7 @@ pub struct DeviceDeclaration {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum DeviceBehavior {
+    CommandBank(CommandBank),
     RegisterBank {
         cells: Vec<RegisterCell>,
     },
@@ -67,6 +68,9 @@ pub enum DeviceBehavior {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum DeviceIssue {
+    InvalidCommand { value: u32 },
+    UnknownSelector { selector: u32 },
+    PendingCommand,
     AccessWidth,
     ReadOnly,
     ExhaustedReads,
@@ -85,6 +89,8 @@ pub enum ModelStatus {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelObservation {
+    /// Present only for a packed-command bank; includes pending completion obligations.
+    pub commands: Option<CommandObservation>,
     pub id: String,
     pub definition: ArtifactId,
     pub lifetime: RegionLifetime,
@@ -100,7 +106,10 @@ pub struct ModelObservation {
 impl ModelObservation {
     pub fn expected_status(&self) -> ModelStatus {
         if self.issue.is_some()
-            || (self.closed && (self.remaining_reads != 0 || self.remaining_writes != 0))
+            || (self.closed
+                && (self.remaining_reads != 0
+                    || self.remaining_writes != 0
+                    || self.commands.is_some_and(|c| c.pending != 0)))
         {
             ModelStatus::Incomplete
         } else if self.closed {
@@ -137,6 +146,7 @@ impl DeviceDeclaration {
             Ok(())
         };
         match &self.behavior {
+            DeviceBehavior::CommandBank(bank) => bank.validate()?,
             DeviceBehavior::RegisterBank { cells } => {
                 if cells.is_empty() || cells.len() > MAX_DEVICE_PORTS {
                     return Err(bad());
@@ -220,9 +230,10 @@ impl DeviceDeclaration {
         }
         Ok(())
     }
-    /// Dynamic bytes copied by cloning this flat declaration, excluding allocator bookkeeping.
+    /// Dynamic bytes copied by cloning this declaration, excluding allocator bookkeeping.
     pub fn payload_bytes(&self) -> u64 {
         let values = match &self.behavior {
+            DeviceBehavior::CommandBank(bank) => bank.payload_bytes() as usize,
             DeviceBehavior::RegisterBank { cells } => {
                 cells.len() * std::mem::size_of::<RegisterCell>()
             }
@@ -254,6 +265,10 @@ impl DeviceDeclaration {
             Ok(())
         };
         match &self.behavior {
+            DeviceBehavior::CommandBank(bank) => {
+                put(8)?;
+                bank.identity_words(&mut put)?;
+            }
             DeviceBehavior::RegisterBank { cells } => {
                 put(0)?;
                 put(cells.len() as u32)?;

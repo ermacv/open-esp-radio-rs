@@ -6,6 +6,15 @@
 
 #![cfg(feature = "validation-probes")]
 
+/// Execute the shipping wake-path I2C reset, including its finite completion bound.
+/// The caller retains the shared PHY owner; no hardware state is fabricated here.
+#[cfg(target_arch = "riscv32")]
+pub fn reset_i2c_master(
+    platform: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
+) -> Result<(), crate::PhyTargetPortError> {
+    crate::target_port::reset_wake_i2c_master(platform)
+}
+
 /// Execute the accredited-domain production behavior of
 /// `phy_get_i2c_hostid_new` and project its typed host to the vendor ABI.
 #[cfg(target_arch = "riscv32")]

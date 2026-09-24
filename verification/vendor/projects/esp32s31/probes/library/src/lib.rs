@@ -16,6 +16,7 @@ use oer_esp32s31_pac::RadioPhyRegisters;
 
 use oer_esp32s31_wifi_mac::ap_tsf::{reset_and_start_access_point_tsf, stop_access_point_tsf};
 
+mod i2c;
 mod production_trace;
 
 // Stable test-only projection protocol. Production PHY types keep their Rust
@@ -1816,6 +1817,7 @@ pub unsafe extern "C" fn open_phy_trace_seeded_entry(entry: u32, argument: u32) 
 /// the PHY driver.
 #[inline(never)]
 pub fn retain_all_probes() {
+    i2c::retain();
     core::hint::black_box(open_phy_trace_command_memory as *const ());
     core::hint::black_box(open_phy_trace_initialize_parameters as *const ());
     core::hint::black_box(open_phy_trace_seeded_entry as *const ());

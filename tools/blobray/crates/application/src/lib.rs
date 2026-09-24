@@ -25,6 +25,7 @@ mod semantic_ir;
 mod trace;
 pub use knowledge::{KnowledgeWork, prepare_knowledge_worker};
 pub use semantic_ir::{IrWork, prepare_ir_worker};
+mod command_bank;
 mod companions;
 mod execution;
 mod execution_goals;

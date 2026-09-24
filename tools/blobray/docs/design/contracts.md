@@ -1408,6 +1408,22 @@ presence; it rejects MATCH with unmet obligations without executing model semant
 Models and code observations are persisted and replayed together. Full current
 mechanism syntax and claim limits belong to the [operator reference](../../next/README.md#concrete-execution-and-comparison).
 
+Packed-command banks follow the same owner. Domain defines bounded wire geometry,
+seeded cells, script inputs and command accounting; application `command_bank`
+owns admitted per-port pending commands and shared mutable cells. `devices` owns
+installation, exact port lookup, access work and closure. Only a ready read commits
+a staged write. Reset can explicitly abort one port's pending command, preserving
+shared cells and script cursors. No chip encoding, polling loop or RF algorithm is
+inside the generic mechanism. A model with pending commands cannot close complete.
+
+Store validates command/sample conservation and phase deltas against retained
+declarations. Its accounting checks cannot claim the ISA or device responses were
+re-executed; replay uses the retained executor/environment and original inputs.
+The [native command tests](../../next/tests/execution/command_bank.rs) cover
+warm completion, incomplete closure, source-free restore/replay, gaps and capacity;
+domain/application/store tests cover geometry, independent shared-bank values,
+reset, sample consumption, cancelled admission and forged evidence counters.
+
 
 ### Implemented external-call boundary
 

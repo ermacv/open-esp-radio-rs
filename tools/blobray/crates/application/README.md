@@ -283,3 +283,8 @@ it and checks write permissions; overlapping successful writes invalidate it.
 AMO updates validate/admit before invoking backend arithmetic once. The environment
 executes one hart in program order; reservations reset between phases and atomic
 MMIO is unsupported.
+
+Execution cold phases recreate captured mappings; warm phases retain writable ELF
+and session RAM. Phase RAM and stack release after evidence serialization/comparison.
+An incomplete phase blocks warm successors; a cold phase starts another independent
+chain within the same budget and publication. Live RAM lifetime changes conflict.

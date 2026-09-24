@@ -2,17 +2,16 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 3;
+pub const EXECUTION_SCHEMA: u32 = 4;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 
-/// Exact compiled entry; additional sources are explicitly mapped into the session.
+/// Captured address space; each invocation selects its own entry within the mappings.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionTarget {
     pub revision: RevisionId,
     pub source: FunctionSource,
-    pub entry: u32,
     pub companions: Vec<u64>,
     pub abi: CallAbi,
     pub stack: MemorySeed,
@@ -36,11 +35,13 @@ pub struct RegisterCell {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Invocation {
+    /// Exact guest PC in this target's captured address space.
+    pub entry: u32,
     /// Already lowered RV32 integer ABI words: a0..a7, then ascending stack words.
     /// `None` and omitted register words remain unknown, including on a filled stack.
     /// Clients lower multiword/variadic arguments and insert ABI padding explicitly.
     pub arguments: Vec<Option<u32>>,
-    pub memory: Vec<MemorySeed>,
+    pub memory: Vec<ExecutionRegion>,
     /// Explicit register-bank model: reads observe the latest written value.
     pub mmio: Vec<RegisterCell>,
 }
@@ -48,14 +49,30 @@ pub struct Invocation {
 #[serde(deny_unknown_fields)]
 pub struct ExecutionCase {
     pub name: String,
+    pub reset: SessionReset,
     pub vendor: Invocation,
     pub replacement: Option<Invocation>,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum CaseExecution {
-    Independent,
-    Stateful,
+pub enum SessionReset {
+    /// Recreate captured images and discard all previous mutable state/dependencies.
+    Cold,
+    /// Continue the preceding successful phase with session-owned regions.
+    Warm,
+}
+/// Lifetime of a caller-declared RAM mapping. Images/stack have fixed owners.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RegionLifetime {
+    Phase,
+    Session,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionRegion {
+    pub seed: MemorySeed,
+    pub lifetime: RegionLifetime,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -71,7 +88,6 @@ pub struct ExecutionRequest {
     pub replacement: Option<ExecutionTarget>,
     pub binding: Option<CompiledBinding>,
     pub cases: Vec<ExecutionCase>,
-    pub case_execution: CaseExecution,
     /// Hard capacity; exhaustion is a resource failure, not truncated evidence.
     pub max_events: u32,
     pub compare_return: bool,
@@ -223,6 +239,10 @@ impl ExecutionRequest {
         };
         if self.schema != EXECUTION_SCHEMA
             || self.cases.is_empty()
+            || self
+                .cases
+                .first()
+                .is_some_and(|case| case.reset != SessionReset::Cold)
             || self.cases.len() > 128
             || self.max_events == 0
             || self.max_events > 65536
@@ -231,8 +251,7 @@ impl ExecutionRequest {
             return Err(bad());
         }
         for target in std::iter::once(&self.vendor).chain(&self.replacement) {
-            if target.entry & 1 != 0 || target.entry >= u32::MAX - 1 || target.companions.len() > 64
-            {
+            if target.companions.len() > 64 {
                 return Err(bad());
             }
             target.stack.validate()?;
@@ -252,13 +271,18 @@ impl ExecutionRequest {
             for (input, target) in std::iter::once((&case.vendor, &self.vendor))
                 .chain(case.replacement.as_ref().zip(self.replacement.as_ref()))
             {
+                if input.entry & 1 != 0 || input.entry >= u32::MAX - 1 {
+                    return Err(bad());
+                }
                 input.entry_stack(&target.stack)?;
                 if input.memory.len() > 128 || input.mmio.len() > 1024 {
                     return Err(bad());
                 }
-                for (index, seed) in input.memory.iter().enumerate() {
+                for (index, region) in input.memory.iter().enumerate() {
+                    let seed = &region.seed;
                     seed.validate()?;
-                    if input.memory[..index].iter().any(|s| {
+                    if input.memory[..index].iter().any(|r| {
+                        let s = &r.seed;
                         u64::from(s.address) < u64::from(seed.address) + u64::from(seed.length)
                             && u64::from(seed.address) < u64::from(s.address) + u64::from(s.length)
                     }) {

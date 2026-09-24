@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 21 and journal schema 22. Earlier and future
+Projects require metadata schema 22 and journal schema 23. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,9 +712,9 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 22 for every durable and read operation. Storage metadata
-uses schema 21; revision manifests use schema 1 and execution manifests use schema
-3. These are independent formats. Earlier journals are rejected by single-run,
+Run records use schema 23 for every durable and read operation. Storage metadata
+uses schema 22; revision manifests use schema 1 and execution manifests use schema
+4. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-22 run; an envelope version is not a journal
+execution 7) wrap the same schema-23 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1366,7 +1366,7 @@ claim a single mmap arena or a process-wide no-allocation guarantee.
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
 operation/query paths. No legacy engine or external limiter participates.
-Execution requests and manifests use schema 3; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
+Execution requests and manifests use schema 4; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 
 ```console
@@ -1382,11 +1382,10 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 3,
+  "schema": 4,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
-    "entry": 268435456,
     "companions": [],
     "abi": "riscv-integer",
     "stack": { "address": 805306368, "length": 65536, "fill": null, "bytes": [] }
@@ -1395,10 +1394,10 @@ with an exact captured occurrence):
   "binding": null,
   "cases": [{
     "name": "one-explicit-case",
-    "vendor": { "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "mmio": [] },
+    "reset": "cold",
+    "vendor": { "entry": 268435456, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "mmio": [] },
     "replacement": null
   }],
-  "case_execution": "independent",
   "max_events": 4096,
   "compare_return": true
 }
@@ -1463,12 +1462,18 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 comparison relation still excludes final RAM itself.
 
-The `static-elf/explicit-ram/stack-words-1/single-hart-atomics-1/register-bank-1` environment maps validated ELF
+The `static-elf/phased-regions-1/stack-words-1/single-hart-atomics-1/register-bank-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
-writable non-executable RAM: each seed has `address`, `length`, optional `fill`
-and a byte prefix. Absent fill leaves new bytes unknown. Seeds cannot replace
-ELF segments or overlap the stack, one another or MMIO. Stack fill is an explicit
-condition; zero is never inferred from absent initialization.
+writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
+`session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
+prefix. For example `{"lifetime":"session","seed":{"address":12288,"length":8,"fill":null,"bytes":[1,0,0,0]}}`.
+Absent fill leaves newly mapped bytes unknown. Declarations cannot replace ELF
+segments or overlap the stack, one another or MMIO. Redeclaration of an existing
+session RAM mapping requires the identical address, length and lifetime; its
+explicit prefix/fill overwrites those bytes, while unspecified bytes retain their
+state. Changing a live mapping's owner/lifetime conflicts. A cold reset discards
+that mapping and permits a fresh declaration. Stack fill is an explicit condition;
+zero is never inferred from absent initialization.
 
 MMIO is an explicitly selected register-bank model. Each cell has `address`,
 `width` (1, 2 or 4 bytes) and `value`; a matching read returns the latest written
@@ -1478,12 +1483,22 @@ outside mapped RAM/code. Missing cells remain inaccessible; there are no implici
 responses. This release has no external-call substitutions or pluggable device
 model registry.
 
-Independent cases recreate both sessions. Stateful cases retain writable ELF
-and declared RAM bytes separately for each implementation. Later explicit seed
-bytes/fill replace only that declared RAM; omitted bytes retain their prior state.
-Registers, stack, MMIO cells and event buffers reset each phase. An incomplete
-phase blocks subsequent dependent phases on both sides. A completed difference
-does not erase concrete state or prevent later phases from running.
+Every case is an explicit phase with a shared `reset` for both implementations
+and an `entry` in each invocation. Setup and action phases can select different
+entries in the same captured address space. `cold` recreates captured images and
+discards all prior mutable state. `warm` retains writable ELF bytes and declared
+`session` RAM independently for each implementation. The first phase must be cold.
+
+Registers, stack, MMIO cells and LR reservations reset each phase. `phase` RAM and
+stack buffers are released after observation serialization/comparison, before the
+next phase. Omitted phase RAM is inaccessible on the next warm phase; redeclaring
+it initializes a fresh region from its seed. Session RAM survives until a cold
+reset or the end of the operation. An incomplete phase blocks subsequent warm
+phases on both sides, with zero steps and explicit `blocked-by-prior-phase` evidence.
+A later cold phase starts an independent chain and executes normally. Earlier
+incompleteness remains in the aggregate result; a completed difference does not
+block later phases. All chains share one operation, work/deadline/disk budget and
+atomic publication. Resource failure publishes no successful prefix.
 
 The [verifier](../crates/verification/README.md) compares ordered MMIO and fence
 events plus the low 32-bit return when `compare_return` is true. It does not
@@ -2186,7 +2201,7 @@ aggregate coverage, execution verdict, hardware claim or proof that every execut
 byte is classified. Composed may-effects retain that meaning. IR exports contain
 semantic facts, not captured ELF payloads or every evidence document; a project
 backup remains the preservation unit. Source-free reading and backup/restore use
-native database 21 / journal 22, without converters for previous formats.
+native database 22 / journal 23, without converters for previous formats.
 
 ## Static observable traces
 

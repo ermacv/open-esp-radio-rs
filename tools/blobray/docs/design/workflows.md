@@ -181,8 +181,8 @@ requested claim scope. A generated reference, shared production core and exact
 production entry remain different evidence classes.
 
 The application prepares both images through the common image operation and
-creates the declared execution sessions. Independent cases start fresh;
-stateful sequences retain only declared state across phases. Executable models
+creates the declared execution sessions. Cold phases start fresh; warm successors
+retain only session-owned state. Each invocation declares its own entry. Executable models
 record their selected implementation and applicability in the evidence.
 
 Verification compares observations and coverage. `MATCH` answers the declared

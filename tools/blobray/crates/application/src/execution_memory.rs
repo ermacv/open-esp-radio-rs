@@ -4,7 +4,7 @@ use crate::*;
 enum RegionKind {
     Image,
     Stack,
-    Ram,
+    Ram(RegionLifetime),
 }
 struct Mapping {
     address: u32,
@@ -139,7 +139,7 @@ impl<'a> Session<'a> {
     ) -> Result<u32> {
         let stack = input.entry_stack(&target.stack)?;
         self.reservation = None;
-        self.regions.retain(|r| r.kind != RegionKind::Stack);
+        self.finish_phase();
         self.events.clear();
         self.cells.clear();
         self.region(
@@ -163,12 +163,13 @@ impl<'a> Session<'a> {
             region.bytes[offset..offset + 4].copy_from_slice(&word.unwrap_or(0).to_le_bytes());
             region.known[offset..offset + 4].fill(u8::from(word.is_some()));
         }
-        for seed in &input.memory {
+        for declared in &input.memory {
+            let seed = &declared.seed;
             c.checkpoint(self.regions.len() as u64)?;
             // Only a declared RAM region can be reseeded; never replace ELF data.
             if let Some(r) = self.regions.iter_mut().find(|r| {
                 r.address == seed.address
-                    && r.kind == RegionKind::Ram
+                    && r.kind == RegionKind::Ram(declared.lifetime)
                     && r.bytes.len() == seed.length as usize
             }) {
                 for offset in (0..r.bytes.len()).step_by(WORK_BLOCK) {
@@ -197,7 +198,7 @@ impl<'a> Session<'a> {
                         address: seed.address,
                         length: seed.length as usize,
                         flags: 6,
-                        kind: RegionKind::Ram,
+                        kind: RegionKind::Ram(declared.lifetime),
                     },
                     seed.fill,
                     &seed.bytes,
@@ -233,6 +234,17 @@ impl<'a> Session<'a> {
     pub fn recycle(&mut self, mut observation: ExecutionObservation) {
         observation.events.clear();
         self.events = observation.events;
+        self.finish_phase();
+    }
+    fn finish_phase(&mut self) {
+        self.reservation = None;
+        self.cells.clear();
+        self.regions.retain(|r| {
+            !matches!(
+                r.kind,
+                RegionKind::Stack | RegionKind::Ram(RegionLifetime::Phase)
+            )
+        });
     }
     fn region_index(&self, address: u32, width: u8) -> Option<(usize, usize)> {
         self.regions.iter().enumerate().find_map(|(i, r)| {

@@ -435,8 +435,8 @@ preserving all parent acceptance and sharing the existing execution lifecycle:
 | --- | --- | --- |
 | 07.1 | done | Explicit known/unknown RV32 integer argument words, register/stack ABI placement and bounded stack capacity. Shared request/backend/memory contracts, API/CLI execution/comparison/replay, source-free restore, more than eight arguments, unknown consumption and malformed/resource failures pass. No implicit zero arguments or stack initialization. |
 | 07.2 | done | RV32 LR/SC/AMO through an explicit atomic memory port with owned reservation state. Single-hart ordering, reservation invalidation, unknown/unaligned/unsupported locations and all supported operations are tested; no nonatomic fallback or invented peripheral behavior. |
-| 07.3 | active | Multiple exact entry/setup phases, explicit region ownership/persistence and cold/warm reset transitions. One application budget and publication; dependent-phase blocking, isolated/stateful data and exact source-free replay pass. |
-| 07.4 | pending | Explicit return, reach-symbol and observe-call completion goals over physical captured identities. Goals, premature returns, unresolved targets and phase failure have distinct evidence; API/CLI/comparison/replay and negative cases close stage 07 without claiming unobserved completion. |
+| 07.3 | done | Multiple exact entry/setup phases, explicit region ownership/persistence and cold/warm reset transitions. One application budget and publication; dependent-phase blocking, isolated/stateful data and exact source-free replay pass. |
+| 07.4 | active | Explicit return, reach-symbol and observe-call completion goals over physical captured identities. Goals, premature returns, unresolved targets and phase failure have distinct evidence; API/CLI/comparison/replay and negative cases close stage 07 without claiming unobserved completion. |
 
 
 Stage 07.1 acceptance closes explicit optional integer words and bounded aligned
@@ -466,3 +466,17 @@ phase/session lifetime; captured writable ELF is session-owned, stack and MMIO a
 phase-owned. A cold phase creates a new independent dependency chain, while a warm
 phase after incomplete execution remains blocked. The first phase must be cold.
 These are native contracts, with no compatibility interpretation of old requests.
+
+
+Stage 07.3 acceptance closes per-invocation entries and per-phase cold/warm resets.
+Setup/read chains retain only session RAM and writable ELF; phase RAM/stack release
+immediately after evidence delivery, with a memory-release regression. Cold reset
+releases both old implementations before allocating new sessions, verified by a
+32 MiB test swapping a large RAM allocation between sides. Invalid first-warm/entry
+requests, live lifetime changes, missing state and later-phase resource failure
+cannot publish a successful prefix. Warm successors block after incomplete phases;
+a cold successor runs while preserving earlier incompleteness. The multi-entry
+chain replays identically after source removal and backup/restore. All affected
+packages/Next tests, Clippy, formatting, public/private docs and standalone pass.
+Execution schema 4, database 22 and journal 23 identify these native transitions.
+Stage 07.4 owns explicit goal completion; phase execution currently requires return.

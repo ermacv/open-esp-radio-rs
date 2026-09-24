@@ -93,7 +93,6 @@ impl Fixture {
         let target = ExecutionTarget {
             revision: run.revision.unwrap(),
             source: FunctionSource::Input { input: 0 },
-            entry: 0x1000,
             companions: vec![],
             abi: CallAbi::RiscvInteger,
             stack: MemorySeed {
@@ -112,6 +111,7 @@ impl Fixture {
     }
     fn request(&self) -> ExecutionRequest {
         let invocation = Invocation {
+            entry: 0x1000,
             arguments: vec![Some(0); 8],
             memory: vec![],
             mmio: vec![],
@@ -122,11 +122,12 @@ impl Fixture {
             replacement: Some(self.target.clone()),
             binding: Some(CompiledBinding::SharedCore),
             cases: vec![ExecutionCase {
+                reset: SessionReset::Cold,
                 name: "case".into(),
                 vendor: invocation.clone(),
                 replacement: Some(invocation),
             }],
-            case_execution: CaseExecution::Independent,
+
             max_events: 16,
             compare_return: true,
         }
@@ -239,16 +240,16 @@ fn concrete_memory_state_and_unknowns_are_not_invented() {
     let mut r = f.request();
     r.replacement = None;
     r.binding = None;
-    r.case_execution = CaseExecution::Stateful;
     r.cases[0].replacement = None;
     r.cases[0].vendor.arguments[0] = Some(0x3000);
-    r.cases[0].vendor.memory.push(MemorySeed {
+    r.cases[0].vendor.memory.push(ram(MemorySeed {
         address: 0x3000,
         length: 4,
         fill: Some(0),
         bytes: vec![],
-    });
+    }));
     let mut second = r.cases[0].clone();
+    second.reset = SessionReset::Warm;
     second.name = "second".into();
     second.vendor.memory.clear();
     r.cases.push(second);
@@ -261,7 +262,7 @@ fn concrete_memory_state_and_unknowns_are_not_invented() {
         .filter_map(|r| r["value"]["stop"]["low"].as_u64())
         .collect();
     assert_eq!(low, vec![1, 2]);
-    r.case_execution = CaseExecution::Independent;
+    r.cases[1].reset = SessionReset::Cold;
     let run = f.run(r.clone(), budget());
     assert_eq!(
         run.assessment
@@ -270,7 +271,7 @@ fn concrete_memory_state_and_unknowns_are_not_invented() {
             .map(|c| c.status == CoverageStatus::Complete),
         Some(false)
     );
-    r.case_execution = CaseExecution::Stateful;
+    r.cases[1].reset = SessionReset::Warm;
     r.cases[0].vendor.memory.clear();
     let run = f.run(r, budget());
     let facts = f.read(&run.execution.unwrap());
@@ -391,12 +392,12 @@ fn signed_loads_and_phase_stack_reset_are_explicit() {
     r.binding = None;
     r.cases[0].replacement = None;
     r.cases[0].vendor.arguments[0] = Some(0x3000);
-    r.cases[0].vendor.memory.push(MemorySeed {
+    r.cases[0].vendor.memory.push(ram(MemorySeed {
         address: 0x3000,
         length: 1,
         fill: Some(0x80),
         bytes: vec![],
-    });
+    }));
     let run = f.run(r, budget());
     assert_eq!(
         f.read(&run.execution.unwrap())["records"][0]["value"]["stop"]["low"],
@@ -405,12 +406,12 @@ fn signed_loads_and_phase_stack_reset_are_explicit() {
     // First phase writes the fresh stack, second phase reads the reset unknown byte.
     let f = Fixture::new(&[0x00050663, 0xfea12e23, 0x00008067, 0xffc12503, 0x00008067]);
     let mut r = f.request();
-    r.case_execution = CaseExecution::Stateful;
     r.replacement = None;
     r.binding = None;
     r.cases[0].replacement = None;
     r.cases[0].vendor.arguments[0] = Some(7);
     let mut second = r.cases[0].clone();
+    second.reset = SessionReset::Warm;
     second.name = "read-stack".into();
     second.vendor.arguments[0] = Some(0);
     r.cases.push(second);
@@ -466,15 +467,14 @@ fn selected_companion_code_and_elf_zero_fill_obey_session_ownership() {
     let mut r = f.request();
     r.replacement = None;
     r.binding = None;
-    r.case_execution = CaseExecution::Stateful;
     r.cases[0].replacement = None;
     r.cases[0].vendor.arguments[0] = Some(0x3000);
     r.cases.push(r.cases[0].clone());
     for (mode, expected) in [
-        (CaseExecution::Stateful, vec![1, 2]),
-        (CaseExecution::Independent, vec![1, 1]),
+        (SessionReset::Warm, vec![1, 2]),
+        (SessionReset::Cold, vec![1, 1]),
     ] {
-        r.case_execution = mode;
+        r.cases[1].reset = mode;
         let run = f.run(r.clone(), budget());
         let facts = f.read(&run.execution.unwrap());
         let values: Vec<_> = facts["records"]
@@ -491,3 +491,12 @@ fn selected_companion_code_and_elf_zero_fill_obey_session_ownership() {
 mod arguments;
 #[path = "execution/atomics.rs"]
 mod atomics;
+
+fn ram(seed: MemorySeed) -> ExecutionRegion {
+    ExecutionRegion {
+        seed,
+        lifetime: RegionLifetime::Session,
+    }
+}
+#[path = "execution/sessions.rs"]
+mod sessions;

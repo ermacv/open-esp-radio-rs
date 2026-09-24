@@ -10,7 +10,7 @@ fn session(memory: &WorkingMemory, fill: Option<u8>) -> Session<'_> {
             address: 0x1000,
             length: 8,
             flags: 6,
-            kind: RegionKind::Ram,
+            kind: RegionKind::Ram(RegionLifetime::Session),
         },
         fill,
         &[],
@@ -173,4 +173,58 @@ fn atomic_update_is_once_after_validation_and_invalidates_only_overlap() {
         Some(true)
     );
     assert!(s.events.is_empty());
+}
+
+#[test]
+fn phase_release_drops_stack_and_temporary_ram_but_preserves_session_ram() {
+    let memory = WorkingMemory::new(16 * 1024 * 1024).unwrap();
+    let mut s = session(&memory, Some(0));
+    let initial = memory.observation().reserved_bytes;
+    s.region(
+        Mapping {
+            address: 0x8000,
+            length: 4096,
+            flags: 6,
+            kind: RegionKind::Stack,
+        },
+        None,
+        &[],
+        &mut || Ok(()),
+    )
+    .unwrap();
+    s.region(
+        Mapping {
+            address: 0x10000,
+            length: 65536,
+            flags: 6,
+            kind: RegionKind::Ram(RegionLifetime::Phase),
+        },
+        Some(0),
+        &[],
+        &mut || Ok(()),
+    )
+    .unwrap();
+    assert!(memory.observation().reserved_bytes > initial + 65536);
+    s.write(0x1000, 4, 77, &mut || Ok(())).unwrap();
+    let observation = s.observation(
+        ExecutionStop::Returned {
+            low: None,
+            high: None,
+        },
+        0,
+    );
+    s.recycle(observation);
+    assert_eq!(memory.observation().reserved_bytes, initial);
+    assert_eq!(
+        s.read(0x1000, 4, MemoryAccess::Read, &mut || Ok(()))
+            .unwrap(),
+        Some(77)
+    );
+    for address in [0x8000, 0x10000] {
+        assert_eq!(
+            s.read(address, 4, MemoryAccess::Read, &mut || Ok(()))
+                .unwrap(),
+            None
+        );
+    }
 }

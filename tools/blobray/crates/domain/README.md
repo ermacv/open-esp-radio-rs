@@ -121,7 +121,7 @@ results independently from operation completion. Their evaluation belongs to ana
 and application. Function schema 7 / policy 8 includes typed fences and outgoing tail
 inputs; display strings have no semantic authority.
 
-Concrete execution schema 3 uses bounded optional RV32 ABI words: a0–a7 followed
+Concrete execution schema 4 uses bounded optional RV32 ABI words: a0–a7 followed
 by ascending stack slots. `Invocation::entry_stack` validates placement within the
 declared stack; `register_arguments` preserves missing values as unknown. These
 are physical words, with type/variadic lowering owned by the caller.
@@ -129,3 +129,7 @@ are physical words, with type/variadic lowering owned by the caller.
 The atomic memory port owns reservation/access/update indivisibility; backend
 callbacks supply pure word arithmetic. Ordering bits are explicit inputs. Missing
 access is distinct from a failed SC reservation.
+
+Execution cases declare cold/warm resets and per-invocation entry PCs. RAM mappings
+declare phase/session lifetimes; the first case must be cold. Targets own captured
+address spaces and stack geometry, not one fixed entry.

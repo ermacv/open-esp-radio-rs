@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 22
-and database schema 21 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 23
+and database schema 22 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -180,7 +180,7 @@ cannot be reconstructed from a display label.
 | Write transaction | Store grants one writer authority | Commit consumes the transaction; rollback/drop leaves published roots unchanged |
 | Analysis memo | Analysis worker, scoped to its recipe and dependencies | Drop or eviction loses only recomputable work |
 | Prepared image | Image-preparation operation under a job | Artifact and mapping leases transfer to execution; source and tool identities remain attached |
-| Execution session | Executor, created for a declared scenario lifecycle | Stateful phases retain explicitly declared state; completion/cancellation releases machine/model state |
+| Execution session | Application, created for a declared scenario lifecycle | Warm phases retain session-owned state; cold reset/completion/cancellation releases it |
 | Run handle | Application supervisor registers a job | Client requests cancellation or waits; supervisor owns cleanup regardless of client handle lifetime |
 | Child process and temporary files | Host process adapter under the supervisor | Termination includes descendants and reaping before job resources are released |
 | Export bundle | Application export operation over a snapshot | Caller receives materialized files and manifest; repository evidence ownership is unchanged |
@@ -752,7 +752,7 @@ Domain validates stack geometry and computes entry SP; application initializes
 stack arguments in its freshly owned stack, and passes eight optional register
 words to the backend. Unknown argument slots override stack seeds. No register or
 stack word becomes zero by omission, and setup emits no guest events. The caller
-owns type/variadic lowering. Request and manifest schema 3 pin this interpretation;
+owns type/variadic lowering. Request and manifest schema 4 pin this interpretation;
 producer identity pins both backend unknown-value semantics and stack environment.
 
 `ExecutionMemory` also owns LR/SC reservation state, permission checks and indivisible
@@ -765,11 +765,15 @@ Atomic MMIO is unsupported and cannot invoke the register-bank model by fallback
 Atomic effects are ordinary captured guest behavior, not an expanded comparison
 relation or a proof about multi-hart ordering.
 
-The scenario owns independent versus stateful lifetime. Each implementation has
-its own admitted memory; only declared RAM and writable ELF bytes survive a
-stateful phase. Registers, stack and MMIO reset. An incomplete phase blocks its
-dependent phases. Observations retain their capacity until comparison and staged
-serialization finish. Every phase shares the original control and memory authority.
+Each case owns an explicit cold/warm transition and each invocation selects its
+own captured-address-space entry. The first case is cold. Implementations have
+separate mutable state: writable ELF and session RAM survive warm transitions;
+phase RAM, stack, MMIO and reservations do not. RAM lifetime is part of its mapping
+identity and cannot change while that mapping is live. Phase buffers release after
+comparison/staged serialization. A warm successor to incomplete execution is blocked;
+a cold case discards prior state/dependencies and starts a fresh chain without
+erasing earlier incompleteness. All chains share one control, memory/disk authority
+and publication, never separate CLI operations.
 Reading execution evidence owns decoded-manifest capacity through its lease;
 SQLite journal cells are admitted before incremental loading. Querying does not
 execute or repair anything.
@@ -849,8 +853,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 21
-and journal schema 22 carry these identities. Old formats are rejected without
+Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 22
+and journal schema 23 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers

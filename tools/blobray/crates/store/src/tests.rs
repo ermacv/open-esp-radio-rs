@@ -1304,7 +1304,6 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
         vendor: ExecutionTarget {
             revision: revision.clone(),
             source: FunctionSource::Input { input: 0 },
-            entry: 4096,
             companions: vec![],
             abi: CallAbi::RiscvInteger,
             stack: MemorySeed {
@@ -1317,15 +1316,16 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
         replacement: None,
         binding: None,
         cases: vec![ExecutionCase {
+            reset: SessionReset::Cold,
             name: "one".into(),
             vendor: Invocation {
+                entry: 4096,
                 arguments: vec![Some(0); 8],
                 memory: vec![],
                 mmio: vec![],
             },
             replacement: None,
         }],
-        case_execution: CaseExecution::Independent,
         max_events: 1,
         compare_return: false,
     };

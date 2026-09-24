@@ -3,7 +3,7 @@ use crate::execution_memory::Session;
 use crate::*;
 use std::io::Write;
 pub const EXECUTION_ENVIRONMENT: &str =
-    "static-elf/explicit-ram/stack-words-1/single-hart-atomics-1/register-bank-1";
+    "static-elf/phased-regions-1/stack-words-1/single-hart-atomics-1/register-bank-1";
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionWork {
@@ -170,6 +170,12 @@ pub(crate) fn prepare_execution_worker_in(
             .map(|_| ComparisonVerdict::Match);
         let mut file = disk.temporary(&stage.join("staging"))?;
         for (index, case) in request.cases.iter().enumerate() {
+            if case.reset == SessionReset::Cold {
+                blocked = false;
+                // Release both previous address spaces before acquiring either new one.
+                vendor = None;
+                replacement = None;
+            }
             let mut position = control.position();
             position.table = Some(index as u64);
             control.set_position(position);
@@ -179,6 +185,7 @@ pub(crate) fn prepare_execution_worker_in(
                 request,
                 memory,
                 executor,
+                reset: case.reset,
             };
             let left = engine.invoke(
                 &request.vendor,
@@ -226,7 +233,7 @@ pub(crate) fn prepare_execution_worker_in(
                     .as_ref()
                     .is_none_or(|r| matches!(r.stop, ExecutionStop::Returned { .. }));
             complete &= phase_complete;
-            if request.case_execution == CaseExecution::Stateful && !phase_complete {
+            if !phase_complete {
                 blocked = true;
             }
             if let Some(session) = &mut vendor {
@@ -263,6 +270,7 @@ struct Engine<'a> {
     request: &'a ExecutionRequest,
     memory: &'a WorkingMemory,
     executor: &'a dyn Executor,
+    reset: SessionReset,
 }
 impl<'a> Engine<'a> {
     fn invoke(
@@ -281,10 +289,13 @@ impl<'a> Engine<'a> {
                 events: Vec::new(),
             });
         }
-        if self.request.case_execution == CaseExecution::Independent {
-            *slot = None;
-        }
         if slot.is_none() {
+            if self.reset == SessionReset::Warm {
+                return Err(Error::new(
+                    ErrorCode::Integrity,
+                    "warm phase has no prior session",
+                ));
+            }
             *slot = Some(session(
                 self.project,
                 target,
@@ -302,7 +313,7 @@ impl<'a> Engine<'a> {
         });
         c.checkpoint(0)?;
         let (stop, steps) = self.executor.execute(
-            target.entry,
+            invocation.entry,
             stack,
             &invocation.register_arguments(),
             machine,

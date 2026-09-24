@@ -6,12 +6,12 @@ fn op(function: u32, ordering: u32, dest: u32, base: u32, src: u32) -> u32 {
 fn scenario(f: &Fixture, value: Option<u32>) -> ExecutionRequest {
     let mut request = f.request();
     request.cases[0].vendor.arguments = vec![Some(0x3000), Some(5)];
-    request.cases[0].vendor.memory.push(MemorySeed {
+    request.cases[0].vendor.memory.push(ram(MemorySeed {
         address: 0x3000,
         length: 8,
         fill: None,
         bytes: value.map(|n| n.to_le_bytes().to_vec()).unwrap_or_default(),
-    });
+    }));
     request.cases[0].replacement = Some(request.cases[0].vendor.clone());
     request
 }
@@ -68,8 +68,8 @@ fn lr_sc_status_and_phase_reset_are_replayable() {
         0x00008067,
     ]);
     let mut request = scenario(&f, Some(9));
-    request.case_execution = CaseExecution::Stateful;
     let mut second = request.cases[0].clone();
+    second.reset = SessionReset::Warm;
     second.name = "no-reservation-crosses-phase".into();
     second.vendor.arguments[1] = Some(0);
     second.vendor.memory.clear();

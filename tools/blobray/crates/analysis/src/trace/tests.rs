@@ -2,6 +2,214 @@
 use super::*;
 
 #[test]
+fn prefix_comparison_keeps_proven_differences_without_assuming_missing_events() {
+    let memory = WorkingMemory::new(65536).unwrap();
+    let store = |value| TraceEvent::Memory {
+        access: MemoryKind::Store,
+        address: 0x60000000,
+        width: 4,
+        value: Some(value),
+    };
+    let one = store(TraceValue::Constant { value: 1 });
+    let two = store(TraceValue::Constant { value: 2 });
+    let symbolic = store(TraceValue::Expression { id: 0 });
+    let mut changed_address = one;
+    if let TraceEvent::Memory { address, .. } = &mut changed_address {
+        *address += 4;
+    }
+    let mut changed_width = one;
+    if let TraceEvent::Memory { width, .. } = &mut changed_width {
+        *width = 2;
+    }
+    let mut changed_access = one;
+    if let TraceEvent::Memory { access, .. } = &mut changed_access {
+        *access = MemoryKind::Load;
+    }
+    let fence = TraceEvent::Fence {
+        predecessor: 3,
+        successor: 3,
+    };
+    let collect = |events: &[TraceEvent], exact| {
+        let mut retained = AdmittedVec::new(&memory);
+        for &event in events {
+            retained.push(event, RunPosition::default()).unwrap();
+        }
+        Collected {
+            outcome: TraceOutcome {
+                exact,
+                events: events.len() as u64,
+                invocations: 1,
+            },
+            events: retained,
+        }
+    };
+    for (a, ae, b, be, expected, difference) in [
+        (
+            vec![one],
+            false,
+            vec![changed_access],
+            false,
+            ComparisonVerdict::Diff,
+            Some(0),
+        ),
+        (
+            vec![one],
+            false,
+            vec![two],
+            false,
+            ComparisonVerdict::Diff,
+            Some(0),
+        ),
+        (
+            vec![one],
+            true,
+            vec![two],
+            false,
+            ComparisonVerdict::Diff,
+            Some(0),
+        ),
+        (
+            vec![one],
+            false,
+            vec![changed_address],
+            false,
+            ComparisonVerdict::Diff,
+            Some(0),
+        ),
+        (
+            vec![one],
+            false,
+            vec![changed_width],
+            false,
+            ComparisonVerdict::Diff,
+            Some(0),
+        ),
+        (
+            vec![one],
+            false,
+            vec![fence],
+            false,
+            ComparisonVerdict::Diff,
+            Some(0),
+        ),
+        (
+            vec![one, fence],
+            false,
+            vec![fence, one],
+            false,
+            ComparisonVerdict::Diff,
+            Some(0),
+        ),
+        (
+            vec![symbolic, one],
+            false,
+            vec![one, two],
+            false,
+            ComparisonVerdict::Diff,
+            Some(1),
+        ),
+        (
+            vec![symbolic],
+            true,
+            vec![one],
+            true,
+            ComparisonVerdict::Incomplete,
+            None,
+        ),
+        (
+            vec![one],
+            false,
+            vec![one],
+            true,
+            ComparisonVerdict::Incomplete,
+            None,
+        ),
+        (
+            vec![one],
+            true,
+            vec![one],
+            true,
+            ComparisonVerdict::Match,
+            None,
+        ),
+        (
+            vec![one],
+            true,
+            vec![one, two],
+            false,
+            ComparisonVerdict::Diff,
+            Some(1),
+        ),
+        (
+            vec![one],
+            false,
+            vec![one, two],
+            true,
+            ComparisonVerdict::Incomplete,
+            None,
+        ),
+        (
+            vec![],
+            true,
+            vec![one],
+            false,
+            ComparisonVerdict::Diff,
+            Some(0),
+        ),
+        (
+            vec![],
+            false,
+            vec![one],
+            true,
+            ComparisonVerdict::Incomplete,
+            None,
+        ),
+        (
+            vec![],
+            false,
+            vec![],
+            false,
+            ComparisonVerdict::Incomplete,
+            None,
+        ),
+        (vec![], true, vec![], true, ComparisonVerdict::Match, None),
+    ] {
+        for reverse in [false, true] {
+            let (a, ae, b, be) = if reverse {
+                (&b, be, &a, ae)
+            } else {
+                (&a, ae, &b, be)
+            };
+            let mut rows = Vec::new();
+            let result = compare(
+                &collect(a, ae),
+                &collect(b, be),
+                &mut || Ok(()),
+                &mut |r, _| {
+                    rows.push(r.clone());
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert_eq!(result, expected, "{a:?}/{ae} vs {b:?}/{be}");
+            let found: Vec<_> = rows
+                .iter()
+                .filter_map(|r| match r {
+                    TraceRecord::Difference { index, left, right } => Some((*index, *left, *right)),
+                    _ => None,
+                })
+                .collect();
+            let expected: Vec<_> = difference
+                .into_iter()
+                .map(|i| (i, a.get(i as usize).copied(), b.get(i as usize).copied()))
+                .collect();
+            assert_eq!(found, expected);
+        }
+    }
+    assert_eq!(memory.used(), 0);
+}
+
+#[test]
 fn missing_unsupported_duplicate_and_contradictory_link_effects_fail_closed() {
     let id = ArtifactId::of_bytes(b"caller");
     let analysis: FunctionAnalysisId = id.as_str().parse().unwrap();

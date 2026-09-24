@@ -238,7 +238,7 @@ fn elf_call_link_effects_agree_with_concrete_execution_and_restore() {
         let saved = trace(&f, &q);
         let executed = concrete(&f, 0x1100);
         let verdict = if tail { "MATCH" } else { "DIFF" };
-        assert_eq!(saved["summary"]["summary"]["policy"], 2);
+        assert_eq!(saved["summary"]["summary"]["policy"], STATIC_TRACE_POLICY);
         assert_eq!(
             saved["summary"]["summary"]["verdict"], verdict,
             "variant {variant}: {saved}"

@@ -1,6 +1,6 @@
 //! Static observable relations over saved semantic IR, distinct from machine execution.
 use crate::*;
-pub const STATIC_TRACE_POLICY: u32 = 2;
+pub const STATIC_TRACE_POLICY: u32 = 3;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TraceTarget {
@@ -224,7 +224,7 @@ impl TraceSummary {
             || self.request.right.is_some() != self.right.is_some()
             || self.right.is_some() != self.verdict.is_some()
             || self.right.is_some_and(|r| !r.exact || !self.left.exact)
-                && self.verdict != Some(ComparisonVerdict::Incomplete)
+                && self.verdict == Some(ComparisonVerdict::Match)
         {
             return Err(Error::new(
                 ErrorCode::Integrity,
@@ -232,5 +232,67 @@ impl TraceSummary {
             ));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn incomplete_outcomes_allow_difference_but_never_match() {
+        let target = TraceTarget {
+            ir: ArtifactId::of_bytes(b"ir"),
+            profile: "trace".into(),
+            entry: "1".repeat(64).parse().unwrap(),
+            abi: CallAbi::RiscvInteger,
+            registers: vec![],
+        };
+        for left in [false, true] {
+            for right in [false, true] {
+                for verdict in [
+                    ComparisonVerdict::Match,
+                    ComparisonVerdict::Diff,
+                    ComparisonVerdict::Incomplete,
+                ] {
+                    let mut summary = TraceSummary {
+                        schema: 1,
+                        policy: STATIC_TRACE_POLICY,
+                        request: TraceRequest {
+                            left: target.clone(),
+                            right: Some(target.clone()),
+                            observation: TraceObservation {
+                                ranges: vec![],
+                                fences: true,
+                            },
+                        },
+                        left: TraceOutcome {
+                            exact: left,
+                            events: 1,
+                            invocations: 1,
+                        },
+                        right: Some(TraceOutcome {
+                            exact: right,
+                            events: 1,
+                            invocations: 1,
+                        }),
+                        verdict: Some(verdict),
+                    };
+                    assert_eq!(
+                        summary.validate().is_ok(),
+                        verdict != ComparisonVerdict::Match || left && right
+                    );
+                    summary.policy -= 1;
+                    assert_eq!(summary.validate().unwrap_err().code, ErrorCode::Integrity);
+                    summary.policy = STATIC_TRACE_POLICY;
+                    summary.verdict = None;
+                    assert!(summary.validate().is_err());
+                    summary.right = None;
+                    assert!(summary.validate().is_err());
+                    summary.request.right = None;
+                    assert!(summary.validate().is_ok());
+                }
+            }
+        }
     }
 }

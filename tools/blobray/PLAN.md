@@ -683,3 +683,16 @@ the effect-contract and composed source-only checkpoint remains active 10.4.
 | Local expression index | done | Operation-owned full-key interning preserves IDs, records, provenance and admission rollback. Collision, cancellation, capacity/release and 512/1024/2048 work-growth regressions pass without raising limits. |
 | Runtime interface preparation | done | Group snapshot/object requests with admitted sorting and linear group passes; retain individual physical validation, result order and release before sessions. Work growth, cold/warm ownership, invalid selections and publication atomicity pass. Mixed callback/captured indirect calls retain the explicit strict-profile INCOMPLETE outcome and replay. |
 | Documentation and full checkpoint | done | One current-format reference and coherent execution position; focused/public/private docs, formatting, Clippy, all eight core package unit suites, functions/images/execution/architecture, standalone, source-only and authenticated PHY/ROM watchdog acceptance pass. Artifacts remain ignored; unavailable inputs/checks keep obligations open. |
+
+### Review corrections for completed stages 06 and 09
+
+These corrections preserve the active stage-10 obligations and do not include a
+shared FIFO/table policy refactor. Acceptance validates the isolated fixes and, as selected by the user, a frozen
+copy of the current stage-10 WIP. Unfinished parallel edits remain owned by their
+executor.
+
+| Correction | Status | Required acceptance |
+| --- | --- | --- |
+| Static trace prefixes | done | Known differences in observed prefixes yield DIFF despite later blockers. Length differences require a completed shorter side; symbolic uncertainty alone cannot prove DIFF and incomplete paths cannot MATCH. Summary validation and trace policy agree. ELF-to-IR API/CLI, empty/unequal prefixes, symbolic values, source removal and backup/restore pass. |
+| Retained interface validation | active | Store groups selected tables by frozen snapshot with admitted O(n log n) sorting and linear group traversal, retaining every per-declaration check. Grouping, publication and reopening work-growth tests, one history load per selected snapshot, cancellation/capacity release, invalid late entries and source-free replay pass without raising budgets. |
+| Review correction acceptance | active | Both corrections pass core/Next tests, strict Clippy, formatting, owned public/private docs, standalone, authenticated PHY/ROM watchdog trace/restore and the final source-only checkpoint. Integration with the selected parallel snapshot is checked before closure; missing inputs or gates remain open obligations. |

@@ -86,9 +86,10 @@ Only owned admitted observations survive that borrowed preparation.
 per-function indexes are reused across invocations; admitted expression memoization,
 path visitation and call frames are iterative. Canonical symbolic equality can prove
 a selected observable relation; unsupported paths and undecided inequality remain
-incomplete. It neither schedules analysis nor models RAM/peripheral state. Typed
+incomplete unless an observed prefix already proves a difference. A length difference
+is proven only when the shorter side is exact. It neither schedules analysis nor models RAM/peripheral state. Typed
 fences come from the semantic producer, not parsed disassembly text.
 
-Trace policy 2 distinguishes pre-transfer `CallInputs` from callee entry, applying
+Trace policy 3 distinguishes pre-transfer `CallInputs` from callee entry, applying
 the saved typed `Value` link effect first. Physical return addresses become exact
 values; section-relative links stay unresolved without an address mapping.

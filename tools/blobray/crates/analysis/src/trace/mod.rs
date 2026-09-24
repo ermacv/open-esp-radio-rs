@@ -591,15 +591,17 @@ pub fn compare(
     c: &mut dyn RunControl,
     emit: &mut Emitter<'_>,
 ) -> Result<ComparisonVerdict> {
-    if !left.outcome.exact || !right.outcome.exact {
-        return Ok(ComparisonVerdict::Incomplete);
-    }
     let mut undecided = false;
     for i in 0..left.events.len().max(right.events.len()) {
         c.checkpoint(1)?;
         let (a, b) = (left.events.get(i).copied(), right.events.get(i).copied());
         if a == b {
             continue;
+        }
+        // A missing event proves a difference only after that side has ended.
+        // Before then the observed events are just a prefix of its trace.
+        if a.is_none() && !left.outcome.exact || b.is_none() && !right.outcome.exact {
+            break;
         }
         if let (
             Some(TraceEvent::Memory {
@@ -641,7 +643,9 @@ pub fn compare(
             c,
         )?;
         Ok(ComparisonVerdict::Incomplete)
-    } else {
+    } else if left.outcome.exact && right.outcome.exact {
         Ok(ComparisonVerdict::Match)
+    } else {
+        Ok(ComparisonVerdict::Incomplete)
     }
 }

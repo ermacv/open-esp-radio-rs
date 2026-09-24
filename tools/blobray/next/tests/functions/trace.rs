@@ -180,9 +180,19 @@ fn static_trace_observes_ordered_memory_fences_and_symbolic_read_values() {
             }
         ]
     ));
+    assert_source_free_roundtrip(&f, &q, summary, rows);
+}
+
+fn assert_source_free_roundtrip(
+    f: &Fixture,
+    q: &TraceRequest,
+    summary: TraceSummary,
+    rows: Vec<TraceRecord>,
+) {
+    let verdict = serde_json::to_value(summary.verdict.unwrap()).unwrap();
     fs::remove_file(f.dir.path().join("entry.a")).unwrap();
     fs::remove_file(f.dir.path().join("entry.o")).unwrap();
-    assert_eq!(query(&f, &q), (summary, rows));
+    assert_eq!(query(f, q), (summary.clone(), rows.clone()));
 
     let backup = f.dir.path().join("trace.blobray");
     f.app
@@ -211,16 +221,23 @@ fn static_trace_observes_ordered_memory_fences_and_symbolic_read_values() {
         )
         .unwrap();
     let mut saved = Sink::default();
+    let app::QuerySummary::Trace {
+        summary: restored_summary,
+    } = out.summary()
+    else {
+        panic!("trace")
+    };
+    assert_eq!(**restored_summary, summary);
     out.records(&|| false, &mut saved).unwrap();
     drop(out);
-    assert_eq!(query(&f, &q).1, saved.0);
+    assert_eq!(rows, saved.0);
     let path = f.dir.path().join("trace.json");
     fs::write(&path, serde_json::to_vec(&q).unwrap()).unwrap();
-    let document = interfaces::cli(&f, &["trace", "--request", path.to_str().unwrap()]);
-    assert_eq!(document["summary"]["summary"]["verdict"], "MATCH");
+    let document = interfaces::cli(f, &["trace", "--request", path.to_str().unwrap()]);
+    assert_eq!(document["summary"]["summary"]["verdict"], verdict);
     let export = f.dir.path().join("trace-export.json");
     interfaces::cli(
-        &f,
+        f,
         &[
             "trace",
             "--request",
@@ -233,6 +250,40 @@ fn static_trace_observes_ordered_memory_fences_and_symbolic_read_values() {
         serde_json::from_slice::<serde_json::Value>(&fs::read(&export).unwrap()).unwrap(),
         document
     );
+}
+
+#[test]
+fn static_prefix_difference_survives_source_deletion_cli_and_restore() {
+    let (f, q) = two(
+        &[0x600002b7, 0x00100593, 0x00b2a023, 0x00008067],
+        &[0x600002b7, 0x00200593, 0x00b2a023, 0x0000006f],
+    );
+    let (summary, rows) = query(&f, &q);
+    assert_eq!(summary.policy, 3);
+    assert_eq!(summary.verdict, Some(ComparisonVerdict::Diff));
+    assert!(summary.left.exact);
+    assert!(!summary.right.unwrap().exact);
+    assert!(rows.iter().any(|r| matches!(
+        r,
+        TraceRecord::Blocked {
+            side: TraceSide::Right,
+            reason: TraceBlocker::Loop,
+            ..
+        }
+    )));
+    let differences: Vec<_> = rows
+        .iter()
+        .filter(|r| matches!(r, TraceRecord::Difference { .. }))
+        .collect();
+    assert!(matches!(
+        differences.as_slice(),
+        [TraceRecord::Difference {
+            index: 0,
+            left: Some(_),
+            right: Some(_)
+        }]
+    ));
+    assert_source_free_roundtrip(&f, &q, summary, rows);
 }
 #[test]
 fn static_comparison_separates_known_difference_symbolic_uncertainty_and_incomplete_paths() {

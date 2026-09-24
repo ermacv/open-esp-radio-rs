@@ -1344,7 +1344,7 @@ The implemented static trace profile is defined in the
 [operator reference](../../next/README.md#static-observable-traces). Domain owns the
 request, observable values, blockers and result schema. The RV32 semantic producer
 emits typed fences, pre-transfer call/tail inputs and separate architectural
-register writes. Trace policy 2 applies the saved link write before callee entry;
+register writes. Trace policy 3 applies the saved link write before callee entry;
 unknown section-relative links never inherit the caller's old register value. Analysis owns per-function borrowed
 indexes, canonical symbolic expressions and iterative invocation/path traversal;
 application acquires the explicitly selected saved profile and releases one side's
@@ -1360,7 +1360,10 @@ A trace is conditional on explicit inputs, original immutable-image assumptions 
 ordinary integer ABI call/return behavior. Composed may-effects are never treated as
 an ordered execution. Unknowns are blockers, not zeroes; all incomplete paths prevent
 MATCH. Canonical symbolic equality can prove the selected relation, while undecidable
-symbolic inequality remains INCOMPLETE. Return rows/call sites are provenance and are
+symbolic inequality remains INCOMPLETE unless a later observed event proves a
+difference. A proven prefix mismatch yields DIFF even with incomplete paths,
+preserving their blockers and exactness flags. An unequal length proves DIFF only
+when the shorter side is exact. Return rows/call sites are provenance and are
 excluded from the physical MMIO/fence relation. A successful query denotes delivery,
 not exactness or termination proof. The same frozen IR and request reproduce the
 result after source-free backup/restore. Regression owners are Next

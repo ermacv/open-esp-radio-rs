@@ -2501,7 +2501,12 @@ range or fences must be selected. Range/address overflow and duplicate register
 inputs fail. A profile member is required; provenance-only functions do not become
 implicit entry points or callees.
 
-Policy 2 traces original local function streams. It follows a path only when its
+Policy 3 compares observed prefixes before considering path completeness. A proven
+event difference yields DIFF even when a path is incomplete; blockers and exactness
+flags remain in the result. An extra event proves DIFF only when the shorter side
+is exact. Undecidable symbolic inequality does not hide a later proven difference.
+
+It traces original local function streams. It follows a path only when its
 branch predicates are decidable from saved values and supplied inputs. Resolved
 calls and tail transfers use the saved physical link index, per-invocation argument
 substitution and return values. Saved `CallInputs` describe registers before
@@ -2516,7 +2521,7 @@ conflicting boundaries, missing flow or unsupported semantics; those still block
 exactness. Original function coverage is not upgraded.
 
 Function/call loops use admitted iterative worklists
-and stop as incomplete. Every event carries its original analysis/record/site and
+and leave the extracted path incomplete. Every event carries its original analysis/record/site and
 invocation; invocations identify parent call sites. Fences are typed saved facts
 in function schema 7 / policy 8 (`values-5`); their display text is never reparsed.
 

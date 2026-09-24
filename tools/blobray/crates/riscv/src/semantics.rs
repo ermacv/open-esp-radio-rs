@@ -16,7 +16,7 @@ impl FunctionSemantics for RiscvDecoder {
     }
 
     fn semantic_identity(&self) -> &'static str {
-        "rv32imac/values-5/rv-asm-0.2.1"
+        "rv32imac/values-6/rv-asm-0.2.1"
     }
     fn lift(&self, bytes: &[u8]) -> SemanticOp {
         let Some((inst, _)) = decode_instruction(bytes) else {

@@ -38,6 +38,44 @@ pub unsafe extern "C" fn open_phy_trace_i2c_entry(entry: u32, words: &[u32; 8]) 
     );
 }
 
+/// Invoke two captured void entries in caller-selected order with zero ABI words.
+/// No child result or algorithm is synthesized; both bodies execute normally.
+///
+/// # Safety
+/// Both addresses must identify executable void functions accepting zero input
+/// words. The caller supplies a valid stack and any memory those functions need.
+#[unsafe(no_mangle)]
+#[unsafe(naked)]
+pub unsafe extern "C" fn open_phy_trace_two_void_entries(first: u32, second: u32) {
+    core::arch::naked_asm!(
+        "addi sp, sp, -16",
+        "sw ra, 12(sp)",
+        "sw a1, 8(sp)",
+        "mv t0, a0",
+        "li a0, 0",
+        "li a1, 0",
+        "li a2, 0",
+        "li a3, 0",
+        "li a4, 0",
+        "li a5, 0",
+        "li a6, 0",
+        "li a7, 0",
+        "jalr t0",
+        "lw t0, 8(sp)",
+        "lw ra, 12(sp)",
+        "addi sp, sp, 16",
+        "li a0, 0",
+        "li a1, 0",
+        "li a2, 0",
+        "li a3, 0",
+        "li a4, 0",
+        "li a5, 0",
+        "li a6, 0",
+        "li a7, 0",
+        "jr t0",
+    );
+}
+
 /// Supply a finite sequence of completion edges to the production transaction.
 /// Profiles 0..3 select ADC-rate byte read/write/field read/write; 4..7 select
 /// the TX-capacitor high field. Encodings and masked updates remain production code.
@@ -121,6 +159,7 @@ pub extern "C" fn open_phy_trace_i2c_reset() -> u32 {
 }
 
 pub fn retain() {
+    core::hint::black_box(open_phy_trace_two_void_entries as *const ());
     core::hint::black_box(open_phy_trace_i2c_entry as *const ());
     core::hint::black_box(open_phy_trace_i2c_transfer as *const ());
     core::hint::black_box(open_phy_trace_i2c_host as *const ());

@@ -781,9 +781,9 @@ write the run envelope to stderr. Inventory coverage is not a verification verdi
 
 ### Current formats
 
-Run records use journal schema 36 for every durable and read operation. Storage metadata
-uses schema 35; revision manifests use schema 1 and execution manifests use schema
-16. These are independent formats. Earlier journals are rejected by single-run,
+Run records use journal schema 37 for every durable and read operation. Storage metadata
+uses schema 36; revision manifests use schema 1 and execution manifests use schema
+17. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -802,7 +802,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-36 run; an envelope version is not a journal
+execution 7) wrap the same schema-37 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1451,7 +1451,7 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 16,
+  "schema": 17,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -1531,7 +1531,7 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 selected final-RAM and normal-memory timeline relations can observe their updates.
 
-The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-2/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1` environment maps validated ELF
+The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-3/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
@@ -1553,7 +1553,7 @@ For example:
   "id": "status-script",
   "applicability": "synthetic ready-on-second-read scenario",
   "lifetime": "session",
-  "behavior": {"kind":"sequence-read","address":12288,"width":4,"values":[0,1]}
+  "behavior": {"kind":"sequence-read","address":12288,"width":4,"runs":[{"value":0,"count":1},{"value":1,"count":1}]}
 }
 ```
 
@@ -1561,13 +1561,23 @@ For example:
 | --- | --- |
 | `register-bank` | `cells` with address/width/value; reads return current values, writes replace them. |
 | `constant-read` | address/width/value; reads repeat the value, writes fail. |
-| `sequence-read` | address/width/values; each read consumes one value; exhaustion and writes fail. All values must be consumed before closure. |
+| `sequence-read` | address/width/runs; each run has value/count and supplies that many consecutive reads. Exhaustion and writes fail. All logical responses must be consumed before closure. |
 | `w1c` | address/width/initial/clear_mask/read_clear_mask; reads return the old value then clear read-clear bits; writes clear selected one bits. |
 | `read-clear` | address/width/initial/clear_mask; reads return then clear selected bits; writes fail. |
 | `self-clearing` | address/width/initial/store_mask/command_mask; writes replace store-mask bits, command bits clear immediately, other bits retain state. Masks cannot overlap and initial command bits must be clear. No timing is simulated. |
 | `fifo` | address/width/reads/writes; independent ordered input/output transcripts. Reads consume inputs; writes must match the next output. Both lists must be consumed. This is not a loopback queue service. |
 | `indexed-bank` | index_address/data_address/width/index/values; index-port accesses select/report a slot, data-port accesses read/write it. `index:null` is unknown until explicitly written; invalid indices fail. Gaps between the two ports remain unclaimed. |
 | `command-bank` | Packed 32-bit command ports over a shared bounded bank. Exact field/control bits, initial state, samples and completion-read counts are caller inputs; details below. |
+
+`sequence-read` admits 1..4096 ordered runs, each with a nonzero `u32` count;
+the logical total must fit `u32`. Adjacent equal runs are allowed, and their
+explicit representation participates in identity. Application retains a run
+cursor, offset and remaining logical count without expanding the input. One
+read performs bounded cursor work; cancellation precedes consumption. Warm
+phases retain the cursor, cold/phase closure releases it. Store validates
+`successful reads + remaining = logical total`, rather than the number of runs.
+A long finite busy script therefore stays compact without becoming an infinite
+response source. Model identity version 2 includes every repeat count.
 
 Widths are bytes (1, 2 or 4); values and masks must fit. Exact ports must be aligned,
 disjoint and outside mapped code/RAM/stack. Missing ports remain inaccessible;
@@ -1912,7 +1922,7 @@ No host call-stack recursion follows the analyzed program.
 Requests remain capped at 64 KiB, with 1–128 cases, at most 64 companions per
 target, 128 RAM seeds, 128 device and 128 call declarations per invocation,
 128 live models of each category, 4096 responses per call model, 256 outputs per response,
-4096 exact live ports, 4096 values per model list, 2048 regions per session,
+4096 exact live ports, 4096 encoded values/runs per model list, 2048 regions per session,
 and 1–65536 events per implementation per case. `max_events` exhaustion is a
 resource failure with no publication; events are never silently truncated.
 Traces stream as bounded JSONL events/final-memory/device-models/call-models/runtime-tables/fifo-services/outcomes/comparisons into quota-owned
@@ -2634,7 +2644,7 @@ exactness. Original function coverage is not upgraded.
 Function/call loops use admitted iterative worklists
 and leave the extracted path incomplete. Every event carries its original analysis/record/site and
 invocation; invocations identify parent call sites. Fences are typed saved facts
-in function schema 7 / policy 8 (`values-5`); their display text is never reparsed.
+in function schema 7 / policy 8 (`values-6`); their display text is never reparsed.
 
 This is a conditional static relation: `abi` explicitly assumes ordinary integer
 ABI call/return behavior, including the saved x1/x5 return patterns. It does not

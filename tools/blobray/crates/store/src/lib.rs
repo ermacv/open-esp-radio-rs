@@ -53,7 +53,7 @@ use std::{
 };
 
 const STATE: &str = ".blobray-next";
-const SCHEMA: i64 = 35;
+const SCHEMA: i64 = 36;
 
 /// A project handle owns no source-file handles or mutable inventory cache.
 #[derive(Clone)]

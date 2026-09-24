@@ -1400,7 +1400,10 @@ bounded index capacity may remain for reuse. All allocation, traversal and acces
 work shares the existing operation budget, with no global cache or new runtime.
 
 `ModelObservation` distinguishes open, complete and incomplete obligations. Required
-sequence/FIFO values must be consumed at closure; failed accesses preserve an issue.
+Sequence reads use bounded value/count runs with a checked logical total;
+application retains a cursor and remaining count without expansion. Store checks
+logical consumption, and identity binds the encoded runs. Sequence/FIFO values
+must be consumed at closure; failed accesses preserve an issue.
 A returned goal cannot override incomplete environment evidence. Verification
 requires both code and due model obligations for MATCH. Store checks identity,
 monotonic counts, declared transcript totals, exact closure and required observation

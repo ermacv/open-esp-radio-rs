@@ -12,6 +12,8 @@ struct Instance<'m> {
     reads: u64,
     writes: u64,
     read_cursor: usize,
+    run_used: u32,
+    sequence_remaining: u32,
     write_cursor: usize,
     issue: Option<DeviceIssue>,
 }
@@ -234,10 +236,16 @@ impl<'m> Instance<'m> {
             reads: 0,
             writes: 0,
             read_cursor: 0,
+            run_used: 0,
+            sequence_remaining: 0,
             write_cursor: 0,
             issue: None,
         };
         match &declaration.behavior {
+            DeviceBehavior::SequenceRead { runs, .. } => {
+                c.checkpoint(runs.len() as u64)?;
+                instance.sequence_remaining = ReadRun::total(runs)?;
+            }
             DeviceBehavior::CommandBank(bank) => {
                 instance.commands = Some(crate::command_bank::CommandState::new(bank, memory, c)?);
             }
@@ -270,8 +278,19 @@ impl<'m> Instance<'m> {
             }
             DeviceBehavior::RegisterBank { .. } => Ok(self.cells[slot].value),
             DeviceBehavior::ConstantRead { value, .. } => Ok(*value),
-            DeviceBehavior::SequenceRead { values, .. }
-            | DeviceBehavior::Fifo { reads: values, .. } => match values.get(self.read_cursor) {
+            DeviceBehavior::SequenceRead { runs, .. } => match runs.get(self.read_cursor) {
+                Some(run) => {
+                    self.run_used += 1;
+                    self.sequence_remaining -= 1;
+                    if self.run_used == run.count {
+                        self.read_cursor += 1;
+                        self.run_used = 0;
+                    }
+                    Ok(run.value)
+                }
+                None => Err(DeviceIssue::ExhaustedReads),
+            },
+            DeviceBehavior::Fifo { reads: values, .. } => match values.get(self.read_cursor) {
                 Some(value) => {
                     self.read_cursor += 1;
                     Ok(*value)
@@ -376,7 +395,6 @@ impl<'m> Instance<'m> {
     }
     fn observation(&self, closed: bool) -> ModelObservation {
         let (reads, writes) = match &self.declaration.behavior {
-            DeviceBehavior::SequenceRead { values, .. } => (values.len(), 0),
             DeviceBehavior::Fifo { reads, writes, .. } => (reads.len(), writes.len()),
             _ => (0, 0),
         };
@@ -387,10 +405,11 @@ impl<'m> Instance<'m> {
             lifetime: self.declaration.lifetime,
             reads: self.reads,
             writes: self.writes,
-            remaining_reads: self
-                .commands
-                .as_ref()
-                .map_or((reads - self.read_cursor) as u32, |c| c.remaining()),
+            remaining_reads: match &self.declaration.behavior {
+                DeviceBehavior::SequenceRead { .. } => self.sequence_remaining,
+                DeviceBehavior::CommandBank(_) => self.commands.as_ref().unwrap().remaining(),
+                _ => (reads - self.read_cursor) as u32,
+            },
             remaining_writes: (writes - self.write_cursor) as u32,
             closed,
             issue: self.issue,
@@ -404,6 +423,33 @@ impl<'m> Instance<'m> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn repeated_reads_keep_constant_capacity_and_cancel_before_cursor_progress() {
+        let mut d = declaration(RegionLifetime::Session);
+        d.behavior = DeviceBehavior::SequenceRead {
+            address: 0x1000,
+            width: 4,
+            runs: vec![ReadRun {
+                value: 7,
+                count: u32::MAX,
+            }],
+        };
+        let memory = WorkingMemory::new(1024).unwrap();
+        let mut instance = Instance::new(&d, &memory, &mut || Ok(())).unwrap();
+        assert!(memory.observation().reserved_bytes < 512);
+        assert_eq!(instance.read(0, &mut || Ok(())).unwrap(), Some(7));
+        assert_eq!(instance.observation(false).remaining_reads, u32::MAX - 1);
+        assert_eq!(
+            instance
+                .read(0, &mut || Err(Error::new(ErrorCode::Cancelled, "stop")))
+                .unwrap_err()
+                .code,
+            ErrorCode::Cancelled
+        );
+        assert_eq!(instance.observation(false).remaining_reads, u32::MAX - 1);
+        drop(instance);
+        assert_eq!(memory.observation().reserved_bytes, 0);
+    }
     fn declaration(lifetime: RegionLifetime) -> DeviceDeclaration {
         DeviceDeclaration {
             id: "large".into(),
@@ -473,7 +519,7 @@ mod tests {
         d.behavior = DeviceBehavior::SequenceRead {
             address: 0x1000,
             width: 4,
-            values: vec![42],
+            runs: vec![42].into_iter().map(ReadRun::once).collect(),
         };
         devices
             .install(&[d], &mut || Ok(()), &mut |_, _, _| Ok(()))

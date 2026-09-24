@@ -89,7 +89,7 @@ fn all_standard_devices_have_independent_values_and_complete_participation() {
             DeviceBehavior::SequenceRead {
                 address: 0x3000,
                 width: 4,
-                values: vec![7, 9],
+                runs: vec![7, 9].into_iter().map(ReadRun::once).collect(),
             },
             5,
             16,
@@ -198,7 +198,7 @@ fn unconsumed_obligations_cannot_match_a_successful_return() {
         DeviceBehavior::SequenceRead {
             address: 0x3000,
             width: 4,
-            values: vec![7, 9],
+            runs: vec![7, 9].into_iter().map(ReadRun::once).collect(),
         },
         DeviceBehavior::Fifo {
             address: 0x3000,
@@ -227,7 +227,7 @@ fn mismatched_and_exhausted_accesses_preserve_explicit_model_issues() {
             DeviceBehavior::SequenceRead {
                 address: 0x3000,
                 width: 4,
-                values: vec![7],
+                runs: vec![7].into_iter().map(ReadRun::once).collect(),
             },
             DeviceIssue::ExhaustedReads,
         ),
@@ -330,7 +330,7 @@ fn session_sequences_stay_open_until_chain_closure_and_phase_sequences_block() {
             DeviceBehavior::SequenceRead {
                 address: 0x3000,
                 width: 4,
-                values: vec![7, 9],
+                runs: vec![7, 9].into_iter().map(ReadRun::once).collect(),
             },
         );
         r.cases[0].vendor.models[0].lifetime = lifetime;
@@ -403,7 +403,7 @@ fn model_identity_and_session_evidence_survive_cli_backup_and_replay() {
         DeviceBehavior::SequenceRead {
             address: 0x3000,
             width: 4,
-            values: vec![7, 9],
+            runs: vec![7, 9].into_iter().map(ReadRun::once).collect(),
         },
     );
     r.cases[0].vendor.models[0].lifetime = RegionLifetime::Session;
@@ -483,14 +483,62 @@ fn model_identity_and_session_evidence_survive_cli_backup_and_replay() {
         .map(|r| serde_json::from_value(r["value"].clone()).unwrap())
         .collect();
     assert_eq!((saved, rows), original);
-    if let DeviceBehavior::SequenceRead { values, .. } =
+    if let DeviceBehavior::SequenceRead { runs, .. } =
         &mut r.cases[0].replacement.as_mut().unwrap().models[0].behavior
     {
-        values[1] = 10;
+        runs[1].value = 10;
     }
     let (manifest, _) = run(&f, r);
     assert!(manifest.complete);
     assert_eq!(manifest.verdict, Some(ComparisonVerdict::Diff));
+}
+
+#[test]
+fn finite_read_runs_cross_warm_boundaries_and_cold_restarts_without_expanding() {
+    let f = Fixture::new(&[0x00052503, 0x00008067]);
+    let mut r = request(
+        &f,
+        DeviceBehavior::SequenceRead {
+            address: 0x3000,
+            width: 4,
+            runs: vec![ReadRun { value: 7, count: 2 }, ReadRun::once(9)],
+        },
+    );
+    r.cases[0].vendor.models[0].lifetime = RegionLifetime::Session;
+    r.cases[0].replacement = Some(r.cases[0].vendor.clone());
+    for i in 1..3 {
+        let mut next = r.cases[0].clone();
+        next.name = format!("warm-{i}");
+        next.reset = SessionReset::Warm;
+        next.vendor.models.clear();
+        next.replacement = Some(next.vendor.clone());
+        r.cases.push(next);
+    }
+    let mut cold = r.cases[0].clone();
+    cold.name = "cold-with-unconsumed-repeat".into();
+    cold.vendor.models[0].behavior = DeviceBehavior::SequenceRead {
+        address: 0x3000,
+        width: 4,
+        runs: vec![ReadRun {
+            value: 42,
+            count: 20_000,
+        }],
+    };
+    cold.replacement = Some(cold.vendor.clone());
+    r.cases.push(cold);
+    let (manifest, rows) = run(&f, r);
+    assert_eq!(manifest.verdict, Some(ComparisonVerdict::Incomplete));
+    for (i, (value, remaining)) in [(7, 2), (7, 1), (9, 0), (42, 19_999)]
+        .into_iter()
+        .enumerate()
+    {
+        assert!(
+            matches!(stop(&rows, i as u32), ExecutionStop::Returned { low: Some(v), .. } if *v == value)
+        );
+        assert_eq!(model(&rows, i as u32).remaining_reads, remaining);
+    }
+    assert_eq!(model(&rows, 2).status, ModelStatus::Complete);
+    assert_eq!(model(&rows, 3).status, ModelStatus::Incomplete);
 }
 #[test]
 fn cold_closure_is_explicit_and_expired_ports_can_become_ram() {
@@ -500,7 +548,7 @@ fn cold_closure_is_explicit_and_expired_ports_can_become_ram() {
         DeviceBehavior::SequenceRead {
             address: 0x3000,
             width: 4,
-            values: vec![7],
+            runs: vec![7].into_iter().map(ReadRun::once).collect(),
         },
     );
     r.cases[0].vendor.models[0].lifetime = RegionLifetime::Session;
@@ -579,7 +627,7 @@ fn invalid_declarations_and_live_ownership_conflicts_publish_nothing() {
         DeviceBehavior::SequenceRead {
             address: 0x3000,
             width: 4,
-            values: vec![],
+            runs: vec![].into_iter().map(ReadRun::once).collect(),
         },
         DeviceBehavior::SelfClearing {
             address: 0x3000,

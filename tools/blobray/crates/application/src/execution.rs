@@ -2,7 +2,7 @@
 use crate::execution_memory::Session;
 use crate::*;
 use std::io::Write;
-pub const EXECUTION_ENVIRONMENT: &str = "static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-2/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1";
+pub const EXECUTION_ENVIRONMENT: &str = "static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-3/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1";
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionWork {

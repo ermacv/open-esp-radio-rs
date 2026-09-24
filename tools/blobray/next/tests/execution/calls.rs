@@ -449,7 +449,7 @@ fn composed_allocation_device_delay_and_warm_calls_replay_after_restore() {
         behavior: DeviceBehavior::SequenceRead {
             address: 0x3000,
             width: 4,
-            values: vec![77],
+            runs: vec![77].into_iter().map(ReadRun::once).collect(),
         },
     }];
     r.cases[0].replacement = Some(r.cases[0].vendor.clone());

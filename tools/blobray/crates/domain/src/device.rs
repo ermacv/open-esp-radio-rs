@@ -29,7 +29,7 @@ pub enum DeviceBehavior {
     SequenceRead {
         address: u32,
         width: u8,
-        values: Vec<u32>,
+        runs: Vec<ReadRun>,
     },
     W1c {
         address: u32,
@@ -64,6 +64,32 @@ pub enum DeviceBehavior {
         index: Option<u32>,
         values: Vec<u32>,
     },
+}
+
+/// An explicit finite count of identical consecutive peripheral responses.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReadRun {
+    pub value: u32,
+    pub count: u32,
+}
+impl ReadRun {
+    pub const fn once(value: u32) -> Self {
+        Self { value, count: 1 }
+    }
+    /// Validate bounded encoded and logical lengths without expanding responses.
+    pub fn total(runs: &[Self]) -> Result<u32> {
+        let bad = || Error::new(ErrorCode::InvalidRequest, "invalid finite read sequence");
+        if runs.is_empty() || runs.len() > MAX_DEVICE_VALUES {
+            return Err(bad());
+        }
+        runs.iter().try_fold(0u32, |total, run| {
+            if run.count == 0 {
+                return Err(bad());
+            }
+            total.checked_add(run.count).ok_or_else(bad)
+        })
+    }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
@@ -163,12 +189,12 @@ impl DeviceDeclaration {
             DeviceBehavior::SequenceRead {
                 address,
                 width,
-                values,
+                runs,
             } => {
-                if values.is_empty() || values.len() > MAX_DEVICE_VALUES {
-                    return Err(bad());
+                ReadRun::total(runs)?;
+                for run in runs {
+                    scalar(*address, *width, &[run.value])?;
                 }
-                scalar(*address, *width, values)?;
             }
             DeviceBehavior::W1c {
                 address,
@@ -237,19 +263,21 @@ impl DeviceDeclaration {
             DeviceBehavior::RegisterBank { cells } => {
                 cells.len() * std::mem::size_of::<RegisterCell>()
             }
-            DeviceBehavior::SequenceRead { values, .. }
-            | DeviceBehavior::IndexedBank { values, .. } => values.len() * 4,
+            DeviceBehavior::SequenceRead { runs, .. } => {
+                runs.len() * std::mem::size_of::<ReadRun>()
+            }
+            DeviceBehavior::IndexedBank { values, .. } => values.len() * 4,
             DeviceBehavior::Fifo { reads, writes, .. } => (reads.len() + writes.len()) * 4,
             _ => 0,
         };
         (self.id.len() + self.applicability.len() + values) as u64
     }
-    /// Stable v1 content identity includes every declaration field and ordered value.
+    /// Stable v2 content identity includes every declaration field, value and repeat count.
     /// Fields use explicit tags, little-endian u32 words and length-prefixed strings/lists.
     pub fn identity(&self, c: &mut dyn RunControl) -> Result<ArtifactId> {
         self.validate()?;
         let mut h = Sha256::new();
-        h.update(b"blobray-device-v1\0");
+        h.update(b"blobray-device-v2\0");
         for s in [&self.id, &self.applicability] {
             c.bytes(s.len())?;
             h.update((s.len() as u32).to_le_bytes());
@@ -290,13 +318,14 @@ impl DeviceDeclaration {
             DeviceBehavior::SequenceRead {
                 address,
                 width,
-                values,
+                runs,
             } => {
-                for n in [2, *address, u32::from(*width), values.len() as u32] {
+                for n in [2, *address, u32::from(*width), runs.len() as u32] {
                     put(n)?;
                 }
-                for n in values {
-                    put(*n)?;
+                for run in runs {
+                    put(run.value)?;
+                    put(run.count)?;
                 }
             }
             DeviceBehavior::W1c {
@@ -392,6 +421,48 @@ impl DeviceDeclaration {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn finite_read_runs_validate_counts_width_and_identity_without_expansion() {
+        let declaration = |runs| DeviceDeclaration {
+            id: "sequence".into(),
+            applicability: "bounded synthetic polling".into(),
+            lifetime: RegionLifetime::Session,
+            behavior: DeviceBehavior::SequenceRead {
+                address: 0x1000,
+                width: 1,
+                runs,
+            },
+        };
+        let huge = declaration(vec![ReadRun {
+            value: 7,
+            count: u32::MAX,
+        }]);
+        huge.validate().unwrap();
+        let one = declaration(vec![ReadRun::once(7)]);
+        assert_eq!(huge.payload_bytes(), one.payload_bytes());
+        assert_ne!(
+            huge.identity(&mut || Ok(())).unwrap(),
+            one.identity(&mut || Ok(())).unwrap()
+        );
+        for runs in [
+            vec![],
+            vec![ReadRun { value: 0, count: 0 }],
+            vec![
+                ReadRun {
+                    value: 0,
+                    count: u32::MAX,
+                },
+                ReadRun::once(0),
+            ],
+            vec![ReadRun::once(256)],
+            vec![ReadRun::once(0); MAX_DEVICE_VALUES + 1],
+        ] {
+            assert_eq!(
+                declaration(runs).validate().unwrap_err().code,
+                ErrorCode::InvalidRequest
+            );
+        }
+    }
     #[test]
     fn identity_binds_assumptions_lifetime_and_order() {
         let d = DeviceDeclaration {

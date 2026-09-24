@@ -3,7 +3,7 @@ use super::*;
 pub struct RiscvExecutor;
 impl Executor for RiscvExecutor {
     fn identity(&self) -> &'static str {
-        "rv32imac/execution-9/rv-asm-0.2.1"
+        "rv32imac/execution-10/rv-asm-0.2.1"
     }
     fn execute(
         &self,

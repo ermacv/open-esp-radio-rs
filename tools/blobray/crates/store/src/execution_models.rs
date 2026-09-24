@@ -97,7 +97,10 @@ impl<'a> Models<'a> {
             return Err(integrity("model identity, counters or closure differs"));
         }
         let (reads, writes) = match &instance.declaration.behavior {
-            DeviceBehavior::SequenceRead { values, .. } => (Some(values.len()), Some(0)),
+            DeviceBehavior::SequenceRead { runs, .. } => {
+                c.checkpoint(runs.len() as u64)?;
+                (Some(ReadRun::total(runs)? as usize), Some(0))
+            }
             DeviceBehavior::Fifo { reads, writes, .. } => (Some(reads.len()), Some(writes.len())),
             DeviceBehavior::ConstantRead { .. } | DeviceBehavior::ReadClear { .. } => {
                 (None, Some(0))

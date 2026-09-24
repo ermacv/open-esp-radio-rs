@@ -1885,7 +1885,13 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
         behavior: DeviceBehavior::SequenceRead {
             address: 0x3000,
             width: 4,
-            values: vec![7, 9],
+            runs: vec![
+                ReadRun {
+                    value: 7,
+                    count: 20_000,
+                },
+                ReadRun::once(9),
+            ],
         },
     };
     let input = Invocation {
@@ -1922,7 +1928,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
                 lifetime: RegionLifetime::Phase,
                 reads: 1,
                 writes: 0,
-                remaining_reads: 1,
+                remaining_reads: 20_000,
                 remaining_writes: 0,
                 closed: true,
                 issue: None,
@@ -2012,7 +2018,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
         .iter()
         .position(|r| matches!(r, ExecutionEvidence::Model { .. }))
         .unwrap();
-    for variant in 0..5 {
+    for variant in 0..6 {
         let mut forged = rows.clone();
         if variant == 0 {
             forged.remove(model_index);
@@ -2028,6 +2034,8 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
                     observation.remaining_reads = 0;
                     observation.status = ModelStatus::Complete;
                 }
+                // Encoded run count is not the remaining logical read count.
+                5 => observation.remaining_reads = 1,
                 _ => unreachable!(),
             }
         }

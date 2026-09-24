@@ -187,8 +187,9 @@ Stages 00–10 and both corrective checkpoints below are complete, including all
 four stage-10 comparison profiles and their combined acceptance. The 10.L linker-capability checkpoint is complete after 10.4. Execution has
 resumed on explicit user instruction. Stage 11 is complete, including both
 command-memory and transport acceptance. Stage 12.1 is complete under the full
-calibration/RF assignment below. Next is 12.2: complete PBus/DCODE execution,
-negative outcomes and preservation before advancing to RFPLL.
+calibration/RF assignment below. Stage 12.2 is complete, including PBus/DCODE
+execution, negative outcomes and preservation. The next unit is 12.3: RFPLL
+search, maintenance and frequency memory.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -808,7 +809,7 @@ current owner docs and the ordinary stage gates. No partial unit is completion.
 | Unit | Status | Scope and additional acceptance |
 | --- | --- | --- |
 | 12.1 | done | Four finite leaves from `profiles/phy-calibration-leaves.toml`: TX-gain restore, forced digital gain, temperature-to-power and post-init AGC. Execute every declared input case with the current authenticated archive, independently expected writes/returns and compiled HAL/PHY. Preserve the restore-enabled domain and archive-versus-ROM temperature policy. Changed input DIFF, missing/unknown input INCOMPLETE, capacity/no-publication and restored replay must pass. |
-| 12.2 | pending | PBus clear and DCODE: all profiles in `phy_rfpll/calibration.rs`, `phy_rfpll/dcode.rs` and the PBus rows of the calibration profile. Retained values, both settle branches, delayed readiness, crystal selectors and eight measured bytes; stuck PBus/channel/I2C cannot publish partial codes or restore unfinished state. |
+| 12.2 | done | PBus clear and DCODE: all profiles in `phy_rfpll/calibration.rs`, `phy_rfpll/dcode.rs` and the PBus rows of the calibration profile. Retained values, both settle branches, delayed readiness, crystal selectors and eight measured bytes; stuck PBus/channel/I2C cannot publish partial codes or restore unfinished state. |
 | 12.3 | pending | RFPLL search, maintenance and frequency memory: all cases in `phy_rfpll.rs` and `phy_rfpll/memory.rs`. Zero/nonzero signed corrections, search commands, requested settles, retained memory/control transactions and timeout without restored hardware control. Preserve the installed-layout query exclusion explicitly and retain raw observations. |
 | 12.4 | pending | Gain arithmetic and publication: `phy_rfpll/gain_calculation.rs`, `phy_rfpll/tx_gain.rs`, `phy_rfpll/bluetooth_gain.rs`. Actual current coefficient selection and ROM kernel inputs, signed narrowing, additive current versus subtractive ROM behavior, boundary curves, complete Wi-Fi/BT publishers and bank wrap. Independently authenticate coefficients; changing coefficients changes dependency identity. |
 | 12.5 | pending | Gain state and RF-test producer: `phy_rfpll/gain_state.rs`, `phy_rfpll/gain_producer.rs`. Execute real backup/destruction/recovery/init/consumption and the separately authenticated RF-test power producer, including rounding/saturation and gain/MAC publication. Preserve their characterization scope; vendor storage support is not inferred for production. Missing RF-test input remains an unmet obligation, never an omitted case. |
@@ -837,3 +838,25 @@ all original evidence and exact replay after move and backup/restore. Probe
 release build, strict target-library Clippy, root/probe formatting and owned
 public/private docs pass; the target-only doctest is inapplicable. Core interfaces
 and formats are unchanged. The full stage-12 checkpoint remains in 12.10.
+
+
+12.2 acceptance: all 24 PBus and 16 DCODE cases execute captured children and
+compiled production with independent command, frequency, NRX, sample and output
+expectations. PBus compares every effect. DCODE's native selected relation covers
+all writes/fences/delays and eight final bytes; the runner additionally checks all
+other reads except the two command ports, while retaining the raw polling DIFF.
+Three PBus timeouts and three DCODE channel/I2C/shared-budget failures preserve
+unfinished state or unchanged output; changed samples, unknown parameters and
+capacity failure have checked DIFF/INCOMPLETE/no-publication outcomes.
+Finite read runs replace expanded sequence declarations with bounded encoded
+storage and logical-count conservation, including cancellation and warm/cold
+ownership tests. Independent PBus expectations exposed rv-asm's unsigned C.ANDI
+immediate; the shared decoder now sign-extends it, with exhaustive immediate/register
+lifting and concrete high-bit regressions and new producer identities. Execution
+schema 17, database 36 and journal 37 reject prior formats without conversion.
+All nine Next/core package suites (526 tests), strict affected Clippy, root/probe
+formatting, probe release build/Clippy, owned public/private docs and standalone
+checks pass. The kernel cgroup test remains environment-gated; real acceptance
+uses explicitly selected watchdog mode. The combined stage-11/leaves/prefix route
+passes source removal, move, backup/restore and exact replay for all retained
+results. Full source-only remains the stage-12.10 checkpoint.

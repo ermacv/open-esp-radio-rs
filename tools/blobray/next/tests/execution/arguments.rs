@@ -155,3 +155,51 @@ fn invalid_argument_geometry_is_rejected_before_publication() {
     }
     assert_eq!(f.read(&prior)["summary"]["manifest"]["verdict"], "MATCH");
 }
+
+#[test]
+fn compressed_andi_matches_independent_signed_masks_in_concrete_execution() {
+    // One entry for each immediate: C.ANDI a0,imm; C.JR ra. Ordinary ANDI
+    // entries follow in the same captured image. Expected values come from
+    // signed integer masks, not from either decoder or the comparison verdict.
+    let mut code = Vec::new();
+    for signed in -32i32..32 {
+        let bits = signed as u32 & 63;
+        code.push(0x8082_0000 | 0x8901 | ((bits & 31) << 2) | ((bits & 32) << 7));
+    }
+    for signed in -32i32..32 {
+        code.extend([((signed as u32 & 0xfff) << 20) | 0x57513, 0x00008067]);
+    }
+    let f = Fixture::new(&code);
+    for input in [0x8013, 0xa5a5_5a5a, 0xffff_ffff] {
+        let mut request = f.request();
+        let template = request.cases[0].clone();
+        request.cases.clear();
+        for (index, signed) in (-32i32..32).enumerate() {
+            let mut case = template.clone();
+            case.name = format!("andi-{signed}");
+            case.vendor.entry = 0x1000 + index as u32 * 4;
+            case.vendor.arguments[0] = Some(input);
+            let mut replacement = case.vendor.clone();
+            replacement.entry = 0x1100 + index as u32 * 8;
+            case.replacement = Some(replacement);
+            request.cases.push(case);
+        }
+        let run = f.run(request, budget());
+        assert_eq!(run.state, RunState::Completed, "{run:?}");
+        let result = f.read(&run.execution.unwrap());
+        assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
+        let outcomes: Vec<_> = result["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| &row["value"])
+            .filter(|row| row["kind"] == "outcome")
+            .collect();
+        assert_eq!(outcomes.len(), 128);
+        for row in outcomes {
+            let signed = row["case"].as_i64().unwrap() as i32 - 32;
+            assert_eq!(row["stop"]["kind"], "returned");
+            assert_eq!(row["stop"]["low"], input & signed as u32);
+        }
+    }
+}

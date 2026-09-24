@@ -20,7 +20,7 @@ impl PointerDecoder for RiscvDecoder {
 }
 impl FunctionDecoder for RiscvDecoder {
     fn identity(&self) -> &'static str {
-        "rv32imac/rv-asm-0.2.1/policy-1"
+        "rv32imac/rv-asm-0.2.1/policy-2"
     }
     fn unsupported_flow(&self, bytes: &[u8]) -> UnsupportedFlow {
         // ISA structure only, not CSR/privileged execution support. Zicsr:
@@ -204,6 +204,41 @@ mod tests {
         assert!(!r.known);
     }
     #[test]
+    fn compressed_andi_uses_signed_six_bit_immediates_in_display_and_lifting() {
+        // Independently encode every C.ANDI register and immediate, and compare
+        // with the ordinary ANDI encoding and the ISA's signed numeric value.
+        for register in 8u16..16 {
+            for signed in -32i32..32 {
+                let bits = (signed as u16) & 63;
+                let half = 0x8801 | ((register - 8) << 7) | ((bits & 31) << 2) | ((bits & 32) << 7);
+                let word = ((signed as u32 & 0xfff) << 20)
+                    | (u32::from(register) << 15)
+                    | 0x7013
+                    | (u32::from(register) << 7);
+                let expected = SemanticOp::Integer {
+                    op: IntegerOp::And,
+                    dest: register as u8,
+                    left: Operand::Register(register as u8),
+                    right: Operand::Immediate(signed as u32),
+                };
+                assert_eq!(RiscvDecoder.lift(&half.to_le_bytes()), expected);
+                assert_eq!(RiscvDecoder.lift(&word.to_le_bytes()), expected);
+                let compressed = RiscvDecoder.decode(&half.to_le_bytes()).unwrap();
+                let full = RiscvDecoder.decode(&word.to_le_bytes()).unwrap();
+                assert_eq!(compressed.text, full.text);
+                assert_eq!(compressed.length, 2);
+                assert_eq!(full.length, 4);
+            }
+        }
+        // Ordinary ANDI has twelve immediate bits; it must not be truncated.
+        for signed in [-2048i32, -33, 32, 63, 2047] {
+            let word = ((signed as u32 & 0xfff) << 20) | 0x57513;
+            assert!(matches!(RiscvDecoder.lift(&word.to_le_bytes()),
+                SemanticOp::Integer { right: Operand::Immediate(value), .. }
+                if value == signed as u32));
+        }
+    }
+    #[test]
     fn decoding_rejects_truncated_long_and_unsupported_encodings() {
         assert_eq!(RiscvDecoder.decode(&[1, 0]).unwrap().length, 2);
         assert!(RiscvDecoder.decode(&[0x13, 0, 0]).is_none());
@@ -244,6 +279,17 @@ fn decode_instruction(bytes: &[u8]) -> Option<(Inst, usize)> {
     if (compressed == IsCompressed::Yes) != (width == 2) {
         return None;
     }
+    // rv-asm 0.2.1 zero-extends C.ANDI's six-bit immediate. Normalize at
+    // this shared boundary so display, abstract lifting and concrete execution
+    // all implement the ISA's signed immediate (C extension, integer ALU).
+    let inst = match (width, inst) {
+        (2, Inst::Andi { imm, dest, src1 }) => Inst::Andi {
+            imm: rv_asm::Imm::new_i32(((imm.as_u32() << 26) as i32) >> 26),
+            dest,
+            src1,
+        },
+        (_, inst) => inst,
+    };
     Some((inst, width))
 }
 

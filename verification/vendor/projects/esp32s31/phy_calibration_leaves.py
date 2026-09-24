@@ -62,7 +62,7 @@ def exercise(call, doc, symbol, roots, vendor, replacement):
         add(name, "phy_reg_update_new", 3, [], cells, writes)
 
     def execute(label, selected, verdict, maximum=4096):
-        request = dict(schema=16, vendor=vendor, replacement=replacement, binding="shared-core",
+        request = dict(schema=17, vendor=vendor, replacement=replacement, binding="shared-core",
                        cases=selected, max_events=maximum)
         identity = call(label, ["compare", "--request", doc(label, request)])["run"]["execution"]
         evidence = call(label+"-evidence", ["execution", "--id", identity])
@@ -109,7 +109,7 @@ def exercise(call, doc, symbol, roots, vendor, replacement):
     assert stop["reason"] == dict(kind="memory", address=0x20100410, access="read"), stop
     artifacts.append(("calibration-missing", identity, evidence))
 
-    request = dict(schema=16, vendor=vendor, replacement=replacement, binding="shared-core",
+    request = dict(schema=17, vendor=vendor, replacement=replacement, binding="shared-core",
                    cases=[cases[0]], max_events=1)
     failed = call("calibration-capacity", ["compare", "--request", doc("calibration-capacity", request)], expected=1)
     assert failed["run"].get("execution") is None and failed["run"].get("publication") is None

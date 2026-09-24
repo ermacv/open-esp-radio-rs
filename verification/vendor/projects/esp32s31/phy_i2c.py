@@ -86,9 +86,13 @@ def main():
     parser.add_argument("--limit-mode", choices=["kernel", "watchdog"], required=True)
     parser.add_argument("--calibration-leaves", action="store_true",
                         help="also compare the four current calibration leaves")
+    parser.add_argument("--calibration-prefix", action="store_true",
+                        help="also check the PBus/DCODE prefix (requires calibration leaves)")
     parser.add_argument("--sdk", type=pathlib.Path,
                         help="pinned linked SDK symbol companion, required for calibration leaves")
     options = parser.parse_args()
+    if options.calibration_prefix and not options.calibration_leaves:
+        parser.error("--calibration-prefix requires --calibration-leaves")
     if options.calibration_leaves != (options.sdk is not None):
         parser.error("--calibration-leaves and --sdk must be supplied together")
     options.output.mkdir(parents=True, exist_ok=True)
@@ -124,7 +128,7 @@ def main():
     if options.sdk is not None:
         assert identities[3] == SDK_SHA, identities[3]
     doc("inputs", dict(sha256=identities, scope="I2C software comparison",
-                       calibration_leaves=options.calibration_leaves))
+                       calibration_leaves=options.calibration_leaves, calibration_prefix=options.calibration_prefix))
     local = [run / f"input-{i}" for i in range(len(sources))]
     for source, destination in zip(sources, local):
         shutil.copyfile(source, destination)
@@ -207,6 +211,10 @@ def main():
                   companions=[1, 2], abi="riscv-integer", stack=stack)
     replacement = dict(revision=revision, source=dict(kind="input", input=2),
                        companions=[1], abi="riscv-integer", stack=stack)
+    prefix = []
+    if options.calibration_prefix:
+        from phy_calibration_prefix import exercise
+        prefix = exercise(call, doc, symbol, roots, vendor, replacement, parameter)
     setup_entry = symbol(2, "open_phy_trace_initialize_parameters")["value"]
     seeded_entry = symbol(2, "open_phy_trace_seeded_entry")["value"]
     command_entry = symbol(2, "open_phy_trace_command_memory")["value"]
@@ -247,7 +255,7 @@ def main():
                 invocation(symbol(2, "open_phy_trace_"+name)["value"], args, mem, observe=observe), memory=True))
     for name in leaves[2:]:
         cases.append(case(name, invocation(roots[name]), invocation(symbol(2, "open_phy_trace_"+name)["value"])))
-    request = dict(schema=16, vendor=vendor, replacement=replacement, binding="shared-core", cases=cases, max_events=512)
+    request = dict(schema=17, vendor=vendor, replacement=replacement, binding="shared-core", cases=cases, max_events=512)
     execution = call("compare", ["compare", "--request", doc("compare", request)])["run"]["execution"]
     evidence = call("evidence", ["execution", "--id", execution])
     assert evidence["summary"]["manifest"]["verdict"] == "MATCH"
@@ -299,7 +307,7 @@ def main():
     assert failed["run"].get("execution") is None and failed["run"].get("publication") is None
     assert failed["run"]["error"]["code"] == "resource-limited"
     from phy_i2c_transport import exercise
-    transport = exercise(call, doc, symbol, roots, vendor, replacement)
+    transport = prefix + exercise(call, doc, symbol, roots, vendor, replacement)
     if options.calibration_leaves:
         from phy_calibration_leaves import exercise as calibration
         transport += calibration(call, doc, symbol, roots, vendor, replacement)

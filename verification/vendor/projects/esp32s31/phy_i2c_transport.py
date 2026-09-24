@@ -97,7 +97,7 @@ def exercise(call, doc, symbol, roots, vendor, replacement):
         expected.append(([(0x2010f800+4*i, 0x04000000) for i in range(2) if initial[i]], None, sum(bool(v) for v in initial)))
 
     def execute(label, selected, verdict, max_events=32768):
-        request = dict(schema=16, vendor=vendor, replacement=replacement, binding="shared-core",
+        request = dict(schema=17, vendor=vendor, replacement=replacement, binding="shared-core",
                        cases=selected, max_events=max_events)
         identity = call(label, ["compare", "--request", doc(label, request)])["run"]["execution"]
         evidence = call(label+"-evidence", ["execution", "--id", identity])

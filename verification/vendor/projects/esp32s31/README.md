@@ -143,6 +143,44 @@ no result. The combined run retains these cases with the I2C evidence and checks
 their exact replay after source removal and backup/restore. These leaves do not
 establish a complete calibration or physical timing claim.
 
+### PBus and DCODE prefix
+
+Add `--calibration-prefix` together with `--calibration-leaves --sdk ...` to run
+[the native prefix matrix](phy_calibration_prefix.py). PBus covers 24 combinations
+of retained values, work-mode settling, immediate/delayed readiness and stack
+fills. It compares all MMIO observations and requested delays, with independent
+expected command/acknowledgment writes. Three stuck-command positions execute the
+production timeout policy and check that unfinished commands are not acknowledged
+and work mode is not restored afterward. Finite read runs encode the long busy
+prefix without allocating one declaration element per response.
+
+DCODE covers four crystal selectors, two stack/analog fills and two readiness
+delays. A setup phase executes captured ROM `memcpy` to initialize the retained
+parameter buffer. A small guest ABI shim calls the captured PBus and DCODE bodies
+in order; the production wrapper executes its actual parent transitions and both
+children. ROM I2C callbacks select captured archive code. The peripheral bank
+supplies retained CKGEN values and eight finite samples; delay responses expose
+requested microseconds only. No model replaces a calibration algorithm.
+
+The native DCODE relation compares every MMIO write, fence, requested delay and
+each of the eight selected final bytes. Production performs extra I2C busy
+prechecks, so raw reads are retained but excluded from that native relation. The
+runner additionally compares the complete ordered read/write/delay/fence stream
+except reads of the two command ports. It also independently checks the four
+frequency programs, NRX values, forty CKGEN commands, sample consumption and exact
+output `[0,63,31,32,32,31,63,0]`. These extra runner assertions are not part of the
+native MATCH claim. An unfiltered native comparison retains the expected polling
+DIFF; no blanket peripheral aperture exclusion is used by the independent check.
+
+Stuck channel readiness, stuck I2C and a read/modify/write whose halves individually
+fit but jointly exhaust the production budget must return their specific failure,
+leave all eight initialized output bytes unchanged and stop issuing commands at
+the failed boundary. Changed samples produce DIFF, an unknown parameter pointer
+produces INCOMPLETE, and insufficient event capacity publishes no execution.
+The combined runner retains all these results for source-free move,
+backup/restore and exact replay. This is a software prefix comparison under the
+declared environment, not complete RX calibration or hardware qualification.
+
 ## Legacy configuration reference
 
 The configuration and command vocabulary below describe retained legacy inputs;

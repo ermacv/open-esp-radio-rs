@@ -440,7 +440,7 @@ fn reviewed_extent_is_selected_explicitly_and_names_do_not_change_function_compu
                         ..Default::default()
                     },
                     producer: FunctionProducer {
-                        decoder: "rv32imac/rv-asm-0.2.1/policy-1".into(),
+                        decoder: "rv32imac/rv-asm-0.2.1/policy-2".into(),
                         semantics: blobray_backend_riscv::RiscvDecoder
                             .semantic_identity()
                             .into(),

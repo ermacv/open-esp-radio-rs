@@ -34,6 +34,8 @@ pub(super) struct Session<'a> {
     services: crate::fifo_services::Services<'a>,
     service_observations: Vec<FifoObservation>,
     service_goal: Option<(u16, Option<u32>)>,
+    final_memory: Vec<FinalMemoryChunk>,
+    final_memory_capacity: Option<MemoryReservation<'a>>,
     table_observations: Vec<RuntimeTableObservation>,
     call_observations: Vec<CallObservation>,
     model_observations: Vec<ModelObservation>,
@@ -107,6 +109,8 @@ impl<'a> Session<'a> {
             services: crate::fifo_services::Services::new(memory),
             service_observations,
             service_goal: None,
+            final_memory: Vec::new(),
+            final_memory_capacity: None,
             call_observations,
             model_observations,
             events,
@@ -368,6 +372,7 @@ impl<'a> Session<'a> {
             calls: std::mem::take(&mut self.call_observations),
             tables: std::mem::take(&mut self.table_observations),
             services: std::mem::take(&mut self.service_observations),
+            final_memory: std::mem::take(&mut self.final_memory),
         })
     }
     pub fn recycle(&mut self, mut observation: ExecutionObservation) {
@@ -381,6 +386,8 @@ impl<'a> Session<'a> {
         self.table_observations = observation.tables;
         observation.services.clear();
         self.service_observations = observation.services;
+        drop(observation.final_memory);
+        self.final_memory_capacity = None;
         self.finish_phase();
     }
     fn finish_phase(&mut self) {
@@ -638,3 +645,6 @@ mod execution_tables;
 
 #[path = "execution_services.rs"]
 mod execution_services;
+
+#[path = "execution_observation.rs"]
+mod execution_observation;

@@ -591,7 +591,25 @@ required gates; no generic policy framework or compatibility path is introduced.
 
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
-| 10.1 | active | Explicit per-case comparison selection and bounded final normal-memory observations, alongside selected return words and existing ordered MMIO/fence/delay events. Physical paired ranges have exact lengths and identities; all selected bytes, including unchanged bytes and unknowns, are represented. RAM-only and high/low-return differences DIFF; equal known completed selections MATCH; unknown/unavailable/unfinished results remain INCOMPLETE. Excluded observations remain retained. Invalid/overlapping/overflowing selections fail, phase lifetime/resource/cancellation atomicity and source-free replay pass. No inferred layout equivalence. |
-| 10.2 | pending | Ordered captured-code, modeled and service call observations with physical targets, ABI words and exact interleaving with selected observables. Explicit reviewed semantic call pairs support exact/selected/ignored argument policies; unlisted calls remain retained and their exclusion is visible. Missing/ambiguous/unreviewed pairs fail; reordered/missing calls and selected argument-only differences are caught; unknown words stay incomplete. Shared application API/CLI and source-free retained comparison pass. |
+| 10.1 | done | Explicit per-case comparison selection and bounded final normal-memory observations, alongside selected return words and existing ordered MMIO/fence/delay events. Physical paired ranges have exact lengths and identities; all selected bytes, including unchanged bytes and unknowns, are represented. RAM-only and high/low-return differences DIFF; equal known completed selections MATCH; unknown/unavailable/unfinished results remain INCOMPLETE. Excluded observations remain retained. Invalid/overlapping/overflowing selections fail, phase lifetime/resource/cancellation atomicity and source-free replay pass. No inferred layout equivalence. |
+| 10.2 | active | Ordered captured-code, modeled and service call observations with physical targets, ABI words and exact interleaving with selected observables. Explicit reviewed semantic call pairs support exact/selected/ignored argument policies; unlisted calls remain retained and their exclusion is visible. Missing/ambiguous/unreviewed pairs fail; reordered/missing calls and selected argument-only differences are caught; unknown words stay incomplete. Shared application API/CLI and source-free retained comparison pass. |
 | 10.3 | pending | Ordinary RAM access/atomic and branch timeline observations plus explicit reviewed ABI/layout projections for corresponding memory/arguments and control observations. Validate exact domains, widths, aliases/overlap, offsets and applicability; no dropped unknown/missing fields or automatic pointer normalization. Final-state-only equivalence stays distinct from ordered internal-state equivalence. Different layouts can match only under the selected valid projection; invalid/stale projection and branch/RAM-order changes are tested. |
 | 10.4 | pending | Reviewed effect contracts classify required, omitted, replaced and added MMIO/delay/fence effects, preserving reason and claim ceiling. Absent/unclassified/conflicting rules fail closed; known effect differences DIFF and incomplete execution cannot MATCH. Policy identity, raw excluded evidence, provenance and source-free replay remain retained. Compose all stage-10 relations, run the full execution/comparison/recovery suites and source-only checkpoint; close stage 10 only after all four sub-stages pass. |
+
+
+Stage 10.1 closes explicit per-case event/return/final-memory selection and
+complete byte snapshots with separate availability/knownness. Physical pairing,
+unchanged-byte and high-return differences, excluded observations, phase release,
+interrupted-state claim limits, source-free CLI/API restore/replay, capacity before
+allocation and canonical retained validation pass. All affected tests, 73 Next
+execution tests, Clippy, formatting, public/private docs and standalone pass.
+
+Before activating 10.2, separate its two complete comparison profiles. Instrumented
+physical calls and reviewed cross-implementation correspondence have different
+acceptance owners; the second introduces a proposal/review applicability lifecycle.
+Both remain required to close 10.2.
+
+| Sub-stage | Status | Acceptance |
+| --- | --- | --- |
+| 10.2.1 | active | Explicit bounded physical call/tail-transfer capture, known/unknown register and selected stack ABI words, exact target comparison and interleaving with selected MMIO/fence/delay. Captured code, call models and FIFO service boundaries are represented; observe-call goals retain their pre-dispatch semantics. Site/transfer provenance and excluded observations remain available. Target/order/argument-only differences, unknowns, invalid capture, resource/cancellation atomicity, API/CLI/source-free replay and all gates pass. No semantic pair is inferred. |
+| 10.2.2 | pending | Native proposal/review of semantic call correspondence anchored to exact captured occurrences or explicit modeled binding identity. Explicit exact/selected/ignored word policies and selected pair scope; no name fallback or implicit ABI projection. Invalid, unaccepted, ambiguous, mismatched/stale pairs fail; all listed and unlisted calls remain provenance. Ordered reviewed comparison, generic/specialized API/CLI, source-free query/replay, resource/atomicity checks and all gates close 10.2. |

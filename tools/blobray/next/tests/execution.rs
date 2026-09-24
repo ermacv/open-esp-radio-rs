@@ -111,6 +111,7 @@ impl Fixture {
     }
     fn request(&self) -> ExecutionRequest {
         let invocation = Invocation {
+            observe_memory: vec![],
             goal: ExecutionGoal::Return,
             entry: 0x1000,
             arguments: vec![Some(0); 8],
@@ -126,6 +127,7 @@ impl Fixture {
             replacement: Some(self.target.clone()),
             binding: Some(CompiledBinding::SharedCore),
             cases: vec![ExecutionCase {
+                relation: Some(fixture_relation(true)),
                 reset: SessionReset::Cold,
                 name: "case".into(),
                 vendor: invocation.clone(),
@@ -133,7 +135,6 @@ impl Fixture {
             }],
 
             max_events: 16,
-            compare_return: true,
         }
     }
     fn run(&self, r: ExecutionRequest, b: ResourceBudget) -> app::RunRecord {
@@ -245,6 +246,7 @@ fn concrete_memory_state_and_unknowns_are_not_invented() {
     r.replacement = None;
     r.binding = None;
     r.cases[0].replacement = None;
+    r.cases[0].relation = None;
     r.cases[0].vendor.arguments[0] = Some(0x3000);
     r.cases[0].vendor.memory.push(ram(MemorySeed {
         address: 0x3000,
@@ -375,6 +377,7 @@ fn rv32_arithmetic_edges_and_machine_calls_execute_instructions() {
         r.replacement = None;
         r.binding = None;
         r.cases[0].replacement = None;
+        r.cases[0].relation = None;
         r.cases[0].vendor.arguments[0] = Some(a);
         r.cases[0].vendor.arguments[1] = Some(b);
         let run = f.run(r, budget());
@@ -395,6 +398,7 @@ fn signed_loads_and_phase_stack_reset_are_explicit() {
     r.replacement = None;
     r.binding = None;
     r.cases[0].replacement = None;
+    r.cases[0].relation = None;
     r.cases[0].vendor.arguments[0] = Some(0x3000);
     r.cases[0].vendor.memory.push(ram(MemorySeed {
         address: 0x3000,
@@ -413,6 +417,7 @@ fn signed_loads_and_phase_stack_reset_are_explicit() {
     r.replacement = None;
     r.binding = None;
     r.cases[0].replacement = None;
+    r.cases[0].relation = None;
     r.cases[0].vendor.arguments[0] = Some(7);
     let mut second = r.cases[0].clone();
     second.reset = SessionReset::Warm;
@@ -437,6 +442,7 @@ fn selected_companion_code_and_elf_zero_fill_obey_session_ownership() {
     r.replacement = None;
     r.binding = None;
     r.cases[0].replacement = None;
+    r.cases[0].relation = None;
     let run = f.run(r.clone(), budget());
     assert_eq!(
         run.assessment
@@ -472,6 +478,7 @@ fn selected_companion_code_and_elf_zero_fill_obey_session_ownership() {
     r.replacement = None;
     r.binding = None;
     r.cases[0].replacement = None;
+    r.cases[0].relation = None;
     r.cases[0].vendor.arguments[0] = Some(0x3000);
     r.cases.push(r.cases[0].clone());
     for (mode, expected) in [
@@ -526,3 +533,19 @@ mod interfaces;
 
 #[path = "execution/services.rs"]
 mod services;
+
+fn fixture_relation(low: bool) -> ComparisonRelation {
+    ComparisonRelation {
+        returns: ReturnWords { low, high: false },
+        events: EventChannels {
+            mmio_read: true,
+            mmio_write: true,
+            fence: true,
+            delay: true,
+        },
+        memory: vec![],
+    }
+}
+
+#[path = "execution/comparison.rs"]
+mod comparison;

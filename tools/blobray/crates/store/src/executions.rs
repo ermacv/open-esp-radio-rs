@@ -1,5 +1,6 @@
 //! Durable concrete evidence. Runs index publications; interpretation stays outside store.
 use super::*;
+use crate::execution_observation::{EvidencePart, MemoryState, difference_valid};
 use std::io::Write;
 pub struct ExecutionLease<'a> {
     _capacity: MemoryReservation<'a>,
@@ -282,7 +283,9 @@ pub fn validate_execution_records(
         crate::execution_services::Services::new(memory),
     ];
     let mut prepared = None;
-    let mut models_started = false;
+    let mut part = EvidencePart::Events;
+    let mut memory_state = [MemoryState::new(), MemoryState::new()];
+    let mut relation_complete = true;
     let mut environment_complete = true;
     let mut verdict = manifest.verdict.map(|_| ComparisonVerdict::Match);
     visit_jsonl::<ExecutionEvidence>(source, c, |record, c| {
@@ -297,6 +300,9 @@ pub fn validate_execution_records(
             .get(case as usize + 1)
             .is_none_or(|next| next.reset == SessionReset::Cold);
         if prepared != Some(case) {
+            relation_complete = true;
+            memory_state[0].begin(phase.relation.as_ref(), false);
+            memory_state[1].begin(phase.relation.as_ref(), true);
             services[0].begin(
                 &phase.vendor,
                 &manifest.request.vendor.stack,
@@ -328,6 +334,27 @@ pub fn validate_execution_records(
             prepared = Some(case);
         }
         match record {
+            ExecutionEvidence::FinalMemory {
+                case: i,
+                replacement,
+                chunk,
+            } => {
+                if i != case
+                    || replacement != side
+                    || outcome
+                    || part == EvidencePart::Environment
+                    || must_block
+                {
+                    return Err(integrity("final-memory evidence order differs"));
+                }
+                part = EvidencePart::Memory;
+                let input = if side {
+                    phase.replacement.as_ref().unwrap()
+                } else {
+                    &phase.vendor
+                };
+                memory_state[usize::from(side)].chunk(input, &chunk)?;
+            }
             ExecutionEvidence::FifoService {
                 case: i,
                 replacement,
@@ -336,7 +363,7 @@ pub fn validate_execution_records(
                 if i != case || replacement != side || outcome {
                     return Err(integrity("FIFO evidence order differs"));
                 }
-                models_started = true;
+                part = EvidencePart::Environment;
                 services[usize::from(side)].observe(&observation, close_chain, must_block)?;
                 environment_complete &= observation.status != ModelStatus::Incomplete;
             }
@@ -348,7 +375,7 @@ pub fn validate_execution_records(
                 if i != case || replacement != side || outcome {
                     return Err(integrity("runtime table evidence order differs"));
                 }
-                models_started = true;
+                part = EvidencePart::Environment;
                 tables[usize::from(side)].observe(&observation, close_chain, must_block)?;
                 environment_complete &= observation.status != ModelStatus::Incomplete;
             }
@@ -360,7 +387,7 @@ pub fn validate_execution_records(
                 if i != case || replacement != side || outcome {
                     return Err(integrity("call model evidence order differs"));
                 }
-                models_started = true;
+                part = EvidencePart::Environment;
                 calls[usize::from(side)].observe(&observation, close_chain, must_block, c)?;
                 environment_complete &= observation.status != ModelStatus::Incomplete;
             }
@@ -372,7 +399,7 @@ pub fn validate_execution_records(
                 if i != case || replacement != side || outcome {
                     return Err(integrity("model evidence order differs"));
                 }
-                models_started = true;
+                part = EvidencePart::Environment;
                 models[usize::from(side)].observe(&observation, close_chain, must_block, c)?;
                 environment_complete &= observation.status != ModelStatus::Incomplete;
             }
@@ -381,7 +408,7 @@ pub fn validate_execution_records(
                 replacement,
                 event,
             } => {
-                if i != case || replacement != side || outcome || models_started {
+                if i != case || replacement != side || outcome || part != EvidencePart::Events {
                     return Err(integrity("execution event order differs"));
                 }
                 if let ExecutionEvent::RuntimeTable { instance, event } = &event {
@@ -445,13 +472,28 @@ pub fn validate_execution_records(
                         "execution outcome does not match its declared goal",
                     ));
                 }
+                memory_state[usize::from(side)].finish(input, must_block)?;
+                relation_complete &= memory_state[usize::from(side)].known;
+                if let Some(r) = &phase.relation {
+                    for (word, selected) in [r.returns.low, r.returns.high].into_iter().enumerate()
+                    {
+                        if selected {
+                            relation_complete &= match &stop {
+                                ExecutionStop::Returned { low, high } => {
+                                    [*low, *high][word].is_some()
+                                }
+                                _ => false,
+                            };
+                        }
+                    }
+                }
                 models[usize::from(side)].finish_side()?;
                 calls[usize::from(side)].finish_side()?;
                 tables[usize::from(side)].finish_side()?;
                 services[usize::from(side)].finish_side()?;
                 complete &= stop.completed() && environment_complete;
                 phase_complete &= stop.completed() && environment_complete;
-                models_started = false;
+                part = EvidencePart::Events;
                 environment_complete = true;
                 if manifest.request.replacement.is_none() {
                     blocked = !phase_complete;
@@ -469,7 +511,10 @@ pub fn validate_execution_records(
                 if i != case || !outcome || verdict.is_none() {
                     return Err(integrity("comparison order differs"));
                 }
-                if result.verdict == ComparisonVerdict::Match && !phase_complete {
+                if !difference_valid(&result, phase, manifest.request.max_events)
+                    || (result.verdict == ComparisonVerdict::Match
+                        && (!phase_complete || !relation_complete))
+                {
                     return Err(integrity("MATCH has unmet execution/model obligations"));
                 }
                 verdict = Some(match (verdict.unwrap(), result.verdict) {

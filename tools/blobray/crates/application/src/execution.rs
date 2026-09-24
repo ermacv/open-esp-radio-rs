@@ -2,7 +2,7 @@
 use crate::execution_memory::Session;
 use crate::*;
 use std::io::Write;
-pub const EXECUTION_ENVIRONMENT: &str = "static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1";
+pub const EXECUTION_ENVIRONMENT: &str = "static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1";
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionWork {
@@ -103,6 +103,18 @@ fn evidence(
                 case,
                 replacement,
                 event: event.clone(),
+            },
+        )?;
+        file.write_all(b"\n").map_err(storage_io)?;
+    }
+    for chunk in &observation.final_memory {
+        c.checkpoint(1)?;
+        write_control_message(
+            &mut *file,
+            &ExecutionEvidence::FinalMemory {
+                case,
+                replacement,
+                chunk: *chunk,
             },
         )?;
         file.write_all(b"\n").map_err(storage_io)?;
@@ -266,7 +278,9 @@ pub(crate) fn prepare_execution_worker_in(
                 let comparison = blobray_verification::compare(
                     &left,
                     right,
-                    request.compare_return,
+                    case.relation.as_ref().ok_or_else(|| {
+                        Error::new(ErrorCode::Integrity, "comparison relation missing")
+                    })?,
                     &mut control,
                 )?;
                 verdict = Some(match (verdict.unwrap(), comparison.verdict) {
@@ -365,6 +379,7 @@ impl<'a> Engine<'a> {
         let machine = slot.as_mut().unwrap();
         let (stack, issue) = machine.phase(target, invocation, ready.tables, c)?;
         if let Some((instance, issue)) = issue {
+            machine.capture_final_memory(invocation, c)?;
             return machine.observation(
                 ExecutionStop::Incomplete {
                     pc: invocation.entry,
@@ -395,6 +410,7 @@ impl<'a> Engine<'a> {
             machine,
             c,
         )?;
+        machine.capture_final_memory(invocation, c)?;
         machine.observation(stop, steps, self.close_chain, c)
     }
 }

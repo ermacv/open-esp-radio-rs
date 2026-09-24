@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 9;
+pub const EXECUTION_SCHEMA: u32 = 10;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 
@@ -47,12 +47,14 @@ pub struct Invocation {
     pub calls: Vec<CallDeclaration>,
     pub tables: Vec<RuntimeTable>,
     pub services: Vec<FifoService>,
+    pub observe_memory: Vec<MemorySelection>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionCase {
     pub name: String,
     pub reset: SessionReset,
+    pub relation: Option<ComparisonRelation>,
     pub vendor: Invocation,
     pub replacement: Option<Invocation>,
 }
@@ -139,7 +141,6 @@ pub struct ExecutionRequest {
     pub cases: Vec<ExecutionCase>,
     /// Hard capacity; exhaustion is a resource failure, not truncated evidence.
     pub max_events: u32,
-    pub compare_return: bool,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
@@ -303,6 +304,7 @@ pub struct ExecutionObservation {
     pub calls: Vec<CallObservation>,
     pub tables: Vec<RuntimeTableObservation>,
     pub services: Vec<FifoObservation>,
+    pub final_memory: Vec<FinalMemoryChunk>,
 }
 impl ExecutionObservation {
     /// Goal reached with all environment obligations due at this boundary satisfied.
@@ -337,9 +339,8 @@ pub enum ComparisonVerdict {
 #[serde(deny_unknown_fields)]
 pub struct CaseComparison {
     pub verdict: ComparisonVerdict,
-    /// First differing event, or the common length when lengths differ.
-    pub event: Option<u32>,
-    pub return_difference: bool,
+    /// First established difference in a selected observation domain.
+    pub difference: Option<ComparisonDifference>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -465,6 +466,11 @@ impl ExecutionRequest {
             {
                 return Err(bad());
             }
+            match (&case.relation, &case.replacement) {
+                (Some(relation), Some(other)) => relation.validate(&case.vendor, other)?,
+                (None, None) => {}
+                _ => return Err(bad()),
+            }
             if let Some(other) = &case.replacement
                 && std::mem::discriminant(&case.vendor.goal) != std::mem::discriminant(&other.goal)
             {
@@ -479,18 +485,13 @@ impl ExecutionRequest {
                 match &input.goal {
                     ExecutionGoal::Return => {}
                     ExecutionGoal::ObserveDequeue { service, .. } => {
-                        if self.compare_return
-                            || service.trim().is_empty()
-                            || service.len() > 128
-                            || !service.is_ascii()
-                        {
+                        if service.trim().is_empty() || service.len() > 128 || !service.is_ascii() {
                             return Err(bad());
                         }
                     }
                     ExecutionGoal::ReachSymbol { target: point }
                     | ExecutionGoal::ObserveCall { target: point, .. } => {
-                        if self.compare_return
-                            || point.symbol.object.location != ObjectLocation::Standalone
+                        if point.symbol.object.location != ObjectLocation::Standalone
                             || (point.source != target.source
                                 && !matches!(&point.source,
                                 FunctionSource::Input { input } if target.companions.contains(input)))
@@ -500,6 +501,7 @@ impl ExecutionRequest {
                     }
                 }
                 input.entry_stack(&target.stack)?;
+                input.validate_memory_selection()?;
                 if input.services.len() > MAX_FIFO_SERVICES {
                     return Err(bad());
                 }
@@ -610,6 +612,11 @@ impl MemorySeed {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ExecutionEvidence {
+    FinalMemory {
+        case: u32,
+        replacement: bool,
+        chunk: FinalMemoryChunk,
+    },
     FifoService {
         case: u32,
         replacement: bool,

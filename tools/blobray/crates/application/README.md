@@ -314,3 +314,9 @@ defines phase release, snapshot selection and the limits of value association.
 ABI words and private-stack effects before mutation. It signals a selected
 successful dequeue goal through the existing execution port. Queue state is
 independent for each implementation and never implies real RTOS scheduling.
+
+`execution_memory::execution_observation` admits and captures exact selected normal
+memory at the phase stop before releasing phase owners. It preserves unchanged,
+unknown and unavailable bytes in bounded chunks, without device reads. Snapshot
+capacity lives through serialization/comparison and is released on recycle. Each
+comparison case supplies its own relation to verification; no frontend composes it.

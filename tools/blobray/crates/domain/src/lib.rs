@@ -466,3 +466,6 @@ pub use runtime_interface::*;
 
 mod fifo_service;
 pub use fifo_service::*;
+
+mod comparison;
+pub use comparison::*;

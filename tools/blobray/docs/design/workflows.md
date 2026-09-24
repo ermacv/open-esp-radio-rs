@@ -595,3 +595,17 @@ the caller must finish. Full/empty are declared responses, while invalid pointer
 handles and unknown required values are incomplete. Warm continuation cannot hide
 a failed phase. Preserve the project and reopen/replay without source files.
 These FIFO mechanisms do not execute an RTOS or qualify scheduler/hardware behavior.
+
+## Selected final-state comparison (implemented profile)
+
+Declare `observe_memory` on each invocation, including exact named address ranges.
+Select per-case `relation` with return words, event channels and memory pair indices.
+Use different physical addresses only through an explicit equal-length pair; this
+scenario does not infer a layout mapping. Run the shared comparison operation and
+inspect its typed difference or selected unknown/unavailable bytes.
+
+All selected bytes, including unchanged data, survive retained reads and replay.
+Excluded observations remain available. An incomplete code phase's RAM snapshot
+is intermediate evidence; successful execution coverage alone does not prove a
+comparison when required outputs are unknown. Preservation and reopening use the
+same project backup/restore lifecycle as other execution evidence.

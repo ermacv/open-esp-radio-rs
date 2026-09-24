@@ -1,39 +1,32 @@
 # Blobray verification
 
 `blobray-verification` compares concrete observations through domain values. It
-has no filesystem, store, executor, provider-selection or publication authority.
-Application supplies the two observations and the shared operation control.
+has no filesystem, store, executor, selection or publication authority. Application
+supplies observations, the exact case relation and shared operation control.
 
-The `ordered-mmio-fence-delay-u32/model-4` relation compares the exact ordered MMIO reads,
-writes, fence and modeled delay events, and optionally the low 32-bit return value. Ordinary
-RAM, call boundaries, elapsed time and the high return register are outside this
-relation. No selected observable event is normalized away. A completed shorter trace contradicts
-an observed extra event on the other side even if that other execution stopped
-incomplete. An incomplete shorter prefix cannot prove a length difference.
-Unknown required returns and unfinished executions cannot yield `MATCH`.
-Already observed differing return values remain `DIFF` even if a model has
-unconsumed obligations; the adjacent completeness remains false.
+`selected-events-returns-memory/model-5` compares explicitly selected ordered
+MMIO read/write, fence and modeled delay channels; selected low/high return words;
+and exact paired final normal-memory ranges. Physical range lengths must agree;
+addresses may differ only because the caller selected that pair. No pointer, ABI
+or layout equivalence is inferred. Unselected evidence remains with the caller.
 
-`DIFF` retains the first differing event index or a return mismatch. `INCOMPLETE`
-retains the execution gaps in the adjacent observations. The caller preserves
-those observations; the verifier neither mutates nor substitutes them. Every
-compared event consumes the same run's work budget. Exhaustion is an error, never
-a verdict. Application aggregates cases with `DIFF` taking precedence over
-`INCOMPLETE`, and publishes through the ordinary durable job lifecycle.
+Known event/return differences yield DIFF even with other unmet obligations. A
+code-goal-completed shorter event stream contradicts an observed extra event;
+an unfinished shorter prefix cannot establish that length difference. Selected
+unknown returns or memory bytes cannot establish equality. A known differing final
+byte proves DIFF when both code goals completed; snapshots at unfinished stops are
+intermediate evidence and cannot prove different completed final states. Equal
+selected data can MATCH only with both code goals and due model obligations met.
 
-The result applies to the explicitly enumerated cases and caller-declared
-compiled binding. It is neither whole-domain equivalence nor qualification.
-See [concrete execution](../../next/README.md#concrete-execution-and-comparison)
-for the recipe, session lifetime and supported environment.
+`CaseComparison.difference` identifies the selected event index, return word, or
+memory pair/byte offset and values. Missing execution/model obligations remain in
+adjacent observations. Every compared item consumes shared work; exhaustion is an
+error, never a verdict. The application aggregates DIFF before INCOMPLETE and
+publishes through the ordinary durable lifecycle.
 
-The relation accepts explicitly completed symbol/call
-goals when return comparison is disabled and both outcome kinds agree. An early
-return before a goal remains incomplete. Event-prefix differences remain evidence;
-equal incomplete prefixes cannot match. No target body or suspended continuation is
-inferred from reaching an early boundary.
-
-
-The model-4 relation requires a completed code goal and satisfied model obligations due at that phase. An open session transcript can continue warm; unconsumed values at closure cannot MATCH even when both programs return. A known observed event difference remains DIFF independently of incomplete coverage.
-
-
-The model-4 observable stream also includes explicit modeled microsecond delays. Call argument/output/allocation/return records remain retained evidence outside this relation; no address normalization or pointer-layout equivalence is inferred. Difference indices count the selected observable stream.
+Memory lookups use the ordered selection/chunk index without cloning snapshots.
+Unknown and unavailable bytes are distinct retained facts. Call boundaries,
+ordinary access/branch timelines, elapsed time and abstract service internals are
+outside this implemented relation. Results concern explicit cases and the declared
+compiled binding; they do not establish whole-domain equivalence or qualification.
+See [selected comparison contracts](../../docs/design/contracts.md#selected-final-memory-and-comparison-relations).

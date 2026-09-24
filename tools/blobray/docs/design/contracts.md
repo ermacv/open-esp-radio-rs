@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 28
-and database schema 27 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 29
+and database schema 28 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -41,8 +41,8 @@ extents separately; these intervals are neither inferred functions nor padding.
 Unknown structure remains explicit and does not become a zero-byte observation.
 `PASS` for target auditing covers resolved static transfers only. Unknown indirect
 transfers remain separately counted. Comparison retains its explicit relation:
-ordered MMIO/fence/delay events and, when selected, low u32 return values; RAM, call
-observations and the high return register are outside that relation.
+per-case event channels, low/high return words and exact paired final-memory
+selections. Calls and internal timelines remain outside this implemented relation.
 
 ### Durable and ephemeral acquisition
 
@@ -752,7 +752,7 @@ Domain validates stack geometry and computes entry SP; application initializes
 stack arguments in its freshly owned stack, and passes eight optional register
 words to the backend. Unknown argument slots override stack seeds. No register or
 stack word becomes zero by omission, and setup emits no guest events. The caller
-owns type/variadic lowering. Request and manifest schema 9 pin this interpretation;
+owns type/variadic lowering. Request and manifest schema 10 pin this interpretation;
 producer identity pins both backend unknown-value semantics and stack environment.
 
 `ExecutionMemory` also owns LR/SC reservation state, permission checks and indivisible
@@ -867,8 +867,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 27
-and journal schema 28 carry these identities. Old formats are rejected without
+Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 28
+and journal schema 29 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -1552,7 +1552,63 @@ There are at most 128 live FIFO services per side, 64 bindings per service and
 Queue rings and target/instance indexes are admitted in execution and retained
 validation. Enqueue/dequeue use constant-time ring operations; no front removal
 shifts all remaining items. Request, event, work/deadline and temporary disk budgets
-remain shared with the full scenario. The selected MMIO/fence/delay comparison
-relation retains service evidence but does not implicitly compare queue internals
-or callbacks; explicit code returns remain part of the declared return relation.
+remain shared with the full scenario. The selected comparison relation retains service evidence but does not implicitly
+compare queue internals or callbacks; explicit code returns and selected normal
+memory remain part of the declared relation.
 Device FIFO transcripts remain a distinct port model from these stateful services.
+
+## Selected final memory and comparison relations
+
+Every comparison case owns a `ComparisonRelation`; single-implementation cases
+use none. It selects independent low/high return words, ordered MMIO read/write,
+fence and delay channels, and physical `MemoryPair` indices. The relation must
+select at least one domain. Return words require Return goals on both sides. No
+other phase's relation or old request flag supplies a default. Full request and
+producer identities retain each selection; replay cannot substitute another policy.
+
+`Invocation.observe_memory` names exact nonempty disjoint normal-memory ranges.
+A pair selects one range per side with equal byte length. Names and pair indices
+are explicit; matching names/addresses do not infer corresponding layouts. There
+are at most 128 selections and 1 MiB selected bytes per invocation. Bounds are
+validated before worker execution; selections never truncate silently. Observations
+may be retained without being selected for comparison.
+
+Application snapshots every requested byte at the phase stop, before releasing
+phase RAM, allocations, tables or stack. It accesses readable normal-memory views
+without invoking MMIO/device callbacks. Availability distinguishes readable mapped
+bytes from inaccessible/unmapped bytes; knownness distinguishes initialized values
+from unknown contents. Selected unchanged bytes are included. Canonical fixed-size
+16-byte chunks identify selection/offset/length and both masks; masked-out bytes
+are stored as zero only as an encoding rule, never as an observed value. Blocked
+phases execute and capture nothing, with explicit blocked outcome.
+
+Session admits the snapshot vector before allocation and owns its reservation
+through evidence serialization and comparison. Recycling drops the snapshot before
+releasing capacity; a following phase cannot accumulate previous snapshots. These
+records are separate from guest events and do not consume `max_events`; their
+independent byte bound and shared memory/work/disk budgets still apply. Capture
+failure cancels the whole publication. No extra memory cache or lifecycle owner is
+introduced.
+
+Store checks chunk order, exact range coverage, canonical masks/bytes, phase/side
+ordering, blocked absence and selected-knownness before accepting a comparison
+MATCH. Missing or forged chunks are integrity failures. A difference descriptor
+must name a selected event/return/memory domain. Store validates structural evidence;
+verification remains the sole owner of comparison computation.
+
+Verification compares selected event prefixes and known returned words, then paired
+memory bytes using bounded selection lookups. Known selected differences dominate
+other unknowns. Memory snapshots from unfinished code goals cannot establish a
+DIFF in completed final states; they remain retained intermediate observations.
+When both code goals completed, any known differing selected byte proves DIFF even
+if another selected byte is unknown. Selected unknown/unavailable bytes prevent
+MATCH. Full goal/model completion plus equality of every selected observation is
+required for MATCH; excluded observations cannot silently enter the relation.
+
+`ExecutionObservation::completed` and execution-scenario completeness still mean
+code goals and due environment obligations were met. They do not claim that all
+retained memory/returns are known. Unknown selected outputs can therefore yield an
+INCOMPLETE comparison beside completed execution coverage. Comparison verdict,
+operation state and scoped execution coverage remain independent machine fields.
+A failed phase blocks warm execution; an unknown selected output or comparison
+DIFF alone does not change the session's successful code-goal transition.

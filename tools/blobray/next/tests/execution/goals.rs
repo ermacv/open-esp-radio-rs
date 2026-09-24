@@ -58,7 +58,9 @@ pub(super) fn fixture(code: &[u32], goal: u32) -> (Fixture, ExecutionSymbol) {
 }
 fn request(f: &Fixture, goal: ExecutionGoal) -> ExecutionRequest {
     let mut request = f.request();
-    request.compare_return = matches!(goal, ExecutionGoal::Return);
+    for phase in &mut request.cases {
+        phase.relation.as_mut().unwrap().returns.low = matches!(goal, ExecutionGoal::Return);
+    }
     request.cases[0].vendor.goal = goal;
     request.cases[0].replacement = Some(request.cases[0].vendor.clone());
     request
@@ -272,7 +274,7 @@ fn invalid_physical_goals_and_relations_publish_nothing() {
             },
         );
         match which {
-            0 => r.compare_return = true,
+            0 => r.cases[0].relation.as_mut().unwrap().returns.low = true,
             1 => r.cases[0].replacement.as_mut().unwrap().goal = ExecutionGoal::Return,
             _ => {
                 if let ExecutionGoal::ReachSymbol { target } = &mut r.cases[0].vendor.goal {

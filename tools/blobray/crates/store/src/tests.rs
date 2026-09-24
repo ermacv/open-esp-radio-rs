@@ -1316,9 +1316,11 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
         replacement: None,
         binding: None,
         cases: vec![ExecutionCase {
+            relation: None,
             reset: SessionReset::Cold,
             name: "one".into(),
             vendor: Invocation {
+                observe_memory: vec![],
                 goal: ExecutionGoal::Return,
                 entry: 4096,
                 arguments: vec![Some(0); 8],
@@ -1331,7 +1333,6 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
             replacement: None,
         }],
         max_events: 1,
-        compare_return: false,
     };
     let memory = WorkingMemory::new(16 * 1024 * 1024).unwrap();
     let producer = ExecutionProducer {
@@ -1881,6 +1882,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
         },
     };
     let input = Invocation {
+        observe_memory: vec![],
         entry: 4096,
         goal: ExecutionGoal::Return,
         arguments: vec![],
@@ -1931,8 +1933,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
         case: 0,
         result: CaseComparison {
             verdict: ComparisonVerdict::Incomplete,
-            event: None,
-            return_difference: false,
+            difference: None,
         },
     });
     let manifest = ExecutionManifest {
@@ -1944,13 +1945,25 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
             replacement: Some(target),
             binding: Some(CompiledBinding::ProductionEntry),
             cases: vec![ExecutionCase {
+                relation: Some(ComparisonRelation {
+                    returns: ReturnWords {
+                        low: true,
+                        high: false,
+                    },
+                    events: EventChannels {
+                        mmio_read: true,
+                        mmio_write: true,
+                        fence: true,
+                        delay: true,
+                    },
+                    memory: vec![],
+                }),
                 name: "one".into(),
                 reset: SessionReset::Cold,
                 vendor: input.clone(),
                 replacement: Some(input),
             }],
             max_events: 4,
-            compare_return: true,
         },
         producer: ExecutionProducer {
             executor: "test/1".into(),

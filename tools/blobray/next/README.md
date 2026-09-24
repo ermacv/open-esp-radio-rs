@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 27 and journal schema 28. Earlier and future
+Projects require metadata schema 28 and journal schema 29. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,9 +712,9 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 28 for every durable and read operation. Storage metadata
-uses schema 27; revision manifests use schema 1 and execution manifests use schema
-9. These are independent formats. Earlier journals are rejected by single-run,
+Run records use schema 29 for every durable and read operation. Storage metadata
+uses schema 28; revision manifests use schema 1 and execution manifests use schema
+10. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-28 run; an envelope version is not a journal
+execution 7) wrap the same schema-29 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1366,7 +1366,7 @@ claim a single mmap arena or a process-wide no-allocation guarantee.
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
 operation/query paths. No legacy engine or external limiter participates.
-Execution requests and manifests use schema 9; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
+Execution requests and manifests use schema 10; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 
 ```console
@@ -1382,7 +1382,7 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 9,
+  "schema": 10,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -1395,11 +1395,11 @@ with an exact captured occurrence):
   "cases": [{
     "name": "one-explicit-case",
     "reset": "cold",
-    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [], "calls": [], "tables": [], "services": [] },
+    "relation": null,
+    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [], "calls": [], "tables": [], "services": [], "observe_memory": [] },
     "replacement": null
   }],
-  "max_events": 4096,
-  "compare_return": true
+  "max_events": 4096
 }
 ```
 
@@ -1462,7 +1462,7 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 comparison relation still excludes final RAM itself.
 
-The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1` environment maps validated ELF
+The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
@@ -1674,7 +1674,7 @@ may close successfully because there is no implicit obligation to drain it.
 `{"kind":"observe-dequeue","service":"queue","value":42}` completes
 only after a successful dequeue of that value from that service, including its
 output write. `value:null` accepts any successfully dequeued value. It requires
-`compare_return:false`; empty dequeue, another queue or another value does not
+both relation return selectors disabled; empty dequeue, another queue or another value does not
 satisfy it. Returning first produces `goal-not-reached`. This observes a modeled
 service event, not real task scheduling. [FIFO service contracts](../docs/design/contracts.md#stateful-fifo-services)
 define exact bounds, lifecycle and retained validation.
@@ -1737,18 +1737,44 @@ follow a completed early goal with a fresh entry/register/stack state and retain
 session RAM, never a suspended continuation.
 
 Comparison requires the same goal kind on both sides of each phase. Non-return goals
-require `compare_return:false`; the relation compares their observed event prefixes,
+require both relation return selectors disabled; the relation compares their observed event prefixes,
 not unexecuted bodies. Equal prefixes with unmet goals remain `INCOMPLETE`; known
 prefix differences remain `DIFF`. Store checks that outcome kind and dependency
 blocking match the declared goals before publication.
 
-The [verifier](../crates/verification/README.md) compares ordered MMIO and fence
-events and modeled delay-microsecond values plus the low 32-bit return when `compare_return` is true. It does not
-compare RAM contents, calls or the high return register. `MATCH` applies only to
-the listed concrete scenarios, not all possible arguments or paths. `DIFF`
-retains the first differing event/return; `INCOMPLETE` retains missing execution
-obligations. A known event or returned-value difference survives unmet model obligations and
-other incomplete cases; this retains the observed difference without claiming completion.
+Each comparison case supplies `relation`; a single-implementation case uses null.
+For example, compare low return, ordered MMIO/fence/delay and one exact memory pair:
+
+```json
+{
+  "returns":{"low":true,"high":false},
+  "events":{"mmio_read":true,"mmio_write":true,"fence":true,"delay":true},
+  "memory":[{"vendor":0,"replacement":0}]
+}
+```
+
+Each invocation supplies `observe_memory`, an array such as
+`[{"name":"output","address":12288,"length":32}]`. Memory pair indices select
+one range on each side; lengths must match, while addresses may differ. This is an
+explicit physical pairing, not an inferred ABI/layout projection. Selected ranges
+must be nonempty, disjoint and uniquely named, with at most 128 selections and
+1 MiB total bytes per invocation. Every selected byte is retained, including
+unchanged bytes. Fixed-size `final-memory` chunks carry bytes, availability and
+knownness masks; unknown/unreadable/unmapped bytes never become known zeros.
+Capturing normal memory does not read a device port or consume model values.
+
+The [verifier](../crates/verification/README.md) uses the exact per-case relation.
+Low and high return words are independently selectable; event channels retain their
+relative order. Unselected events and memory observations remain in the result.
+`difference` identifies an event index in the selected stream, a return word, or a
+memory pair/byte offset with differing values. A known selected difference yields
+`DIFF`; unknown selected data or unmet goals/model obligations cannot yield `MATCH`.
+Memory snapshots from unfinished phases remain evidence but cannot establish a
+difference between completed final states. Already observed event or returned-value
+differences remain valid independently of other unknowns or unmet model obligations.
+`MATCH` covers only the selected observations in the enumerated scenarios, not every
+argument, path, callback or internal state. [Selected comparison contracts](../docs/design/contracts.md#selected-final-memory-and-comparison-relations)
+define the precise completion and ownership boundaries.
 `manifest.complete` means every phase reached its declared goal and all model
 obligations due at closure were met, independently of the verdict. Only a `returned` outcome proves the entry returned.
 A completed operation, including `DIFF` or `INCOMPLETE`, exits 0; admission,
@@ -1771,7 +1797,7 @@ target, 128 RAM seeds, 128 device and 128 call declarations per invocation,
 4096 exact live ports, 4096 values per model list, 2048 regions per session,
 and 1–65536 events per implementation per case. `max_events` exhaustion is a
 resource failure with no publication; events are never silently truncated.
-Traces stream as bounded JSONL events/device-models/call-models/runtime-tables/fifo-services/outcomes/comparisons into quota-owned
+Traces stream as bounded JSONL events/final-memory/device-models/call-models/runtime-tables/fifo-services/outcomes/comparisons into quota-owned
 staging. The coordinator checks the admitted recipe and stream structure before
 atomically committing the result reference and completed run. Cancellation,
 limits or corruption cannot publish partial evidence. Process-level OOM and

@@ -392,7 +392,9 @@ fn tail_alternate_link_and_physical_goal_precede_model_dispatch() {
         0x1010,
     );
     let mut r = request(&f, vec![response(Some(42))]);
-    r.compare_return = false;
+    for phase in &mut r.cases {
+        phase.relation.as_mut().unwrap().returns.low = false;
+    }
     r.cases[0].vendor.calls[0].binding = CallBinding {
         address: 0x1010,
         boundary: CallBoundary::CapturedCode,

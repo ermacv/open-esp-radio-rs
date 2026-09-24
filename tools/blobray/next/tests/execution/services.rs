@@ -201,7 +201,9 @@ fn only_selected_successful_dequeue_completes_the_service_goal() {
         (vec![7], Some(42), false),
     ] {
         let (f, mut r) = setup(initial);
-        r.compare_return = false;
+        for phase in &mut r.cases {
+            phase.relation.as_mut().unwrap().returns.low = false;
+        }
         r.cases[0].vendor.arguments[4] = Some(0x3008);
         r.cases[0].vendor.goal = ExecutionGoal::ObserveDequeue {
             service: "queue".into(),
@@ -447,7 +449,9 @@ fn services_and_comparison_sides_keep_isolated_queues() {
 #[test]
 fn fifo_workflow_restores_and_replays_without_sources_and_failed_runs_publish_nothing() {
     let (f, mut r) = setup(vec![]);
-    r.compare_return = false;
+    for phase in &mut r.cases {
+        phase.relation.as_mut().unwrap().returns.low = false;
+    }
     append(
         &mut r,
         "consume",
@@ -547,7 +551,9 @@ fn fifo_workflow_restores_and_replays_without_sources_and_failed_runs_publish_no
 #[test]
 fn a_dequeue_from_another_queue_cannot_satisfy_the_selected_goal() {
     let (f, mut r) = setup_queues(vec![42], true);
-    r.compare_return = false;
+    for phase in &mut r.cases {
+        phase.relation.as_mut().unwrap().returns.low = false;
+    }
     r.cases[0].vendor.arguments[4] = Some(0x3008);
     r.cases[0].vendor.goal = ExecutionGoal::ObserveDequeue {
         service: "other".into(),
@@ -622,7 +628,9 @@ fn missing_or_conflicting_service_bindings_fail_before_publication() {
                     RuntimeSlotTarget::Model { address: 0x2000 }
             }
             _ => {
-                r.compare_return = false;
+                for phase in &mut r.cases {
+                    phase.relation.as_mut().unwrap().returns.low = false;
+                }
                 r.cases[0].vendor.goal = ExecutionGoal::ObserveDequeue {
                     service: "missing".into(),
                     value: None,

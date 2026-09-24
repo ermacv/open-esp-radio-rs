@@ -553,11 +553,21 @@ per-call scan over every table byte:
 
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
-| 09.1 | active | Explicit selected accepted interface contract → runtime table/pointer placement → captured or explicitly modeled callback execution → retained lifecycle and source-free replay. Resolve physical roots and bounded paths, validate layout/ABI/index/guard conditions and exact slots; null/missing/ambiguous targets remain distinct. Track initialization, pointer installation, writes and indirect-target associations with bounded operation-owned indexes; association never claims unsupported pointer provenance. Wrong review/source/layout/guards, overlapping ownership, unknown/partial writes, alias targets, cold/warm state and resources fail explicitly. All root/path forms admitted by the reviewed contract retain an implementation or a named unmet criterion; no silent supported-profile reduction. API/CLI/reopen agree. |
-| 09.2 | pending | Stateful FIFO enqueue/dequeue/length through explicitly selected reviewed slot bindings, with argument/private-stack input, output and wake behavior. Bounded isolated queues persist by declared lifetime; full/empty/order/wrong handle/width and cross-phase failures are checked. Observe-dequeue service goals stop only after the selected successful event; failed phases never imply completion. A reviewed table → service → event-goal scenario, API/CLI/source-free restore/replay, resource/cancellation/closure and all positive/negative mechanisms close stage 09. |
+| 09.1 | done | Explicit selected accepted interface contract → runtime table/pointer placement → captured or explicitly modeled callback execution → retained lifecycle and source-free replay. Resolve physical roots and bounded paths, validate layout/ABI/index/guard conditions and exact slots; null/missing/ambiguous targets remain distinct. Track initialization, pointer installation, writes and indirect-target associations with bounded operation-owned indexes; association never claims unsupported pointer provenance. Wrong review/source/layout/guards, overlapping ownership, unknown/partial writes, alias targets, cold/warm state and resources fail explicitly. All root/path forms admitted by the reviewed contract retain an implementation or a named unmet criterion; no silent supported-profile reduction. API/CLI/reopen agree. |
+| 09.2 | active | Stateful FIFO enqueue/dequeue/length through explicitly selected reviewed slot bindings, with argument/private-stack input, output and wake behavior. Bounded isolated queues persist by declared lifetime; full/empty/order/wrong handle/width and cross-phase failures are checked. Observe-dequeue service goals stop only after the selected successful event; failed phases never imply completion. A reviewed table → service → event-goal scenario, API/CLI/source-free restore/replay, resource/cancellation/closure and all positive/negative mechanisms close stage 09. |
 
 Standard FIFO device transcripts remain stage 08's explicit peripheral mechanism;
 stateful queue services own separate data and semantics. Execution uses the existing
 call port, session memory, supervision and publication, not a second scheduler,
 legacy adapter or generic workflow framework. Review authorizes a selected contract,
 not automatic acceptance of a hardware claim.
+
+
+Stage 09.1 closes selected runtime interface placement, all physical root forms,
+checked paths/guards, captured/model callbacks, partial slot writes and bounded
+current-target association. Regression coverage includes ownership and phase
+release, frozen accepted/rejected selections, unavailable/ambiguous targets, ABI
+admission, cancellation/resource atomicity, forged lifecycle evidence and
+source-free CLI/API restore/replay. Affected package/Next tests, Clippy, formatting,
+public/private documentation and standalone checks pass. Service queues and
+service-event goals remain wholly owned by active stage 09.2.

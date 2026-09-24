@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 7;
+pub const EXECUTION_SCHEMA: u32 = 8;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 
@@ -45,6 +45,7 @@ pub struct Invocation {
     pub memory: Vec<ExecutionRegion>,
     pub models: Vec<DeviceDeclaration>,
     pub calls: Vec<CallDeclaration>,
+    pub tables: Vec<RuntimeTable>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -131,6 +132,10 @@ pub struct ExecutionRequest {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ExecutionEvent {
+    RuntimeTable {
+        instance: u16,
+        event: RuntimeTableEvent,
+    },
     ModeledCall {
         site: u32,
         target: u32,
@@ -213,10 +218,22 @@ impl ExecutionStop {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ExecutionGap {
-    CallModel { target: u32, issue: CallIssue },
+    RuntimeInterface {
+        instance: Option<u16>,
+        issue: RuntimeTableIssue,
+    },
+    CallModel {
+        target: u32,
+        issue: CallIssue,
+    },
     UnsupportedInstruction,
-    Memory { address: u32, access: MemoryAccess },
-    UnknownRegister { register: u8 },
+    Memory {
+        address: u32,
+        access: MemoryAccess,
+    },
+    UnknownRegister {
+        register: u8,
+    },
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -234,6 +251,7 @@ pub struct ExecutionObservation {
     pub events: Vec<ExecutionEvent>,
     pub models: Vec<ModelObservation>,
     pub calls: Vec<CallObservation>,
+    pub tables: Vec<RuntimeTableObservation>,
 }
 impl ExecutionObservation {
     /// Goal reached with all environment obligations due at this boundary satisfied.
@@ -245,6 +263,10 @@ impl ExecutionObservation {
                 .all(|m| m.status == m.expected_status() && m.status != ModelStatus::Incomplete)
             && self
                 .calls
+                .iter()
+                .all(|m| m.status == m.expected_status() && m.status != ModelStatus::Incomplete)
+            && self
+                .tables
                 .iter()
                 .all(|m| m.status == m.expected_status() && m.status != ModelStatus::Incomplete)
     }
@@ -428,6 +450,15 @@ impl ExecutionRequest {
                         return Err(bad());
                     }
                 }
+                if input.tables.len() > MAX_RUNTIME_TABLES {
+                    return Err(bad());
+                }
+                for (i, table) in input.tables.iter().enumerate() {
+                    table.validate()?;
+                    if input.tables[..i].iter().any(|t| t.id == table.id) {
+                        return Err(bad());
+                    }
+                }
                 if input.calls.len() > MAX_CALL_MODELS {
                     return Err(bad());
                 }
@@ -503,6 +534,11 @@ impl MemorySeed {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ExecutionEvidence {
+    RuntimeTable {
+        case: u32,
+        replacement: bool,
+        observation: RuntimeTableObservation,
+    },
     CallModel {
         case: u32,
         replacement: bool,

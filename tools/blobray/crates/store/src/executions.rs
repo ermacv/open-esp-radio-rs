@@ -137,6 +137,7 @@ impl Project {
                 }
             }
         }
+        self.validate_execution_interfaces(request, memory, c)?;
         Ok(ExecutionLease {
             _capacity: capacity,
             records: self.open_payload(&manifest.records, c)?,
@@ -195,6 +196,8 @@ impl Writer {
         {
             return Err(integrity("execution receipt differs from admission"));
         }
+        self.project
+            .validate_execution_interfaces(request, memory, c)?;
         validate_execution_records(&manifest, &stage.open_payload(&manifest.records, c)?, c)?;
         for id in [&manifest.records, &receipt.execution] {
             self.promote(&stage, id, None, c)?;
@@ -264,6 +267,10 @@ pub fn validate_execution_records(
         crate::execution_calls::Calls::new(),
         crate::execution_calls::Calls::new(),
     ];
+    let mut tables = [
+        crate::execution_tables::Tables::new(),
+        crate::execution_tables::Tables::new(),
+    ];
     let mut prepared = None;
     let mut models_started = false;
     let mut environment_complete = true;
@@ -280,15 +287,29 @@ pub fn validate_execution_records(
             .get(case as usize + 1)
             .is_none_or(|next| next.reset == SessionReset::Cold);
         if prepared != Some(case) {
+            tables[0].begin(&phase.vendor.tables, phase.reset, must_block, c)?;
             calls[0].begin(&phase.vendor.calls, phase.reset, must_block, c)?;
             models[0].begin(&phase.vendor.models, phase.reset, must_block, c)?;
             if let Some(replacement) = &phase.replacement {
+                tables[1].begin(&replacement.tables, phase.reset, must_block, c)?;
                 calls[1].begin(&replacement.calls, phase.reset, must_block, c)?;
                 models[1].begin(&replacement.models, phase.reset, must_block, c)?;
             }
             prepared = Some(case);
         }
         match record {
+            ExecutionEvidence::RuntimeTable {
+                case: i,
+                replacement,
+                observation,
+            } => {
+                if i != case || replacement != side || outcome {
+                    return Err(integrity("runtime table evidence order differs"));
+                }
+                models_started = true;
+                tables[usize::from(side)].observe(&observation, close_chain, must_block)?;
+                environment_complete &= observation.status != ModelStatus::Incomplete;
+            }
             ExecutionEvidence::CallModel {
                 case: i,
                 replacement,
@@ -320,6 +341,9 @@ pub fn validate_execution_records(
             } => {
                 if i != case || replacement != side || outcome || models_started {
                     return Err(integrity("execution event order differs"));
+                }
+                if let ExecutionEvent::RuntimeTable { instance, event } = &event {
+                    tables[usize::from(side)].event(*instance, event, c)?;
                 }
                 calls[usize::from(side)].event(&event, c)?;
                 events += 1;
@@ -376,6 +400,7 @@ pub fn validate_execution_records(
                 }
                 models[usize::from(side)].finish_side()?;
                 calls[usize::from(side)].finish_side()?;
+                tables[usize::from(side)].finish_side()?;
                 complete &= stop.completed() && environment_complete;
                 phase_complete &= stop.completed() && environment_complete;
                 models_started = false;
@@ -426,6 +451,7 @@ pub fn validate_execution_records(
         || verdict != manifest.verdict
         || !models.iter().all(crate::execution_models::Models::closed)
         || !calls.iter().all(crate::execution_calls::Calls::closed)
+        || !tables.iter().all(crate::execution_tables::Tables::closed)
     {
         return Err(integrity("execution evidence summary differs"));
     }

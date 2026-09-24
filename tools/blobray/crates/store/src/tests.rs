@@ -1325,6 +1325,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
                 memory: vec![],
                 models: vec![],
                 calls: vec![],
+                tables: vec![],
             },
             replacement: None,
         }],
@@ -1874,6 +1875,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
         memory: vec![],
         models: vec![declaration.clone()],
         calls: vec![],
+        tables: vec![],
     };
     let mut rows = Vec::new();
     for replacement in [false, true] {

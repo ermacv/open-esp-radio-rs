@@ -432,8 +432,24 @@ qualification.
    global-pointer/slot path with independently established instruction operands.
 
 This structural scenario does not claim callback execution or hardware behavior.
-Runtime interface instances and service completion belong to the target execution
-workflow, not to the read query's success condition.
+Runtime interface placement and callback execution use the separate explicit
+scenario below; service completion remains a target capability. Neither is a
+read query success condition.
+
+## Reviewed runtime callback (implemented profile)
+
+Select an accepted interface assertion and its exact knowledge revision. Supply
+`Invocation.tables` with that selection, a fresh normal-memory range, exact slot
+addresses and existing writable pointer cells. Select captured callback bytes or
+an explicit call model with reviewed semantic/signature metadata. Run through the
+shared `execute`/`compare` operation.
+
+Inspect both code outcome and runtime-table lifecycle: initialization, conditions,
+current-target association, writes and closure. Unknown/ambiguous targets or failed
+guards are incomplete. Warm phases retain only session instances; cold phases
+start fresh. Preserve the project and use retained reads/replay after source
+removal. The [runtime interface contract](contracts.md#runtime-interface-instances)
+defines exact ownership and the value-association claim.
 
 
 ## Function and argument-context review (implemented profile)

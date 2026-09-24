@@ -121,7 +121,7 @@ results independently from operation completion. Their evaluation belongs to ana
 and application. Function schema 7 / policy 8 includes typed fences and outgoing tail
 inputs; display strings have no semantic authority.
 
-Concrete execution schema 7 uses bounded optional RV32 ABI words: a0–a7 followed
+Concrete execution schema 8 uses bounded optional RV32 ABI words: a0–a7 followed
 by ascending stack slots. `Invocation::entry_stack` validates placement within the
 declared stack; `register_arguments` preserves missing values as unknown. These
 are physical words, with type/variadic lowering owned by the caller.
@@ -144,3 +144,9 @@ Device declarations bind caller applicability, phase/session lifetime and every 
 
 
 `CallDeclaration` and `CallObservation` retain exact modeled ABI boundaries, response/effect identities and phase/session obligations. The required call-dispatch port distinguishes captured code from explicit modeled returns and issues; argument words and output ownership are never inferred.
+
+`runtime_interface` defines selected review identities, runtime placements, physical
+slot targets, condition gaps and lifecycle observations. Invocation `tables` is
+explicit, including an empty array. Code-goal completion and table/call/device
+obligations remain separate. Indirect target association records current value,
+not inferred pointer provenance.

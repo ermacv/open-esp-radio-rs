@@ -126,6 +126,9 @@ struct Pending {
 impl Calls<'_> {
     pub fn event(&mut self, event: &ExecutionEvent, c: &mut dyn RunControl) -> Result<()> {
         c.checkpoint(self.live.len() as u64 + 1)?;
+        if matches!(event, ExecutionEvent::RuntimeTable { .. }) {
+            return Ok(());
+        }
         if let ExecutionEvent::ModeledCall {
             target,
             tail,

@@ -272,6 +272,7 @@ fn modeled_allocation_capacity_is_owned_but_only_requested_bytes_are_accessible(
                     site: 0x1000,
                     target: 0x2000,
                     tail: false,
+                    indirect: false,
                     stack: Some(0x9000),
                     arguments: [Some(4), None, None, None, None, None, None, None],
                 },

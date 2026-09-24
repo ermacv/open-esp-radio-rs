@@ -1,5 +1,5 @@
 use super::*;
-fn symbol_elf(code: &[u32], base: u32, goal: u32) -> (Vec<u8>, ExecutionSymbol) {
+pub(super) fn symbol_elf(code: &[u32], base: u32, goal: u32) -> (Vec<u8>, ExecutionSymbol) {
     let mut bytes = elf(code);
     for offset in [24, 60, 64] {
         bytes[offset..offset + 4].copy_from_slice(&base.to_le_bytes());

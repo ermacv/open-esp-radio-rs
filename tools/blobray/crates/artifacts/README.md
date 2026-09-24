@@ -101,3 +101,8 @@ interpretation; artifacts neither applies RISC-V relocations nor chooses targets
 entry in ET_EXEC executable file-backed bytes and their load mapping. It permits
 zero-sized symbols as addresses, without inferring an extent or decoding a body.
 Application alone decides whether that source belongs to an execution scenario.
+
+`PreparedObject::runtime_root` resolves physical runtime-interface roots from an
+already verified ET_EXEC object: allocated section, defined/absolute symbol plus
+addend, or exact entry selector. It lends no mutable memory and evaluates no runtime
+path, guard or call model; those belong to application-owned execution sessions.

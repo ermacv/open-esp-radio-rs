@@ -123,11 +123,16 @@ pub struct CallInput {
     pub site: u32,
     pub target: u32,
     pub tail: bool,
+    pub indirect: bool,
     pub stack: Option<u32>,
     pub arguments: [Option<u32>; 8],
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CallDispatch {
+    RuntimeInterface {
+        instance: Option<u16>,
+        issue: RuntimeTableIssue,
+    },
     /// No selected model claims this transfer; execute captured code normally.
     Code,
     Returned {

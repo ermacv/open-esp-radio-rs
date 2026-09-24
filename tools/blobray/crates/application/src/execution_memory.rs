@@ -3,6 +3,7 @@ use crate::*;
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum RegionKind {
     Image,
+    Table(RegionLifetime),
     Stack,
     Ram(RegionLifetime),
     Allocation {
@@ -29,6 +30,8 @@ pub(super) struct Session<'a> {
     _metadata: MemoryReservation<'a>,
     devices: crate::devices::Devices<'a>,
     calls: crate::external_calls::Calls<'a>,
+    tables: crate::runtime_tables::Tables<'a>,
+    table_observations: Vec<RuntimeTableObservation>,
     call_observations: Vec<CallObservation>,
     model_observations: Vec<ModelObservation>,
     events: Vec<ExecutionEvent>,
@@ -41,7 +44,8 @@ impl<'a> Session<'a> {
         let metadata = memory.reserve(
             1024 * 1024
                 + u64::from(max_events) * 128
-                + (MAX_DEVICE_MODELS + MAX_CALL_MODELS) as u64 * 512,
+                + (MAX_DEVICE_MODELS + MAX_CALL_MODELS) as u64 * 512
+                + MAX_RUNTIME_TABLES as u64 * 1024,
             c.position(),
         )?;
         let mut regions = Vec::new();
@@ -66,6 +70,15 @@ impl<'a> Session<'a> {
                     "call observations allocation refused",
                 )
             })?;
+        let mut table_observations = Vec::new();
+        table_observations
+            .try_reserve_exact(MAX_RUNTIME_TABLES)
+            .map_err(|_| {
+                Error::new(
+                    ErrorCode::ResourceLimited,
+                    "table observation allocation refused",
+                )
+            })?;
         let mut events = Vec::new();
         events
             .try_reserve_exact(max_events as usize)
@@ -76,6 +89,8 @@ impl<'a> Session<'a> {
             _metadata: metadata,
             devices: crate::devices::Devices::new(memory),
             calls: crate::external_calls::Calls::new(memory),
+            tables: crate::runtime_tables::Tables::new(memory),
+            table_observations,
             call_observations,
             model_observations,
             events,
@@ -181,8 +196,9 @@ impl<'a> Session<'a> {
         &mut self,
         target: &ExecutionTarget,
         input: &Invocation,
+        tables: &[crate::execution_interfaces::PreparedTable<'_>],
         c: &mut dyn RunControl,
-    ) -> Result<u32> {
+    ) -> Result<(u32, Option<(u16, RuntimeTableIssue)>)> {
         let stack = input.entry_stack(&target.stack)?;
         self.reservation = None;
         self.finish_phase();
@@ -296,7 +312,8 @@ impl<'a> Session<'a> {
                 ));
             }
         }
-        Ok(stack)
+        let issue = self.install_tables(tables, input, c)?;
+        Ok((stack, issue))
     }
     pub fn observation(
         &mut self,
@@ -309,12 +326,15 @@ impl<'a> Session<'a> {
             .finish(close_chain, &mut self.model_observations, c)?;
         self.calls
             .finish(close_chain, &mut self.call_observations, c)?;
+        self.tables
+            .finish(close_chain, &mut self.table_observations, c)?;
         Ok(ExecutionObservation {
             stop,
             steps,
             events: std::mem::take(&mut self.events),
             models: std::mem::take(&mut self.model_observations),
             calls: std::mem::take(&mut self.call_observations),
+            tables: std::mem::take(&mut self.table_observations),
         })
     }
     pub fn recycle(&mut self, mut observation: ExecutionObservation) {
@@ -324,6 +344,8 @@ impl<'a> Session<'a> {
         self.model_observations = observation.models;
         observation.calls.clear();
         self.call_observations = observation.calls;
+        observation.tables.clear();
+        self.table_observations = observation.tables;
         self.finish_phase();
     }
     fn finish_phase(&mut self) {
@@ -333,6 +355,7 @@ impl<'a> Session<'a> {
                 r.kind,
                 RegionKind::Stack
                     | RegionKind::Ram(RegionLifetime::Phase)
+                    | RegionKind::Table(RegionLifetime::Phase)
                     | RegionKind::Allocation {
                         lifetime: RegionLifetime::Phase,
                         ..
@@ -382,6 +405,11 @@ impl<'a> Session<'a> {
 }
 impl ExecutionMemory for Session<'_> {
     fn call(&mut self, input: &CallInput, c: &mut dyn RunControl) -> Result<CallDispatch> {
+        if input.indirect
+            && let Some(result) = self.interface_call(input, c)?
+        {
+            return Ok(result);
+        }
         self.external_call(input, c)
     }
     fn read(
@@ -467,6 +495,13 @@ impl ExecutionMemory for Session<'_> {
         r.bytes[offset..offset + width as usize]
             .copy_from_slice(&value.to_le_bytes()[..width as usize]);
         r.known[offset..offset + width as usize].fill(1);
+        self.table_write(
+            address,
+            width,
+            value,
+            c.position().entry.and_then(|p| u32::try_from(p).ok()),
+            c,
+        )?;
         Ok(true)
     }
     fn load_reserved(
@@ -504,6 +539,13 @@ impl ExecutionMemory for Session<'_> {
         let r = &mut self.regions[i];
         r.bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
         r.known[offset..offset + 4].fill(1);
+        self.table_write(
+            address,
+            4,
+            value,
+            c.position().entry.and_then(|p| u32::try_from(p).ok()),
+            c,
+        )?;
         Ok(Some(true))
     }
     fn modify_word(
@@ -524,6 +566,13 @@ impl ExecutionMemory for Session<'_> {
         let value = update(old);
         self.invalidate_reservation(address, 4);
         self.regions[i].bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+        self.table_write(
+            address,
+            4,
+            value,
+            c.position().entry.and_then(|p| u32::try_from(p).ok()),
+            c,
+        )?;
         Ok(Some(old))
     }
     fn event(&mut self, event: ExecutionEvent, c: &mut dyn RunControl) -> Result<()> {
@@ -545,3 +594,6 @@ mod tests;
 
 #[path = "execution_calls.rs"]
 mod execution_calls;
+
+#[path = "execution_tables.rs"]
+mod execution_tables;

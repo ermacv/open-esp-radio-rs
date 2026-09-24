@@ -117,6 +117,7 @@ impl Fixture {
             memory: vec![],
             models: vec![],
             calls: vec![],
+            tables: vec![],
         };
         ExecutionRequest {
             schema: EXECUTION_SCHEMA,
@@ -518,3 +519,6 @@ mod devices;
 
 #[path = "execution/calls.rs"]
 mod calls;
+
+#[path = "execution/interfaces.rs"]
+mod interfaces;

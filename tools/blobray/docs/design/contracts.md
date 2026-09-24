@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 26
-and database schema 25 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 27
+and database schema 26 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -752,7 +752,7 @@ Domain validates stack geometry and computes entry SP; application initializes
 stack arguments in its freshly owned stack, and passes eight optional register
 words to the backend. Unknown argument slots override stack seeds. No register or
 stack word becomes zero by omission, and setup emits no guest events. The caller
-owns type/variadic lowering. Request and manifest schema 7 pin this interpretation;
+owns type/variadic lowering. Request and manifest schema 8 pin this interpretation;
 producer identity pins both backend unknown-value semantics and stack environment.
 
 `ExecutionMemory` also owns LR/SC reservation state, permission checks and indivisible
@@ -867,8 +867,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 25
-and journal schema 26 carry these identities. Old formats are rejected without
+Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 26
+and journal schema 27 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -1415,3 +1415,76 @@ and closure; missing/forged evidence cannot complete the run. The verifier selec
 MMIO/fence/delay observations and optional low return only; excluded model records
 remain available for inspection. Delay values are assumptions, never wall-time or
 hardware timing evidence. All clients use the existing execution/replay lifecycle.
+
+## Runtime interface instances
+
+`Invocation.tables` selects exact `InterfaceReview` pairs: a retained knowledge
+revision and an accepted interface assertion in that snapshot. A later knowledge
+head cannot silently change the selection. Missing, pending, rejected, mismatched
+source/revision and incompatible layout selections fail before publication.
+Review remains a structural/applicability claim; placing a runtime table is an
+explicit execution assumption, never hardware qualification.
+
+Application `execution_interfaces` resolves selected roots from captured ET_EXEC
+objects. Literal addresses, allocated sections, physical defined/absolute symbols
+with checked addends, and exact symbol/range entry-word selectors are supported.
+Entry-word selectors must name the installing invocation's entry. Accepted contracts
+supply pointer width (RV32 four bytes), ABI, exact slot offsets, layout size, guards
+and bounded index domains. Captured-payload guards must match the acquired object.
+Objects are prepared once per selected knowledge snapshot/object group; their
+buffers and snapshot are released before mutable sessions. Only admitted resolved
+roots, contracts and placement declarations remain.
+
+Session `runtime_tables` owns each instance and its phase/session lifetime. The
+entire table range is a fresh writable normal-memory mapping, disjoint from other
+owned mappings and modeled ports. Seed bytes initialize padding; explicit slots
+initialize pointers. Pointer installation writes the table base to existing
+writable normal-memory cells. Phase instances and their bytes are released before
+the next phase; session instances survive warm transitions until cold reset/end.
+Redeclaring a live id or overlapping ownership fails. Closed instance slots may be
+reused; lifecycle indices are scoped to their live interval and implementation.
+
+Roots evaluate bounded offset/index/pointer-load paths over current known normal
+memory, with the installing phase's initial ABI words. Warm phases do not silently
+rebind those words. Required conditions are checked at installation, warm entry and
+before each associated indirect use. `conditions_checked` records such successful
+checks, not a perpetual predicate over every instruction. Runtime guard mutations
+after the final use do not retroactively invalidate that use. Unknown root/pointer,
+overflow, violated index domain or failed guard remains an explicit interface gap.
+No MMIO read is performed merely to evaluate a root or guard.
+
+Slot targets explicitly select null, captured executable address or live external
+call model address. Model slots require reviewed semantic and signature metadata;
+the call declaration must supply enough physical ABI words for its named integer/
+pointer arguments. Variadic/aggregate lowering remains explicit. A model never
+appears because a symbol name or semantic label looks familiar. Captured-code
+substitution still requires the external-call boundary declaration. Neither a
+reviewed signature nor a matching pointer proves the callee's implementation.
+
+Guest stores, successful SC/AMO, model outputs and pointer installation update
+current slot values and emit lifecycle writes. A bounded sorted target index is
+rebuilt when values change. Eligible indirect transfers require one unique live
+slot with that value, checked conditions, and available code or an explicitly
+bound reviewed model. Null, absent, unavailable and ambiguous targets are distinct
+incomplete outcomes. The association is by current value; it does not fabricate
+load/register provenance. Direct transfers, canonical returns and the reserved
+root-return sentinel keep their ordinary execution paths. Observe-call goals
+retain their earlier boundary: they complete before callee dispatch.
+
+Domain carries declarations, stable definition identities, gaps and lifecycle
+records; the RISC-V backend supplies the indirect/direct transfer fact through its
+existing call port. Application owns memory and dispatch. Store validates the
+selected accepted review, definition/placement identity, ordered initialization,
+pointer counts, writes/current-target associations, checked conditions and closure
+before retention and when reading. Store does not re-execute code. Initialization
+or condition failures cannot turn other unfinished instances into complete ones.
+`ExecutionObservation::completed` requires both the code goal and all due table,
+call and device obligations. Known selected differences still produce DIFF.
+
+There are at most 128 live tables per side, 64 reviewed slots and 128 pointer cells
+per table, further limited by request size and shared work/memory/event/disk
+budgets. Instance metadata, roots, slot indexes, normal bytes and knownness buffers
+are admitted. No global allocator/cache or new runtime crate owns this state.
+Events and closure snapshots share the existing atomic execution publication;
+capacity/cancellation failures publish no successful prefix. Source-free replay
+reuses the frozen request, reviews and captured mappings in the project.

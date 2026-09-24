@@ -212,6 +212,80 @@ impl<'data> PreparedObject<'data, '_> {
             .code(address, prefix, control)?;
         Ok(address as u32)
     }
+    /// Resolve every reviewed interface root in an exact linked captured occurrence.
+    /// Runtime pointer loads/index domains are evaluated by session memory, not ELF parsing.
+    pub fn runtime_root(
+        &mut self,
+        occurrence: &KnowledgeOccurrence,
+        root: &AccessRoot,
+        control: &mut dyn RunControl,
+    ) -> Result<RuntimeRoot> {
+        if self.file.kind() != object::ObjectKind::Executable {
+            return Err(invalid(
+                "runtime interface requires a linked executable occurrence",
+            ));
+        }
+        let address = match root {
+            AccessRoot::Address { address } => {
+                return Ok(RuntimeRoot::Address { address: *address });
+            }
+            AccessRoot::Section { section, offset } => {
+                let location = self.data_location(
+                    &occurrence.object,
+                    &DataSelector::Section {
+                        section: *section,
+                        offset: *offset,
+                        length: 1,
+                    },
+                    control,
+                )?;
+                location
+                    .image_address
+                    .ok_or_else(|| invalid("runtime root section is not allocated"))?
+            }
+            AccessRoot::Symbol { symbol, addend } => {
+                let s = self.selected_symbol(&occurrence.object, symbol)?;
+                if let Some(index) = s.section_index() {
+                    let section = self.file.section_by_index(index).map_err(parse)?;
+                    if !matches!(section.flags(),object::SectionFlags::Elf{sh_flags} if sh_flags & u64::from(object::elf::SHF_ALLOC)!=0)
+                    {
+                        return Err(invalid("runtime root symbol is not allocated"));
+                    }
+                } else if s.section() != object::SymbolSection::Absolute {
+                    return Err(invalid("runtime root symbol is undefined/common"));
+                }
+                s.address()
+                    .checked_add_signed(*addend)
+                    .ok_or_else(|| invalid("runtime root symbol displacement overflows"))?
+            }
+            AccessRoot::EntryWord { function, word } => {
+                let entry = match function {
+                    FunctionSelector::Symbol { symbol } => {
+                        self.code_symbol_address(&occurrence.object, symbol, control)?
+                    }
+                    FunctionSelector::Range { .. } => self.with_function(
+                        &FunctionRequest {
+                            research: None,
+                            revision: Some(occurrence.revision.clone()),
+                            source: occurrence.source.clone(),
+                            selector: function.clone(),
+                            extent: None,
+                        },
+                        control,
+                        |view, _| {
+                            u32::try_from(view.extent.start)
+                                .map_err(|_| invalid("runtime function entry exceeds RV32"))
+                        },
+                    )?,
+                };
+                return Ok(RuntimeRoot::EntryWord { entry, word: *word });
+            }
+        };
+        Ok(RuntimeRoot::Address {
+            address: u32::try_from(address)
+                .map_err(|_| invalid("runtime interface root exceeds RV32"))?,
+        })
+    }
     /// Validate physical table kind, section and index without a name lookup or
     /// interpreting one table's index in another table.
     fn selected_symbol(

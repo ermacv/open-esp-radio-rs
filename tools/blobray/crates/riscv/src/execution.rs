@@ -3,7 +3,7 @@ use super::*;
 pub struct RiscvExecutor;
 impl Executor for RiscvExecutor {
     fn identity(&self) -> &'static str {
-        "rv32imac/execution-5/rv-asm-0.2.1"
+        "rv32imac/execution-6/rv-asm-0.2.1"
     }
     fn execute(
         &self,
@@ -161,7 +161,7 @@ impl Executor for RiscvExecutor {
                     regs[dest.0 as usize] = Some(next);
                     next = pc.wrapping_add_signed(offset.as_i32());
                     if matches!(dest.0, 0 | 1 | 5) {
-                        transfer = Some((dest.0 == 0, pc.wrapping_add(width as u32)));
+                        transfer = Some((dest.0 == 0, pc.wrapping_add(width as u32), false));
                     }
                     if let Some(tail) = observed_call(goal, dest.0, next, false) {
                         return Ok((
@@ -180,7 +180,7 @@ impl Executor for RiscvExecutor {
                     next = target;
                     let is_return = dest.0 == 0 && matches!(base.0, 1 | 5) && offset.as_i32() == 0;
                     if !is_return && matches!(dest.0, 0 | 1 | 5) {
-                        transfer = Some((dest.0 == 0, pc.wrapping_add(width as u32)));
+                        transfer = Some((dest.0 == 0, pc.wrapping_add(width as u32), true));
                     }
                     if let Some(tail) = observed_call(goal, dest.0, next, is_return) {
                         return Ok((
@@ -306,7 +306,9 @@ impl Executor for RiscvExecutor {
                     _ => stop!(ExecutionGap::UnsupportedInstruction),
                 },
             }
-            if let Some((tail, return_pc)) = transfer {
+            if let Some((tail, return_pc, indirect)) = transfer
+                && next != u32::MAX - 1
+            {
                 let mut arguments = [None; 8];
                 arguments.copy_from_slice(&regs[10..18]);
                 match memory.call(
@@ -314,11 +316,15 @@ impl Executor for RiscvExecutor {
                         site: pc,
                         target: next,
                         tail,
+                        indirect,
                         stack: regs[2],
                         arguments,
                     },
                     control,
                 )? {
+                    CallDispatch::RuntimeInterface { instance, issue } => {
+                        stop!(ExecutionGap::RuntimeInterface { instance, issue })
+                    }
                     CallDispatch::Code => {}
                     CallDispatch::Incomplete { issue } => stop!(ExecutionGap::CallModel {
                         target: next,

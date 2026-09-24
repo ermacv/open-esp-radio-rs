@@ -86,6 +86,7 @@ mod tests {
             events,
             models: vec![],
             calls: vec![],
+            tables: vec![],
         }
     }
     #[test]

@@ -2,7 +2,7 @@
 use crate::execution_memory::Session;
 use crate::*;
 use std::io::Write;
-pub const EXECUTION_ENVIRONMENT: &str = "static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1";
+pub const EXECUTION_ENVIRONMENT: &str = "static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1";
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionWork {
@@ -131,6 +131,18 @@ fn evidence(
         )?;
         file.write_all(b"\n").map_err(storage_io)?;
     }
+    for table in &observation.tables {
+        c.checkpoint(1)?;
+        write_control_message(
+            &mut *file,
+            &ExecutionEvidence::RuntimeTable {
+                case,
+                replacement,
+                observation: table.clone(),
+            },
+        )?;
+        file.write_all(b"\n").map_err(storage_io)?;
+    }
     write_control_message(
         &mut *file,
         &ExecutionEvidence::Outcome {
@@ -184,6 +196,7 @@ pub(crate) fn prepare_execution_worker_in(
         let project = Project::open(&work.project.to_path()?)?;
         let request = &work.request;
         let goals = crate::execution_goals::prepare(&project, request, memory, &mut control)?;
+        let tables = crate::execution_interfaces::prepare(&project, request, memory, &mut control)?;
         let mut vendor = None;
         let mut replacement = None;
         let mut blocked = false;
@@ -218,8 +231,7 @@ pub(crate) fn prepare_execution_worker_in(
             let left = engine.invoke(
                 &request.vendor,
                 &case.vendor,
-                goals[index][0]
-                    .ok_or_else(|| Error::new(ErrorCode::Integrity, "vendor goal unresolved"))?,
+                invocation_preparation(&tables, index, 0, goals[index][0], &mut control)?,
                 &mut vendor,
                 blocked,
                 &mut control,
@@ -228,9 +240,7 @@ pub(crate) fn prepare_execution_worker_in(
                 (Some(t), Some(i)) => Some(engine.invoke(
                     t,
                     i,
-                    goals[index][1].ok_or_else(|| {
-                        Error::new(ErrorCode::Integrity, "replacement goal unresolved")
-                    })?,
+                    invocation_preparation(&tables, index, 1, goals[index][1], &mut control)?,
                     &mut replacement,
                     blocked,
                     &mut control,
@@ -313,7 +323,7 @@ impl<'a> Engine<'a> {
         &self,
         target: &ExecutionTarget,
         invocation: &Invocation,
-        goal: ResolvedExecutionGoal,
+        ready: InvocationPreparation<'_, '_>,
         slot: &mut Option<Session<'a>>,
         blocked: bool,
         c: &mut dyn RunControl,
@@ -341,7 +351,22 @@ impl<'a> Engine<'a> {
             )?);
         }
         let machine = slot.as_mut().unwrap();
-        let stack = machine.phase(target, invocation, c)?;
+        let (stack, issue) = machine.phase(target, invocation, ready.tables, c)?;
+        if let Some((instance, issue)) = issue {
+            return machine.observation(
+                ExecutionStop::Incomplete {
+                    pc: invocation.entry,
+                    reason: ExecutionGap::RuntimeInterface {
+                        instance: Some(instance),
+                        issue,
+                    },
+                },
+                0,
+                self.close_chain,
+                c,
+            );
+        }
+        let goal = ready.goal;
         c.set_position(RunPosition {
             phase: RunPhase::Execute,
             table: case,
@@ -360,4 +385,24 @@ impl<'a> Engine<'a> {
         )?;
         machine.observation(stop, steps, self.close_chain, c)
     }
+}
+
+struct InvocationPreparation<'a, 'm> {
+    goal: ResolvedExecutionGoal,
+    tables: &'a [crate::execution_interfaces::PreparedTable<'m>],
+}
+fn invocation_preparation<'a, 'm>(
+    tables: &'a [crate::execution_interfaces::PreparedTable<'m>],
+    phase: usize,
+    side: usize,
+    goal: Option<ResolvedExecutionGoal>,
+    c: &mut dyn RunControl,
+) -> Result<InvocationPreparation<'a, 'm>> {
+    c.checkpoint(2 * (tables.len().max(1).ilog2() as u64 + 1))?;
+    let start = tables.partition_point(|t| (t.phase, t.side) < (phase, side));
+    let end = tables.partition_point(|t| (t.phase, t.side) <= (phase, side));
+    Ok(InvocationPreparation {
+        goal: goal.ok_or_else(|| Error::new(ErrorCode::Integrity, "execution goal unresolved"))?,
+        tables: &tables[start..end],
+    })
 }

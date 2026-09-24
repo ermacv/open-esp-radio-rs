@@ -460,3 +460,6 @@ pub use device::*;
 
 mod external_call;
 pub use external_call::*;
+
+mod runtime_interface;
+pub use runtime_interface::*;

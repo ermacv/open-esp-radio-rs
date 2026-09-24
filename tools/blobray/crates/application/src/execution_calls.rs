@@ -204,6 +204,7 @@ impl Session<'_> {
             r.bytes[o..o + width].copy_from_slice(&output.value.to_le_bytes()[..width]);
             r.known[o..o + width].fill(1);
             self.invalidate_reservation(address, output.width);
+            self.table_write(address, output.width, output.value, Some(input.site), c)?;
             self.event(
                 ExecutionEvent::CallOutput {
                     address,

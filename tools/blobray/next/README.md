@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 25 and journal schema 26. Earlier and future
+Projects require metadata schema 26 and journal schema 27. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,9 +712,9 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 26 for every durable and read operation. Storage metadata
-uses schema 25; revision manifests use schema 1 and execution manifests use schema
-7. These are independent formats. Earlier journals are rejected by single-run,
+Run records use schema 27 for every durable and read operation. Storage metadata
+uses schema 26; revision manifests use schema 1 and execution manifests use schema
+8. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-26 run; an envelope version is not a journal
+execution 7) wrap the same schema-27 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1366,7 +1366,7 @@ claim a single mmap arena or a process-wide no-allocation guarantee.
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
 operation/query paths. No legacy engine or external limiter participates.
-Execution requests and manifests use schema 7; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
+Execution requests and manifests use schema 8; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 
 ```console
@@ -1382,7 +1382,7 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 7,
+  "schema": 8,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -1395,7 +1395,7 @@ with an exact captured occurrence):
   "cases": [{
     "name": "one-explicit-case",
     "reset": "cold",
-    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [], "calls": [] },
+    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [], "calls": [], "tables": [] },
     "replacement": null
   }],
   "max_events": 4096,
@@ -1462,7 +1462,7 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 comparison relation still excludes final RAM itself.
 
-The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1` environment maps validated ELF
+The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
@@ -1597,6 +1597,41 @@ ordered responses and every effect. Store authenticates argument/effect/return o
 against the declared response as well as participation counts and closure. Query,
 backup and replay retain both modeled boundaries and actual code outcomes.
 
+Each invocation also supplies `tables` (an empty array when unused). A runtime
+instance selects an exact accepted interface assertion and knowledge revision:
+
+```json
+{
+  "id": "callbacks",
+  "review": {"knowledge":"KNOWLEDGE_SHA","assertion":"ASSERTION_SHA"},
+  "lifetime": "session",
+  "seed": {"address":12288,"length":16,"fill":null,"bytes":[1]},
+  "slots": [{"offset":4,"target":{"kind":"code","address":4116}}],
+  "pointer_cells": [16384]
+}
+```
+
+The table owns its whole seed range. Slots overwrite seed bytes; pointer cells
+must already be writable normal memory and receive the table base. The selected
+review determines exact layout, slots, ABI, root/path, index domains and guards.
+Address, captured section/symbol and entry-word roots are supported; entry words
+belong to the installing invocation. Unknown pointers, failed guards and ambiguous
+current targets produce explicit incomplete evidence. `null` slots use
+`{"kind":"null"}`. A `model` slot supplies an exact address of a live `calls`
+declaration and requires reviewed semantic/signature metadata; it never invents
+a response or resolves a name.
+
+`runtime-table` evidence records initialization, pointer installation, writes,
+condition checks, indirect target association and phase/session closure. Association
+means a unique current pointer value in a selected slot, not proof that a register
+was loaded from that slot. While tables are live, an eligible indirect call with
+no unique selected target is incomplete. Direct calls and canonical returns keep
+their ordinary behavior. Conditions are checked at installation, warm-phase entry
+and before associated indirect use; this does not assert their truth at every
+instruction or after the last use. [The runtime interface contract](../docs/design/contracts.md#runtime-interface-instances)
+defines ownership, binding and claim scope. `execute`/`compare`, retained reads and
+source-free `replay` use the same application path.
+
 Every case is an explicit phase with a shared `reset` for both implementations
 and an `entry` in each invocation. Setup and action phases can select different
 entries in the same captured address space. `cold` recreates captured images and
@@ -1689,7 +1724,7 @@ target, 128 RAM seeds, 128 device and 128 call declarations per invocation,
 4096 exact live ports, 4096 values per model list, 2048 regions per session,
 and 1–65536 events per implementation per case. `max_events` exhaustion is a
 resource failure with no publication; events are never silently truncated.
-Traces stream as bounded JSONL events/device-models/call-models/outcomes/comparisons into quota-owned
+Traces stream as bounded JSONL events/device-models/call-models/runtime-tables/outcomes/comparisons into quota-owned
 staging. The coordinator checks the admitted recipe and stream structure before
 atomically committing the result reference and completed run. Cancellation,
 limits or corruption cannot publish partial evidence. Process-level OOM and

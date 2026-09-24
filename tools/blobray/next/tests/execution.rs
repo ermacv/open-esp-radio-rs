@@ -489,3 +489,5 @@ fn selected_companion_code_and_elf_zero_fill_obey_session_ownership() {
 
 #[path = "execution/arguments.rs"]
 mod arguments;
+#[path = "execution/atomics.rs"]
+mod atomics;

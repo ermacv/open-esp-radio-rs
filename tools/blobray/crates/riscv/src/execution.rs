@@ -1,9 +1,9 @@
-//! Concrete RV32IMC execution. Instruction fetch, data, and events use explicit ports.
+//! Concrete RV32IMAC execution. Instruction fetch, data, and events use explicit ports.
 use super::*;
 pub struct RiscvExecutor;
 impl Executor for RiscvExecutor {
     fn identity(&self) -> &'static str {
-        "rv32imc/execution-2/rv-asm-0.2.1"
+        "rv32imac/execution-3/rv-asm-0.2.1"
     }
     fn execute(
         &self,
@@ -92,6 +92,56 @@ impl Executor for RiscvExecutor {
             steps += 1;
             let mut next = pc.wrapping_add(width as u32);
             match inst {
+                Inst::LrW { order, dest, addr } => {
+                    let address = reg!(addr.0);
+                    let Some(value) = memory.load_reserved(address, ordering(order), control)?
+                    else {
+                        stop!(ExecutionGap::Memory {
+                            address,
+                            access: MemoryAccess::Atomic
+                        });
+                    };
+                    regs[dest.0 as usize] = Some(value);
+                }
+                Inst::ScW {
+                    order,
+                    dest,
+                    addr,
+                    src,
+                } => {
+                    let (address, value) = (reg!(addr.0), reg!(src.0));
+                    let Some(stored) =
+                        memory.store_conditional(address, value, ordering(order), control)?
+                    else {
+                        stop!(ExecutionGap::Memory {
+                            address,
+                            access: MemoryAccess::Atomic
+                        });
+                    };
+                    regs[dest.0 as usize] = Some(u32::from(!stored));
+                }
+                Inst::AmoW {
+                    order,
+                    op,
+                    dest,
+                    addr,
+                    src,
+                } => {
+                    let (address, value) = (reg!(addr.0), reg!(src.0));
+                    let Some(old) = memory.modify_word(
+                        address,
+                        ordering(order),
+                        &mut |old| atomic(op, old, value),
+                        control,
+                    )?
+                    else {
+                        stop!(ExecutionGap::Memory {
+                            address,
+                            access: MemoryAccess::Atomic
+                        });
+                    };
+                    regs[dest.0 as usize] = Some(old);
+                }
                 Inst::Jal { dest, offset } => {
                     regs[dest.0 as usize] = Some(next);
                     next = pc.wrapping_add_signed(offset.as_i32());
@@ -258,5 +308,24 @@ fn integer(op: IntegerOp, a: u32, b: u32) -> u32 {
                 a % b
             }
         }
+    }
+}
+
+fn ordering(order: rv_asm::AmoOrdering) -> ExecutionOrdering {
+    let (acquire, release) = order.aq_rl();
+    ExecutionOrdering { acquire, release }
+}
+fn atomic(op: rv_asm::AmoOp, old: u32, value: u32) -> u32 {
+    use rv_asm::AmoOp;
+    match op {
+        AmoOp::Swap => value,
+        AmoOp::Add => old.wrapping_add(value),
+        AmoOp::Xor => old ^ value,
+        AmoOp::And => old & value,
+        AmoOp::Or => old | value,
+        AmoOp::Min => (old as i32).min(value as i32) as u32,
+        AmoOp::Max => (old as i32).max(value as i32) as u32,
+        AmoOp::Minu => old.min(value),
+        AmoOp::Maxu => old.max(value),
     }
 }

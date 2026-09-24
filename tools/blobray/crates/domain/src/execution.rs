@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 2;
+pub const EXECUTION_SCHEMA: u32 = 3;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 
@@ -103,6 +103,7 @@ pub enum MemoryAccess {
     Fetch,
     Read,
     Write,
+    Atomic,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -162,6 +163,43 @@ pub trait ExecutionMemory {
         control: &mut dyn RunControl,
     ) -> Result<bool>;
     fn event(&mut self, event: ExecutionEvent, control: &mut dyn RunControl) -> Result<()>;
+
+    /// Read one aligned known word and replace this session's reservation.
+    /// Unknown/inaccessible data returns None and leaves no reservation.
+    fn load_reserved(
+        &mut self,
+        address: u32,
+        order: ExecutionOrdering,
+        control: &mut dyn RunControl,
+    ) -> Result<Option<u32>>;
+    /// Check store permissions even without a reservation, then conditionally
+    /// write a word. Some(false) is a failed reservation, None an invalid access.
+    /// Every attempt clears the reservation, including failure.
+    fn store_conditional(
+        &mut self,
+        address: u32,
+        value: u32,
+        order: ExecutionOrdering,
+        control: &mut dyn RunControl,
+    ) -> Result<Option<bool>>;
+    /// One indivisible read/update/write of a known aligned writable word.
+    /// Calls `update` exactly once on success, never on invalid/unknown memory.
+    /// Returns the old word and invalidates overlapping reservations. The callback
+    /// supplies pure ISA arithmetic; it must not acquire resources or call memory.
+    fn modify_word(
+        &mut self,
+        address: u32,
+        order: ExecutionOrdering,
+        update: &mut dyn FnMut(u32) -> u32,
+        control: &mut dyn RunControl,
+    ) -> Result<Option<u32>>;
+}
+/// Ordering requested by the guest atomic instruction. A single-hart environment
+/// executes memory operations in program order; this is not a concurrency model.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecutionOrdering {
+    pub acquire: bool,
+    pub release: bool,
 }
 /// Concrete ISA capability; no input selection, repository, models or verdict authority.
 pub trait Executor {

@@ -277,3 +277,9 @@ Concrete invocation setup owns the aligned stack argument area and its knownness
 Explicit unknown words invalidate seeded bytes before execution. Domain validates
 physical ABI word capacity/placement; the backend receives optional a0–a7 words.
 All setup and phase resets share the execution budget and retained request.
+
+Each concrete session owns one exact four-byte LR reservation. SC always clears
+it and checks write permissions; overlapping successful writes invalidate it.
+AMO updates validate/admit before invoking backend arithmetic once. The environment
+executes one hart in program order; reservations reset between phases and atomic
+MMIO is unsupported.

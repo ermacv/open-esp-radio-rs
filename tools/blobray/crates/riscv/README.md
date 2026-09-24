@@ -11,7 +11,7 @@ pinned decoder's normalized operands. The backend declares relocation roles;
 analysis validates the flowing address relationship and owns abstract states.
 
 
-`RiscvExecutor` owns concrete RV32IMC register state and the iterative instruction
+`RiscvExecutor` owns concrete RV32IMAC register state and the iterative instruction
 loop. It receives entry, stack, eight optional integer register words, an `ExecutionMemory` port and
 shared run control. It uses the same decoder and integer lift descriptions, with
 separate concrete control-flow and fence handling. Unknown operands or unsupported
@@ -29,6 +29,11 @@ sets. Static trace extraction consumes the saved fence record; it never parses
 instruction display strings. Concrete execution retains its own supported fence-mode
 check and reports unsupported modes explicitly.
 
-`execution-2` preserves unspecified argument registers as unknown. Stack argument
+`execution-3` preserves unspecified argument registers as unknown. Stack argument
 placement belongs to application; the backend observes those words through memory
 loads with the same initialization and permissions as other guest accesses.
+
+LR.W, SC.W and all nine AMO.W operations use dedicated memory ports. The backend
+maps aq/rl and owns arithmetic; session memory owns permissions and reservations.
+Unknown or unsupported atomic accesses produce an atomic memory gap, not MMIO
+substitution or a fabricated fence event.

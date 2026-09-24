@@ -434,8 +434,8 @@ preserving all parent acceptance and sharing the existing execution lifecycle:
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
 | 07.1 | done | Explicit known/unknown RV32 integer argument words, register/stack ABI placement and bounded stack capacity. Shared request/backend/memory contracts, API/CLI execution/comparison/replay, source-free restore, more than eight arguments, unknown consumption and malformed/resource failures pass. No implicit zero arguments or stack initialization. |
-| 07.2 | active | RV32 LR/SC/AMO through an explicit atomic memory port with owned reservation state. Single-hart ordering, reservation invalidation, unknown/unaligned/unsupported locations and all supported operations are tested; no nonatomic fallback or invented peripheral behavior. |
-| 07.3 | pending | Multiple exact entry/setup phases, explicit region ownership/persistence and cold/warm reset transitions. One application budget and publication; dependent-phase blocking, isolated/stateful data and exact source-free replay pass. |
+| 07.2 | done | RV32 LR/SC/AMO through an explicit atomic memory port with owned reservation state. Single-hart ordering, reservation invalidation, unknown/unaligned/unsupported locations and all supported operations are tested; no nonatomic fallback or invented peripheral behavior. |
+| 07.3 | active | Multiple exact entry/setup phases, explicit region ownership/persistence and cold/warm reset transitions. One application budget and publication; dependent-phase blocking, isolated/stateful data and exact source-free replay pass. |
 | 07.4 | pending | Explicit return, reach-symbol and observe-call completion goals over physical captured identities. Goals, premature returns, unresolved targets and phase failure have distinct evidence; API/CLI/comparison/replay and negative cases close stage 07 without claiming unobserved completion. |
 
 
@@ -448,3 +448,21 @@ replay identity. All affected packages/Next tests, Clippy, formatting, public/pr
 docs and standalone pass. Execution request/manifest schema 2, database 20 and
 journal 21 identify the new contract. Clients supply physically lowered words;
 no type or variadic layout is inferred. Stage 07.2 is active.
+
+
+Stage 07.2 acceptance closes LR.W/SC.W and all nine AMO.W operations across all
+four aq/rl combinations. Independent expected old/new values, overlapping/disjoint
+writes, replacement reservations, failed SC permission checks, phase/implementation
+isolation, unknown/misaligned/read-only/MMIO locations and callback admission failure
+pass. Atomic instructions run through the shared API/CLI evidence lifecycle; exact
+replay of a known difference survives source removal and backup/restore. All affected
+packages/Next tests, Clippy, formatting, public/private docs and standalone pass.
+Execution schema 3, database 21 and journal 22 identify the explicit single-hart
+program-order profile; no multi-hart, device or weak-memory guarantee is inferred.
+
+Stage 07.3 implements explicit cold/warm reset per phase and physical entry per
+invocation, replacing the global case mode and fixed entry. RAM declarations carry
+phase/session lifetime; captured writable ELF is session-owned, stack and MMIO are
+phase-owned. A cold phase creates a new independent dependency chain, while a warm
+phase after incomplete execution remains blocked. The first phase must be cold.
+These are native contracts, with no compatibility interpretation of old requests.

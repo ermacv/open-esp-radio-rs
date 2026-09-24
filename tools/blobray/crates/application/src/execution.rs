@@ -2,7 +2,8 @@
 use crate::execution_memory::Session;
 use crate::*;
 use std::io::Write;
-pub const EXECUTION_ENVIRONMENT: &str = "static-elf/explicit-ram/stack-words-1/register-bank-1";
+pub const EXECUTION_ENVIRONMENT: &str =
+    "static-elf/explicit-ram/stack-words-1/single-hart-atomics-1/register-bank-1";
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionWork {

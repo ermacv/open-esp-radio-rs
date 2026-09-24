@@ -26,6 +26,8 @@ pub(super) struct Session<'a> {
     cells: Vec<RegisterCell>,
     events: Vec<ExecutionEvent>,
     max_events: usize,
+    /// Exact four-byte reservation; never shared between implementations/phases.
+    reservation: Option<u32>,
 }
 impl<'a> Session<'a> {
     pub fn new(memory: &'a WorkingMemory, max_events: u32, c: &mut dyn RunControl) -> Result<Self> {
@@ -49,6 +51,7 @@ impl<'a> Session<'a> {
             cells,
             events,
             max_events: max_events as usize,
+            reservation: None,
         })
     }
     fn region(
@@ -135,6 +138,7 @@ impl<'a> Session<'a> {
         c: &mut dyn RunControl,
     ) -> Result<u32> {
         let stack = input.entry_stack(&target.stack)?;
+        self.reservation = None;
         self.regions.retain(|r| r.kind != RegionKind::Stack);
         self.events.clear();
         self.cells.clear();
@@ -236,6 +240,34 @@ impl<'a> Session<'a> {
             (offset + u64::from(width) <= r.bytes.len() as u64).then_some((i, offset as usize))
         })
     }
+    fn invalidate_reservation(&mut self, address: u32, width: u8) {
+        if self.reservation.is_some_and(|reserved| {
+            u64::from(address) < u64::from(reserved) + 4
+                && u64::from(reserved) < u64::from(address) + u64::from(width)
+        }) {
+            self.reservation = None;
+        }
+    }
+    fn atomic_region(
+        &self,
+        address: u32,
+        flags: u32,
+        known: bool,
+        c: &mut dyn RunControl,
+    ) -> Result<Option<(usize, usize)>> {
+        c.checkpoint(self.regions.len() as u64 + 1)?;
+        if !address.is_multiple_of(4) {
+            return Ok(None);
+        }
+        let Some((i, offset)) = self.region_index(address, 4) else {
+            return Ok(None);
+        };
+        let r = &self.regions[i];
+        Ok(
+            (r.flags & flags == flags && (!known || !r.known[offset..offset + 4].contains(&0)))
+                .then_some((i, offset)),
+        )
+    }
 }
 impl ExecutionMemory for Session<'_> {
     fn read(
@@ -246,7 +278,10 @@ impl ExecutionMemory for Session<'_> {
         c: &mut dyn RunControl,
     ) -> Result<Option<u32>> {
         c.checkpoint((self.regions.len() + self.cells.len() + 1) as u64)?;
-        if !matches!(width, 1 | 2 | 4) || !address.is_multiple_of(u32::from(width)) {
+        if !matches!(access, MemoryAccess::Read | MemoryAccess::Fetch)
+            || !matches!(width, 1 | 2 | 4)
+            || !address.is_multiple_of(u32::from(width))
+        {
             return Ok(None);
         }
         if access == MemoryAccess::Read
@@ -313,14 +348,72 @@ impl ExecutionMemory for Session<'_> {
         let Some((i, offset)) = self.region_index(address, width) else {
             return Ok(false);
         };
-        let r = &mut self.regions[i];
-        if r.flags & 2 == 0 {
+        if self.regions[i].flags & 2 == 0 {
             return Ok(false);
         }
+        self.invalidate_reservation(address, width);
+        let r = &mut self.regions[i];
         r.bytes[offset..offset + width as usize]
             .copy_from_slice(&value.to_le_bytes()[..width as usize]);
         r.known[offset..offset + width as usize].fill(1);
         Ok(true)
+    }
+    fn load_reserved(
+        &mut self,
+        address: u32,
+        _order: ExecutionOrdering,
+        c: &mut dyn RunControl,
+    ) -> Result<Option<u32>> {
+        self.reservation = None;
+        let Some((i, offset)) = self.atomic_region(address, 4, true, c)? else {
+            return Ok(None);
+        };
+        let value = u32::from_le_bytes(
+            self.regions[i].bytes[offset..offset + 4]
+                .try_into()
+                .unwrap(),
+        );
+        self.reservation = Some(address);
+        Ok(Some(value))
+    }
+    fn store_conditional(
+        &mut self,
+        address: u32,
+        value: u32,
+        _order: ExecutionOrdering,
+        c: &mut dyn RunControl,
+    ) -> Result<Option<bool>> {
+        let reserved = self.reservation.take();
+        let Some((i, offset)) = self.atomic_region(address, 2, false, c)? else {
+            return Ok(None);
+        };
+        if reserved != Some(address) {
+            return Ok(Some(false));
+        }
+        let r = &mut self.regions[i];
+        r.bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+        r.known[offset..offset + 4].fill(1);
+        Ok(Some(true))
+    }
+    fn modify_word(
+        &mut self,
+        address: u32,
+        _order: ExecutionOrdering,
+        update: &mut dyn FnMut(u32) -> u32,
+        c: &mut dyn RunControl,
+    ) -> Result<Option<u32>> {
+        let Some((i, offset)) = self.atomic_region(address, 6, true, c)? else {
+            return Ok(None);
+        };
+        let old = u32::from_le_bytes(
+            self.regions[i].bytes[offset..offset + 4]
+                .try_into()
+                .unwrap(),
+        );
+        let value = update(old);
+        self.invalidate_reservation(address, 4);
+        self.regions[i].bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+        Ok(Some(old))
     }
     fn event(&mut self, event: ExecutionEvent, c: &mut dyn RunControl) -> Result<()> {
         c.checkpoint(1)?;
@@ -334,3 +427,7 @@ impl ExecutionMemory for Session<'_> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "execution_memory_tests.rs"]
+mod tests;

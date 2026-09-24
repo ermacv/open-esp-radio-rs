@@ -171,16 +171,16 @@ query failures use `{schema:1,query:WorkerReport}`. Codes are machine interfaces
 descriptive prose is not a parsing key.
 
 ```console
-cargo test -p blobray-domain -p blobray-artifacts -p blobray-store \
+cargo test --manifest-path tools/blobray/Cargo.toml -p blobray-domain -p blobray-artifacts -p blobray-store \
   -p blobray-application -p blobray-next
-cargo clippy -p blobray-domain -p blobray-artifacts -p blobray-store \
+cargo clippy --manifest-path tools/blobray/Cargo.toml -p blobray-domain -p blobray-artifacts -p blobray-store \
   -p blobray-application -p blobray-next --all-targets -- -D warnings
 cargo xtask check blobray-standalone
 ```
 
 Tests use synthetic binaries and isolated fixture processes. The cgroup allocation
 test requires real memory delegation and is explicitly ignored in ordinary runs.
-Build its executable with `cargo test -p blobray-next --lib --no-run`, then run
+Build its executable with `cargo test --manifest-path tools/blobray/Cargo.toml -p blobray-next --lib --no-run`, then run
 that printed test executable under a delegated systemd user service:
 
 ```console

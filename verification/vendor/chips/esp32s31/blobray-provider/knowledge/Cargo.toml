@@ -1,4 +1,5 @@
 [package]
+workspace = "../../../../../../tools/blobray"
 name = "open-radio-vendor-chip-knowledge-esp32s31-rev0"
 version.workspace = true
 edition.workspace = true

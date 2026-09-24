@@ -156,7 +156,7 @@ transaction/fsync path), verified reads and physical database/pack sizes:
 ```console
 BLOBRAY_CACHE_BENCH_ROOT=target \
   BLOBRAY_CACHE_BENCH_OUTPUT=target/cache-policy-measurement.json \
-  cargo test -p blobray cache_storage_policy_measurement --lib -- \
+  cargo test --manifest-path tools/blobray/Cargo.toml -p blobray cache_storage_policy_measurement --lib -- \
   --ignored --test-threads=1
 ```
 

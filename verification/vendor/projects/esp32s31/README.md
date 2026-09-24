@@ -17,9 +17,9 @@ callback has no reviewed binding; its unknown target cannot acquire callee effec
 Outputs must stay in ignored storage.
 
 ```console
-cargo build --profile blobray -p blobray-next --bin blobray
+cargo build --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-next --bin blobray
 python3 verification/vendor/projects/esp32s31/phy_research.py \
-  --binary target/blobray/blobray --library /private/libphy.a \
+  --binary tools/blobray/target/blobray/blobray --library /private/libphy.a \
   --rom /private/esp32s31_rev0_rom.elf --linker /usr/bin/ld.lld --limit-mode watchdog \
   --output target/blobray-phy-research
 ```
@@ -257,7 +257,7 @@ cargo xtask vendor-scenario gain --library /private/libphy.a \
 ```
 
 Requests and evidence are Blobray's own serde types, and CLI documents decode
-through `blobray_next_host::wire`. `cargo test -p oer-esp32s31-vendor-scenarios`
+through `blobray_next_host::wire`. `cargo test --manifest-path tools/blobray/Cargo.toml -p oer-esp32s31-vendor-scenarios`
 checks the harness, the evidence interpretation and the oracles. Those tests
 need no private inputs.
 
@@ -463,7 +463,7 @@ Bind `source-artifact:libpp` and `source-inventory:libpp` to the authenticated
 archive named in the suite, and `rust-artifact` to a fresh production probe ELF:
 
 ```console
-target/blobray/blobray-run --project verification/vendor/projects/esp32s31/vendor-project.toml \
+tools/blobray/target/blobray/blobray-run --project verification/vendor/projects/esp32s31/vendor-project.toml \
   --run-spec verification/vendor/projects/esp32s31/local.toml \
   project verify --suite ordinary-tx-ownership
 ```
@@ -498,7 +498,7 @@ PHY-specific duration-to-byte conversion and on-air exchange are outside them.
 Use the same authenticated `libpp` and fresh `rust-artifact` bindings as above:
 
 ```console
-target/blobray/blobray-run --project verification/vendor/projects/esp32s31/vendor-project.toml \
+tools/blobray/target/blobray/blobray-run --project verification/vendor/projects/esp32s31/vendor-project.toml \
   --run-spec verification/vendor/projects/esp32s31/local.toml \
   project verify --suite tx-protection-control
 ```
@@ -535,7 +535,7 @@ Bind `source-artifact:phy-current` to the archive and
 `rust-artifact` role must point to a fresh production probe ELF.
 
 ```console
-target/blobray/blobray-run --project verification/vendor/projects/esp32s31/vendor-project.toml \
+tools/blobray/target/blobray/blobray-run --project verification/vendor/projects/esp32s31/vendor-project.toml \
   --run-spec verification/vendor/projects/esp32s31/local.toml \
   project verify --suite phy-calibration-leaves
 ```
@@ -786,7 +786,7 @@ requests from scenario code. The combined I2C route also checks
 [compiled call boundaries](scenarios/src/harness_edges.rs), then restores and replays their
 evidence alongside positive and negative PHY comparisons. The typed scenarios in
 [`scenarios`](scenarios/src/harness.rs) share the same preparation rules. Their
-host regressions run with `cargo test -p oer-esp32s31-vendor-scenarios`.
+host regressions run with `cargo test --manifest-path tools/blobray/Cargo.toml -p oer-esp32s31-vendor-scenarios`.
 
 Run preparation-only regressions without private inputs:
 

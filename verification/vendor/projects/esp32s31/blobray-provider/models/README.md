@@ -27,7 +27,7 @@ The base model provider is included in both composition identities.
 Run source-only regressions with:
 
 ```console
-cargo test -p open-radio-vendor-models-esp32s31 --lib
+cargo test --manifest-path tools/blobray/Cargo.toml -p open-radio-vendor-models-esp32s31 --lib
 ```
 
 The optional authenticated-ROM mutation test additionally requires a
@@ -106,7 +106,7 @@ Build the [production probe](../../probes/README.md), then build the private-inp
 test executable:
 
 ```console
-cargo test -p open-radio-vendor-models-esp32s31 --test phy_rfpll \
+cargo test --manifest-path tools/blobray/Cargo.toml -p open-radio-vendor-models-esp32s31 --test phy_rfpll \
   --profile blobray --no-run
 ```
 
@@ -118,7 +118,7 @@ BLOBRAY_BINARY="<absolute test executable path printed by Cargo>" \
 OER_PHY_ARCHIVE="<absolute path to the pinned libphy.a>" \
 OER_PHY_ROM="<absolute path to the pinned rev0 ROM ELF>" \
 OER_PHY_PROBE="<absolute path to the newly built probe ELF>" \
-target/blobray/blobray-run --ignored --nocapture
+tools/blobray/target/blobray/blobray-run --ignored --nocapture
 ```
 
 The watchdog backend preserves the explicit input environment while enforcing
@@ -148,7 +148,7 @@ identity, repeated initialization, request/release bus order and software status
 access. It does not model RF arbitration, timer advancement, grant latency or
 concurrent clients and is not vendor/production equivalence.
 
-Build with `cargo test -p open-radio-vendor-models-esp32s31 --test coex_grant
+Build with `cargo test --manifest-path tools/blobray/Cargo.toml -p open-radio-vendor-models-esp32s31 --test coex_grant
 --profile blobray --no-run`, then pass the printed executable to `blobray-run`:
 
 ```console
@@ -157,7 +157,7 @@ BLOBRAY_BINARY="<absolute test executable path printed by Cargo>" \
 OER_COEX_ELF="<absolute linked vendor ELF path>" \
 OER_COEX_ELF_SHA256="<reviewed SHA256 of that ELF>" \
 OER_PHY_ROM="<absolute path to the pinned rev0 ROM ELF>" \
-target/blobray/blobray-run --ignored --nocapture
+tools/blobray/target/blobray/blobray-run --ignored --nocapture
 ```
 
 The ELF hash is required to identify the exact build. It does not authenticate

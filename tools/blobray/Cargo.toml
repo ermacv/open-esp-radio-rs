@@ -67,3 +67,63 @@ object = { version = "=0.39.1", default-features = false, features = ["elf", "st
 scope = "development"
 layer = "tool"
 platform = "host"
+
+# Blobray is a separate host-tool workspace with its own lockfile and target
+# directory, so its dependencies never change the radio workspace lockfile.
+[workspace]
+members = [
+    ".",
+    "addons/c",
+    "addons/esp-idf",
+    "crates/analysis",
+    "crates/analysis-model",
+    "crates/application",
+    "crates/artifacts",
+    "crates/backend-riscv",
+    "crates/contracts",
+    "crates/domain",
+    "crates/execution-model",
+    "crates/knowledge",
+    "crates/riscv",
+    "crates/semantics",
+    "crates/store",
+    "crates/verification",
+    "next",
+    "../../verification/vendor/chips/esp32s31/blobray-provider/contracts",
+    "../../verification/vendor/chips/esp32s31/blobray-provider/knowledge",
+    "../../verification/vendor/chips/esp32s31/blobray-provider/models",
+    "../../verification/vendor/projects/esp32s31/blobray-provider/contracts",
+    "../../verification/vendor/projects/esp32s31/blobray-provider/knowledge",
+    "../../verification/vendor/projects/esp32s31/blobray-provider/models",
+    "../../verification/vendor/projects/esp32s31/scenarios",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ermacv/open-esp-radio-rs"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+debug_assert_with_mut_call = "deny"
+
+[profile.release]
+opt-level = 3
+debug = true
+lto = "fat"
+codegen-units = 1
+
+# Host-side binary analysis is prohibitively slow at dev opt-level 0. Keep a
+# separate incremental profile for the normal blobray aliases so unit tests
+# retain their ordinary dev/release behavior.
+[profile.blobray]
+inherits = "dev"
+opt-level = 3
+debug = 1
+incremental = true
+codegen-units = 16

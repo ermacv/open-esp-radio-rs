@@ -64,9 +64,12 @@ an individual edit. Run the relevant target, architecture, safety and artifact
 checks when changing their ownership boundaries; a partial check is not full
 repository coverage.
 
-Use `cargo test -p <package> <test_name>` for focused iteration. Build the
-Blobray host with `cargo build --profile blobray -p blobray-next --bin
-blobray`. Real analyses use its built-in supervisor; select `--limit-mode
+Use `cargo test -p <package> <test_name>` for focused iteration. Blobray and
+its vendor providers form the separate `tools/blobray` workspace with its own
+lockfile and target directory; pass `--manifest-path tools/blobray/Cargo.toml`
+to Cargo for them. Build the Blobray host with `cargo build --manifest-path
+tools/blobray/Cargo.toml --profile blobray -p blobray-next --bin blobray`
+(or `cargo blobray`). Real analyses use its built-in supervisor; select `--limit-mode
 watchdog` explicitly when kernel cgroup delegation is unavailable. Register
 publication uses `cargo registers generate --manifest
 registers/esp32s31/publication/registers.toml --check`. HIL commands require attached hardware;
@@ -115,8 +118,10 @@ remain in ignored outputs. This exception does not authorize other work logs.
 
 History follows Conventional Commit-style subjects such as
 `feat(blobray): ...`, `fix(esp32s31): ...`, and `refactor(blobray): ...`.
-Keep commits scoped and imperative. PRs should explain the affected ownership
-boundary, list checks run, link qualification/HIL evidence where applicable,
+Keep commits scoped and imperative. A production-crate change needed by
+Blobray or verification work lands in its own product-scoped commit, never
+inside a `blobray` commit: production owners are HIL evidence inputs. PRs
+should explain the affected ownership boundary, list checks run, link qualification/HIL evidence where applicable,
 and call out generated SVD/PAC changes. Never commit vendor binaries,
 disassembly dumps, credentials, or unreviewed extraction artifacts. Necessary
 recovered hardware tables and calibration coefficients are explicitly allowed

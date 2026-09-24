@@ -13,8 +13,7 @@ pub fn run(ctx: &Context, chip: &str, args: &[OsString]) -> Result<std::process:
     let Some((scenario, rest)) = args.split_first() else {
         return Err("select a scenario, for example `gain`".into());
     };
-    process::run(ctx.cargo().args([
-        "build",
+    process::run(crate::blobray::cargo(ctx, "build").args([
         "--profile",
         "blobray",
         "-p",
@@ -22,8 +21,7 @@ pub fn run(ctx: &Context, chip: &str, args: &[OsString]) -> Result<std::process:
         "--bin",
         "blobray",
     ]))?;
-    process::run(ctx.cargo().args([
-        "build",
+    process::run(crate::blobray::cargo(ctx, "build").args([
         "--profile",
         "blobray",
         "-p",
@@ -31,12 +29,11 @@ pub fn run(ctx: &Context, chip: &str, args: &[OsString]) -> Result<std::process:
         "--bin",
         binary,
     ]))?;
-    let output = ctx.root.join("target/blobray");
-    let mut command = ctx.command(output.join(binary));
+    let mut command = ctx.command(crate::blobray::binary(ctx, binary));
     command
         .arg(scenario)
         .arg("--binary")
-        .arg(output.join("blobray"))
+        .arg(crate::blobray::binary(ctx, "blobray"))
         .args(rest);
     let mut child = oer_process::owned::Child::spawn(&mut command)?;
     Ok(crate::hil::exit_code(child.wait_forwarding_cancellation()?))

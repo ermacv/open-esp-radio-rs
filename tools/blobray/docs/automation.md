@@ -36,9 +36,9 @@ Build the selected host with the optimized profile. The limiter accepts an
 explicit executable, including paths relative to the current directory:
 
 ```console
-cargo build --profile blobray -p blobray --bin blobray-generic --bin blobray-run
-BLOBRAY_BINARY=target/blobray/blobray-generic \
-  target/blobray/blobray-run project analyze --project path/to/vendor-project.toml
+cargo build --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray --bin blobray-generic --bin blobray-run
+BLOBRAY_BINARY=tools/blobray/target/blobray/blobray-generic \
+  tools/blobray/target/blobray/blobray-run project analyze --project path/to/vendor-project.toml
 ```
 
 Without `BLOBRAY_BINARY`, the launcher retains the repository's ESP32-S31 host

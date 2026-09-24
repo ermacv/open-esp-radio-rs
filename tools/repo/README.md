@@ -115,7 +115,7 @@ Run the orchestration regressions with:
 
 ```console
 cargo test -p oer-xtask
-cargo test -p blobray --test launcher
+cargo test --manifest-path tools/blobray/Cargo.toml -p blobray --test launcher
 ```
 
 Tests exercise actual temporary Cargo graphs, ownership, argument boundaries,

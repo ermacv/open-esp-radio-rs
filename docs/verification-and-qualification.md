@@ -275,7 +275,7 @@ The commands below produce and assess evidence for an explicitly selected
 checkpoint. They are not prerequisites for reading project status.
 
 ```console
-cargo build --profile blobray -p blobray-next --bin blobray
+cargo build --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-next --bin blobray
 cargo blobray compare --project /path/to/research --request /path/to/comparison.json --limit-mode watchdog
 
 cargo qualification evaluate \

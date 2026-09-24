@@ -1,4 +1,5 @@
 [package]
+workspace = "../../../../../tools/blobray"
 name = "oer-esp32s31-vendor-scenarios"
 version.workspace = true
 edition.workspace = true

@@ -81,8 +81,8 @@ source revisions; there is no pruning or automatic analysis cache lookup.
 
 ### Research a linked image
 
-From the repository root, build `cargo build --profile blobray -p blobray-next`.
-Use `target/blobray/blobray` as `blobray` below. Linking requires the
+From the repository root, build `cargo build --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-next`.
+Use `tools/blobray/target/blobray/blobray` as `blobray` below. Linking requires the
 explicit supported ELF linker executable; reading and analysis do not require a linker.
 
 ```console

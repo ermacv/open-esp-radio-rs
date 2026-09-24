@@ -98,8 +98,10 @@ matrix.
 Use `cargo xtask check source-only` for the complete source checkpoint. It also needs the embedded target and the selected
 toolchain's `llvm-tools-preview` component. It checks dependency and ownership
 boundaries, generated PAC outputs and compiled artifacts. Independent example,
-integration and HIL workspaces have their own build configuration; the root
-workspace check alone does not cover them.
+integration, HIL and Blobray workspaces have their own build configuration; the
+root workspace check alone does not cover them. Blobray host tests run with
+`cargo test --manifest-path tools/blobray/Cargo.toml --workspace --locked --offline`
+and need LLD plus a GNU RV32 linker from binutils 2.47 or later.
 
 Linux/OpenWrt fixture operations belong to HIL. Hardware commands require the
 configured lab and an attached device; source checks do not install fixtures

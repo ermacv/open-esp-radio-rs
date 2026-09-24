@@ -95,8 +95,13 @@ Use the current references to select commands and their supported scope.
 
 ## Start an investigation
 
+Blobray and the vendor provider crates form the separate `tools/blobray` Cargo
+workspace, with its own `Cargo.lock` and `tools/blobray/target` directory, so
+Blobray dependencies never change the radio workspace. From the repository
+root, `cargo blobray` and `--manifest-path tools/blobray/Cargo.toml` select it.
+
 ```console
-cargo build --profile blobray -p blobray-next --bin blobray
+cargo build --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-next --bin blobray
 cargo blobray init --project /path/to/research
 cargo blobray import --project /path/to/research --input vendor=/path/to/lib.a --limit-mode watchdog
 cargo blobray analyze-project --project /path/to/research --limit-mode watchdog

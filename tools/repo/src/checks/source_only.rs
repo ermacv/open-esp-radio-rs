@@ -177,23 +177,18 @@ fn phy(ctx: &Context) -> Result<PathBuf> {
 }
 
 fn final_image_audit(ctx: &Context, runtime: &Path) -> Result<()> {
-    process::run(
-        ctx.cargo()
-            .env("CARGO_TARGET_DIR", ctx.root.join("target"))
-            .args([
-                "build",
-                "--locked",
-                "--offline",
-                "--profile",
-                "blobray",
-                "-p",
-                "blobray-next",
-                "--bin",
-                "blobray",
-            ]),
-    )?;
+    process::run(crate::blobray::cargo(ctx, "build").args([
+        "--locked",
+        "--offline",
+        "--profile",
+        "blobray",
+        "-p",
+        "blobray-next",
+        "--bin",
+        "blobray",
+    ]))?;
     process::run_with_shutdown_grace(
-        ctx.command(ctx.root.join("target/blobray/blobray"))
+        ctx.command(crate::blobray::binary(ctx, "blobray"))
             .args(["audit-targets", "--artifact"])
             .arg(runtime)
             .args([
@@ -263,8 +258,7 @@ fn execute_pre_image_stage(ctx: &Context, stage: PreImageStage) -> Result<()> {
             "-p",
             "oer-firmware",
         ])),
-        PreImageStage::BlobrayCoreTests => process::run(ctx.cargo().args([
-            "test",
+        PreImageStage::BlobrayCoreTests => process::run(crate::blobray::cargo(ctx, "test").args([
             "--locked",
             "--offline",
             "-p",

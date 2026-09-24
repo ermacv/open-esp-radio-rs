@@ -30,7 +30,7 @@ For an existing project, build the host and limiter as described under
 ```console
 cargo blobray project doctor --project path/to/vendor-project.toml
 cargo blobray project files --project path/to/vendor-project.toml
-target/blobray/blobray-run \
+tools/blobray/target/blobray/blobray-run \
   project analyze --project path/to/vendor-project.toml --jobs 1
 cargo blobray project status --project path/to/vendor-project.toml
 cargo blobray project research next --project path/to/vendor-project.toml
@@ -896,6 +896,6 @@ rather than make the development machine unusable. Build the optimized host
 once when iterating repeatedly:
 
 ```console
-cargo build --profile blobray -p blobray-esp32s31 --bin blobray
-cargo build --profile blobray -p blobray --bin blobray-run
+cargo build --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-esp32s31 --bin blobray
+cargo build --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray --bin blobray-run
 ```

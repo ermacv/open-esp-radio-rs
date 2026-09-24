@@ -55,7 +55,7 @@ to locate those responsibilities.
 ## Try synthetic binary discovery, review and export
 
 ```console
-cargo test -p blobray-next --test functions register_discovery_review_conflicts_and_source_free_export_share_scope --locked --offline
+cargo test --manifest-path tools/blobray/Cargo.toml -p blobray-next --test functions register_discovery_review_conflicts_and_source_free_export_share_scope --locked --offline
 ```
 
 This selector runs one test in the

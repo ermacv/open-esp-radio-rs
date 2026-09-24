@@ -14,10 +14,10 @@ symbols are recorded in `functions/reviewed.toml` and can be inspected without
 exporting a disassembly dump:
 
 ```console
-target/blobray/blobray inspect function \
+tools/blobray/target/blobray/blobray inspect function \
   --project verification/vendor/projects/esp32s31/vendor-project.toml \
   ble-controller:r_sym_ble_2ZQ4FJGb6hQUDPQ9jp4a --full
-target/blobray/blobray inspect function \
+tools/blobray/target/blobray/blobray inspect function \
   --project verification/vendor/projects/esp32s31/vendor-project.toml \
   ble-controller:r_sym_ble_DCD5eVhcHQ9ueSpewKn1 --full
 ```

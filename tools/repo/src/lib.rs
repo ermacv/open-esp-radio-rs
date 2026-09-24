@@ -6,6 +6,7 @@ use std::{
     process::Command,
 };
 
+pub mod blobray;
 pub mod cargo;
 pub mod checks;
 pub mod firmware;

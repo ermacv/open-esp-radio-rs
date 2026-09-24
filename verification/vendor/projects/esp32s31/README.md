@@ -247,6 +247,7 @@ python3 verification/vendor/projects/esp32s31/phy_gain.py \
   --rom /private/esp32s31_rev0_rom.elf \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
   --linker /usr/bin/ld.lld --nm /usr/bin/llvm-nm \
+  --rftest /private/librftest.a \
   --output target/blobray-research/gain --limit-mode watchdog
 ```
 
@@ -290,6 +291,43 @@ must publish no execution. Input copies are removed before linking; all retained
 positive and negative runs reopen after move/backup/restore and replay with exactly
 their original identities. These are software gain-child comparisons, not RF,
 whole-TXCAL, Wi-Fi or BT/154 protocol qualification.
+
+### Gain state and RF-test power producer
+
+The same runner characterizes captured calibration storage and the RF-test
+power policy (`phy_gain_state.py`). These are vendor-only executions: no
+production storage or RF power API exists, and none is inferred.
+
+Storage always runs, because it needs only the pinned archive and ROM. The
+captured image's startup adjustment byte must be zero. For both stack fills and
+adjustments 0, 1, 31, 127, 128 and 255, warm phases execute the real backup,
+destruction of live state, recovery, parameter registration, curve/base
+isolation, restored-adjustment consumption and consumption after moving the
+value to the base. Independent expectations check the 532-byte backup image,
+the exact registration writes and every 160-byte gain output against the
+coefficient oracle. No hardware event occurs.
+
+`--rftest` supplies `librftest.a` (SHA-256
+`547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e`, same
+`b88e4b76` revision). Its `set_rate_power_index` and `mac_power_set` are linked
+as additional roots; no power or gain callee is substituted. The real callback
+installer runs, then fifteen policy rows per fill check rounding, saturation,
+signed-byte wrap, the adjustment byte, conditional `phy_wifi_set_tx_gain_new`
+publication with all MMIO events, and both MAC index writes. Without `--rftest`
+every other case still runs, the unmet producer obligation is written to
+`unmet-obligations.request.json`, and the runner exits with status 2 instead of passing.
+
+Negative cases are:
+
+- corrupted saved adjustments on both sides propagating to a DIFF;
+- recovery from an unknown cache, which is INCOMPLETE;
+- a missing callback installation, which is INCOMPLETE and publishes neither gain
+  nor MAC state;
+- an unknown policy input, which stops at the exact byte read and blocks later
+  phases;
+- event exhaustion, which publishes no execution.
+
+All retained runs join the source-free move/backup/restore/replay set.
 
 ## Legacy configuration reference
 

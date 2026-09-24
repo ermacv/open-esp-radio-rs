@@ -1,4 +1,4 @@
-"""Native captured Wi-Fi/BT gain arithmetic and complete publication comparison.
+"""Native Wi-Fi/BT gain comparison and optional storage/RF-test characterization.
 
 Explicit finite software inputs only; no RF, protocol or whole-TXCAL qualification.
 Private inputs and retained requests/evidence belong in the selected ignored output.
@@ -17,6 +17,8 @@ import struct
 from harness import Runner, ProbeCatalog, Buffer, seed, region, invocation, selection, case, words, symbol
 from phy_i2c import LIBRARY_SHA, ROM_SHA
 
+# Pinned `librftest.a` from the same PHY source revision as the archive.
+RFTEST_SHA = "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e"
 OBJECT_SHA = "88ee26018604100c9ba7839214024d54b48adf982c482dfb1e90d2a11f29f7d3"
 # Independently extracted with llvm-ar/llvm-objcopy from the pinned archive;
 # the native export must match before these data may support a comparison.
@@ -115,10 +117,13 @@ class Gain:
         (options.output / 'latest').write_text(str(self.run))
         self.runner = Runner(options.binary, self.run, self.run/'project', options.limit_mode)
         self.call, self.doc = self.runner.call, self.runner.doc
-        self.revision, identities = self.runner.capture(
-            [options.library, options.rom, options.production], ['phy','rom','production'],
-            [LIBRARY_SHA, ROM_SHA, None])
-        self.doc('identities', dict(sha256=identities, scope=__doc__))
+        sources, roles, hashes = [options.library,options.rom,options.production], ['phy','rom','production'], [LIBRARY_SHA,ROM_SHA,None]
+        if options.rftest is not None:
+            sources.append(options.rftest)
+            roles.append('rftest')
+            hashes.append(RFTEST_SHA)
+        self.revision, identities = self.runner.capture(sources,roles,hashes)
+        self.doc('identities', dict(sha256=identities, scope=__doc__, rftest=options.rftest is not None))
         self.inventory = self.call('inventory',['inventory'])['snapshot']['revision']['inputs']
         self.probes = ProbeCatalog.capture(self.runner, self.revision, self.inventory, 2)
         obj = next(o for o in self.inventory[0]['inventory']['objects'] if bytes(o['name']) == b'phy_tx_gain.o')
@@ -137,9 +142,16 @@ class Gain:
         companions += ['phy_i2c_writeReg','memset','phy_get_i2c_mst0_mask','phy_i2c_paral_write_num',
                        'ets_delay_us','phy_wait_i2c_sdm_stable','phy_tsens_dac_cal','phy_tsens_temp_read_local',
                        'phy_i2c_readReg','phy_i2c_writeReg_Mask']
+        # Calibration storage roots need no RF-test input and always participate.
+        roots += ['phy_rf_cal_data_backup_new','phy_rf_cal_data_recovery_new',
+                  'register_chipv7_phy_init_param','phy_wifi_set_tx_gain_new']
+        companions += ['phy_get_target_pwr','phy_byte_to_word']
         link = dict(revision=self.revision,inputs=[0],entry=self.root(roots[0]),roots=[self.root(n) for n in roots[1:]],
             companions=[dict(input=1,symbol=self.sym(1,n)['id']) for n in companions],
             layout=dict(code=dict(start=0x11000000,length=0x1000000),data=dict(start=0x20000000,length=0x1000000)))
+        if options.rftest is not None:
+            link['inputs'].append(3)
+            link['roots'] += [dict(input=3,symbol=self.sym(3,n)['id']) for n in ('set_rate_power_index','mac_power_set')]
         plan = self.run/'link-plan.json'
         self.call('plan',['link-plan','--request',self.doc('plan',link),'--linker',options.linker.resolve(),'--output',plan])
         image = self.call('prepare',['prepare-image','--plan',plan,'--linker',options.linker.resolve()])['run']['image']
@@ -488,7 +500,13 @@ def main():
     for name in ('binary','library','rom','production','linker','nm','output'):
         parser.add_argument('--'+name,type=pathlib.Path,required=True)
     parser.add_argument('--limit-mode',choices=['kernel','watchdog'],required=True)
-    g = Gain(parser.parse_args())
+    parser.add_argument('--rftest',type=pathlib.Path,
+                        help='authenticated librftest.a; without it the RF-test producer obligation stays unmet')
+    options = parser.parse_args()
+    g = Gain(options)
+    from phy_gain_state import exercise
+    unmet = exercise(g, options.rftest is not None)
+    g.doc('unmet-obligations', unmet)
     g.coefficient_boundaries()
     g.characterize()
     g.wifi()
@@ -497,7 +515,10 @@ def main():
     g.additive()
     g.negative()
     g.preserve()
-    print('authenticated gain arithmetic/publication and source-free replay passed',g.run,flush=True)
+    if unmet:
+        print('INCOMPLETE: unmet obligations:',', '.join(o['id'] for o in unmet),g.run,flush=True)
+        raise SystemExit(2)
+    print('authenticated gain arithmetic/publication, gain state and source-free replay passed',g.run,flush=True)
 
 
 if __name__ == '__main__':

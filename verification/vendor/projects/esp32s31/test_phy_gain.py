@@ -49,5 +49,29 @@ class GainEvidenceTests(unittest.TestCase):
         self.assertEqual(bluetooth[5][2], 0x80000)
 
 
+class GainStateTests(unittest.TestCase):
+    def test_mac_power_updates_both_index_fields_and_preserves_other_bits(self):
+        from phy_gain_state import mac_power
+        self.assertEqual(mac_power(21, 0xa5a5a5a5), [
+            ('read', 0x20105500, 0xa5a5a5a5), ('write', 0x20105500, 0xa5a5a595),
+            ('read', 0x20105500, 0xa5a5a595), ('write', 0x20105500, 0xa5a59595)])
+        # Signed policy results are truncated to the six-bit fields.
+        self.assertEqual(mac_power(-12, 0)[3], ('write', 0x20105500, 0x3434))
+
+    def test_missing_rftest_is_an_unmet_obligation(self):
+        from phy_gain_state import exercise, RFTEST_OBLIGATION
+        import phy_gain_state
+        ran = []
+        original = phy_gain_state.storage, phy_gain_state.storage_negative, phy_gain_state.producer
+        try:
+            phy_gain_state.storage = lambda g: ran.append('storage') or 'baseline'
+            phy_gain_state.storage_negative = lambda g, b: ran.append(('storage-negative', b))
+            phy_gain_state.producer = lambda g: self.fail('producer requires RF-test input')
+            self.assertEqual(exercise(object(), False), [RFTEST_OBLIGATION])
+        finally:
+            phy_gain_state.storage, phy_gain_state.storage_negative, phy_gain_state.producer = original
+        self.assertEqual(ran, ['storage', ('storage-negative', 'baseline')])
+
+
 if __name__ == '__main__':
     unittest.main()

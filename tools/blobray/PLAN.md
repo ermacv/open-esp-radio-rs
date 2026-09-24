@@ -190,8 +190,9 @@ command-memory and transport acceptance. Stage 12.1 is complete under the full
 calibration/RF assignment below. Checkpoint 12.H is complete. Stage 12.2 is complete, including PBus/DCODE
 execution, negative outcomes and preservation. Stage 12.3 is complete: RFPLL
 search, maintenance, frequency memory and restored replay. Stage 12.4 is complete:
-gain arithmetic, coefficient boundaries and full Wi-Fi/BT publication. The next
-acceptance unit is 12.5, gain state and the RF-test producer.
+gain arithmetic, coefficient boundaries and full Wi-Fi/BT publication. Stage 12.5
+is complete: gain state and the RF-test producer. Checkpoint 12.R is active:
+typed Rust verification scenarios replace the Python runners before 12.6.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -815,7 +816,8 @@ current owner docs and the ordinary stage gates. No partial unit is completion.
 | 12.2 | done | PBus clear and DCODE: all profiles in `phy_rfpll/calibration.rs`, `phy_rfpll/dcode.rs` and the PBus rows of the calibration profile. Retained values, both settle branches, delayed readiness, crystal selectors and eight measured bytes; stuck PBus/channel/I2C cannot publish partial codes or restore unfinished state. |
 | 12.3 | done | RFPLL search, maintenance and frequency memory: all cases in `phy_rfpll.rs` and `phy_rfpll/memory.rs`. Zero/nonzero signed corrections, search commands, requested settles, retained memory/control transactions and timeout without restored hardware control. Preserve the installed-layout query exclusion explicitly and retain raw observations. |
 | 12.4 | done | Gain arithmetic and publication: `phy_rfpll/gain_calculation.rs`, `phy_rfpll/tx_gain.rs`, `phy_rfpll/bluetooth_gain.rs`. Actual current coefficient selection and ROM kernel inputs, signed narrowing, additive current versus subtractive ROM behavior, boundary curves, complete Wi-Fi/BT publishers and bank wrap. Independently authenticate coefficients; changing coefficients changes dependency identity. |
-| 12.5 | pending | Gain state and RF-test producer: `phy_rfpll/gain_state.rs`, `phy_rfpll/gain_producer.rs`. Execute real backup/destruction/recovery/init/consumption and the separately authenticated RF-test power producer, including rounding/saturation and gain/MAC publication. Preserve their characterization scope; vendor storage support is not inferred for production. Missing RF-test input remains an unmet obligation, never an omitted case. |
+| 12.5 | done | Gain state and RF-test producer: `phy_rfpll/gain_state.rs`, `phy_rfpll/gain_producer.rs`. Execute real backup/destruction/recovery/init/consumption and the separately authenticated RF-test power producer, including rounding/saturation and gain/MAC publication. Preserve their characterization scope; vendor storage support is not inferred for production. Missing RF-test input remains an unmet obligation, never an omitted case. |
+| 12.R | active | Typed Rust verification scenarios, detailed below. Every current Python scenario, oracle and host test moves to a Rust owner package with unchanged cases, verdicts, negatives and preservation; Python is removed. Stage 12.6–12.10 obligations are unchanged. |
 | 12.6 | pending | Channel restoration: `phy_rfpll/channel.rs`. Actual callback installation, all temperature-prefix sensor ranges, full-root gain publication and committed channel/bandwidth/temperature; stuck readiness cannot publish gain or semantic output. Prefix and full-root evidence remain distinct. |
 | 12.7 | pending | RX gain/calibration: `phy_rfpll/rx_gain.rs`. Both complete roots, DC/table guards, signed estimators, delayed I2C/settle, projected coefficients and bank limits; failed channel, minimum search and shared budget preserve prior coefficients. Readiness observations and genuine output publication remain visible. |
 | 12.8 | pending | TX-DC/PWDET: `phy_rfpll/tx_dc_pwdet.rs`. Actual search/PBus/SAR children, Wi-Fi/BT selection, DC rows, constant/alternating samples and tone/settle paths. Independent PBus/SAR faults cannot publish calibration; observation capacity differs from time/work limits. Preserve seeded gain adjustment and explicit unused-read exclusions. |
@@ -961,3 +963,49 @@ docs pass; target-only doctests remain inapplicable. The generic engine, schemas
 and architecture boundaries are unchanged. These are software gain-child claims,
 not RF, protocol or whole-TXCAL qualification. No legacy runtime or compatibility
 mechanism participates.
+
+
+12.5 acceptance: storage runs without RF-test input: startup adjustment, six
+adjustments and both fills through real backup, destruction, recovery,
+parameter registration, isolation and both consumptions, with independent
+backup-image, registration and 160-byte oracle expectations and no hardware
+events. With the authenticated `librftest.a`, the real callback installer and
+fifteen policy rows per fill check the adjustment byte, conditional gain
+publication with all MMIO events and both MAC index writes. Negatives cover
+two-sided corruption DIFF, unknown-cache INCOMPLETE, missing-callback and
+unknown-policy-input INCOMPLETE without gain/MAC publication, and event
+exhaustion without publication. Without `--rftest` the runner records the
+unmet producer obligation and exits with status 2. With it, all 216 retained
+executions reopen and replay exactly after move and backup/restore; without it,
+all 204 do. Host oracle tests and the docs check pass. These are vendor
+characterizations: no production storage or RF power API is inferred.
+
+
+### Checkpoint 12.R: typed Rust verification scenarios
+
+User-authorized insertion after 12.5 and before 12.6. The Python runners in
+`verification/vendor/projects/esp32s31/` build untyped request dictionaries,
+duplicate native schemas, run outside `cargo`/`xtask` checks and add a second
+language. All stage-12 obligations remain intact.
+
+- One Rust package owned by the ESP32-S31 verification owner replaces every
+  Python runner, harness, oracle and host test: research, I2C command memory and
+  transport, calibration leaves/prefix, RFPLL, gain arithmetic/publication and
+  gain state/RF-test.
+- Requests and evidence use serde types from `blobray-domain`; no hand-built
+  JSON schema copy. Blobray is invoked as the `blobray` process through its CLI,
+  preserving the supervisor and explicit `--limit-mode`.
+- A binary accepts explicit private inputs (no environment or filename
+  guessing) and is launched by a `cargo xtask` command. Pure oracles, evidence
+  interpretation and probe-catalog handling are ordinary `cargo test` cases
+  that need no private inputs. Missing inputs remain unmet obligations with a
+  nonzero exit.
+- Chip addresses, source identities and expectations stay in the verification
+  owner; generic Blobray gains no chip dependency. The new package declares its
+  `open-radio` metadata and passes architecture and standalone checks.
+- Acceptance: every scenario reproduces the Python case counts, independent
+  expectations, MATCH/DIFF/INCOMPLETE outcomes, no-publication failures and
+  source-free move/backup/restore/replay on the authenticated inputs under
+  watchdog limits. All Python files are removed and owner docs updated.
+  Formatting, strict Clippy, public/private docs, architecture, standalone and
+  source-only checks pass. Partial migration does not close 12.R.

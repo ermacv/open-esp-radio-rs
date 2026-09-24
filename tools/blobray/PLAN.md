@@ -183,7 +183,7 @@ Aliases/old grammar are not portability requirements.
 ## Current execution position
 
 Stages 00–09 and the corrective transfer-state obligation in 06.2 are complete.
-The local expression index correction is active before continuation of 10.4.
+The runtime interface preparation correction is active before continuation of 10.4.
 Stages 10.1–10.3 are complete.
 The corrections below preserve all original stage obligations and 10.4 WIP.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -679,6 +679,6 @@ the effect-contract and composed source-only checkpoint remains active 10.4.
 | Correction | Status | Required acceptance |
 | --- | --- | --- |
 | 06.2 transfer state | done | Keep pre-transfer CallInputs; apply saved typed link writes on callee entry under trace policy 2. User-authorized exact saved indirect links may close only structural indirect CFG gaps; all other gaps remain blocking. ELF-to-IR-to-trace and concrete execution agree for x1/x5, 2/4-byte calls, tails, nested/repeated calls and selected effects. Section-relative addresses never become physical offsets; malformed facts fail closed. Source-free restore and existing real PHY/ROM trace acceptance pass before reclosing 06.2. |
-| Local expression index | active | Operation-owned full-key interning preserves IDs, records, provenance and admission rollback. Collision, cancellation, capacity/release and 512/1024/2048 work-growth regressions pass without raising limits. |
-| Runtime interface preparation | ready | Group snapshot/object requests with admitted sorting and linear group passes; retain individual physical validation, result order and release before sessions. Work growth, cold/warm ownership, invalid selections and publication atomicity pass. Mixed callback/captured indirect calls retain the explicit strict-profile INCOMPLETE outcome and replay. |
+| Local expression index | done | Operation-owned full-key interning preserves IDs, records, provenance and admission rollback. Collision, cancellation, capacity/release and 512/1024/2048 work-growth regressions pass without raising limits. |
+| Runtime interface preparation | active | Group snapshot/object requests with admitted sorting and linear group passes; retain individual physical validation, result order and release before sessions. Work growth, cold/warm ownership, invalid selections and publication atomicity pass. Mixed callback/captured indirect calls retain the explicit strict-profile INCOMPLETE outcome and replay. |
 | Documentation and full checkpoint | ready | One current-format reference and coherent execution position; focused/public/private docs, formatting, Clippy, all eight core package unit suites, functions/images/execution/architecture, standalone, source-only and authenticated PHY/ROM watchdog acceptance pass. Artifacts remain ignored; unavailable inputs/checks keep obligations open. |

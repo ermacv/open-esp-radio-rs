@@ -5,7 +5,7 @@ use crate::*;
 pub const FUNCTION_SCHEMA: u32 = 7;
 pub const FUNCTION_POLICY: u32 = 8;
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum FunctionSource {
     Input { input: u64 },

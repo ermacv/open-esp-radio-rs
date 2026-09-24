@@ -27,6 +27,10 @@ The same value solver can emit a flat expression DAG, entry-register values,
 symbolic loads, conditions and returns. Record and payload reservations live with the DAG;
 loops use the bounded monotone state queue. Explicit ABI context controls only
 integer call preservation. ELF ABI flags never select that assumption.
+An operation-owned, capacity-admitted hash index interns full `(site, expression)`
+keys with stable record IDs and provenance. Hash collisions use full equality;
+lookup, replacement-index construction and payload ownership share the analysis
+budget. Failed admission or cancellation leaves retained IDs usable.
 
 The `summaries` module composes supplied acyclic callees and substitutes arguments
 without acquiring source-selection authority. Its owned output uses a capacity-admitted `RecordBuffer`; mapping/return

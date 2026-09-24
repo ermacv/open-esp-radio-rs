@@ -503,3 +503,36 @@ fn relocatable_call_link_address_never_becomes_a_physical_section_offset() {
         }
     )));
 }
+
+#[test]
+fn symbolic_elf_analysis_scales_within_existing_work_budget() {
+    let mut previous = None;
+    for count in [512, 1024, 2048] {
+        let mut code = vec![0x00150513; count]; // addi a0,a0,1: new DAG node at each site.
+        code.push(0x00008067);
+        let bytes = words(&code);
+        let f = fixture(object(&bytes, bytes.len() as u64, false), false);
+        let mut limits = budget();
+        limits.max_work_units = Some(1_000_000);
+        let run = f
+            .app
+            .start_analyze_function(&f.project, f.request.clone(), limits)
+            .unwrap()
+            .wait();
+        assert_eq!(run.state, RunState::Completed, "{count}: {run:?}");
+        let used = run.diagnostics.unwrap().progress.unwrap().work_used;
+        let (_, records) = export(&f, run.analysis.unwrap());
+        assert!(
+            records
+                .iter()
+                .filter(|r| matches!(r, FunctionRecord::Expression { .. }))
+                .count()
+                >= count
+        );
+        if let Some(previous) = previous {
+            assert!(used < previous * 3, "{count}: {used}/{previous}");
+        }
+        eprintln!("ELF expressions={count}, work={used}");
+        previous = Some(used);
+    }
+}

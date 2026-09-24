@@ -97,7 +97,7 @@ pub trait FunctionSemantics: FunctionDecoder {
     ) -> ValueRelocation;
 }
 /// Values are relative to this recipe's input/object unless an exact symbol is supplied.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum AbstractValue {
     Unknown,
@@ -133,7 +133,7 @@ pub enum AbstractValue {
 /// Maximum exact alternatives retained by the finite-value profile.
 pub const MAX_VALUE_ALTERNATIVES: usize = 8;
 /// Nonrecursive exact leaves. Alternatives never contain expressions or other sets.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ValueAlternative {
     Constant {
@@ -211,7 +211,7 @@ impl ValueAlternative {
     }
 }
 /// Canonical, bounded set; serde rejects oversized, singleton and noncanonical sets.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Hash)]
 #[serde(transparent)]
 pub struct ValueAlternatives(Vec<ValueAlternative>);
 impl ValueAlternatives {
@@ -348,7 +348,7 @@ pub struct ResearchOptions {
     pub knowledge: Option<KnowledgeRevisionId>,
 }
 /// Flat DAG. References must point to earlier records in the same function.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Expression {
     EntryRegister {

@@ -3,6 +3,7 @@
 use super::value_sets::Sets;
 use super::*;
 use std::collections::VecDeque;
+use std::hash::{Hash, Hasher};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum Value {
@@ -922,6 +923,7 @@ pub(super) fn analyze_with(
 struct Symbols<'a> {
     sets: Sets<'a>,
     records: AdmittedVec<'a, (u64, Expression)>,
+    slots: AdmittedVec<'a, Option<u32>>,
     payloads: AdmittedVec<'a, MemoryReservation<'a>>,
     memory: &'a WorkingMemory,
     limit: usize,
@@ -941,6 +943,7 @@ impl<'a> Symbols<'a> {
         Ok(Self {
             sets: Sets::new(memory),
             records: AdmittedVec::new(memory),
+            slots: AdmittedVec::new(memory),
             payloads: AdmittedVec::new(memory),
             memory,
             limit,
@@ -952,11 +955,10 @@ impl<'a> Symbols<'a> {
         expr: Expression,
         c: &mut dyn RunControl,
     ) -> Result<Value> {
-        for (id, (site, old)) in self.records.iter().enumerate().rev() {
-            c.checkpoint(1)?;
-            if *site == offset && old == &expr {
-                return Ok(Value::Expr(id as u32));
-            }
+        let hash = Self::hash(offset, &expr, c)?;
+        let mut at = self.find(hash, offset, &expr, c)?;
+        if let Some(id) = at.and_then(|at| self.slots[at]) {
+            return Ok(Value::Expr(id));
         }
         if self.records.len() == self.limit {
             return Err(Error::new(
@@ -966,13 +968,77 @@ impl<'a> Symbols<'a> {
         }
         let id = u32::try_from(self.records.len())
             .map_err(|_| Error::new(ErrorCode::ResourceLimited, "expression ID overflow"))?;
+        if self.slots.is_empty() || self.records.len() >= self.slots.len() / 2 {
+            self.grow(c)?;
+            at = self.find(hash, offset, &expr, c)?;
+        }
         let payload = self.memory.reserve(expr.allocated_bytes(), c.position())?;
         self.payloads.push(payload, c.position())?;
         if let Err(error) = self.records.push((offset, expr), c.position()) {
             self.payloads.pop();
             return Err(error);
         }
+        // Publish the slot only after both admitted owners accepted the record.
+        self.slots[at.expect("nonempty expression index")] = Some(id);
         Ok(Value::Expr(id))
+    }
+    fn hash(offset: u64, expr: &Expression, c: &mut dyn RunControl) -> Result<usize> {
+        // Leaves are bounded/nonrecursive; charge their dynamic storage too.
+        c.checkpoint(1 + expr.allocated_bytes())?;
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        (offset, expr).hash(&mut hash);
+        Ok(hash.finish() as usize)
+    }
+    fn find(
+        &self,
+        hash: usize,
+        offset: u64,
+        expr: &Expression,
+        c: &mut dyn RunControl,
+    ) -> Result<Option<usize>> {
+        if self.slots.is_empty() {
+            return Ok(None);
+        }
+        let mut at = hash & (self.slots.len() - 1);
+        loop {
+            c.checkpoint(1)?;
+            match self.slots[at] {
+                Some(id)
+                    if self.records[id as usize].0 != offset
+                        || &self.records[id as usize].1 != expr =>
+                {
+                    at = (at + 1) & (self.slots.len() - 1);
+                }
+                _ => return Ok(Some(at)),
+            }
+        }
+    }
+    fn grow(&mut self, c: &mut dyn RunControl) -> Result<()> {
+        let size = self
+            .slots
+            .len()
+            .checked_mul(2)
+            .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "expression index overflow"))?
+            .max(64);
+        // Build beside the old index, so cancellation/admission failure leaves it usable.
+        let mut slots = AdmittedVec::new(self.memory);
+        for _ in 0..size {
+            c.checkpoint(1)?;
+            slots.push(None, c.position())?;
+        }
+        for (id, (offset, expr)) in self.records.iter().enumerate() {
+            let mut at = Self::hash(*offset, expr, c)? & (size - 1);
+            loop {
+                c.checkpoint(1)?;
+                if slots[at].is_none() {
+                    break;
+                }
+                at = (at + 1) & (size - 1);
+            }
+            slots[at] = Some(id as u32);
+        }
+        self.slots = slots;
+        Ok(())
     }
     fn binary(
         &mut self,
@@ -1616,3 +1682,7 @@ mod tests {
         assert_eq!(lower(Value::Constant(0), r), Value::Unknown);
     }
 }
+
+#[cfg(test)]
+#[path = "expression_tests.rs"]
+mod expression_tests;

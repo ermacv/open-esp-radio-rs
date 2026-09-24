@@ -633,6 +633,18 @@ impl Application {
     ) -> Result<RunHandle> {
         self.start_scenario(project, ScenarioRequest::Research { request }, budget)
     }
+    pub fn start_propose_effect_contract(
+        &self,
+        project: &Path,
+        request: EffectProposalRequest,
+        budget: ResourceBudget,
+    ) -> Result<RunHandle> {
+        self.start_scenario(
+            project,
+            ScenarioRequest::ProposeEffectContract { request },
+            budget,
+        )
+    }
     pub fn start_propose_projection(
         &self,
         project: &Path,
@@ -749,6 +761,12 @@ impl Application {
                         Error::new(ErrorCode::NotFound, "project has no revision")
                     })?);
             }
+        }
+        if let ScenarioRequest::ProposeEffectContract { request } = &request {
+            request.contract.validate()?;
+            writer
+                .project()
+                .check_knowledge_base(&request.expected_base)?;
         }
         if let ScenarioRequest::ProposeProjection { request } = &request {
             request.projection.validate()?;
@@ -1029,7 +1047,7 @@ impl Application {
             &work,
         )?;
         let record = RunRecord {
-            schema: 33,
+            schema: 34,
             operation: blobray_store::RunOperation::Query,
             resolved_operation: None,
             image: None,

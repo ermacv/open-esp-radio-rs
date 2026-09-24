@@ -29,11 +29,10 @@ pub(crate) fn endpoint(
 }
 pub(crate) fn secondary(
     project: &Project,
-    pair: &CallCorrespondence,
+    e: &CallEndpoint,
     memory: &WorkingMemory,
     c: &mut dyn RunControl,
 ) -> Result<Vec<ArtifactId>> {
-    let e = &pair.replacement;
     let mut roots = vec![
         e.occurrence.revision.as_str().parse()?,
         e.occurrence.object.artifact.clone(),

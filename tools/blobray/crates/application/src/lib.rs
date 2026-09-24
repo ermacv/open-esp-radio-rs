@@ -400,4 +400,5 @@ mod fifo_services;
 
 mod call_pairs;
 
+mod effect_contracts;
 mod layout_projections;

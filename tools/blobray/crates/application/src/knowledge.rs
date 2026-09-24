@@ -49,7 +49,9 @@ fn validate_evidence(
                 KnowledgeClaim::FunctionExtent { extent } => Some(extent),
                 _ => None,
             };
-            if let KnowledgeClaim::LayoutProjection { projection } = &proposal.claim {
+            if let KnowledgeClaim::EffectContract { contract } = &proposal.claim {
+                crate::call_pairs::endpoint(&capture, &contract.vendor, memory, c)?;
+            } else if let KnowledgeClaim::LayoutProjection { projection } = &proposal.claim {
                 crate::layout_projections::endpoint(
                     &capture, projection, false, decoder, memory, c,
                 )?;
@@ -146,6 +148,14 @@ fn validate_evidence(
             }
             Ok(capture.payload.clone())
         })?;
+    if let KnowledgeClaim::EffectContract { contract } = &proposal.claim {
+        roots.extend(crate::call_pairs::secondary(
+            project,
+            &contract.replacement,
+            memory,
+            control,
+        )?);
+    }
     if let KnowledgeClaim::LayoutProjection { projection } = &proposal.claim {
         roots.extend(crate::layout_projections::secondary(
             project, projection, decoder, memory, control,
@@ -154,7 +164,7 @@ fn validate_evidence(
     if let KnowledgeClaim::CallPair { correspondence } = &proposal.claim {
         roots.extend(crate::call_pairs::secondary(
             project,
-            correspondence,
+            &correspondence.replacement,
             memory,
             control,
         )?);

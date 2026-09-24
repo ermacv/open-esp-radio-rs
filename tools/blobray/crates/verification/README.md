@@ -4,7 +4,7 @@
 has no filesystem, store, executor, selection or publication authority. Application
 supplies observations, the exact case relation and shared operation control.
 
-`selected-projected-timeline-calls-returns-memory/model-9` compares explicitly selected ordered
+The verifier compares explicitly selected ordered
 MMIO read/write, fence and modeled delay channels; selected low/high return words;
 exact paired final normal-memory ranges; and opt-in ordered physical call targets/words. Physical range lengths must agree;
 addresses may differ only because the caller selected that pair. No pointer, ABI
@@ -53,3 +53,12 @@ effects prevent equality. Final fields compare complete selected known bytes; un
 padding is retained outside the explicit selection. Projected call words compare
 exact 32-bit values at reviewed positions. No pointer-value or type conversion is
 inferred. The verifier borrows contracts and observations; store owns review lookup.
+
+Reviewed effect contracts classify every concrete MMIO/delay/fence observation.
+Required effects remain exact; optional omissions retain an ordered exact
+subsequence; replacements pair explicit patterns; additions and prohibitions keep
+independent exercise/value/count obligations. Unknown classification stops alignment
+without manufacturing a shifted mismatch. Raw evidence remains with the caller.
+The result exposes the review's claim ceiling and first policy gap; a refined MATCH
+never asserts physical equality. Shared bounded domain counters permit store to
+validate retained accounting independently. See [effect contracts](../../docs/design/contracts.md#reviewed-effect-contracts).

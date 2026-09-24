@@ -669,3 +669,18 @@ unmapped selected effects cannot MATCH. Different addresses/word positions can m
 only under the selected mapping. Query, move, backup/restore and replay preserve
 that frozen scope independently of subsequent knowledge changes. Arbitrary type,
 pointer-value and dynamic-path conversions are not part of this profile.
+
+### Reviewed effect refinement — implemented finite profile
+
+Capture both compiled inputs → identify exact root entries → propose explicit
+required/omitted/replaced/added or forbidden MMIO/delay/fence rules → review →
+select the accepted effect assertion with the desired call, layout, timeline,
+return and final-memory relations → execute/compare → inspect claim ceiling and
+remaining obligations → preserve/reopen/replay the same research.
+
+All raw effects remain evidence. A policy may deliberately relax physical
+observations only under the reviewed refinement ceiling; it cannot discharge
+unknown classification, missing required exercise or unfinished execution.
+[Effect scenarios](../../next/tests/execution/effects.rs) exercise generic and
+specialized proposal, CLI review, conflicting/stale selection, combined relations,
+failed-run atomicity and source-free restore/replay.

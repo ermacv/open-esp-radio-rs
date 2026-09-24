@@ -538,6 +538,7 @@ mod services;
 
 fn fixture_relation(low: bool) -> ComparisonRelation {
     ComparisonRelation {
+        effects: None,
         projection: None,
         calls: false,
         reviewed_calls: None,
@@ -565,6 +566,8 @@ mod call_pairs;
 #[path = "execution/timeline.rs"]
 mod timeline;
 
+#[path = "execution/effects.rs"]
+mod effects;
 #[path = "execution/projections.rs"]
 mod projections;
 #[path = "execution/static_trace.rs"]

@@ -64,7 +64,7 @@ does not inspect procfs or implement the worker transport. The application wraps
 store readers in restricted capabilities instead of exposing `Project` to read
 consumers.
 
-Run schema 33 carries the admitted operation, optional concrete scenario
+The current run format carries the admitted operation, optional concrete scenario
 resolution and scoped `ResultAssessment`. Readers validate one published result,
 its assessment identity and scenario shape. Earlier journal formats are rejected.
 Recovery records the last valid stage checkpoint before cleanup, while

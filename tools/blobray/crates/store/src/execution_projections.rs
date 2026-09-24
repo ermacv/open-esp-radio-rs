@@ -323,6 +323,7 @@ mod tests {
                 vendor: input,
                 replacement: Some(right),
                 relation: Some(ComparisonRelation {
+                    effects: None,
                     projection: Some(selected.clone()),
                     calls: false,
                     reviewed_calls: None,
@@ -367,6 +368,7 @@ mod tests {
         ));
         assert_eq!(small.used(), 0);
         let mut manifest = ExecutionManifest {
+            effect_contracts: vec![],
             schema: EXECUTION_SCHEMA,
             project: project.id().clone(),
             request,

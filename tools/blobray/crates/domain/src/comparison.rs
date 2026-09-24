@@ -52,6 +52,7 @@ pub struct MemoryPair {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ComparisonRelation {
+    pub effects: Option<EffectReview>,
     pub projection: Option<ProjectionReview>,
     pub returns: ReturnWords,
     pub events: EventChannels,
@@ -81,6 +82,14 @@ impl ComparisonRelation {
                 && self.memory.is_empty()
                 && !self.observes_calls()
                 && self.projection.is_none())
+        {
+            return Err(bad());
+        }
+        if self.effects.is_some()
+            && !(self.events.mmio_read
+                && self.events.mmio_write
+                && self.events.fence
+                && self.events.delay)
         {
             return Err(bad());
         }
@@ -212,6 +221,9 @@ impl FinalMemoryChunk {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ComparisonDifference {
+    EffectViolation {
+        violation: EffectViolation,
+    },
     ProjectedMemory {
         field: u16,
         offset: u32,

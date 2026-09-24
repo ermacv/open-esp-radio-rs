@@ -1,17 +1,22 @@
 //! Comparison of explicitly selected concrete observations; no execution/store authority.
 use blobray_domain::*;
+mod effects;
 mod projection;
 pub use projection::ProjectionComparison;
-pub const VERIFIER: &str = "selected-projected-timeline-calls-returns-memory/model-9";
+pub const VERIFIER: &str = "reviewed-effects-projected-timeline-calls-returns-memory/model-10";
 pub fn compare(
     left: &ExecutionObservation,
     right: &ExecutionObservation,
     relation: &ComparisonRelation,
     pairs: &[ResolvedCallPair],
     projection: Option<ProjectionComparison<'_>>,
+    effects: Option<&ResolvedEffectContract>,
     control: &mut dyn RunControl,
 ) -> Result<CaseComparison> {
+    let effect_report = effects::inspect(left, right, relation, effects, control)?;
     let different = |difference| CaseComparison {
+        effect_claim: effect_report.claim,
+        effect_gap: effect_report.gap,
         verdict: ComparisonVerdict::Diff,
         difference: Some(difference),
     };
@@ -30,13 +35,57 @@ pub fn compare(
         relation.validate(p.vendor, p.replacement)?;
     }
     let layout = projection.map(|p| &p.resolved.projection);
-    let mut known = true;
+    let mut known = effect_report.gap.is_none();
     control.checkpoint((left.events.len() + right.events.len()) as u64)?;
-    let mut le = Selected::new(&left.events, relation, pairs, layout, false, control)?;
-    let mut re = Selected::new(&right.events, relation, pairs, layout, true, control)?;
+    let mut le = Selected::new(
+        &left.events,
+        relation,
+        pairs,
+        layout,
+        effects,
+        false,
+        control,
+    )?;
+    let mut re = Selected::new(
+        &right.events,
+        relation,
+        pairs,
+        layout,
+        effects,
+        true,
+        control,
+    )?;
+    if let Some(violation) = effect_report.violation {
+        return Ok(different(ComparisonDifference::EffectViolation {
+            violation,
+        }));
+    }
     let mut count = 0;
+    let (mut a, mut b) = (None, None);
     loop {
-        let (a, b) = (le.next(control)?, re.next(control)?);
+        if a.is_none() {
+            a = le.next(control)?;
+        }
+        if b.is_none() {
+            b = re.next(control)?;
+        }
+        // Unknown classification can change alignment; later positions cannot prove a mismatch.
+        if matches!(
+            a,
+            Some(Observation::Effect(_, EffectSelection::Unclassified))
+        ) || matches!(
+            b,
+            Some(Observation::Effect(_, EffectSelection::Unclassified))
+        ) {
+            known = false;
+            break;
+        }
+        if let Some(Observation::Effect(event, EffectSelection::Omitted(rule))) = a
+            && !matches!(b, Some(Observation::Effect(other, EffectSelection::Omitted(id))) if rule == id && event == other)
+        {
+            a = None;
+            continue;
+        }
         match (a, b) {
             (Some(a), Some(b)) => {
                 control.checkpoint(1)?;
@@ -137,6 +186,12 @@ pub fn compare(
                             return Ok(different(ComparisonDifference::Event { index: count }));
                         }
                     },
+                    (
+                        Observation::Effect(_, EffectSelection::Replaced(a)),
+                        Observation::Effect(_, EffectSelection::Replaced(b)),
+                    ) if a == b => {}
+                    (Observation::Effect(a, sa), Observation::Effect(b, sb))
+                        if sa == sb && a == b => {}
                     (Observation::Event(a), Observation::Event(b)) if a == b => {}
                     _ => return Ok(different(ComparisonDifference::Event { index: count })),
                 }
@@ -154,6 +209,8 @@ pub fn compare(
                 break;
             }
         }
+        a = None;
+        b = None;
     }
     for (word, selected) in [relation.returns.low, relation.returns.high]
         .into_iter()
@@ -231,6 +288,8 @@ pub fn compare(
         }
     }
     Ok(CaseComparison {
+        effect_claim: effect_report.claim,
+        effect_gap: effect_report.gap,
         verdict: if known
             && left.completed()
             && right.completed()
@@ -243,7 +302,9 @@ pub fn compare(
         difference: None,
     })
 }
+#[derive(Clone, Copy)]
 enum Observation<'a> {
+    Effect(&'a ExecutionEvent, EffectSelection),
     Unmapped,
     ProjectedMemory(u16, MemoryTransaction),
     ProjectedBranch(u16, bool),
@@ -261,6 +322,8 @@ struct Selected<'a> {
     index: CallRelationIndex<'a>,
     projection: Option<&'a LayoutProjection>,
     side: bool,
+    effects: Option<EffectTracker<'a>>,
+    total: usize,
 }
 impl<'a> Selected<'a> {
     fn new(
@@ -268,10 +331,15 @@ impl<'a> Selected<'a> {
         relation: &'a ComparisonRelation,
         pairs: &'a [ResolvedCallPair],
         projection: Option<&'a LayoutProjection>,
+        effects: Option<&'a ResolvedEffectContract>,
         side: bool,
         c: &mut dyn RunControl,
     ) -> Result<Self> {
         Ok(Self {
+            total: remaining.len(),
+            effects: effects
+                .map(|e| EffectTracker::new(&e.contract, side, c))
+                .transpose()?,
             remaining,
             relation,
             projection,
@@ -316,6 +384,13 @@ impl<'a> Selected<'a> {
                 }
             } else if matches!(event, ExecutionEvent::TransferArgument { .. }) {
                 return Err(invalid());
+            } else if is_contract_effect(event) && self.effects.is_some() {
+                let ordinal = u32::try_from(self.total - self.remaining.len() - 1)
+                    .map_err(|_| Error::new(ErrorCode::Integrity, "effect ordinal overflow"))?;
+                let selection = self.effects.as_mut().unwrap().observe(event, ordinal, c)?;
+                if !matches!(selection, EffectSelection::Added(_)) {
+                    return Ok(Some(Observation::Effect(event, selection)));
+                }
             } else if self.relation.events.selects(event) {
                 return Ok(Some(if let Some(transaction) = event.normal_memory() {
                     transaction.validate()?;
@@ -373,6 +448,7 @@ mod tests {
             left,
             right,
             &ComparisonRelation {
+                effects: None,
                 projection: None,
                 calls: false,
                 reviewed_calls: None,
@@ -390,6 +466,7 @@ mod tests {
                 memory: vec![],
             },
             &[],
+            None,
             None,
             c,
         )
@@ -505,6 +582,7 @@ mod physical_calls {
     #[test]
     fn reordered_missing_and_unknown_call_prefixes_fail_closed() {
         let r = ComparisonRelation {
+            effects: None,
             projection: None,
             returns: ReturnWords {
                 low: false,
@@ -528,7 +606,7 @@ mod physical_calls {
             observation(&[0x2000], known, true),
         ] {
             assert_eq!(
-                compare(&a, &b, &r, &[], None, &mut || Ok(()))
+                compare(&a, &b, &r, &[], None, None, &mut || Ok(()))
                     .unwrap()
                     .verdict,
                 ComparisonVerdict::Diff
@@ -536,28 +614,28 @@ mod physical_calls {
         }
         let b = observation(&[0x2000], known, false);
         assert_eq!(
-            compare(&a, &b, &r, &[], None, &mut || Ok(()))
+            compare(&a, &b, &r, &[], None, None, &mut || Ok(()))
                 .unwrap()
                 .verdict,
             ComparisonVerdict::Incomplete
         );
         let b = observation(&[0x2000, 0x3000], ObservedWord::Unknown, true);
         assert_eq!(
-            compare(&a, &b, &r, &[], None, &mut || Ok(()))
+            compare(&a, &b, &r, &[], None, None, &mut || Ok(()))
                 .unwrap()
                 .verdict,
             ComparisonVerdict::Incomplete
         );
         let mut b = observation(&[0x2000, 0x4000], ObservedWord::Unknown, true);
         assert_eq!(
-            compare(&a, &b, &r, &[], None, &mut || Ok(()))
+            compare(&a, &b, &r, &[], None, None, &mut || Ok(()))
                 .unwrap()
                 .verdict,
             ComparisonVerdict::Diff
         );
         b.events.truncate(1);
         assert_eq!(
-            compare(&a, &b, &r, &[], None, &mut || Ok(()))
+            compare(&a, &b, &r, &[], None, None, &mut || Ok(()))
                 .unwrap_err()
                 .code,
             ErrorCode::Integrity
@@ -610,6 +688,7 @@ mod reviewed_calls {
         };
         let pairs = [pair(0x2000, 0x5000), pair(0x3000, 0x6000)];
         let relation = ComparisonRelation {
+            effects: None,
             projection: None,
             returns: ReturnWords {
                 low: false,
@@ -656,7 +735,7 @@ mod reviewed_calls {
         let left = observation(&[0x2000, 0x3000]);
         let right = observation(&[0x5000, 0x6000]);
         assert_eq!(
-            compare(&left, &right, &relation, &pairs, None, &mut || Ok(()))
+            compare(&left, &right, &relation, &pairs, None, None, &mut || Ok(()))
                 .unwrap()
                 .verdict,
             ComparisonVerdict::Match
@@ -668,6 +747,7 @@ mod reviewed_calls {
                     &observation(&targets),
                     &relation,
                     &pairs,
+                    None,
                     None,
                     &mut || Ok(())
                 )
@@ -681,15 +761,31 @@ mod reviewed_calls {
             *target_kind = ObservedCallTarget::CallModel;
         }
         assert_eq!(
-            compare(&left, &malformed, &relation, &pairs, None, &mut || Ok(()))
-                .unwrap_err()
-                .code,
+            compare(
+                &left,
+                &malformed,
+                &relation,
+                &pairs,
+                None,
+                None,
+                &mut || Ok(())
+            )
+            .unwrap_err()
+            .code,
             ErrorCode::Integrity
         );
         assert_eq!(
-            compare(&left, &malformed, &relation, &[], None, &mut || Ok(()))
-                .unwrap_err()
-                .code,
+            compare(
+                &left,
+                &malformed,
+                &relation,
+                &[],
+                None,
+                None,
+                &mut || Ok(())
+            )
+            .unwrap_err()
+            .code,
             ErrorCode::Integrity
         );
     }
@@ -709,6 +805,7 @@ mod timeline_order {
             },
         };
         let relation = ComparisonRelation {
+            effects: None,
             projection: None,
             returns: ReturnWords {
                 low: false,
@@ -765,7 +862,7 @@ mod timeline_order {
             let a = observation(vec![memory.clone(), effect.clone()]);
             let b = observation(vec![effect, memory.clone()]);
             assert_eq!(
-                compare(&a, &b, &relation, &[], None, &mut || Ok(()))
+                compare(&a, &b, &relation, &[], None, None, &mut || Ok(()))
                     .unwrap()
                     .difference,
                 Some(ComparisonDifference::Event { index: 0 })

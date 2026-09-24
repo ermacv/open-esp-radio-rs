@@ -141,6 +141,7 @@ impl Project {
         self.validate_execution_interfaces(request, memory, c)?;
         self.validate_execution_call_pairs(&manifest, memory, c)?;
         self.validate_execution_projections(&manifest, memory, c)?;
+        self.validate_execution_effects(&manifest, memory, c)?;
         Ok(ExecutionLease {
             _capacity: capacity,
             records: self.open_payload(&manifest.records, c)?,
@@ -205,6 +206,8 @@ impl Writer {
             .validate_execution_call_pairs(&manifest, memory, c)?;
         self.project
             .validate_execution_projections(&manifest, memory, c)?;
+        self.project
+            .validate_execution_effects(&manifest, memory, c)?;
         validate_execution_records(
             &manifest,
             &stage.open_payload(&manifest.records, c)?,
@@ -292,6 +295,7 @@ pub fn validate_execution_records(
         CallRelationIndex::new(None, &manifest.call_pairs, false, c)?,
         CallRelationIndex::new(None, &manifest.call_pairs, true, c)?,
     ];
+    let mut effects: [Option<EffectTracker<'_>>; 2] = [None, None];
     let mut prepared = None;
     let mut part = EvidencePart::Events;
     let mut memory_state = [MemoryState::new(), MemoryState::new()];
@@ -318,6 +322,23 @@ pub fn validate_execution_records(
             .is_none_or(|next| next.reset == SessionReset::Cold);
         if prepared != Some(case) {
             relation_complete = true;
+            c.checkpoint(manifest.effect_contracts.len() as u64 + 1)?;
+            effects = match selected_effect_contract(
+                phase.relation.as_ref(),
+                &manifest.effect_contracts,
+            )? {
+                Some(selected) => {
+                    c.checkpoint((selected.contract.rules.len() as u64 + 1).saturating_pow(2))?;
+                    selected
+                        .contract
+                        .validate_use(&manifest.request, case as usize)?;
+                    [
+                        Some(EffectTracker::new(&selected.contract, false, c)?),
+                        Some(EffectTracker::new(&selected.contract, true, c)?),
+                    ]
+                }
+                None => [None, None],
+            };
             relation_index = [
                 CallRelationIndex::new(phase.relation.as_ref(), &manifest.call_pairs, false, c)?,
                 CallRelationIndex::new(phase.relation.as_ref(), &manifest.call_pairs, true, c)?,
@@ -509,6 +530,11 @@ pub fn validate_execution_records(
                 }
                 services[usize::from(side)].event(&event, &tables[usize::from(side)], c)?;
                 calls[usize::from(side)].event(&event, c)?;
+                if is_contract_effect(&event)
+                    && let Some(tracker) = &mut effects[usize::from(side)]
+                {
+                    tracker.observe(&event, events, c)?;
+                }
                 events += 1;
                 if events > manifest.request.max_events {
                     return Err(integrity("event capacity exceeded"));
@@ -612,6 +638,7 @@ pub fn validate_execution_records(
                 if i != case || !outcome || verdict.is_none() {
                     return Err(integrity("comparison order differs"));
                 }
+                crate::execution_effects::validate_result(&result, &effects)?;
                 if !difference_valid(&result, phase, manifest.request.max_events, projection)
                     || (result.verdict == ComparisonVerdict::Match
                         && (!phase_complete || !relation_complete))

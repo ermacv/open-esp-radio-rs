@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 14;
+pub const EXECUTION_SCHEMA: u32 = 15;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 
@@ -363,6 +363,8 @@ pub enum ComparisonVerdict {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CaseComparison {
+    pub effect_claim: Option<EffectClaimCeiling>,
+    pub effect_gap: Option<EffectGap>,
     pub verdict: ComparisonVerdict,
     /// First established difference in a selected observation domain.
     pub difference: Option<ComparisonDifference>,
@@ -370,6 +372,7 @@ pub struct CaseComparison {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionManifest {
+    pub effect_contracts: Vec<ResolvedEffectContract>,
     pub projections: Vec<ResolvedProjection>,
     pub call_pairs: Vec<ResolvedCallPair>,
     pub schema: u32,

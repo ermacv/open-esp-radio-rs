@@ -124,6 +124,11 @@ pub(super) fn difference_valid(
     };
     match (&result.verdict, &result.difference) {
         (ComparisonVerdict::Match | ComparisonVerdict::Incomplete, None) => true,
+        (ComparisonVerdict::Diff, Some(ComparisonDifference::EffectViolation { violation })) => {
+            relation.effects.is_some()
+                && violation.event < max_events
+                && usize::from(violation.rule) < MAX_EFFECT_RULES
+        }
         (
             ComparisonVerdict::Diff,
             Some(ComparisonDifference::ProjectedMemory {
@@ -228,6 +233,7 @@ mod tests {
             }],
         };
         let relation = ComparisonRelation {
+            effects: None,
             projection: None,
             calls: false,
             reviewed_calls: None,

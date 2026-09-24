@@ -146,6 +146,7 @@ mod tests {
             },
         };
         let mut manifest = ExecutionManifest {
+            effect_contracts: vec![],
             projections: vec![],
             schema: EXECUTION_SCHEMA,
             project: id.as_str().parse().unwrap(),
@@ -170,6 +171,7 @@ mod tests {
                     vendor: input(),
                     replacement: Some(input()),
                     relation: Some(ComparisonRelation {
+                        effects: None,
                         projection: None,
                         returns: ReturnWords {
                             low: false,
@@ -219,6 +221,8 @@ mod tests {
         rows.push(ExecutionEvidence::Comparison {
             case: 0,
             result: CaseComparison {
+                effect_claim: None,
+                effect_gap: None,
                 verdict: ComparisonVerdict::Incomplete,
                 difference: None,
             },

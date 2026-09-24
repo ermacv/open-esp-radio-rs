@@ -479,5 +479,7 @@ pub use call_correspondence::*;
 mod timeline;
 pub use timeline::*;
 
+mod effect_contract;
+pub use effect_contract::*;
 mod layout_projection;
 pub use layout_projection::*;

@@ -714,9 +714,9 @@ write the run envelope to stderr. Inventory coverage is not a verification verdi
 
 ### Current formats
 
-Run records use journal schema 33 for every durable and read operation. Storage metadata
-uses schema 32; revision manifests use schema 1 and execution manifests use schema
-14. These are independent formats. Earlier journals are rejected by single-run,
+Run records use journal schema 34 for every durable and read operation. Storage metadata
+uses schema 33; revision manifests use schema 1 and execution manifests use schema
+15. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -735,7 +735,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-33 run; an envelope version is not a journal
+execution 7) wrap the same schema-34 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1368,7 +1368,7 @@ claim a single mmap arena or a process-wide no-allocation guarantee.
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
 operation/query paths. No legacy engine or external limiter participates.
-Execution requests and manifests use schema 14; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
+Execution requests, manifests and journal/storage versions follow [current formats](#current-formats). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 
 ```console
@@ -1384,7 +1384,7 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 14,
+  "schema": 15,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -1464,7 +1464,7 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 comparison relation still excludes final RAM itself.
 
-The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1` environment maps validated ELF
+The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
@@ -2702,3 +2702,42 @@ remain available. `CallArgument.word` is the selected pair ordinal for this poli
 All projections are finite reviewed assumptions bound to captured sources and entries.
 A successful comparison establishes selected observations under those assumptions;
 it does not establish general equivalence. See [projection contracts](../docs/design/contracts.md#reviewed-layout-and-abi-projections).
+
+### Reviewed effect comparison
+
+`knowledge propose-effect-contract --request effects.json` submits
+`{subject, contract, expected_base, actor, reason}` through the shared application
+scenario. Normal knowledge review accepts or rejects it. Set a comparison case's
+`relation.effects` to `{knowledge, assertion}` for the exact accepted review;
+all four MMIO read/write, fence and delay event channels must be enabled.
+
+A contract contains exact `vendor`/`replacement` code endpoints (the same
+occurrence/boundary shape as call correspondence), `rules`, `claim_ceiling`,
+`applicability` and `reason`. Each rule contains `name`, per-side patterns,
+`disposition`, `min_occurrences`, `max_occurrences` and `reason`. A pattern combines
+`selector` with `value: {kind: "any"}` or `{kind: "exact", value: N}`.
+Selectors are `mmio-read`/`mmio-write` with physical address and width,
+`delay` with `micros` (a value or explicit `null` for all delays), or `fence` with
+predecessor/successor masks. Per-side selectors cannot overlap.
+
+Required rules compare identical observations. Omitted rules permit an ordered
+subsequence of exact vendor effects; replaced rules require both explicit patterns
+in corresponding order. Added rules validate replacement-only effects. Forbidden
+rules reject observed occurrences. Missing exercise and unclassified effects are
+INCOMPLETE; known differences are DIFF. A zero minimum means required when observed;
+an omitted rule always allows zero replacement occurrences. Rules reset per case.
+
+`claim_ceiling: "selected-effect-equality"` permits only required/forbidden rules.
+Omitted/replaced/added rules require `"reviewed-effect-refinement"`. Each saved
+`CaseComparison` exposes this ceiling as `effect_claim` and its first unclassified
+or unexercised obligation as `effect_gap`. A policy violation reports exact side,
+raw event ordinal and rule ordinal in `difference`. MATCH with a refinement is
+conditional on that reviewed policy; it is not physical equality or general
+firmware equivalence. Incomplete execution cannot MATCH.
+
+The manifest retains the resolved accepted contracts alongside all raw evidence,
+including omitted and added effects. Comparison composes with reviewed call-word
+and layout projections, selected internal timelines, return words and final RAM.
+API/CLI query, backup/restore and replay use the same immutable selections. See
+[effect contracts](../docs/design/contracts.md#reviewed-effect-contracts) for the
+precise obligations, lifetime and limits.

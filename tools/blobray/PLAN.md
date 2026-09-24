@@ -55,7 +55,7 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
 | 07 | done | Integer execution sessions: stack ABI arguments, RV32 atomics, multiple entry points/setup phases, ownership/persistent regions, cold/warm resets and return/reach-symbol/observe-call goals. State transitions, unknown data, unsupported instructions, dependent-phase blocking and exact replay are tested. |
 | 08 | done | External-call returns/outputs/bounded allocation, delay events and standard constant/sequence/W1C/read-clear/self-clearing/FIFO/indexed-bank models. Every mechanism has positive/negative cases; no implicit response/fallback; model identity/applicability/participation is evidence; code and modeled boundaries stay distinct. |
 | 09 | done | Stateful FIFO services and interface tables: enqueue/dequeue/length, wake/output, table lifecycle, service-event completion. Full/empty/order/isolation and cross-phase state are tested; only selected reviewed bindings resolve calls; failed phases cannot imply workflow completion. |
-| 10 | active | Comparison relations: selected final RAM, ordered calls/reviewed argument pairs, RAM/branch timeline, ABI/layout projections and effect contracts. Explicit relation selects returns/memory/events; RAM-only and call-only differences are caught; invalid projections fail; all three verdicts and retained excluded observations are tested. |
+| 10 | done | Comparison relations: selected final RAM, ordered calls/reviewed argument pairs, RAM/branch timeline, ABI/layout projections and effect contracts. Explicit relation selects returns/memory/events; RAM-only and call-only differences are caught; invalid projections fail; all three verdicts and retained excluded observations are tested. |
 | 11 | pending | Real PHY I2C workflow from authenticated capture and tables through linked execution/models and compiled-production comparison. Independent expectations, model boundaries, source removal and backup/restore are required; no model hides absent production/vendor code or grants hardware qualification. |
 | 12 | pending | Real PHY calibration/RF workflow, required intrinsics and reviewed summaries. Each declared calibration case has explicit conditions and expected outcome; coefficients/models/production changes alter dependency identity; reconstruction never impersonates captured execution. |
 | 13 | pending | Project verification: native roles/scopes/models/suites/policies, profile domains/coverage, production bindings/dispositions/audit, baselines/status/check/files/doctor and ranked next actions. One application lifecycle executes suites; auxiliary inputs do not inflate coverage; stale/unreviewed evidence cannot satisfy gates; no CLI-only orchestration. |
@@ -182,9 +182,10 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stages 00–09 and the corrective checkpoint below are complete. Stages 10.1–10.3
-are complete; reviewed effect contracts and the composed comparison obligations
-remain active in 10.4. The corrections preserve all original stage obligations.
+Stages 00–10 and both corrective checkpoints below are complete, including all
+four stage-10 comparison profiles and their combined acceptance. At the user's
+request, stop after pushing the stage-10.4 commit. Stage 11 remains pending until
+an explicit resume; all remaining obligations are preserved.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -586,6 +587,10 @@ release on closure and reuse bounded instance slots; retained validation admits
 its own queue buffers. All affected tests, 66 Next execution tests, Clippy,
 formatting, public/private docs and standalone checks pass.
 
+After completing stage 10.4 and its acceptance checks, commit and push the
+completed stage, then pause this plan before stage 11 as requested by the user.
+Remaining stage obligations remain pending.
+
 ### Stage 10: comparison checkpoints
 
 The original row combines four independently reviewable comparisons. Split it
@@ -598,7 +603,7 @@ required gates; no generic policy framework or compatibility path is introduced.
 | 10.1 | done | Explicit per-case comparison selection and bounded final normal-memory observations, alongside selected return words and existing ordered MMIO/fence/delay events. Physical paired ranges have exact lengths and identities; all selected bytes, including unchanged bytes and unknowns, are represented. RAM-only and high/low-return differences DIFF; equal known completed selections MATCH; unknown/unavailable/unfinished results remain INCOMPLETE. Excluded observations remain retained. Invalid/overlapping/overflowing selections fail, phase lifetime/resource/cancellation atomicity and source-free replay pass. No inferred layout equivalence. |
 | 10.2 | done | Ordered captured-code, modeled and service call observations with physical targets, ABI words and exact interleaving with selected observables. Explicit reviewed semantic call pairs support exact/selected/ignored argument policies; unlisted calls remain retained and their exclusion is visible. Missing/ambiguous/unreviewed pairs fail; reordered/missing calls and selected argument-only differences are caught; unknown words stay incomplete. Shared application API/CLI and source-free retained comparison pass. |
 | 10.3 | done | Ordinary RAM access/atomic and branch timeline observations plus explicit reviewed ABI/layout projections for corresponding memory/arguments and control observations. Validate exact domains, widths, aliases/overlap, offsets and applicability; no dropped unknown/missing fields or automatic pointer normalization. Final-state-only equivalence stays distinct from ordered internal-state equivalence. Different layouts can match only under the selected valid projection; invalid/stale projection and branch/RAM-order changes are tested. |
-| 10.4 | active | Reviewed effect contracts classify required, omitted, replaced and added MMIO/delay/fence effects, preserving reason and claim ceiling. Absent/unclassified/conflicting rules fail closed; known effect differences DIFF and incomplete execution cannot MATCH. Policy identity, raw excluded evidence, provenance and source-free replay remain retained. Compose all stage-10 relations, run the full execution/comparison/recovery suites and source-only checkpoint; close stage 10 only after all four sub-stages pass. |
+| 10.4 | done | Reviewed effect contracts classify required, omitted, replaced and added MMIO/delay/fence effects, preserving reason and claim ceiling. Absent/unclassified/conflicting rules fail closed; known effect differences DIFF and incomplete execution cannot MATCH. Policy identity, raw excluded evidence, provenance and source-free replay remain retained. Compose all stage-10 relations, run the full execution/comparison/recovery suites and source-only checkpoint; close stage 10 only after all four sub-stages pass. |
 
 
 Stage 10.1 closes explicit per-case event/return/final-memory selection and
@@ -695,16 +700,25 @@ executor.
 | --- | --- | --- |
 | Static trace prefixes | done | Known differences in observed prefixes yield DIFF despite later blockers. Length differences require a completed shorter side; symbolic uncertainty alone cannot prove DIFF and incomplete paths cannot MATCH. Summary validation and trace policy agree. ELF-to-IR API/CLI, empty/unequal prefixes, symbolic values, source removal and backup/restore pass. |
 | Retained interface validation | done | Store groups selected tables by frozen snapshot with admitted O(n log n) sorting and linear group traversal, retaining every per-declaration check. Grouping, publication and reopening work-growth tests, one history load per selected snapshot, cancellation/capacity release, invalid late entries and source-free replay pass without raising budgets. |
-| Review correction acceptance | isolated done; combined pending stage-10 WIP | Both corrections pass core/Next tests, strict Clippy, formatting, owned public/private docs, standalone, authenticated PHY/ROM watchdog trace/restore and the final source-only checkpoint. Integration with the selected parallel snapshot is checked before closure; missing inputs or gates remain open obligations. |
+| Review correction acceptance | done | Both corrections pass core/Next tests, strict Clippy, formatting, owned public/private docs, standalone, authenticated PHY/ROM watchdog trace/restore and the final source-only checkpoint. Integration with the selected parallel snapshot is checked before closure; missing inputs or gates remain open obligations. |
 
-The isolated corrections pass every listed gate, including authenticated PHY/ROM
-watchdog trace/restore and the complete source-only checkpoint. The selected WIP
-also passes the affected domain, analysis and store unit suites. Its combined
-checkpoint is still open: the effect-contract change leaves calls to
-`verification::compare` without the new argument in
-[application execution](crates/application/src/execution.rs) and the
-[projection regression](crates/verification/src/projection.rs); its Clippy and
-formatting gates also fail. Complete these stage-10 obligations under their current
-owner, then rerun combined core/Next, strict Clippy, formatting, public/private docs,
-standalone, PHY/ROM trace/restore and source-only before closing this acceptance row.
-The corrections do not complete or advance stage 10.
+Both corrections pass in the combined stage-10 tree: core/Next suites, strict
+Clippy, formatting, owned public/private docs, standalone, authenticated PHY/ROM
+watchdog trace/restore and the full source-only checkpoint. Application execution
+and projection regressions supply the complete comparison contract. The review
+correction acceptance is closed without a shared FIFO/table policy refactor.
+
+
+
+Stage 10.4 closes reviewed required/omitted/replaced/added/forbidden concrete
+MMIO/delay/fence contracts at exact captured entries. Immutable accepted selection,
+claim ceilings, complete raw accounting, unknown alignment, exercise/value/count
+obligations, shared generic/specialized API/CLI, physical endpoint validation,
+conflicting acceptance, admitted ownership and retained-result forgery checks pass.
+The composed ELF scenario covers reviewed call-word/layout relations, internal
+memory/branch order, returns, physical final RAM and source-free restore/replay.
+All affected suites (including 115 execution tests), formatting, strict Clippy,
+public/private documentation, standalone, authenticated PHY/ROM watchdog
+trace/restore and the full source-only checkpoint pass; the shipping host builds
+in the blobray profile. Stage 10 is complete. Pause at the user-requested boundary
+after committing and pushing; do not activate stage 11.

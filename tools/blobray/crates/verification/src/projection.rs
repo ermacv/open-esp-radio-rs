@@ -215,6 +215,7 @@ mod tests {
             },
         };
         let relation = ComparisonRelation {
+            effects: None,
             projection: Some(p.review.clone()),
             calls: false,
             reviewed_calls: None,
@@ -320,6 +321,7 @@ mod tests {
                     vendor: &input,
                     replacement: &input,
                 }),
+                None,
                 &mut || Ok(()),
             )
             .unwrap()

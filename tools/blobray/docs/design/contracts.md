@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 33
-and database schema 32 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. The [current native formats](../../next/README.md#current-formats)
+are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -43,7 +43,7 @@ Unknown structure remains explicit and does not become a zero-byte observation.
 transfers remain separately counted. Comparison retains its explicit relation:
 per-case event channels, low/high return words, exact paired final-memory
 selections, physical or reviewed call correspondence and the selected internal
-physical timeline and explicitly reviewed layout/ABI projections.
+physical timeline, explicitly reviewed layout/ABI projections and reviewed effect contracts.
 
 ### Durable and ephemeral acquisition
 
@@ -753,7 +753,7 @@ Domain validates stack geometry and computes entry SP; application initializes
 stack arguments in its freshly owned stack, and passes eight optional register
 words to the backend. Unknown argument slots override stack seeds. No register or
 stack word becomes zero by omission, and setup emits no guest events. The caller
-owns type/variadic lowering. Request and manifest schema 14 pin this interpretation;
+owns type/variadic lowering. The execution request and manifest format pins this interpretation;
 producer identity pins both backend unknown-value semantics and stack environment.
 
 `ExecutionMemory` also owns LR/SC reservation state, permission checks and indivisible
@@ -868,8 +868,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 32
-and journal schema 33 carry these identities. Old formats are rejected without
+Function and investigation records carry these identities under the
+[current formats](../../next/README.md#current-formats). Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -1879,3 +1879,76 @@ fields, unknown padding/fields, missing capture, source-free restore/replay and
 failed-run atomicity. [Verifier tests](../../crates/verification/src/projection.rs)
 check ordered mapped memory/control and unknowns; [store tests](../../crates/store/src/execution_projections.rs)
 check selected-byte masks, admitted owner release and changed retained policy.
+
+### Reviewed effect contracts
+
+`EffectContract` binds exact captured vendor/replacement code entries using the
+same physical endpoint validation as call correspondence. Application validates
+both symbols, source occurrences and evidence for generic proposal, specialized
+proposal and review. The secondary captured roots are retained with the claim.
+Knowledge owns structural validation and conflicting acceptance; store owns the
+immutable accepted snapshot and admitted copies; verification owns comparison.
+There is no policy-name lookup, implicit current revision or inferred replacement.
+
+Each case selects one `EffectReview` in `ComparisonRelation.effects`. The resolved
+contract is retained in `ExecutionManifest.effect_contracts` and checked against
+that exact accepted assertion on publication and reopening. Selection requires
+all four concrete MMIO read/write, fence and modeled-delay channels. Internal
+memory/branch, call, return and final-memory selections remain independent and
+compose with the effect relation. A missing selected review is an error; absence
+of an effect selection retains the explicitly selected physical comparison.
+
+The finite profile permits up to 128 uniquely named rules. Every rule has a reason,
+explicit per-side patterns and minimum/maximum occurrence counts. MMIO selectors
+use aligned physical addresses and widths 1/2/4; fence selectors use the captured
+predecessor/successor masks; delay selectors use a duration or explicitly all
+modeled delays. Patterns may require an exact value or allow any value. Selectors
+on each side must not overlap, including overlapping MMIO spans and wildcard
+versus specific delays. There is no first-rule precedence. Fence patterns have no
+separate value constraint because their complete observation is the masks.
+
+| Disposition | Ordered comparison obligation |
+| --- | --- |
+| `required` | Identical patterns on both sides; every selected occurrence compares exactly, including values and order among other selected observables. |
+| `omitted` | Identical patterns; replacement may omit vendor occurrences. Every retained replacement occurrence must equal a vendor occurrence in order. Removing an occurrence never licenses changing its value or moving it across a selected call, memory access or other effect. |
+| `replaced` | Both explicit patterns must hold; corresponding occurrences compare by the same rule identity and order. Values are constrained by the individual patterns, without an implicit physical equality requirement. |
+| `added` | Only a replacement pattern; matching replacement effects discharge its count/value obligations and remain raw evidence outside the paired stream. |
+| `forbidden` | Identical selectors on both sides, unconstrained value and zero counts. Any matching observed occurrence is a known violation. |
+
+A minimum of zero means required when observed. Otherwise missing exercise is
+INCOMPLETE, including when both complete runs have no occurrence. The replacement
+minimum of an omitted rule is always zero. Counts reset for each case, including
+warm continuations. Excess counts, forbidden effects and violated exact-value
+constraints establish DIFF from actual observations, even if execution stopped
+later. A completed shorter required stream also establishes a difference; an
+unfinished prefix cannot establish equality or an absent future effect.
+
+Every raw concrete effect is classified. Unclassified observations produce
+INCOMPLETE and stop positional alignment: an unknown omission/replacement must
+not shift subsequent positions into a fabricated mismatch. Independently known
+return/final-memory differences and directly observed policy violations can still
+establish DIFF. Full policy accounting precedes alignment, so a violation after an
+unclassified event remains visible. Neither a satisfied contract nor excluded
+observations can turn unfinished execution or unmet environment obligations into
+MATCH. Raw excluded effects, exact inputs, model participation and review reasons
+remain retained and replayable.
+
+`CaseComparison.effect_claim` exposes the selected claim ceiling even for DIFF or
+INCOMPLETE. `selected-effect-equality` permits only required/forbidden rules;
+`reviewed-effect-refinement` is mandatory for omitted/replaced/added rules. MATCH
+under the latter means the reviewed refinement held for these concrete cases,
+not physical event equality, general equivalence or hardware qualification.
+`effect_gap` identifies the first vendor-side gap, then replacement-side gap:
+an unclassified raw event ordinal, otherwise an unexercised rule ordinal.
+`EffectViolation` includes side, raw event ordinal, rule ordinal and cause. Gaps
+are retained alongside an independently established difference.
+
+Verification borrows the resolved contract and raw observations. Bounded per-side
+counters have no expanding heap allocation; every rule scan consumes the shared
+work budget. Store uses the same typed classification for retained admission,
+checks claim/gap/violation identities and rejects MATCH with unmet policy
+obligations. It does not re-execute the ISA or acquire verdict authority.
+[Effect scenarios](../../next/tests/execution/effects.rs),
+[verifier tests](../../crates/verification/src/effects.rs) and
+[retained-admission tests](../../crates/store/src/execution_effects.rs) cover these
+boundaries, policy composition and source-free preservation.

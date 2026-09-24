@@ -52,3 +52,11 @@ Native event-route declarations validate finite participants, ABI roles, selecto
 fields and acyclic upstream/terminal paths. They require root analysis evidence and
 conflict by subject. Application authenticates the same structural bindings at
 proposal and acceptance; review never discharges runtime route conditions.
+
+Reviewed effect contracts bind exact captured code endpoints and finite explicit
+MMIO/delay/fence classifications. Pure validation rejects overlapping selectors,
+invalid rule shapes and claim ceilings that would misrepresent a refinement as
+physical equality. Conflicting accepted policies require explicit supersession.
+Application shares physical endpoint validation with call correspondence and
+retains both sources. Acceptance records an assumption; verification alone applies
+it to actual observations and reports its limited claim.

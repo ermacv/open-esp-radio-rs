@@ -1,0 +1,516 @@
+//! Complete policy accounting precedes alignment; excluded raw effects remain evidence.
+use blobray_domain::*;
+
+pub(super) struct Report {
+    pub claim: Option<EffectClaimCeiling>,
+    pub gap: Option<EffectGap>,
+    pub violation: Option<EffectViolation>,
+}
+
+pub(super) fn inspect(
+    left: &ExecutionObservation,
+    right: &ExecutionObservation,
+    relation: &ComparisonRelation,
+    selected: Option<&ResolvedEffectContract>,
+    c: &mut dyn RunControl,
+) -> Result<Report> {
+    if relation.effects.as_ref() != selected.map(|s| &s.review) {
+        return Err(Error::new(
+            ErrorCode::Integrity,
+            "selected effect review differs from comparison input",
+        ));
+    }
+    let mut report = Report {
+        claim: None,
+        gap: None,
+        violation: None,
+    };
+    let Some(selected) = selected else {
+        return Ok(report);
+    };
+    c.checkpoint((selected.contract.rules.len() as u64 + 1).saturating_pow(2))?;
+    selected.contract.validate()?;
+    if !(relation.events.mmio_read
+        && relation.events.mmio_write
+        && relation.events.fence
+        && relation.events.delay)
+    {
+        return Err(Error::new(
+            ErrorCode::InvalidRequest,
+            "effect contract requires all concrete effect channels",
+        ));
+    }
+    report.claim = Some(selected.contract.claim_ceiling);
+    for (replacement, observation) in [(false, left), (true, right)] {
+        let mut tracker = EffectTracker::new(&selected.contract, replacement, c)?;
+        for (ordinal, event) in observation.events.iter().enumerate() {
+            c.checkpoint(1)?;
+            if is_contract_effect(event) {
+                let ordinal = u32::try_from(ordinal)
+                    .map_err(|_| Error::new(ErrorCode::Integrity, "effect ordinal overflow"))?;
+                tracker.observe(event, ordinal, c)?;
+            }
+        }
+        report.gap = report.gap.or(tracker.gap());
+        report.violation = report.violation.or(tracker.first_violation());
+    }
+    Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn endpoint() -> CallEndpoint {
+        let id = ArtifactId::of_bytes(b"effect fixture");
+        let object = ObjectId {
+            artifact: id.clone(),
+            location: ObjectLocation::Standalone,
+        };
+        CallEndpoint {
+            occurrence: KnowledgeOccurrence {
+                revision: id.as_str().parse().unwrap(),
+                source: FunctionSource::Input { input: 0 },
+                object: object.clone(),
+                symbol: Some(SymbolId {
+                    object,
+                    table: SymbolTableKind::Static,
+                    table_section: 3,
+                    index: 1,
+                }),
+            },
+            boundary: ReviewedCallBoundary::Code { address: 0x1000 },
+        }
+    }
+    fn write(value: u32) -> ExecutionEvent {
+        ExecutionEvent::Write {
+            address: 0x4000,
+            width: 4,
+            value,
+        }
+    }
+    fn pattern(selector: EffectSelector) -> EffectPattern {
+        EffectPattern {
+            selector,
+            value: EffectValue::Any,
+        }
+    }
+    fn rule(disposition: EffectDisposition) -> EffectRule {
+        let p = pattern(EffectSelector::MmioWrite {
+            address: 0x4000,
+            width: 4,
+        });
+        EffectRule {
+            name: "register".into(),
+            vendor: Some(p),
+            replacement: Some(p),
+            disposition,
+            min_occurrences: 1,
+            max_occurrences: 8,
+            reason: "reviewed synthetic obligation".into(),
+        }
+    }
+    fn policy(rules: Vec<EffectRule>) -> ResolvedEffectContract {
+        let id = ArtifactId::of_bytes(b"effect fixture");
+        ResolvedEffectContract {
+            review: EffectReview {
+                knowledge: id.as_str().parse().unwrap(),
+                assertion: id.as_str().parse().unwrap(),
+            },
+            contract: EffectContract {
+                vendor: endpoint(),
+                replacement: endpoint(),
+                rules,
+                claim_ceiling: EffectClaimCeiling::ReviewedEffectRefinement,
+                applicability: "exact fixture entries".into(),
+                reason: "synthetic policy".into(),
+            },
+        }
+    }
+    fn relation(p: &ResolvedEffectContract) -> ComparisonRelation {
+        ComparisonRelation {
+            effects: Some(p.review.clone()),
+            projection: None,
+            returns: ReturnWords {
+                low: true,
+                high: false,
+            },
+            events: EventChannels {
+                timeline: TimelineCapture::default(),
+                mmio_read: true,
+                mmio_write: true,
+                fence: true,
+                delay: true,
+            },
+            memory: vec![],
+            calls: false,
+            reviewed_calls: None,
+        }
+    }
+    fn observed(events: Vec<ExecutionEvent>) -> ExecutionObservation {
+        ExecutionObservation {
+            stop: ExecutionStop::Returned {
+                low: Some(0),
+                high: None,
+            },
+            steps: 1,
+            events,
+            models: vec![],
+            calls: vec![],
+            tables: vec![],
+            services: vec![],
+            final_memory: vec![],
+        }
+    }
+    fn compare(
+        p: &ResolvedEffectContract,
+        a: Vec<ExecutionEvent>,
+        b: Vec<ExecutionEvent>,
+    ) -> CaseComparison {
+        super::super::compare(
+            &observed(a),
+            &observed(b),
+            &relation(p),
+            &[],
+            None,
+            Some(p),
+            &mut || Ok(()),
+        )
+        .unwrap()
+    }
+    #[test]
+    fn omission_preserves_order_and_values_of_every_retained_effect() {
+        let p = policy(vec![rule(EffectDisposition::Omitted)]);
+        for right in [
+            vec![],
+            vec![write(2)],
+            vec![write(1), write(3)],
+            vec![write(1), write(2), write(3)],
+        ] {
+            let result = compare(&p, vec![write(1), write(2), write(3)], right);
+            assert_eq!(result.verdict, ComparisonVerdict::Match);
+            assert_eq!(
+                result.effect_claim,
+                Some(EffectClaimCeiling::ReviewedEffectRefinement)
+            );
+            assert_eq!(result.effect_gap, None);
+        }
+        for right in [
+            vec![write(4)],
+            vec![write(3), write(1)],
+            vec![write(2), write(2)],
+        ] {
+            assert_eq!(
+                compare(&p, vec![write(1), write(2), write(3)], right).verdict,
+                ComparisonVerdict::Diff
+            );
+        }
+        let result = compare(&p, vec![], vec![]);
+        assert_eq!(result.verdict, ComparisonVerdict::Incomplete);
+        assert_eq!(
+            result.effect_gap,
+            Some(EffectGap::Unexercised {
+                replacement: false,
+                rule: 0
+            })
+        );
+    }
+    #[test]
+    fn required_replaced_added_and_forbidden_effects_have_distinct_obligations() {
+        let required = policy(vec![rule(EffectDisposition::Required)]);
+        assert_eq!(
+            compare(&required, vec![write(1)], vec![write(1)]).verdict,
+            ComparisonVerdict::Match
+        );
+        assert_eq!(
+            compare(&required, vec![write(1)], vec![write(2)]).verdict,
+            ComparisonVerdict::Diff
+        );
+        assert_eq!(
+            compare(&required, vec![write(1)], vec![]).verdict,
+            ComparisonVerdict::Diff
+        );
+        let mut replaced = rule(EffectDisposition::Replaced);
+        replaced.vendor.as_mut().unwrap().value = EffectValue::Exact { value: 7 };
+        replaced.replacement = Some(EffectPattern {
+            selector: EffectSelector::Delay { micros: Some(9) },
+            value: EffectValue::Exact { value: 9 },
+        });
+        let mut added = rule(EffectDisposition::Added);
+        added.name = "barrier".into();
+        added.vendor = None;
+        added.replacement = Some(pattern(EffectSelector::Fence {
+            predecessor: 3,
+            successor: 3,
+        }));
+        let fence = ExecutionEvent::Fence {
+            predecessor: 3,
+            successor: 3,
+        };
+        let delay = ExecutionEvent::DelayMicros { value: 9 };
+        let p = policy(vec![replaced, added]);
+        assert_eq!(
+            compare(&p, vec![write(7)], vec![fence.clone(), delay.clone()]).verdict,
+            ComparisonVerdict::Match
+        );
+        assert_eq!(
+            compare(&p, vec![write(7)], vec![delay.clone()]).verdict,
+            ComparisonVerdict::Incomplete
+        );
+        let bad = compare(&p, vec![write(8)], vec![delay.clone(), fence]);
+        assert_eq!(
+            bad.difference,
+            Some(ComparisonDifference::EffectViolation {
+                violation: EffectViolation {
+                    replacement: false,
+                    event: 0,
+                    rule: 0,
+                    kind: EffectViolationKind::Value
+                }
+            })
+        );
+        let mut forbidden = rule(EffectDisposition::Forbidden);
+        forbidden.min_occurrences = 0;
+        forbidden.max_occurrences = 0;
+        let p = policy(vec![forbidden]);
+        assert_eq!(
+            compare(&p, vec![], vec![]).verdict,
+            ComparisonVerdict::Match
+        );
+        assert_eq!(
+            compare(&p, vec![write(0)], vec![write(0)]).difference,
+            Some(ComparisonDifference::EffectViolation {
+                violation: EffectViolation {
+                    replacement: false,
+                    event: 0,
+                    rule: 0,
+                    kind: EffectViolationKind::Forbidden
+                }
+            })
+        );
+        let mut r = rule(EffectDisposition::Required);
+        r.max_occurrences = 1;
+        let p = policy(vec![r]);
+        assert_eq!(
+            compare(&p, vec![write(1), write(1)], vec![write(1)]).difference,
+            Some(ComparisonDifference::EffectViolation {
+                violation: EffectViolation {
+                    replacement: false,
+                    event: 1,
+                    rule: 0,
+                    kind: EffectViolationKind::Count
+                }
+            })
+        );
+    }
+    #[test]
+    fn unknown_alignment_is_incomplete_but_independent_known_differences_survive() {
+        let p = policy(vec![rule(EffectDisposition::Required)]);
+        let unknown = ExecutionEvent::DelayMicros { value: 3 };
+        let a = observed(vec![unknown.clone(), write(1)]);
+        let mut b = observed(vec![write(2)]);
+        let compare = |b: &ExecutionObservation| {
+            super::super::compare(&a, b, &relation(&p), &[], None, Some(&p), &mut || Ok(()))
+                .unwrap()
+        };
+        assert_eq!(compare(&b).verdict, ComparisonVerdict::Incomplete);
+        assert_eq!(
+            compare(&b).effect_gap,
+            Some(EffectGap::Unclassified {
+                replacement: false,
+                event: 0
+            })
+        );
+        b.stop = ExecutionStop::Returned {
+            low: Some(7),
+            high: None,
+        };
+        assert!(matches!(
+            compare(&b).difference,
+            Some(ComparisonDifference::Return {
+                vendor: 0,
+                replacement: 7,
+                ..
+            })
+        ));
+        let a = observed(vec![write(1)]);
+        let mut b = a.clone();
+        b.stop = ExecutionStop::BlockedByPriorPhase;
+        assert_eq!(
+            super::super::compare(&a, &b, &relation(&p), &[], None, Some(&p), &mut || Ok(()))
+                .unwrap()
+                .verdict,
+            ComparisonVerdict::Incomplete
+        );
+        // A violation after an unknown event is still directly observable; no alignment inference.
+        let mut strict = p.clone();
+        strict.contract.rules[0].vendor.as_mut().unwrap().value = EffectValue::Exact { value: 7 };
+        strict.contract.rules[0].replacement = strict.contract.rules[0].vendor;
+        assert!(matches!(
+            self::compare(&strict, vec![unknown, write(9)], vec![write(7)]).difference,
+            Some(ComparisonDifference::EffectViolation {
+                violation: EffectViolation { event: 1, .. }
+            })
+        ));
+    }
+    #[test]
+    fn policies_reject_ambiguous_rules_invalid_geometry_and_false_claim_ceilings() {
+        let p = policy(vec![rule(EffectDisposition::Required)]);
+        p.contract.validate().unwrap();
+        let mut bad = Vec::new();
+        let mut x = p.clone();
+        x.contract.rules.clear();
+        bad.push(x);
+        let mut x = p.clone();
+        let mut duplicate = x.contract.rules[0].clone();
+        duplicate.name = "other".into();
+        x.contract.rules.push(duplicate);
+        bad.push(x);
+        let mut x = p.clone();
+        x.contract.rules[0].min_occurrences = 9;
+        bad.push(x);
+        let mut x = p.clone();
+        x.contract.claim_ceiling = EffectClaimCeiling::SelectedEffectEquality;
+        x.contract.rules[0].disposition = EffectDisposition::Omitted;
+        bad.push(x);
+        for width in [0, 3, 8] {
+            let mut x = p.clone();
+            let pat = pattern(EffectSelector::MmioWrite {
+                address: 0x4000,
+                width,
+            });
+            x.contract.rules[0].vendor = Some(pat);
+            x.contract.rules[0].replacement = Some(pat);
+            bad.push(x);
+        }
+        let mut x = p.clone();
+        let pat = EffectPattern {
+            selector: EffectSelector::MmioWrite {
+                address: 0x4000,
+                width: 1,
+            },
+            value: EffectValue::Exact { value: 256 },
+        };
+        x.contract.rules[0].vendor = Some(pat);
+        x.contract.rules[0].replacement = Some(pat);
+        bad.push(x);
+        let mut x = p.clone();
+        let mut r = rule(EffectDisposition::Required);
+        r.vendor = Some(pattern(EffectSelector::Delay { micros: None }));
+        r.replacement = r.vendor;
+        let mut other = r.clone();
+        other.name = "specific".into();
+        other.vendor = Some(pattern(EffectSelector::Delay { micros: Some(3) }));
+        other.replacement = other.vendor;
+        x.contract.rules = vec![r, other];
+        bad.push(x);
+        for x in bad {
+            assert_eq!(
+                x.contract.validate().unwrap_err().code,
+                ErrorCode::InvalidRequest
+            );
+        }
+        let a = observed(vec![write(1)]);
+        assert_eq!(
+            super::super::compare(&a, &a, &relation(&p), &[], None, None, &mut || Ok(()))
+                .unwrap_err()
+                .code,
+            ErrorCode::Integrity
+        );
+        let mut r = relation(&p);
+        r.events.delay = false;
+        assert_eq!(
+            super::super::compare(&a, &a, &r, &[], None, Some(&p), &mut || Ok(()))
+                .unwrap_err()
+                .code,
+            ErrorCode::InvalidRequest
+        );
+        assert!(
+            super::super::compare(&a, &a, &relation(&p), &[], None, Some(&p), &mut || Err(
+                Error::new(ErrorCode::Cancelled, "cancel")
+            ))
+            .is_err()
+        );
+    }
+    #[test]
+    fn malformed_concrete_effects_cannot_authorize_match() {
+        let p = policy(vec![rule(EffectDisposition::Required)]);
+        for event in [
+            ExecutionEvent::Write {
+                address: 0x4000,
+                width: 0,
+                value: 0,
+            },
+            ExecutionEvent::Read {
+                address: 0x4000,
+                width: 1,
+                value: 256,
+            },
+            ExecutionEvent::Write {
+                address: 0x4001,
+                width: 4,
+                value: 7,
+            },
+            ExecutionEvent::Fence {
+                predecessor: 16,
+                successor: 3,
+            },
+        ] {
+            let a = observed(vec![event]);
+            assert_eq!(
+                super::super::compare(&a, &a, &relation(&p), &[], None, Some(&p), &mut || Ok(()))
+                    .unwrap_err()
+                    .code,
+                ErrorCode::Integrity
+            );
+        }
+    }
+    #[test]
+    fn optional_and_added_effects_remain_ordered_against_calls_and_internal_memory() {
+        let p = policy(vec![rule(EffectDisposition::Omitted)]);
+        let memory = ExecutionEvent::Memory {
+            site: 0x1000,
+            transaction: MemoryTransaction::Write {
+                address: 0x3000,
+                width: 4,
+                value: 7,
+            },
+        };
+        let call = ExecutionEvent::CallTransfer {
+            site: 0x1004,
+            target: 0x2000,
+            tail: false,
+            indirect: false,
+            stack: None,
+            target_kind: ObservedCallTarget::CapturedCode,
+            words: 0,
+        };
+        let mut r = relation(&p);
+        r.events.timeline.writes = true;
+        r.calls = true;
+        let a = observed(vec![write(1), memory.clone(), call.clone(), write(2)]);
+        for events in [
+            vec![memory.clone(), call.clone(), write(2)],
+            vec![write(1), memory.clone(), call.clone()],
+        ] {
+            let b = observed(events);
+            assert_eq!(
+                super::super::compare(&a, &b, &r, &[], None, Some(&p), &mut || Ok(()))
+                    .unwrap()
+                    .verdict,
+                ComparisonVerdict::Match
+            );
+        }
+        for events in [
+            vec![memory.clone(), write(1), call.clone()],
+            vec![call, memory, write(2)],
+        ] {
+            let b = observed(events);
+            assert_eq!(
+                super::super::compare(&a, &b, &r, &[], None, Some(&p), &mut || Ok(()))
+                    .unwrap()
+                    .verdict,
+                ComparisonVerdict::Diff
+            );
+        }
+    }
+}

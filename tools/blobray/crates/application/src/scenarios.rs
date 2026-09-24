@@ -30,6 +30,9 @@ fn resolve(
     c: &mut dyn RunControl,
 ) -> Result<Resolution> {
     let operation = match action {
+        ScenarioRequest::ProposeEffectContract { request } => RunOperation::Knowledge {
+            change: crate::effect_contracts::propose(project, request, memory, c)?,
+        },
         ScenarioRequest::ProposeProjection { request } => RunOperation::Knowledge {
             change: crate::layout_projections::propose(project, request, memory, c)?,
         },

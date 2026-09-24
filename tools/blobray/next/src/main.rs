@@ -33,11 +33,17 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum KnowledgeCommand {
-    /// Propose an exact captured/model call correspondence for explicit review.
+    /// Propose an effect classification for explicit review at exact captured entries.
+    ProposeEffectContract {
+        #[arg(long)]
+        request: PathBuf,
+    },
+    /// Propose a reviewed memory layout and branch correspondence.
     ProposeProjection {
         #[arg(long)]
         request: PathBuf,
     },
+    /// Propose an exact captured/model call correspondence for explicit review.
     ProposeCallPair {
         #[arg(long)]
         request: PathBuf,
@@ -1111,6 +1117,15 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             command,
             limits,
         } => match command {
+            KnowledgeCommand::ProposeEffectContract { request } => {
+                return propose_command(
+                    project,
+                    request,
+                    limits,
+                    format,
+                    ProposalInput::EffectContract,
+                );
+            }
             KnowledgeCommand::ProposeProjection { request } => {
                 return propose_command(
                     project,
@@ -2770,6 +2785,7 @@ fn export_data_query(
 }
 
 enum ProposalInput {
+    EffectContract,
     Projection,
     Data,
     Constant,
@@ -2794,6 +2810,11 @@ fn propose_command(
         ProposalInput::Data => {
             application.start_propose_data(&project, read_json_file(&request)?, limits.budget()?)?
         }
+        ProposalInput::EffectContract => application.start_propose_effect_contract(
+            &project,
+            read_json_file(&request)?,
+            limits.budget()?,
+        )?,
         ProposalInput::Projection => application.start_propose_projection(
             &project,
             read_json_file(&request)?,

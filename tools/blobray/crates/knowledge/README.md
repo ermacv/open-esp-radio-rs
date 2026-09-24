@@ -24,7 +24,7 @@ An accepted hypothesis remains a hypothesis. Accepting a name, binding or extent
 does not establish behavioral equivalence. Executable ABI models and
 register-publication policy remain outside this crate's authority.
 
-See the [application commands and wire contracts](../../next/README.md#knowledge-and-preservation)
+See the [application commands and wire contracts](../../next/reference/knowledge-review/README.md#knowledge-and-preservation)
 for evidence verification, revision selection and backup/restore ownership.
 
 Integer tables and instruction-derived constants use the same explicit review

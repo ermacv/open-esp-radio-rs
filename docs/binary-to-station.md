@@ -5,7 +5,24 @@ It connects hardware research, protocol implementation and independent checks.
 Start here before the detailed [repository architecture](architecture.md), then
 try the [first host contribution](first-contribution.md).
 
+The practical question is: **which decision am I making, and what information
+do I need to make it?** A register address alone does not tell us how to start
+a radio. A working channel operation alone does not implement association.
+Each layer adds a different kind of meaning.
+
+Read this page for the overall model, use the
+[synthetic register exercise](first-contribution.md#read-the-observations-before-the-declaration)
+to learn how evidence becomes an interpretation, then follow
+[a real channel change](channel-walkthrough.md) from reviewed hardware facts
+to the station scan caller.
+
 ## Three connected paths
+
+Hardware research answers what the chip does. Protocol development answers
+what a station should do. Runtime composition connects those two answers on
+a particular board. Verification checks selected behavior along the way.
+This is why there is no single pipeline that translates a vendor binary into
+an IEEE 802.11 implementation.
 
 ```mermaid
 flowchart TD
@@ -44,6 +61,21 @@ compile the production implementation rather than another copy of it.
 
 ## Who makes each decision?
 
+Use the owner of the decision to choose where a change belongs:
+
+| Question you are answering | Work here | Result that the next owner can use |
+| --- | --- | --- |
+| Which code accesses this address, with what values and ordering? | Blobray and the selected vendor investigation | Saved observations, gaps and source identities |
+| What physical register or field does that access mean? | Reviewed register model | Accepted geometry, semantics and applicability |
+| Who may read or change it? | PAC publication policy and restricted PAC | A typed, limited capability |
+| How do several hardware actions form one operation? | HAL | Ordered transactions, waits and recovery |
+| How do we calculate RF settings and calibration values? | PHY | Algorithms, retained state and authenticated tables |
+| How do buffers, MAC state and interrupts implement a radio operation? | Chip driver | Hardware transitions and resource ownership |
+| When should a station scan, associate, retry or reconnect? | Portable IEEE 802.11 / STA | Protocol decisions through explicit ports |
+| Who executes those decisions and supplies time and wakeups? | Runtime and composition | A runnable system with one hardware lifetime |
+
+The detailed boundaries are:
+
 | Owner | Determines | Detailed contract |
 | --- | --- | --- |
 | Blobray | What selected binary code reveals under stated analysis, execution and model limits | [Task map](../tools/blobray/README.md#choose-a-task) |
@@ -67,10 +99,35 @@ readiness the independent qualification evaluator assesses.
 
 ## Handoffs, review and checks
 
+Research becomes production input through an explicit review and publication
+boundary. A read instruction establishes an observed access width; it does
+not establish the physical register width, reset value or write-one-to-clear
+behavior. Those interpretations need supporting evidence.
+
+```mermaid
+flowchart LR
+    Access["Observed MMIO access"] --> Review["Review meaning and source applicability"]
+    Review --> Model["Hardware model: registers and fields"]
+    Policy["Publication policy: allowed authority"] --> Publish["cargo registers"]
+    Model --> Publish
+    Publish --> Raw["SVD and raw PAC"]
+    Publish --> Cap["Generated capability catalog and bindings"]
+    Raw --> PAC["Restricted PAC: typed local operations"]
+    Cap --> PAC
+    PAC --> HAL["HAL: hardware transactions"]
+```
+
+Arrows here show inputs and generated/handwritten consumers. Publication
+checks consistency; it does not execute the vendor binary to re-establish
+the review. The restricted PAC also contains handwritten ownership code.
+The separate upstream `esp-pacs` → `esp-hal` chain supplies board/SoC access;
+it does not generate this radio PAC. See the
+[two PAC chains](../crates/hardware/esp32s31/pac/README.md#upstream-pac-and-esp-hal).
+
 | Transition | Input → result | Human decision | Check and owner |
 | --- | --- | --- | --- |
-| Capture → research | Caller-owned artifact → immutable capture and selected observations | Choose source identity, exact code/data scope and assumptions | [Blobray capture and analysis](../tools/blobray/next/README.md#use); unresolved paths stay visible |
-| Research → accepted meaning | Observations and conflicts → reviewed physical declaration or data interpretation | Is the interpretation supported for this chip/profile? An access width is not a register width | [Register research](../tools/blobray/next/README.md#saved-register-research) and [review tool](../tools/registers/review/README.md) |
+| Capture → research | Caller-owned artifact → immutable capture and selected observations | Choose source identity, exact code/data scope and assumptions | [Blobray capture and analysis](../tools/blobray/next/reference/capture-images/README.md#use); unresolved paths stay visible |
+| Research → accepted meaning | Observations and conflicts → reviewed physical declaration or data interpretation | Is the interpretation supported for this chip/profile? An access width is not a register width | [Register research](../tools/blobray/next/reference/registers-data/README.md#saved-register-research) and [review tool](../tools/registers/review/README.md) |
 | Model → PAC | Reviewed model, provenance and API policy → SVD, Rust accessors and bindings | Which fields and ownership capabilities may production expose? | [Publication](../registers/esp32s31/publication/README.md); reproducible `cargo registers generate --check` |
 | PAC → HAL | Restricted register authority → ordered hardware operation and terminal outcome | Sequence, wait bounds, delay and recovery requirements | [HAL source](../crates/hardware/esp32s31/hal/src/lib.rs); host behavior checks and applicable hardware evidence |
 | Reviewed data + HAL → PHY | Tables, coefficients and hardware operations → channel/calibration algorithms | Source profile, representation, applicability and algorithm boundary | [PHY comparison](phy/README.md) and [source policy](source-policy.md) |
@@ -83,12 +140,15 @@ Registers are only part of hardware knowledge. RF algorithms may require
 recovered integer tables and calibration coefficients. Retain their source
 identity, purpose, representation and applicable hardware/profile; verify the
 values against the real source artifact. The
-[data export contract](../tools/blobray/next/README.md#captured-data-tables-and-coefficients)
+[data export contract](../tools/blobray/next/reference/registers-data/README.md#captured-data-tables-and-coefficients)
 retains captured bytes and provenance. Binary origin does not justify omitting
 required data or substituting an older profile. A synthetic exercise teaches
 review mechanics; it cannot establish these facts about a real chip.
 
 ## Production layers during a scan
+
+The [channel walkthrough](channel-walkthrough.md) follows one concrete
+readiness bit through these owners, including timeout and owner return.
 
 ```mermaid
 flowchart TD

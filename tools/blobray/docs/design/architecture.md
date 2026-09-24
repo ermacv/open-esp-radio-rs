@@ -210,13 +210,13 @@ worker contract and application job set serve import, queries, inspection planni
 and planned inspection. Runtime owner records and leases span query delivery and
 Plan lifetime; only proven orphans are automatically reclaimed. Project import
 recovery remains explicit. The implemented limits and exclusions belong to the
-[temporary storage contract](../../next/README.md#temporary-storage-and-crash-cleanup).
+[temporary storage contract](../../next/reference/resources-storage/README.md#temporary-storage-and-crash-cleanup).
 Plans retain a captured manifest and fixed recipe;
 reopening verifies the selected project without substituting current. Restricted
 application read views hide writer/recovery access and pin the selected manifest;
 query admission resolves current before launching work. CLI import and inventory consume
 streaming paths; the materializing convenience APIs and their narrower guarantees
-are described in Next's [memory boundary](../../next/README.md#current-memory-boundary).
+are described in Next's [memory boundary](../../next/reference/resources-storage/README.md#current-memory-boundary).
 
 The target supervisor serves durable operations and ephemeral read operations.
 They share admission, cancellation, deadlines, worker ownership and cleanup.

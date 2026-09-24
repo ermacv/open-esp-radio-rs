@@ -3,6 +3,7 @@ import path from 'node:path';
 import { apiEntries, compressApi, config, copySnapshots, files, git, markdown, output, planSnapshots, root, run, sourcePage, transform, verifyReport, write } from './lib.mjs';
 import { visit } from 'unist-util-visit';
 import { linkApi } from './api-links.mjs';
+import { groupReferences, isLegacyReference } from './navigation.mjs';
 
 const full = process.argv.includes('--full');
 if (process.argv.slice(2).some(arg => !['--full', '--reuse-checks'].includes(arg))) throw new Error('Usage: node tools/docs/build.mjs [--full] [--reuse-checks]');
@@ -25,7 +26,6 @@ const titles = new Map();
 const diagrams = [];
 const staged = [];
 const sourceStamp = `Source: [${revision.slice(0, 12)}](${config.repository}/tree/${revision})${report.source.dirty ? ' **with local changes**' : ''}.`;
-const legacy = source => /^tools\/blobray\/docs\/[^/]+\.md$/.test(source);
 
 async function stage(text, source, destination) {
   const result = await transform(text, source, destination, pages, revision);
@@ -51,7 +51,7 @@ async function stage(text, source, destination) {
 
 for (const source of documents) {
   let text = await fs.readFile(path.join(root, source), 'utf8');
-  if (legacy(source)) {
+  if (isLegacyReference(source)) {
     text = text.replace(/^(# .*)\n/, '$1\n\n> Legacy reference: its command grammar is not supported by current `cargo blobray`.\n');
   }
   text += `\n\n---\n\n${sourceStamp} [View source](${config.repository}/blob/${revision}/${source}) · [Edit original](${config.repository}/edit/main/${source})\n`;
@@ -108,11 +108,20 @@ for (const group of config.navigation) {
 summary.push('# API and capability map', '', '- [API documentation](api/index.md)', '- [Capability map](status/index.md)');
 for (const page of statusPages) summary.push(`  - [${titles.get(page)}](${page})`);
 summary.push('', '# Component references', '');
-for (const source of documents.filter(source => !used.has(source) && !legacy(source))) {
-  summary.push(`- [${titles.get(pages.get(source))}](${pages.get(source)})`);
+for (const group of groupReferences(documents, used, config.referenceGroups)) {
+  const destination = `reference/${group.id}.md`;
+  const index = [`# ${group.title}`, '', 'Reference documents remain with their source owners. Choose a topic below.', ''];
+  summary.push(`- [${group.title}](${destination})`);
+  for (const source of group.sources) {
+    const page = pages.get(source);
+    summary.push(`  - [${titles.get(page)}](${page})`);
+    index.push(`- [${titles.get(page)}](${path.posix.relative('reference', page)})`);
+  }
+  await write(path.join(src, destination), index.join('\n') + '\n');
+  staged.push(destination);
 }
 summary.push('', '# Legacy references', '');
-for (const source of documents.filter(legacy)) summary.push(`- [Legacy: ${titles.get(pages.get(source))}](${pages.get(source)})`);
+for (const source of documents.filter(isLegacyReference)) summary.push(`- [Legacy: ${titles.get(pages.get(source))}](${pages.get(source)})`);
 await write(path.join(src, 'SUMMARY.md'), summary.join('\n') + '\n');
 
 const toolBin = path.join(root, 'target/docs/tooling/bin');

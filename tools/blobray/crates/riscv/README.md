@@ -22,7 +22,7 @@ shared run control. It uses the same decoder and integer lift descriptions, with
 separate concrete control-flow and fence handling. Unknown operands or unsupported
 instructions end with an explicit gap. The backend cannot select images, acquire
 memory regions, choose models or publish a verdict. See the
-[concrete profile](../../next/README.md#concrete-execution-and-comparison).
+[concrete profile](../../next/reference/execution/README.md#concrete-execution-and-comparison).
 
 `PointerDecoder` provides the `rv32-absolute-rela/1` profile: NONE writes nothing;
 R_RISCV_32 RELA supplies absolute 32-bit symbol-plus-addend semantics. Other

@@ -25,13 +25,13 @@ range reads participate in cooperative work accounting. Sink failures preserve
 their original error and cannot become malformed-object diagnostics. The caller
 owns any retained record copies and their memory capacity. Borrowed views cannot
 outlive the admitted input buffer. See the
-[memory boundary](../../next/README.md#current-memory-boundary) for admission
+[memory boundary](../../next/reference/resources-storage/README.md#current-memory-boundary) for admission
 accounting and the single-ELF size limit.
 
 ELF inspection reads raw section/symbol/relocation tables, including null and
 local symbols and malformed-name entries. Table kind, section and entry index
 remain part of symbol identity. The
-[implemented scope](../../next/README.md#identity-and-schema-1) defines supported
+[implemented scope](../../next/reference/interfaces-formats/README.md#identity-and-schema-1) defines supported
 formats and coverage limits. No inference here establishes linking, target
 execution support or verification success.
 

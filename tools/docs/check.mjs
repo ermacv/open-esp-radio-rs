@@ -90,6 +90,20 @@ export async function checkBrowser(site, build) {
     await page.goto(url);
     await page.getByRole('link', { name: 'From binary evidence to a Wi-Fi station', exact: true }).first().click();
     await page.waitForURL('**/guide/docs/binary-to-station.html');
+    await page.locator('main').getByRole('link', { name: 'a real channel change', exact: true }).click();
+    await page.waitForURL('**/guide/docs/channel-walkthrough.html');
+    await page.goto(url);
+    await page.locator('main').getByRole('link', { name: 'First host contribution', exact: true }).click();
+    await page.waitForURL('**/guide/docs/first-contribution.html');
+    await page.goto(url);
+    await page.locator('main').getByRole('link', { name: 'Blobray task map', exact: true }).first().click();
+    await page.waitForURL('**/guide/tools/blobray/index.html#choose-a-task');
+    await page.goto(`${url}guide/tools/blobray/next/index.html#saved-register-research`);
+    await page.locator('main a[href="reference/registers-data/index.html#saved-register-research"]').click();
+    await page.waitForURL('**/reference/registers-data/index.html#saved-register-research');
+    if (await page.locator('main').getByText('Legacy reference:', { exact: false }).count()) {
+      throw new Error('Current Blobray reference was marked legacy');
+    }
     await page.goto(`${url}?search=ScanPhy`);
     await page.locator('#mdbook-searchresults a').first().waitFor();
     await page.locator('#mdbook-searchresults a').first().click();

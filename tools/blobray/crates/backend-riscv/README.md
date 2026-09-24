@@ -1,5 +1,10 @@
 # RISC-V vendor-binary backend
 
+This package belongs to the retained vendor-investigation engine. The current
+`cargo blobray` command uses [Next](../../next/README.md); it does not load this
+package implicitly. This page describes the retained library contract.
+
+
 RV32 ELF/archive decoding, relocation handling, symbolic analysis, concrete
 execution, final-image auditing and Rust reference generation for the explicit
 `riscv32` + `riscv-ilp32` backend pair.

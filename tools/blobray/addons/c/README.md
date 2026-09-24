@@ -1,5 +1,10 @@
 # C semantic add-on
 
+This package belongs to the retained vendor-investigation engine. The current
+`cargo blobray` command uses [Next](../../next/README.md); it does not load this
+package implicitly. This page describes the retained library contract.
+
+
 This add-on identifies standardized C runtime boundaries by exact public
 symbol name. Architecture backends may apply the declared ABI contract to a
 call site, but must not use the callee implementation body as semantic

@@ -50,6 +50,13 @@ short. Use tables for capability or ownership comparisons, and diagrams only
 when they clarify interactions. Explain a restriction where it affects a
 caller; avoid repeating the entire project's exclusions on every page.
 
+Give a diagram one question to answer: dependency direction, knowledge flow,
+call sequence or resource lifetime. Label what its arrows mean, keep abstraction
+levels consistent, and include a text explanation. Link a worked example to
+its actual source owners instead of duplicating numeric register definitions.
+Keep learning routes short; long operator references can use topic pages with
+stable entry anchors in their original index.
+
 ## Document ownership and safety
 
 For a component, identify what it owns and what the caller retains. For
@@ -145,3 +152,8 @@ external URLs are reported as `external-not-checked`.
 - [Espressif's Rust documentation](https://docs.espressif.com/projects/rust/)
   separates learning resources from package references; device-specific API
   documentation identifies its target explicitly.
+- [Write the Docs](https://www.writethedocs.org/guide/writing/beginners-guide-to-docs/)
+  connects project purpose, a small example, installation and contribution paths.
+- [C4's introduction](https://c4model.com/introduction) explains why diagrams
+  need consistent abstraction levels and clear relationships. Here Mermaid
+  presents selected views without imposing a new architecture vocabulary.

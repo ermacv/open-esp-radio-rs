@@ -29,7 +29,7 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. The [current native formats](../../next/README.md#current-formats)
+completed durable run contains exactly one result reference. The [current native formats](../../next/reference/interfaces-formats/README.md#current-formats)
 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
@@ -231,7 +231,7 @@ Next implements `Plan` for inventory inspection only: one revision, input,
 object or symbol scope. Its live owner retains a captured manifest; portable
 reopening revalidates project membership and recipe dependencies. This is not
 the general pass/provider graph or a transitive retention pin described below.
-See [inspection plans](../../next/README.md#selection-and-inspection-plans) for
+See [inspection plans](../../next/reference/capture-images/README.md#selection-and-inspection-plans) for
 the implemented schema, resource handoffs and command semantics.
 
 ### Handles and capability boundaries
@@ -325,7 +325,7 @@ selected definitions, relocations, unresolved boundaries and the executed recipe
 Run, replay and comparison share this operation. Companion-provided data
 definitions participate before relocation validation, just as call definitions do.
 
-The implemented [synthetic image profile](../../next/README.md#synthetic-prepared-images)
+The implemented [synthetic image profile](../../next/reference/capture-images/README.md#synthetic-prepared-images)
 uses an explicitly identified LLD or GNU ld capability and captured relocatable
 inputs. Application validates normalized observations against captured occurrence
 identities; Linux adapters alone interpret linker-specific text. Existing linked
@@ -345,7 +345,7 @@ run; successful bounded stderr and exit status are retained in the image manifes
 
 ## Analysis, knowledge and verification ports
 
-The implemented [function operation](../../next/README.md#function-analysis-contract)
+The implemented [function operation](../../next/reference/analysis/README.md#function-analysis-contract)
 consumes an imported occurrence or a symbol in a selected prepared image, with an
 explicit/declared extent, producing a retained local graph and separately
 qualified coverage. `FunctionSource` and `CodeAddressSpace` distinguish section
@@ -547,7 +547,7 @@ owner, including Plan clones. Failed cleanup preserves the charge and identifies
 residue without replacing the primary outcome. Private runtime cleanup requires
 known version/ownership, a dead process identity, an exclusive lease and empty
 containment; unknown or active entries are preserved. Durable project recovery
-remains a separate explicit authority. Next's [temporary storage contract](../../next/README.md#temporary-storage-and-crash-cleanup)
+remains a separate explicit authority. Next's [temporary storage contract](../../next/reference/resources-storage/README.md#temporary-storage-and-crash-cleanup)
 specifies implemented defaults, control reserve, accounting and reconciliation
 bounds, including materialized link inputs and prepared images.
 
@@ -617,7 +617,7 @@ without store project handles. Selected current becomes an explicit revision
 at admission. Result transfer and delivery are each allowed once; repeated wait
 retains the terminal outcome. A successful query computation is distinct from
 successful delivery to an output destination.
-The [implemented memory boundary](../../next/README.md#current-memory-boundary)
+The [implemented memory boundary](../../next/reference/resources-storage/README.md#current-memory-boundary)
 defines admission costs, defaults, single-object limits and convenience APIs.
 
 A two-ended arena is an allowed implementation, not a universal storage mandate.
@@ -703,7 +703,7 @@ authenticate an old proof or establish its applicability to the new revision.
 
 ### Local value analysis boundary
 
-The implemented [value and memory-effect contract](../../next/README.md#values-and-memory-effects)
+The implemented [value and memory-effect contract](../../next/reference/analysis/README.md#values-and-memory-effects)
 extends local function analysis through an injected semantic port. The ISA owner
 lifts operations, analysis owns fixed-point state, application owns execution
 and store owns retained bytes. Unknown values, incomplete effects and failed
@@ -712,7 +712,7 @@ memory environment is acquired implicitly.
 
 ### Implemented review and preservation boundary
 
-[Blobray Next review and preservation](../../next/README.md#knowledge-and-preservation)
+[Blobray Next review and preservation](../../next/reference/knowledge-review/README.md#knowledge-and-preservation)
 owns the implemented wire contracts. `KnowledgeRevisionId` identifies review
 events, independently of the import `RevisionId`; existing import IDs retain
 their original meaning. `SubjectId` is a project-scoped semantic key. Claims
@@ -729,7 +729,7 @@ this implemented review vocabulary. Reviewed MMIO region/register interpretation
 
 ### Implemented PHY/ROM research boundary
 
-The [native research operation](../../next/README.md#phyrom-research) extends the
+The [native research operation](../../next/reference/analysis/README.md#phyrom-research) extends the
 same local engine with a bounded expression DAG and acyclic call composition.
 Application selects exact published callees; analysis receives borrowed facts and
 returns admitted owned output. Recursive components retain local facts and gaps.
@@ -821,7 +821,7 @@ known difference survives other incomplete cases; an emergency resource failure
 publishes no completed evidence. The implemented relation compares exact ordered
 MMIO/fence/delay events and optionally one 32-bit return, with a caller-declared compiled
 binding ceiling. It cannot claim arbitrary-domain or hardware equivalence. See
-[concrete execution](../../next/README.md#concrete-execution-and-comparison) for
+[concrete execution](../../next/reference/execution/README.md#concrete-execution-and-comparison) for
 request limits, memory initialization, schemas and unsupported behavior.
 
 
@@ -892,7 +892,7 @@ and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
 Function and investigation records carry these identities under the
-[current formats](../../next/README.md#current-formats). Old formats are rejected without
+[current formats](../../next/reference/interfaces-formats/README.md#current-formats). Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -1126,7 +1126,7 @@ maps logical context arguments to physical incoming words; unknown signatures re
 caller-supplied mappings. A known signature rejects contradictory maps. `AccessRoot`
 and `AccessStep` are the shared physical vocabulary for interface and field paths;
 entry words and index domains use `word`, not logical `argument` ordinals. ABI
-placement and command examples are in the [operator reference](../../next/README.md#navigation-over-saved-research).
+placement and command examples are in the [operator reference](../../next/reference/navigation/README.md#navigation-over-saved-research).
 
 `store::AnalysisReader` owns at most 256 admitted, verified immediate dependency
 handles until the query ends. Shared revision/publication/member roots are hashed
@@ -1364,7 +1364,7 @@ extraction is a separate consumer responsible for its explicit exactness claim.
 ## Static trace relation
 
 The implemented static trace profile is defined in the
-[operator reference](../../next/README.md#static-observable-traces). Domain owns the
+[operator reference](../../next/reference/ir-traces/README.md#static-observable-traces). Domain owns the
 request, observable values, blockers and result schema. The RV32 semantic producer
 emits typed fences, pre-transfer call/tail inputs and separate architectural
 register writes. Trace policy 3 applies the saved link write before callee entry;
@@ -1430,7 +1430,7 @@ requires both code and due model obligations for MATCH. Store checks identity,
 monotonic counts, declared transcript totals, exact closure and required observation
 presence; it rejects MATCH with unmet obligations without executing model semantics.
 Models and code observations are persisted and replayed together. Full current
-mechanism syntax and claim limits belong to the [operator reference](../../next/README.md#concrete-execution-and-comparison).
+mechanism syntax and claim limits belong to the [operator reference](../../next/reference/execution/README.md#concrete-execution-and-comparison).
 
 Packed-command banks follow the same owner. Domain defines bounded wire geometry,
 seeded cells, script inputs and command accounting; application `command_bank`

@@ -87,7 +87,7 @@ and bounded wake-reset helper. Its finite harness only supplies arguments,
 capabilities and completion edges. A retained entry shim supplies all eight
 integer arguments and explicit callee-saved register values.
 
-The generic [packed-command model](../../../../tools/blobray/next/README.md#packed-command-bank)
+The generic [packed-command model](../../../../tools/blobray/next/reference/execution/README.md#packed-command-bank)
 owns two ports over one seeded bank. Scenario declarations select register
 geometry, initial values, optional scripted replies and busy poll counts. These
 are environmental assumptions. Bank writes commit on a ready read; pending

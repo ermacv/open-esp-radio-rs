@@ -15,18 +15,31 @@ composition, and the [ESP32-S31 radio capability map](crates/hardware/esp32s31/d
 for shared lifecycle, PHY, coexistence and all three protocol inventories.
 
 The project connects open radio implementation with typed resource ownership and
-checks against compiled production code. Contributors can improve portable
-protocols, research tools and documentation without a board. Start with the
-[contribution guide](CONTRIBUTING.md) and the
-[documentation routes](docs/README.md). The
-[documentation portal](https://ermacv.github.io/open-esp-radio-rs/) also presents
-API configurations and a declarations-only capability map.
+checks against compiled production code. It lets contributors investigate a
+hardware operation, implement it in Rust, and trace the evidence behind its
+documented behavior.
+
+| Your interest | A useful starting point | Requirements |
+| --- | --- | --- |
+| Radio drivers and embedded Rust | [Follow a real channel change](docs/channel-walkthrough.md) from reviewed hardware facts to STA | Source reading and host tests need no board; on-air work needs ESP32-S31 hardware |
+| Binary analysis and hardware research | [Blobray task map](tools/blobray/README.md#choose-a-task) and the synthetic exercise | Linux host; real research also needs your own identified vendor artifacts |
+| Portable Rust and resource ownership | [First host contribution](docs/first-contribution.md) | Rust basics and public build dependencies; no private inputs |
+| A station application | [Buildable station example](examples/esp32s31-station/README.md) and [capability limits](crates/hardware/esp32s31/driver/FEATURES.md) | Supported board, toolchain and network configuration |
+
+Start with the [documentation routes](docs/README.md) and
+[contribution guide](CONTRIBUTING.md). The [documentation portal build](tools/docs/README.md)
+provides searchable guides, API configurations and a declarations-only capability
+map. The [Pages address](https://ermacv.github.io/open-esp-radio-rs/) becomes
+available after successful manual publication; local preview works independently.
+
+The workspace is licensed under [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE).
 
 ## Start here
 
 | Task | Documentation |
 | --- | --- |
 | Understand the architecture | [From binary evidence to a Wi-Fi station](docs/binary-to-station.md) |
+| Trace one operation through the layers | [Channel change: evidence to STA](docs/channel-walkthrough.md) |
 | Make a first contribution | [Host tutorial](docs/first-contribution.md), [contribution guide](CONTRIBUTING.md) |
 | Investigate hardware | [Blobray task map](tools/blobray/README.md#choose-a-task), [review and publication](registers/README.md) |
 | Build and validate a station | [ESP32-S31 route](docs/station-hardware.md) |

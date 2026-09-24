@@ -72,6 +72,59 @@ For later CLI investigations choose a resource backend explicitly; where cgroup
 delegation is unavailable use `--limit-mode watchdog`. See the
 [Blobray task map](../tools/blobray/README.md#choose-a-task).
 
+### Read the observations before the declaration
+
+Keep the test source open while following these checkpoints. The assertions
+are the expected results; the normal test output reports pass/fail rather than
+printing a research report. The fixture is synthetic, so its names and values
+describe this exercise only.
+
+| Checkpoint in the test | Expected observation | What you have learned |
+| --- | --- | --- |
+| `analyze(&f)` and the first register query | One selected analysis, no declarations, and at least one unresolved address | Analysis can finish while selected facts remain unknown |
+| `RegisterRecord::Address` and `Observation` assertions | Word accesses at `0x20000`, read-selection and write-replacement masks | Instructions reveal accesses and manipulated bits; they do not name a physical register |
+| `KnowledgeClaim::MmioRegister` | A proposed four-byte `CONTROL` register with a `MODE` field | The test author supplies an interpretation explicitly |
+| Review with `ReviewDecision::Accept` | Accepted bindings, including a byte access at `0x20001` contained in the wider register | Instruction width and physical register width are different facts |
+| Propose a two-byte declaration for the same subject | A visible conflict; accepting it fails | Review cannot silently overwrite conflicting meaning |
+| Query with `knowledge: None` | No declarations | A query does not implicitly select the current knowledge head |
+| Remove original files, export, backup and restore | Identical saved query and exported bytes | Retained capture and review support source-free reading |
+
+The fixture also loads through an unknown input pointer. Do not interpret
+that unresolved address as absence of another register access. The masks
+describe this synthetic instruction sequence, not reviewed ESP32-S31 fields.
+
+Before reading each assertion, predict whether it concerns an observation,
+an interpretation or preservation. Then check your answer against the table.
+In particular, explain why accepting `CONTROL` does **not** generate a PAC:
+production publication consumes a separately reviewed hardware model and API
+policy. Continue with the [real channel example](channel-walkthrough.md#2-find-the-accepted-hardware-meaning)
+to see that boundary in the repository.
+
+### Match the exercise to operator commands
+
+The fixture invokes the application API for analysis and review, and CLI helpers
+for export and backup/restore. In an operator session, the corresponding command
+families are:
+
+| Exercise step | Operator entry point | Detailed input contract |
+| --- | --- | --- |
+| Capture and select code | `init`, `import`, `inventory`, `select` | [Capture and selection](../tools/blobray/next/reference/capture-images/README.md) |
+| Analyze a function | `analyze-function` | [Function analysis](../tools/blobray/next/reference/analysis/README.md#function-analysis-contract) |
+| Inspect candidates | `registers` | [Saved register research](../tools/blobray/next/reference/registers-data/README.md#saved-register-research) |
+| Propose and review | `knowledge propose-register`, `knowledge accept` | [Knowledge and review](../tools/blobray/next/reference/knowledge-review/README.md) |
+| Preserve the investigation | `backup`, `restore` | [Preservation](../tools/blobray/next/reference/knowledge-review/README.md#knowledge-and-preservation) |
+
+For command discovery without changing a project, run from the repository root:
+
+```console
+cargo blobray --help
+cargo blobray registers --help
+cargo blobray knowledge --help
+```
+
+For an actual investigation, supply the exact selectors and requests documented
+by those references. Temporary fixture IDs are not reusable operator inputs.
+
 ## Turn understanding into a contribution
 
 Pick a documented limitation or missing behavior check from the
@@ -79,6 +132,13 @@ Pick a documented limitation or missing behavior check from the
 Useful work without hardware includes portable policy regressions, codecs,
 documentation, synthetic analysis fixtures and host tooling. Check the owner
 and existing tests before changing behavior.
+
+Choose a bounded first contribution: explain a confusing handoff with source
+links, add a missing failure-path assertion to an existing policy test, or
+reproduce an analysis gap with a synthetic fixture. State the missing behavior
+or explanation before proposing a change. Board-dependent RF behavior and
+vendor comparisons have additional prerequisites; the [hardware route](station-hardware.md)
+names them separately.
 
 Follow [CONTRIBUTING](../CONTRIBUTING.md) for checks and PR preparation.
 Continue with [the hardware route](station-hardware.md) when you have the

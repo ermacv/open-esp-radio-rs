@@ -65,7 +65,7 @@ port and obtains time, cancellation and observation from `RunEnvironment`.
 coordinator retention; a successful worker receipt without accounting is invalid.
 Progress and terminal errors retain phase and physical position. The primary
 failure stays separate from bounded cleanup/persistence diagnostics. See
-[cooperative control](../../next/README.md#cooperative-control-and-failure-diagnostics)
+[cooperative control](../../next/reference/resources-storage/README.md#cooperative-control-and-failure-diagnostics)
 for policy, protocol versions and working-memory boundaries.
 
 The application creates one `WorkingMemory` authority per worker operation.
@@ -84,7 +84,7 @@ candidates. No scheduling graph or analysis engine is introduced for inspection.
 Each execution retains the plan independently of client handles, validates its
 manifest/recipe and streams the selected records under the saved execution
 budget. Reopening explicitly checks a selected project; it cannot rebind current.
-See [selection and plans](../../next/README.md#selection-and-inspection-plans)
+See [selection and plans](../../next/reference/capture-images/README.md#selection-and-inspection-plans)
 for formats, CLI use, lifecycle, capacity and coverage limitations.
 
 `TemporaryStoragePolicy` and the `temporary` module own per-operation admission,
@@ -96,7 +96,7 @@ admission to retained file lengths; Plan clones share that reservation. Cleanup
 failure retains the charge and diagnostics. Query runtime reconciliation is
 automatic for proven abandoned workspaces; project import recovery stays explicit.
 `write_control_message` is the bounded 64 KiB host-control serializer, including
-guard and worker reports. See the [temporary storage contract](../../next/README.md#temporary-storage-and-crash-cleanup)
+guard and worker reports. See the [temporary storage contract](../../next/reference/resources-storage/README.md#temporary-storage-and-crash-cleanup)
 for accounting, defaults, observations and cleanup limits.
 
 `linking` owns the synthetic image policy and the `LinkerHost` port. `LinkPlan`
@@ -109,7 +109,7 @@ ELF ownership. Application never parses linker-specific map text. `start_prepare
 staging and commit boundary as import with a typed image receipt. Normalized placement and extraction evidence
 must prove the exact entry/root occurrences before publication. Saved image
 queries and exports use the ordinary read-query lifecycle. See
-[prepared images](../../next/README.md#synthetic-prepared-images) for the supported
+[prepared images](../../next/reference/capture-images/README.md#synthetic-prepared-images) for the supported
 profile, mapping limits, metadata capacities and resource ownership.
 
 `functions` owns exact captured-object/prepared-image function selection and the schema-1 `FunctionWork`
@@ -117,7 +117,7 @@ message. It passes admitted bytes and raw relocations to `blobray-analysis` with
 an injected `FunctionSemantics`, never a concrete ISA dependency. The same durable
 supervisor publishes typed function receipts, including semantic incompleteness.
 Read/export operations consume retained records without scheduling computation.
-See [function analysis](../../next/README.md#function-analysis-contract).
+See [function analysis](../../next/reference/analysis/README.md#function-analysis-contract).
 
 
 `investigations` owns object-input or prepared-image selection and execution through
@@ -136,7 +136,7 @@ that transaction completes. Publication/status/access/reference queries consume
 retained records only. `RunControl::progress` lets the store persist final
 accounting in the same transaction after streamed child inserts. This operation
 adds no scheduler, backend dependency or subprocess per function. See the
-[library contract](../../next/README.md#library-investigations).
+[library contract](../../next/reference/analysis/README.md#library-investigations).
 
 ## Knowledge and preservation
 
@@ -156,7 +156,7 @@ legacy adapter can create a writer only for its new private staging project;
 it cannot mutate the original legacy project or an existing destination. The
 caller publishes a verified new project with `QueryOutput::publish_restore`.
 Original bytes, unresolved references and unsupported representations remain
-explicit catalog records. [Commands and contracts](../../next/README.md#knowledge-and-preservation)
+explicit catalog records. [Commands and contracts](../../next/reference/knowledge-review/README.md#knowledge-and-preservation)
 define the formats, bounds, publication boundary and supported conversions.
 
 `ReadQuery::NamedLinkPlan` resolves one defined entry in an explicit input and
@@ -178,7 +178,7 @@ No second worker, parser, scheduler or provider registry is introduced.
 It rejects name collisions and synthetic-placement overlap; the host still only
 executes the explicit linker invocation. Knowledge occurrence validation shares
 input/image identity with function analysis. See the
-[native workflow](../../next/README.md#phyrom-research).
+[native workflow](../../next/reference/analysis/README.md#phyrom-research).
 
 ## Concrete execution
 
@@ -189,7 +189,7 @@ initialization state and bounded events. `Executor` is injected from domain;
 application has no concrete ISA dependency. The pure verification crate owns
 comparison. All cases share the ordinary durable supervisor, budget, staging and
 publication boundary. Read/replay clients use `ReadQuery::Execution`.
-See [execution and comparison](../../next/README.md#concrete-execution-and-comparison)
+See [execution and comparison](../../next/reference/execution/README.md#concrete-execution-and-comparison)
 for stateful lifetimes, resource obligations and claim limits.
 
 `ReadQuery::AuditTargets` reads an explicitly selected ELF outside a project under
@@ -269,7 +269,7 @@ names; finite profile propagation and a separate admitted provenance worklist
 preserve the distinction between selected callees and evidence-only dependencies.
 The build owns one supervised budget/publication. `ReadQuery::SemanticIr` expands
 original function facts through `QuerySink::semantic_ir`; no hidden analysis or
-live-origin access occurs. See [IR profiles](../../next/README.md#saved-semantic-ir-profiles).
+live-origin access occurs. See [IR profiles](../../next/reference/ir-traces/README.md#saved-semantic-ir-profiles).
 
 `ReadQuery::Trace` selects original local members of retained IR profiles and exposes
 `QuerySink::trace` evidence and a scoped static comparison verdict. Each side's saved

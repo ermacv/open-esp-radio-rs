@@ -86,6 +86,28 @@ Developers of a lower subsystem start from its defining crate and owner types.
 This is why internal crates depend on specific lower contracts and never route
 their dependencies back through `oer`.
 
+```mermaid
+flowchart TD
+    Composition["ESP32-S31 Wi-Fi composition"] --> Runtime["Concrete Embassy radio runtime"]
+    Composition --> Chip["Chip STA backend"]
+    Runtime --> Chip
+    Runtime --> STA["Portable STA policy"]
+    Chip --> STA
+    Chip --> PHY["PHY algorithms and state"]
+    Chip --> HAL["Radio HAL"]
+    STA --> MAC["Portable IEEE 802.11 contracts"]
+    PHY --> HAL
+    HAL --> PAC["Restricted radio PAC"]
+    PAC --> Raw["Raw radio PAC"]
+```
+
+Here each arrow points from a consumer to a production dependency; the diagram
+selects the Wi-Fi station layers and omits other dependencies and feature
+profiles. This differs from the knowledge-flow diagrams: Blobray, register
+publication and qualification do not enter the production dependency graph.
+Calls can pass through a portable port implemented by a higher composition
+without introducing a reverse Cargo dependency.
+
 Portable packages cannot depend on chip or host packages; the public facade
 is the explicit selection boundary. Chip packages can depend on portable
 packages and packages for the same chip. Host packages can depend on portable

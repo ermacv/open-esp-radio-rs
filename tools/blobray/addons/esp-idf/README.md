@@ -1,5 +1,10 @@
 # ESP-IDF semantic add-on
 
+This package belongs to the retained vendor-investigation engine. The current
+`cargo blobray` command uses [Next](../../next/README.md); it does not load this
+package implicitly. This page describes the retained library contract.
+
+
 This add-on owns reusable ESP-IDF ABI identities and meanings that are shared
 between chips. Known RTOS, logging, NVS, timing, and OSI calls are semantic
 boundaries: analysis records the call, signature, arguments, return contract,

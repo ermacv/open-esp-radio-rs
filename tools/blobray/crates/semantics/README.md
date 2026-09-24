@@ -1,5 +1,10 @@
 # Vendor semantics layer
 
+This package belongs to the retained vendor-investigation engine. The current
+`cargo blobray` command uses [Next](../../next/README.md); it does not load this
+package implicitly. This page describes the retained library contract.
+
+
 Architecture-neutral effect comparison types shared by the generic Blobray
 engine and declarative add-ons. This crate contains no platform registry,
 production driver dependency, or target-owned verdict callback.

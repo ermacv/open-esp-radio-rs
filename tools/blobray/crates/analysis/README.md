@@ -15,7 +15,7 @@ The private `values` module owns finite-lattice register states and a bounded
 fixed-point queue. It emits values and accesses only after convergence, through
 the same borrowed sink as the CFG. Input-dependent allocations share the caller's
 working capacity, and all repeated visits share its work/deadline budget.
-See [value semantics and limits](../../next/README.md#values-and-memory-effects).
+See [value semantics and limits](../../next/reference/analysis/README.md#values-and-memory-effects).
 
 An optional borrowed `ImageMemory` port supplies immutable load bytes. Static
 ELF permissions qualify these constants; writable/unmapped memory stays unknown.

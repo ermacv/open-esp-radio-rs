@@ -7,8 +7,9 @@ lab. These are separate prerequisites.
 
 ## Trace channel configuration
 
-Read [the scan handoff](binary-to-station.md#production-layers-during-a-scan), then
-follow these owners:
+Follow [the worked channel change](channel-walkthrough.md) for the concrete
+frequency-ready field, review, PAC operation, timeout and scan caller. Use the
+following shorter map when returning to the code:
 
 1. [Runtime target binding](../crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/target.rs)
    implements the scan port and retains the caller's hardware owner.

@@ -241,7 +241,7 @@ Next query/Plan admission reconciles its private runtime root independently of
 project recovery: dead owner, inactive lease and empty containment are all
 required before deleting an identified workspace. Live or unverifiable entries
 remain with bounded diagnostics. This path cannot delete saved Plans, exports or
-project revisions. The [temporary storage contract](../../next/README.md#temporary-storage-and-crash-cleanup)
+project revisions. The [temporary storage contract](../../next/reference/resources-storage/README.md#temporary-storage-and-crash-cleanup)
 also governs aggregate admission and retained-result lifetime.
 
 Disk exhaustion reports protected data and the failed operation. Corrupt retained
@@ -533,7 +533,7 @@ semantics in reviewed packs. Validation composes those with the selected model,
 memory/ownership and PAC policies, then generates all four outputs. There is no
 automatic Next-to-hardware acceptance or binary-derived write-semantics fallback.
 See the [source-authoring commands](../../../registers/README.md) and
-[saved register reference](../../next/README.md#saved-register-research).
+[saved register reference](../../next/reference/registers-data/README.md#saved-register-research).
 
 Regression owners are Next `functions/registers.rs` (review, conflicts, limits,
 source-free export and restore), analysis `registers` (mask bounds), application
@@ -549,7 +549,7 @@ profile membership, partial coverage, unresolved links and transitive provenance
 Deleting origins, moving the project and restoring a backup preserve that identity.
 A successful build means the configured bundle was retained; static-trace exactness
 and concrete execution are separate consumer claims. Details and commands:
-[IR profiles](../../next/README.md#saved-semantic-ir-profiles).
+[IR profiles](../../next/reference/ir-traces/README.md#saved-semantic-ir-profiles).
 
 ## Static trace comparison (implemented, bounded profile)
 
@@ -558,7 +558,7 @@ supply explicit register inputs and physical observation ranges, then query `tra
 Read the path blockers and exactness independently from operation completion. Compare
 ordered MMIO/fence events only; return/RAM/call relations belong to other profiles.
 Export the result and retain its project backup to reproduce the same trace without
-source binaries. [Static trace scope and assumptions](../../next/README.md#static-observable-traces)
+source binaries. [Static trace scope and assumptions](../../next/reference/ir-traces/README.md#static-observable-traces)
 define MATCH/DIFF/INCOMPLETE and the distinction from composed research and concrete
 execution.
 

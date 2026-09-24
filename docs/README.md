@@ -7,17 +7,23 @@ details live beside their owner; this directory contains shared contracts.
 
 | Goal | Start | Continue |
 | --- | --- | --- |
-| Understand the architecture | [From binary evidence to a Wi-Fi station](binary-to-station.md) | [Responsibility and dependency reference](architecture.md), [protocol vocabulary](protocol-naming.md) |
+| Understand the architecture | [From binary evidence to a Wi-Fi station](binary-to-station.md) | [Worked channel change](channel-walkthrough.md), [responsibility and dependency reference](architecture.md) |
 | Make a first contribution | [Host tutorial](first-contribution.md) | [Contribution workflow](../CONTRIBUTING.md) |
 | Investigate hardware | [Blobray task map](../tools/blobray/README.md#choose-a-task) | [Reviewed models and publication](../registers/README.md), [PHY research](phy/README.md) |
 | Build and validate a station | [ESP32-S31 route](station-hardware.md) | [Application example](../examples/esp32s31-station/README.md), [HIL](../hil/README.md), [qualification](../qualification/README.md) |
 
 These routes assume Rust and embedded basics. The host route needs no board or
 private binary; the hardware route names additional prerequisites at each step.
-The [portal](https://ermacv.github.io/open-esp-radio-rs/) adds searchable guides,
+The [portal build](../tools/docs/README.md) adds searchable guides,
 public/private API snapshots labeled by target/features, and generated static
-capability views. Its [build instructions](../tools/docs/README.md) describe
-local preview and manual publication.
+capability views. The [Pages address](https://ermacv.github.io/open-esp-radio-rs/)
+serves the site after a successful manual publication; ordinary push/PR checks
+build previews. Use the local preview when a published site is unavailable.
+
+For learning, start with the explanation and the host exercise. For a concrete
+job, choose the hardware or contribution route. Component references define
+the exact inputs, outputs and limitations once you know which owner you need.
+You do not need to read every component reference to make a first change.
 
 ## Architecture and reference
 
@@ -25,6 +31,8 @@ local preview and manual publication.
   HIL, verification and qualification responsibilities.
 - [Driver architecture](../crates/README.md): layers, resources and application
   integration.
+- [Channel walkthrough](channel-walkthrough.md): one real hardware fact through
+  review, publication, PAC, HAL, PHY and the station scan caller.
 - [Protocol terminology](protocol-naming.md): IEEE 802.11, Wi-Fi, IEEE 802.15.4,
   Bluetooth and module naming.
 - [Network implementation choices](network-implementations.md): original and

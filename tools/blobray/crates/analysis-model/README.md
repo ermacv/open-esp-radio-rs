@@ -1,5 +1,10 @@
 # Vendor analysis model
 
+This package belongs to the retained vendor-investigation engine. The current
+`cargo blobray` command uses [Next](../../next/README.md); it does not load this
+package implicitly. This page describes the retained library contract.
+
+
 Architecture-neutral symbolic values, observable-effect/reference IR and SVD
 derived MMIO catalogs shared by instruction backends and knowledge providers.
 

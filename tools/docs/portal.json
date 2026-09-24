@@ -4,11 +4,148 @@
   "mdbook": "0.5.4",
   "mermaid": "0.17.1",
   "node": "24.14.0",
-  "sourceOnly": ["AGENTS.md", "tools/blobray/PLAN.md", "hil/tests/fixtures/catalog/README.md"],
+  "sourceOnly": [
+    "AGENTS.md",
+    "tools/blobray/PLAN.md",
+    "hil/tests/fixtures/catalog/README.md"
+  ],
   "navigation": [
-    { "title": "Understand the architecture", "sources": ["docs/README.md", "docs/binary-to-station.md", "docs/architecture.md", "docs/protocol-naming.md", "crates/README.md", "docs/source-policy.md"] },
-    { "title": "Make a first contribution", "sources": ["docs/first-contribution.md", "CONTRIBUTING.md", "docs/documentation.md", "tools/docs/README.md"] },
-    { "title": "Investigate hardware", "sources": ["tools/blobray/README.md", "tools/blobray/next/README.md", "registers/README.md", "registers/esp32s31/publication/README.md", "docs/phy/README.md", "verification/README.md"] },
-    { "title": "Build and validate a station", "sources": ["docs/station-hardware.md", "examples/esp32s31-station/README.md", "docs/network-implementations.md", "docs/wifi-egress.md", "hil/README.md", "hil/targets/esp32s31/README.md", "docs/verification-and-qualification.md", "qualification/README.md"] }
+    {
+      "title": "Understand the architecture",
+      "sources": [
+        "docs/README.md",
+        "docs/binary-to-station.md",
+        "docs/channel-walkthrough.md",
+        "docs/architecture.md",
+        "docs/protocol-naming.md",
+        "crates/README.md",
+        "docs/source-policy.md"
+      ]
+    },
+    {
+      "title": "Make a first contribution",
+      "sources": [
+        "docs/first-contribution.md",
+        "CONTRIBUTING.md",
+        "docs/documentation.md",
+        "tools/docs/README.md"
+      ]
+    },
+    {
+      "title": "Investigate hardware",
+      "sources": [
+        "tools/blobray/README.md",
+        "tools/blobray/next/README.md",
+        "registers/README.md",
+        "registers/esp32s31/publication/README.md",
+        "docs/phy/README.md",
+        "verification/README.md"
+      ]
+    },
+    {
+      "title": "Build and validate a station",
+      "sources": [
+        "docs/station-hardware.md",
+        "examples/esp32s31-station/README.md",
+        "docs/network-implementations.md",
+        "docs/wifi-egress.md",
+        "hil/README.md",
+        "hil/targets/esp32s31/README.md",
+        "docs/verification-and-qualification.md",
+        "qualification/README.md"
+      ]
+    }
+  ],
+  "referenceGroups": [
+    {
+      "id": "blobray-operator",
+      "title": "Blobray operator references",
+      "prefixes": [
+        "tools/blobray/next/reference/"
+      ]
+    },
+    {
+      "id": "radio",
+      "title": "Radio libraries",
+      "prefixes": [
+        "crates/"
+      ]
+    },
+    {
+      "id": "blobray-retained",
+      "title": "Retained investigation libraries",
+      "prefixes": [
+        "tools/blobray/addons/",
+        "tools/blobray/crates/analysis-model/",
+        "tools/blobray/crates/backend-riscv/",
+        "tools/blobray/crates/contracts/",
+        "tools/blobray/crates/semantics/"
+      ]
+    },
+    {
+      "id": "blobray-design",
+      "title": "Blobray design and implementation",
+      "prefixes": [
+        "tools/blobray/"
+      ]
+    },
+    {
+      "id": "registers",
+      "title": "Hardware models and register tools",
+      "prefixes": [
+        "registers/",
+        "tools/registers/"
+      ]
+    },
+    {
+      "id": "verification",
+      "title": "Vendor investigations and comparisons",
+      "prefixes": [
+        "verification/"
+      ]
+    },
+    {
+      "id": "hil",
+      "title": "Hardware tests and lab operation",
+      "prefixes": [
+        "hil/"
+      ]
+    },
+    {
+      "id": "qualification",
+      "title": "Qualification",
+      "prefixes": [
+        "qualification/"
+      ]
+    },
+    {
+      "id": "platform",
+      "title": "Boards and applications",
+      "prefixes": [
+        "platform/",
+        "examples/"
+      ]
+    },
+    {
+      "id": "tools",
+      "title": "Repository and host tools",
+      "prefixes": [
+        "tools/"
+      ]
+    },
+    {
+      "id": "contracts",
+      "title": "Cross-component contracts",
+      "prefixes": [
+        "docs/"
+      ]
+    },
+    {
+      "id": "experiments",
+      "title": "Experiments",
+      "prefixes": [
+        "experiments/"
+      ]
+    }
   ]
 }

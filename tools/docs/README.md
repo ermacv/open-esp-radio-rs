@@ -96,6 +96,14 @@ symlinks or hard links survives publication.
 
 ## CI and manual publication
 
+The configured [Pages address](https://ermacv.github.io/open-esp-radio-rs/)
+requires a successful manual build **and deploy**. A running build or a green
+push/PR preview does not publish a site. If the address returns 404, inspect the
+[Documentation workflow](https://github.com/ermacv/open-esp-radio-rs/actions/workflows/docs.yml)
+and its deployment job; before the first successful deployment, use local preview.
+Repository Pages settings require maintainer access and cannot be inferred from
+the presence of `book.toml` or a passing local build.
+
 Pull requests and pushes to `main` run static checks, the guide/status preview,
 portal regression tests and the two host tutorial scenarios. Changes to Rust
 or Cargo inputs also run affected package API checks; shared documentation
@@ -115,10 +123,21 @@ local validation.
 ## Maintaining navigation and contracts
 
 Use `portal.json` to put an owner document on a main route. Other checked
-Markdown is grouped into component references; retained legacy Blobray pages
+Markdown is grouped by `referenceGroups` into component references. Prefixes
+are matched in order, with specific owners before broad directories. Every
+remaining current document must have a group; missing ownership fails the build.
+Group landing pages are generated navigation, not copies of owner contracts.
+Retained legacy Blobray pages
 have a separate section and visible legacy notice. Do not copy contracts into
 portal-only Markdown. Source/code links point to the build's Git revision;
 edit links point to the original path on `main`.
+
+Current Blobray references live below `tools/blobray/next/reference/`, with an
+owner README per topic. Files directly under `tools/blobray/docs/` are retained
+legacy references; its `design/` subdirectory describes Next. Preserve old
+operator section anchors as links to their canonical topic when reorganizing
+the reference. The portal regression suite checks those bookmark destinations
+and short content routes from the root README.
 
 AST transformation rewrites document, reference and image links without touching
 code examples. Generated catalog links resolve from their original output path. Local

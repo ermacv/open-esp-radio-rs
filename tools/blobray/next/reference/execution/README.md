@@ -1,0 +1,527 @@
+# Concrete execution and comparison
+
+Run explicit RV32 scenarios with selected inputs, device models and comparison observations.
+
+[Choose a task](../../../README.md#choose-a-task) · [All command references](../../README.md#reference-navigation).
+
+## Concrete execution and comparison
+
+`execute`, `compare`, `replay` and `execution` use the existing supervised
+operation/query paths. No legacy engine or external limiter participates.
+Execution requests, manifests and journal/storage versions follow [current formats](../interfaces-formats/README.md#current-formats). The completed journal record is the publication
+reference. No second result index or current-source change is needed.
+
+```console
+blobray execute --project research --request execution.json --limit-mode watchdog
+blobray compare --project research --request comparison.json --limit-mode watchdog
+blobray execution --project research --id EXECUTION_SHA --limit-mode watchdog --format json
+blobray replay --project research --id EXECUTION_SHA --limit-mode watchdog
+```
+
+`execute` requires one implementation; `compare` requires both and an explicit
+binding class. A request has the following shape (replace the revision and entry
+with an exact captured occurrence):
+
+```json
+{
+  "schema": 17,
+  "vendor": {
+    "revision": "REVISION_SHA",
+    "source": { "kind": "input", "input": 0 },
+    "companions": [],
+    "abi": "riscv-integer",
+    "stack": { "address": 805306368, "length": 65536, "fill": null, "bytes": [] }
+  },
+  "replacement": null,
+  "binding": null,
+  "cases": [{
+    "name": "one-explicit-case",
+    "reset": "cold",
+    "relation": null,
+    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [], "calls": [], "tables": [], "services": [], "observe_memory": [], "observe_calls": null, "observe_timeline": {"reads":false,"writes":false,"atomics":false,"branches":false} },
+    "replacement": null
+  }],
+  "max_events": 4096
+}
+```
+
+A target selects a captured standalone static RV32 ELF (`input`) or a retained
+prepared image (`{"kind":"image","image":"IMAGE_SHA"}`). ET_REL/archive
+entries must first use the shared image-preparation operation. `companions`
+explicitly selects additional captured standalone ELF input ordinals in that
+target's revision, including their code and data segments. Overlap is rejected;
+linker absolute definitions alone do not supply executable bytes. Reading and
+replay never rediscover origins or substitute another symbol implementation.
+
+For comparison, supply a second target in `replacement`, set `binding` to
+`production-entry` or `shared-core`, and supply each case's replacement invocation.
+Binding is the caller's declared relationship to production; a label does not
+authenticate that relationship or grant qualification. Captured bytes, entries,
+scenarios and implementation identities remain in the evidence. Side-specific
+arguments and layouts are explicit; the verifier does not infer their equivalence.
+
+An invocation supplies zero to 256 already lowered RV32 integer ABI words in
+`arguments`. Numeric entries are known; `null` and omitted register words are
+unknown. The first eight words initialize a0–a7. Remaining words occupy successive
+little-endian 32-bit slots at entry SP, beginning at offset zero. The stack grows
+down; its top must be 16-byte aligned. Application reserves the stack argument area
+rounded up to 16 bytes and places SP at its start. That area must fit the declared
+stack; bytes below SP remain available for callee frames. With nine words, SP is
+stack top minus 16, and word nine is at SP. With no stack words, SP is stack top.
+These placements follow the [RISC-V integer psABI](https://riscv-non-isa.github.io/riscv-elf-psabi-doc/).
+
+The words are physical ABI slots, not a C type description. Clients explicitly
+lower wide scalars/aggregates, indirect values and variadic alignment, including
+padding slots; the executor does not guess argument types. An explicit unknown
+stack word overrides even known stack seed bytes/fill. Alignment padding and
+remaining stack bytes retain only the declared seed initialization. Argument setup
+creates no guest memory/MMIO event. x0 is zero and ra is a reserved unmapped return
+sentinel. Other integer registers begin unknown. Loading an unknown byte,
+using an unknown register, an inaccessible memory access or an
+unsupported instruction ends that phase with a typed `incomplete` observation
+and its PC. The current integer executor supports RV32IMAC arithmetic, branches,
+loads/stores, direct/indirect jumps, word atomics and ordinary fence events. FP,
+CSR/privileged execution, syscalls, dynamic loading and TLS are unsupported.
+Declared float ABI flags do not silently select floating-point execution.
+
+Ordinary RAM and ELF-backed data allow unaligned halfword/word loads and stores
+within one mapping, using little-endian byte order. Every loaded byte must be
+known and readable; a store validates the complete writable range before changing
+any byte. Crossing mapping/permission boundaries stays unavailable even when
+adjacent mappings exist. This `byte-addressed-memory-1` execution-environment
+policy supports captured routines such as ROM `memcpy`; it is not a claim about
+hardware handling, timing or concurrent atomicity. The
+[RISC-V load/store specification](https://docs.riscv.org/reference/isa/v20260120/unpriv/rv32.html)
+leaves misaligned ordinary accesses to the execution environment. Instruction
+fetches, MMIO and atomics retain their alignment requirements. Unaligned device
+accesses consume no model response and are never decomposed into byte accesses.
+Normal-memory timeline events preserve the original address and width. Any
+successful overlapping store, including an unaligned one, invalidates LR/SC.
+
+Word atomics use a single-hart, program-order environment with one exact four-byte
+reservation per session. LR.W replaces the reservation; SC.W checks write access
+before testing it, writes only on success (status 0), and clears it after every
+attempt (status 1 for reservation failure). Any successful overlapping ordinary
+store or AMO invalidates it, even if the bytes are unchanged. Disjoint writes retain
+it. Reservations never cross phases or implementations. LR/SC and all nine AMO.W
+operations support all aq/rl combinations in this sequential environment. This is
+one explicit execution model, not a concurrency/weak-memory or interruption test.
+See the [ratified A extension](https://docs.riscv.org/reference/isa/v20260120/unpriv/a-st-ext.html)
+for instruction and ordering definitions.
+
+LR requires a readable known aligned word; AMOs require read/write access and a
+known old word, including swap or discarded results. SC requires an aligned writable
+word even when no reservation exists. Atomics operate only on mapped memory, never
+the register-bank MMIO cells. Unknown data, inaccessible/misaligned addresses and
+unsupported peripheral atomics stop with `memory` / `access: atomic`; missing source
+registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
+events. Their effects can be read by subsequent guest instructions; the current
+selected final-RAM and normal-memory timeline relations can observe their updates.
+
+The `static-elf/byte-addressed-memory-1/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-3/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1` environment maps validated ELF
+segments with their permissions and ELF-defined zero-fill. Scenario memory is
+writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
+`session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
+prefix. For example `{"lifetime":"session","seed":{"address":12288,"length":8,"fill":null,"bytes":[1,0,0,0]}}`.
+Absent fill leaves newly mapped bytes unknown. Declarations cannot replace ELF
+segments or overlap the stack, one another or MMIO. Redeclaration of an existing
+session RAM mapping requires the identical address, length and lifetime; its
+explicit prefix/fill overwrites those bytes, while unspecified bytes retain their
+state. Changing a live mapping's owner/lifetime conflicts. A cold reset discards
+that mapping and permits a fresh declaration. Stack fill is an explicit condition;
+zero is never inferred from absent initialization.
+
+MMIO uses explicit `models` declarations. Each has a unique live `id`, caller
+`applicability` conditions, `lifetime` (`phase` or `session`) and tagged `behavior`.
+For example:
+
+```json
+{
+  "id": "status-script",
+  "applicability": "synthetic ready-on-second-read scenario",
+  "lifetime": "session",
+  "behavior": {"kind":"sequence-read","address":12288,"width":4,"runs":[{"value":0,"count":1},{"value":1,"count":1}]}
+}
+```
+
+| Behavior kind | Declared fields and exact semantics |
+| --- | --- |
+| `register-bank` | `cells` with address/width/value; reads return current values, writes replace them. |
+| `constant-read` | address/width/value; reads repeat the value, writes fail. |
+| `sequence-read` | address/width/runs; each run has value/count and supplies that many consecutive reads. Exhaustion and writes fail. All logical responses must be consumed before closure. |
+| `w1c` | address/width/initial/clear_mask/read_clear_mask; reads return the old value then clear read-clear bits; writes clear selected one bits. |
+| `read-clear` | address/width/initial/clear_mask; reads return then clear selected bits; writes fail. |
+| `self-clearing` | address/width/initial/store_mask/command_mask; writes replace store-mask bits, command bits clear immediately, other bits retain state. Masks cannot overlap and initial command bits must be clear. No timing is simulated. |
+| `fifo` | address/width/reads/writes; independent ordered input/output transcripts. Reads consume inputs; writes must match the next output. Both lists must be consumed. This is not a loopback queue service. |
+| `indexed-bank` | index_address/data_address/width/index/values; index-port accesses select/report a slot, data-port accesses read/write it. `index:null` is unknown until explicitly written; invalid indices fail. Gaps between the two ports remain unclaimed. |
+| `command-bank` | Packed 32-bit command ports over a shared bounded bank. Exact field/control bits, initial state, samples and completion-read counts are caller inputs; details below. |
+
+`sequence-read` admits 1..4096 ordered runs, each with a nonzero `u32` count;
+the logical total must fit `u32`. Adjacent equal runs are allowed, and their
+explicit representation participates in identity. Application retains a run
+cursor, offset and remaining logical count without expanding the input. One
+read performs bounded cursor work; cancellation precedes consumption. Warm
+phases retain the cursor, cold/phase closure releases it. Store validates
+`successful reads + remaining = logical total`, rather than the number of runs.
+A long finite busy script therefore stays compact without becoming an infinite
+response source. Model identity version 2 includes every repeat count.
+
+Widths are bytes (1, 2 or 4); values and masks must fit. Exact ports must be aligned,
+disjoint and outside mapped code/RAM/stack. Missing ports remain inaccessible;
+partial or mismatched-width accesses do not fall through to another owner. Successful
+accesses emit ordinary ordered MMIO events. Model gaps retain a memory stop plus
+`model` evidence with the explicit issue. Model declarations are assumptions, not
+accepted hardware facts or claims about real timing/peripherals. External-call responses are separately selected in `calls` as described below.
+
+Every instance retains its SHA-256 definition identity, including its id, conditions,
+lifetime and complete ordered configuration. `model` records precede the side's
+outcome and report cumulative successful reads/writes, remaining obligations, issue,
+closure and status. `open` permits warm continuation; `complete` means closed with
+no issue or remaining transcript; `incomplete` preserves failure or unmet closure
+obligations. Returning successfully with unconsumed required values cannot MATCH.
+Unused constant/register models can close complete; their zero participation is
+visible and does not prove that code touched them.
+
+Phase models close and release state after each phase. Session models retain state
+through warm phases and close before the next cold phase or operation end. Omit a
+live declaration on warm continuation; redeclaring its id conflicts, even if identical.
+An expired phase model's id/ports can be assigned anew. Both implementations own
+separate instances. A blocked warm phase performs no model accesses but still emits
+participation/closure evidence for existing instances.
+
+### Packed-command bank
+
+`command-bank` declares `selector_mask`, `data_mask`, `read_command`,
+`write_command`, `busy_mask`, optional `reset_command`, `ports` and `cells`.
+Selector/data masks are disjoint contiguous fields of at most sixteen bits each.
+Read/write words specify distinct exact fixed bits outside those fields. The
+single busy bit is disjoint and clear in every issued command. No other command
+bits are ignored, and read commands must carry zero input data.
+
+Ports are strictly ordered by aligned `address`, with a maximum of 64 per bank.
+Each declares an idle `initial` response (busy clear), `initial_busy_reads` and
+`busy_reads` for each new command. Cells are strictly ordered by unique unshifted
+`selector`, with `initial` data and `reads:null` for retained state or an explicit
+sample list. An empty sample list is exhausted. At most 4096 cells and 4096 total
+samples are admitted per bank. Gaps between ports remain unclaimed.
+
+An issue selects a cell exactly. A read samples retained state or consumes one
+scripted value at issue; polling never consumes another sample. A write stages
+its value. Each pending command returns busy for the declared count, then one
+ready read observes completion and commits a staged write to the shared bank.
+Even zero busy reads requires that ready observation. Other ports see only
+committed writes. Subsequent idle reads repeat the last response. Initial busy
+state is an explicit completion obligation, independent of issued commands.
+
+Ordinary overwrite of a pending command fails. An explicitly declared reset
+word may abort that port's pending command and discard its staged write; reset
+itself still needs completion. It never resets cells or sample cursors. A reset
+word cannot also select a declared cell as an ordinary command. There is no
+implicit reset opcode or hardware timing assumption.
+
+`model.commands` is present only for these banks. It records cumulative issued,
+completed, reset, aborted and scripted-read counts, plus currently pending
+commands. CPU `reads`/`writes` remain separate. `remaining_reads` counts unused
+samples; pending commands separately block closure. Store checks declaration
+identity, conservation (initial pending + issued = completed + aborted + pending),
+sample totals and monotonic progress backed by new port operations. These checks
+validate evidence structure; they do not re-execute guest code or qualify a
+peripheral model. Both hosts use the same native API/CLI lifecycle and retained
+definition. Unknown selectors/commands, widths, exhausted samples and pending
+overwrites remain explicit gaps; capacity/cancellation fails the operation.
+
+### External-call responses
+
+An invocation's `calls` declares ABI boundary models separately from its device
+`models`. IDs are unique within each category; call targets are also unique among
+live call models. A call declaration contains:
+
+```json
+{
+  "id": "platform-read",
+  "applicability": "synthetic one-call scenario with writable output pointer",
+  "lifetime": "phase",
+  "binding": {"address":8192,"boundary":"unmapped","allow_tail":false},
+  "argument_words": 1,
+  "responses": [{
+    "return_words": [0,null],
+    "outputs": [{"pointer_argument":0,"byte_offset":0,"width":4,"value":42,"scope":"normal-memory"}],
+    "allocation": null,
+    "delay_micros": {"kind":"constant","value":5}
+  }]
+}
+```
+
+The binding selects one exact aligned target address in this captured address space.
+`unmapped` requires that no memory/device owns its first two bytes. `captured-code`
+requires a known executable ELF load mapping there and explicitly replaces execution
+of its body with the response. It never claims that the body ran. The operation
+validates bindings after phase memory/device installation; it does not guess names,
+reviewed service bindings or absent implementations. A root entry is executed as
+code, even if a model binds the same address: models intercept transfers only.
+Unselected targets execute captured code normally; missing bytes stop on fetch.
+Ordinary x1/x5 calls may use responses. Non-return x0 transfers require `allow_tail`;
+canonical returns through x1/x5 are never intercepted. `observe-call` stops before
+model dispatch, so an unconsumed required response still prevents completion.
+
+`argument_words` selects zero to 256 physical ABI words to retain at the call site:
+a0–a7, then current-SP stack words. SP must be known and 16-byte aligned; stack words
+must lie in the private stack. Unknown words remain explicit and block only effects
+that require their value. The backend invalidates caller-saved ra/t0–t6/a0–a7 after
+a modeled return, then applies exactly the two optional `return_words`. Callee-saved
+registers, SP, gp and tp retain state. A normal call resumes after the transfer;
+a modeled tail returns through the incoming ra. Type/variadic lowering remains the
+caller's responsibility. No absent word becomes zero.
+
+Each response may contain ordered outputs through a selected argument plus a checked
+byte offset. Widths are 1/2/4 bytes and values must fit. `private-stack` requires the
+operation's stack; `normal-memory` permits writable stack, ELF or declared RAM, never
+MMIO. All output addresses are checked before any response write. An invalid later
+output cannot leave earlier output writes in a published incomplete response.
+Outputs require existing memory; newly allocated memory becomes available to later
+calls/instructions. Modeled writes invalidate overlapping LR reservations.
+
+`allocation` has `address`, `size_argument`, `capacity`, `lifetime`. The address must
+be 16-byte aligned and the explicit low return word must equal it. The full capacity
+must be fresh and disjoint from live memory, devices and call boundaries. The known
+size argument selects a leading accessible zero-initialized prefix, including an
+explicit zero-length allocation; exceeding capacity is a model issue. Unused capacity
+remains owned but inaccessible, even for writes. Allocation lifetime is independently
+`phase` or `session`; it cannot be reseeded as ordinary RAM while live. Working-memory
+admission failure is an operation error, not a simulated allocator response.
+
+`delay_micros` is null, `{"kind":"constant","value":5}` or
+`{"kind":"argument","word":0}`. It emits an explicit observable value without
+sleeping, advancing a hardware clock or claiming timing accuracy. Model call,
+argument, output, allocation and return records preserve environment evidence;
+the current relation compares delay values with MMIO/fences, and excludes those
+other model records. It does not infer equivalence of pointer layouts or allocators.
+The first differing event index counts only this selected observable stream.
+
+Call declarations use the same phase/session closure rules as device declarations.
+Each successful response consumes exactly one entry; exhaustion, unknown required
+words, bad ownership or unused responses retain explicit `call-model` issues and
+cannot MATCH. Open session responses permit warm continuation; blocked phases
+consume nothing. Definition identities include applicability, binding, ABI width,
+ordered responses and every effect. Store authenticates argument/effect/return order
+against the declared response as well as participation counts and closure. Query,
+backup and replay retain both modeled boundaries and actual code outcomes.
+
+Each invocation also supplies `tables` (an empty array when unused). A runtime
+instance selects an exact accepted interface assertion and knowledge revision:
+
+```json
+{
+  "id": "callbacks",
+  "review": {"knowledge":"KNOWLEDGE_SHA","assertion":"ASSERTION_SHA"},
+  "lifetime": "session",
+  "seed": {"address":12288,"length":16,"fill":null,"bytes":[1]},
+  "slots": [{"offset":4,"target":{"kind":"code","address":4116}}],
+  "pointer_cells": [16384]
+}
+```
+
+The table owns its whole seed range. Slots overwrite seed bytes; pointer cells
+must already be writable normal memory and receive the table base. The selected
+review determines exact layout, slots, ABI, root/path, index domains and guards.
+Address, captured section/symbol and entry-word roots are supported; entry words
+belong to the installing invocation. Unknown pointers, failed guards and ambiguous
+current targets produce explicit incomplete evidence. `null` slots use
+`{"kind":"null"}`. A `model` slot supplies an exact address of a live `calls`
+declaration and requires reviewed semantic/signature metadata; it never invents
+a response or resolves a name.
+
+`runtime-table` evidence records initialization, pointer installation, writes,
+condition checks, indirect target association and phase/session closure. Association
+means a unique current pointer value in a selected slot, not proof that a register
+was loaded from that slot. While tables are live, an eligible indirect call with
+no unique selected target is incomplete. Direct calls and canonical returns keep
+their ordinary behavior. An ordinary captured call encoded as `auipc/jalr` is
+also indirect: after a selected callback, a subsequent captured `jalr` target
+without a selected slot ends the phase as incomplete. Captured-code membership
+alone does not bypass table dispatch. Conditions are checked at installation, warm-phase entry
+and before associated indirect use; this does not assert their truth at every
+instruction or after the last use. [The runtime interface contract](../../../docs/design/contracts.md#runtime-interface-instances)
+defines ownership, binding and claim scope. `execute`/`compare`, retained reads and
+source-free `replay` use the same application path.
+
+Each invocation supplies `services` (empty when unused). A FIFO service declares
+its id/applicability, phase/session lifetime, nonzero handle, item width (1/2/4),
+capacity, initial ordered items and explicit reviewed table bindings. For example:
+
+```json
+{
+  "id":"queue", "applicability":"Selected reviewed callback contract",
+  "lifetime":"session", "handle":85, "item_width":4, "capacity":16,
+  "items":[],
+  "bindings":[{
+    "table":"callbacks", "slot":4,
+    "call":{"address":8192,"boundary":"unmapped","allow_tail":false},
+    "argument_words":3, "handle_word":0,
+    "operation":{
+      "kind":"enqueue", "input":{"kind":"argument","word":1,"width":4},
+      "success":1, "full":0, "wake":{"word":2,"width":4}
+    }
+  }]
+}
+```
+
+The selected table slot uses `{"kind":"service","address":8192}` and must
+have reviewed semantic/signature metadata. `enqueue` reads an explicit ABI word
+or `private-stack` pointer word, checks item width, and appends if capacity permits.
+Its optional wake output points into private stack and receives one only when the
+queue changes from empty to nonempty; full/nonempty enqueue writes zero.
+`dequeue` declares `output` (pointer word/width), `success` and `empty` returns;
+a successful dequeue writes/removes the oldest item. Empty dequeue leaves output
+untouched. `{"kind":"length"}` returns current depth. All returns set a0,
+leave a1 unknown and apply the same caller-saved clobbers as explicit call models.
+
+Services own isolated bounded rings for each implementation. Failed handle,
+input or output checks leave the queue unchanged. Bindings require eligible
+indirect transfers through their exact selected table/slot; direct calls cannot
+activate a service. A missing or differently reviewed binding never falls back to
+an external model. Private-stack inputs/outputs do not fall back to RAM or MMIO.
+Service lifecycle/input/output/transition evidence is retained; a nonempty queue
+may close successfully because there is no implicit obligation to drain it.
+
+`{"kind":"observe-dequeue","service":"queue","value":42}` completes
+only after a successful dequeue of that value from that service, including its
+output write. `value:null` accepts any successfully dequeued value. It requires
+both relation return selectors disabled; empty dequeue, another queue or another value does not
+satisfy it. Returning first produces `goal-not-reached`. This observes a modeled
+service event, not real task scheduling. [FIFO service contracts](../../../docs/design/contracts.md#stateful-fifo-services)
+define exact bounds, lifecycle and retained validation.
+
+Every case is an explicit phase with a shared `reset` for both implementations
+and an `entry` in each invocation. Setup and action phases can select different
+entries in the same captured address space. `cold` recreates captured images and
+discards all prior mutable state. `warm` retains writable ELF bytes and declared
+`session` RAM independently for each implementation. The first phase must be cold.
+
+Registers, stack and LR reservations reset each phase; models follow their declared lifetime. `phase` RAM and
+stack buffers are released after observation serialization/comparison, before the
+next phase. Omitted phase RAM is inaccessible on the next warm phase; redeclaring
+it initializes a fresh region from its seed. Session RAM survives until a cold
+reset or the end of the operation. An incomplete phase blocks subsequent warm
+phases on both sides, with zero steps and explicit `blocked-by-prior-phase` evidence.
+A later cold phase starts an independent chain and executes normally. Earlier
+incompleteness remains in the aggregate result; a completed difference does not
+block later phases. All chains share one operation, work/deadline/disk budget and
+atomic publication. Resource failure publishes no successful prefix.
+
+Each invocation declares `goal`: `{"kind":"return"}`, `reach-symbol`, or
+`observe-call`. Symbol goals contain a `target` with the mapped `source` and exact
+physical `symbol` identity (object, static/dynamic table kind, table section and
+index). For example:
+
+```json
+{
+  "kind": "observe-call",
+  "target": {
+    "source": {"kind":"input","input":0},
+    "symbol": {
+      "object":{"artifact":"CAPTURED_ELF_SHA","location":{"kind":"standalone"}},
+      "table":"static","table_section":3,"index":2
+    }
+  },
+  "include_tail": false
+}
+```
+
+`reach-symbol` uses the same target without `include_tail`. The source must be the
+target's primary image/input or an explicitly mapped companion. The physical symbol
+must be defined FUNC/NOTYPE in captured executable bytes with a matching load mapping;
+zero-sized symbols and aliases are valid address identities. Data, undefined,
+absolute, mismatched or unavailable symbols fail the operation before execution.
+No name lookup, extent inference or code analysis resolves these goals. Each distinct
+selected object is prepared once for all phase/side goals and released before mutable
+sessions are created.
+
+`reached-symbol` stops at the selected PC before decoding/executing its instruction,
+after verifying fetchable bytes. `observed-call` stops after a matching direct or
+resolved indirect transfer, before the callee body. Ordinary calls use link register
+x1/x5; `include_tail:true` also selects x0 transfers except canonical ABI returns.
+The outcome records transfer PC, target and whether this was a tail. Reaching a
+symbol does not prove that it is a function, and observing a call does not prove
+execution of its body. Early goals do not synthesize a return value. Returning first
+produces `goal-not-reached`, retaining the observed return registers; unknown control
+flow and unsupported instructions retain their ordinary gaps. Warm successors may
+follow a completed early goal with a fresh entry/register/stack state and retained
+session RAM, never a suspended continuation.
+
+Comparison requires the same goal kind on both sides of each phase. Non-return goals
+require both relation return selectors disabled; the relation compares their observed event prefixes,
+not unexecuted bodies. Equal prefixes with unmet goals remain `INCOMPLETE`; known
+prefix differences remain `DIFF`. Store checks that outcome kind and dependency
+blocking match the declared goals before publication.
+
+Each comparison case supplies `relation`; a single-implementation case uses null.
+For example, compare low return, ordered MMIO/fence/delay and one exact memory pair:
+
+```json
+{
+  "returns":{"low":true,"high":false},
+  "events":{"timeline":{"reads":false,"writes":false,"atomics":false,"branches":false},"mmio_read":true,"mmio_write":true,"fence":true,"delay":true},
+  "memory":[{"vendor":0,"replacement":0}],
+  "calls":false,
+  "reviewed_calls":null
+}
+```
+
+Each invocation supplies `observe_memory`, an array such as
+`[{"name":"output","address":12288,"length":32}]`. Memory pair indices select
+one range on each side; lengths must match, while addresses may differ. This is an
+explicit physical pairing, not an inferred ABI/layout projection. Selected ranges
+must be nonempty, disjoint and uniquely named, with at most 128 selections and
+1 MiB total bytes per invocation. Every selected byte is retained, including
+unchanged bytes. Fixed-size `final-memory` chunks carry bytes, availability and
+knownness masks; unknown/unreadable/unmapped bytes never become known zeros.
+Capturing normal memory does not read a device port or consume model values.
+
+The [verifier](../../../crates/verification/README.md) uses the exact per-case relation.
+Low and high return words are independently selectable; event channels retain their
+relative order. Unselected events and memory observations remain in the result.
+`difference` identifies an event index in the selected stream, a return word, or a
+memory pair/byte offset with differing values. A known selected difference yields
+`DIFF`; unknown selected data or unmet goals/model obligations cannot yield `MATCH`.
+Memory snapshots from unfinished phases remain evidence but cannot establish a
+difference between completed final states. Already observed event or returned-value
+differences remain valid independently of other unknowns or unmet model obligations.
+`MATCH` covers only the selected observations in the enumerated scenarios, not every
+argument, path, callback or internal state. [Selected comparison contracts](../../../docs/design/contracts.md#selected-final-memory-and-comparison-relations)
+define the precise completion and ownership boundaries.
+`manifest.complete` means every phase reached its declared goal and all model
+obligations due at closure were met, independently of the verdict. Only a `returned` outcome proves the entry returned.
+A completed operation, including `DIFF` or `INCOMPLETE`, exits 0; admission,
+resource, integrity and execution infrastructure failures exit nonzero.
+
+All instruction loops share the admitted work/deadline control. Execute progress
+uses `table` for the case ordinal and `entry` for the last PC. Each session
+reserves metadata plus event/model observation capacity before allocation, and owns admitted byte
+and initialization buffers for every region. Input ELF buffers are admitted
+separately and released after loading. Event vectors remain charged through
+comparison and serialization, then are reused or dropped with their session.
+Device configuration clones and mutable banks have separate admitted owners; phase
+closure releases them before the next phase. A sorted bounded exact-port index serves
+accesses; capacity retained for index reuse is distinct from live model state.
+No host call-stack recursion follows the analyzed program.
+
+Requests remain capped at 64 KiB, with 1–128 cases, at most 64 companions per
+target, 128 RAM seeds, 128 device and 128 call declarations per invocation,
+128 live models of each category, 4096 responses per call model, 256 outputs per response,
+4096 exact live ports, 4096 encoded values/runs per model list, 2048 regions per session,
+and 1–65536 events per implementation per case. `max_events` exhaustion is a
+resource failure with no publication; events are never silently truncated.
+Traces stream as bounded JSONL events/final-memory/device-models/call-models/runtime-tables/fifo-services/outcomes/comparisons into quota-owned
+staging. The coordinator checks the admitted recipe and stream structure before
+atomically committing the result reference and completed run. Cancellation,
+limits or corruption cannot publish partial evidence. Process-level OOM and
+opaque dependency containment retain the existing host guarantees.
+
+`execution` only reads retained evidence. `replay` checks the executor,
+environment and verifier identities, reuses the exact request, and charges
+selection and execution against one application run, original deadline and work budget. Missing implementations
+are reported, never replaced. Doctor validates execution references, record order
+and CAS integrity. Backup/restore includes the journal, evidence and captured
+inputs; reopening evidence does not require replay tools. There is no converter
+for an incompatible execution schema.

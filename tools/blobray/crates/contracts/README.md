@@ -1,5 +1,10 @@
 # Vendor contracts
 
+This package belongs to the retained vendor-investigation engine. The current
+`cargo blobray` command uses [Next](../../next/README.md); it does not load this
+package implicitly. This page describes the retained library contract.
+
+
 Architecture- and platform-neutral immutable contract types shared by
 analysis backends and optional knowledge providers. The crate owns provenance,
 semantic identities and physical artifact locators, without instruction or

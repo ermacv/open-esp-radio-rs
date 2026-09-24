@@ -51,7 +51,7 @@ execution, storage leases and Human/JSON formatting remain outside domain.
 `storage_io` adapter preserves typed capacity errors and distinguishes filesystem
 exhaustion (`disk-full`). Application chooses local policy; store owns bounded
 files and accounting. Optional progress/error fields preserve unknown historical
-observations. See [temporary storage](../../next/README.md#temporary-storage-and-crash-cleanup).
+observations. See [temporary storage](../../next/reference/resources-storage/README.md#temporary-storage-and-crash-cleanup).
 
 [Image values](src/image.rs) own exact root selections, bounded RV32 regions,
 linker identity, the ElfAnalysisLinkV1 contract, occurrence-qualified
@@ -91,7 +91,7 @@ Concrete execution values include exact targets, explicit scenarios, producer
 identities, observations and comparison evidence. `Executor` and `ExecutionMemory`
 are injected ports; domain selects neither an ISA nor an environment. Request
 validation bounds control cardinalities. Host admission also bounds serialization
-before copying requests. See the [execution contract](../../next/README.md#concrete-execution-and-comparison).
+before copying requests. See the [execution contract](../../next/reference/execution/README.md#concrete-execution-and-comparison).
 
 `ResultAssessment` separates scoped coverage from policy checks and comparison verdicts. `ScenarioRequest` defines four concrete application actions. `AdmittedVec` admits overlapping buffers before growth. Fixed `WorkMeasurements` and phase costs report resource work independently of result identity.
 

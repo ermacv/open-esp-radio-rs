@@ -4,10 +4,10 @@
 Its only internal dependency is [domain](../domain/README.md). It does not parse
 ELF/AR, select targets, resolve thin paths or install a process supervisor.
 
-Projects require the [current native formats](../../next/README.md#current-formats);
+Projects require the [current native formats](../../next/reference/interfaces-formats/README.md#current-formats);
 earlier/future formats are rejected without conversion or mutation. Revision
 manifests have an independent version.
-See [storage diagnosis](../../next/README.md#diagnosis-and-recovery).
+See [storage diagnosis](../../next/reference/resources-storage/README.md#diagnosis-and-recovery).
 
 `Writer` owns the exclusive import/publication lock. `register` creates a run
 identity and owned staging. `register_with_stage_owner` assigns the path to its
@@ -55,7 +55,7 @@ Materialized `snapshot`, `lease` and `doctor` conveniences have default capacity
 admission and retain their synchronous APIs. CLI operations use the streaming
 ports and application supervision. Controlled serde I/O restores the original
 typed resource or consumer error. See the
-[implemented memory contract](../../next/README.md#current-memory-boundary).
+[implemented memory contract](../../next/reference/resources-storage/README.md#current-memory-boundary).
 
 [Persisted records](src/records.rs) own `RunRecord`, `OwnerIdentity` and the
 `PreparedImport` receipt. Owner fields preserve PID, start ticks and boot identity;
@@ -91,7 +91,7 @@ Supervised workers receive `temporary.json` before writing. Low-level staging
 callers without that metadata use an 8 GiB default. Callers sharing a writable
 stage must share `TemporaryBudget`; reconstructing it does not scan or account
 preexisting files. Coordinator reopening of completed import staging is read-only.
-The [temporary storage contract](../../next/README.md#temporary-storage-and-crash-cleanup)
+The [temporary storage contract](../../next/reference/resources-storage/README.md#temporary-storage-and-crash-cleanup)
 defines the control reserve, logical-byte boundary and retained data exclusions.
 
 `images` owns `ImageLease`, image receipts and publication capabilities.
@@ -106,7 +106,7 @@ and reconcile actual size on transfer. Failed unlink keeps the reservation.
 Store does not repeat ELF interpretation or invoke a linker. `ImageLease` retains
 normalized observations alongside raw outputs and provenance in open payload
 handles; all committed source revisions remain retained. See
-[image ownership](../../next/README.md#ownership-limits-and-persistence).
+[image ownership](../../next/reference/capture-images/README.md#ownership-limits-and-persistence).
 
 `functions` owns verified `FunctionLease`, `PreparedFunctionReceipt` and opaque
 `RetainedFunction`. Publication atomically records the result and completed run;
@@ -136,7 +136,7 @@ change publication identity. `doctor_stream` checks publication closures too.
 read transaction. Opening a publication verifies its membership and all result
 closures; it does not open original inputs or recompute analysis. The JSONL reader
 holds at most one 64 KiB record at a time, inside caller-admitted metadata capacity.
-See the [library contract](../../next/README.md#library-investigations).
+See the [library contract](../../next/reference/analysis/README.md#library-investigations).
 
 ## Review and preservation storage
 
@@ -150,7 +150,7 @@ payloads. Doctor verifies both closures; no cache deletion or GC is implemented.
 Backup pins a database read snapshot and streams CAS bytes. Restore builds a
 private project and verifies its complete retained closure before application
 exposes it. No parsing of ELF/AR or claim acceptance belongs to this store. See
-the [wire formats and application ownership](../../next/README.md#knowledge-and-preservation).
+the [wire formats and application ownership](../../next/reference/knowledge-review/README.md#knowledge-and-preservation).
 
 Research recipes retain the selected source/companion publications, ABI assumption
 and knowledge revision. Function reads validate their immediate CAS roots without
@@ -165,7 +165,7 @@ execution manifests in the existing database carry their publication reference;
 then `publish_execution` commits the result and terminal run atomically. Reads
 verify the reference, immutable manifest and payload digests; doctor also checks
 stream ordering and summaries. Store does not execute or compute comparison
-verdicts. See [concrete execution](../../next/README.md#concrete-execution-and-comparison).
+verdicts. See [concrete execution](../../next/reference/execution/README.md#concrete-execution-and-comparison).
 
 `knowledge_snapshot` verifies a selected immutable event history and evidence
 roots once. Its admitted owned entries preserve proposal, review and supersession

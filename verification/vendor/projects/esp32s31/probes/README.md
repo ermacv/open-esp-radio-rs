@@ -63,3 +63,12 @@ two-microsecond modeled delay. The existing executor classifies `jr t0` in the
 seeded entry as a return-style transfer; this test does not claim to capture
 that transfer as a call. These checks concern software boundaries, not physical
 timing.
+
+The gain scenario uses `open_phy_trace_stack_entry` as an isolated guest root:
+eight explicit words become argument registers and eight occupy a 32-byte aligned
+stack area. Its tail transfer retains the root return sentinel; saved registers
+are intentionally reset, so ordinary nested callers must not use it. The adapter
+changes ABI delivery only and never dispatches an execution model. Bluetooth's
+pure calculation and combined calculation/publication probes share one array
+projection around shipping `calculate_bluetooth_tx_gain`; only publication acquires
+a radio owner. Their full behavior is exercised by the [native gain matrix](../README.md#wi-fi-and-bluetooth-gain-arithmeticpublication).

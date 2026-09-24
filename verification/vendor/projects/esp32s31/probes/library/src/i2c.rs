@@ -4,6 +4,39 @@ use oer_esp32s31_phy::calibration::cold::{
 };
 
 oer_probe_macros::probe! {
+    /// Isolated guest entry with eight register and eight stack ABI words.
+    /// Saved registers and unused temporaries start at zero; no callee is modeled.
+    ///
+    /// # Safety
+    /// Only enter as a guest root: saved registers and the stack are overwritten.
+    /// `entry` must be executable and all sixteen words must be valid for its ABI.
+    #[unsafe(naked)]
+    pub unsafe fn open_phy_trace_stack_entry(entry: u32, words: &[u32; 16]) {
+        core::arch::naked_asm!(
+            "addi sp, sp, -32",
+            "lw t2, 32(a1)",
+            "sw t2, 0(sp)",
+            "lw t2, 36(a1)",
+            "sw t2, 4(sp)",
+            "lw t2, 40(a1)",
+            "sw t2, 8(sp)",
+            "lw t2, 44(a1)",
+            "sw t2, 12(sp)",
+            "lw t2, 48(a1)",
+            "sw t2, 16(sp)",
+            "lw t2, 52(a1)",
+            "sw t2, 20(sp)",
+            "lw t2, 56(a1)",
+            "sw t2, 24(sp)",
+            "lw t2, 60(a1)",
+            "sw t2, 28(sp)",
+            "j {register_entry}",
+            register_entry = sym open_phy_trace_i2c_entry,
+        );
+    }
+}
+
+oer_probe_macros::probe! {
     /// Isolated entry with explicit ABI words, zero saved registers and zero unused temporaries.
     ///
     /// # Safety

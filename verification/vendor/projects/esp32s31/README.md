@@ -234,6 +234,63 @@ event exhaustion have explicit DIFF/INCOMPLETE/no-publication checks. The combin
 runner retains the entire matrix for source-free backup, move, restore and exact
 replay. Software observations do not establish hardware/RF or grant qualification.
 
+### Wi-Fi and Bluetooth gain arithmetic/publication
+
+[The native gain runner](phy_gain.py) executes captured archive callbacks and
+ROM children against the compiled production arithmetic and publishers. Build
+and validate the probe catalog with `cargo xtask build vendor-probes --chip
+esp32s31`, then run from the repository root:
+
+```console
+python3 verification/vendor/projects/esp32s31/phy_gain.py \
+  --binary target/blobray/blobray --library /private/libphy.a \
+  --rom /private/esp32s31_rev0_rom.elf \
+  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
+  --linker /usr/bin/ld.lld --nm /usr/bin/llvm-nm \
+  --output target/blobray-research/gain --limit-mode watchdog
+```
+
+Archive and ROM identities are the same pinned inputs as the I2C runner; no SDK
+companion is needed. The gain object and its complete 216-byte coefficient
+section must match independently extracted SHA-256 identities before comparison.
+The callback's actual three `memcpy` source ranges are checked against those
+captured bytes, and its real ROM kernel arguments include signed narrowing and
+stack ABI words. The entry adapter supplies sixteen explicit words and initializes
+saved registers; it supplies no gain algorithm or callback result.
+
+The finite matrix contains 150 callback/kernel input combinations, 360 Wi-Fi
+production arithmetic combinations, 24 complete Wi-Fi publication combinations
+and 120 Bluetooth combinations. Another 72 calculation cases select every one of
+the 18 Wi-Fi and 18 Bluetooth coefficient thresholds exactly; the original matrix
+alone does not select every interval in the production path. All counts include
+both declared stack fills. Every
+Wi-Fi calculation checks all 160 output bytes; Bluetooth checks all 80. An
+independent interval-selection oracle consumes the authenticated coefficients.
+Separate vendor-only observations retain the distinction between current additive
+Wi-Fi adjustment and the older ROM callback's subtractive attenuation and tables;
+these observations do not assert equivalence of the two profiles.
+
+Bluetooth executes the real `phy_get_romfunc_addr` installer and follows the
+installed callback during full publication. The explicit ROM pointer names
+captured writable BSS storage; no synthetic callback table supplies the result.
+The pure production calculation borrows ordinary arrays, while complete Wi-Fi/BT
+publishers acquire the shipping radio capability. A retained index register and
+three passive data ports model only peripheral storage. Independent instruction-
+derived expectations require all 161 Wi-Fi or 81 Bluetooth MMIO events, including
+bank selection, index wrap and preserved control bits. No MMIO events are excluded
+from publication comparison; void return values and physical call addresses are
+not equivalence criteria. Raw call observations remain retained.
+
+The runner batches bounded native requests, each with explicit cold/warm phases.
+Selected RAM and every MMIO/fence/delay event form the native comparison relation.
+Unknown curve data and missing callback installation must be INCOMPLETE. A changed
+caller-supplied coefficient at the direct ROM boundary must produce DIFF and a new
+execution identity; this is a vendor-boundary characterization. Event exhaustion
+must publish no execution. Input copies are removed before linking; all retained
+positive and negative runs reopen after move/backup/restore and replay with exactly
+their original identities. These are software gain-child comparisons, not RF,
+whole-TXCAL, Wi-Fi or BT/154 protocol qualification.
+
 ## Legacy configuration reference
 
 The configuration and command vocabulary below describe retained legacy inputs;

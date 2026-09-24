@@ -189,8 +189,9 @@ resumed on explicit user instruction. Stage 11 is complete, including both
 command-memory and transport acceptance. Stage 12.1 is complete under the full
 calibration/RF assignment below. Checkpoint 12.H is complete. Stage 12.2 is complete, including PBus/DCODE
 execution, negative outcomes and preservation. Stage 12.3 is complete: RFPLL
-search, maintenance, frequency memory and restored replay. The next acceptance
-unit is 12.4, gain arithmetic and publication.
+search, maintenance, frequency memory and restored replay. Stage 12.4 is complete:
+gain arithmetic, coefficient boundaries and full Wi-Fi/BT publication. The next
+acceptance unit is 12.5, gain state and the RF-test producer.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -813,7 +814,7 @@ current owner docs and the ordinary stage gates. No partial unit is completion.
 | 12.H | done | Declarative harness checkpoint below: all three probe images, generated exports/roots/catalogs, shared explicit owner and Python preparation, executable-entry validation, compiled call boundaries and preserved Next scenarios. Stage 12.2–12.10 obligations are unchanged. |
 | 12.2 | done | PBus clear and DCODE: all profiles in `phy_rfpll/calibration.rs`, `phy_rfpll/dcode.rs` and the PBus rows of the calibration profile. Retained values, both settle branches, delayed readiness, crystal selectors and eight measured bytes; stuck PBus/channel/I2C cannot publish partial codes or restore unfinished state. |
 | 12.3 | done | RFPLL search, maintenance and frequency memory: all cases in `phy_rfpll.rs` and `phy_rfpll/memory.rs`. Zero/nonzero signed corrections, search commands, requested settles, retained memory/control transactions and timeout without restored hardware control. Preserve the installed-layout query exclusion explicitly and retain raw observations. |
-| 12.4 | pending | Gain arithmetic and publication: `phy_rfpll/gain_calculation.rs`, `phy_rfpll/tx_gain.rs`, `phy_rfpll/bluetooth_gain.rs`. Actual current coefficient selection and ROM kernel inputs, signed narrowing, additive current versus subtractive ROM behavior, boundary curves, complete Wi-Fi/BT publishers and bank wrap. Independently authenticate coefficients; changing coefficients changes dependency identity. |
+| 12.4 | done | Gain arithmetic and publication: `phy_rfpll/gain_calculation.rs`, `phy_rfpll/tx_gain.rs`, `phy_rfpll/bluetooth_gain.rs`. Actual current coefficient selection and ROM kernel inputs, signed narrowing, additive current versus subtractive ROM behavior, boundary curves, complete Wi-Fi/BT publishers and bank wrap. Independently authenticate coefficients; changing coefficients changes dependency identity. |
 | 12.5 | pending | Gain state and RF-test producer: `phy_rfpll/gain_state.rs`, `phy_rfpll/gain_producer.rs`. Execute real backup/destruction/recovery/init/consumption and the separately authenticated RF-test power producer, including rounding/saturation and gain/MAC publication. Preserve their characterization scope; vendor storage support is not inferred for production. Missing RF-test input remains an unmet obligation, never an omitted case. |
 | 12.6 | pending | Channel restoration: `phy_rfpll/channel.rs`. Actual callback installation, all temperature-prefix sensor ranges, full-root gain publication and committed channel/bandwidth/temperature; stuck readiness cannot publish gain or semantic output. Prefix and full-root evidence remain distinct. |
 | 12.7 | pending | RX gain/calibration: `phy_rfpll/rx_gain.rs`. Both complete roots, DC/table guards, signed estimators, delayed I2C/settle, projected coefficients and bank limits; failed channel, minimum search and shared budget preserve prior coefficients. Readiness observations and genuine output publication remain visible. |
@@ -935,3 +936,28 @@ along with affected strict Clippy, standalone, root/probe formatting, probe buil
 and Clippy, and owned public/private API and Markdown checks. This closes the
 software RFPLL profile, without hardware, grant or RF qualification. No storage
 conversion or compatibility reader is introduced.
+
+
+12.4 acceptance: native requests execute all 150 current callback/ROM-kernel
+input combinations, 360 compiled Wi-Fi arithmetic combinations, 24 complete Wi-Fi
+publishers and 120 Bluetooth calculation/publication combinations. Another 72
+cases select all 18 coefficient thresholds of each profile with both stack fills;
+the original production matrix alone did not select every interval. Archive,
+gain-object and coefficient-section identities are independently authenticated.
+Actual kernel arguments, three coefficient copies, all 160/80 output bytes and
+all 161/81 publication events satisfy independent expectations. Bluetooth executes
+the captured callback installer and indirect callee; bank wrap and preserved
+control bits remain observable. Eighteen vendor-only observations preserve current
+additive adjustment versus the older ROM's subtraction and different tables.
+
+Unknown curve and missing callback installation yield INCOMPLETE. Changing a
+caller-supplied coefficient at the direct ROM boundary yields a completed DIFF and
+a different execution identity. Event capacity failure publishes no execution and
+preserves earlier evidence. All 196 retained executions across the original and
+additional boundary matrices reopen and replay exactly after source removal,
+project move and backup/restore. All three probe catalogs/builds, affected host
+regressions, strict probe Clippy, root/probe formatting and owned public/private
+docs pass; target-only doctests remain inapplicable. The generic engine, schemas
+and architecture boundaries are unchanged. These are software gain-child claims,
+not RF, protocol or whole-TXCAL qualification. No legacy runtime or compatibility
+mechanism participates.

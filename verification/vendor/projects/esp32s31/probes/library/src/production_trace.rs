@@ -211,30 +211,46 @@ oer_probe_macros::probe! {
     }
 }
 
+fn bluetooth_gain_projection(
+    input: &[u32; 9],
+    output: &mut [u8; 80],
+) -> oer_esp32s31_phy::calibration::bluetooth::PhyBluetoothTxGainImage {
+    use oer_esp32s31_phy::calibration::bluetooth::{
+        PhyBluetoothTxGainParameters, calculate_bluetooth_tx_gain,
+    };
+    let curve = input[7].to_le_bytes();
+    let controls = input[8].to_le_bytes();
+    let image = calculate_bluetooth_tx_gain(PhyBluetoothTxGainParameters {
+        seed: input[..6].try_into().unwrap(),
+        config: input[6] as u16,
+        calibration_curve: curve[..3].try_into().unwrap(),
+        correction: curve[3] as i8,
+        base: controls[0],
+        attenuation: controls[1],
+    });
+    output[..16].copy_from_slice(&image.output_32);
+    for (destination, value) in output[16..48].chunks_exact_mut(2).zip(image.output_64) {
+        destination.copy_from_slice(&value.to_le_bytes());
+    }
+    for (destination, value) in output[48..].chunks_exact_mut(2).zip(image.output_72) {
+        destination.copy_from_slice(&value.to_le_bytes());
+    }
+    image
+}
+
+oer_probe_macros::probe! {
+    /// Pure shipping Bluetooth arithmetic, projected without a peripheral owner.
+    pub fn open_phy_bluetooth_trace_calculate_gain(input: &[u32; 9], output: &mut [u8; 80]) {
+        let _ = bluetooth_gain_projection(input, output);
+    }
+}
+
 oer_probe_macros::probe! {
     /// Actual Bluetooth gain calculation and publication with caller-owned inputs.
     /// ABI conversion only: `seed[6]`, config, packed curve/correction, base/attenuation.
     pub fn open_phy_bluetooth_trace_tx_gain(input: &[u32; 9], output: &mut [u8; 80]) {
-        use oer_esp32s31_phy::calibration::bluetooth::{
-            PhyBluetoothTxGainParameters, PhyBluetoothTxGainPublication, calculate_bluetooth_tx_gain,
-        };
-        let curve = input[7].to_le_bytes();
-        let controls = input[8].to_le_bytes();
-        let image = calculate_bluetooth_tx_gain(PhyBluetoothTxGainParameters {
-            seed: input[..6].try_into().unwrap(),
-            config: input[6] as u16,
-            calibration_curve: curve[..3].try_into().unwrap(),
-            correction: curve[3] as i8,
-            base: controls[0],
-            attenuation: controls[1],
-        });
-        output[..16].copy_from_slice(&image.output_32);
-        for (destination, value) in output[16..48].chunks_exact_mut(2).zip(image.output_64) {
-            destination.copy_from_slice(&value.to_le_bytes());
-        }
-        for (destination, value) in output[48..].chunks_exact_mut(2).zip(image.output_72) {
-            destination.copy_from_slice(&value.to_le_bytes());
-        }
+        use oer_esp32s31_phy::calibration::bluetooth::PhyBluetoothTxGainPublication;
+        let image = bluetooth_gain_projection(input, output);
         let mut radio =
             oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
         PhyBluetoothTxGainPublication::new(image).execute_target(radio.phy_hal_mut());

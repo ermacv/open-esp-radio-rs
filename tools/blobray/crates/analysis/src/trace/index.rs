@@ -1,5 +1,11 @@
 //! Borrowed per-function indexes, shared by every invocation of that function.
 use super::*;
+/// Saved architectural write at a transfer, distinct from pre-transfer inputs.
+pub(super) struct LinkEffect<'a> {
+    pub record: u64,
+    pub register: u8,
+    pub value: &'a AbstractValue,
+}
 pub(super) struct Instruction<'a> {
     pub record: u64,
     pub offset: u64,
@@ -13,6 +19,7 @@ pub(super) struct Instruction<'a> {
     )>,
     pub condition: Option<(BranchTest, &'a AbstractValue, &'a AbstractValue)>,
     pub inputs: Option<&'a [AbstractValue]>,
+    pub link_effect: Option<LinkEffect<'a>>,
     pub returns: Option<(&'a AbstractValue, &'a AbstractValue)>,
     pub gap: Option<SemanticGapReason>,
     pub fence: Option<(u8, u8, u8)>,
@@ -28,6 +35,82 @@ pub(super) struct Index<'a, 'm> {
     pub expressions: AdmittedVec<'m, ExpressionRef<'a>>,
 }
 impl<'a, 'm> Index<'a, 'm> {
+    /// The structural CFG cannot resolve register targets. A saved exact link
+    /// may close only that gap; it cannot repair decoding or other missing flow.
+    pub fn complete_for_trace(
+        &self,
+        caller: usize,
+        links: &[TraceLink],
+        c: &mut dyn RunControl,
+    ) -> Result<bool> {
+        let manifest = self.function.manifest;
+        if manifest.coverage.complete() {
+            return Ok(true);
+        }
+        if !manifest.coverage.decoding
+            || !manifest.coverage.references
+            || manifest.recipe.address_space != CodeAddressSpace::Image
+        {
+            return Ok(false);
+        }
+        let end = manifest.recipe.extent.start + manifest.recipe.extent.length;
+        let mut resolved = 0;
+        for record in self.function.records {
+            c.checkpoint(1)?;
+            match record {
+                FunctionRecord::Gap { .. } => return Ok(false),
+                FunctionRecord::SemanticGap { reason, .. }
+                    if *reason != SemanticGapReason::OpaqueCall =>
+                {
+                    return Ok(false);
+                }
+                FunctionRecord::Instruction {
+                    offset, decoded, ..
+                } if decoded.flow == InstructionFlow::Stop
+                    || (decoded.flow == InstructionFlow::Next
+                        && *offset + u64::from(decoded.length) == end) =>
+                {
+                    return Ok(false);
+                }
+                FunctionRecord::Edge {
+                    relation: EdgeKind::Conflict | EdgeKind::Stop,
+                    ..
+                } => return Ok(false),
+                FunctionRecord::Edge {
+                    from,
+                    target: None,
+                    relation: EdgeKind::Call | EdgeKind::Indirect,
+                    ..
+                } => {
+                    let Some(i) = self.lookup(*from, c)? else {
+                        return Ok(false);
+                    };
+                    if !matches!(
+                        self.instructions[i].decoded.flow,
+                        InstructionFlow::Indirect { .. }
+                    ) {
+                        return Ok(false);
+                    }
+                    c.checkpoint(links.len().max(1).ilog2() as u64 + 1)?;
+                    let link = links
+                        .binary_search_by_key(&(caller, *from), |l| (l.caller, l.offset))
+                        .ok()
+                        .map(|i| links[i]);
+                    if !link.is_some_and(|l| l.callee.is_some() && l.issue.is_none()) {
+                        return Ok(false);
+                    }
+                    resolved += 1;
+                }
+                FunctionRecord::Edge {
+                    target: None,
+                    relation,
+                    ..
+                } if *relation != EdgeKind::Return => return Ok(false),
+                _ => (),
+            }
+        }
+        Ok(resolved > 0)
+    }
     pub fn new(
         function: &'a TraceFunction<'a>,
         memory: &'m WorkingMemory,
@@ -59,6 +142,7 @@ impl<'a, 'm> Index<'a, 'm> {
                             memory: None,
                             condition: None,
                             inputs: None,
+                            link_effect: None,
                             returns: None,
                             gap: None,
                             fence: None,
@@ -114,6 +198,7 @@ impl<'a, 'm> Index<'a, 'm> {
                 FunctionRecord::MemoryAccess { offset, .. }
                 | FunctionRecord::Condition { offset, .. }
                 | FunctionRecord::CallInputs { offset, .. }
+                | FunctionRecord::Value { offset, .. }
                 | FunctionRecord::ReturnValue { offset, .. }
                 | FunctionRecord::SemanticGap { offset, .. }
                 | FunctionRecord::Fence { offset, .. } => *offset,
@@ -124,6 +209,24 @@ impl<'a, 'm> Index<'a, 'm> {
                 .ok_or_else(|| integrity("semantic trace fact has no instruction"))?;
             let at = &mut out.instructions[i];
             let duplicate = match r {
+                FunctionRecord::Value {
+                    register, value, ..
+                } if matches!(
+                    at.decoded.flow,
+                    InstructionFlow::Jump { .. } | InstructionFlow::Indirect { .. }
+                ) =>
+                {
+                    if *register >= 32 {
+                        return Err(integrity("invalid transfer register"));
+                    }
+                    at.link_effect
+                        .replace(LinkEffect {
+                            record: ordinal as u64,
+                            register: *register,
+                            value,
+                        })
+                        .is_some()
+                }
                 FunctionRecord::MemoryAccess {
                     access,
                     width,
@@ -156,6 +259,7 @@ impl<'a, 'm> Index<'a, 'm> {
                     successor,
                     ..
                 } => at.fence.replace((*fm, *predecessor, *successor)).is_some(),
+                FunctionRecord::Value { .. } => false,
                 _ => unreachable!(),
             };
             if duplicate {

@@ -567,3 +567,5 @@ mod timeline;
 
 #[path = "execution/projections.rs"]
 mod projections;
+#[path = "execution/static_trace.rs"]
+mod static_trace;

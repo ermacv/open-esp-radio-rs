@@ -263,7 +263,7 @@ impl<'a, 'm> Facts<'a, 'm> {
                         offset: displacement,
                         link,
                     } => {
-                        if !link && base == 1 && displacement == 0 {
+                        if !link && matches!(base, 1 | 5) && displacement == 0 {
                             continue;
                         }
                         let value = self

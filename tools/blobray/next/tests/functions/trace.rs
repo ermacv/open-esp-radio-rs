@@ -394,3 +394,112 @@ fn static_trace_does_not_accept_unsupported_fence_or_suppress_requested_fences()
         "{rows:?}"
     );
 }
+
+#[test]
+fn relocatable_call_link_address_never_becomes_a_physical_section_offset() {
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let caller = obj.add_section(vec![], b".text.entry".to_vec(), SectionKind::Text);
+    obj.append_section_data(
+        caller,
+        &words(&[
+            0x00008313, 0x60000537, 0x00c000ef, 0x00030093, 0x00008067, 0x00152023, 0x00008067,
+        ]),
+        4,
+    );
+    obj.add_symbol(symbol(
+        b"entry",
+        SymbolSection::Section(caller),
+        20,
+        SymbolKind::Text,
+    ));
+    let mut callee = symbol(
+        b"callee",
+        SymbolSection::Section(caller),
+        8,
+        SymbolKind::Text,
+    );
+    callee.value = 20;
+    obj.add_symbol(callee);
+    let f = fixture(obj.write().unwrap(), false);
+    let caller = analyze(&f).analysis.unwrap();
+    let snapshot = app::inventory(&f.project, None).unwrap();
+    let symbol = snapshot.revision.inputs[0]
+        .inventory
+        .as_ref()
+        .unwrap()
+        .objects[1]
+        .elf
+        .as_ref()
+        .unwrap()
+        .symbols
+        .iter()
+        .find(|s| s.name.as_deref() == Some(b"callee"))
+        .unwrap()
+        .id
+        .clone();
+    let mut req = f.request.clone();
+    req.selector = symbol.into();
+    let run = f
+        .app
+        .start_analyze_function(&f.project, req, budget())
+        .unwrap()
+        .wait();
+    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    let run = f
+        .app
+        .start_build_ir(
+            &f.project,
+            IrBuildRequest {
+                scope: NavigationScope {
+                    revision: f.revision.clone(),
+                    publications: vec![],
+                    analyses: vec![caller.clone(), run.analysis.unwrap()],
+                    knowledge: None,
+                },
+                profiles: vec![IrProfile {
+                    name: "trace".into(),
+                    roots: IrRoots::All,
+                    include_reachable: true,
+                }],
+            },
+            budget(),
+        )
+        .unwrap()
+        .wait();
+    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    let target = TraceTarget {
+        ir: run.semantic_ir.unwrap(),
+        profile: "trace".into(),
+        entry: caller,
+        abi: CallAbi::RiscvInteger,
+        registers: vec![TraceRegister {
+            register: 1,
+            value: 123,
+        }],
+    };
+    let q = TraceRequest {
+        left: target.clone(),
+        right: Some(target),
+        observation: TraceObservation {
+            ranges: vec![ImageRegion {
+                start: 0x60000000,
+                length: 4,
+            }],
+            fences: false,
+        },
+    };
+    let (summary, rows) = query(&f, &q);
+    assert_eq!(
+        summary.verdict,
+        Some(ComparisonVerdict::Incomplete),
+        "{summary:?} {rows:?}"
+    );
+    assert_eq!(summary.left.invocations, 2, "{rows:?}");
+    assert!(rows.iter().any(|r| matches!(
+        r,
+        TraceRecord::Blocked {
+            reason: TraceBlocker::UnknownValue,
+            ..
+        }
+    )));
+}

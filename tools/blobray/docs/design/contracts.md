@@ -1343,11 +1343,18 @@ extraction is a separate consumer responsible for its explicit exactness claim.
 The implemented static trace profile is defined in the
 [operator reference](../../next/README.md#static-observable-traces). Domain owns the
 request, observable values, blockers and result schema. The RV32 semantic producer
-emits typed fences and outgoing tail-call inputs. Analysis owns per-function borrowed
+emits typed fences, pre-transfer call/tail inputs and separate architectural
+register writes. Trace policy 2 applies the saved link write before callee entry;
+unknown section-relative links never inherit the caller's old register value. Analysis owns per-function borrowed
 indexes, canonical symbolic expressions and iterative invocation/path traversal;
 application acquires the explicitly selected saved profile and releases one side's
 facts before loading the other. Only compact observable events and the shared admitted
 expression index survive between sides. Store remains unaware of trace semantics.
+
+A structural unknown indirect edge can be closed by its unique saved physical
+callee in the selected IR profile. This does not repair decoding/reference gaps,
+conflicting boundaries, missing flow or unsupported semantics; those still block
+exactness. Original function coverage is not upgraded.
 
 A trace is conditional on explicit inputs, original immutable-image assumptions and
 ordinary integer ABI call/return behavior. Composed may-effects are never treated as

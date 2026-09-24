@@ -84,3 +84,7 @@ path visitation and call frames are iterative. Canonical symbolic equality can p
 a selected observable relation; unsupported paths and undecided inequality remain
 incomplete. It neither schedules analysis nor models RAM/peripheral state. Typed
 fences come from the semantic producer, not parsed disassembly text.
+
+Trace policy 2 distinguishes pre-transfer `CallInputs` from callee entry, applying
+the saved typed `Value` link effect first. Physical return addresses become exact
+values; section-relative links stay unresolved without an address mapping.

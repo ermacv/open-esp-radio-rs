@@ -1,6 +1,6 @@
 //! Static observable relations over saved semantic IR, distinct from machine execution.
 use crate::*;
-pub const STATIC_TRACE_POLICY: u32 = 1;
+pub const STATIC_TRACE_POLICY: u32 = 2;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TraceTarget {

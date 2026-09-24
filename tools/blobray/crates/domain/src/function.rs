@@ -255,6 +255,8 @@ pub enum FunctionRecord {
         origin: Option<FunctionAnalysisId>,
         expression: Expression,
     },
+    /// Register state before the transfer instruction. Its architectural write
+    /// is a separate `Value` fact and must precede callee-entry substitution.
     CallInputs {
         offset: u64,
         registers: Vec<AbstractValue>,

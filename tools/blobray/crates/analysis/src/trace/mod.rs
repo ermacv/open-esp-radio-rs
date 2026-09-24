@@ -5,6 +5,8 @@ mod index;
 pub use expressions::Canonical;
 use expressions::{Eval, constant, number};
 use index::Index;
+#[cfg(test)]
+mod tests;
 pub type Emitter<'a> = dyn FnMut(&TraceRecord, &mut dyn RunControl) -> Result<()> + 'a;
 pub struct TraceFunction<'a> {
     pub id: &'a FunctionAnalysisId,
@@ -154,6 +156,13 @@ pub fn extract<'m>(
             return Err(integrity("invalid static trace call index"));
         }
     }
+    let mut complete = AdmittedVec::new(memory);
+    for (caller, index) in indexes.iter().enumerate() {
+        complete.push(
+            index.complete_for_trace(caller, input.links, c)?,
+            c.position(),
+        )?;
+    }
     let mut arguments = [None; 32];
     arguments[0] = Some(constant(0));
     for (r, arg) in arguments.iter_mut().enumerate().skip(1) {
@@ -281,9 +290,7 @@ pub fn extract<'m>(
         if index.function.manifest.recipe.research.is_some() {
             blocked!(TraceBlocker::ComposedInterpretation);
         }
-        if !index.function.manifest.coverage.complete()
-            || index.function.manifest.semantics.is_none()
-        {
+        if !complete[frame.function] || index.function.manifest.semantics.is_none() {
             blocked!(TraceBlocker::PartialFunction);
         }
         if frame.visited[frame.cursor] {
@@ -410,11 +417,48 @@ pub fn extract<'m>(
             if inputs.len() != 32 {
                 return Err(integrity("trace call input register count differs"));
             }
+            let Some(effect) = &instruction.link_effect else {
+                blocked!(TraceBlocker::UnsupportedEffect);
+            };
+            if (direct_call && !matches!(effect.register, 1 | 5))
+                || (!direct_call && effect.register != 0)
+            {
+                blocked!(TraceBlocker::UnsupportedEffect);
+            }
+            // Validate the saved producer contract without interpreting instruction bytes.
+            let expected = if effect.register == 0 {
+                AbstractValue::Constant { value: 0 }
+            } else {
+                match recipe.address_space {
+                    CodeAddressSpace::Image => AbstractValue::ImageAddress {
+                        address: next as u32,
+                    },
+                    CodeAddressSpace::Section => AbstractValue::Section {
+                        section: recipe.section,
+                        offset: i64::try_from(next)
+                            .map_err(|_| integrity("transfer section offset overflow"))?,
+                    },
+                }
+            };
+            if *effect.value != expected {
+                return Err(integrity(&format!(
+                    "inconsistent transfer effect at record {}",
+                    effect.record
+                )));
+            }
             let mut arguments = [None; 32];
             for (dest, value) in arguments.iter_mut().zip(inputs) {
                 *dest = frame
                     .eval
                     .value(value, index, &frame.arguments, canonical, c, emit)?;
+            }
+            if effect.register != 0 {
+                // A section-relative return address stays unknown to this physical
+                // trace profile; never retain the caller's previous link value.
+                arguments[usize::from(effect.register)] =
+                    frame
+                        .eval
+                        .value(effect.value, index, &frame.arguments, canonical, c, emit)?;
             }
             arguments[0] = Some(constant(0));
             let call = frame.cursor;

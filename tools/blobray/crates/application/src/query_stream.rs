@@ -303,6 +303,13 @@ pub trait QuerySink: InventorySink + DoctorSink {
             "consumer does not support images",
         ))
     }
+    fn link_observation(
+        &mut self,
+        _: &LinkObservationRecord,
+        _: &mut dyn RunControl,
+    ) -> Result<()> {
+        Ok(())
+    }
     fn image_mapping(&mut self, _: &ImageMapping, _: &mut dyn RunControl) -> Result<()> {
         Err(Error::new(
             ErrorCode::InvalidRequest,
@@ -369,6 +376,7 @@ enum RecordRef<'a> {
     Finding(&'a InvestigationFinding),
     Image(&'a PreparedImageId),
     ImageMapping(&'a ImageMapping),
+    LinkObservation(&'a LinkObservationRecord),
     Analysis(&'a FunctionAnalysisId),
     Function(&'a FunctionRecord),
     Revision(&'a RevisionHeader),
@@ -406,6 +414,7 @@ enum Record {
     Finding(InvestigationFinding),
     Image(PreparedImageId),
     ImageMapping(ImageMapping),
+    LinkObservation(LinkObservationRecord),
     Analysis(FunctionAnalysisId),
     Function(FunctionRecord),
     Revision(RevisionHeader),
@@ -1027,6 +1036,7 @@ pub fn prepare_query_with_tools(
                         &request,
                         &executable.to_path()?,
                         linker,
+                        &crate::linking::LinkWorkspace::for_query(stage, &disk, &memory),
                         &memory,
                         control,
                     )?;
@@ -1055,6 +1065,7 @@ pub fn prepare_query_with_tools(
                     request,
                     &executable.to_path()?,
                     linker,
+                    &crate::linking::LinkWorkspace::for_query(stage, &disk, &memory),
                     &memory,
                     control,
                 )?;
@@ -1086,13 +1097,19 @@ pub fn prepare_query_with_tools(
                     control,
                     |mapping: ImageMapping, c| spool.push(RecordRef::ImageMapping(&mapping), c),
                 )?;
+                blobray_store::visit_jsonl(
+                    &image.observations,
+                    control,
+                    |r: LinkObservationRecord, c| spool.push(RecordRef::LinkObservation(&r), c),
+                )?;
                 if *export {
                     for (name, source) in [
                         ("image.elf", &image.elf),
                         ("manifest.json", &image.manifest_bytes),
                         ("link.map", &image.map),
-                        ("extraction.tsv", &image.extraction),
+                        ("extraction.raw", &image.extraction),
                         ("provenance.jsonl", &image.provenance),
+                        ("observations.jsonl", &image.observations),
                     ] {
                         copy_source(source, &mut disk.create(&stage.join(name))?, control)?;
                     }
@@ -1307,6 +1324,7 @@ pub(crate) fn visit(
             Record::Publication(r) => sink.publication(&r, control)?,
             Record::Finding(r) => sink.finding(&r, control)?,
             Record::Image(id) => sink.image(&id, control)?,
+            Record::LinkObservation(r) => sink.link_observation(&r, control)?,
             Record::ImageMapping(mapping) => sink.image_mapping(&mapping, control)?,
             Record::Analysis(id) => sink.analysis(&id, control)?,
             Record::Execution(record) => sink.execution_evidence(&record, control)?,

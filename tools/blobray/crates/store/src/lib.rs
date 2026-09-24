@@ -18,7 +18,9 @@ pub use functions::{AnalysisReader, FunctionLease, RetainedFunction};
 mod images;
 pub use images::{ImageLease, RetainedImage};
 mod temporary;
-pub use temporary::{TemporaryBudget, TemporaryConfig, TemporaryControl, TemporaryFile};
+pub use temporary::{
+    ExternalOutput, TemporaryBudget, TemporaryConfig, TemporaryControl, TemporaryFile,
+};
 mod records;
 pub use records::{
     OwnerIdentity, PreparedImageReceipt, PreparedImport, PreparedIrReceipt, RunOperation, RunRecord,
@@ -51,7 +53,7 @@ use std::{
 };
 
 const STATE: &str = ".blobray-next";
-const SCHEMA: i64 = 33;
+const SCHEMA: i64 = 34;
 
 /// A project handle owns no source-file handles or mutable inventory cache.
 #[derive(Clone)]

@@ -20,6 +20,13 @@ pub struct TemporaryConfig {
     pub limit_bytes: u64,
 }
 impl TemporaryBudget {
+    /// Named external output has deterministic tool-visible spelling and refunds
+    /// capacity only after deletion, just like an anonymous temporary fragment.
+    pub fn external(&self, path: &Path, maximum: u64) -> Result<ExternalOutput> {
+        let mut file = self.create(path)?;
+        file.remove = true;
+        file.external(maximum)
+    }
     pub fn new(limit: u64, owner: Option<RunId>) -> Result<Self> {
         if limit < TEMPORARY_CONTROL_BYTES {
             return Err(Error::new(
@@ -148,6 +155,23 @@ impl Drop for Refund {
     }
 }
 impl TemporaryFile {
+    /// Reserve an external writer's maximum extent before exposing its path.
+    /// The caller must enforce `maximum` in the child and reap it before finishing
+    /// or dropping the lease. The reservation survives truncation by the child.
+    pub fn external(mut self, maximum: u64) -> Result<ExternalOutput> {
+        if self.length != 0 || maximum == 0 {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "external output needs an empty file and positive capacity",
+            ));
+        }
+        self.budget.reserve(maximum)?;
+        self.length = maximum;
+        Ok(ExternalOutput {
+            file: self,
+            maximum,
+        })
+    }
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -185,6 +209,44 @@ impl TemporaryFile {
         self.remove = false;
         fs::remove_file(old).map_err(storage_io)?;
         Ok(true)
+    }
+}
+
+/// Exclusive, pre-admitted file for a bounded external process. Never clone it.
+pub struct ExternalOutput {
+    file: TemporaryFile,
+    maximum: u64,
+}
+impl ExternalOutput {
+    pub fn path(&self) -> &Path {
+        self.file.path()
+    }
+    pub fn maximum(&self) -> u64 {
+        self.maximum
+    }
+    /// Call only after all external writers have exited and been reaped.
+    pub fn finish(mut self) -> Result<TemporaryFile> {
+        let metadata = self.file.metadata().map_err(storage_io)?;
+        let path_metadata = fs::symlink_metadata(self.file.path()).map_err(storage_io)?;
+        if !metadata.is_file() || !super::capture::same_file(&metadata, &path_metadata) {
+            // The owned inode may survive under another name. Do not refund or
+            // delete the replacement; workspace cleanup owns the remaining charge.
+            self.file.remove = false;
+            return Err(Error::new(
+                ErrorCode::SourceChanged,
+                "external output path was replaced",
+            ));
+        }
+        let actual = metadata.len();
+        if actual > self.maximum {
+            return Err(Error::new(
+                ErrorCode::Integrity,
+                "external output exceeded its admitted extent",
+            ));
+        }
+        self.file.budget.release(self.maximum - actual);
+        self.file.length = actual;
+        Ok(self.file)
     }
 }
 impl TemporaryFile {
@@ -372,5 +434,49 @@ mod tests {
             budget.reserve(1).unwrap_err().code,
             ErrorCode::ResourceLimited
         );
+    }
+}
+
+#[cfg(test)]
+mod external_tests {
+    use super::*;
+    #[test]
+    fn external_path_replacement_cannot_refund_or_publish_another_inode() {
+        let dir = tempfile::tempdir().unwrap();
+        let disk = TemporaryBudget::new(TEMPORARY_CONTROL_BYTES + 32, None).unwrap();
+        let lease = disk.external(&dir.path().join("output"), 24).unwrap();
+        fs::write(lease.path(), b"partial").unwrap();
+        fs::rename(lease.path(), dir.path().join("residue")).unwrap();
+        fs::write(lease.path(), b"replacement").unwrap();
+        assert_eq!(lease.finish().err().unwrap().code, ErrorCode::SourceChanged);
+        assert_eq!(disk.usage().current_bytes, TEMPORARY_CONTROL_BYTES + 24);
+        assert_eq!(fs::read(dir.path().join("output")).unwrap(), b"replacement");
+    }
+    #[test]
+    fn external_extent_is_reserved_before_writes_and_reconciled_after_reaping() {
+        let dir = tempfile::tempdir().unwrap();
+        let disk = TemporaryBudget::new(TEMPORARY_CONTROL_BYTES + 32, None).unwrap();
+        let lease = disk.external(&dir.path().join("image.elf"), 24).unwrap();
+        assert_eq!(disk.usage().current_bytes, TEMPORARY_CONTROL_BYTES + 24);
+        assert!(disk.external(&dir.path().join("other"), 9).is_err());
+        fs::write(lease.path(), b"elf").unwrap(); // A reaped writer truncated its file.
+        assert_eq!(disk.usage().current_bytes, TEMPORARY_CONTROL_BYTES + 24);
+        let file = lease.finish().unwrap();
+        assert_eq!(disk.usage().current_bytes, TEMPORARY_CONTROL_BYTES + 3);
+        drop(file);
+        assert_eq!(disk.usage().current_bytes, TEMPORARY_CONTROL_BYTES);
+    }
+    #[test]
+    fn external_failure_and_cleanup_residue_preserve_admission() {
+        let dir = tempfile::tempdir().unwrap();
+        let disk = TemporaryBudget::new(TEMPORARY_CONTROL_BYTES + 32, None).unwrap();
+        let lease = disk.external(&dir.path().join("output"), 24).unwrap();
+        fs::write(lease.path(), b"partial").unwrap();
+        drop(lease);
+        assert_eq!(disk.usage().current_bytes, TEMPORARY_CONTROL_BYTES);
+        let lease = disk.external(&dir.path().join("output"), 24).unwrap();
+        fs::rename(lease.path(), dir.path().join("residue")).unwrap();
+        drop(lease);
+        assert_eq!(disk.usage().current_bytes, TEMPORARY_CONTROL_BYTES + 24);
     }
 }

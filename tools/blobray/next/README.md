@@ -167,8 +167,8 @@ initialization and recovery do not use the supervised worker path.
 
 ## Synthetic prepared images
 
-`link-plan` validates a selected revision and creates a schema-1 `LinkPlan`.
-`prepare-image` materializes its captured inputs, invokes explicit LLVM LLD 22,
+`link-plan` validates a selected revision and creates a schema-2 `LinkRecipe` in a `LinkPlan`.
+`prepare-image` materializes its captured inputs, invokes the explicitly selected LLD or GNU BFD ld,
 validates the output and atomically publishes an immutable prepared image and
 completed run. It never changes the current import revision. A ready plan means
 supported inputs and unambiguous roots; it does not promise that all references
@@ -208,20 +208,20 @@ it cannot reopen original source paths. The store currently retains all revision
 and images without pruning. Reopening an image verifies retained digests and
 needs neither the linker nor original input files. Project relocation preserves
 identities. An exported bundle contains `image.elf`, `manifest.json`, `link.map`,
-`extraction.tsv` and `provenance.jsonl`. Export requires a nonexistent destination,
+`extraction.raw`, `provenance.jsonl` and `observations.jsonl`. Export requires a nonexistent destination,
 writes the manifest last and never overwrites an existing destination. A failed
 export can leave an incomplete directory; its presence alone does not mean success.
 
 ### Link policy and evidence
 
-Link policy 2 accepts little-endian RV32 ILP32/ILP32F/ILP32D relocatable objects, ordinary
+Link policy 5 accepts little-endian RV32 ILP32/ILP32F/ILP32D relocatable objects, ordinary
 archives and captured thin archives. Companion code and data participate in the
 same link. Every selected payload must be supported; malformed, missing, TLS,
 RV32E and quad-float inputs block preparation. Linked firmware/ROM ELF bindings as linker inputs,
 dynamic linking, arbitrary scripts and caller-supplied linker flags are not
 supported. Root symbols must be defined global/weak executable symbols with
 unambiguous static-table and section identity. Input names containing CR/LF are
-rejected because LLD's unescaped map cannot safely represent them.
+rejected because the linkers' unescaped maps cannot safely represent them.
 
 Each member is materialized once as `i<input>-m<ordinal>.o`; duplicate archive
 names and byte-identical imported bindings remain distinct occurrences. Root
@@ -233,28 +233,46 @@ the producer's original link and never establishes original firmware selection.
 
 The generated script defines CODE and DATA regions, RX/RW load segments,
 text/rodata/eh-frame, data/sdata and bss/common sections and the RISC-V global
-pointer. LLD uses `elf32lriscv`, one thread, section GC, emitted relocations,
-no relaxation, no ICF, no build ID, no demangling and strict undefined-symbol
-handling. The environment is cleared except `LC_ALL=C` and `TZ=UTC`; core dumps
-are disabled. Other sections follow LLD 22 placement rules and must pass the same
-post-link segment bounds. The tool path is explicit: no PATH/rustc search or
-linker substitution. Its full version response and executable digest enter the
-recipe and are checked again for preparation. This identifies the executable,
-not a hermetic snapshot of its dynamically loaded system libraries.
+pointer. Both adapters use `elf32lriscv`, section GC, emitted relocations,
+no relaxation, no build ID, no demangling and strict undefined-symbol handling.
+LLD also explicitly disables ICF and uses one thread. The environment contains
+only `LC_ALL=C` and `TZ=UTC`; core dumps are disabled. Other sections follow the
+selected tool's placement rules and must pass the same post-link validation.
+No PATH/rustc search, archive regrouping or linker substitution occurs.
+
+`ElfLinker` recognizes the family using `--version` and exercises the actual
+adapter with two bounded synthetic RV32 links before accepting it. Their ELF,
+raw evidence, normalized observations and stderr digests must agree. Each probe
+output channel is capped at 64 KiB and observations at 128 records. The probe checks
+root extent/layout, garbage collection, retained relocations and normalized
+placement/extraction evidence through the production validators. Version numbers
+are not an allowlist: missing `elf32lriscv`, `--start-lib` or required evidence
+rejects that executable with `Incompatible`. The version's first line and SHA-256
+enter identity and are checked again at preparation. Executable hashes are also
+checked before and after linking. This does not snapshot dynamically loaded
+system libraries.
+
+GNU ld processes archives in order; LLD can satisfy backward references from
+previous archives. Both implement `static-analysis-elf-link-v1`, but their
+selected members, success/failure and image IDs can differ. Blobray preserves
+these differences and never claims original firmware selection.
 
 `LinkPlanId` hashes the schema/policy, project, revision, input order, exact roots,
-layout and linker identity. Policy 4 fixes accepted ABI families, explicit ROM definitions, executable-section placement, transformation, script generation,
+layout, linker contract and linker identity. Recipe schema 2 / policy 5 fixes accepted ABI families, explicit ROM definitions, executable-section placement, transformation, script generation,
 flags and environment. Time, memory and disk budgets and local paths do not enter
 this identity. Existing inspection Plan schemas and IDs keep their own contracts.
 `PreparedImageId` hashes its manifest, which references the ELF, raw map, extraction
-report and normalized provenance by content digest. The manifest labels the image
+report, normalized observations and provenance by content digest. Image manifest
+schema 3 records this closure. The manifest labels the image
 synthetic and retains verified roots/segments and bounded successful tool stderr.
 
 Validation requires RV32 ET_EXEC, bounded nonoverlapping PT_LOAD segments inside
 the declared regions, no writable executable segment, allocated sections covered
 by load segments, file-backed executable roots and no unresolved symbol relocation
 in allocated sections, including unresolved weak references. The selected entry
-must equal `e_entry`. Root addresses are proved by input-section map rows plus
+must equal `e_entry`. Empty PT_LOAD records are retained without mapping memory;
+nonzero file bytes still require a sufficient memory extent. Root addresses are
+proved by normalized input-section placements plus
 source symbol offsets, unchanged section sizes and matching output symbols.
 Hidden symbols may be localized by LLD. Symbol rows cannot impersonate section
 rows. No exact root mapping means no publication. Other map records retain their
@@ -264,24 +282,41 @@ are not implemented by image preparation.
 
 ### Ownership, limits and persistence
 
-Domain owns recipes/IDs and result values; artifacts owns input and output ELF
-validation; application owns selection, materialization, policy, map evidence
-and orchestration. The Linux `Lld22` adapter implements the injected `LinkerHost`
-port and only launches/drains the specified tool. Store owns payload leases,
-`PreparedImageReceipt`, `RetainedImage` and transactional publication. No worker
-has publication authority and no linker adapter selects project inputs.
+Domain owns recipes/IDs and typed observations; artifacts owns input and output
+ELF validation. Application owns selection, materialization, semantic policy,
+root proof and orchestration. Linux adapters own CLI/script dialects and parsers
+behind `LinkerHost`. The common subprocess helper owns bounded transport and
+process lifetime. Store owns payload leases, `PreparedImageReceipt`, `RetainedImage`
+and atomic publication; adapters never select project inputs or publish images.
 
-The same operation guard contains worker and LLD. Output ELF, map and extraction
-flow through concurrently drained pipes into quota-admitted `TemporaryFile`s;
-LLD receives no writable file output path. Materialized inputs and script are
-also charged. LLD buffers stdout ELF in its own memory, covered by the process
-limit, not by Blobray `WorkingMemory`. Inspection and validation admit one full
-object/image buffer at a time; this is not a streaming ELF linker or a no-heap
-core. A bounded 8 MiB metadata reservation covers at most 512 selected bindings,
-4096 members, 16 roots and 32 blockers. Root names/sections are at most 4096 bytes,
-map lines at most 64 KiB, saved plan metadata at most 60 KiB, image manifest at
-most 56 KiB and successful stderr tail at most 8192 bytes. Capacity exhaustion
-fails explicitly, without partial publication.
+`SectionPlacement` and `ArchiveExtraction` identify the input binding and ObjectId,
+including repeated imports, and reference byte spans in retained raw map or
+extraction output. Application validates occurrence identity, extraction coverage,
+root extent and exit observations. Records use schema 1 and are retained in
+extraction/placement/exit order independent of pipe scheduling. `image` queries
+emit `link-observation` records; exported `observations.jsonl` contains the same
+typed records. LLD extraction evidence comes from why-extract; GNU extraction
+comes from the map, so its separate `extraction.raw` is empty. Raw outputs remain
+available for provenance without application parsing either tool's text.
+
+The same operation guard contains worker and linker. LLD ELF, map and extraction
+flow through concurrently drained pipes into quota-admitted `TemporaryFile`s.
+GNU needs a seekable ELF: application reserves its maximum extent before launch,
+using the available working memory at image validation after fixed metadata.
+This capacity must be available on disk even when the final ELF is smaller.
+The adapter enforces the ceiling with hard `RLIMIT_FSIZE`, reaps the writer, and
+reconciles actual length before transferring the file. Unused reservation is
+released then; failed cleanup retains the charge. No new CLI limit is required.
+Map and diagnostics remain bounded streams. Materialized inputs/scripts, raw
+outputs and normalized evidence share the operation's temporary budget.
+
+LLD buffers stdout ELF in process memory, covered by the process limit rather
+than Blobray `WorkingMemory`. Inspection and validation admit one full object/image
+buffer at a time. An 8 MiB metadata reservation covers up to 512 bindings,
+4096 members, 16 roots, 32 blockers and the bounded capability probe. Root
+names/sections are at most 4096 bytes, map/observation records 64 KiB, saved plan
+metadata 60 KiB, image manifest 56 KiB and stderr tail 8192 bytes. Capacity
+exhaustion fails explicitly without partial publication.
 
 Durable run records identify the admitted operation and its published result;
 query status stays in memory. Payload promotion precedes one transaction for
@@ -291,10 +326,19 @@ result remains successful even if response delivery is lost. Recovery abandons
 interrupted attempts and never converts staged ELF into success. Doctor checks
 retained image closures. See [JSON and checks](#json-and-checks) for versions.
 
-Real-link integration tests require LLD 22 at `/usr/bin/ld.lld`, or an explicit
-`BLOBRAY_TEST_LLD` executable. This dependency is mandatory, including for
-`cargo xtask check blobray-standalone`; absence is a test failure. These tests
-exercise synthetic RV32 bytes, not private vendor binaries or execution readiness.
+Real-link acceptance requires both LLD (reference 22.1.8) and GNU ld (reference
+2.47 with RV32). Set `BLOBRAY_TEST_LLD` to override `/usr/bin/ld.lld` and
+`BLOBRAY_TEST_GNU_LD` to select the GNU executable. The local GNU default is
+`target/blobray-tools/gnu/bin/riscv32-unknown-elf-ld`; standalone checks need an
+absolute `BLOBRAY_TEST_GNU_LD` because they build in an extracted tree. Missing
+tools fail tests. Tests use synthetic RV32 inputs, not hardware qualification.
+
+For a local GNU test provider, unpack the official GNU binutils 2.47 source into
+ignored `target/blobray-tools/`, configure an out-of-tree build with
+`--target=riscv32-unknown-elf --prefix=<absolute-repo>/target/blobray-tools/gnu
+--disable-nls --disable-werror --disable-gdb --disable-gprofng --disable-gas
+--disable-binutils`, then run `make all-ld` and `make install-ld`. A system GNU ld
+with only x86 emulations does not satisfy the contract.
 
 ## Selection and inspection plans
 
@@ -714,8 +758,8 @@ write the run envelope to stderr. Inventory coverage is not a verification verdi
 
 ### Current formats
 
-Run records use journal schema 34 for every durable and read operation. Storage metadata
-uses schema 33; revision manifests use schema 1 and execution manifests use schema
+Run records use journal schema 35 for every durable and read operation. Storage metadata
+uses schema 34; revision manifests use schema 1 and execution manifests use schema
 15. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
@@ -845,7 +889,7 @@ source revisions; there is no pruning or automatic analysis cache lookup.
 
 From the repository root, build `cargo build --profile blobray -p blobray-next`.
 Use `target/blobray/blobray` as `blobray` below. Linking requires the
-explicit LLD 22 executable; reading and analysis do not require a linker.
+explicit supported ELF linker executable; reading and analysis do not require a linker.
 
 ```console
 blobray init --project research
@@ -870,7 +914,7 @@ available through `link-plan --request`. Code/data regions each default to 16 Mi
 `--region-bytes` changes their size. The retained revision supplies the RV32 integer-analysis profile; the retained
 link recipe supplies input order, layout and tool identity. Image manifests
 (version 2) and function recipes record the actual ELF-declared ABI separately.
-LLD checks ABI compatibility across selected inputs. Floating-point instruction
+The selected linker checks ABI compatibility across selected inputs. Floating-point instruction
 semantics remain unsupported in static research; concrete execution uses the separate
 [execution contract](#concrete-execution-and-comparison). Unsupported instructions stay gaps.
 No legacy configuration reader participates.

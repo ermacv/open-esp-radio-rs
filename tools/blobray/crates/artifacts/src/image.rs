@@ -78,7 +78,7 @@ pub fn inspect_link_input(
             .any(|b| matches!(b, b'\n' | b'\r'))
         {
             return Err(bad(
-                "section name cannot be represented safely in LLD map evidence",
+                "section name cannot be represented safely in linker map evidence",
             ));
         }
         if matches!(section.flags(),object::SectionFlags::Elf{sh_flags} if sh_flags & u64::from(object::elf::SHF_TLS)!=0)
@@ -95,7 +95,7 @@ pub fn inspect_link_input(
             .any(|b| matches!(b, b'\n' | b'\r'))
         {
             return Err(bad(
-                "symbol name cannot be represented safely in LLD map evidence",
+                "symbol name cannot be represented safely in linker map evidence",
             ));
         }
     }
@@ -210,7 +210,9 @@ pub fn validate_image(
         } else {
             layout.code
         };
-        if !region.contains(segment.address(), segment.size())
+        // GNU retains empty PHDRS at address zero when a layout region has no
+        // sections. Preserve the record; an empty extent occupies no memory.
+        if (segment.size() != 0 && !region.contains(segment.address(), segment.size()))
             || size > segment.size()
             || offset
                 .checked_add(size)
@@ -219,7 +221,9 @@ pub fn validate_image(
             return Err(bad("load segment exceeds declared memory/file bounds"));
         }
         if segments.iter().any(|s: &ImageSegment| {
-            segment.address() < s.address + s.memory_size
+            segment.size() != 0
+                && s.memory_size != 0
+                && segment.address() < s.address + s.memory_size
                 && s.address < segment.address() + segment.size()
         }) {
             return Err(bad("load segments overlap"));

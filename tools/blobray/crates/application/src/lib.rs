@@ -36,17 +36,17 @@ mod research;
 pub use functions::{FunctionWork, prepare_function_worker};
 mod linking;
 pub use linking::{
-    ImageWork, LinkInput, LinkInvocation, LinkOutput, LinkOutputSink, LinkPlan, LinkerHost,
-    prepare_image_worker, read_link_plan, validate_link_plan,
+    ImageWork, LinkInput, LinkInvocation, LinkMember, LinkOutput, LinkOutputSink, LinkPlan,
+    LinkWorkspace, LinkerHost, prepare_image_worker, read_link_plan, validate_link_plan,
 };
 mod planning;
 pub use planning::*;
 mod protocol;
 mod selection;
 pub use blobray_store::{
-    OwnerIdentity, PreparedExecutionReceipt, PreparedFunctionReceipt, PreparedImageReceipt,
-    PreparedImport, PreparedInvestigationReceipt, PreparedIrReceipt, PreparedKnowledgeReceipt,
-    RunOperation, RunRecord,
+    ExternalOutput, OwnerIdentity, PreparedExecutionReceipt, PreparedFunctionReceipt,
+    PreparedImageReceipt, PreparedImport, PreparedInvestigationReceipt, PreparedIrReceipt,
+    PreparedKnowledgeReceipt, RunOperation, RunRecord, TemporaryFile,
 };
 pub use protocol::*;
 mod jobs;

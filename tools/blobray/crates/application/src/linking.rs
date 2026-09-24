@@ -2,26 +2,98 @@
 use crate::*;
 use blobray_store::{TemporaryBudget, TemporaryFile};
 use std::{
-    io::{BufRead, BufReader, Read, Write},
+    io::{Read, Write},
     sync::{Arc, Mutex},
 };
 
 pub const LINK_METADATA_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_MEMBERS: usize = 4096;
+mod evidence;
+mod probe;
+
 #[derive(Clone, Debug)]
 pub enum LinkInput {
     Object(String),
     Archive(Vec<String>),
 }
+
+/// Alias chosen by application, never an original untrusted filename.
+#[derive(Clone, Debug)]
+pub struct LinkMember {
+    pub alias: String,
+    pub occurrence: LinkObject,
+}
+
+/// Fixed semantic policy is identified by contract; adapters own flags and script dialect.
 pub struct LinkInvocation<'a> {
     pub executable: &'a Path,
     pub identity: &'a LinkerIdentity,
-    pub directory: &'a Path,
+    pub contract: LinkerContract,
+    pub workspace: &'a LinkWorkspace<'a>,
     pub entry: &'a [u8],
     pub roots: Vec<Vec<u8>>,
     pub forced: Vec<String>,
     pub inputs: Vec<LinkInput>,
-    pub script: String,
+    pub members: Vec<LinkMember>,
+    pub layout: ImageLayout,
+    pub definitions: Vec<(String, u32)>,
+}
+
+/// Application-owned capacity; Linux adapters cannot allocate unaccounted outputs.
+pub struct LinkWorkspace<'a> {
+    directory: &'a Path,
+    disk: &'a TemporaryBudget,
+    elf_limit: u64,
+}
+impl LinkWorkspace<'_> {
+    pub(crate) fn for_query<'a>(
+        directory: &'a Path,
+        disk: &'a TemporaryBudget,
+        memory: &WorkingMemory,
+    ) -> LinkWorkspace<'a> {
+        let capacity = memory.observation();
+        LinkWorkspace {
+            directory,
+            disk,
+            elf_limit: capacity
+                .limit_bytes
+                .saturating_sub(capacity.reserved_bytes + LINK_METADATA_BYTES),
+        }
+    }
+    pub fn directory(&self) -> &Path {
+        self.directory
+    }
+    pub fn temporary(&self) -> Result<TemporaryFile> {
+        self.disk.temporary(self.directory)
+    }
+    pub fn external_elf(&self) -> Result<blobray_store::ExternalOutput> {
+        if self.elf_limit == 0 {
+            return Err(Error::new(
+                ErrorCode::ResourceLimited,
+                "no working capacity remains for ELF validation",
+            ));
+        }
+        self.disk
+            .external(&self.directory.join("image.elf"), self.elf_limit)
+    }
+    pub fn materialize(&self, name: &str, bytes: &[u8]) -> Result<TemporaryFile> {
+        if name.is_empty() || name.contains('/') || name == "." || name == ".." {
+            return Err(invalid("link workspace name must be a single component"));
+        }
+        let mut file = self.disk.create(&self.directory.join(name))?;
+        file.write_all(bytes).map_err(storage_io)?;
+        Ok(file)
+    }
+    /// Exercises the actual adapter, then independently validates RV32 output/evidence.
+    pub fn probe(
+        &self,
+        host: &dyn LinkerHost,
+        executable: &Path,
+        identity: &LinkerIdentity,
+        control: &mut dyn RunControl,
+    ) -> Result<()> {
+        probe::check(self, host, executable, identity, control)
+    }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LinkOutput {
@@ -38,9 +110,18 @@ pub trait LinkOutputSink {
         bytes: &[u8],
         control: &mut dyn RunControl,
     ) -> Result<()>;
+    fn observe(&mut self, observation: LinkObservation, control: &mut dyn RunControl)
+    -> Result<()>;
+    /// Takes ownership of a reaped, quota-accounted seekable output without copying.
+    fn elf_file(&mut self, file: TemporaryFile) -> Result<()>;
 }
 pub trait LinkerHost {
-    fn identify(&self, executable: &Path, control: &mut dyn RunControl) -> Result<LinkerIdentity>;
+    fn identify(
+        &self,
+        executable: &Path,
+        workspace: &LinkWorkspace<'_>,
+        control: &mut dyn RunControl,
+    ) -> Result<LinkerIdentity>;
     fn link(
         &self,
         request: &LinkInvocation<'_>,
@@ -50,7 +131,12 @@ pub trait LinkerHost {
 }
 pub(crate) struct NoLinker;
 impl LinkerHost for NoLinker {
-    fn identify(&self, _: &Path, _: &mut dyn RunControl) -> Result<LinkerIdentity> {
+    fn identify(
+        &self,
+        _: &Path,
+        _: &LinkWorkspace<'_>,
+        _: &mut dyn RunControl,
+    ) -> Result<LinkerIdentity> {
         Err(Error::new(
             ErrorCode::Unavailable,
             "linker capability was not supplied",
@@ -123,12 +209,7 @@ pub fn read_link_plan(reader: impl Read) -> Result<LinkPlanDescription> {
 }
 pub fn validate_link_plan(plan: &LinkPlanDescription) -> Result<()> {
     let recipe = &plan.recipe;
-    if recipe.schema != 1 || recipe.policy != 4 || recipe.linker.implementation != "lld-elf-22" {
-        return Err(Error::new(
-            ErrorCode::Incompatible,
-            "unsupported link recipe",
-        ));
-    }
+    recipe.validate_contract()?;
     validate_request(&LinkRequest {
         companions: recipe.companions.clone(),
         revision: Some(recipe.revision.clone()),
@@ -422,17 +503,19 @@ pub(crate) fn make_link_plan(
     request: &LinkRequest,
     executable: &Path,
     host: &dyn LinkerHost,
+    workspace: &LinkWorkspace<'_>,
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
 ) -> Result<LinkPlanDescription> {
     let _fixed = memory.reserve(LINK_METADATA_BYTES, control.position())?;
-    let tool = host.identify(executable, control)?;
+    let tool = host.identify(executable, workspace, control)?;
     let project = Project::open(project)?;
     let found = collect(&project, request, memory, control, |_, _, _, _| Ok(()))?;
     let recipe = LinkRecipe {
         companions: request.companions.clone(),
-        schema: 1,
-        policy: 4,
+        linker_contract: LinkerContract::ElfAnalysisLinkV1,
+        schema: 2,
+        policy: 5,
         project: found.project,
         revision: request.revision.clone().unwrap(),
         inputs: request.inputs.clone(),
@@ -482,10 +565,61 @@ struct Outputs {
     elf: TemporaryFile,
     map: TemporaryFile,
     extraction: TemporaryFile,
+    observations: TemporaryFile,
+    placements: TemporaryFile,
+    exit_observations: u32,
     stderr: Vec<u8>,
     truncated: bool,
 }
+impl Outputs {
+    fn new(workspace: &LinkWorkspace<'_>) -> Result<Self> {
+        Ok(Self {
+            exit_code: None,
+            signal: None,
+            elf: workspace.temporary()?,
+            map: workspace.temporary()?,
+            extraction: workspace.temporary()?,
+            observations: workspace.temporary()?,
+            placements: workspace.temporary()?,
+            exit_observations: 0,
+            stderr: Vec::new(),
+            truncated: false,
+        })
+    }
+}
 impl LinkOutputSink for Outputs {
+    fn elf_file(&mut self, file: TemporaryFile) -> Result<()> {
+        self.elf = file;
+        Ok(())
+    }
+    fn observe(
+        &mut self,
+        observation: LinkObservation,
+        control: &mut dyn RunControl,
+    ) -> Result<()> {
+        control.checkpoint(1)?;
+        let destination = match &observation {
+            LinkObservation::SectionPlacement { .. } => &mut self.placements,
+            LinkObservation::ArchiveExtraction { .. } => &mut self.observations,
+            LinkObservation::ToolExit { code, signal } => {
+                if *code != self.exit_code || *signal != self.signal || self.exit_observations != 0
+                {
+                    return Err(invalid("duplicate or inconsistent tool exit"));
+                }
+                self.exit_observations += 1;
+                return Ok(());
+            }
+        };
+        write_control_message(
+            &mut *destination,
+            &LinkObservationRecord {
+                schema: 1,
+                observation,
+            },
+        )?;
+        destination.write_all(b"\n").map_err(storage_io)
+    }
+
     fn exited(&mut self, code: Option<i32>, signal: Option<i32>) {
         self.exit_code = code;
         self.signal = signal;
@@ -513,12 +647,6 @@ impl LinkOutputSink for Outputs {
             }
         }
     }
-}
-fn script(layout: ImageLayout) -> String {
-    format!(
-        "MEMORY {{ CODE (rx) : ORIGIN = {:#x}, LENGTH = {:#x}\n DATA (rw) : ORIGIN = {:#x}, LENGTH = {:#x} }}\nPHDRS {{ code PT_LOAD FLAGS(5); data PT_LOAD FLAGS(6); }}\nSECTIONS {{ .text : {{ INPUT_SECTION_FLAGS (SHF_ALLOC & SHF_EXECINSTR) *(*) }} > CODE :code\n .rodata : {{ *(.rodata .rodata.* .srodata .srodata.*) }} > CODE :code\n .eh_frame : {{ *(.eh_frame) }} > CODE :code\n .data : {{ *(.data .data.* .sdata .sdata.*) }} > DATA :data\n PROVIDE(__global_pointer$ = ADDR(.data) + 0x800);\n .bss (NOLOAD) : {{ *(.bss .bss.* .sbss .sbss.*) *(COMMON) }} > DATA :data\n }}\n",
-        layout.code.start, layout.code.length, layout.data.start, layout.data.length
-    )
 }
 pub fn prepare_image_worker(
     stage: &Path,
@@ -571,7 +699,14 @@ fn prepare_image_inner(
 ) -> Result<blobray_store::PreparedImageReceipt> {
     let _fixed = memory.reserve(LINK_METADATA_BYTES, control.position())?;
     let executable = work.linker.to_path()?;
-    if host.identify(&executable, control)? != work.plan.recipe.linker {
+    let directory = stage.join("staging");
+    let capacity = memory.observation();
+    let workspace = LinkWorkspace {
+        directory: &directory,
+        disk,
+        elf_limit: capacity.limit_bytes - capacity.reserved_bytes,
+    };
+    if host.identify(&executable, &workspace, control)? != work.plan.recipe.linker {
         return Err(Error::new(
             ErrorCode::SourceChanged,
             "linker identity changed since planning",
@@ -581,7 +716,6 @@ fn prepare_image_inner(
     if project.id() != &work.plan.recipe.project {
         return Err(invalid("link plan belongs to another project"));
     }
-    let directory = stage.join("staging");
     control.phase(RunPhase::Materialize)?;
     let found = collect(
         &project,
@@ -631,35 +765,30 @@ fn prepare_image_inner(
     }
     let definitions =
         crate::companions::resolve(&project, &request_from(&work.plan), memory, control)?;
-    let mut layout_script = script(work.plan.recipe.layout);
-    for (name, address) in definitions {
-        use std::fmt::Write as _;
-        writeln!(&mut layout_script, "{name} = {address:#x};").unwrap();
-    }
-    let mut script_file = disk.create(&directory.join("layout.ld"))?;
-    script_file
-        .write_all(layout_script.as_bytes())
-        .map_err(storage_io)?;
-    script_file.sync_all().map_err(storage_io)?;
-    let mut outputs = Outputs {
-        exit_code: None,
-        signal: None,
-        elf: disk.temporary(&directory)?,
-        map: disk.temporary(&directory)?,
-        extraction: disk.temporary(&directory)?,
-        stderr: Vec::new(),
-        truncated: false,
-    };
+    let mut outputs = Outputs::new(&workspace)?;
     control.phase(RunPhase::Link)?;
     let invocation = LinkInvocation {
         executable: &executable,
         identity: &work.plan.recipe.linker,
-        directory: &directory,
+        workspace: &workspace,
+        contract: work.plan.recipe.linker_contract,
         entry: &found.roots[0].name,
         roots: found.roots.iter().skip(1).map(|r| r.name.clone()).collect(),
         forced,
         inputs,
-        script: "layout.ld".into(),
+        members: found
+            .members
+            .iter()
+            .map(|m| LinkMember {
+                alias: m.alias.clone(),
+                occurrence: LinkObject {
+                    input: m.input,
+                    object: m.object.clone(),
+                },
+            })
+            .collect(),
+        layout: work.plan.recipe.layout,
+        definitions,
     };
     let linked = host.link(&invocation, &mut outputs, control);
     *diagnostics = Some(LinkerDiagnostics {
@@ -684,7 +813,7 @@ fn prepare_image_inner(
         }
         return Err(error);
     }
-    let roots = map_roots(&mut outputs.map, &found, disk, &directory, control)?;
+    let roots = evidence::roots(&mut outputs, &found, &invocation, control)?;
     let provenance = roots.1;
     let roots = roots.0;
     let storage = Staging::with_temporary_budget(stage, disk.clone())?;
@@ -704,13 +833,14 @@ fn prepare_image_inner(
             stderr_tail: outputs.stderr,
             stderr_truncated: outputs.truncated,
         },
-        schema: 2,
+        schema: 3,
         synthetic: true,
         plan: work.plan.clone(),
         elf,
         map: storage.retain_temporary(outputs.map, control)?,
         extraction: storage.retain_temporary(outputs.extraction, control)?,
         provenance: storage.retain_temporary(provenance, control)?,
+        observations: storage.retain_temporary(outputs.observations, control)?,
         entry: roots[0].address,
         roots,
         segments: validated.segments,
@@ -726,150 +856,4 @@ fn prepare_image_inner(
     let mut file = disk.temporary(&directory)?;
     file.write_all(&encoded).map_err(storage_io)?;
     storage.image_receipt(file, control)
-}
-fn map_roots(
-    map: &mut TemporaryFile,
-    found: &Collected,
-    disk: &TemporaryBudget,
-    directory: &Path,
-    control: &mut dyn RunControl,
-) -> Result<(Vec<ResolvedRoot>, TemporaryFile)> {
-    use std::io::Seek;
-    map.rewind().map_err(storage_io)?;
-    let mut reader = BufReader::with_capacity(WORK_BLOCK, map);
-    let mut line = Vec::new();
-    let mut proof = disk.temporary(directory)?;
-    let mut addresses = vec![None; found.roots.len()];
-    loop {
-        line.clear();
-        loop {
-            control.checkpoint(1)?;
-            let available = reader.fill_buf().map_err(storage_io)?;
-            if available.is_empty() {
-                break;
-            }
-            let count = available
-                .iter()
-                .position(|b| *b == b'\n')
-                .map_or(available.len(), |i| i + 1)
-                .min(WORK_BLOCK);
-            if line.len() + count > 65536 {
-                return Err(Error::new(
-                    ErrorCode::ResourceLimited,
-                    "link map record exceeds 64 KiB",
-                ));
-            }
-            let end = available[count - 1] == b'\n';
-            line.extend_from_slice(&available[..count]);
-            reader.consume(count);
-            if end {
-                break;
-            }
-        }
-        if line.is_empty() {
-            break;
-        }
-        control.bytes(line.len())?;
-        // LLD 22 header ends with one space, followed by exactly eight spaces
-        // for input sections. Symbol rows use sixteen and must never be evidence.
-        let mut cursor = 0;
-        for _ in 0..4 {
-            while cursor < line.len() && line[cursor].is_ascii_whitespace() {
-                cursor += 1;
-            }
-            while cursor < line.len() && !line[cursor].is_ascii_whitespace() {
-                cursor += 1;
-            }
-        }
-        let padding = cursor;
-        while cursor < line.len() && line[cursor] == b' ' {
-            cursor += 1;
-        }
-        if cursor - padding != 9 {
-            continue;
-        }
-        let fields: Vec<_> = line
-            .split(|b| b.is_ascii_whitespace())
-            .filter(|s| !s.is_empty())
-            .take(5)
-            .collect();
-        if fields.len() < 5 {
-            continue;
-        }
-        let Some(split) = fields[4].windows(2).position(|b| b == b":(") else {
-            continue;
-        };
-        let alias = &fields[4][..split];
-        let Some(member) = found.members.iter().find(|m| m.alias.as_bytes() == alias) else {
-            continue;
-        };
-        let prefix = line
-            .windows(fields[4].len())
-            .position(|b| b == fields[4])
-            .unwrap()
-            + split
-            + 2;
-        let tail = &line[prefix..];
-        let Some(end) = tail.iter().rposition(|b| *b == b')') else {
-            return Err(Error::new(
-                ErrorCode::LinkBlocked,
-                "unrecognized linker map section record",
-            ));
-        };
-        let section = &tail[..end];
-        let hex = |bytes: &[u8]| {
-            std::str::from_utf8(bytes)
-                .ok()
-                .and_then(|s| u64::from_str_radix(s, 16).ok())
-                .ok_or_else(|| invalid("invalid linker map address"))
-        };
-        let address = hex(fields[0])?;
-        let size = hex(fields[2])?;
-        let mut exact = false;
-        for (index, root) in found.roots.iter().enumerate() {
-            if root.selection.input == member.input
-                && root.selection.symbol.object == member.object
-                && root.section == section
-            {
-                if root.section_size != size || addresses[index].is_some() {
-                    return Err(Error::new(
-                        ErrorCode::LinkBlocked,
-                        "root section placement is transformed or ambiguous",
-                    ));
-                }
-                addresses[index] = Some(
-                    address
-                        .checked_add(root.offset)
-                        .ok_or_else(|| invalid("root address overflow"))?,
-                );
-                exact = true;
-            }
-        }
-        let mapping = ImageMapping {
-            input: member.input,
-            object: member.object.clone(),
-            payload: member.payload.clone().unwrap(),
-            section: section.into(),
-            address,
-            size,
-            exact,
-        };
-        write_control_message(&mut proof, &mapping)?;
-        proof.write_all(b"\n").map_err(storage_io)?;
-    }
-    let mut result = Vec::new();
-    for (root, address) in found.roots.iter().zip(addresses) {
-        result.push(ResolvedRoot {
-            selection: root.selection.clone(),
-            name: root.name.clone(),
-            size: root.size,
-            address: address.ok_or_else(|| {
-                Error::new(
-                    ErrorCode::LinkBlocked,
-                    "no exact linker-map provenance for a requested root",
-                )
-            })?,
-        });
-    }
-    Ok((result, proof))
 }

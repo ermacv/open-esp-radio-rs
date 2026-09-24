@@ -211,11 +211,28 @@ fn fixture(thin: bool, dependency: bool) -> Fixture {
 }
 #[test]
 fn real_lld_publishes_closed_image_and_reopens_after_source_deletion() {
+    closed_image(&linker());
+}
+#[test]
+fn real_gnu_publishes_closed_image_and_reopens_after_source_deletion() {
+    closed_image(&gnu_linker());
+}
+fn gnu_linker() -> PathBuf {
+    std::env::var_os("BLOBRAY_TEST_GNU_LD")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../../target/blobray-tools/gnu/bin/riscv32-unknown-elf-ld"
+            ))
+        })
+}
+fn closed_image(tool: &Path) {
     let f = fixture(true, true);
     let _unused = support::elf();
     let plan = f
         .app
-        .link_plan(&f.project, f.request.clone(), &linker(), budget())
+        .link_plan(&f.project, f.request.clone(), tool, budget())
         .unwrap();
     assert!(
         plan.description().ready(),
@@ -230,7 +247,7 @@ fn real_lld_publishes_closed_image_and_reopens_after_source_deletion() {
     }
     let run = f
         .app
-        .start_prepare_image(&f.project, &description, &linker(), budget())
+        .start_prepare_image(&f.project, &description, tool, budget())
         .unwrap()
         .wait();
     assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
@@ -260,10 +277,18 @@ fn real_lld_publishes_closed_image_and_reopens_after_source_deletion() {
     assert_eq!(manifest.entry, 0x10000000);
     assert_eq!(manifest.plan, description);
     assert_eq!(manifest.roots[0].selection, f.request.entry);
+    let observations = fs::read_to_string(export.join("observations.jsonl")).unwrap();
     assert!(
-        String::from_utf8(fs::read(export.join("extraction.tsv")).unwrap())
-            .unwrap()
-            .contains("i1-m0.o")
+        observations
+            .lines()
+            .map(|l| serde_json::from_str::<LinkObservationRecord>(l).unwrap())
+            .any(|r| matches!(
+                r.observation,
+                LinkObservation::ArchiveExtraction {
+                    object: LinkObject { input: 1, .. },
+                    ..
+                }
+            ))
     );
     assert!(matches!(
         f.app
@@ -278,10 +303,54 @@ fn real_lld_publishes_closed_image_and_reopens_after_source_deletion() {
     ));
     let second = f
         .app
-        .start_prepare_image(&f.project, &description, &linker(), budget())
+        .start_prepare_image(&f.project, &description, tool, budget())
         .unwrap()
         .wait();
     assert_eq!(second.image, Some(id.clone()), "{:?}", second.error);
+    let backup = f.dir.path().join("image.blobray");
+    f.app
+        .query(&f.project, app::ReadQuery::Backup, budget())
+        .unwrap()
+        .export_backup(&backup, &|| false)
+        .unwrap();
+    let restored = f.dir.path().join("restored");
+    f.app
+        .query(
+            &restored,
+            app::ReadQuery::Restore {
+                bundle: OriginPath::from_path(&backup),
+            },
+            budget(),
+        )
+        .unwrap()
+        .publish_restore(&restored, &|| false)
+        .unwrap();
+    let restored_export = f.dir.path().join("restored-export");
+    f.app
+        .query(
+            &restored,
+            app::ReadQuery::Image {
+                id: id.clone(),
+                export: true,
+            },
+            budget(),
+        )
+        .unwrap()
+        .export_image(&restored_export, &|| false)
+        .unwrap();
+    for name in [
+        "manifest.json",
+        "image.elf",
+        "link.map",
+        "extraction.raw",
+        "provenance.jsonl",
+        "observations.jsonl",
+    ] {
+        assert_eq!(
+            fs::read(export.join(name)).unwrap(),
+            fs::read(restored_export.join(name)).unwrap()
+        );
+    }
     drop(output);
     drop(plan);
     f.app.shutdown();
@@ -333,6 +402,10 @@ fn unresolved_link_preserves_revision_and_does_not_publish() {
 }
 #[test]
 fn cli_plan_prepare_inspect_and_export_use_the_same_application_contract() {
+    cli_image(&linker());
+    cli_image(&gnu_linker());
+}
+fn cli_image(tool: &Path) {
     let f = fixture(false, true);
     let request = f.dir.path().join("request.json");
     let plan = f.dir.path().join("plan.json");
@@ -346,7 +419,7 @@ fn cli_plan_prepare_inspect_and_export_use_the_same_application_contract() {
         .arg("--output")
         .arg(&plan)
         .arg("--linker")
-        .arg(linker())
+        .arg(tool)
         .args(["--limit-mode", "watchdog"]);
     let output = command.output().unwrap();
     assert!(
@@ -360,7 +433,7 @@ fn cli_plan_prepare_inspect_and_export_use_the_same_application_contract() {
         .arg("--plan")
         .arg(&plan)
         .arg("--linker")
-        .arg(linker())
+        .arg(tool)
         .args(["--limit-mode", "watchdog", "--format", "json"])
         .output()
         .unwrap();
@@ -585,7 +658,7 @@ fn test_linker(directory: &Path, body: &str) -> PathBuf {
     fs::write(
         &path,
         format!(
-            "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'LLD 22.1.8'; exit 0; fi\n{body}\n"
+            "#!/bin/sh\nif [ \"$1\" = --version ]; then exec '{}' --version; fi\ncase \"$PWD\" in */probe) exec '{}' \"$@\";; esac\n{body}\n", linker().display(), linker().display()
         ),
     )
     .unwrap();
@@ -919,5 +992,283 @@ fn linker_stderr_flood_is_bounded_and_its_exit_is_distinct_from_worker_exit() {
     assert_eq!(tool.stderr_tail.len(), 8192);
     assert!(tool.stderr_truncated);
     assert_eq!(diagnostics.exit.unwrap().code, Some(0));
+    assert_unpublished(&f);
+}
+
+fn gnu_test_linker(directory: &Path, body: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let path = directory.join("gnu-test-linker");
+    let real = gnu_linker()
+        .canonicalize()
+        .expect("GNU RV32 linker is mandatory");
+    fs::write(&path, format!("#!/bin/sh\nif [ \"$1\" = --version ]; then exec '{}' --version; fi\ncase \"$PWD\" in */probe) exec '{}' \"$@\";; esac\n{body}\n", real.display(), real.display())).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+    path
+}
+#[test]
+fn gnu_output_hard_limit_crash_and_timeout_never_publish() {
+    for (body, expected) in [
+        (
+            "exec /usr/bin/head -c 67108864 /dev/zero > image.elf",
+            RunState::ResourceLimited,
+        ),
+        ("kill -SEGV $$", RunState::Failed),
+        ("exec /bin/sleep 30", RunState::TimedOut),
+    ] {
+        let f = fixture(false, true);
+        let tool = gnu_test_linker(f.dir.path(), body);
+        let plan = f
+            .app
+            .link_plan(&f.project, f.request.clone(), &tool, budget())
+            .unwrap();
+        let mut limits = budget();
+        if expected == RunState::TimedOut {
+            limits.timeout_ms = 500;
+        }
+        let run = f
+            .app
+            .start_prepare_image(&f.project, plan.description(), &tool, limits)
+            .unwrap()
+            .wait();
+        assert_eq!(run.state, expected, "{:?}", run.error);
+        assert_unpublished(&f);
+        drop(plan);
+        assert_eq!(f.app.temporary_storage_status().reserved_bytes, 0);
+    }
+}
+
+#[test]
+fn gnu_elf_reservation_fails_before_launch_and_cancel_reaps_writer() {
+    let f = fixture(false, true);
+    let marker = f.dir.path().join("launched");
+    let tool = gnu_test_linker(
+        f.dir.path(),
+        &format!("echo yes > '{}'; exec /bin/sleep 30", marker.display()),
+    );
+    let plan = f
+        .app
+        .link_plan(&f.project, f.request.clone(), &tool, budget())
+        .unwrap();
+    let limited = app::Application::with_temporary_storage(
+        Arc::new(LinuxHost::new(env!("CARGO_BIN_EXE_blobray").into(), None)),
+        app::ApplicationLimits::default(),
+        app::TemporaryStoragePolicy {
+            root: Some(f.dir.path().join("limited")),
+            operation_bytes: 2 * TEMPORARY_CONTROL_BYTES,
+            total_bytes: 4 * TEMPORARY_CONTROL_BYTES,
+        },
+    )
+    .unwrap();
+    let run = limited
+        .start_prepare_image(&f.project, plan.description(), &tool, budget())
+        .unwrap()
+        .wait();
+    assert_eq!(run.state, RunState::ResourceLimited, "{:?}", run.error);
+    assert!(run.error.unwrap().storage.is_some());
+    assert!(!marker.exists());
+    assert_eq!(limited.temporary_storage_status().reserved_bytes, 0);
+    let job = f
+        .app
+        .start_prepare_image(&f.project, plan.description(), &tool, budget())
+        .unwrap();
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !marker.exists() {
+        assert!(std::time::Instant::now() < until);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(job.cancel());
+    assert_eq!(job.wait().state, RunState::Cancelled);
+    drop(plan);
+    assert_eq!(f.app.temporary_storage_status().reserved_bytes, 0);
+    assert_unpublished(&f);
+}
+fn dependency_object(name: &[u8], dependency: Option<&[u8]>) -> Vec<u8> {
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let mut section_name = b".text.".to_vec();
+    section_name.extend_from_slice(name);
+    let section = obj.add_section(Vec::new(), section_name, SectionKind::Text);
+    obj.append_section_data(section, &[0x67, 0x80, 0, 0, 0, 0, 0, 0], 4);
+    obj.add_symbol(symbol(
+        name,
+        SymbolSection::Section(section),
+        8,
+        SymbolKind::Text,
+    ));
+    if let Some(dependency) = dependency {
+        let target = obj.add_symbol(symbol(
+            dependency,
+            SymbolSection::Undefined,
+            0,
+            SymbolKind::Unknown,
+        ));
+        obj.add_relocation(
+            section,
+            Relocation {
+                offset: 4,
+                symbol: target,
+                addend: 0,
+                flags: RelocationFlags::Elf {
+                    r_type: object::elf::R_RISCV_32,
+                },
+            },
+        )
+        .unwrap();
+    }
+    obj.write().unwrap()
+}
+#[test]
+fn archive_order_is_preserved_and_linker_identities_are_distinct() {
+    let f = custom_fixture(
+        vec![
+            (
+                "target.a",
+                support::archive(&[(b"target.o", &dependency_object(b"target", None))], false),
+            ),
+            (
+                "bridge.a",
+                support::archive(
+                    &[(b"bridge.o", &dependency_object(b"bridge", Some(b"target")))],
+                    false,
+                ),
+            ),
+            ("entry.o", dependency_object(b"entry", Some(b"bridge"))),
+        ],
+        2,
+        0,
+    );
+    let lld = std::env::var_os("BLOBRAY_REFERENCE_LLD")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| "/usr/bin/ld.lld".into());
+    let a = f
+        .app
+        .link_plan(&f.project, f.request.clone(), &lld, budget())
+        .unwrap();
+    let b = f
+        .app
+        .link_plan(&f.project, f.request.clone(), &gnu_linker(), budget())
+        .unwrap();
+    assert_ne!(a.description().id, b.description().id);
+    let lld_run = f
+        .app
+        .start_prepare_image(&f.project, a.description(), &lld, budget())
+        .unwrap()
+        .wait();
+    assert_eq!(lld_run.state, RunState::Completed, "{:?}", lld_run.error);
+    let gnu_run = f
+        .app
+        .start_prepare_image(&f.project, b.description(), &gnu_linker(), budget())
+        .unwrap()
+        .wait();
+    assert_eq!(gnu_run.state, RunState::Failed);
+    assert_eq!(gnu_run.error.unwrap().code, ErrorCode::LinkFailed);
+}
+
+#[test]
+fn capabilities_not_version_numbers_decide_adapter_support() {
+    use std::os::unix::fs::PermissionsExt;
+    for (version, real) in [
+        ("LLD 99.7", PathBuf::from("/usr/bin/ld.lld")),
+        ("GNU ld (future) 99.7", gnu_linker().canonicalize().unwrap()),
+    ] {
+        let f = fixture(false, true);
+        let path = f.dir.path().join("future-linker");
+        fs::write(&path, format!("#!/bin/sh\nif [ \"$1\" = --version ]; then echo '{version}'; exit 0; fi\nexec '{}' \"$@\"\n", real.display())).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        let plan = f
+            .app
+            .link_plan(&f.project, f.request.clone(), &path, budget())
+            .unwrap();
+        assert_eq!(plan.description().recipe.linker.version, version);
+        let mut unsupported = plan.description().clone();
+        unsupported.recipe.schema = 1;
+        assert_eq!(
+            app::validate_link_plan(&unsupported).unwrap_err().code,
+            ErrorCode::Incompatible
+        );
+        drop(plan);
+        fs::write(
+            &path,
+            format!("#!/bin/sh\nif [ \"$1\" = --version ]; then echo '{version}'; fi\nexit 0\n"),
+        )
+        .unwrap();
+        let err = f
+            .app
+            .link_plan(&f.project, f.request.clone(), &path, budget())
+            .err()
+            .unwrap();
+        assert_eq!(err.code, ErrorCode::Incompatible);
+        assert_unpublished(&f);
+    }
+}
+#[test]
+fn gnu_code_only_image_retains_empty_segment_without_mapping_memory() {
+    let f = custom_fixture(vec![("entry.o", dependency_object(b"entry", None))], 0, 0);
+    let tool = gnu_linker();
+    let plan = f
+        .app
+        .link_plan(&f.project, f.request.clone(), &tool, budget())
+        .unwrap();
+    let run = f
+        .app
+        .start_prepare_image(&f.project, plan.description(), &tool, budget())
+        .unwrap()
+        .wait();
+    assert_eq!(run.state, RunState::Completed, "{:?}", run.error);
+    let out = f
+        .app
+        .query(
+            &f.project,
+            app::ReadQuery::Image {
+                id: run.image.unwrap(),
+                export: false,
+            },
+            budget(),
+        )
+        .unwrap();
+    let app::QuerySummary::Image { manifest, .. } = out.summary() else {
+        panic!()
+    };
+    assert!(
+        manifest
+            .segments
+            .iter()
+            .any(|s| s.memory_size == 0 && s.file_size == 0)
+    );
+}
+
+#[test]
+fn oversized_map_record_is_bounded_before_publication() {
+    let f = fixture(false, true);
+    let tool = test_linker(
+        f.dir.path(),
+        "for arg in \"$@\"; do case \"$arg\" in --Map=*) map=${arg#--Map=};; esac; done\nif [ -n \"$map\" ]; then exec /usr/bin/head -c 70000 /dev/zero > \"$map\"; else exec /usr/bin/head -c 70000 /dev/zero; fi",
+    );
+    let plan = f
+        .app
+        .link_plan(&f.project, f.request.clone(), &tool, budget())
+        .unwrap();
+    let run = f
+        .app
+        .start_prepare_image(&f.project, plan.description(), &tool, budget())
+        .unwrap()
+        .wait();
+    assert_eq!(run.state, RunState::ResourceLimited, "{:?}", run.error);
+    assert_unpublished(&f);
+}
+#[test]
+fn nondeterministic_capability_evidence_is_rejected() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = fixture(false, true);
+    let real = PathBuf::from("/usr/bin/ld.lld");
+    let tool = f.dir.path().join("varying-linker");
+    fs::write(&tool, format!("#!/bin/sh\nif [ \"$1\" = --version ]; then exec '{}' --version; fi\necho \"$PWD\" >&2\nexec '{}' \"$@\"\n", real.display(), real.display())).unwrap();
+    fs::set_permissions(&tool, fs::Permissions::from_mode(0o700)).unwrap();
+    let err = f
+        .app
+        .link_plan(&f.project, f.request.clone(), &tool, budget())
+        .err()
+        .unwrap();
+    assert_eq!(err.code, ErrorCode::Incompatible);
+    assert!(err.message.contains("deterministic"));
     assert_unpublished(&f);
 }

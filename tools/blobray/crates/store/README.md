@@ -99,8 +99,13 @@ defines the control reserve, logical-byte boundary and retained data exclusions.
 `publish_image` commits image metadata and completed run together without changing
 current revision. `image` verifies the saved manifest, source revision identity
 and output digests; `doctor_stream` checks images as well as source revisions.
+External ELF output uses an exclusive `ExternalOutput` lease: reserve maximum
+extent before exposing the path, enforce it in the child, reap before finish/drop,
+and reconcile actual size on transfer. Failed unlink keeps the reservation.
+
 Store does not repeat ELF interpretation or invoke a linker. `ImageLease` retains
-open payload handles; all committed source revisions remain retained. See
+normalized observations alongside raw outputs and provenance in open payload
+handles; all committed source revisions remain retained. See
 [image ownership](../../next/README.md#ownership-limits-and-persistence).
 
 `functions` owns verified `FunctionLease`, `PreparedFunctionReceipt` and opaque

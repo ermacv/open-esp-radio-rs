@@ -2642,7 +2642,7 @@ fn internal(args: &[OsString]) -> Result<()> {
                 &stage,
                 &work,
                 &mut context,
-                &blobray_next_host::linux::Lld22,
+                &blobray_next_host::linux::ElfLinker,
                 Some(&blobray_backend_riscv::RiscvDecoder),
             )
             .map(|_| None),
@@ -2651,7 +2651,7 @@ fn internal(args: &[OsString]) -> Result<()> {
             (_, _, Some(work), _, _, _) => app::prepare_image_worker(
                 &stage,
                 &work,
-                &blobray_next_host::linux::Lld22,
+                &blobray_next_host::linux::ElfLinker,
                 &mut context,
                 &mut linker_diagnostics,
             )

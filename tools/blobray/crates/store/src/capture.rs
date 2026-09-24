@@ -167,7 +167,7 @@ impl Writer {
     }
 }
 
-fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
+pub(crate) fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
     if a.len() != b.len() || a.modified().ok() != b.modified().ok() || a.is_file() != b.is_file() {
         return false;
     }

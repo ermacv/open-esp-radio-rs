@@ -173,7 +173,12 @@ Facts-only packs and executable models remain separate selections. Chip facts
 do not acquire investigation-specific applicability merely through composition.
 
 The image-preparation operation owns link planning. Its host adapter owns each
-external linker process under the application job supervisor. The ISA backend
+external linker process, CLI/script dialect and raw evidence parsers under the
+application job supervisor. `LinkerHost` accepts an ElfAnalysisLinkV1 semantic
+request and returns typed occurrence-qualified placement/extraction/exit records.
+LLD and GNU ld retain distinct identities and archive-selection semantics.
+GNU seekable output uses an application-admitted extent enforced by Linux
+RLIMIT_FSIZE; application independently validates roots and ELF before publication. The ISA backend
 consumes a prepared image; it does not discover tools through `PATH` or invoke
 `rustc` to choose a linker. All execute, replay and comparison operations use
 the same image-preparation contract.

@@ -100,6 +100,7 @@ pub struct LinkerIdentity {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LinkRecipe {
+    pub linker_contract: LinkerContract,
     pub companions: Vec<EntrySelection>,
     pub schema: u32,
     pub policy: u32,
@@ -160,6 +161,7 @@ pub struct ImageManifest {
     pub map: ArtifactId,
     pub extraction: ArtifactId,
     pub provenance: ArtifactId,
+    pub observations: ArtifactId,
     pub entry: u64,
     pub roots: Vec<ResolvedRoot>,
     pub segments: Vec<ImageSegment>,
@@ -192,4 +194,85 @@ pub struct LinkerDiagnostics {
 pub struct NamedCompanion {
     pub input: u64,
     pub name: String,
+}
+
+/// Semantic analysis profile; tool version is independently retained in identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LinkerContract {
+    #[serde(rename = "static-analysis-elf-link-v1")]
+    ElfAnalysisLinkV1,
+}
+
+/// Physical imported occurrence, including repeated bindings of identical bytes.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkObject {
+    pub input: u64,
+    pub object: ObjectId,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LinkEvidenceSource {
+    Map,
+    Extraction,
+}
+
+/// Byte interval in a retained raw output, before normalization.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkEvidenceSpan {
+    pub source: LinkEvidenceSource,
+    pub offset: u64,
+    pub length: u64,
+}
+
+/// Adapter observations are claims checked by application, not publication authority.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum LinkObservation {
+    SectionPlacement {
+        object: LinkObject,
+        section: Vec<u8>,
+        address: u64,
+        size: u64,
+        evidence: LinkEvidenceSpan,
+    },
+    ArchiveExtraction {
+        object: LinkObject,
+        cause: Option<Vec<u8>>,
+        referring: Option<LinkObject>,
+        evidence: LinkEvidenceSpan,
+    },
+    ToolExit {
+        code: Option<i32>,
+        signal: Option<i32>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkObservationRecord {
+    pub schema: u32,
+    pub observation: LinkObservation,
+}
+
+impl LinkRecipe {
+    /// Shared portable compatibility check; adapters own executable capabilities.
+    pub fn validate_contract(&self) -> Result<()> {
+        if self.schema != 2
+            || self.policy != 5
+            || self.linker_contract != LinkerContract::ElfAnalysisLinkV1
+        {
+            return Err(Error::new(
+                ErrorCode::Incompatible,
+                "unsupported link recipe",
+            ));
+        }
+        if self.linker.implementation.is_empty() || self.linker.version.is_empty() {
+            return Err(Error::new(ErrorCode::Integrity, "missing linker identity"));
+        }
+        Ok(())
+    }
 }

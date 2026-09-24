@@ -101,8 +101,12 @@ for accounting, defaults, observations and cleanup limits.
 
 `linking` owns the synthetic image policy and the `LinkerHost` port. `LinkPlan`
 retains a frozen description and captured manifest; image admission revalidates
-its project and revision. `start_prepare_image` uses the same durable supervisor,
-staging and commit boundary as import with a typed image receipt. Map evidence
+its project and revision. `LinkInvocation` passes layout, exact ordered members,
+roots and companion definitions to an identified ElfAnalysisLinkV1 adapter.
+`LinkWorkspace` lends quota-admitted files and a bounded capability probe;
+`LinkOutputSink` receives raw output, normalized observations and reaped seekable
+ELF ownership. Application never parses linker-specific map text. `start_prepare_image` uses the same durable supervisor,
+staging and commit boundary as import with a typed image receipt. Normalized placement and extraction evidence
 must prove the exact entry/root occurrences before publication. Saved image
 queries and exports use the ordinary read-query lifecycle. See
 [prepared images](../../next/README.md#synthetic-prepared-images) for the supported

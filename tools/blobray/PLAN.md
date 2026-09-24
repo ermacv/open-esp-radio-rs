@@ -56,6 +56,7 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
 | 08 | done | External-call returns/outputs/bounded allocation, delay events and standard constant/sequence/W1C/read-clear/self-clearing/FIFO/indexed-bank models. Every mechanism has positive/negative cases; no implicit response/fallback; model identity/applicability/participation is evidence; code and modeled boundaries stay distinct. |
 | 09 | done | Stateful FIFO services and interface tables: enqueue/dequeue/length, wake/output, table lifecycle, service-event completion. Full/empty/order/isolation and cross-phase state are tested; only selected reviewed bindings resolve calls; failed phases cannot imply workflow completion. |
 | 10 | done | Comparison relations: selected final RAM, ordered calls/reviewed argument pairs, RAM/branch timeline, ABI/layout projections and effect contracts. Explicit relation selects returns/memory/events; RAM-only and call-only differences are caught; invalid projections fail; all three verdicts and retained excluded observations are tested. |
+| 10.L linker capabilities | done | After completed 10.4, deliver ElfAnalysisLinkV1 through LLD and GNU ld adapters: capability probes, semantic requests, normalized placement/extraction/exit evidence with raw provenance, exact root validation, quota-admitted seekable GNU output, retained closure/query/export/restore, and distinct tool identities/archive semantics. Both real RV32 toolchains, parser/application/resource regressions, affected suites, strict Clippy, formatting, public/private docs, standalone and source-only checks are mandatory. Commit only after full acceptance; stage 11 remains pending. |
 | 11 | pending | Real PHY I2C workflow from authenticated capture and tables through linked execution/models and compiled-production comparison. Independent expectations, model boundaries, source removal and backup/restore are required; no model hides absent production/vendor code or grants hardware qualification. |
 | 12 | pending | Real PHY calibration/RF workflow, required intrinsics and reviewed summaries. Each declared calibration case has explicit conditions and expected outcome; coefficients/models/production changes alter dependency identity; reconstruction never impersonates captured execution. |
 | 13 | pending | Project verification: native roles/scopes/models/suites/policies, profile domains/coverage, production bindings/dispositions/audit, baselines/status/check/files/doctor and ranked next actions. One application lifecycle executes suites; auxiliary inputs do not inflate coverage; stale/unreviewed evidence cannot satisfy gates; no CLI-only orchestration. |
@@ -183,9 +184,9 @@ Aliases/old grammar are not portability requirements.
 ## Current execution position
 
 Stages 00–10 and both corrective checkpoints below are complete, including all
-four stage-10 comparison profiles and their combined acceptance. At the user's
-request, stop after pushing the stage-10.4 commit. Stage 11 remains pending until
-an explicit resume; all remaining obligations are preserved.
+four stage-10 comparison profiles and their combined acceptance. The authorized
+10.L linker-capability checkpoint is complete after 10.4. Stage 11 remains pending;
+this checkpoint does not resume the remaining completion pipeline.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -722,3 +723,20 @@ public/private documentation, standalone, authenticated PHY/ROM watchdog
 trace/restore and the full source-only checkpoint pass; the shipping host builds
 in the blobray profile. Stage 10 is complete. Pause at the user-requested boundary
 after committing and pushing; do not activate stage 11.
+
+
+### Checkpoint 10.L: external ELF linker capabilities
+
+LLD and GNU ld implement ElfAnalysisLinkV1 with bounded deterministic RV32
+capability probes, independent dialect parsers and occurrence-qualified retained
+observations. Application validates roots/extraction and ELF; GNU seekable output
+uses a pre-admitted, hard-limited lease with reaped ownership and inode validation.
+Raw evidence, normalized records, CLI/API queries and source-free backup/restore
+are closed. Archive-order differences remain explicit tool behavior.
+
+Both 46-case image matrices, parser/application/storage regressions, affected
+package and Next suites, strict Clippy, formatting, public/private docs, standalone,
+source-only and the shipping blobray build pass with LLD 22.1.8 and RV32 GNU ld
+2.47. Recipe schema 2/policy 5, image schema 3, observation schema 1, database 34
+and journal 35 identify this contract; older storage is rejected without migration.
+GNU sources/builds and acceptance outputs remain ignored. Stage 11 stays pending.

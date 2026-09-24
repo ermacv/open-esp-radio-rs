@@ -317,8 +317,10 @@ Run, replay and comparison share this operation. Companion-provided data
 definitions participate before relocation validation, just as call definitions do.
 
 The implemented [synthetic image profile](../../next/README.md#synthetic-prepared-images)
-uses explicit LLD 22 and captured relocatable inputs. Existing firmware/ROM ELF
-bindings and execution sessions are not implemented.
+uses an explicitly identified LLD or GNU ld capability and captured relocatable
+inputs. Application validates normalized observations against captured occurrence
+identities; Linux adapters alone interpret linker-specific text. Existing linked
+firmware/ROM bindings are analyzed directly rather than relinked.
 
 An existing linked firmware image preserves its actual placement. A synthetic
 analysis link is labeled as such; its addresses and member choices do not prove
@@ -731,7 +733,7 @@ function symbol. Accepted MMIO descriptions label observations without providing
 load values or hardware qualification. Root/image applicability is validated on
 proposal and review; a mapping never silently transfers an assertion.
 
-Prepared-image policy 4 records exact captured ROM function definitions and places
+Prepared-image policy 5 records exact captured ROM function definitions and places
 executable sections by ELF flags. No compatibility adapter, model stub or implicit
 companion lookup participates. The original ELF/code view ends before composition;
 working buffers and summary reservations end after their staged delivery. The

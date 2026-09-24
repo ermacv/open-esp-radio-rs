@@ -54,7 +54,9 @@ files and accounting. Optional progress/error fields preserve unknown historical
 observations. See [temporary storage](../../next/README.md#temporary-storage-and-crash-cleanup).
 
 [Image values](src/image.rs) own exact root selections, bounded RV32 regions,
-linker identity, versioned synthetic recipes and retained manifest/provenance
+linker identity, the ElfAnalysisLinkV1 contract, occurrence-qualified
+placement/extraction/exit observations with raw evidence spans, versioned
+synthetic recipes and retained manifest/provenance
 values. `LinkPlanId` and `PreparedImageId` are distinct from inspection-plan,
 revision and run IDs. Recipe identity excludes local emergency budgets; image
 lifecycle and publication belong to application/store.

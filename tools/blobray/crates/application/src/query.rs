@@ -272,8 +272,9 @@ impl QueryOutput {
             for name in [
                 "image.elf",
                 "link.map",
-                "extraction.tsv",
+                "extraction.raw",
                 "provenance.jsonl",
+                "observations.jsonl",
                 "manifest.json",
             ] {
                 bundle.push((name, File::open(stage.join(name)).map_err(io)?));
@@ -488,7 +489,7 @@ impl QueryOutput {
     /// Export an already captured image bundle. The destination must not exist.
     /// Delivery is single-use; a failed export may leave an explicitly incomplete directory.
     pub fn export_image(&mut self, destination: &Path, cancelled: &dyn Fn() -> bool) -> Result<()> {
-        if self.bundle.len() != 5 {
+        if self.bundle.len() != 6 {
             return Err(Error::new(
                 ErrorCode::InvalidRequest,
                 "query has no captured image bundle",

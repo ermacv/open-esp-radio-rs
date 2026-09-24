@@ -522,9 +522,10 @@ fn image_and_completed_run_publish_atomically_without_advancing_current() {
         },
     };
     let recipe = LinkRecipe {
+        linker_contract: LinkerContract::ElfAnalysisLinkV1,
         companions: Vec::new(),
-        schema: 1,
-        policy: 4,
+        schema: 2,
+        policy: 5,
         project: project.id().clone(),
         revision: snapshot.revision_id.clone(),
         inputs: vec![0],
@@ -541,7 +542,7 @@ fn image_and_completed_run_publish_atomically_without_advancing_current() {
             },
         },
         linker: LinkerIdentity {
-            implementation: "lld-elf-22".into(),
+            implementation: "lld-elf".into(),
             version: "LLD 22.1.8".into(),
             executable: payload.clone(),
         },
@@ -568,13 +569,14 @@ fn image_and_completed_run_publish_atomically_without_advancing_current() {
         .unwrap();
     let manifest = ImageManifest {
         abi: RiscvAbi::Ilp32,
-        schema: 2,
+        schema: 3,
         synthetic: true,
         plan,
         elf: payload.clone(),
         map: payload.clone(),
         extraction: payload.clone(),
         provenance: payload.clone(),
+        observations: payload.clone(),
         entry: 0x1000,
         roots: vec![ResolvedRoot {
             selection: selected,

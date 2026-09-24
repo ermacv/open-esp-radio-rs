@@ -625,6 +625,13 @@ impl app::QuerySink for Records<'_> {
     fn image(&mut self, id: &PreparedImageId, c: &mut dyn RunControl) -> Result<()> {
         self.record("image", id, c)
     }
+    fn link_observation(
+        &mut self,
+        r: &LinkObservationRecord,
+        c: &mut dyn RunControl,
+    ) -> Result<()> {
+        self.record("link-observation", r, c)
+    }
     fn image_mapping(&mut self, mapping: &ImageMapping, c: &mut dyn RunControl) -> Result<()> {
         self.record("mapping", mapping, c)
     }

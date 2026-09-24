@@ -10,6 +10,7 @@ pub struct ImageLease {
     pub map: FileLease,
     pub extraction: FileLease,
     pub provenance: FileLease,
+    pub observations: FileLease,
 }
 pub struct RetainedImage {
     run: RunId,
@@ -22,18 +23,10 @@ fn manifest(source: &dyn ByteSource, control: &mut dyn RunControl) -> Result<Ima
     let mut bytes = vec![0; source.len() as usize];
     source.read_at(0, &mut bytes, control)?;
     let manifest: ImageManifest = serde_json::from_slice(&bytes).map_err(jobs::json)?;
-    if manifest.schema != 2 || !manifest.synthetic || !manifest.plan.ready() {
+    if manifest.schema != 3 || !manifest.synthetic || !manifest.plan.ready() {
         return Err(integrity("invalid prepared image manifest"));
     }
-    if manifest.plan.recipe.schema != 1
-        || manifest.plan.recipe.policy != 4
-        || manifest.plan.recipe.linker.implementation != "lld-elf-22"
-    {
-        return Err(Error::new(
-            ErrorCode::Incompatible,
-            "unsupported image recipe",
-        ));
-    }
+    manifest.plan.recipe.validate_contract()?;
     if manifest.linker_diagnostics.exit_code != Some(0)
         || manifest.linker_diagnostics.signal.is_some()
         || manifest.linker_diagnostics.stderr_tail.len() > 8192
@@ -133,6 +126,7 @@ impl Project {
             map: self.open_payload(&manifest.map, control)?,
             extraction: self.open_payload(&manifest.extraction, control)?,
             provenance: self.open_payload(&manifest.provenance, control)?,
+            observations: self.open_payload(&manifest.observations, control)?,
             manifest,
             manifest_bytes,
         })
@@ -207,6 +201,7 @@ impl Writer {
             &image.map,
             &image.extraction,
             &image.provenance,
+            &image.observations,
             &id,
         ] {
             self.promote(&stage, payload, None, control)?;

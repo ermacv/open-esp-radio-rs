@@ -1,7 +1,7 @@
 //! Linux containment adapter. Each guard is a separate subreaper process; no
 //! global process attributes or signal handlers are installed in an API caller.
 mod linker;
-pub use linker::Lld22;
+pub use linker::ElfLinker;
 mod guard;
 mod procfs;
 mod progress;

@@ -171,6 +171,24 @@ fn comparison_replay_and_preservation_use_captured_bytes() {
     let id = run.execution.unwrap();
     let result = f.read(&id);
     assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
+    let typed: blobray_next_host::wire::RecordDocument<ExecutionEvidence> =
+        serde_json::from_value(result).unwrap();
+    assert_eq!(typed.schema, blobray_next_host::wire::RECORDS_SCHEMA);
+    assert!(typed.records.iter().all(|r| r.kind == "execution"));
+    assert!(typed.records.iter().any(|r| matches!(
+        r.value,
+        ExecutionEvidence::Comparison {
+            result: CaseComparison {
+                verdict: ComparisonVerdict::Match,
+                ..
+            },
+            ..
+        }
+    )));
+    let app::QuerySummary::Execution { manifest, .. } = typed.summary else {
+        panic!("execution query returns an execution summary")
+    };
+    assert_eq!(manifest.verdict, Some(ComparisonVerdict::Match));
     let replay = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["--format", "json", "replay", "--project"])
         .arg(&f.project)
@@ -182,8 +200,8 @@ fn comparison_replay_and_preservation_use_captured_bytes() {
         "{}",
         String::from_utf8_lossy(&replay.stderr)
     );
-    let r: serde_json::Value = serde_json::from_slice(&replay.stdout).unwrap();
-    assert_eq!(r["run"]["execution"], id.as_str());
+    let r: blobray_next_host::wire::RunDocument = serde_json::from_slice(&replay.stdout).unwrap();
+    assert_eq!(r.run.execution.as_ref(), Some(&id));
     let mut different = request;
     different.cases[0].replacement.as_mut().unwrap().arguments[8] = Some(9);
     let run = f.run(different, budget());

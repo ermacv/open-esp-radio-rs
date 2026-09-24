@@ -14,6 +14,7 @@ pub mod hil;
 pub mod hostapd;
 pub mod paths;
 pub mod process;
+pub mod vendor_scenario;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 

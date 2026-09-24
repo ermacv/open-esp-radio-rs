@@ -134,6 +134,12 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
+Typed clients decode `--format json` output with the host library's
+`blobray_next_host::wire` module. It covers record documents, run documents and
+the inventory document. The renderer emits the same types. Their payloads are
+the application and domain records, so clients never copy a request or evidence
+schema. The ESP32-S31 vendor scenarios are such a client.
+
 ### Current formats
 
 Run records use journal schema 37 for every durable and read operation. Storage metadata

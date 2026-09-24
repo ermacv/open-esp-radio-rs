@@ -1009,3 +1009,26 @@ language. All stage-12 obligations remain intact.
   watchdog limits. All Python files are removed and owner docs updated.
   Formatting, strict Clippy, public/private docs, architecture, standalone and
   source-only checks pass. Partial migration does not close 12.R.
+
+The JSON documents printed by the CLI are host wire formats assembled by hand
+in `next`. A typed client needs one owner for them. Checkpoint 12.R therefore
+has three acceptance units, all required:
+
+| Unit | Status | Acceptance |
+| --- | --- | --- |
+| 12.R.1 | done | Host-owned wire types for record, run and inventory documents, used by the renderer and checked against CLI output. Scenario package, process runner, capture/import, probe catalog through `oer-probe-codegen` types, ABI lowering and request builders over domain types; `cargo test` covers the harness and gain oracles. `xtask` command. Gain arithmetic/publication and gain state/RF-test run in Rust with the Python case counts, verdicts, negatives, unmet-obligation exit and preservation; `phy_gain*.py` and their tests are removed. |
+| 12.R.2 | active | I2C command memory and transport, harness call edges, calibration leaves/prefix and RFPLL runners in Rust with unchanged cases and outcomes; the corresponding Python is removed. |
+| 12.R.3 | pending | PHY research scenario (analysis, interfaces, IR/trace, navigation, flow, registers, memory slices, data/knowledge review and preservation) in Rust; `harness.py` and every remaining Python file are removed; owner docs, Blobray references and full checks close 12.R. |
+
+12.R.1 acceptance: `blobray_next_host::wire` owns the record, run and
+inventory documents. The renderer emits them, and execution/import CLI tests
+decode real output into them. `oer-esp32s31-vendor-scenarios` builds requests
+from domain types, reads the probe catalog through `oer-probe-codegen` types and
+resolves image symbols with `object` instead of an external `nm`. It runs under
+`cargo xtask vendor-scenario`. The Rust gain scenario reproduces the Python
+runner on the authenticated inputs under watchdog limits: with `--rftest`, 237
+operations and 216 restored replays, exit 0; without it, 204 replays and the
+unmet RF-test obligation with exit 2. Harness, evidence, oracle and obligation
+host tests pass without private inputs. `phy_gain.py`, `phy_gain_state.py` and
+`test_phy_gain.py` are removed. Formatting, strict Clippy, architecture,
+metadata, docs and standalone (532 tests) pass.

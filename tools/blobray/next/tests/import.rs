@@ -69,9 +69,20 @@ fn processes_reopen_identical_inventory_without_sources_and_after_project_move()
         ],
     ));
     assert_eq!(first["run"]["assessment"]["coverage"]["status"], "complete");
+    let imported: blobray_next_host::wire::RunDocument = serde_json::from_value(first).unwrap();
     let first = json(cli(&project, &["inventory"]));
     let api = app::inventory(&project, None).unwrap();
     assert_eq!(first["snapshot"], serde_json::to_value(&api).unwrap());
+    // Typed clients decode the same document without a schema copy.
+    let typed: blobray_next_host::wire::InventoryDocument =
+        serde_json::from_value(first.clone()).unwrap();
+    assert_eq!(typed.schema, blobray_next_host::wire::INVENTORY_SCHEMA);
+    assert!(typed.complete);
+    assert_eq!(typed.snapshot.revision, api.revision);
+    assert_eq!(
+        Some(&typed.snapshot.revision_id),
+        imported.run.revision.as_ref()
+    );
     assert_eq!(api.revision.inputs.len(), 2);
     let objects = &api.revision.inputs[0].inventory.as_ref().unwrap().objects;
     assert_eq!(objects.len(), 2);

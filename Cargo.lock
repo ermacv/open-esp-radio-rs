@@ -3053,6 +3053,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-vendor-scenarios"
+version = "0.1.0"
+dependencies = [
+ "blobray-application",
+ "blobray-domain",
+ "blobray-next",
+ "clap",
+ "object 0.39.1",
+ "oer-probe-codegen",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "oer-esp32s31-wifi"
 version = "0.1.0"
 dependencies = [

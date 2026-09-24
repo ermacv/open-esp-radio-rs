@@ -22,6 +22,15 @@ enum Task {
     },
     /// Prepare the current observer configuration without running HIL.
     HilObserver,
+    /// Build Blobray and the typed vendor scenarios, then run one scenario with
+    /// the forwarded arguments (for example `gain --library ...`).
+    #[command(disable_help_flag = true)]
+    VendorScenario {
+        #[arg(long, default_value = "esp32s31")]
+        chip: String,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<std::ffi::OsString>,
+    },
     /// Report the basic source workflow tools in the current environment.
     Doctor,
     Check {
@@ -120,6 +129,9 @@ fn run() -> Result<std::process::ExitCode> {
             Ok(())
         }
         Task::Hil { args } => return oer_xtask::hil::run(&ctx, &args),
+        Task::VendorScenario { chip, args } => {
+            return oer_xtask::vendor_scenario::run(&ctx, &chip, &args);
+        }
         Task::Build {
             build: Build::Hostapd,
         } => oer_xtask::hostapd::build(&ctx),

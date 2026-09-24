@@ -62,7 +62,7 @@ pub fn run(ctx: &Context, args: &[OsString]) -> Result<std::process::ExitCode> {
     Ok(exit_code(child.wait_forwarding_cancellation()?))
 }
 
-fn exit_code(status: std::process::ExitStatus) -> std::process::ExitCode {
+pub(crate) fn exit_code(status: std::process::ExitStatus) -> std::process::ExitCode {
     #[cfg(unix)]
     use std::os::unix::process::ExitStatusExt;
     let code = status.code().unwrap_or_else(|| {

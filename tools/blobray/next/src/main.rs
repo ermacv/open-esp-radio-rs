@@ -990,7 +990,13 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 let success = wait_handle(&handle, &signals, format);
                 let record = handle.wait();
                 match format {
-                    Format::Json => println!("{}", serde_json::json!({"schema":1,"run":record})),
+                    Format::Json => println!(
+                        "{}",
+                        serde_json::json!(blobray_next_host::wire::RunDocument {
+                            schema: 1,
+                            run: &record
+                        })
+                    ),
                     Format::Human => println!(
                         "IR {:?}: {}",
                         record.state,
@@ -1220,7 +1226,13 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 }
                 let run = handle.wait();
                 match format {
-                    Format::Json => println!("{}", serde_json::json!({"schema":6,"run":run})),
+                    Format::Json => println!(
+                        "{}",
+                        serde_json::json!(blobray_next_host::wire::RunDocument {
+                            schema: 6,
+                            run: &run
+                        })
+                    ),
                     Format::Human => println!("Knowledge revision {}", run.knowledge.unwrap()),
                 }
                 return Ok(ExitCode::SUCCESS);
@@ -1246,7 +1258,13 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 }
                 let record = handle.wait();
                 match format {
-                    Format::Json => println!("{}", serde_json::json!({"schema":6,"run":record})),
+                    Format::Json => println!(
+                        "{}",
+                        serde_json::json!(blobray_next_host::wire::RunDocument {
+                            schema: 6,
+                            run: &record
+                        })
+                    ),
                     Format::Human => println!("Knowledge revision {}", record.knowledge.unwrap()),
                 }
             }
@@ -1392,7 +1410,11 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             let record = handle.wait();
             let success = record.state == RunState::Completed;
             let text = match format {
-                Format::Json => serde_json::json!({"schema":5,"run":record}).to_string(),
+                Format::Json => serde_json::json!(blobray_next_host::wire::RunDocument {
+                    schema: 5,
+                    run: &record
+                })
+                .to_string(),
                 Format::Human => format!(
                     "{}\nPublication: {} ({})",
                     render_run(&record),
@@ -1546,7 +1568,13 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             }
             let run = handle.wait();
             match format {
-                Format::Json => println!("{}", serde_json::json!({"schema":4,"run":run})),
+                Format::Json => println!(
+                    "{}",
+                    serde_json::json!(blobray_next_host::wire::RunDocument {
+                        schema: 4,
+                        run: &run
+                    })
+                ),
                 Format::Human => println!(
                     "Research saved: {} ({})",
                     run.analysis.as_ref().map_or("", |id| id.as_str()),
@@ -1621,7 +1649,11 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             let record = handle.wait();
             let success = record.state == RunState::Completed;
             let text = match format {
-                Format::Json => serde_json::json!({"schema":4,"run":record}).to_string(),
+                Format::Json => serde_json::json!(blobray_next_host::wire::RunDocument {
+                    schema: 4,
+                    run: &record
+                })
+                .to_string(),
                 Format::Human => {
                     let mut text = format!("Function analysis {:?}", record.state);
                     if let Some(id) = &record.analysis {
@@ -1813,7 +1845,11 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             let record = handle.wait();
             let success = record.state == RunState::Completed;
             let text = match format {
-                Format::Json => serde_json::json!({"schema":3,"run":record}).to_string(),
+                Format::Json => serde_json::json!(blobray_next_host::wire::RunDocument {
+                    schema: 3,
+                    run: &record
+                })
+                .to_string(),
                 Format::Human => format!(
                     "{}\nImage: {}",
                     render_run(&record),
@@ -2023,7 +2059,11 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             let record = handle.wait();
             let success = record.state == RunState::Completed;
             let text = match format {
-                Format::Json => serde_json::json!({"schema": 3, "run": record}).to_string(),
+                Format::Json => serde_json::json!(blobray_next_host::wire::RunDocument {
+                    schema: 3,
+                    run: &record
+                })
+                .to_string(),
                 Format::Human => render_run(&record),
             };
             if success {
@@ -2125,7 +2165,13 @@ fn finish_execution(handle: &app::RunHandle, signals: &Signals, format: Format) 
     let success = wait_handle(handle, signals, format);
     let record = handle.wait();
     match format {
-        Format::Json => println!("{}", serde_json::json!({"schema":1,"run":record})),
+        Format::Json => println!(
+            "{}",
+            serde_json::json!(blobray_next_host::wire::RunDocument {
+                schema: 1,
+                run: &record
+            })
+        ),
         Format::Human => println!(
             "Execution {:?}{}: {}",
             record.state,
@@ -2752,7 +2798,13 @@ fn apply_native_knowledge(
     }
     let run = handle.wait();
     match format {
-        Format::Json => println!("{}", serde_json::json!({"schema":6,"run":run})),
+        Format::Json => println!(
+            "{}",
+            serde_json::json!(blobray_next_host::wire::RunDocument {
+                schema: 6,
+                run: &run
+            })
+        ),
         Format::Human => println!("Knowledge revision {}", run.knowledge.unwrap()),
     }
     Ok(ExitCode::SUCCESS)
@@ -2831,7 +2883,13 @@ fn propose_command(
     }
     let run = handle.wait();
     match format {
-        Format::Json => println!("{}", serde_json::json!({"schema":6,"run":run})),
+        Format::Json => println!(
+            "{}",
+            serde_json::json!(blobray_next_host::wire::RunDocument {
+                schema: 6,
+                run: &run
+            })
+        ),
         Format::Human => println!("Knowledge revision {}", run.knowledge.unwrap()),
     }
     Ok(ExitCode::SUCCESS)

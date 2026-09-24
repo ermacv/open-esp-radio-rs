@@ -4,6 +4,7 @@ members = [
     "tools/repo",
     "verification/vendor/harness/codegen",
     "verification/vendor/harness/macros",
+    "verification/vendor/projects/esp32s31/scenarios",
     "tools/process",
     "tools/firmware",
     "hil/protocol",

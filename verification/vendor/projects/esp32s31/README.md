@@ -236,20 +236,25 @@ replay. Software observations do not establish hardware/RF or grant qualificatio
 
 ### Wi-Fi and Bluetooth gain arithmetic/publication
 
-[The native gain runner](phy_gain.py) executes captured archive callbacks and
-ROM children against the compiled production arithmetic and publishers. Build
-and validate the probe catalog with `cargo xtask build vendor-probes --chip
-esp32s31`, then run from the repository root:
+The `gain` scenario of the [typed scenario package](scenarios/src/gain.rs)
+executes captured archive callbacks and ROM children against the compiled
+production arithmetic and publishers. Build and validate the probe catalog
+with `cargo xtask build vendor-probes --chip esp32s31`. Then run from the
+repository root; `xtask` builds `blobray` and the scenarios and supplies
+`--binary`:
 
 ```console
-python3 verification/vendor/projects/esp32s31/phy_gain.py \
-  --binary target/blobray/blobray --library /private/libphy.a \
+cargo xtask vendor-scenario gain --library /private/libphy.a \
   --rom /private/esp32s31_rev0_rom.elf \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
-  --linker /usr/bin/ld.lld --nm /usr/bin/llvm-nm \
-  --rftest /private/librftest.a \
+  --linker /usr/bin/ld.lld --rftest /private/librftest.a \
   --output target/blobray-research/gain --limit-mode watchdog
 ```
+
+Requests and evidence are Blobray's own serde types, and CLI documents decode
+through `blobray_next_host::wire`. `cargo test -p oer-esp32s31-vendor-scenarios`
+checks the harness, the evidence interpretation and the oracles. Those tests
+need no private inputs.
 
 Archive and ROM identities are the same pinned inputs as the I2C runner; no SDK
 companion is needed. The gain object and its complete 216-byte coefficient
@@ -294,8 +299,8 @@ whole-TXCAL, Wi-Fi or BT/154 protocol qualification.
 
 ### Gain state and RF-test power producer
 
-The same runner characterizes captured calibration storage and the RF-test
-power policy (`phy_gain_state.py`). These are vendor-only executions: no
+The same scenario characterizes captured calibration storage and the RF-test
+power policy ([`gain_state.rs`](scenarios/src/gain_state.rs)). These are vendor-only executions: no
 production storage or RF power API exists, and none is inferred.
 
 Storage always runs, because it needs only the pinned archive and ROM. The

@@ -124,7 +124,15 @@ pub(super) fn render(
                 else {
                     unreachable!()
                 };
-                raw(writer, b"{\"schema\":2,\"assessment\":", control)?;
+                raw(
+                    writer,
+                    format!(
+                        "{{\"schema\":{},\"assessment\":",
+                        blobray_next_host::wire::INVENTORY_SCHEMA
+                    )
+                    .as_bytes(),
+                    control,
+                )?;
                 json(writer, &summary.assessment(), control)?;
                 raw(writer, b",\"complete\":", control)?;
                 json(writer, complete, control)?;
@@ -424,7 +432,15 @@ impl Records<'_> {
     fn begin(&mut self, c: &mut dyn RunControl) -> Result<()> {
         if !self.started {
             if matches!(self.format, super::Format::Json) {
-                raw(self.file, b"{\"schema\":2,\"records\":[", c)?;
+                raw(
+                    self.file,
+                    format!(
+                        "{{\"schema\":{},\"records\":[",
+                        blobray_next_host::wire::RECORDS_SCHEMA
+                    )
+                    .as_bytes(),
+                    c,
+                )?;
             }
             self.started = true;
         }
@@ -441,12 +457,11 @@ impl Records<'_> {
             if self.count != 0 {
                 raw(self.file, b",", c)?;
             }
-            #[derive(serde::Serialize)]
-            struct Record<'a, T> {
-                kind: &'a str,
-                value: &'a T,
-            }
-            json(self.file, &Record { kind, value }, c)?;
+            let record = blobray_next_host::wire::Record {
+                kind: kind.to_owned(),
+                value,
+            };
+            json(self.file, &record, c)?;
         } else {
             raw(self.file, kind.as_bytes(), c)?;
             raw(self.file, b": ", c)?;

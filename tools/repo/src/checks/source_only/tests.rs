@@ -230,11 +230,11 @@ fn pending_image_child_is_cleaned_up_after_early_gate_failure() {
 }
 
 #[test]
-fn docs_failure_stops_source_only_before_the_image_owner_starts() {
+fn failed_stage_stops_the_rest_of_its_lane() {
     let mut executed = Vec::new();
-    let error = run_pre_image_stages(|stage| {
+    let error = run_stages(Lane::Root.stages(), |stage| {
         executed.push(stage);
-        if stage == PreImageStage::Docs {
+        if stage == Stage::Docs {
             Err("docs fixture failed".into())
         } else {
             Ok(())
@@ -242,8 +242,103 @@ fn docs_failure_stops_source_only_before_the_image_owner_starts() {
     })
     .unwrap_err()
     .to_string();
-    assert_eq!(executed, PRE_IMAGE_STAGES);
+    let docs = Lane::Root
+        .stages()
+        .iter()
+        .position(|stage| *stage == Stage::Docs)
+        .unwrap();
+    assert_eq!(executed, Lane::Root.stages()[..=docs]);
     assert!(error.contains("docs fixture failed"), "{error}");
-    // The production image owner is created only after this shared sequence
-    // returns successfully, so this failure path cannot reach hardware/image work.
+}
+
+#[test]
+fn every_stage_belongs_to_exactly_one_lane_and_lane_ids_round_trip() {
+    let mut stages = Vec::new();
+    for lane in Lane::ALL {
+        assert_eq!(Lane::parse(lane.id()).unwrap(), lane);
+        stages.extend_from_slice(lane.stages());
+    }
+    let unique = stages.iter().map(|s| s.label()).collect::<BTreeSet<_>>();
+    assert_eq!(unique.len(), stages.len(), "a stage runs in two lanes");
+    assert!(Lane::parse("unknown").is_err());
+}
+
+struct FakeJob {
+    label: &'static str,
+    polls_until_done: usize,
+    fails: bool,
+    dropped: std::rc::Rc<std::cell::RefCell<Vec<&'static str>>>,
+}
+
+impl Job for FakeJob {
+    fn label(&self) -> String {
+        self.label.into()
+    }
+
+    fn poll(&mut self) -> Result<Poll> {
+        if self.polls_until_done > 0 {
+            self.polls_until_done -= 1;
+            return Ok(Poll::Running);
+        }
+        if self.fails {
+            Err("fixture failure".into())
+        } else {
+            Ok(Poll::Done)
+        }
+    }
+}
+
+impl Drop for FakeJob {
+    fn drop(&mut self) {
+        self.dropped.borrow_mut().push(self.label);
+    }
+}
+
+fn fake(
+    label: &'static str,
+    polls_until_done: usize,
+    fails: bool,
+    dropped: &std::rc::Rc<std::cell::RefCell<Vec<&'static str>>>,
+) -> Box<dyn Job> {
+    Box::new(FakeJob {
+        label,
+        polls_until_done,
+        fails,
+        dropped: dropped.clone(),
+    })
+}
+
+#[test]
+fn first_failure_cancels_every_pending_job() {
+    let dropped = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let mut passed = Vec::new();
+    let error = supervise(
+        vec![
+            fake("fast", 0, false, &dropped),
+            fake("failing", 1, true, &dropped),
+            fake("slow", 1000, false, &dropped),
+        ],
+        |label| passed.push(label.to_owned()),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("failing failed: fixture failure"), "{error}");
+    assert_eq!(passed, ["fast"]);
+    // The slow job never finished: returning the error dropped it.
+    let mut dropped = dropped.borrow().clone();
+    dropped.sort_unstable();
+    assert_eq!(dropped, ["failing", "fast", "slow"]);
+}
+
+#[test]
+fn supervision_waits_for_every_job_to_pass() {
+    let dropped = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let mut passed = Vec::new();
+    supervise(
+        vec![fake("a", 2, false, &dropped), fake("b", 0, false, &dropped)],
+        |label| passed.push(label.to_owned()),
+    )
+    .unwrap();
+    passed.sort_unstable();
+    assert_eq!(passed, ["a", "b"]);
 }

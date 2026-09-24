@@ -176,17 +176,8 @@ fn phy(ctx: &Context) -> Result<PathBuf> {
     Ok(artifact)
 }
 
+/// Audit one final image with the host built by the Blobray lane.
 fn final_image_audit(ctx: &Context, runtime: &Path) -> Result<()> {
-    process::run(crate::blobray::cargo(ctx, "build").args([
-        "--locked",
-        "--offline",
-        "--profile",
-        "blobray",
-        "-p",
-        "blobray-next",
-        "--bin",
-        "blobray",
-    ]))?;
     process::run_with_shutdown_grace(
         ctx.command(crate::blobray::binary(ctx, "blobray"))
             .args(["audit-targets", "--artifact"])
@@ -203,51 +194,110 @@ fn final_image_audit(ctx: &Context, runtime: &Path) -> Result<()> {
     )
 }
 
+/// Independent work of the source checkpoint. Each lane owns one Cargo target
+/// directory, so lanes never wait on each other's build lock; stages inside a
+/// lane share it and run in order, cheapest first.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PreImageStage {
-    RepositoryTests,
-    BlobrayCoreTests,
-    RegisterPublicationTests,
-    Metadata,
-    NetworkDependencies,
+pub enum Lane {
+    /// Repository gates and lints over the root `target/`.
+    Root,
+    /// Blobray core tests and the audit host in `tools/blobray/target`.
+    Blobray,
+    /// Example workspaces with their own target directories.
     Examples,
-    Docs,
 }
 
-impl PreImageStage {
-    const fn label(self) -> &'static str {
+impl Lane {
+    const ALL: [Self; 3] = [Self::Root, Self::Blobray, Self::Examples];
+
+    pub const fn id(self) -> &'static str {
         match self {
-            Self::RepositoryTests => "repository-tests",
-            Self::BlobrayCoreTests => "blobray-core-tests",
-            Self::RegisterPublicationTests => "register-publication-tests",
-            Self::Metadata => "metadata",
-            Self::NetworkDependencies => "network-dependencies",
+            Self::Root => "root",
+            Self::Blobray => "blobray",
             Self::Examples => "examples",
-            Self::Docs => "docs",
+        }
+    }
+
+    pub fn parse(id: &str) -> Result<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|lane| lane.id() == id)
+            .ok_or_else(|| format!("unknown source-only lane {id}").into())
+    }
+
+    const fn stages(self) -> &'static [Stage] {
+        match self {
+            Self::Root => &[
+                Stage::RepositoryTests,
+                Stage::RegisterPublicationTests,
+                Stage::Metadata,
+                Stage::NetworkDependencies,
+                Stage::Docs,
+                Stage::WorkspaceClippy,
+                Stage::ProductionLints,
+                Stage::Safety,
+                Stage::Architecture,
+                Stage::Bluetooth,
+                Stage::Publication,
+                Stage::Phy,
+            ],
+            Self::Blobray => &[Stage::BlobrayCoreTests, Stage::BlobrayAuditHost],
+            Self::Examples => &[Stage::Examples],
         }
     }
 }
 
-const PRE_IMAGE_STAGES: &[PreImageStage] = &[
-    PreImageStage::RepositoryTests,
-    PreImageStage::BlobrayCoreTests,
-    PreImageStage::RegisterPublicationTests,
-    PreImageStage::Metadata,
-    PreImageStage::NetworkDependencies,
-    PreImageStage::Examples,
-    PreImageStage::Docs,
-];
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Stage {
+    RepositoryTests,
+    RegisterPublicationTests,
+    Metadata,
+    NetworkDependencies,
+    Docs,
+    WorkspaceClippy,
+    ProductionLints,
+    Safety,
+    Architecture,
+    Bluetooth,
+    Publication,
+    Phy,
+    BlobrayCoreTests,
+    BlobrayAuditHost,
+    Examples,
+}
 
-fn run_pre_image_stages(mut execute: impl FnMut(PreImageStage) -> Result<()>) -> Result<()> {
-    for stage in PRE_IMAGE_STAGES {
+impl Stage {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::RepositoryTests => "repository-tests",
+            Self::RegisterPublicationTests => "register-publication-tests",
+            Self::Metadata => "metadata",
+            Self::NetworkDependencies => "network-dependencies",
+            Self::Docs => "docs",
+            Self::WorkspaceClippy => "workspace-clippy",
+            Self::ProductionLints => "production-lints",
+            Self::Safety => "safety",
+            Self::Architecture => "architecture",
+            Self::Bluetooth => "bluetooth",
+            Self::Publication => "publication",
+            Self::Phy => "phy",
+            Self::BlobrayCoreTests => "blobray-core-tests",
+            Self::BlobrayAuditHost => "blobray-audit-host",
+            Self::Examples => "examples",
+        }
+    }
+}
+
+fn run_stages(stages: &[Stage], mut execute: impl FnMut(Stage) -> Result<()>) -> Result<()> {
+    for stage in stages {
         execute(*stage)?;
     }
     Ok(())
 }
 
-fn execute_pre_image_stage(ctx: &Context, stage: PreImageStage) -> Result<()> {
+fn execute_stage(ctx: &Context, stage: Stage) -> Result<()> {
     match stage {
-        PreImageStage::RepositoryTests => process::run(ctx.cargo().args([
+        Stage::RepositoryTests => process::run(ctx.cargo().args([
             "test",
             "--locked",
             "--offline",
@@ -258,7 +308,45 @@ fn execute_pre_image_stage(ctx: &Context, stage: PreImageStage) -> Result<()> {
             "-p",
             "oer-firmware",
         ])),
-        PreImageStage::BlobrayCoreTests => process::run(crate::blobray::cargo(ctx, "test").args([
+        Stage::RegisterPublicationTests => process::run(ctx.cargo().args([
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "oer-register-tool",
+            "-p",
+            "open-esp-radio-register-model",
+            "-p",
+            "open-radio-vendor-review",
+            "-p",
+            "oer-reviewed-contracts",
+        ])),
+        Stage::Metadata => metadata::run(ctx).map(|_| ()),
+        Stage::NetworkDependencies => network::run(ctx, true),
+        Stage::Docs => docs::run_selected(ctx, checkpoint_docs_scope(), false, false, 1),
+        Stage::WorkspaceClippy => process::run(ctx.cargo().args([
+            "clippy",
+            "--locked",
+            "--offline",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings",
+            "-A",
+            "clippy::disallowed-methods",
+        ])),
+        Stage::ProductionLints => production_lints(ctx),
+        Stage::Safety => safety::run(ctx),
+        Stage::Architecture => architecture::run(ctx),
+        Stage::Bluetooth => bluetooth::run(ctx),
+        Stage::Publication => publication(ctx),
+        Stage::Phy => {
+            let artifact = phy(ctx)?;
+            println!("source-only PHY rlib audit passed: {}", artifact.display());
+            Ok(())
+        }
+        Stage::BlobrayCoreTests => process::run(crate::blobray::cargo(ctx, "test").args([
             "--locked",
             "--offline",
             "-p",
@@ -280,23 +368,17 @@ fn execute_pre_image_stage(ctx: &Context, stage: PreImageStage) -> Result<()> {
             "-p",
             "blobray-verification",
         ])),
-        PreImageStage::RegisterPublicationTests => process::run(ctx.cargo().args([
-            "test",
+        Stage::BlobrayAuditHost => process::run(crate::blobray::cargo(ctx, "build").args([
             "--locked",
             "--offline",
+            "--profile",
+            "blobray",
             "-p",
-            "oer-register-tool",
-            "-p",
-            "open-esp-radio-register-model",
-            "-p",
-            "open-radio-vendor-review",
-            "-p",
-            "oer-reviewed-contracts",
+            "blobray-next",
+            "--bin",
+            "blobray",
         ])),
-        PreImageStage::Metadata => metadata::run(ctx).map(|_| ()),
-        PreImageStage::NetworkDependencies => network::run(ctx, true),
-        PreImageStage::Examples => examples::run(ctx),
-        PreImageStage::Docs => docs::run_selected(ctx, checkpoint_docs_scope(), false, false, 1),
+        Stage::Examples => examples::run(ctx),
     }
 }
 
@@ -304,12 +386,143 @@ fn checkpoint_docs_scope() -> docs::Scope {
     docs::Scope::Static
 }
 
+/// Run one lane in this process; `run` executes each lane as a child.
+pub fn run_lane(ctx: &Context, lane: Lane) -> Result<()> {
+    run_stages(lane.stages(), |stage| {
+        timed_stage(stage.label(), || execute_stage(ctx, stage))
+    })
+}
+
+/// Result of polling one concurrently running job.
+enum Poll {
+    Running,
+    Done,
+}
+
+/// A concurrently running checkpoint job. Dropping it cancels its process group.
+trait Job {
+    fn label(&self) -> String;
+    fn poll(&mut self) -> Result<Poll>;
+    /// Final images produced by a completed job.
+    fn take_images(&mut self) -> Vec<FinalImageArtifact> {
+        Vec::new()
+    }
+}
+
+/// Poll every job until all pass. The first failure is returned at once and
+/// the remaining jobs are dropped with it, which cancels their processes.
+fn supervise(
+    mut jobs: Vec<Box<dyn Job + '_>>,
+    mut passed: impl FnMut(&str),
+) -> Result<Vec<FinalImageArtifact>> {
+    let mut images = Vec::new();
+    while !jobs.is_empty() {
+        process::check_cancelled()?;
+        let mut index = 0;
+        while index < jobs.len() {
+            match jobs[index].poll() {
+                Ok(Poll::Running) => index += 1,
+                Ok(Poll::Done) => {
+                    let mut job = jobs.remove(index);
+                    images.extend(job.take_images());
+                    passed(&job.label());
+                }
+                Err(error) => {
+                    return Err(format!("{} failed: {error}", jobs[index].label()).into());
+                }
+            }
+        }
+        if !jobs.is_empty() {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+    Ok(images)
+}
+
+struct LaneProcess {
+    lane: Lane,
+    child: owned::Child,
+    log: PathBuf,
+    started_at: Instant,
+}
+
+impl LaneProcess {
+    fn spawn(ctx: &Context, temporary: &Path, lane: Lane) -> Result<Self> {
+        let log = temporary.join(format!("{}-lane.log", lane.id()));
+        let file = File::create(&log)?;
+        let child = owned::Child::spawn_with_shutdown_grace(
+            ctx.command(std::env::current_exe()?)
+                .arg("--root")
+                .arg(&ctx.root)
+                .args(["check", "source-only", "--lane", lane.id()])
+                .stdin(Stdio::null())
+                .stdout(Stdio::from(file.try_clone()?))
+                .stderr(Stdio::from(file)),
+            std::time::Duration::from_secs(40),
+        )?;
+        Ok(Self {
+            lane,
+            child,
+            log,
+            started_at: Instant::now(),
+        })
+    }
+}
+
+impl Job for LaneProcess {
+    fn label(&self) -> String {
+        format!("lane {}", self.lane.id())
+    }
+
+    fn poll(&mut self) -> Result<Poll> {
+        let Some(status) = self.child.try_wait()? else {
+            return Ok(Poll::Running);
+        };
+        eprintln!("==> source-only lane {}", self.lane.id());
+        eprint!("{}", fs::read_to_string(&self.log)?);
+        eprintln!(
+            "source-only timing: stage=lane-{} total-us={} status={}",
+            self.lane.id(),
+            self.started_at.elapsed().as_micros(),
+            if status.success() { "PASS" } else { "FAIL" },
+        );
+        if !status.success() {
+            return Err(format!("exited with {status}").into());
+        }
+        Ok(Poll::Done)
+    }
+}
+
+/// One final image class. Each class owns its output and target directories
+/// and resolves through a private lockfile copy, so both classes build at once.
+struct ImageJob<'a> {
+    root: &'a Path,
+    build: FinalImageBuild,
+    built: Option<FinalImageArtifact>,
+}
+
+impl Job for ImageJob<'_> {
+    fn label(&self) -> String {
+        format!("{} image build", self.build.class.id())
+    }
+
+    fn poll(&mut self) -> Result<Poll> {
+        if self.build.child.try_wait()?.is_none() {
+            return Ok(Poll::Running);
+        }
+        self.built = Some(self.build.finish(self.root)?);
+        Ok(Poll::Done)
+    }
+
+    fn take_images(&mut self) -> Vec<FinalImageArtifact> {
+        self.built.take().into_iter().collect()
+    }
+}
+
 pub fn run(ctx: &Context) -> Result<()> {
     let total_start = Instant::now();
-    run_pre_image_stages(|stage| {
-        timed_stage(stage.label(), || execute_pre_image_stage(ctx, stage))
-    })?;
-
+    // The image builder must exist before the images start; afterwards the
+    // root lane is the only user of `target/`.
     timed_stage("build-hil-runner", || {
         process::run(
             ctx.cargo()
@@ -325,39 +538,28 @@ pub fn run(ctx: &Context) -> Result<()> {
         )
     })?;
     let temporary = tempfile::tempdir()?;
-    let mut performance = timed_stage("spawn-performance-image", || {
-        FinalImageBuild::spawn(ctx, temporary.path(), FinalImageClass::Performance)
-    })?;
-    println!("source-only: final performance HIL image build running concurrently");
-
-    timed_stage("workspace-clippy", || {
-        process::run(ctx.cargo().args([
-            "clippy",
-            "--locked",
-            "--offline",
-            "--workspace",
-            "--all-targets",
-            "--",
-            "-D",
-            "warnings",
-            "-A",
-            "clippy::disallowed-methods",
-        ]))
-    })?;
-    timed_stage("production-lints", || production_lints(ctx))?;
-    timed_stage("safety", || safety::run(ctx))?;
-    timed_stage("architecture", || architecture::run(ctx))?;
-    timed_stage("bluetooth", || bluetooth::run(ctx))?;
-    timed_stage("publication", || publication(ctx))?;
-    let artifact = timed_stage("phy", || phy(ctx))?;
-
-    timed_stage("final-images", || {
+    let mut jobs: Vec<Box<dyn Job + '_>> = Vec::new();
+    for class in FinalImageClass::ALL {
+        jobs.push(Box::new(ImageJob {
+            root: &ctx.root,
+            build: FinalImageBuild::spawn(ctx, temporary.path(), class)?,
+            built: None,
+        }));
+    }
+    for lane in Lane::ALL {
+        jobs.push(Box::new(LaneProcess::spawn(ctx, temporary.path(), lane)?));
+    }
+    println!("source-only: final images and lanes root, blobray, examples run concurrently");
+    // Both images and the Blobray audit host exist only after every job passed.
+    let mut built = supervise(jobs, |label| eprintln!("source-only: {label} passed"))?;
+    timed_stage("final-image-audits", || {
         audit_final_images(
-            |class| match class {
-                FinalImageClass::Performance => performance.finish(&ctx.root),
-                FinalImageClass::Correctness => {
-                    FinalImageBuild::spawn(ctx, temporary.path(), class)?.finish(&ctx.root)
-                }
+            |class| {
+                let index = built
+                    .iter()
+                    .position(|artifact| artifact.report["image_class"] == class.id())
+                    .ok_or_else(|| format!("final {} image was not built", class.id()))?;
+                Ok(built.swap_remove(index))
             },
             |artifact| {
                 let class = artifact.report["image_class"].as_str().unwrap_or("unknown");
@@ -367,10 +569,7 @@ pub fn run(ctx: &Context) -> Result<()> {
             },
         )
     })?;
-    println!(
-        "source-only radio audit passed: rlib={} performance+correctness",
-        artifact.display(),
-    );
+    println!("source-only radio audit passed: performance+correctness");
     eprintln!(
         "source-only timing: stage=total total-us={} status=PASS",
         total_start.elapsed().as_micros()

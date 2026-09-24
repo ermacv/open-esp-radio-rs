@@ -81,7 +81,15 @@ made. Static catalog checking and rendering neither load runtime evidence nor
 evaluate readiness, and the command performs no hardware operations.
 Rustdoc type-checking of the bootstrap uses an owned empty compile input for
 its required `PSRAM_RUNTIME_BIN`; it is never linked, packed or presented as a
-firmware image. The source-only image owner builds the real performance and
+firmware image. `source-only` first builds the HIL runner, then runs
+independent jobs concurrently: the final images and three lanes, `root`
+(repository gates, Clippy, safety, architecture and publication over
+`target/`), `blobray` (core tests and the audit host in `tools/blobray/target`)
+and `examples`. Each lane owns one Cargo target directory, so lanes never wait
+on each other's build lock; its stages run in order and its log is printed
+when it finishes. The first failing job cancels every other job. Both image classes
+build at once: each owns its output directory and resolves through a private
+copy of the committed lockfile. The image owner builds the real performance and
 correctness application images through the HIL builder, checks each class's
 fresh stack, placement and packed-image artifacts, and runs the final radio
 target audit on each reported runtime ELF. Successful builds emit separate

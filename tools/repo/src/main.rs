@@ -78,7 +78,11 @@ enum Check {
         #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..=2))]
         jobs: u8,
     },
-    SourceOnly,
+    SourceOnly {
+        /// Internal: run one independent lane of the checkpoint.
+        #[arg(long, hide = true)]
+        lane: Option<String>,
+    },
     BlobrayStandalone,
 }
 
@@ -171,7 +175,10 @@ fn run() -> Result<std::process::ExitCode> {
                 };
                 checks::docs::run_selected(&ctx, scope, list, export_html, usize::from(jobs))
             }
-            Check::SourceOnly => checks::source_only::run(&ctx),
+            Check::SourceOnly { lane: None } => checks::source_only::run(&ctx),
+            Check::SourceOnly { lane: Some(lane) } => {
+                checks::source_only::run_lane(&ctx, checks::source_only::Lane::parse(&lane)?)
+            }
             Check::BlobrayStandalone => checks::standalone::run(&ctx),
         },
         Task::Build {

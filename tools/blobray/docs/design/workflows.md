@@ -461,7 +461,7 @@ read lifecycle and resource budget. Missing/partial facts and ambiguous addresse
 remain visible. No read performs hidden planning, linking or analysis, and no empty
 selection proves that the entire firmware lacks an effect. Structural flow/effect inventory and ordered path review use `flow` and the native
 path claim. `memory-slice` inspects local RAM definitions at publication.
-Asynchronous event-route validation remains a target capability.
+`event-route` validates reviewed conditional asynchronous routes against saved facts.
 
 
 ### Saved structural path review
@@ -483,3 +483,18 @@ Inspect incoming state, last definitions, source facts, CFG witnesses and barrie
 export the query and reopen it after removing source files or restoring a backup.
 Joining paths, loops, unknown aliases/calls and partial coverage remain explicit.
 The slice never launches analysis or turns composed may-effects into RAM state.
+
+
+### Conditional event-route review
+
+Implemented: choose exact dispatch, registration/delivery or domain/subscription
+calls and the saved field/selector/callback evidence. Inspect `event-route`
+checks, correct unresolved or mismatched bindings, then use ordinary knowledge
+proposal and acceptance. Query/export the same declaration after source removal;
+knowledge export preserves its participant identities. Selector delivery, static
+callbacks and broker subscriptions each have their own finite declaration.
+
+Acceptance authenticates the physical structure and the reviewed assignment of
+service roles. Mechanism semantics, object lifetime, delivery/context/guards and
+registration order remain explicit obligations for a runtime consumer. Static
+review alone cannot complete an asynchronous execution scenario.

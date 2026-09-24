@@ -30,18 +30,17 @@ fn append(
     }
     Ok(())
 }
-fn candidates(
-    index: &[Entry<'_>],
-    caller: &Node<'_>,
-    value: &AbstractValue,
-    selected: &mut AdmittedVec<'_, usize>,
-    c: &mut dyn RunControl,
-) -> Result<()> {
-    let mut source = &caller.function.location.source;
-    let mut object = caller.function.location.selector.object();
+fn key<'a>(
+    source: &'a FunctionSource,
+    object: &'a ObjectId,
+    space: CodeAddressSpace,
+    value: &'a AbstractValue,
+) -> Option<Key<'a>> {
+    let mut source = source;
+    let mut object = object;
     let coordinate = match value {
         AbstractValue::ImageAddress { address } | AbstractValue::Constant { value: address }
-            if caller.space == CodeAddressSpace::Image =>
+            if space == CodeAddressSpace::Image =>
         {
             Coordinate::Image(u64::from(*address))
         }
@@ -54,9 +53,9 @@ fn candidates(
             object = o;
             Coordinate::Image(u64::from(*address))
         }
-        AbstractValue::Section { section, offset } if caller.space == CodeAddressSpace::Section => {
+        AbstractValue::Section { section, offset } if space == CodeAddressSpace::Section => {
             let Ok(offset) = u64::try_from(*offset) else {
-                return Ok(());
+                return None;
             };
             Coordinate::Section(*section, offset)
         }
@@ -64,18 +63,30 @@ fn candidates(
             object = &symbol.object;
             Coordinate::Symbol(symbol)
         }
-        _ => return Ok(()),
+        _ => return None,
     };
-    append(
-        index,
-        Key {
-            source,
-            object,
-            coordinate,
-        },
-        selected,
-        c,
-    )
+    Some(Key {
+        source,
+        object,
+        coordinate,
+    })
+}
+fn candidates(
+    index: &[Entry<'_>],
+    caller: &Node<'_>,
+    value: &AbstractValue,
+    selected: &mut AdmittedVec<'_, usize>,
+    c: &mut dyn RunControl,
+) -> Result<()> {
+    let Some(key) = key(
+        &caller.function.location.source,
+        caller.function.location.selector.object(),
+        caller.space,
+        value,
+    ) else {
+        return Ok(());
+    };
+    append(index, key, selected, c)
 }
 pub(super) fn emit(
     nodes: &[Node<'_>],
@@ -222,4 +233,39 @@ pub(super) fn emit(
         )?;
     }
     Ok(())
+}
+
+/// Same physical keys used by selected call resolution; no name fallback.
+pub(super) fn target_matches(
+    caller: &FunctionRecipe,
+    target: &FunctionRecipe,
+    value: &AbstractValue,
+) -> bool {
+    let Some(observed) = key(
+        &caller.source,
+        caller.selector.object(),
+        caller.address_space,
+        value,
+    ) else {
+        return false;
+    };
+    let physical = Key {
+        source: &target.source,
+        object: target.selector.object(),
+        coordinate: if target.address_space == CodeAddressSpace::Image {
+            Coordinate::Image(target.extent.start)
+        } else {
+            Coordinate::Section(target.section, target.extent.start)
+        },
+    };
+    observed == physical
+        || !target.user_extent
+            && target.selector.symbol().is_some_and(|symbol| {
+                observed
+                    == Key {
+                        source: &target.source,
+                        object: target.selector.object(),
+                        coordinate: Coordinate::Symbol(symbol),
+                    }
+            })
 }

@@ -3,7 +3,7 @@ use crate::navigation::Facts;
 use blobray_domain::*;
 mod cycles;
 mod index;
-mod locations;
+pub(crate) mod locations;
 mod reaching;
 use index::{Index, writes};
 fn invalid(s: &str) -> Error {

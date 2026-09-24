@@ -66,3 +66,9 @@ path authority stay with application/knowledge.
 and iteratively finds last local writes before an exact anchor. SCC membership
 bounds scalar identity; per-location backward searches release their scratch
 before the next location. It performs no I/O, execution or callee expansion.
+
+
+`event_routes::Prepared` borrows one authenticated function stream and its existing
+navigation index. It interprets required ABI values, local field coordinates and
+selector predicates, and shares the memory-slice owner for callback-store checks.
+Only owned admitted observations survive that borrowed preparation.

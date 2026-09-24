@@ -975,5 +975,7 @@ mod contracts;
 #[path = "functions/navigation.rs"]
 mod navigation;
 
+#[path = "functions/event_routes.rs"]
+mod event_routes;
 #[path = "functions/memory_slice.rs"]
 mod memory_slice;

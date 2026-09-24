@@ -108,3 +108,8 @@ Native interface declarations retain exact symbol/function/address roots, explic
 `MemorySliceQuery` and its records distinguish exact anchor identity, local spans,
 incoming uncertainty, last-write classes and unresolved barriers. Saved expression
 IDs scope pointer identity to one analysis; witnesses are structural evidence.
+
+
+`ReviewedEventRoute` defines three finite conditional mechanisms; `EventRouteQuery`
+and its output separate exact saved evidence, structural check outcomes and runtime
+conditions. No schema field promotes static bindings to completed delivery.

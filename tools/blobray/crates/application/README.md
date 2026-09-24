@@ -245,3 +245,10 @@ No path query invokes analysis, and review is not executable reachability.
 `ReadQuery::MemorySlice` loads one authenticated saved record owner and streams
 bounded local definition queries under the same supervision/export lifecycle.
 Application owns acquisition and atomic delivery; analysis owns CFG/alias rules.
+
+
+`ReadQuery::EventRoute` and native route proposal/review share one evidence path.
+Navigation supplies exact selected callees and a synchronous borrowed-facts port;
+route orchestration retains only admitted values/metadata between participants.
+Physical structural checks are distinct from service semantics and temporal
+conditions. No route query launches hidden analysis or executable delivery.

@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 17
-and database schema 16 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 18
+and database schema 17 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -831,8 +831,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 16
-and journal schema 17 carry these identities. Old formats are rejected without
+Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 17
+and journal schema 18 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -1198,3 +1198,65 @@ machine-code fixtures, API/CLI exports, unknown calls, killed clobbers, malforme
 requests, capacity/work failures and source-free reopening. The PHY scenario checks
 exact prologue stack writes/witnesses before and after an ordinary linked call;
 its unexpanded tail retains partial CFG status even for the early local witness.
+
+### Reviewed event routes
+
+Three finite native declarations own selector delivery, static callback
+registration/delivery and broker subscription. Participants are exact saved
+analysis/call/condition/load/store identities, with explicit physical RV32 ABI
+words and selector/object/queue/domain fields. Upstream and terminal paths retain
+ordered exact hops. No name lookup, legacy pack or implicit analysis participates.
+
+Application shares navigation's physical selection and target keys. A synchronous
+borrowed-facts consumer prepares only required observations while one saved record
+owner is live, then releases that owner; cross-participant checks retain admitted
+values and metadata. Analysis owns local pointer coordinates, branch predicates,
+CFG suffixes and callback-store reaching definitions. Knowledge owns finite shape,
+conflicts and review; proposal and acceptance authenticate the same physical facts.
+
+The read result separates established, unresolved and mismatched structural checks
+from runtime obligations: object lifetime, registration before dispatch, delivery
+order, execution context and guard satisfaction. Acceptance requires established
+structural bindings and never discharges these temporal obligations. Unknown stack
+arguments or dynamic pointers are explicit unresolved evidence, never substituted
+with a different ABI word or selected callback. No complete/PASS/execution claim
+is inferred from a structurally reviewed asynchronous route.
+
+
+Service roles (send, receive, registration, invoke, attach and subscribe) are
+reviewed interpretations of the explicitly selected callees. Structural argument
+checks do not derive those service semantics from their bodies. The result retains
+`mechanism-semantics` as an obligation, alongside lifetime/order/context/guard
+conditions; runtime consumers must supply the matching reviewed service model.
+Selector case checks show that the selected value is consistent with a chosen
+branch and a structural suffix to the handler, not that this is its exclusive or
+exhaustive runtime dispatch. A suffix cannot change the selected case by revisiting
+the same condition. Full-width RV32 masks preserve pointer coordinates; partial
+masks never silently become a resolved callback address.
+
+
+Declaration bounds are 1..16 static dispatch sites, at most 16 hops on each optional
+upstream/terminal path, physical ABI words below 64, and 4096 bytes per context or
+applicability text. Current saved-call arguments expose words 0..7; higher words
+remain unresolved. Selector widths are 1/2/4 bytes. A callback store is exactly four
+bytes and must be the unique reaching write before subscription. The broker domain
+selector is checked both at attach and subscribe; publish object and selector,
+subscriber field and callback entry, callback selector branch and selected handler
+remain separate checks. Payload words retain raw saved call inputs; no guessed
+payload expression is required.
+
+Preview queries return unresolved/mismatched checks without publication. Both
+generic proposal and acceptance reject those checks through the same application
+path. Accepted claims retain every participant manifest/fact root, require exact
+root analysis evidence and conflict with different routes for the same subject.
+`analyses_read` counts one decode per selected participant; a borrowed facts
+consumer releases each full stream before the next. Local checks report
+`AnalyzeValues`, acquisition reports `LoadResearch`. Work/capacity failure exposes
+no partial query or knowledge revision.
+
+Regressions: Next `functions::event_routes` exercises all three declarations,
+physical values and cases, callback overwrite/truncation, competing interpretations,
+wrong records/fields, cycle rejection, budgets, proposal/review and source-free
+exports. A selected case cannot reach its handler by revisiting the same predicate
+and taking a different edge on a later iteration. Runtime conditions remain in
+all successful query results.

@@ -107,6 +107,17 @@ enum KnowledgeCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Inspect exact saved bindings and temporal obligations of a conditional event route.
+    EventRoute {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        request: PathBuf,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[command(flatten)]
+        limits: ResourceOptions,
+    },
     /// Inspect local write definitions immediately before an exact saved publication site.
     MemorySlice {
         #[arg(long)]
@@ -883,6 +894,22 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 ),
                 Format::Human => println!("Project preserved at {}", project.display()),
             }
+        }
+        Command::EventRoute {
+            project,
+            request,
+            output,
+            limits,
+        } => {
+            return read_query_output(
+                project,
+                ReadQuery::EventRoute {
+                    request: read_json_file(&request)?,
+                },
+                limits,
+                format,
+                output,
+            );
         }
         Command::MemorySlice {
             project,

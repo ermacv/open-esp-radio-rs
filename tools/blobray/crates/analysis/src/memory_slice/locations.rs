@@ -1,7 +1,7 @@
 //! Canonical local locations and conservative, explicit alias boundaries.
 use crate::navigation::Facts;
 use blobray_domain::*;
-pub(super) fn bytes(location: &SliceLocation) -> u64 {
+pub(crate) fn bytes(location: &SliceLocation) -> u64 {
     match &location.address {
         SliceAddress::Stack { .. } | SliceAddress::Value { .. } => 0,
         SliceAddress::Scoped { source, object, .. } => {
@@ -72,7 +72,7 @@ fn canonical(
     }
     Ok(SliceAddress::Path { path })
 }
-pub(super) fn identify(
+pub(crate) fn identify(
     value: &AbstractValue,
     width: u8,
     recipe: &FunctionRecipe,

@@ -20,7 +20,7 @@ pub struct Facts<'a, 'm> {
     records: &'a [FunctionRecord],
     expressions: AdmittedVec<'m, &'a Expression>,
     references: AdmittedVec<'m, &'a ReferenceTarget>,
-    inputs: AdmittedVec<'m, (u64, &'a [AbstractValue])>,
+    inputs: AdmittedVec<'m, (u64, &'a [AbstractValue], u64)>,
     transfers: AdmittedVec<'m, (u64, u64, &'a AbstractValue, bool)>,
     resolutions: AdmittedVec<'m, (u64, &'a Option<FunctionAnalysisId>)>,
 }
@@ -65,9 +65,9 @@ impl<'a, 'm> Facts<'a, 'm> {
                 FunctionRecord::Reference { target, .. } => {
                     out.references.push(target, c.position())?
                 }
-                FunctionRecord::CallInputs { offset, registers } => {
-                    out.inputs.push((*offset, registers), c.position())?
-                }
+                FunctionRecord::CallInputs { offset, registers } => out
+                    .inputs
+                    .push((*offset, registers, record as u64), c.position())?,
                 FunctionRecord::Transfer {
                     offset,
                     target,
@@ -118,6 +118,30 @@ impl<'a, 'm> Facts<'a, 'm> {
             .get(id as usize)
             .copied()
             .ok_or_else(|| integrity("expression ID is absent"))
+    }
+    pub fn call_inputs_record(&self, offset: u64, c: &mut dyn RunControl) -> Result<Option<u64>> {
+        c.checkpoint(self.inputs.len().max(1).ilog2() as u64 + 1)?;
+        Ok(self
+            .inputs
+            .binary_search_by_key(&offset, |r| r.0)
+            .ok()
+            .map(|i| self.inputs[i].2))
+    }
+    pub fn call_argument(
+        &self,
+        offset: u64,
+        word: u8,
+        c: &mut dyn RunControl,
+    ) -> Result<Option<&AbstractValue>> {
+        c.checkpoint(self.inputs.len().max(1).ilog2() as u64 + 1)?;
+        Ok((word < 8)
+            .then(|| {
+                self.inputs
+                    .binary_search_by_key(&offset, |r| r.0)
+                    .ok()
+                    .and_then(|i| self.inputs[i].1.get(usize::from(word) + 10))
+            })
+            .flatten())
     }
     pub fn paths(
         &self,

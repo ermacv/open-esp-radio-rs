@@ -246,6 +246,10 @@ pub fn address_paths(
                             }
                         }
                         let constant = match (op, left, right) {
+                            (IntegerOp::And, v, AbstractValue::Constant { value: u32::MAX })
+                            | (IntegerOp::And, AbstractValue::Constant { value: u32::MAX }, v) => {
+                                Some((v, 0))
+                            }
                             (IntegerOp::Add, v, AbstractValue::Constant { value }) => {
                                 Some((v, i64::from(*value as i32)))
                             }

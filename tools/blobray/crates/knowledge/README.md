@@ -46,3 +46,9 @@ functions and interface slots. Context layouts, overlapping byte predicates and
 argument range/mask intersections are bounded and checked before acceptance.
 Unknown signatures/types remain unknown; declared predicates are never observed
 runtime facts. Application supplies the captured function and evidence validation.
+
+
+Native event-route declarations validate finite participants, ABI roles, selector
+fields and acyclic upstream/terminal paths. They require root analysis evidence and
+conflict by subject. Application authenticates the same structural bindings at
+proposal and acceptance; review never discharges runtime route conditions.

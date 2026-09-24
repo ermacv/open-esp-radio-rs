@@ -74,7 +74,8 @@ pub(super) fn render(
 ) -> Result<()> {
     if matches!(
         result.summary(),
-        app::QuerySummary::MemorySlice { .. }
+        app::QuerySummary::EventRoute { .. }
+            | app::QuerySummary::MemorySlice { .. }
             | app::QuerySummary::Flow { .. }
             | app::QuerySummary::Navigation { .. }
             | app::QuerySummary::Interfaces { .. }
@@ -493,6 +494,9 @@ impl app::DoctorSink for Records<'_> {
     }
 }
 impl app::QuerySink for Records<'_> {
+    fn event_route(&mut self, r: &EventRouteRecord, c: &mut dyn RunControl) -> Result<()> {
+        self.record("event-route", r, c)
+    }
     fn memory_slice(&mut self, r: &MemorySliceRecord, c: &mut dyn RunControl) -> Result<()> {
         self.record("memory-slice", r, c)
     }

@@ -144,6 +144,11 @@ fn validate_evidence(
             project, proposal, path, memory, control,
         )?);
     }
+    if let KnowledgeClaim::EventRoute { route } = &proposal.claim {
+        roots.extend(crate::event_routes::validate(
+            project, proposal, route, memory, control,
+        )?);
+    }
     for evidence in &proposal.evidence {
         control.checkpoint(1)?;
         match evidence {

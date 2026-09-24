@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 16 and journal schema 17. Earlier and future
+Projects require metadata schema 17 and journal schema 18. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,8 +712,8 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 17 for every durable and read operation. Storage metadata
-uses schema 16; revision manifests use schema 1 and execution manifests use schema
+Run records use schema 18 for every durable and read operation. Storage metadata
+uses schema 17; revision manifests use schema 1 and execution manifests use schema
 1. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-17 run; an envelope version is not a journal
+execution 7) wrap the same schema-18 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1997,3 +1997,69 @@ Composed callee effects never silently replace local call clobbers. The
 [canonical contract](../docs/design/contracts.md#memory-definitions-at-publication)
 defines these bounds; none of the classes claims runtime feasibility or hardware
 state. API/CLI results and atomic JSON export reopen without original sources.
+
+
+### Conditional event routes
+
+`event-route --request route.json [--output observations.json]` inspects saved
+participants without linking or running analysis. For selector delivery:
+
+```json
+{
+  "revision":"<revision>",
+  "route":{
+    "mechanism":"project.events", "execution_context":"interrupt to task",
+    "applicability":"These captured participants and the reviewed service semantics",
+    "upstream":[], "terminal":[],
+    "route":{"kind":"selector-delivery", "route":{
+      "dispatch":{"call":{"caller":"<producer>","record":42,"callee":"<send>"},"word":1},
+      "selector":25,
+      "delivery":{"call":{"caller":"<consumer>","record":80,"callee":"<receive>"},"word":0},
+      "selector_load":{"analysis":"<consumer>","record":90},
+      "selector_offset":0, "selector_width":4,
+      "case":{"condition":{"analysis":"<consumer>","record":95},"taken":true,
+        "handler":{"caller":"<consumer>","record":100,"callee":"<handler>"}}
+    }}
+  }
+}
+```
+
+Record ordinals come from `analysis --id`; call ordinals are the exact sites used
+by `navigate`. Calls name the selected callee analysis, preserving alternate
+interpretations. Words 0..7 mean a0..a7 under the explicit RV32 integer route
+profile. Higher words are accepted as selectors but currently return unresolved
+saved-call evidence. This never substitutes a register for a stack argument.
+
+The [native route types](../crates/domain/src/event_route.rs) define three profiles:
+
+| Kind | Required physical relationships |
+| --- | --- |
+| `selector-delivery` | Dispatch selector, delivery output pointer, exact field load/width/offset, matching branch edge and structural handler suffix |
+| `static-callback` | 1..16 dispatch object/queue pairs, registration object/callback pointer, matching receive queue, receive return or output load passed to invoke, exact callback entry |
+| `broker-subscription` | Publish object/selector/payload word, attach object/domain selector, subscribed domain, subscriber callback-field store reaching subscription, callback selector case and handler |
+
+Optional upstream and terminal paths have at most 16 contiguous acyclic hops each.
+Selector fields use 1/2/4 bytes; callback stores use four. A whole-word mask preserves
+an RV32 pointer, while a partial mask remains unresolved. Different stack frames
+and captured object namespaces are not merged merely because offsets match.
+
+Output contains original evidence rows, named `established|unresolved|mismatch`
+checks and separate conditions. `analyses_read` counts decoded participant streams;
+the operation releases each full buffer before reading the next. A selected branch
+has a structural suffix consistent with the supplied selector; it does not prove
+exclusive dispatch or runtime feasibility. A partial CFG remains unresolved.
+
+To review, place the declaration in a knowledge claim
+`{"kind":"event-route","route":<the route object>}` with the dispatch root's
+exact occurrence and an analysis evidence reference. Use the ordinary
+`knowledge validate/apply/accept/show/export` lifecycle. Both proposal and acceptance
+recheck physical bindings; unresolved/mismatched declarations fail before publication.
+Accepted route identities and query exports survive source removal and current-format
+backup/restore.
+
+Service roles are reviewed interpretations of selected callees. The query does not
+infer send/receive/invoke semantics from service bodies: `mechanism-semantics`
+remains an obligation. Object lifetime, delivery order, execution context and runtime
+guards remain conditions; registration routes also retain registration-before-dispatch.
+There is no overall complete/PASS or proof that the event actually arrived. See the
+[canonical route contract](../docs/design/contracts.md#reviewed-event-routes).

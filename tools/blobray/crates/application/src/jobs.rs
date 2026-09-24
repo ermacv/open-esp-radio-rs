@@ -938,7 +938,7 @@ impl Application {
             &work,
         )?;
         let record = RunRecord {
-            schema: 9,
+            schema: 18,
             operation: blobray_store::RunOperation::Query,
             resolved_operation: None,
             image: None,

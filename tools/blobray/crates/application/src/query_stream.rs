@@ -9,6 +9,9 @@ use std::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum QuerySummary {
+    EventRoute {
+        summary: Box<EventRouteSummary>,
+    },
     MemorySlice {
         summary: Box<MemorySliceSummary>,
     },
@@ -174,6 +177,12 @@ impl QuerySummary {
 }
 /// Borrowed callbacks. Retaining records requires the consumer's own capacity.
 pub trait QuerySink: InventorySink + DoctorSink {
+    fn event_route(&mut self, _: &EventRouteRecord, _: &mut dyn RunControl) -> Result<()> {
+        Err(Error::new(
+            ErrorCode::InvalidRequest,
+            "consumer does not support event routes",
+        ))
+    }
     fn coverage(&mut self, _: &ExtentCoverageRecord, _: &mut dyn RunControl) -> Result<()> {
         Err(Error::new(
             ErrorCode::InvalidRequest,
@@ -307,6 +316,7 @@ pub trait QuerySink: InventorySink + DoctorSink {
 }
 #[derive(Serialize)]
 enum RecordRef<'a> {
+    EventRoute(&'a EventRouteRecord),
     MemorySlice(&'a MemorySliceRecord),
     Flow(&'a FlowRecord),
     Navigation(&'a NavigationRecord),
@@ -340,6 +350,7 @@ enum RecordRef<'a> {
 }
 #[derive(Deserialize)]
 enum Record {
+    EventRoute(EventRouteRecord),
     MemorySlice(MemorySliceRecord),
     Flow(FlowRecord),
     Navigation(NavigationRecord),
@@ -507,6 +518,18 @@ pub fn prepare_query_with_tools(
             file: disk.create(&stage.join("query-records"))?,
         };
         let summary = match &work.query {
+            ReadQuery::EventRoute { request } => {
+                let project = Project::open(&work.project.to_path()?)?;
+                QuerySummary::EventRoute {
+                    summary: Box::new(crate::event_routes::query(
+                        &project,
+                        request,
+                        &memory,
+                        control,
+                        &mut |r, c| spool.push(RecordRef::EventRoute(r), c),
+                    )?),
+                }
+            }
             ReadQuery::MemorySlice { request } => {
                 let project = Project::open(&work.project.to_path()?)?;
                 let lease = project.analysis(&request.analysis, control)?;
@@ -1180,6 +1203,7 @@ pub(crate) fn visit(
         let record: Record = serde_json::from_slice(&bytes)
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         match record {
+            Record::EventRoute(r) => sink.event_route(&r, control)?,
             Record::MemorySlice(r) => sink.memory_slice(&r, control)?,
             Record::Flow(r) => sink.flow(&r, control)?,
             Record::Navigation(r) => sink.navigation(&r, control)?,

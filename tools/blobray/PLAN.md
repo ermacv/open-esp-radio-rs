@@ -49,8 +49,8 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
 | 01 | done | Close existing capture/analysis/research/data/review/export/coverage/storage/execution/preservation promises. All detailed criteria below pass, including a real linked graph and source-free restore. |
 | 02 | done | Exact code/data addressing: reviewed symbol-less executable ranges; physical static/dynamic symbol selection; zero-sized/alias occurrences; initialization bytes and range-local relocation effects. Accepted selectors survive analysis/export/reopen; only affecting relocations block integer interpretation; coverage does not infer code in unselected bytes. |
 | 03 | done | Pointer tables and interfaces: exact relocated targets, bounded alternatives, roots/slots, layout/ABI/guards/index domains and semantic bindings. Discovery → proposal → review → query/export works on synthetic and real inputs; ambiguity/unsupported/null/external targets stay distinct; invalid guards and conflicting layouts fail. |
-| 04 | active | Function/context contracts and research navigation: signatures, argument roles, fields, preconditions, reviewed paths/event routes; function/callers/callees, object readers/writers, field accesses, flow/effect slices. Answers retain evidence paths and distinguish structural from executable paths; cycles, ambiguous callbacks and partial results are tested; reads never schedule hidden analysis. |
-| 05 | pending | Register lifecycle: MMIO/field discovery, physical catalog, evidence/conflicts/coverage, applicability/review. Independent register tool owns model initialization/SVD import and existing publication. Observation → reviewed source model → validate → four generated outputs works; observed access width is not physical width; generic Blobray gains no production/chip dependency. |
+| 04 | done | Function/context contracts and research navigation: signatures, argument roles, fields, preconditions, reviewed paths/event routes; function/callers/callees, object readers/writers, field accesses, flow/effect slices. Answers retain evidence paths and distinguish structural from executable paths; cycles, ambiguous callbacks and partial results are tested; reads never schedule hidden analysis. |
+| 05 | ready | Register lifecycle: MMIO/field discovery, physical catalog, evidence/conflicts/coverage, applicability/review. Independent register tool owns model initialization/SVD import and existing publication. Observation → reviewed source model → validate → four generated outputs works; observed access width is not physical width; generic Blobray gains no production/chip dependency. |
 | 06 | pending | Saved linked semantic IR, configured builds/exports and static observable trace comparison. May-effects, exact static traces and concrete observations remain distinct; incomplete traces cannot MATCH; known differences DIFF; provenance and source-free reading survive composition. |
 | 07 | pending | Integer execution sessions: stack ABI arguments, RV32 atomics, multiple entry points/setup phases, ownership/persistent regions, cold/warm resets and return/reach-symbol/observe-call goals. State transitions, unknown data, unsupported instructions, dependent-phase blocking and exact replay are tested. |
 | 08 | pending | External-call returns/outputs/bounded allocation, delay events and standard constant/sequence/W1C/read-clear/self-clearing/FIFO/indexed-bank models. Every mechanism has positive/negative cases; no implicit response/fallback; model identity/applicability/participation is evidence; code and modeled boundaries stay distinct. |
@@ -182,7 +182,7 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stages 00–03 are complete. Stages 04.1–04.2 and 04.3.1–04.3.2 are complete; stage 04.3.3 is ready with the partitions below.
+Stages 00–04 are complete. Stage 05 is ready.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
 interface review/discovery, ambiguous bindings and authenticated ROM query/export
 reopening. All standalone Next packages/tests, Clippy, formatting and affected
@@ -290,7 +290,7 @@ scenarios; do not import legacy packs or add a second resolver:
 | --- | --- | --- |
 | 04.1 | done | Physical function signature/context declaration → validate/propose/review → query/export/source-free reopening. Share call ABI vocabulary with interfaces. Argument/return roles, context extents/fields/access roles and explicit preconditions remain conditional claims. Bad selectors, field bounds/types, contradictory preconditions and conflicting accepted contracts fail without publication; symbol/range, ordinary/thin/image and resource regressions pass. |
 | 04.2 | done | Shared saved-research navigation for functions/callers/callees, data-object readers/writers and context-field accesses. Explicit selected analyses/publications/knowledge, bounded operation indexes, physical selectors and evidence references; ambiguous/unresolved targets remain visible, cycles terminate, no hidden analysis. CLI/API/export/reopen agree on synthetic and real queries. |
-| 04.3 | active | Flow/effect slices and reviewed paths/event routes: selector delivery, static callback registration/delivery and broker subscription with exact participants, sites, fields/selectors and evidence. Structural paths, conditional reviewed routes and executable evidence remain distinct. Missing/ambiguous/mismatched steps, cycles and bounds cannot claim completion; complete query/review/export/reopen scenarios close the remaining stage 04 obligations. Runtime replay remains a later execution consumer, never synthesized by navigation. |
+| 04.3 | done | Flow/effect slices and reviewed paths/event routes: selector delivery, static callback registration/delivery and broker subscription with exact participants, sites, fields/selectors and evidence. Structural paths, conditional reviewed routes and executable evidence remain distinct. Missing/ambiguous/mismatched steps, cycles and bounds cannot claim completion; complete query/review/export/reopen scenarios close the remaining stage 04 obligations. Runtime replay remains a later execution consumer, never synthesized by navigation. |
 
 
 Stage 04.1 acceptance is covered by knowledge `functions::tests`, the Next
@@ -323,7 +323,7 @@ before implementation; none is dropped or moved into a legacy adapter.
 | --- | --- | --- |
 | 04.3.1 | done | Exact saved root → selected function target or reachable effect inventory, with bounded call graph, evidence hops, ambiguous/missing/partial frontiers and explicit structural scope. Native ordered path proposal/review revalidates every exact saved step, rejects missing/mismatched/ambiguous steps and preserves roots. CLI/API/query/export/source-free reopening, cycles/diamond/depth/resource cases and real linked target/effects pass. |
 | 04.3.2 | done | RAM definitions reaching an exact saved call/store publication anchor: incoming, must/alternative/candidate last writes; partial overlap, unknown alias and call clobbers remain explicit. Iterative bounded CFG/dataflow, local witnesses and values; joins, loops, killed definitions, unknown calls, resource failures and source-free query/export pass. It does not invent interprocedural memory effects. |
-| 04.3.3 | ready | Native reviewed selector delivery, static callback registration/delivery and broker subscription routes with exact participants, sites, object/queue/domain/selector fields, callback identity, case handler and optional terminal. Query authenticates physical evidence and reports condition/lifetime/order blockers separately; review never proves actual asynchronous delivery. Positive/negative/ambiguous/source-free review/query/export cases for all three close stage 04; runtime replay remains stages 07–10. |
+| 04.3.3 | done | Native reviewed selector delivery, static callback registration/delivery and broker subscription routes with exact participants, sites, object/queue/domain/selector fields, callback identity, case handler and optional terminal. Query authenticates physical evidence and reports condition/lifetime/order blockers separately; review never proves actual asynchronous delivery. Positive/negative/ambiguous/source-free review/query/export cases for all three close stage 04; runtime replay remains stages 07–10. |
 
 
 Stage 04.3.1 acceptance covers deterministic bounded graph witnesses, native
@@ -344,3 +344,16 @@ failures. CLI/API source-free exports agree. Authenticated linked PHY prologue
 writes retain exact CFG suffixes, partial-tail status and intervening call barriers;
 restored exports are byte-identical. Full affected package/Next tests, Clippy,
 formatting, owned public/private documentation and standalone checks pass.
+
+
+Stage 04.3.3 acceptance covers all three native event mechanisms through query,
+proposal/acceptance, source-free export and backup/restore. Wrong selectors/fields,
+overwritten or truncated callback stores, ambiguous selected interpretations,
+cycles, wrong records and capacity/work failures cannot publish an accepted route.
+Borrowed navigation facts share physical target keys; checks retain explicit
+service-semantics, lifetime/order/context/guard obligations. Full affected/Next
+tests, focused regressions, Clippy, formatting, public/private documentation and
+standalone checks pass. The authenticated PHY workflow reopens identical retained
+research/data/interface/flow/memory-slice exports under watchdog supervision.
+Native storage/journal are 17/18, including schema-18 ephemeral query run records;
+no compatibility reader or converter is introduced. Stage 04 is closed.

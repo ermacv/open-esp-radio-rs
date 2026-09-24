@@ -53,6 +53,38 @@ pub(crate) fn query_observed(
     ) -> Result<()>,
     emit: &mut dyn FnMut(&NavigationRecord, &mut dyn RunControl) -> Result<()>,
 ) -> Result<NavigationSummary> {
+    query_inspected(
+        project,
+        request,
+        memory,
+        c,
+        observe,
+        &mut |_, _, _, _, _| Ok(()),
+        emit,
+    )
+}
+type FactsObserver<'a> = dyn FnMut(
+        &NavigationFunction,
+        &FunctionManifest,
+        &[FunctionRecord],
+        &Facts<'_, '_>,
+        &mut dyn RunControl,
+    ) -> Result<()>
+    + 'a;
+/// Additional synchronous borrowed-facts consumer; it must admit any retained copies.
+pub(crate) fn query_inspected(
+    project: &Project,
+    request: &NavigationQuery,
+    memory: &WorkingMemory,
+    c: &mut dyn RunControl,
+    observe: &mut dyn FnMut(
+        &NavigationFunction,
+        &FunctionManifest,
+        &mut dyn RunControl,
+    ) -> Result<()>,
+    inspect: &mut FactsObserver<'_>,
+    emit: &mut dyn FnMut(&NavigationRecord, &mut dyn RunControl) -> Result<()>,
+) -> Result<NavigationSummary> {
     let scope = &request.scope;
     if scope.publications.len() > 64
         || scope.analyses.len() > 4096
@@ -243,6 +275,7 @@ pub(crate) fn query_observed(
             let records = crate::research::load_records(&lease.records, memory, c)?;
             summary.analyses_read += 1;
             let facts = Facts::new(&records, memory, c)?;
+            inspect(&node.function, &lease.manifest, &records, &facts, c)?;
             if matches!(request.filter, NavigationFilter::Calls { .. }) {
                 facts.calls(recipe, c, &mut |call, c| {
                     let capacity = memory.reserve(
@@ -314,3 +347,11 @@ fn count(record: &NavigationRecord, summary: &mut NavigationSummary) {
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) fn target_matches(
+    caller: &FunctionRecipe,
+    target: &FunctionRecipe,
+    value: &AbstractValue,
+) -> bool {
+    calls::target_matches(caller, target, value)
+}

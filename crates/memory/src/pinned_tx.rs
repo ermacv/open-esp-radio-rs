@@ -489,12 +489,12 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
     }
 }
 
-// SAFETY: this non-Clone lease retains a separately pinned pool slot in the
-// Radio state. Moving the lease cannot move or release its allocation.
 #[allow(
     unsafe_code,
     reason = "radio lease proves the stable DMA backing contract"
 )]
+// SAFETY: this non-Clone lease retains a separately pinned pool slot in the
+// Radio state. Moving the lease cannot move or release its allocation.
 unsafe impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
     StableDmaBacking for PinnedDmaTxRadioLease<'_, FRAME_CAPACITY, HEADROOM, TRAILER>
 {
@@ -574,12 +574,12 @@ impl<T, B> DerefMut for TaggedStableDmaBacking<T, B> {
     }
 }
 
-// SAFETY: immutable CPU metadata cannot move, release, or alias the wrapped
-// stable backing. The exact allocation remains retained by `backing`.
 #[allow(
     unsafe_code,
     reason = "metadata wrapper retains the same audited stable DMA owner"
 )]
+// SAFETY: immutable CPU metadata cannot move, release, or alias the wrapped
+// stable backing. The exact allocation remains retained by `backing`.
 unsafe impl<T, B: StableDmaBacking> StableDmaBacking for TaggedStableDmaBacking<T, B> {
     fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
         self.backing.stable_dma_region()
@@ -617,12 +617,12 @@ impl<B: IndexedStableDmaLease, R: DmaIndexReturn> DerefMut for ReturningStableDm
     }
 }
 
-// SAFETY: the wrapper retains the exact stable backing and exposes no
-// operation which can release it before this owner is dropped.
 #[allow(
     unsafe_code,
     reason = "wrapper retains the same audited stable DMA owner"
 )]
+// SAFETY: the wrapper retains the exact stable backing and exposes no
+// operation which can release it before this owner is dropped.
 unsafe impl<B: IndexedStableDmaLease, R: DmaIndexReturn> StableDmaBacking
     for ReturningStableDmaBacking<B, R>
 {

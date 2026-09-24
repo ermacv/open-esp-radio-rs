@@ -103,12 +103,12 @@ impl ExternalRxBuffer {
             return;
         }
         self.live = false;
-        // SAFETY: the constructor bound this exact callback and owner identity
-        // to the allocation. `live` makes this the sole invocation.
         #[allow(
             unsafe_code,
             reason = "affine token invokes its bound return edge once"
         )]
+        // SAFETY: the constructor bound this exact callback and owner identity
+        // to the allocation. `live` makes this the sole invocation.
         unsafe {
             (self.release)(self.owner, self.owner_index);
         }
@@ -121,12 +121,12 @@ impl Drop for ExternalRxBuffer {
     }
 }
 
-// SAFETY: the chip owner promises stable storage and cross-core ownership is
-// transferred only by the pool's release/acquire state transitions.
 #[allow(
     unsafe_code,
     reason = "affine external buffer may cross executor cores"
 )]
+// SAFETY: the chip owner promises stable storage and cross-core ownership is
+// transferred only by the pool's release/acquire state transitions.
 unsafe impl Send for ExternalRxBuffer {}
 
 struct ExternalRxHandoffSlot {
@@ -253,9 +253,10 @@ impl ExternalRxHandoffSlot {
             Ok(owner),
             "only the current external RX owner may release"
         );
-        // SLOT_RELEASING excludes a new producer until the old binding has
-        // been removed. The affine buffer's Drop then publishes its separate
-        // DMA-release state.
+        // SAFETY: the successful exchange to SLOT_RELEASING grants this call
+        // exclusive access to the binding cells and excludes a new producer
+        // until the old binding has been removed. The affine buffer's Drop
+        // then publishes its separate DMA-release state.
         #[allow(unsafe_code, reason = "free slot exclusively owns binding removal")]
         let buffer = unsafe {
             *self.offset.get() = 0;
@@ -272,12 +273,12 @@ impl ExternalRxHandoffSlot {
     }
 }
 
-// SAFETY: atomic slot ownership serializes every access to UnsafeCell fields;
-// Release/Acquire publishes both the binding and its bytes across cores.
 #[allow(
     unsafe_code,
     reason = "slot state machine is the external pool Sync boundary"
 )]
+// SAFETY: atomic slot ownership serializes every access to UnsafeCell fields;
+// Release/Acquire publishes both the binding and its bytes across cores.
 unsafe impl Sync for ExternalRxHandoffSlot {}
 
 /// Bounded index pool for DMA buffers retained above the descriptor ring.

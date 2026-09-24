@@ -36,13 +36,13 @@ pub struct AffineSpscQueue<T, const DEPTH: usize> {
     active_endpoints: AtomicU8,
 }
 
-// SAFETY: each slot has exactly one producer before its Release publication
-// and exactly one consumer after the matching Acquire load. The consumer's
-// Release cursor prevents reuse until the affine value has moved out.
 #[allow(
     unsafe_code,
     reason = "bounded SPSC cursor ownership serializes every value slot"
 )]
+// SAFETY: each slot has exactly one producer before its Release publication
+// and exactly one consumer after the matching Acquire load. The consumer's
+// Release cursor prevents reuse until the affine value has moved out.
 unsafe impl<T: Send, const DEPTH: usize> Sync for AffineSpscQueue<T, DEPTH> {}
 
 impl<T, const DEPTH: usize> AffineSpscQueue<T, DEPTH> {
@@ -160,12 +160,12 @@ impl<T, const DEPTH: usize> AffineSpscQueue<T, DEPTH> {
         if Self::cursor_distance(consumer, producer) >= DEPTH {
             return Err(AffineSpscTrySendError(value));
         }
-        // SAFETY: only the producer writes the slot at its private cursor, and
-        // the Acquire consumer cursor proved the previous value moved out.
         #[allow(
             unsafe_code,
             reason = "the single producer owns this unpublished SPSC slot"
         )]
+        // SAFETY: only the producer writes the slot at its private cursor, and
+        // the Acquire consumer cursor proved the previous value moved out.
         unsafe {
             (*self.values[producer % DEPTH].get()).write(value);
         }
@@ -182,12 +182,12 @@ impl<T, const DEPTH: usize> AffineSpscQueue<T, DEPTH> {
         if consumer == producer {
             return Err(AffineSpscTryReceiveError::Empty);
         }
-        // SAFETY: the producer's Release cursor initialized this slot, and
-        // only the consumer moves its affine value out before returning it.
         #[allow(
             unsafe_code,
             reason = "the single consumer owns this published SPSC slot"
         )]
+        // SAFETY: the producer's Release cursor initialized this slot, and
+        // only the consumer moves its affine value out before returning it.
         let value = unsafe { (*self.values[consumer % DEPTH].get()).assume_init_read() };
         self.consumer
             .0
@@ -207,12 +207,12 @@ impl<T, const DEPTH: usize> Drop for AffineSpscQueue<T, DEPTH> {
         let mut consumer = *self.consumer.0.get_mut();
         let producer = *self.producer.0.get_mut();
         while consumer != producer {
-            // SAFETY: exclusive queue ownership proves no endpoint exists;
-            // every cursor-visible slot still contains one initialized value.
             #[allow(
                 unsafe_code,
                 reason = "queue drop releases every still-published affine value"
             )]
+            // SAFETY: exclusive queue ownership proves no endpoint exists;
+            // every cursor-visible slot still contains one initialized value.
             unsafe {
                 self.values[consumer % DEPTH].get_mut().assume_init_drop();
             }

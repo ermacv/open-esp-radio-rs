@@ -345,6 +345,8 @@ impl TaskOwner {
         inputs: BluetoothPhyRegisterInitInputs,
     ) {
         self.reunitable = false;
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the PAC transaction's prerequisites.
         unsafe {
             self.registers.enable_ble_base_stack_hardware(inputs);
         }
@@ -1020,6 +1022,9 @@ impl RxMemoryListInitialPublication for PacBluetoothRxMemoryListInitialPublicati
         reason = "the enclosing HAL operation retains list lifetime and controller-lifecycle prerequisites"
     )]
     fn publish_current_head(&mut self) {
+        // SAFETY: this transaction exists only inside the two unsafe RX-list
+        // initial-publication operations, whose callers retain the pinned
+        // list at `head` and the serialized controller lifecycle.
         unsafe {
             self.registers.program_memory_list_pointer(
                 self.selector,
@@ -1034,6 +1039,8 @@ impl RxMemoryListInitialPublication for PacBluetoothRxMemoryListInitialPublicati
         reason = "the enclosing HAL operation retains list lifetime and controller-lifecycle prerequisites"
     )]
     fn clear_next_head(&mut self) {
+        // SAFETY: as for `publish_current_head`; a zero next pointer
+        // references no storage.
         unsafe {
             self.registers.program_memory_list_pointer(
                 self.selector,
@@ -1086,6 +1093,8 @@ impl ControllerHal<'_> {
         &mut self,
         descriptor: BluetoothControllerSramAddress,
     ) -> DirectionFindingDisabledBaselineOwner {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the PAC transaction's prerequisites.
         let prepared = unsafe {
             self.registers
                 .prepare_direction_finding_disabled_baseline(descriptor)
@@ -1178,6 +1187,8 @@ impl ControllerHal<'_> {
         reason = "the caller retains scanner graph lifetime and controller-lifecycle prerequisites"
     )]
     pub unsafe fn publish_scan_start(&mut self) -> BluetoothScanStartPublished {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the PAC transaction's prerequisites.
         unsafe { self.registers.publish_scan_start() }
     }
 
@@ -1222,6 +1233,8 @@ impl ControllerHal<'_> {
         index: BluetoothSchedulerHardwareListIndex,
         head: BluetoothSchedulerHardwareListHead,
     ) -> BluetoothSchedulerHardwareListHeadPublished {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the PAC transaction's prerequisites.
         unsafe {
             self.registers
                 .publish_scheduler_hardware_list_head(index, head)
@@ -1243,6 +1256,8 @@ impl ControllerHal<'_> {
         &mut self,
         command: BluetoothSchedulerInsertionCommand,
     ) -> BluetoothSchedulerInsertionCommandStartCleared {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the PAC transaction's prerequisites.
         unsafe {
             self.registers
                 .clear_scheduler_insertion_command_start(command)
@@ -1266,6 +1281,8 @@ impl ControllerHal<'_> {
         &mut self,
         request: BluetoothSchedulerExecutionLockRequest,
     ) -> BluetoothSchedulerExecutionLockPublished {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the PAC transaction's prerequisites.
         unsafe { self.registers.publish_scheduler_execution_lock(request) }
     }
 
@@ -1294,6 +1311,8 @@ impl ControllerHal<'_> {
         &mut self,
         index: BluetoothSchedulerHardwareListIndex,
     ) -> BluetoothSchedulerExecutionModifyPublished {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the PAC transaction's prerequisites.
         unsafe { self.registers.publish_scheduler_execution_modify(index) }
     }
 

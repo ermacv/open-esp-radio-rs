@@ -64,13 +64,13 @@ impl RxFrameBuffer {
     }
 }
 
-// SAFETY: `states`/`stub_state` gate every UnsafeCell transition. Buffer reads
-// require a unique Delivered token; writes happen only before publishing a
-// unique Armed token or through the single native model token.
 #[allow(
     unsafe_code,
     reason = "atomic ownership states are the RX buffer Sync boundary"
 )]
+// SAFETY: `states`/`stub_state` gate every UnsafeCell transition. Buffer reads
+// require a unique Delivered token; writes happen only before publishing a
+// unique Armed token or through the single native model token.
 unsafe impl Sync for RxFrameBuffer {}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

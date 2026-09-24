@@ -1633,6 +1633,9 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         };
         let PassiveScanEmptySchedulerMergePrepared { graph, reservation } = merged;
         let graph = graph.prepare_publication();
+        // SAFETY: `self` holds the sole powered task epoch, and the exact scanner
+        // graph moves into this publication and stays retained by its success or
+        // failure owner.
         let graph = match unsafe { self.task.publish_passive_scan_rx_memory(graph) } {
             Ok(graph) => graph,
             Err(mismatch) => {
@@ -1648,6 +1651,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 });
             }
         };
+        // SAFETY: `graph` is the RX-published scanner graph returned above, and
+        // `self` still holds the sole powered scanner epoch.
         let graph = unsafe { self.task.publish_passive_scan_command(graph) };
         let publication = self.publish_validated_first_scheduler_item_head(address, index, head);
         Ok(PassiveScanSchedulerHeadPublished {
@@ -1693,6 +1698,9 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         index: BluetoothSchedulerHardwareListIndex,
         head: BluetoothSchedulerHardwareListHead,
     ) -> BluetoothSchedulerHardwareListHeadPublished {
+        // SAFETY: `head` was validated against the exclusively owned source list
+        // and typed head encoding; `self` holds the powered task epoch that
+        // serializes scheduler-list MMIO.
         let publication = unsafe { self.task.publish_scheduler_hardware_list_head(index, head) };
         self._scheduler_list.retain_published_first_item(address);
         publication

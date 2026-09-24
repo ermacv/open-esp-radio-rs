@@ -131,6 +131,9 @@ impl<const SWI: u8> Executor<SWI> {
                 unsafe_code,
                 reason = "the static executor owner is polled only by its run loop"
             )]
+            // SAFETY: only this non-returning run loop polls `inner`, and the
+            // pender merely marks work and wakes the software interrupt whose
+            // handler only resets it, so `poll` is never entered reentrantly.
             unsafe {
                 self.inner.poll()
             };

@@ -589,6 +589,9 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         let index = BluetoothSchedulerHardwareListIndex::ZERO;
         let (event, reservation, head, interrupts) = committed.into_parts();
         let (graph, remainder) = event.into_parts();
+        // SAFETY: `self` holds the sole powered task epoch and consumes the unique
+        // task-side peripheral memory owner; the graph and its scheduler item stay
+        // retained by the success or fail-stop owner.
         let graph = match unsafe { self.task.publish_peripheral_connection_rx_memory(graph) } {
             Ok(graph) => graph,
             Err(mismatch) => {

@@ -282,6 +282,10 @@ pub struct AmpduDmaStart<'owner> {
     unsafe_code,
     reason = "start token exists only after aggregate hardware ownership is recorded"
 )]
+// SAFETY: `commit` records `HardwareOwned` for the whole aggregate before
+// creating this token and only lends it to the start closure; the owner keeps
+// every descriptor and buffer until completion or reset, and the private
+// field prevents forging the token.
 unsafe impl HardwareOwnedTxDma for AmpduDmaStart<'_> {
     fn descriptor_head(&self) -> u32 {
         self.binding.descriptor_base
@@ -1267,6 +1271,9 @@ pub struct RetainedAmpduDmaPublication<
     unsafe_code,
     reason = "publication token is coupled to the owner retaining every external lease"
 )]
+// SAFETY: this token exists only after the retaining owner published the
+// complete aggregate chain; it mutably borrows that owner, which retains
+// every external lease, and hardware cannot own the chain before `commit`.
 unsafe impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize> PreparedTxDma
     for RetainedAmpduDmaPublication<'_, '_, B, SLOTS, BUFFER_SIZE>
 {
@@ -1299,6 +1306,9 @@ pub struct AmpduDmaPublication<'owner, const SLOTS: usize, const BUFFER_SIZE: us
     unsafe_code,
     reason = "publication token retains a validated internal aggregate chain"
 )]
+// SAFETY: this token exists only after the pinned owner published and
+// validated the internal aggregate chain; it mutably borrows that owner, and
+// hardware cannot own the chain before `commit`.
 unsafe impl<const SLOTS: usize, const BUFFER_SIZE: usize> PreparedTxDma
     for AmpduDmaPublication<'_, SLOTS, BUFFER_SIZE>
 {

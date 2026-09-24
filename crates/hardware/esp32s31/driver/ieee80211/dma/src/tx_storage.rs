@@ -187,6 +187,10 @@ impl TxDmaStart<'_> {
     unsafe_code,
     reason = "start token is exposed only after the owner records hardware ownership"
 )]
+// SAFETY: `commit` records `HardwareOwned` before creating this token and
+// only lends it to the start closure; the owner keeps the pinned descriptor
+// and buffer until completion or reset, and the private field prevents
+// forging the token.
 unsafe impl HardwareOwnedTxDma for TxDmaStart<'_> {
     fn descriptor_head(&self) -> u32 {
         self.binding.descriptor_address
@@ -354,6 +358,10 @@ impl<const BUFFER_SIZE: usize> TxDmaPublication<'_, BUFFER_SIZE> {
     unsafe_code,
     reason = "publication token retains the initialized software-owned descriptor"
 )]
+// SAFETY: this token is a `&mut` borrow of a Reserved owner whose pinned
+// storage holds the initialized software-owned descriptor and buffer;
+// hardware cannot own it before `commit`, and the private field prevents
+// independent construction.
 unsafe impl<const BUFFER_SIZE: usize> PreparedTxDma for TxDmaPublication<'_, BUFFER_SIZE> {
     fn descriptor_head(&self) -> u32 {
         self.owner.binding.descriptor_address

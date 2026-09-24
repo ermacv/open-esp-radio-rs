@@ -214,6 +214,9 @@ where
                 .task
                 .program_random_device_address_while_idle(random_address);
         }
+        // SAFETY: this runtime holds the sole powered task epoch, and the
+        // response-capable graph with its loaned RX pool moves into this
+        // publication and stays retained by its success or failure owner.
         let memory = match unsafe {
             self.runtime
                 .task

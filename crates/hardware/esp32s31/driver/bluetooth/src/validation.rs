@@ -75,6 +75,8 @@ pub fn configure_and_select_phy_i2c_host(block: u8) -> u32 {
 )]
 #[inline(always)]
 pub unsafe fn initialize_baseband_v2(gain_parameter: u8) {
+    // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+    // which states the lower transaction's prerequisites.
     unsafe {
         oer_esp32s31_pac::validation::initialize_bluetooth_baseband_v2(gain_parameter);
     }
@@ -99,6 +101,8 @@ pub unsafe fn initialize_controller_hal_reviewed_standalone() {
         oer_esp32s31_pac::RadioHardware::for_validation(),
     );
     let (mut task, interrupts) = crate::resources::separate_interrupt_owner(cold);
+    // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+    // which states the lower transaction's prerequisites.
     unsafe {
         task.initialize_controller_hal(BluetoothControllerHalInitConfig::reviewed_standalone());
     }
@@ -126,6 +130,8 @@ pub unsafe fn prepare_modem_lp_timer_registers() {
         oer_esp32s31_pac::RadioHardware::for_validation(),
     );
     let (mut task, interrupts) = cold.separate_interrupt_owner();
+    // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+    // which states the lower transaction's prerequisites.
     let prepared = unsafe { task.prepare_modem_lp_timer_registers() }
         .expect("a fresh Bluetooth task retains the modem LP-timer partition");
     let _terminal_owners = (task, prepared, interrupts);
@@ -149,6 +155,8 @@ pub unsafe fn program_memory_list_pointer(
     slot: BluetoothMemoryListSlot,
     image: BluetoothMemoryListPointerImage,
 ) {
+    // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+    // which states the lower transaction's prerequisites.
     unsafe {
         oer_esp32s31_pac::validation::program_bluetooth_memory_list_pointer(selector, slot, image);
     }
@@ -180,6 +188,8 @@ pub unsafe fn initialize_phy_registers(
     let Ok(resolving_list) = BluetoothControllerSramAddress::new(resolving_list_address) else {
         return false;
     };
+    // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+    // which states the lower transaction's prerequisites.
     unsafe {
         oer_esp32s31_pac::validation::initialize_bluetooth_phy_registers(
             private_timing_source_byte,

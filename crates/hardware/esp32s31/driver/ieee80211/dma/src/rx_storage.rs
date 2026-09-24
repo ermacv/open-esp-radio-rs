@@ -140,13 +140,13 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
             )
             .map_err(|_| RxRingError::Busy)?;
         let pointer = NonNull::new(self.0.get().cast::<u8>()).expect("RX DMA buffer is non-null");
-        // SAFETY: the completed-unit owner proved that DMA released this
-        // buffer. The buffer is part of stable arena storage and the state
-        // transition prevents recycle until the callback marks it released.
         #[allow(
             unsafe_code,
             reason = "completed descriptor detaches stable DMA buffer ownership"
         )]
+        // SAFETY: the completed-unit owner proved that DMA released this
+        // buffer. The buffer is part of stable arena storage and the state
+        // transition prevents recycle until the callback marks it released.
         Ok(unsafe { ExternalRxBuffer::new(pointer, length, BUFFER_SIZE, owner, index, release) })
     }
 
@@ -203,6 +203,8 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
     unsafe_code,
     reason = "detached-buffer state machine serializes cross-core access"
 )]
+// SAFETY: the atomic detached-buffer state serializes every cross-core
+// access to the byte cell; only the current state owner reads or writes it.
 unsafe impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> Sync
     for RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>
 {
@@ -525,6 +527,9 @@ pub struct RxDmaStorage<const COUNT: usize, const BUFFER_SIZE: usize, const STOR
 }
 
 #[allow(unsafe_code, reason = "atomic bindings serialize cross-core ownership")]
+// SAFETY: descriptors, buffers and bindings change only through their
+// atomic ownership bindings and lifecycle state, which serialize every
+// cross-core access.
 unsafe impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> Sync
     for RxDmaStorage<COUNT, BUFFER_SIZE, STORAGE_SIZE>
 {
@@ -1164,12 +1169,12 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         else {
             return Ok(false);
         };
-        // SAFETY: the frozen cursor and terminal unit frontier establish that
-        // DMA has released this descriptor. Only values are copied, and the
-        // immutable view ends before this function returns.
         let buffer = self
             .buffer_for_descriptor(index)
             .ok_or(RxRingError::Count)?;
+        // SAFETY: the frozen cursor and terminal unit frontier establish that
+        // DMA has released this descriptor. Only values are copied, and the
+        // immutable view ends before this function returns.
         output.copy_from_slice(unsafe { &buffer.completed()[offset..end] });
         Ok(true)
     }

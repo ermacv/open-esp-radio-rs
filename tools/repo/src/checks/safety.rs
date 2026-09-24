@@ -86,6 +86,8 @@ impl Policy {
                     "unsafe-code",
                     "-D",
                     "unsafe-op-in-unsafe-fn",
+                    "-D",
+                    "clippy::undocumented_unsafe_blocks",
                 ]);
             }
             Self::Safe => {

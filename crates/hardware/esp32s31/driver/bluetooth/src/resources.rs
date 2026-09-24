@@ -366,6 +366,8 @@ impl TaskResources {
     > {
         let selector = prepared.selector();
         let head = prepared.receive_head();
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the lower transaction's prerequisites.
         let publication = unsafe {
             self.registers
                 .borrow_bluetooth_controller()
@@ -392,6 +394,8 @@ impl TaskResources {
     ) -> Result<PassiveScanMemoryGraphPublished, PassiveScanMemoryGraphPublicationMismatch> {
         let selector = prepared.selector();
         let head = prepared.head();
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the lower transaction's prerequisites.
         let publication = unsafe {
             self.registers
                 .borrow_bluetooth_controller()
@@ -421,6 +425,8 @@ impl TaskResources {
     > {
         let selector = prepared.selector();
         let head = prepared.receive_head();
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the lower transaction's prerequisites.
         let publication = unsafe {
             self.registers
                 .borrow_bluetooth_controller()
@@ -444,6 +450,8 @@ impl TaskResources {
         &mut self,
         published: PassiveScanMemoryGraphPublished,
     ) -> PassiveScanMemoryGraphCommandPublished {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the lower transaction's prerequisites.
         let command = unsafe {
             self.registers
                 .borrow_bluetooth_controller()
@@ -469,7 +477,11 @@ impl TaskResources {
     pub(crate) unsafe fn initialize_modem_lp_timer_hardware(
         &mut self,
     ) -> Result<ModemLpTimerLowPowerHardwareInitializedOwner, BluetoothModemLpTimerOwnerError> {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the lower transaction's prerequisites.
         let prepared = unsafe { self.registers.prepare_modem_lp_timer_registers()? };
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the lower transaction's prerequisites.
         Ok(unsafe { prepared.initialize_low_power_hardware(&mut self.registers) })
     }
 
@@ -503,6 +515,8 @@ impl TaskResources {
         head: BluetoothSchedulerHardwareListHead,
     ) -> BluetoothSchedulerHardwareListHeadPublished {
         let mut controller = self.registers.borrow_bluetooth_controller();
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the lower transaction's prerequisites.
         unsafe { controller.publish_scheduler_hardware_list_head(index, head) }
     }
 
@@ -710,6 +724,8 @@ impl TaskResources {
         &mut self,
         config: BluetoothControllerHalInitConfig,
     ) {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the lower transaction's prerequisites.
         unsafe {
             self.registers.initialize_controller_hal_transaction(config);
         }
@@ -749,6 +765,8 @@ impl TaskResources {
         reason = "the unsafe signature retains the PAC common-PHY prerequisite across the crate boundary"
     )]
     pub(crate) unsafe fn initialize_baseband_v2(&mut self, gain_parameter: u8) {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the lower transaction's prerequisites.
         unsafe {
             self.registers
                 .initialize_baseband_v2_arg_one(gain_parameter);
@@ -772,6 +790,8 @@ impl TaskResources {
         &mut self,
         inputs: BluetoothPhyRegisterInitInputs,
     ) {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the lower transaction's prerequisites.
         unsafe {
             self.registers.enable_ble_base_stack_hardware(inputs);
         }
@@ -804,6 +824,8 @@ impl TaskResources {
         &mut self,
         descriptor: BluetoothControllerSramAddress,
     ) -> DirectionFindingDisabledBaselineOwner {
+        // SAFETY: forwarded unchanged from this function's `# Safety` contract,
+        // which states the lower transaction's prerequisites.
         unsafe {
             self.registers
                 .borrow_bluetooth_controller()

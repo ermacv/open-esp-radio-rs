@@ -146,6 +146,8 @@ pub unsafe fn program_bluetooth_memory_list_pointer(
 ) {
     let cold = RadioHardware::for_validation().into_bluetooth();
     let (mut task, interrupts) = cold.separate_interrupt_owner();
+    // SAFETY: the caller upholds this bridge's modeled list-change and
+    // pointed-storage contract; `task` is the sole validation owner.
     unsafe {
         task.program_memory_list_pointer(selector, slot, image);
     }
@@ -191,6 +193,8 @@ pub unsafe fn initialize_bluetooth_phy_registers(
     );
     let cold = RadioHardware::for_validation().into_bluetooth();
     let (mut task, interrupts) = cold.separate_interrupt_owner();
+    // SAFETY: the caller models every prerequisite of
+    // `initialize_ble_phy_registers`; `task` is the sole validation owner.
     unsafe {
         task.initialize_ble_phy_registers(inputs);
     }

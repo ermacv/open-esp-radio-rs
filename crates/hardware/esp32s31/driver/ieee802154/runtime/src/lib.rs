@@ -534,15 +534,15 @@ impl<R, E: MacCommandExecutor> MacRuntimeActive<R, E> {
                     hardware.executor.disarm_acknowledgement_watchdog();
                 }
                 hardware.executor.finish_terminal_operation();
+                #[allow(
+                    unsafe_code,
+                    reason = "the private acknowledged terminal batch is the DMA reclaim proof"
+                )]
                 // SAFETY: `batch` can only be constructed from the affine
                 // acknowledged hard-IRQ value. The actor consumed that batch
                 // and returned `Deferred`, proving it accepted a terminal for
                 // these exact retained resources. Evidence stays private in
                 // the completion until type-specific reclaim consumes it.
-                #[allow(
-                    unsafe_code,
-                    reason = "the private acknowledged terminal batch is the DMA reclaim proof"
-                )]
                 let terminal = unsafe { DmaTerminalEvidence::from_accepted_terminal_batch() };
                 Ok(MacRuntimeBatchOutcome::Completed(MacRuntimeCompletion {
                     hardware,

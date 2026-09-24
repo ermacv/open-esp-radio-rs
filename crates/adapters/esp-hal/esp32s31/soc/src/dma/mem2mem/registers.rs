@@ -72,6 +72,8 @@ pub(super) fn terminal_status() -> Option<(u32, u32)> {
 
 pub(super) fn enable_channel_interrupts() {
     let regs = AXI_GDMA::regs();
+    // SAFETY: the masks contain only defined channel interrupt bits; the
+    // channel owner is the sole writer of its enable registers.
     unsafe {
         regs.in_ch(CHANNEL)
             .in_int()
@@ -86,6 +88,8 @@ pub(super) fn enable_channel_interrupts() {
 
 pub(super) fn disable_channel_interrupts() {
     let regs = AXI_GDMA::regs();
+    // SAFETY: zero disables every channel interrupt; the channel owner is the
+    // sole writer of its enable registers.
     unsafe {
         regs.in_ch(CHANNEL)
             .in_int()
@@ -124,24 +128,32 @@ pub(super) fn enable_and_configure_group() {
             .axim_rst_wr_inter()
             .clear_bit()
     });
+    // SAFETY: the four window bounds are the internal SRAM range and the
+    // external range from Flash XIP through the end of PSRAM, which this
+    // module's descriptor and payload validation already requires.
     regs.intr_mem_start_addr().write(|writer| unsafe {
         writer
             .access_intr_mem_start_addr()
             .bits(INTERNAL_SRAM_START as u32)
     });
+    // SAFETY: see the window bounds above.
     regs.intr_mem_end_addr().write(|writer| unsafe {
         writer
             .access_intr_mem_end_addr()
             .bits((INTERNAL_SRAM_END - 1) as u32)
     });
+    // SAFETY: see the window bounds above.
     regs.extr_mem_start_addr()
         .write(|writer| unsafe { writer.access_extr_mem_start_addr().bits(0x4000_0000) });
+    // SAFETY: see the window bounds above.
     regs.extr_mem_end_addr()
         .write(|writer| unsafe { writer.access_extr_mem_end_addr().bits(PSRAM_END as u32 - 1) });
 }
 
 pub(super) fn dma_fence() {
     compiler_fence(Ordering::SeqCst);
+    // SAFETY: a full memory fence only orders accesses; it reads and writes
+    // no memory and leaves registers and the stack unchanged.
     unsafe { asm!("fence rw, rw", options(nostack)) };
     compiler_fence(Ordering::SeqCst);
 }
@@ -154,15 +166,19 @@ impl<'d> AxiGdmaMem2Mem<'d> {
         let input = regs.in_ch(CHANNEL);
         let output = regs.out_ch(CHANNEL);
 
+        // SAFETY: the clear masks contain only defined channel interrupt bits.
         input
             .in_int()
             .clr()
             .write(|writer| unsafe { writer.bits(RX_ALL) });
+        // SAFETY: see the clear masks above.
         output
             .out_int()
             .clr()
             .write(|writer| unsafe { writer.bits(TX_ALL) });
 
+        // SAFETY: `BurstSize::register_value` yields only the encoded 16-,
+        // 32- or 64-byte burst selector values.
         input.in_conf0().modify(|_, writer| unsafe {
             writer
                 .mem_trans_en()
@@ -175,13 +191,17 @@ impl<'d> AxiGdmaMem2Mem<'d> {
         input
             .in_conf1()
             .modify(|_, writer| writer.in_check_owner().set_bit());
+        // SAFETY: trigger 6 selects the memory-to-memory peripheral.
         input
             .in_peri_sel()
             .write(|writer| unsafe { writer.peri_in_sel().bits(M2M_TRIGGER_ID) });
+        // SAFETY: callers pass the head of a descriptor chain that they have
+        // validated as 8-byte aligned internal SRAM, built and still own.
         input
             .in_link2()
             .write(|writer| unsafe { writer.inlink_addr().bits(rx_head) });
 
+        // SAFETY: see the burst selector above.
         output.out_conf0().modify(|_, writer| unsafe {
             writer
                 .out_auto_wrback()
@@ -196,9 +216,11 @@ impl<'d> AxiGdmaMem2Mem<'d> {
         output
             .out_conf1()
             .modify(|_, writer| writer.out_check_owner().set_bit());
+        // SAFETY: see the memory-to-memory trigger above.
         output
             .out_peri_sel()
             .write(|writer| unsafe { writer.peri_out_sel().bits(M2M_TRIGGER_ID) });
+        // SAFETY: see the validated descriptor chain head above.
         output
             .out_link2()
             .write(|writer| unsafe { writer.outlink_addr().bits(tx_head) });

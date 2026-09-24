@@ -42,6 +42,8 @@ impl FlashMmu {
         let entry = u32::try_from(relative / page_size).ok()?;
         let within_page = u32::try_from(relative % page_size).ok()?;
 
+        // SAFETY: the full-width index field accepts every `u32`; the owned
+        // SPI0 singleton and `&mut self` serialize this index/content pair.
         registers
             .mmu_item_index()
             .write(|writer| unsafe { writer.mmu_item_index().bits(entry) });

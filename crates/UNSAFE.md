@@ -6,6 +6,13 @@ ownership. Most driver crates forbid unsafe code. Trusted exceptions use
 `deny(unsafe_op_in_unsafe_fn)`; membership in an exception list is not blanket
 permission to add unsafe operations.
 
+Audited packages also deny `clippy::undocumented_unsafe_blocks`: every
+`unsafe` block and `unsafe impl` needs a `// SAFETY:` comment on the lines
+immediately before it, stating why its prerequisites hold. A forwarding
+call inside an `unsafe fn` names the `# Safety` contract it relies on. Put the
+comment below any `#[allow(unsafe_code, ...)]` attribute: Clippy 1.97 does
+not accept a comment above an attribute that spans several lines.
+
 The executable policy is
 [`cargo xtask check safety`](../tools/repo/src/checks/safety.rs). Its generated
 package handling, audited-unsafe list and direct-PAC-dependency list are

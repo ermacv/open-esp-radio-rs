@@ -694,6 +694,9 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         };
         let PeripheralConnectionEmptySchedulerMergePrepared { event, reservation } = merged;
         let (graph, remainder) = event.prepare_publication().into_parts();
+        // SAFETY: `self` holds the sole powered task epoch; the connection graph
+        // and its detached scheduler item move into this publication and stay
+        // retained by its success or failure owner.
         let graph = match unsafe { self.task.publish_peripheral_connection_rx_memory(graph) } {
             Ok(graph) => graph,
             Err(mismatch) => {

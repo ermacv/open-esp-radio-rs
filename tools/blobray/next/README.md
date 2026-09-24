@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 30 and journal schema 31. Earlier and future
+Projects require metadata schema 31 and journal schema 32. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,9 +712,9 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 31 for every durable and read operation. Storage metadata
-uses schema 30; revision manifests use schema 1 and execution manifests use schema
-12. These are independent formats. Earlier journals are rejected by single-run,
+Run records use schema 32 for every durable and read operation. Storage metadata
+uses schema 31; revision manifests use schema 1 and execution manifests use schema
+13. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-31 run; an envelope version is not a journal
+execution 7) wrap the same schema-32 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1366,7 +1366,7 @@ claim a single mmap arena or a process-wide no-allocation guarantee.
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
 operation/query paths. No legacy engine or external limiter participates.
-Execution requests and manifests use schema 12; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
+Execution requests and manifests use schema 13; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 
 ```console
@@ -1382,7 +1382,7 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 12,
+  "schema": 13,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -1396,7 +1396,7 @@ with an exact captured occurrence):
     "name": "one-explicit-case",
     "reset": "cold",
     "relation": null,
-    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [], "calls": [], "tables": [], "services": [], "observe_memory": [], "observe_calls": null },
+    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [], "calls": [], "tables": [], "services": [], "observe_memory": [], "observe_calls": null, "observe_timeline": {"reads":false,"writes":false,"atomics":false,"branches":false} },
     "replacement": null
   }],
   "max_events": 4096
@@ -1462,7 +1462,7 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 comparison relation still excludes final RAM itself.
 
-The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1` environment maps validated ELF
+The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
@@ -1748,7 +1748,7 @@ For example, compare low return, ordered MMIO/fence/delay and one exact memory p
 ```json
 {
   "returns":{"low":true,"high":false},
-  "events":{"mmio_read":true,"mmio_write":true,"fence":true,"delay":true},
+  "events":{"timeline":{"reads":false,"writes":false,"atomics":false,"branches":false},"mmio_read":true,"mmio_write":true,"fence":true,"delay":true},
   "memory":[{"vendor":0,"replacement":0}],
   "calls":false,
   "reviewed_calls":null
@@ -2587,7 +2587,7 @@ validate and preserve both source occurrences; review uses the ordinary accept o
 reject action. Select the accepted immutable reference in a comparison relation:
 
 ```json
-{"calls":false,"reviewed_calls":{"pairs":[{"knowledge":"<revision>","assertion":"<id>"}],"unlisted":"exclude"},"returns":{"low":false,"high":false},"events":{"mmio_read":true,"mmio_write":true,"fence":true,"delay":true},"memory":[]}
+{"calls":false,"reviewed_calls":{"pairs":[{"knowledge":"<revision>","assertion":"<id>"}],"unlisted":"exclude"},"returns":{"low":false,"high":false},"events":{"timeline":{"reads":false,"writes":false,"atomics":false,"branches":false},"mmio_read":true,"mmio_write":true,"fence":true,"delay":true},"memory":[]}
 ```
 
 Reviewed `arguments` is `{"kind":"exact","words":8}`,
@@ -2605,3 +2605,36 @@ pair. At most 128 distinct reviews are selected per execution, within the existi
 64 KiB request/manifest bounds. A reviewed relation is a scoped comparison
 assumption, not hardware qualification. See
 [reviewed call contracts](../docs/design/contracts.md#reviewed-call-correspondence).
+
+## Internal physical timeline
+
+Each invocation supplies `observe_timeline`:
+
+```json
+{"reads":true,"writes":true,"atomics":true,"branches":true}
+```
+
+Use all false to disable guest timeline capture. In the comparison relation,
+`events.timeline` independently selects the same four channels; a selected channel
+must be captured by both invocations. `max_events` and common run budgets apply.
+Capture and comparison use execute/compare/query/replay through the shared API.
+
+Raw `memory` events retain instruction site and typed read/write/LR/SC/RMW data.
+Read values distinguish known, unknown and unavailable. Writes retain their exact
+width/value; atomics include ordering and old/new or SC outcome. `branch` records
+include site, target, fallthrough and taken decision, including compressed branches.
+Selected branch sites compare physically. Memory sites/origins remain provenance;
+address, width and transaction values/order enter equality. No cross-layout or
+pointer correspondence is inferred.
+
+Existing call/service normal-memory effects enter these channels once from their
+original records, including dynamic allocation as one `initialize-zeroed` span
+for its nonempty accessible prefix. Unused capacity remains provenance; a zero-byte
+allocation adds no memory transaction. Bulk initialization is distinct from
+individual stores. Fetch, setup initialization, argument inspection and final
+snapshots do not invent guest transactions. All selected memory/control observations
+remain ordered relative to selected call/MMIO/fence/delay events. Different
+intermediate states or read order can DIFF even when final memory matches.
+Unknown/inaccessible reads or incomplete execution cannot MATCH. Raw excluded
+observations remain available after source removal and project restore. See
+[internal timeline contracts](../docs/design/contracts.md#internal-timeline).

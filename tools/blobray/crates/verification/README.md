@@ -4,7 +4,7 @@
 has no filesystem, store, executor, selection or publication authority. Application
 supplies observations, the exact case relation and shared operation control.
 
-`selected-events-reviewed-calls-returns-memory/model-7` compares explicitly selected ordered
+`selected-timeline-reviewed-calls-returns-memory/model-8` compares explicitly selected ordered
 MMIO read/write, fence and modeled delay channels; selected low/high return words;
 exact paired final normal-memory ranges; and opt-in ordered physical call targets/words. Physical range lengths must agree;
 addresses may differ only because the caller selected that pair. No pointer, ABI
@@ -25,9 +25,8 @@ error, never a verdict. The application aggregates DIFF before INCOMPLETE and
 publishes through the ordinary durable lifecycle.
 
 Memory lookups use the ordered selection/chunk index without cloning snapshots.
-Unknown and unavailable bytes are distinct retained facts. Ordinary access/branch
-timelines, elapsed time and abstract service internals are
-outside this implemented relation. Results concern explicit cases and the declared
+Unknown and unavailable bytes are distinct retained facts. Elapsed time and
+abstract service internals are outside this implemented relation. Results concern explicit cases and the declared
 compiled binding; they do not establish whole-domain equivalence or qualification.
 See [selected comparison contracts](../../docs/design/contracts.md#selected-final-memory-and-comparison-relations).
 
@@ -38,3 +37,12 @@ Unlisted calls are explicitly exact or excluded, with raw evidence retained.
 Pairs can relate distinct targets; they do not infer ABI/layout or pointer
 normalization. Store independently checks selected reviews and uses the same
 index for knownness admission. No knowledge lookup occurs inside verification.
+
+`events.timeline` selects normal reads/writes, atomics and conditional branches.
+Guest memory records and declared call/service effects share typed normal-memory
+comparison without duplicate bookkeeping events. Dynamic allocation compares one
+zeroed requested span, excluding inaccessible capacity; empty spans add no memory
+effect. Bulk initialization is distinct from individual stores. Memory sites/origins remain
+provenance; branches compare exact physical control coordinates. Unknown reads
+cannot establish equality, and identical final RAM does not erase a timeline
+DIFF. All selected channels remain interleaved in one ordered comparison stream.

@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 31
-and database schema 30 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 32
+and database schema 31 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -41,8 +41,9 @@ extents separately; these intervals are neither inferred functions nor padding.
 Unknown structure remains explicit and does not become a zero-byte observation.
 `PASS` for target auditing covers resolved static transfers only. Unknown indirect
 transfers remain separately counted. Comparison retains its explicit relation:
-per-case event channels, low/high return words and exact paired final-memory
-selections. Calls and internal timelines remain outside this implemented relation.
+per-case event channels, low/high return words, exact paired final-memory
+selections, physical or reviewed call correspondence and the selected internal
+physical timeline. Cross-layout/ABI projections remain an explicit target profile.
 
 ### Durable and ephemeral acquisition
 
@@ -752,7 +753,7 @@ Domain validates stack geometry and computes entry SP; application initializes
 stack arguments in its freshly owned stack, and passes eight optional register
 words to the backend. Unknown argument slots override stack seeds. No register or
 stack word becomes zero by omission, and setup emits no guest events. The caller
-owns type/variadic lowering. Request and manifest schema 12 pin this interpretation;
+owns type/variadic lowering. Request and manifest schema 13 pin this interpretation;
 producer identity pins both backend unknown-value semantics and stack environment.
 
 `ExecutionMemory` also owns LR/SC reservation state, permission checks and indivisible
@@ -867,8 +868,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 30
-and journal schema 31 carry these identities. Old formats are rejected without
+Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 31
+and journal schema 32 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -1411,9 +1412,9 @@ redeclare a live model or reseed live allocation storage through ordinary RAM.
 Fixed-size streamed events retain modeled boundary, arguments, effects and returns.
 Event capacity is admitted for the full successful response before mutation. Store
 checks selected bindings, ordered arguments/effects/returns, exact response consumption
-and closure; missing/forged evidence cannot complete the run. The verifier selects
-MMIO/fence/delay observations and optional low return only; excluded model records
-remain available for inspection. Delay values are assumptions, never wall-time or
+and closure; missing/forged evidence cannot complete the run. The explicit relation
+selects MMIO/fence/delay, return words, final memory, physical/reviewed calls and
+internal timeline channels; excluded model records remain available for inspection. Delay values are assumptions, never wall-time or
 hardware timing evidence. All clients use the existing execution/replay lifecycle.
 
 ## Runtime interface instances
@@ -1727,3 +1728,68 @@ changes, phase ownership, all argument policies, unlisted calls and source-free
 restore/replay. Store tests reject changed/missing resolved policies and verify
 admitted owner release. Review authorizes this comparison assumption, not hardware
 qualification or proof of whole-function equivalence.
+
+### Internal timeline
+
+The invocation explicitly selects normal-memory reads/writes, atomics and
+conditional branches for capture; the relation independently selects those
+channels for comparison. Selected channels must be captured by both sides.
+Application owns admitted event storage and physical normal-memory ownership;
+the backend supplies the current instruction identity and branch decision.
+Instruction fetch, argument inspection and setup initialization do not become
+guest data transactions. Declared call/service memory effects retain their existing
+records and enter selected normal-memory channels once, without duplicate table
+bookkeeping events. Memory site/origin remain provenance; physical address, width,
+values and atomic outcome/order are comparison inputs. Conditional branches retain
+physical site, target, fallthrough and taken decision. No cross-layout or branch
+correspondence is inferred by this profile.
+
+Unknown or inaccessible owned reads stay explicit. Failed instructions/accesses
+also retain their execution gap and cannot establish completed equality. Successful
+stores, LR/SC/RMW and declared model effects are ordered with selected calls/MMIO/
+fence/delay. Setup/inspection cannot add extra guest effects. A known prefix
+difference can establish DIFF; equal final memory cannot erase a different selected
+timeline. Capture failure aborts the entire publication. Reviewed projections are
+owned by the next acceptance unit.
+
+`Invocation.observe_timeline` contains explicit `reads`, `writes`, `atomics` and
+`branches` booleans. `ComparisonRelation.events.timeline` independently selects
+these channels and must be a subset of each side's capture. Raw memory events
+carry instruction PC plus a fixed-size typed transaction. Reads retain known,
+unknown or unavailable values. Successful normal stores retain truncated values
+at widths 1/2/4. LR records its old word; SC records operand and success/failure;
+RMW records old/new words. Atomic ordering bits are explicit program-order inputs,
+not a multi-hart timing guarantee. Invalid/unowned accesses stop with a gap rather
+than inventing a normal-memory owner or using an implicit device fallback.
+
+The executor's `instruction` port identifies memory sites independently of shared
+progress. A phase clears this identity and capture flags. Conditional branch
+records include site, target, fallthrough and taken decision for both ordinary and
+compressed instructions. Fetch, setup seeds, argument inspection, final snapshots
+and runtime-table bookkeeping never duplicate guest transactions. Existing
+`CallOutput`/`ServiceOutput` writes and `ServiceInput` reads enter the selected
+normal-memory relation once via their original records, retaining model provenance.
+Dynamic `Allocation` records enter writes as one `initialize-zeroed` span for
+the nonempty requested prefix, never the unused capacity. A zero-length request
+retains allocation evidence but has no memory transaction. Bulk initialization is
+an explicit transaction, not implicitly coalesced with individual stores. Table
+initialization and pointer installation remain setup, not guest writes.
+
+Event storage remains admitted once per session and recycled per phase. Memory
+writes/atomics check event capacity before mutation; RMW admission precedes its
+pure update callback. Failures during subsequent evidence handling abort the run's
+publication. Store checks capture authorization, instruction/branch geometry,
+transaction widths/values and selected-knownness; it does not reconstruct ISA
+execution from the transcript. A claimed completed outcome plus an unknown selected
+read still cannot admit MATCH. Verification borrows transactions and compares
+normal-memory values without including source PC/origin as an implicit equality
+condition. Branch comparison is exact physical control comparison; differing code
+addresses require an explicit future reviewed projection.
+
+[Timeline regressions](../../next/tests/execution/timeline.rs) cover all widths,
+AMO/orderings and LR/SC, ordinary/compressed branches, intermediate differences
+with equal final RAM, model/service effects, phase capture, unknown/unreadable
+memory, capacity, cancellation and source-free restore/replay.
+[Store validation](../../crates/store/src/execution_timeline.rs) rejects malformed
+or unrequested transcripts and invented MATCH; application verifies capacity before
+atomic callback/mutation. No elapsed-time or real hardware equivalence is implied.

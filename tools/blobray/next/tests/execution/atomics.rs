@@ -1,9 +1,9 @@
 use super::*;
 
-fn op(function: u32, ordering: u32, dest: u32, base: u32, src: u32) -> u32 {
+pub(super) fn op(function: u32, ordering: u32, dest: u32, base: u32, src: u32) -> u32 {
     function << 27 | ordering << 25 | src << 20 | base << 15 | 2 << 12 | dest << 7 | 0x2f
 }
-fn scenario(f: &Fixture, value: Option<u32>) -> ExecutionRequest {
+pub(super) fn scenario(f: &Fixture, value: Option<u32>) -> ExecutionRequest {
     let mut request = f.request();
     request.cases[0].vendor.arguments = vec![Some(0x3000), Some(5)];
     request.cases[0].vendor.memory.push(ram(MemorySeed {

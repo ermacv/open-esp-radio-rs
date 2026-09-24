@@ -642,3 +642,19 @@ Read `manifest.call_pairs` and raw calls beside the verdict. Different addresses
 can correspond only through the selected pair. Changed source/definition or
 ambiguous selected endpoints fail before publication. Reading and replaying the
 retained result after source removal/restore uses the same frozen reviews.
+
+### Compare the internal physical timeline (implemented)
+
+Set invocation `observe_timeline` flags for required normal reads/writes, atomics
+and conditional branches. Select the corresponding `events.timeline` flags in the
+case relation; both sides must capture every selected channel. Use execute/compare
+and the ordinary execution/query/replay lifecycle. All existing call/MMIO/fence/
+delay selections preserve their order relative to selected internal observations.
+
+A final-memory match can coexist with a timeline difference: an intermediate write,
+load order, atomic outcome/order or branch choice may differ despite identical final
+bytes and return. Excluded raw observations remain readable. Unknown/inaccessible
+selected reads cannot MATCH. Model/service memory effects retain their explicit
+assumption provenance; setup and inspection are excluded. Physical branch sites
+compare exactly; reviewed cross-layout/ABI/control correspondence remains the next
+profile, with no automatic normalization.

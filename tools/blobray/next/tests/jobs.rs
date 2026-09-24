@@ -223,7 +223,7 @@ fn work_exhaustion_is_durable_and_cli_preserves_the_selected_snapshot() {
     let value: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(value["schema"], 3);
     let record: RunRecord = serde_json::from_value(value["run"].clone()).unwrap();
-    assert_eq!(record.schema, 31);
+    assert_eq!(record.schema, 32);
     assert_eq!(record.state, RunState::ResourceLimited);
     assert_eq!(
         record.error.as_ref().unwrap().code,

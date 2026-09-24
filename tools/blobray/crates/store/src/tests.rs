@@ -1321,6 +1321,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
             name: "one".into(),
             vendor: Invocation {
                 observe_calls: None,
+                observe_timeline: TimelineCapture::default(),
                 observe_memory: vec![],
                 goal: ExecutionGoal::Return,
                 entry: 4096,
@@ -1885,6 +1886,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
     };
     let input = Invocation {
         observe_calls: None,
+        observe_timeline: TimelineCapture::default(),
         observe_memory: vec![],
         entry: 4096,
         goal: ExecutionGoal::Return,
@@ -1957,6 +1959,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
                         high: false,
                     },
                     events: EventChannels {
+                        timeline: TimelineCapture::default(),
                         mmio_read: true,
                         mmio_write: true,
                         fence: true,
@@ -2226,6 +2229,7 @@ fn retained_call_pairs_require_exact_review_content_and_release_admitted_owners(
         tables: vec![],
         services: vec![],
         observe_memory: vec![],
+        observe_timeline: TimelineCapture::default(),
         observe_calls: Some(CallCapture {
             include_tail: false,
             argument_words: 0,
@@ -2249,6 +2253,7 @@ fn retained_call_pairs_require_exact_review_content_and_release_admitted_owners(
                     high: false,
                 },
                 events: EventChannels {
+                    timeline: TimelineCapture::default(),
                     mmio_read: false,
                     mmio_write: false,
                     fence: false,

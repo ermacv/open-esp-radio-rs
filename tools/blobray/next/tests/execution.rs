@@ -112,6 +112,7 @@ impl Fixture {
     fn request(&self) -> ExecutionRequest {
         let invocation = Invocation {
             observe_calls: None,
+            observe_timeline: TimelineCapture::default(),
             observe_memory: vec![],
             goal: ExecutionGoal::Return,
             entry: 0x1000,
@@ -541,6 +542,7 @@ fn fixture_relation(low: bool) -> ComparisonRelation {
         reviewed_calls: None,
         returns: ReturnWords { low, high: false },
         events: EventChannels {
+            timeline: TimelineCapture::default(),
             mmio_read: true,
             mmio_write: true,
             fence: true,
@@ -558,3 +560,6 @@ mod capture;
 
 #[path = "execution/call_pairs.rs"]
 mod call_pairs;
+
+#[path = "execution/timeline.rs"]
+mod timeline;

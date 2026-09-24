@@ -141,6 +141,7 @@ mod tests {
             tables: vec![],
             services: vec![],
             observe_memory: vec![],
+            observe_timeline: TimelineCapture::default(),
             observe_calls: Some(CallCapture {
                 include_tail: false,
                 argument_words: 2,

@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 12;
+pub const EXECUTION_SCHEMA: u32 = 13;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 
@@ -49,6 +49,7 @@ pub struct Invocation {
     pub services: Vec<FifoService>,
     pub observe_memory: Vec<MemorySelection>,
     pub observe_calls: Option<CallCapture>,
+    pub observe_timeline: TimelineCapture,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -146,6 +147,16 @@ pub struct ExecutionRequest {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ExecutionEvent {
+    Memory {
+        site: u32,
+        transaction: MemoryTransaction,
+    },
+    Branch {
+        site: u32,
+        target: u32,
+        fallthrough: u32,
+        taken: bool,
+    },
     CallTransfer {
         site: u32,
         target: u32,
@@ -378,6 +389,8 @@ pub struct ExecutionProducer {
 }
 /// Session-owned memory. None denotes unknown/inaccessible bytes, never zero.
 pub trait ExecutionMemory {
+    /// Identify the current instruction independently of progress/reporting state.
+    fn instruction(&mut self, pc: u32);
     /// Observe an eligible transfer before goal completion or dispatch; never execute a model.
     fn observe_call(&mut self, input: &CallInput, control: &mut dyn RunControl) -> Result<()>;
     fn call(&mut self, input: &CallInput, control: &mut dyn RunControl) -> Result<CallDispatch>;
@@ -429,7 +442,8 @@ pub trait ExecutionMemory {
 }
 /// Ordering requested by the guest atomic instruction. A single-hart environment
 /// executes memory operations in program order; this is not a concurrency model.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExecutionOrdering {
     pub acquire: bool,
     pub release: bool,

@@ -35,6 +35,8 @@ pub(super) struct Session<'a> {
     service_observations: Vec<FifoObservation>,
     service_goal: Option<(u16, Option<u32>)>,
     capture: Option<(CallCapture, MemoryReservation<'a>)>,
+    timeline: TimelineCapture,
+    pc: Option<u32>,
     final_memory: Vec<FinalMemoryChunk>,
     final_memory_capacity: Option<MemoryReservation<'a>>,
     table_observations: Vec<RuntimeTableObservation>,
@@ -111,6 +113,8 @@ impl<'a> Session<'a> {
             service_observations,
             service_goal: None,
             capture: None,
+            timeline: TimelineCapture::default(),
+            pc: None,
             final_memory: Vec::new(),
             final_memory_capacity: None,
             call_observations,
@@ -229,6 +233,7 @@ impl<'a> Session<'a> {
         self.reservation = None;
         self.finish_phase();
         self.events.clear();
+        self.timeline = input.observe_timeline;
         if let Some(profile) = &input.observe_calls {
             profile.validate()?;
             let capacity = self.memory.reserve(profile.payload_bytes(), c.position())?;
@@ -418,6 +423,8 @@ impl<'a> Session<'a> {
     }
     fn finish_phase(&mut self) {
         self.capture = None;
+        self.timeline = TimelineCapture::default();
+        self.pc = None;
         self.reservation = None;
         self.regions.retain(|r| {
             !matches!(
@@ -473,6 +480,9 @@ impl<'a> Session<'a> {
     }
 }
 impl ExecutionMemory for Session<'_> {
+    fn instruction(&mut self, pc: u32) {
+        self.pc = Some(pc);
+    }
     fn observe_call(&mut self, input: &CallInput, c: &mut dyn RunControl) -> Result<()> {
         self.capture_call(input, c)
     }
@@ -522,13 +532,33 @@ impl ExecutionMemory for Session<'_> {
         };
         let r = &self.regions[i];
         let required = if access == MemoryAccess::Fetch { 1 } else { 4 };
-        if r.flags & required == 0 || r.known[offset..offset + width as usize].contains(&0) {
-            return Ok(None);
+        let value = if r.flags & required == 0 {
+            MemoryReadValue::Unavailable
+        } else if r.known[offset..offset + width as usize].contains(&0) {
+            MemoryReadValue::Unknown
+        } else {
+            let mut bytes = [0; 4];
+            bytes[..width as usize].copy_from_slice(&r.bytes[offset..offset + width as usize]);
+            MemoryReadValue::Known {
+                value: u32::from_le_bytes(bytes),
+            }
+        };
+        if access == MemoryAccess::Read {
+            self.trace_memory(
+                MemoryTransaction::Read {
+                    address,
+                    width,
+                    value,
+                },
+                c,
+            )?;
         }
-        let mut bytes = [0; 4];
-        bytes[..width as usize].copy_from_slice(&r.bytes[offset..offset + width as usize]);
-        Ok(Some(u32::from_le_bytes(bytes)))
+        Ok(match value {
+            MemoryReadValue::Known { value } => Some(value),
+            _ => None,
+        })
     }
+
     fn write(
         &mut self,
         address: u32,
@@ -565,16 +595,19 @@ impl ExecutionMemory for Session<'_> {
         if self.regions[i].flags & 2 == 0 {
             return Ok(false);
         }
+        self.admit_memory_event(self.timeline.writes, c)?;
         self.invalidate_reservation(address, width);
         let r = &mut self.regions[i];
         r.bytes[offset..offset + width as usize]
             .copy_from_slice(&value.to_le_bytes()[..width as usize]);
         r.known[offset..offset + width as usize].fill(1);
-        self.table_write(
-            address,
-            width,
-            value,
-            c.position().entry.and_then(|p| u32::try_from(p).ok()),
+        self.table_write(address, width, value, self.pc, c)?;
+        self.trace_memory(
+            MemoryTransaction::Write {
+                address,
+                width,
+                value,
+            },
             c,
         )?;
         Ok(true)
@@ -582,7 +615,7 @@ impl ExecutionMemory for Session<'_> {
     fn load_reserved(
         &mut self,
         address: u32,
-        _order: ExecutionOrdering,
+        order: ExecutionOrdering,
         c: &mut dyn RunControl,
     ) -> Result<Option<u32>> {
         self.reservation = None;
@@ -594,31 +627,53 @@ impl ExecutionMemory for Session<'_> {
                 .try_into()
                 .unwrap(),
         );
+        self.admit_memory_event(self.timeline.atomics, c)?;
         self.reservation = Some(address);
+        self.trace_memory(
+            MemoryTransaction::LoadReserved {
+                address,
+                order,
+                value,
+            },
+            c,
+        )?;
         Ok(Some(value))
     }
     fn store_conditional(
         &mut self,
         address: u32,
         value: u32,
-        _order: ExecutionOrdering,
+        order: ExecutionOrdering,
         c: &mut dyn RunControl,
     ) -> Result<Option<bool>> {
         let reserved = self.reservation.take();
         let Some((i, offset)) = self.atomic_region(address, 2, false, c)? else {
             return Ok(None);
         };
+        self.admit_memory_event(self.timeline.atomics, c)?;
         if reserved != Some(address) {
+            self.trace_memory(
+                MemoryTransaction::StoreConditional {
+                    address,
+                    order,
+                    value,
+                    stored: false,
+                },
+                c,
+            )?;
             return Ok(Some(false));
         }
         let r = &mut self.regions[i];
         r.bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
         r.known[offset..offset + 4].fill(1);
-        self.table_write(
-            address,
-            4,
-            value,
-            c.position().entry.and_then(|p| u32::try_from(p).ok()),
+        self.table_write(address, 4, value, self.pc, c)?;
+        self.trace_memory(
+            MemoryTransaction::StoreConditional {
+                address,
+                order,
+                value,
+                stored: true,
+            },
             c,
         )?;
         Ok(Some(true))
@@ -626,7 +681,7 @@ impl ExecutionMemory for Session<'_> {
     fn modify_word(
         &mut self,
         address: u32,
-        _order: ExecutionOrdering,
+        order: ExecutionOrdering,
         update: &mut dyn FnMut(u32) -> u32,
         c: &mut dyn RunControl,
     ) -> Result<Option<u32>> {
@@ -638,19 +693,26 @@ impl ExecutionMemory for Session<'_> {
                 .try_into()
                 .unwrap(),
         );
+        self.admit_memory_event(self.timeline.atomics, c)?;
         let value = update(old);
         self.invalidate_reservation(address, 4);
         self.regions[i].bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
-        self.table_write(
-            address,
-            4,
-            value,
-            c.position().entry.and_then(|p| u32::try_from(p).ok()),
+        self.table_write(address, 4, value, self.pc, c)?;
+        self.trace_memory(
+            MemoryTransaction::ReadModifyWrite {
+                address,
+                order,
+                old,
+                value,
+            },
             c,
         )?;
         Ok(Some(old))
     }
     fn event(&mut self, event: ExecutionEvent, c: &mut dyn RunControl) -> Result<()> {
+        if matches!(event, ExecutionEvent::Branch { .. }) && !self.timeline.branches {
+            return Ok(());
+        }
         c.checkpoint(1)?;
         if self.events.len() == self.max_events {
             return Err(Error::new(
@@ -681,3 +743,6 @@ mod execution_observation;
 
 #[path = "execution_capture.rs"]
 mod execution_capture;
+
+#[path = "execution_timeline.rs"]
+mod execution_timeline;

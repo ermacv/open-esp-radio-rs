@@ -82,7 +82,8 @@ pub(super) fn difference_valid(
                     || relation.events.mmio_read
                     || relation.events.mmio_write
                     || relation.events.fence
-                    || relation.events.delay)
+                    || relation.events.delay
+                    || relation.events.timeline.any())
         }
         (
             ComparisonVerdict::Diff,
@@ -147,6 +148,7 @@ mod tests {
     fn missing_reordered_and_forged_memory_chunks_are_rejected() {
         let input = Invocation {
             observe_calls: None,
+            observe_timeline: TimelineCapture::default(),
             entry: 0x1000,
             goal: ExecutionGoal::Return,
             arguments: vec![],
@@ -169,6 +171,7 @@ mod tests {
                 high: false,
             },
             events: EventChannels {
+                timeline: TimelineCapture::default(),
                 mmio_read: false,
                 mmio_write: false,
                 fence: false,

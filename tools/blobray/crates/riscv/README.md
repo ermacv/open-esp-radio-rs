@@ -30,7 +30,7 @@ sets. Static trace extraction consumes the saved fence record; it never parses
 instruction display strings. Concrete execution retains its own supported fence-mode
 check and reports unsupported modes explicitly.
 
-`execution-8` preserves unspecified argument registers as unknown. Stack argument
+`execution-9` preserves unspecified argument registers as unknown. Stack argument
 placement belongs to application; the backend observes those words through memory
 loads with the same initialization and permissions as other guest accesses.
 
@@ -45,7 +45,7 @@ returns. Premature return is `goal-not-reached`. The backend never resolves phys
 symbols, infers function extents or claims an early goal executed its target body.
 
 
-`execution-8` dispatches explicit call-boundary responses through the injected memory port after observe-call goals. It applies psABI caller-saved unknown clobbers and explicit return words, preserves callee-saved/SP/gp/tp, and never resolves bindings or owns model state. Ordinary code and canonical returns retain their instruction paths.
+`execution-9` dispatches explicit call-boundary responses through the injected memory port after observe-call goals. It applies psABI caller-saved unknown clobbers and explicit return words, preserves callee-saved/SP/gp/tp, and never resolves bindings or owns model state. Ordinary code and canonical returns retain their instruction paths.
 
 Eligible call transfers report whether their target was indirect. Application may
 validate a selected runtime interface before dispatch; typed interface gaps stop the
@@ -53,5 +53,11 @@ phase. Canonical returns and the reserved root-return sentinel bypass call dispa
 The backend neither resolves reviewed roots nor infers pointer provenance.
 
 A successful selected dequeue is supplied by application after modeled output;
-`execution-8` stops with `observed-dequeue` at that service event. Failed/other
+`execution-9` stops with `observed-dequeue` at that service event. Failed/other
 service events cannot complete it, and returning first remains goal-not-reached.
+
+The executor identifies each instruction through the memory port independently of
+progress callbacks. Conditional branches emit physical site/target/fallthrough and
+taken choice; the session's explicit timeline capture decides whether to retain
+these events. The backend does not own event storage or comparison selection.
+Normal-memory and atomic effects are observed by their session owner.

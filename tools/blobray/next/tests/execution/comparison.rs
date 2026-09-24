@@ -2,6 +2,7 @@ use super::interfaces::run;
 use super::*;
 fn no_events() -> EventChannels {
     EventChannels {
+        timeline: TimelineCapture::default(),
         mmio_read: false,
         mmio_write: false,
         fence: false,

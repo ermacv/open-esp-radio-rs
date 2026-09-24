@@ -1,6 +1,6 @@
 //! Comparison of explicitly selected concrete observations; no execution/store authority.
 use blobray_domain::*;
-pub const VERIFIER: &str = "selected-events-reviewed-calls-returns-memory/model-7";
+pub const VERIFIER: &str = "selected-timeline-reviewed-calls-returns-memory/model-8";
 pub fn compare(
     left: &ExecutionObservation,
     right: &ExecutionObservation,
@@ -85,6 +85,13 @@ pub fn compare(
                             }
                         }
                     }
+                    (Observation::Memory(a), Observation::Memory(b)) => match a.equal(b) {
+                        Some(true) => (),
+                        None => known = false,
+                        Some(false) => {
+                            return Ok(different(ComparisonDifference::Event { index: count }));
+                        }
+                    },
                     (Observation::Event(a), Observation::Event(b)) if a == b => {}
                     _ => return Ok(different(ComparisonDifference::Event { index: count })),
                 }
@@ -185,6 +192,7 @@ pub fn compare(
     })
 }
 enum Observation<'a> {
+    Memory(MemoryTransaction),
     Event(&'a ExecutionEvent),
     Call {
         target: u32,
@@ -249,7 +257,12 @@ impl<'a> Selected<'a> {
             } else if matches!(event, ExecutionEvent::TransferArgument { .. }) {
                 return Err(invalid());
             } else if self.relation.events.selects(event) {
-                return Ok(Some(Observation::Event(event)));
+                return Ok(Some(if let Some(transaction) = event.normal_memory() {
+                    transaction.validate()?;
+                    Observation::Memory(transaction)
+                } else {
+                    Observation::Event(event)
+                }));
             }
         }
         Ok(None)
@@ -275,6 +288,7 @@ mod tests {
                     high: false,
                 },
                 events: EventChannels {
+                    timeline: TimelineCapture::default(),
                     mmio_read: true,
                     mmio_write: true,
                     fence: true,
@@ -402,6 +416,7 @@ mod physical_calls {
                 high: false,
             },
             events: EventChannels {
+                timeline: TimelineCapture::default(),
                 mmio_read: true,
                 mmio_write: true,
                 fence: true,
@@ -495,6 +510,7 @@ mod reviewed_calls {
                 high: false,
             },
             events: EventChannels {
+                timeline: TimelineCapture::default(),
                 mmio_read: false,
                 mmio_write: false,
                 fence: false,
@@ -569,5 +585,83 @@ mod reviewed_calls {
                 .code,
             ErrorCode::Integrity
         );
+    }
+}
+
+#[cfg(test)]
+mod timeline_order {
+    use super::*;
+    #[test]
+    fn normal_memory_stays_interleaved_with_calls_mmio_fences_and_delays() {
+        let memory = ExecutionEvent::Memory {
+            site: 0x1000,
+            transaction: MemoryTransaction::Read {
+                address: 0x3000,
+                width: 4,
+                value: MemoryReadValue::Known { value: 7 },
+            },
+        };
+        let relation = ComparisonRelation {
+            returns: ReturnWords {
+                low: false,
+                high: false,
+            },
+            events: EventChannels {
+                timeline: TimelineCapture {
+                    reads: true,
+                    ..Default::default()
+                },
+                mmio_read: true,
+                mmio_write: true,
+                fence: true,
+                delay: true,
+            },
+            memory: vec![],
+            calls: true,
+            reviewed_calls: None,
+        };
+        for effect in [
+            ExecutionEvent::CallTransfer {
+                site: 0x1004,
+                target: 0x2000,
+                tail: false,
+                indirect: true,
+                stack: Some(0x9000),
+                target_kind: ObservedCallTarget::CapturedCode,
+                words: 0,
+            },
+            ExecutionEvent::Write {
+                address: 0x4000,
+                width: 4,
+                value: 7,
+            },
+            ExecutionEvent::Fence {
+                predecessor: 3,
+                successor: 3,
+            },
+            ExecutionEvent::DelayMicros { value: 7 },
+        ] {
+            let observation = |events| ExecutionObservation {
+                stop: ExecutionStop::Returned {
+                    low: Some(0),
+                    high: None,
+                },
+                steps: 1,
+                events,
+                models: vec![],
+                calls: vec![],
+                tables: vec![],
+                services: vec![],
+                final_memory: vec![],
+            };
+            let a = observation(vec![memory.clone(), effect.clone()]);
+            let b = observation(vec![effect, memory.clone()]);
+            assert_eq!(
+                compare(&a, &b, &relation, &[], &mut || Ok(()))
+                    .unwrap()
+                    .difference,
+                Some(ComparisonDifference::Event { index: 0 })
+            );
+        }
     }
 }

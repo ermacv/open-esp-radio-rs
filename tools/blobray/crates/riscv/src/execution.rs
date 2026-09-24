@@ -3,7 +3,7 @@ use super::*;
 pub struct RiscvExecutor;
 impl Executor for RiscvExecutor {
     fn identity(&self) -> &'static str {
-        "rv32imac/execution-8/rv-asm-0.2.1"
+        "rv32imac/execution-9/rv-asm-0.2.1"
     }
     fn execute(
         &self,
@@ -46,6 +46,7 @@ impl Executor for RiscvExecutor {
             };
         }
         loop {
+            memory.instruction(pc);
             let mut position = control.position();
             position.entry = Some(u64::from(pc));
             control.set_position(position);
@@ -193,8 +194,18 @@ impl Executor for RiscvExecutor {
                         BranchTest::Ltu => a < b,
                         BranchTest::Geu => a >= b,
                     };
+                    let target = pc.wrapping_add_signed(offset.as_i32());
+                    memory.event(
+                        ExecutionEvent::Branch {
+                            site: pc,
+                            target,
+                            fallthrough: next,
+                            taken,
+                        },
+                        control,
+                    )?;
                     if taken {
-                        next = pc.wrapping_add_signed(offset.as_i32());
+                        next = target;
                     }
                 }
                 Inst::Fence { fence } => {

@@ -19,14 +19,22 @@ pub struct ReturnWords {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EventChannels {
+    pub timeline: TimelineCapture,
     pub mmio_read: bool,
     pub mmio_write: bool,
     pub fence: bool,
     pub delay: bool,
 }
 impl EventChannels {
+    pub fn any(self) -> bool {
+        self.mmio_read || self.mmio_write || self.fence || self.delay || self.timeline.any()
+    }
     pub fn selects(self, event: &ExecutionEvent) -> bool {
+        if let Some(transaction) = event.normal_memory() {
+            return self.timeline.selects(&transaction);
+        }
         match event {
+            ExecutionEvent::Branch { .. } => self.timeline.branches,
             ExecutionEvent::Read { .. } => self.mmio_read,
             ExecutionEvent::Write { .. } => self.mmio_write,
             ExecutionEvent::Fence { .. } => self.fence,
@@ -68,8 +76,14 @@ impl ComparisonRelation {
                 && !self.events.mmio_write
                 && !self.events.fence
                 && !self.events.delay
+                && !self.events.timeline.any()
                 && self.memory.is_empty()
                 && !self.observes_calls())
+        {
+            return Err(bad());
+        }
+        if !vendor.observe_timeline.contains(self.events.timeline)
+            || !replacement.observe_timeline.contains(self.events.timeline)
         {
             return Err(bad());
         }

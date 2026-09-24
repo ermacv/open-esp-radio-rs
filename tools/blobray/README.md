@@ -37,11 +37,17 @@ cargo registers generate --manifest registers/esp32s31/publication/registers.tom
 cargo xtask check blobray-standalone
 ```
 
-Concrete comparison currently covers ordered MMIO/fence events and optional u32
-returns over explicit cases. RAM/call comparison, device/service models,
-correspondence/rebase, retention GC, reference-code
-generation and TUI are not available in the new CLI. Unsupported execution remains
-`INCOMPLETE`; these limitations do not enable the old engine implicitly.
+Concrete execution supports phased RV32 integer/stack arguments, atomics, explicit
+goals, device/call models and reviewed runtime interfaces/FIFO services. Comparison
+selects MMIO/fence/delay, low/high return words, final normal-memory ranges,
+physical or reviewed call pairs, and the internal physical memory/branch timeline.
+Unknown selected values and unmet goals/model obligations cannot MATCH. Results
+remain conditional on the selected cases and explicit modeling assumptions.
+
+Reviewed cross-layout/ABI projections, effect contracts, cross-revision
+correspondence/rebase, retention GC, reference-code generation and TUI remain
+pending. Unsupported execution remains `INCOMPLETE`; these limitations do not
+enable the old engine implicitly.
 
 The old facade sources still contain unported responsibilities. They are not the
 normal command, and their command grammar is not supported by `cargo blobray`.

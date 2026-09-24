@@ -442,6 +442,15 @@ pub fn validate_execution_records(
                         .map_or(0, |p| p.overrides.len()) as u64
                         + 1,
                 )?;
+                crate::execution_timeline::validate(input, &event)?;
+                if phase
+                    .relation
+                    .as_ref()
+                    .is_some_and(|r| r.events.selects(&event))
+                    && let Some(transaction) = event.normal_memory()
+                {
+                    relation_complete &= transaction.known();
+                }
                 capture[usize::from(side)].event(
                     input,
                     &event,

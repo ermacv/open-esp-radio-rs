@@ -18,6 +18,7 @@ fn select(r: &mut ExecutionRequest, words: u16) {
                 high: false,
             },
             events: EventChannels {
+                timeline: TimelineCapture::default(),
                 mmio_read: true,
                 mmio_write: true,
                 fence: true,

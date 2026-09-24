@@ -642,5 +642,16 @@ required before the effect-contract checkpoint; no original obligation is remove
 
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
-| 10.3.1 | active | Explicit bounded normal-memory read/write/atomic and conditional-branch observations, with exact ordered physical comparison interleaved with selected calls/MMIO/fence/delay. Include declared model/service normal-memory effects once; setup/inspection reads are provenance rather than invented guest transactions. Capture/compare selections are explicit; unknown/inaccessible/unfinished states cannot MATCH, excluded evidence stays available, and equal final state cannot hide a selected timeline difference. All widths, LR/SC/RMW, branch choices, model effects, phase ownership, resource/cancellation atomicity, retained validation and source-free API/CLI restore/replay pass with all gates. |
-| 10.3.2 | pending | Native reviewed ABI/layout projections for corresponding final-memory fields, call words and internal memory/control observations. Exact endpoint domains/widths/offsets/aliases/applicability and every selected field are validated; no implicit pointer normalization, dropped unknown/missing field, unreviewed mapping or name fallback. Different layouts/ABI word positions can match only under the selected valid projection; reordered RAM/branches and known projected differences remain DIFF. Generic/specialized API/CLI, immutable review/source/definition retention, invalid/stale/conflicting mappings, resource atomicity and source-free replay pass. Compose physical and projected relations, then close 10.3. |
+| 10.3.1 | done | Explicit bounded normal-memory read/write/atomic and conditional-branch observations, with exact ordered physical comparison interleaved with selected calls/MMIO/fence/delay. Include declared model/service normal-memory effects once; setup/inspection reads are provenance rather than invented guest transactions. Capture/compare selections are explicit; unknown/inaccessible/unfinished states cannot MATCH, excluded evidence stays available, and equal final state cannot hide a selected timeline difference. All widths, LR/SC/RMW, branch choices, model effects, phase ownership, resource/cancellation atomicity, retained validation and source-free API/CLI restore/replay pass with all gates. |
+| 10.3.2 | active | Native reviewed ABI/layout projections for corresponding final-memory fields, call words and internal memory/control observations. Exact endpoint domains/widths/offsets/aliases/applicability and every selected field are validated; no implicit pointer normalization, dropped unknown/missing field, unreviewed mapping or name fallback. Different layouts/ABI word positions can match only under the selected valid projection; reordered RAM/branches and known projected differences remain DIFF. Generic/specialized API/CLI, immutable review/source/definition retention, invalid/stale/conflicting mappings, resource atomicity and source-free replay pass. Compose physical and projected relations, then close 10.3. |
+
+
+Stage 10.3.1 closes opt-in physical reads/writes/atomics and conditional branches,
+interleaved with selected calls/MMIO/fence/delay. Modeled output/input and dynamic
+allocation initialization enter once; setup and inspection remain separate.
+Unknown/unavailable reads, equal-final-RAM timeline differences, all widths/AMOs,
+compressed branches, admission before atomic mutation, phase release, forged
+retained evidence and source-free API/CLI restore/replay are covered. All affected
+tests, 97 Next execution tests, Clippy, formatting, public/private documentation
+and standalone pass. Execution schema 13, database 31 and journal 32 identify this
+physical profile. Reviewed cross-layout/ABI projection remains active 10.3.2.

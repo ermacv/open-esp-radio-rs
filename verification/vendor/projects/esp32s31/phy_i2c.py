@@ -1,8 +1,8 @@
-"""Authenticate and compare captured PHY I2C command memory with compiled production.
+"""Compare authenticated PHY I2C and optional calibration leaves with production.
 
 Uses native Blobray requests only. Private inputs, requests and evidence are written
 under the explicitly selected output directory. This is software comparison under
-an explicit register-bank assumption, never hardware qualification.
+explicit peripheral assumptions, never hardware qualification.
 """
 
 import argparse
@@ -19,6 +19,7 @@ LIBRARY_SHA = "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580"
 ROM_SHA = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
 OBJECT_SHA = "7e6ebb1353d1bd2c53b4b5b1176bbf795c57d899c3f07a26ce56e74b5803e9d9"
 TABLE_SHA = "927b3305a35468bb52f3de4e3305f4b4d0674831014376a094ceb00022bab183"
+SDK_SHA = "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
 
 # Independent instruction reading of the authenticated phy_i2c.o root and ROM
 # encode/fill leaves. Low words specify block/register in call order; these are
@@ -83,7 +84,13 @@ def main():
     for name in ("binary", "library", "rom", "production", "linker", "nm", "output"):
         parser.add_argument("--" + name, type=pathlib.Path, required=True)
     parser.add_argument("--limit-mode", choices=["kernel", "watchdog"], required=True)
+    parser.add_argument("--calibration-leaves", action="store_true",
+                        help="also compare the four current calibration leaves")
+    parser.add_argument("--sdk", type=pathlib.Path,
+                        help="pinned linked SDK symbol companion, required for calibration leaves")
     options = parser.parse_args()
+    if options.calibration_leaves != (options.sdk is not None):
+        parser.error("--calibration-leaves and --sdk must be supplied together")
     options.output.mkdir(parents=True, exist_ok=True)
     run = pathlib.Path(tempfile.mkdtemp(prefix="run-", dir=options.output.resolve()))
     (options.output / "latest").write_text(str(run))
@@ -110,15 +117,21 @@ def main():
         return json.loads(result.stdout) if result.stdout else None
 
     sources = [options.library, options.rom, options.production]
+    if options.sdk is not None:
+        sources.append(options.sdk)
     identities = [hashlib.sha256(p.read_bytes()).hexdigest() for p in sources]
     assert identities[:2] == [LIBRARY_SHA, ROM_SHA], identities
-    doc("inputs", dict(sha256=identities, scope="command-memory software comparison"))
-    local = [run / f"input-{i}" for i in range(3)]
+    if options.sdk is not None:
+        assert identities[3] == SDK_SHA, identities[3]
+    doc("inputs", dict(sha256=identities, scope="I2C software comparison",
+                       calibration_leaves=options.calibration_leaves))
+    local = [run / f"input-{i}" for i in range(len(sources))]
     for source, destination in zip(sources, local):
         shutil.copyfile(source, destination)
     call("init", ["init"])
-    revision = call("import", ["import", "--input", "phy="+str(local[0]),
-        "--input", "rom="+str(local[1]), "--input", "production="+str(local[2])])["run"]["revision"]
+    imports = [item for role, path in zip(("phy", "rom", "production", "sdk"), local)
+               for item in ("--input", role+"="+str(path))]
+    revision = call("import", ["import"] + imports)["run"]["revision"]
     for path in local:
         path.unlink()
     inventory = call("inventory", ["inventory"])["snapshot"]["revision"]["inputs"]
@@ -142,13 +155,34 @@ def main():
     assert hashlib.sha256((run/"table/data.bin").read_bytes()).hexdigest() == TABLE_SHA
     leaves = ["phy_i2c_master_mem_cfg", "phy_i2c_master_command_mem_cfg",
               "phy_get_i2c_data", "phy_i2c_enter_critical", "phy_i2c_exit_critical"]
+    calibration_roots = ["phy_txgain_comp_pacfg_new", "phy_force_dig_gain",
+                         "phy_temp_to_power_new", "phy_reg_update_new"] if options.calibration_leaves else []
     link = dict(revision=revision, inputs=[0], entry=entry("phy_i2c_master_cmd_mem_init"),
-                roots=[entry(name) for name in leaves + ["phy_get_i2c_read_mask_new", "phy_get_i2c_hostid_new"]],
+                roots=[entry(name) for name in leaves + ["phy_get_i2c_read_mask_new", "phy_get_i2c_hostid_new"] + calibration_roots],
                 companions=[dict(input=1, symbol=symbol(1, name)["id"]) for name in
                     ("phy_encode_i2c_master", "phy_i2c_master_fill", "phy_get_data_sat",
-                     "phy_i2c_writeReg", "memset", "phy_get_i2c_mst0_mask", "phy_i2c_paral_write_num")],
+                     "phy_i2c_writeReg", "memset", "phy_get_i2c_mst0_mask", "phy_i2c_paral_write_num") +
+                    (("phy_wifi_agc_sat_gain",) if options.calibration_leaves else ())],
                 layout=dict(code=dict(start=0x11000000, length=0x1000000),
                             data=dict(start=0x20000000, length=0x1000000)))
+    if options.calibration_leaves:
+        # AGC shares .iram1 with unrelated roots. Close their physical link
+        # references with authenticated symbols, without rewriting that section
+        # or synthesizing bodies. Every selected binding is in the saved request.
+        extra_rom = ("ets_delay_us", "phy_wait_i2c_sdm_stable", "phy_force_txrx_off",
+                     "phy_dis_hw_set_freq", "phy_i2c_master_reset", "phy_open_fe_bb_clk",
+                     "phy_bbpll_cal", "phy_pbus_clear_reg", "phy_i2c_clk_sel",
+                     "phy_fe_txrx_reset", "phy_adc_rate_set", "phy_i2cmst_reg_init",
+                     "phy_freq_reg_init", "phy_fe_reg_init", "phy_pwdet_reg_init",
+                     "phy_write_chan_freq", "phy_set_pbus_reg", "phy_reg_init",
+                     "phy_bb_agc_reg_update", "phy_set_chan_reg", "phy_set_txcap_reset",
+                     "phy_bb_cbw_chan_cfg", "phy_enable_agc", "phy_wait_freq_set_busy",
+                     "phy_reset_ckgen", "phy_en_hw_set_freq", "phy_wifi_enable_set",
+                     "phy_disable_agc", "phy_tsens_temp_read", "phy_i2c_writeReg_Mask",
+                     "phy_i2c_readReg", "phy_freq_i2c_write_set")
+        link["companions"] += [dict(input=1, symbol=symbol(1, n)["id"]) for n in extra_rom]
+        link["companions"] += [dict(input=3, symbol=symbol(3, n)["id"]) for n in
+                               ("rtc_clk_xtal_freq_get",)]
     plan = run / "link-plan.json"
     call("plan", ["link-plan", "--request", doc("plan", link), "--linker", options.linker.resolve(), "--output", plan])
     image = call("prepare", ["prepare-image", "--plan", plan, "--linker", options.linker.resolve()])["run"]["image"]
@@ -266,6 +300,9 @@ def main():
     assert failed["run"]["error"]["code"] == "resource-limited"
     from phy_i2c_transport import exercise
     transport = exercise(call, doc, symbol, roots, vendor, replacement)
+    if options.calibration_leaves:
+        from phy_calibration_leaves import exercise as calibration
+        transport += calibration(call, doc, symbol, roots, vendor, replacement)
     # All original source copies were deleted before linking/execution. Preserve
     # the full project closure, including probe/ROM bytes and negative evidence.
     call("backup", ["backup", "--output", run/"backup.blobray"])
@@ -288,7 +325,7 @@ def main():
         assert restored["records"] == before["records"]
         assert restored["summary"]["manifest"] == before["summary"]["manifest"]
         assert call("replay-"+name, ["replay", "--id", identity])["run"]["execution"] == identity
-    print("authenticated command-memory and transport comparison and source-free replay passed", run, flush=True)
+    print("authenticated PHY comparisons and source-free replay passed", run, flush=True)
 
 
 if __name__ == "__main__":

@@ -112,6 +112,37 @@ All positive and negative artifacts are checked after source removal and
 backup/restore, including exact replay. This establishes the selected software
 relation under declared peripheral responses, not analog-bus or RF qualification.
 
+### Current calibration leaves
+
+Add `--calibration-leaves --sdk /private/bootloader.elf` to the same command to include the native
+[four-leaf matrix](phy_calibration_leaves.py). Its eleven independent cold cases
+exercise TX-gain restore, forced signed digital gains, temperature-to-power and
+post-init AGC with complementary retained register inputs. All MMIO reads/writes
+remain selected, with independently checked ordered writes and temperature
+returns. AGC executes its captured ROM saturation-gain child. The guest probe
+constructs a validation owner and calls existing shipping HAL/PHY leaves; no
+production capability is fabricated by seeding a pointer.
+
+The extra SDK bootloader ELF is a pinned static symbol companion (SHA-256
+`e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195`).
+AGC shares one archive `.iram1` section with unrelated functions. Their retained
+relocations require the physical SDK clock symbol in addition to ROM
+symbols. The runner records all these explicit symbol bindings and captures the
+SDK before deleting source copies. It does not execute SDK bodies or install
+responses for them: the selected roots use only their retained image, ROM and
+probe mappings. Entering an unmapped SDK dependency would be an execution gap.
+The comparison does not cover the other functions co-located in `.iram1`.
+
+Restore comparison requires the explicitly enabled domain. Temperature conversion
+uses the current archive policy: positive Wi-Fi delta divides by eight, negative
+by three; Bluetooth uses five/four. Selecting a similar ROM function would change
+that policy. Void returns are excluded, while temperature returns are compared.
+Changed temperature must produce DIFF, an unknown argument buffer or absent
+register input must produce INCOMPLETE, and exhausted event capacity must publish
+no result. The combined run retains these cases with the I2C evidence and checks
+their exact replay after source removal and backup/restore. These leaves do not
+establish a complete calibration or physical timing claim.
+
 ## Legacy configuration reference
 
 The configuration and command vocabulary below describe retained legacy inputs;
@@ -296,7 +327,7 @@ cannot qualify them.
 The [ordinary DMA contract](../../../../crates/hardware/esp32s31/driver/ieee80211/dma/README.md)
 and qualification catalog retain that admission limit.
 
-## Current PHY calibration gate
+## Legacy PHY calibration gate
 
 The `phy-calibration-leaves` suite compares four production-bound leaves against
 the pinned esp-phy-lib archive. Its vendor entry authenticates both the archive

@@ -58,7 +58,7 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
 | 10 | done | Comparison relations: selected final RAM, ordered calls/reviewed argument pairs, RAM/branch timeline, ABI/layout projections and effect contracts. Explicit relation selects returns/memory/events; RAM-only and call-only differences are caught; invalid projections fail; all three verdicts and retained excluded observations are tested. |
 | 10.L linker capabilities | done | After completed 10.4, deliver ElfAnalysisLinkV1 through LLD and GNU ld adapters: capability probes, semantic requests, normalized placement/extraction/exit evidence with raw provenance, exact root validation, quota-admitted seekable GNU output, retained closure/query/export/restore, and distinct tool identities/archive semantics. Both real RV32 toolchains, parser/application/resource regressions, affected suites, strict Clippy, formatting, public/private docs, standalone and source-only checks are mandatory. Commit only after full acceptance; this checkpoint does not include stage 11. |
 | 11 | done | Real PHY I2C workflow from authenticated capture and tables through linked execution/models and compiled-production comparison. Independent expectations, model boundaries, source removal and backup/restore are required; no model hides absent production/vendor code or grants hardware qualification. |
-| 12 | pending | Real PHY calibration/RF workflow, required intrinsics and reviewed summaries. Each declared calibration case has explicit conditions and expected outcome; coefficients/models/production changes alter dependency identity; reconstruction never impersonates captured execution. |
+| 12 | active | Real PHY calibration/RF workflow, required intrinsics and reviewed summaries. Each declared calibration case has explicit conditions and expected outcome; coefficients/models/production changes alter dependency identity; reconstruction never impersonates captured execution. |
 | 13 | pending | Project verification: native roles/scopes/models/suites/policies, profile domains/coverage, production bindings/dispositions/audit, baselines/status/check/files/doctor and ranked next actions. One application lifecycle executes suites; auxiliary inputs do not inflate coverage; stale/unreviewed evidence cannot satisfy gates; no CLI-only orchestration. |
 | 14 | pending | Remaining declared Wi-Fi/Bluetooth/coexistence/radio-leaf suites. Every original suite has a native scenario and checked expected MATCH/DIFF/INCOMPLETE; preserve exclusions/claim strength; compiled production paths are required. Split independent large groups into separately accepted sub-stages before activation, without dropping suite obligations. |
 | 15 | pending | Vendor revision snapshots/prepare-update/diff, symbol correspondence/lineage and reviewed rebase of assertions/boundaries. Rename is evidence, not acceptance; changed bodies/layouts/applicability invalidate dependencies; ambiguous mappings require decisions; A→B→reviewed rebase retains A. |
@@ -186,8 +186,9 @@ Aliases/old grammar are not portability requirements.
 Stages 00–10 and both corrective checkpoints below are complete, including all
 four stage-10 comparison profiles and their combined acceptance. The 10.L linker-capability checkpoint is complete after 10.4. Execution has
 resumed on explicit user instruction. Stage 11 is complete, including both
-command-memory and transport acceptance. Stage 12 is next; its calibration/RF
-obligations must be split into executable acceptance units before activation.
+command-memory and transport acceptance. Stage 12.1 is complete under the full
+calibration/RF assignment below. Next is 12.2: complete PBus/DCODE execution,
+negative outcomes and preservation before advancing to RFPLL.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -790,3 +791,49 @@ linker selection. Target-only doctests are inapplicable; the kernel cgroup test
 remains environment-gated. Real execution uses watchdog and claims no hardware
 qualification. Execution schema 16, database schema 35 and journal schema 36
 retain the new model evidence; unsupported formats are rejected without conversion.
+
+
+### Stage 12: calibration/RF acceptance units
+
+The original stage spans independent leaves and composed calibration parents.
+These units preserve its entire scope and close in order. Legacy profiles/tests
+identify questions, inputs and claim limits; their execution code is not a Next
+implementation. Every unit executes captured code and freshly compiled production
+where comparison is claimed, independently checks expected values/outcomes,
+retains explicit relations and environmental assumptions, and covers negative
+resource/unknown/failure paths without partial publication. Each uses native
+application/CLI operations, source-free reopening and replay after backup/restore,
+current owner docs and the ordinary stage gates. No partial unit is completion.
+
+| Unit | Status | Scope and additional acceptance |
+| --- | --- | --- |
+| 12.1 | done | Four finite leaves from `profiles/phy-calibration-leaves.toml`: TX-gain restore, forced digital gain, temperature-to-power and post-init AGC. Execute every declared input case with the current authenticated archive, independently expected writes/returns and compiled HAL/PHY. Preserve the restore-enabled domain and archive-versus-ROM temperature policy. Changed input DIFF, missing/unknown input INCOMPLETE, capacity/no-publication and restored replay must pass. |
+| 12.2 | pending | PBus clear and DCODE: all profiles in `phy_rfpll/calibration.rs`, `phy_rfpll/dcode.rs` and the PBus rows of the calibration profile. Retained values, both settle branches, delayed readiness, crystal selectors and eight measured bytes; stuck PBus/channel/I2C cannot publish partial codes or restore unfinished state. |
+| 12.3 | pending | RFPLL search, maintenance and frequency memory: all cases in `phy_rfpll.rs` and `phy_rfpll/memory.rs`. Zero/nonzero signed corrections, search commands, requested settles, retained memory/control transactions and timeout without restored hardware control. Preserve the installed-layout query exclusion explicitly and retain raw observations. |
+| 12.4 | pending | Gain arithmetic and publication: `phy_rfpll/gain_calculation.rs`, `phy_rfpll/tx_gain.rs`, `phy_rfpll/bluetooth_gain.rs`. Actual current coefficient selection and ROM kernel inputs, signed narrowing, additive current versus subtractive ROM behavior, boundary curves, complete Wi-Fi/BT publishers and bank wrap. Independently authenticate coefficients; changing coefficients changes dependency identity. |
+| 12.5 | pending | Gain state and RF-test producer: `phy_rfpll/gain_state.rs`, `phy_rfpll/gain_producer.rs`. Execute real backup/destruction/recovery/init/consumption and the separately authenticated RF-test power producer, including rounding/saturation and gain/MAC publication. Preserve their characterization scope; vendor storage support is not inferred for production. Missing RF-test input remains an unmet obligation, never an omitted case. |
+| 12.6 | pending | Channel restoration: `phy_rfpll/channel.rs`. Actual callback installation, all temperature-prefix sensor ranges, full-root gain publication and committed channel/bandwidth/temperature; stuck readiness cannot publish gain or semantic output. Prefix and full-root evidence remain distinct. |
+| 12.7 | pending | RX gain/calibration: `phy_rfpll/rx_gain.rs`. Both complete roots, DC/table guards, signed estimators, delayed I2C/settle, projected coefficients and bank limits; failed channel, minimum search and shared budget preserve prior coefficients. Readiness observations and genuine output publication remain visible. |
+| 12.8 | pending | TX-DC/PWDET: `phy_rfpll/tx_dc_pwdet.rs`. Actual search/PBus/SAR children, Wi-Fi/BT selection, DC rows, constant/alternating samples and tone/settle paths. Independent PBus/SAR faults cannot publish calibration; observation capacity differs from time/work limits. Preserve seeded gain adjustment and explicit unused-read exclusions. |
+| 12.9 | pending | Combined calibration and tracking parents: `phy_rfpll/combined.rs`, `phy_rfpll/parent.rs`, `phy_rfpll/graph.rs`. Execute real children, guards/grant order, channel 13/HT40, client/thermal domains, RFPLL disabled/enabled and signed corrections. Failed TX preserves pre-calibration state and earlier completed power/RFPLL state. Modeled child completions cannot satisfy complete-parent acceptance. |
+| 12.10 | pending | Combined practical-PHY checkpoint: all units and stage-11 scenarios work together under native identities, shared budgets and preservation. Complete required intrinsic/reviewed-summary coverage with direct semantic/unknown/resource tests and explicit applicability; changing model, summary or production invalidates identity. No summary impersonates executed capture. All relevant integration suites, standalone, formatting, strict Clippy, owned public/private docs and `cargo xtask check source-only` pass before closing stage 12. |
+
+Required engine/intrinsic or peripheral mechanisms belong to the first unit that
+needs them and must be fully contracted/tested there; 12.10 audits their combined
+coverage, not deferred partial implementation. Retain every original case and
+claim restriction when expressing it as a native request. Any infeasible unit
+uses the executor's `needs-replan` procedure, preserving all unmet obligations.
+
+
+12.1 acceptance: all eleven declared four-leaf cases execute through native
+comparison with independently checked writes/returns and a freshly compiled
+capability-owning production wrapper. AGC retains its actual ROM child. Its
+co-located archive section uses explicit ROM definitions and an authenticated
+static SDK bootloader clock-symbol companion, captured before source removal;
+no SDK body or synthetic callback executes in the selected cases. Positive,
+changed-temperature DIFF, unknown/missing-input INCOMPLETE and event-capacity
+failure without publication pass. The combined I2C/calibration route preserves
+all original evidence and exact replay after move and backup/restore. Probe
+release build, strict target-library Clippy, root/probe formatting and owned
+public/private docs pass; the target-only doctest is inapplicable. Core interfaces
+and formats are unchanged. The full stage-12 checkpoint remains in 12.10.

@@ -73,7 +73,7 @@ is deliberately narrower than full timing equivalence:
   these comparisons do not qualify its full scheduling/calibration graph.
 
 The RX calibration comparisons are described in the project
-[calibration boundary](../../README.md#current-phy-calibration-gate).
+[calibration boundary](../../README.md#legacy-phy-calibration-gate).
 Their production executors are shared with runtime maintenance; probe wrappers
 supply only isolated capabilities and semantic inputs. Output storage starts
 with a sentinel so a failed child cannot be mistaken for published coefficients.

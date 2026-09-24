@@ -3,7 +3,7 @@ use super::*;
 pub struct RiscvExecutor;
 impl Executor for RiscvExecutor {
     fn identity(&self) -> &'static str {
-        "rv32imac/execution-6/rv-asm-0.2.1"
+        "rv32imac/execution-7/rv-asm-0.2.1"
     }
     fn execute(
         &self,
@@ -324,6 +324,12 @@ impl Executor for RiscvExecutor {
                 )? {
                     CallDispatch::RuntimeInterface { instance, issue } => {
                         stop!(ExecutionGap::RuntimeInterface { instance, issue })
+                    }
+                    CallDispatch::FifoService { instance, issue } => {
+                        stop!(ExecutionGap::FifoService { instance, issue })
+                    }
+                    CallDispatch::ObservedDequeue { instance, value } => {
+                        return Ok((ExecutionStop::ObservedDequeue { instance, value }, steps));
                     }
                     CallDispatch::Code => {}
                     CallDispatch::Incomplete { issue } => stop!(ExecutionGap::CallModel {

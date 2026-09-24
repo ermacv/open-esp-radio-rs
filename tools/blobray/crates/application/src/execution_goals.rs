@@ -30,6 +30,9 @@ pub(crate) fn prepare<'m>(
         {
             match &input.goal {
                 ExecutionGoal::Return => result[phase][side] = Some(ResolvedExecutionGoal::Return),
+                ExecutionGoal::ObserveDequeue { .. } => {
+                    result[phase][side] = Some(ResolvedExecutionGoal::ObserveDequeue)
+                }
                 ExecutionGoal::ReachSymbol { target: point }
                 | ExecutionGoal::ObserveCall { target: point, .. } => pending.push(
                     Pending {
@@ -74,7 +77,7 @@ pub(crate) fn prepare<'m>(
                                 include_tail: *include_tail,
                             }
                         }
-                        ExecutionGoal::Return => {
+                        ExecutionGoal::Return | ExecutionGoal::ObserveDequeue { .. } => {
                             return Err(Error::new(
                                 ErrorCode::Integrity,
                                 "unexpected pending return goal",

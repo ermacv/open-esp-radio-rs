@@ -638,7 +638,7 @@ impl Project {
                 if run.execution.is_some() {
                     let result = (|| {
                         let lease = self.execution_from_run(&run, memory, control)?;
-                        validate_execution_records(&lease.manifest, &lease.records, control)
+                        validate_execution_records(&lease.manifest, &lease.records, memory, control)
                     })();
                     if let Err(error) = result {
                         if matches!(

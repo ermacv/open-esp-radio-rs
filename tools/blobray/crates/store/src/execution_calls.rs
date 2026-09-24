@@ -126,6 +126,19 @@ struct Pending {
 impl Calls<'_> {
     pub fn event(&mut self, event: &ExecutionEvent, c: &mut dyn RunControl) -> Result<()> {
         c.checkpoint(self.live.len() as u64 + 1)?;
+        if matches!(
+            event,
+            ExecutionEvent::ServiceCall { .. }
+                | ExecutionEvent::ServiceArgument { .. }
+                | ExecutionEvent::ServiceInput { .. }
+                | ExecutionEvent::ServiceOutput { .. }
+                | ExecutionEvent::ServiceResult { .. }
+        ) {
+            if self.pending.is_some() {
+                return Err(integrity("FIFO event interrupts call model response"));
+            }
+            return Ok(());
+        }
         if matches!(event, ExecutionEvent::RuntimeTable { .. }) {
             return Ok(());
         }

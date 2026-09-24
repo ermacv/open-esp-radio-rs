@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 27
-and database schema 26 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 28
+and database schema 27 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -752,7 +752,7 @@ Domain validates stack geometry and computes entry SP; application initializes
 stack arguments in its freshly owned stack, and passes eight optional register
 words to the backend. Unknown argument slots override stack seeds. No register or
 stack word becomes zero by omission, and setup emits no guest events. The caller
-owns type/variadic lowering. Request and manifest schema 8 pin this interpretation;
+owns type/variadic lowering. Request and manifest schema 9 pin this interpretation;
 producer identity pins both backend unknown-value semantics and stack environment.
 
 `ExecutionMemory` also owns LR/SC reservation state, permission checks and indivisible
@@ -867,8 +867,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 26
-and journal schema 27 carry these identities. Old formats are rejected without
+Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 27
+and journal schema 28 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -1488,3 +1488,71 @@ are admitted. No global allocator/cache or new runtime crate owns this state.
 Events and closure snapshots share the existing atomic execution publication;
 capacity/cancellation failures publish no successful prefix. Source-free replay
 reuses the frozen request, reviews and captured mappings in the project.
+
+## Stateful FIFO services
+
+`Invocation.services` declares bounded `FifoService` owners. Each declaration
+contains a stable id, applicability, phase/session lifetime, nonzero opaque handle,
+item width (1/2/4 bytes), capacity, ordered initial items and exact `FifoBinding`s.
+A binding selects a live reviewed runtime table id/slot, explicit captured/unmapped
+call boundary, physical ABI word count, handle word and operation. Its slot must
+select `RuntimeSlotTarget::Service` at that address, with reviewed semantic and
+signature metadata. No service is inferred from a function or RTOS name.
+
+Application `fifo_services` owns admitted ring buffers, instance definitions,
+counters and sorted target indexes. Session `execution_services` validates the
+selected association and complete effects; the shared call-word helper reads
+register/stack arguments. The RISC-V backend retains instruction ownership and
+ordinary ABI clobbers, and receives typed service gaps or successful goal events
+through its existing call port. No service state belongs to the backend or frontend.
+
+Enqueue reads either a physical argument word or a known aligned private-stack
+item through a pointer word. It rejects values outside the declared width. Space
+permits appending at the ring tail; full leaves the queue unchanged and returns the
+explicit full response. Optional private-stack wake output receives one for an
+empty-to-nonempty transition, otherwise zero, including full. This is a modeled
+notification value, not proof of a sleeping task or actual wakeup. Dequeue writes
+and removes the oldest item, or returns the explicit empty response without touching
+output. Length returns depth. Successful responses set a0 and leave a1 unknown.
+
+Handle, input, output geometry and permissions are checked before any queue or
+output mutation. A private-stack pointer cannot use normal RAM, table memory or
+MMIO as a fallback. Unknown required words/data, wrong handle or width and invalid
+pointers produce typed incomplete evidence. Full and empty are ordinary responses;
+a queue has no implicit drain-at-closure obligation. Side effects remain private
+to the operation until the common atomic publication; resource or cancellation
+failure cannot publish a successful prefix.
+
+Phase owners release rings after phase evidence; session owners retain independent
+state across successful warm phases. Cold reset releases all owners before new
+state is allocated. A live id/handle or target cannot be redeclared; closed instance
+indices are reusable. Each implementation has separate queues. An incomplete phase
+blocks dependent warm phases. Service and table lifetimes are explicit: calling a
+service whose table/binding has expired cannot silently restore that binding.
+
+The `observe-dequeue` goal selects service id and optional value in the current
+phase. Application resolves a live owner; completion is signaled only after its
+successful matching dequeue and output write. Empty dequeue, other services or
+other values cannot satisfy it; returning first is `goal-not-reached`. It does not
+require executing the remainder of the caller/callee. Return comparison is disabled
+for this goal. Code-goal completion still requires all due device/call/table/service
+obligations to make the complete observation true.
+
+Fixed-size service-call, argument, input, output and result events retain selected
+binding, known values, transition/depth and returns. Closure snapshots retain
+identity, operation count, depth and issue. Store validates initialization and
+reviewed slot selection, ordered values/full/empty/wake/returns, private-stack
+ranges, queue depth/counts, closure and exact successful goal event. Its admitted
+ring reconstruction verifies transcripts; it does not re-execute guest instructions
+or prove unknown pointer provenance. Retained current-target association retains
+its separately documented limit.
+
+There are at most 128 live FIFO services per side, 64 bindings per service and
+65,536 items per queue, further constrained by request and working capacity.
+Queue rings and target/instance indexes are admitted in execution and retained
+validation. Enqueue/dequeue use constant-time ring operations; no front removal
+shifts all remaining items. Request, event, work/deadline and temporary disk budgets
+remain shared with the full scenario. The selected MMIO/fence/delay comparison
+relation retains service evidence but does not implicitly compare queue internals
+or callbacks; explicit code returns remain part of the declared return relation.
+Device FIFO transcripts remain a distinct port model from these stateful services.

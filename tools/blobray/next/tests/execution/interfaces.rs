@@ -4,7 +4,7 @@ fn fixture() -> (Fixture, KnowledgeOccurrence) {
         0x00008413, 0x00452303, 0x000300e7, 0x00040067, 0x00000013, 0x00700513, 0x00008067,
     ])
 }
-fn fixture_code(code: &[u32]) -> (Fixture, KnowledgeOccurrence) {
+pub(super) fn fixture_code(code: &[u32]) -> (Fixture, KnowledgeOccurrence) {
     let (mut bytes, _) = super::goals::symbol_elf(code, 0x1000, 0x1014);
     let sections = u32::from_le_bytes(bytes[32..36].try_into().unwrap()) as usize;
     let symbols = u32::from_le_bytes(
@@ -27,7 +27,7 @@ fn fixture_code(code: &[u32]) -> (Fixture, KnowledgeOccurrence) {
     };
     (f, occurrence)
 }
-fn contract(root: AccessRoot, payload: ArtifactId) -> InterfaceContract {
+pub(super) fn contract(root: AccessRoot, payload: ArtifactId) -> InterfaceContract {
     InterfaceContract {
         root,
         path: vec![],
@@ -66,7 +66,7 @@ fn contract(root: AccessRoot, payload: ArtifactId) -> InterfaceContract {
         applicability: "selected occurrence and explicit runtime conditions".into(),
     }
 }
-fn review(
+pub(super) fn review(
     f: &Fixture,
     occurrence: KnowledgeOccurrence,
     contract: InterfaceContract,
@@ -165,7 +165,7 @@ fn review_as(
         assertion,
     }
 }
-fn request(f: &Fixture, review: InterfaceReview) -> ExecutionRequest {
+pub(super) fn request(f: &Fixture, review: InterfaceReview) -> ExecutionRequest {
     let mut r = f.request();
     r.max_events = 128;
     r.cases[0].vendor.arguments[0] = Some(0x3000);
@@ -188,7 +188,7 @@ fn request(f: &Fixture, review: InterfaceReview) -> ExecutionRequest {
     r.cases[0].replacement = Some(r.cases[0].vendor.clone());
     r
 }
-fn run(f: &Fixture, r: ExecutionRequest) -> (ExecutionManifest, Vec<ExecutionEvidence>) {
+pub(super) fn run(f: &Fixture, r: ExecutionRequest) -> (ExecutionManifest, Vec<ExecutionEvidence>) {
     let record = f.run(r, budget());
     assert_eq!(record.state, RunState::Completed, "{record:?}");
     let data = f.read(&record.execution.unwrap());

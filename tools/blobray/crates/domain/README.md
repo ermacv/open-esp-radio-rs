@@ -121,7 +121,7 @@ results independently from operation completion. Their evaluation belongs to ana
 and application. Function schema 7 / policy 8 includes typed fences and outgoing tail
 inputs; display strings have no semantic authority.
 
-Concrete execution schema 8 uses bounded optional RV32 ABI words: a0–a7 followed
+Concrete execution schema 9 uses bounded optional RV32 ABI words: a0–a7 followed
 by ascending stack slots. `Invocation::entry_stack` validates placement within the
 declared stack; `register_arguments` preserves missing values as unknown. These
 are physical words, with type/variadic lowering owned by the caller.
@@ -150,3 +150,8 @@ slot targets, condition gaps and lifecycle observations. Invocation `tables` is
 explicit, including an empty array. Code-goal completion and table/call/device
 obligations remain separate. Indirect target association records current value,
 not inferred pointer provenance.
+
+`fifo_service` defines explicit bounded queue owners, reviewed slot bindings,
+physical input/output contracts, transitions and closure observations. A selected
+`observe-dequeue` goal observes a successful modeled event and output write;
+code return, queue status and comparison verdict remain separate claims.

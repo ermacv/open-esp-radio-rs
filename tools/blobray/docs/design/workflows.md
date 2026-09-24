@@ -433,8 +433,7 @@ qualification.
 
 This structural scenario does not claim callback execution or hardware behavior.
 Runtime interface placement and callback execution use the separate explicit
-scenario below; service completion remains a target capability. Neither is a
-read query success condition.
+scenarios below. Neither is a read query success condition.
 
 ## Reviewed runtime callback (implemented profile)
 
@@ -579,3 +578,20 @@ return and participation, all three verdicts, output ownership, stack words,
 unknown values, response exhaustion, early goals, resource failure and identical
 API/CLI replay after source removal and backup/restore. Model effects retain their
 conditional scope; hardware qualification and reviewed service dispatch are separate.
+
+
+## Reviewed FIFO service scenario (implemented profile)
+
+Select accepted interface contracts and place their explicit `service` slots in
+an execution request. Declare bounded FIFO owners with handle, item width,
+initial items and phase/session lifetime; bind enqueue/dequeue/length to exact
+reviewed table slots and call boundaries. Supply physical ABI arguments and
+private-stack input/output pointers in the captured caller.
+
+Run setup and action phases through the shared execution API/CLI. Inspect queue
+transitions, known inputs/outputs, wake values and closure alongside code outcomes.
+Use `observe-dequeue` for a selected successful service event; use `return` when
+the caller must finish. Full/empty are declared responses, while invalid pointers,
+handles and unknown required values are incomplete. Warm continuation cannot hide
+a failed phase. Preserve the project and reopen/replay without source files.
+These FIFO mechanisms do not execute an RTOS or qualify scheduler/hardware behavior.

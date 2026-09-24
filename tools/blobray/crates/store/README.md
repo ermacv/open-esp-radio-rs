@@ -4,7 +4,7 @@
 Its only internal dependency is [domain](../domain/README.md). It does not parse
 ELF/AR, select targets, resolve thin paths or install a process supervisor.
 
-Projects require metadata schema 26 and journal schema 27; earlier/future formats
+Projects require metadata schema 27 and journal schema 28; earlier/future formats
 are rejected without conversion or mutation. Revision manifests retain schema 1.
 See [storage diagnosis](../../next/README.md#diagnosis-and-recovery).
 
@@ -63,7 +63,7 @@ does not inspect procfs or implement the worker transport. The application wraps
 store readers in restricted capabilities instead of exposing `Project` to read
 consumers.
 
-Run schema 27 carries the admitted operation, optional concrete scenario
+Run schema 28 carries the admitted operation, optional concrete scenario
 resolution and scoped `ResultAssessment`. Readers validate one published result,
 its assessment identity and scenario shape. Earlier journal formats are rejected.
 Recovery records the last valid stage checkpoint before cleanup, while
@@ -113,7 +113,7 @@ ELF ABI and a semantic producer/value-effect summary. Earlier derived schemas
 are unsupported; existing CAS bytes are never rewritten. Function assessment coverage is complete only
 when structural coverage and semantic
 coverage are both complete; unknown values alone do not imply missing semantics.
-The analyses table and publication transaction remain metadata schema 26.
+The analyses table and publication transaction remain metadata schema 27.
 
 
 `investigations` owns `InvestigationLease`, `PreparedInvestigationReceipt` and the
@@ -153,7 +153,7 @@ registered publications and knowledge history. Knowledge event schema 2 uses the
 same input/image source identity. Earlier derived schemas are not converted.
 
 
-Concrete execution manifests and JSONL evidence use CAS payloads. Schema-8
+Concrete execution manifests and JSONL evidence use CAS payloads. Schema-9
 execution manifests in the existing database carry their publication reference;
 `retain_execution` validates the admitted producer/request and evidence structure,
 then `publish_execution` commits the result and terminal run atomically. Reads
@@ -187,3 +187,9 @@ External-call trace validation checks binding/response identity, ordered ABI arg
 lifecycle evidence: placement identity, initialization/pointer writes, current target
 association, counters, conditions and phase/session closure. Reading never resolves
 live paths or re-executes callbacks; captured reviews and objects remain project roots.
+
+`execution_services` validates FIFO transitions using working-capacity-admitted
+rings, including exact oldest values, full/empty/wake responses, private-stack
+ranges, reviewed associations, closure and selected dequeue goals.
+`validate_execution_records` requires the caller's `WorkingMemory`; reading never
+allocates queue capacity outside the shared budget or executes a guest instruction.

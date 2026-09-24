@@ -1,7 +1,42 @@
 //! Validate complete responses before mutating normal memory; no MMIO output fallback.
 use super::*;
 impl Session<'_> {
-    fn output_location(
+    pub(super) fn read_call_words(
+        &self,
+        input: &CallInput,
+        words: u16,
+        arguments: &mut [Option<u32>; MAX_EXECUTION_ARGUMENT_WORDS],
+        c: &mut dyn RunControl,
+    ) -> Result<Option<CallIssue>> {
+        let Some(stack) = input.stack.filter(|s| s.is_multiple_of(16)) else {
+            return Ok(Some(CallIssue::StackAlignment));
+        };
+        for word in 0..words {
+            c.checkpoint(1)?;
+            arguments[usize::from(word)] = if word < 8 {
+                input.arguments[usize::from(word)]
+            } else {
+                let Some(address) = stack.checked_add(u32::from(word - 8) * 4) else {
+                    return Ok(Some(CallIssue::StackArgument { word }));
+                };
+                let Some((i, o)) = self.region_index(address, 4) else {
+                    return Ok(Some(CallIssue::StackArgument { word }));
+                };
+                let r = &self.regions[i];
+                if r.kind != RegionKind::Stack || r.flags & 4 == 0 {
+                    return Ok(Some(CallIssue::StackArgument { word }));
+                }
+                if r.known[o..o + 4].contains(&0) {
+                    None
+                } else {
+                    Some(u32::from_le_bytes(r.bytes[o..o + 4].try_into().unwrap()))
+                }
+            };
+        }
+        Ok(None)
+    }
+
+    pub(super) fn output_location(
         &self,
         address: u32,
         width: u8,
@@ -33,36 +68,14 @@ impl Session<'_> {
         if input.tail && !binding.allow_tail {
             gap!(CallIssue::TailNotAllowed);
         }
-        let Some(stack) = input.stack.filter(|s| s.is_multiple_of(16)) else {
-            gap!(CallIssue::StackAlignment);
-        };
         let response = self.calls.consumed(slot);
         let words = self.calls.declaration(slot).argument_words;
         if self.calls.response(slot).is_none() {
             gap!(CallIssue::ExhaustedResponses);
         }
         let mut arguments = [None; MAX_EXECUTION_ARGUMENT_WORDS];
-        for word in 0..words {
-            c.checkpoint(1)?;
-            arguments[usize::from(word)] = if word < 8 {
-                input.arguments[usize::from(word)]
-            } else {
-                let Some(address) = stack.checked_add(u32::from(word - 8) * 4) else {
-                    gap!(CallIssue::StackArgument { word });
-                };
-                let Some((i, o)) = self.region_index(address, 4) else {
-                    gap!(CallIssue::StackArgument { word });
-                };
-                let r = &self.regions[i];
-                if r.kind != RegionKind::Stack || r.flags & 4 == 0 {
-                    gap!(CallIssue::StackArgument { word });
-                }
-                if r.known[o..o + 4].contains(&0) {
-                    None
-                } else {
-                    Some(u32::from_le_bytes(r.bytes[o..o + 4].try_into().unwrap()))
-                }
-            };
+        if let Some(issue) = self.read_call_words(input, words, &mut arguments, c)? {
+            gap!(issue);
         }
         let r = self.calls.response(slot).unwrap();
         let (return_words, allocation, delay, outputs) = (
@@ -147,9 +160,14 @@ impl Session<'_> {
                     u64::from(a.address) < u64::from(r.address) + r.bytes.len() as u64
                         && u64::from(r.address) < end
                 })
-                || self.calls.bindings().any(|b| {
-                    u64::from(a.address) < u64::from(b.address) + 2 && u64::from(b.address) < end
-                })
+                || self
+                    .calls
+                    .bindings()
+                    .chain(self.services.bindings().map(|(_, _, b)| b.call))
+                    .any(|b| {
+                        u64::from(a.address) < u64::from(b.address) + 2
+                            && u64::from(b.address) < end
+                    })
             {
                 gap!(CallIssue::AllocationOverlap {
                     address: a.address,

@@ -198,7 +198,12 @@ impl Writer {
         }
         self.project
             .validate_execution_interfaces(request, memory, c)?;
-        validate_execution_records(&manifest, &stage.open_payload(&manifest.records, c)?, c)?;
+        validate_execution_records(
+            &manifest,
+            &stage.open_payload(&manifest.records, c)?,
+            memory,
+            c,
+        )?;
         for id in [&manifest.records, &receipt.execution] {
             self.promote(&stage, id, None, c)?;
         }
@@ -249,6 +254,7 @@ impl Writer {
 pub fn validate_execution_records(
     manifest: &ExecutionManifest,
     source: &dyn ByteSource,
+    memory: &WorkingMemory,
     c: &mut dyn RunControl,
 ) -> Result<()> {
     manifest.request.validate()?;
@@ -271,6 +277,10 @@ pub fn validate_execution_records(
         crate::execution_tables::Tables::new(),
         crate::execution_tables::Tables::new(),
     ];
+    let mut services = [
+        crate::execution_services::Services::new(memory),
+        crate::execution_services::Services::new(memory),
+    ];
     let mut prepared = None;
     let mut models_started = false;
     let mut environment_complete = true;
@@ -287,17 +297,49 @@ pub fn validate_execution_records(
             .get(case as usize + 1)
             .is_none_or(|next| next.reset == SessionReset::Cold);
         if prepared != Some(case) {
+            services[0].begin(
+                &phase.vendor,
+                &manifest.request.vendor.stack,
+                phase.reset,
+                must_block,
+                c,
+            )?;
             tables[0].begin(&phase.vendor.tables, phase.reset, must_block, c)?;
             calls[0].begin(&phase.vendor.calls, phase.reset, must_block, c)?;
             models[0].begin(&phase.vendor.models, phase.reset, must_block, c)?;
+            if !must_block {
+                services[0].validate_bindings(&phase.vendor, &tables[0], c)?;
+            }
             if let Some(replacement) = &phase.replacement {
+                services[1].begin(
+                    replacement,
+                    &manifest.request.replacement.as_ref().unwrap().stack,
+                    phase.reset,
+                    must_block,
+                    c,
+                )?;
                 tables[1].begin(&replacement.tables, phase.reset, must_block, c)?;
                 calls[1].begin(&replacement.calls, phase.reset, must_block, c)?;
                 models[1].begin(&replacement.models, phase.reset, must_block, c)?;
+                if !must_block {
+                    services[1].validate_bindings(replacement, &tables[1], c)?;
+                }
             }
             prepared = Some(case);
         }
         match record {
+            ExecutionEvidence::FifoService {
+                case: i,
+                replacement,
+                observation,
+            } => {
+                if i != case || replacement != side || outcome {
+                    return Err(integrity("FIFO evidence order differs"));
+                }
+                models_started = true;
+                services[usize::from(side)].observe(&observation, close_chain, must_block)?;
+                environment_complete &= observation.status != ModelStatus::Incomplete;
+            }
             ExecutionEvidence::RuntimeTable {
                 case: i,
                 replacement,
@@ -345,6 +387,7 @@ pub fn validate_execution_records(
                 if let ExecutionEvent::RuntimeTable { instance, event } = &event {
                     tables[usize::from(side)].event(*instance, event, c)?;
                 }
+                services[usize::from(side)].event(&event, &tables[usize::from(side)], c)?;
                 calls[usize::from(side)].event(&event, c)?;
                 events += 1;
                 if events > manifest.request.max_events {
@@ -378,6 +421,10 @@ pub fn validate_execution_records(
                 let address_valid = |pc: u32| pc & 1 == 0 && pc < u32::MAX - 1;
                 let goal_valid = match (&stop, &input.goal) {
                     (ExecutionStop::Returned { .. }, ExecutionGoal::Return) => true,
+                    (
+                        ExecutionStop::ObservedDequeue { .. },
+                        ExecutionGoal::ObserveDequeue { .. },
+                    ) => true,
                     (ExecutionStop::ReachedSymbol { pc }, ExecutionGoal::ReachSymbol { .. }) => {
                         address_valid(*pc)
                     }
@@ -393,7 +440,7 @@ pub fn validate_execution_records(
                     }
                     _ => false,
                 };
-                if !goal_valid {
+                if !goal_valid || !services[usize::from(side)].goal_valid(&stop) {
                     return Err(integrity(
                         "execution outcome does not match its declared goal",
                     ));
@@ -401,6 +448,7 @@ pub fn validate_execution_records(
                 models[usize::from(side)].finish_side()?;
                 calls[usize::from(side)].finish_side()?;
                 tables[usize::from(side)].finish_side()?;
+                services[usize::from(side)].finish_side()?;
                 complete &= stop.completed() && environment_complete;
                 phase_complete &= stop.completed() && environment_complete;
                 models_started = false;
@@ -452,6 +500,9 @@ pub fn validate_execution_records(
         || !models.iter().all(crate::execution_models::Models::closed)
         || !calls.iter().all(crate::execution_calls::Calls::closed)
         || !tables.iter().all(crate::execution_tables::Tables::closed)
+        || !services
+            .iter()
+            .all(crate::execution_services::Services::closed)
     {
         return Err(integrity("execution evidence summary differs"));
     }

@@ -31,6 +31,9 @@ pub(super) struct Session<'a> {
     devices: crate::devices::Devices<'a>,
     calls: crate::external_calls::Calls<'a>,
     tables: crate::runtime_tables::Tables<'a>,
+    services: crate::fifo_services::Services<'a>,
+    service_observations: Vec<FifoObservation>,
+    service_goal: Option<(u16, Option<u32>)>,
     table_observations: Vec<RuntimeTableObservation>,
     call_observations: Vec<CallObservation>,
     model_observations: Vec<ModelObservation>,
@@ -45,7 +48,8 @@ impl<'a> Session<'a> {
             1024 * 1024
                 + u64::from(max_events) * 128
                 + (MAX_DEVICE_MODELS + MAX_CALL_MODELS) as u64 * 512
-                + MAX_RUNTIME_TABLES as u64 * 1024,
+                + MAX_RUNTIME_TABLES as u64 * 1024
+                + MAX_FIFO_SERVICES as u64 * 512,
             c.position(),
         )?;
         let mut regions = Vec::new();
@@ -79,6 +83,15 @@ impl<'a> Session<'a> {
                     "table observation allocation refused",
                 )
             })?;
+        let mut service_observations = Vec::new();
+        service_observations
+            .try_reserve_exact(MAX_FIFO_SERVICES)
+            .map_err(|_| {
+                Error::new(
+                    ErrorCode::ResourceLimited,
+                    "FIFO observation allocation refused",
+                )
+            })?;
         let mut events = Vec::new();
         events
             .try_reserve_exact(max_events as usize)
@@ -91,6 +104,9 @@ impl<'a> Session<'a> {
             calls: crate::external_calls::Calls::new(memory),
             tables: crate::runtime_tables::Tables::new(memory),
             table_observations,
+            services: crate::fifo_services::Services::new(memory),
+            service_observations,
+            service_goal: None,
             call_observations,
             model_observations,
             events,
@@ -130,7 +146,11 @@ impl<'a> Session<'a> {
                 "memory region overlaps a live device",
             ));
         }
-        for binding in self.calls.bindings() {
+        for binding in self
+            .calls
+            .bindings()
+            .chain(self.services.bindings().map(|(_, _, b)| b.call))
+        {
             c.checkpoint(1)?;
             if u64::from(binding.address) < end
                 && u64::from(address) < u64::from(binding.address) + 2
@@ -284,8 +304,15 @@ impl<'a> Session<'a> {
                 Ok(())
             })?;
         self.calls.install(&input.calls, c)?;
+        self.services.install(&input.services, c)?;
+        self.service_goal = None;
+        self.validate_service_targets(input, c)?;
         // Validate live bindings after phase memory/devices are installed. No hidden symbol lookup.
-        for binding in self.calls.bindings() {
+        for binding in self
+            .calls
+            .bindings()
+            .chain(self.services.bindings().map(|(_, _, b)| b.call))
+        {
             c.checkpoint(self.regions.len() as u64 + 1)?;
             if self.devices.overlaps(binding.address, 2, c)? {
                 return Err(Error::new(
@@ -313,6 +340,9 @@ impl<'a> Session<'a> {
             }
         }
         let issue = self.install_tables(tables, input, c)?;
+        if issue.is_none() {
+            self.prepare_services(input, c)?;
+        }
         Ok((stack, issue))
     }
     pub fn observation(
@@ -328,6 +358,8 @@ impl<'a> Session<'a> {
             .finish(close_chain, &mut self.call_observations, c)?;
         self.tables
             .finish(close_chain, &mut self.table_observations, c)?;
+        self.services
+            .finish(close_chain, &mut self.service_observations, c)?;
         Ok(ExecutionObservation {
             stop,
             steps,
@@ -335,6 +367,7 @@ impl<'a> Session<'a> {
             models: std::mem::take(&mut self.model_observations),
             calls: std::mem::take(&mut self.call_observations),
             tables: std::mem::take(&mut self.table_observations),
+            services: std::mem::take(&mut self.service_observations),
         })
     }
     pub fn recycle(&mut self, mut observation: ExecutionObservation) {
@@ -346,6 +379,8 @@ impl<'a> Session<'a> {
         self.call_observations = observation.calls;
         observation.tables.clear();
         self.table_observations = observation.tables;
+        observation.services.clear();
+        self.service_observations = observation.services;
         self.finish_phase();
     }
     fn finish_phase(&mut self) {
@@ -408,6 +443,9 @@ impl ExecutionMemory for Session<'_> {
         if input.indirect
             && let Some(result) = self.interface_call(input, c)?
         {
+            return Ok(result);
+        }
+        if let Some(result) = self.service_call(input, c)? {
             return Ok(result);
         }
         self.external_call(input, c)
@@ -597,3 +635,6 @@ mod execution_calls;
 
 #[path = "execution_tables.rs"]
 mod execution_tables;
+
+#[path = "execution_services.rs"]
+mod execution_services;

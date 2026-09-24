@@ -1326,6 +1326,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
                 models: vec![],
                 calls: vec![],
                 tables: vec![],
+                services: vec![],
             },
             replacement: None,
         }],
@@ -1413,8 +1414,13 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
             steps: 1,
         })
         .unwrap();
-        let error = validate_execution_records(&goal_manifest, &bytes.as_slice(), &mut || Ok(()))
-            .unwrap_err();
+        let error = validate_execution_records(
+            &goal_manifest,
+            &bytes.as_slice(),
+            &WorkingMemory::new(1024 * 1024).unwrap(),
+            &mut || Ok(()),
+        )
+        .unwrap_err();
         assert_eq!(error.code, ErrorCode::Integrity);
         assert!(
             error.message.contains("goal") || error.message.contains("blocking"),
@@ -1431,7 +1437,13 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
         steps: 1,
     })
     .unwrap();
-    validate_execution_records(&goal_manifest, &bytes.as_slice(), &mut || Ok(())).unwrap();
+    validate_execution_records(
+        &goal_manifest,
+        &bytes.as_slice(),
+        &WorkingMemory::new(1024 * 1024).unwrap(),
+        &mut || Ok(()),
+    )
+    .unwrap();
     manifest.complete = false;
     let invalid = stage.execution_receipt(&manifest, &mut || Ok(())).unwrap();
     assert!(
@@ -1876,6 +1888,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
         models: vec![declaration.clone()],
         calls: vec![],
         tables: vec![],
+        services: vec![],
     };
     let mut rows = Vec::new();
     for replacement in [false, true] {
@@ -1954,7 +1967,12 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
             serde_json::to_writer(&mut bytes, row).unwrap();
             bytes.push(b'\n');
         }
-        validate_execution_records(m, &bytes.as_slice(), &mut || Ok(()))
+        validate_execution_records(
+            m,
+            &bytes.as_slice(),
+            &WorkingMemory::new(1024 * 1024).unwrap(),
+            &mut || Ok(()),
+        )
     };
     validate(&manifest, &rows).unwrap();
     let model_index = rows

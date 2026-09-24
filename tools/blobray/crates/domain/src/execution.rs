@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 8;
+pub const EXECUTION_SCHEMA: u32 = 9;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 
@@ -46,6 +46,7 @@ pub struct Invocation {
     pub models: Vec<DeviceDeclaration>,
     pub calls: Vec<CallDeclaration>,
     pub tables: Vec<RuntimeTable>,
+    pub services: Vec<FifoService>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -87,6 +88,10 @@ pub struct ExecutionSymbol {
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ExecutionGoal {
     Return,
+    ObserveDequeue {
+        service: String,
+        value: Option<u32>,
+    },
     ReachSymbol {
         target: ExecutionSymbol,
     },
@@ -101,8 +106,15 @@ pub enum ExecutionGoal {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResolvedExecutionGoal {
     Return,
-    ReachSymbol { address: u32 },
-    ObserveCall { address: u32, include_tail: bool },
+    /// Application validates the selected live service and signals its successful dequeue.
+    ObserveDequeue,
+    ReachSymbol {
+        address: u32,
+    },
+    ObserveCall {
+        address: u32,
+        include_tail: bool,
+    },
 }
 #[derive(Clone, Copy, Debug)]
 pub struct ExecutionStart {
@@ -132,6 +144,33 @@ pub struct ExecutionRequest {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ExecutionEvent {
+    ServiceCall {
+        instance: u16,
+        binding: u16,
+        site: u32,
+        target: u32,
+        tail: bool,
+    },
+    ServiceArgument {
+        word: u16,
+        value: Option<u32>,
+    },
+    ServiceInput {
+        address: u32,
+        width: u8,
+        value: u32,
+    },
+    ServiceOutput {
+        address: u32,
+        width: u8,
+        value: u32,
+    },
+    ServiceResult {
+        instance: u16,
+        transition: FifoTransition,
+        depth: u32,
+        words: [Option<u32>; 2],
+    },
     RuntimeTable {
         instance: u16,
         event: RuntimeTableEvent,
@@ -183,6 +222,10 @@ pub enum ExecutionEvent {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ExecutionStop {
+    ObservedDequeue {
+        instance: u16,
+        value: u32,
+    },
     Returned {
         low: Option<u32>,
         high: Option<u32>,
@@ -211,13 +254,20 @@ impl ExecutionStop {
     pub fn completed(&self) -> bool {
         matches!(
             self,
-            Self::Returned { .. } | Self::ReachedSymbol { .. } | Self::ObservedCall { .. }
+            Self::Returned { .. }
+                | Self::ReachedSymbol { .. }
+                | Self::ObservedCall { .. }
+                | Self::ObservedDequeue { .. }
         )
     }
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ExecutionGap {
+    FifoService {
+        instance: u16,
+        issue: FifoIssue,
+    },
     RuntimeInterface {
         instance: Option<u16>,
         issue: RuntimeTableIssue,
@@ -252,11 +302,16 @@ pub struct ExecutionObservation {
     pub models: Vec<ModelObservation>,
     pub calls: Vec<CallObservation>,
     pub tables: Vec<RuntimeTableObservation>,
+    pub services: Vec<FifoObservation>,
 }
 impl ExecutionObservation {
     /// Goal reached with all environment obligations due at this boundary satisfied.
     pub fn completed(&self) -> bool {
         self.stop.completed()
+            && self
+                .services
+                .iter()
+                .all(|o| o.status != ModelStatus::Incomplete && o.status == o.expected_status())
             && self
                 .models
                 .iter()
@@ -423,6 +478,15 @@ impl ExecutionRequest {
                 }
                 match &input.goal {
                     ExecutionGoal::Return => {}
+                    ExecutionGoal::ObserveDequeue { service, .. } => {
+                        if self.compare_return
+                            || service.trim().is_empty()
+                            || service.len() > 128
+                            || !service.is_ascii()
+                        {
+                            return Err(bad());
+                        }
+                    }
                     ExecutionGoal::ReachSymbol { target: point }
                     | ExecutionGoal::ObserveCall { target: point, .. } => {
                         if self.compare_return
@@ -436,6 +500,18 @@ impl ExecutionRequest {
                     }
                 }
                 input.entry_stack(&target.stack)?;
+                if input.services.len() > MAX_FIFO_SERVICES {
+                    return Err(bad());
+                }
+                for (index, service) in input.services.iter().enumerate() {
+                    service.validate()?;
+                    if input.services[..index]
+                        .iter()
+                        .any(|s| s.id == service.id || s.handle == service.handle)
+                    {
+                        return Err(bad());
+                    }
+                }
                 if input.memory.len() > 128 || input.models.len() > MAX_DEVICE_MODELS {
                     return Err(bad());
                 }
@@ -534,6 +610,11 @@ impl MemorySeed {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ExecutionEvidence {
+    FifoService {
+        case: u32,
+        replacement: bool,
+        observation: FifoObservation,
+    },
     RuntimeTable {
         case: u32,
         replacement: bool,

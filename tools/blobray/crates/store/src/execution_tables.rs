@@ -19,6 +19,19 @@ pub(super) struct Tables<'a> {
     dirty: bool,
 }
 impl<'a> Tables<'a> {
+    pub fn declaration(&self, id: &str) -> Option<&RuntimeTable> {
+        self.live
+            .iter()
+            .flatten()
+            .find(|v| v.declaration.id == id)
+            .map(|v| v.declaration)
+    }
+    pub fn instance_id(&self, instance: u16) -> Option<&str> {
+        self.live
+            .get(instance as usize)
+            .and_then(Option::as_ref)
+            .map(|v| v.declaration.id.as_str())
+    }
     pub fn new() -> Self {
         Self {
             live: Vec::new(),
@@ -300,6 +313,19 @@ impl Project {
                 let KnowledgeClaim::Interface { contract } = &entry.proposal.claim else {
                     return Err(integrity("execution interface review has another claim"));
                 };
+                for slot in &t.slots {
+                    c.checkpoint(contract.slots.len() as u64 + 1)?;
+                    if matches!(
+                        slot.target,
+                        RuntimeSlotTarget::Model { .. } | RuntimeSlotTarget::Service { .. }
+                    ) && !contract.slots.iter().any(|s| {
+                        s.offset == slot.offset && s.semantic.is_some() && s.signature.is_some()
+                    }) {
+                        return Err(integrity(
+                            "modeled table slot lacks reviewed semantic/signature",
+                        ));
+                    }
+                }
                 let occurrence = &entry.proposal.occurrence;
                 c.checkpoint((contract.slots.len() * t.slots.len()) as u64)?;
                 if entry.state != AssertionState::Accepted

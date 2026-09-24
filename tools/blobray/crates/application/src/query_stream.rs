@@ -964,6 +964,7 @@ pub fn prepare_query_with_tools(
                 blobray_store::validate_execution_records(
                     &result.manifest,
                     &result.records,
+                    &memory,
                     control,
                 )?;
                 blobray_store::visit_jsonl(&result.records, control, |r: ExecutionEvidence, c| {

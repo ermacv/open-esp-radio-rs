@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 26 and journal schema 27. Earlier and future
+Projects require metadata schema 27 and journal schema 28. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,9 +712,9 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 27 for every durable and read operation. Storage metadata
-uses schema 26; revision manifests use schema 1 and execution manifests use schema
-8. These are independent formats. Earlier journals are rejected by single-run,
+Run records use schema 28 for every durable and read operation. Storage metadata
+uses schema 27; revision manifests use schema 1 and execution manifests use schema
+9. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-27 run; an envelope version is not a journal
+execution 7) wrap the same schema-28 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1366,7 +1366,7 @@ claim a single mmap arena or a process-wide no-allocation guarantee.
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
 operation/query paths. No legacy engine or external limiter participates.
-Execution requests and manifests use schema 8; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
+Execution requests and manifests use schema 9; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 
 ```console
@@ -1382,7 +1382,7 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 8,
+  "schema": 9,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -1395,7 +1395,7 @@ with an exact captured occurrence):
   "cases": [{
     "name": "one-explicit-case",
     "reset": "cold",
-    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [], "calls": [], "tables": [] },
+    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [], "calls": [], "tables": [], "services": [] },
     "replacement": null
   }],
   "max_events": 4096,
@@ -1462,7 +1462,7 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 comparison relation still excludes final RAM itself.
 
-The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1` environment maps validated ELF
+The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
@@ -1632,6 +1632,53 @@ instruction or after the last use. [The runtime interface contract](../docs/desi
 defines ownership, binding and claim scope. `execute`/`compare`, retained reads and
 source-free `replay` use the same application path.
 
+Each invocation supplies `services` (empty when unused). A FIFO service declares
+its id/applicability, phase/session lifetime, nonzero handle, item width (1/2/4),
+capacity, initial ordered items and explicit reviewed table bindings. For example:
+
+```json
+{
+  "id":"queue", "applicability":"Selected reviewed callback contract",
+  "lifetime":"session", "handle":85, "item_width":4, "capacity":16,
+  "items":[],
+  "bindings":[{
+    "table":"callbacks", "slot":4,
+    "call":{"address":8192,"boundary":"unmapped","allow_tail":false},
+    "argument_words":3, "handle_word":0,
+    "operation":{
+      "kind":"enqueue", "input":{"kind":"argument","word":1,"width":4},
+      "success":1, "full":0, "wake":{"word":2,"width":4}
+    }
+  }]
+}
+```
+
+The selected table slot uses `{"kind":"service","address":8192}` and must
+have reviewed semantic/signature metadata. `enqueue` reads an explicit ABI word
+or `private-stack` pointer word, checks item width, and appends if capacity permits.
+Its optional wake output points into private stack and receives one only when the
+queue changes from empty to nonempty; full/nonempty enqueue writes zero.
+`dequeue` declares `output` (pointer word/width), `success` and `empty` returns;
+a successful dequeue writes/removes the oldest item. Empty dequeue leaves output
+untouched. `{"kind":"length"}` returns current depth. All returns set a0,
+leave a1 unknown and apply the same caller-saved clobbers as explicit call models.
+
+Services own isolated bounded rings for each implementation. Failed handle,
+input or output checks leave the queue unchanged. Bindings require eligible
+indirect transfers through their exact selected table/slot; direct calls cannot
+activate a service. A missing or differently reviewed binding never falls back to
+an external model. Private-stack inputs/outputs do not fall back to RAM or MMIO.
+Service lifecycle/input/output/transition evidence is retained; a nonempty queue
+may close successfully because there is no implicit obligation to drain it.
+
+`{"kind":"observe-dequeue","service":"queue","value":42}` completes
+only after a successful dequeue of that value from that service, including its
+output write. `value:null` accepts any successfully dequeued value. It requires
+`compare_return:false`; empty dequeue, another queue or another value does not
+satisfy it. Returning first produces `goal-not-reached`. This observes a modeled
+service event, not real task scheduling. [FIFO service contracts](../docs/design/contracts.md#stateful-fifo-services)
+define exact bounds, lifecycle and retained validation.
+
 Every case is an explicit phase with a shared `reset` for both implementations
 and an `entry` in each invocation. Setup and action phases can select different
 entries in the same captured address space. `cold` recreates captured images and
@@ -1724,7 +1771,7 @@ target, 128 RAM seeds, 128 device and 128 call declarations per invocation,
 4096 exact live ports, 4096 values per model list, 2048 regions per session,
 and 1–65536 events per implementation per case. `max_events` exhaustion is a
 resource failure with no publication; events are never silently truncated.
-Traces stream as bounded JSONL events/device-models/call-models/runtime-tables/outcomes/comparisons into quota-owned
+Traces stream as bounded JSONL events/device-models/call-models/runtime-tables/fifo-services/outcomes/comparisons into quota-owned
 staging. The coordinator checks the admitted recipe and stream structure before
 atomically committing the result reference and completed run. Cancellation,
 limits or corruption cannot publish partial evidence. Process-level OOM and

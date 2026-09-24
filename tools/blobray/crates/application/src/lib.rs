@@ -395,3 +395,5 @@ mod external_calls;
 mod execution_interfaces;
 
 mod runtime_tables;
+
+mod fifo_services;

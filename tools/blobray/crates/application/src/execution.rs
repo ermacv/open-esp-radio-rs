@@ -2,7 +2,7 @@
 use crate::execution_memory::Session;
 use crate::*;
 use std::io::Write;
-pub const EXECUTION_ENVIRONMENT: &str = "static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1";
+pub const EXECUTION_ENVIRONMENT: &str = "static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1";
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionWork {
@@ -139,6 +139,18 @@ fn evidence(
                 case,
                 replacement,
                 observation: table.clone(),
+            },
+        )?;
+        file.write_all(b"\n").map_err(storage_io)?;
+    }
+    for service in &observation.services {
+        c.checkpoint(1)?;
+        write_control_message(
+            &mut *file,
+            &ExecutionEvidence::FifoService {
+                case,
+                replacement,
+                observation: service.clone(),
             },
         )?;
         file.write_all(b"\n").map_err(storage_io)?;

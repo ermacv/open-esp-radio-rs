@@ -10,6 +10,9 @@ pub struct InterfaceReview {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum RuntimeSlotTarget {
+    Service {
+        address: u32,
+    },
     Null,
     /// Exact executable address in the selected captured mappings.
     Code {
@@ -24,7 +27,7 @@ impl RuntimeSlotTarget {
     pub fn address(self) -> u32 {
         match self {
             Self::Null => 0,
-            Self::Code { address } | Self::Model { address } => address,
+            Self::Code { address } | Self::Model { address } | Self::Service { address } => address,
         }
     }
 }
@@ -143,6 +146,7 @@ impl RuntimeTable {
                 RuntimeSlotTarget::Null => 0,
                 RuntimeSlotTarget::Code { .. } => 1,
                 RuntimeSlotTarget::Model { .. } => 2,
+                RuntimeSlotTarget::Service { .. } => 3,
             }]);
             h.update(s.target.address().to_le_bytes());
         }

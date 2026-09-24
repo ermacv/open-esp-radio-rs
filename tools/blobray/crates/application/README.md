@@ -308,3 +308,9 @@ checks conditions and connects eligible indirect transfers to captured code or
 explicit call models. Stores, atomics and model outputs update lifecycle evidence.
 The [runtime interface contract](../../docs/design/contracts.md#runtime-interface-instances)
 defines phase release, snapshot selection and the limits of value association.
+
+`fifo_services` owns admitted FIFO rings and binding indexes by phase/session;
+`execution_memory::execution_services` validates reviewed slot dispatch, current
+ABI words and private-stack effects before mutation. It signals a selected
+successful dequeue goal through the existing execution port. Queue state is
+independent for each implementation and never implies real RTOS scheduling.

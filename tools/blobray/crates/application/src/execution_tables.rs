@@ -2,7 +2,7 @@
 use super::*;
 use crate::runtime_tables::Association;
 impl Session<'_> {
-    fn normal_value(&self, address: u32, width: u8) -> Option<u32> {
+    pub(super) fn normal_value(&self, address: u32, width: u8) -> Option<u32> {
         if !matches!(width, 1 | 2 | 4) || !address.is_multiple_of(u32::from(width)) {
             return None;
         }
@@ -140,12 +140,12 @@ impl Session<'_> {
         }
         Ok(None)
     }
-    fn reviewed_model(
+    pub(super) fn reviewed_model(
         &self,
         table: u16,
         offset: u32,
         target: u32,
-        call: usize,
+        words: u16,
         c: &mut dyn RunControl,
     ) -> Result<Option<RuntimeTableIssue>> {
         c.checkpoint(self.tables.get(table).contract.slots.len() as u64)?;
@@ -183,8 +183,7 @@ impl Session<'_> {
             }
             count += width;
         }
-        Ok((self.calls.declaration(call).argument_words < count)
-            .then_some(RuntimeTableIssue::ModelAbi { target }))
+        Ok((words < count).then_some(RuntimeTableIssue::ModelAbi { target }))
     }
     pub(super) fn install_tables(
         &mut self,
@@ -217,12 +216,24 @@ impl Session<'_> {
                 let address = self.tables.get(instance).declaration.seed.address + slot.offset;
                 let issue = match slot.target {
                     RuntimeSlotTarget::Null => None,
+                    RuntimeSlotTarget::Service { address } => {
+                        match self.services.find(address, c)? {
+                            Some((service, binding)) => {
+                                self.reviewed_service(instance, slot.offset, service, binding, c)?
+                            }
+                            None => Some(RuntimeTableIssue::UnavailableTarget { target: address }),
+                        }
+                    }
                     RuntimeSlotTarget::Code { address } => (!self.executable(address))
                         .then_some(RuntimeTableIssue::UnavailableTarget { target: address }),
                     RuntimeSlotTarget::Model { address } => match self.calls.find(address, c)? {
-                        Some(call) => {
-                            self.reviewed_model(instance, slot.offset, address, call, c)?
-                        }
+                        Some(call) => self.reviewed_model(
+                            instance,
+                            slot.offset,
+                            address,
+                            self.calls.declaration(call).argument_words,
+                            c,
+                        )?,
                         None => Some(RuntimeTableIssue::UnavailableTarget { target: address }),
                     },
                 };
@@ -315,8 +326,18 @@ impl Session<'_> {
                 Association::Slot { table, offset } => {
                     let mut issue = self.table_condition(table, c)?;
                     if issue.is_none() {
-                        issue = if let Some(call) = self.calls.find(input.target, c)? {
-                            self.reviewed_model(table, offset, input.target, call, c)?
+                        issue = if let Some((service, binding)) =
+                            self.services.find(input.target, c)?
+                        {
+                            self.reviewed_service(table, offset, service, binding, c)?
+                        } else if let Some(call) = self.calls.find(input.target, c)? {
+                            self.reviewed_model(
+                                table,
+                                offset,
+                                input.target,
+                                self.calls.declaration(call).argument_words,
+                                c,
+                            )?
                         } else {
                             (!self.executable(input.target)).then_some(
                                 RuntimeTableIssue::UnavailableTarget {

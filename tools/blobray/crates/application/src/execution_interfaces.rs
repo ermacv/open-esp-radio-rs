@@ -156,8 +156,10 @@ fn prepare_one<'m>(
             .iter()
             .find(|s| s.offset == slot.offset)
             .unwrap();
-        if matches!(slot.target, RuntimeSlotTarget::Model { .. })
-            && (reviewed.semantic.is_none() || reviewed.signature.is_none())
+        if matches!(
+            slot.target,
+            RuntimeSlotTarget::Model { .. } | RuntimeSlotTarget::Service { .. }
+        ) && (reviewed.semantic.is_none() || reviewed.signature.is_none())
         {
             return Err(Error::new(
                 ErrorCode::InvalidRequest,

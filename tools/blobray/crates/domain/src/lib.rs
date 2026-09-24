@@ -463,3 +463,6 @@ pub use external_call::*;
 
 mod runtime_interface;
 pub use runtime_interface::*;
+
+mod fifo_service;
+pub use fifo_service::*;

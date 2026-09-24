@@ -1955,3 +1955,45 @@ targets, ambiguous interpretations, disconnected hops and cycles fail before
 knowledge publication. The path holds at most 64 hops and retains participant
 manifest/fact roots. Acceptance records a reviewed structural relationship;
 preconditions, asynchronous delivery and executable equivalence remain unproved.
+
+
+### Memory definitions at a publication point
+
+`memory-slice --request query.json [--output observations.json]` reads one saved
+analysis. Obtain exact record ordinals through `analysis --id <analysis>` first:
+
+```json
+{
+  "analysis":"<analysis>", "anchor":42, "abi":"riscv-integer",
+  "locations":[{"kind":"stack", "offset":-4, "width":4}]
+}
+```
+
+The anchor is a local call instruction, transfer or write record, and the slice
+ends immediately before it. A loop can include a prior iteration of that same
+write. `locations: []` discovers preceding local write spans. Up to 256 explicit
+selections accept `access` with a saved local memory record ordinal, `stack` with
+an entry-SP offset, `address` with an RV32 address, or `argument` with an incoming
+ABI `word`, byte `offset` and `width`. Widths are 1, 2, 4 or 8. An explicit argument
+requires `abi: "riscv-integer"`; `abi: null` never guesses an argument mapping.
+A selected read may expose untouched incoming state. Unknown addresses remain
+`unknown-location` rows during discovery; explicit unresolved access selectors fail.
+
+`location` rows report `incoming: possible|overwritten|unknown` and named issues.
+`definition` rows retain exact source record, raw fact, instruction offset and a
+structural suffix witness to the anchor. `must` requires one last-write site on
+all saved paths, closed coverage and no unresolved interference. `alternative`
+means multiple possible last definitions or a surviving incoming value. `candidate`
+keeps evidence affected by partial coverage, partial overlap, dynamic identity,
+unknown writes or calls. `barrier` rows identify that evidence explicitly. A
+covering write may overwrite incoming bits without providing an interpreted narrow
+value; the result performs no byte assembly or atomic-operation execution.
+
+Fields of one immutable loaded pointer can share a saved expression identity.
+Loads repeated within cycles remain dynamic. Different roots may alias, and a
+stack argument's initial pointee is not equated to an arbitrary later load from
+its mutable cell. An `access` selector follows the exact saved loaded value.
+Composed callee effects never silently replace local call clobbers. The
+[canonical contract](../docs/design/contracts.md#memory-definitions-at-publication)
+defines these bounds; none of the classes claims runtime feasibility or hardware
+state. API/CLI results and atomic JSON export reopen without original sources.

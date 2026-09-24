@@ -9,6 +9,9 @@ use std::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum QuerySummary {
+    MemorySlice {
+        summary: Box<MemorySliceSummary>,
+    },
     Flow {
         summary: Box<FlowSummary>,
     },
@@ -266,6 +269,12 @@ pub trait QuerySink: InventorySink + DoctorSink {
         ))
     }
 
+    fn memory_slice(&mut self, _: &MemorySliceRecord, _: &mut dyn RunControl) -> Result<()> {
+        Err(Error::new(
+            ErrorCode::InvalidRequest,
+            "consumer does not support memory slices",
+        ))
+    }
     fn flow(&mut self, _: &FlowRecord, _: &mut dyn RunControl) -> Result<()> {
         Err(Error::new(
             ErrorCode::InvalidRequest,
@@ -298,6 +307,7 @@ pub trait QuerySink: InventorySink + DoctorSink {
 }
 #[derive(Serialize)]
 enum RecordRef<'a> {
+    MemorySlice(&'a MemorySliceRecord),
     Flow(&'a FlowRecord),
     Navigation(&'a NavigationRecord),
     Interface(&'a InterfaceObservation),
@@ -330,6 +340,7 @@ enum RecordRef<'a> {
 }
 #[derive(Deserialize)]
 enum Record {
+    MemorySlice(MemorySliceRecord),
     Flow(FlowRecord),
     Navigation(NavigationRecord),
     Interface(InterfaceObservation),
@@ -496,6 +507,23 @@ pub fn prepare_query_with_tools(
             file: disk.create(&stage.join("query-records"))?,
         };
         let summary = match &work.query {
+            ReadQuery::MemorySlice { request } => {
+                let project = Project::open(&work.project.to_path()?)?;
+                let lease = project.analysis(&request.analysis, control)?;
+                let records = crate::research::load_records(&lease.records, &memory, control)?;
+                let summary = blobray_analysis::memory_slice::inspect(
+                    &lease.manifest.recipe,
+                    lease.manifest.coverage,
+                    &records,
+                    request,
+                    &memory,
+                    control,
+                    &mut |r, c| spool.push(RecordRef::MemorySlice(r), c),
+                )?;
+                QuerySummary::MemorySlice {
+                    summary: Box::new(summary),
+                }
+            }
             ReadQuery::Flow { request } => {
                 let project = Project::open(&work.project.to_path()?)?;
                 let summary =
@@ -1152,6 +1180,7 @@ pub(crate) fn visit(
         let record: Record = serde_json::from_slice(&bytes)
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         match record {
+            Record::MemorySlice(r) => sink.memory_slice(&r, control)?,
             Record::Flow(r) => sink.flow(&r, control)?,
             Record::Navigation(r) => sink.navigation(&r, control)?,
             Record::Interface(r) => sink.interface(&r, control)?,

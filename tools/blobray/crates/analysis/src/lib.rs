@@ -500,3 +500,5 @@ fn emit(
 pub mod audit;
 
 pub mod flow;
+
+pub mod memory_slice;

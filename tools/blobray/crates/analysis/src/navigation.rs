@@ -113,6 +113,12 @@ impl<'a, 'm> Facts<'a, 'm> {
             .ok()
             .map(|i| self.references[i]))
     }
+    pub(crate) fn expression(&self, id: u32) -> Result<&Expression> {
+        self.expressions
+            .get(id as usize)
+            .copied()
+            .ok_or_else(|| integrity("expression ID is absent"))
+    }
     pub fn paths(
         &self,
         value: &AbstractValue,

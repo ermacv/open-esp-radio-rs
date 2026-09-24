@@ -74,7 +74,8 @@ pub(super) fn render(
 ) -> Result<()> {
     if matches!(
         result.summary(),
-        app::QuerySummary::Flow { .. }
+        app::QuerySummary::MemorySlice { .. }
+            | app::QuerySummary::Flow { .. }
             | app::QuerySummary::Navigation { .. }
             | app::QuerySummary::Interfaces { .. }
             | app::QuerySummary::Coverage { .. }
@@ -492,6 +493,9 @@ impl app::DoctorSink for Records<'_> {
     }
 }
 impl app::QuerySink for Records<'_> {
+    fn memory_slice(&mut self, r: &MemorySliceRecord, c: &mut dyn RunControl) -> Result<()> {
+        self.record("memory-slice", r, c)
+    }
     fn flow(&mut self, r: &FlowRecord, c: &mut dyn RunControl) -> Result<()> {
         self.record("flow", r, c)
     }

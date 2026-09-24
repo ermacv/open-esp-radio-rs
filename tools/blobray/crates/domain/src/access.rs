@@ -16,7 +16,7 @@ pub enum AccessRoot {
     /// Literal RV32 address scoped by the occurrence; not a file/section offset or host pointer.
     Address { address: u32 },
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum AccessStep {
     Offset { bytes: i32 },
@@ -42,7 +42,7 @@ pub enum AccessIssue {
     UnresolvedPointer,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AccessPath {
     pub root: AccessRoot,

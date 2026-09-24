@@ -60,3 +60,9 @@ reported as structural edges; unknown addresses remain explicit.
 The flow module computes bounded iterative reachability over caller-selected
 unambiguous arcs. It returns predecessor indexes and depths; storage and reviewed
 path authority stay with application/knowledge.
+
+
+`memory_slice` borrows saved facts, constructs admitted instruction/access indexes
+and iteratively finds last local writes before an exact anchor. SCC membership
+bounds scalar identity; per-location backward searches release their scratch
+before the next location. It performs no I/O, execution or callee expansion.

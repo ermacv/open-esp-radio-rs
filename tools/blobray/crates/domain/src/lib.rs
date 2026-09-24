@@ -442,3 +442,6 @@ pub use reports::*;
 
 mod flow;
 pub use flow::*;
+
+mod memory_slice;
+pub use memory_slice::*;

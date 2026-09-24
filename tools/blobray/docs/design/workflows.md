@@ -460,8 +460,8 @@ and reopen the same query after source removal. `navigate` shares the applicatio
 read lifecycle and resource budget. Missing/partial facts and ambiguous addresses
 remain visible. No read performs hidden planning, linking or analysis, and no empty
 selection proves that the entire firmware lacks an effect. Structural flow/effect inventory and ordered path review use `flow` and the native
-path claim. Reaching RAM definitions at publication and asynchronous event-route
-validation remain separate target capabilities until implemented.
+path claim. `memory-slice` inspects local RAM definitions at publication.
+Asynchronous event-route validation remains a target capability.
 
 
 ### Saved structural path review
@@ -473,3 +473,13 @@ flow query. Review rejects an ambiguous selected step instead of choosing an
 interpretation. The same source-free project can produce a reachable memory-effect
 inventory with original local/composed provenance and explicit unknown addresses.
 These results do not establish event delivery, feasible execution or comparison.
+
+
+### Saved RAM definitions
+
+Implemented: select one retained analysis and an exact local call/store/transfer
+anchor, then discover preceding writes or select a known address/access span.
+Inspect incoming state, last definitions, source facts, CFG witnesses and barriers;
+export the query and reopen it after removing source files or restoring a backup.
+Joining paths, loops, unknown aliases/calls and partial coverage remain explicit.
+The slice never launches analysis or turns composed may-effects into RAM state.

@@ -220,6 +220,30 @@ assert address_writes[0]["fact"]["value"] == {"kind": "constant", "value": 0x702
 assert any(r["value"]["kind"] == "effect" and r["value"]["address_match"] is None for r in address_effects["records"])
 call("save-flow", ["flow", "--request", doc("flow-export", flow_request),
     "--output", str(run / "flow-export.json")])
+# Independent prologue decoding: sw ra,28(sp) after a 32-byte frame allocation,
+# at linked root + 10. The first ordinary call is root + 24, the second + 36.
+# The saved root has an unexpanded tail, so this local witness remains candidate.
+slice_anchor = next(i for i, r in enumerate(linked_facts)
+    if r["kind"] == "transfer" and r["offset"] == 0x10000018)
+slice_request = {"analysis": linked_analysis, "anchor": slice_anchor,
+    "abi": "riscv-integer", "locations": [{"kind": "stack", "offset": -4, "width": 4}]}
+memory_slice = call("memory-slice", ["memory-slice", "--request", doc("memory-slice", slice_request)])
+slice_rows = [r["value"] for r in memory_slice["records"]]
+slice_defs = [r for r in slice_rows if r["kind"] == "definition"]
+assert len(slice_defs) == 1
+assert slice_defs[0]["offset"] == 0x1000000A
+assert slice_defs[0]["fact"] == linked_facts[slice_defs[0]["record"]]
+assert slice_defs[0]["fact"]["address"] == {"kind": "entry-stack", "offset": -4}
+assert slice_defs[0]["witness"] == [0x1000000A, 0x1000000C, 0x1000000E, 0x10000010, 0x10000012, 0x10000014, 0x10000018]
+assert slice_defs[0]["class"] == "candidate"
+assert next(r for r in slice_rows if r["kind"] == "location")["issues"] == ["partial-control-flow"]
+after_request = {**slice_request, "anchor": next(i for i, r in enumerate(linked_facts)
+    if r["kind"] == "transfer" and r["offset"] == 0x10000024)}
+after_slice = call("memory-slice-after-call", ["memory-slice", "--request", doc("memory-slice-after-call", after_request)])
+assert any(r["value"]["kind"] == "barrier" and r["value"]["issue"] == "call-clobber"
+    and r["value"]["offset"] == 0x10000018 for r in after_slice["records"])
+call("save-memory-slice", ["memory-slice", "--request", doc("memory-slice-export", slice_request),
+    "--output", str(run / "memory-slice-export.json")])
 usage = call("storage-usage", ["storage-usage"])
 assert usage["summary"]["usage"]["cas"]["logical_bytes"] > 0
 assert not usage["summary"]["usage"]["reachability_assessed"]
@@ -623,6 +647,10 @@ call("save-restored-navigation", ["navigate", "--request", doc("restored-navigat
 assert (run / "navigation-export.json").read_bytes() == (run / "restored-navigation-export.json").read_bytes()
 
 assert call("restored-flow", ["flow", "--request", doc("restored-flow", flow_request)]) == flow_effects
+assert call("restored-memory-slice", ["memory-slice", "--request", doc("restored-memory-slice", slice_request)]) == memory_slice
+call("save-restored-memory-slice", ["memory-slice", "--request", doc("restored-memory-slice-export", slice_request),
+    "--output", str(run / "restored-memory-slice-export.json")])
+assert (run / "restored-memory-slice-export.json").read_bytes() == (run / "memory-slice-export.json").read_bytes()
 call("save-restored-flow", ["flow", "--request", doc("restored-flow-export", flow_request),
     "--output", str(run / "restored-flow-export.json")])
 assert (run / "flow-export.json").read_bytes() == (run / "restored-flow-export.json").read_bytes()

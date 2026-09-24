@@ -107,6 +107,17 @@ enum KnowledgeCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Inspect local write definitions immediately before an exact saved publication site.
+    MemorySlice {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        request: PathBuf,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[command(flatten)]
+        limits: ResourceOptions,
+    },
     /// Inspect structural paths and effects in an explicitly selected saved graph.
     Flow {
         #[arg(long)]
@@ -872,6 +883,22 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 ),
                 Format::Human => println!("Project preserved at {}", project.display()),
             }
+        }
+        Command::MemorySlice {
+            project,
+            request,
+            output,
+            limits,
+        } => {
+            return read_query_output(
+                project,
+                ReadQuery::MemorySlice {
+                    request: read_json_file(&request)?,
+                },
+                limits,
+                format,
+                output,
+            );
         }
         Command::Flow {
             project,

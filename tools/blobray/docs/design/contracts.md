@@ -1141,3 +1141,60 @@ ambiguous physical interpretations, wrong records/occurrences, work failure and
 CLI/API export after source removal. The PHY workflow checks a linked target,
 44 composed fill records and the independently expected first encoded write, then
 reopens identical flow exports after project backup/restore.
+
+
+### Memory definitions at publication
+
+A read request selects one retained analysis, an exact local call/transfer/store
+record as the publication anchor, an optional explicit integer ABI, and locations.
+An empty location selection discovers known local write spans; explicit selections
+can name a local access record, literal span, entry-stack span or incoming ABI-word
+pointee. Thus a selected read with no prior write can report incoming state. No
+caller-invented symbol identity or hidden source reanalysis enters this query.
+
+Analysis builds bounded indexes over saved instructions, edges, expressions and
+local accesses. Per location, it walks CFG predecessors from immediately before
+the anchor, stops at definite covering writes and retains possible/conditional writes,
+incoming state, call clobbers and unknown/overlapping aliases. It reuses one admitted
+worklist/visited/predecessor set per location instead of materializing all location
+states at every CFG node. Loops use marked nodes and preserve the possibility of a
+prior iteration of the anchor. Work and memory exhaustion fail the query atomically.
+
+The returned local definition is `must`, `alternative` or `candidate` with an exact
+record and structural suffix witness. A must classification requires one definite
+last-write site, no incoming alternative or unresolved alias/clobber and closed
+structural coverage. Partial-width overlap remains explicit without invented byte
+composition. Different incoming pointers or dereferenced roots are not assumed
+disjoint; composed callee effects do not erase an unmodeled call's clobber. These
+are local write-definition relationships, not runtime memory contents, hardware
+state, path feasibility or interprocedural effect-completeness guarantees.
+
+`ReadQuery::MemorySlice` owns one authenticated retained fact stream. The pure
+analysis port borrows it for instruction/access indexes, SCC membership and one
+backward search per selected span. Explicit selections are bounded at 256; an
+empty selection discovers preceding write spans within the operation budget.
+Loading reports `LoadResearch`; local index/dataflow work reports `AnalyzeValues`.
+No prepared ELF or global cache overlaps these owners.
+
+`incoming` is `possible` when an unchanged entry value has a structural path,
+`overwritten` when every such path meets a covering write, and `unknown` when
+missing CFG or a surviving ambiguous path prevents that decision. A wide covering
+write can establish overwritten while its narrower value remains candidate:
+there is no byte-lane composition or projection. Definition facts retain original
+operands, including atomic operands, not manufactured final RAM values.
+
+Equal entry-register words, stack offsets and physical addresses share locations.
+Different pointer roots may alias. A scalar computed once outside every CFG cycle
+can identify one loaded pointer and its disjoint fields. Its expression ID belongs
+to this saved analysis, never to a host allocation. Iterative SCC detection keeps
+repeated loads dynamic; pure expressions of immutable inputs remain stable.
+Stack argument cells are mutable: selecting an initial ABI pointee does not assert
+that a later stack load still contains that pointer. Select its exact saved access
+record to follow a particular loaded value. ABI omission does not infer a mapping.
+
+Regressions: analysis `memory_slice` covers bounded predecessor search, SCCs,
+joins/loops/conditional writes and overlap; Next `functions::memory_slice` covers
+machine-code fixtures, API/CLI exports, unknown calls, killed clobbers, malformed
+requests, capacity/work failures and source-free reopening. The PHY scenario checks
+exact prologue stack writes/witnesses before and after an ordinary linked call;
+its unexpanded tail retains partial CFG status even for the early local witness.

@@ -240,3 +240,8 @@ handles belong to one store reader. Navigation never starts analysis implicitly.
 call graph metadata, and streams reached effects in a second linear pass. Native
 path proposal/review rechecks exact immutable hops through this shared resolver.
 No path query invokes analysis, and review is not executable reachability.
+
+
+`ReadQuery::MemorySlice` loads one authenticated saved record owner and streams
+bounded local definition queries under the same supervision/export lifecycle.
+Application owns acquisition and atomic delivery; analysis owns CFG/alias rules.

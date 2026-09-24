@@ -182,7 +182,7 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stages 00–03 are complete. Stages 04.1–04.2 are complete; stage 04.3.1 is complete and stage 04.3.2 is ready with the partitions below.
+Stages 00–03 are complete. Stages 04.1–04.2 and 04.3.1–04.3.2 are complete; stage 04.3.3 is ready with the partitions below.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
 interface review/discovery, ambiguous bindings and authenticated ROM query/export
 reopening. All standalone Next packages/tests, Clippy, formatting and affected
@@ -322,8 +322,8 @@ before implementation; none is dropped or moved into a legacy adapter.
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
 | 04.3.1 | done | Exact saved root → selected function target or reachable effect inventory, with bounded call graph, evidence hops, ambiguous/missing/partial frontiers and explicit structural scope. Native ordered path proposal/review revalidates every exact saved step, rejects missing/mismatched/ambiguous steps and preserves roots. CLI/API/query/export/source-free reopening, cycles/diamond/depth/resource cases and real linked target/effects pass. |
-| 04.3.2 | ready | RAM definitions reaching an exact saved call/store publication anchor: incoming, must/alternative/candidate last writes; partial overlap, unknown alias and call clobbers remain explicit. Iterative bounded CFG/dataflow, local witnesses and values; joins, loops, killed definitions, unknown calls, resource failures and source-free query/export pass. It does not invent interprocedural memory effects. |
-| 04.3.3 | pending | Native reviewed selector delivery, static callback registration/delivery and broker subscription routes with exact participants, sites, object/queue/domain/selector fields, callback identity, case handler and optional terminal. Query authenticates physical evidence and reports condition/lifetime/order blockers separately; review never proves actual asynchronous delivery. Positive/negative/ambiguous/source-free review/query/export cases for all three close stage 04; runtime replay remains stages 07–10. |
+| 04.3.2 | done | RAM definitions reaching an exact saved call/store publication anchor: incoming, must/alternative/candidate last writes; partial overlap, unknown alias and call clobbers remain explicit. Iterative bounded CFG/dataflow, local witnesses and values; joins, loops, killed definitions, unknown calls, resource failures and source-free query/export pass. It does not invent interprocedural memory effects. |
+| 04.3.3 | ready | Native reviewed selector delivery, static callback registration/delivery and broker subscription routes with exact participants, sites, object/queue/domain/selector fields, callback identity, case handler and optional terminal. Query authenticates physical evidence and reports condition/lifetime/order blockers separately; review never proves actual asynchronous delivery. Positive/negative/ambiguous/source-free review/query/export cases for all three close stage 04; runtime replay remains stages 07–10. |
 
 
 Stage 04.3.1 acceptance covers deterministic bounded graph witnesses, native
@@ -335,3 +335,12 @@ Clippy, formatting, public/private docs and standalone tests pass. The acceptanc
 run also closes runtime cleanup/reconciliation serialization with a focused lock
 and capacity-release regression; failed initialization releases the root lock
 before cleanup. No runtime path feasibility or hardware qualification is claimed.
+
+
+Stage 04.3.2 acceptance covers saved-instruction joins, killed writes/clobbers,
+loop anchor iterations, stable versus repeated pointer loads, partial-width
+writes, unknown aliases, exact record identities and resource/malformed-request
+failures. CLI/API source-free exports agree. Authenticated linked PHY prologue
+writes retain exact CFG suffixes, partial-tail status and intervening call barriers;
+restored exports are byte-identical. Full affected package/Next tests, Clippy,
+formatting, owned public/private documentation and standalone checks pass.

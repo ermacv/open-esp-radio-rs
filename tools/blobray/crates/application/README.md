@@ -224,3 +224,9 @@ preserve the profile, raw bytes, physical relocation identities and classificati
 counters without promoting external symbols or numeric addresses to callees.
 
 Interface proposals and reviews use the existing knowledge lifecycle and captured-occurrence helper. Exact symbol and function-range roots and captured-payload guards are checked against retained bytes. Runtime guards are conditional metadata and do not resolve callbacks or grant execution authority.
+
+The `interfaces` read scenario selects saved analysis facts or a captured pointer
+span plus an explicit knowledge revision. It owns one admitted record/object view
+and one sorted path/slot binding index. It exposes every matching review state and
+unverified runtime condition without hidden analysis, callee selection or model
+execution. CLI and API share this query; JSON export retains reference identities.

@@ -37,14 +37,14 @@ pub trait ImageMemory {
     ) -> Result<bool>;
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CodeRange {
     pub start: u64,
     pub length: u64,
 }
 /// Physical code selection. Explicit ranges never fabricate a symbol identity.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum FunctionSelector {
     Symbol {

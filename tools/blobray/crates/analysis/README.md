@@ -47,3 +47,8 @@ on a ninth result; stored `alternative-limit` gaps distinguish this loss from a
 resolved singleton. Public alternatives are nonrecursive and validated on decode.
 Callee composition qualifies every retained image-address alternative; it never
 silently removes an unknown callee stack possibility or chooses one callback.
+
+`interfaces` follows saved indirect-call expressions iteratively and canonicalizes
+physical root/path/slot keys. It retains bounded alternative paths and explicit
+unsupported/missing-provenance issues, with admitted per-query indexes. It neither
+loads knowledge nor chooses an accepted binding; application owns those decisions.

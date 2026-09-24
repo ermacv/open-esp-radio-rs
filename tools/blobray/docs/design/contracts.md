@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 13
-and database schema 12 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 14
+and database schema 13 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -831,8 +831,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 12
-and journal schema 13 carry these identities. Old formats are rejected without
+Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 13
+and journal schema 14 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -907,7 +907,8 @@ owns roots, paths, layout/slot signatures, index domains, guards and semantic ke
 Knowledge performs pure layout/ABI/domain/guard validation and acceptance conflict
 checks. Application uses the shared captured-occurrence owner for all proposals
 and reviews: symbol roots are physical data-symbol identities, argument roots
-validate a real symbol or explicit function range, and payload guards match the
+validate a real symbol or explicit function range, section roots validate a physical
+section location, and payload guards match the
 actual captured object bytes. Optional occurrence symbols have the same validation
 as data export. No caller reopens a live path or guesses a symbol by name.
 
@@ -916,7 +917,8 @@ index ranges are preconditions, never observed execution facts. `semantic` is a
 reviewed subject key, not a model/callee resolver. Literal-root bounds and static
 range overlap are checked; different dynamic dereference paths do not establish
 runtime non-aliasing. Slot ABI support is an explicit RV32 integer/pointer,
-nonvariadic profile. Declaration of an argument position does not imply that an
+nonvariadic profile; an unknown slot signature is represented by `None`.
+Declaration of an argument position does not imply that an
 execution engine supports its ABI placement.
 
 The existing knowledge lifecycle supplies expected-base admission, review states,
@@ -930,3 +932,43 @@ Regressions: knowledge `interfaces::tests` checks guards/domains/ABI and physica
 static overlap; Next `native_interface_roots_validate_review_and_export_without_sources`
 checks generic admission, every root kind, symbol-less arguments, thin members,
 resource failure and source-free CLI review/export.
+
+
+### Interface observation lifetime and matching
+
+`ReadQuery::Interfaces` owns one explicit `InterfaceQuery`. Domain owns its request,
+observation and summary values. Analysis interprets the retained flat expression DAG
+iteratively and builds admitted instruction/call/expression indexes. Application
+loads one saved analysis into a `RecordBuffer`, or prepares one captured data object
+and borrows its span for streaming pointer interpretation. It loads only the requested
+knowledge revision (`None` is empty) and builds a sorted, admitted physical path/slot
+index. No per-call full knowledge scan, hidden analysis, extra resolver authority or
+persistent discovery cache is introduced. Output bindings and variable payloads are
+admitted until the synchronous sink returns; errors discard the supervised query's
+private staging without publishing a truncated result.
+
+An observation retains the input analysis record or pointer-slot ordinal, instruction
+or data offset, exact paths, saved target/pointer value, issues and every candidate
+binding's review state. Matching requires the same revision/source/object and physical
+root/path/slot. Static offsets are canonicalized; dereference/index boundaries remain
+part of identity. No address-to-symbol guessing or cross-occurrence alias inference is
+performed. Accepted candidates can remain ambiguous. Guards and index domains remain
+unverified runtime preconditions; signatures and semantic keys can remain unknown.
+The query has counts, not a general coverage or verification assessment.
+
+The current analysis profile recognizes saved indirect calls (also ET_REL), four-byte
+loads, constant offsets and scaled a0..a7 entry arguments under an explicit integer
+ABI. Known numeric/finite targets without retained load provenance produce
+`NoPointerPath`; unsupported expressions and foreign occurrences remain explicit.
+It does not reverse-engineer an originating table from a destination address, expand
+callee control flow or claim executable reachability. Data queries preserve captured
+initialization and relocation uncertainty. Source-free query/export retains reference
+identities; a JSON observation export is not a transitive research backup.
+
+Regressions: analysis `interfaces::tests` covers exact argument/index paths, canonical
+keys, malformed DAGs and resource failure; Next
+`saved_callback_discovery_review_states_guards_and_export_share_one_query_contract`
+and `captured_symbol_less_pointer_slots_match_only_selected_structural_declarations`
+cover shared API/CLI, review states, conditional matches and source removal. The real
+`phy_research.py` checks the independently read ROM global/slot path, explicit unknown
+signature, acceptance and byte-identical query export after backup/restore.

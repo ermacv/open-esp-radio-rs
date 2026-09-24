@@ -412,3 +412,24 @@ requires these behavioral tests, published API/schema documentation, standalone
 composition checks and relevant repository architecture checks. Documentation
 validation alone establishes neither those runtime guarantees nor hardware
 qualification.
+
+
+## Captured interface observation and review (implemented profile)
+
+1. Select a retained analysis or exact captured pointer-table span. Run the shared
+   `interfaces` read query with explicit ABI where argument roots require it.
+2. Inspect physical root, dereference/index path, slot and evidence record. Missing
+   provenance or unsupported expressions remain issues; numeric targets do not
+   establish table ownership. Null/external/unresolved pointer values stay distinct.
+3. Propose a native interface contract with reviewed layout and preconditions.
+   Leave signature/semantic binding unknown when evidence only establishes a slot.
+   Validate and review through the ordinary knowledge lifecycle.
+4. Query with the exact accepted knowledge revision. Inspect candidate states,
+   ambiguity and unverified runtime conditions. Matching never executes a model.
+5. Export observations and preserve the project; source removal and backup/restore
+   retain identical query identities and content. The real PHY scenario checks a ROM
+   global-pointer/slot path with independently established instruction operands.
+
+This structural scenario does not claim callback execution or hardware behavior.
+Runtime interface instances and service completion belong to the target execution
+workflow, not to the read query's success condition.

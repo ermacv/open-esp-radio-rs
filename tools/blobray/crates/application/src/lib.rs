@@ -16,6 +16,7 @@ mod investigations;
 pub use investigations::{InvestigationWork, prepare_investigation_worker};
 mod legacy;
 pub use legacy::LegacyRequest;
+mod interfaces;
 mod knowledge;
 pub use knowledge::{KnowledgeWork, prepare_knowledge_worker};
 mod companions;

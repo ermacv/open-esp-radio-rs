@@ -48,8 +48,8 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
 | 00 | done | Establish this plan, its repository exception, all feature assignments and first-stage prerequisites. Every legacy leaf and internal mechanism has an owner; required tools and real inputs are identified. |
 | 01 | done | Close existing capture/analysis/research/data/review/export/coverage/storage/execution/preservation promises. All detailed criteria below pass, including a real linked graph and source-free restore. |
 | 02 | done | Exact code/data addressing: reviewed symbol-less executable ranges; physical static/dynamic symbol selection; zero-sized/alias occurrences; initialization bytes and range-local relocation effects. Accepted selectors survive analysis/export/reopen; only affecting relocations block integer interpretation; coverage does not infer code in unselected bytes. |
-| 03 | active | Pointer tables and interfaces: exact relocated targets, bounded alternatives, roots/slots, layout/ABI/guards/index domains and semantic bindings. Discovery → proposal → review → query/export works on synthetic and real inputs; ambiguity/unsupported/null/external targets stay distinct; invalid guards and conflicting layouts fail. |
-| 04 | pending | Function/context contracts and research navigation: signatures, argument roles, fields, preconditions, reviewed paths/event routes; function/callers/callees, object readers/writers, field accesses, flow/effect slices. Answers retain evidence paths and distinguish structural from executable paths; cycles, ambiguous callbacks and partial results are tested; reads never schedule hidden analysis. |
+| 03 | done | Pointer tables and interfaces: exact relocated targets, bounded alternatives, roots/slots, layout/ABI/guards/index domains and semantic bindings. Discovery → proposal → review → query/export works on synthetic and real inputs; ambiguity/unsupported/null/external targets stay distinct; invalid guards and conflicting layouts fail. |
+| 04 | ready | Function/context contracts and research navigation: signatures, argument roles, fields, preconditions, reviewed paths/event routes; function/callers/callees, object readers/writers, field accesses, flow/effect slices. Answers retain evidence paths and distinguish structural from executable paths; cycles, ambiguous callbacks and partial results are tested; reads never schedule hidden analysis. |
 | 05 | pending | Register lifecycle: MMIO/field discovery, physical catalog, evidence/conflicts/coverage, applicability/review. Independent register tool owns model initialization/SVD import and existing publication. Observation → reviewed source model → validate → four generated outputs works; observed access width is not physical width; generic Blobray gains no production/chip dependency. |
 | 06 | pending | Saved linked semantic IR, configured builds/exports and static observable trace comparison. May-effects, exact static traces and concrete observations remain distinct; incomplete traces cannot MATCH; known differences DIFF; provenance and source-free reading survive composition. |
 | 07 | pending | Integer execution sessions: stack ABI arguments, RV32 atomics, multiple entry points/setup phases, ownership/persistent regions, cold/warm resets and return/reach-symbol/observe-call goals. State transitions, unknown data, unsupported instructions, dependent-phase blocking and exact replay are tested. |
@@ -182,7 +182,13 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stages 00, 01, 02, 03.1, 03.2 and 03.3.1 are complete. Stage 03.3.2 is active with the partitions below.
+Stages 00–03 are complete. Stage 04 is ready with the partitions below.
+Stage 03 acceptance includes captured pointers, finite callback alternatives, native
+interface review/discovery, ambiguous bindings and authenticated ROM query/export
+reopening. All standalone Next packages/tests, Clippy, formatting and affected
+public/private documentation gates pass. Real PHY capture, linked research,
+table/constant/pointer/interface review and byte-identical restored exports pass
+under explicit watchdog limits; this does not claim kernel memory enforcement.
 Stage 01 acceptance is covered by `record_memory` regressions, application
 `research::lifetime_tests`, Next `functions`/`images` tests, and the real
 `phy_research.py` linked/review/export/reopen scenario. All nine Next packages,
@@ -219,7 +225,7 @@ reader. Runtime device/service execution remains owned by stages 08/09.
 | --- | --- | --- |
 | 03.1 | done | Captured pointer tables: explicit layout and RV32 pointer profile, physical relocation target/addend or image address, null/external/ambiguous/unsupported distinctions. Discovery/data query → proposal → acceptance → export/reopen on synthetic and authenticated real bytes. Preserve initialization and relocation evidence; invalid/overlapping relocation extents, overflow, budget failure and unsupported encodings cannot yield a complete resolved table. |
 | 03.2 | done | Bounded alternatives for addresses/call targets: stable finite join, operation-scoped admitted storage, cycles/convergence and explicit overflow-to-unknown/incomplete evidence. Read-only analyses and exported facts preserve all retained alternatives and provenance; no arbitrary target chosen. Real and synthetic callbacks plus budget/cancellation checks pass. |
-| 03.3 | active | Native interface contracts and discovery: physical table/argument/address roots, access paths and slots, layout/ABI, guards, finite index domains and semantic bindings. Observation → proposal → review → query/export/reopen is one application workflow. Missing/rejected bindings, invalid guards/index domains, overlapping/conflicting layouts and unsupported ABI remain explicit; no model execution or hardware qualification is implied. |
+| 03.3 | done | Native interface contracts and discovery: physical table/argument/address roots, access paths and slots, layout/ABI, guards, finite index domains and semantic bindings. Observation → proposal → review → query/export/reopen is one application workflow. Missing/rejected bindings, invalid guards/index domains, overlapping/conflicting layouts and unsupported ABI remain explicit; no model execution or hardware qualification is implied. |
 
 Stage 03.3 refinement: `needs-replan` resolved before implementation. The parent
 acceptance combined a new reviewed declaration format with discovery over saved
@@ -230,7 +236,7 @@ separate these independently testable scenarios, preserving every parent criteri
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
 | 03.3.1 | done | Native interface declaration → physical/pure validation → proposal/review → knowledge query/export/source-free reopening. Table/argument/address roots, explicit paths, layout/slot ABI, guards, finite index domains and semantic bindings have bounded typed contracts. Bad identities, invalid guards/domains, unsupported ABI and conflicting accepted layouts fail without publication. No declaration claims runtime guard satisfaction or executes a model. |
-| 03.3.2 | active | Discover table/callback observations from captured data and saved function facts; match only explicitly selected accepted contracts. Export exact slot/path/evidence, bindings and guard applicability; missing/rejected/ambiguous/unsupported cases remain explicit. Synthetic and authenticated real observation→review→query/export/reopen scenarios pass without hidden analysis, legacy resolution or runtime-model execution. |
+| 03.3.2 | done | Discover table/callback observations from captured data and saved function facts; match only explicitly selected accepted contracts. Export exact slot/path/evidence, bindings and guard applicability; missing/rejected/ambiguous/unsupported cases remain explicit. Synthetic and authenticated real observation→review→query/export/reopen scenarios pass without hidden analysis, legacy resolution or runtime-model execution. |
 
 Stage 03.2 implementation contract: domain exposes bounded nonrecursive exact
 alternatives; the existing analysis phase owns interned sets and its admitted
@@ -269,3 +275,19 @@ is a four-byte ROM tail trampoline. Current call composition does not expand
 that transfer, so it cannot meet the composed-effect acceptance criterion. The
 replacement root above has ordinary calls to two concrete, small ROM bodies;
 no acceptance obligation was removed.
+
+
+### Stage 04 refinement
+
+`needs-replan` resolved before activation: the legacy function workspace combines
+signature/context declarations with graph queries and three event-route mechanisms.
+Native saved call/value/effect records exist, but a reviewed function/context schema
+and shared cross-analysis navigation do not. Keeping this as one stage would couple
+independent review and graph acceptance. Preserve every obligation in these complete
+scenarios; do not import legacy packs or add a second resolver:
+
+| Sub-stage | Status | Acceptance |
+| --- | --- | --- |
+| 04.1 | ready | Physical function signature/context declaration → validate/propose/review → query/export/source-free reopening. Share call ABI vocabulary with interfaces. Argument/return roles, context extents/fields/access roles and explicit preconditions remain conditional claims. Bad selectors, field bounds/types, contradictory preconditions and conflicting accepted contracts fail without publication; symbol/range, ordinary/thin/image and resource regressions pass. |
+| 04.2 | pending | Shared saved-research navigation for functions/callers/callees, data-object readers/writers and context-field accesses. Explicit selected analyses/publications/knowledge, bounded operation indexes, physical selectors and evidence references; ambiguous/unresolved targets remain visible, cycles terminate, no hidden analysis. CLI/API/export/reopen agree on synthetic and real queries. |
+| 04.3 | pending | Flow/effect slices and reviewed paths/event routes: selector delivery, static callback registration/delivery and broker subscription with exact participants, sites, fields/selectors and evidence. Structural paths, conditional reviewed routes and executable evidence remain distinct. Missing/ambiguous/mismatched steps, cycles and bounds cannot claim completion; complete query/review/export/reopen scenarios close the remaining stage 04 obligations. Runtime replay remains a later execution consumer, never synthesized by navigation. |

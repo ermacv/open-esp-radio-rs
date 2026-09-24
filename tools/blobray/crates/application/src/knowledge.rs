@@ -74,6 +74,9 @@ fn validate_evidence(
                             };
                             object.with_function(&request, c, |_, _| Ok(()))?;
                         }
+                        InterfaceRoot::Section { section, offset } => {
+                            object.validate_section_root(*section, *offset)?
+                        }
                         InterfaceRoot::Address { .. } => (),
                     }
                     Ok(())

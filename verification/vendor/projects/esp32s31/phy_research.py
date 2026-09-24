@@ -107,6 +107,18 @@ assert any(r["value"].get("kind") == "transfer" and r["value"]["offset"] == 0x2F
 assert any(r["value"].get("kind") == "call-resolution" and r["value"]["offset"] == 0x2F829FB6
     and r["value"]["analysis"] is None for r in callback_records)
 assert not any(r["value"].get("kind") == "callee-effect" for r in callback_records)
+
+callback_query = {"input": {"kind": "analysis", "analysis": callback_analysis,
+                            "abi": "riscv-integer"}, "knowledge": None}
+callback_discovery = call("callback-discovery", ["interfaces", "--request", doc("callback-discovery", callback_query)])
+assert len(callback_discovery["records"]) == 1
+callback_slot = callback_discovery["records"][0]["value"]
+assert callback_slot["offset"] == 0x2F829FB6
+assert callback_slot["paths"] == [{"root": {"kind": "address", "address": 0x2F07FC3C},
+    "path": [{"kind": "load-pointer", "offset": 0}], "slot": 8}]
+assert callback_slot["target"] == {"kind": "unknown"}
+assert callback_slot["issue"] is None and callback_slot["bindings"] == []
+
 coverage = call("coverage", ["coverage", "--id", publication])
 assert coverage["assessment"]["coverage"]["scope"] == "selected-function-extents"
 assert coverage["summary"]["extents"]["objects"] > 0
@@ -412,6 +424,44 @@ entries = call("pointer-claims", ["knowledge", "show"])["records"]
 pointer_id = next(r["value"]["id"] for r in entries if r["value"]["state"] == "proposed")
 base = call("accept-pointers", ["knowledge", "accept", "--base", proposal, "--assertion", pointer_id, "--actor", "source-byte-review", "--reason", "Exact captured representation only"])["run"]["knowledge"]
 call("export-pointers", ["export-data", "--revision", base, "--assertion", pointer_id, "--output", str(run / "accepted-pointers")])
+
+pointer_revision = base
+# Review only the structural path independently established by the ROM instructions:
+# lui/lw captures global 0x2f07fc3c, lw +8 loads the callback, jalr invokes it.
+# Neither the callback signature nor its semantic purpose follows from these bytes.
+callback_summary = callback_discovery["summary"]["summary"]
+callback_contract = {
+    **callback_slot["paths"][0], "layout_version": "captured-rom-callback/1",
+    "layout_bytes": 12, "pointer_bytes": 4, "abi": "riscv-integer", "index_domains": [],
+    "guards": [{"kind": "captured-payload", "payload": callback_summary["payload"]}],
+    "slots": [{"offset": 8, "name": "captured-slot-8", "semantic": None, "signature": None}],
+    "purpose": "Exact captured callback load path; signature and runtime target unknown",
+    "applicability": "Authenticated ROM occurrence only; no hardware behavior assertion",
+}
+del callback_contract["slot"]
+change = {"expected_base": base, "actor": "source-instruction-review",
+    "reason": "Independent ROM instruction offsets and operands", "action": {"kind": "propose", "proposal": {
+        "subject": "phy.captured-rom-callback", "occurrence": callback_summary["occurrence"],
+        "claim": {"kind": "interface", "contract": callback_contract},
+        "evidence": [{"kind": "analysis", "analysis": callback_analysis, "record": callback_slot["record"]}],
+        "note": "Structural identity only; no inferred signature, semantic binding or runtime guard satisfaction",
+    }}}
+proposal = call("propose-callback", ["knowledge", "apply", "--change", doc("callback-proposal", change)])["run"]["knowledge"]
+entries = call("callback-claims", ["knowledge", "show"])["records"]
+callback_id = next(r["value"]["id"] for r in entries if r["value"]["state"] == "proposed")
+base = call("accept-callback", ["knowledge", "accept", "--base", proposal, "--assertion", callback_id,
+    "--actor", "source-instruction-review", "--reason", "Confirmed physical load path only"])["run"]["knowledge"]
+callback_query["knowledge"] = base
+callback_matched = call("matched-callback", ["interfaces", "--request", doc("callback-matched", callback_query)])
+assert callback_matched["summary"]["summary"]["matched_accepted"] == 1
+assert callback_matched["summary"]["summary"]["unresolved_paths"] == 0
+binding = callback_matched["records"][0]["value"]["bindings"][0]
+assert binding["assertion"] == callback_id and binding["state"] == "accepted"
+assert binding["signature"] is None and binding["semantic"] is None
+assert callback_matched["records"][0]["value"]["target"] == {"kind": "unknown"}
+call("export-callback", ["interfaces", "--request", doc("callback-export", callback_query),
+    "--output", str(run / "callback-export.json")])
+
 for directory in ["i2c-observations", "accepted-table", "initial", "accepted-constant", "accepted-pointers"]:
     d = run / directory
     m = json.loads((d / "manifest.json").read_text())
@@ -469,7 +519,7 @@ call(
         str(run / "restored-constant"),
     ],
 )
-call("restored-pointers", ["export-data", "--revision", base, "--assertion", pointer_id, "--output", str(run / "restored-pointers")])
+call("restored-pointers", ["export-data", "--revision", pointer_revision, "--assertion", pointer_id, "--output", str(run / "restored-pointers")])
 for name in ["object.elf", "data.bin", "records.jsonl", "manifest.json"]:
     assert (run / "restored-pointers" / name).read_bytes() == (run / "accepted-pointers" / name).read_bytes()
 call("restored-doctor", ["doctor"])
@@ -512,3 +562,8 @@ assert call("restored-callback-facts", ["analysis", "--id", callback_analysis])[
 call("restored-finite-export", ["export-analysis", "--id", finite_analysis, "--output", str(run / "restored-finite-export")])
 for file in ("manifest.json", "records.jsonl"):
     assert (run / "finite-export" / file).read_bytes() == (run / "restored-finite-export" / file).read_bytes()
+
+assert call("restored-interfaces", ["interfaces", "--request", doc("restored-interfaces", callback_query)]) == callback_matched
+call("export-restored-callback", ["interfaces", "--request", doc("restored-interface-export", callback_query),
+    "--output", str(run / "restored-interface-export.json")])
+assert (run / "callback-export.json").read_bytes() == (run / "restored-interface-export.json").read_bytes()

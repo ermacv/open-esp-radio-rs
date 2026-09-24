@@ -7,7 +7,8 @@ accepted assertions through the conflict predicate, and submits a validated even
 to store. Store owns durability and the expected-base transaction.
 
 The supported claims are display names, semantic subject bindings, explicit
-function extents, research hypotheses and reviewed MMIO regions/register fields. `SubjectId` is a caller-assigned key
+function extents/ranges, research hypotheses, reviewed MMIO regions/register fields,
+integer/pointer tables, constants and conditional interface declarations. `SubjectId` is a caller-assigned key
 scoped to a project. It is separate from the exact physical occurrence:
 source revision, input/image source, object identity and optional symbol identity.
 Names are never used to resolve physical identity.
@@ -20,8 +21,8 @@ latest revision. There is no implicit rebase. Review attribution is recorded
 text, not authentication of the reviewer.
 
 An accepted hypothesis remains a hypothesis. Accepting a name, binding or extent
-does not establish behavioral equivalence. Executable ABI models, register-publication policy and interface
-validators are outside the implemented claim vocabulary.
+does not establish behavioral equivalence. Executable ABI models and
+register-publication policy remain outside this crate's authority.
 
 See the [application commands and wire contracts](../../next/README.md#knowledge-and-preservation)
 for evidence verification, revision selection and backup/restore ownership.

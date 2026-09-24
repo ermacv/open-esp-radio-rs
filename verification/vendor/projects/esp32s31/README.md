@@ -441,3 +441,9 @@ The PHY research scenario also checks the eleven absolute relocation entries in
 and a captured-byte digest. It reviews that pointer layout, exports it and checks
 identical output after restore. These local code-label references do not establish
 callback ABI or new function boundaries.
+
+For the ROM `phy_get_i2c_mst0_mask` callback, the scenario checks the independently
+read global-pointer address `0x2f07fc3c` and slot `+8`. It reviews only that physical
+load path, leaving signature and semantic binding unknown, then compares the
+selected interface query and JSON export after source removal and backup/restore.
+No callback model, resolved callee or hardware assertion follows from this review.

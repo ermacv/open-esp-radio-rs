@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 12 and journal schema 13. Earlier and future
+Projects require metadata schema 13 and journal schema 14. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,8 +712,8 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 13 for every durable and read operation. Storage metadata
-uses schema 12; revision manifests use schema 1 and execution manifests use schema
+Run records use schema 14 for every durable and read operation. Storage metadata
+uses schema 13; revision manifests use schema 1 and execution manifests use schema
 1. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-13 run; an envelope version is not a journal
+execution 7) wrap the same schema-14 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1667,8 +1667,8 @@ research closure in the supported format.
 ### Reviewed interface declarations
 
 `knowledge validate/apply/accept/show/export` also accepts the native `interface`
-claim. It declares a conditional table contract; it neither discovers callbacks
-nor supplies a runtime model. Existing evidence, expected-base review and physical
+claim. It declares a conditional table contract used by `interfaces` queries.
+It supplies no runtime model. Existing evidence, expected-base review and physical
 occurrence checks apply. Example `claim` within a `KnowledgeChange` proposal:
 
 ```json
@@ -1701,7 +1701,8 @@ occurrence checks apply. Example `claim` within a `KnowledgeChange` proposal:
 ```
 
 Roots can instead be `symbol` with a physical `SymbolId` and signed `addend`, or
-`function-argument` with an exact `FunctionSelector` and zero-based `argument`.
+`function-argument` with an exact `FunctionSelector` and zero-based `argument`,
+or `section` with a physical section index and byte offset.
 Symbol-less function ranges are valid argument contexts. An address root is a
 literal RV32 address scoped by the occurrence, not an offset into the ELF file.
 Paths contain explicit `offset`, `load-pointer` and `index` steps. Each index
@@ -1712,7 +1713,9 @@ support for all stack arguments or signatures.
 
 The declaration profile has four-byte pointers, aligned nonoverlapping slots,
 RV32 integer ABI, nonvariadic signatures, 8/16/32/64-bit integers, pointers and a
-void result. At most 64 slots, 32 arguments per signature, 16 path steps, 16 guards
+void result. A slot may have `signature: null` when its call signature is unknown;
+this preserves a structural observation without inventing argument or return types.
+At most 64 slots, 32 arguments per signature, 16 path steps, 16 guards
 and eight index domains fit within the existing 64 KiB knowledge-event limit.
 A `captured-payload` guard must match the exact object digest (including detached
 thin-member identity). Runtime byte/halfword/word guards are bounds/mask checked;
@@ -1725,3 +1728,51 @@ root ranges conflict during acceptance. Different dynamic dereference paths are
 distinct declared identities; static validation does not prove runtime non-aliasing.
 Export retains review events and evidence references, not a transitive binary
 backup. Use project backup/restore to preserve the captured research.
+
+
+### Interface discovery and selected bindings
+
+`interfaces --request query.json [--output observations.json]` is one supervised
+read query. The optional output is an atomic JSON export to a new file. Without
+it, normal human/JSON output selection applies. Example request over saved facts:
+
+```json
+{
+  "input": {"kind": "analysis", "analysis": "<analysis-id>", "abi": "riscv-integer"},
+  "knowledge": null
+}
+```
+
+Alternatively `input` is `{"kind":"data","occurrence":<KnowledgeOccurrence>,
+"selector":<DataSelector>,"layout":{"count":4,"stride":4}}`. This reads exact
+captured pointer bytes through the same occurrence/relocation owner as `data`.
+`captured_span` preserves section, digest and writable-initialization classification;
+pointer values distinguish null, physical symbols, numeric addresses, external
+symbols and unresolved transformations. Slot offsets are relative to the selected
+root. Captured pointer contents do not assert function boundaries or live values.
+
+Analysis discovery reads retained instructions, call inputs and expression facts,
+including calls in ET_REL objects. It never schedules analysis or linking. Paths
+retain literal/section/symbol/function-argument roots, dereferences, byte offsets,
+bounded scaled argument indices and the final pointer slot. The current argument
+profile requires an explicit integer ABI and supports entry registers a0..a7.
+Missing facts, unsupported expressions, call results, non-pointer loads and path
+bounds produce explicit issues. A known or finite call destination can lack a
+retained pointer-load expression: `no-pointer-path` retains that target and does
+not guess its originating table. A path is a structural may-observation, not proof
+of an executable route or of runtime index/guard satisfaction.
+
+`knowledge: null` means no declarations. A revision ID selects exactly that saved
+snapshot, never the current head implicitly. The query indexes physical occurrence,
+root/path and slot once. Bindings retain assertion IDs and proposed/rejected/accepted
+states; only accepted matches contribute to `matched_accepted`. Multiple accepted
+candidates remain visible and increment `ambiguous_bindings`. Runtime guards/index
+domains yield `runtime-conditions-unverified`; neither acceptance nor matching runs
+a model, resolves a callee or satisfies those conditions. Unknown signatures and
+semantic keys remain null. Summary counts have no general `complete` or PASS claim.
+
+To review a discovered path, propose an `interface` claim using the summary's exact
+occurrence and payload, the observation's path/slot and its source analysis record
+as evidence. Use the existing validate/apply/accept lifecycle, then repeat the query
+with that explicit knowledge revision. Export preserves these identities and review
+states; retain the project for transitive evidence and source-free reopening.

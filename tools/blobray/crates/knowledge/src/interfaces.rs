@@ -32,6 +32,11 @@ pub(super) fn validate(p: &KnowledgeProposal, d: &InterfaceContract) -> Result<(
         ));
     }
     match &d.root {
+        InterfaceRoot::Section { section, offset }
+            if *section == 0 || offset.checked_add(u64::from(d.layout_bytes)).is_none() =>
+        {
+            return Err(invalid("invalid section interface root"));
+        }
         InterfaceRoot::Symbol { symbol, .. }
             if symbol.object != p.occurrence.object
                 || p.occurrence.symbol.as_ref().is_some_and(|s| s != symbol) =>
@@ -128,19 +133,22 @@ pub(super) fn validate(p: &KnowledgeProposal, d: &InterfaceContract) -> Result<(
             || d.slots[..i]
                 .iter()
                 .any(|s| s.offset == slot.offset || s.name == slot.name)
-            || slot.signature.arguments.len() > 32
+            || slot
+                .signature
+                .as_ref()
+                .is_some_and(|s| s.arguments.len() > 32)
         {
             return Err(invalid(
                 "interface slots must have unique names and aligned nonoverlapping layout ranges",
             ));
         }
-        if slot.signature.variadic
-            || !value_type(&slot.signature.result, true)
-            || slot
-                .signature
-                .arguments
-                .iter()
-                .any(|a| !value_type(&a.value_type, false))
+        if let Some(signature) = &slot.signature
+            && (signature.variadic
+                || !value_type(&signature.result, true)
+                || signature
+                    .arguments
+                    .iter()
+                    .any(|a| !value_type(&a.value_type, false)))
         {
             return Err(Error::new(
                 ErrorCode::Incompatible,
@@ -211,6 +219,9 @@ pub(super) fn overlap(a: &InterfaceContract, b: &InterfaceContract) -> bool {
     }
     let roots_match = match (&a.root, &b.root) {
         (InterfaceRoot::Address { .. }, InterfaceRoot::Address { .. }) => true,
+        (InterfaceRoot::Section { section: a, .. }, InterfaceRoot::Section { section: b, .. }) => {
+            a == b
+        }
         (InterfaceRoot::Symbol { symbol: a, .. }, InterfaceRoot::Symbol { symbol: b, .. }) => {
             a == b
         }
@@ -230,6 +241,7 @@ pub(super) fn overlap(a: &InterfaceContract, b: &InterfaceContract) -> bool {
         let mut at = match &d.root {
             InterfaceRoot::Address { address } => i128::from(*address),
             InterfaceRoot::Symbol { addend, .. } => i128::from(*addend),
+            InterfaceRoot::Section { offset, .. } => i128::from(*offset),
             _ => 0,
         };
         for step in &d.path {
@@ -274,14 +286,14 @@ mod tests {
                         offset: 4,
                         name: "callback".into(),
                         semantic: Some("fixture.callback".to_owned().try_into().unwrap()),
-                        signature: InterfaceSignature {
+                        signature: Some(InterfaceSignature {
                             arguments: vec![],
                             result: InterfaceValueType::Integer {
                                 bits: 32,
                                 signed: false,
                             },
                             variadic: false,
-                        },
+                        }),
                     }],
                     purpose: "fixture".into(),
                     applicability: "selected occurrence only".into(),
@@ -312,9 +324,9 @@ mod tests {
             let d = contract(&mut bad);
             match change {
                 0 => d.pointer_bytes = 8,
-                1 => d.slots[0].signature.variadic = true,
+                1 => d.slots[0].signature.as_mut().unwrap().variadic = true,
                 2 => {
-                    d.slots[0].signature.result = InterfaceValueType::Integer {
+                    d.slots[0].signature.as_mut().unwrap().result = InterfaceValueType::Integer {
                         bits: 128,
                         signed: false,
                     }

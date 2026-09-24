@@ -9,6 +9,9 @@ use std::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum QuerySummary {
+    Interfaces {
+        summary: Box<InterfaceSummary>,
+    },
     Coverage {
         id: PublicationId,
         selected_functions: InvestigationCoverage,
@@ -257,6 +260,12 @@ pub trait QuerySink: InventorySink + DoctorSink {
         ))
     }
 
+    fn interface(&mut self, _: &InterfaceObservation, _: &mut dyn RunControl) -> Result<()> {
+        Err(Error::new(
+            ErrorCode::InvalidRequest,
+            "consumer does not support interfaces",
+        ))
+    }
     fn candidate(
         &mut self,
         _candidate: &SelectionCandidate,
@@ -271,6 +280,7 @@ pub trait QuerySink: InventorySink + DoctorSink {
 }
 #[derive(Serialize)]
 enum RecordRef<'a> {
+    Interface(&'a InterfaceObservation),
     Coverage(&'a ExtentCoverageRecord),
     Data(&'a DataRecord),
     TargetAudit(&'a TargetAuditRecord),
@@ -300,6 +310,7 @@ enum RecordRef<'a> {
 }
 #[derive(Deserialize)]
 enum Record {
+    Interface(InterfaceObservation),
     Coverage(ExtentCoverageRecord),
     Data(DataRecord),
     TargetAudit(TargetAuditRecord),
@@ -463,6 +474,20 @@ pub fn prepare_query_with_tools(
             file: disk.create(&stage.join("query-records"))?,
         };
         let summary = match &work.query {
+            ReadQuery::Interfaces { request } => {
+                let project = Project::open(&work.project.to_path()?)?;
+                let summary = crate::interfaces::discover(
+                    &project,
+                    request,
+                    decoder,
+                    &memory,
+                    control,
+                    &mut |r, c| spool.push(RecordRef::Interface(r), c),
+                )?;
+                QuerySummary::Interfaces {
+                    summary: Box::new(summary),
+                }
+            }
             ReadQuery::Coverage { id } => {
                 let project = Project::open(&work.project.to_path()?)?;
                 let (selected_functions, extents) =
@@ -1085,6 +1110,7 @@ pub(crate) fn visit(
         let record: Record = serde_json::from_slice(&bytes)
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         match record {
+            Record::Interface(r) => sink.interface(&r, control)?,
             Record::TargetAudit(r) => sink.target_audit(&r, control)?,
             Record::Legacy(r) => sink.legacy(&r, control)?,
             Record::KnowledgeEntry(r) => sink.knowledge_entry(&r, control)?,

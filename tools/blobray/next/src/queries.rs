@@ -74,7 +74,8 @@ pub(super) fn render(
 ) -> Result<()> {
     if matches!(
         result.summary(),
-        app::QuerySummary::Coverage { .. }
+        app::QuerySummary::Interfaces { .. }
+            | app::QuerySummary::Coverage { .. }
             | app::QuerySummary::StorageUsage { .. }
             | app::QuerySummary::Data { .. }
             | app::QuerySummary::TargetAudit { .. }
@@ -489,6 +490,9 @@ impl app::DoctorSink for Records<'_> {
     }
 }
 impl app::QuerySink for Records<'_> {
+    fn interface(&mut self, r: &InterfaceObservation, c: &mut dyn RunControl) -> Result<()> {
+        self.record("interface", r, c)
+    }
     fn coverage(&mut self, r: &ExtentCoverageRecord, c: &mut dyn RunControl) -> Result<()> {
         self.record("coverage", r, c)
     }

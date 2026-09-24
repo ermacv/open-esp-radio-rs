@@ -107,6 +107,18 @@ enum KnowledgeCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Discover captured pointer slots or saved indirect-call paths with explicit review selection.
+    Interfaces {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        request: PathBuf,
+        /// Atomically export the completed JSON observation stream to a new file.
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[command(flatten)]
+        limits: ResourceOptions,
+    },
     /// Report executable intervals inside and outside selected function extents.
     Coverage {
         #[arg(long)]
@@ -838,6 +850,22 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 ),
                 Format::Human => println!("Project preserved at {}", project.display()),
             }
+        }
+        Command::Interfaces {
+            project,
+            request,
+            output,
+            limits,
+        } => {
+            return read_query_output(
+                project,
+                ReadQuery::Interfaces {
+                    request: read_json_file(&request)?,
+                },
+                limits,
+                format,
+                output,
+            );
         }
         Command::Knowledge {
             project,
@@ -2060,6 +2088,15 @@ fn read_query(
     limits: ResourceOptions,
     format: Format,
 ) -> Result<ExitCode> {
+    read_query_output(project, query, limits, format, None)
+}
+fn read_query_output(
+    project: PathBuf,
+    query: ReadQuery,
+    limits: ResourceOptions,
+    format: Format,
+    output: Option<PathBuf>,
+) -> Result<ExitCode> {
     let budget = limits.budget()?;
     let signals = Signals::new()?;
     let application = limits.application()?;
@@ -2069,9 +2106,23 @@ fn read_query(
         return Ok(ExitCode::FAILURE);
     }
     let mut result = handle.take_output()?;
-    queries::render(&mut result, format, &mut std::io::stdout().lock(), &|| {
-        signals.cancelled()
-    })?;
+    if let Some(path) = output {
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(std::path::Path::new("."));
+        let mut file = tempfile::NamedTempFile::new_in(parent).map_err(io_error)?;
+        queries::render(&mut result, Format::Json, file.as_file_mut(), &|| {
+            signals.cancelled()
+        })?;
+        file.as_file().sync_all().map_err(io_error)?;
+        file.persist_noclobber(path)
+            .map_err(|e| io_error(e.error))?;
+    } else {
+        queries::render(&mut result, format, &mut std::io::stdout().lock(), &|| {
+            signals.cancelled()
+        })?;
+    }
     Ok(if result.assessment().check_passed() {
         ExitCode::SUCCESS
     } else {

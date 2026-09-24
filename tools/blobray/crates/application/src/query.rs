@@ -55,6 +55,11 @@ impl QueryOutput {
         let summary: QuerySummary = serde_json::from_slice(&bytes)
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         let manifest = match (&work.query, &summary) {
+            (ReadQuery::Interfaces { request }, QuerySummary::Interfaces { summary })
+                if request == &summary.request && summary.schema == 1 =>
+            {
+                None
+            }
             (ReadQuery::Coverage { id }, QuerySummary::Coverage { id: actual, .. })
                 if id == actual =>
             {

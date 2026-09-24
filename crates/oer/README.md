@@ -41,7 +41,9 @@ facade also enables portable Wi-Fi in the final feature union.
 
 For a ready ESP32-S31 Embassy Wi-Fi composition, select one of
 `upstream-xarxa`, `owned-xarxa`, or `embassy-smoltcp`. The composition is exposed
-at `systems::esp32s31::embassy::wifi`. Network profiles are alternatives and
+at `systems::esp32s31::embassy::wifi`, together with every input needed to
+construct it; the [station example](../../examples/esp32s31-station/) uses only
+this path. Network profiles are alternatives and
 are checked separately. Stack dependencies and patch ownership are described
 in [network implementations](../../docs/network-implementations.md).
 

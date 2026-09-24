@@ -35,6 +35,15 @@ mod maintenance_policy;
 mod watchdog;
 #[cfg(target_arch = "riscv32")]
 pub use watchdog::WatchdogConfig;
+
+// Inputs of `new`, `RadioConfig` and `WatchdogConfig`, so an application can
+// construct the composition through this crate (or the `oer` facade) alone.
+pub use oer_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
+#[cfg(target_arch = "riscv32")]
+pub use oer_esp32s31_soc::watchdog::{DeadlineBudget, DeadlineWatchdog};
+#[cfg(target_arch = "riscv32")]
+pub use oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
+pub use oer_wifi_embassy::await_stack_boundary;
 mod network_diagnostics;
 pub mod resources;
 

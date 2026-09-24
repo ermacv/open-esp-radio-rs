@@ -14,6 +14,12 @@ the hardware-free `WifiControl`, network devices, monitor stream and status
 observers. The runner, not `WifiControl`, retains the stopped PHY/MAC owner,
 DMA arenas and IRQ route while it is spawned. Internal crates do not depend on
 the `oer` facade; the facade reexports their application-facing contracts.
+This crate also reexports every input of `new`, `RadioConfig` and
+`WatchdogConfig`: `EspHalRadioPeripheral`, `PhyCalibrationIdentity`,
+`phy_get_rf_cal_version`, `DeadlineWatchdog`, `DeadlineBudget` and the
+`await_stack_boundary!` poll boundary. Applications therefore need no direct
+PHY, SoC or esp-hal adapter dependency; board startup and the executor remain
+application-owned.
 
 Use the buildable [station](../../../../../examples/esp32s31-station/),
 [access-point](../../../../../examples/esp32s31-access-point/) and

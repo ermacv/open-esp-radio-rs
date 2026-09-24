@@ -1,10 +1,10 @@
-use oer_esp32s31_embassy_wifi::WifiDevice;
+use oer::systems::esp32s31::embassy::wifi::WifiDevice;
 
 use static_cell::StaticCell;
 pub async fn run(device: WifiDevice, seed: u64) -> ! {
     use crate::embassy_net;
 
-    use oer_esp32s31_embassy_wifi::{WifiNetworkRunner, WifiStackResources};
+    use oer::systems::esp32s31::embassy::wifi::{WifiNetworkRunner, WifiStackResources};
     static STORAGE: StaticCell<WifiStackResources> = StaticCell::new();
     let (stack, runner) = WifiNetworkRunner::new(
         device,

@@ -1,10 +1,10 @@
-use oer_esp32s31_embassy_wifi::WifiDevice;
+use oer::systems::esp32s31::embassy::wifi::WifiDevice;
 
 use static_cell::StaticCell;
 pub async fn run(device: WifiDevice, seed: u64) -> ! {
     use embassy_net_upstream::{Stack, StackStorage};
 
-    use oer_esp32s31_embassy_wifi::WifiNetworkDevice;
+    use oer::systems::esp32s31::embassy::wifi::WifiNetworkDevice;
     static STORAGE: StaticCell<StackStorage<'static>> = StaticCell::new();
     static DRIVER: StaticCell<WifiNetworkDevice> = StaticCell::new();
     let (stack, mut runner) = Stack::new(STORAGE.init(StackStorage::new()), seed);

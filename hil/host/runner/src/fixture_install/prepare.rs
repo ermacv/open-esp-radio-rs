@@ -320,6 +320,7 @@ mod tests {
 
     #[test]
     fn helper_capabilities_cannot_hold_preparation_open_indefinitely() {
+        let _serial = crate::fixture_install::tests::serial();
         let directory = tempfile::tempdir().unwrap();
         let helper = directory.path().join("helper");
         fs::write(&helper, "#!/bin/sh\nexec sleep 60\n").unwrap();

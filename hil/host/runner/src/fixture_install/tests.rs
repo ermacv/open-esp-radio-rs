@@ -15,6 +15,17 @@ use crate::fixture_install::{
 
 const OPERATOR: &str = "fixture_test";
 
+/// Serializes tests that hold installation locks or write executables while
+/// other tests spawn processes. A concurrent fork inherits every open
+/// descriptor until its exec, so it can briefly keep a session flock
+/// (`EAGAIN`) or a written helper (`ETXTBSY`) owned by another test.
+pub(super) fn serial() -> std::sync::MutexGuard<'static, ()> {
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 struct TestEffects {
     fail: Option<Stage>,
     panic: Option<Stage>,
@@ -290,6 +301,7 @@ fn test_apply(
 
 #[test]
 fn plans_are_provider_specific_deterministic_and_offline() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     let net = build_plan(root.path(), Provider::LinuxNet, &[]).unwrap();
     assert_eq!(
@@ -317,6 +329,7 @@ fn plans_are_provider_specific_deterministic_and_offline() {
 
 #[test]
 fn bluetooth_adapter_policy_is_explicit_and_canonical() {
+    let _serial = serial();
     assert_eq!(
         validate_adapters(
             Provider::LinuxBluetooth,
@@ -336,6 +349,7 @@ fn bluetooth_adapter_policy_is_explicit_and_canonical() {
 
 #[test]
 fn fresh_repeat_and_upgrade_use_complete_generations() {
+    let _serial = serial();
     use std::os::unix::fs::MetadataExt as _;
 
     let root = tempfile::tempdir().unwrap();
@@ -400,6 +414,7 @@ fn fresh_repeat_and_upgrade_use_complete_generations() {
 
 #[test]
 fn post_install_dispatch_contains_only_policy_bytes_and_capabilities_checks() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     let (bundle, _) = make_bundle(root.path(), Provider::LinuxBluetooth, "software-only");
     let mut effects = TestEffects::passing();
@@ -419,6 +434,7 @@ fn post_install_dispatch_contains_only_policy_bytes_and_capabilities_checks() {
 
 #[test]
 fn invalid_candidate_rolls_back_without_replacing_old_bytes_or_policy() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     let (first, _) = make_bundle(root.path(), Provider::LinuxNet, "old");
     let installed = test_apply(
@@ -451,6 +467,7 @@ fn invalid_candidate_rolls_back_without_replacing_old_bytes_or_policy() {
 
 #[test]
 fn effective_policy_failure_rolls_back_and_never_runs_capabilities() {
+    let _serial = serial();
     struct EffectiveReject {
         effective_calls: usize,
     }
@@ -497,6 +514,7 @@ fn effective_policy_failure_rolls_back_and_never_runs_capabilities() {
 
 #[test]
 fn every_control_stage_fails_closed_and_rollback_failure_is_reported() {
+    let _serial = serial();
     for stage in [
         Stage::Imported,
         Stage::LinksPrepared,
@@ -569,6 +587,7 @@ fn every_control_stage_fails_closed_and_rollback_failure_is_reported() {
 
 #[test]
 fn abrupt_process_loss_is_recovered_from_persisted_journal() {
+    let _serial = serial();
     for stage in [Stage::PolicyPublished, Stage::Activated] {
         let root = tempfile::tempdir().unwrap();
         let layout = Layout::test(root.path(), Provider::LinuxBluetooth).unwrap();
@@ -628,6 +647,7 @@ fn abrupt_process_loss_is_recovered_from_persisted_journal() {
 
 #[test]
 fn receipt_failure_after_commit_preserves_truth_and_next_apply_finishes_recovery() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     let layout = Layout::test(root.path(), Provider::LinuxBluetooth).unwrap();
     let (bundle, expected) = make_bundle(root.path(), Provider::LinuxBluetooth, "receipt");
@@ -694,6 +714,7 @@ fn receipt_failure_after_commit_preserves_truth_and_next_apply_finishes_recovery
 
 #[test]
 fn source_replacement_symlink_and_partial_installation_are_rejected() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     let (bundle, _) = make_bundle(root.path(), Provider::LinuxBluetooth, "source");
     let replaced = bundle.join("artifacts/open-radio-bluetooth");
@@ -753,6 +774,7 @@ fn source_replacement_symlink_and_partial_installation_are_rejected() {
 
 #[test]
 fn manifest_traversal_operator_mismatch_and_writable_bundle_are_rejected() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     let (bundle_path, mut bundle) = make_bundle(root.path(), Provider::LinuxBluetooth, "manifest");
     bundle.artifacts[0].target = PathBuf::from("/usr/local/libexec/../escape");
@@ -805,6 +827,7 @@ fn manifest_traversal_operator_mismatch_and_writable_bundle_are_rejected() {
 
 #[test]
 fn unmanaged_installation_requires_explicit_recovery_without_replacing_files() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     let layout = Layout::test(root.path(), Provider::LinuxBluetooth).unwrap();
     let stable = root.path().join("usr/local/libexec/open-radio-bluetooth");
@@ -832,6 +855,7 @@ fn unmanaged_installation_requires_explicit_recovery_without_replacing_files() {
 
 #[test]
 fn active_session_lock_refuses_upgrade_and_providers_are_independent() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     let (net_bundle, _) = make_bundle(root.path(), Provider::LinuxNet, "net");
     let (bt_bundle, _) = make_bundle(root.path(), Provider::LinuxBluetooth, "bt");
@@ -909,6 +933,7 @@ fn active_session_lock_refuses_upgrade_and_providers_are_independent() {
 
 #[test]
 fn missing_launcher_is_incomplete_not_an_implicit_upgrade_path() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     let (first, _) = make_bundle(root.path(), Provider::LinuxBluetooth, "installed");
     test_apply(
@@ -938,6 +963,7 @@ fn missing_launcher_is_incomplete_not_an_implicit_upgrade_path() {
 
 #[test]
 fn writable_or_symlinked_destination_and_writable_active_generation_are_rejected() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     let (bundle, _) = make_bundle(root.path(), Provider::LinuxBluetooth, "paths");
     let layout = Layout::test(root.path(), Provider::LinuxBluetooth).unwrap();
@@ -1003,6 +1029,7 @@ fn writable_or_symlinked_destination_and_writable_active_generation_are_rejected
 
 #[test]
 fn policy_never_grants_installer_runner_or_wildcard_adapter() {
+    let _serial = serial();
     let directory = tempfile::tempdir().unwrap();
     let (_, mut bundle) = make_bundle(directory.path(), Provider::LinuxBluetooth, "policy");
     bundle.allowed_bluetooth_adapters = vec!["hci0".into(), "hci2".into()];
@@ -1043,6 +1070,7 @@ fn policy_never_grants_installer_runner_or_wildcard_adapter() {
 
 #[test]
 fn genuine_visudo_parses_generated_policy_when_available() {
+    let _serial = serial();
     let Some(visudo) = ["/usr/sbin/visudo", "/usr/bin/visudo"]
         .into_iter()
         .map(PathBuf::from)
@@ -1148,6 +1176,7 @@ fn executable(path: &Path, contents: &str) {
 
 #[test]
 fn preparation_captures_locked_bluetooth_artifact_and_dirty_source_identity() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     initialize_test_repository(root.path());
     write_bluetooth_prepare_input(root.path(), "prepared");
@@ -1176,6 +1205,7 @@ fn preparation_captures_locked_bluetooth_artifact_and_dirty_source_identity() {
 
 #[test]
 fn preparation_rejects_missing_stale_or_modified_artifacts() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     initialize_test_repository(root.path());
     assert!(prepare(root.path(), Provider::LinuxBluetooth, OPERATOR, &[]).is_err());
@@ -1204,6 +1234,7 @@ fn preparation_rejects_missing_stale_or_modified_artifacts() {
 
 #[test]
 fn network_preparation_rejects_hostapd_provenance_mismatch() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     initialize_test_repository(root.path());
     let network = root.path().join("hil/host/linux-net/open-radio-net");
@@ -1264,6 +1295,7 @@ fn network_preparation_rejects_hostapd_provenance_mismatch() {
 
 #[test]
 fn installed_provider_leases_survive_modeled_run_cleanup() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     for provider in [Provider::LinuxNet, Provider::LinuxBluetooth] {
         let (bundle, _) = make_bundle(root.path(), provider, "persistent-lease");
@@ -1306,6 +1338,7 @@ fn installed_provider_leases_survive_modeled_run_cleanup() {
 
 #[test]
 fn persistent_operational_lease_blocks_upgrade_until_its_owner_releases() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     let effect = root.path().join("runner-effect");
     let (first, _) = make_network_race_bundle(root.path(), "held-A", &effect);
@@ -1362,6 +1395,7 @@ fn persistent_operational_lease_blocks_upgrade_until_its_owner_releases() {
 
 #[test]
 fn admission_rejects_unsafe_persistent_lease_and_parent_metadata() {
+    let _serial = serial();
     fn installed_root() -> (tempfile::TempDir, PathBuf) {
         let root = tempfile::tempdir().unwrap();
         let (bundle, _) = make_bundle(root.path(), Provider::LinuxBluetooth, "unsafe");
@@ -1442,6 +1476,7 @@ fn admission_rejects_unsafe_persistent_lease_and_parent_metadata() {
 
 #[test]
 fn admission_rejects_pending_or_invalid_committed_state_without_fallback() {
+    let _serial = serial();
     fn installed_root() -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
         let (bundle, _) = make_bundle(root.path(), Provider::LinuxBluetooth, "state");
@@ -1514,6 +1549,8 @@ fn admission_rejects_pending_or_invalid_committed_state_without_fallback() {
 #[test]
 fn lifecycle_isolated_child_entry() {
     use std::io::{Read as _, Write as _};
+
+    let _serial = serial();
 
     let Ok(mode) = std::env::var("OPEN_RADIO_LIFECYCLE_CHILD") else {
         return;
@@ -1594,6 +1631,7 @@ fn lifecycle_isolated_child_entry() {
 
 #[test]
 fn process_loss_leaves_admission_closed_until_authorized_recovery() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     let (bundle, _) = make_bundle(root.path(), Provider::LinuxBluetooth, "process-loss");
     let status = Command::new(std::env::current_exe().unwrap())
@@ -1642,6 +1680,7 @@ fn process_loss_leaves_admission_closed_until_authorized_recovery() {
 
 #[test]
 fn interrupted_installation_rejects_a_new_operational_consumer() {
+    let _serial = serial();
     let root = tempfile::tempdir().unwrap();
     let layout = Layout::test(root.path(), Provider::LinuxBluetooth).unwrap();
     let external_effect = root.path().join("hardware-effect");
@@ -1708,6 +1747,7 @@ fn interrupted_installation_rejects_a_new_operational_consumer() {
 #[cfg(target_os = "linux")]
 #[test]
 fn direct_stable_launch_cannot_mix_loaded_and_selected_generations() {
+    let _serial = serial();
     use std::ffi::CString;
     use std::io::{Read as _, Write as _};
 

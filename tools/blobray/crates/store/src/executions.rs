@@ -19,7 +19,7 @@ fn decode(source: &dyn ByteSource, c: &mut dyn RunControl) -> Result<ExecutionMa
     let mut bytes = vec![0; source.len() as usize];
     source.read_at(0, &mut bytes, c)?;
     let manifest: ExecutionManifest = serde_json::from_slice(&bytes).map_err(jobs::json)?;
-    if manifest.schema != 1 {
+    if manifest.schema != EXECUTION_SCHEMA {
         return Err(Error::new(
             ErrorCode::Incompatible,
             "unsupported execution manifest",

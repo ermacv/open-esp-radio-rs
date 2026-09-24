@@ -3,13 +3,13 @@ use super::*;
 pub struct RiscvExecutor;
 impl Executor for RiscvExecutor {
     fn identity(&self) -> &'static str {
-        "rv32imc/execution-1/rv-asm-0.2.1"
+        "rv32imc/execution-2/rv-asm-0.2.1"
     }
     fn execute(
         &self,
         entry: u32,
         stack: u32,
-        arguments: &[u32; 8],
+        arguments: &[Option<u32>; 8],
         memory: &mut dyn ExecutionMemory,
         control: &mut dyn RunControl,
     ) -> Result<(ExecutionStop, u64)> {
@@ -18,7 +18,7 @@ impl Executor for RiscvExecutor {
         regs[1] = Some(u32::MAX - 1);
         regs[2] = Some(stack);
         for (i, value) in arguments.iter().enumerate() {
-            regs[i + 10] = Some(*value);
+            regs[i + 10] = *value;
         }
         let mut pc = entry;
         let mut steps = 0;

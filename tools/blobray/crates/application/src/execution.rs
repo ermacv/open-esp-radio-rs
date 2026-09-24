@@ -2,7 +2,7 @@
 use crate::execution_memory::Session;
 use crate::*;
 use std::io::Write;
-pub const EXECUTION_ENVIRONMENT: &str = "static-elf/explicit-ram/register-bank-1";
+pub const EXECUTION_ENVIRONMENT: &str = "static-elf/explicit-ram/stack-words-1/register-bank-1";
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionWork {
@@ -241,7 +241,7 @@ pub(crate) fn prepare_execution_worker_in(
         let records = staging.retain_temporary(file, &mut control)?;
         staging.execution_receipt(
             &ExecutionManifest {
-                schema: 1,
+                schema: EXECUTION_SCHEMA,
                 project: project.id().clone(),
                 request: request.clone(),
                 producer: work.producer.clone(),
@@ -300,9 +300,13 @@ impl<'a> Engine<'a> {
             ..Default::default()
         });
         c.checkpoint(0)?;
-        let (stop, steps) =
-            self.executor
-                .execute(target.entry, stack, &invocation.arguments, machine, c)?;
+        let (stop, steps) = self.executor.execute(
+            target.entry,
+            stack,
+            &invocation.register_arguments(),
+            machine,
+            c,
+        )?;
         Ok(machine.observation(stop, steps))
     }
 }

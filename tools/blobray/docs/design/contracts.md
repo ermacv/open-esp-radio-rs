@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 20
-and database schema 19 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 21
+and database schema 20 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -747,6 +747,14 @@ verification alone computes the ordered-observation verdict. Store validates
 receipt/record structure and atomically publishes the evidence with its run.
 None of those computation modules can select live paths or acquire publication.
 
+The invocation owns a bounded vector of known/unknown physical RV32 ABI words.
+Domain validates stack geometry and computes entry SP; application initializes
+stack arguments in its freshly owned stack, and passes eight optional register
+words to the backend. Unknown argument slots override stack seeds. No register or
+stack word becomes zero by omission, and setup emits no guest events. The caller
+owns type/variadic lowering. Request and manifest schema 2 pin this interpretation;
+producer identity pins both backend unknown-value semantics and stack environment.
+
 The scenario owns independent versus stateful lifetime. Each implementation has
 its own admitted memory; only declared RAM and writable ELF bytes survive a
 stateful phase. Registers, stack and MMIO reset. An incomplete phase blocks its
@@ -831,8 +839,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 19
-and journal schema 20 carry these identities. Old formats are rejected without
+Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 20
+and journal schema 21 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers

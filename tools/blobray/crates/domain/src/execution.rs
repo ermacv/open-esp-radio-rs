@@ -1,6 +1,11 @@
 //! Concrete execution contracts. Scenarios are explicit inputs, never inferred facts.
 use crate::*;
 
+/// Native concrete request and manifest format.
+pub const EXECUTION_SCHEMA: u32 = 2;
+/// Maximum explicitly supplied RV32 ABI words per invocation.
+pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
+
 /// Exact compiled entry; additional sources are explicitly mapped into the session.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -31,7 +36,10 @@ pub struct RegisterCell {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Invocation {
-    pub arguments: [u32; 8],
+    /// Already lowered RV32 integer ABI words: a0..a7, then ascending stack words.
+    /// `None` and omitted register words remain unknown, including on a filled stack.
+    /// Clients lower multiword/variadic arguments and insert ABI padding explicitly.
+    pub arguments: Vec<Option<u32>>,
     pub memory: Vec<MemorySeed>,
     /// Explicit register-bank model: reads observe the latest written value.
     pub mmio: Vec<RegisterCell>,
@@ -162,7 +170,7 @@ pub trait Executor {
         &self,
         entry: u32,
         stack: u32,
-        arguments: &[u32; 8],
+        arguments: &[Option<u32>; 8],
         memory: &mut dyn ExecutionMemory,
         control: &mut dyn RunControl,
     ) -> Result<(ExecutionStop, u64)>;
@@ -175,7 +183,7 @@ impl ExecutionRequest {
                 "invalid execution request or capacity",
             )
         };
-        if self.schema != 1
+        if self.schema != EXECUTION_SCHEMA
             || self.cases.is_empty()
             || self.cases.len() > 128
             || self.max_events == 0
@@ -203,7 +211,10 @@ impl ExecutionRequest {
             {
                 return Err(bad());
             }
-            for input in std::iter::once(&case.vendor).chain(&case.replacement) {
+            for (input, target) in std::iter::once((&case.vendor, &self.vendor))
+                .chain(case.replacement.as_ref().zip(self.replacement.as_ref()))
+            {
+                input.entry_stack(&target.stack)?;
                 if input.memory.len() > 128 || input.mmio.len() > 1024 {
                     return Err(bad());
                 }
@@ -228,6 +239,39 @@ impl ExecutionRequest {
             }
         }
         Ok(())
+    }
+}
+impl Invocation {
+    /// Initial integer argument registers; absent words are unknown, never zero.
+    pub fn register_arguments(&self) -> [Option<u32>; 8] {
+        let mut registers = [None; 8];
+        for (dst, src) in registers.iter_mut().zip(&self.arguments) {
+            *dst = *src;
+        }
+        registers
+    }
+
+    /// Validate the argument/stack geometry and return the aligned entry SP.
+    /// Stack words occupy an upward-growing prefix at SP of a 16-byte rounded
+    /// area at the top of the declared stack. Remaining bytes below SP are the
+    /// callee's stack capacity. No minimum callee frame size is inferred.
+    pub fn entry_stack(&self, stack: &MemorySeed) -> Result<u32> {
+        stack.validate()?;
+        if self.arguments.len() > MAX_EXECUTION_ARGUMENT_WORDS {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "too many execution argument words",
+            ));
+        }
+        let reserved = (self.arguments.len().saturating_sub(8) as u32 * 4).next_multiple_of(16);
+        let top = stack.address + stack.length; // MemorySeed validates checked range.
+        if stack.length < 16 || !top.is_multiple_of(16) || reserved > stack.length {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "execution arguments do not fit aligned stack",
+            ));
+        }
+        Ok(top - reserved)
     }
 }
 impl MemorySeed {

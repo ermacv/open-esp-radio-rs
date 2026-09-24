@@ -1300,7 +1300,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
         .unwrap()
         .revision_id;
     let request = ExecutionRequest {
-        schema: 1,
+        schema: EXECUTION_SCHEMA,
         vendor: ExecutionTarget {
             revision: revision.clone(),
             source: FunctionSource::Input { input: 0 },
@@ -1319,7 +1319,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
         cases: vec![ExecutionCase {
             name: "one".into(),
             vendor: Invocation {
-                arguments: [0; 8],
+                arguments: vec![Some(0); 8],
                 memory: vec![],
                 mmio: vec![],
             },
@@ -1365,7 +1365,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
     file.write_all(b"\n").unwrap();
     let records = stage.retain_temporary(file, &mut || Ok(())).unwrap();
     let mut manifest = ExecutionManifest {
-        schema: 1,
+        schema: EXECUTION_SCHEMA,
         project: project.id().clone(),
         request,
         producer,

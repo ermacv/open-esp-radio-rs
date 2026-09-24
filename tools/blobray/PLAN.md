@@ -433,7 +433,18 @@ preserving all parent acceptance and sharing the existing execution lifecycle:
 
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
-| 07.1 | active | Explicit known/unknown RV32 integer argument words, register/stack ABI placement and bounded stack capacity. Shared request/backend/memory contracts, API/CLI execution/comparison/replay, source-free restore, more than eight arguments, unknown consumption and malformed/resource failures pass. No implicit zero arguments or stack initialization. |
-| 07.2 | pending | RV32 LR/SC/AMO through an explicit atomic memory port with owned reservation state. Single-hart ordering, reservation invalidation, unknown/unaligned/unsupported locations and all supported operations are tested; no nonatomic fallback or invented peripheral behavior. |
+| 07.1 | done | Explicit known/unknown RV32 integer argument words, register/stack ABI placement and bounded stack capacity. Shared request/backend/memory contracts, API/CLI execution/comparison/replay, source-free restore, more than eight arguments, unknown consumption and malformed/resource failures pass. No implicit zero arguments or stack initialization. |
+| 07.2 | active | RV32 LR/SC/AMO through an explicit atomic memory port with owned reservation state. Single-hart ordering, reservation invalidation, unknown/unaligned/unsupported locations and all supported operations are tested; no nonatomic fallback or invented peripheral behavior. |
 | 07.3 | pending | Multiple exact entry/setup phases, explicit region ownership/persistence and cold/warm reset transitions. One application budget and publication; dependent-phase blocking, isolated/stateful data and exact source-free replay pass. |
 | 07.4 | pending | Explicit return, reach-symbol and observe-call completion goals over physical captured identities. Goals, premature returns, unresolved targets and phase failure have distinct evidence; API/CLI/comparison/replay and negative cases close stage 07 without claiming unobserved completion. |
+
+
+Stage 07.1 acceptance closes explicit optional integer words and bounded aligned
+stack placement across API/CLI execution, comparison and replay. Tests independently
+check a7/stack arithmetic, SP at 0/8/9/12/13/256 words, unknown register consumption,
+unknown words overriding filled stack seeds, uninitialized padding, oversized and
+misaligned/overflowing stack geometry, capacity/cancellation and source-free restored
+replay identity. All affected packages/Next tests, Clippy, formatting, public/private
+docs and standalone pass. Execution request/manifest schema 2, database 20 and
+journal 21 identify the new contract. Clients supply physically lowered words;
+no type or variadic layout is inferred. Stage 07.2 is active.

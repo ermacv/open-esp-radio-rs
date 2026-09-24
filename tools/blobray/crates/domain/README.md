@@ -120,3 +120,8 @@ observation scope, ABI/register inputs, symbolic values and MATCH/DIFF/INCOMPLET
 results independently from operation completion. Their evaluation belongs to analysis
 and application. Function schema 7 / policy 8 includes typed fences and outgoing tail
 inputs; display strings have no semantic authority.
+
+Concrete execution schema 2 uses bounded optional RV32 ABI words: a0–a7 followed
+by ascending stack slots. `Invocation::entry_stack` validates placement within the
+declared stack; `register_arguments` preserves missing values as unknown. These
+are physical words, with type/variadic lowering owned by the caller.

@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 19 and journal schema 20. Earlier and future
+Projects require metadata schema 20 and journal schema 21. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,9 +712,9 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 20 for every durable and read operation. Storage metadata
-uses schema 19; revision manifests use schema 1 and execution manifests use schema
-1. These are independent formats. Earlier journals are rejected by single-run,
+Run records use schema 21 for every durable and read operation. Storage metadata
+uses schema 20; revision manifests use schema 1 and execution manifests use schema
+2. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-20 run; an envelope version is not a journal
+execution 7) wrap the same schema-21 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1366,7 +1366,7 @@ claim a single mmap arena or a process-wide no-allocation guarantee.
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
 operation/query paths. No legacy engine or external limiter participates.
-Execution manifests use schema 1; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
+Execution requests and manifests use schema 2; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 
 ```console
@@ -1382,7 +1382,7 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -1419,9 +1419,23 @@ authenticate that relationship or grant qualification. Captured bytes, entries,
 scenarios and implementation identities remain in the evidence. Side-specific
 arguments and layouts are explicit; the verifier does not infer their equivalence.
 
-An invocation supplies all eight integer argument registers. x0 is zero, sp
-starts at the aligned end of the declared stack, and ra is a reserved unmapped
-return sentinel. Other integer registers begin unknown. Loading an unknown byte,
+An invocation supplies zero to 256 already lowered RV32 integer ABI words in
+`arguments`. Numeric entries are known; `null` and omitted register words are
+unknown. The first eight words initialize a0–a7. Remaining words occupy successive
+little-endian 32-bit slots at entry SP, beginning at offset zero. The stack grows
+down; its top must be 16-byte aligned. Application reserves the stack argument area
+rounded up to 16 bytes and places SP at its start. That area must fit the declared
+stack; bytes below SP remain available for callee frames. With nine words, SP is
+stack top minus 16, and word nine is at SP. With no stack words, SP is stack top.
+These placements follow the [RISC-V integer psABI](https://riscv-non-isa.github.io/riscv-elf-psabi-doc/).
+
+The words are physical ABI slots, not a C type description. Clients explicitly
+lower wide scalars/aggregates, indirect values and variadic alignment, including
+padding slots; the executor does not guess argument types. An explicit unknown
+stack word overrides even known stack seed bytes/fill. Alignment padding and
+remaining stack bytes retain only the declared seed initialization. Argument setup
+creates no guest memory/MMIO event. x0 is zero and ra is a reserved unmapped return
+sentinel. Other integer registers begin unknown. Loading an unknown byte,
 using an unknown register, an inaccessible/misaligned memory access or an
 unsupported instruction ends that phase with a typed `incomplete` observation
 and its PC. The current integer executor supports RV32IMC arithmetic, branches,
@@ -1429,7 +1443,7 @@ loads/stores, direct/indirect jumps and ordinary fence events. Atomics, FP,
 CSR/privileged execution, syscalls, dynamic loading and TLS are unsupported.
 Declared float ABI flags do not silently select floating-point execution.
 
-The `static-elf/explicit-ram/register-bank-1` environment maps validated ELF
+The `static-elf/explicit-ram/stack-words-1/register-bank-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM: each seed has `address`, `length`, optional `fill`
 and a byte prefix. Absent fill leaves new bytes unknown. Seeds cannot replace
@@ -2152,7 +2166,7 @@ aggregate coverage, execution verdict, hardware claim or proof that every execut
 byte is classified. Composed may-effects retain that meaning. IR exports contain
 semantic facts, not captured ELF payloads or every evidence document; a project
 backup remains the preservation unit. Source-free reading and backup/restore use
-native database 19 / journal 20, without converters for previous formats.
+native database 20 / journal 21, without converters for previous formats.
 
 ## Static observable traces
 

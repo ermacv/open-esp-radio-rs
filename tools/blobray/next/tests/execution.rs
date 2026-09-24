@@ -112,12 +112,12 @@ impl Fixture {
     }
     fn request(&self) -> ExecutionRequest {
         let invocation = Invocation {
-            arguments: [0; 8],
+            arguments: vec![Some(0); 8],
             memory: vec![],
             mmio: vec![],
         };
         ExecutionRequest {
-            schema: 1,
+            schema: EXECUTION_SCHEMA,
             vendor: self.target.clone(),
             replacement: Some(self.target.clone()),
             binding: Some(CompiledBinding::SharedCore),
@@ -154,8 +154,10 @@ impl Fixture {
 }
 #[test]
 fn comparison_replay_and_preservation_use_captured_bytes() {
-    let f = Fixture::new(&[0x00150513, 0x00008067]);
-    let request = f.request();
+    let f = Fixture::new(&[0x00012503, 0x00150513, 0x00008067]);
+    let mut request = f.request();
+    request.cases[0].vendor.arguments.push(Some(7));
+    request.cases[0].replacement = Some(request.cases[0].vendor.clone());
     let run = f.run(request.clone(), budget());
     assert_eq!(run.state, RunState::Completed, "{run:?}");
     let id = run.execution.unwrap();
@@ -175,7 +177,7 @@ fn comparison_replay_and_preservation_use_captured_bytes() {
     let r: serde_json::Value = serde_json::from_slice(&replay.stdout).unwrap();
     assert_eq!(r["run"]["execution"], id.as_str());
     let mut different = request;
-    different.cases[0].replacement.as_mut().unwrap().arguments[0] = 9;
+    different.cases[0].replacement.as_mut().unwrap().arguments[8] = Some(9);
     let run = f.run(different, budget());
     assert_eq!(
         f.read(&run.execution.unwrap())["summary"]["manifest"]["verdict"],
@@ -217,6 +219,19 @@ fn comparison_replay_and_preservation_use_captured_bytes() {
         .output()
         .unwrap();
     assert!(status.status.success());
+    let replay = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args(["--format", "json", "replay", "--project"])
+        .arg(&moved)
+        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
+        .output()
+        .unwrap();
+    assert!(
+        replay.status.success(),
+        "{}",
+        String::from_utf8_lossy(&replay.stderr)
+    );
+    let replay: serde_json::Value = serde_json::from_slice(&replay.stdout).unwrap();
+    assert_eq!(replay["run"]["execution"], id.as_str());
 }
 #[test]
 fn concrete_memory_state_and_unknowns_are_not_invented() {
@@ -226,7 +241,7 @@ fn concrete_memory_state_and_unknowns_are_not_invented() {
     r.binding = None;
     r.case_execution = CaseExecution::Stateful;
     r.cases[0].replacement = None;
-    r.cases[0].vendor.arguments[0] = 0x3000;
+    r.cases[0].vendor.arguments[0] = Some(0x3000);
     r.cases[0].vendor.memory.push(MemorySeed {
         address: 0x3000,
         length: 4,
@@ -270,8 +285,8 @@ fn mmio_fence_and_capacity_are_observable() {
     let mut r = f.request();
     {
         let i = &mut r.cases[0].vendor;
-        i.arguments[0] = 0x3000;
-        i.arguments[1] = 123;
+        i.arguments[0] = Some(0x3000);
+        i.arguments[1] = Some(123);
         i.mmio.push(RegisterCell {
             address: 0x3000,
             width: 4,
@@ -299,7 +314,7 @@ fn invalid_memory_and_unsupported_code_stay_incomplete() {
     ] {
         let f = Fixture::new(code);
         let mut r = f.request();
-        r.cases[0].vendor.arguments[0] = 0x1000;
+        r.cases[0].vendor.arguments[0] = Some(0x1000);
         r.cases[0].replacement = Some(r.cases[0].vendor.clone());
         let run = f.run(r, budget());
         assert_eq!(run.state, RunState::Completed);
@@ -355,8 +370,8 @@ fn rv32_arithmetic_edges_and_machine_calls_execute_instructions() {
         r.replacement = None;
         r.binding = None;
         r.cases[0].replacement = None;
-        r.cases[0].vendor.arguments[0] = a;
-        r.cases[0].vendor.arguments[1] = b;
+        r.cases[0].vendor.arguments[0] = Some(a);
+        r.cases[0].vendor.arguments[1] = Some(b);
         let run = f.run(r, budget());
         let facts = f.read(&run.execution.unwrap());
         assert_eq!(facts["records"][0]["value"]["stop"]["low"], expected);
@@ -375,7 +390,7 @@ fn signed_loads_and_phase_stack_reset_are_explicit() {
     r.replacement = None;
     r.binding = None;
     r.cases[0].replacement = None;
-    r.cases[0].vendor.arguments[0] = 0x3000;
+    r.cases[0].vendor.arguments[0] = Some(0x3000);
     r.cases[0].vendor.memory.push(MemorySeed {
         address: 0x3000,
         length: 1,
@@ -394,10 +409,10 @@ fn signed_loads_and_phase_stack_reset_are_explicit() {
     r.replacement = None;
     r.binding = None;
     r.cases[0].replacement = None;
-    r.cases[0].vendor.arguments[0] = 7;
+    r.cases[0].vendor.arguments[0] = Some(7);
     let mut second = r.cases[0].clone();
     second.name = "read-stack".into();
-    second.vendor.arguments[0] = 0;
+    second.vendor.arguments[0] = Some(0);
     r.cases.push(second);
     let run = f.run(r, budget());
     let facts = f.read(&run.execution.unwrap());
@@ -453,7 +468,7 @@ fn selected_companion_code_and_elf_zero_fill_obey_session_ownership() {
     r.binding = None;
     r.case_execution = CaseExecution::Stateful;
     r.cases[0].replacement = None;
-    r.cases[0].vendor.arguments[0] = 0x3000;
+    r.cases[0].vendor.arguments[0] = Some(0x3000);
     r.cases.push(r.cases[0].clone());
     for (mode, expected) in [
         (CaseExecution::Stateful, vec![1, 2]),
@@ -471,3 +486,6 @@ fn selected_companion_code_and_elf_zero_fill_obey_session_ownership() {
         assert_eq!(values, expected);
     }
 }
+
+#[path = "execution/arguments.rs"]
+mod arguments;

@@ -272,3 +272,8 @@ live-origin access occurs. See [IR profiles](../../next/README.md#saved-semantic
 facts are loaded once and released before the next side. Only ordered observables
 and an admitted canonical expression index overlap. Unknowns and composition-only
 facts never trigger an implicit analysis or execution workflow.
+
+Concrete invocation setup owns the aligned stack argument area and its knownness.
+Explicit unknown words invalidate seeded bytes before execution. Domain validates
+physical ABI word capacity/placement; the backend receives optional a0–a7 words.
+All setup and phase resets share the execution budget and retained request.

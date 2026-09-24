@@ -134,6 +134,7 @@ impl<'a> Session<'a> {
         input: &Invocation,
         c: &mut dyn RunControl,
     ) -> Result<u32> {
+        let stack = input.entry_stack(&target.stack)?;
         self.regions.retain(|r| r.kind != RegionKind::Stack);
         self.events.clear();
         self.cells.clear();
@@ -148,6 +149,16 @@ impl<'a> Session<'a> {
             &target.stack.bytes,
             c,
         )?;
+        // The newly owned stack is the only destination for argument setup.
+        // Unknown argument words override seeds; setup is not a guest MMIO event.
+        let region = self.regions.last_mut().unwrap();
+        let base = (stack - target.stack.address) as usize;
+        for (index, word) in input.arguments.iter().skip(8).enumerate() {
+            c.checkpoint(1)?;
+            let offset = base + index * 4;
+            region.bytes[offset..offset + 4].copy_from_slice(&word.unwrap_or(0).to_le_bytes());
+            region.known[offset..offset + 4].fill(u8::from(word.is_some()));
+        }
         for seed in &input.memory {
             c.checkpoint(self.regions.len() as u64)?;
             // Only a declared RAM region can be reseeded; never replace ELF data.
@@ -206,7 +217,7 @@ impl<'a> Session<'a> {
             }
             self.cells.push(cell.clone());
         }
-        Ok(target.stack.address + target.stack.length)
+        Ok(stack)
     }
     pub fn observation(&mut self, stop: ExecutionStop, steps: u64) -> ExecutionObservation {
         ExecutionObservation {

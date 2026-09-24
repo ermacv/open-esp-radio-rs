@@ -1,4 +1,5 @@
 use super::*;
+use crate::cargo;
 use std::ffi::OsStr;
 
 fn tiny_crate(source: &str) -> (tempfile::TempDir, Context, common::CargoConfiguration) {

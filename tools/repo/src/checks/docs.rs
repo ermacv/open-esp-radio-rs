@@ -24,7 +24,7 @@ mod markdown;
 use markdown::check_markdown;
 
 use super::{TARGET, common};
-use crate::{Context, Result, cargo, paths, process};
+use crate::{Context, Result, paths, process};
 
 const OUTPUT_OWNER: &str = "oer-xtask-docs-v1\n";
 const STRICT_RUSTDOC_FLAGS: &[&str] = &[
@@ -1140,13 +1140,6 @@ fn run_rustdoc_measured(
         configuration.features,
         configuration.cargo_target.label()
     );
-    let _catalog = cargo::catalog_read(
-        ctx,
-        configuration
-            .workspace_manifest
-            .parent()
-            .ok_or("workspace manifest has no parent")?,
-    )?;
     let cache = output
         .join("cache/rustdoc")
         .join(job.purpose.label())
@@ -1296,13 +1289,6 @@ fn run_doctest_measured(ctx: &Context, output: &Path, job: &Job) -> Result<JobTi
     let total_start = Instant::now();
     let metadata_start = Instant::now();
     let configuration = &job.configuration;
-    let _catalog = cargo::catalog_read(
-        ctx,
-        configuration
-            .workspace_manifest
-            .parent()
-            .ok_or("workspace manifest has no parent")?,
-    )?;
     let cache = output
         .join("cache/doctest")
         .join(workspace_cache_id(ctx, configuration)?);
@@ -1332,13 +1318,6 @@ fn run_consumer_measured(ctx: &Context, output: &Path, job: &Job) -> Result<JobT
     let total_start = Instant::now();
     let metadata_start = Instant::now();
     let configuration = &job.configuration;
-    let _catalog = cargo::catalog_read(
-        ctx,
-        configuration
-            .workspace_manifest
-            .parent()
-            .ok_or("workspace manifest has no parent")?,
-    )?;
     let cache = output.join("consumers").join(configuration.id(&ctx.root)?);
     let mut command = ctx.cargo();
     command.args(["check", "--target-dir"]).arg(cache);

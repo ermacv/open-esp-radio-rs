@@ -36,11 +36,6 @@ pub fn build(
         .and_then(|p| p.get("name"))
         .and_then(toml::Value::as_str)
         .ok_or("example has no package name")?;
-    let mut selection = oer_firmware::network::Selection::acquire(
-        &ctx.root,
-        &directory,
-        network.unwrap_or_default(),
-    )?;
     let directory_output = ctx
         .root
         .join("target/firmware")
@@ -52,6 +47,9 @@ pub fn build(
         &ctx.root.join("platform/esp32s31/stack.toml"),
     )?;
     let runtime_target = workspace.cache().join("runtime");
+    // A patched network resolves into this private copy, never the example's catalog.
+    let runtime_lock =
+        oer_firmware::network::BuildLock::prepare(&directory, &workspace.cache().join("lock"))?;
     let mut command = ctx.cargo();
     command
         .args(["build", "--release", "--target", TARGET, "--manifest-path"])
@@ -62,6 +60,7 @@ pub fn build(
     if network != Some(oer_firmware::network::Integration::PatchedXarxa) {
         command.arg("--locked");
     }
+    runtime_lock.configure(&mut command);
     if let Some(network) = network {
         network.configure(&mut command, &ctx.root);
         command.args(["--features", network.feature()]);
@@ -74,7 +73,7 @@ pub fn build(
     }
     oer_firmware::stack::enable_stack_checks(&mut command, &budget);
     process::run(&mut command)?;
-    selection.validate()?;
+    runtime_lock.validate(&ctx.root, network.unwrap_or_default())?;
     let runtime = workspace.snapshot(
         &runtime_target.join(TARGET).join("release").join(binary),
         "runtime.elf",
@@ -134,10 +133,7 @@ pub fn build(
         output.join("otadata.bin"),
         oer_firmware::flash::ota0_selector_image(),
     )?;
-    fs::copy(
-        directory.join("Cargo.lock"),
-        output.join("runtime-Cargo.lock"),
-    )?;
+    fs::copy(runtime_lock.path(), output.join("runtime-Cargo.lock"))?;
     fs::copy(
         ctx.root.join("platform/esp32s31/Cargo.lock"),
         output.join("bootstrap-Cargo.lock"),
@@ -146,7 +142,6 @@ pub fn build(
         output.join("network.txt"),
         format!("{}\n", network.map_or("none", |n| n.id())),
     )?;
-    selection.restore()?;
     println!("application image: {}", image.display());
     println!("bootstrap ELF: {}", bootstrap.display());
     Ok(workspace.finish())
@@ -203,9 +198,11 @@ pub fn flash(
 
 /// Exercise the same blocked-send workload with an explicit quiescence requirement.
 pub fn check_network_backpressure(ctx: &Context) -> Result<()> {
-    use oer_firmware::network::{Integration, Selection};
+    use oer_firmware::network::{BuildLock, Integration};
     let network = Integration::PatchedXarxa;
-    let mut selection = Selection::acquire(&ctx.root, &ctx.root, network)?;
+    let output = ctx.root.join("target/network-backpressure");
+    // The patched resolution stays in this copy; the root catalog is untouched.
+    let lock = BuildLock::prepare(&ctx.root, &output.join("lock"))?;
     let mut command = ctx.cargo();
     command.args([
         "test",
@@ -214,6 +211,7 @@ pub fn check_network_backpressure(ctx: &Context) -> Result<()> {
         "--test",
         "upstream_backpressure",
     ]);
+    lock.configure(&mut command);
     network.configure(&mut command, &ctx.root);
     command.args([
         "--",
@@ -223,13 +221,7 @@ pub fn check_network_backpressure(ctx: &Context) -> Result<()> {
         "--nocapture",
     ]);
     process::run(&mut command)?;
-    selection.validate()?;
-    let output = ctx.root.join("target/network-backpressure");
-    fs::create_dir_all(&output)?;
-    fs::copy(
-        ctx.root.join("Cargo.lock"),
-        output.join("effective-Cargo.lock"),
-    )?;
-    selection.restore()?;
+    lock.validate(&ctx.root, network)?;
+    fs::copy(lock.path(), output.join("effective-Cargo.lock"))?;
     Ok(())
 }

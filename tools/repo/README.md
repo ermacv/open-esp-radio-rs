@@ -70,10 +70,9 @@ under `catalogs/`, and `report.json` is written only after every stage succeeds.
 Only `--export-html` copies full, separate public/private HTML snapshots into
 `rustdoc/`; it does not replace any required rustdoc check. The report records
 stage and per-job microsecond timings with Cargo execution separated from
-catalog/metadata leases and HTML snapshot copying. Featureless packages and
+metadata queries and HTML snapshot copying. Featureless packages and
 packages with only an empty default feature reuse equivalent Cargo profiles;
-distinct dependency/feature graphs remain separate. Workers share read-only
-catalog leases but never write the same Cargo rustdoc target directory
+distinct dependency/feature graphs remain separate. Workers never write the same Cargo rustdoc target directory
 concurrently. The gate checks tracked Markdown,
 owner documents below `docs/`, package `README.md` files and Cargo `readme`
 targets. Arbitrary untracked working notes are not repository documentation.
@@ -133,13 +132,14 @@ Cargo features resolve to their corresponding implementation. See the
 [implementation guide](../../docs/network-implementations.md) for smoltcp and
 owned-network choices.
 
-Different example workspaces can build concurrently. An overlapping build in
-the same workspace fails before changing its dependency lock catalog; the
-artifact lease separately protects the selected cache and output snapshot.
-Repository metadata checks and isolated graph catalog snapshots take shared
-read leases on the same workspace catalog. They wait for a patched build to
-restore the original lockfile; a build waits for existing readers. Waiting uses
-OS file locks. Readers and independent workspaces can still run concurrently.
+Firmware builds never modify a committed `Cargo.lock`. Each build copies the
+workspace catalog into its own cache and resolves through Cargo's
+`resolver.lockfile-path` (Cargo 1.97+), so a patched network or local override
+writes only that copy, which is archived as the build's effective lockfile.
+Metadata checks read committed catalogs without waiting, and builds of
+different examples, networks or image classes run concurrently. An overlapping
+build of the same output fails on that copy's lease; the artifact lease
+separately protects the selected cache and output snapshot.
 Successful bundles remain available for inspection, while failed partial bundles
 are removed. Flashing uses the completed bundle after releasing the build lease,
 so a later build cannot replace the selected image. The serial-device lease

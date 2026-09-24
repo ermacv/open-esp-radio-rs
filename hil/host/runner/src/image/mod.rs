@@ -397,17 +397,7 @@ pub(crate) fn build(
     class: crate::image::ImageClass,
     network: Integration,
 ) -> Result<Artifacts> {
-    let mut selection = oer_firmware::network::Selection::acquire(
-        root,
-        &root.join("hil/targets/esp32s31"),
-        network,
-    )?;
-    let result = build_selected(root, class, network);
-    if result.is_ok() {
-        selection.validate()?;
-    }
-    selection.restore()?;
-    result
+    build_selected(root, class, network)
 }
 
 fn build_selected(
@@ -418,26 +408,11 @@ fn build_selected(
     let local_esp_hal = local_esp_hal_override()?;
     let local_embassy = local_embassy_override()?;
     let local_xarxa = local_xarxa_override()?;
-    if local_esp_hal.is_none() && local_embassy.is_none() && local_xarxa.is_none() {
-        return build_resolved(
-            root,
-            class,
-            network,
-            LocalOverrides::default(),
-            None,
-            false,
-            false,
-        );
-    }
-    if network != Integration::UpstreamXarxa {
+    let overridden = local_esp_hal.is_some() || local_embassy.is_some() || local_xarxa.is_some();
+    if overridden && network != Integration::UpstreamXarxa {
         return Err("local dependency overrides are supported only with upstream-xarxa".into());
     }
-
-    let lockfile = root.join("hil/targets/esp32s31/Cargo.lock");
-    let mut snapshot = TrackedFileSnapshot::capture(lockfile)?;
-    let mut platform_snapshot =
-        TrackedFileSnapshot::capture(root.join("platform/esp32s31/Cargo.lock"))?;
-    let result = build_resolved(
+    build_resolved(
         root,
         class,
         network,
@@ -449,19 +424,7 @@ fn build_selected(
         None,
         false,
         false,
-    );
-    let restore = snapshot
-        .restore()
-        .and_then(|()| platform_snapshot.restore());
-    match (result, restore) {
-        (Ok(artifacts), Ok(())) => Ok(artifacts),
-        (Err(error), Ok(())) => Err(error),
-        (Ok(_), Err(error)) => Err(format!("restore embedded Cargo.lock: {error}").into()),
-        (Err(build_error), Err(restore_error)) => Err(format!(
-            "{build_error}; additionally failed to restore embedded Cargo.lock: {restore_error}"
-        )
-        .into()),
-    }
+    )
 }
 
 #[derive(Default)]
@@ -502,6 +465,17 @@ fn build_resolved(
     let bootstrap_target = output.join("cargo/bootstrap");
     fs::create_dir_all(&output)?;
     fs::write(output.join("image-class.txt"), format!("{}\n", class.id()))?;
+    // Private copies of both committed catalogs: patched networks and local
+    // overrides resolve into them, never into the source tree.
+    let runtime_lock = oer_firmware::network::BuildLock::prepare(
+        &root.join("hil/targets/esp32s31"),
+        &output.join("locks/runtime"),
+    )?;
+    let bootstrap_lock = oer_firmware::network::BuildLock::prepare(
+        &root.join("platform/esp32s31"),
+        &output.join("locks/bootstrap"),
+    )?;
+    let overridden = local_esp_hal.is_some() || local_embassy.is_some() || local_xarxa.is_some();
 
     let runtime_elf = runtime_target
         .join(TARGET)
@@ -529,13 +503,10 @@ fn build_resolved(
         .args(["--no-default-features", "--features", &runtime_features])
         .env("CARGO_TARGET_DIR", &runtime_target)
         .env("CARGO_INCREMENTAL", "0");
-    if local_esp_hal.is_none()
-        && local_embassy.is_none()
-        && local_xarxa.is_none()
-        && network != Integration::PatchedXarxa
-    {
+    if !overridden && network != Integration::PatchedXarxa {
         runtime.arg("--locked");
     }
+    runtime_lock.configure(&mut runtime);
     network.configure(&mut runtime, root);
     add_local_esp_hal_patches(&mut runtime, local_esp_hal);
     add_local_embassy_patches(&mut runtime, local_embassy);
@@ -547,6 +518,11 @@ fn build_resolved(
     }
     run_command(&mut runtime, "build stage-two runtime")?;
     require_file(&runtime_elf, "runtime ELF")?;
+    // Local overrides deliberately resolve path packages; only a network
+    // selection has a fixed expected pin change.
+    if !overridden {
+        runtime_lock.validate(root, network)?;
+    }
 
     let stack_report = crate::image::stack::analyze_elf_stack(&runtime_elf, &stack_budget)?;
     let stack_report_path = output.join("runtime-stack.txt");
@@ -579,6 +555,7 @@ fn build_resolved(
     if local_esp_hal.is_none() {
         bootstrap.arg("--locked");
     }
+    bootstrap_lock.configure(&mut bootstrap);
     add_local_esp_hal_patches(&mut bootstrap, local_esp_hal);
     add_local_embassy_patches(&mut bootstrap, local_embassy);
     add_local_xarxa_patches(&mut bootstrap, local_xarxa);
@@ -604,15 +581,8 @@ fn build_resolved(
     run_command(&mut save_image, "encode ESP application image")?;
     audit_application_image(&application_image)
         .map_err(|error| -> Box<dyn Error + Send + Sync> { error })?;
-    fs::copy(
-        root.join("hil/targets/esp32s31/Cargo.lock"),
-        &effective_embedded_lock,
-    )?;
-
-    fs::copy(
-        root.join("platform/esp32s31/Cargo.lock"),
-        &effective_bootstrap_lock,
-    )?;
+    fs::copy(runtime_lock.path(), &effective_embedded_lock)?;
+    fs::copy(bootstrap_lock.path(), &effective_bootstrap_lock)?;
 
     eprintln!("runtime_crc32={crc:08x}");
     eprintln!("placement_audit=PASS");
@@ -628,62 +598,6 @@ fn build_resolved(
         effective_bootstrap_lock,
         application_image,
     })
-}
-
-/// Byte-exact restoration guard for a caller-owned tracked file.
-///
-/// An explicitly requested local Cargo override legitimately resolves the
-/// embedded workspace against path packages and therefore rewrites package
-/// `source` fields in its lock file. That resolution is a build fixture, not a
-/// repository mutation. The explicit `restore` reports failures; `Drop` is
-/// the fallback for every early return and panic path.
-struct TrackedFileSnapshot {
-    path: PathBuf,
-    contents: Option<Vec<u8>>,
-    restored: bool,
-}
-
-impl TrackedFileSnapshot {
-    fn capture(path: PathBuf) -> std::io::Result<Self> {
-        let contents = match fs::read(&path) {
-            Ok(contents) => Some(contents),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-            Err(error) => return Err(error),
-        };
-        Ok(Self {
-            path,
-            contents,
-            restored: false,
-        })
-    }
-
-    fn restore(&mut self) -> std::io::Result<()> {
-        if self.restored {
-            return Ok(());
-        }
-        match &self.contents {
-            Some(contents) => {
-                let unchanged = fs::read(&self.path)
-                    .is_ok_and(|current| current.as_slice() == contents.as_slice());
-                if !unchanged {
-                    fs::write(&self.path, contents)?;
-                }
-            }
-            None => match fs::remove_file(&self.path) {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error),
-            },
-        }
-        self.restored = true;
-        Ok(())
-    }
-}
-
-impl Drop for TrackedFileSnapshot {
-    fn drop(&mut self) {
-        let _ = self.restore();
-    }
 }
 
 fn cargo_command() -> Command {

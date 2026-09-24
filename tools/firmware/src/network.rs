@@ -79,75 +79,70 @@ impl FromStr for Integration {
     }
 }
 
-/// Protect the workspace lock catalog while Cargo resolves an explicit patch.
-/// The build's effective lock must be archived before restoring the catalog.
-pub struct Selection {
-    lock: PathBuf,
-    original: Vec<u8>,
-    integration: Integration,
-    expected: String,
-    _lease: WorkspaceLease,
-    _build: WorkspaceLease,
+/// A private copy of one workspace's committed `Cargo.lock` for one build.
+///
+/// Cargo resolves through `resolver.lockfile-path`, so a patched or locally
+/// overridden resolution is written only to this copy. The committed catalog
+/// is never modified, concurrent builds never observe a temporary resolution,
+/// and the copy is the build's effective lockfile. One build owns the copy's
+/// directory at a time.
+pub struct BuildLock {
+    committed: PathBuf,
+    path: PathBuf,
+    _lease: Lease,
 }
+
 // Closing one descriptor does not release flock while a forked pre-exec
 // child still holds the shared open file description. Release ownership at
-// the owner's boundary, including failures after lock acquisition.
-struct WorkspaceLease(fs::File);
-impl Drop for WorkspaceLease {
+// the owner's boundary, including failures after acquisition.
+struct Lease(fs::File);
+
+impl Drop for Lease {
     fn drop(&mut self) {
         if let Err(error) = FileExt::unlock(&self.0) {
-            eprintln!("release network build ownership: {error}");
+            eprintln!("release build lockfile ownership: {error}");
         }
     }
 }
 
-fn workspace_lease_file(root: &Path, workspace: &Path, name: &str) -> Result<fs::File> {
-    let root = root.canonicalize()?;
-    let workspace = workspace.canonicalize()?;
-    let lease_dir = root
-        .join("target/network-build")
-        .join(workspace.strip_prefix(&root)?);
-    fs::create_dir_all(&lease_dir)?;
-    Ok(fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(lease_dir.join(name))?)
-}
-
-/// Read the original Cargo catalog after any temporary network selection is
-/// restored. Readers share the lease; only builds of this workspace exclude
-/// them. Keep this guard alive through Cargo metadata or the catalog snapshot.
-pub struct CatalogRead {
-    _lease: WorkspaceLease,
-}
-
-impl CatalogRead {
-    pub fn acquire(root: &Path, workspace: &Path) -> Result<Self> {
-        let file = workspace_lease_file(root, workspace, "workspace.lock")?;
-        FileExt::lock_shared(&file)?;
+impl BuildLock {
+    /// Copy `workspace/Cargo.lock` to `directory/Cargo.lock` for one build.
+    pub fn prepare(workspace: &Path, directory: &Path) -> Result<Self> {
+        fs::create_dir_all(directory)?;
+        let lease = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(directory.join("build.lease"))?;
+        lease
+            .try_lock_exclusive()
+            .map_err(|e| format!("another build owns {}: {e}", directory.display()))?;
+        let committed = workspace.join("Cargo.lock");
+        let path = directory.join("Cargo.lock");
+        fs::copy(&committed, &path)?;
         Ok(Self {
-            _lease: WorkspaceLease(file),
+            committed,
+            path,
+            _lease: Lease(lease),
         })
     }
-}
 
-impl Selection {
-    pub fn acquire(root: &Path, workspace: &Path, integration: Integration) -> Result<Self> {
-        // Reject overlapping builds, but wait for catalog readers to finish.
-        // The separate gate keeps this distinction without polling or making
-        // unrelated workspace builds wait for one another.
-        let build = workspace_lease_file(root, workspace, "build.lock")?;
-        build
-            .try_lock_exclusive()
-            .map_err(|e| format!("another firmware build owns {}: {e}", workspace.display()))?;
-        let build = WorkspaceLease(build);
-        let lease = workspace_lease_file(root, workspace, "workspace.lock")?;
-        FileExt::lock_exclusive(&lease)?;
-        let lease = WorkspaceLease(lease);
-        let lock = workspace.join("Cargo.lock");
-        let original = fs::read(&lock)?;
+    /// The effective lockfile of this build.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Resolve `command` through this copy instead of the committed catalog.
+    pub fn configure(&self, command: &mut Command) {
+        let path = toml::Value::String(self.path.display().to_string());
+        command
+            .arg("--config")
+            .arg(format!("resolver.lockfile-path={path}"));
+    }
+
+    /// Check that the network selection changed only its expected pins.
+    pub fn validate(&self, root: &Path, integration: Integration) -> Result<()> {
         let config: toml::Value = toml::from_str(&fs::read_to_string(root.join(CONFIG))?)?;
         let spec = &config["patch"]["https://github.com/embassy-rs/xarxa"]["xarxa"];
         let git = spec["git"]
@@ -159,34 +154,15 @@ impl Selection {
         if rev.len() != 40 || !rev.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("Xarxa must be pinned to a full revision".into());
         }
-        Ok(Self {
-            lock,
-            original,
+        validate_identities(
+            identities(&fs::read(&self.committed)?)?,
+            identities(&fs::read(&self.path)?)?,
             integration,
-            expected: format!("git+{git}?rev={rev}#{rev}"),
-            _lease: lease,
-            _build: build,
-        })
-    }
-    pub fn validate(&self) -> Result<()> {
-        let original = identities(&self.original)?;
-        let actual = identities(&fs::read(&self.lock)?)?;
-        validate_identities(original, actual, self.integration, &self.expected)
-    }
-    pub fn restore(&mut self) -> Result<()> {
-        if self.integration == Integration::PatchedXarxa {
-            fs::write(&self.lock, &self.original)?;
-        }
-        Ok(())
+            &format!("git+{git}?rev={rev}#{rev}"),
+        )
     }
 }
-impl Drop for Selection {
-    fn drop(&mut self) {
-        if let Err(error) = self.restore() {
-            eprintln!("restore network build lock catalog: {error}");
-        }
-    }
-}
+
 type Identity = (String, String, Option<String>);
 fn identities(bytes: &[u8]) -> Result<BTreeSet<Identity>> {
     let lock: toml::Value = toml::from_str(std::str::from_utf8(bytes)?)?;

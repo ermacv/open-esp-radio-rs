@@ -100,11 +100,6 @@ pub(crate) fn capture(root: &Path, class: ImageClass) -> Result<()> {
             "scope":"runtime compiler estimates; no linked-byte attribution or HIL qualification",
         }),
     )?;
-    let mut selection = oer_firmware::network::Selection::acquire(
-        root,
-        &root.join("hil/targets/esp32s31"),
-        Integration::UpstreamXarxa,
-    )?;
     let built = build_resolved(
         root,
         class,
@@ -114,10 +109,6 @@ pub(crate) fn capture(root: &Path, class: ImageClass) -> Result<()> {
         false,
         true,
     );
-    if built.is_ok() {
-        selection.validate()?;
-    }
-    selection.restore()?;
     let artifacts = built?;
     if clean_commit(root)? != commit {
         return Err("source identity changed during mono capture".into());

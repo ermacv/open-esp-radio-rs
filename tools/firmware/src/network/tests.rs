@@ -87,35 +87,6 @@ fn command_applies_no_patch_to_the_control() {
 }
 
 #[test]
-fn failed_build_restores_catalog_and_releases_workspace_ownership() {
-    let directory = tempfile::tempdir().unwrap();
-    let root = directory.path();
-    let workspace = root.join("application");
-    fs::create_dir_all(&workspace).unwrap();
-    fs::create_dir_all(root.join(CONFIG).parent().unwrap()).unwrap();
-    fs::write(
-        root.join(CONFIG),
-        include_str!("../../../../crates/network/dependencies/xarxa-patched.toml"),
-    )
-    .unwrap();
-    let lock = workspace.join("Cargo.lock");
-    let original = b"version = 4\n[[package]]\nname = 'local'\nversion = '0.1.0'\n";
-    fs::write(&lock, original).unwrap();
-    let inherited;
-    {
-        let _selection = Selection::acquire(root, &workspace, Integration::PatchedXarxa).unwrap();
-        // dup shares the same open file description as inheritance across
-        // fork. Keep it alive to reproduce the pre-exec child window exactly.
-        inherited = _selection._lease.0.try_clone().unwrap();
-        assert!(Selection::acquire(root, &workspace, Integration::UpstreamXarxa).is_err());
-        fs::write(&lock, "incomplete build output").unwrap();
-    }
-    assert_eq!(fs::read(&lock).unwrap(), original);
-    Selection::acquire(root, &workspace, Integration::UpstreamXarxa).unwrap();
-    drop(inherited);
-}
-
-#[test]
 fn example_selection_is_explicit_and_rejects_conflicting_contracts() {
     assert_eq!(
         Integration::for_example(None, &[]).unwrap(),
@@ -159,65 +130,100 @@ fn example_selection_is_explicit_and_rejects_conflicting_contracts() {
     );
 }
 
-fn catalog_fixture() -> (tempfile::TempDir, PathBuf) {
+fn workspace_fixture() -> (tempfile::TempDir, PathBuf) {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
     let workspace = root.join("application");
-    fs::create_dir_all(&workspace).unwrap();
+    fs::create_dir_all(workspace.join("src")).unwrap();
     fs::create_dir_all(root.join(CONFIG).parent().unwrap()).unwrap();
     fs::write(
         root.join(CONFIG),
         include_str!("../../../../crates/network/dependencies/xarxa-patched.toml"),
     )
     .unwrap();
-    fs::write(workspace.join("Cargo.lock"), "original catalog").unwrap();
+    fs::write(
+        workspace.join("Cargo.toml"),
+        "[package]\nname = 'application'\nversion = '0.1.0'\nedition = '2024'\n",
+    )
+    .unwrap();
+    fs::write(workspace.join("src/lib.rs"), "").unwrap();
+    fs::write(workspace.join("Cargo.lock"), "version = 4\n").unwrap();
     (directory, workspace)
 }
 
 #[test]
-fn catalog_readers_share_access_and_exclude_only_their_workspace_writer() {
-    let (directory, workspace) = catalog_fixture();
-    let root = directory.path();
-    let first = CatalogRead::acquire(root, &workspace).unwrap();
-    let second = CatalogRead::acquire(root, &workspace.join(".")).unwrap();
-    let probe = workspace_lease_file(root, &workspace, "workspace.lock").unwrap();
-    assert!(FileExt::try_lock_exclusive(&probe).is_err());
-    drop(first);
-    assert!(FileExt::try_lock_exclusive(&probe).is_err());
-
-    let other = root.join("other");
-    fs::create_dir(&other).unwrap();
-    fs::write(other.join("Cargo.lock"), "other catalog").unwrap();
-    Selection::acquire(root, &other, Integration::UpstreamXarxa).unwrap();
-
-    // A writer waits for the remaining reader using the OS lease. Completion
-    // is synchronized by ownership release, never by an assumed sleep time.
-    std::thread::scope(|scope| {
-        let writer = scope
-            .spawn(|| Selection::acquire(root, &workspace, Integration::UpstreamXarxa).unwrap());
-        drop(second);
-        drop(writer.join().unwrap());
-    });
-    FileExt::try_lock_exclusive(&probe).unwrap();
-    FileExt::unlock(&probe).unwrap();
+fn build_lock_copies_the_committed_catalog_and_owns_its_directory() {
+    let (directory, workspace) = workspace_fixture();
+    let output = directory.path().join("output");
+    let lock = BuildLock::prepare(&workspace, &output).unwrap();
+    assert_eq!(lock.path(), output.join("Cargo.lock"));
+    assert_eq!(
+        fs::read(lock.path()).unwrap(),
+        fs::read(workspace.join("Cargo.lock")).unwrap()
+    );
+    let error = BuildLock::prepare(&workspace, &output)
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("another build owns"), "{error}");
+    // Another output directory builds the same workspace concurrently.
+    let _other = BuildLock::prepare(&workspace, &directory.path().join("other")).unwrap();
+    // dup shares the open file description as inheritance across fork does;
+    // releasing the owner must not depend on that descriptor closing.
+    let inherited = lock._lease.0.try_clone().unwrap();
+    drop(lock);
+    BuildLock::prepare(&workspace, &output).unwrap();
+    drop(inherited);
 }
 
 #[test]
-fn concurrent_catalog_reader_observes_restoration_after_failed_build() {
-    let (directory, workspace) = catalog_fixture();
+fn cargo_resolves_into_the_private_copy_and_leaves_the_catalog_untouched() {
+    let (directory, workspace) = workspace_fixture();
+    let committed = fs::read(workspace.join("Cargo.lock")).unwrap();
+    let lock = BuildLock::prepare(&workspace, &directory.path().join("output")).unwrap();
+    let mut command = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+    command
+        .args([
+            "metadata",
+            "--offline",
+            "--format-version",
+            "1",
+            "--manifest-path",
+        ])
+        .arg(workspace.join("Cargo.toml"));
+    lock.configure(&mut command);
+    let output = command.output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(workspace.join("Cargo.lock")).unwrap(), committed);
+    let resolved = fs::read_to_string(lock.path()).unwrap();
+    assert!(resolved.contains("name = \"application\""), "{resolved}");
+}
+
+#[test]
+fn validation_compares_the_copy_with_the_committed_catalog() {
+    let (directory, workspace) = workspace_fixture();
     let root = directory.path();
-    let selection = Selection::acquire(root, &workspace, Integration::PatchedXarxa).unwrap();
-    fs::write(workspace.join("Cargo.lock"), "transient patched catalog").unwrap();
-    let probe = workspace_lease_file(root, &workspace, "workspace.lock").unwrap();
-    assert!(FileExt::try_lock_shared(&probe).is_err());
-    std::thread::scope(|scope| {
-        let reader = scope.spawn(|| {
-            let _read = CatalogRead::acquire(root, &workspace).unwrap();
-            fs::read_to_string(workspace.join("Cargo.lock")).unwrap()
-        });
-        drop(selection);
-        assert_eq!(reader.join().unwrap(), "original catalog");
-    });
-    FileExt::try_lock_exclusive(&probe).unwrap();
-    FileExt::unlock(&probe).unwrap();
+    let catalog = |xarxa: &str, other: &str| {
+        format!(
+            "version = 4\n[[package]]\nname = 'xarxa'\nversion = '0.1.0'\nsource = '{xarxa}'\n\
+             [[package]]\nname = 'other'\nversion = '{other}'\n"
+        )
+    };
+    fs::write(workspace.join("Cargo.lock"), catalog(UPSTREAM, "1.0.0")).unwrap();
+    let lock = BuildLock::prepare(&workspace, &root.join("output")).unwrap();
+    lock.validate(root, Integration::UpstreamXarxa).unwrap();
+    let config: toml::Value =
+        toml::from_str(&fs::read_to_string(root.join(CONFIG)).unwrap()).unwrap();
+    let spec = &config["patch"]["https://github.com/embassy-rs/xarxa"]["xarxa"];
+    let (git, rev) = (spec["git"].as_str().unwrap(), spec["rev"].as_str().unwrap());
+    let patched = format!("git+{git}?rev={rev}#{rev}");
+    fs::write(lock.path(), catalog(&patched, "1.0.0")).unwrap();
+    lock.validate(root, Integration::PatchedXarxa).unwrap();
+    assert!(lock.validate(root, Integration::UpstreamXarxa).is_err());
+    fs::write(lock.path(), catalog(&patched, "2.0.0")).unwrap();
+    assert!(lock.validate(root, Integration::PatchedXarxa).is_err());
 }

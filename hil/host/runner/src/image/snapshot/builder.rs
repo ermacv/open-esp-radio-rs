@@ -39,26 +39,6 @@ impl FrozenSources {
             .join("target/hil/esp32s31/snapshot-builds")
             .join(&self.snapshot.snapshot_id)
             .join(format!("{}-{}", class.id(), network.id()));
-        let mut selection = oer_firmware::network::Selection::acquire(
-            &source,
-            &source.join("hil/targets/esp32s31"),
-            network,
-        )?;
-        let has_overrides = esp_hal.is_some() || embassy.is_some() || xarxa.is_some();
-        let mut runtime_lock = has_overrides
-            .then(|| {
-                crate::image::TrackedFileSnapshot::capture(
-                    source.join("hil/targets/esp32s31/Cargo.lock"),
-                )
-            })
-            .transpose()?;
-        let mut bootstrap_lock = has_overrides
-            .then(|| {
-                crate::image::TrackedFileSnapshot::capture(
-                    source.join("platform/esp32s31/Cargo.lock"),
-                )
-            })
-            .transpose()?;
         let artifacts = crate::image::build_resolved(
             &source,
             class,
@@ -72,14 +52,6 @@ impl FrozenSources {
             false,
             false,
         )?;
-        if let Some(lock) = &mut runtime_lock {
-            lock.restore()?;
-        }
-        if let Some(lock) = &mut bootstrap_lock {
-            lock.restore()?;
-        }
-        selection.validate()?;
-        selection.restore()?;
         self.verify_unchanged()?;
         atomic_json(&output.join("source-snapshot.json"), &self.snapshot)?;
         Ok(artifacts)

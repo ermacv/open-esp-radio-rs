@@ -20,6 +20,7 @@ mod event_routes;
 mod interfaces;
 mod knowledge;
 mod navigation;
+mod registers;
 pub use knowledge::{KnowledgeWork, prepare_knowledge_worker};
 mod companions;
 mod execution;

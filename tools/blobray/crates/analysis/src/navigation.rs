@@ -28,6 +28,14 @@ fn integrity(s: &str) -> Error {
     Error::new(ErrorCode::Integrity, s)
 }
 impl<'a, 'm> Facts<'a, 'm> {
+    /// Borrow an already validated expression by its exact saved ID.
+    pub(crate) fn value_expression(&self, value: &AbstractValue) -> Option<&'a Expression> {
+        if let AbstractValue::Expression { id } = value {
+            self.expressions.get(*id as usize).copied()
+        } else {
+            None
+        }
+    }
     pub fn new(
         records: &'a [FunctionRecord],
         memory: &'m WorkingMemory,

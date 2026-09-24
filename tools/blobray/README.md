@@ -21,6 +21,9 @@ Explicit executable ranges and physical static/dynamic symbols support retained
 code research without inferred boundaries. Exact data ranges, integer-table review and instruction-derived constants can be
 exported with captured bytes and provenance; see the operator reference.
 CLI/JSON share the [application](crates/application/README.md) operations.
+Saved interface discovery, function/context review, structural paths, memory slices
+and conditional event routes retain their evidence. The register catalogue reports
+MMIO candidates and masks separately from reviewed physical declarations.
 
 Register source publication belongs to the independent
 [register tool](../registers/README.md). It consumes reviewed hardware models and
@@ -32,8 +35,8 @@ cargo xtask check blobray-standalone
 ```
 
 Concrete comparison currently covers ordered MMIO/fence events and optional u32
-returns over explicit cases. RAM/call comparison, device/service models, full
-register/interface research, correspondence/rebase, retention GC, reference-code
+returns over explicit cases. RAM/call comparison, device/service models,
+correspondence/rebase, retention GC, reference-code
 generation and TUI are not available in the new CLI. Unsupported execution remains
 `INCOMPLETE`; these limitations do not enable the old engine implicitly.
 

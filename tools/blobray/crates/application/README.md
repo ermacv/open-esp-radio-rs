@@ -7,6 +7,12 @@ Its internal dependencies are [domain](../domain/README.md),
 [verification](../verification/README.md).
 It does not depend on the legacy engine or a concrete Linux process adapter.
 
+Saved register research uses the existing scoped navigation fact owner and one
+operation-local declaration interval/name index. It retains exact evidence,
+review state, physical occurrence applicability and partial coverage. The query
+cannot promote observed access widths or masks to hardware declarations; source
+publication remains with the independent register tool.
+
 `Application::new` receives a host capability. `start_import`, `start_query`,
 `start_plan`, `start_reopen_plan` and `start_run`
 return a `RunHandle` from one owned job set; `import` and `query` are blocking

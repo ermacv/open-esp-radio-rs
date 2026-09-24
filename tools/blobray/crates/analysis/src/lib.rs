@@ -5,6 +5,7 @@ pub mod navigation;
 pub mod paths;
 pub mod pointers;
 mod references;
+pub mod registers;
 pub mod summaries;
 mod value_sets;
 mod values;

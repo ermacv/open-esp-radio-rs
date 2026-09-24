@@ -50,8 +50,8 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
 | 02 | done | Exact code/data addressing: reviewed symbol-less executable ranges; physical static/dynamic symbol selection; zero-sized/alias occurrences; initialization bytes and range-local relocation effects. Accepted selectors survive analysis/export/reopen; only affecting relocations block integer interpretation; coverage does not infer code in unselected bytes. |
 | 03 | done | Pointer tables and interfaces: exact relocated targets, bounded alternatives, roots/slots, layout/ABI/guards/index domains and semantic bindings. Discovery → proposal → review → query/export works on synthetic and real inputs; ambiguity/unsupported/null/external targets stay distinct; invalid guards and conflicting layouts fail. |
 | 04 | done | Function/context contracts and research navigation: signatures, argument roles, fields, preconditions, reviewed paths/event routes; function/callers/callees, object readers/writers, field accesses, flow/effect slices. Answers retain evidence paths and distinguish structural from executable paths; cycles, ambiguous callbacks and partial results are tested; reads never schedule hidden analysis. |
-| 05 | ready | Register lifecycle: MMIO/field discovery, physical catalog, evidence/conflicts/coverage, applicability/review. Independent register tool owns model initialization/SVD import and existing publication. Observation → reviewed source model → validate → four generated outputs works; observed access width is not physical width; generic Blobray gains no production/chip dependency. |
-| 06 | pending | Saved linked semantic IR, configured builds/exports and static observable trace comparison. May-effects, exact static traces and concrete observations remain distinct; incomplete traces cannot MATCH; known differences DIFF; provenance and source-free reading survive composition. |
+| 05 | done | Register lifecycle: MMIO/field discovery, physical catalog, evidence/conflicts/coverage, applicability/review. Independent register tool owns model initialization/SVD import and existing publication. Observation → reviewed source model → validate → four generated outputs works; observed access width is not physical width; generic Blobray gains no production/chip dependency. |
+| 06 | ready | Saved linked semantic IR, configured builds/exports and static observable trace comparison. May-effects, exact static traces and concrete observations remain distinct; incomplete traces cannot MATCH; known differences DIFF; provenance and source-free reading survive composition. |
 | 07 | pending | Integer execution sessions: stack ABI arguments, RV32 atomics, multiple entry points/setup phases, ownership/persistent regions, cold/warm resets and return/reach-symbol/observe-call goals. State transitions, unknown data, unsupported instructions, dependent-phase blocking and exact replay are tested. |
 | 08 | pending | External-call returns/outputs/bounded allocation, delay events and standard constant/sequence/W1C/read-clear/self-clearing/FIFO/indexed-bank models. Every mechanism has positive/negative cases; no implicit response/fallback; model identity/applicability/participation is evidence; code and modeled boundaries stay distinct. |
 | 09 | pending | Stateful FIFO services and interface tables: enqueue/dequeue/length, wake/output, table lifecycle, service-event completion. Full/empty/order/isolation and cross-phase state are tested; only selected reviewed bindings resolve calls; failed phases cannot imply workflow completion. |
@@ -182,7 +182,7 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stages 00–04 are complete. Stage 05 is ready.
+Stages 00–05 are complete. Stage 06 is ready.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
 interface review/discovery, ambiguous bindings and authenticated ROM query/export
 reopening. All standalone Next packages/tests, Clippy, formatting and affected
@@ -357,3 +357,19 @@ standalone checks pass. The authenticated PHY workflow reopens identical retaine
 research/data/interface/flow/memory-slice exports under watchdog supervision.
 Native storage/journal are 17/18, including schema-18 ephemeral query run records;
 no compatibility reader or converter is introduced. Stage 04 is closed.
+
+
+Stage 05 acceptance covers saved register discovery through generic proposal,
+acceptance, conflict rejection, source-free export and backup/restore. Candidate
+access widths, expression masks, unknown/alternative addresses and coverage remain
+separate from physical declarations. Scoped interval/name indexes preserve exact
+applicability and exclude retired assertions from active conflicts. Native source
+initialization/SVD import creates unreviewed models, retains original inputs and
+rejects invalid geometry without overwriting existing sources. Synthetic explicit
+source review validates and generates all four publication outputs; the existing
+ESP32-S31 publication passes its source check. Full affected/Next tests, Clippy,
+formatting, public/private documentation and standalone checks pass. Authenticated
+PHY/ROM research preserves four alternative ROM addresses and 44 composed PHY I2C
+writes in byte-identical restored catalogue exports under watchdog supervision.
+No new persistence schema, compatibility mechanism or hardware qualification claim
+is introduced.

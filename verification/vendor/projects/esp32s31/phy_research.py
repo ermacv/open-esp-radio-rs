@@ -210,6 +210,23 @@ flow_writes = [r["value"] for r in flow_effects["records"] if r["value"]["kind"]
 assert len(flow_writes) == 44
 assert all(linked_facts[r["record"]] == r["fact"] for r in flow_writes)
 assert any(r["fact"]["value"] == {"kind": "constant", "value": 0x70267} for r in flow_writes)
+register_request = {"scope": {"revision": revision, "publications": [],
+    "analyses": [finite_analysis, linked_analysis], "knowledge": None},
+    "ranges": [{"start": 0x2010D858, "length": 28}, {"start": 0x2010FC00, "length": 176}]}
+register_catalog = call("register-catalog", ["registers", "--request", doc("register-catalog", register_request)])
+register_rows = [r["value"] for r in register_catalog["records"]]
+finite_accesses = [r for r in register_rows if r["kind"] == "observation"
+    and r["function"]["analysis"] == finite_analysis and r["fact"]["kind"] == "memory-access"]
+assert len(finite_accesses) == 8
+assert {r["address"] for r in finite_accesses} == {0x2010D858, 0x2010D860, 0x2010D868, 0x2010D870}
+assert all(r["alternative"] is not None for r in finite_accesses)
+composed_registers = [r for r in register_rows if r["kind"] == "observation"
+    and r["fact"]["kind"] == "callee-effect" and r["fact"]["analysis"] == callees["phy_i2c_master_fill"]]
+assert len(composed_registers) == 44
+assert {r["address"] for r in composed_registers} == {0x2010FC00 + 4 * i for i in range(44)}
+assert register_catalog["summary"]["summary"]["declarations"] == 0
+call("save-register-catalog", ["registers", "--request", doc("register-catalog-export", register_request),
+    "--output", str(run / "register-catalog-export.json")])
 address_request = {**flow_request, "goal": {"kind": "effects", "profile": "memory", "address": 0x2010FC00}}
 address_effects = call("flow-address", ["flow", "--request", doc("flow-address", address_request)])
 address_writes = [r["value"] for r in address_effects["records"]
@@ -647,6 +664,10 @@ call("save-restored-navigation", ["navigate", "--request", doc("restored-navigat
 assert (run / "navigation-export.json").read_bytes() == (run / "restored-navigation-export.json").read_bytes()
 
 assert call("restored-flow", ["flow", "--request", doc("restored-flow", flow_request)]) == flow_effects
+assert call("restored-register-catalog", ["registers", "--request", doc("restored-register-catalog", register_request)]) == register_catalog
+call("save-restored-register-catalog", ["registers", "--request", doc("restored-register-catalog-export", register_request),
+    "--output", str(run / "restored-register-catalog-export.json")])
+assert (run / "restored-register-catalog-export.json").read_bytes() == (run / "register-catalog-export.json").read_bytes()
 assert call("restored-memory-slice", ["memory-slice", "--request", doc("restored-memory-slice", slice_request)]) == memory_slice
 call("save-restored-memory-slice", ["memory-slice", "--request", doc("restored-memory-slice-export", slice_request),
     "--output", str(run / "restored-memory-slice-export.json")])

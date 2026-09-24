@@ -1043,7 +1043,7 @@ no preferred candidate; `functions` lists candidates and exact addresses.
 ```console
 blobray research --project research --id PUBLICATION_ID --name phy_force_dig_gain --abi-contract riscv-integer --limit-mode watchdog
 blobray analysis --project research --id ANALYSIS_ID --limit-mode watchdog
-blobray knowledge --project research --limit-mode watchdog propose-register --analysis ANALYSIS_ID --subject phy.force-dig-gain --name FORCE_DIG_GAIN --address 0x20100408 --field ENABLE:16:1 --field GAIN_0:0:8 --field GAIN_1:8:8 --actor researcher --reason "Reviewed register evidence"
+blobray knowledge --project research --limit-mode watchdog propose-register --analysis ANALYSIS_ID --subject phy.force-dig-gain --name FORCE_DIG_GAIN --address 0x20100408 --width 4 --field ENABLE:16:1 --field GAIN_0:0:8 --field GAIN_1:8:8 --actor researcher --reason "Reviewed register evidence"
 blobray knowledge --project research --limit-mode watchdog show
 blobray knowledge --project research --limit-mode watchdog accept --base PROPOSAL_REVISION --assertion ASSERTION_ID --actor researcher --reason "Accepted interpretation"
 blobray research --project research --id PUBLICATION_ID --name phy_force_dig_gain --abi-contract riscv-integer --knowledge ACCEPTED_REVISION --limit-mode watchdog
@@ -2063,3 +2063,49 @@ remains an obligation. Object lifetime, delivery order, execution context and ru
 guards remain conditions; registration routes also retain registration-before-dispatch.
 There is no overall complete/PASS or proof that the event actually arrived. See the
 [canonical route contract](../docs/design/contracts.md#reviewed-event-routes).
+## Saved register research
+
+`blobray registers --project PROJECT --request query.json [--output result.json]`
+reads saved research through the same supervised API as other navigation commands:
+
+```json
+{
+  "scope": {
+    "revision": "<revision-id>",
+    "publications": [],
+    "analyses": ["<analysis-id>"],
+    "knowledge": null
+  },
+  "ranges": [{"start": 131072, "length": 256}]
+}
+```
+
+The scope is explicit and frozen; `knowledge: null` selects no declarations.
+Empty `ranges` selects all numeric memory candidates. Unknown/nonnumeric addresses
+remain visible even with a numeric filter. Ranges filter observations and do not
+classify hardware. The command does not schedule analysis or read live binaries.
+JSON export uses the shared new-file publication path and works after source removal.
+
+Schema-1 records include selected-function coverage/unavailable members, exact
+original facts and record ordinals, address alternatives, read-selection and
+load-preserve-OR write masks, declarations with review/evidence/applicability,
+conflicts and matching bindings. Address rows aggregate candidates across the
+selected analyses; they count local accesses and composed effects separately.
+Instruction access widths remain a set of observations, not physical register widths.
+Masks describe saved expressions, not proven physical fields or safe hardware RMW.
+Finite alternatives are may-addresses; unresolved values are never discarded.
+
+Bindings use the declaration's exact source revision, source and object. A byte
+access can be contained within a wider explicitly reviewed register. Crossing
+accesses are distinct. Composed effects keep their child provenance and are not
+classified using the caller's declarations. Query the child analysis to inspect
+its own applicable declarations. Proposed/rejected declarations remain visible;
+only accepted matches contribute to the accepted-binding counter. The summary
+does not promise complete hardware coverage, absence of register accesses or PASS.
+
+Use generic knowledge proposal/review or `knowledge propose-register` for an
+explicit physical interpretation; `--width` is required and is in bytes. Fields
+remain explicit nonoverlapping declarations. The independent
+[register tool](../../registers/README.md) owns source-model initialization,
+SVD import, reviewed source applicability and four-output publication. A Next
+review is scoped research knowledge, not an automatic hardware-source promotion.

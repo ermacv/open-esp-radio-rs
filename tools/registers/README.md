@@ -4,6 +4,46 @@
 SVD, raw PAC, restricted PAC API and the binding index. It does not load a Blobray
 project, vendor binary, device model or global provider registry.
 
+`cargo registers init-model --request geometry.toml --directory new-model`
+creates an editable native model from an explicit schema-1 TOML request:
+
+```toml
+schema = 1
+chip = "example-chip"
+address-space = "cpu"
+[device]
+name = "EXAMPLE"
+version = "1"
+description = "Unreviewed source model"
+address-unit-bits = 8
+width = 32
+[[peripherals]]
+name = "CONTROL"
+base = 0x20000
+length = 256
+```
+
+The new model has empty peripherals and address blocks, no inferred register
+widths or fields. Device metadata/defaults use `ModelDevice`; the device bus width
+does not declare the size of any register. Add explicit reviewed source assertions
+with physical chip/address-space/address/width identities and evidence before
+publication. Binary access observations support investigation; they do not supply
+hardware access or write semantics.
+
+`cargo registers import-svd --source device.svd --directory new-model --chip
+example-chip --address-space cpu` imports standard CMSIS-SVD declarations into the
+same schema-3 manifest/schema-2 fragment format. It preserves original XML as
+`source.svd`, including extensions outside the native model. Imported declarations
+have no review annotations or accepted assertions. The initializer similarly
+retains `initialization.toml`. `device.toml` is the model entry point.
+
+Both commands require a new directory with an existing parent. They validate and
+render before exclusive directory creation, sync the source/fragment and write
+the manifest last. Errors clean up that invocation's directory; an abrupt process
+death can leave an incomplete draft. Existing destinations are never overwritten.
+These operations create source models only; applicability, review/evidence packs
+and publication policy are supplied explicitly through the following manifest.
+
 ```console
 cargo registers validate --manifest registers/esp32s31/publication/registers.toml
 cargo registers generate --manifest registers/esp32s31/publication/registers.toml --check

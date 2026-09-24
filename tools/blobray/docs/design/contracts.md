@@ -1260,3 +1260,20 @@ wrong records/fields, cycle rejection, budgets, proposal/review and source-free
 exports. A selected case cannot reach its handler by revisiting the same predicate
 and taking a different edge on a later iteration. Runtime conditions remain in
 all successful query results.
+## Register research and source publication
+
+Register discovery reads an explicit saved analysis/publication scope and an
+optional frozen knowledge revision. Candidate addresses, instruction access widths
+and expression masks are observations, not physical register/field declarations.
+Unknown addresses, alternatives, partial analyses and unavailable members remain
+visible. A catalogue matches declarations only in their exact source revision and
+object applicability; no hardware meaning is inferred from a coincident address.
+Proposals and acceptance use the existing knowledge evidence/conflict lifecycle.
+
+The independent register owner initializes editable source models from explicit
+peripheral geometry and imports CMSIS-SVD into the same native source format.
+Neither operation accepts hardware claims. Imported XML is retained verbatim;
+unsupported XML extensions are not promoted to native semantics. Reviewed source
+assertions, applicability, evidence and publication policy remain explicit inputs
+to validation and the existing four-output publisher. Blobray does not acquire
+register-generation or production dependencies.

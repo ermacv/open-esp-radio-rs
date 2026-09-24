@@ -10,6 +10,7 @@ qualification examples below are target contracts unless listed here. The
 | Automatic whole-library or saved-plan investigation | Implemented, one application run and atomic publication |
 | Link PHY entry with explicit ROM companions → research | Limited RV32 integer static profile, unsupported semantics remain gaps |
 | Propose register from analysis → explicit review → research with selected knowledge | Implemented; proposal, review and observation remain distinct |
+| Saved MMIO/mask discovery → physical catalogue → review → source-model publication | Implemented; Next evidence and source-owned hardware acceptance remain separate |
 | Execute / compare / replay captured implementations | Limited explicit integer scenario profile, scoped MATCH/DIFF/INCOMPLETE |
 | Move / backup / restore / recovery | Implemented for supported formats; no conversion or GC |
 | Exact data ranges → integer table/constant proposal → review → provenance export | Implemented for captured RV32 ELF bytes; unresolved relocations and analysis gaps remain explicit |
@@ -498,3 +499,26 @@ Acceptance authenticates the physical structure and the reviewed assignment of
 service roles. Mechanism semantics, object lifetime, delivery/context/guards and
 registration order remain explicit obligations for a runtime consumer. Static
 review alone cannot complete an asynchronous execution scenario.
+## Register discovery and source publication
+
+Select saved analyses/publications and, optionally, a frozen knowledge revision.
+`registers` reports the selected coverage, unknown/alternative addresses, local and
+composed observations, expression masks and applicable declarations/conflicts. The
+same API exports its complete typed result without reacquiring original binaries.
+Use exact analysis records as proposal evidence and supply physical widths/fields
+explicitly. Acceptance preserves occurrence applicability; it does not turn an
+instruction access width into physical geometry or establish hardware behavior.
+
+To publish source, the independent register tool initializes explicit empty
+peripherals or imports retained CMSIS-SVD into an unreviewed native model. A source
+review supplies canonical physical identities, evidence, applicability and hardware
+semantics in reviewed packs. Validation composes those with the selected model,
+memory/ownership and PAC policies, then generates all four outputs. There is no
+automatic Next-to-hardware acceptance or binary-derived write-semantics fallback.
+See the [source-authoring commands](../../../registers/README.md) and
+[saved register reference](../../next/README.md#saved-register-research).
+
+Regression owners are Next `functions/registers.rs` (review, conflicts, limits,
+source-free export and restore), analysis `registers` (mask bounds), application
+`registers::index` (applicability and retired claims) and register tool `drafts`
+(initialization/import, explicit review and four-output publication).

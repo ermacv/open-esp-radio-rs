@@ -979,3 +979,6 @@ mod navigation;
 mod event_routes;
 #[path = "functions/memory_slice.rs"]
 mod memory_slice;
+
+#[path = "functions/registers.rs"]
+mod registers;

@@ -9,6 +9,9 @@ use std::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum QuerySummary {
+    Registers {
+        summary: Box<RegisterSummary>,
+    },
     EventRoute {
         summary: Box<EventRouteSummary>,
     },
@@ -177,6 +180,12 @@ impl QuerySummary {
 }
 /// Borrowed callbacks. Retaining records requires the consumer's own capacity.
 pub trait QuerySink: InventorySink + DoctorSink {
+    fn register(&mut self, _: &RegisterRecord, _: &mut dyn RunControl) -> Result<()> {
+        Err(Error::new(
+            ErrorCode::InvalidRequest,
+            "consumer does not support registers",
+        ))
+    }
     fn event_route(&mut self, _: &EventRouteRecord, _: &mut dyn RunControl) -> Result<()> {
         Err(Error::new(
             ErrorCode::InvalidRequest,
@@ -316,6 +325,7 @@ pub trait QuerySink: InventorySink + DoctorSink {
 }
 #[derive(Serialize)]
 enum RecordRef<'a> {
+    Register(&'a RegisterRecord),
     EventRoute(&'a EventRouteRecord),
     MemorySlice(&'a MemorySliceRecord),
     Flow(&'a FlowRecord),
@@ -350,6 +360,7 @@ enum RecordRef<'a> {
 }
 #[derive(Deserialize)]
 enum Record {
+    Register(RegisterRecord),
     EventRoute(EventRouteRecord),
     MemorySlice(MemorySliceRecord),
     Flow(FlowRecord),
@@ -518,6 +529,18 @@ pub fn prepare_query_with_tools(
             file: disk.create(&stage.join("query-records"))?,
         };
         let summary = match &work.query {
+            ReadQuery::Registers { request } => {
+                let project = Project::open(&work.project.to_path()?)?;
+                QuerySummary::Registers {
+                    summary: Box::new(crate::registers::query(
+                        &project,
+                        request,
+                        &memory,
+                        control,
+                        &mut |r, c| spool.push(RecordRef::Register(r), c),
+                    )?),
+                }
+            }
             ReadQuery::EventRoute { request } => {
                 let project = Project::open(&work.project.to_path()?)?;
                 QuerySummary::EventRoute {
@@ -1203,6 +1226,7 @@ pub(crate) fn visit(
         let record: Record = serde_json::from_slice(&bytes)
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         match record {
+            Record::Register(r) => sink.register(&r, control)?,
             Record::EventRoute(r) => sink.event_route(&r, control)?,
             Record::MemorySlice(r) => sink.memory_slice(&r, control)?,
             Record::Flow(r) => sink.flow(&r, control)?,

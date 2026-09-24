@@ -3,6 +3,8 @@
 `open-esp-radio-register-model` owns the portable register publication formats:
 
 - safe loading of a multi-file TOML model;
+- native unreviewed initialization from explicit peripheral geometry and import
+  of CMSIS-SVD standard declarations; the source tool retains original inputs;
 - CMSIS-SVD data structures, arrays, clusters, fields and enumerations;
 - structured review records kept outside exported hardware descriptions;
 - deterministic clean SVD materialization and expanded register identities;

@@ -10,6 +10,8 @@ use std::{fmt, str::FromStr};
 
 mod data;
 pub use data::*;
+mod registers;
+pub use registers::*;
 mod execution;
 pub use execution::*;
 mod function;

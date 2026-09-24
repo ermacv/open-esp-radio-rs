@@ -53,7 +53,8 @@ enum KnowledgeCommand {
         name: String,
         #[arg(long, value_parser=parse_address)]
         address: u32,
-        #[arg(long, default_value_t = 4)]
+        /// Physical declaration width in bytes; never inferred from an observed instruction.
+        #[arg(long)]
         width: u8,
         /// NAME:LSB:WIDTH, repeat for each nonoverlapping field.
         #[arg(long)]
@@ -107,6 +108,18 @@ enum KnowledgeCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Discover saved MMIO candidates, field masks and applicable reviewed declarations.
+    Registers {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        request: PathBuf,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[command(flatten)]
+        limits: ResourceOptions,
+    },
+
     /// Inspect exact saved bindings and temporal obligations of a conditional event route.
     EventRoute {
         #[arg(long)]
@@ -894,6 +907,22 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 ),
                 Format::Human => println!("Project preserved at {}", project.display()),
             }
+        }
+        Command::Registers {
+            project,
+            request,
+            output,
+            limits,
+        } => {
+            return read_query_output(
+                project,
+                ReadQuery::Registers {
+                    request: read_json_file(&request)?,
+                },
+                limits,
+                format,
+                output,
+            );
         }
         Command::EventRoute {
             project,

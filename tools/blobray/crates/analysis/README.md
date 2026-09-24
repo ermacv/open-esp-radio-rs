@@ -6,6 +6,11 @@ receives borrowed captured code, structural relocation records, an injected ISA
 port, working capacity, control and a result sink. It has no store or filesystem
 authority. Edges to callees never schedule analysis of another function.
 
+`registers` recognizes bounded saved load/mask/store expression shapes using
+the shared borrowed fact index. It reports bit-selection observations with their
+original physical load width; application owns address scope and knowledge matching.
+It never infers register geometry, hardware field meaning or safe RMW semantics.
+
 The private `values` module owns finite-lattice register states and a bounded
 fixed-point queue. It emits values and accesses only after convergence, through
 the same borrowed sink as the CFG. Input-dependent allocations share the caller's

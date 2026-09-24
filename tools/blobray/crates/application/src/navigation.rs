@@ -53,15 +53,7 @@ pub(crate) fn query_observed(
     ) -> Result<()>,
     emit: &mut dyn FnMut(&NavigationRecord, &mut dyn RunControl) -> Result<()>,
 ) -> Result<NavigationSummary> {
-    query_inspected(
-        project,
-        request,
-        memory,
-        c,
-        observe,
-        &mut |_, _, _, _, _| Ok(()),
-        emit,
-    )
+    query_inner(project, request, memory, c, observe, None, emit)
 }
 type FactsObserver<'a> = dyn FnMut(
         &NavigationFunction,
@@ -83,6 +75,21 @@ pub(crate) fn query_inspected(
         &mut dyn RunControl,
     ) -> Result<()>,
     inspect: &mut FactsObserver<'_>,
+    emit: &mut dyn FnMut(&NavigationRecord, &mut dyn RunControl) -> Result<()>,
+) -> Result<NavigationSummary> {
+    query_inner(project, request, memory, c, observe, Some(inspect), emit)
+}
+fn query_inner(
+    project: &Project,
+    request: &NavigationQuery,
+    memory: &WorkingMemory,
+    c: &mut dyn RunControl,
+    observe: &mut dyn FnMut(
+        &NavigationFunction,
+        &FunctionManifest,
+        &mut dyn RunControl,
+    ) -> Result<()>,
+    mut inspect: Option<&mut FactsObserver<'_>>,
     emit: &mut dyn FnMut(&NavigationRecord, &mut dyn RunControl) -> Result<()>,
 ) -> Result<NavigationSummary> {
     let scope = &request.scope;
@@ -238,44 +245,48 @@ pub(crate) fn query_inspected(
                     .as_ref()
                     .is_none_or(|s| !s.complete),
         );
-        if let NavigationFilter::Functions { .. } = &request.filter {
-            if focus.is_none_or(|f| f == &node.function.location) {
+        if let NavigationFilter::Functions { .. } = &request.filter
+            && focus.is_none_or(|f| f == &node.function.location)
+        {
+            emit(
+                &NavigationRecord::Function {
+                    function: node.function.clone(),
+                    extent: node.extent,
+                    address_space: node.space,
+                    coverage: lease.manifest.coverage,
+                    semantic_complete: lease.manifest.semantics.as_ref().map(|s| s.complete),
+                },
+                c,
+            )?;
+            summary.observations += 1;
+            c.checkpoint(declarations.len().max(1).ilog2() as u64 + 1)?;
+            let start = declarations.partition_point(|d| d.key < node.function.location);
+            for declaration in declarations[start..]
+                .iter()
+                .take_while(|d| d.key == node.function.location)
+            {
+                c.checkpoint(1)?;
                 emit(
-                    &NavigationRecord::Function {
+                    &NavigationRecord::Declaration {
                         function: node.function.clone(),
-                        extent: node.extent,
-                        address_space: node.space,
-                        coverage: lease.manifest.coverage,
-                        semantic_complete: lease.manifest.semantics.as_ref().map(|s| s.complete),
+                        assertion: declaration.entry.id.clone(),
+                        state: declaration.entry.state,
                     },
                     c,
                 )?;
-                summary.observations += 1;
-                c.checkpoint(declarations.len().max(1).ilog2() as u64 + 1)?;
-                let start = declarations.partition_point(|d| d.key < node.function.location);
-                for declaration in declarations[start..]
-                    .iter()
-                    .take_while(|d| d.key == node.function.location)
-                {
-                    c.checkpoint(1)?;
-                    emit(
-                        &NavigationRecord::Declaration {
-                            function: node.function.clone(),
-                            assertion: declaration.entry.id.clone(),
-                            state: declaration.entry.state,
-                        },
-                        c,
-                    )?;
-                }
             }
-        } else if matches!(request.filter, NavigationFilter::Calls { .. })
+        }
+        if inspect.is_some()
+            || matches!(request.filter, NavigationFilter::Calls { .. })
             || target.as_ref().is_some_and(|t| t.relevant(recipe))
         {
             context_found = true;
             let records = crate::research::load_records(&lease.records, memory, c)?;
             summary.analyses_read += 1;
             let facts = Facts::new(&records, memory, c)?;
-            inspect(&node.function, &lease.manifest, &records, &facts, c)?;
+            if let Some(inspect) = inspect.as_mut() {
+                inspect(&node.function, &lease.manifest, &records, &facts, c)?;
+            }
             if matches!(request.filter, NavigationFilter::Calls { .. }) {
                 facts.calls(recipe, c, &mut |call, c| {
                     let capacity = memory.reserve(

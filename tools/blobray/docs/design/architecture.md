@@ -300,5 +300,9 @@ solely because it already parses archives or stores an analysis database.
 
 Register source publication is owned by [the register tool](../../../registers/README.md),
 with separate reviewed contracts/model/review modules and no legacy execution dependency.
+That owner also initializes native source geometry and captures SVD imports without
+accepting hardware claims. Next's saved register catalogue uses the application
+navigation owner, pure expression observations and indexed knowledge applicability;
+it has no generator or production dependencies.
 The primary `cargo blobray` command selects Next. Final-image target auditing uses
 the ordinary ephemeral supervisor and injected ISA port; it has no project writer.

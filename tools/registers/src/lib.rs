@@ -10,7 +10,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod drafts;
 mod host;
+pub use drafts::{import_svd, initialize_model};
 mod memory;
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 

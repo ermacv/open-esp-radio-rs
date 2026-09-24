@@ -17,7 +17,9 @@ use svd_rs::{
     RegisterCluster, RegisterInfo, RegisterProperties, ValidateLevel,
 };
 
+mod draft;
 mod geometry;
+pub use draft::{ModelDraft, ModelInit, PeripheralInit};
 mod model_validation;
 pub use geometry::{FieldGeometry, PeripheralRegion, RegisterGeometry, svd_geometry, svd_regions};
 mod pac_api;

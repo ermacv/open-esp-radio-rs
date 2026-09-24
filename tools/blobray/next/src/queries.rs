@@ -74,7 +74,8 @@ pub(super) fn render(
 ) -> Result<()> {
     if matches!(
         result.summary(),
-        app::QuerySummary::EventRoute { .. }
+        app::QuerySummary::Registers { .. }
+            | app::QuerySummary::EventRoute { .. }
             | app::QuerySummary::MemorySlice { .. }
             | app::QuerySummary::Flow { .. }
             | app::QuerySummary::Navigation { .. }
@@ -494,6 +495,9 @@ impl app::DoctorSink for Records<'_> {
     }
 }
 impl app::QuerySink for Records<'_> {
+    fn register(&mut self, r: &RegisterRecord, c: &mut dyn RunControl) -> Result<()> {
+        self.record("register", r, c)
+    }
     fn event_route(&mut self, r: &EventRouteRecord, c: &mut dyn RunControl) -> Result<()> {
         self.record("event-route", r, c)
     }

@@ -710,6 +710,8 @@ fn image_mmio_knowledge_round_trip_has_native_commands_and_retained_evidence() {
             "CONTROL",
             "--address",
             "0x60000000",
+            "--width",
+            "4",
             "--field",
             "ENABLE:0:1",
             "--actor",

@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 6;
+pub const EXECUTION_SCHEMA: u32 = 7;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 
@@ -44,6 +44,7 @@ pub struct Invocation {
     pub arguments: Vec<Option<u32>>,
     pub memory: Vec<ExecutionRegion>,
     pub models: Vec<DeviceDeclaration>,
+    pub calls: Vec<CallDeclaration>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -130,9 +131,49 @@ pub struct ExecutionRequest {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ExecutionEvent {
-    Read { address: u32, width: u8, value: u32 },
-    Write { address: u32, width: u8, value: u32 },
-    Fence { predecessor: u8, successor: u8 },
+    ModeledCall {
+        site: u32,
+        target: u32,
+        tail: bool,
+        response: u32,
+        boundary: CallBoundary,
+    },
+    CallArgument {
+        word: u16,
+        value: Option<u32>,
+    },
+    CallReturn {
+        words: [Option<u32>; 2],
+    },
+    CallOutput {
+        address: u32,
+        width: u8,
+        value: u32,
+        scope: CallOutputScope,
+    },
+    Allocation {
+        address: u32,
+        requested: u32,
+        capacity: u32,
+        lifetime: RegionLifetime,
+    },
+    DelayMicros {
+        value: u32,
+    },
+    Read {
+        address: u32,
+        width: u8,
+        value: u32,
+    },
+    Write {
+        address: u32,
+        width: u8,
+        value: u32,
+    },
+    Fence {
+        predecessor: u8,
+        successor: u8,
+    },
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
@@ -172,6 +213,7 @@ impl ExecutionStop {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ExecutionGap {
+    CallModel { target: u32, issue: CallIssue },
     UnsupportedInstruction,
     Memory { address: u32, access: MemoryAccess },
     UnknownRegister { register: u8 },
@@ -191,6 +233,7 @@ pub struct ExecutionObservation {
     pub steps: u64,
     pub events: Vec<ExecutionEvent>,
     pub models: Vec<ModelObservation>,
+    pub calls: Vec<CallObservation>,
 }
 impl ExecutionObservation {
     /// Goal reached with all environment obligations due at this boundary satisfied.
@@ -198,6 +241,10 @@ impl ExecutionObservation {
         self.stop.completed()
             && self
                 .models
+                .iter()
+                .all(|m| m.status == m.expected_status() && m.status != ModelStatus::Incomplete)
+            && self
+                .calls
                 .iter()
                 .all(|m| m.status == m.expected_status() && m.status != ModelStatus::Incomplete)
     }
@@ -238,6 +285,7 @@ pub struct ExecutionProducer {
 }
 /// Session-owned memory. None denotes unknown/inaccessible bytes, never zero.
 pub trait ExecutionMemory {
+    fn call(&mut self, input: &CallInput, control: &mut dyn RunControl) -> Result<CallDispatch>;
     fn read(
         &mut self,
         address: u32,
@@ -380,6 +428,18 @@ impl ExecutionRequest {
                         return Err(bad());
                     }
                 }
+                if input.calls.len() > MAX_CALL_MODELS {
+                    return Err(bad());
+                }
+                for (index, call) in input.calls.iter().enumerate() {
+                    call.validate()?;
+                    if input.calls[..index]
+                        .iter()
+                        .any(|m| m.id == call.id || m.binding.address == call.binding.address)
+                    {
+                        return Err(bad());
+                    }
+                }
                 for (index, model) in input.models.iter().enumerate() {
                     model.validate()?;
                     if input.models[..index].iter().any(|m| m.id == model.id) {
@@ -443,6 +503,11 @@ impl MemorySeed {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ExecutionEvidence {
+    CallModel {
+        case: u32,
+        replacement: bool,
+        observation: CallObservation,
+    },
     Model {
         case: u32,
         replacement: bool,

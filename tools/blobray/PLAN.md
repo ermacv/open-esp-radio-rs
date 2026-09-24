@@ -53,8 +53,8 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
 | 05 | done | Register lifecycle: MMIO/field discovery, physical catalog, evidence/conflicts/coverage, applicability/review. Independent register tool owns model initialization/SVD import and existing publication. Observation → reviewed source model → validate → four generated outputs works; observed access width is not physical width; generic Blobray gains no production/chip dependency. |
 | 06 | done | Saved linked semantic IR, configured builds/exports and static observable trace comparison. May-effects, exact static traces and concrete observations remain distinct; incomplete traces cannot MATCH; known differences DIFF; provenance and source-free reading survive composition. |
 | 07 | done | Integer execution sessions: stack ABI arguments, RV32 atomics, multiple entry points/setup phases, ownership/persistent regions, cold/warm resets and return/reach-symbol/observe-call goals. State transitions, unknown data, unsupported instructions, dependent-phase blocking and exact replay are tested. |
-| 08 | active | External-call returns/outputs/bounded allocation, delay events and standard constant/sequence/W1C/read-clear/self-clearing/FIFO/indexed-bank models. Every mechanism has positive/negative cases; no implicit response/fallback; model identity/applicability/participation is evidence; code and modeled boundaries stay distinct. |
-| 09 | pending | Stateful FIFO services and interface tables: enqueue/dequeue/length, wake/output, table lifecycle, service-event completion. Full/empty/order/isolation and cross-phase state are tested; only selected reviewed bindings resolve calls; failed phases cannot imply workflow completion. |
+| 08 | done | External-call returns/outputs/bounded allocation, delay events and standard constant/sequence/W1C/read-clear/self-clearing/FIFO/indexed-bank models. Every mechanism has positive/negative cases; no implicit response/fallback; model identity/applicability/participation is evidence; code and modeled boundaries stay distinct. |
+| 09 | active | Stateful FIFO services and interface tables: enqueue/dequeue/length, wake/output, table lifecycle, service-event completion. Full/empty/order/isolation and cross-phase state are tested; only selected reviewed bindings resolve calls; failed phases cannot imply workflow completion. |
 | 10 | pending | Comparison relations: selected final RAM, ordered calls/reviewed argument pairs, RAM/branch timeline, ABI/layout projections and effect contracts. Explicit relation selects returns/memory/events; RAM-only and call-only differences are caught; invalid projections fail; all three verdicts and retained excluded observations are tested. |
 | 11 | pending | Real PHY I2C workflow from authenticated capture and tables through linked execution/models and compiled-production comparison. Independent expectations, model boundaries, source removal and backup/restore are required; no model hides absent production/vendor code or grants hardware qualification. |
 | 12 | pending | Real PHY calibration/RF workflow, required intrinsics and reviewed summaries. Each declared calibration case has explicit conditions and expected outcome; coefficients/models/production changes alter dependency identity; reconstruction never impersonates captured execution. |
@@ -508,7 +508,7 @@ compatibility model alongside the current register bank.
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
 | 08.1 | done | Native register-bank, constant/sequence read, W1C, read-clear, self-clearing, FIFO and indexed-bank mechanisms with explicit identity/applicability and phase/session lifetime. One supervised execution owns state, resource admission and model participation/closure evidence. Missing/extra/mismatched accesses, exhausted/unconsumed sequences, invalid geometry/overlap and cold/warm closure are tested; unmet model obligations cannot MATCH even if the entry returned. All mechanisms work through API/CLI/query/replay/source-free restore, with code outcomes distinct from model coverage. |
-| 08.2 | active | Explicit external-call return words, private-stack/normal-memory outputs, bounded allocation and delay events. Exact selected bindings, ABI clobbers/stack words, consumed responses, modeled/code boundaries and provenance are checked. No implicit return, MMIO output fallback or hidden allocator. Unknown pointers, wrong ownership, capacity/exhaustion and unconsumed obligations remain explicit. A composed call/device/phase scenario, all mechanisms' positive/negative regressions and source-free restore/replay close stage 08. |
+| 08.2 | done | Explicit external-call return words, private-stack/normal-memory outputs, bounded allocation and delay events. Exact selected bindings, ABI clobbers/stack words, consumed responses, modeled/code boundaries and provenance are checked. No implicit return, MMIO output fallback or hidden allocator. Unknown pointers, wrong ownership, capacity/exhaustion and unconsumed obligations remain explicit. A composed call/device/phase scenario, all mechanisms' positive/negative regressions and source-free restore/replay close stage 08. |
 
 Hardware-specific mechanisms and calibrated expectations remain their assigned
 stages 11/12/14. A model declaration is an explicit execution assumption, never an
@@ -527,3 +527,37 @@ All seven affected packages/Next tests, Clippy, formatting, public/private docs 
 standalone extraction pass. Execution schema 6, database 24 and journal 25 bind
 model assumptions separately from code goals. Stage 08.2 is active; external calls
 and delay events remain its obligations, with no implicit response or legacy path.
+
+
+Stage 08.2 closes explicit captured-code/unmapped call boundaries, optional return
+words, caller-saved clobbers, stack ABI words, checked normal/private-stack outputs,
+bounded fresh allocations and modeled microsecond delays. Required responses and
+phase/session closure remain distinct from actual code goals. Unknown values,
+invalid ownership, exhausted/unused responses, tail policy, observe-call precedence,
+admission/cancellation and prefix accessibility/release pass. Store rejects forged
+binding/argument/effect/return/consumption/closure evidence. A composed allocation →
+warm RAM read → call → device scenario has checked returns and identical API/CLI
+source-free backup/restore/replay; changed delays or known returns yield DIFF even
+with incomplete coverage. All affected packages/Next tests, final 43 execution tests,
+Clippy, formatting, public/private docs and standalone checks pass. Execution schema
+7, database 25 and journal 26 identify the new boundary. No compatibility layer or
+hardware timing claim is introduced. Stage 08 is complete.
+
+### Stage 09 runtime interfaces and services
+
+The legacy owner combines table placement/lifecycle with FIFO operations and a
+service-event goal. Native reviewed interface contracts already exist; the missing
+runtime table owner must precede reviewed service binding. Split these complete
+scenarios without dropping any table/service obligation or copying legacy's
+per-call scan over every table byte:
+
+| Sub-stage | Status | Acceptance |
+| --- | --- | --- |
+| 09.1 | active | Explicit selected accepted interface contract → runtime table/pointer placement → captured or explicitly modeled callback execution → retained lifecycle and source-free replay. Resolve physical roots and bounded paths, validate layout/ABI/index/guard conditions and exact slots; null/missing/ambiguous targets remain distinct. Track initialization, pointer installation, writes and indirect-target associations with bounded operation-owned indexes; association never claims unsupported pointer provenance. Wrong review/source/layout/guards, overlapping ownership, unknown/partial writes, alias targets, cold/warm state and resources fail explicitly. All root/path forms admitted by the reviewed contract retain an implementation or a named unmet criterion; no silent supported-profile reduction. API/CLI/reopen agree. |
+| 09.2 | pending | Stateful FIFO enqueue/dequeue/length through explicitly selected reviewed slot bindings, with argument/private-stack input, output and wake behavior. Bounded isolated queues persist by declared lifetime; full/empty/order/wrong handle/width and cross-phase failures are checked. Observe-dequeue service goals stop only after the selected successful event; failed phases never imply completion. A reviewed table → service → event-goal scenario, API/CLI/source-free restore/replay, resource/cancellation/closure and all positive/negative mechanisms close stage 09. |
+
+Standard FIFO device transcripts remain stage 08's explicit peripheral mechanism;
+stateful queue services own separate data and semantics. Execution uses the existing
+call port, session memory, supervision and publication, not a second scheduler,
+legacy adapter or generic workflow framework. Review authorizes a selected contract,
+not automatic acceptance of a hardware claim.

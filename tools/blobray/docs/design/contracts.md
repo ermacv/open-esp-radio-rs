@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 25
-and database schema 24 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 26
+and database schema 25 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -41,7 +41,7 @@ extents separately; these intervals are neither inferred functions nor padding.
 Unknown structure remains explicit and does not become a zero-byte observation.
 `PASS` for target auditing covers resolved static transfers only. Unknown indirect
 transfers remain separately counted. Comparison retains its explicit relation:
-ordered MMIO/fence events and, when selected, low u32 return values; RAM, call
+ordered MMIO/fence/delay events and, when selected, low u32 return values; RAM, call
 observations and the high return register are outside that relation.
 
 ### Durable and ephemeral acquisition
@@ -752,7 +752,7 @@ Domain validates stack geometry and computes entry SP; application initializes
 stack arguments in its freshly owned stack, and passes eight optional register
 words to the backend. Unknown argument slots override stack seeds. No register or
 stack word becomes zero by omission, and setup emits no guest events. The caller
-owns type/variadic lowering. Request and manifest schema 6 pin this interpretation;
+owns type/variadic lowering. Request and manifest schema 7 pin this interpretation;
 producer identity pins both backend unknown-value semantics and stack environment.
 
 `ExecutionMemory` also owns LR/SC reservation state, permission checks and indivisible
@@ -795,7 +795,7 @@ execute or repair anything.
 Replay requires the original executor, environment and verifier identities. A
 known difference survives other incomplete cases; an emergency resource failure
 publishes no completed evidence. The implemented relation compares exact ordered
-MMIO/fence events and optionally one 32-bit return, with a caller-declared compiled
+MMIO/fence/delay events and optionally one 32-bit return, with a caller-declared compiled
 binding ceiling. It cannot claim arbitrary-domain or hardware equivalence. See
 [concrete execution](../../next/README.md#concrete-execution-and-comparison) for
 request limits, memory initialization, schemas and unsupported behavior.
@@ -867,8 +867,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 24
-and journal schema 25 carry these identities. Old formats are rejected without
+Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 25
+and journal schema 26 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -1383,3 +1383,35 @@ monotonic counts, declared transcript totals, exact closure and required observa
 presence; it rejects MATCH with unmet obligations without executing model semantics.
 Models and code observations are persisted and replayed together. Full current
 mechanism syntax and claim limits belong to the [operator reference](../../next/README.md#concrete-execution-and-comparison).
+
+
+### Implemented external-call boundary
+
+`CallDeclaration` owns exact target/boundary, caller applicability, physical argument
+width, immutable response sequence and phase/session lifetime. Application
+`external_calls` owns admitted copies and cursors; `execution_calls` validates full
+responses and mutates only session-owned normal memory. Device and call models have
+separate explicit ports and ID namespaces, and share completion/closure semantics.
+No global response registry or legacy resolver participates.
+
+The backend invokes the required `ExecutionMemory::call` port at eligible transfers,
+after checking observe-call goals. An unselected transfer executes captured code;
+a selected response has explicit returns, output/allocation/delay effects and ABI
+clobbers. Root entries and canonical returns cannot be modeled accidentally. Model
+responses never constitute evidence that replaced code executed. All participating
+assumptions remain in the immutable request and model identities.
+
+Output geometry/ownership, allocation freshness and required argument values are
+validated before response mutation. Resource failure during admitted effects aborts
+the operation atomically. Allocation capacity is owned until its declared lifetime
+ends; only the requested zero-initialized prefix is accessible. Model responses and
+memory allocations have independently declared lifetimes. Warm continuation cannot
+redeclare a live model or reseed live allocation storage through ordinary RAM.
+
+Fixed-size streamed events retain modeled boundary, arguments, effects and returns.
+Event capacity is admitted for the full successful response before mutation. Store
+checks selected bindings, ordered arguments/effects/returns, exact response consumption
+and closure; missing/forged evidence cannot complete the run. The verifier selects
+MMIO/fence/delay observations and optional low return only; excluded model records
+remain available for inspection. Delay values are assumptions, never wall-time or
+hardware timing evidence. All clients use the existing execution/replay lifecycle.

@@ -260,6 +260,10 @@ pub fn validate_execution_records(
         crate::execution_models::Models::new(),
         crate::execution_models::Models::new(),
     ];
+    let mut calls = [
+        crate::execution_calls::Calls::new(),
+        crate::execution_calls::Calls::new(),
+    ];
     let mut prepared = None;
     let mut models_started = false;
     let mut environment_complete = true;
@@ -276,13 +280,27 @@ pub fn validate_execution_records(
             .get(case as usize + 1)
             .is_none_or(|next| next.reset == SessionReset::Cold);
         if prepared != Some(case) {
+            calls[0].begin(&phase.vendor.calls, phase.reset, must_block, c)?;
             models[0].begin(&phase.vendor.models, phase.reset, must_block, c)?;
             if let Some(replacement) = &phase.replacement {
+                calls[1].begin(&replacement.calls, phase.reset, must_block, c)?;
                 models[1].begin(&replacement.models, phase.reset, must_block, c)?;
             }
             prepared = Some(case);
         }
         match record {
+            ExecutionEvidence::CallModel {
+                case: i,
+                replacement,
+                observation,
+            } => {
+                if i != case || replacement != side || outcome {
+                    return Err(integrity("call model evidence order differs"));
+                }
+                models_started = true;
+                calls[usize::from(side)].observe(&observation, close_chain, must_block, c)?;
+                environment_complete &= observation.status != ModelStatus::Incomplete;
+            }
             ExecutionEvidence::Model {
                 case: i,
                 replacement,
@@ -298,11 +316,12 @@ pub fn validate_execution_records(
             ExecutionEvidence::Event {
                 case: i,
                 replacement,
-                ..
+                event,
             } => {
                 if i != case || replacement != side || outcome || models_started {
                     return Err(integrity("execution event order differs"));
                 }
+                calls[usize::from(side)].event(&event, c)?;
                 events += 1;
                 if events > manifest.request.max_events {
                     return Err(integrity("event capacity exceeded"));
@@ -356,6 +375,7 @@ pub fn validate_execution_records(
                     ));
                 }
                 models[usize::from(side)].finish_side()?;
+                calls[usize::from(side)].finish_side()?;
                 complete &= stop.completed() && environment_complete;
                 phase_complete &= stop.completed() && environment_complete;
                 models_started = false;
@@ -405,6 +425,7 @@ pub fn validate_execution_records(
         || complete != manifest.complete
         || verdict != manifest.verdict
         || !models.iter().all(crate::execution_models::Models::closed)
+        || !calls.iter().all(crate::execution_calls::Calls::closed)
     {
         return Err(integrity("execution evidence summary differs"));
     }

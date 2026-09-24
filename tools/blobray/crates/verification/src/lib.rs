@@ -1,6 +1,6 @@
 //! Comparison of concrete ordered observations; no execution or repository authority.
 use blobray_domain::*;
-pub const VERIFIER: &str = "ordered-mmio-fence-u32/model-3";
+pub const VERIFIER: &str = "ordered-mmio-fence-delay-u32/model-4";
 pub fn compare(
     left: &ExecutionObservation,
     right: &ExecutionObservation,
@@ -12,33 +12,48 @@ pub fn compare(
         event: None,
         return_difference: false,
     };
-    for (index, (a, b)) in left.events.iter().zip(&right.events).enumerate() {
+    control.checkpoint((left.events.len() + right.events.len()) as u64)?;
+    let observable = |e: &&ExecutionEvent| {
+        matches!(
+            e,
+            ExecutionEvent::Read { .. }
+                | ExecutionEvent::Write { .. }
+                | ExecutionEvent::Fence { .. }
+                | ExecutionEvent::DelayMicros { .. }
+        )
+    };
+    let mut le = left.events.iter().filter(observable);
+    let mut re = right.events.iter().filter(observable);
+    let mut count = 0;
+    loop {
+        let (a, b) = (le.next(), re.next());
+        let (Some(a), Some(b)) = (a, b) else {
+            if (left.completed() && a.is_none() && b.is_some())
+                || (right.completed() && b.is_none() && a.is_some())
+            {
+                result.verdict = ComparisonVerdict::Diff;
+                result.event = Some(count);
+                return Ok(result);
+            }
+            break;
+        };
+        let index = count;
+        count += 1;
         control.checkpoint(1)?;
         if a != b {
             result.verdict = ComparisonVerdict::Diff;
-            result.event = Some(index as u32);
+            result.event = Some(index);
             return Ok(result);
         }
     }
     let l = left.completed();
     let r = right.completed();
-    // A finished shorter side cannot acquire the extra event observed on the other.
-    if (l && left.events.len() < right.events.len())
-        || (r && right.events.len() < left.events.len())
-    {
-        result.verdict = ComparisonVerdict::Diff;
-        result.event = Some(left.events.len().min(right.events.len()) as u32);
-        return Ok(result);
-    }
     if !compare_return
         && l
         && r
         && std::mem::discriminant(&left.stop) == std::mem::discriminant(&right.stop)
     {
         result.verdict = ComparisonVerdict::Match;
-        return Ok(result);
-    }
-    if !l || !r {
         return Ok(result);
     }
     if let (ExecutionStop::Returned { low: a, .. }, ExecutionStop::Returned { low: b, .. }) =
@@ -55,7 +70,9 @@ pub fn compare(
                 _ => return Ok(result),
             }
         }
-        result.verdict = ComparisonVerdict::Match;
+        if l && r {
+            result.verdict = ComparisonVerdict::Match;
+        }
     }
     Ok(result)
 }
@@ -68,6 +85,7 @@ mod tests {
             steps: 1,
             events,
             models: vec![],
+            calls: vec![],
         }
     }
     #[test]

@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 24 and journal schema 25. Earlier and future
+Projects require metadata schema 25 and journal schema 26. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,9 +712,9 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 25 for every durable and read operation. Storage metadata
-uses schema 24; revision manifests use schema 1 and execution manifests use schema
-6. These are independent formats. Earlier journals are rejected by single-run,
+Run records use schema 26 for every durable and read operation. Storage metadata
+uses schema 25; revision manifests use schema 1 and execution manifests use schema
+7. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-25 run; an envelope version is not a journal
+execution 7) wrap the same schema-26 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1366,7 +1366,7 @@ claim a single mmap arena or a process-wide no-allocation guarantee.
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
 operation/query paths. No legacy engine or external limiter participates.
-Execution requests and manifests use schema 6; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
+Execution requests and manifests use schema 7; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 
 ```console
@@ -1382,7 +1382,7 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 6,
+  "schema": 7,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -1395,7 +1395,7 @@ with an exact captured occurrence):
   "cases": [{
     "name": "one-explicit-case",
     "reset": "cold",
-    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [] },
+    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [], "calls": [] },
     "replacement": null
   }],
   "max_events": 4096,
@@ -1462,7 +1462,7 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 comparison relation still excludes final RAM itself.
 
-The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1` environment maps validated ELF
+The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
@@ -1504,8 +1504,7 @@ disjoint and outside mapped code/RAM/stack. Missing ports remain inaccessible;
 partial or mismatched-width accesses do not fall through to another owner. Successful
 accesses emit ordinary ordered MMIO events. Model gaps retain a memory stop plus
 `model` evidence with the explicit issue. Model declarations are assumptions, not
-accepted hardware facts or claims about real timing/peripherals. External-call
-substitution remains outside this implemented profile.
+accepted hardware facts or claims about real timing/peripherals. External-call responses are separately selected in `calls` as described below.
 
 Every instance retains its SHA-256 definition identity, including its id, conditions,
 lifetime and complete ordered configuration. `model` records precede the side's
@@ -1522,6 +1521,81 @@ live declaration on warm continuation; redeclaring its id conflicts, even if ide
 An expired phase model's id/ports can be assigned anew. Both implementations own
 separate instances. A blocked warm phase performs no model accesses but still emits
 participation/closure evidence for existing instances.
+
+An invocation's `calls` declares ABI boundary models separately from its device
+`models`. IDs are unique within each category; call targets are also unique among
+live call models. A call declaration contains:
+
+```json
+{
+  "id": "platform-read",
+  "applicability": "synthetic one-call scenario with writable output pointer",
+  "lifetime": "phase",
+  "binding": {"address":8192,"boundary":"unmapped","allow_tail":false},
+  "argument_words": 1,
+  "responses": [{
+    "return_words": [0,null],
+    "outputs": [{"pointer_argument":0,"byte_offset":0,"width":4,"value":42,"scope":"normal-memory"}],
+    "allocation": null,
+    "delay_micros": {"kind":"constant","value":5}
+  }]
+}
+```
+
+The binding selects one exact aligned target address in this captured address space.
+`unmapped` requires that no memory/device owns its first two bytes. `captured-code`
+requires a known executable ELF load mapping there and explicitly replaces execution
+of its body with the response. It never claims that the body ran. The operation
+validates bindings after phase memory/device installation; it does not guess names,
+reviewed service bindings or absent implementations. A root entry is executed as
+code, even if a model binds the same address: models intercept transfers only.
+Unselected targets execute captured code normally; missing bytes stop on fetch.
+Ordinary x1/x5 calls may use responses. Non-return x0 transfers require `allow_tail`;
+canonical returns through x1/x5 are never intercepted. `observe-call` stops before
+model dispatch, so an unconsumed required response still prevents completion.
+
+`argument_words` selects zero to 256 physical ABI words to retain at the call site:
+a0–a7, then current-SP stack words. SP must be known and 16-byte aligned; stack words
+must lie in the private stack. Unknown words remain explicit and block only effects
+that require their value. The backend invalidates caller-saved ra/t0–t6/a0–a7 after
+a modeled return, then applies exactly the two optional `return_words`. Callee-saved
+registers, SP, gp and tp retain state. A normal call resumes after the transfer;
+a modeled tail returns through the incoming ra. Type/variadic lowering remains the
+caller's responsibility. No absent word becomes zero.
+
+Each response may contain ordered outputs through a selected argument plus a checked
+byte offset. Widths are 1/2/4 bytes and values must fit. `private-stack` requires the
+operation's stack; `normal-memory` permits writable stack, ELF or declared RAM, never
+MMIO. All output addresses are checked before any response write. An invalid later
+output cannot leave earlier output writes in a published incomplete response.
+Outputs require existing memory; newly allocated memory becomes available to later
+calls/instructions. Modeled writes invalidate overlapping LR reservations.
+
+`allocation` has `address`, `size_argument`, `capacity`, `lifetime`. The address must
+be 16-byte aligned and the explicit low return word must equal it. The full capacity
+must be fresh and disjoint from live memory, devices and call boundaries. The known
+size argument selects a leading accessible zero-initialized prefix, including an
+explicit zero-length allocation; exceeding capacity is a model issue. Unused capacity
+remains owned but inaccessible, even for writes. Allocation lifetime is independently
+`phase` or `session`; it cannot be reseeded as ordinary RAM while live. Working-memory
+admission failure is an operation error, not a simulated allocator response.
+
+`delay_micros` is null, `{"kind":"constant","value":5}` or
+`{"kind":"argument","word":0}`. It emits an explicit observable value without
+sleeping, advancing a hardware clock or claiming timing accuracy. Model call,
+argument, output, allocation and return records preserve environment evidence;
+the current relation compares delay values with MMIO/fences, and excludes those
+other model records. It does not infer equivalence of pointer layouts or allocators.
+The first differing event index counts only this selected observable stream.
+
+Call declarations use the same phase/session closure rules as device declarations.
+Each successful response consumes exactly one entry; exhaustion, unknown required
+words, bad ownership or unused responses retain explicit `call-model` issues and
+cannot MATCH. Open session responses permit warm continuation; blocked phases
+consume nothing. Definition identities include applicability, binding, ABI width,
+ordered responses and every effect. Store authenticates argument/effect/return order
+against the declared response as well as participation counts and closure. Query,
+backup and replay retain both modeled boundaries and actual code outcomes.
 
 Every case is an explicit phase with a shared `reset` for both implementations
 and an `entry` in each invocation. Setup and action phases can select different
@@ -1587,11 +1661,12 @@ prefix differences remain `DIFF`. Store checks that outcome kind and dependency
 blocking match the declared goals before publication.
 
 The [verifier](../crates/verification/README.md) compares ordered MMIO and fence
-events plus the low 32-bit return when `compare_return` is true. It does not
+events and modeled delay-microsecond values plus the low 32-bit return when `compare_return` is true. It does not
 compare RAM contents, calls or the high return register. `MATCH` applies only to
 the listed concrete scenarios, not all possible arguments or paths. `DIFF`
 retains the first differing event/return; `INCOMPLETE` retains missing execution
-obligations. Across cases, a known difference survives other incomplete coverage.
+obligations. A known event or returned-value difference survives unmet model obligations and
+other incomplete cases; this retains the observed difference without claiming completion.
 `manifest.complete` means every phase reached its declared goal and all model
 obligations due at closure were met, independently of the verdict. Only a `returned` outcome proves the entry returned.
 A completed operation, including `DIFF` or `INCOMPLETE`, exits 0; admission,
@@ -1609,11 +1684,12 @@ accesses; capacity retained for index reuse is distinct from live model state.
 No host call-stack recursion follows the analyzed program.
 
 Requests remain capped at 64 KiB, with 1–128 cases, at most 64 companions per
-target, 128 RAM seeds and 128 model declarations per invocation, 128 live models,
+target, 128 RAM seeds, 128 device and 128 call declarations per invocation,
+128 live models of each category, 4096 responses per call model, 256 outputs per response,
 4096 exact live ports, 4096 values per model list, 2048 regions per session,
 and 1–65536 events per implementation per case. `max_events` exhaustion is a
 resource failure with no publication; events are never silently truncated.
-Traces stream as bounded JSONL events/models/outcomes/comparisons into quota-owned
+Traces stream as bounded JSONL events/device-models/call-models/outcomes/comparisons into quota-owned
 staging. The coordinator checks the admitted recipe and stream structure before
 atomically committing the result reference and completed run. Cancellation,
 limits or corruption cannot publish partial evidence. Process-level OOM and

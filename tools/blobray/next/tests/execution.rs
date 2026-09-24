@@ -116,6 +116,7 @@ impl Fixture {
             arguments: vec![Some(0); 8],
             memory: vec![],
             models: vec![],
+            calls: vec![],
         };
         ExecutionRequest {
             schema: EXECUTION_SCHEMA,
@@ -514,3 +515,6 @@ fn register_bank(cells: Vec<RegisterCell>) -> DeviceDeclaration {
 }
 #[path = "execution/devices.rs"]
 mod devices;
+
+#[path = "execution/calls.rs"]
+mod calls;

@@ -457,3 +457,6 @@ pub use trace::*;
 
 mod device;
 pub use device::*;
+
+mod external_call;
+pub use external_call::*;

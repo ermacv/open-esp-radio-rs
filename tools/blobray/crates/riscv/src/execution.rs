@@ -3,7 +3,7 @@ use super::*;
 pub struct RiscvExecutor;
 impl Executor for RiscvExecutor {
     fn identity(&self) -> &'static str {
-        "rv32imac/execution-4/rv-asm-0.2.1"
+        "rv32imac/execution-5/rv-asm-0.2.1"
     }
     fn execute(
         &self,
@@ -105,6 +105,7 @@ impl Executor for RiscvExecutor {
             };
             steps += 1;
             let mut next = pc.wrapping_add(width as u32);
+            let mut transfer = None;
             match inst {
                 Inst::LrW { order, dest, addr } => {
                     let address = reg!(addr.0);
@@ -159,6 +160,9 @@ impl Executor for RiscvExecutor {
                 Inst::Jal { dest, offset } => {
                     regs[dest.0 as usize] = Some(next);
                     next = pc.wrapping_add_signed(offset.as_i32());
+                    if matches!(dest.0, 0 | 1 | 5) {
+                        transfer = Some((dest.0 == 0, pc.wrapping_add(width as u32)));
+                    }
                     if let Some(tail) = observed_call(goal, dest.0, next, false) {
                         return Ok((
                             ExecutionStop::ObservedCall {
@@ -175,6 +179,9 @@ impl Executor for RiscvExecutor {
                     regs[dest.0 as usize] = Some(next);
                     next = target;
                     let is_return = dest.0 == 0 && matches!(base.0, 1 | 5) && offset.as_i32() == 0;
+                    if !is_return && matches!(dest.0, 0 | 1 | 5) {
+                        transfer = Some((dest.0 == 0, pc.wrapping_add(width as u32)));
+                    }
                     if let Some(tail) = observed_call(goal, dest.0, next, is_return) {
                         return Ok((
                             ExecutionStop::ObservedCall {
@@ -298,6 +305,35 @@ impl Executor for RiscvExecutor {
                     }
                     _ => stop!(ExecutionGap::UnsupportedInstruction),
                 },
+            }
+            if let Some((tail, return_pc)) = transfer {
+                let mut arguments = [None; 8];
+                arguments.copy_from_slice(&regs[10..18]);
+                match memory.call(
+                    &CallInput {
+                        site: pc,
+                        target: next,
+                        tail,
+                        stack: regs[2],
+                        arguments,
+                    },
+                    control,
+                )? {
+                    CallDispatch::Code => {}
+                    CallDispatch::Incomplete { issue } => stop!(ExecutionGap::CallModel {
+                        target: next,
+                        issue
+                    }),
+                    CallDispatch::Returned { words } => {
+                        next = if tail { reg!(1) } else { return_pc };
+                        // psABI caller-saved registers become unknown, then explicit return words apply.
+                        for r in [1, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 28, 29, 30, 31] {
+                            regs[r] = None;
+                        }
+                        regs[10] = words[0];
+                        regs[11] = words[1];
+                    }
+                }
             }
             regs[0] = Some(0);
             pc = next;

@@ -554,3 +554,12 @@ participation into MATCH. The [device regressions](../../next/tests/execution/de
 cover all eight mechanisms, ownership conflicts, closure, forged records and restored
 replay. [Memory tests](../../crates/application/src/devices.rs) verify release of model
 payload/state and cancellation before response consumption.
+
+
+The implemented external-call scenario composes admitted allocation, a warm-phase
+read, an explicit call response, a device sequence and modeled delays in one
+execution. [Call regressions](../../next/tests/execution/calls.rs) check the actual
+return and participation, all three verdicts, output ownership, stack words,
+unknown values, response exhaustion, early goals, resource failure and identical
+API/CLI replay after source removal and backup/restore. Model effects retain their
+conditional scope; hardware qualification and reviewed service dispatch are separate.

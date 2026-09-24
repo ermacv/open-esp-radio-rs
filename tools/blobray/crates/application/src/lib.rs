@@ -389,3 +389,5 @@ mod coverage;
 mod flow;
 
 mod devices;
+
+mod external_calls;

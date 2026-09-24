@@ -52,7 +52,7 @@ fn symbol_elf(code: &[u32], base: u32, goal: u32) -> (Vec<u8>, ExecutionSymbol) 
     };
     (bytes, point)
 }
-fn fixture(code: &[u32], goal: u32) -> (Fixture, ExecutionSymbol) {
+pub(super) fn fixture(code: &[u32], goal: u32) -> (Fixture, ExecutionSymbol) {
     let (bytes, point) = symbol_elf(code, 0x1000, goal);
     (Fixture::from_inputs(vec![bytes]), point)
 }

@@ -297,3 +297,6 @@ their own entry with only session-owned memory retained.
 
 
 `devices` owns admitted configuration/state, exact sorted ports and phase/session closure. Session snapshots model participation before releasing closed instances; verification sees both code outcomes and due model obligations. Warm continuation cannot redeclare a live id. All models use the shared execution/replay path and budget.
+
+
+`external_calls` owns immutable response copies, admitted instances and cursors. `execution_memory::execution_calls` validates complete effects, writes only checked normal memory, and owns bounded allocations. Phase/session closure and call evidence share execution supervision, capacity and atomic publication.

@@ -5,6 +5,10 @@ enum RegionKind {
     Image,
     Stack,
     Ram(RegionLifetime),
+    Allocation {
+        lifetime: RegionLifetime,
+        requested: u32,
+    },
 }
 struct Mapping {
     address: u32,
@@ -24,6 +28,8 @@ pub(super) struct Session<'a> {
     memory: &'a WorkingMemory,
     _metadata: MemoryReservation<'a>,
     devices: crate::devices::Devices<'a>,
+    calls: crate::external_calls::Calls<'a>,
+    call_observations: Vec<CallObservation>,
     model_observations: Vec<ModelObservation>,
     events: Vec<ExecutionEvent>,
     max_events: usize,
@@ -33,7 +39,9 @@ pub(super) struct Session<'a> {
 impl<'a> Session<'a> {
     pub fn new(memory: &'a WorkingMemory, max_events: u32, c: &mut dyn RunControl) -> Result<Self> {
         let metadata = memory.reserve(
-            1024 * 1024 + u64::from(max_events) * 128 + MAX_DEVICE_MODELS as u64 * 512,
+            1024 * 1024
+                + u64::from(max_events) * 128
+                + (MAX_DEVICE_MODELS + MAX_CALL_MODELS) as u64 * 512,
             c.position(),
         )?;
         let mut regions = Vec::new();
@@ -49,6 +57,15 @@ impl<'a> Session<'a> {
                     "model observation allocation refused",
                 )
             })?;
+        let mut call_observations = Vec::new();
+        call_observations
+            .try_reserve_exact(MAX_CALL_MODELS)
+            .map_err(|_| {
+                Error::new(
+                    ErrorCode::ResourceLimited,
+                    "call observations allocation refused",
+                )
+            })?;
         let mut events = Vec::new();
         events
             .try_reserve_exact(max_events as usize)
@@ -58,6 +75,8 @@ impl<'a> Session<'a> {
             memory,
             _metadata: metadata,
             devices: crate::devices::Devices::new(memory),
+            calls: crate::external_calls::Calls::new(memory),
+            call_observations,
             model_observations,
             events,
             max_events: max_events as usize,
@@ -95,6 +114,17 @@ impl<'a> Session<'a> {
                 ErrorCode::Conflict,
                 "memory region overlaps a live device",
             ));
+        }
+        for binding in self.calls.bindings() {
+            c.checkpoint(1)?;
+            if u64::from(binding.address) < end
+                && u64::from(address) < u64::from(binding.address) + 2
+            {
+                return Err(Error::new(
+                    ErrorCode::Conflict,
+                    "new memory overlaps live call boundary",
+                ));
+            }
         }
         for region in &self.regions {
             c.checkpoint(1)?;
@@ -237,6 +267,35 @@ impl<'a> Session<'a> {
                 }
                 Ok(())
             })?;
+        self.calls.install(&input.calls, c)?;
+        // Validate live bindings after phase memory/devices are installed. No hidden symbol lookup.
+        for binding in self.calls.bindings() {
+            c.checkpoint(self.regions.len() as u64 + 1)?;
+            if self.devices.overlaps(binding.address, 2, c)? {
+                return Err(Error::new(
+                    ErrorCode::Conflict,
+                    "call boundary overlaps device",
+                ));
+            }
+            let containing = self.region_index(binding.address, 2);
+            let valid = match binding.boundary {
+                CallBoundary::Unmapped => !self.regions.iter().any(|r| {
+                    u64::from(binding.address) < u64::from(r.address) + r.bytes.len() as u64
+                        && u64::from(r.address) < u64::from(binding.address) + 2
+                }),
+                CallBoundary::CapturedCode => containing.is_some_and(|(i, o)| {
+                    self.regions[i].kind == RegionKind::Image
+                        && self.regions[i].flags & 1 != 0
+                        && !self.regions[i].known[o..o + 2].contains(&0)
+                }),
+            };
+            if !valid {
+                return Err(Error::new(
+                    ErrorCode::InvalidRequest,
+                    "call boundary does not match captured/unmapped declaration",
+                ));
+            }
+        }
         Ok(stack)
     }
     pub fn observation(
@@ -248,11 +307,14 @@ impl<'a> Session<'a> {
     ) -> Result<ExecutionObservation> {
         self.devices
             .finish(close_chain, &mut self.model_observations, c)?;
+        self.calls
+            .finish(close_chain, &mut self.call_observations, c)?;
         Ok(ExecutionObservation {
             stop,
             steps,
             events: std::mem::take(&mut self.events),
             models: std::mem::take(&mut self.model_observations),
+            calls: std::mem::take(&mut self.call_observations),
         })
     }
     pub fn recycle(&mut self, mut observation: ExecutionObservation) {
@@ -260,6 +322,8 @@ impl<'a> Session<'a> {
         self.events = observation.events;
         observation.models.clear();
         self.model_observations = observation.models;
+        observation.calls.clear();
+        self.call_observations = observation.calls;
         self.finish_phase();
     }
     fn finish_phase(&mut self) {
@@ -267,14 +331,24 @@ impl<'a> Session<'a> {
         self.regions.retain(|r| {
             !matches!(
                 r.kind,
-                RegionKind::Stack | RegionKind::Ram(RegionLifetime::Phase)
+                RegionKind::Stack
+                    | RegionKind::Ram(RegionLifetime::Phase)
+                    | RegionKind::Allocation {
+                        lifetime: RegionLifetime::Phase,
+                        ..
+                    }
             )
         });
     }
     fn region_index(&self, address: u32, width: u8) -> Option<(usize, usize)> {
         self.regions.iter().enumerate().find_map(|(i, r)| {
             let offset = u64::from(address).checked_sub(u64::from(r.address))?;
-            (offset + u64::from(width) <= r.bytes.len() as u64).then_some((i, offset as usize))
+            (offset + u64::from(width)
+                <= match r.kind {
+                    RegionKind::Allocation { requested, .. } => u64::from(requested),
+                    _ => r.bytes.len() as u64,
+                })
+            .then_some((i, offset as usize))
         })
     }
     fn invalidate_reservation(&mut self, address: u32, width: u8) {
@@ -307,6 +381,9 @@ impl<'a> Session<'a> {
     }
 }
 impl ExecutionMemory for Session<'_> {
+    fn call(&mut self, input: &CallInput, c: &mut dyn RunControl) -> Result<CallDispatch> {
+        self.external_call(input, c)
+    }
     fn read(
         &mut self,
         address: u32,
@@ -465,3 +542,6 @@ impl ExecutionMemory for Session<'_> {
 #[cfg(test)]
 #[path = "execution_memory_tests.rs"]
 mod tests;
+
+#[path = "execution_calls.rs"]
+mod execution_calls;

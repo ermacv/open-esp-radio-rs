@@ -232,3 +232,94 @@ fn phase_release_drops_stack_and_temporary_ram_but_preserves_session_ram() {
         );
     }
 }
+
+#[test]
+fn modeled_allocation_capacity_is_owned_but_only_requested_bytes_are_accessible() {
+    for lifetime in [RegionLifetime::Phase, RegionLifetime::Session] {
+        let memory = WorkingMemory::new(16 * 1024 * 1024).unwrap();
+        let mut s = session(&memory, None);
+        s.calls
+            .install(
+                &[CallDeclaration {
+                    id: "allocator".into(),
+                    applicability: "fixture".into(),
+                    lifetime: RegionLifetime::Phase,
+                    binding: CallBinding {
+                        address: 0x2000,
+                        boundary: CallBoundary::Unmapped,
+                        allow_tail: false,
+                    },
+                    argument_words: 1,
+                    responses: vec![CallResponse {
+                        return_words: [Some(0x4000), None],
+                        outputs: vec![],
+                        allocation: Some(CallAllocation {
+                            address: 0x4000,
+                            size_argument: 0,
+                            capacity: 4096,
+                            lifetime,
+                        }),
+                        delay_micros: None,
+                    }],
+                }],
+                &mut || Ok(()),
+            )
+            .unwrap();
+        let before = memory.observation().reserved_bytes;
+        let result = s
+            .call(
+                &CallInput {
+                    site: 0x1000,
+                    target: 0x2000,
+                    tail: false,
+                    stack: Some(0x9000),
+                    arguments: [Some(4), None, None, None, None, None, None, None],
+                },
+                &mut || Ok(()),
+            )
+            .unwrap();
+        assert_eq!(
+            result,
+            CallDispatch::Returned {
+                words: [Some(0x4000), None]
+            }
+        );
+        assert!(memory.observation().reserved_bytes >= before + 8192);
+        assert_eq!(
+            s.read(0x4000, 4, MemoryAccess::Read, &mut || Ok(()))
+                .unwrap(),
+            Some(0)
+        );
+        for address in [0x4004, 0x4ffc] {
+            assert_eq!(
+                s.read(address, 4, MemoryAccess::Read, &mut || Ok(()))
+                    .unwrap(),
+                None
+            );
+            assert!(!s.write(address, 4, 7, &mut || Ok(())).unwrap());
+        }
+        let o = s
+            .observation(
+                ExecutionStop::Returned {
+                    low: Some(0x4000),
+                    high: None,
+                },
+                1,
+                true,
+                &mut || Ok(()),
+            )
+            .unwrap();
+        s.recycle(o);
+        assert_eq!(
+            s.read(0x4000, 4, MemoryAccess::Read, &mut || Ok(()))
+                .unwrap(),
+            if lifetime == RegionLifetime::Session {
+                Some(0)
+            } else {
+                None
+            }
+        );
+        drop(s);
+        assert_eq!(memory.observation().reserved_bytes, 0);
+    }
+}

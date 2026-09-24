@@ -30,7 +30,7 @@ sets. Static trace extraction consumes the saved fence record; it never parses
 instruction display strings. Concrete execution retains its own supported fence-mode
 check and reports unsupported modes explicitly.
 
-`execution-4` preserves unspecified argument registers as unknown. Stack argument
+`execution-5` preserves unspecified argument registers as unknown. Stack argument
 placement belongs to application; the backend observes those words through memory
 loads with the same initialization and permissions as other guest accesses.
 
@@ -43,3 +43,6 @@ Resolved goals stop at a fetchable symbol address or a selected x1/x5 call trans
 before the callee body; explicit tail inclusion accepts x0 transfers except canonical
 returns. Premature return is `goal-not-reached`. The backend never resolves physical
 symbols, infers function extents or claims an early goal executed its target body.
+
+
+`execution-5` dispatches explicit call-boundary responses through the injected memory port after observe-call goals. It applies psABI caller-saved unknown clobbers and explicit return words, preserves callee-saved/SP/gp/tp, and never resolves bindings or owns model state. Ordinary code and canonical returns retain their instruction paths.

@@ -388,9 +388,9 @@ extern "C" fn runtime_main() -> ! {
         peripherals.FROM_CPU_INTR0,
     )));
 
-    // Bootstrap intentionally hands MIE over clear. Timer and software wake
-    // interrupt ownership is complete at this point.
-    unsafe { asm!("csrsi mstatus, 8", options(nomem, nostack)) };
+    // SAFETY: bootstrap intentionally hands MIE over clear, and timer and
+    // software wake interrupt ownership is complete at this point.
+    unsafe { oer_esp32s31_runtime::enable_interrupts_after_handoff() };
 
     #[cfg(feature = "bluetooth-gatt")]
     bluetooth_gatt::start(
@@ -521,10 +521,10 @@ fn run_app_core(app_interrupt: SoftwareInterrupt<'static, 1>) -> ! {
         psram_task_stack::install_current_hart_interrupt_stack();
     }
     paint_app_core_stack();
-    // Core 1 enters directly from ROM rather than through `_runtime_start`,
-    // so hand global interrupt enable to its executor explicitly after the
-    // per-hart vector state and stack ownership are complete.
-    unsafe { asm!("csrsi mstatus, 8", options(nomem, nostack)) };
+    // SAFETY: Core 1 enters directly from ROM rather than through
+    // `_runtime_start` with MIE clear; its per-hart vector state and stack
+    // ownership are complete, so hand interrupt enable to its executor.
+    unsafe { oer_esp32s31_runtime::enable_interrupts_after_handoff() };
     APP_EXECUTOR
         .init(Executor::<1>::new(app_interrupt))
         .run(|spawner| {

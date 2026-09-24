@@ -106,8 +106,9 @@ extern "C" fn runtime_main() -> ! {
     let executor = EXECUTOR.init(Executor::<0>::new(SoftwareInterrupt::new(
         peripherals.FROM_CPU_INTR0,
     )));
-    // Timer and executor handlers are now bound; the staged handoff kept MIE clear.
-    unsafe { core::arch::asm!("csrsi mstatus, 8", options(nomem, nostack)) };
+    // SAFETY: timer and executor handlers are now bound on CPU0, and the staged
+    // handoff has kept MIE clear since `adopt_psram`.
+    unsafe { oer_esp32s31_runtime::enable_interrupts_after_handoff() };
     executor.run(|spawner| {
         let task = station_task(spawner, radio, trng, watchdog)
             .expect("station task storage must be available once");

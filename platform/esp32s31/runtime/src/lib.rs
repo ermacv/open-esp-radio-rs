@@ -26,6 +26,22 @@ pub unsafe fn adopt_psram(
     }
 }
 
+/// Hand global interrupt enable (`mstatus.MIE`) to the current hart's executor.
+///
+/// The staged handoff keeps MIE clear, so interrupt handlers cannot run
+/// against unbound timer, executor or stack state.
+///
+/// # Safety
+/// Call once per hart, after its interrupt vectors, interrupt stack, timer and
+/// executor handlers are bound. MIE must have stayed clear since that hart
+/// entered the runtime. Earlier enabling can dispatch an interrupt into
+/// uninitialized ownership state.
+pub unsafe fn enable_interrupts_after_handoff() {
+    // SAFETY: the caller guarantees that every handler this hart can dispatch
+    // is bound; setting MIE touches no memory and leaves the stack unchanged.
+    unsafe { core::arch::asm!("csrsi mstatus, 8", options(nomem, nostack)) };
+}
+
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".critical.data.stack_guard")]
 static mut __stack_chk_guard: u32 = 0xDEED_BAAD;

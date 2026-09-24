@@ -137,6 +137,8 @@ pub fn current_hart_interrupt_stack_free_bytes() -> usize {
     );
     let previous: usize;
     // MIE is hart-local. Do not acquire a cross-core lock or scan a foreign stack.
+    // SAFETY: clearing MIE only masks this hart's interrupts; the prior state
+    // is restored below.
     unsafe {
         asm!("csrrci {previous}, mstatus, 8", previous = out(reg) previous, options(nostack))
     };
@@ -144,6 +146,8 @@ pub fn current_hart_interrupt_stack_free_bytes() -> usize {
     // hart uses this allocation; the scanner has a finite capacity and cannot panic.
     let free = unsafe { watermark::free_words(bottom, IRQ_STACK_BYTES / 4) } * 4;
     if previous & 8 != 0 {
+        // SAFETY: restores the MIE state observed on entry; handlers were
+        // already enabled then, so no new dispatch becomes possible.
         unsafe { asm!("csrsi mstatus, 8", options(nostack)) };
     }
     free

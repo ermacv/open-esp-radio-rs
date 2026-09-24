@@ -1,5 +1,52 @@
 use super::*;
 
+#[test]
+fn explicit_guest_register_inputs_allow_spills_without_inventing_unknown_values() {
+    // Entry prelude sets s0, then tail-enters a conventional save/restore leaf.
+    // The alternate entry has the same body but no declared s0 input. A filled
+    // stack cannot turn that unknown register into a known stored value.
+    let f = Fixture::new(&[
+        0x00000413, 0x0080006f, 0x00000013, 0xff010113, 0x00812023, 0x00700513, 0x00012403,
+        0x01010113, 0x00008067,
+    ]);
+    let mut request = f.request();
+    request.vendor.stack.fill = Some(0xa5);
+    request.replacement.as_mut().unwrap().stack.fill = Some(0xa5);
+    request.cases[0].name = "explicit-saved-register".into();
+    let mut unknown = request.cases[0].clone();
+    unknown.name = "undeclared-saved-register".into();
+    unknown.vendor.entry = 0x100c;
+    unknown.replacement.as_mut().unwrap().entry = 0x100c;
+    request.cases.push(unknown);
+    let run = f.run(request, budget());
+    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    let facts = f.read(&run.execution.unwrap());
+    let records = facts["records"].as_array().unwrap();
+    for replacement in [false, true] {
+        let stop = |case| {
+            &records
+                .iter()
+                .find(|r| {
+                    r["value"]["kind"] == "outcome"
+                        && r["value"]["case"] == case
+                        && r["value"]["replacement"] == replacement
+                })
+                .unwrap()["value"]["stop"]
+        };
+        assert_eq!(stop(0)["kind"], "returned");
+        assert_eq!(stop(0)["low"], 7);
+        assert_eq!(stop(1)["kind"], "incomplete");
+        assert_eq!(stop(1)["reason"]["kind"], "unknown-register");
+        assert_eq!(stop(1)["reason"]["register"], 8);
+    }
+    let verdicts: Vec<_> = records
+        .iter()
+        .filter(|r| r["value"]["kind"] == "comparison")
+        .map(|r| r["value"]["result"]["verdict"].as_str().unwrap())
+        .collect();
+    assert_eq!(verdicts, ["MATCH", "INCOMPLETE"]);
+}
+
 fn phases(f: &Fixture, lifetime: RegionLifetime) -> ExecutionRequest {
     let mut request = f.request();
     let first = &mut request.cases[0];

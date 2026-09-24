@@ -10,7 +10,6 @@ struct ProductionTraceDelay;
 impl oer_esp32s31_phy::target_executor::PhyAsyncDelay for ProductionTraceDelay {
     type ShortDelay = oer_esp32s31_phy::RomShortDelay;
 
-
     fn after_micros(
         _kind: oer_esp32s31_phy::executor::wait::Kind,
         micros: u64,
@@ -18,7 +17,6 @@ impl oer_esp32s31_phy::target_executor::PhyAsyncDelay for ProductionTraceDelay {
         super::ets_delay_us(micros as u32);
         ready(())
     }
-
 }
 
 /// Complete production search, including typed I2C transactions and settling.
@@ -125,10 +123,15 @@ pub extern "C" fn open_phy_channel_trace_state(
     cbw: u32,
     output: &mut [u16; 3],
 ) -> u32 {
-    let Ok(state) = trace_channel(channel_or_frequency, cbw) else { return 1; };
+    let Ok(state) = trace_channel(channel_or_frequency, cbw) else {
+        return 1;
+    };
     let parameters = state.calibration_tracking_parameters(None);
-    *output = [state.current_wifi_channel(), state.temperature_observation().value as u16,
-        u16::from(parameters.channel_bandwidth)];
+    *output = [
+        state.current_wifi_channel(),
+        state.temperature_observation().value as u16,
+        u16::from(parameters.channel_bandwidth),
+    ];
     0
 }
 
@@ -183,8 +186,8 @@ pub extern "C" fn open_phy_channel_trace_publish_tx_gain(input: &[u32; 47]) -> u
     };
     let mut radio =
         oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
-    let binding = PhyChipChannelMmioBinding::new(PhyChipChannelAction::PublishTxGain(image))
-        .unwrap();
+    let binding =
+        PhyChipChannelMmioBinding::new(PhyChipChannelAction::PublishTxGain(image)).unwrap();
     binding.execute_target(&mut (), radio.phy_hal_mut());
     0
 }
@@ -195,8 +198,7 @@ pub extern "C" fn open_phy_channel_trace_publish_tx_gain(input: &[u32; 47]) -> u
 #[inline(never)]
 pub extern "C" fn open_phy_bluetooth_trace_tx_gain(input: &[u32; 9], output: &mut [u8; 80]) {
     use oer_esp32s31_phy::calibration::bluetooth::{
-        PhyBluetoothTxGainParameters, PhyBluetoothTxGainPublication,
-        calculate_bluetooth_tx_gain,
+        PhyBluetoothTxGainParameters, PhyBluetoothTxGainPublication, calculate_bluetooth_tx_gain,
     };
     let curve = input[7].to_le_bytes();
     let controls = input[8].to_le_bytes();
@@ -232,10 +234,13 @@ pub extern "C" fn open_phy_calibration_trace_tx_dc_pwdet(
     output: &mut [[u16; 4]; 3],
 ) -> u32 {
     use oer_esp32s31_phy::{
-        target_port::{calibration, NoopPhyTargetObserver},
+        target_port::{NoopPhyTargetObserver, calibration},
         tx::dc_power_detector::*,
     };
-    let parameters = PhyTxDcPwdetParameters { dco: *input, clear_tone_after_ready };
+    let parameters = PhyTxDcPwdetParameters {
+        dco: *input,
+        clear_tone_after_ready,
+    };
     let mut child = if bluetooth {
         PhyTxDcPwdetTransition::new_bluetooth(parameters, tx_path_value)
     } else {
@@ -250,17 +255,22 @@ pub extern "C" fn open_phy_calibration_trace_tx_dc_pwdet(
         &core::cell::RefCell::new(&mut observer),
         || None,
     ) {
-        Ok(()) => {},
+        Ok(()) => {}
         Err(oer_esp32s31_phy::PhyTargetPortError::HardwareEdgeTimedOut) => return 2,
         Err(oer_esp32s31_phy::PhyTargetPortError::RfOperationLimit) => return 6,
         Err(_) => return 3,
     }
     match child.action() {
-        PhyTxDcPwdetAction::Complete(result) => { *output = result.dco; 0 },
+        PhyTxDcPwdetAction::Complete(result) => {
+            *output = result.dco;
+            0
+        }
         PhyTxDcPwdetAction::Failed(PhyTxDcPwdetFailure::Search(
             PhyTxDcPwdetSearchFailure::ToneSar(
-                oer_esp32s31_phy::tx::calibration::PhyToneSarFailure::ReadyObservationLimit { .. }
-            )
+                oer_esp32s31_phy::tx::calibration::PhyToneSarFailure::ReadyObservationLimit {
+                    ..
+                },
+            ),
         )) => 5,
         PhyTxDcPwdetAction::Failed(_) => 4,
         _ => 7,
@@ -356,12 +366,7 @@ pub extern "C" fn open_phy_calibration_trace_dcode(
         let completion = calibration::dcode::<
             <ProductionTraceDelay as oer_esp32s31_phy::target_executor::PhyAsyncDelay>::ShortDelay,
             _,
-        >(
-            child,
-            &mut (),
-            registers,
-            |_| {},
-        )
+        >(child, &mut (), registers, |_| {})
         .map_err(|error| match error {
             oer_esp32s31_phy::PhyTargetPortError::HardwareEdgeTimedOut => 5u32,
             _ => 9u32,
@@ -426,13 +431,8 @@ pub extern "C" fn open_phy_calibration_trace_rx_gain(
     match oer_esp32s31_phy::target_port::calibration::rx_gain_init::<
         oer_esp32s31_phy::RomShortDelay,
         _,
-    >(
-            &mut child,
-            &mut (),
-            radio.phy_hal_mut(),
-            |_, _| {},
-            |_| {},
-        ) {
+    >(&mut child, &mut (), radio.phy_hal_mut(), |_, _| {}, |_| {})
+    {
         Ok(()) => {}
         Err(oer_esp32s31_phy::PhyTargetPortError::HardwareEdgeTimedOut) => return 2,
         Err(oer_esp32s31_phy::PhyTargetPortError::RfOperationLimit) => return 5,
@@ -449,7 +449,10 @@ pub extern "C" fn open_phy_calibration_trace_rx_gain(
         for (destination, source) in output[18..40].chunks_exact_mut(2).zip(dc.shared_index_dc) {
             destination.copy_from_slice(&source);
         }
-        for (destination, source) in output[40..52].chunks_exact_mut(2).zip(dc.rxbb_dc_adjustments) {
+        for (destination, source) in output[40..52]
+            .chunks_exact_mut(2)
+            .zip(dc.rxbb_dc_adjustments)
+        {
             destination.copy_from_slice(&source);
         }
     }
@@ -492,19 +495,22 @@ pub extern "C" fn open_phy_calibration_trace_combined(
         ProductionTraceDelay,
         _,
     >::new(&mut platform, radio.phy_hal_mut(), &mut observer);
-    let mut child =
-        validation::calibration_tracking(&mut state, PhyParamTrackRequest::new(wifi, bluetooth));
-    let status = if embassy_futures::block_on(
-        oer_esp32s31_phy::executor::run_phy_calibration_tracking(&mut child, &mut port),
-    )
-    .is_err()
-    {
-        drop(child);
-        1
-    } else if child.commit().is_err() {
-        2
-    } else {
-        0
+    let status = {
+        let mut child = validation::calibration_tracking(
+            &mut state,
+            PhyParamTrackRequest::new(wifi, bluetooth),
+        );
+        if embassy_futures::block_on(oer_esp32s31_phy::executor::run_phy_calibration_tracking(
+            &mut child, &mut port,
+        ))
+        .is_err()
+        {
+            1
+        } else if child.commit().is_err() {
+            2
+        } else {
+            0
+        }
     };
     snapshot_calibration(&state, output);
 

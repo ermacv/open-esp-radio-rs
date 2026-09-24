@@ -29,6 +29,53 @@ budget per operation. Select kernel mode only in an environment with delegated
 cgroup memory control; watchdog is an explicit sampled-RSS policy. Run JSON files
 are the measurement authority, not this documentation.
 
+## Captured I2C command-memory comparison
+
+[phy_i2c.py](phy_i2c.py) compares the authenticated archive/ROM command initializer
+and its descriptor/no-op leaves with a freshly built production probe ELF. It
+checks all 45 ordered command writes against independent instruction-derived
+expectations on zero, mixed, lower and upper parameter profiles. Descriptor
+outputs are checked byte for byte from both zero and filled initial memory.
+The command bank is an explicit passive register model; analog bus transactions,
+completion timing and RF behavior are outside this scenario.
+
+```console
+cargo xtask build vendor-probes --chip esp32s31
+python3 verification/vendor/projects/esp32s31/phy_i2c.py \
+  --binary target/blobray/blobray --library /private/libphy.a \
+  --rom /private/esp32s31_rev0_rom.elf \
+  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
+  --linker /usr/bin/ld.lld --nm /usr/bin/llvm-nm --limit-mode watchdog \
+  --output target/blobray-phy-i2c
+```
+
+The runner owns scenario construction and independent expected-value assertions;
+ordinary Next application operations own capture, linking, execution, comparison
+and persistence. No provider pack or legacy engine is selected. `--nm` independently
+identifies `phy_param` in the exported linked ELF; inexact source mappings are not
+used to infer that address. All inputs are captured before local source copies
+are removed. The pinned archive/object/table/ROM hashes authenticate vendor inputs;
+the exact production ELF digest identifies the freshly compiled replacement.
+
+An explicit setup entry copies scenario parameters into writable captured memory.
+Warm execution then uses the shipping HAL/PAC command-memory transaction on one
+side and the linked archive root plus captured ROM callees on the other. A retained
+guest entry shim supplies zero values for integer callee-saved registers on both
+sides. This is a declared concrete input: the executor still stops on unknown
+register copies/spills and never initializes them implicitly. The shim may only
+be entered as an isolated root because it destroys its caller's saved registers.
+
+The relation compares all MMIO/fence/delay events and selected final descriptor
+bytes. Void returns, setup addresses, internal branches and stack transactions are
+excluded explicitly. MATCH establishes only this software relation under these
+inputs. Changed replacement input must produce DIFF; an unknown argument must
+produce INCOMPLETE; a missing ROM companion must stop at its unmapped fetch;
+exhausted event capacity must publish no execution. The runner
+also checks moved and restored projects and exact replay of positive and negative
+evidence. Whole-project backup preserves the full closure; the exported table alone
+does not. Operation JSON records carry phase/resource diagnostics. There is no
+hardware or kernel-enforcement claim from a watchdog run.
+
 ## Legacy configuration reference
 
 The configuration and command vocabulary below describe retained legacy inputs;

@@ -1374,6 +1374,17 @@ result after source-free backup/restore. Regression owners are Next
 
 ### Implemented device ownership and completion
 
+Concrete platform scenarios may supply captured guest setup code and register-input
+shims through ordinary execution targets. Their bytes and input words are retained
+dependencies, not implicit engine initialization. A warm phase can consume setup
+writes to captured writable ELF memory; a RAM seed cannot overlap or replace that
+mapping. Unknown register copies/spills still stop execution, including when stack
+memory was filled. The explicit-input regression in
+[session tests](../../next/tests/execution/sessions.rs) checks both paths. The
+[PHY I2C scenario](../../../../verification/vendor/projects/esp32s31/README.md#captured-i2c-command-memory-comparison)
+records this narrower input/observation scope and uses shipping HAL/PAC behavior.
+Chip-specific setup, addresses and expectations stay with the verification owner.
+
 `DeviceDeclaration` is a caller assumption with explicit applicability, stable
 content identity and phase/session lifetime. Application `devices` owns configuration
 clones, admitted mutable banks, transcript cursors and an exact sorted port index.

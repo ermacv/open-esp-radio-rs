@@ -1749,11 +1749,76 @@ pub extern "C" fn open_phy_trace_freq_i2c_mem_write(
     );
 }
 
+/// Execute the shipping command-memory transaction with explicit parameter bytes.
+/// The isolated image constructs its own owner; no private owner layout is part
+/// of the guest ABI. Encoding and all MMIO remain in the production HAL/PAC.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_phy_trace_command_memory(parameters: &[u8; 6]) {
+    let (mut registers, _interrupts) = oer_esp32s31_pac::RadioHardware::for_validation()
+        .into_wifi()
+        .into_running();
+    let inputs = oer_esp32s31_hal::phy::i2c::PhyI2cCommandMemoryInputs::new(
+        parameters[0],
+        parameters[1],
+        parameters[2],
+        parameters[3],
+        parameters[4],
+        parameters[5],
+    );
+    oer_esp32s31_hal::phy::i2c::configure_command_memory(registers.radio_phy_mut(), inputs);
+}
+
+/// Initialize captured mutable parameter memory during an explicit setup phase.
+/// This harness copy supplies scenario inputs; it performs no PHY computation.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_phy_trace_initialize_parameters(
+    destination: &mut [u8; 400],
+    source: &[u8; 400],
+) {
+    destination.copy_from_slice(source);
+}
+
+/// Harness entry with explicit zero-valued integer callee-saved register inputs.
+///
+/// Tail-enter `entry` with `argument` in a0 and the incoming return sentinel.
+/// This avoids making unknown prologue spills into invented values in the
+/// execution engine. It contains no peripheral access or PHY behavior.
+///
+/// # Safety
+/// Only enter as an isolated execution root: this destroys the caller's saved
+/// registers. `entry` must be executable and `argument` valid for that entry.
+#[unsafe(no_mangle)]
+#[unsafe(naked)]
+pub unsafe extern "C" fn open_phy_trace_seeded_entry(entry: u32, argument: u32) {
+    core::arch::naked_asm!(
+        "mv t0, a0",
+        "mv a0, a1",
+        "li s0, 0",
+        "li s1, 0",
+        "li s2, 0",
+        "li s3, 0",
+        "li s4, 0",
+        "li s5, 0",
+        "li s6, 0",
+        "li s7, 0",
+        "li s8, 0",
+        "li s9, 0",
+        "li s10, 0",
+        "li s11, 0",
+        "jr t0",
+    );
+}
+
 /// Retain every exported probe when this crate is linked into the executable
 /// comparison image. This function is harness-only and is never executed by
 /// the PHY driver.
 #[inline(never)]
 pub fn retain_all_probes() {
+    core::hint::black_box(open_phy_trace_command_memory as *const ());
+    core::hint::black_box(open_phy_trace_initialize_parameters as *const ());
+    core::hint::black_box(open_phy_trace_seeded_entry as *const ());
     core::hint::black_box(production_trace::open_phy_channel_trace_state as *const ());
     core::hint::black_box(production_trace::open_phy_channel_trace_calculate_tx_gain as *const ());
     core::hint::black_box(production_trace::open_phy_bluetooth_trace_tx_gain as *const ());

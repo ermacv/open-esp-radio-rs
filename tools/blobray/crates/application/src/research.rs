@@ -52,7 +52,7 @@ fn load<'a>(
         composed: None,
     })
 }
-fn load_records<'a>(
+pub(crate) fn load_records<'a>(
     source: &dyn ByteSource,
     memory: &'a WorkingMemory,
     c: &mut dyn RunControl,

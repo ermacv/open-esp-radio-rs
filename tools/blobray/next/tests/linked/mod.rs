@@ -2016,3 +2016,134 @@ fn image_interface_data_roots_use_the_same_physical_validation_during_review() {
         "accepted"
     );
 }
+
+#[test]
+fn image_function_contracts_reject_data_symbols_and_preserve_review_after_source_removal() {
+    use object::ObjectSection as _;
+    for range in [false, true] {
+        let f = fixture(true, true);
+        let image = prepared(&f);
+        let bytes = export(&f, image.clone());
+        let elf = object::File::parse(bytes.as_slice()).unwrap();
+        let payload = ArtifactId::of_bytes(&bytes);
+        let object = ObjectId {
+            artifact: payload.clone(),
+            location: ObjectLocation::Standalone,
+        };
+        let symbol = |name: &str| {
+            let s = elf.symbol_by_name(name).unwrap();
+            SymbolId {
+                object: object.clone(),
+                table: SymbolTableKind::Static,
+                table_section: elf.section_by_name(".symtab").unwrap().index().0 as u32,
+                index: s.index().0 as u64,
+            }
+        };
+        let entry = elf.symbol_by_name("entry").unwrap();
+        let selector = if range {
+            FunctionSelector::Range {
+                object: object.clone(),
+                section: entry.section_index().unwrap().0 as u32,
+                extent: CodeRange {
+                    start: entry.address(),
+                    length: entry.size(),
+                },
+            }
+        } else {
+            symbol("entry").into()
+        };
+        let p: KnowledgeProposal = serde_json::from_value(serde_json::json!({
+            "subject":"image.function","occurrence":{"revision":f.revision,"source":{"kind":"image","image":image},"object":object,"symbol":selector.symbol()},
+            "claim":{"kind":"function","contract":{"selector":selector,"abi":"riscv-integer","signature":null,
+                "name":"entry","role":null,"return_role":null,"summary":"exact entry identity with unknown signature",
+                "contexts":[],"preconditions":[],"applicability":"captured fixture only"}},
+            "evidence":[{"kind":"source","payload":payload,"range":{"start":0,"length":bytes.len()}}],"note":null
+        })).unwrap();
+        let change = |proposal| KnowledgeChange {
+            expected_base: None,
+            actor: "fixture".into(),
+            reason: "captured function identity".into(),
+            action: KnowledgeAction::Propose { proposal },
+        };
+        for which in 0..3 {
+            let mut bad = p.clone();
+            bad.occurrence.symbol = None;
+            let KnowledgeClaim::Function { contract } = &mut bad.claim else {
+                panic!()
+            };
+            let mut s = symbol("value");
+            match which {
+                0 => (),
+                1 => s.index = u64::MAX,
+                _ => s.table = SymbolTableKind::Dynamic,
+            }
+            contract.selector = s.into();
+            let failed = f
+                .app
+                .start_knowledge(&f.project, &change(bad), budget())
+                .unwrap()
+                .wait();
+            assert_eq!(failed.state, RunState::Failed, "{failed:?}");
+            assert!(failed.knowledge.is_none());
+            assert!(
+                cli(&f, &["knowledge", "show"])["records"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        let proposed = f
+            .app
+            .start_knowledge(&f.project, &change(p.clone()), budget())
+            .unwrap()
+            .wait();
+        assert_eq!(proposed.state, RunState::Completed, "{proposed:?}");
+        let entries = cli(&f, &["knowledge", "show"]);
+        let assertion = entries["records"][0]["value"]["id"].as_str().unwrap();
+        for path in fs::read_dir(f.dir.path()).unwrap() {
+            let path = path.unwrap().path();
+            if path.is_file()
+                && matches!(path.extension().and_then(|s| s.to_str()), Some("o" | "a"))
+            {
+                fs::remove_file(path).unwrap();
+            }
+        }
+        let accepted = cli(
+            &f,
+            &[
+                "knowledge",
+                "accept",
+                "--base",
+                proposed.knowledge.unwrap().as_str(),
+                "--assertion",
+                assertion,
+                "--actor",
+                "fixture",
+                "--reason",
+                "physical entry only",
+            ],
+        );
+        let revision = accepted["run"]["knowledge"].as_str().unwrap();
+        let saved = cli(&f, &["knowledge", "show", "--revision", revision]);
+        assert_eq!(
+            saved["records"][0]["value"]["proposal"],
+            serde_json::to_value(p).unwrap()
+        );
+        let output = f.dir.path().join("function-contract.json");
+        cli(
+            &f,
+            &[
+                "knowledge",
+                "export",
+                "--revision",
+                revision,
+                "--output",
+                output.to_str().unwrap(),
+            ],
+        );
+        assert_eq!(
+            cli(&f, &["knowledge", "show", "--revision", revision]),
+            saved
+        );
+    }
+}

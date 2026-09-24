@@ -48,31 +48,11 @@ pub enum InterfaceGuard {
     },
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum InterfaceValueType {
-    Void,
-    Integer { bits: u8, signed: bool },
-    Pointer { nullable: bool },
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InterfaceArgument {
-    pub role: SubjectId,
-    pub value_type: InterfaceValueType,
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InterfaceSignature {
-    pub arguments: Vec<InterfaceArgument>,
-    pub result: InterfaceValueType,
-    pub variadic: bool,
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InterfaceSlot {
     pub offset: u32,
     pub name: String,
-    pub signature: Option<InterfaceSignature>,
+    pub signature: Option<CallSignature>,
     /// Reviewed semantic identity. It does not select an execution model or callee.
     pub semantic: Option<SubjectId>,
 }
@@ -124,7 +104,7 @@ impl InterfaceContract {
                     .signature
                     .as_ref()
                     .map_or(0, |s| s.arguments.capacity())
-                    * std::mem::size_of::<InterfaceArgument>()) as u64;
+                    * std::mem::size_of::<CallArgument>()) as u64;
             if let Some(signature) = &slot.signature {
                 for arg in &signature.arguments {
                     bytes += arg.role.allocated_bytes();
@@ -193,7 +173,7 @@ pub struct InterfaceBinding {
     pub state: AssertionState,
     pub name: String,
     pub semantic: Option<SubjectId>,
-    pub signature: Option<InterfaceSignature>,
+    pub signature: Option<CallSignature>,
     pub conditions: InterfaceConditions,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -225,15 +205,4 @@ pub struct InterfaceSummary {
     pub ambiguous_bindings: u64,
     pub matched_accepted: u64,
     pub conditional: u64,
-}
-
-impl InterfaceSignature {
-    pub fn allocated_bytes(&self) -> u64 {
-        (self.arguments.capacity() * std::mem::size_of::<InterfaceArgument>()) as u64
-            + self
-                .arguments
-                .iter()
-                .map(|a| a.role.allocated_bytes())
-                .sum::<u64>()
-    }
 }

@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 14
-and database schema 13 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 15
+and database schema 14 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -831,8 +831,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 13
-and journal schema 14 carry these identities. Old formats are rejected without
+Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 14
+and journal schema 15 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -972,3 +972,63 @@ and `captured_symbol_less_pointer_slots_match_only_selected_structural_declarati
 cover shared API/CLI, review states, conditional matches and source removal. The real
 `phy_research.py` checks the independently read ROM global/slot path, explicit unknown
 signature, acceptance and byte-identical query export after backup/restore.
+
+
+### Function/context declaration boundary (implemented profile)
+
+A function contract belongs to one exact captured function selector and occurrence.
+It shares the integer/pointer call-signature vocabulary with interface slots; it
+adds function/return roles, named argument contexts and field layouts, applicability
+and explicit preconditions. A missing signature stays unknown. Context offsets are
+signed and bounded by an explicit extent; fields have byte widths, optional types
+and declared read/write roles. These are reviewed interpretations, not substituted
+analysis facts, allocation ownership or execution permissions.
+
+Typed argument predicates constrain raw ABI bit patterns (inclusive ranges and
+masked equalities); context predicates constrain explicitly located bytes. Bounds,
+contradictions and unsupported representations must fail admission. An uninterpreted
+named assumption remains attributed text, never an evaluated predicate. Review does
+not turn any precondition into an observed runtime fact. Pure validation and conflict
+checks belong to knowledge, captured selector/evidence validation to application,
+and immutable review publication to store. No frontend owns a second validator.
+
+Saved facts do not change when a function contract is accepted. Read/export must
+retain exact occurrence, evidence and review identities after source removal. A
+contract with the same physical selector and incompatible interpretation requires
+explicit review replacement. Alias equivalence cannot be inferred from a display
+name. Narrative paths and event-route witnesses are separate assertions with their
+own evidence; this declaration alone does not prove an executable route.
+
+
+`KnowledgeClaim::Function` boxes one `FunctionContract`; `CallSignature`,
+`CallArgument` and `AbiValueType` are shared with interface slots. Application
+validates the exact symbol or executable range through the captured prepared-object
+owner, including image and thin-member occurrences. A data symbol cannot stand in
+for a function. The signature has at most 32 arguments; the contract has at most
+16 contexts, 128 fields in total and 64 preconditions, inside the same 64 KiB event
+limit. Store accounts boxed and variable capacities with its knowledge snapshot.
+
+The RV32 integer profile allows 8/16/32/64-bit integer and pointer values. Context
+fields may have unknown types; known types must match their widths. Packed fields
+are permitted but overlapping field declarations require another explicit profile
+and are rejected here. A known signature's context argument must be a pointer;
+unknown signatures do not invent arity or return types. A return role requires an
+explicit non-void return type. Context read/write roles are declarations, never
+substitutes for retained observed accesses.
+
+Argument range/mask predicates require explicit signature types. Bit ranges are
+unsigned even for signed ABI values, and non-null pointer types exclude zero.
+Admission intersects ranges and masks using a fixed 64-bit tight-bound solver;
+it does not enumerate the input domain. Little-endian context predicates reject
+contradictions across overlapping byte/halfword/word/doubleword views. Assumptions
+have unique attributed IDs and remain uninterpreted. None of these checks asserts
+runtime satisfaction or modifies analysis identity/results.
+
+Contract regressions: knowledge `functions::tests` independently enumerates small
+predicate domains and checks 64-bit boundaries, layout/type errors and contradictory
+predicates; Next
+`function_contracts_validate_review_and_export_exact_symbols_ranges_and_contexts`
+and `image_function_contracts_reject_data_symbols_and_preserve_review_after_source_removal`
+cover ordinary/thin/image capture, shared CLI/API, resource/conflict atomicity and
+source-free review/export. Signature validation also remains covered by the native
+interface regressions through the shared `calls` validator.

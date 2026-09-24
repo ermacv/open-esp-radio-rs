@@ -38,3 +38,11 @@ interpretations. Acceptance concerns the captured layout, not resolved callback
 semantics or hardware behavior; application validates physical bytes/evidence.
 
 The private `interfaces` validator admits bounded RV32 interface declarations and rejects malformed/contradictory guards, unsupported slot signatures and conflicting static layouts. Runtime conditions remain declared preconditions after review; this crate cannot assert their satisfaction.
+
+
+`functions` validates physical-selector function contracts, argument contexts and
+preconditions. `calls` owns one shared integer/pointer signature profile for direct
+functions and interface slots. Context layouts, overlapping byte predicates and
+argument range/mask intersections are bounded and checked before acceptance.
+Unknown signatures/types remain unknown; declared predicates are never observed
+runtime facts. Application supplies the captured function and evidence validation.

@@ -47,7 +47,7 @@ use std::{
 };
 
 const STATE: &str = ".blobray-next";
-const SCHEMA: i64 = 13;
+const SCHEMA: i64 = 14;
 
 /// A project handle owns no source-file handles or mutable inventory cache.
 #[derive(Clone)]
@@ -97,7 +97,7 @@ pub(crate) fn sync_dir(path: &Path) -> Result<()> {
 }
 
 impl Project {
-    /// Initialize private schema-13 metadata with schema-1 revision manifests. An existing state directory is never reset.
+    /// Initialize private schema-14 metadata with schema-1 revision manifests. An existing state directory is never reset.
     pub fn create(path: &Path) -> Result<Self> {
         fs::create_dir_all(path).map_err(io)?;
         let destination = path.join(STATE);

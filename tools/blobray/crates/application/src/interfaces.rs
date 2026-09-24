@@ -110,7 +110,7 @@ impl<'a> Bindings<'a> {
                         + slot
                             .signature
                             .as_ref()
-                            .map_or(0, InterfaceSignature::allocated_bytes),
+                            .map_or(0, CallSignature::allocated_bytes),
                 )
                 .ok_or_else(|| invalid("interface binding capacity overflow"))?;
         }
@@ -190,10 +190,7 @@ pub(crate) fn discover(
                 ambiguous_bindings: 0,
                 conditional: 0,
             };
-            let mut records = RecordBuffer::new(memory);
-            blobray_store::visit_jsonl::<FunctionRecord>(&lease.records, c, |record, c| {
-                records.push(record, c.position())
-            })?;
+            let records = crate::research::load_records(&lease.records, memory, c)?;
             blobray_analysis::interfaces::discover(
                 &records,
                 recipe,

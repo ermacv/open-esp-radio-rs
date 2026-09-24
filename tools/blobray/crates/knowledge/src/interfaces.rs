@@ -3,13 +3,6 @@ use super::*;
 fn text(value: &str) -> bool {
     !value.trim().is_empty() && value.len() <= 4096 && !value.chars().any(char::is_control)
 }
-fn value_type(value: &InterfaceValueType, result: bool) -> bool {
-    match value {
-        InterfaceValueType::Void => result,
-        InterfaceValueType::Integer { bits, .. } => matches!(bits, 8 | 16 | 32 | 64),
-        InterfaceValueType::Pointer { .. } => true,
-    }
-}
 pub(super) fn validate(p: &KnowledgeProposal, d: &InterfaceContract) -> Result<()> {
     if !text(&d.layout_version)
         || !text(&d.purpose)
@@ -142,18 +135,8 @@ pub(super) fn validate(p: &KnowledgeProposal, d: &InterfaceContract) -> Result<(
                 "interface slots must have unique names and aligned nonoverlapping layout ranges",
             ));
         }
-        if let Some(signature) = &slot.signature
-            && (signature.variadic
-                || !value_type(&signature.result, true)
-                || signature
-                    .arguments
-                    .iter()
-                    .any(|a| !value_type(&a.value_type, false)))
-        {
-            return Err(Error::new(
-                ErrorCode::Incompatible,
-                "unsupported interface signature; integer/pointer nonvariadic profile required",
-            ));
+        if let Some(signature) = &slot.signature {
+            calls::validate(signature)?;
         }
     }
     for (i, guard) in d.guards.iter().enumerate() {
@@ -286,9 +269,9 @@ mod tests {
                         offset: 4,
                         name: "callback".into(),
                         semantic: Some("fixture.callback".to_owned().try_into().unwrap()),
-                        signature: Some(InterfaceSignature {
+                        signature: Some(CallSignature {
                             arguments: vec![],
-                            result: InterfaceValueType::Integer {
+                            result: AbiValueType::Integer {
                                 bits: 32,
                                 signed: false,
                             },
@@ -326,7 +309,7 @@ mod tests {
                 0 => d.pointer_bytes = 8,
                 1 => d.slots[0].signature.as_mut().unwrap().variadic = true,
                 2 => {
-                    d.slots[0].signature.as_mut().unwrap().result = InterfaceValueType::Integer {
+                    d.slots[0].signature.as_mut().unwrap().result = AbiValueType::Integer {
                         bits: 128,
                         signed: false,
                     }

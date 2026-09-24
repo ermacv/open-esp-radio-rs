@@ -48,7 +48,18 @@ fn validate_evidence(
                 KnowledgeClaim::FunctionExtent { extent } => Some(extent),
                 _ => None,
             };
-            if let KnowledgeClaim::Interface { contract } = &proposal.claim {
+            if let KnowledgeClaim::Function { contract } = &proposal.claim {
+                let request = FunctionRequest {
+                    research: None,
+                    revision: Some(occurrence.revision.clone()),
+                    source: occurrence.source.clone(),
+                    selector: contract.selector.clone(),
+                    extent: None,
+                };
+                capture.with_prepared(memory, c, |object, c| {
+                    object.with_function(&request, c, |_, _| Ok(()))
+                })?;
+            } else if let KnowledgeClaim::Interface { contract } = &proposal.claim {
                 capture.with_prepared(memory, c, |object, c| {
                     for guard in &contract.guards {
                         c.checkpoint(1)?;

@@ -433,3 +433,19 @@ qualification.
 This structural scenario does not claim callback execution or hardware behavior.
 Runtime interface instances and service completion belong to the target execution
 workflow, not to the read query's success condition.
+
+
+## Function and argument-context review (implemented profile)
+
+Select a captured function symbol or explicit executable range. Propose its native
+function contract with retained evidence, known or unknown signature, argument
+contexts, field roles and caller preconditions. Validate through the shared read
+query, then apply/review against an explicit knowledge base. Conflicting accepted
+interpretations require explicit supersession; invalid physical identities or
+contradictory layout/predicates publish no knowledge revision.
+
+Query/export the accepted revision after source removal. Review preserves the
+interpretation and never rewrites the saved function analysis or supplies observed
+runtime preconditions. Field navigation and route witnesses consume explicit
+reviewed declarations through their own query contracts; declaration alone does
+not assert a call path, executable route or behavioral equivalence.

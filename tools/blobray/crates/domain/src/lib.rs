@@ -409,6 +409,10 @@ pub use semantics::*;
 mod investigation;
 pub use investigation::*;
 
+mod call_contract;
+pub use call_contract::*;
+mod function_contract;
+pub use function_contract::*;
 mod interfaces;
 pub use interfaces::*;
 mod knowledge;

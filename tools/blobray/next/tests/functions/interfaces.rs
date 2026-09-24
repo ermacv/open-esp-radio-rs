@@ -22,15 +22,15 @@ fn declaration(root: InterfaceRoot, payload: ArtifactId) -> InterfaceContract {
             offset: 4,
             name: "callback".into(),
             semantic: Some("fixture.callback".to_owned().try_into().unwrap()),
-            signature: Some(InterfaceSignature {
-                arguments: vec![InterfaceArgument {
+            signature: Some(CallSignature {
+                arguments: vec![CallArgument {
                     role: "fixture.input".to_owned().try_into().unwrap(),
-                    value_type: InterfaceValueType::Integer {
+                    value_type: AbiValueType::Integer {
                         bits: 32,
                         signed: false,
                     },
                 }],
-                result: InterfaceValueType::Integer {
+                result: AbiValueType::Integer {
                     bits: 32,
                     signed: false,
                 },
@@ -41,7 +41,7 @@ fn declaration(root: InterfaceRoot, payload: ArtifactId) -> InterfaceContract {
         applicability: "only this captured occurrence and declared guards".into(),
     }
 }
-fn cli(f: &Fixture, args: &[&str]) -> serde_json::Value {
+pub(super) fn cli(f: &Fixture, args: &[&str]) -> serde_json::Value {
     let out = Command::new(env!("CARGO_BIN_EXE_blobray"))
         .args(["--format", "json", args[0], "--project"])
         .arg(&f.project)
@@ -246,7 +246,7 @@ fn observe(f: &Fixture, request: &InterfaceQuery) -> serde_json::Value {
     fs::write(&file, serde_json::to_vec(request).unwrap()).unwrap();
     cli(f, &["interfaces", "--request", file.to_str().unwrap()])
 }
-fn propose(
+pub(super) fn propose(
     f: &Fixture,
     proposal: KnowledgeProposal,
     base: Option<KnowledgeRevisionId>,
@@ -265,7 +265,7 @@ fn propose(
         .unwrap()
         .wait()
 }
-fn review(
+pub(super) fn review(
     f: &Fixture,
     base: KnowledgeRevisionId,
     id: AssertionId,

@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 13 and journal schema 14. Earlier and future
+Projects require metadata schema 14 and journal schema 15. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,8 +712,8 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 14 for every durable and read operation. Storage metadata
-uses schema 13; revision manifests use schema 1 and execution manifests use schema
+Run records use schema 15 for every durable and read operation. Storage metadata
+uses schema 14; revision manifests use schema 1 and execution manifests use schema
 1. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-14 run; an envelope version is not a journal
+execution 7) wrap the same schema-15 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1776,3 +1776,66 @@ occurrence and payload, the observation's path/slot and its source analysis reco
 as evidence. Use the existing validate/apply/accept lifecycle, then repeat the query
 with that explicit knowledge revision. Export preserves these identities and review
 states; retain the project for transitive evidence and source-free reopening.
+
+
+### Reviewed function and context contracts
+
+The `function` knowledge claim uses the same `knowledge validate/apply/accept/show/export`
+lifecycle as interface declarations. Its `selector` is an exact symbol or executable
+range in the proposal's captured occurrence. Example claim (substitute the physical
+selector obtained from inventory or a saved function recipe):
+
+```json
+{
+  "kind": "function",
+  "contract": {
+    "selector": {"kind": "symbol", "symbol": "<physical SymbolId object>"},
+    "abi": "riscv-integer",
+    "signature": {
+      "arguments": [{"role": "project.context", "value_type": {"kind": "pointer", "nullable": false}}],
+      "result": {"kind": "void"}, "variadic": false
+    },
+    "name": "copy_field", "role": "project.copy", "return_role": null,
+    "summary": "Conditional context-field interpretation",
+    "contexts": [{
+      "argument": 0, "name": "state", "start": 0, "length": 12,
+      "fields": [
+        {"offset": 4, "width": 4, "name": "input", "value_type": {"kind": "integer", "bits": 32, "signed": false}, "access": "read", "role": null},
+        {"offset": 8, "width": 4, "name": "output", "value_type": null, "access": "write", "role": null}
+      ]
+    }],
+    "preconditions": [{"kind": "argument-bits", "argument": 0, "mask": 3, "value": 0, "reason": "Caller supplies aligned storage"}],
+    "applicability": "Selected captured function and declared caller obligations"
+  }
+}
+```
+
+Wrap the claim in a `KnowledgeChange` proposal with exact occurrence and retained
+source/analysis evidence, then validate and review it. Data symbols, stale physical
+selectors, invalid fields, contradictory predicates and incompatible accepted
+contracts fail before publication. Explicit review supersession is required to
+replace a conflicting interpretation; there is no implicit merge of field layouts.
+
+`signature: null` leaves the call signature unknown. The shared signature profile
+supports up to 32 integer/pointer arguments; declaration does not assert execution
+support for every ABI placement. Function/argument/return roles are reviewed subject
+keys. A return role needs an explicit non-void return. Context arguments are zero
+based; a known signature must identify them as pointers. Signed context starts
+allow explicit prefixes before the argument pointer. Fields must fit their context,
+have width 1/2/4/8, unique names and nonoverlapping ranges. Known field types must
+match width; null preserves an unknown type. `read`, `write` and `read-write` are
+asserted roles, not access permissions or observations.
+
+Preconditions are `argument-range` (inclusive `min`/`max`), `argument-bits`
+(`mask`/`value`), `context-bits` (`argument`, signed `offset`, `width`, `mask`, `value`)
+or `assumption` (`id`, `statement`). Each has a required `reason`. Argument predicates
+require a known signature and operate on unsigned raw bit patterns, including for
+signed ABI types. Non-null pointers exclude zero. Context bits use little-endian
+byte interpretation; overlapping contradictory requirements are rejected. Named
+assumptions are uninterpreted, not evaluated expressions. Limits are 16 contexts,
+128 fields total and 64 predicates, within the common 64 KiB admission message.
+
+Acceptance preserves a conditional interpretation and its evidence. It neither
+changes saved analysis facts nor marks preconditions as observed. Explicit-revision
+knowledge queries/exports work after removal of source archives and image inputs;
+project backup is still required for the complete retained evidence closure.

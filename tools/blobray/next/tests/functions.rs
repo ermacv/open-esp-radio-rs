@@ -968,3 +968,6 @@ mod reports;
 
 #[path = "functions/ranges.rs"]
 mod ranges;
+
+#[path = "functions/contracts.rs"]
+mod contracts;

@@ -658,3 +658,14 @@ selected reads cannot MATCH. Model/service memory effects retain their explicit
 assumption provenance; setup and inspection are excluded. Physical branch sites
 compare exactly; reviewed cross-layout/ABI/control correspondence remains the next
 profile, with no automatic normalization.
+
+### Reviewed layout comparison — implemented finite profile
+
+Capture both linked entries → propose explicit paired fields/branches (or call ABI
+word positions) → review → select the exact accepted snapshot in the comparison.
+Capture requested final ranges/timeline channels and execute through the shared
+application workflow. Compare keeps raw physical observations and explicit unknowns;
+unmapped selected effects cannot MATCH. Different addresses/word positions can match
+only under the selected mapping. Query, move, backup/restore and replay preserve
+that frozen scope independently of subsequent knowledge changes. Arbitrary type,
+pointer-value and dynamic-path conversions are not part of this profile.

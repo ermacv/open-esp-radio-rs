@@ -745,6 +745,9 @@ pub fn prepare_query_with_tools(
                         started_ms: work.started_ms,
                         deadline_ms: work.deadline_ms,
                     },
+                    decoder.ok_or_else(|| {
+                        Error::new(ErrorCode::Incompatible, "knowledge decoder unavailable")
+                    })?,
                     &memory,
                     &disk,
                     control,
@@ -774,7 +777,15 @@ pub fn prepare_query_with_tools(
             ReadQuery::ImportLegacy { request } => QuerySummary::Preservation {
                 restored: true,
                 summary: crate::legacy::prepare_legacy(
-                    stage, work, request, &memory, &disk, control,
+                    stage,
+                    work,
+                    request,
+                    decoder.ok_or_else(|| {
+                        Error::new(ErrorCode::Incompatible, "knowledge decoder unavailable")
+                    })?,
+                    &memory,
+                    &disk,
+                    control,
                 )?,
             },
             ReadQuery::Legacy => {

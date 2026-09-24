@@ -64,7 +64,7 @@ fn proposal(pair: &CallCorrespondence) -> KnowledgeProposal {
         note: None,
     }
 }
-fn proposed_id(f: &Fixture, run: app::RunRecord) -> CallPairReview {
+pub(super) fn proposed_id(f: &Fixture, run: app::RunRecord) -> CallPairReview {
     assert_eq!(run.state, RunState::Completed, "{run:?}");
     let revision = run.knowledge.unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_blobray"))
@@ -429,7 +429,12 @@ fn modeled_pair_identity_and_phase_ownership_are_part_of_applicability() {
         definition: other.calls[0].identity(&mut || Ok(())).unwrap(),
     };
     // Unknown caller-saved arguments after a response are excluded by this reviewed policy.
-    pair.arguments = CallArguments::Selected { words: vec![0] };
+    pair.arguments = CallArguments::Projected {
+        words: vec![CallWordPair {
+            vendor: 0,
+            replacement: 0,
+        }],
+    };
     let accepted = review(&f, propose(&f, &pair, None, true), ReviewDecision::Accept);
     select(&mut r, accepted);
     let mut warm = r.cases[0].clone();
@@ -552,4 +557,89 @@ fn duplicate_accepted_endpoint_selections_are_ambiguous_without_changing_frozen_
     let failed = f.run(r, budget());
     assert_eq!(failed.error.unwrap().code, ErrorCode::Conflict);
     assert!(failed.execution.is_none());
+}
+
+#[test]
+fn reviewed_word_projection_maps_register_and_stack_positions_without_dropping_unknowns() {
+    let (f, mut r, mut pair) = setup();
+    pair.arguments = CallArguments::Projected {
+        words: vec![
+            CallWordPair {
+                vendor: 0,
+                replacement: 1,
+            },
+            CallWordPair {
+                vendor: 7,
+                replacement: 8,
+            },
+        ],
+    };
+    r.cases[0].vendor.arguments = vec![None; 8];
+    r.cases[0].vendor.arguments[0] = Some(7);
+    r.cases[0].vendor.arguments[7] = Some(42);
+    let right = r.cases[0].replacement.as_mut().unwrap();
+    right.arguments = vec![None; 9];
+    right.arguments[1] = Some(7);
+    right.arguments[8] = Some(42);
+    right.observe_calls.as_mut().unwrap().argument_words = 9;
+    let accepted = review(&f, propose(&f, &pair, None, true), ReviewDecision::Accept);
+    select(&mut r, accepted);
+    r.cases[0]
+        .relation
+        .as_mut()
+        .unwrap()
+        .reviewed_calls
+        .as_mut()
+        .unwrap()
+        .unlisted = UnlistedCalls::Exclude;
+    assert_eq!(run(&f, r.clone()).0.verdict, Some(ComparisonVerdict::Match));
+    super::comparison::check_preservation(&f, r.clone());
+    r.cases[0].replacement.as_mut().unwrap().arguments[8] = Some(43);
+    assert_eq!(run(&f, r.clone()).0.verdict, Some(ComparisonVerdict::Diff));
+    r.cases[0].replacement.as_mut().unwrap().arguments[8] = None;
+    assert_eq!(
+        run(&f, r.clone()).0.verdict,
+        Some(ComparisonVerdict::Incomplete)
+    );
+    r.cases[0]
+        .replacement
+        .as_mut()
+        .unwrap()
+        .observe_calls
+        .as_mut()
+        .unwrap()
+        .argument_words = 8;
+    let failed = f.run(r, budget());
+    assert_eq!(failed.state, RunState::Failed);
+    assert!(failed.execution.is_none());
+    for words in [
+        vec![
+            CallWordPair {
+                vendor: 0,
+                replacement: 1,
+            },
+            CallWordPair {
+                vendor: 0,
+                replacement: 2,
+            },
+        ],
+        vec![
+            CallWordPair {
+                vendor: 0,
+                replacement: 1,
+            },
+            CallWordPair {
+                vendor: 2,
+                replacement: 1,
+            },
+        ],
+        vec![CallWordPair {
+            vendor: 256,
+            replacement: 1,
+        }],
+        vec![],
+    ] {
+        pair.arguments = CallArguments::Projected { words };
+        assert!(pair.validate().is_err());
+    }
 }

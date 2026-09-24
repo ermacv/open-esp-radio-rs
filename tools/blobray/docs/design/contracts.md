@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 32
-and database schema 31 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 33
+and database schema 32 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -43,7 +43,7 @@ Unknown structure remains explicit and does not become a zero-byte observation.
 transfers remain separately counted. Comparison retains its explicit relation:
 per-case event channels, low/high return words, exact paired final-memory
 selections, physical or reviewed call correspondence and the selected internal
-physical timeline. Cross-layout/ABI projections remain an explicit target profile.
+physical timeline and explicitly reviewed layout/ABI projections.
 
 ### Durable and ephemeral acquisition
 
@@ -753,7 +753,7 @@ Domain validates stack geometry and computes entry SP; application initializes
 stack arguments in its freshly owned stack, and passes eight optional register
 words to the backend. Unknown argument slots override stack seeds. No register or
 stack word becomes zero by omission, and setup emits no guest events. The caller
-owns type/variadic lowering. Request and manifest schema 13 pin this interpretation;
+owns type/variadic lowering. Request and manifest schema 14 pin this interpretation;
 producer identity pins both backend unknown-value semantics and stack environment.
 
 `ExecutionMemory` also owns LR/SC reservation state, permission checks and indivisible
@@ -868,8 +868,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 31
-and journal schema 32 carry these identities. Old formats are rejected without
+Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 32
+and journal schema 33 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -1662,8 +1662,8 @@ borrows grouped slices without allocating or rescanning preceding calls. The
 CLI, persistence, word/effect differences and resource atomicity;
 [store validation](../../crates/store/src/execution_capture.rs) rejects malformed
 groups. Reviewed semantic pairs require a separately selected accepted correspondence;
-ABI/layout projections remain a target relation. Neither is inferred by this
-physical profile.
+ABI/layout projections require their explicit reviewed relation below. Neither is
+inferred by this physical profile.
 
 ### Reviewed call correspondence
 
@@ -1749,8 +1749,8 @@ also retain their execution gap and cannot establish completed equality. Success
 stores, LR/SC/RMW and declared model effects are ordered with selected calls/MMIO/
 fence/delay. Setup/inspection cannot add extra guest effects. A known prefix
 difference can establish DIFF; equal final memory cannot erase a different selected
-timeline. Capture failure aborts the entire publication. Reviewed projections are
-owned by the next acceptance unit.
+timeline. Capture failure aborts the entire publication. Reviewed projections use
+the separate explicit contract below.
 
 `Invocation.observe_timeline` contains explicit `reads`, `writes`, `atomics` and
 `branches` booleans. `ComparisonRelation.events.timeline` independently selects
@@ -1784,7 +1784,7 @@ execution from the transcript. A claimed completed outcome plus an unknown selec
 read still cannot admit MATCH. Verification borrows transactions and compares
 normal-memory values without including source PC/origin as an implicit equality
 condition. Branch comparison is exact physical control comparison; differing code
-addresses require an explicit future reviewed projection.
+addresses require an explicitly selected accepted projection.
 
 [Timeline regressions](../../next/tests/execution/timeline.rs) cover all widths,
 AMO/orderings and LR/SC, ordinary/compressed branches, intermediate differences
@@ -1793,3 +1793,79 @@ memory, capacity, cancellation and source-free restore/replay.
 [Store validation](../../crates/store/src/execution_timeline.rs) rejects malformed
 or unrequested transcripts and invented MATCH; application verifies capacity before
 atomic callback/mutation. No elapsed-time or real hardware equivalence is implied.
+
+
+### Reviewed layout and ABI projections
+
+`CallArguments::Projected` contains a nonempty bounded list of unique vendor and
+replacement ABI word positions. Each pair compares the exact 32-bit word, including
+pointer bits; positions can cross a0–a7 and the captured stack argument area. Both
+capture widths must include every selected position. Duplicate positions, out-of-range
+words and unknown selected values cannot establish equality. Unselected words stay
+in raw call groups. `CallArgument.word` identifies the selected pair ordinal for
+this policy; its immutable correspondence resolves both physical positions. These
+projections share the existing call-pair review and model/service definition checks.
+
+`KnowledgeClaim::LayoutProjection` owns two exact captured code entry occurrences,
+explicit normal-memory address domains, paired byte fields and conditional branch
+coordinates, with applicability and reason. Entry boundaries must be physical code
+symbols in retained linked executables. Domain/field declarations are reviewed
+runtime layout assumptions, not claims that the ELF contains initialized data there.
+The session's normal-memory permissions and byte knownness remain authoritative.
+The selected execution source/revision and entry must match each endpoint; changing
+an entry, source or selected review cannot silently reuse a projection.
+
+At most 128 fields, domains per side and branches are accepted. Domains are bounded,
+nonempty and nonoverlapping, and every domain has a declared field. Field names are
+unique labels, never resolvers. Each field declares a domain index and offset per
+side, equal element width 1/2/4/8, a nonzero `count`, and `final_state`/`timeline`
+participation. Checked width × count defines the field/array span; all projected
+spans together are limited to 1 MiB. Both aligned field
+ranges must fit their domains; overlapping aliases or unused fields are rejected.
+All declared final fields require captured snapshots containing every byte and
+cannot overlap a physical whole-selection comparison. Unknown padding outside the
+selected fields stays in evidence without claiming it is equal.
+
+Branches declare site, target and fallthrough on each side. Application borrows
+executable bytes from artifacts and checks them through the supplied ISA decoder
+on both proposal and review. No backend dependency or decoder implementation lives
+in application/artifacts. Duplicate branch sites, invalid instruction geometry and
+coordinates differing from captured instructions fail before publication. Projected
+branches compare the paired identity and the same taken decision; predicate inversion
+or different dynamic path shapes are not inferred.
+
+The case selects one immutable `ProjectionReview` in `ComparisonRelation.projection`.
+All field/branch scopes declared by that projection participate; a final-only profile
+is explicit. Store loads accepted snapshots into operation-owned admitted vectors,
+validates applicability and preserves resolved contracts in the execution manifest.
+A later knowledge head cannot change that selection. Generic proposal, specialized
+`start_propose_projection`, CLI `knowledge propose-projection --request`, review,
+query, compare and replay share this lifecycle. No automatic acceptance occurs.
+
+Verification borrows the selected contract and observations. Final fields compare
+all selected known bytes at completed goals. Timeline memory is mapped to field and
+within-field offset, retaining transaction kind, width, values and atomic order/outcome.
+An effect must fit wholly inside one selected field/array; bulk allocation initialization
+is not implicitly split or coalesced. Pointer values are compared exactly, never
+rebased because their storage address moved. Branch/memory observations stay in the
+same ordered stream as selected calls/MMIO/fence/delay. An unmapped selected memory
+or branch observation makes equality unknown rather than disappearing or falling
+back to physical equality. Known mapped differences remain DIFF; unknown bytes or
+unfinished code/model obligations cannot MATCH.
+
+Store independently reconstructs a bounded sorted index of selected final-byte
+intervals, validates projected timeline coverage/knownness and rejects forged MATCH.
+The verifier traverses array snapshots with advancing borrowed byte cursors, without
+rescanning their chunks per byte. Store rechecks that retained resolved contracts
+equal selected accepted assertions.
+Raw physical evidence and excluded bytes remain intact. This finite profile claims
+selected observation equality under reviewed assumptions, not universal ABI, type,
+algorithm or hardware equivalence. Arbitrary width conversion, pointer-value mapping
+and path normalization are outside this profile and are never approximated.
+
+[Projection scenarios](../../next/tests/execution/projections.rs) cover physical
+admission, generic/specialized API/CLI, frozen/superseded/conflicting reviews, final
+fields, unknown padding/fields, missing capture, source-free restore/replay and
+failed-run atomicity. [Verifier tests](../../crates/verification/src/projection.rs)
+check ordered mapped memory/control and unknowns; [store tests](../../crates/store/src/execution_projections.rs)
+check selected-byte masks, admitted owner release and changed retained policy.

@@ -121,7 +121,7 @@ results independently from operation completion. Their evaluation belongs to ana
 and application. Function schema 7 / policy 8 includes typed fences and outgoing tail
 inputs; display strings have no semantic authority.
 
-Concrete execution schema 13 uses bounded optional RV32 ABI words: a0–a7 followed
+Concrete execution schema 14 uses bounded optional RV32 ABI words: a0–a7 followed
 by ascending stack slots. `Invocation::entry_stack` validates placement within the
 declared stack; `register_arguments` preserves missing values as unknown. These
 are physical words, with type/variadic lowering owned by the caller.
@@ -161,3 +161,10 @@ final-memory chunks with separate availability/knownness masks. Pair indices bin
 same-sized physical selections, not inferred layouts. Execution coverage remains
 code-goal/environment completeness; selected unknown outputs prevent comparison
 MATCH without converting a successful code phase into a failed session transition.
+
+`LayoutProjection` declares finite source-bound code entries, explicit memory
+domains, same-width byte fields and conditional branch correspondence. Selection
+uses an immutable accepted `ProjectionReview`; unknown/unmapped observations never
+become equal by omission. `CallArguments::Projected` pairs distinct physical ABI
+word positions with exact 32-bit comparison. These are reviewed comparison
+assumptions, without implicit pointer/type normalization.

@@ -4,7 +4,7 @@
 has no filesystem, store, executor, selection or publication authority. Application
 supplies observations, the exact case relation and shared operation control.
 
-`selected-timeline-reviewed-calls-returns-memory/model-8` compares explicitly selected ordered
+`selected-projected-timeline-calls-returns-memory/model-9` compares explicitly selected ordered
 MMIO read/write, fence and modeled delay channels; selected low/high return words;
 exact paired final normal-memory ranges; and opt-in ordered physical call targets/words. Physical range lengths must agree;
 addresses may differ only because the caller selected that pair. No pointer, ABI
@@ -46,3 +46,10 @@ effect. Bulk initialization is distinct from individual stores. Memory sites/ori
 provenance; branches compare exact physical control coordinates. Unknown reads
 cannot establish equality, and identical final RAM does not erase a timeline
 DIFF. All selected channels remain interleaved in one ordered comparison stream.
+
+Reviewed layout projections map exact byte fields/offsets and conditional branch
+coordinates while retaining order, unknowns and atomic semantics. Unmapped selected
+effects prevent equality. Final fields compare complete selected known bytes; unknown
+padding is retained outside the explicit selection. Projected call words compare
+exact 32-bit values at reviewed positions. No pointer-value or type conversion is
+inferred. The verifier borrows contracts and observations; store owns review lookup.

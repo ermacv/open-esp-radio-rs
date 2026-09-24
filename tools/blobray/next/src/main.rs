@@ -34,6 +34,10 @@ struct Cli {
 #[derive(Subcommand)]
 enum KnowledgeCommand {
     /// Propose an exact captured/model call correspondence for explicit review.
+    ProposeProjection {
+        #[arg(long)]
+        request: PathBuf,
+    },
     ProposeCallPair {
         #[arg(long)]
         request: PathBuf,
@@ -1107,6 +1111,15 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             command,
             limits,
         } => match command {
+            KnowledgeCommand::ProposeProjection { request } => {
+                return propose_command(
+                    project,
+                    request,
+                    limits,
+                    format,
+                    ProposalInput::Projection,
+                );
+            }
             KnowledgeCommand::ProposeCallPair { request } => {
                 return propose_command(project, request, limits, format, ProposalInput::CallPair);
             }
@@ -2642,10 +2655,13 @@ fn internal(args: &[OsString]) -> Result<()> {
                 &mut context,
             )
             .map(|p| Some(app::PreparedReceipt::Investigation(p))),
-            (_, _, _, _, _, Some(work)) => {
-                app::prepare_knowledge_worker(&stage, &work, &mut context)
-                    .map(|p| Some(app::PreparedReceipt::Knowledge(p)))
-            }
+            (_, _, _, _, _, Some(work)) => app::prepare_knowledge_worker(
+                &stage,
+                &work,
+                &blobray_backend_riscv::RiscvDecoder,
+                &mut context,
+            )
+            .map(|p| Some(app::PreparedReceipt::Knowledge(p))),
             _ => unreachable!(),
         }
     };
@@ -2754,6 +2770,7 @@ fn export_data_query(
 }
 
 enum ProposalInput {
+    Projection,
     Data,
     Constant,
     CallPair,
@@ -2777,6 +2794,11 @@ fn propose_command(
         ProposalInput::Data => {
             application.start_propose_data(&project, read_json_file(&request)?, limits.budget()?)?
         }
+        ProposalInput::Projection => application.start_propose_projection(
+            &project,
+            read_json_file(&request)?,
+            limits.budget()?,
+        )?,
         ProposalInput::CallPair => application.start_propose_call_pair(
             &project,
             read_json_file(&request)?,

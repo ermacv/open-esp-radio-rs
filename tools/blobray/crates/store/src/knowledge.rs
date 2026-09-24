@@ -431,6 +431,9 @@ impl KnowledgeSnapshot<'_> {
 }
 fn proposal_heap_bytes(p: &KnowledgeProposal) -> u64 {
     let claim = match &p.claim {
+        KnowledgeClaim::LayoutProjection { projection } => {
+            std::mem::size_of::<LayoutProjection>() + projection.allocated_bytes() as usize
+        }
         KnowledgeClaim::CallPair { correspondence } => {
             std::mem::size_of::<CallCorrespondence>() + correspondence.allocated_bytes() as usize
         }

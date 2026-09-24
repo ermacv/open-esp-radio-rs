@@ -22,6 +22,13 @@ pub fn validate_proposal(p: &KnowledgeProposal) -> Result<()> {
         return Err(invalid("symbol and object occurrence differ"));
     }
     match &p.claim {
+        KnowledgeClaim::LayoutProjection { projection } => {
+            projection.validate()?;
+            if p.occurrence != projection.vendor.entry.occurrence {
+                return Err(invalid("layout projection primary occurrence differs"));
+            }
+        }
+
         KnowledgeClaim::CallPair { correspondence } => {
             correspondence.validate()?;
             if p.occurrence != correspondence.vendor.occurrence {
@@ -205,6 +212,16 @@ pub fn conflicts(a: &KnowledgeProposal, b: &KnowledgeProposal) -> bool {
         return false;
     }
     match (&a.claim, &b.claim) {
+        (
+            KnowledgeClaim::LayoutProjection { projection: x },
+            KnowledgeClaim::LayoutProjection { projection: y },
+        ) => {
+            x != y
+                && (a.subject == b.subject
+                    || x.vendor.entry == y.vendor.entry
+                    || x.replacement.entry == y.replacement.entry)
+        }
+
         (
             KnowledgeClaim::CallPair { correspondence: x },
             KnowledgeClaim::CallPair { correspondence: y },

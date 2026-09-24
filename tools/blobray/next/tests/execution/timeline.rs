@@ -6,6 +6,7 @@ fn select(r: &mut ExecutionRequest, capture: TimelineCapture) {
         case.vendor.observe_timeline = capture;
         case.replacement.as_mut().unwrap().observe_timeline = capture;
         case.relation = Some(ComparisonRelation {
+            projection: None,
             returns: ReturnWords {
                 low: false,
                 high: false,

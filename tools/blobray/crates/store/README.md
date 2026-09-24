@@ -4,7 +4,7 @@
 Its only internal dependency is [domain](../domain/README.md). It does not parse
 ELF/AR, select targets, resolve thin paths or install a process supervisor.
 
-Projects require metadata schema 31 and journal schema 32; earlier/future formats
+Projects require metadata schema 32 and journal schema 33; earlier/future formats
 are rejected without conversion or mutation. Revision manifests retain schema 1.
 See [storage diagnosis](../../next/README.md#diagnosis-and-recovery).
 
@@ -63,7 +63,7 @@ does not inspect procfs or implement the worker transport. The application wraps
 store readers in restricted capabilities instead of exposing `Project` to read
 consumers.
 
-Run schema 32 carries the admitted operation, optional concrete scenario
+Run schema 33 carries the admitted operation, optional concrete scenario
 resolution and scoped `ResultAssessment`. Readers validate one published result,
 its assessment identity and scenario shape. Earlier journal formats are rejected.
 Recovery records the last valid stage checkpoint before cleanup, while
@@ -113,7 +113,7 @@ ELF ABI and a semantic producer/value-effect summary. Earlier derived schemas
 are unsupported; existing CAS bytes are never rewritten. Function assessment coverage is complete only
 when structural coverage and semantic
 coverage are both complete; unknown values alone do not imply missing semantics.
-The analyses table and publication transaction remain metadata schema 31.
+The analyses table and publication transaction remain metadata schema 32.
 
 
 `investigations` owns `InvestigationLease`, `PreparedInvestigationReceipt` and the
@@ -199,3 +199,10 @@ range coverage, phase ordering, blocked absence and whether selected bytes are
 known. Missing chunks or MATCH with selected unknown data is rejected. Difference
 descriptors must belong to the explicit per-case relation; comparison algorithms
 remain in verification.
+
+`execution_projections` admits immutable accepted layout contracts per operation and
+validates selected entry/source applicability. The manifest carries exact resolved
+policies; reopening rejects changed/missing review content. A bounded sorted final
+field index checks selected-byte knownness without requiring padding to be known.
+Unmapped selected timeline records cannot admit MATCH. No projection mutates raw
+evidence or resolves current knowledge implicitly.

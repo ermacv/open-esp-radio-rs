@@ -106,3 +106,7 @@ Application alone decides whether that source belongs to an execution scenario.
 already verified ET_EXEC object: allocated section, defined/absolute symbol plus
 addend, or exact entry selector. It lends no mutable memory and evaluates no runtime
 path, guard or call model; those belong to application-owned execution sessions.
+
+`PreparedObject::executable_bytes` lends a bounded 2/4-byte prefix from an executable
+file-backed load mapping. ISA consumers validate instruction meaning through their
+decoder; artifact acquisition never supplies branch semantics.

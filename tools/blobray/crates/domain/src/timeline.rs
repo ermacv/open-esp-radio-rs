@@ -72,6 +72,30 @@ pub enum MemoryTransaction {
     },
 }
 impl MemoryTransaction {
+    pub fn range(self) -> (u32, u32) {
+        match self {
+            Self::InitializeZeroed { address, length } => (address, length),
+            Self::Read { address, width, .. } | Self::Write { address, width, .. } => {
+                (address, u32::from(width))
+            }
+            Self::LoadReserved { address, .. }
+            | Self::StoreConditional { address, .. }
+            | Self::ReadModifyWrite { address, .. } => (address, 4),
+        }
+    }
+    /// Comparison-only rebasing after a selected reviewed field mapping; raw evidence is unchanged.
+    pub fn at_address(mut self, projected: u32) -> Self {
+        match &mut self {
+            Self::InitializeZeroed { address, .. }
+            | Self::Read { address, .. }
+            | Self::Write { address, .. }
+            | Self::LoadReserved { address, .. }
+            | Self::StoreConditional { address, .. }
+            | Self::ReadModifyWrite { address, .. } => *address = projected,
+        }
+        self
+    }
+
     pub fn known(self) -> bool {
         !matches!(
             self,

@@ -51,7 +51,7 @@ use std::{
 };
 
 const STATE: &str = ".blobray-next";
-const SCHEMA: i64 = 31;
+const SCHEMA: i64 = 32;
 
 /// A project handle owns no source-file handles or mutable inventory cache.
 #[derive(Clone)]
@@ -413,3 +413,6 @@ mod execution_call_pairs;
 pub use execution_call_pairs::*;
 
 mod execution_timeline;
+
+mod execution_projections;
+pub use execution_projections::*;

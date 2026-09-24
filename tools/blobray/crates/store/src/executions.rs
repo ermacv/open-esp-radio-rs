@@ -140,6 +140,7 @@ impl Project {
         }
         self.validate_execution_interfaces(request, memory, c)?;
         self.validate_execution_call_pairs(&manifest, memory, c)?;
+        self.validate_execution_projections(&manifest, memory, c)?;
         Ok(ExecutionLease {
             _capacity: capacity,
             records: self.open_payload(&manifest.records, c)?,
@@ -202,6 +203,8 @@ impl Writer {
             .validate_execution_interfaces(request, memory, c)?;
         self.project
             .validate_execution_call_pairs(&manifest, memory, c)?;
+        self.project
+            .validate_execution_projections(&manifest, memory, c)?;
         validate_execution_records(
             &manifest,
             &stage.open_payload(&manifest.records, c)?,
@@ -304,6 +307,9 @@ pub fn validate_execution_records(
             return Err(integrity("extra execution case"));
         }
         let phase = &manifest.request.cases[case as usize];
+        c.checkpoint(manifest.projections.len() as u64 + 1)?;
+        let projection = selected_projection(phase.relation.as_ref(), &manifest.projections)?
+            .map(|p| &p.projection);
         let must_block = phase.reset == SessionReset::Warm && blocked;
         let close_chain = manifest
             .request
@@ -322,6 +328,17 @@ pub fn validate_execution_records(
             ];
             memory_state[0].begin(phase.relation.as_ref(), false);
             memory_state[1].begin(phase.relation.as_ref(), true);
+            if let Some(p) = projection {
+                c.checkpoint((p.fields.len() + p.branches.len() + 1).pow(2) as u64)?;
+                p.validate_use(&manifest.request, case as usize)?;
+                memory_state[0].begin_projection(p, &phase.vendor, false, c)?;
+                memory_state[1].begin_projection(
+                    p,
+                    phase.replacement.as_ref().unwrap(),
+                    true,
+                    c,
+                )?;
+            }
             services[0].begin(
                 &phase.vendor,
                 &manifest.request.vendor.stack,
@@ -372,7 +389,7 @@ pub fn validate_execution_records(
                 } else {
                     &phase.vendor
                 };
-                memory_state[usize::from(side)].chunk(input, &chunk)?;
+                memory_state[usize::from(side)].chunk(input, &chunk, c)?;
             }
             ExecutionEvidence::FifoService {
                 case: i,
@@ -443,6 +460,32 @@ pub fn validate_execution_records(
                         + 1,
                 )?;
                 crate::execution_timeline::validate(input, &event)?;
+                if let (
+                    Some(p),
+                    ExecutionEvent::Branch {
+                        site,
+                        target,
+                        fallthrough,
+                        ..
+                    },
+                ) = (projection, &event)
+                    && phase
+                        .relation
+                        .as_ref()
+                        .is_some_and(|r| r.events.timeline.branches)
+                {
+                    c.checkpoint(p.branches.len() as u64 + 1)?;
+                    relation_complete &= p
+                        .branch_location(
+                            BranchLocation {
+                                site: *site,
+                                target: *target,
+                                fallthrough: *fallthrough,
+                            },
+                            side,
+                        )
+                        .is_some();
+                }
                 if phase
                     .relation
                     .as_ref()
@@ -450,6 +493,10 @@ pub fn validate_execution_records(
                     && let Some(transaction) = event.normal_memory()
                 {
                     relation_complete &= transaction.known();
+                    if let Some(p) = projection {
+                        c.checkpoint(p.fields.len() as u64 + 1)?;
+                        relation_complete &= p.memory_location(transaction, side)?.is_some();
+                    }
                 }
                 capture[usize::from(side)].event(
                     input,
@@ -565,7 +612,7 @@ pub fn validate_execution_records(
                 if i != case || !outcome || verdict.is_none() {
                     return Err(integrity("comparison order differs"));
                 }
-                if !difference_valid(&result, phase, manifest.request.max_events)
+                if !difference_valid(&result, phase, manifest.request.max_events, projection)
                     || (result.verdict == ComparisonVerdict::Match
                         && (!phase_complete || !relation_complete))
                 {

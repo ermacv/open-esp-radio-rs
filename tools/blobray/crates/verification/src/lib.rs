@@ -1,21 +1,39 @@
 //! Comparison of explicitly selected concrete observations; no execution/store authority.
 use blobray_domain::*;
-pub const VERIFIER: &str = "selected-timeline-reviewed-calls-returns-memory/model-8";
+mod projection;
+pub use projection::ProjectionComparison;
+pub const VERIFIER: &str = "selected-projected-timeline-calls-returns-memory/model-9";
 pub fn compare(
     left: &ExecutionObservation,
     right: &ExecutionObservation,
     relation: &ComparisonRelation,
     pairs: &[ResolvedCallPair],
+    projection: Option<ProjectionComparison<'_>>,
     control: &mut dyn RunControl,
 ) -> Result<CaseComparison> {
     let different = |difference| CaseComparison {
         verdict: ComparisonVerdict::Diff,
         difference: Some(difference),
     };
+    if relation.projection.as_ref() != projection.map(|p| &p.resolved.review) {
+        return Err(Error::new(
+            ErrorCode::Integrity,
+            "selected projection differs from comparison input",
+        ));
+    }
+    if let Some(p) = projection {
+        control.checkpoint(
+            (p.resolved.projection.fields.len() + p.resolved.projection.branches.len() + 1).pow(2)
+                as u64,
+        )?;
+        p.resolved.projection.validate()?;
+        relation.validate(p.vendor, p.replacement)?;
+    }
+    let layout = projection.map(|p| &p.resolved.projection);
     let mut known = true;
     control.checkpoint((left.events.len() + right.events.len()) as u64)?;
-    let mut le = Selected::new(&left.events, relation, pairs, false, control)?;
-    let mut re = Selected::new(&right.events, relation, pairs, true, control)?;
+    let mut le = Selected::new(&left.events, relation, pairs, layout, false, control)?;
+    let mut re = Selected::new(&right.events, relation, pairs, layout, true, control)?;
     let mut count = 0;
     loop {
         let (a, b) = (le.next(control)?, re.next(control)?);
@@ -61,12 +79,25 @@ pub fn compare(
                                 "physical call capture widths differ",
                             ));
                         }
-                        for word in 0..aa.len().max(ba.len()) {
+                        let count_words = match policy {
+                            Some(CallArguments::Projected { words }) => words.len(),
+                            _ => aa.len().max(ba.len()),
+                        };
+                        for word in 0..count_words {
                             control.checkpoint(policy.map_or(1, CallArguments::selection_work))?;
-                            if policy.is_some_and(|p| !p.selects(word as u16)) {
+                            if !matches!(policy, Some(CallArguments::Projected { .. }))
+                                && policy.is_some_and(|p| !p.selects(word as u16, false))
+                            {
                                 continue;
                             }
-                            let (a, b) = (&aa[word], &ba[word]);
+                            let (ai, bi) = match policy {
+                                Some(CallArguments::Projected { words }) => (
+                                    words[word].vendor as usize,
+                                    words[word].replacement as usize,
+                                ),
+                                _ => (word, word),
+                            };
+                            let (a, b) = (&aa[ai], &ba[bi]);
                             let value = |e: &ExecutionEvent| match e {
                                 ExecutionEvent::TransferArgument { value, .. } => value.value(),
                                 _ => unreachable!(),
@@ -85,6 +116,20 @@ pub fn compare(
                             }
                         }
                     }
+                    (Observation::Unmapped, _) | (_, Observation::Unmapped) => known = false,
+                    (Observation::ProjectedMemory(af, a), Observation::ProjectedMemory(bf, b))
+                        if af == bf =>
+                    {
+                        match a.equal(b) {
+                            Some(true) => (),
+                            None => known = false,
+                            Some(false) => {
+                                return Ok(different(ComparisonDifference::Event { index: count }));
+                            }
+                        }
+                    }
+                    (Observation::ProjectedBranch(a, at), Observation::ProjectedBranch(b, bt))
+                        if a == b && at == bt => {}
                     (Observation::Memory(a), Observation::Memory(b)) => match a.equal(b) {
                         Some(true) => (),
                         None => known = false,
@@ -178,6 +223,13 @@ pub fn compare(
             }
         }
     }
+    if let Some(projection) = projection {
+        let (complete, difference) = projection.final_memory(left, right, control)?;
+        known &= complete;
+        if let Some(difference) = difference {
+            return Ok(different(difference));
+        }
+    }
     Ok(CaseComparison {
         verdict: if known
             && left.completed()
@@ -192,6 +244,9 @@ pub fn compare(
     })
 }
 enum Observation<'a> {
+    Unmapped,
+    ProjectedMemory(u16, MemoryTransaction),
+    ProjectedBranch(u16, bool),
     Memory(MemoryTransaction),
     Event(&'a ExecutionEvent),
     Call {
@@ -204,18 +259,23 @@ struct Selected<'a> {
     remaining: &'a [ExecutionEvent],
     relation: &'a ComparisonRelation,
     index: CallRelationIndex<'a>,
+    projection: Option<&'a LayoutProjection>,
+    side: bool,
 }
 impl<'a> Selected<'a> {
     fn new(
         remaining: &'a [ExecutionEvent],
         relation: &'a ComparisonRelation,
         pairs: &'a [ResolvedCallPair],
+        projection: Option<&'a LayoutProjection>,
         side: bool,
         c: &mut dyn RunControl,
     ) -> Result<Self> {
         Ok(Self {
             remaining,
             relation,
+            projection,
+            side,
             index: CallRelationIndex::new(Some(relation), pairs, side, c)?,
         })
     }
@@ -259,7 +319,39 @@ impl<'a> Selected<'a> {
             } else if self.relation.events.selects(event) {
                 return Ok(Some(if let Some(transaction) = event.normal_memory() {
                     transaction.validate()?;
-                    Observation::Memory(transaction)
+                    if let Some(p) = self.projection {
+                        c.checkpoint(p.fields.len() as u64 + 1)?;
+                        match p.memory_location(transaction, self.side)? {
+                            Some((field, offset)) => {
+                                Observation::ProjectedMemory(field, transaction.at_address(offset))
+                            }
+                            None => Observation::Unmapped,
+                        }
+                    } else {
+                        Observation::Memory(transaction)
+                    }
+                } else if let (
+                    Some(p),
+                    ExecutionEvent::Branch {
+                        site,
+                        target,
+                        fallthrough,
+                        taken,
+                    },
+                ) = (self.projection, event)
+                {
+                    c.checkpoint(p.branches.len() as u64 + 1)?;
+                    match p.branch_location(
+                        BranchLocation {
+                            site: *site,
+                            target: *target,
+                            fallthrough: *fallthrough,
+                        },
+                        self.side,
+                    ) {
+                        Some(id) => Observation::ProjectedBranch(id, *taken),
+                        None => Observation::Unmapped,
+                    }
                 } else {
                     Observation::Event(event)
                 }));
@@ -281,6 +373,7 @@ mod tests {
             left,
             right,
             &ComparisonRelation {
+                projection: None,
                 calls: false,
                 reviewed_calls: None,
                 returns: ReturnWords {
@@ -297,6 +390,7 @@ mod tests {
                 memory: vec![],
             },
             &[],
+            None,
             c,
         )
     }
@@ -411,6 +505,7 @@ mod physical_calls {
     #[test]
     fn reordered_missing_and_unknown_call_prefixes_fail_closed() {
         let r = ComparisonRelation {
+            projection: None,
             returns: ReturnWords {
                 low: false,
                 high: false,
@@ -433,28 +528,38 @@ mod physical_calls {
             observation(&[0x2000], known, true),
         ] {
             assert_eq!(
-                compare(&a, &b, &r, &[], &mut || Ok(())).unwrap().verdict,
+                compare(&a, &b, &r, &[], None, &mut || Ok(()))
+                    .unwrap()
+                    .verdict,
                 ComparisonVerdict::Diff
             );
         }
         let b = observation(&[0x2000], known, false);
         assert_eq!(
-            compare(&a, &b, &r, &[], &mut || Ok(())).unwrap().verdict,
+            compare(&a, &b, &r, &[], None, &mut || Ok(()))
+                .unwrap()
+                .verdict,
             ComparisonVerdict::Incomplete
         );
         let b = observation(&[0x2000, 0x3000], ObservedWord::Unknown, true);
         assert_eq!(
-            compare(&a, &b, &r, &[], &mut || Ok(())).unwrap().verdict,
+            compare(&a, &b, &r, &[], None, &mut || Ok(()))
+                .unwrap()
+                .verdict,
             ComparisonVerdict::Incomplete
         );
         let mut b = observation(&[0x2000, 0x4000], ObservedWord::Unknown, true);
         assert_eq!(
-            compare(&a, &b, &r, &[], &mut || Ok(())).unwrap().verdict,
+            compare(&a, &b, &r, &[], None, &mut || Ok(()))
+                .unwrap()
+                .verdict,
             ComparisonVerdict::Diff
         );
         b.events.truncate(1);
         assert_eq!(
-            compare(&a, &b, &r, &[], &mut || Ok(())).unwrap_err().code,
+            compare(&a, &b, &r, &[], None, &mut || Ok(()))
+                .unwrap_err()
+                .code,
             ErrorCode::Integrity
         );
     }
@@ -505,6 +610,7 @@ mod reviewed_calls {
         };
         let pairs = [pair(0x2000, 0x5000), pair(0x3000, 0x6000)];
         let relation = ComparisonRelation {
+            projection: None,
             returns: ReturnWords {
                 low: false,
                 high: false,
@@ -550,7 +656,7 @@ mod reviewed_calls {
         let left = observation(&[0x2000, 0x3000]);
         let right = observation(&[0x5000, 0x6000]);
         assert_eq!(
-            compare(&left, &right, &relation, &pairs, &mut || Ok(()))
+            compare(&left, &right, &relation, &pairs, None, &mut || Ok(()))
                 .unwrap()
                 .verdict,
             ComparisonVerdict::Match
@@ -562,6 +668,7 @@ mod reviewed_calls {
                     &observation(&targets),
                     &relation,
                     &pairs,
+                    None,
                     &mut || Ok(())
                 )
                 .unwrap()
@@ -574,13 +681,13 @@ mod reviewed_calls {
             *target_kind = ObservedCallTarget::CallModel;
         }
         assert_eq!(
-            compare(&left, &malformed, &relation, &pairs, &mut || Ok(()))
+            compare(&left, &malformed, &relation, &pairs, None, &mut || Ok(()))
                 .unwrap_err()
                 .code,
             ErrorCode::Integrity
         );
         assert_eq!(
-            compare(&left, &malformed, &relation, &[], &mut || Ok(()))
+            compare(&left, &malformed, &relation, &[], None, &mut || Ok(()))
                 .unwrap_err()
                 .code,
             ErrorCode::Integrity
@@ -602,6 +709,7 @@ mod timeline_order {
             },
         };
         let relation = ComparisonRelation {
+            projection: None,
             returns: ReturnWords {
                 low: false,
                 high: false,
@@ -657,7 +765,7 @@ mod timeline_order {
             let a = observation(vec![memory.clone(), effect.clone()]);
             let b = observation(vec![effect, memory.clone()]);
             assert_eq!(
-                compare(&a, &b, &relation, &[], &mut || Ok(()))
+                compare(&a, &b, &relation, &[], None, &mut || Ok(()))
                     .unwrap()
                     .difference,
                 Some(ComparisonDifference::Event { index: 0 })

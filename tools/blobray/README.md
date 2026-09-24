@@ -40,11 +40,13 @@ cargo xtask check blobray-standalone
 Concrete execution supports phased RV32 integer/stack arguments, atomics, explicit
 goals, device/call models and reviewed runtime interfaces/FIFO services. Comparison
 selects MMIO/fence/delay, low/high return words, final normal-memory ranges,
-physical or reviewed call pairs, and the internal physical memory/branch timeline.
+physical or reviewed call pairs, and the internal memory/branch timeline. Explicit
+accepted projections map byte fields/arrays, branch coordinates and ABI word
+positions while preserving unknowns and raw physical evidence.
 Unknown selected values and unmet goals/model obligations cannot MATCH. Results
 remain conditional on the selected cases and explicit modeling assumptions.
 
-Reviewed cross-layout/ABI projections, effect contracts, cross-revision
+Effect contracts, cross-revision
 correspondence/rebase, retention GC, reference-code generation and TUI remain
 pending. Unsupported execution remains `INCOMPLETE`; these limitations do not
 enable the old engine implicitly.

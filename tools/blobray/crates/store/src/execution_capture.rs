@@ -111,7 +111,8 @@ impl CaptureState {
             self.selected.fill(false);
             c.checkpoint(u64::from(*words) * selection.selection_work() + 1)?;
             for word in 0..*words {
-                self.selected[usize::from(word)] = selection.selects_word(word);
+                self.selected[usize::from(word)] =
+                    selection.selects_word(word, index.is_some_and(CallRelationIndex::replacement));
             }
             self.next = 0;
             self.words = *words;

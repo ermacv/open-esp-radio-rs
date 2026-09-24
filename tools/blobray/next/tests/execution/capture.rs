@@ -13,6 +13,7 @@ fn select(r: &mut ExecutionRequest, words: u16) {
         phase.vendor.observe_calls = Some(profile(words));
         phase.replacement.as_mut().unwrap().observe_calls = Some(profile(words));
         phase.relation = Some(ComparisonRelation {
+            projection: None,
             returns: ReturnWords {
                 low: false,
                 high: false,

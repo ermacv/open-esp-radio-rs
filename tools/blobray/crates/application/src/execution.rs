@@ -2,7 +2,7 @@
 use crate::execution_memory::Session;
 use crate::*;
 use std::io::Write;
-pub const EXECUTION_ENVIRONMENT: &str = "static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1";
+pub const EXECUTION_ENVIRONMENT: &str = "static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1";
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionWork {
@@ -222,6 +222,7 @@ pub(crate) fn prepare_execution_worker_in(
         let goals = crate::execution_goals::prepare(&project, request, memory, &mut control)?;
         let tables = crate::execution_interfaces::prepare(&project, request, memory, &mut control)?;
         let pairs = project.execution_call_pairs(request, memory, &mut control)?;
+        let projections = project.execution_projections(request, memory, &mut control)?;
         let mut vendor = None;
         let mut replacement = None;
         let mut blocked = false;
@@ -283,6 +284,13 @@ pub(crate) fn prepare_execution_worker_in(
                         Error::new(ErrorCode::Integrity, "comparison relation missing")
                     })?,
                     &pairs.pairs,
+                    selected_projection(case.relation.as_ref(), &projections.projections)?.map(
+                        |resolved| blobray_verification::ProjectionComparison {
+                            resolved,
+                            vendor: &case.vendor,
+                            replacement: case.replacement.as_ref().unwrap(),
+                        },
+                    ),
                     &mut control,
                 )?;
                 verdict = Some(match (verdict.unwrap(), comparison.verdict) {
@@ -322,6 +330,7 @@ pub(crate) fn prepare_execution_worker_in(
         let records = staging.retain_temporary(file, &mut control)?;
         staging.execution_receipt(
             &ExecutionManifest {
+                projections: projections.projections,
                 call_pairs: pairs.pairs,
                 schema: EXECUTION_SCHEMA,
                 project: project.id().clone(),

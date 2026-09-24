@@ -320,3 +320,8 @@ memory at the phase stop before releasing phase owners. It preserves unchanged,
 unknown and unavailable bytes in bounded chunks, without device reads. Snapshot
 capacity lives through serialization/comparison and is released on recycle. Each
 comparison case supplies its own relation to verification; no frontend composes it.
+
+`layout_projections` validates both captured entries and branch instructions through
+the required knowledge-worker decoder capability. It shares generic proposal/review
+publication with `start_propose_projection`; CLI only supplies the request. Execution
+borrows store-owned accepted projection selections through comparison/serialization.

@@ -10,6 +10,8 @@ pub(super) struct MemoryState {
     selection: usize,
     offset: u32,
     compared: [bool; MAX_MEMORY_SELECTIONS],
+    projected: [(u16, u32, u32); MAX_LAYOUT_FIELDS],
+    projected_len: usize,
     pub known: bool,
 }
 impl MemoryState {
@@ -18,6 +20,8 @@ impl MemoryState {
             selection: 0,
             offset: 0,
             compared: [false; MAX_MEMORY_SELECTIONS],
+            projected: [(0, 0, 0); MAX_LAYOUT_FIELDS],
+            projected_len: 0,
             known: true,
         }
     }
@@ -29,7 +33,34 @@ impl MemoryState {
             }
         }
     }
-    pub fn chunk(&mut self, input: &Invocation, chunk: &FinalMemoryChunk) -> Result<()> {
+    pub fn begin_projection(
+        &mut self,
+        projection: &LayoutProjection,
+        input: &Invocation,
+        side: bool,
+        c: &mut dyn RunControl,
+    ) -> Result<()> {
+        for f in projection.fields.iter().filter(|f| f.final_state) {
+            c.checkpoint(input.observe_memory.len() as u64 + 1)?;
+            let (selection, offset) = projection.final_selection(input, f, side)?;
+            if self.projected_len == MAX_LAYOUT_FIELDS {
+                return Err(integrity("projected memory index capacity exceeded"));
+            }
+            self.projected[self.projected_len] = (selection as u16, offset, f.byte_length()?);
+            self.projected_len += 1;
+        }
+        c.checkpoint(
+            (self.projected_len * (self.projected_len.max(1).ilog2() as usize + 1)) as u64,
+        )?;
+        self.projected[..self.projected_len].sort_unstable_by_key(|p| (p.0, p.1));
+        Ok(())
+    }
+    pub fn chunk(
+        &mut self,
+        input: &Invocation,
+        chunk: &FinalMemoryChunk,
+        c: &mut dyn RunControl,
+    ) -> Result<()> {
         chunk.validate()?;
         let span = input
             .observe_memory
@@ -44,6 +75,22 @@ impl MemoryState {
         }
         if self.compared[self.selection] {
             self.known &= chunk.complete();
+        }
+        c.checkpoint(self.projected_len.max(1).ilog2() as u64 + 1)?;
+        let spans = &self.projected[..self.projected_len];
+        let start = spans.partition_point(|p| {
+            p.0 < chunk.selection || (p.0 == chunk.selection && p.1 + p.2 <= chunk.offset)
+        });
+        for &(selection, offset, width) in &spans[start..] {
+            if selection != chunk.selection || offset >= chunk.offset + u32::from(length) {
+                break;
+            }
+            c.checkpoint(u64::from(length) + 1)?;
+            for byte in
+                offset.max(chunk.offset)..(offset + width).min(chunk.offset + u32::from(length))
+            {
+                self.known &= chunk.known & (1 << (byte - chunk.offset)) != 0;
+            }
         }
         self.offset += u32::from(length);
         if self.offset == span.length {
@@ -70,12 +117,29 @@ pub(super) fn difference_valid(
     result: &CaseComparison,
     case: &ExecutionCase,
     max_events: u32,
+    projection: Option<&LayoutProjection>,
 ) -> bool {
     let Some(relation) = &case.relation else {
         return false;
     };
     match (&result.verdict, &result.difference) {
         (ComparisonVerdict::Match | ComparisonVerdict::Incomplete, None) => true,
+        (
+            ComparisonVerdict::Diff,
+            Some(ComparisonDifference::ProjectedMemory {
+                field,
+                offset,
+                vendor,
+                replacement,
+            }),
+        ) => {
+            vendor != replacement
+                && projection
+                    .and_then(|p| p.fields.get(*field as usize))
+                    .is_some_and(|f| {
+                        f.final_state && f.byte_length().is_ok_and(|length| *offset < length)
+                    })
+        }
         (ComparisonVerdict::Diff, Some(ComparisonDifference::Event { index })) => {
             *index <= max_events
                 && (relation.observes_calls()
@@ -164,6 +228,7 @@ mod tests {
             }],
         };
         let relation = ComparisonRelation {
+            projection: None,
             calls: false,
             reviewed_calls: None,
             returns: ReturnWords {
@@ -202,13 +267,13 @@ mod tests {
                 _ => bad.known = 0,
             };
             assert_eq!(
-                s.chunk(&input, &bad).unwrap_err().code,
+                s.chunk(&input, &bad, &mut || Ok(())).unwrap_err().code,
                 ErrorCode::Integrity
             );
         }
-        s.chunk(&input, &first).unwrap();
+        s.chunk(&input, &first, &mut || Ok(())).unwrap();
         assert!(s.finish(&input, false).is_err());
-        assert!(s.chunk(&input, &first).is_err());
+        assert!(s.chunk(&input, &first, &mut || Ok(())).is_err());
         let last = FinalMemoryChunk {
             selection: 0,
             offset: 16,
@@ -217,12 +282,12 @@ mod tests {
             available: 1,
             known: 0,
         };
-        s.chunk(&input, &last).unwrap();
+        s.chunk(&input, &last, &mut || Ok(())).unwrap();
         s.finish(&input, false).unwrap();
         assert!(!s.known);
         let mut excluded = MemoryState::new();
-        excluded.chunk(&input, &first).unwrap();
-        excluded.chunk(&input, &last).unwrap();
+        excluded.chunk(&input, &first, &mut || Ok(())).unwrap();
+        excluded.chunk(&input, &last, &mut || Ok(())).unwrap();
         assert!(excluded.known);
     }
 }

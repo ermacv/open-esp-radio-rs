@@ -34,6 +34,9 @@ pub struct RegisterProposalRequest {
 // One bounded admission message, not a resident collection of requests.
 #[allow(clippy::large_enum_variant)]
 pub enum ScenarioRequest {
+    ProposeProjection {
+        request: ProjectionProposalRequest,
+    },
     ProposeCallPair {
         request: CallPairProposalRequest,
     },

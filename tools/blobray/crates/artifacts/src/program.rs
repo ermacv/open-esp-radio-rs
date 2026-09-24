@@ -11,6 +11,31 @@ fn invalid(message: &str) -> Error {
     Error::new(ErrorCode::Integrity, message)
 }
 impl<'a> ProgramView<'a> {
+    pub fn executable_bytes(
+        &self,
+        address: u32,
+        length: u8,
+        c: &mut dyn RunControl,
+    ) -> Result<&'a [u8]> {
+        if !matches!(length, 2 | 4) || address & 1 != 0 {
+            return Err(invalid("invalid instruction prefix"));
+        }
+        for segment in &self.segments {
+            c.checkpoint(1)?;
+            if segment.flags & object::elf::PF_X != 0
+                && u64::from(address) >= segment.address
+                && u64::from(address) + u64::from(length) <= segment.address + segment.file_size
+            {
+                let start = (segment.file_offset + u64::from(address) - segment.address) as usize;
+                return self
+                    .bytes
+                    .get(start..start + usize::from(length))
+                    .ok_or_else(|| invalid("instruction outside captured image"));
+            }
+        }
+        Err(invalid("instruction outside executable captured mapping"))
+    }
+
     pub fn new(
         bytes: &'a [u8],
         file: &object::File<'_>,

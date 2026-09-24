@@ -1372,6 +1372,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
     file.write_all(b"\n").unwrap();
     let records = stage.retain_temporary(file, &mut || Ok(())).unwrap();
     let mut manifest = ExecutionManifest {
+        projections: vec![],
         call_pairs: vec![],
         schema: EXECUTION_SCHEMA,
         project: project.id().clone(),
@@ -1942,6 +1943,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
         },
     });
     let manifest = ExecutionManifest {
+        projections: vec![],
         call_pairs: vec![],
         schema: EXECUTION_SCHEMA,
         project: project.id().clone(),
@@ -1952,6 +1954,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
             binding: Some(CompiledBinding::ProductionEntry),
             cases: vec![ExecutionCase {
                 relation: Some(ComparisonRelation {
+                    projection: None,
                     calls: false,
                     reviewed_calls: None,
                     returns: ReturnWords {
@@ -2248,6 +2251,7 @@ fn retained_call_pairs_require_exact_review_content_and_release_admitted_owners(
             vendor: input.clone(),
             replacement: Some(input),
             relation: Some(ComparisonRelation {
+                projection: None,
                 returns: ReturnWords {
                     low: false,
                     high: false,
@@ -2294,6 +2298,7 @@ fn retained_call_pairs_require_exact_review_content_and_release_admitted_owners(
     ));
     assert_eq!(small.used(), 0);
     let mut manifest = ExecutionManifest {
+        projections: vec![],
         schema: EXECUTION_SCHEMA,
         project: project.id().clone(),
         request,

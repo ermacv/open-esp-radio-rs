@@ -312,7 +312,7 @@ impl Writer {
             .map_err(db)?;
         budget.validate()?;
         let record = RunRecord {
-            schema: 32,
+            schema: 33,
             operation,
             resolved_operation: None,
             image: None,
@@ -716,7 +716,7 @@ fn verify_file(
 pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
     let value: serde_json::Value = serde_json::from_str(raw).map_err(json)?;
     let schema = value.get("schema").and_then(serde_json::Value::as_u64);
-    if schema != Some(32) {
+    if schema != Some(33) {
         return Err(Error::new(
             ErrorCode::Incompatible,
             "unsupported run record schema",
@@ -743,6 +743,18 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
         && let Some(resolved) = &record.resolved_operation
     {
         let valid = match (request, &**resolved) {
+            (
+                ScenarioRequest::ProposeProjection { request },
+                RunOperation::Knowledge { change },
+            ) => {
+                change.expected_base == request.expected_base
+                    && change.actor == request.actor
+                    && change.reason == request.reason
+                    && matches!(&change.action, KnowledgeAction::Propose {proposal} if proposal.subject == request.subject
+                    && proposal.occurrence == request.projection.vendor.entry.occurrence
+                    && matches!(&proposal.claim, KnowledgeClaim::LayoutProjection {projection} if **projection == request.projection))
+            }
+
             (ScenarioRequest::ProposeCallPair { request }, RunOperation::Knowledge { change }) => {
                 change.expected_base == request.expected_base
                     && change.actor == request.actor

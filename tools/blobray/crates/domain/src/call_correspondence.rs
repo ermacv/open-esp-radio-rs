@@ -78,30 +78,51 @@ impl CallEndpoint {
             }
     }
 }
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CallWordPair {
+    pub vendor: u16,
+    pub replacement: u16,
+}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum CallArguments {
-    Exact { words: u16 },
-    Selected { words: Vec<u16> },
+    /// Explicit 32-bit ABI word positions; values remain exact, including pointer bits.
+    Projected {
+        words: Vec<CallWordPair>,
+    },
+    Exact {
+        words: u16,
+    },
+    Selected {
+        words: Vec<u16>,
+    },
     Ignore,
 }
 impl CallArguments {
     pub fn selection_work(&self) -> u64 {
         match self {
             Self::Selected { words } => words.len() as u64 + 1,
+            Self::Projected { words } => words.len() as u64 + 1,
             _ => 1,
         }
     }
-    pub fn selects(&self, word: u16) -> bool {
+    pub fn selects(&self, word: u16, replacement: bool) -> bool {
         match self {
             Self::Exact { words } => word < *words,
             Self::Selected { words } => words.contains(&word),
+            Self::Projected { words } => words
+                .iter()
+                .any(|p| if replacement { p.replacement } else { p.vendor } == word),
             Self::Ignore => false,
         }
     }
     pub fn validate_capture(&self, left: u16, right: u16) -> Result<()> {
         let valid = match self {
             Self::Exact { words } => *words == left && *words == right,
+            Self::Projected { words } => words
+                .iter()
+                .all(|p| p.vendor < left && p.replacement < right),
             Self::Selected { words } => words.iter().all(|w| *w < left && *w < right),
             Self::Ignore => true,
         };
@@ -130,6 +151,17 @@ impl CallCorrespondence {
         self.replacement.validate()?;
         let arguments = match &self.arguments {
             CallArguments::Exact { words } => usize::from(*words) <= MAX_EXECUTION_ARGUMENT_WORDS,
+            CallArguments::Projected { words } => {
+                !words.is_empty()
+                    && words.len() <= MAX_EXECUTION_ARGUMENT_WORDS
+                    && words.iter().enumerate().all(|(i, p)| {
+                        usize::from(p.vendor) < MAX_EXECUTION_ARGUMENT_WORDS
+                            && usize::from(p.replacement) < MAX_EXECUTION_ARGUMENT_WORDS
+                            && !words[..i]
+                                .iter()
+                                .any(|q| q.vendor == p.vendor || q.replacement == p.replacement)
+                    })
+            }
             CallArguments::Selected { words } => {
                 !words.is_empty()
                     && words.len() <= MAX_EXECUTION_ARGUMENT_WORDS
@@ -159,6 +191,9 @@ impl CallCorrespondence {
             + self.reason.capacity() as u64
             + match &self.arguments {
                 CallArguments::Selected { words } => (words.capacity() * 2) as u64,
+                CallArguments::Projected { words } => {
+                    (words.capacity() * std::mem::size_of::<CallWordPair>()) as u64
+                }
                 _ => 0,
             }
     }
@@ -316,15 +351,18 @@ impl CallSelection<'_> {
             _ => 1,
         }
     }
-    pub fn selects_word(self, word: u16) -> bool {
+    pub fn selects_word(self, word: u16, replacement: bool) -> bool {
         match self {
             Self::Physical => true,
-            Self::Reviewed(p) => p.correspondence.arguments.selects(word),
+            Self::Reviewed(p) => p.correspondence.arguments.selects(word, replacement),
             Self::Excluded => false,
         }
     }
 }
 impl<'a> CallRelationIndex<'a> {
+    pub fn replacement(&self) -> bool {
+        self.side
+    }
     pub fn new(
         relation: Option<&ComparisonRelation>,
         resolved: &'a [ResolvedCallPair],

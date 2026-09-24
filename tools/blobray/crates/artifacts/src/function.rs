@@ -164,6 +164,19 @@ pub fn with_function<T>(
     })
 }
 impl<'data> PreparedObject<'data, '_> {
+    /// Exact executable bytes for an ISA consumer; no instruction semantics here.
+    pub fn executable_bytes(
+        &self,
+        address: u32,
+        length: u8,
+        c: &mut dyn RunControl,
+    ) -> Result<&[u8]> {
+        self.image
+            .as_ref()
+            .ok_or_else(|| invalid("executable bytes require a linked image"))?
+            .executable_bytes(address, length, c)
+    }
+
     /// Resolve a physical FUNC/NOTYPE symbol at an executable ET_EXEC boundary.
     /// Zero-sized symbols are allowed: this identifies an address, not an extent
     /// or a claim that the following instruction/body is supported.

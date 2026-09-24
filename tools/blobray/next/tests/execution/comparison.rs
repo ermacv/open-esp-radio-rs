@@ -34,6 +34,7 @@ fn memory_request(f: &Fixture) -> ExecutionRequest {
     other.observe_memory[0].address = 0x4000;
     r.cases[0].replacement = Some(other);
     r.cases[0].relation = Some(ComparisonRelation {
+        projection: None,
         calls: false,
         reviewed_calls: None,
         returns: ReturnWords {

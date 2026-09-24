@@ -146,6 +146,7 @@ mod tests {
             },
         };
         let mut manifest = ExecutionManifest {
+            projections: vec![],
             schema: EXECUTION_SCHEMA,
             project: id.as_str().parse().unwrap(),
             call_pairs: vec![],
@@ -169,6 +170,7 @@ mod tests {
                     vendor: input(),
                     replacement: Some(input()),
                     relation: Some(ComparisonRelation {
+                        projection: None,
                         returns: ReturnWords {
                             low: false,
                             high: false,

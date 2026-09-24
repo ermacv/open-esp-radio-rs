@@ -593,8 +593,8 @@ required gates; no generic policy framework or compatibility path is introduced.
 | --- | --- | --- |
 | 10.1 | done | Explicit per-case comparison selection and bounded final normal-memory observations, alongside selected return words and existing ordered MMIO/fence/delay events. Physical paired ranges have exact lengths and identities; all selected bytes, including unchanged bytes and unknowns, are represented. RAM-only and high/low-return differences DIFF; equal known completed selections MATCH; unknown/unavailable/unfinished results remain INCOMPLETE. Excluded observations remain retained. Invalid/overlapping/overflowing selections fail, phase lifetime/resource/cancellation atomicity and source-free replay pass. No inferred layout equivalence. |
 | 10.2 | done | Ordered captured-code, modeled and service call observations with physical targets, ABI words and exact interleaving with selected observables. Explicit reviewed semantic call pairs support exact/selected/ignored argument policies; unlisted calls remain retained and their exclusion is visible. Missing/ambiguous/unreviewed pairs fail; reordered/missing calls and selected argument-only differences are caught; unknown words stay incomplete. Shared application API/CLI and source-free retained comparison pass. |
-| 10.3 | active | Ordinary RAM access/atomic and branch timeline observations plus explicit reviewed ABI/layout projections for corresponding memory/arguments and control observations. Validate exact domains, widths, aliases/overlap, offsets and applicability; no dropped unknown/missing fields or automatic pointer normalization. Final-state-only equivalence stays distinct from ordered internal-state equivalence. Different layouts can match only under the selected valid projection; invalid/stale projection and branch/RAM-order changes are tested. |
-| 10.4 | pending | Reviewed effect contracts classify required, omitted, replaced and added MMIO/delay/fence effects, preserving reason and claim ceiling. Absent/unclassified/conflicting rules fail closed; known effect differences DIFF and incomplete execution cannot MATCH. Policy identity, raw excluded evidence, provenance and source-free replay remain retained. Compose all stage-10 relations, run the full execution/comparison/recovery suites and source-only checkpoint; close stage 10 only after all four sub-stages pass. |
+| 10.3 | done | Ordinary RAM access/atomic and branch timeline observations plus explicit reviewed ABI/layout projections for corresponding memory/arguments and control observations. Validate exact domains, widths, aliases/overlap, offsets and applicability; no dropped unknown/missing fields or automatic pointer normalization. Final-state-only equivalence stays distinct from ordered internal-state equivalence. Different layouts can match only under the selected valid projection; invalid/stale projection and branch/RAM-order changes are tested. |
+| 10.4 | active | Reviewed effect contracts classify required, omitted, replaced and added MMIO/delay/fence effects, preserving reason and claim ceiling. Absent/unclassified/conflicting rules fail closed; known effect differences DIFF and incomplete execution cannot MATCH. Policy identity, raw excluded evidence, provenance and source-free replay remain retained. Compose all stage-10 relations, run the full execution/comparison/recovery suites and source-only checkpoint; close stage 10 only after all four sub-stages pass. |
 
 
 Stage 10.1 closes explicit per-case event/return/final-memory selection and
@@ -643,7 +643,7 @@ required before the effect-contract checkpoint; no original obligation is remove
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
 | 10.3.1 | done | Explicit bounded normal-memory read/write/atomic and conditional-branch observations, with exact ordered physical comparison interleaved with selected calls/MMIO/fence/delay. Include declared model/service normal-memory effects once; setup/inspection reads are provenance rather than invented guest transactions. Capture/compare selections are explicit; unknown/inaccessible/unfinished states cannot MATCH, excluded evidence stays available, and equal final state cannot hide a selected timeline difference. All widths, LR/SC/RMW, branch choices, model effects, phase ownership, resource/cancellation atomicity, retained validation and source-free API/CLI restore/replay pass with all gates. |
-| 10.3.2 | active | Native reviewed ABI/layout projections for corresponding final-memory fields, call words and internal memory/control observations. Exact endpoint domains/widths/offsets/aliases/applicability and every selected field are validated; no implicit pointer normalization, dropped unknown/missing field, unreviewed mapping or name fallback. Different layouts/ABI word positions can match only under the selected valid projection; reordered RAM/branches and known projected differences remain DIFF. Generic/specialized API/CLI, immutable review/source/definition retention, invalid/stale/conflicting mappings, resource atomicity and source-free replay pass. Compose physical and projected relations, then close 10.3. |
+| 10.3.2 | done | Native reviewed ABI/layout projections for corresponding final-memory fields, call words and internal memory/control observations. Exact endpoint domains/widths/offsets/aliases/applicability and every selected field are validated; no implicit pointer normalization, dropped unknown/missing field, unreviewed mapping or name fallback. Different layouts/ABI word positions can match only under the selected valid projection; reordered RAM/branches and known projected differences remain DIFF. Generic/specialized API/CLI, immutable review/source/definition retention, invalid/stale/conflicting mappings, resource atomicity and source-free replay pass. Compose physical and projected relations, then close 10.3. |
 
 
 Stage 10.3.1 closes opt-in physical reads/writes/atomics and conditional branches,
@@ -655,3 +655,17 @@ retained evidence and source-free API/CLI restore/replay are covered. All affect
 tests, 97 Next execution tests, Clippy, formatting, public/private documentation
 and standalone pass. Execution schema 13, database 31 and journal 32 identify this
 physical profile. Reviewed cross-layout/ABI projection remains active 10.3.2.
+
+
+Stage 10.3.2 closes reviewed same-width byte fields/arrays, physical conditional
+branch correspondence and exact 32-bit ABI word-position projection. All declared
+field/array bytes participate; unknown padding remains explicit outside selection.
+Unmapped selected effects cannot MATCH. Both physical endpoints/instructions,
+geometry/aliases/overflow, accepted/frozen/superseded/conflicting review, changed
+source/entry, unknown fields/words, order/atomic outcomes, cross-chunk arrays and
+bulk initialization are covered. Generic/specialized API/CLI, admitted owner release,
+failed-run atomicity and source-free restore/replay pass. All affected tests,
+105 Next execution tests, Clippy, formatting, public/private docs and standalone
+pass. Execution schema 14, database 32 and journal 33 identify this profile. No
+pointer-value, type-width or path normalization is inferred. Stage 10.3 is complete;
+the effect-contract and composed source-only checkpoint remains active 10.4.

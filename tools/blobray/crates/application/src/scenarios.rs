@@ -30,6 +30,9 @@ fn resolve(
     c: &mut dyn RunControl,
 ) -> Result<Resolution> {
     let operation = match action {
+        ScenarioRequest::ProposeProjection { request } => RunOperation::Knowledge {
+            change: crate::layout_projections::propose(project, request, memory, c)?,
+        },
         ScenarioRequest::ProposeCallPair { request } => RunOperation::Knowledge {
             change: crate::call_pairs::propose(project, request, memory, c)?,
         },
@@ -284,7 +287,7 @@ pub fn prepare_scenario_worker(
                     deadline_ms: work.deadline_ms,
                 };
                 PreparedReceipt::Knowledge(crate::knowledge::prepare_with(
-                    stage, &request, &memory, &disk, c,
+                    stage, &request, decoder, &memory, &disk, c,
                 )?)
             }
             RunOperation::Execute { request, producer } => {

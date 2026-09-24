@@ -17,6 +17,7 @@ fn invalid(message: &str) -> Error {
 fn validate_evidence(
     project: &Project,
     proposal: &KnowledgeProposal,
+    decoder: &dyn FunctionDecoder,
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
 ) -> Result<Vec<ArtifactId>> {
@@ -48,7 +49,11 @@ fn validate_evidence(
                 KnowledgeClaim::FunctionExtent { extent } => Some(extent),
                 _ => None,
             };
-            if let KnowledgeClaim::CallPair { correspondence } = &proposal.claim {
+            if let KnowledgeClaim::LayoutProjection { projection } = &proposal.claim {
+                crate::layout_projections::endpoint(
+                    &capture, projection, false, decoder, memory, c,
+                )?;
+            } else if let KnowledgeClaim::CallPair { correspondence } = &proposal.claim {
                 crate::call_pairs::endpoint(&capture, &correspondence.vendor, memory, c)?;
             } else if let KnowledgeClaim::Function { contract } = &proposal.claim {
                 let request = FunctionRequest {
@@ -141,6 +146,11 @@ fn validate_evidence(
             }
             Ok(capture.payload.clone())
         })?;
+    if let KnowledgeClaim::LayoutProjection { projection } = &proposal.claim {
+        roots.extend(crate::layout_projections::secondary(
+            project, projection, decoder, memory, control,
+        )?);
+    }
     if let KnowledgeClaim::CallPair { correspondence } = &proposal.claim {
         roots.extend(crate::call_pairs::secondary(
             project,
@@ -252,6 +262,7 @@ fn validate_evidence(
 pub fn prepare_knowledge_worker(
     stage: &Path,
     work: &KnowledgeWork,
+    decoder: &dyn FunctionDecoder,
     control: &mut dyn RunControl,
 ) -> Result<PreparedKnowledgeReceipt> {
     if work.schema != 1 {
@@ -270,7 +281,7 @@ pub fn prepare_knowledge_worker(
         control,
         budget: &disk,
     };
-    let result = prepare_with(stage, work, &memory, &disk, &mut control);
+    let result = prepare_with(stage, work, decoder, &memory, &disk, &mut control);
     control.memory_phases(&memory.phase_observations());
     control.working_memory(memory.observation());
     result
@@ -279,6 +290,7 @@ pub fn prepare_knowledge_worker(
 pub(crate) fn prepare_with(
     stage: &Path,
     work: &KnowledgeWork,
+    decoder: &dyn FunctionDecoder,
     memory: &WorkingMemory,
     disk: &blobray_store::TemporaryBudget,
     control: &mut dyn RunControl,
@@ -294,7 +306,10 @@ pub(crate) fn prepare_with(
                 let encoded =
                     serde_json::to_vec(&work.change).map_err(|e| invalid(&e.to_string()))?;
                 let id = ArtifactId::of_bytes(&encoded).as_str().parse()?;
-                (id, validate_evidence(&project, proposal, memory, control)?)
+                (
+                    id,
+                    validate_evidence(&project, proposal, decoder, memory, control)?,
+                )
             }
             KnowledgeAction::Review {
                 assertion,
@@ -312,7 +327,8 @@ pub(crate) fn prepare_with(
                     .map(|id| project.knowledge_entry(base, id, control))
                     .transpose()?;
                 blobray_knowledge::validate_review(&target, *decision, replaced.as_ref())?;
-                let mut roots = validate_evidence(&project, &target.proposal, memory, control)?;
+                let mut roots =
+                    validate_evidence(&project, &target.proposal, decoder, memory, control)?;
                 if *decision == ReviewDecision::Accept {
                     project.knowledge_entries(Some(base),control,&mut |entry,_|{
                         if entry.state==AssertionState::Accepted && Some(&entry.id)!=supersedes.as_ref() && blobray_knowledge::conflicts(&target.proposal,&entry.proposal) {return Err(Error::new(ErrorCode::Conflict,"acceptance conflicts with an existing assertion; select it explicitly for supersession"));}Ok(())

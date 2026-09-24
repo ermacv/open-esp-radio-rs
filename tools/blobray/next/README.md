@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 31 and journal schema 32. Earlier and future
+Projects require metadata schema 32 and journal schema 33. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,9 +712,9 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 32 for every durable and read operation. Storage metadata
-uses schema 31; revision manifests use schema 1 and execution manifests use schema
-13. These are independent formats. Earlier journals are rejected by single-run,
+Run records use schema 33 for every durable and read operation. Storage metadata
+uses schema 32; revision manifests use schema 1 and execution manifests use schema
+14. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-32 run; an envelope version is not a journal
+execution 7) wrap the same schema-33 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1366,7 +1366,7 @@ claim a single mmap arena or a process-wide no-allocation guarantee.
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
 operation/query paths. No legacy engine or external limiter participates.
-Execution requests and manifests use schema 13; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
+Execution requests and manifests use schema 14; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 
 ```console
@@ -1382,7 +1382,7 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 13,
+  "schema": 14,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -1462,7 +1462,7 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 comparison relation still excludes final RAM itself.
 
-The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1` environment maps validated ELF
+The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
@@ -2638,3 +2638,46 @@ intermediate states or read order can DIFF even when final memory matches.
 Unknown/inaccessible reads or incomplete execution cannot MATCH. Raw excluded
 observations remain available after source removal and project restore. See
 [internal timeline contracts](../docs/design/contracts.md#internal-timeline).
+
+
+### Reviewed layout and ABI comparison
+
+`knowledge propose-projection --request projection.json` creates a proposal with
+`subject`, `projection`, `expected_base`, `actor` and `reason`. Use normal knowledge
+review to accept it, then set the execution case's `relation.projection` to
+`{"knowledge":"<accepted-snapshot>","assertion":"<assertion>"}`. The manifest retains
+that exact resolved policy; updating knowledge does not update old comparisons.
+
+A projection specifies `vendor` and `replacement` endpoints, `fields`, `branches`,
+`applicability` and `reason`. Each endpoint has an `entry` using the exact captured
+code endpoint format of call pairs, plus `domains` such as
+`[{"address":12288,"length":16}]`. A field can map different offsets:
+
+```json
+{"name":"counter","vendor":{"domain":0,"offset":0},
+ "replacement":{"domain":0,"offset":8},"width":4,"count":1,
+ "final_state":true,"timeline":true}
+```
+
+Both domains must contain their aligned field/array. Element widths 1/2/4/8 and a
+nonzero count define the exact byte span, with a total 1 MiB projection limit;
+aliases, missing capture, duplicate names and unsupported widths fail explicitly.
+Capture final ranges in `observe_memory` and enable the selected timeline channels.
+All declared final fields participate, including unchanged/unknown bytes. Padding
+outside those fields is retained without being included in equality. Branch pairs
+contain `vendor`/`replacement` objects with exact `site`, `target`, `fallthrough`;
+proposal/review checks the captured instructions. Corresponding taken decisions
+must agree. Raw order, memory transaction kind/width/value and atomic outcomes remain
+significant. Unmapped selected observations prevent MATCH.
+
+For different call ABI positions, an accepted call correspondence can use
+`"arguments":{"kind":"projected","words":[{"vendor":0,"replacement":1},
+{"vendor":7,"replacement":8}]}`. Capture every selected word, including stack words.
+This compares exact 32-bit values at different positions; it does not normalize
+pointer values, truncate integers or infer types. With different capture widths,
+unlisted-call scope must explicitly exclude unpaired calls. Raw unselected words
+remain available. `CallArgument.word` is the selected pair ordinal for this policy.
+
+All projections are finite reviewed assumptions bound to captured sources and entries.
+A successful comparison establishes selected observations under those assumptions;
+it does not establish general equivalence. See [projection contracts](../docs/design/contracts.md#reviewed-layout-and-abi-projections).

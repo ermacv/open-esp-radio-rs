@@ -234,6 +234,7 @@ pub(crate) fn prepare_legacy(
     stage: &Path,
     work: &QueryWork,
     request: &LegacyRequest,
+    decoder: &dyn FunctionDecoder,
     memory: &WorkingMemory,
     disk: &blobray_store::TemporaryBudget,
     control: &mut dyn RunControl,
@@ -415,6 +416,7 @@ pub(crate) fn prepare_legacy(
                                         work,
                                         row,
                                         artifact,
+                                        decoder,
                                         memory,
                                         disk,
                                         control,
@@ -569,11 +571,13 @@ impl ElfSink for MatchBoundary<'_> {
         Ok(())
     }
 }
+#[allow(clippy::too_many_arguments)]
 fn private_change(
     writer: &mut blobray_store::Writer,
     project: &Project,
     work: &QueryWork,
     change: KnowledgeChange,
+    decoder: &dyn FunctionDecoder,
     memory: &WorkingMemory,
     disk: &blobray_store::TemporaryBudget,
     control: &mut dyn RunControl,
@@ -601,6 +605,7 @@ fn private_change(
                 started_ms: work.started_ms,
                 deadline_ms: work.deadline_ms,
             },
+            decoder,
             memory,
             disk,
             control,
@@ -627,6 +632,7 @@ fn convert_boundary(
     work: &QueryWork,
     row: &toml_edit::Table,
     document: &ArtifactId,
+    decoder: &dyn FunctionDecoder,
     memory: &WorkingMemory,
     disk: &blobray_store::TemporaryBudget,
     control: &mut dyn RunControl,
@@ -727,6 +733,7 @@ fn convert_boundary(
                 reason: reason.clone(),
                 action: KnowledgeAction::Propose { proposal },
             },
+            decoder,
             memory,
             disk,
             control,
@@ -750,6 +757,7 @@ fn convert_boundary(
                         supersedes: None,
                     },
                 },
+                decoder,
                 memory,
                 disk,
                 control,

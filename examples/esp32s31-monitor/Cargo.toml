@@ -7,20 +7,15 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-oer-wifi-embassy = { path = "../../crates/adapters/embassy/ieee80211" }
 oer-esp32s31-runtime = { path = "../../platform/esp32s31/runtime", features = ["psram-task-stack"] }
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
 esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["esp32s31", "rt", "unstable"] }
 esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["auto", "esp32s31", "log-04"] }
-oer = { package = "open-esp-radio", path = "../../crates/oer", default-features = false, features = ["wifi"] }
+oer = { package = "open-esp-radio", path = "../../crates/oer", default-features = false, features = ["owned-xarxa"] }
 oer-esp32s31-embassy-runtime = { path = "../../crates/adapters/embassy/esp32s31/runtime", features = ["esp32s31"] }
-oer-esp32s31-phy = { path = "../../crates/hardware/esp32s31/phy" }
-oer-esp32s31-wifi-esp-hal = { path = "../../crates/adapters/esp-hal/esp32s31/ieee80211", features = ["esp32s31"] }
-oer-esp32s31-embassy-wifi = { path = "../../crates/composition/esp32s31/embassy/ieee80211" }
 static_cell = "2.1.1"
-oer-esp32s31-soc = { path = "../../crates/adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
 
 [profile.release]
 codegen-units = 1

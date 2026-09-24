@@ -1486,6 +1486,11 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 name = "open-esp-radio"
 version = "0.1.0"
 dependencies = [
+ "oer-esp32s31-embassy-wifi",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-wifi-ap",
+ "oer-esp32s31-wifi-mac",
+ "oer-esp32s31-wifi-sta",
  "oer-ieee80211",
  "oer-memory",
  "oer-network",
@@ -1507,13 +1512,8 @@ dependencies = [
  "esp-hal",
  "esp-println",
  "oer-esp32s31-embassy-runtime",
- "oer-esp32s31-embassy-wifi",
- "oer-esp32s31-phy",
  "oer-esp32s31-runtime",
- "oer-esp32s31-soc",
- "oer-esp32s31-wifi-esp-hal",
  "oer-firmware",
- "oer-wifi-embassy",
  "open-esp-radio",
  "static_cell",
 ]

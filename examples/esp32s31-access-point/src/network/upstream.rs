@@ -33,7 +33,7 @@ pub fn remote_endpoint(meta: embassy_net::udp::UdpMetadata) -> embassy_net::wire
 
 #[cfg(target_arch = "riscv32")]
 pub async fn run<F: core::future::Future>(
-    device: oer_esp32s31_embassy_wifi::WifiDevice,
+    device: oer::systems::esp32s31::embassy::wifi::WifiDevice,
     seed: u64,
     application: impl FnOnce(Stack<'static>) -> F,
 ) -> ! {
@@ -42,7 +42,7 @@ pub async fn run<F: core::future::Future>(
         wire::{IpAddress, IpCidr},
     };
 
-    use oer_esp32s31_embassy_wifi::WifiNetworkDevice;
+    use oer::systems::esp32s31::embassy::wifi::WifiNetworkDevice;
     static STORAGE: static_cell::StaticCell<StackStorage<'static>> = static_cell::StaticCell::new();
     static DRIVER: static_cell::StaticCell<WifiNetworkDevice> = static_cell::StaticCell::new();
     let (stack, mut runner) = Stack::new(STORAGE.init(StackStorage::new()), seed);

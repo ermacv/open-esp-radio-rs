@@ -35,13 +35,13 @@ pub fn remote_endpoint(meta: embassy_net::udp::UdpMetadata) -> embassy_net::IpEn
 
 #[cfg(target_arch = "riscv32")]
 pub async fn run<F: core::future::Future>(
-    device: oer_esp32s31_embassy_wifi::WifiDevice,
+    device: oer::systems::esp32s31::embassy::wifi::WifiDevice,
     seed: u64,
     application: impl FnOnce(Stack<'static>) -> F,
 ) -> ! {
     use embassy_net::{Config, Ipv4Address, Ipv4Cidr, StaticConfigV4};
 
-    use oer_esp32s31_embassy_wifi::{WifiNetworkRunner, WifiStackResources};
+    use oer::systems::esp32s31::embassy::wifi::{WifiNetworkRunner, WifiStackResources};
     static STORAGE: static_cell::StaticCell<WifiStackResources> = static_cell::StaticCell::new();
     let config = Config::ipv4_static(StaticConfigV4 {
         address: Ipv4Cidr::new(Ipv4Address::new(192, 168, 4, 1), 24),

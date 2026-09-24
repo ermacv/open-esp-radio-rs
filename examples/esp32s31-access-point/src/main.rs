@@ -23,13 +23,11 @@ use open_esp_radio_esp32s31_access_point::{dhcp, network, services};
 
 use oer_esp32s31_embassy_runtime::{self as platform_executor, Executor};
 
-use oer_esp32s31_embassy_wifi::{
-    self as integration, RadioConfig, RadioParts, RadioRunners, RadioSystem, WifiParts,
+use oer::systems::esp32s31::embassy::wifi::{
+    self as integration, DeadlineBudget, DeadlineWatchdog, EspHalRadioPeripheral,
+    PhyCalibrationIdentity, RadioConfig, RadioParts, RadioRunners, RadioSystem, WatchdogConfig,
+    WifiParts, phy_get_rf_cal_version,
 };
-
-use oer_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
-
-use oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 
 use static_cell::StaticCell;
 
@@ -55,10 +53,8 @@ extern "C" fn runtime_main() -> ! {
     // with global interrupts disabled and the PSRAM mapping intact.
     let _psram = unsafe { oer_esp32s31_runtime::adopt_psram(peripherals.PSRAM) };
 
-    static WATCHDOG: StaticCell<oer_esp32s31_soc::watchdog::DeadlineWatchdog> = StaticCell::new();
-    let watchdog = WATCHDOG.init(oer_esp32s31_soc::watchdog::DeadlineWatchdog::new(
-        peripherals.TIMG1,
-    ));
+    static WATCHDOG: StaticCell<DeadlineWatchdog> = StaticCell::new();
+    let watchdog = WATCHDOG.init(DeadlineWatchdog::new(peripherals.TIMG1));
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     platform_executor::init(OneShotTimer::new(timer_group.timer0));
     TRNG_SOURCE.init(TrngSource::new(peripherals.RNG));
@@ -93,7 +89,7 @@ async fn access_point_task(
     spawner: Spawner,
     radio: EspHalRadioPeripheral,
     trng: Trng,
-    watchdog: &'static oer_esp32s31_soc::watchdog::DeadlineWatchdog,
+    watchdog: &'static DeadlineWatchdog,
 ) {
     let mut station_address = [0; 6];
     station_address
@@ -118,10 +114,8 @@ async fn access_point_task(
     .expect("AP request must be supported");
     // Board-selected engineering limits, not qualified timing bounds.
     use core::num::NonZeroU32;
-    use oer_esp32s31_soc::watchdog::DeadlineBudget;
-    static WATCHDOG_CONFIG: StaticCell<oer_esp32s31_embassy_wifi::WatchdogConfig> =
-        StaticCell::new();
-    let watchdog = WATCHDOG_CONFIG.init(oer_esp32s31_embassy_wifi::WatchdogConfig::new(
+    static WATCHDOG_CONFIG: StaticCell<WatchdogConfig> = StaticCell::new();
+    let watchdog = WATCHDOG_CONFIG.init(WatchdogConfig::new(
         watchdog,
         DeadlineBudget::from_micros(NonZeroU32::new(5_000_000).unwrap()),
         DeadlineBudget::from_micros(NonZeroU32::new(1_000_000).unwrap()),
@@ -139,7 +133,7 @@ async fn access_point_task(
         WifiChannel::mhz20(AP_CHANNEL).expect("initial channel must be valid"),
     );
     let RadioSystem { radio, runners } =
-        oer_wifi_embassy::await_stack_boundary!(integration::new(radio, trng, config))
+        integration::await_stack_boundary!(integration::new(radio, trng, config))
             .expect("radio initialization must succeed once");
     let RadioRunners {
         hardware: radio_runner,
@@ -167,7 +161,7 @@ async fn access_point_task(
         0xa5,
         0x31,
     ]);
-    oer_wifi_embassy::await_stack_boundary!(network::run(
+    integration::await_stack_boundary!(network::run(
         access_point_device,
         seed,
         |stack| async move {

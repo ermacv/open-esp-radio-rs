@@ -285,6 +285,10 @@ pub fn validate_execution_records(
     let mut prepared = None;
     let mut part = EvidencePart::Events;
     let mut memory_state = [MemoryState::new(), MemoryState::new()];
+    let mut capture = [
+        crate::execution_capture::CaptureState::new(),
+        crate::execution_capture::CaptureState::new(),
+    ];
     let mut relation_complete = true;
     let mut environment_complete = true;
     let mut verdict = manifest.verdict.map(|_| ComparisonVerdict::Match);
@@ -301,6 +305,10 @@ pub fn validate_execution_records(
             .is_none_or(|next| next.reset == SessionReset::Cold);
         if prepared != Some(case) {
             relation_complete = true;
+            capture = [
+                crate::execution_capture::CaptureState::new(),
+                crate::execution_capture::CaptureState::new(),
+            ];
             memory_state[0].begin(phase.relation.as_ref(), false);
             memory_state[1].begin(phase.relation.as_ref(), true);
             services[0].begin(
@@ -411,6 +419,19 @@ pub fn validate_execution_records(
                 if i != case || replacement != side || outcome || part != EvidencePart::Events {
                     return Err(integrity("execution event order differs"));
                 }
+                let input = if side {
+                    phase.replacement.as_ref().unwrap()
+                } else {
+                    &phase.vendor
+                };
+                c.checkpoint(
+                    input
+                        .observe_calls
+                        .as_ref()
+                        .map_or(0, |p| p.overrides.len()) as u64
+                        + 1,
+                )?;
+                capture[usize::from(side)].event(input, &event)?;
                 if let ExecutionEvent::RuntimeTable { instance, event } = &event {
                     tables[usize::from(side)].event(*instance, event, c)?;
                 }
@@ -471,6 +492,10 @@ pub fn validate_execution_records(
                     return Err(integrity(
                         "execution outcome does not match its declared goal",
                     ));
+                }
+                capture[usize::from(side)].finish(input, &stop)?;
+                if phase.relation.as_ref().is_some_and(|r| r.calls) {
+                    relation_complete &= capture[usize::from(side)].known;
                 }
                 memory_state[usize::from(side)].finish(input, must_block)?;
                 relation_complete &= memory_state[usize::from(side)].known;

@@ -1,6 +1,6 @@
 use super::interfaces::{contract, fixture_code, request, review, run};
 use super::*;
-fn setup(initial: Vec<u32>) -> (Fixture, ExecutionRequest) {
+pub(super) fn setup(initial: Vec<u32>) -> (Fixture, ExecutionRequest) {
     setup_queues(initial, false)
 }
 fn setup_queues(initial: Vec<u32>, second: bool) -> (Fixture, ExecutionRequest) {

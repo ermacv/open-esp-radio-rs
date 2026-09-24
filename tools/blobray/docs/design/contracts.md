@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 29
-and database schema 28 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 30
+and database schema 29 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -752,7 +752,7 @@ Domain validates stack geometry and computes entry SP; application initializes
 stack arguments in its freshly owned stack, and passes eight optional register
 words to the backend. Unknown argument slots override stack seeds. No register or
 stack word becomes zero by omission, and setup emits no guest events. The caller
-owns type/variadic lowering. Request and manifest schema 10 pin this interpretation;
+owns type/variadic lowering. Request and manifest schema 11 pin this interpretation;
 producer identity pins both backend unknown-value semantics and stack environment.
 
 `ExecutionMemory` also owns LR/SC reservation state, permission checks and indivisible
@@ -867,8 +867,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 28
-and journal schema 29 carry these identities. Old formats are rejected without
+Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 29
+and journal schema 30 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -1612,3 +1612,53 @@ INCOMPLETE comparison beside completed execution coverage. Comparison verdict,
 operation state and scoped execution coverage remain independent machine fields.
 A failed phase blocks warm execution; an unknown selected output or comparison
 DIFF alone does not change the session's successful code-goal transition.
+
+### Physical call observations
+
+`Invocation.observe_calls` explicitly selects transfer capture for this phase.
+`null` disables it; a profile declares `include_tail`, `argument_words` (0–256)
+and at most 128 unique aligned physical target overrides. Zero words means
+target-only observation. This is physical RV32 word selection, with no inferred
+signature, variadic lowering or pointer equivalence.
+
+The backend invokes the observation port on x1/x5 transfers and optionally x0
+noncanonical transfers. Canonical x1/x5 returns and the root return sentinel are
+excluded. Opt-in x0 transfers are tail candidates: this convention also includes
+intrafunction jumps and does not prove function boundaries. Capture precedes
+observe-call goal completion, interface checks, model/service dispatch and callee
+code. It never invokes the destination. A `call-transfer` header retains physical
+site/target, direct/indirect form, tail flag, current SP, word count and selected
+target kind (captured code, call model, FIFO service or unavailable). Target kind
+describes the available boundary, not proof that its body executed; the request,
+model identities and adjacent dispatch evidence retain that distinction.
+
+The following ordered `transfer-argument` records contain a0–a7 then words from
+the current private stack. Unknown registers/bytes remain unknown. Missing SP,
+misalignment and outside-private-stack accesses remain unavailable with a reason.
+Capture never redirects a stack read to RAM or MMIO, and unknown captured data
+alone does not stop code. Each group admits header plus all words against shared
+event capacity before emission. Application owns the admitted sorted override
+index for one phase and releases it at phase completion; retained event capacity
+remains charged through serialization/comparison. Work, memory, deadline or disk
+failure aborts publication of the entire operation.
+
+`ComparisonRelation.calls` selects exact ordered physical targets and configured
+words, interleaved with the selected MMIO/fence/delay channels. Both invocations
+must select the identical capture profile. Sites, SP, transfer form and target
+kind remain provenance rather than implicit equivalence conditions. An event
+index counts selected calls/effects, not individual argument rows. Different
+targets or known selected words yield typed `call-target`/`call-argument`
+differences; different call/effect order or completed stream lengths yields
+`event`. Unknown/unavailable selected words prevent MATCH; known differences
+remain DIFF despite other unknowns. Completed code/model obligations remain
+required. Excluding calls does not erase their evidence.
+
+Store validates requested geometry, contiguous word groups, unavailable reasons,
+observe-call boundary presence and selected knownness before admitting MATCH.
+It does not replay ISA semantics to authenticate the physical trace. Verification
+borrows grouped slices without allocating or rescanning preceding calls. The
+[capture regressions](../../next/tests/execution/capture.rs) exercise application,
+CLI, persistence, word/effect differences and resource atomicity;
+[store validation](../../crates/store/src/execution_capture.rs) rejects malformed
+groups. Reviewed semantic pairs and ABI/layout projections remain separate target
+relations and are not inferred by this physical profile.

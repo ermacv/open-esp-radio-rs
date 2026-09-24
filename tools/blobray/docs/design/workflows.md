@@ -609,3 +609,19 @@ Excluded observations remain available. An incomplete code phase's RAM snapshot
 is intermediate evidence; successful execution coverage alone does not prove a
 comparison when required outputs are unknown. Preservation and reopening use the
 same project backup/restore lifecycle as other execution evidence.
+
+### Compare physical call boundaries (implemented)
+
+Set each invocation's `observe_calls` to an explicit word/tail profile and select
+`relation.calls: true`. For exact comparison use the identical profile on both
+sides; target overrides select words only for that physical destination. Execute
+or compare through the shared application scenario, then read the retained
+`call-transfer`/`transfer-argument` groups and typed difference. A zero-word profile
+compares target order without claiming argument equivalence. Source-free project
+backup/restore and replay preserve the same evidence and producer identity.
+
+Compare call groups together with the required MMIO/fence/delay channels to retain
+their relative order. Unknown selected words yield INCOMPLETE. `observe-call`
+goals stop after boundary capture and before dispatch, so that prefix never proves
+callee-body behavior. Exact physical comparison does not map renamed or relocated
+semantic operations; reviewed correspondence remains a target profile.

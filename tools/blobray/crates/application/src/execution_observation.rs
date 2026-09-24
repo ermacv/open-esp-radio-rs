@@ -78,6 +78,7 @@ mod tests {
         let c = &mut || Ok(());
         let mut s = Session::new(&memory, 1, c).unwrap();
         let input = Invocation {
+            observe_calls: None,
             entry: 0x1000,
             goal: ExecutionGoal::Return,
             arguments: vec![],

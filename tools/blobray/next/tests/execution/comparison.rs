@@ -33,6 +33,7 @@ fn memory_request(f: &Fixture) -> ExecutionRequest {
     other.observe_memory[0].address = 0x4000;
     r.cases[0].replacement = Some(other);
     r.cases[0].relation = Some(ComparisonRelation {
+        calls: false,
         returns: ReturnWords {
             low: false,
             high: false,
@@ -285,6 +286,9 @@ fn invalid_pairs_and_physical_ranges_are_rejected_before_worker_execution() {
 fn selected_memory_survives_cli_restore_replay_and_failed_attempts() {
     let f = Fixture::new(&[0x00b52023, 0x00000513, 0x00008067]);
     let r = memory_request(&f);
+    check_preservation(&f, r);
+}
+pub(super) fn check_preservation(f: &Fixture, r: ExecutionRequest) {
     let record = f.run(r.clone(), budget());
     assert_eq!(record.state, RunState::Completed);
     let id = record.execution.unwrap();

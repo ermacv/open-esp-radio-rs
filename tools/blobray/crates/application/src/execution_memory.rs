@@ -34,6 +34,7 @@ pub(super) struct Session<'a> {
     services: crate::fifo_services::Services<'a>,
     service_observations: Vec<FifoObservation>,
     service_goal: Option<(u16, Option<u32>)>,
+    capture: Option<(CallCapture, MemoryReservation<'a>)>,
     final_memory: Vec<FinalMemoryChunk>,
     final_memory_capacity: Option<MemoryReservation<'a>>,
     table_observations: Vec<RuntimeTableObservation>,
@@ -109,6 +110,7 @@ impl<'a> Session<'a> {
             services: crate::fifo_services::Services::new(memory),
             service_observations,
             service_goal: None,
+            capture: None,
             final_memory: Vec::new(),
             final_memory_capacity: None,
             call_observations,
@@ -227,6 +229,30 @@ impl<'a> Session<'a> {
         self.reservation = None;
         self.finish_phase();
         self.events.clear();
+        if let Some(profile) = &input.observe_calls {
+            profile.validate()?;
+            let capacity = self.memory.reserve(profile.payload_bytes(), c.position())?;
+            let mut overrides = Vec::new();
+            overrides
+                .try_reserve_exact(profile.overrides.len())
+                .map_err(|_| {
+                    Error::new(
+                        ErrorCode::ResourceLimited,
+                        "call capture allocation refused",
+                    )
+                })?;
+            c.checkpoint(profile.overrides.len() as u64 + 1)?;
+            overrides.extend_from_slice(&profile.overrides);
+            overrides.sort_unstable_by_key(|o| o.target);
+            self.capture = Some((
+                CallCapture {
+                    include_tail: profile.include_tail,
+                    argument_words: profile.argument_words,
+                    overrides,
+                },
+                capacity,
+            ));
+        }
         self.region(
             Mapping {
                 address: target.stack.address,
@@ -391,6 +417,7 @@ impl<'a> Session<'a> {
         self.finish_phase();
     }
     fn finish_phase(&mut self) {
+        self.capture = None;
         self.reservation = None;
         self.regions.retain(|r| {
             !matches!(
@@ -446,6 +473,9 @@ impl<'a> Session<'a> {
     }
 }
 impl ExecutionMemory for Session<'_> {
+    fn observe_call(&mut self, input: &CallInput, c: &mut dyn RunControl) -> Result<()> {
+        self.capture_call(input, c)
+    }
     fn call(&mut self, input: &CallInput, c: &mut dyn RunControl) -> Result<CallDispatch> {
         if input.indirect
             && let Some(result) = self.interface_call(input, c)?
@@ -648,3 +678,6 @@ mod execution_services;
 
 #[path = "execution_observation.rs"]
 mod execution_observation;
+
+#[path = "execution_capture.rs"]
+mod execution_capture;

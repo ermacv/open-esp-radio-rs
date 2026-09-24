@@ -78,7 +78,8 @@ pub(super) fn difference_valid(
         (ComparisonVerdict::Match | ComparisonVerdict::Incomplete, None) => true,
         (ComparisonVerdict::Diff, Some(ComparisonDifference::Event { index })) => {
             *index <= max_events
-                && (relation.events.mmio_read
+                && (relation.calls
+                    || relation.events.mmio_read
                     || relation.events.mmio_write
                     || relation.events.fence
                     || relation.events.delay)
@@ -113,6 +114,28 @@ pub(super) fn difference_valid(
                     .get(*pair as usize)
                     .is_some_and(|p| *offset < case.vendor.observe_memory[p.vendor as usize].length)
         }
+        (
+            ComparisonVerdict::Diff,
+            Some(ComparisonDifference::CallTarget {
+                index,
+                vendor,
+                replacement,
+            }),
+        ) => relation.calls && *index < max_events && vendor != replacement,
+        (
+            ComparisonVerdict::Diff,
+            Some(ComparisonDifference::CallArgument {
+                index,
+                word,
+                vendor,
+                replacement,
+            }),
+        ) => {
+            relation.calls
+                && *index < max_events
+                && usize::from(*word) < MAX_EXECUTION_ARGUMENT_WORDS
+                && vendor != replacement
+        }
         _ => false,
     }
 }
@@ -123,6 +146,7 @@ mod tests {
     #[test]
     fn missing_reordered_and_forged_memory_chunks_are_rejected() {
         let input = Invocation {
+            observe_calls: None,
             entry: 0x1000,
             goal: ExecutionGoal::Return,
             arguments: vec![],
@@ -138,6 +162,7 @@ mod tests {
             }],
         };
         let relation = ComparisonRelation {
+            calls: false,
             returns: ReturnWords {
                 low: false,
                 high: false,

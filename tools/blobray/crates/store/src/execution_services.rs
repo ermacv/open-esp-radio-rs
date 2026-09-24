@@ -431,6 +431,7 @@ mod tests {
     use super::*;
     fn input() -> Invocation {
         Invocation {
+            observe_calls: None,
             observe_memory: vec![],
             entry: 0x1000,
             goal: ExecutionGoal::Return,

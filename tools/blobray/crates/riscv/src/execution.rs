@@ -3,7 +3,7 @@ use super::*;
 pub struct RiscvExecutor;
 impl Executor for RiscvExecutor {
     fn identity(&self) -> &'static str {
-        "rv32imac/execution-7/rv-asm-0.2.1"
+        "rv32imac/execution-8/rv-asm-0.2.1"
     }
     fn execute(
         &self,
@@ -163,16 +163,6 @@ impl Executor for RiscvExecutor {
                     if matches!(dest.0, 0 | 1 | 5) {
                         transfer = Some((dest.0 == 0, pc.wrapping_add(width as u32), false));
                     }
-                    if let Some(tail) = observed_call(goal, dest.0, next, false) {
-                        return Ok((
-                            ExecutionStop::ObservedCall {
-                                pc,
-                                target: next,
-                                tail,
-                            },
-                            steps,
-                        ));
-                    }
                 }
                 Inst::Jalr { dest, base, offset } => {
                     let target = reg!(base.0).wrapping_add_signed(offset.as_i32()) & !1;
@@ -181,16 +171,6 @@ impl Executor for RiscvExecutor {
                     let is_return = dest.0 == 0 && matches!(base.0, 1 | 5) && offset.as_i32() == 0;
                     if !is_return && matches!(dest.0, 0 | 1 | 5) {
                         transfer = Some((dest.0 == 0, pc.wrapping_add(width as u32), true));
-                    }
-                    if let Some(tail) = observed_call(goal, dest.0, next, is_return) {
-                        return Ok((
-                            ExecutionStop::ObservedCall {
-                                pc,
-                                target: next,
-                                tail,
-                            },
-                            steps,
-                        ));
                     }
                 }
                 Inst::Beq { offset, .. }
@@ -311,17 +291,26 @@ impl Executor for RiscvExecutor {
             {
                 let mut arguments = [None; 8];
                 arguments.copy_from_slice(&regs[10..18]);
-                match memory.call(
-                    &CallInput {
-                        site: pc,
-                        target: next,
-                        tail,
-                        indirect,
-                        stack: regs[2],
-                        arguments,
-                    },
-                    control,
-                )? {
+                let input = CallInput {
+                    site: pc,
+                    target: next,
+                    tail,
+                    indirect,
+                    stack: regs[2],
+                    arguments,
+                };
+                memory.observe_call(&input, control)?;
+                if observed_call(goal, if tail { 0 } else { 1 }, next, false).is_some() {
+                    return Ok((
+                        ExecutionStop::ObservedCall {
+                            pc,
+                            target: next,
+                            tail,
+                        },
+                        steps,
+                    ));
+                }
+                match memory.call(&input, control)? {
                     CallDispatch::RuntimeInterface { instance, issue } => {
                         stop!(ExecutionGap::RuntimeInterface { instance, issue })
                     }

@@ -47,6 +47,7 @@ pub struct ComparisonRelation {
     pub returns: ReturnWords,
     pub events: EventChannels,
     pub memory: Vec<MemoryPair>,
+    pub calls: bool,
 }
 impl ComparisonRelation {
     pub fn validate(&self, vendor: &Invocation, replacement: &Invocation) -> Result<()> {
@@ -63,13 +64,19 @@ impl ComparisonRelation {
                 && !self.events.mmio_write
                 && !self.events.fence
                 && !self.events.delay
-                && self.memory.is_empty())
+                && self.memory.is_empty()
+                && !self.calls)
         {
             return Err(bad());
         }
         if (self.returns.low || self.returns.high)
             && (!matches!(vendor.goal, ExecutionGoal::Return)
                 || !matches!(replacement.goal, ExecutionGoal::Return))
+        {
+            return Err(bad());
+        }
+        if self.calls
+            && (vendor.observe_calls.is_none() || vendor.observe_calls != replacement.observe_calls)
         {
             return Err(bad());
         }
@@ -166,6 +173,17 @@ impl FinalMemoryChunk {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ComparisonDifference {
+    CallTarget {
+        index: u32,
+        vendor: u32,
+        replacement: u32,
+    },
+    CallArgument {
+        index: u32,
+        word: u16,
+        vendor: u32,
+        replacement: u32,
+    },
     Event {
         index: u32,
     },

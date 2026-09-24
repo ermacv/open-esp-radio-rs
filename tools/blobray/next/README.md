@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 28 and journal schema 29. Earlier and future
+Projects require metadata schema 29 and journal schema 30. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,9 +712,9 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 29 for every durable and read operation. Storage metadata
-uses schema 28; revision manifests use schema 1 and execution manifests use schema
-10. These are independent formats. Earlier journals are rejected by single-run,
+Run records use schema 30 for every durable and read operation. Storage metadata
+uses schema 29; revision manifests use schema 1 and execution manifests use schema
+11. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-29 run; an envelope version is not a journal
+execution 7) wrap the same schema-30 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1366,7 +1366,7 @@ claim a single mmap arena or a process-wide no-allocation guarantee.
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
 operation/query paths. No legacy engine or external limiter participates.
-Execution requests and manifests use schema 10; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
+Execution requests and manifests use schema 11; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 
 ```console
@@ -1382,7 +1382,7 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 10,
+  "schema": 11,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -1396,7 +1396,7 @@ with an exact captured occurrence):
     "name": "one-explicit-case",
     "reset": "cold",
     "relation": null,
-    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [], "calls": [], "tables": [], "services": [], "observe_memory": [] },
+    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [], "calls": [], "tables": [], "services": [], "observe_memory": [], "observe_calls": null },
     "replacement": null
   }],
   "max_events": 4096
@@ -1462,7 +1462,7 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 comparison relation still excludes final RAM itself.
 
-The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1` environment maps validated ELF
+The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
@@ -1749,7 +1749,8 @@ For example, compare low return, ordered MMIO/fence/delay and one exact memory p
 {
   "returns":{"low":true,"high":false},
   "events":{"mmio_read":true,"mmio_write":true,"fence":true,"delay":true},
-  "memory":[{"vendor":0,"replacement":0}]
+  "memory":[{"vendor":0,"replacement":0}],
+  "calls":false
 }
 ```
 
@@ -2531,3 +2532,35 @@ expression IDs alone are not proof of different behavior. Canonical expressions
 retain entry-register and observed-read identities. Traces/exports are reproducible
 after source removal and project restore; preserving the whole project retains their
 IR and original facts. This comparison grants no hardware qualification.
+
+## Physical call capture and comparison
+
+An invocation may set `observe_calls` to:
+
+```json
+{"include_tail":false,"argument_words":8,"overrides":[{"target":8192,"words":10}]}
+```
+
+`null` disables capture. Counts are explicit RV32 words (maximum 256); at most
+128 unique target overrides are allowed. Eight words select a0–a7; later words
+read the current private stack. Unknown and unavailable words stay explicit and
+do not change code execution. Zero words selects targets only. `include_tail`
+also captures x0 noncanonical jump candidates, including possible intrafunction
+jumps; canonical returns and the root sentinel are excluded.
+
+Set `relation.calls` to `true` on a comparison case and use the identical capture
+profile on both sides. Physical targets and selected words compare in order with
+selected MMIO/fence/delay events. Sites, SP and transfer/target kinds remain
+provenance. `call-target` and `call-argument` differences identify the selected
+call/effect index and differing values; changed ordering yields `event`.
+Unknown selected words prevent MATCH. Captures stay retained when `calls` is
+false. This profile does not infer semantic correspondence across different
+addresses or interpret pointer arguments.
+
+Capture happens before `observe-call` stops and before captured/model/FIFO
+dispatch. Target classification identifies the selected boundary, not execution
+of its body. Each `call-transfer` plus its `transfer-argument` rows consumes
+`max_events`, with whole-group admission and shared run limits. See
+[physical call contracts](../docs/design/contracts.md#physical-call-observations)
+for lifetime and claim scope. Execute/compare/query/replay all use this same
+retained profile.

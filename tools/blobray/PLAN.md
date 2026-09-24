@@ -182,7 +182,7 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stages 00–07 are complete. Stage 08 is active.
+Stages 00–09 and 10.1/10.2.1 are complete. Stage 10.2.2 is active.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
 interface review/discovery, ambiguous bindings and authenticated ROM query/export
 reopening. All standalone Next packages/tests, Clippy, formatting and affected
@@ -611,5 +611,16 @@ Both remain required to close 10.2.
 
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
-| 10.2.1 | active | Explicit bounded physical call/tail-transfer capture, known/unknown register and selected stack ABI words, exact target comparison and interleaving with selected MMIO/fence/delay. Captured code, call models and FIFO service boundaries are represented; observe-call goals retain their pre-dispatch semantics. Site/transfer provenance and excluded observations remain available. Target/order/argument-only differences, unknowns, invalid capture, resource/cancellation atomicity, API/CLI/source-free replay and all gates pass. No semantic pair is inferred. |
-| 10.2.2 | pending | Native proposal/review of semantic call correspondence anchored to exact captured occurrences or explicit modeled binding identity. Explicit exact/selected/ignored word policies and selected pair scope; no name fallback or implicit ABI projection. Invalid, unaccepted, ambiguous, mismatched/stale pairs fail; all listed and unlisted calls remain provenance. Ordered reviewed comparison, generic/specialized API/CLI, source-free query/replay, resource/atomicity checks and all gates close 10.2. |
+| 10.2.1 | done | Explicit bounded physical call/tail-transfer capture, known/unknown register and selected stack ABI words, exact target comparison and interleaving with selected MMIO/fence/delay. Captured code, call models and FIFO service boundaries are represented; observe-call goals retain their pre-dispatch semantics. Site/transfer provenance and excluded observations remain available. Target/order/argument-only differences, unknowns, invalid capture, resource/cancellation atomicity, API/CLI/source-free replay and all gates pass. No semantic pair is inferred. |
+| 10.2.2 | active | Native proposal/review of semantic call correspondence anchored to exact captured occurrences or explicit modeled binding identity. Explicit exact/selected/ignored word policies and selected pair scope; no name fallback or implicit ABI projection. Invalid, unaccepted, ambiguous, mismatched/stale pairs fail; all listed and unlisted calls remain provenance. Ordered reviewed comparison, generic/specialized API/CLI, source-free query/replay, resource/atomicity checks and all gates close 10.2. |
+
+
+Stage 10.2.1 closes opt-in physical call groups, exact targets/selected RV32 words,
+pre-dispatch goals and ordered interleaving with MMIO/fence/delay. Captured code,
+modeled/FIFO boundaries, explicit tail candidates, unknown/unavailable stack words,
+exclusions, bounded owner release and malformed retained groups are covered.
+Store rejects invented MATCH with unknown selected call words. All affected tests,
+80 Next execution tests, Clippy, formatting, public/private documentation and
+standalone pass. Source-free API/CLI restore/replay and failed-run atomicity pass.
+Execution schema 11, database 29 and journal 30 identify this physical profile;
+semantic correspondence remains active stage 10.2.2.

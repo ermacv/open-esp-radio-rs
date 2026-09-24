@@ -4,9 +4,9 @@
 has no filesystem, store, executor, selection or publication authority. Application
 supplies observations, the exact case relation and shared operation control.
 
-`selected-events-returns-memory/model-5` compares explicitly selected ordered
+`selected-events-calls-returns-memory/model-6` compares explicitly selected ordered
 MMIO read/write, fence and modeled delay channels; selected low/high return words;
-and exact paired final normal-memory ranges. Physical range lengths must agree;
+exact paired final normal-memory ranges; and opt-in ordered physical call targets/words. Physical range lengths must agree;
 addresses may differ only because the caller selected that pair. No pointer, ABI
 or layout equivalence is inferred. Unselected evidence remains with the caller.
 
@@ -25,8 +25,8 @@ error, never a verdict. The application aggregates DIFF before INCOMPLETE and
 publishes through the ordinary durable lifecycle.
 
 Memory lookups use the ordered selection/chunk index without cloning snapshots.
-Unknown and unavailable bytes are distinct retained facts. Call boundaries,
-ordinary access/branch timelines, elapsed time and abstract service internals are
+Unknown and unavailable bytes are distinct retained facts. Ordinary access/branch
+timelines, elapsed time and abstract service internals are
 outside this implemented relation. Results concern explicit cases and the declared
 compiled binding; they do not establish whole-domain equivalence or qualification.
 See [selected comparison contracts](../../docs/design/contracts.md#selected-final-memory-and-comparison-relations).

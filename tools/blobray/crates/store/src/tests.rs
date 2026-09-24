@@ -1320,6 +1320,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
             reset: SessionReset::Cold,
             name: "one".into(),
             vendor: Invocation {
+                observe_calls: None,
                 observe_memory: vec![],
                 goal: ExecutionGoal::Return,
                 entry: 4096,
@@ -1882,6 +1883,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
         },
     };
     let input = Invocation {
+        observe_calls: None,
         observe_memory: vec![],
         entry: 4096,
         goal: ExecutionGoal::Return,
@@ -1946,6 +1948,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
             binding: Some(CompiledBinding::ProductionEntry),
             cases: vec![ExecutionCase {
                 relation: Some(ComparisonRelation {
+                    calls: false,
                     returns: ReturnWords {
                         low: true,
                         high: false,
@@ -2015,6 +2018,73 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
             validate(&manifest, &forged).unwrap_err().code,
             ErrorCode::Integrity
         );
+    }
+    // Code completion alone cannot admit MATCH with unknown selected call words.
+    {
+        let mut m = manifest.clone();
+        m.complete = true;
+        {
+            let i = &mut m.request.cases[0].vendor;
+            i.models.clear();
+            i.observe_calls = Some(CallCapture {
+                include_tail: false,
+                argument_words: 1,
+                overrides: vec![],
+            });
+        }
+        m.request.cases[0].replacement = Some(m.request.cases[0].vendor.clone());
+        m.request.cases[0].relation.as_mut().unwrap().calls = true;
+        let mut captured = Vec::new();
+        for replacement in [false, true] {
+            for event in [
+                ExecutionEvent::CallTransfer {
+                    site: 4096,
+                    target: 4100,
+                    tail: false,
+                    indirect: false,
+                    stack: Some(12288),
+                    target_kind: ObservedCallTarget::CapturedCode,
+                    words: 1,
+                },
+                ExecutionEvent::TransferArgument {
+                    word: 0,
+                    value: ObservedWord::Unknown,
+                },
+            ] {
+                captured.push(ExecutionEvidence::Event {
+                    case: 0,
+                    replacement,
+                    event,
+                });
+            }
+            captured.push(ExecutionEvidence::Outcome {
+                case: 0,
+                replacement,
+                steps: 3,
+                stop: ExecutionStop::Returned {
+                    low: Some(7),
+                    high: None,
+                },
+            });
+        }
+        captured.push(ExecutionEvidence::Comparison {
+            case: 0,
+            result: CaseComparison {
+                verdict: ComparisonVerdict::Incomplete,
+                difference: None,
+            },
+        });
+        validate(&m, &captured).unwrap();
+        m.verdict = Some(ComparisonVerdict::Match);
+        if let ExecutionEvidence::Comparison { result, .. } = captured.last_mut().unwrap() {
+            result.verdict = ComparisonVerdict::Match;
+        }
+        assert_eq!(
+            validate(&m, &captured).unwrap_err().code,
+            ErrorCode::Integrity
+        );
+        m.request.cases[0].relation.as_mut().unwrap().calls = false;
+        validate(&m, &captured).unwrap(); // excluded unknown evidence stays retained
     }
     let mut forged = rows;
     for row in &mut forged {

@@ -469,3 +469,6 @@ pub use fifo_service::*;
 
 mod comparison;
 pub use comparison::*;
+
+mod call_observation;
+pub use call_observation::*;

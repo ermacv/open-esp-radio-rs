@@ -111,6 +111,7 @@ impl Fixture {
     }
     fn request(&self) -> ExecutionRequest {
         let invocation = Invocation {
+            observe_calls: None,
             observe_memory: vec![],
             goal: ExecutionGoal::Return,
             entry: 0x1000,
@@ -536,6 +537,7 @@ mod services;
 
 fn fixture_relation(low: bool) -> ComparisonRelation {
     ComparisonRelation {
+        calls: false,
         returns: ReturnWords { low, high: false },
         events: EventChannels {
             mmio_read: true,
@@ -549,3 +551,6 @@ fn fixture_relation(low: bool) -> ComparisonRelation {
 
 #[path = "execution/comparison.rs"]
 mod comparison;
+
+#[path = "execution/capture.rs"]
+mod capture;

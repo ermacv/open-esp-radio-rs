@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 10;
+pub const EXECUTION_SCHEMA: u32 = 11;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 
@@ -48,6 +48,7 @@ pub struct Invocation {
     pub tables: Vec<RuntimeTable>,
     pub services: Vec<FifoService>,
     pub observe_memory: Vec<MemorySelection>,
+    pub observe_calls: Option<CallCapture>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -145,6 +146,19 @@ pub struct ExecutionRequest {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ExecutionEvent {
+    CallTransfer {
+        site: u32,
+        target: u32,
+        tail: bool,
+        indirect: bool,
+        stack: Option<u32>,
+        target_kind: ObservedCallTarget,
+        words: u16,
+    },
+    TransferArgument {
+        word: u16,
+        value: ObservedWord,
+    },
     ServiceCall {
         instance: u16,
         binding: u16,
@@ -363,6 +377,8 @@ pub struct ExecutionProducer {
 }
 /// Session-owned memory. None denotes unknown/inaccessible bytes, never zero.
 pub trait ExecutionMemory {
+    /// Observe an eligible transfer before goal completion or dispatch; never execute a model.
+    fn observe_call(&mut self, input: &CallInput, control: &mut dyn RunControl) -> Result<()>;
     fn call(&mut self, input: &CallInput, control: &mut dyn RunControl) -> Result<CallDispatch>;
     fn read(
         &mut self,
@@ -502,6 +518,9 @@ impl ExecutionRequest {
                 }
                 input.entry_stack(&target.stack)?;
                 input.validate_memory_selection()?;
+                if let Some(capture) = &input.observe_calls {
+                    capture.validate()?;
+                }
                 if input.services.len() > MAX_FIFO_SERVICES {
                     return Err(bad());
                 }

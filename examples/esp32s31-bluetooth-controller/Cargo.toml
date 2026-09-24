@@ -10,12 +10,8 @@ publish = false
 default = ["firmware"]
 firmware = [
     "dep:oer-esp32s31-runtime", "dep:embassy-time", "dep:static_cell",
-    "dep:oer-esp32s31-soc", "dep:embassy-executor", "dep:embassy-futures",
-    "dep:esp-backtrace", "dep:esp-hal", "dep:esp-println", "dep:oer-bluetooth-ll",
-    "dep:oer-esp32s31-bluetooth", "dep:oer-esp32s31-bluetooth-embassy",
-    "dep:oer-esp32s31-bluetooth-integration", "dep:oer-esp32s31-bluetooth-memory",
-    "dep:oer-esp32s31-embassy-runtime", "dep:oer-esp32s31-radio-platform-esp-hal",
-    "dep:oer-firmware",
+    "dep:embassy-executor", "dep:embassy-futures", "dep:esp-backtrace", "dep:esp-hal",
+    "dep:esp-println", "dep:oer", "dep:oer-esp32s31-embassy-runtime", "dep:oer-firmware",
 ]
 advertising-smoke = ["firmware"]
 trouble-gatt = ["gatt-application", "firmware"]
@@ -40,18 +36,12 @@ trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", 
 oer-esp32s31-runtime = { optional = true, path = "../../platform/esp32s31/runtime", features = ["psram-task-stack"] }
 embassy-time = { version = "0.5.1", optional = true }
 static_cell = { version = "2.1.1", optional = true }
-oer-esp32s31-soc = { optional = true, path = "../../crates/adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
 embassy-executor = { optional = true, version = "0.10.0", default-features = false }
 esp-backtrace = { optional = true, git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
 esp-hal = { optional = true, git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["esp32s31", "rt", "unstable"] }
 esp-println = { optional = true, git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["auto", "esp32s31", "log-04"] }
-oer-bluetooth-ll = { optional = true, path = "../../crates/protocols/bluetooth/le/ll" }
-oer-esp32s31-bluetooth = { optional = true, path = "../../crates/hardware/esp32s31/driver/bluetooth" }
-oer-esp32s31-bluetooth-embassy = { optional = true, path = "../../crates/runtime/embassy/esp32s31/bluetooth" }
-oer-esp32s31-bluetooth-integration = { optional = true, path = "../../crates/composition/esp32s31/embassy/bluetooth" }
-oer-esp32s31-bluetooth-memory = { optional = true, path = "../../crates/hardware/esp32s31/driver/bluetooth/memory" }
+oer = { package = "open-esp-radio", optional = true, path = "../../crates/oer", default-features = false, features = ["embassy-esp32s31-bluetooth"] }
 oer-esp32s31-embassy-runtime = { optional = true, path = "../../crates/adapters/embassy/esp32s31/runtime", features = ["esp32s31"] }
-oer-esp32s31-radio-platform-esp-hal = { optional = true, path = "../../crates/adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
 
 [profile.release]
 codegen-units = 1

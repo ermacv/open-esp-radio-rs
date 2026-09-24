@@ -36,6 +36,11 @@ oer = { package = "open-esp-radio", path = "../../crates/oer", default-features 
 ```
 
 That composition does not require Wi-Fi STA/AP, Embassy networking or Xarxa.
+`systems::esp32s31::embassy::bluetooth` also reexports the cold-start inputs
+that the driver path lacks: scheduler allocation and default TX power values,
+`DtmRecheckPeriod`, the esp-hal radio platform, the deadline watchdog and SoC
+`entropy::Entropy`. The [Bluetooth controller example](../../examples/esp32s31-bluetooth-controller/)
+uses only the facade besides its board runtime and executor.
 Cargo features are additive: another dependency enabling `wifi` on the same
 facade also enables portable Wi-Fi in the final feature union.
 

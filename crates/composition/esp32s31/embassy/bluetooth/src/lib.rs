@@ -160,6 +160,19 @@ pub use system_storage::{
 };
 pub use trouble::BluetoothTroubleSystem;
 
+// Cold-start inputs outside the driver's facade path, so an application can
+// start the Controller through this crate (or the `oer` facade) alone.
+#[cfg(target_arch = "riscv32")]
+pub use oer_esp32s31_bluetooth_embassy::controller::DtmRecheckPeriod;
+pub use oer_esp32s31_bluetooth_memory::{
+    DtmSchedulerAllocationConfig, PassiveScanDefaultTxPowerDbm,
+    PassiveScanSchedulerAllocationConfig, PeripheralConnectionDefaultTxPowerDbm,
+};
+#[cfg(target_arch = "riscv32")]
+pub use oer_esp32s31_radio_platform_esp_hal::{EspHalBluetoothPlatform, EspHalRadioPlatform};
+#[cfg(target_arch = "riscv32")]
+pub use oer_esp32s31_soc::watchdog::{DeadlineBudget, DeadlineWatchdog};
+
 #[cfg(not(target_arch = "riscv32"))]
 use oer_esp32s31_bluetooth_memory::{
     BlePhyEngineModelAddress, DirectionFindingWorkspaceModelAddress, DtmMemoryGraphModelAddress,

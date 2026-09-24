@@ -1470,10 +1470,32 @@ name = "oer-memory"
 version = "0.1.0"
 
 [[package]]
+name = "oer-network"
+version = "0.1.0"
+
+[[package]]
+name = "oer-radio"
+version = "0.1.0"
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "open-esp-radio"
+version = "0.1.0"
+dependencies = [
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-integration",
+ "oer-esp32s31-hal",
+ "oer-memory",
+ "oer-network",
+ "oer-radio",
+]
 
 [[package]]
 name = "open-esp-radio-esp32s31-bluetooth-controller-example"
@@ -1491,16 +1513,10 @@ dependencies = [
  "esp-println",
  "heapless 0.9.3",
  "oer-bluetooth-hci",
- "oer-bluetooth-ll",
- "oer-esp32s31-bluetooth",
- "oer-esp32s31-bluetooth-embassy",
- "oer-esp32s31-bluetooth-integration",
- "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-embassy-runtime",
- "oer-esp32s31-radio-platform-esp-hal",
  "oer-esp32s31-runtime",
- "oer-esp32s31-soc",
  "oer-firmware",
+ "open-esp-radio",
  "static_cell",
  "trouble-host",
 ]

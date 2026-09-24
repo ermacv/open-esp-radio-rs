@@ -1,6 +1,6 @@
 //! Startup diagnostics borrow failures so their hardware owners remain retained.
 
-use oer_esp32s31_bluetooth_integration::BluetoothColdStartError;
+use oer::systems::esp32s31::embassy::bluetooth::BluetoothColdStartError;
 
 type Error = BluetoothColdStartError<
     { super::MODEM_TIMER_CAPACITY },

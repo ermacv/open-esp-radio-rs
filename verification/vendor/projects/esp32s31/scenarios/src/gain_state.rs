@@ -337,7 +337,7 @@ fn capacity(g: &mut Gain, baseline: &Baseline) -> Result<()> {
         overrides: vec![],
     });
     limited.max_events = 1;
-    g.capacity_failure("storage-capacity", &limited, "execute")?;
+    g.capacity_failure("storage-capacity", &limited)?;
     g.assert_retained("storage-after-failure", &baseline.identity, &before)
 }
 

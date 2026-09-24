@@ -1017,8 +1017,8 @@ has three acceptance units, all required:
 | Unit | Status | Acceptance |
 | --- | --- | --- |
 | 12.R.1 | done | Host-owned wire types for record, run and inventory documents, used by the renderer and checked against CLI output. Scenario package, process runner, capture/import, probe catalog through `oer-probe-codegen` types, ABI lowering and request builders over domain types; `cargo test` covers the harness and gain oracles. `xtask` command. Gain arithmetic/publication and gain state/RF-test run in Rust with the Python case counts, verdicts, negatives, unmet-obligation exit and preservation; `phy_gain*.py` and their tests are removed. |
-| 12.R.2 | active | I2C command memory and transport, harness call edges, calibration leaves/prefix and RFPLL runners in Rust with unchanged cases and outcomes; the corresponding Python is removed. |
-| 12.R.3 | pending | PHY research scenario (analysis, interfaces, IR/trace, navigation, flow, registers, memory slices, data/knowledge review and preservation) in Rust; `harness.py` and every remaining Python file are removed; owner docs, Blobray references and full checks close 12.R. |
+| 12.R.2 | done | I2C command memory and transport, harness call edges, calibration leaves/prefix and RFPLL runners in Rust with unchanged cases and outcomes; the corresponding Python is removed. |
+| 12.R.3 | active | PHY research scenario (analysis, interfaces, IR/trace, navigation, flow, registers, memory slices, data/knowledge review and preservation) in Rust; `harness.py` and every remaining Python file are removed; owner docs, Blobray references and full checks close 12.R. |
 
 12.R.1 acceptance: `blobray_next_host::wire` owns the record, run and
 inventory documents. The renderer emits them, and execution/import CLI tests
@@ -1032,3 +1032,18 @@ unmet RF-test obligation with exit 2. Harness, evidence, oracle and obligation
 host tests pass without private inputs. `phy_gain.py`, `phy_gain_state.py` and
 `test_phy_gain.py` are removed. Formatting, strict Clippy, architecture,
 metadata, docs and standalone (532 tests) pass.
+
+12.R.2 acceptance: the `i2c` scenario runs command memory, descriptors and
+leaves, transport, harness call edges, calibration leaves, the PBus/DCODE
+prefix and RFPLL in Rust over the shared session lifecycle. The SDK inputs are
+explicit: `--sdk` enables leaves and prefix, and `--phy-sdk` adds RFPLL. Each
+missing input is recorded as an unmet 12.1/12.2/12.3 obligation, and the
+scenario exits with status 2. On the authenticated inputs under watchdog limits,
+the Rust and Python runners perform the same 557 operations; they differ only
+in one evidence label. Each has 138 restored replays and exit 0. The minimal run
+exits 2 with three unmet obligations after its own source-free preservation. After
+the move to the shared session, the gain scenario passed every execution assertion
+and negative case again. At commit time its restore/replay phase was still running,
+with 119 replays passed and none failed. The six migrated
+Python files are removed. Host oracle tests, formatting, strict Clippy, docs and
+architecture checks pass.

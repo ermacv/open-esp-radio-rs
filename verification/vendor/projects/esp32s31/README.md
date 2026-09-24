@@ -31,30 +31,35 @@ are the measurement authority, not this documentation.
 
 ## Captured I2C command-memory comparison
 
-[phy_i2c.py](phy_i2c.py) compares the authenticated archive/ROM command initializer
+The `i2c` scenario ([`i2c.rs`](scenarios/src/i2c.rs)) compares the authenticated archive/ROM command initializer
 and its descriptor/no-op leaves with a freshly built production probe ELF. It
 checks all 45 ordered command writes against independent instruction-derived
 expectations on zero, mixed, lower and upper parameter profiles. Descriptor
 outputs are checked byte for byte from both zero and filled initial memory.
 Command-memory writes use an explicit passive register model. The runner also
-executes the [transport scenarios](phy_i2c_transport.py) below with bounded
+executes the [transport scenarios](scenarios/src/i2c_transport.rs) below with bounded
 packed-command responses; neither model claims physical timing or RF behavior.
 
 ```console
 cargo xtask build vendor-probes --chip esp32s31
-python3 verification/vendor/projects/esp32s31/phy_i2c.py \
-  --binary target/blobray/blobray --library /private/libphy.a \
+cargo xtask vendor-scenario i2c --library /private/libphy.a \
   --rom /private/esp32s31_rev0_rom.elf \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
-  --linker /usr/bin/ld.lld --nm /usr/bin/llvm-nm --limit-mode watchdog \
+  --linker /usr/bin/ld.lld --limit-mode watchdog \
+  --sdk /private/bootloader.elf --phy-sdk /private/phy_tracking_reference.elf \
   --output target/blobray-phy-i2c
 ```
 
-The runner owns scenario construction and independent expected-value assertions;
+`--sdk` enables the calibration leaves and the PBus/DCODE prefix. `--phy-sdk`
+requires `--sdk` and adds RFPLL. Without them the command-memory, transport and
+call-boundary scenarios still run. Each missing obligation is recorded in
+`unmet-obligations.request.json`, and the scenario exits with status 2.
+
+The scenario owns construction and independent expected-value assertions;
 ordinary Next application operations own capture, linking, execution, comparison
-and persistence. No provider pack or legacy engine is selected. `--nm` independently
-identifies `phy_param` in the exported linked ELF; inexact source mappings are not
-used to infer that address. All inputs are captured before local source copies
+and persistence. No provider pack or legacy engine is selected. The scenario
+reads `phy_param` directly from the exported linked ELF's symbol table;
+inexact source mappings are not used to infer that address. All inputs are captured before local source copies
 are removed. The pinned archive/object/table/ROM hashes authenticate vendor inputs;
 the exact production ELF digest identifies the freshly compiled replacement.
 
@@ -114,8 +119,8 @@ relation under declared peripheral responses, not analog-bus or RF qualification
 
 ### Current calibration leaves
 
-Add `--calibration-leaves --sdk /private/bootloader.elf` to the same command to include the native
-[four-leaf matrix](phy_calibration_leaves.py). Its eleven independent cold cases
+`--sdk /private/bootloader.elf` includes the native
+[four-leaf matrix](scenarios/src/calibration_leaves.rs). Its eleven independent cold cases
 exercise TX-gain restore, forced signed digital gains, temperature-to-power and
 post-init AGC with complementary retained register inputs. All MMIO reads/writes
 remain selected, with independently checked ordered writes and temperature
@@ -145,8 +150,8 @@ establish a complete calibration or physical timing claim.
 
 ### PBus and DCODE prefix
 
-Add `--calibration-prefix` together with `--calibration-leaves --sdk ...` to run
-[the native prefix matrix](phy_calibration_prefix.py). PBus covers 24 combinations
+`--sdk` also runs
+[the native prefix matrix](scenarios/src/calibration_prefix.rs). PBus covers 24 combinations
 of retained values, work-mode settling, immediate/delayed readiness and stack
 fills. It compares all MMIO observations and requested delays, with independent
 expected command/acknowledgment writes. Three stuck-command positions execute the
@@ -183,8 +188,8 @@ declared environment, not complete RX calibration or hardware qualification.
 
 ### RFPLL search and frequency maintenance
 
-Add `--rfpll --phy-sdk PATH` to the prefix invocation to run
-[the native RFPLL matrix](phy_rfpll_native.py). The additional linked SDK firmware
+`--phy-sdk PATH` runs
+[the native RFPLL matrix](scenarios/src/rfpll.rs). The additional linked SDK firmware
 must have SHA-256 `ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9`.
 It contributes the exact static `phy_printf` definition needed by the linked
 archive section. It is captured and retained but is not an execution companion:
@@ -777,9 +782,11 @@ both an explicit count and fill value; unknown memory stays unknown.
 
 The generated requests use the existing Next execution format. Replay reads the
 retained request and captured bytes, including the catalog; it does not regenerate
-requests using the current Python code. The combined I2C route also checks
-[compiled call boundaries](harness_edges.py), then restores and replays their
-evidence alongside positive and negative PHY comparisons.
+requests from scenario code. The combined I2C route also checks
+[compiled call boundaries](scenarios/src/harness_edges.rs), then restores and replays their
+evidence alongside positive and negative PHY comparisons. The typed scenarios in
+[`scenarios`](scenarios/src/harness.rs) share the same preparation rules. Their
+host regressions run with `cargo test -p oer-esp32s31-vendor-scenarios`.
 
 Run preparation-only regressions without private inputs:
 

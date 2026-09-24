@@ -5,27 +5,20 @@
 //! selected ignored output.
 use crate::evidence::{Access, Effect, calls, effects, events, has_events, outcomes, output, stop};
 use crate::harness::{
-    Buffer, ExecutionDocument, Input, LimitMode, ProbeCatalog, Result, Runner, args, case,
-    data_request, evidence, filled, invalid, invocation, known, manifest, named_object,
-    named_section, region, selection, sha256, symbol, words, words_padded,
+    Buffer, Input, LimitMode, Result, case, data_request, evidence, filled, invalid, invocation,
+    known, manifest, named_object, named_section, region, selection, sha256, symbol, words,
+    words_padded,
 };
+use crate::session::{Session, image_symbol, request};
 use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_domain::{
-    ArtifactId, CallAbi, CallCapture, ComparisonVerdict, CompiledBinding, DataSelector,
-    DeviceBehavior, DeviceDeclaration, EXECUTION_SCHEMA, EntrySelection, ErrorCode, ExecutionCase,
-    ExecutionEvent, ExecutionEvidence, ExecutionGap, ExecutionRegion, ExecutionRequest,
-    ExecutionStop, ExecutionTarget, FunctionSource, ImageLayout, ImageRegion, Invocation,
-    LinkRequest, MemorySelection, ObjectId, ObjectLocation, ObservedCallTarget, RegionLifetime,
-    RegisterCell, Revision, RevisionId, SessionReset,
+    ArtifactId, CallCapture, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration,
+    EntrySelection, ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionGap,
+    ExecutionRegion, ExecutionRequest, ExecutionStop, ExecutionTarget, FunctionSource, ImageLayout,
+    ImageRegion, Invocation, LinkRequest, MemorySelection, ObjectId, ObjectLocation,
+    ObservedCallTarget, RegionLifetime, RegisterCell, SessionReset,
 };
-use blobray_next_host::wire::RecordDocument;
-use object::{Object, ObjectSymbol};
-use std::{
-    collections::BTreeMap,
-    ffi::OsString,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeMap, fs, path::PathBuf};
 
 /// Pinned `librftest.a` from the same PHY source revision as the archive.
 pub const RFTEST_SHA: &str = "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e";
@@ -216,12 +209,6 @@ pub struct Executed {
     pub identity: ArtifactId,
 }
 
-pub struct Artifact {
-    pub label: String,
-    pub identity: ArtifactId,
-    pub document: ExecutionDocument,
-}
-
 pub struct Options {
     pub binary: PathBuf,
     pub library: PathBuf,
@@ -235,45 +222,33 @@ pub struct Options {
 
 /// Linked captured gain image, compiled production and retained evidence.
 pub struct Gain {
-    pub runner: Runner,
-    pub run: PathBuf,
-    pub revision: RevisionId,
-    pub inventory: Revision,
-    pub probes: ProbeCatalog,
+    pub session: Session,
     pub coefficients: Vec<u8>,
     pub roots: BTreeMap<String, u32>,
     pub parameter: u32,
     pub image_object: ObjectId,
     pub vendor: ExecutionTarget,
     pub production: ExecutionTarget,
-    pub artifacts: Vec<Artifact>,
     wifi_request: Option<ExecutionRequest>,
     bluetooth_request: Option<ExecutionRequest>,
     publication_request: Option<ExecutionRequest>,
     coefficient_address: Option<u32>,
 }
 
-fn path_arg(path: &Path) -> OsString {
-    path.as_os_str().to_owned()
+impl std::ops::Deref for Gain {
+    type Target = Session;
+    fn deref(&self) -> &Session {
+        &self.session
+    }
+}
+impl std::ops::DerefMut for Gain {
+    fn deref_mut(&mut self) -> &mut Session {
+        &mut self.session
+    }
 }
 
 impl Gain {
     pub fn new(options: &Options) -> Result<Self> {
-        fs::create_dir_all(&options.output)?;
-        let run = tempfile::Builder::new()
-            .prefix("run-")
-            .tempdir_in(std::path::absolute(&options.output)?)?
-            .keep();
-        fs::write(
-            options.output.join("latest"),
-            run.as_os_str().as_encoded_bytes(),
-        )?;
-        let runner = Runner::new(
-            &options.binary,
-            &run,
-            run.join("project"),
-            options.limit_mode,
-        )?;
         let mut inputs = vec![
             Input {
                 role: "phy",
@@ -298,21 +273,23 @@ impl Gain {
                 sha256: Some(RFTEST_SHA),
             });
         }
-        let (revision, identities) = runner.capture(&inputs)?;
-        runner.doc(
-            "identities",
-            &serde_json::json!({
-                "sha256": identities,
-                "scope": "captured Wi-Fi/BT gain, calibration storage and RF-test policy; no RF qualification",
-                "rftest": options.rftest.is_some(),
-            }),
+        let session = Session::start(
+            &options.binary,
+            &options.output,
+            options.limit_mode,
+            &inputs,
+            "captured Wi-Fi/BT gain, calibration storage and RF-test policy; no RF qualification",
         )?;
-        let inventory = runner.inventory()?;
-        let probes = ProbeCatalog::capture(&runner, &revision, &inventory, 2)?;
-        let object = named_object(&inventory, 0, "phy_tx_gain.o")?;
+        let (runner, run, revision, inventory) = (
+            &session.runner,
+            &session.run,
+            &session.revision,
+            &session.inventory,
+        );
+        let object = named_object(inventory, 0, "phy_tx_gain.o")?;
         let section = named_section(object, ".rodata")?;
         let request = data_request(
-            &revision,
+            revision,
             FunctionSource::Input { input: 0 },
             object,
             DataSelector::Section {
@@ -370,7 +347,7 @@ impl Gain {
         let root = |input: usize, name: &str| -> Result<EntrySelection> {
             Ok(EntrySelection {
                 input: input as u64,
-                symbol: symbol(&inventory, input, name)?.id.clone(),
+                symbol: symbol(inventory, input, name)?.id.clone(),
             })
         };
         let mut link = LinkRequest {
@@ -402,43 +379,7 @@ impl Gain {
                 link.roots.push(root(3, name)?);
             }
         }
-        let plan = run.join("link-plan.json");
-        let linker = path_arg(&std::path::absolute(&options.linker)?);
-        let mut command = args(["link-plan", "--request"]);
-        command.extend([
-            path_arg(&runner.doc("plan", &link)?),
-            "--linker".into(),
-            linker.clone(),
-            "--output".into(),
-            path_arg(&plan),
-        ]);
-        runner.call("plan", &command, 0)?;
-        let mut command = args(["prepare-image", "--plan"]);
-        command.extend([path_arg(&plan), "--linker".into(), linker]);
-        let image = runner
-            .run_record("prepare", &command, 0)?
-            .image
-            .ok_or_else(|| invalid("prepare-image published no image"))?;
-        let view: RecordDocument<serde_json::Value> =
-            runner.json("image", &args(["image", "--id", image.as_str()]))?;
-        let blobray_application::QuerySummary::Image {
-            manifest: image_manifest,
-            ..
-        } = view.summary
-        else {
-            return Err(invalid("image query returned another summary"));
-        };
-        let mut root_addresses = BTreeMap::new();
-        for r in &image_manifest.roots {
-            root_addresses.insert(
-                String::from_utf8(r.name.clone())?,
-                u32::try_from(r.address)?,
-            );
-        }
-        root_addresses.insert(roots[0].to_owned(), u32::try_from(image_manifest.entry)?);
-        let mut command = args(["export-image", "--id", image.as_str(), "--output"]);
-        command.push(path_arg(&run.join("image")));
-        runner.call("export-image", &command, 0)?;
+        let linked = session.link(&link, &options.linker, roots[0])?;
         let parameter = image_symbol(
             &run.join("image/image.elf"),
             &run.join("image-symbols.txt"),
@@ -449,37 +390,18 @@ impl Gain {
                 "phy_param does not have the expected 516-byte extent",
             ));
         }
-        let stack = crate::harness::seed(0x3ffe_0000, 0x8000, &[], None)?;
+        let (vendor, production) = session.targets(&linked.image)?;
         Ok(Self {
-            vendor: ExecutionTarget {
-                revision: revision.clone(),
-                source: FunctionSource::Image {
-                    image: image.clone(),
-                },
-                companions: vec![1, 2],
-                abi: CallAbi::RiscvInteger,
-                stack: stack.clone(),
-            },
-            production: ExecutionTarget {
-                revision: revision.clone(),
-                source: FunctionSource::Input { input: 2 },
-                companions: vec![1],
-                abi: CallAbi::RiscvInteger,
-                stack,
-            },
+            vendor,
+            production,
             image_object: ObjectId {
-                artifact: image_manifest.elf.clone(),
+                artifact: linked.manifest.elf.clone(),
                 location: ObjectLocation::Standalone,
             },
-            runner,
-            run,
-            revision,
-            inventory,
-            probes,
+            session,
             coefficients,
-            roots: root_addresses,
+            roots: linked.roots,
             parameter: parameter.0,
-            artifacts: vec![],
             wifi_request: None,
             bluetooth_request: None,
             publication_request: None,
@@ -621,45 +543,23 @@ impl Gain {
                 row.relation = None;
             }
         }
-        let mut left = self.vendor.clone();
-        left.stack.fill = Some(fill);
         let replacement = match right {
             Right::None => None,
             Right::Production => Some(self.production.clone()),
             Right::Vendor => Some(self.vendor.clone()),
-        }
-        .map(|mut target| {
-            target.stack.fill = Some(fill);
-            target
-        });
+        };
         let count = rows.len() * if replacement.is_some() { 2 } else { 1 };
-        let request = ExecutionRequest {
-            schema: EXECUTION_SCHEMA,
-            vendor: left,
-            binding: replacement.as_ref().map(|_| CompiledBinding::SharedCore),
-            replacement,
-            cases: rows,
-            max_events: maximum,
-        };
-        let command = if request.replacement.is_some() {
-            "compare"
-        } else {
-            "execute"
-        };
-        let mut invocation = args([command, "--request"]);
-        invocation.push(path_arg(&self.runner.doc(label, &request)?));
-        let identity = self
-            .runner
-            .run_record(label, &invocation, 0)?
-            .execution
-            .ok_or_else(|| invalid(format!("{label}: no execution published")))?;
-        let document = self
-            .runner
-            .execution(&format!("{label}-evidence"), &identity)?;
-        let summary = manifest(&document);
+        let request = request(
+            &self.vendor,
+            replacement.as_ref(),
+            Some(fill),
+            rows,
+            maximum,
+        );
         let expected = (right != Right::None).then_some(verdict);
-        assert_eq!(summary.verdict, expected, "{label}");
-        let records = evidence(&document);
+        let artifact = self.session.submit(label, &request, expected)?;
+        let summary = manifest(&artifact.document);
+        let records = evidence(&artifact.document);
         let stops = outcomes(&records);
         assert_eq!(stops.len(), count, "{label}");
         if matches!(verdict, ComparisonVerdict::Match | ComparisonVerdict::Diff) {
@@ -671,11 +571,7 @@ impl Gain {
                 "{label}: {stops:?}"
             );
         }
-        self.artifacts.push(Artifact {
-            label: label.into(),
-            identity: identity.clone(),
-            document,
-        });
+        let identity = artifact.identity.clone();
         Ok(Executed {
             records,
             request,
@@ -1401,41 +1297,6 @@ impl Gain {
         Ok(())
     }
 
-    /// Run a request that must fail for capacity and publish nothing.
-    pub fn capacity_failure(
-        &self,
-        label: &str,
-        request: &ExecutionRequest,
-        command: &str,
-    ) -> Result<()> {
-        let mut invocation = args([command, "--request"]);
-        invocation.push(path_arg(&self.runner.doc(label, request)?));
-        let failed = self.runner.run_record(label, &invocation, 1)?;
-        assert!(
-            failed.execution.is_none()
-                && failed.publication.is_none()
-                && failed.resolved_operation.is_none()
-        );
-        assert_eq!(
-            failed.error.map(|e| e.code),
-            Some(ErrorCode::ResourceLimited)
-        );
-        Ok(())
-    }
-
-    /// A retained execution is unchanged after a later failure.
-    pub fn assert_retained(
-        &self,
-        label: &str,
-        identity: &ArtifactId,
-        before: &ExecutionDocument,
-    ) -> Result<()> {
-        let after = self.runner.execution(label, identity)?;
-        assert_eq!(after.records, before.records);
-        assert_eq!(manifest(&after), manifest(before));
-        Ok(())
-    }
-
     pub fn negative(&mut self) -> Result<()> {
         let mut unknown = self.wifi_request.clone().expect("Wi-Fi matrix ran").cases;
         unknown.truncate(2);
@@ -1493,7 +1354,7 @@ impl Gain {
         let mut limited = self.publication_request.clone().expect("publication ran");
         limited.cases.truncate(1);
         limited.max_events = 1;
-        self.capacity_failure("gain-capacity", &limited, "compare")?;
+        self.capacity_failure("gain-capacity", &limited)?;
         self.assert_retained("retained-after-failure", &identity, &document)?;
         // The same ROM kernel receives caller-owned coefficient bytes. This is
         // explicitly a vendor-boundary characterization, not a production match.
@@ -1565,78 +1426,10 @@ impl Gain {
         );
         Ok(())
     }
-
-    /// Source-free move, backup/restore and exact replay of every retained run.
-    pub fn preserve(&mut self) -> Result<()> {
-        let backup = self.run.join("backup.blobray");
-        let mut command = args(["backup", "--output"]);
-        command.push(path_arg(&backup));
-        self.runner.call("backup", &command, 0)?;
-        let moved = self.run.join("moved");
-        fs::rename(&self.runner.project, &moved)?;
-        self.runner.project = moved;
-        let first = self
-            .artifacts
-            .first()
-            .ok_or_else(|| invalid("no retained executions"))?;
-        let reopened = self.runner.execution("moved", &first.identity)?;
-        assert_eq!(reopened.records, first.document.records);
-        self.runner.project = self.run.join("restored");
-        let mut command = args(["restore", "--backup"]);
-        command.push(path_arg(&backup));
-        self.runner.call("restore", &command, 0)?;
-        for artifact in &self.artifacts {
-            let restored = self
-                .runner
-                .execution(&format!("restored-{}", artifact.label), &artifact.identity)?;
-            assert_eq!(restored.records, artifact.document.records);
-            assert_eq!(manifest(&restored), manifest(&artifact.document));
-            let replay = self.runner.run_record(
-                &format!("replay-{}", artifact.label),
-                &args(["replay", "--id", artifact.identity.as_str()]),
-                0,
-            )?;
-            assert_eq!(replay.execution.as_ref(), Some(&artifact.identity));
-        }
-        Ok(())
-    }
 }
 
 fn python_bool(value: bool) -> &'static str {
     if value { "True" } else { "False" }
-}
-
-/// Resolve one uniquely named defined symbol in the exported image and retain
-/// the complete defined-symbol listing next to the evidence.
-fn image_symbol(elf: &Path, listing: &Path, name: &str) -> Result<(u32, u64)> {
-    let bytes = fs::read(elf)?;
-    let file = object::File::parse(&*bytes)?;
-    let mut lines = String::new();
-    let mut matches = vec![];
-    for symbol in file.symbols().filter(|s| !s.is_undefined()) {
-        let Ok(symbol_name) = symbol.name() else {
-            continue;
-        };
-        if symbol_name.is_empty() {
-            continue;
-        }
-        lines.push_str(&format!(
-            "{symbol_name} {:x} {:x}\n",
-            symbol.address(),
-            symbol.size()
-        ));
-        if symbol_name == name {
-            matches.push((u32::try_from(symbol.address())?, symbol.size()));
-        }
-    }
-    fs::write(listing, lines)?;
-    match matches[..] {
-        [one] => Ok(one),
-        _ => Err(invalid(format!(
-            "{name}: {} image definitions",
-            matches.len()
-        ))),
-    }
 }
 
 #[cfg(test)]

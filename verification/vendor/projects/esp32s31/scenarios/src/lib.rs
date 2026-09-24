@@ -4,10 +4,17 @@
 //! `blobray` CLI with requests built from Blobray's own types, and checks
 //! independent expectations. Chip addresses and source identities belong to
 //! this verification owner; generic Blobray has no chip dependency.
+pub mod calibration_leaves;
+pub mod calibration_prefix;
 pub mod evidence;
 pub mod gain;
 pub mod gain_state;
 pub mod harness;
+pub mod harness_edges;
+pub mod i2c;
+pub mod i2c_transport;
+pub mod rfpll;
+pub mod session;
 
 /// Pinned `libphy.a` archive (ESP-IDF PHY source revision `b88e4b76`).
 pub const I2C_LIBRARY_SHA: &str =

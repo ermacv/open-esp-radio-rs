@@ -19,29 +19,6 @@ fn position(nodes: &[Node<'_>], id: &FunctionAnalysisId, c: &mut dyn RunControl)
         .binary_search_by(|n| n.function.analysis.cmp(id))
         .map_err(|_| invalid("flow function is absent from selected scope"))
 }
-fn call_bytes(record: &NavigationRecord) -> u64 {
-    match record {
-        NavigationRecord::Call {
-            caller,
-            target,
-            saved_resolution,
-            candidates,
-            ..
-        } => {
-            caller.allocated_bytes()
-                + target.allocated_bytes()
-                + saved_resolution
-                    .as_ref()
-                    .map_or(0, FunctionAnalysisId::allocated_bytes)
-                + (candidates.capacity() * std::mem::size_of::<NavigationFunction>()) as u64
-                + candidates
-                    .iter()
-                    .map(NavigationFunction::allocated_bytes)
-                    .sum::<u64>()
-        }
-        _ => 0,
-    }
-}
 pub(crate) fn query(
     project: &Project,
     request: &FlowQuery,
@@ -77,7 +54,7 @@ pub(crate) fn query(
         },
         memory,
         c,
-        &mut |function, manifest, c| {
+        &mut |function, manifest, _, c| {
             let capacity = memory.reserve(function.allocated_bytes(), c.position())?;
             nodes.push(
                 Node {
@@ -92,7 +69,8 @@ pub(crate) fn query(
         &mut |record, c| {
             match record {
                 NavigationRecord::Call { .. } => {
-                    let capacity = memory.reserve(call_bytes(record), c.position())?;
+                    let capacity =
+                        memory.reserve(crate::navigation::call_bytes(record), c.position())?;
                     calls.push(
                         Call {
                             record: record.clone(),
@@ -250,7 +228,8 @@ pub(crate) fn query(
             }
         ) {
             let _output = memory.reserve(
-                call_bytes(&call.record) + std::mem::size_of::<NavigationRecord>() as u64,
+                crate::navigation::call_bytes(&call.record)
+                    + std::mem::size_of::<NavigationRecord>() as u64,
                 c.position(),
             )?;
             emit(
@@ -379,7 +358,7 @@ pub(crate) fn validate_path(
         },
         memory,
         c,
-        &mut |function, manifest, _| {
+        &mut |function, manifest, _, _| {
             if function.analysis == path.hops[0].caller
                 && (function.location.source != proposal.occurrence.source
                     || *function.location.selector.object() != proposal.occurrence.object

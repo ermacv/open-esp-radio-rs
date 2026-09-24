@@ -9,6 +9,10 @@ use std::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum QuerySummary {
+    SemanticIr {
+        id: ArtifactId,
+        manifest: Box<SemanticIrManifest>,
+    },
     Registers {
         summary: Box<RegisterSummary>,
     },
@@ -180,6 +184,12 @@ impl QuerySummary {
 }
 /// Borrowed callbacks. Retaining records requires the consumer's own capacity.
 pub trait QuerySink: InventorySink + DoctorSink {
+    fn semantic_ir(&mut self, _: &SemanticIrRecord, _: &mut dyn RunControl) -> Result<()> {
+        Err(Error::new(
+            ErrorCode::InvalidRequest,
+            "consumer does not support semantic IR",
+        ))
+    }
     fn register(&mut self, _: &RegisterRecord, _: &mut dyn RunControl) -> Result<()> {
         Err(Error::new(
             ErrorCode::InvalidRequest,
@@ -325,6 +335,7 @@ pub trait QuerySink: InventorySink + DoctorSink {
 }
 #[derive(Serialize)]
 enum RecordRef<'a> {
+    SemanticIr(&'a SemanticIrRecord),
     Register(&'a RegisterRecord),
     EventRoute(&'a EventRouteRecord),
     MemorySlice(&'a MemorySliceRecord),
@@ -360,6 +371,7 @@ enum RecordRef<'a> {
 }
 #[derive(Deserialize)]
 enum Record {
+    SemanticIr(SemanticIrRecord),
     Register(RegisterRecord),
     EventRoute(EventRouteRecord),
     MemorySlice(MemorySliceRecord),
@@ -529,6 +541,19 @@ pub fn prepare_query_with_tools(
             file: disk.create(&stage.join("query-records"))?,
         };
         let summary = match &work.query {
+            ReadQuery::SemanticIr { id } => {
+                let project = Project::open(&work.project.to_path()?)?;
+                QuerySummary::SemanticIr {
+                    id: id.clone(),
+                    manifest: Box::new(crate::semantic_ir::read(
+                        &project,
+                        id,
+                        &memory,
+                        control,
+                        &mut |r, c| spool.push(RecordRef::SemanticIr(r), c),
+                    )?),
+                }
+            }
             ReadQuery::Registers { request } => {
                 let project = Project::open(&work.project.to_path()?)?;
                 QuerySummary::Registers {
@@ -1226,6 +1251,7 @@ pub(crate) fn visit(
         let record: Record = serde_json::from_slice(&bytes)
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         match record {
+            Record::SemanticIr(r) => sink.semantic_ir(&r, control)?,
             Record::Register(r) => sink.register(&r, control)?,
             Record::EventRoute(r) => sink.event_route(&r, control)?,
             Record::MemorySlice(r) => sink.memory_slice(&r, control)?,

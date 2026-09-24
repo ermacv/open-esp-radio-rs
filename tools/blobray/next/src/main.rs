@@ -107,7 +107,30 @@ enum KnowledgeCommand {
 }
 
 #[derive(Subcommand)]
+enum IrCommand {
+    Build {
+        #[arg(long)]
+        request: PathBuf,
+    },
+    /// Stream original facts with profile and evidence identities; --output exports atomically.
+    Show {
+        id: ArtifactId,
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
 enum Command {
+    /// Build and read immutable profiles over saved semantic facts.
+    Ir {
+        #[arg(long)]
+        project: PathBuf,
+        #[command(flatten)]
+        limits: ResourceOptions,
+        #[command(subcommand)]
+        command: IrCommand,
+    },
     /// Discover saved MMIO candidates, field masks and applicable reviewed declarations.
     Registers {
         #[arg(long)]
@@ -908,6 +931,49 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 Format::Human => println!("Project preserved at {}", project.display()),
             }
         }
+        Command::Ir {
+            project,
+            limits,
+            command,
+        } => match command {
+            IrCommand::Build { request } => {
+                let application = limits.application()?;
+                let _diagnostics = TemporaryDiagnostics(&application, format);
+                let signals = Signals::new()?;
+                let handle = application.start_build_ir(
+                    &project,
+                    read_json_file(&request)?,
+                    limits.budget()?,
+                )?;
+                let success = wait_handle(&handle, &signals, format);
+                let record = handle.wait();
+                match format {
+                    Format::Json => println!("{}", serde_json::json!({"schema":1,"run":record})),
+                    Format::Human => println!(
+                        "IR {:?}: {}",
+                        record.state,
+                        record
+                            .semantic_ir
+                            .as_ref()
+                            .map_or("unpublished", |id| id.as_str())
+                    ),
+                }
+                return Ok(if success {
+                    ExitCode::SUCCESS
+                } else {
+                    ExitCode::FAILURE
+                });
+            }
+            IrCommand::Show { id, output } => {
+                return read_query_output(
+                    project,
+                    ReadQuery::SemanticIr { id },
+                    limits,
+                    format,
+                    output,
+                );
+            }
+        },
         Command::Registers {
             project,
             request,
@@ -2394,6 +2460,11 @@ fn internal(args: &[OsString]) -> Result<()> {
         }
         serde_json::from_slice(&bytes).map_err(|e| invalid(&e.to_string()))
     }
+    let ir: Option<app::IrWork> = if stage.join("ir.json").exists() {
+        Some(request(&stage.join("ir.json"))?)
+    } else {
+        None
+    };
     let scenario: Option<app::ScenarioWork> = if stage.join("scenario.json").exists() {
         Some(request(&stage.join("scenario.json"))?)
     } else {
@@ -2430,7 +2501,8 @@ fn internal(args: &[OsString]) -> Result<()> {
     } else {
         None
     };
-    let import: Option<ImportWork> = if query.is_none()
+    let import: Option<ImportWork> = if ir.is_none()
+        && query.is_none()
         && image.is_none()
         && function.is_none()
         && investigation.is_none()
@@ -2442,7 +2514,9 @@ fn internal(args: &[OsString]) -> Result<()> {
     } else {
         None
     };
-    let (run, started, deadline, budget) = if let Some(w) = &scenario {
+    let (run, started, deadline, budget) = if let Some(w) = &ir {
+        (&w.run, w.started_ms, w.deadline_ms, &w.budget)
+    } else if let Some(w) = &scenario {
         (&w.run, w.started_ms, w.deadline_ms, &w.budget)
     } else if let Some(w) = &execution {
         (&w.run, w.started_ms, w.deadline_ms, &w.budget)
@@ -2479,7 +2553,10 @@ fn internal(args: &[OsString]) -> Result<()> {
     let environment = blobray_next_host::linux::WorkerEnvironment::new(&stage, run.clone())?;
     let mut context = app::RunContext::new(&environment, started, deadline, budget, None)?;
     let mut linker_diagnostics = None;
-    let result = if let Some(work) = scenario {
+    let result = if let Some(work) = ir {
+        app::prepare_ir_worker(&stage, &work, &mut context)
+            .map(|p| Some(app::PreparedReceipt::Ir(p)))
+    } else if let Some(work) = scenario {
         app::prepare_scenario_worker(
             &stage,
             &work,

@@ -683,7 +683,15 @@ fn check_function_publication(decoding: bool) {
         .unwrap();
     let stage = Staging::open(&path).unwrap();
     let mut file = stage.disk.temporary(&path.join("staging")).unwrap();
-    file.write_all(b"retained typed records").unwrap();
+    serde_json::to_writer(
+        &mut file,
+        &FunctionRecord::SemanticGap {
+            offset: 0,
+            reason: SemanticGapReason::UnsupportedInstruction,
+        },
+    )
+    .unwrap();
+    file.write_all(b"\n").unwrap();
     let records = stage.retain_temporary(file, &mut || Ok(())).unwrap();
     let manifest = FunctionManifest {
         schema: 6,
@@ -799,6 +807,7 @@ fn check_function_publication(decoding: bool) {
         "shared revision is neither re-read nor re-hashed"
     );
     assert_eq!(memory.used(), used);
+    check_ir_publication(&reopened, id, &manifest);
     // A cached revision must not hide subsequent corruption of function facts.
     std::fs::write(
         reopened
@@ -1593,6 +1602,19 @@ fn frozen_knowledge_snapshot_preserves_review_history_and_checks_superseded_even
                     .unwrap()
             );
         }
+        for entry in snapshot.entries() {
+            assert_eq!(snapshot.get(&entry.id, &mut control).unwrap(), Some(entry));
+        }
+        assert!(
+            snapshot
+                .get(
+                    &ArtifactId::of_bytes(b"absent").as_str().parse().unwrap(),
+                    &mut control
+                )
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(control.0, 1, "indexed lookups do not replay history");
         drop(snapshot);
         assert_eq!(memory.used(), 0);
     }
@@ -1620,5 +1642,137 @@ fn frozen_knowledge_snapshot_preserves_review_history_and_checks_superseded_even
             ..
         })
     ));
+    assert_eq!(memory.used(), 0);
+}
+
+fn check_ir_publication(
+    project: &Project,
+    analysis: &FunctionAnalysisId,
+    function: &FunctionManifest,
+) {
+    use std::io::Write;
+    let memory = WorkingMemory::new(16 * 1024 * 1024).unwrap();
+    let request = IrBuildRequest {
+        scope: NavigationScope {
+            revision: function.recipe.revision.clone(),
+            publications: vec![],
+            analyses: vec![analysis.clone()],
+            knowledge: None,
+        },
+        profiles: vec![IrProfile {
+            name: "fixture".into(),
+            roots: IrRoots::All,
+            include_reachable: false,
+        }],
+    };
+    let mut writer = project.writer().unwrap();
+    let (mut run, path) = writer
+        .register_operation(
+            ResourceBudget::default(),
+            owner(),
+            RunOperation::BuildIr {
+                request: request.clone(),
+            },
+            |_| {},
+        )
+        .unwrap();
+    let stage = Staging::open(&path).unwrap();
+    let row = SemanticIrRecord::Function {
+        function: NavigationFunction {
+            analysis: analysis.clone(),
+            location: FunctionLocation {
+                source: function.recipe.source.clone(),
+                selector: function.recipe.selector.clone(),
+            },
+        },
+        manifest: Box::new(function.clone()),
+        name: None,
+        profiles: vec![0],
+        roots: vec![0],
+        provenance_only: false,
+    };
+    let mut file = stage.disk.temporary(&path.join("staging")).unwrap();
+    serde_json::to_writer(&mut file, &row).unwrap();
+    file.write_all(b"\n").unwrap();
+    let records = stage.retain_temporary(file, &mut || Ok(())).unwrap();
+    let manifest = SemanticIrManifest {
+        schema: 1,
+        policy: 1,
+        project: project.id().clone(),
+        request,
+        records,
+        record_count: 1,
+        functions: 1,
+        provenance_functions: 0,
+        unavailable_entries: 0,
+        profiles: vec![IrProfileSummary {
+            name: "fixture".into(),
+            roots: 1,
+            functions: 1,
+            partial_functions: 1,
+            unresolved_links: 0,
+        }],
+    };
+    for case in 0..3 {
+        let mut bad = manifest.clone();
+        match case {
+            0 => bad.profiles[0].partial_functions = 0,
+            1 => bad.profiles[0].unresolved_links = 1,
+            _ => bad.request.profiles[0].include_reachable = true,
+        }
+        let receipt = stage.ir_receipt(&bad, &mut || Ok(())).unwrap();
+        assert!(
+            matches!(writer.retain_ir(&run, &receipt, &memory, &mut || Ok(())), Err(e) if e.code == ErrorCode::Integrity)
+        );
+        assert!(run.semantic_ir.is_none());
+    }
+    let receipt = stage.ir_receipt(&manifest, &mut || Ok(())).unwrap();
+    let retained = writer
+        .retain_ir(&run, &receipt, &memory, &mut || Ok(()))
+        .unwrap();
+    let connection = open_connection(&project.root, true).unwrap();
+    connection.execute_batch("CREATE TRIGGER fail_ir BEFORE UPDATE ON runs BEGIN SELECT RAISE(ABORT,'injected'); END;").unwrap();
+    assert!(writer.publish_ir(&mut run, retained).is_err());
+    assert!(run.semantic_ir.is_none());
+    let count: i64 = connection
+        .query_row("SELECT count(*) FROM semantic_ir", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0);
+    connection.execute_batch("DROP TRIGGER fail_ir").unwrap();
+    let retained = writer
+        .retain_ir(&run, &receipt, &memory, &mut || Ok(()))
+        .unwrap();
+    writer.publish_ir(&mut run, retained).unwrap();
+    assert_eq!(
+        project
+            .semantic_ir(&receipt.semantic_ir, &memory, &mut || Ok(()))
+            .unwrap()
+            .manifest,
+        manifest
+    );
+    assert_eq!(
+        project.current().unwrap(),
+        Some(function.recipe.revision.clone())
+    );
+    // Valid JSON and a completed state cannot substitute another admitted build.
+    let original = serde_json::to_string(&run).unwrap();
+    if let RunOperation::BuildIr { request } = &mut run.operation {
+        request.profiles[0].name = "changed".into();
+    }
+    connection
+        .execute(
+            "UPDATE runs SET record=?2 WHERE id=?1",
+            params![run.id.as_str(), serde_json::to_string(&run).unwrap()],
+        )
+        .unwrap();
+    assert!(
+        matches!(project.semantic_ir(&receipt.semantic_ir, &memory, &mut || Ok(())), Err(e) if e.code == ErrorCode::Integrity)
+    );
+    connection
+        .execute(
+            "UPDATE runs SET record=?2 WHERE id=?1",
+            params![run.id.as_str(), original],
+        )
+        .unwrap();
     assert_eq!(memory.used(), 0);
 }

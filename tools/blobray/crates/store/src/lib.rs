@@ -11,6 +11,8 @@ mod investigations;
 pub use investigations::*;
 mod executions;
 pub use executions::*;
+mod semantic_ir;
+pub use semantic_ir::*;
 mod functions;
 pub use functions::{AnalysisReader, FunctionLease, RetainedFunction};
 mod images;
@@ -18,7 +20,9 @@ pub use images::{ImageLease, RetainedImage};
 mod temporary;
 pub use temporary::{TemporaryBudget, TemporaryConfig, TemporaryControl, TemporaryFile};
 mod records;
-pub use records::{OwnerIdentity, PreparedImageReceipt, PreparedImport, RunOperation, RunRecord};
+pub use records::{
+    OwnerIdentity, PreparedImageReceipt, PreparedImport, PreparedIrReceipt, RunOperation, RunRecord,
+};
 pub use records::{
     PreparedExecutionReceipt, PreparedFunctionReceipt, PreparedInvestigationReceipt,
     PreparedKnowledgeReceipt,
@@ -47,7 +51,7 @@ use std::{
 };
 
 const STATE: &str = ".blobray-next";
-const SCHEMA: i64 = 17;
+const SCHEMA: i64 = 18;
 
 /// A project handle owns no source-file handles or mutable inventory cache.
 #[derive(Clone)]
@@ -137,6 +141,7 @@ impl Project {
             CREATE TABLE analyses (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, revision TEXT NOT NULL);
             CREATE TABLE images (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, revision TEXT NOT NULL, plan TEXT NOT NULL);
             CREATE TABLE runs (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, record TEXT NOT NULL);
+            CREATE TABLE semantic_ir (id TEXT PRIMARY KEY, run TEXT NOT NULL);
             CREATE TABLE project (singleton INTEGER PRIMARY KEY CHECK(singleton=1), id TEXT NOT NULL, current_revision TEXT);
             CREATE TABLE revisions (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE);
             INSERT INTO project VALUES (1, lower(hex(randomblob(32))), NULL);

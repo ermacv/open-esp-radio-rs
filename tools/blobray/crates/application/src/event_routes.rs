@@ -199,7 +199,7 @@ fn evaluate(
         },
         memory,
         c,
-        &mut |function, manifest, c| {
+        &mut |function, manifest, _, c| {
             if &function.analysis == request.route.root()
                 && occurrence.is_some_and(|o| {
                     o.revision != request.revision

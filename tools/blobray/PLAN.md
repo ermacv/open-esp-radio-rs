@@ -51,7 +51,7 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
 | 03 | done | Pointer tables and interfaces: exact relocated targets, bounded alternatives, roots/slots, layout/ABI/guards/index domains and semantic bindings. Discovery → proposal → review → query/export works on synthetic and real inputs; ambiguity/unsupported/null/external targets stay distinct; invalid guards and conflicting layouts fail. |
 | 04 | done | Function/context contracts and research navigation: signatures, argument roles, fields, preconditions, reviewed paths/event routes; function/callers/callees, object readers/writers, field accesses, flow/effect slices. Answers retain evidence paths and distinguish structural from executable paths; cycles, ambiguous callbacks and partial results are tested; reads never schedule hidden analysis. |
 | 05 | done | Register lifecycle: MMIO/field discovery, physical catalog, evidence/conflicts/coverage, applicability/review. Independent register tool owns model initialization/SVD import and existing publication. Observation → reviewed source model → validate → four generated outputs works; observed access width is not physical width; generic Blobray gains no production/chip dependency. |
-| 06 | ready | Saved linked semantic IR, configured builds/exports and static observable trace comparison. May-effects, exact static traces and concrete observations remain distinct; incomplete traces cannot MATCH; known differences DIFF; provenance and source-free reading survive composition. |
+| 06 | active | Saved linked semantic IR, configured builds/exports and static observable trace comparison. May-effects, exact static traces and concrete observations remain distinct; incomplete traces cannot MATCH; known differences DIFF; provenance and source-free reading survive composition. |
 | 07 | pending | Integer execution sessions: stack ABI arguments, RV32 atomics, multiple entry points/setup phases, ownership/persistent regions, cold/warm resets and return/reach-symbol/observe-call goals. State transitions, unknown data, unsupported instructions, dependent-phase blocking and exact replay are tested. |
 | 08 | pending | External-call returns/outputs/bounded allocation, delay events and standard constant/sequence/W1C/read-clear/self-clearing/FIFO/indexed-bank models. Every mechanism has positive/negative cases; no implicit response/fallback; model identity/applicability/participation is evidence; code and modeled boundaries stay distinct. |
 | 09 | pending | Stateful FIFO services and interface tables: enqueue/dequeue/length, wake/output, table lifecycle, service-event completion. Full/empty/order/isolation and cross-phase state are tested; only selected reviewed bindings resolve calls; failed phases cannot imply workflow completion. |
@@ -182,7 +182,7 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stages 00–05 are complete. Stage 06 is ready.
+Stages 00–05 are complete. Stage 06 is active.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
 interface review/discovery, ambiguous bindings and authenticated ROM query/export
 reopening. All standalone Next packages/tests, Clippy, formatting and affected
@@ -373,3 +373,39 @@ PHY/ROM research preserves four alternative ROM addresses and 44 composed PHY I2
 writes in byte-identical restored catalogue exports under watchdog supervision.
 No new persistence schema, compatibility mechanism or hardware qualification claim
 is introduced.
+
+
+### Stage 06 execution boundaries
+
+The saved semantic bundle and exact trace evaluator have separate acceptance
+boundaries. Existing function facts are the native semantic IR; building a bundle
+must reuse those records and their physical identities rather than introducing a
+second decoder or copying the legacy symbolic engine. Project-wide configuration
+and automatic campaign execution remain stage 13; this stage accepts explicit
+captured research scopes and named IR build profiles.
+
+| Sub-stage | Status | Acceptance |
+| --- | --- | --- |
+| 06.1 | done | Native configured semantic IR build from explicit saved publications/analyses: named profiles, all/prefix/exact roots and optional resolved call closure; original function facts, exact/ambiguous links, coverage and transitive saved provenance. One supervised build owns memory/work/disk, stages and atomically publishes one immutable bundle. API/CLI show/export, duplicate/missing profiles, ambiguity/cycles, capacity/cancellation, source removal and restore pass. No hidden binary analysis, second semantic engine or legacy adapter. |
+| 06.2 | active | Static observable trace extraction/comparison over saved IR with explicit physical observation scope. Ordered exact traces, symbolic/may-effects and concrete execution remain distinct. Unknown branches/addresses/calls, loops and unsupported effects retain blockers and cannot MATCH; exact equal/different cases yield MATCH/DIFF. Trace evidence/conditions/provenance and exports survive source removal/restore; real saved scope plus full source-only checkpoint close stage 06. |
+
+The IR build owns a result, not an alternate analysis cache. Root selection and
+call closure use the existing application navigation resolver; the bundle retains
+original local/composed records with their evidence identities. New durable result
+storage follows existing staged-receipt/publication rules. Scientific claim strength
+is unchanged by packaging; the static trace consumer alone establishes its explicit
+exactness profile, and never labels a may-effect inventory an execution trace.
+
+
+Stage 06.1 acceptance closes configured saved IR build/show/export through the
+shared application lifecycle. Prefix/all/exact roots, root-only versus reachable
+profiles, a linked diamond, cycles and ambiguous finite callback targets pass.
+Original local/composed facts and transitive evidence-only functions retain their
+identities and coverage. Memory/work/disk exhaustion, cancellation, changed admitted
+requests, inconsistent summaries, SQL publication failure and corrupted CAS streams
+fail without publishing a substitute result. Source-free export and backup/restore
+are identical. Full affected/Next tests, the final linked regressions, Clippy,
+formatting, public/private API docs and standalone checks pass. Native database 18
+and journal 19 identify IR results; no compatibility reader or second analyzer is
+introduced. Stage 06.2 remains active and owns static-trace exactness and the full
+source-only checkpoint.

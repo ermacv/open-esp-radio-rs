@@ -414,6 +414,15 @@ pub struct KnowledgeSnapshot<'a> {
     slots: AdmittedVec<'a, KnowledgeSlot<'a>>,
 }
 impl KnowledgeSnapshot<'_> {
+    /// Lookup within this frozen admitted history, without replaying it again.
+    pub fn get(&self, id: &AssertionId, c: &mut dyn RunControl) -> Result<Option<&KnowledgeEntry>> {
+        c.checkpoint(self.slots.len().max(1).ilog2() as u64 + 1)?;
+        Ok(self
+            .slots
+            .binary_search_by(|(key, _, _)| key.cmp(id))
+            .ok()
+            .and_then(|i| self.slots[i].1.as_ref().map(|(entry, _)| entry)))
+    }
     pub fn entries(&self) -> impl Iterator<Item = &KnowledgeEntry> {
         self.slots
             .iter()

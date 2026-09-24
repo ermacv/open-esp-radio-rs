@@ -11,6 +11,53 @@ pub struct Reached {
     pub depth: u32,
     pub parent: Option<usize>,
 }
+/// Propagate at most 32 profile memberships through an already resolved graph.
+/// Labels outside `following` remain roots only. A queued node owns one work item;
+/// cycles terminate because labels only grow within this finite bitset.
+pub fn propagate_profiles(
+    labels: &mut [u32],
+    arcs: &[Arc],
+    following: u32,
+    memory: &WorkingMemory,
+    c: &mut dyn RunControl,
+) -> Result<()> {
+    for (i, edge) in arcs.iter().enumerate() {
+        c.checkpoint(1)?;
+        if edge.from >= labels.len()
+            || edge.to >= labels.len()
+            || i > 0 && arcs[i - 1].from > edge.from
+        {
+            return Err(Error::new(ErrorCode::Integrity, "invalid profile graph"));
+        }
+    }
+    let mut pending = AdmittedVec::new(memory);
+    let mut queued = AdmittedVec::new(memory);
+    for (i, label) in labels.iter().enumerate() {
+        c.checkpoint(1)?;
+        let active = label & following != 0;
+        queued.push(active, c.position())?;
+        if active {
+            pending.push(i, c.position())?;
+        }
+    }
+    while let Some(node) = pending.pop() {
+        c.checkpoint(arcs.len().max(1).ilog2() as u64 + 1)?;
+        queued[node] = false;
+        let added = labels[node] & following;
+        let start = arcs.partition_point(|edge| edge.from < node);
+        for edge in arcs[start..].iter().take_while(|edge| edge.from == node) {
+            c.checkpoint(1)?;
+            if labels[edge.to] | added != labels[edge.to] {
+                labels[edge.to] |= added;
+                if !queued[edge.to] {
+                    pending.push(edge.to, c.position())?;
+                    queued[edge.to] = true;
+                }
+            }
+        }
+    }
+    Ok(())
+}
 pub fn reachable<'m>(
     nodes: usize,
     arcs: &[Arc],
@@ -74,6 +121,36 @@ pub fn reachable<'m>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn profile_membership_closes_diamond_cycle_but_keeps_nonfollowing_roots_local() {
+        let m = WorkingMemory::new(8192).unwrap();
+        let arcs: Vec<_> = [(0, 1), (0, 2), (1, 3), (2, 3), (3, 0)]
+            .into_iter()
+            .map(|(from, to)| Arc {
+                from,
+                to,
+                record: 0,
+            })
+            .collect();
+        let mut labels = [3, 0, 4, 0];
+        propagate_profiles(&mut labels, &arcs, 1 | 4, &m, &mut || Ok(())).unwrap();
+        assert_eq!(labels, [7, 5, 5, 5]);
+        assert_eq!(m.used(), 0);
+        let m = WorkingMemory::new(1).unwrap();
+        assert_eq!(
+            propagate_profiles(&mut [1; 4], &arcs, 1, &m, &mut || Ok(()))
+                .unwrap_err()
+                .code,
+            ErrorCode::ResourceLimited
+        );
+        assert_eq!(m.used(), 0);
+        assert_eq!(
+            propagate_profiles(&mut [1], &arcs, 1, &m, &mut || Ok(()))
+                .unwrap_err()
+                .code,
+            ErrorCode::Integrity
+        );
+    }
     #[test]
     fn diamond_cycle_and_depth_limit_have_bounded_shortest_witnesses() {
         let m = WorkingMemory::new(8192).unwrap();

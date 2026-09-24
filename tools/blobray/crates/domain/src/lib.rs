@@ -12,6 +12,8 @@ mod data;
 pub use data::*;
 mod registers;
 pub use registers::*;
+mod semantic_ir;
+pub use semantic_ir::*;
 mod execution;
 pub use execution::*;
 mod function;

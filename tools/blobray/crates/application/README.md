@@ -258,3 +258,11 @@ Navigation supplies exact selected callees and a synchronous borrowed-facts port
 route orchestration retains only admitted values/metadata between participants.
 Physical structural checks are distinct from service semantics and temporal
 conditions. No route query launches hidden analysis or executable delivery.
+
+`start_build_ir` packages explicit saved scopes into immutable named semantic
+profiles. The common navigation resolver supplies physical links and publication
+names; finite profile propagation and a separate admitted provenance worklist
+preserve the distinction between selected callees and evidence-only dependencies.
+The build owns one supervised budget/publication. `ReadQuery::SemanticIr` expands
+original function facts through `QuerySink::semantic_ir`; no hidden analysis or
+live-origin access occurs. See [IR profiles](../../next/README.md#saved-semantic-ir-profiles).

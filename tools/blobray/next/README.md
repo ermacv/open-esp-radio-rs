@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 17 and journal schema 18. Earlier and future
+Projects require metadata schema 18 and journal schema 19. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,8 +712,8 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 18 for every durable and read operation. Storage metadata
-uses schema 17; revision manifests use schema 1 and execution manifests use schema
+Run records use schema 19 for every durable and read operation. Storage metadata
+uses schema 18; revision manifests use schema 1 and execution manifests use schema
 1. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-18 run; an envelope version is not a journal
+execution 7) wrap the same schema-19 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -2109,3 +2109,47 @@ remain explicit nonoverlapping declarations. The independent
 [register tool](../../registers/README.md) owns source-model initialization,
 SVD import, reviewed source applicability and four-output publication. A Next
 review is scoped research knowledge, not an automatic hardware-source promotion.
+
+## Saved semantic IR profiles
+
+`ir build` packages an explicitly selected saved research scope. `FunctionRecord`
+and `FunctionManifest` remain the semantic representation. Building profiles does
+not reread live binaries or schedule analysis; prepare an image and analyze/research
+it first when linked addresses and callees are required.
+
+A request contains `scope` (frozen `revision`, `publications`, `analyses`, optional
+`knowledge`) and 1–32 uniquely named `profiles`. Each profile supplies `name`,
+`include_reachable`, and `roots`: `{"kind":"all"}`, `{"kind":"name-prefix",
+"prefix":[112,104,121,95]}` (raw name bytes), or `{"kind":"analyses",
+"analyses":["<analysis-id>"]}`. Prefix names come from selected publication
+membership; a named analysis without that metadata fails prefix selection. Explicit
+analysis IDs and all-roots work without names. Symbol-less ranges have no inferred
+name. Empty root matches and duplicate profile names fail.
+
+```sh
+blobray ir --project research --limit-mode watchdog build --request ir-build.json
+blobray ir --project research --limit-mode watchdog show <semantic-ir-id>
+blobray ir --project research --limit-mode watchdog show <semantic-ir-id> --output ir.json
+```
+
+`Application::start_build_ir` owns one durable run and publishes `run.semantic_ir`.
+`ReadQuery::SemanticIr` / `QuerySink::semantic_ir` provide the same result as CLI
+show/export. JSON export is an atomic single-file query export. The saved index
+references immutable original streams; read/export expands every original fact
+with its analysis ID and record ordinal. It includes original coverage, physical
+links and ambiguity, profile memberships/roots, and the explicitly selected frozen
+knowledge entries for the source revision, retaining their review state.
+
+Only an unambiguous selected physical target extends call closure. A profile with
+`include_reachable:false` keeps its root selection. Dependencies of composed
+expressions/effects and selected knowledge analysis evidence are retained transitively
+as `provenance_only` functions, without adding them to a profile. Cycles use bounded
+iterative worklists. No unresolved call is replaced by another engine or a guess.
+
+Manifest schema 1 / policy 1 separately counts roots, selected functions, partial
+functions, unresolved links and unavailable scope entries. Packaging grants no
+aggregate coverage, execution verdict, hardware claim or proof that every executable
+byte is classified. Composed may-effects retain that meaning. IR exports contain
+semantic facts, not captured ELF payloads or every evidence document; a project
+backup remains the preservation unit. Source-free reading and backup/restore use
+native database 18 / journal 19, without converters for previous formats.

@@ -306,3 +306,10 @@ navigation owner, pure expression observations and indexed knowledge applicabili
 it has no generator or production dependencies.
 The primary `cargo blobray` command selects Next. Final-image target auditing uses
 the ordinary ephemeral supervisor and injected ISA port; it has no project writer.
+
+Saved semantic IR packaging stays within these boundaries: domain defines profile
+requests and result records, analysis propagates finite labels over supplied arcs,
+application selects the saved scope and owns call/provenance traversal, and store
+validates and atomically publishes immutable references. CLI is a client of the
+same build/query operations. Original function streams remain the semantic source;
+this adds neither an analysis engine nor another runtime owner.

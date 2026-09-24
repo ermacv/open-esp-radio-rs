@@ -270,6 +270,10 @@ impl Writer {
             RunOperation::PrepareImage { revision, .. }
             | RunOperation::Investigate { revision, .. } => Some(revision),
             RunOperation::AnalyzeFunction { request } => request.revision.as_ref(),
+            RunOperation::BuildIr { request } => {
+                request.validate()?;
+                Some(&request.scope.revision)
+            }
             _ => None,
         };
         if matches!(&operation,RunOperation::AnalyzeFunction{request} if request.revision.is_none())
@@ -308,7 +312,7 @@ impl Writer {
             .map_err(db)?;
         budget.validate()?;
         let record = RunRecord {
-            schema: 18,
+            schema: 19,
             operation,
             resolved_operation: None,
             image: None,
@@ -316,6 +320,7 @@ impl Writer {
             publication: None,
             knowledge: None,
             execution: None,
+            semantic_ir: None,
             assessment: None,
             id: raw.parse()?,
             state: RunState::Registered,
@@ -380,6 +385,7 @@ impl Writer {
             || previous.revision != record.revision
             || previous.assessment != record.assessment
             || previous.execution != record.execution
+            || previous.semantic_ir != record.semantic_ir
             || previous.resolved_operation != record.resolved_operation
         {
             return Err(integrity(
@@ -710,7 +716,7 @@ fn verify_file(
 pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
     let value: serde_json::Value = serde_json::from_str(raw).map_err(json)?;
     let schema = value.get("schema").and_then(serde_json::Value::as_u64);
-    if schema != Some(18) {
+    if schema != Some(19) {
         return Err(Error::new(
             ErrorCode::Incompatible,
             "unsupported run record schema",
@@ -787,6 +793,7 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
         record.publication.is_some(),
         record.knowledge.is_some(),
         record.execution.is_some(),
+        record.semantic_ir.is_some(),
     ]
     .into_iter()
     .filter(|v| *v)
@@ -819,7 +826,18 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
             ));
         }
     }
+    if record.semantic_ir.is_some()
+        && !matches!(record.effective_operation(), RunOperation::BuildIr { .. })
+    {
+        return Err(integrity("semantic IR result belongs to another operation"));
+    }
     match record.effective_operation() {
+        RunOperation::BuildIr { request } => {
+            request.validate()?;
+            if (record.state == RunState::Completed) != record.semantic_ir.is_some() {
+                return Err(integrity("invalid semantic IR outcome"));
+            }
+        }
         RunOperation::Execute { request, producer } => {
             request.validate()?;
             if producer.executor.is_empty()

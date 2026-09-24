@@ -4,7 +4,7 @@
 Its only internal dependency is [domain](../domain/README.md). It does not parse
 ELF/AR, select targets, resolve thin paths or install a process supervisor.
 
-Projects require metadata schema 17 and journal schema 18; earlier/future formats
+Projects require metadata schema 18 and journal schema 19; earlier/future formats
 are rejected without conversion or mutation. Revision manifests retain schema 1.
 See [storage diagnosis](../../next/README.md#diagnosis-and-recovery).
 
@@ -63,7 +63,7 @@ does not inspect procfs or implement the worker transport. The application wraps
 store readers in restricted capabilities instead of exposing `Project` to read
 consumers.
 
-Run schema 18 carries the admitted operation, optional concrete scenario
+Run schema 19 carries the admitted operation, optional concrete scenario
 resolution and scoped `ResultAssessment`. Readers validate one published result,
 its assessment identity and scenario shape. Earlier journal formats are rejected.
 Recovery records the last valid stage checkpoint before cleanup, while
@@ -113,7 +113,7 @@ ELF ABI and a semantic producer/value-effect summary. Earlier derived schemas
 are unsupported; existing CAS bytes are never rewritten. Function assessment coverage is complete only
 when structural coverage and semantic
 coverage are both complete; unknown values alone do not imply missing semantics.
-The analyses table and publication transaction remain metadata schema 17.
+The analyses table and publication transaction remain metadata schema 18.
 
 
 `investigations` owns `InvestigationLease`, `PreparedInvestigationReceipt` and the
@@ -168,3 +168,11 @@ states for repeated lookups within one operation; it is not a persistent cache.
 `storage_usage` walks logical CAS/metadata/staging sizes under read-only authority.
 It includes unreachable objects, does not follow symlinks or run recovery, and
 provides no reclaimability estimate or atomic filesystem snapshot guarantee.
+
+Semantic IR builds publish an immutable manifest/index and a `semantic_ir` table
+entry in the same transaction as the completed run. Reads use that index to obtain
+an admitted journal cell and verify the admitted request, original function streams,
+profile counts, frozen knowledge and transitive analysis dependencies. The index
+contains no copied function facts; query/export expands original CAS streams.
+Doctor checks indexes and completed-run references, and backup/restore retains
+both. Retention roots for any future GC must include these transitive dependencies.

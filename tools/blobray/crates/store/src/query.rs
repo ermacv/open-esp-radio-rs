@@ -570,6 +570,31 @@ impl Project {
                 })?;
             }
         }
+        // Validate indexed IR even if its run row was removed or changed.
+        let mut statement = connection
+            .prepare("SELECT id FROM semantic_ir ORDER BY id")
+            .map_err(db)?;
+        let mut rows = statement.query([]).map_err(db)?;
+        while let Some(row) = rows.next().map_err(db)? {
+            control.checkpoint(1)?;
+            let id: String = row.get(0).map_err(db)?;
+            if let Err(error) = id
+                .parse()
+                .and_then(|id| self.semantic_ir(&id, memory, control).map(|_| ()))
+            {
+                if matches!(
+                    error.code,
+                    ErrorCode::ResourceLimited
+                        | ErrorCode::Cancelled
+                        | ErrorCode::TimedOut
+                        | ErrorCode::DiagnosticChannel
+                ) {
+                    return Err(error);
+                }
+                sink.error(&error, control)?;
+                report.errors += 1;
+            }
+        }
         if schema >= 2 {
             let mut statement = connection
                 .prepare("SELECT sequence FROM runs ORDER BY sequence")
@@ -615,6 +640,26 @@ impl Project {
                         let lease = self.execution_from_run(&run, memory, control)?;
                         validate_execution_records(&lease.manifest, &lease.records, control)
                     })();
+                    if let Err(error) = result {
+                        if matches!(
+                            error.code,
+                            ErrorCode::ResourceLimited
+                                | ErrorCode::Cancelled
+                                | ErrorCode::TimedOut
+                                | ErrorCode::DiagnosticChannel
+                        ) {
+                            return Err(error);
+                        }
+                        sink.error(&error, control)?;
+                        report.errors += 1;
+                    }
+                }
+                if let Some(id) = &run.semantic_ir {
+                    let result = self.semantic_ir(id, memory, control).and_then(|ir| {
+                        if matches!(run.effective_operation(), RunOperation::BuildIr { request } if *request == ir.manifest.request) {
+                            Ok(())
+                        } else { Err(integrity("IR publication differs from completed run")) }
+                    });
                     if let Err(error) = result {
                         if matches!(
                             error.code,

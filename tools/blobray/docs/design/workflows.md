@@ -522,3 +522,14 @@ Regression owners are Next `functions/registers.rs` (review, conflicts, limits,
 source-free export and restore), analysis `registers` (mask bounds), application
 `registers::index` (applicability and retired claims) and register tool `drafts`
 (initialization/import, explicit review and four-output publication).
+
+## Saved semantic IR build (implemented)
+
+Select frozen publications/analyses and optional knowledge, then configure named
+all/prefix/exact-analysis roots and resolved call closure. One application build
+publishes an immutable IR identity. Show/export streams the original facts with
+profile membership, partial coverage, unresolved links and transitive provenance.
+Deleting origins, moving the project and restoring a backup preserve that identity.
+A successful build means the configured bundle was retained; static-trace exactness
+and concrete execution are separate consumer claims. Details and commands:
+[IR profiles](../../next/README.md#saved-semantic-ir-profiles).

@@ -416,6 +416,61 @@ impl Application {
             },
         )
     }
+    pub fn start_build_ir(
+        &self,
+        project: &Path,
+        request: IrBuildRequest,
+        budget: ResourceBudget,
+    ) -> Result<RunHandle> {
+        let mut jobs = self.jobs.lock().unwrap();
+        let permit = self.admit(&mut jobs)?;
+        budget.validate()?;
+        if budget.working_memory_bytes.is_none() {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "working capacity missing",
+            ));
+        }
+        let project = std::path::absolute(project).map_err(storage_io)?;
+        let started_ms = self.host.now_ms();
+        let deadline_ms = started_ms
+            .checked_add(budget.timeout_ms)
+            .ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "deadline overflow"))?;
+        self.temporary.root(&*self.host)?;
+        let mut reservation = self.temporary.reserve()?;
+        let mut writer = Writer::open(&project)?;
+        request.validate()?;
+        write_control_message(&mut std::io::sink(), &request)?;
+        let mut work = IrWork {
+            schema: 1,
+            run: ArtifactId::of_bytes(b"admission").as_str().parse()?,
+            project: OriginPath::from_path(&project),
+            request: request.clone(),
+            budget: budget.clone(),
+            started_ms,
+            deadline_ms,
+        };
+        write_control_message(&mut std::io::sink(), &work)?;
+        let (record, stage) = writer.register_operation(
+            budget,
+            self.host.owner()?,
+            RunOperation::BuildIr { request },
+            |stage| reservation.attach(stage),
+        )?;
+        work.run = record.id.clone();
+        self.launch_durable(
+            &mut jobs,
+            project,
+            DurableAdmission {
+                writer,
+                record,
+                stage,
+                work: DurableWork::Ir(Box::new(work)),
+                permit,
+                reservation,
+            },
+        )
+    }
     pub fn start_execution(
         &self,
         project: &Path,
@@ -938,7 +993,7 @@ impl Application {
             &work,
         )?;
         let record = RunRecord {
-            schema: 18,
+            schema: 19,
             operation: blobray_store::RunOperation::Query,
             resolved_operation: None,
             image: None,
@@ -946,6 +1001,7 @@ impl Application {
             publication: None,
             knowledge: None,
             execution: None,
+            semantic_ir: None,
             assessment: None,
             id: run,
             owner: self.host.owner()?,
@@ -1130,6 +1186,7 @@ struct DurableAdmission {
     reservation: crate::temporary::TemporaryReservation,
 }
 enum DurableWork {
+    Ir(Box<IrWork>),
     Scenario(Box<ScenarioWork>),
     Execution(Box<ExecutionWork>),
     Knowledge(Box<KnowledgeWork>),
@@ -1141,6 +1198,7 @@ enum DurableWork {
 impl DurableWork {
     fn started_ms(&self) -> u64 {
         match self {
+            Self::Ir(w) => w.started_ms,
             Self::Scenario(w) => w.started_ms,
             Self::Execution(w) => w.started_ms,
             Self::Knowledge(w) => w.started_ms,
@@ -1152,6 +1210,7 @@ impl DurableWork {
     }
     fn deadline_ms(&self) -> u64 {
         match self {
+            Self::Ir(w) => w.deadline_ms,
             Self::Scenario(w) => w.deadline_ms,
             Self::Execution(w) => w.deadline_ms,
             Self::Knowledge(w) => w.deadline_ms,
@@ -1163,6 +1222,7 @@ impl DurableWork {
     }
 }
 enum Retained {
+    Ir(blobray_store::RetainedIr),
     Execution(blobray_store::RetainedExecution),
     Knowledge(Box<blobray_store::RetainedKnowledge>),
     Import(blobray_store::RetainedImport),
@@ -1182,6 +1242,10 @@ fn supervise(
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         crate::temporary::configure(&stage, &record.id, reservation.capacity())?;
         match &work {
+            DurableWork::Ir(work) => crate::protocol::write_request(
+                std::fs::File::create(stage.join("ir.json")).map_err(storage_io)?,
+                work,
+            )?,
             DurableWork::Scenario(work) => crate::protocol::write_request(
                 std::fs::File::create(stage.join("scenario.json")).map_err(storage_io)?,
                 work,
@@ -1254,7 +1318,8 @@ fn supervise(
         let publication_memory = WorkingMemory::new(record.budget.working_memory_bytes.unwrap())?;
         let publication_reservation = if matches!(
             work,
-            DurableWork::Investigation(_)
+            DurableWork::Ir(_)
+                | DurableWork::Investigation(_)
                 | DurableWork::Knowledge(_)
                 | DurableWork::Execution(_)
                 | DurableWork::Scenario(_)
@@ -1345,6 +1410,12 @@ fn supervise(
                         )?,
                     ))
                 }
+                (DurableWork::Ir(_), PreparedReceipt::Ir(p)) => Retained::Ir(writer.retain_ir(
+                    &record,
+                    &p,
+                    &publication_memory,
+                    &mut context,
+                )?),
                 (DurableWork::Execution(_), PreparedReceipt::Execution(p)) => Retained::Execution(
                     writer.retain_execution(&record, &p, &publication_memory, &mut context)?,
                 ),
@@ -1408,6 +1479,7 @@ fn supervise(
             state.committing = true;
         }
         match retained {
+            Retained::Ir(retained) => writer.publish_ir(&mut record, retained),
             Retained::Execution(retained) => writer.publish_execution(&mut record, retained),
             Retained::Knowledge(retained) => {
                 writer.publish_knowledge(&mut record, *retained, &mut context)

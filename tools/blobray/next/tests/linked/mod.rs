@@ -947,6 +947,38 @@ fn recursive_research_retains_partial_local_facts_without_recursing() {
             .as_str()
             .is_some_and(|s| s.contains("recursive component"))
     }));
+    let build = IrBuildRequest {
+        scope: NavigationScope {
+            revision: app::inventory(&f.project, None).unwrap().revision_id,
+            publications: vec![pid],
+            analyses: vec![],
+            knowledge: None,
+        },
+        profiles: vec![IrProfile {
+            name: "cycle".into(),
+            roots: IrRoots::All,
+            include_reachable: true,
+        }],
+    };
+    let run = f
+        .app
+        .start_build_ir(&f.project, build, budget())
+        .unwrap()
+        .wait();
+    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    let ir = cli(
+        &f,
+        &["ir", "show", run.semantic_ir.as_ref().unwrap().as_str()],
+    );
+    assert_eq!(ir["summary"]["manifest"]["profiles"][0]["functions"], 1);
+    assert_eq!(ir["summary"]["manifest"]["profiles"][0]["roots"], 1);
+    assert!(
+        ir["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["value"]["kind"] == "call")
+    );
 }
 
 #[test]
@@ -1366,6 +1398,92 @@ fn diamond_research_keeps_shared_leaf_effects_for_both_parents_and_repeated_call
             "{facts}"
         );
     }
+    // Saved IR profiles follow the same physical graph; provenance does not widen selection.
+    let revision = app::inventory(&f.project, None).unwrap().revision_id;
+    let mut build = IrBuildRequest {
+        scope: NavigationScope {
+            revision: revision.clone(),
+            publications: vec![publication.clone()],
+            analyses: vec![],
+            knowledge: None,
+        },
+        profiles: vec![
+            IrProfile {
+                name: "closure".into(),
+                roots: IrRoots::NamePrefix {
+                    prefix: b"entry".to_vec(),
+                },
+                include_reachable: true,
+            },
+            IrProfile {
+                name: "root-only".into(),
+                roots: IrRoots::NamePrefix {
+                    prefix: b"entry".to_vec(),
+                },
+                include_reachable: false,
+            },
+        ],
+    };
+    let request = f.dir.path().join("ir-build.json");
+    fs::write(&request, serde_json::to_vec(&build).unwrap()).unwrap();
+    let built = cli(&f, &["ir", "build", "--request", request.to_str().unwrap()]);
+    let ir = cli(
+        &f,
+        &["ir", "show", built["run"]["semantic_ir"].as_str().unwrap()],
+    );
+    assert_eq!(
+        ir["summary"]["manifest"]["profiles"][0]["functions"], 4,
+        "{ir}"
+    );
+    assert_eq!(ir["summary"]["manifest"]["profiles"][1]["functions"], 1);
+    assert_eq!(
+        ir["summary"]["manifest"]["profiles"][0]["unresolved_links"],
+        0
+    );
+    build.scope.publications.clear();
+    build.scope.analyses = vec![
+        research["run"]["analysis"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap(),
+    ];
+    build.profiles = vec![IrProfile {
+        name: "composed".into(),
+        roots: IrRoots::All,
+        include_reachable: false,
+    }];
+    let run = f
+        .app
+        .start_build_ir(&f.project, build, budget())
+        .unwrap()
+        .wait();
+    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    let ir = cli(
+        &f,
+        &["ir", "show", run.semantic_ir.as_ref().unwrap().as_str()],
+    );
+    assert_eq!(ir["summary"]["manifest"]["functions"], 1);
+    assert!(
+        ir["summary"]["manifest"]["provenance_functions"]
+            .as_u64()
+            .unwrap()
+            >= 3,
+        "{ir}"
+    );
+    let rows = ir["records"].as_array().unwrap();
+    assert!(rows.iter().any(|r| r["value"]["kind"] == "function"
+        && r["value"]["function"]["analysis"] == leaf_id
+        && r["value"]["provenance_only"] == true
+        && r["value"]["profiles"].as_array().unwrap().is_empty()));
+    assert_eq!(
+        rows.iter()
+            .filter(|r| r["value"]["kind"] == "fact"
+                && r["value"]["fact"]["kind"] == "callee-effect"
+                && r["value"]["fact"]["analysis"] == leaf_id)
+            .count(),
+        3
+    );
 }
 
 #[test]
@@ -1892,6 +2010,45 @@ fn finite_pointer_loads_keep_both_callback_targets_in_queries_research_and_reope
         !records
             .iter()
             .any(|r| r["value"]["kind"] == "callee-effect")
+    );
+
+    let build = IrBuildRequest {
+        scope: NavigationScope {
+            revision: app::inventory(&f.project, None).unwrap().revision_id,
+            publications: vec![publication.clone()],
+            analyses: vec![],
+            knowledge: None,
+        },
+        profiles: vec![IrProfile {
+            name: "ambiguous".into(),
+            roots: IrRoots::NamePrefix {
+                prefix: b"entry".to_vec(),
+            },
+            include_reachable: true,
+        }],
+    };
+    let run = f
+        .app
+        .start_build_ir(&f.project, build, budget())
+        .unwrap()
+        .wait();
+    assert_eq!(run.state, RunState::Completed, "{run:?}");
+    let ir = cli(
+        &f,
+        &["ir", "show", run.semantic_ir.as_ref().unwrap().as_str()],
+    );
+    assert_eq!(ir["summary"]["manifest"]["profiles"][0]["functions"], 1);
+    assert_eq!(
+        ir["summary"]["manifest"]["profiles"][0]["unresolved_links"],
+        1
+    );
+    assert!(
+        ir["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["value"]["kind"] == "call"
+                && r["value"]["record"]["candidates"].as_array().unwrap().len() == 2)
     );
     fs::remove_file(f.dir.path().join("callbacks.o")).unwrap();
     let output = f.dir.path().join("saved-alternatives");

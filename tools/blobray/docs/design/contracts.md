@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 18
-and database schema 17 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 19
+and database schema 18 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -831,8 +831,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 17
-and journal schema 18 carry these identities. Old formats are rejected without
+Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 18
+and journal schema 19 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -1277,3 +1277,26 @@ unsupported XML extensions are not promoted to native semantics. Reviewed source
 assertions, applicability, evidence and publication policy remain explicit inputs
 to validation and the existing four-output publisher. Blobray does not acquire
 register-generation or production dependencies.
+## Saved semantic IR packaging
+
+The native semantic representation remains the saved `FunctionRecord` stream and
+its `FunctionManifest`. An IR build selects frozen publications/analyses and named
+profiles; it does not reacquire origins, decode code or choose an alternative
+engine. All, name-prefix and exact-analysis roots are explicit. Prefix selection
+uses physical names retained in selected publication membership; missing name
+metadata for a named function is an error. Symbol-less ranges have no inferred name.
+
+Call closure uses the same application navigation resolver. Only one unambiguous
+selected physical target can extend a profile. Unknown/outside/ambiguous links and
+partial function coverage remain separate evidence. Cycles are finite graph edges,
+not input-controlled host recursion. Packaging does not certify an executable path.
+
+One operation owns admitted profile/graph indexes, temporary index output and a
+staged immutable manifest. Original function streams remain immutable; their
+transitive saved analysis provenance is retained separately from profile membership.
+An evidence-only dependency never silently becomes a selected callee. The normal
+supervisor validates/promotes the closure and publishes the result with the run;
+capacity, cancellation or validation failure cannot publish an incomplete bundle.
+Read/export expands original facts with exact analysis and record identities,
+preserving local effects, composed may-effects and their original coverage. Trace
+extraction is a separate consumer responsible for its explicit exactness claim.

@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum RunOperation {
+    BuildIr {
+        request: IrBuildRequest,
+    },
     Scenario {
         request: ScenarioRequest,
     },
@@ -57,6 +60,8 @@ pub struct RunRecord {
     pub knowledge: Option<KnowledgeRevisionId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution: Option<ArtifactId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_ir: Option<ArtifactId>,
     pub assessment: Option<ResultAssessment>,
     pub id: RunId,
     pub state: RunState,
@@ -80,6 +85,14 @@ pub struct PreparedImport {
     pub revision: RevisionId,
     pub closure: ArtifactId,
     pub complete: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreparedIrReceipt {
+    pub schema: u32,
+    pub project: ProjectId,
+    pub semantic_ir: ArtifactId,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

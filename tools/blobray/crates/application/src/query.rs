@@ -55,6 +55,18 @@ impl QueryOutput {
         let summary: QuerySummary = serde_json::from_slice(&bytes)
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         let manifest = match (&work.query, &summary) {
+            (
+                ReadQuery::SemanticIr { id },
+                QuerySummary::SemanticIr {
+                    id: actual,
+                    manifest,
+                },
+            ) if id == actual
+                && manifest.schema == SEMANTIC_IR_SCHEMA
+                && manifest.policy == SEMANTIC_IR_POLICY =>
+            {
+                None
+            }
             (ReadQuery::Registers { request }, QuerySummary::Registers { summary })
                 if summary.schema == 1 && summary.request == *request =>
             {

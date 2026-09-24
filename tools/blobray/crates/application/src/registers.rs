@@ -129,7 +129,7 @@ pub(crate) fn query(
         &navigation,
         memory,
         c,
-        &mut |_, _, _| Ok(()),
+        &mut |_, _, _, _| Ok(()),
         &mut |function, manifest, records, facts, c| {
             c.phase(RunPhase::AnalyzeValues)?;
             let mut observe = |record: u64,

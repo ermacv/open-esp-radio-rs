@@ -21,7 +21,9 @@ mod interfaces;
 mod knowledge;
 mod navigation;
 mod registers;
+mod semantic_ir;
 pub use knowledge::{KnowledgeWork, prepare_knowledge_worker};
+pub use semantic_ir::{IrWork, prepare_ir_worker};
 mod companions;
 mod execution;
 mod execution_memory;
@@ -41,8 +43,8 @@ mod protocol;
 mod selection;
 pub use blobray_store::{
     OwnerIdentity, PreparedExecutionReceipt, PreparedFunctionReceipt, PreparedImageReceipt,
-    PreparedImport, PreparedInvestigationReceipt, PreparedKnowledgeReceipt, RunOperation,
-    RunRecord,
+    PreparedImport, PreparedInvestigationReceipt, PreparedIrReceipt, PreparedKnowledgeReceipt,
+    RunOperation, RunRecord,
 };
 pub use protocol::*;
 mod jobs;

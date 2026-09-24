@@ -982,3 +982,6 @@ mod memory_slice;
 
 #[path = "functions/registers.rs"]
 mod registers;
+
+#[path = "functions/semantic_ir.rs"]
+mod semantic_ir;

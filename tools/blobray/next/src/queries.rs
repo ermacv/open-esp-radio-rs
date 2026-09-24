@@ -74,7 +74,8 @@ pub(super) fn render(
 ) -> Result<()> {
     if matches!(
         result.summary(),
-        app::QuerySummary::Registers { .. }
+        app::QuerySummary::SemanticIr { .. }
+            | app::QuerySummary::Registers { .. }
             | app::QuerySummary::EventRoute { .. }
             | app::QuerySummary::MemorySlice { .. }
             | app::QuerySummary::Flow { .. }
@@ -495,6 +496,9 @@ impl app::DoctorSink for Records<'_> {
     }
 }
 impl app::QuerySink for Records<'_> {
+    fn semantic_ir(&mut self, r: &SemanticIrRecord, c: &mut dyn RunControl) -> Result<()> {
+        self.record("semantic-ir", r, c)
+    }
     fn register(&mut self, r: &RegisterRecord, c: &mut dyn RunControl) -> Result<()> {
         self.record("register", r, c)
     }

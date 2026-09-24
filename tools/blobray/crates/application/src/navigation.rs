@@ -6,8 +6,9 @@ mod calls;
 fn invalid(s: &str) -> Error {
     Error::new(ErrorCode::InvalidRequest, s)
 }
-struct Owned<'m, T> {
-    value: T,
+struct Selected<'m> {
+    value: FunctionAnalysisId,
+    name: Option<Vec<u8>>,
     _capacity: MemoryReservation<'m>,
 }
 struct Node<'m> {
@@ -38,19 +39,17 @@ pub(crate) fn query(
     c: &mut dyn RunControl,
     emit: &mut dyn FnMut(&NavigationRecord, &mut dyn RunControl) -> Result<()>,
 ) -> Result<NavigationSummary> {
-    query_observed(project, request, memory, c, &mut |_, _, _| Ok(()), emit)
+    query_observed(project, request, memory, c, &mut |_, _, _, _| Ok(()), emit)
 }
-/// Same selection and single fact pass, with a scoped descriptor consumer for flow.
+type DescriptorObserver<'a> = dyn FnMut(&NavigationFunction, &FunctionManifest, Option<&[u8]>, &mut dyn RunControl) -> Result<()>
+    + 'a;
+/// Same selection and single fact pass, with borrowed names from selected publications.
 pub(crate) fn query_observed(
     project: &Project,
     request: &NavigationQuery,
     memory: &WorkingMemory,
     c: &mut dyn RunControl,
-    observe: &mut dyn FnMut(
-        &NavigationFunction,
-        &FunctionManifest,
-        &mut dyn RunControl,
-    ) -> Result<()>,
+    observe: &mut DescriptorObserver<'_>,
     emit: &mut dyn FnMut(&NavigationRecord, &mut dyn RunControl) -> Result<()>,
 ) -> Result<NavigationSummary> {
     query_inner(project, request, memory, c, observe, None, emit)
@@ -69,11 +68,7 @@ pub(crate) fn query_inspected(
     request: &NavigationQuery,
     memory: &WorkingMemory,
     c: &mut dyn RunControl,
-    observe: &mut dyn FnMut(
-        &NavigationFunction,
-        &FunctionManifest,
-        &mut dyn RunControl,
-    ) -> Result<()>,
+    observe: &mut DescriptorObserver<'_>,
     inspect: &mut FactsObserver<'_>,
     emit: &mut dyn FnMut(&NavigationRecord, &mut dyn RunControl) -> Result<()>,
 ) -> Result<NavigationSummary> {
@@ -84,11 +79,7 @@ fn query_inner(
     request: &NavigationQuery,
     memory: &WorkingMemory,
     c: &mut dyn RunControl,
-    observe: &mut dyn FnMut(
-        &NavigationFunction,
-        &FunctionManifest,
-        &mut dyn RunControl,
-    ) -> Result<()>,
+    observe: &mut DescriptorObserver<'_>,
     mut inspect: Option<&mut FactsObserver<'_>>,
     emit: &mut dyn FnMut(&NavigationRecord, &mut dyn RunControl) -> Result<()>,
 ) -> Result<NavigationSummary> {
@@ -118,11 +109,15 @@ fn query_inner(
         data: target.as_ref().and_then(accesses::Target::data),
     };
     let mut ids = AdmittedVec::new(memory);
-    let mut add = |id: FunctionAnalysisId, c: &mut dyn RunControl| {
-        let capacity = memory.reserve(id.allocated_bytes(), c.position())?;
+    let mut add = |id: FunctionAnalysisId, name: Option<Vec<u8>>, c: &mut dyn RunControl| {
+        let capacity = memory.reserve(
+            id.allocated_bytes() + name.as_ref().map_or(0, |n| n.capacity() as u64),
+            c.position(),
+        )?;
         ids.push(
-            Owned {
+            Selected {
                 value: id,
+                name,
                 _capacity: capacity,
             },
             c.position(),
@@ -130,7 +125,7 @@ fn query_inner(
     };
     for id in &scope.analyses {
         c.checkpoint(1)?;
-        add(id.clone(), c)?;
+        add(id.clone(), None, c)?;
     }
     for (i, id) in scope.publications.iter().enumerate() {
         c.checkpoint(i as u64 + 1)?;
@@ -143,7 +138,15 @@ fn query_inner(
         }
         blobray_store::visit_jsonl(&publication.members, c, |member: InvestigationMember, c| {
             match &member.outcome {
-                InvestigationOutcome::Analyzed { analysis, .. } => add(analysis.clone(), c)?,
+                InvestigationOutcome::Analyzed { analysis, .. } => {
+                    let PlanEntry::Function { name, .. } = member.entry else {
+                        return Err(Error::new(
+                            ErrorCode::Integrity,
+                            "analyzed membership is not a function",
+                        ));
+                    };
+                    add(analysis.clone(), name, c)?;
+                }
                 _ if matches!(
                     member.entry,
                     PlanEntry::Gap { .. }
@@ -213,6 +216,19 @@ fn query_inner(
         if i > 0 && ids[i - 1].value == id.value {
             continue;
         }
+        let mut name = None;
+        for candidate in ids[i..].iter().take_while(|n| n.value == id.value) {
+            c.checkpoint(1)?;
+            if let Some(current) = candidate.name.as_deref() {
+                if name.is_some_and(|previous| previous != current) {
+                    return Err(Error::new(
+                        ErrorCode::Integrity,
+                        "selected publications disagree on a function name",
+                    ));
+                }
+                name = Some(current);
+            }
+        }
         let lease = reader.analysis(&id.value, c)?;
         let recipe = &lease.manifest.recipe;
         if recipe.revision != scope.revision {
@@ -235,7 +251,7 @@ fn query_inner(
             user_extent: recipe.user_extent,
             _capacity: capacity,
         };
-        observe(&node.function, &lease.manifest, c)?;
+        observe(&node.function, &lease.manifest, name, c)?;
         summary.selected_analyses += 1;
         summary.partial_analyses += u64::from(
             !lease.manifest.coverage.complete()
@@ -365,4 +381,29 @@ pub(crate) fn target_matches(
     value: &AbstractValue,
 ) -> bool {
     calls::target_matches(caller, target, value)
+}
+
+/// Heap payload retained when storing a call row beyond its borrowed callback.
+pub(crate) fn call_bytes(record: &NavigationRecord) -> u64 {
+    match record {
+        NavigationRecord::Call {
+            caller,
+            target,
+            saved_resolution,
+            candidates,
+            ..
+        } => {
+            caller.allocated_bytes()
+                + target.allocated_bytes()
+                + saved_resolution
+                    .as_ref()
+                    .map_or(0, FunctionAnalysisId::allocated_bytes)
+                + (candidates.capacity() * std::mem::size_of::<NavigationFunction>()) as u64
+                + candidates
+                    .iter()
+                    .map(NavigationFunction::allocated_bytes)
+                    .sum::<u64>()
+        }
+        _ => 0,
+    }
 }

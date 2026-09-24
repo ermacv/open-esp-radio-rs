@@ -43,6 +43,7 @@ pub struct WorkerReport {
     deny_unknown_fields
 )]
 pub enum PreparedReceipt {
+    Ir(PreparedIrReceipt),
     Execution(PreparedExecutionReceipt),
     Knowledge(PreparedKnowledgeReceipt),
     Import(PreparedImport),
@@ -86,6 +87,9 @@ pub trait OperationHost: Send + Sync {
 // One bounded control message, never a resident collection of requests.
 #[allow(clippy::large_enum_variant)]
 pub enum ReadQuery {
+    SemanticIr {
+        id: ArtifactId,
+    },
     Registers {
         request: RegisterQuery,
     },

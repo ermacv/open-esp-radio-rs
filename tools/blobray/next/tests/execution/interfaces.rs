@@ -899,3 +899,231 @@ fn review_selection_and_model_abi_cannot_be_inferred_from_target_addresses() {
         }
     }
 }
+
+#[test]
+fn shared_snapshot_preparation_scales_and_restores_phase_order() {
+    let (f, occurrence) = fixture();
+    let selected = review(
+        &f,
+        occurrence.clone(),
+        contract(
+            AccessRoot::Address { address: 0x3000 },
+            occurrence.object.artifact,
+        ),
+    );
+    let mut base = request(&f, selected);
+    base.replacement = None;
+    base.binding = None;
+    base.cases[0].replacement = None;
+    base.cases[0].relation = None;
+    let mut previous = None;
+    for count in [16, 32, 64] {
+        let mut request = base.clone();
+        request.cases = (0..count)
+            .map(|n| {
+                let mut case = base.cases[0].clone();
+                case.name = format!("cold-{n}");
+                case.vendor.tables[0].id = format!("table-{n}");
+                case.replacement = None;
+                case
+            })
+            .collect();
+        let record = f.run(request, budget());
+        assert_eq!(record.state, RunState::Completed, "{record:?}");
+        let progress = record.diagnostics.unwrap().progress.unwrap();
+        assert_eq!(progress.measurements.objects_prepared, 1);
+        assert_eq!(progress.measurements.knowledge_history_passes, 2);
+        let work = progress.phases.prepare_object.work_units;
+        assert!(work > 0);
+        if let Some(previous) = previous {
+            assert!(work < previous * 3, "{count}: {work}/{previous}");
+        }
+        previous = Some(work);
+        eprintln!("runtime phases={count}, preparation work={work}");
+        let saved = f.read(&record.execution.unwrap());
+        let manifest: ExecutionManifest =
+            serde_json::from_value(saved["summary"]["manifest"].clone()).unwrap();
+        assert!(manifest.complete);
+        let rows: Vec<ExecutionEvidence> = saved["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| serde_json::from_value(r["value"].clone()).unwrap())
+            .collect();
+        for n in 0..count {
+            let observation = table(&rows, n);
+            assert_eq!(observation.id, format!("table-{n}"));
+            assert_eq!(observation.status, ModelStatus::Complete);
+            assert_eq!(observation.calls, 1);
+        }
+    }
+}
+
+#[test]
+fn callback_then_unassociated_captured_jalr_is_incomplete_and_replays() {
+    let (f, occurrence) = fixture_code(&[
+        0x00008413, // save ra in s0
+        0x00452303, // load selected callback
+        0x000300e7, // jalr ra,t1
+        0x00000297, // ordinary captured call: auipc t0,0 at 0x100c
+        0x018280e7, // jalr ra,t0,0x18 => 0x1024 (no selected slot)
+        0x00040067, // return through s0
+        0x00000013, 0x00700513, // callback at 0x101c
+        0x00008067, 0x00900513, // ordinary function at 0x1024
+        0x00008067,
+    ]);
+    let selected = review(
+        &f,
+        occurrence.clone(),
+        contract(
+            AccessRoot::Address { address: 0x3000 },
+            occurrence.object.artifact,
+        ),
+    );
+    let mut request = request(&f, selected);
+    request.cases[0].vendor.tables[0].slots[0].target = RuntimeSlotTarget::Code { address: 0x101c };
+    request.cases[0].replacement = Some(request.cases[0].vendor.clone());
+    let record = f.run(request, budget());
+    assert_eq!(record.state, RunState::Completed, "{record:?}");
+    let id = record.execution.unwrap();
+    let saved = f.read(&id);
+    let manifest: ExecutionManifest =
+        serde_json::from_value(saved["summary"]["manifest"].clone()).unwrap();
+    assert!(!manifest.complete);
+    assert_eq!(manifest.verdict, Some(ComparisonVerdict::Incomplete));
+    let rows: Vec<ExecutionEvidence> = saved["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| serde_json::from_value(r["value"].clone()).unwrap())
+        .collect();
+    let observed = table(&rows, 0);
+    assert_eq!(observed.calls, 1);
+    assert_eq!(
+        observed.issue,
+        Some(RuntimeTableIssue::UnassociatedTarget { target: 0x1024 })
+    );
+    assert!(rows.iter().any(|r| matches!(
+        r,
+        ExecutionEvidence::Event {
+            event: ExecutionEvent::RuntimeTable {
+                event: RuntimeTableEvent::IndirectTarget {
+                    site: 0x1008,
+                    target: 0x101c,
+                    offset: 4
+                },
+                ..
+            },
+            ..
+        }
+    )));
+    let replay = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args(["--format", "json", "replay", "--project"])
+        .arg(&f.project)
+        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
+        .output()
+        .unwrap();
+    assert!(
+        replay.status.success(),
+        "{}",
+        String::from_utf8_lossy(&replay.stderr)
+    );
+    let replay: serde_json::Value = serde_json::from_slice(&replay.stdout).unwrap();
+    assert_eq!(replay["run"]["execution"], id.as_str());
+    assert_eq!(f.read(&id)["records"], saved["records"]);
+}
+
+#[test]
+fn preparation_groups_each_snapshot_and_physical_object_without_reordering_tables() {
+    let code = [
+        0x00008413, 0x00452303, 0x000300e7, 0x00040067, 0x00000013, 0x00700513, 0x00008067,
+    ];
+    let (primary, _) = super::goals::symbol_elf(&code, 0x1000, 0x1014);
+    let (companion, _) = super::goals::symbol_elf(&[0x00008067; 7], 0x2000, 0x2014);
+    let objects: Vec<_> = [&primary, &companion]
+        .into_iter()
+        .map(|bytes| ObjectId {
+            artifact: ArtifactId::of_bytes(bytes),
+            location: ObjectLocation::Standalone,
+        })
+        .collect();
+    let mut f = Fixture::from_inputs(vec![primary, companion]);
+    f.target.companions.push(1);
+    let occurrence = |input: usize| KnowledgeOccurrence {
+        revision: f.target.revision.clone(),
+        source: FunctionSource::Input {
+            input: input as u64,
+        },
+        object: objects[input].clone(),
+        symbol: None,
+    };
+    let old = review(
+        &f,
+        occurrence(0),
+        contract(
+            AccessRoot::Address { address: 0x3000 },
+            objects[0].artifact.clone(),
+        ),
+    );
+    let new = review_as(
+        &f,
+        occurrence(1),
+        contract(
+            AccessRoot::Address { address: 0x4000 },
+            objects[1].artifact.clone(),
+        ),
+        Some(old.knowledge.clone()),
+        ReviewDecision::Accept,
+    );
+    let mut first = old.clone();
+    first.knowledge = new.knowledge.clone();
+    let mut request = request(&f, first);
+    let mut second = request.cases[0].vendor.tables[0].clone();
+    second.id = "companion".into();
+    second.review = new;
+    second.seed.address = 0x4000;
+    second.slots[0].target = RuntimeSlotTarget::Null;
+    request.cases[0].vendor.tables.insert(0, second);
+    request.cases[0].replacement = Some(request.cases[0].vendor.clone());
+    let mut later = request.cases[0].clone();
+    later.name = "older-snapshot".into();
+    later.vendor.tables.remove(0);
+    later.vendor.tables[0].review = old;
+    later.replacement = Some(later.vendor.clone());
+    request.cases.push(later);
+    let record = f.run(request.clone(), budget());
+    assert_eq!(record.state, RunState::Completed, "{record:?}");
+    let progress = record.diagnostics.unwrap().progress.unwrap();
+    assert_eq!(progress.measurements.objects_prepared, 3);
+    assert_eq!(progress.measurements.knowledge_history_passes, 4);
+    let saved = f.read(&record.execution.unwrap());
+    let manifest: ExecutionManifest =
+        serde_json::from_value(saved["summary"]["manifest"].clone()).unwrap();
+    assert!(manifest.complete);
+    let rows: Vec<ExecutionEvidence> = saved["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| serde_json::from_value(r["value"].clone()).unwrap())
+        .collect();
+    let tables: Vec<_> = rows
+        .iter()
+        .filter_map(|r| match r {
+            ExecutionEvidence::RuntimeTable {
+                case,
+                replacement: false,
+                observation,
+            } => Some((*case, observation.id.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        tables,
+        [(0, "companion"), (0, "callbacks"), (1, "callbacks")]
+    );
+    // A later request in a shared object group still undergoes individual validation.
+    request.cases[1].vendor.tables[0].seed.length = 32;
+    let failed = f.run(request, budget());
+    assert_eq!(failed.error.unwrap().code, ErrorCode::InvalidRequest);
+    assert!(failed.execution.is_none());
+}

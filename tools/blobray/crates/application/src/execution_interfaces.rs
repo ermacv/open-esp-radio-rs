@@ -50,21 +50,16 @@ pub(crate) fn prepare<'m>(
             }
         }
     }
-    for (first, p) in pending.iter().enumerate() {
-        c.checkpoint(first as u64 + 1)?;
-        if pending[..first]
-            .iter()
-            .any(|q| q.table.review.knowledge == p.table.review.knowledge)
-        {
-            continue;
-        }
+    c.checkpoint(pending.len() as u64 * (pending.len().max(1).ilog2() as u64 + 1))?;
+    pending.sort_unstable_by(|a, b| a.table.review.knowledge.cmp(&b.table.review.knowledge));
+    // Charge the adjacent group-boundary comparisons, not prefixes of the requests.
+    c.checkpoint(pending.len() as u64)?;
+    for group in pending.chunk_by(|a, b| a.table.review.knowledge == b.table.review.knowledge) {
+        let p = &group[0];
         let snapshot = project.knowledge_snapshot(Some(&p.table.review.knowledge), memory, c)?;
         let mut selected = AdmittedVec::new(memory);
-        for q in &*pending {
+        for q in group {
             c.checkpoint(1)?;
-            if q.table.review.knowledge != p.table.review.knowledge {
-                continue;
-            }
             let entry = snapshot.get(&q.table.review.assertion, c)?.ok_or_else(|| {
                 Error::new(
                     ErrorCode::NotFound,
@@ -93,22 +88,21 @@ pub(crate) fn prepare<'m>(
             }
             selected.push((q, entry), c.position())?;
         }
-        for (first, (_, entry)) in selected.iter().enumerate() {
-            c.checkpoint(first as u64 + 1)?;
-            let occurrence = &entry.proposal.occurrence;
-            if selected[..first]
-                .iter()
-                .any(|(_, e)| same_object(&e.proposal.occurrence, occurrence))
-            {
-                continue;
-            }
+        c.checkpoint(selected.len() as u64 * (selected.len().max(1).ilog2() as u64 + 1))?;
+        selected.sort_unstable_by(|(_, a), (_, b)| {
+            let a = &a.proposal.occurrence;
+            let b = &b.proposal.occurrence;
+            (&a.revision, &a.source, &a.object).cmp(&(&b.revision, &b.source, &b.object))
+        });
+        c.checkpoint(selected.len() as u64)?;
+        for group in selected
+            .chunk_by(|(_, a), (_, b)| same_object(&a.proposal.occurrence, &b.proposal.occurrence))
+        {
+            let occurrence = &group[0].1.proposal.occurrence;
             crate::occurrence::with_source(project, occurrence, memory, c, |capture, c| {
                 capture.with_prepared(memory, c, |object, c| {
-                    for (q, entry) in &*selected {
+                    for (q, entry) in group {
                         c.checkpoint(1)?;
-                        if !same_object(&entry.proposal.occurrence, occurrence) {
-                            continue;
-                        }
                         result.push(
                             prepare_one(q, entry, object, capture.payload, memory, c)?,
                             c.position(),
@@ -120,7 +114,7 @@ pub(crate) fn prepare<'m>(
         }
     }
     c.checkpoint(result.len() as u64 * (result.len().max(1).ilog2() as u64 + 1))?;
-    result.sort_by_key(|t| (t.phase, t.side, t.ordinal));
+    result.sort_unstable_by_key(|t| (t.phase, t.side, t.ordinal));
     Ok(result)
 }
 

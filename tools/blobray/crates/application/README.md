@@ -302,7 +302,11 @@ their own entry with only session-owned memory retained.
 `external_calls` owns immutable response copies, admitted instances and cursors. `execution_memory::execution_calls` validates complete effects, writes only checked normal memory, and owns bounded allocations. Phase/session closure and call evidence share execution supervision, capacity and atomic publication.
 
 `execution_interfaces` resolves explicitly selected accepted interface roots from
-captured objects before sessions. `runtime_tables` owns admitted live instances and
+captured objects before sessions. Admitted in-place sorting groups requests first
+by selected knowledge snapshot, then by revision/source/object. Each request still
+receives its own occurrence, layout and root validation; returned tables retain
+phase/side/declaration order. Captured ELF owners end before session allocation.
+`runtime_tables` owns admitted live instances and
 bounded current-target indexes; `execution_memory::execution_tables` places bytes,
 checks conditions and connects eligible indirect transfers to captured code or
 explicit call models. Stores, atomics and model outputs update lifecycle evidence.

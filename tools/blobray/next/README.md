@@ -1626,7 +1626,10 @@ condition checks, indirect target association and phase/session closure. Associa
 means a unique current pointer value in a selected slot, not proof that a register
 was loaded from that slot. While tables are live, an eligible indirect call with
 no unique selected target is incomplete. Direct calls and canonical returns keep
-their ordinary behavior. Conditions are checked at installation, warm-phase entry
+their ordinary behavior. An ordinary captured call encoded as `auipc/jalr` is
+also indirect: after a selected callback, a subsequent captured `jalr` target
+without a selected slot ends the phase as incomplete. Captured-code membership
+alone does not bypass table dispatch. Conditions are checked at installation, warm-phase entry
 and before associated indirect use; this does not assert their truth at every
 instruction or after the last use. [The runtime interface contract](../docs/design/contracts.md#runtime-interface-instances)
 defines ownership, binding and claim scope. `execute`/`compare`, retained reads and

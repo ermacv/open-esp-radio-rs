@@ -4,8 +4,9 @@
 Its only internal dependency is [domain](../domain/README.md). It does not parse
 ELF/AR, select targets, resolve thin paths or install a process supervisor.
 
-Projects require metadata schema 32 and journal schema 33; earlier/future formats
-are rejected without conversion or mutation. Revision manifests retain schema 1.
+Projects require the [current native formats](../../next/README.md#current-formats);
+earlier/future formats are rejected without conversion or mutation. Revision
+manifests have an independent version.
 See [storage diagnosis](../../next/README.md#diagnosis-and-recovery).
 
 `Writer` owns the exclusive import/publication lock. `register` creates a run
@@ -113,7 +114,7 @@ ELF ABI and a semantic producer/value-effect summary. Earlier derived schemas
 are unsupported; existing CAS bytes are never rewritten. Function assessment coverage is complete only
 when structural coverage and semantic
 coverage are both complete; unknown values alone do not imply missing semantics.
-The analyses table and publication transaction remain metadata schema 32.
+The analyses table and publication transaction share the current metadata format.
 
 
 `investigations` owns `InvestigationLease`, `PreparedInvestigationReceipt` and the

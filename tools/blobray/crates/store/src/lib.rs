@@ -101,7 +101,7 @@ pub(crate) fn sync_dir(path: &Path) -> Result<()> {
 }
 
 impl Project {
-    /// Initialize private schema-17 metadata with schema-1 revision manifests. An existing state directory is never reset.
+    /// Initialize the current native metadata and revision manifests. An existing state directory is never reset.
     pub fn create(path: &Path) -> Result<Self> {
         fs::create_dir_all(path).map_err(io)?;
         let destination = path.join(STATE);

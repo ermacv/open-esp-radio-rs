@@ -674,10 +674,10 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 32 and journal schema 33. Earlier and future
+Projects require the [current native formats](#current-formats). Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
-use a new project directory. Revision manifests keep their own schema 1.
+use a new project directory. Revision manifests have an independent version.
 
 `doctor` verifies saved revisions, prepared-image and function-analysis closures and reports unfinished runs without acquiring a
 writer, repairing SQLite or changing current. A hot rollback journal can prevent
@@ -712,7 +712,9 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 33 for every durable and read operation. Storage metadata
+### Current formats
+
+Run records use journal schema 33 for every durable and read operation. Storage metadata
 uses schema 32; revision manifests use schema 1 and execution manifests use schema
 14. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
@@ -2481,7 +2483,7 @@ aggregate coverage, execution verdict, hardware claim or proof that every execut
 byte is classified. Composed may-effects retain that meaning. IR exports contain
 semantic facts, not captured ELF payloads or every evidence document; a project
 backup remains the preservation unit. Source-free reading and backup/restore use
-native database 23 / journal 24, without converters for previous formats.
+the [current native formats](#current-formats), without converters for previous formats.
 
 ## Static observable traces
 
@@ -2507,7 +2509,8 @@ the transfer; trace applies its typed `Value` link write before entering the
 callee. x1/x5 receive the saved return address, x0 tail transfers preserve links.
 Section-relative return addresses stay unresolved in the physical trace profile;
 using one in a selected value or address blocks exactness. Missing effects block
-tracing and contradictory effects fail integrity validation. A structural unknown indirect edge can be closed by its unique saved physical
+tracing and contradictory effects fail integrity validation. A structural unknown
+indirect edge can be closed by its unique saved physical
 callee in the selected IR profile. This does not repair decoding/reference gaps,
 conflicting boundaries, missing flow or unsupported semantics; those still block
 exactness. Original function coverage is not upgraded.

@@ -610,7 +610,11 @@ fn build_plan(ctx: &Context, host: &str) -> Result<Plan> {
                 );
                 if target.doctest
                     && target_triple == host
-                    && matches!(selector, common::CargoTargetSelection::Lib(_))
+                    && matches!(
+                        selector,
+                        common::CargoTargetSelection::Lib(_)
+                            | common::CargoTargetSelection::ProcMacro(_)
+                    )
                 {
                     record_requirement(
                         &mut mapped,
@@ -702,7 +706,9 @@ fn documentation_target(package: &cargo_metadata::Package) -> Result<Option<&str
 }
 
 fn target_selector(target: &cargo_metadata::Target) -> Option<common::CargoTargetSelection> {
-    if target.kind.iter().any(|kind| {
+    if target.kind.contains(&TargetKind::ProcMacro) {
+        Some(common::CargoTargetSelection::ProcMacro(target.name.clone()))
+    } else if target.kind.iter().any(|kind| {
         matches!(
             kind,
             TargetKind::Lib
@@ -710,7 +716,6 @@ fn target_selector(target: &cargo_metadata::Target) -> Option<common::CargoTarge
                 | TargetKind::DyLib
                 | TargetKind::CDyLib
                 | TargetKind::StaticLib
-                | TargetKind::ProcMacro
         )
     }) {
         Some(common::CargoTargetSelection::Lib(target.name.clone()))
@@ -1146,7 +1151,16 @@ fn run_rustdoc_measured(
         .join("cache/rustdoc")
         .join(job.purpose.label())
         .join(workspace_cache_id(ctx, configuration)?);
-    let staging = cache.join(&configuration.target).join("doc");
+    // Cargo documents procedural macros for the host even with an explicit
+    // --target; their output lives at the cache root, not under the triple.
+    let staging = if matches!(
+        configuration.cargo_target,
+        common::CargoTargetSelection::ProcMacro(_)
+    ) {
+        cache.join("doc")
+    } else {
+        cache.join(&configuration.target).join("doc")
+    };
     if export_html {
         // Cargo shares compiled dependencies across these jobs, but rustdoc's
         // output also accumulates crate lists, search shards and implementors.
@@ -1223,9 +1237,9 @@ fn run_rustdoc(ctx: &Context, output: &Path, job: &Job) -> Result<PathBuf> {
 
 fn target_crate_name(target: &common::CargoTargetSelection) -> Result<String> {
     match target {
-        common::CargoTargetSelection::Lib(name) | common::CargoTargetSelection::Bin(name) => {
-            Ok(name.replace('-', "_"))
-        }
+        common::CargoTargetSelection::Lib(name)
+        | common::CargoTargetSelection::ProcMacro(name)
+        | common::CargoTargetSelection::Bin(name) => Ok(name.replace('-', "_")),
         common::CargoTargetSelection::DefaultTargets => {
             Err("rustdoc requires an explicit Cargo target".into())
         }

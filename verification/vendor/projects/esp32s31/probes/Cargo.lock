@@ -886,6 +886,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "object"
+version = "0.39.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e5a6c098c7a3b6547378093f5cc30bc54fd361ce711e05293a5cc589562739b"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "oer-bluetooth-hci"
 version = "0.1.0"
 dependencies = [
@@ -1099,6 +1108,26 @@ name = "oer-network"
 version = "0.1.0"
 
 [[package]]
+name = "oer-probe-codegen"
+version = "0.1.0"
+dependencies = [
+ "object",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "oer-probe-macros"
+version = "0.1.0"
+dependencies = [
+ "oer-probe-codegen",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "oer-wifi-ap"
 version = "0.1.0"
 dependencies = [
@@ -1156,6 +1185,7 @@ version = "0.1.0"
 dependencies = [
  "oer-esp32s31-bluetooth",
  "oer-esp32s31-phy",
+ "oer-probe-macros",
 ]
 
 [[package]]
@@ -1163,6 +1193,7 @@ name = "open-esp-radio-verification-esp32s31-bluetooth-probes-elf"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "oer-probe-codegen",
  "open-esp-radio-verification-esp32s31-bluetooth-probes",
 ]
 
@@ -1183,6 +1214,7 @@ dependencies = [
  "oer-esp32s31-wifi-esp-hal",
  "oer-esp32s31-wifi-mac",
  "oer-memory",
+ "oer-probe-macros",
  "oer-wifi-softmac",
 ]
 
@@ -1190,6 +1222,7 @@ dependencies = [
 name = "open-esp-radio-verification-esp32s31-probes-elf"
 version = "0.1.0"
 dependencies = [
+ "oer-probe-codegen",
  "open-esp-radio-verification-esp32s31-probes",
 ]
 
@@ -1198,12 +1231,14 @@ name = "open-esp-radio-verification-esp32s31-register-probes"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
+ "oer-probe-macros",
 ]
 
 [[package]]
 name = "open-esp-radio-verification-esp32s31-register-probes-elf"
 version = "0.1.0"
 dependencies = [
+ "oer-probe-codegen",
  "open-esp-radio-verification-esp32s31-register-probes",
 ]
 
@@ -1417,6 +1452,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.4",
+]
+
+[[package]]
+name = "serde_json"
+version = "1.0.151"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
+dependencies = [
+ "itoa",
+ "memchr",
+ "serde",
+ "serde_core",
+ "zmij",
 ]
 
 [[package]]
@@ -1690,3 +1738,9 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "zmij"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"

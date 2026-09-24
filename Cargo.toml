@@ -2,6 +2,8 @@
 members = [
     "crates/oer",
     "tools/repo",
+    "verification/vendor/harness/codegen",
+    "verification/vendor/harness/macros",
     "tools/process",
     "tools/firmware",
     "hil/protocol",

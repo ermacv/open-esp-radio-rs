@@ -2,7 +2,7 @@
 import copy
 
 
-def exercise(call, doc, symbol, roots, vendor, replacement, parameter):
+def exercise(call, doc, symbol, roots, vendor, replacement, parameter, production_delay):
     from phy_i2c import invocation, region, case, selection
 
     shim = symbol(2, "open_phy_trace_i2c_entry")["value"]
@@ -14,7 +14,7 @@ def exercise(call, doc, symbol, roots, vendor, replacement, parameter):
         result = invocation(shim, [target, 0x3fff4000], [region(0x3fff4000, 32, fill=0)], models)
         if settle:
             result["calls"] = [dict(id="settle-delay", applicability="declared delay ABI; requested microseconds only",
-                lifetime="phase", binding=dict(address=symbol(2 if side else 1, "ets_delay_us")["value"],
+                lifetime="phase", binding=dict(address=production_delay if side else symbol(1, "ets_delay_us")["value"],
                 boundary="captured-code", allow_tail=True), argument_words=1,
                 responses=[dict(return_words=[0, 0], outputs=[], allocation=None,
                                 delay_micros=dict(kind="argument", word=0)) for _ in range(2)])]
@@ -167,7 +167,7 @@ def exercise(call, doc, symbol, roots, vendor, replacement, parameter):
                        [crystal, output] if side else [pbus, dcode], memory,
                        dcode_models(fill, busy), [selection(output, 8)])
         result["calls"] = [dict(id="frequency-delay", applicability="declared delay ABI; requested microseconds only",
-            lifetime="phase", binding=dict(address=symbol(2 if side else 1, "ets_delay_us")["value"],
+            lifetime="phase", binding=dict(address=production_delay if side else symbol(1, "ets_delay_us")["value"],
                 boundary="captured-code", allow_tail=True), argument_words=1,
             responses=[dict(return_words=[0,0], outputs=[], allocation=None,
                 delay_micros=dict(kind="argument", word=0)) for _ in range(8)])]

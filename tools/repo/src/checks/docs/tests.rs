@@ -740,3 +740,33 @@ fn unavailable_offline_dependency_is_a_real_child_failure() {
         "{error}"
     );
 }
+
+#[test]
+fn procedural_macro_docs_use_cargos_host_output_for_public_and_private_exports() {
+    let (_repository, context, mut configuration) = tiny_crate(
+        "//! Host macro fixture.\n#[proc_macro] pub fn example(input: proc_macro::TokenStream) -> proc_macro::TokenStream { input }\n",
+    );
+    let manifest = context.root.join("Cargo.toml");
+    let text = fs::read_to_string(&manifest).unwrap();
+    fs::write(&manifest, format!("{text}\n[lib]\nproc-macro=true\n")).unwrap();
+    let metadata = cargo::metadata_no_deps(&context, &manifest).unwrap();
+    configuration.cargo_target = target_selector(&metadata.packages[0].targets[0]).unwrap();
+    assert!(matches!(
+        configuration.cargo_target,
+        common::CargoTargetSelection::ProcMacro(_)
+    ));
+    let output = acquire_output(&context).unwrap();
+    for purpose in [Purpose::PublicRustdoc, Purpose::PrivateRustdoc] {
+        let snapshot = run_rustdoc(
+            &context,
+            &output,
+            &Job {
+                purpose,
+                configuration: configuration.clone(),
+            },
+        )
+        .unwrap();
+        assert!(snapshot.join("doc_fixture/macro.example.html").is_file());
+        assert!(snapshot.join("search.index/root.js").is_file());
+    }
+}

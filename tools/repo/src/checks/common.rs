@@ -41,6 +41,7 @@ impl CargoBuildProfile {
 pub enum CargoTargetSelection {
     DefaultTargets,
     Lib(String),
+    ProcMacro(String),
     Bin(String),
 }
 
@@ -49,6 +50,7 @@ impl CargoTargetSelection {
         match self {
             Self::DefaultTargets => "default-targets".into(),
             Self::Lib(name) => format!("lib:{name}"),
+            Self::ProcMacro(name) => format!("proc-macro:{name}"),
             Self::Bin(name) => format!("bin:{name}"),
         }
     }
@@ -78,7 +80,7 @@ impl CargoConfiguration {
         }
         match &self.cargo_target {
             CargoTargetSelection::DefaultTargets => {}
-            CargoTargetSelection::Lib(_) => {
+            CargoTargetSelection::Lib(_) | CargoTargetSelection::ProcMacro(_) => {
                 command.arg("--lib");
             }
             CargoTargetSelection::Bin(name) => {

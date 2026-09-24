@@ -8,6 +8,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+oer-probe-codegen = { path = "../../verification/vendor/harness/codegen" }
 oer-process = { path = "../process" }
 fs2 = "0.4"
 sha2 = "0.10"

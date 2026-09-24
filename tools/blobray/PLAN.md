@@ -187,7 +187,7 @@ Stages 00–10 and both corrective checkpoints below are complete, including all
 four stage-10 comparison profiles and their combined acceptance. The 10.L linker-capability checkpoint is complete after 10.4. Execution has
 resumed on explicit user instruction. Stage 11 is complete, including both
 command-memory and transport acceptance. Stage 12.1 is complete under the full
-calibration/RF assignment below. Stage 12.2 is complete, including PBus/DCODE
+calibration/RF assignment below. Checkpoint 12.H is complete. Stage 12.2 is complete, including PBus/DCODE
 execution, negative outcomes and preservation. Stage 12.3 is complete: RFPLL
 search, maintenance, frequency memory and restored replay. The next acceptance
 unit is 12.4, gain arithmetic and publication.
@@ -810,6 +810,7 @@ current owner docs and the ordinary stage gates. No partial unit is completion.
 | Unit | Status | Scope and additional acceptance |
 | --- | --- | --- |
 | 12.1 | done | Four finite leaves from `profiles/phy-calibration-leaves.toml`: TX-gain restore, forced digital gain, temperature-to-power and post-init AGC. Execute every declared input case with the current authenticated archive, independently expected writes/returns and compiled HAL/PHY. Preserve the restore-enabled domain and archive-versus-ROM temperature policy. Changed input DIFF, missing/unknown input INCOMPLETE, capacity/no-publication and restored replay must pass. |
+| 12.H | done | Declarative harness checkpoint below: all three probe images, generated exports/roots/catalogs, shared explicit owner and Python preparation, executable-entry validation, compiled call boundaries and preserved Next scenarios. Stage 12.2–12.10 obligations are unchanged. |
 | 12.2 | done | PBus clear and DCODE: all profiles in `phy_rfpll/calibration.rs`, `phy_rfpll/dcode.rs` and the PBus rows of the calibration profile. Retained values, both settle branches, delayed readiness, crystal selectors and eight measured bytes; stuck PBus/channel/I2C cannot publish partial codes or restore unfinished state. |
 | 12.3 | done | RFPLL search, maintenance and frequency memory: all cases in `phy_rfpll.rs` and `phy_rfpll/memory.rs`. Zero/nonzero signed corrections, search commands, requested settles, retained memory/control transactions and timeout without restored hardware control. Preserve the installed-layout query exclusion explicitly and retain raw observations. |
 | 12.4 | pending | Gain arithmetic and publication: `phy_rfpll/gain_calculation.rs`, `phy_rfpll/tx_gain.rs`, `phy_rfpll/bluetooth_gain.rs`. Actual current coefficient selection and ROM kernel inputs, signed narrowing, additive current versus subtractive ROM behavior, boundary curves, complete Wi-Fi/BT publishers and bank wrap. Independently authenticate coefficients; changing coefficients changes dependency identity. |
@@ -840,6 +841,48 @@ release build, strict target-library Clippy, root/probe formatting and owned
 public/private docs pass; the target-only doctest is inapplicable. Core interfaces
 and formats are unchanged. The full stage-12 checkpoint remains in 12.10.
 
+
+### Checkpoint 12.H: declarative verification harness
+
+User-authorized insertion before 12.2; all stage-12 obligations remain intact.
+Status: done.
+
+- One Rust declaration owns each probe export, ABI wrapper, linker root and ELF
+  catalog across all three probe libraries. Preserve existing names, ABI,
+  projections and production behavior; remove every manual retention list.
+- Share parsing between the procedural macro and build-time collection. Generate
+  explicit roots, retain the catalog and validate every declared executable entry
+  after release/fat-LTO linking through `cargo xtask build vendor-probes`.
+- Share explicit owner setup and routine scalar/buffer adaptation. Complex async,
+  assembly and ownership adapters remain explicit; delay/tail-call barriers retain
+  their behavior and receive execution regression coverage.
+- Share Python request preparation, catalog resolution, explicit ABI/buffer/phase
+  construction and runner operations across current Next scenarios. Preserve all
+  independent expectations, models, claim limits and existing executor/replay
+  formats. Legacy provider scenarios remain compatible consumers, with migration
+  assigned to their original stages.
+- Acceptance: generator and negative catalog regressions, all three complete ELF
+  inventories, incremental declaration changes, ordinary/delay/tail execution,
+  all current I2C/transport/calibration cases and verdicts, failed-publication
+  resource paths, source-free move/backup/restore/replay, research scenario,
+  formatting, strict affected Clippy, public/private docs, architecture,
+  standalone and source-only checks. Commit only after complete acceptance.
+- Missing authenticated inputs or infeasible prerequisites require needs-replan
+  preserving every unmet criterion; partial migration does not close 12.H.
+
+
+12.H acceptance: all 172 prior probe exports and their ABI remain available;
+all three release/fat-LTO images validate, with one additional owned entry for
+ordinary-call/ROM-tail/delay acceptance. Shared primitive-array buffer preparation
+preserves explicit addresses, seeds and lifetimes. Current I2C, transport,
+calibration and research scenarios pass independent expectations, negative
+outcomes and source-free preservation; the call-boundary evidence also restores
+and replays. Generator, malformed-ELF, adapter, Python and actual RV32
+addition/relocation regressions pass. Next architecture/execution, strict affected
+Clippy, formatting, public/private docs, standalone and the complete source-only
+checkpoint pass with both final images. The GNU acceptance linker was explicitly
+selected. Private inputs and generated evidence remain in ignored outputs.
+Executor/comparison/replay formats and all later stage obligations are unchanged.
 
 12.2 acceptance: all 24 PBus and 16 DCODE cases execute captured children and
 compiled production with independent command, frequency, NRX, sample and output

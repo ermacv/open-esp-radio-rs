@@ -20,6 +20,15 @@ mod calibration_leaves;
 mod i2c;
 mod production_trace;
 
+/// Borrow an isolated Wi-Fi PHY partition while retaining its interrupt owner.
+/// The closure cannot return a borrow of this temporary validation capability.
+fn with_phy<R>(call: impl FnOnce(&mut RadioPhyRegisters) -> R) -> R {
+    let (mut registers, _interrupts) = oer_esp32s31_pac::RadioHardware::for_validation()
+        .into_wifi()
+        .into_running();
+    call(registers.radio_phy_mut())
+}
+
 // Stable test-only projection protocol. Production PHY types keep their Rust
 // layout private; these small C-layout records are the explicit binary
 // boundary consumed by the host parity verifier.
@@ -71,443 +80,430 @@ pub extern "C" fn ets_delay_us(micros: u32) {
     core::hint::black_box(micros);
 }
 
-/// Harness delay adapter preserving integer inputs around the explicit event edge.
-/// The guest body executes these saves/restores; the inner model supplies only
-/// requested-time observation, never production completion or register values.
-#[unsafe(no_mangle)]
-#[unsafe(naked)]
-pub extern "C" fn open_phy_trace_preserving_delay(_micros: u32) {
-    core::arch::naked_asm!(
-        "addi sp, sp, -64",
-        "sw ra, 0(sp)",
-        "sw t0, 4(sp)",
-        "sw t1, 8(sp)",
-        "sw t2, 12(sp)",
-        "sw t3, 16(sp)",
-        "sw t4, 20(sp)",
-        "sw t5, 24(sp)",
-        "sw t6, 28(sp)",
-        "sw a0, 32(sp)",
-        "sw a1, 36(sp)",
-        "sw a2, 40(sp)",
-        "sw a3, 44(sp)",
-        "sw a4, 48(sp)",
-        "sw a5, 52(sp)",
-        "sw a6, 56(sp)",
-        "sw a7, 60(sp)",
-        "call open_phy_trace_delay_event",
-        "lw ra, 0(sp)",
-        "lw t0, 4(sp)",
-        "lw t1, 8(sp)",
-        "lw t2, 12(sp)",
-        "lw t3, 16(sp)",
-        "lw t4, 20(sp)",
-        "lw t5, 24(sp)",
-        "lw t6, 28(sp)",
-        "lw a0, 32(sp)",
-        "lw a1, 36(sp)",
-        "lw a2, 40(sp)",
-        "lw a3, 44(sp)",
-        "lw a4, 48(sp)",
-        "lw a5, 52(sp)",
-        "lw a6, 56(sp)",
-        "lw a7, 60(sp)",
-        "addi sp, sp, 64",
-        "ret",
-    );
-}
-
-/// Modeled requested-delay observation, reached through the captured ABI adapter.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_delay_event(micros: u32) {
-    core::hint::black_box(micros);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ret_bt_index_to_bb(index: u32) -> u32 {
-    oer_esp32s31_phy::calibration::bluetooth::bluetooth_gain_index_to_baseband(index)
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ret_bt_bb_to_index(baseband: u32) -> u32 {
-    oer_esp32s31_phy::calibration::bluetooth::bluetooth_baseband_to_gain_index(baseband)
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_disable_agc(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::set_enabled(registers, false);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_trace_hal_mac_interrupt_ret_get_event() -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    oer_esp32s31_hal::validation::hal_mac_interrupt_get_event()
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_trace_hal_mac_interrupt_ret_clr_event(events: u32) -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    oer_esp32s31_hal::validation::hal_mac_interrupt_clr_event(events)
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_wifi_sta_trace_hal_disable_sta_beacon_filter() {
-    // SAFETY: these validation-only PAC capabilities are used only by this
-    // isolated probe image. The called helper is the production transaction.
-    oer_esp32s31_hal::validation::hal_disable_sta_beacon_filter();
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_power_irq_trace_hal_pwr_interrupt_get_event() -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    oer_esp32s31_hal::validation::hal_pwr_interrupt_get_event()
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_power_irq_trace_hal_pwr_interrupt_clr_event(events: u32) -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    oer_esp32s31_hal::validation::hal_pwr_interrupt_clr_event(events)
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_rx_trace_hal_mac_rx_disable() {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    let _ = oer_esp32s31_hal::validation::hal_mac_rx_disable(0);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_rx_trace_hal_mac_rx_enable() {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    let _ = oer_esp32s31_hal::validation::hal_mac_rx_enable(0);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_rx_trace_hal_mac_rx_set_base(address: u32) {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    let _ = oer_esp32s31_hal::validation::hal_mac_rx_set_base(address);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_rx_trace_hal_mac_rx_is_dscr_reload() -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    oer_esp32s31_hal::validation::hal_mac_rx_is_dscr_reload()
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_rx_trace_hal_mac_rx_set_dscr_reload() {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    let _ = oer_esp32s31_hal::validation::hal_mac_rx_set_dscr_reload(0);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_coex_trace_coex_hw_timer_enable(index: u32) {
-    oer_esp32s31_hal::coex::validation_enable_timer(index);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_coex_trace_coex_hw_timer_disable(index: u32) {
-    oer_esp32s31_hal::coex::validation_disable_timer(index);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_coex_trace_coex_hw_timer_force(index: u32) {
-    oer_esp32s31_hal::coex::validation_force_timer(index);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_coex_trace_coex_hw_timer_unforce(index: u32) {
-    oer_esp32s31_hal::coex::validation_unforce_timer(index);
-}
-
-/// Compiled production-path probe for the complete `coex_core_pti_get`
-/// contract. The vendor ABI returns `0x102` for a null output pointer and
-/// otherwise copies one entry from its reviewed 48-byte priority table.
-///
-/// # Safety
-/// A non-null `output` must point to one exclusively writable byte.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub unsafe extern "C" fn open_coex_core_trace_pti_get(event: u32, output: *mut u8) -> u32 {
-    if output.is_null() {
-        return 0x102;
-    }
-    let Ok(event) = oer_esp32s31_coex::CoexEventId::new(event as u8) else {
-        return 0x102;
-    };
-    let pti = oer_esp32s31_coex::CoexPtiTable::reviewed_vendor().pti(event);
-    // SAFETY: verification profiles provide a writable caller-owned output
-    // byte and compare its final state with the vendor execution.
-    unsafe { output.write(pti.value()) };
-    0
-}
-
-/// Compiled production-path probe for `coex_core_event_duration_get`.
-/// The vendor leaf accepts only the five events backed by `g_coex_param`,
-/// clears a non-null output for every other event, and uses `u32::MAX` as its
-/// invalid-argument status.
-///
-/// # Safety
-/// A non-null `output` must point to an aligned, exclusively writable word.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub unsafe extern "C" fn open_coex_core_trace_event_duration_get(
-    event: u32,
-    output: *mut u32,
-) -> u32 {
-    if output.is_null() {
-        return u32::MAX;
-    }
-    let duration = oer_esp32s31_coex::CoexEventId::new(event as u8)
-        .ok()
-        .and_then(|event| oer_esp32s31_coex::CoexEventDurations::reviewed_vendor().duration(event));
-    // SAFETY: verification profiles provide a writable caller-owned output
-    // word and compare its final state with the vendor execution.
-    unsafe { output.write(duration.unwrap_or(0)) };
-    if duration.is_some() { 0 } else { u32::MAX }
-}
-
-/// Compiled production-path projection of the complete vendor event-to-timer
-/// switch. `0xff` is the exact unmapped sentinel returned by the vendor leaf.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_coex_core_trace_timer_idx_get(event: u32) -> u32 {
-    let Ok(event) = oer_esp32s31_coex::CoexEventId::new(event as u8) else {
-        return 0xff;
-    };
-    event
-        .timer_index()
-        .map_or(0xff, |index| u32::from(index.value()))
-}
-
-/// Compiled production-path probe for the complete `coex_hw_timer_set`
-/// transaction. The public vendor ABI is `(index, client, pti, latency,
-/// duration)`; notably, duration is written to the primary word before
-/// latency is written to the secondary word.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_coex_set_trace_coex_hw_timer_set(
-    index: u32,
-    client: u32,
-    pti: u32,
-    latency: u32,
-    duration: u32,
-    is_real_chip: u32,
-) {
-    use oer_esp32s31_coex::{CoexClient, CoexPti, CoexTimerIndex};
-
-    let Ok(index) = CoexTimerIndex::new(index as u8) else {
-        return;
-    };
-    let Ok(pti) = CoexPti::new(pti as u8) else {
-        return;
-    };
-    let client = if client == 0 {
-        CoexClient::Bluetooth
-    } else {
-        CoexClient::Wifi
-    };
-    let _ = oer_esp32s31_hal::coex::validation_program_timer(
-        is_real_chip != 0,
-        index,
-        client,
-        pti,
-        latency,
-        duration,
-    );
-}
-
-/// Complete register projection of `coex_core_request` under the reviewed
-/// Rust lifecycle precondition that the COEX owner is enabled.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_coex_core_trace_request(
-    client: u32,
-    event: u32,
-    latency: u32,
-    duration: u32,
-    is_real_chip: u32,
-) -> u32 {
-    use oer_esp32s31_coex::{CoexClientRequest, CoexError, CoexEventId};
-
-    let Ok(event) = CoexEventId::new(event as u8) else {
-        return 0x102;
-    };
-    let request = CoexClientRequest {
-        event,
-        latency,
-        duration,
-    };
-    let result =
-        oer_esp32s31_hal::coex::validation_core_request(is_real_chip != 0, client != 0, request);
-    match result {
-        Ok(_) => 0,
-        Err(CoexError::InvalidEvent) => 0x102,
-        Err(_) => u32::MAX,
+oer_probe_macros::probe! {
+    /// Harness delay adapter preserving integer inputs around the explicit event edge.
+    /// The guest body executes these saves/restores; the inner model supplies only
+    /// requested-time observation, never production completion or register values.
+    #[unsafe(naked)]
+    pub fn open_phy_trace_preserving_delay(_micros: u32) {
+        core::arch::naked_asm!(
+            "addi sp, sp, -64",
+            "sw ra, 0(sp)",
+            "sw t0, 4(sp)",
+            "sw t1, 8(sp)",
+            "sw t2, 12(sp)",
+            "sw t3, 16(sp)",
+            "sw t4, 20(sp)",
+            "sw t5, 24(sp)",
+            "sw t6, 28(sp)",
+            "sw a0, 32(sp)",
+            "sw a1, 36(sp)",
+            "sw a2, 40(sp)",
+            "sw a3, 44(sp)",
+            "sw a4, 48(sp)",
+            "sw a5, 52(sp)",
+            "sw a6, 56(sp)",
+            "sw a7, 60(sp)",
+            "call open_phy_trace_delay_event",
+            "lw ra, 0(sp)",
+            "lw t0, 4(sp)",
+            "lw t1, 8(sp)",
+            "lw t2, 12(sp)",
+            "lw t3, 16(sp)",
+            "lw t4, 20(sp)",
+            "lw t5, 24(sp)",
+            "lw t6, 28(sp)",
+            "lw a0, 32(sp)",
+            "lw a1, 36(sp)",
+            "lw a2, 40(sp)",
+            "lw a3, 44(sp)",
+            "lw a4, 48(sp)",
+            "lw a5, 52(sp)",
+            "lw a6, 56(sp)",
+            "lw a7, 60(sp)",
+            "addi sp, sp, 64",
+            "ret",
+        );
     }
 }
 
-/// Complete register projection of `coex_core_release`. The vendor ABI keeps
-/// the client in `a0` but selects the timer exclusively from event `a1`.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_coex_core_trace_release(_client: u32, event: u32) -> u32 {
-    use oer_esp32s31_coex::{CoexError, CoexEventId};
-
-    let Ok(event) = CoexEventId::new(event as u8) else {
-        return 0x102;
-    };
-    match oer_esp32s31_hal::coex::validation_core_release(event) {
-        Ok(_) => 0,
-        Err(CoexError::InvalidEvent) => 0x102,
-        Err(_) => u32::MAX,
+oer_probe_macros::probe! {
+    /// Modeled requested-delay observation, reached through the captured ABI adapter.
+    pub fn open_phy_trace_delay_event(micros: u32) {
+        core::hint::black_box(micros);
     }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_set_cca(value: u32) -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    oer_esp32s31_hal::validation::hal_mac_tx_set_cca(value)
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_ret_bt_index_to_bb(index: u32) -> u32 =>
+        oer_esp32s31_phy::calibration::bluetooth::bluetooth_gain_index_to_baseband(index);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_trace_hal_mac_get_txq_in_trig_flow_state() -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    oer_esp32s31_hal::validation::hal_mac_get_txq_in_trig_flow_state()
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_ret_bt_bb_to_index(baseband: u32) -> u32 =>
+        oer_esp32s31_phy::calibration::bluetooth::bluetooth_baseband_to_gain_index(baseband);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_trace_hal_mac_is_txq_enabled(queue: u32) -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    oer_esp32s31_hal::validation::hal_mac_is_txq_enabled(queue)
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_disable_agc(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::set_enabled(registers, false);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_trace_hal_mac_is_txq_valid(queue: u32) -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    oer_esp32s31_hal::validation::hal_mac_is_txq_valid(queue)
+oer_probe_macros::probe! {
+    pub fn open_libpp_trace_hal_mac_interrupt_ret_get_event() -> u32 {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        oer_esp32s31_hal::validation::hal_mac_interrupt_get_event()
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_trace_hal_mac_set_txq_invalid(queue: u32) -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    oer_esp32s31_hal::validation::hal_mac_set_txq_invalid(queue)
+oer_probe_macros::probe! {
+    pub fn open_libpp_trace_hal_mac_interrupt_ret_clr_event(events: u32) -> u32 {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        oer_esp32s31_hal::validation::hal_mac_interrupt_clr_event(events)
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_trace_hal_mac_txq_disable(queue: u32) -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    oer_esp32s31_hal::validation::hal_mac_txq_disable(queue)
+oer_probe_macros::probe! {
+    pub fn open_wifi_sta_trace_hal_disable_sta_beacon_filter() {
+        // SAFETY: these validation-only PAC capabilities are used only by this
+        // isolated probe image. The called helper is the production transaction.
+        oer_esp32s31_hal::validation::hal_disable_sta_beacon_filter();
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_tx_protection_initialize_cts() {
-    oer_esp32s31_hal::validation::initialize_mac_software_cts();
+oer_probe_macros::probe! {
+    pub fn open_libpp_power_irq_trace_hal_pwr_interrupt_get_event() -> u32 {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        oer_esp32s31_hal::validation::hal_pwr_interrupt_get_event()
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_tx_protection_control_configure_rts(
-    queue: u32,
-    enabled: u32,
-    _unused: u32,
-    duration_threshold: u32,
-    threshold_bytes: u32,
-) {
-    assert!(enabled <= 1);
-    assert!(duration_threshold <= 1);
-    oer_esp32s31_hal::validation::configure_mac_tx_rts(
-        queue,
-        enabled != 0,
-        (duration_threshold != 0).then_some(threshold_bytes as u16),
-    );
+oer_probe_macros::probe! {
+    pub fn open_libpp_power_irq_trace_hal_pwr_interrupt_clr_event(events: u32) -> u32 {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        oer_esp32s31_hal::validation::hal_pwr_interrupt_clr_event(events)
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_tx_protection_control_disable_he_threshold() {
-    oer_esp32s31_hal::validation::disable_mac_he_rts_threshold();
+oer_probe_macros::probe! {
+    pub fn open_libpp_rx_trace_hal_mac_rx_disable() {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        let _ = oer_esp32s31_hal::validation::hal_mac_rx_disable(0);
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_ordinary_tx_ownership_publish(queue: u8) {
-    oer_esp32s31_hal::validation::ordinary_tx_publish(queue);
+oer_probe_macros::probe! {
+    pub fn open_libpp_rx_trace_hal_mac_rx_enable() {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        let _ = oer_esp32s31_hal::validation::hal_mac_rx_enable(0);
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_ordinary_tx_ownership_acknowledge(selector: u32, queue: u8) {
-    assert_eq!(selector, 2);
-    oer_esp32s31_hal::validation::ordinary_tx_acknowledge_completion(queue);
+oer_probe_macros::probe! {
+    pub fn open_libpp_rx_trace_hal_mac_rx_set_base(address: u32) {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        let _ = oer_esp32s31_hal::validation::hal_mac_rx_set_base(address);
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_ordinary_tx_ownership_disable(queue: u32) -> u32 {
-    oer_esp32s31_hal::validation::hal_mac_txq_disable(queue)
+oer_probe_macros::probe! {
+    pub fn open_libpp_rx_trace_hal_mac_rx_is_dscr_reload() -> u32 {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        oer_esp32s31_hal::validation::hal_mac_rx_is_dscr_reload()
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_config_edca(
-    _vendor_config_address: u32,
-    queue: u32,
-    aifsn: u32,
-    contention_window: u32,
-    interface: oer_esp32s31_hal::types::MacInterface,
-) -> u32 {
-    // The vendor side decodes these semantic arguments from its pointer-rich
-    // ABI object. The Rust probe receives the reviewed projection directly;
-    // every case keeps both representations and exact MMIO comparison proves
-    // that the projection agrees with the vendor object.
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    oer_esp32s31_hal::validation::hal_mac_tx_config_edca(
-        queue,
-        aifsn as u8,
-        contention_window as u16,
-        interface,
-    )
+oer_probe_macros::probe! {
+    pub fn open_libpp_rx_trace_hal_mac_rx_set_dscr_reload() {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        let _ = oer_esp32s31_hal::validation::hal_mac_rx_set_dscr_reload(0);
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_coex_trace_coex_hw_timer_enable(index: u32) =>
+        oer_esp32s31_hal::coex::validation_enable_timer(index);
+}
+
+oer_probe_macros::probe! {
+    pub fn open_coex_trace_coex_hw_timer_disable(index: u32) =>
+        oer_esp32s31_hal::coex::validation_disable_timer(index);
+}
+
+oer_probe_macros::probe! {
+    pub fn open_coex_trace_coex_hw_timer_force(index: u32) =>
+        oer_esp32s31_hal::coex::validation_force_timer(index);
+}
+
+oer_probe_macros::probe! {
+    pub fn open_coex_trace_coex_hw_timer_unforce(index: u32) =>
+        oer_esp32s31_hal::coex::validation_unforce_timer(index);
+}
+
+oer_probe_macros::probe! {
+    /// Compiled production-path probe for the complete `coex_core_pti_get`
+    /// contract. The vendor ABI returns `0x102` for a null output pointer and
+    /// otherwise copies one entry from its reviewed 48-byte priority table.
+    ///
+    /// # Safety
+    /// A non-null `output` must point to one exclusively writable byte.
+    pub unsafe fn open_coex_core_trace_pti_get(event: u32, output: *mut u8) -> u32 {
+        if output.is_null() {
+            return 0x102;
+        }
+        let Ok(event) = oer_esp32s31_coex::CoexEventId::new(event as u8) else {
+            return 0x102;
+        };
+        let pti = oer_esp32s31_coex::CoexPtiTable::reviewed_vendor().pti(event);
+        // SAFETY: verification profiles provide a writable caller-owned output
+        // byte and compare its final state with the vendor execution.
+        unsafe { output.write(pti.value()) };
+        0
+    }
+}
+
+oer_probe_macros::probe! {
+    /// Compiled production-path probe for `coex_core_event_duration_get`.
+    /// The vendor leaf accepts only the five events backed by `g_coex_param`,
+    /// clears a non-null output for every other event, and uses `u32::MAX` as its
+    /// invalid-argument status.
+    ///
+    /// # Safety
+    /// A non-null `output` must point to an aligned, exclusively writable word.
+    pub unsafe fn open_coex_core_trace_event_duration_get(event: u32, output: *mut u32) -> u32 {
+        if output.is_null() {
+            return u32::MAX;
+        }
+        let duration = oer_esp32s31_coex::CoexEventId::new(event as u8)
+            .ok()
+            .and_then(|event| oer_esp32s31_coex::CoexEventDurations::reviewed_vendor().duration(event));
+        // SAFETY: verification profiles provide a writable caller-owned output
+        // word and compare its final state with the vendor execution.
+        unsafe { output.write(duration.unwrap_or(0)) };
+        if duration.is_some() { 0 } else { u32::MAX }
+    }
+}
+
+oer_probe_macros::probe! {
+    /// Compiled production-path projection of the complete vendor event-to-timer
+    /// switch. `0xff` is the exact unmapped sentinel returned by the vendor leaf.
+    pub fn open_coex_core_trace_timer_idx_get(event: u32) -> u32 {
+        let Ok(event) = oer_esp32s31_coex::CoexEventId::new(event as u8) else {
+            return 0xff;
+        };
+        event
+            .timer_index()
+            .map_or(0xff, |index| u32::from(index.value()))
+    }
+}
+
+oer_probe_macros::probe! {
+    /// Compiled production-path probe for the complete `coex_hw_timer_set`
+    /// transaction. The public vendor ABI is `(index, client, pti, latency,
+    /// duration)`; notably, duration is written to the primary word before
+    /// latency is written to the secondary word.
+    pub fn open_coex_set_trace_coex_hw_timer_set(
+        index: u32,
+        client: u32,
+        pti: u32,
+        latency: u32,
+        duration: u32,
+        is_real_chip: u32,
+    ) {
+        use oer_esp32s31_coex::{CoexClient, CoexPti, CoexTimerIndex};
+
+        let Ok(index) = CoexTimerIndex::new(index as u8) else {
+            return;
+        };
+        let Ok(pti) = CoexPti::new(pti as u8) else {
+            return;
+        };
+        let client = if client == 0 {
+            CoexClient::Bluetooth
+        } else {
+            CoexClient::Wifi
+        };
+        let _ = oer_esp32s31_hal::coex::validation_program_timer(
+            is_real_chip != 0,
+            index,
+            client,
+            pti,
+            latency,
+            duration,
+        );
+    }
+}
+
+oer_probe_macros::probe! {
+    /// Complete register projection of `coex_core_request` under the reviewed
+    /// Rust lifecycle precondition that the COEX owner is enabled.
+    pub fn open_coex_core_trace_request(
+        client: u32,
+        event: u32,
+        latency: u32,
+        duration: u32,
+        is_real_chip: u32,
+    ) -> u32 {
+        use oer_esp32s31_coex::{CoexClientRequest, CoexError, CoexEventId};
+
+        let Ok(event) = CoexEventId::new(event as u8) else {
+            return 0x102;
+        };
+        let request = CoexClientRequest {
+            event,
+            latency,
+            duration,
+        };
+        let result =
+            oer_esp32s31_hal::coex::validation_core_request(is_real_chip != 0, client != 0, request);
+        match result {
+            Ok(_) => 0,
+            Err(CoexError::InvalidEvent) => 0x102,
+            Err(_) => u32::MAX,
+        }
+    }
+}
+
+oer_probe_macros::probe! {
+    /// Complete register projection of `coex_core_release`. The vendor ABI keeps
+    /// the client in `a0` but selects the timer exclusively from event `a1`.
+    pub fn open_coex_core_trace_release(_client: u32, event: u32) -> u32 {
+        use oer_esp32s31_coex::{CoexError, CoexEventId};
+
+        let Ok(event) = CoexEventId::new(event as u8) else {
+            return 0x102;
+        };
+        match oer_esp32s31_hal::coex::validation_core_release(event) {
+            Ok(_) => 0,
+            Err(CoexError::InvalidEvent) => 0x102,
+            Err(_) => u32::MAX,
+        }
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_libpp_tx_trace_hal_mac_tx_set_cca(value: u32) -> u32 {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        oer_esp32s31_hal::validation::hal_mac_tx_set_cca(value)
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_libpp_tx_trace_hal_mac_get_txq_in_trig_flow_state() -> u32 {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        oer_esp32s31_hal::validation::hal_mac_get_txq_in_trig_flow_state()
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_libpp_tx_trace_hal_mac_is_txq_enabled(queue: u32) -> u32 {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        oer_esp32s31_hal::validation::hal_mac_is_txq_enabled(queue)
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_libpp_tx_trace_hal_mac_is_txq_valid(queue: u32) -> u32 {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        oer_esp32s31_hal::validation::hal_mac_is_txq_valid(queue)
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_libpp_tx_trace_hal_mac_set_txq_invalid(queue: u32) -> u32 {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        oer_esp32s31_hal::validation::hal_mac_set_txq_invalid(queue)
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_libpp_tx_trace_hal_mac_txq_disable(queue: u32) -> u32 {
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        oer_esp32s31_hal::validation::hal_mac_txq_disable(queue)
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_tx_protection_initialize_cts() =>
+        oer_esp32s31_hal::validation::initialize_mac_software_cts();
+}
+
+oer_probe_macros::probe! {
+    pub fn open_tx_protection_control_configure_rts(
+        queue: u32,
+        enabled: u32,
+        _unused: u32,
+        duration_threshold: u32,
+        threshold_bytes: u32,
+    ) {
+        assert!(enabled <= 1);
+        assert!(duration_threshold <= 1);
+        oer_esp32s31_hal::validation::configure_mac_tx_rts(
+            queue,
+            enabled != 0,
+            (duration_threshold != 0).then_some(threshold_bytes as u16),
+        );
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_tx_protection_control_disable_he_threshold() =>
+        oer_esp32s31_hal::validation::disable_mac_he_rts_threshold();
+}
+
+oer_probe_macros::probe! {
+    pub fn open_ordinary_tx_ownership_publish(queue: u8) =>
+        oer_esp32s31_hal::validation::ordinary_tx_publish(queue);
+}
+
+oer_probe_macros::probe! {
+    pub fn open_ordinary_tx_ownership_acknowledge(selector: u32, queue: u8) {
+        assert_eq!(selector, 2);
+        oer_esp32s31_hal::validation::ordinary_tx_acknowledge_completion(queue);
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_ordinary_tx_ownership_disable(queue: u32) -> u32 =>
+        oer_esp32s31_hal::validation::hal_mac_txq_disable(queue);
+}
+
+oer_probe_macros::probe! {
+    pub fn open_libpp_tx_trace_hal_mac_tx_config_edca(
+        _vendor_config_address: u32,
+        queue: u32,
+        aifsn: u32,
+        contention_window: u32,
+        interface: oer_esp32s31_hal::types::MacInterface,
+    ) -> u32 {
+        // The vendor side decodes these semantic arguments from its pointer-rich
+        // ABI object. The Rust probe receives the reviewed projection directly;
+        // every case keeps both representations and exact MMIO comparison proves
+        // that the projection agrees with the vendor object.
+        // SAFETY: this validation-only function is the sole user of the stolen
+        // peripheral in its isolated probe image.
+        oer_esp32s31_hal::validation::hal_mac_tx_config_edca(
+            queue,
+            aifsn as u8,
+            contention_window as u16,
+            interface,
+        )
+    }
 }
 
 #[repr(C)]
@@ -547,96 +543,96 @@ unsafe impl oer_memory::PreparedTxDma for ValidationPreparedTxDma {
     }
 }
 
-/// Reviewed ABI projection around the exact compiled production HT queue
-/// transaction. The vendor side receives its pointer-rich PP context at `a0`;
-/// the Rust side receives semantic HT parameters at the same address. The
-/// PAC constructs every register word from those reviewed values.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_set_ppdu(
-    program_address: u32,
-    _vendor_auxiliary: u32,
-) -> u32 {
-    use oer_esp32s31_hal::types::{
-        MacHtChannelWidth, MacHtGuardInterval, MacHtMcs, MacHtProtectionSpacing, MacHtRate,
-        MacHtTxFormat, MacHtTxParameters, MacHtTxProgram, MacInterface,
-    };
+oer_probe_macros::probe! {
+    /// Reviewed ABI projection around the exact compiled production HT queue
+    /// transaction. The vendor side receives its pointer-rich PP context at `a0`;
+    /// the Rust side receives semantic HT parameters at the same address. The
+    /// PAC constructs every register word from those reviewed values.
+    pub fn open_libpp_tx_trace_hal_mac_tx_set_ppdu(
+        program_address: u32,
+        _vendor_auxiliary: u32,
+    ) -> u32 {
+        use oer_esp32s31_hal::types::{
+            MacHtChannelWidth, MacHtGuardInterval, MacHtMcs, MacHtProtectionSpacing, MacHtRate,
+            MacHtTxFormat, MacHtTxParameters, MacHtTxProgram, MacInterface,
+        };
 
-    let parameters = program_address as *const CanonicalHtTxParameters;
-    // SAFETY: the verification profile supplies one initialized, aligned and
-    // immutable CanonicalHtTxParameters for the duration of this call.
-    let parameters = unsafe { &*parameters };
-    let interface = match parameters.interface {
-        0 => MacInterface::Station,
-        1 => MacInterface::AccessPoint,
-        2 => MacInterface::Context2,
-        3 => MacInterface::Context3,
-        _ => panic!("verification MAC interface is out of range"),
-    };
-    let mcs = match parameters.mcs {
-        0 => MacHtMcs::Mcs0,
-        1 => MacHtMcs::Mcs1,
-        2 => MacHtMcs::Mcs2,
-        3 => MacHtMcs::Mcs3,
-        4 => MacHtMcs::Mcs4,
-        5 => MacHtMcs::Mcs5,
-        6 => MacHtMcs::Mcs6,
-        7 => MacHtMcs::Mcs7,
-        _ => panic!("verification HT MCS is out of range"),
-    };
-    let guard_interval = match parameters.guard_interval {
-        0 => MacHtGuardInterval::Long800Ns,
-        1 => MacHtGuardInterval::Short400Ns,
-        _ => panic!("verification HT guard interval is out of range"),
-    };
-    let channel_width = match parameters.channel_width {
-        0 => MacHtChannelWidth::Mhz20,
-        1 => MacHtChannelWidth::Mhz40,
-        _ => panic!("verification HT channel width is out of range"),
-    };
-    let format = match parameters.format {
-        0 => MacHtTxFormat::SingleMpdu,
-        1 => MacHtTxFormat::Ampdu,
-        _ => panic!("verification HT format is out of range"),
-    };
-    let protection_spacing = match parameters.protection_spacing {
-        0 => MacHtProtectionSpacing::Density0To4,
-        1 => MacHtProtectionSpacing::Density5,
-        2 => MacHtProtectionSpacing::Density6,
-        3 => MacHtProtectionSpacing::Density7,
-        _ => panic!("verification HT protection spacing is out of range"),
-    };
-    let dma = ValidationPreparedTxDma(parameters.descriptor_head);
-    let program = MacHtTxProgram::new(
-        &dma,
-        MacHtTxParameters {
-            protection: oer_esp32s31_pac::MacTxProtection::None,
-            rate: MacHtRate {
-                mcs,
-                guard_interval,
-                channel_width,
+        let parameters = program_address as *const CanonicalHtTxParameters;
+        // SAFETY: the verification profile supplies one initialized, aligned and
+        // immutable CanonicalHtTxParameters for the duration of this call.
+        let parameters = unsafe { &*parameters };
+        let interface = match parameters.interface {
+            0 => MacInterface::Station,
+            1 => MacInterface::AccessPoint,
+            2 => MacInterface::Context2,
+            3 => MacInterface::Context3,
+            _ => panic!("verification MAC interface is out of range"),
+        };
+        let mcs = match parameters.mcs {
+            0 => MacHtMcs::Mcs0,
+            1 => MacHtMcs::Mcs1,
+            2 => MacHtMcs::Mcs2,
+            3 => MacHtMcs::Mcs3,
+            4 => MacHtMcs::Mcs4,
+            5 => MacHtMcs::Mcs5,
+            6 => MacHtMcs::Mcs6,
+            7 => MacHtMcs::Mcs7,
+            _ => panic!("verification HT MCS is out of range"),
+        };
+        let guard_interval = match parameters.guard_interval {
+            0 => MacHtGuardInterval::Long800Ns,
+            1 => MacHtGuardInterval::Short400Ns,
+            _ => panic!("verification HT guard interval is out of range"),
+        };
+        let channel_width = match parameters.channel_width {
+            0 => MacHtChannelWidth::Mhz20,
+            1 => MacHtChannelWidth::Mhz40,
+            _ => panic!("verification HT channel width is out of range"),
+        };
+        let format = match parameters.format {
+            0 => MacHtTxFormat::SingleMpdu,
+            1 => MacHtTxFormat::Ampdu,
+            _ => panic!("verification HT format is out of range"),
+        };
+        let protection_spacing = match parameters.protection_spacing {
+            0 => MacHtProtectionSpacing::Density0To4,
+            1 => MacHtProtectionSpacing::Density5,
+            2 => MacHtProtectionSpacing::Density6,
+            3 => MacHtProtectionSpacing::Density7,
+            _ => panic!("verification HT protection spacing is out of range"),
+        };
+        let dma = ValidationPreparedTxDma(parameters.descriptor_head);
+        let program = MacHtTxProgram::new(
+            &dma,
+            MacHtTxParameters {
+                protection: oer_esp32s31_pac::MacTxProtection::None,
+                rate: MacHtRate {
+                    mcs,
+                    guard_interval,
+                    channel_width,
+                },
+                format,
+                length: parameters.length as u16,
+                descriptor_count: parameters.descriptor_count as u8,
+                data_power_primary: parameters.data_power_primary as u8,
+                data_power_alternate: parameters.data_power_alternate as u8,
+                rts_power_primary: parameters.rts_power_primary as u8,
+                rts_power_alternate: parameters.rts_power_alternate as u8,
+                protection_spacing,
+                timeout: parameters.timeout as u16,
+                scheduler_priority: parameters.scheduler_priority as u8,
+                packet_priority: parameters.packet_priority as u8,
+                priority_count: parameters.priority_count as u16,
+                aifsn: parameters.aifsn as u8,
+                contention_window: parameters.contention_window as u16,
+                interface,
+                hardware_key_selector: parameters.hardware_key_selector as u8,
+                txop: parameters.txop != 0,
             },
-            format,
-            length: parameters.length as u16,
-            descriptor_count: parameters.descriptor_count as u8,
-            data_power_primary: parameters.data_power_primary as u8,
-            data_power_alternate: parameters.data_power_alternate as u8,
-            rts_power_primary: parameters.rts_power_primary as u8,
-            rts_power_alternate: parameters.rts_power_alternate as u8,
-            protection_spacing,
-            timeout: parameters.timeout as u16,
-            scheduler_priority: parameters.scheduler_priority as u8,
-            packet_priority: parameters.packet_priority as u8,
-            priority_count: parameters.priority_count as u16,
-            aifsn: parameters.aifsn as u8,
-            contention_window: parameters.contention_window as u16,
-            interface,
-            hardware_key_selector: parameters.hardware_key_selector as u8,
-            txop: parameters.txop != 0,
-        },
-    )
-    .expect("verification HT parameters are in the reviewed PAC domain");
-    oer_esp32s31_hal::validation::hal_mac_tx_set_ppdu(parameters.queue as u8, program)
+        )
+        .expect("verification HT parameters are in the reviewed PAC domain");
+        oer_esp32s31_hal::validation::hal_mac_tx_set_ppdu(parameters.queue as u8, program)
+    }
 }
 
 #[repr(C)]
@@ -648,118 +644,108 @@ pub struct CanonicalTxBlockAck {
     pub bitmap_high: u32,
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_get_blockack(
-    queue: u32,
-    output_address: u32,
-) -> u32 {
-    let payload = oer_esp32s31_hal::validation::hal_mac_tx_get_blockack(queue as u8)
-        .expect("profile constrains ordinary TX queue 0..=3");
-    let output = output_address as *mut CanonicalTxBlockAck;
-    // SAFETY: the verification profile supplies one initialized, writable
-    // twelve-byte output object for the duration of this call.
-    unsafe {
-        (*output).control = payload.control();
-        (*output).starting_sequence = payload.starting_sequence();
-        (*output).bitmap_low = payload.bitmap_low();
-        (*output).bitmap_high = payload.bitmap_high();
+oer_probe_macros::probe! {
+    pub fn open_libpp_tx_trace_hal_mac_tx_get_blockack(queue: u32, output_address: u32) -> u32 {
+        let payload = oer_esp32s31_hal::validation::hal_mac_tx_get_blockack(queue as u8)
+            .expect("profile constrains ordinary TX queue 0..=3");
+        let output = output_address as *mut CanonicalTxBlockAck;
+        // SAFETY: the verification profile supplies one initialized, writable
+        // twelve-byte output object for the duration of this call.
+        unsafe {
+            (*output).control = payload.control();
+            (*output).starting_sequence = payload.starting_sequence();
+            (*output).bitmap_low = payload.bitmap_low();
+            (*output).bitmap_high = payload.bitmap_high();
+        }
+        0
     }
-    0
 }
 
-/// ABI projection around the exact production normal-rate selector.
-///
-/// The vendor entry receives a pointer-rich descriptor and stores the chosen
-/// rate at byte `0x0c`. The wrapper performs only that ABI projection; rate
-/// selection is owned by the compiled production function.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_retry_trace_rc_get_rate(
-    _rate_context: u32,
-    descriptor_address: u32,
-) {
-    use oer_esp32s31_wifi_mac::tx::{
-        LegacyRate, TxPhyRate,
-        runtime::{OrdinaryRetryCounters, select_ordinary_retry_rate},
-    };
+oer_probe_macros::probe! {
+    /// ABI projection around the exact production normal-rate selector.
+    ///
+    /// The vendor entry receives a pointer-rich descriptor and stores the chosen
+    /// rate at byte `0x0c`. The wrapper performs only that ABI projection; rate
+    /// selection is owned by the compiled production function.
+    pub fn open_libpp_tx_retry_trace_rc_get_rate(_rate_context: u32, descriptor_address: u32) {
+        use oer_esp32s31_wifi_mac::tx::{
+            LegacyRate, TxPhyRate,
+            runtime::{OrdinaryRetryCounters, select_ordinary_retry_rate},
+        };
 
-    let descriptor = descriptor_address as *mut u8;
-    // SAFETY: every comparison case supplies a writable descriptor object
-    // covering the vendor counter and selected-rate bytes.
-    let counters = unsafe {
-        OrdinaryRetryCounters {
-            mpdu: descriptor.add(5).read(),
-            short: descriptor.add(6).read(),
-            long: descriptor.add(7).read(),
-        }
-    };
-    let selected = select_ordinary_retry_rate(TxPhyRate::Legacy(LegacyRate::Ofdm54M), counters)
-        .expect("reviewed rcGetRate cases remain inside the 54M schedule");
-    // SAFETY: the same case-owned descriptor covers byte 0x0c.
-    unsafe { descriptor.add(0x0c).write(selected.code()) };
+        let descriptor = descriptor_address as *mut u8;
+        // SAFETY: every comparison case supplies a writable descriptor object
+        // covering the vendor counter and selected-rate bytes.
+        let counters = unsafe {
+            OrdinaryRetryCounters {
+                mpdu: descriptor.add(5).read(),
+                short: descriptor.add(6).read(),
+                long: descriptor.add(7).read(),
+            }
+        };
+        let selected = select_ordinary_retry_rate(TxPhyRate::Legacy(LegacyRate::Ofdm54M), counters)
+            .expect("reviewed rcGetRate cases remain inside the 54M schedule");
+        // SAFETY: the same case-owned descriptor covers byte 0x0c.
+        unsafe { descriptor.add(0x0c).write(selected.code()) };
+    }
 }
 
 // These validation-only leaves make the result of the compiled production
 // completion classifier observable without introducing a shadow numeric
 // encoding. The non-pure inline assembly prevents LLVM from deleting the
 // calls; comparison stops at the selected leaf before executing its body.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_retry_ack_timeout(queue: u32) {
-    // SAFETY: an empty volatile assembly block has no machine-visible inputs
-    // or outputs and exists only as an optimizer barrier in the probe image.
-    unsafe {
-        core::arch::asm!(
-            "addi zero, zero, 1",
-            in("a0") queue,
-            options(nomem, nostack)
-        )
-    };
+oer_probe_macros::probe! {
+    pub fn open_libpp_tx_retry_ack_timeout(queue: u32) {
+        // SAFETY: an empty volatile assembly block has no machine-visible inputs
+        // or outputs and exists only as an optimizer barrier in the probe image.
+        unsafe {
+            core::arch::asm!(
+                "addi zero, zero, 1",
+                in("a0") queue,
+                options(nomem, nostack)
+            )
+        };
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_retry_cts_timeout(queue: u32) {
-    // SAFETY: see `open_libpp_tx_retry_ack_timeout`.
-    unsafe {
-        core::arch::asm!(
-            "addi zero, zero, 2",
-            in("a0") queue,
-            options(nomem, nostack)
-        )
-    };
+oer_probe_macros::probe! {
+    pub fn open_libpp_tx_retry_cts_timeout(queue: u32) {
+        // SAFETY: see `open_libpp_tx_retry_ack_timeout`.
+        unsafe {
+            core::arch::asm!(
+                "addi zero, zero, 2",
+                in("a0") queue,
+                options(nomem, nostack)
+            )
+        };
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_retry_collision(queue: u32) {
-    // SAFETY: see `open_libpp_tx_retry_ack_timeout`.
-    unsafe {
-        core::arch::asm!(
-            "addi zero, zero, 3",
-            in("a0") queue,
-            options(nomem, nostack)
-        )
-    };
+oer_probe_macros::probe! {
+    pub fn open_libpp_tx_retry_collision(queue: u32) {
+        // SAFETY: see `open_libpp_tx_retry_ack_timeout`.
+        unsafe {
+            core::arch::asm!(
+                "addi zero, zero, 3",
+                in("a0") queue,
+                options(nomem, nostack)
+            )
+        };
+    }
 }
 
-/// ABI projection around the exact production status-four classifier.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_retry_trace_lmac_process_tx_error(
-    queue: u32,
-    detail: u32,
-    _selector: u32,
-) {
-    use oer_esp32s31_wifi_mac::tx::{TxCompletion, TxCompletionDisposition, TxCookie};
+oer_probe_macros::probe! {
+    /// ABI projection around the exact production status-four classifier.
+    pub fn open_libpp_tx_retry_trace_lmac_process_tx_error(queue: u32, detail: u32, _selector: u32) {
+        use oer_esp32s31_wifi_mac::tx::{TxCompletion, TxCompletionDisposition, TxCookie};
 
-    let completion = TxCompletion::new_validation(TxCookie(0), 4, detail as u8);
-    match completion.disposition() {
-        TxCompletionDisposition::AckTimeout => open_libpp_tx_retry_ack_timeout(queue),
-        TxCompletionDisposition::CtsTimeout => open_libpp_tx_retry_cts_timeout(queue),
-        TxCompletionDisposition::Collision => open_libpp_tx_retry_collision(queue),
-        TxCompletionDisposition::Success | TxCompletionDisposition::Terminal(_) => {}
+        let completion = TxCompletion::new_validation(TxCookie(0), 4, detail as u8);
+        match completion.disposition() {
+            TxCompletionDisposition::AckTimeout => open_libpp_tx_retry_ack_timeout(queue),
+            TxCompletionDisposition::CtsTimeout => open_libpp_tx_retry_cts_timeout(queue),
+            TxCompletionDisposition::Collision => open_libpp_tx_retry_collision(queue),
+            TxCompletionDisposition::Success | TxCompletionDisposition::Terminal(_) => {}
+        }
     }
 }
 
@@ -812,12 +798,12 @@ impl oer_esp32s31_wifi::tx::WifiTxTimer for OrdinaryTxProbeTimer {
     }
 }
 
-/// Reviewed probe edge emitted by every real production publication.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_retry_publication(queue: u32) {
-    // SAFETY: this instruction is a machine-visible optimizer barrier only.
-    unsafe { core::arch::asm!("addi zero, zero, 4", in("a0") queue, options(nomem, nostack)) };
+oer_probe_macros::probe! {
+    /// Reviewed probe edge emitted by every real production publication.
+    pub fn open_libpp_tx_retry_publication(queue: u32) {
+        // SAFETY: this instruction is a machine-visible optimizer barrier only.
+        unsafe { core::arch::asm!("addi zero, zero, 4", in("a0") queue, options(nomem, nostack)) };
+    }
 }
 
 struct OrdinaryTxProbeHardware {
@@ -1032,1001 +1018,738 @@ fn ordinary_tx_ack_timeout_state(output_address: u32) -> u32 {
     0
 }
 
-/// Vendor-ABI-shaped entry for the stateful ACK-timeout short-frame profile.
-/// The fixed output address belongs to the comparison scenario; all retry
-/// decisions and counters come from the exact production state above.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_tx_retry_trace_ack_timeout_state(_queue: u32, _selector: u32) -> u32 {
-    ordinary_tx_ack_timeout_state(0x3fff_5000)
+oer_probe_macros::probe! {
+    /// Vendor-ABI-shaped entry for the stateful ACK-timeout short-frame profile.
+    /// The fixed output address belongs to the comparison scenario; all retry
+    /// decisions and counters come from the exact production state above.
+    pub fn open_libpp_tx_retry_trace_ack_timeout_state(_queue: u32, _selector: u32) -> u32 =>
+        ordinary_tx_ack_timeout_state(0x3fff_5000);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_interface_trace_hal_mac_set_addr(interface: u32, address: &[u8; 6]) {
-    oer_esp32s31_hal::validation::hal_mac_set_addr(interface, address);
+oer_probe_macros::probe! {
+    pub fn open_libpp_interface_trace_hal_mac_set_addr(interface: u32, address: &[u8; 6]) =>
+        oer_esp32s31_hal::validation::hal_mac_set_addr(interface, address);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_interface_trace_hal_mac_set_bssid(interface: u32, address: &[u8; 6]) {
-    oer_esp32s31_hal::validation::hal_mac_set_bssid(interface, address);
+oer_probe_macros::probe! {
+    pub fn open_libpp_interface_trace_hal_mac_set_bssid(interface: u32, address: &[u8; 6]) =>
+        oer_esp32s31_hal::validation::hal_mac_set_bssid(interface, address);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_ap_tsf_trace_hal_disable_softap_tsf() {
-    let mut owner = RadioRuntimeOwner::claim_for_validation();
-    let mut hardware = owner.wifi_mac_hal();
-    stop_access_point_tsf(&mut hardware);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_ap_tsf_start_trace_hal_mac_tsf_reset(selector: u32) {
-    if selector == 0 {
+oer_probe_macros::probe! {
+    pub fn open_libpp_ap_tsf_trace_hal_disable_softap_tsf() {
         let mut owner = RadioRuntimeOwner::claim_for_validation();
         let mut hardware = owner.wifi_mac_hal();
-        reset_and_start_access_point_tsf(&mut hardware);
+        stop_access_point_tsf(&mut hardware);
     }
 }
 
-/// Read STA TSF into the caller's optional output words.
-///
-/// # Safety
-/// Non-null outputs must be aligned, exclusively writable, non-overlapping words.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub unsafe extern "C" fn open_rom_power_tsf_trace_hal_get_sta_tsf(low: *mut u32, high: *mut u32) {
-    // SAFETY: the executable profile supplies either null or one aligned,
-    // writable scratch word for each pointer, matching the ROM ABI.
-    let low = unsafe { low.as_mut() };
-    // SAFETY: same closed profile contract as `low`.
-    let high = unsafe { high.as_mut() };
-    oer_esp32s31_hal::validation::hal_get_sta_tsf(low, high);
+oer_probe_macros::probe! {
+    pub fn open_libpp_ap_tsf_start_trace_hal_mac_tsf_reset(selector: u32) {
+        if selector == 0 {
+            let mut owner = RadioRuntimeOwner::claim_for_validation();
+            let mut hardware = owner.wifi_mac_hal();
+            reset_and_start_access_point_tsf(&mut hardware);
+        }
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_enable_agc(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::set_enabled(registers, true);
+oer_probe_macros::probe! {
+    /// Read STA TSF into the caller's optional output words.
+    ///
+    /// # Safety
+    /// Non-null outputs must be aligned, exclusively writable, non-overlapping words.
+    pub unsafe fn open_rom_power_tsf_trace_hal_get_sta_tsf(low: *mut u32, high: *mut u32) {
+        // SAFETY: the executable profile supplies either null or one aligned,
+        // writable scratch word for each pointer, matching the ROM ABI.
+        let low = unsafe { low.as_mut() };
+        // SAFETY: same closed profile contract as `low`.
+        let high = unsafe { high.as_mut() };
+        oer_esp32s31_hal::validation::hal_get_sta_tsf(low, high);
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_vht_support(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::set_vht_support(registers, input);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_enable_agc(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::set_enabled(registers, true);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_csidump_force_lltf_cfg(
-    input: u32,
-    registers: &mut RadioPhyRegisters,
-) {
-    oer_esp32s31_hal::phy::baseband::set_csi_dump_force_lltf(registers, input);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_vht_support(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::set_vht_support(registers, input);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_hemu_ru26_good_res(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::configure_he_ru26_good_response(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_csidump_force_lltf_cfg(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::set_csi_dump_force_lltf(registers, input);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_freq_band_reg_set(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::set_frequency_band(registers, input);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_hemu_ru26_good_res(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::configure_he_ru26_good_response(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_fe_reg_init(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::initialize_front_end(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_freq_band_reg_set(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::set_frequency_band(registers, input);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_fe_reg_update(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::update_front_end(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_fe_reg_init(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::initialize_front_end(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_bbtx_outfilter(
-    input_0: u32,
-    input_1: u32,
-    input_2: u32,
-    registers: &mut RadioPhyRegisters,
-) {
-    oer_esp32s31_hal::phy::baseband::configure_tx_output_filter(
-        registers, input_0, input_1, input_2,
-    );
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_fe_reg_update(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::update_front_end(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_bb_wdt_rst_enable(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::set_watchdog_reset_enabled(registers, input);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_bbtx_outfilter(
+        input_0: u32,
+        input_1: u32,
+        input_2: u32,
+        registers: &mut RadioPhyRegisters,
+    ) {
+        oer_esp32s31_hal::phy::baseband::configure_tx_output_filter(
+            registers, input_0, input_1, input_2,
+        );
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_bb_wdt_int_enable(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::set_watchdog_interrupt_enabled(registers, input);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_bb_wdt_rst_enable(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::set_watchdog_reset_enabled(registers, input);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_bb_wdt_timeout_clear(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::clear_watchdog_timeout(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_bb_wdt_int_enable(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::set_watchdog_interrupt_enabled(registers, input);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ret_bb_wdt_get_status(registers: &mut RadioPhyRegisters) -> u32 {
-    oer_esp32s31_hal::phy::baseband::watchdog_status(registers)
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_bb_wdt_timeout_clear(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::clear_watchdog_timeout(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_lltf_mask_en(
-    input_0: u32,
-    input_1: u32,
-    registers: &mut RadioPhyRegisters,
-) {
-    oer_esp32s31_hal::phy::baseband::configure_lltf_mask(registers, input_0, input_1);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_ret_bb_wdt_get_status(registers: &mut RadioPhyRegisters) -> u32 =>
+        oer_esp32s31_hal::phy::baseband::watchdog_status(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ant_init(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::configure_antenna(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_lltf_mask_en(input_0: u32, input_1: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::configure_lltf_mask(registers, input_0, input_1);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_bb_wdg_cfg(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::configure_watchdog(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_ant_init(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::configure_antenna(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_bt_filter_reg(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::frequency::configure_bt_filter(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_bb_wdg_cfg(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::configure_watchdog(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_freq_module_resetn(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::frequency::reset_module(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_bt_filter_reg(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::frequency::configure_bt_filter(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_en_hw_set_freq(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::frequency::set_hardware_control(registers, true);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_freq_module_resetn(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::frequency::reset_module(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_dis_hw_set_freq(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::frequency::set_hardware_control(registers, false);
-    ets_delay_us(2);
-    // Keep the delay as a non-tail edge so the executor sees the named
-    // harness symbol independently of linker tail-call relaxation.
-    core::hint::black_box(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_en_hw_set_freq(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::frequency::set_hardware_control(registers, true);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_freq_reg_init(
-    _vendor_parameter_0: u32,
-    _vendor_parameter_1: u32,
-    parameter_override: u32,
-    registers: &mut RadioPhyRegisters,
-) {
-    oer_esp32s31_hal::phy::frequency::initialize_registers(registers, parameter_override != 0);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_dis_hw_set_freq(registers: &mut RadioPhyRegisters) {
+        oer_esp32s31_hal::phy::frequency::set_hardware_control(registers, false);
+        ets_delay_us(2);
+        // Keep the delay as a non-tail edge so the executor sees the named
+        // harness symbol independently of linker tail-call relaxation.
+        core::hint::black_box(registers);
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_iq_corr_enable(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::enable_iq_correction(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_freq_reg_init(
+        _vendor_parameter_0: u32,
+        _vendor_parameter_1: u32,
+        parameter_override: u32,
+        registers: &mut RadioPhyRegisters,
+    ) =>
+        oer_esp32s31_hal::phy::frequency::initialize_registers(registers, parameter_override != 0);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_noise_floor_auto_set(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::configure_noise_floor_auto(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_iq_corr_enable(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::enable_iq_correction(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ret_read_hw_noisefloor(registers: &RadioPhyRegisters) -> u32 {
-    oer_esp32s31_hal::phy::baseband::read_hardware_noise_floor(registers) as u32
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_noise_floor_auto_set(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::configure_noise_floor_auto(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_tx_paon_set(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::configure_tx_pa_on(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_ret_read_hw_noisefloor(registers: &RadioPhyRegisters) -> u32 =>
+        oer_esp32s31_hal::phy::baseband::read_hardware_noise_floor(registers) as u32;
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_wifi_agc_sat_gain(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::set_saturation_gain(registers, input);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_tx_paon_set(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::configure_tx_pa_on(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_enable_low_rate(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::set_low_rate_enabled(registers, true);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_wifi_agc_sat_gain(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::set_saturation_gain(registers, input);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_disable_low_rate(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::set_low_rate_enabled(registers, false);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_enable_low_rate(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::set_low_rate_enabled(registers, true);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ret_is_low_rate_enabled(registers: &RadioPhyRegisters) -> u32 {
-    u32::from(oer_esp32s31_hal::phy::agc::low_rate_enabled(registers))
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_disable_low_rate(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::set_low_rate_enabled(registers, false);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_bb_dcmem_clr(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::clear_dc_memory(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_ret_is_low_rate_enabled(registers: &RadioPhyRegisters) -> u32 =>
+        u32::from(oer_esp32s31_hal::phy::agc::low_rate_enabled(registers));
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_rx_11b_opt(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::configure_rx_11b_optimization(registers, input != 0);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_bb_dcmem_clr(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::clear_dc_memory(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_rfrx_sat_rst(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::configure_rf_rx_saturation(registers, input != 0);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_rx_11b_opt(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::configure_rx_11b_optimization(registers, input != 0);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_set_rxclk_en(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::pbus::configure_rx_clock(registers, input != 0);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_rfrx_sat_rst(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::configure_rf_rx_saturation(registers, input != 0);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_set_txclk_en(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::pbus::configure_tx_clock(registers, input != 0);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_set_rxclk_en(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::pbus::configure_rx_clock(registers, input != 0);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_pbus_debugmode(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::pbus::configure_debug_mode(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_set_txclk_en(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::pbus::configure_tx_clock(registers, input != 0);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_i2c_txrate_init(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::configure_i2c_tx_rate(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_pbus_debugmode(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::pbus::configure_debug_mode(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_nrx_freq_set(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::frequency::configure_nrx_frequency(registers, input);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_i2c_txrate_init(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::configure_i2c_tx_rate(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_bb_cbw_chan_cfg(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::frequency::configure_channel_cbw(registers, input);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_nrx_freq_set(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::frequency::configure_nrx_frequency(registers, input);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_agc_reg_init(
-    parameter_121: u32,
-    parameter_120: u32,
-    registers: &mut RadioPhyRegisters,
-) {
-    oer_esp32s31_hal::phy::agc::initialize_registers(
-        registers,
-        parameter_121 as u8,
-        parameter_120 as u8,
-    );
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_bb_cbw_chan_cfg(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::frequency::configure_channel_cbw(registers, input);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_set_rx_comp_new(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::configure_rx_compensation(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_agc_reg_init(
+        parameter_121: u32,
+        parameter_120: u32,
+        registers: &mut RadioPhyRegisters,
+    ) {
+        oer_esp32s31_hal::phy::agc::initialize_registers(
+            registers,
+            parameter_121 as u8,
+            parameter_120 as u8,
+        );
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_bb_txpwr_track(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::configure_tx_power_tracking(registers, input & 1 != 0);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_set_rx_comp_new(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::configure_rx_compensation(registers);
 }
 
-/// Current vendor TX-gain restore boundary, compiled from production HAL/PAC.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_calibration_trace_restore_tx_gain_compensation(
-    _enabled: u32,
-    registers: &mut RadioPhyRegisters,
-) {
-    oer_esp32s31_hal::phy::baseband::restore_tx_gain_compensation(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_bb_txpwr_track(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::configure_tx_power_tracking(registers, input & 1 != 0);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_calibration_trace_force_digital_gain(
-    enabled: u32,
-    gain_0: u32,
-    gain_1: u32,
-    registers: &mut RadioPhyRegisters,
-) {
-    oer_esp32s31_hal::phy::baseband::configure_forced_digital_gain(
-        registers,
-        enabled & 1 != 0,
-        gain_0 as i8,
-        gain_1 as i8,
-    );
+oer_probe_macros::probe! {
+    /// Current vendor TX-gain restore boundary, compiled from production HAL/PAC.
+    pub fn open_phy_calibration_trace_restore_tx_gain_compensation(
+        _enabled: u32,
+        registers: &mut RadioPhyRegisters,
+    ) =>
+        oer_esp32s31_hal::phy::baseband::restore_tx_gain_compensation(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_calibration_trace_temperature_to_power(
-    current: u32,
-    reference: u32,
-    bluetooth: u32,
-) -> i32 {
-    let class = if bluetooth == 0 {
-        oer_esp32s31_phy::tracking::parameters::PhyCalibrationTrackClass::Wifi
-    } else {
-        oer_esp32s31_phy::tracking::parameters::PhyCalibrationTrackClass::BluetoothIeee802154
-    };
-    i32::from(
-        oer_esp32s31_phy::tracking::parameters::temperature_to_tracking_power(
-            current as i16,
-            reference as i16,
-            class,
-        ),
-    )
+oer_probe_macros::probe! {
+    pub fn open_phy_calibration_trace_force_digital_gain(
+        enabled: u32,
+        gain_0: u32,
+        gain_1: u32,
+        registers: &mut RadioPhyRegisters,
+    ) {
+        oer_esp32s31_hal::phy::baseband::configure_forced_digital_gain(
+            registers,
+            enabled & 1 != 0,
+            gain_0 as i8,
+            gain_1 as i8,
+        );
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_calibration_trace_post_init_agc(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::update_post_initialization(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_calibration_trace_temperature_to_power(
+        current: u32,
+        reference: u32,
+        bluetooth: u32,
+    ) -> i32 {
+        let class = if bluetooth == 0 {
+            oer_esp32s31_phy::tracking::parameters::PhyCalibrationTrackClass::Wifi
+        } else {
+            oer_esp32s31_phy::tracking::parameters::PhyCalibrationTrackClass::BluetoothIeee802154
+        };
+        i32::from(
+            oer_esp32s31_phy::tracking::parameters::temperature_to_tracking_power(
+                current as i16,
+                reference as i16,
+                class,
+            ),
+        )
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_reg_update_new(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::update_post_initialization(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_calibration_trace_post_init_agc(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::update_post_initialization(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_dc_mem_clr(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::clear_dc_memory(registers);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_reg_update_new(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::update_post_initialization(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_set_ftm_en(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::set_ftm_enabled_from_vendor_argument(registers, input);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_dc_mem_clr(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::clear_dc_memory(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_stop_tx_tone_new(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::stop_tx_tone(registers);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_close_fe_bb_clk(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::clock::close_frontend_baseband(registers);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_config_hccfr(
-    enabled: u32,
-    value: u32,
-    registers: &mut RadioPhyRegisters,
-) {
-    oer_esp32s31_hal::phy::baseband::configure_hccfr_from_vendor_arguments(
-        registers, enabled, value,
-    );
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_iccfr_en(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::configure_iccfr_gate(registers, input != 0);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_force_iccfr(
-    mode: u32,
-    enabled: u32,
-    value: u32,
-    registers: &mut RadioPhyRegisters,
-) {
-    oer_esp32s31_hal::phy::baseband::configure_forced_iccfr_from_vendor_arguments(
-        registers, mode, enabled, value,
-    );
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_pwdet_always_en() {
-    oer_esp32s31_phy::tx::power_detector::phy_pwdet_always_en();
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_pwdet_onetime_en() {
-    oer_esp32s31_phy::tx::power_detector::phy_pwdet_onetime_en();
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_11p_set(
-    enabled: u32,
-    configuration: u32,
-    output: &mut CanonicalDot11pState,
-) {
-    let initial = *output;
-    let mut state = oer_esp32s31_phy::state::PhyState::default();
-    state.set_dot11p_configuration(initial.enabled, initial.configuration);
-    state.set_dot11p_configuration(enabled as u8, configuration as u8);
-    let projected = state.dot11p_configuration();
-    *output = CanonicalDot11pState {
-        enabled: projected.enabled,
-        configuration: projected.configuration,
-    };
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_current_level_set(
-    value: u32,
-    output: &mut CanonicalCurrentLevelState,
-) {
-    let initial = output.value;
-    let mut state = oer_esp32s31_phy::state::PhyState::default();
-    state.set_current_level(initial);
-    state.set_current_level(value as u8);
-    output.value = state.current_level();
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_bt_power_track(
-    value: u32,
-    output: &mut CanonicalBtPowerTrackingState,
-) {
-    let initial = output.value;
-    let mut state = oer_esp32s31_phy::state::PhyState::default();
-    state.set_bt_power_tracking(initial);
-    state.set_bt_power_tracking(value as u8);
-    output.value = state.bt_power_tracking();
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_set_ftm_en(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::set_ftm_enabled_from_vendor_argument(registers, input);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_ble_set_chan_base(
-    value: u32,
-    output: &mut CanonicalBleChannelBaseState,
-) {
-    let initial = output.value;
-    let mut state = oer_esp32s31_phy::state::PhyState::default();
-    state.set_ble_channel_base(initial);
-    state.set_ble_channel_base(value as u8);
-    output.value = state.ble_channel_base();
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_stop_tx_tone_new(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::stop_tx_tone(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_init_param_set(
-    value: u32,
-    output: &mut CanonicalInitializationParameterState,
-) {
-    let initial = output.value;
-    let mut state = oer_esp32s31_phy::state::PhyState::default();
-    state.set_initialization_parameter(u32::from(initial != 0));
-    state.set_initialization_parameter(value);
-    output.value = u8::from(state.initialization_parameter());
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_close_fe_bb_clk(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::clock::close_frontend_baseband(registers);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_track_temp_debug(
-    first: u32,
-    second: u32,
-    output: &mut CanonicalTemperatureTrackingState,
-) {
-    let initial = *output;
-    let mut state = oer_esp32s31_phy::state::PhyState::default();
-    state.set_temperature_tracking_debug(initial.first, initial.second);
-    state.set_temperature_tracking_debug(first as u8, second as u8);
-    let projected = state.temperature_tracking_debug();
-    *output = CanonicalTemperatureTrackingState {
-        first: projected.first,
-        second: projected.second,
-    };
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_config_hccfr(
+        enabled: u32,
+        value: u32,
+        registers: &mut RadioPhyRegisters,
+    ) {
+        oer_esp32s31_hal::phy::baseband::configure_hccfr_from_vendor_arguments(
+            registers, enabled, value,
+        );
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_noise_check_loop() {
-    oer_esp32s31_phy::rx::signal_power::noise_check_loop();
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_iccfr_en(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::configure_iccfr_gate(registers, input != 0);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_bbpll_en_usb() {
-    oer_esp32s31_phy::analog::rfpll::phy_bbpll_en_usb();
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_force_iccfr(
+        mode: u32,
+        enabled: u32,
+        value: u32,
+        registers: &mut RadioPhyRegisters,
+    ) {
+        oer_esp32s31_hal::phy::baseband::configure_forced_iccfr_from_vendor_arguments(
+            registers, mode, enabled, value,
+        );
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_freq_mem_backup() {
-    oer_esp32s31_phy::analog::frequency::phy_freq_mem_backup();
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_pwdet_always_en() =>
+        oer_esp32s31_phy::tx::power_detector::phy_pwdet_always_en();
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_freq_offset_set() {
-    oer_esp32s31_phy::analog::frequency::phy_freq_offset_set();
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_pwdet_onetime_en() =>
+        oer_esp32s31_phy::tx::power_detector::phy_pwdet_onetime_en();
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_get_i2c_data() {
-    oer_esp32s31_phy::analog::i2c::phy_get_i2c_data();
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_11p_set(
+        enabled: u32,
+        configuration: u32,
+        output: &mut CanonicalDot11pState,
+    ) {
+        let initial = *output;
+        let mut state = oer_esp32s31_phy::state::PhyState::default();
+        state.set_dot11p_configuration(initial.enabled, initial.configuration);
+        state.set_dot11p_configuration(enabled as u8, configuration as u8);
+        let projected = state.dot11p_configuration();
+        *output = CanonicalDot11pState {
+            enabled: projected.enabled,
+            configuration: projected.configuration,
+        };
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_archive_set_bb_wdg() {
-    oer_esp32s31_phy::calibration::baseband::set_bb_wdg();
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_current_level_set(value: u32, output: &mut CanonicalCurrentLevelState) {
+        let initial = output.value;
+        let mut state = oer_esp32s31_phy::state::PhyState::default();
+        state.set_current_level(initial);
+        state.set_current_level(value as u8);
+        output.value = state.current_level();
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ret_phy_get_rf_cal_version() -> u32 {
-    oer_esp32s31_phy::analog::rfpll::phy_get_rf_cal_version()
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_bt_power_track(value: u32, output: &mut CanonicalBtPowerTrackingState) {
+        let initial = output.value;
+        let mut state = oer_esp32s31_phy::state::PhyState::default();
+        state.set_bt_power_tracking(initial);
+        state.set_bt_power_tracking(value as u8);
+        output.value = state.bt_power_tracking();
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ret_phy_get_rfdata_num() -> u32 {
-    oer_esp32s31_phy::calibration::cold::phy_get_rfdata_num()
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_ble_set_chan_base(value: u32, output: &mut CanonicalBleChannelBaseState) {
+        let initial = output.value;
+        let mut state = oer_esp32s31_phy::state::PhyState::default();
+        state.set_ble_channel_base(initial);
+        state.set_ble_channel_base(value as u8);
+        output.value = state.ble_channel_base();
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ret_get_bias_ref_code() -> u32 {
-    oer_esp32s31_phy::tx::calibration::get_bias_ref_code()
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_init_param_set(
+        value: u32,
+        output: &mut CanonicalInitializationParameterState,
+    ) {
+        let initial = output.value;
+        let mut state = oer_esp32s31_phy::state::PhyState::default();
+        state.set_initialization_parameter(u32::from(initial != 0));
+        state.set_initialization_parameter(value);
+        output.value = u8::from(state.initialization_parameter());
+    }
 }
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ret_phy_internal_delay() -> u32 {
-    oer_esp32s31_phy::calibration::cold::phy_internal_delay()
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_track_temp_debug(
+        first: u32,
+        second: u32,
+        output: &mut CanonicalTemperatureTrackingState,
+    ) {
+        let initial = *output;
+        let mut state = oer_esp32s31_phy::state::PhyState::default();
+        state.set_temperature_tracking_debug(initial.first, initial.second);
+        state.set_temperature_tracking_debug(first as u8, second as u8);
+        let projected = state.temperature_tracking_debug();
+        *output = CanonicalTemperatureTrackingState {
+            first: projected.first,
+            second: projected.second,
+        };
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_noise_check_loop() =>
+        oer_esp32s31_phy::rx::signal_power::noise_check_loop();
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_bbpll_en_usb() =>
+        oer_esp32s31_phy::analog::rfpll::phy_bbpll_en_usb();
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_freq_mem_backup() =>
+        oer_esp32s31_phy::analog::frequency::phy_freq_mem_backup();
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_freq_offset_set() =>
+        oer_esp32s31_phy::analog::frequency::phy_freq_offset_set();
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_get_i2c_data() =>
+        oer_esp32s31_phy::analog::i2c::phy_get_i2c_data();
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_archive_set_bb_wdg() =>
+        oer_esp32s31_phy::calibration::baseband::set_bb_wdg();
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_ret_phy_get_rf_cal_version() -> u32 =>
+        oer_esp32s31_phy::analog::rfpll::phy_get_rf_cal_version();
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_ret_phy_get_rfdata_num() -> u32 =>
+        oer_esp32s31_phy::calibration::cold::phy_get_rfdata_num();
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_ret_get_bias_ref_code() -> u32 =>
+        oer_esp32s31_phy::tx::calibration::get_bias_ref_code();
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_ret_phy_internal_delay() -> u32 =>
+        oer_esp32s31_phy::calibration::cold::phy_internal_delay();
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_i2c_enter_critical() =>
+        oer_esp32s31_phy::analog::i2c::phy_i2c_enter_critical();
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_i2c_exit_critical() =>
+        oer_esp32s31_phy::analog::i2c::phy_i2c_exit_critical();
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_get_dc_value(output: &mut [u16; 2], value: u32) =>
+        oer_esp32s31_phy::calibration::estimator::get_dc_value(output, value);
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_i2c_master_mem_cfg(configuration: &mut [u8; 6]) =>
+        oer_esp32s31_phy::analog::i2c::phy_i2c_master_mem_cfg(configuration);
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_i2c_master_command_mem_cfg(configuration: &mut [u8; 8], mode: &mut u32) =>
+        oer_esp32s31_phy::analog::i2c::phy_i2c_master_command_mem_cfg(configuration, mode);
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_phy_tx_atten_comp(values: &mut [u8; 3]) =>
+        oer_esp32s31_phy::tx::calibration::phy_tx_atten_comp(values);
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_ant_dft_cfg(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::configure_antenna_diversity(registers, input & 1 != 0);
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_btbb_wifi_bb_cfg2(registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::baseband::configure_bt_wifi_baseband(registers);
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_chan_dump_cfg(
+        value: u32,
+        enabled: u32,
+        mode: u32,
+        registers: &mut RadioPhyRegisters,
+    ) =>
+        oer_esp32s31_hal::phy::baseband::configure_channel_dump(registers, value, enabled, mode);
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_dac_rate_set(rate: u32, registers: &mut RadioPhyRegisters) {
+        oer_esp32s31_hal::phy::baseband::configure_dac_rate(
+            registers,
+            oer_esp32s31_hal::types::PhyAdcRate::from_vendor_rate(rate),
+        );
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_force_pwr_index(enabled: bool, index: u8, registers: &mut RadioPhyRegisters) {
+        oer_esp32s31_hal::phy::memory::configure_forced_power_index(
+            registers,
+            enabled,
+            oer_esp32s31_hal::phy::memory::PhyForcedPowerIndex::new(u32::from(index))
+                .expect("probe input must fit the reviewed forced-power index"),
+        );
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_force_rx_gain(enabled: u32, gain: u32, registers: &mut RadioPhyRegisters) {
+        oer_esp32s31_hal::phy::agc::configure_forced_rx_gain_from_vendor_arguments(
+            registers, enabled, gain,
+        );
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_rx11blr_cfg(input: u32, registers: &mut RadioPhyRegisters) =>
+        oer_esp32s31_hal::phy::agc::configure_rx_11b_low_rate(registers, input);
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_enable_cca(registers: &mut RadioPhyRegisters) {
+        let _ = registers;
+        oer_esp32s31_hal::ieee80211::mac::validation_set_cca_enabled(true);
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_disable_cca(registers: &mut RadioPhyRegisters) {
+        let _ = registers;
+        oer_esp32s31_hal::ieee80211::mac::validation_set_cca_enabled(false);
+    }
+}
+
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_sifs_reg_init(registers: &mut RadioPhyRegisters) {
+        let _ = registers;
+        oer_esp32s31_hal::ieee80211::mac::validation_initialize_sifs();
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_i2c_enter_critical() {
-    oer_esp32s31_phy::analog::i2c::phy_i2c_enter_critical();
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_ret_abs_temp(input: u32) -> u32 =>
+        oer_esp32s31_phy::calibration::math::absolute_temperature(input as i32);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_i2c_exit_critical() {
-    oer_esp32s31_phy::analog::i2c::phy_i2c_exit_critical();
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_ret_get_freq_mem_addr(
+        base: u32,
+        stride: u32,
+        index: u32,
+        offset: u32,
+    ) -> u32 {
+        u32::from(oer_esp32s31_phy::analog::frequency::phy_get_freq_mem_addr(
+            base, stride, index, offset,
+        ))
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_get_dc_value(output: &mut [u16; 2], value: u32) {
-    oer_esp32s31_phy::calibration::estimator::get_dc_value(output, value);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_txpwr_track_slow(value: u32, output: &mut CanonicalSlowTxPowerTrackingState) {
+        let initial = output.value;
+        let mut state = oer_esp32s31_phy::state::PhyState::default();
+        state.set_tx_power_tracking_slow(initial);
+        state.set_tx_power_tracking_slow(value as u8);
+        output.value = state.tx_power_tracking_slow();
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_i2c_master_mem_cfg(configuration: &mut [u8; 6]) {
-    oer_esp32s31_phy::analog::i2c::phy_i2c_master_mem_cfg(configuration);
+oer_probe_macros::probe! {
+    pub fn open_phy_trace_freq_i2c_mem_write(
+        address: u32,
+        value: u32,
+        mode: u32,
+        registers: &mut RadioPhyRegisters,
+    ) {
+        oer_esp32s31_hal::phy::frequency::write_memory(
+            registers,
+            (address & 0x07ff) as u16,
+            value & 0x00ff_ffff,
+            mode as u8,
+        );
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_i2c_master_command_mem_cfg(
-    configuration: &mut [u8; 8],
-    mode: &mut u32,
-) {
-    oer_esp32s31_phy::analog::i2c::phy_i2c_master_command_mem_cfg(configuration, mode);
+oer_probe_macros::probe! {
+    /// Execute the shipping command-memory transaction with explicit parameter bytes.
+    /// The isolated image constructs its own owner; no private owner layout is part
+    /// of the guest ABI. Encoding and all MMIO remain in the production HAL/PAC.
+    pub fn open_phy_trace_command_memory(parameters: &[u8; 6]) {
+        with_phy(|registers| {
+            let inputs = oer_esp32s31_hal::phy::i2c::PhyI2cCommandMemoryInputs::new(
+                parameters[0],
+                parameters[1],
+                parameters[2],
+                parameters[3],
+                parameters[4],
+                parameters[5],
+            );
+            oer_esp32s31_hal::phy::i2c::configure_command_memory(registers, inputs);
+        })
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_phy_tx_atten_comp(values: &mut [u8; 3]) {
-    oer_esp32s31_phy::tx::calibration::phy_tx_atten_comp(values);
+oer_probe_macros::probe! {
+    /// Initialize captured mutable parameter memory during an explicit setup phase.
+    /// This harness copy supplies scenario inputs; it performs no PHY computation.
+    pub fn open_phy_trace_initialize_parameters(destination: &mut [u8; 400], source: &[u8; 400]) =>
+        destination.copy_from_slice(source);
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ant_dft_cfg(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::configure_antenna_diversity(registers, input & 1 != 0);
+oer_probe_macros::probe! {
+    /// Harness entry with explicit zero-valued integer callee-saved register inputs.
+    ///
+    /// Tail-enter `entry` with `argument` in a0 and the incoming return sentinel.
+    /// This avoids making unknown prologue spills into invented values in the
+    /// execution engine. It contains no peripheral access or PHY behavior.
+    ///
+    /// # Safety
+    /// Only enter as an isolated execution root: this destroys the caller's saved
+    /// registers. `entry` must be executable and `argument` valid for that entry.
+    #[unsafe(naked)]
+    pub unsafe fn open_phy_trace_seeded_entry(entry: u32, argument: u32) {
+        core::arch::naked_asm!(
+            "mv t0, a0",
+            "mv a0, a1",
+            "li s0, 0",
+            "li s1, 0",
+            "li s2, 0",
+            "li s3, 0",
+            "li s4, 0",
+            "li s5, 0",
+            "li s6, 0",
+            "li s7, 0",
+            "li s8, 0",
+            "li s9, 0",
+            "li s10, 0",
+            "li s11, 0",
+            "jr t0",
+        );
+    }
 }
 
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_btbb_wifi_bb_cfg2(registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::configure_bt_wifi_baseband(registers);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_chan_dump_cfg(
-    value: u32,
-    enabled: u32,
-    mode: u32,
-    registers: &mut RadioPhyRegisters,
-) {
-    oer_esp32s31_hal::phy::baseband::configure_channel_dump(registers, value, enabled, mode);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_dac_rate_set(rate: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::baseband::configure_dac_rate(
-        registers,
-        oer_esp32s31_hal::types::PhyAdcRate::from_vendor_rate(rate),
-    );
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_force_pwr_index(
-    enabled: bool,
-    index: u8,
-    registers: &mut RadioPhyRegisters,
-) {
-    oer_esp32s31_hal::phy::memory::configure_forced_power_index(
-        registers,
-        enabled,
-        oer_esp32s31_hal::phy::memory::PhyForcedPowerIndex::new(u32::from(index))
-            .expect("probe input must fit the reviewed forced-power index"),
-    );
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_force_rx_gain(
-    enabled: u32,
-    gain: u32,
-    registers: &mut RadioPhyRegisters,
-) {
-    oer_esp32s31_hal::phy::agc::configure_forced_rx_gain_from_vendor_arguments(
-        registers, enabled, gain,
-    );
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_rx11blr_cfg(input: u32, registers: &mut RadioPhyRegisters) {
-    oer_esp32s31_hal::phy::agc::configure_rx_11b_low_rate(registers, input);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_enable_cca(registers: &mut RadioPhyRegisters) {
-    let _ = registers;
-    oer_esp32s31_hal::ieee80211::mac::validation_set_cca_enabled(true);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_disable_cca(registers: &mut RadioPhyRegisters) {
-    let _ = registers;
-    oer_esp32s31_hal::ieee80211::mac::validation_set_cca_enabled(false);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_sifs_reg_init(registers: &mut RadioPhyRegisters) {
-    let _ = registers;
-    oer_esp32s31_hal::ieee80211::mac::validation_initialize_sifs();
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ret_abs_temp(input: u32) -> u32 {
-    oer_esp32s31_phy::calibration::math::absolute_temperature(input as i32)
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ret_get_freq_mem_addr(
-    base: u32,
-    stride: u32,
-    index: u32,
-    offset: u32,
-) -> u32 {
-    u32::from(oer_esp32s31_phy::analog::frequency::phy_get_freq_mem_addr(
-        base, stride, index, offset,
-    ))
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_txpwr_track_slow(
-    value: u32,
-    output: &mut CanonicalSlowTxPowerTrackingState,
-) {
-    let initial = output.value;
-    let mut state = oer_esp32s31_phy::state::PhyState::default();
-    state.set_tx_power_tracking_slow(initial);
-    state.set_tx_power_tracking_slow(value as u8);
-    output.value = state.tx_power_tracking_slow();
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_freq_i2c_mem_write(
-    address: u32,
-    value: u32,
-    mode: u32,
-    registers: &mut RadioPhyRegisters,
-) {
-    oer_esp32s31_hal::phy::frequency::write_memory(
-        registers,
-        (address & 0x07ff) as u16,
-        value & 0x00ff_ffff,
-        mode as u8,
-    );
-}
-
-/// Execute the shipping command-memory transaction with explicit parameter bytes.
-/// The isolated image constructs its own owner; no private owner layout is part
-/// of the guest ABI. Encoding and all MMIO remain in the production HAL/PAC.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_command_memory(parameters: &[u8; 6]) {
-    let (mut registers, _interrupts) = oer_esp32s31_pac::RadioHardware::for_validation()
-        .into_wifi()
-        .into_running();
-    let inputs = oer_esp32s31_hal::phy::i2c::PhyI2cCommandMemoryInputs::new(
-        parameters[0],
-        parameters[1],
-        parameters[2],
-        parameters[3],
-        parameters[4],
-        parameters[5],
-    );
-    oer_esp32s31_hal::phy::i2c::configure_command_memory(registers.radio_phy_mut(), inputs);
-}
-
-/// Initialize captured mutable parameter memory during an explicit setup phase.
-/// This harness copy supplies scenario inputs; it performs no PHY computation.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_initialize_parameters(
-    destination: &mut [u8; 400],
-    source: &[u8; 400],
-) {
-    destination.copy_from_slice(source);
-}
-
-/// Harness entry with explicit zero-valued integer callee-saved register inputs.
-///
-/// Tail-enter `entry` with `argument` in a0 and the incoming return sentinel.
-/// This avoids making unknown prologue spills into invented values in the
-/// execution engine. It contains no peripheral access or PHY behavior.
-///
-/// # Safety
-/// Only enter as an isolated execution root: this destroys the caller's saved
-/// registers. `entry` must be executable and `argument` valid for that entry.
-#[unsafe(no_mangle)]
-#[unsafe(naked)]
-pub unsafe extern "C" fn open_phy_trace_seeded_entry(entry: u32, argument: u32) {
-    core::arch::naked_asm!(
-        "mv t0, a0",
-        "mv a0, a1",
-        "li s0, 0",
-        "li s1, 0",
-        "li s2, 0",
-        "li s3, 0",
-        "li s4, 0",
-        "li s5, 0",
-        "li s6, 0",
-        "li s7, 0",
-        "li s8, 0",
-        "li s9, 0",
-        "li s10, 0",
-        "li s11, 0",
-        "jr t0",
-    );
-}
-
-/// Retain every exported probe when this crate is linked into the executable
-/// comparison image. This function is harness-only and is never executed by
-/// the PHY driver.
-#[inline(never)]
-pub fn retain_all_probes() {
-    calibration_leaves::retain();
-    i2c::retain();
-    core::hint::black_box(open_phy_trace_command_memory as *const ());
-    core::hint::black_box(open_phy_trace_initialize_parameters as *const ());
-    core::hint::black_box(open_phy_trace_seeded_entry as *const ());
-    core::hint::black_box(production_trace::open_phy_channel_trace_state as *const ());
-    core::hint::black_box(production_trace::open_phy_channel_trace_calculate_tx_gain as *const ());
-    core::hint::black_box(production_trace::open_phy_bluetooth_trace_tx_gain as *const ());
-    core::hint::black_box(production_trace::open_phy_channel_trace_publish_tx_gain as *const ());
-    core::hint::black_box(production_trace::open_phy_calibration_trace_dcode as *const ());
-    core::hint::black_box(production_trace::open_phy_calibration_trace_rx_gain as *const ());
-    core::hint::black_box(production_trace::open_phy_calibration_trace_pbus_clear as *const ());
-    core::hint::black_box(production_trace::open_phy_calibration_trace_tx_dc_pwdet as *const ());
-    core::hint::black_box(production_trace::open_phy_calibration_trace_combined as *const ());
-    core::hint::black_box(production_trace::open_phy_tracking_trace_parent as *const ());
-    core::hint::black_box(production_trace::open_phy_rfpll_trace_search as *const ());
-    core::hint::black_box(production_trace::open_phy_rfpll_trace_maintain as *const ());
-    core::hint::black_box(production_trace::open_phy_rfpll_trace_track as *const ());
-    core::hint::black_box(
-        production_trace::open_phy_production_trace_phy_chip_set_chan as *const (),
-    );
-    core::hint::black_box(open_phy_trace_disable_agc as *const ());
-    core::hint::black_box(open_libpp_trace_hal_mac_interrupt_ret_get_event as *const ());
-    core::hint::black_box(open_libpp_trace_hal_mac_interrupt_ret_clr_event as *const ());
-    core::hint::black_box(open_wifi_sta_trace_hal_disable_sta_beacon_filter as *const ());
-    core::hint::black_box(open_libpp_power_irq_trace_hal_pwr_interrupt_get_event as *const ());
-    core::hint::black_box(open_libpp_power_irq_trace_hal_pwr_interrupt_clr_event as *const ());
-    core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_disable as *const ());
-    core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_enable as *const ());
-    core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_set_base as *const ());
-    core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_is_dscr_reload as *const ());
-    core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_set_dscr_reload as *const ());
-    core::hint::black_box(open_coex_trace_coex_hw_timer_enable as *const ());
-    core::hint::black_box(open_coex_trace_coex_hw_timer_disable as *const ());
-    core::hint::black_box(open_coex_trace_coex_hw_timer_force as *const ());
-    core::hint::black_box(open_coex_trace_coex_hw_timer_unforce as *const ());
-    core::hint::black_box(open_coex_set_trace_coex_hw_timer_set as *const ());
-    core::hint::black_box(open_coex_core_trace_pti_get as *const ());
-    core::hint::black_box(open_coex_core_trace_event_duration_get as *const ());
-    core::hint::black_box(open_coex_core_trace_timer_idx_get as *const ());
-    core::hint::black_box(open_coex_core_trace_request as *const ());
-    core::hint::black_box(open_coex_core_trace_release as *const ());
-    core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_set_cca as *const ());
-    core::hint::black_box(open_libpp_tx_trace_hal_mac_get_txq_in_trig_flow_state as *const ());
-    core::hint::black_box(open_libpp_tx_trace_hal_mac_is_txq_enabled as *const ());
-    core::hint::black_box(open_libpp_tx_trace_hal_mac_is_txq_valid as *const ());
-    core::hint::black_box(open_libpp_tx_trace_hal_mac_set_txq_invalid as *const ());
-    core::hint::black_box(open_libpp_tx_trace_hal_mac_txq_disable as *const ());
-    core::hint::black_box(open_tx_protection_initialize_cts as *const ());
-    core::hint::black_box(open_tx_protection_control_configure_rts as *const ());
-    core::hint::black_box(open_tx_protection_control_disable_he_threshold as *const ());
-    core::hint::black_box(open_ordinary_tx_ownership_publish as *const ());
-    core::hint::black_box(open_ordinary_tx_ownership_acknowledge as *const ());
-    core::hint::black_box(open_ordinary_tx_ownership_disable as *const ());
-    core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_config_edca as *const ());
-    core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_get_blockack as *const ());
-    core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_set_ppdu as *const ());
-    core::hint::black_box(open_libpp_tx_retry_trace_rc_get_rate as *const ());
-    core::hint::black_box(open_libpp_tx_retry_trace_lmac_process_tx_error as *const ());
-    core::hint::black_box(open_libpp_tx_retry_trace_ack_timeout_state as *const ());
-    core::hint::black_box(open_libpp_tx_retry_ack_timeout as *const ());
-    core::hint::black_box(open_libpp_tx_retry_cts_timeout as *const ());
-    core::hint::black_box(open_libpp_tx_retry_collision as *const ());
-    core::hint::black_box(open_libpp_interface_trace_hal_mac_set_addr as *const ());
-    core::hint::black_box(open_libpp_interface_trace_hal_mac_set_bssid as *const ());
-    core::hint::black_box(open_libpp_ap_tsf_trace_hal_disable_softap_tsf as *const ());
-    core::hint::black_box(open_libpp_ap_tsf_start_trace_hal_mac_tsf_reset as *const ());
-    core::hint::black_box(open_rom_power_tsf_trace_hal_get_sta_tsf as *const ());
-    core::hint::black_box(open_phy_trace_enable_agc as *const ());
-    core::hint::black_box(open_phy_trace_vht_support as *const ());
-    core::hint::black_box(open_phy_trace_csidump_force_lltf_cfg as *const ());
-    core::hint::black_box(open_phy_trace_hemu_ru26_good_res as *const ());
-    core::hint::black_box(open_phy_trace_freq_band_reg_set as *const ());
-    core::hint::black_box(open_phy_trace_fe_reg_init as *const ());
-    core::hint::black_box(open_phy_trace_phy_fe_reg_update as *const ());
-    core::hint::black_box(open_phy_trace_bbtx_outfilter as *const ());
-    core::hint::black_box(open_phy_trace_bb_wdt_rst_enable as *const ());
-    core::hint::black_box(open_phy_trace_bb_wdt_int_enable as *const ());
-    core::hint::black_box(open_phy_trace_bb_wdt_timeout_clear as *const ());
-    core::hint::black_box(open_phy_trace_ret_bb_wdt_get_status as *const ());
-    core::hint::black_box(open_phy_trace_lltf_mask_en as *const ());
-    core::hint::black_box(open_phy_trace_ant_init as *const ());
-    core::hint::black_box(open_phy_trace_bb_wdg_cfg as *const ());
-    core::hint::black_box(open_phy_trace_bt_filter_reg as *const ());
-    core::hint::black_box(open_phy_trace_freq_module_resetn as *const ());
-    core::hint::black_box(open_phy_trace_en_hw_set_freq as *const ());
-    core::hint::black_box(open_phy_trace_dis_hw_set_freq as *const ());
-    core::hint::black_box(open_phy_trace_freq_reg_init as *const ());
-    core::hint::black_box(open_phy_trace_iq_corr_enable as *const ());
-    core::hint::black_box(open_phy_trace_noise_floor_auto_set as *const ());
-    core::hint::black_box(open_phy_trace_ret_read_hw_noisefloor as *const ());
-    core::hint::black_box(open_phy_trace_tx_paon_set as *const ());
-    core::hint::black_box(open_phy_trace_wifi_agc_sat_gain as *const ());
-    core::hint::black_box(open_phy_trace_enable_low_rate as *const ());
-    core::hint::black_box(open_phy_trace_disable_low_rate as *const ());
-    core::hint::black_box(open_phy_trace_ret_is_low_rate_enabled as *const ());
-    core::hint::black_box(open_phy_trace_bb_dcmem_clr as *const ());
-    core::hint::black_box(open_phy_trace_rx_11b_opt as *const ());
-    core::hint::black_box(open_phy_trace_rfrx_sat_rst as *const ());
-    core::hint::black_box(open_phy_trace_set_rxclk_en as *const ());
-    core::hint::black_box(open_phy_trace_set_txclk_en as *const ());
-    core::hint::black_box(open_phy_trace_pbus_debugmode as *const ());
-    core::hint::black_box(open_phy_trace_i2c_txrate_init as *const ());
-    core::hint::black_box(open_phy_trace_nrx_freq_set as *const ());
-    core::hint::black_box(open_phy_trace_bb_cbw_chan_cfg as *const ());
-    core::hint::black_box(open_phy_trace_agc_reg_init as *const ());
-    core::hint::black_box(open_phy_trace_phy_set_rx_comp_new as *const ());
-    core::hint::black_box(open_phy_trace_phy_bb_txpwr_track as *const ());
-    core::hint::black_box(open_phy_trace_phy_reg_update_new as *const ());
-    core::hint::black_box(open_phy_calibration_trace_restore_tx_gain_compensation as *const ());
-    core::hint::black_box(open_phy_calibration_trace_force_digital_gain as *const ());
-    core::hint::black_box(open_phy_calibration_trace_temperature_to_power as *const ());
-    core::hint::black_box(open_phy_calibration_trace_post_init_agc as *const ());
-    core::hint::black_box(open_phy_trace_phy_dc_mem_clr as *const ());
-    core::hint::black_box(open_phy_trace_phy_set_ftm_en as *const ());
-    core::hint::black_box(open_phy_trace_phy_stop_tx_tone_new as *const ());
-    core::hint::black_box(open_phy_trace_phy_close_fe_bb_clk as *const ());
-    core::hint::black_box(open_phy_trace_phy_config_hccfr as *const ());
-    core::hint::black_box(open_phy_trace_phy_iccfr_en as *const ());
-    core::hint::black_box(open_phy_trace_phy_force_iccfr as *const ());
-    core::hint::black_box(open_phy_trace_phy_pwdet_always_en as *const ());
-    core::hint::black_box(open_phy_trace_phy_pwdet_onetime_en as *const ());
-    core::hint::black_box(open_phy_trace_phy_11p_set as *const ());
-    core::hint::black_box(open_phy_trace_phy_current_level_set as *const ());
-    core::hint::black_box(open_phy_trace_phy_bt_power_track as *const ());
-    core::hint::black_box(open_phy_trace_phy_ble_set_chan_base as *const ());
-    core::hint::black_box(open_phy_trace_phy_init_param_set as *const ());
-    core::hint::black_box(open_phy_trace_phy_track_temp_debug as *const ());
-    core::hint::black_box(open_phy_trace_noise_check_loop as *const ());
-    core::hint::black_box(open_phy_trace_phy_bbpll_en_usb as *const ());
-    core::hint::black_box(open_phy_trace_phy_freq_mem_backup as *const ());
-    core::hint::black_box(open_phy_trace_phy_freq_offset_set as *const ());
-    core::hint::black_box(open_phy_trace_phy_get_i2c_data as *const ());
-    core::hint::black_box(open_phy_trace_archive_set_bb_wdg as *const ());
-    core::hint::black_box(open_phy_trace_ret_phy_get_rf_cal_version as *const ());
-    core::hint::black_box(open_phy_trace_ret_phy_get_rfdata_num as *const ());
-    core::hint::black_box(open_phy_trace_ret_get_bias_ref_code as *const ());
-    core::hint::black_box(open_phy_trace_ret_phy_internal_delay as *const ());
-    core::hint::black_box(open_phy_trace_phy_i2c_enter_critical as *const ());
-    core::hint::black_box(open_phy_trace_phy_i2c_exit_critical as *const ());
-    core::hint::black_box(open_phy_trace_get_dc_value as *const ());
-    core::hint::black_box(open_phy_trace_phy_i2c_master_mem_cfg as *const ());
-    core::hint::black_box(open_phy_trace_phy_i2c_master_command_mem_cfg as *const ());
-    core::hint::black_box(open_phy_trace_phy_tx_atten_comp as *const ());
-    core::hint::black_box(open_phy_trace_ant_dft_cfg as *const ());
-    core::hint::black_box(open_phy_trace_btbb_wifi_bb_cfg2 as *const ());
-    core::hint::black_box(open_phy_trace_chan_dump_cfg as *const ());
-    core::hint::black_box(open_phy_trace_dac_rate_set as *const ());
-    core::hint::black_box(open_phy_trace_force_pwr_index as *const ());
-    core::hint::black_box(open_phy_trace_force_rx_gain as *const ());
-    core::hint::black_box(open_phy_trace_rx11blr_cfg as *const ());
-    core::hint::black_box(open_phy_trace_enable_cca as *const ());
-    core::hint::black_box(open_phy_trace_disable_cca as *const ());
-    core::hint::black_box(open_phy_trace_sifs_reg_init as *const ());
-    core::hint::black_box(open_phy_trace_ret_abs_temp as *const ());
-    core::hint::black_box(open_phy_trace_ret_get_freq_mem_addr as *const ());
-    core::hint::black_box(open_phy_trace_txpwr_track_slow as *const ());
-    core::hint::black_box(open_phy_trace_freq_i2c_mem_write as *const ());
+oer_probe_macros::probe! {
+    /// Exercise the production software-frequency transition with an owned PHY
+    /// partition. This also exposes the preserved ordinary delay-call boundary.
+    pub fn open_phy_trace_owned_software_frequency_control() =>
+        with_phy(|registers| open_phy_trace_dis_hw_set_freq(registers));
 }

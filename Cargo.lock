@@ -3234,6 +3234,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-probe-codegen"
+version = "0.1.0"
+dependencies = [
+ "object 0.39.1",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn 2.0.119",
+ "tempfile",
+]
+
+[[package]]
+name = "oer-probe-macros"
+version = "0.1.0"
+dependencies = [
+ "oer-probe-codegen",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "oer-process"
 version = "0.1.0"
 dependencies = [
@@ -3360,6 +3381,7 @@ dependencies = [
  "libc",
  "object 0.39.1",
  "oer-firmware",
+ "oer-probe-codegen",
  "oer-process",
  "open-esp-radio-memory-report",
  "pulldown-cmark",

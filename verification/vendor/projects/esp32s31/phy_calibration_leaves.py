@@ -4,18 +4,18 @@ Expected transactions below come from independent instruction reading of the
 authenticated archive and its ROM AGC child, not from the production result.
 """
 import copy
+from harness import words, compare
 
 
 def exercise(call, doc, symbol, roots, vendor, replacement):
-    from phy_i2c import case, invocation, region
+    from harness import case, invocation, region
 
     shim = symbol(2, "open_phy_trace_i2c_entry")["value"]
     production = symbol(2, "open_phy_calibration_leaf")["value"]
     cases, expected = [], []
 
     def invoke(target, arguments, cells):
-        words = list(arguments) + [0] * (8 - len(arguments))
-        data = [b for word in words for b in word.to_bytes(4, "little")]
+        data = words(arguments, pad_to=8, fill=0)
         models = [dict(id="leaf-registers", applicability="explicit retained calibration register inputs",
                        lifetime="phase", behavior=dict(kind="register-bank", cells=[
                            dict(address=a, width=4, value=v) for a, v in sorted(cells.items())]))] if cells else []
@@ -62,12 +62,7 @@ def exercise(call, doc, symbol, roots, vendor, replacement):
         add(name, "phy_reg_update_new", 3, [], cells, writes)
 
     def execute(label, selected, verdict, maximum=4096):
-        request = dict(schema=17, vendor=vendor, replacement=replacement, binding="shared-core",
-                       cases=selected, max_events=maximum)
-        identity = call(label, ["compare", "--request", doc(label, request)])["run"]["execution"]
-        evidence = call(label+"-evidence", ["execution", "--id", identity])
-        assert evidence["summary"]["manifest"]["verdict"] == verdict
-        return identity, evidence
+        return compare(call, doc, label, vendor, replacement, selected, verdict, maximum)
 
     artifacts = []
     for start in range(0, len(cases), 8):

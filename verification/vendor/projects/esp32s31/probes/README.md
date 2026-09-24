@@ -29,3 +29,37 @@ cargo build --manifest-path verification/vendor/projects/esp32s31/probes/Cargo.t
 a board test, runtime adapter or public driver API. Bluetooth production probes
 live in the separate `bluetooth-library/` and `bluetooth-elf/` pair so BLE
 verification never depends on Wi-Fi/PHY probe wrappers.
+
+## Declaration and validated build
+
+Use the [shared probe compiler](../../../harness/README.md) to declare each
+entry once with `oer_probe_macros::probe!`. It generates the C export, linker root
+and embedded ABI catalog. Simple adapters use `=> expression;`; complex and naked
+adapters retain explicit bodies. Existing symbol names and C projections remain
+the compatibility boundary for legacy consumers.
+
+The primary build command validates the resulting executable entries as well as
+compiling the three images:
+
+```console
+cargo xtask build vendor-probes --chip esp32s31
+```
+
+Every ELF contains `.blobray.probes`. Build scripts derive roots from the same
+Rust declarations used by the macro frontend; there is no retention list to edit
+when adding an entry. The catalog is part of the captured production artifact.
+
+The main library's `with_phy` helper keeps the Wi-Fi register and interrupt owners
+alive while lending the PHY partition to an adapter. Full platform construction,
+Bluetooth setup, async scheduling and assembly trampolines retain their explicit
+ownership rules. No private Rust owner layout is inferred from an ABI parameter.
+
+`ets_delay_us` and the post-delay barrier in the software-frequency adapter retain
+their optimization semantics. The current ESP-HAL link resolves the delay name
+to its ROM address; registration does not override that binding. The owned
+software-frequency probe lets the Next acceptance scenario check an ordinary
+call to the captured ROM veneer, its tail transfer to `ets_delay_us`, and the
+two-microsecond modeled delay. The existing executor classifies `jr t0` in the
+seeded entry as a return-style transfer; this test does not claim to capture
+that transfer as a call. These checks concern software boundaries, not physical
+timing.

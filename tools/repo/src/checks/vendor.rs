@@ -42,7 +42,31 @@ pub fn run(context: &Context, chip: &str, list_roles: bool) -> Result<()> {
         }
         return Ok(());
     }
-    build(context, std::env::var_os(JOBS).as_deref(), process::run)?;
+    build(context, std::env::var_os(JOBS).as_deref(), |command| {
+        process::run(command)?;
+        let arguments: Vec<_> = command.get_args().collect();
+        let package = arguments
+            .windows(2)
+            .find(|pair| pair[0] == "--package")
+            .and_then(|pair| pair[1].to_str())
+            .ok_or("missing probe package")?;
+        let directory = command
+            .get_envs()
+            .find(|(key, _)| *key == "CARGO_TARGET_DIR")
+            .and_then(|(_, value)| value)
+            .ok_or("missing probe target directory")?;
+        let elf = std::path::Path::new(directory)
+            .join(TARGET)
+            .join("release")
+            .join(package);
+        let catalog = oer_probe_codegen::validate_elf(&std::fs::read(&elf)?, package)?;
+        eprintln!(
+            "Validated {} executable probe entries in {}",
+            catalog.entries.len(),
+            elf.display()
+        );
+        Ok(())
+    })?;
     eprintln!(
         "Rust analysis inputs are ready. Capture the ELF inputs with cargo blobray import, then select an explicit comparison request; see tools/blobray/next/README.md."
     );

@@ -655,3 +655,34 @@ read global-pointer address `0x2f07fc3c` and slot `+8`. It reviews only that phy
 load path, leaving signature and semantic binding unknown, then compares the
 selected interface query and JSON export after source removal and backup/restore.
 No callback model, resolved callee or hardware assertion follows from this review.
+
+## Shared Next scenario preparation
+
+[harness.py](harness.py) owns supervised invocation, authenticated input capture,
+request diagnostics, exact symbol selection and the shared memory/phase/comparison
+builders. The I2C, transport and calibration scenarios keep their independent
+expected values and explicit peripheral assumptions. The research scenario uses
+the same runner and capture operations.
+
+The comparison runner exports `.blobray.probes` from the captured production ELF
+through native `inventory` and `data` operations. Every declared entry must resolve;
+selected production calls must be catalog members. Named scalar arguments are
+lowered with signed range checks. Reference parameters are explicit guest
+addresses, not host pointers or inferred private layouts. Unsupported argument
+types require an explicit adapter. `Buffer` declarations derive size and alignment for references to primitive
+fixed arrays, including nested arrays, and generate memory regions automatically.
+Addresses, byte seeds, lifetime, reset, models and observation relations remain
+scenario choices. Opaque owner/layout types require explicit adapters. Word padding requires
+both an explicit count and fill value; unknown memory stays unknown.
+
+The generated requests use the existing Next execution format. Replay reads the
+retained request and captured bytes, including the catalog; it does not regenerate
+requests using the current Python code. The combined I2C route also checks
+[compiled call boundaries](harness_edges.py), then restores and replays their
+evidence alongside positive and negative PHY comparisons.
+
+Run preparation-only regressions without private inputs:
+
+```console
+python3 -m unittest discover -s verification/vendor/projects/esp32s31 -p test_harness.py
+```

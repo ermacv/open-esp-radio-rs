@@ -4,10 +4,11 @@ Scenario expectations are independent of either execution result. The peripheral
 assumption supplies responses only; ROM/PAC/PHY code performs every transaction.
 """
 import copy
+from harness import words, compare
 
 
 def exercise(call, doc, symbol, roots, vendor, replacement):
-    from phy_i2c import invocation, region, case
+    from harness import invocation, region, case
 
     entry = symbol(2, "open_phy_trace_i2c_entry")["value"]
     transfer = symbol(2, "open_phy_trace_i2c_transfer")["value"]
@@ -15,15 +16,12 @@ def exercise(call, doc, symbol, roots, vendor, replacement):
     callbacks = [roots[name] for name in ("phy_i2c_enter_critical", "phy_i2c_exit_critical",
                                          "phy_get_i2c_read_mask_new", "phy_get_i2c_hostid_new")]
 
-    def words(values):
-        return [b for v in values for b in v.to_bytes(4, "little")]
-
     def memory(arguments):
         # The ROM interface pointer has no PT_LOAD mapping. Its explicit RAM
         # value selects captured code, not callback response models.
         return [region(0x2f07fc3c, 4, words([0x3fff3000])),
                 region(0x3fff3000, 16, words(callbacks)),
-                region(0x3fff4000, 32, words(list(arguments) + [0]*(8-len(arguments))))]
+                region(0x3fff4000, 32, words(arguments, pad_to=8, fill=0))]
 
     def controls():
         return dict(id="controls", applicability="captured complemented read mask and host-map RMW",
@@ -97,12 +95,7 @@ def exercise(call, doc, symbol, roots, vendor, replacement):
         expected.append(([(0x2010f800+4*i, 0x04000000) for i in range(2) if initial[i]], None, sum(bool(v) for v in initial)))
 
     def execute(label, selected, verdict, max_events=32768):
-        request = dict(schema=17, vendor=vendor, replacement=replacement, binding="shared-core",
-                       cases=selected, max_events=max_events)
-        identity = call(label, ["compare", "--request", doc(label, request)])["run"]["execution"]
-        evidence = call(label+"-evidence", ["execution", "--id", identity])
-        assert evidence["summary"]["manifest"]["verdict"] == verdict
-        return identity, evidence
+        return compare(call, doc, label, vendor, replacement, selected, verdict, max_events)
 
     artifacts = []
     # Independent cold cases are batched below the native 64-KiB request bound;

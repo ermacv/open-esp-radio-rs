@@ -1,3 +1,6 @@
 # Generated facts contain caller-owned artifact paths and digests.
 generated/
 /local.toml
+
+# Python scenario preparation bytecode.
+__pycache__/

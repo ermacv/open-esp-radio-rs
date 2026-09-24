@@ -19,3 +19,6 @@ scope = "development"
 layer = "verification"
 platform = "chip"
 chip = "esp32s31"
+
+[build-dependencies]
+oer-probe-codegen = { path = "../../../../harness/codegen" }

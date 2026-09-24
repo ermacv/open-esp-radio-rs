@@ -8,10 +8,8 @@ import argparse
 import pathlib
 import tempfile
 import json
-import subprocess
-import shutil
 import hashlib
-import time
+from harness import Runner
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--binary", type=pathlib.Path, required=True)
@@ -26,56 +24,12 @@ root.mkdir(parents=True, exist_ok=True)
 run = pathlib.Path(tempfile.mkdtemp(prefix="run-", dir=root))
 (root / "latest").write_text(str(run))
 project = run / "project"
-binary = options.binary.resolve()
-
-
-def call(name, args, expected=0):
-    cmd = [str(binary), "--format", "json", args[0], "--project", str(project)]
-    if args[0] != "init":
-        cmd += [
-            "--limit-mode",
-            options.limit_mode,
-            "--timeout-secs",
-            "600",
-            "--working-memory-mib",
-            "256",
-            "--max-work-units",
-            "2000000000",
-        ]
-    cmd += args[1:]
-    start = time.monotonic()
-    p = subprocess.run(cmd, capture_output=True)
-    (run / (name + ".json")).write_bytes(p.stdout)
-    (run / (name + ".stderr")).write_bytes(p.stderr)
-    print(name, p.returncode, round(time.monotonic() - start, 2), flush=True)
-    assert p.returncode == expected, p.stderr.decode()[-2500:]
-    return json.loads(p.stdout) if p.returncode == 0 and p.stdout else None
-
-
-def doc(name, value):
-    p = run / (name + ".request.json")
-    p.write_text(json.dumps(value))
-    return str(p)
-
-
-sources = [options.library.resolve(), options.rom.resolve()]
-assert (
-    hashlib.sha256(sources[0].read_bytes()).hexdigest()
-    == "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580"
-)
-assert hashlib.sha256(sources[1].read_bytes()).hexdigest() == "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
-local = []
-for i, p in enumerate(sources):
-    q = run / ("input-" + str(i))
-    shutil.copyfile(p, q)
-    local.append(q)
-call("init", ["init"])
-revision = call(
-    "import",
-    ["import", "--input", "phy=" + str(local[0]), "--input", "rom=" + str(local[1])],
-)["run"]["revision"]
-for p in local:
-    p.unlink()
+runner = Runner(options.binary, run, project, options.limit_mode)
+call, doc = runner.call, runner.doc
+revision, identities = runner.capture(
+    [options.library.resolve(), options.rom.resolve()], ["phy", "rom"],
+    ["d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580",
+     "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"])
 inventory = call("inventory", ["inventory"])["snapshot"]["revision"]
 objects = inventory["inputs"][0]["inventory"]["objects"]
 publication = call("whole", ["analyze-project"])["run"]["publication"]
@@ -595,7 +549,7 @@ for directory in ["i2c-observations", "accepted-table", "initial", "accepted-con
         )
 call("doctor", ["doctor"])
 project.rename(run / "moved")
-project = run / "moved"
+project = runner.project = run / "moved"
 call(
     "moved",
     [
@@ -610,7 +564,7 @@ call(
 )
 backup = run / "project.blobray"
 call("backup", ["backup", "--output", str(backup)])
-project = run / "restored"
+project = runner.project = run / "restored"
 call("restore", ["restore", "--backup", str(backup)])
 call(
     "restored",

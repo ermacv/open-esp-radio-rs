@@ -7,10 +7,11 @@ MEMORY
 
 SECTIONS
 {
+  .blobray.probes : { KEEP(*(.blobray.probes)) } > TRACE
+
   .text : ALIGN(4)
   {
     KEEP(*(.text._start))
-    KEEP(*(.text.open_ble_*))
     *(.text .text.*)
   } > TRACE
 

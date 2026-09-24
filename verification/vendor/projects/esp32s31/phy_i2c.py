@@ -13,7 +13,8 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
-import time
+from harness import Runner, ProbeCatalog, Buffer, single_argument_entry, symbol as captured_symbol
+from harness import seed, region, invocation, selection, case
 
 LIBRARY_SHA = "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580"
 ROM_SHA = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
@@ -46,40 +47,6 @@ PROFILES = [
     ("upper", [1, 2, 3, 255, 253, 1],
      [1, 2, 2, 3, 3, 2, 2, 3, 3, 60, 60, 60, 255, 255, 255, 1, 1, 65, 1]),
 ]
-TIMELINE = dict(reads=False, writes=False, atomics=False, branches=False)
-
-
-def seed(address, length, data=(), fill=None):
-    return dict(address=address, length=length, fill=fill, bytes=list(data))
-
-
-def region(address, length, data=(), fill=None, lifetime="phase"):
-    return dict(seed=seed(address, length, data, fill), lifetime=lifetime)
-
-
-def invocation(entry, arguments=(), memory=(), models=(), observe=()):
-    return dict(entry=entry, goal={"kind": "return"}, arguments=list(arguments),
-                memory=list(memory), models=list(models), calls=[], tables=[], services=[],
-                observe_memory=list(observe), observe_calls=None, observe_timeline=TIMELINE)
-
-
-def selection(address, length):
-    return dict(name="selected-output", address=address, length=length)
-
-
-def relation(memory=False):
-    return dict(effects=None, projection=None, returns=dict(low=False, high=False),
-                events=dict(timeline=TIMELINE, mmio_read=True, mmio_write=True,
-                            fence=True, delay=True),
-                memory=[dict(vendor=0, replacement=0)] if memory else [],
-                calls=False, reviewed_calls=None)
-
-
-def case(name, vendor, replacement, reset="cold", memory=False):
-    return dict(name=name, reset=reset, relation=relation(memory),
-                vendor=vendor, replacement=replacement)
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("binary", "library", "rom", "production", "linker", "nm", "output"):
@@ -108,56 +75,25 @@ def main():
     run = pathlib.Path(tempfile.mkdtemp(prefix="run-", dir=options.output.resolve()))
     (options.output / "latest").write_text(str(run))
     project = run / "project"
-    binary = options.binary.resolve()
-
-    def doc(name, value):
-        path = run / (name + ".request.json")
-        path.write_text(json.dumps(value))
-        return str(path)
-
-    def call(name, args, expected=0):
-        cmd = [str(binary), "--format", "json", args[0], "--project", str(project)]
-        if args[0] != "init":
-            cmd += ["--limit-mode", options.limit_mode, "--timeout-secs", "600",
-                    "--working-memory-mib", "256", "--max-work-units", "2000000000"]
-        cmd += list(map(str, args[1:]))
-        start = time.monotonic()
-        result = subprocess.run(cmd, capture_output=True)
-        (run / (name + ".json")).write_bytes(result.stdout)
-        (run / (name + ".stderr")).write_bytes(result.stderr)
-        print(name, result.returncode, round(time.monotonic() - start, 2), flush=True)
-        assert result.returncode == expected, result.stderr.decode()[-2500:]
-        return json.loads(result.stdout) if result.stdout else None
+    runner = Runner(options.binary, run, project, options.limit_mode)
+    call, doc = runner.call, runner.doc
 
     sources = [options.library, options.rom, options.production]
     if options.sdk is not None:
         sources.append(options.sdk)
     if options.phy_sdk is not None:
         sources.append(options.phy_sdk)
-    identities = [hashlib.sha256(p.read_bytes()).hexdigest() for p in sources]
-    assert identities[:2] == [LIBRARY_SHA, ROM_SHA], identities
-    if options.sdk is not None:
-        assert identities[3] == SDK_SHA, identities[3]
-    if options.phy_sdk is not None:
-        assert identities[4] == PHY_SDK_SHA, identities[4]
+    revision, identities = runner.capture(sources,
+        ["phy", "rom", "production"] + (["sdk"] if options.sdk is not None else []) + (["phy-sdk"] if options.phy_sdk is not None else []),
+        [LIBRARY_SHA, ROM_SHA, None] + ([SDK_SHA] if options.sdk is not None else []) + ([PHY_SDK_SHA] if options.phy_sdk is not None else []))
     doc("inputs", dict(sha256=identities, scope="I2C software comparison",
-                       calibration_leaves=options.calibration_leaves, calibration_prefix=options.calibration_prefix, rfpll=options.rfpll))
-    local = [run / f"input-{i}" for i in range(len(sources))]
-    for source, destination in zip(sources, local):
-        shutil.copyfile(source, destination)
-    call("init", ["init"])
-    imports = [item for role, path in zip(("phy", "rom", "production", "sdk", "phy-sdk"), local)
-               for item in ("--input", role+"="+str(path))]
-    revision = call("import", ["import"] + imports)["run"]["revision"]
-    for path in local:
-        path.unlink()
+                       calibration_leaves=options.calibration_leaves))
     inventory = call("inventory", ["inventory"])["snapshot"]["revision"]["inputs"]
 
+    probes = ProbeCatalog.capture(runner, revision, inventory, 2)
+
     def symbol(input_index, name):
-        matches = [s for o in inventory[input_index]["inventory"]["objects"] if o["elf"]
-                   for s in o["elf"]["symbols"] if bytes(s["name"]).decode() == name and s["raw_section"]]
-        assert len(matches) == 1, (name, matches)
-        return matches[0]
+        return probes.entry(name) if input_index == 2 else captured_symbol(inventory, input_index, name)
 
     def entry(name):
         return dict(input=0, symbol=symbol(0, name)["id"])
@@ -237,10 +173,10 @@ def main():
         prefix += exercise(call, doc, symbol, roots, vendor, replacement, parameter)
     if options.calibration_prefix:
         from phy_calibration_prefix import exercise
-        prefix += exercise(call, doc, symbol, roots, vendor, replacement, parameter)
-    setup_entry = symbol(2, "open_phy_trace_initialize_parameters")["value"]
+        # The ROM delay boundary is a captured symbol, not a declared probe.
+        production_delay = captured_symbol(inventory, 2, "ets_delay_us")["value"]
+        prefix += exercise(call, doc, symbol, roots, vendor, replacement, parameter, production_delay)
     seeded_entry = symbol(2, "open_phy_trace_seeded_entry")["value"]
-    command_entry = symbol(2, "open_phy_trace_command_memory")["value"]
     bank = dict(id="command-ram", applicability="45 aligned command slots; passive register bank",
                 lifetime="phase", behavior=dict(kind="register-bank", cells=[
                     dict(address=0x2010fc00+i*4, width=4, value=0) for i in range(45)]))
@@ -250,16 +186,17 @@ def main():
         full = [0]*400
         for offset, value in zip([0x18e, 0xe9, 0xea, 0xed, 0xee, 0xf0], parameters):
             full[offset] = value
-        setup_left = invocation(setup_entry, [parameter, 0x3fff0000],
-            [region(0x3fff0000, 400, full, lifetime="session")],
+        setup_left = probes.invoke("open_phy_trace_initialize_parameters",
+            dict(destination=parameter, source=Buffer(0x3fff0000, full, lifetime="session")),
             observe=[selection(parameter, 400)])
-        setup_right = invocation(setup_entry, [0x3fff2000, 0x3fff0000],
-            [region(0x3fff0000, 400, full, lifetime="session"),
-             region(0x3fff2000, 400, lifetime="session")], observe=[selection(0x3fff2000, 400)])
+        setup_right = probes.invoke("open_phy_trace_initialize_parameters",
+            dict(destination=Buffer(0x3fff2000, lifetime="session"),
+                 source=Buffer(0x3fff0000, full, lifetime="session")),
+            observe=[selection(0x3fff2000, 400)])
         cases.append(case(name+"-setup", setup_left, setup_right, memory=True))
         left = invocation(seeded_entry, [roots["phy_i2c_master_cmd_mem_init"], 0], models=[bank])
-        right = invocation(seeded_entry, [command_entry, 0x3fff1000],
-                           [region(0x3fff1000, 6, parameters)], [bank])
+        right = single_argument_entry(probes.invoke("open_phy_trace_command_memory",
+            dict(parameters=Buffer(0x3fff1000, parameters)), models=[bank]), seeded_entry)
         values = FIXED_PREFIX + [expected_dynamic[0], 8, 0x70, 0x27] + expected_dynamic[1:] + [0, 0xaf, 0x7f]
         assert len(values) == len(COMMAND_LOW) == 45
         expected_commands[len(cases)] = [low + (v << 16) for low, v in zip(COMMAND_LOW, values)]
@@ -334,15 +271,17 @@ def main():
     if options.calibration_leaves:
         from phy_calibration_leaves import exercise as calibration
         transport += calibration(call, doc, symbol, roots, vendor, replacement)
+    from harness_edges import exercise as harness_edges
+    transport += harness_edges(call, doc, symbol, probes, replacement)
     # All original source copies were deleted before linking/execution. Preserve
     # the full project closure, including probe/ROM bytes and negative evidence.
     call("backup", ["backup", "--output", run/"backup.blobray"])
     shutil.move(project, run/"moved")
-    project = run/"moved"
+    project = runner.project = run/"moved"
     moved = call("moved-evidence", ["execution", "--id", execution])
     assert moved["records"] == evidence["records"]
     assert call("moved-replay", ["replay", "--id", execution])["run"]["execution"] == execution
-    project = run/"restored"
+    project = runner.project = run/"restored"
     call("restore", ["restore", "--backup", run/"backup.blobray"])
     for name, identity in [("positive", execution), ("different", diff_id), ("unknown", unknown_id), ("missing-rom", missing_id)]:
         before = evidence if name == "positive" else json.loads((run/(name+"-evidence.json")).read_text())

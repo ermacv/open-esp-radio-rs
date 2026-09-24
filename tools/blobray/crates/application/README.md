@@ -294,3 +294,6 @@ allocated. Borrowed operation indexes group phase/side goals by object, prepare 
 once and release ELF bytes immediately after address validation. Early goals close
 a phase without claiming return or callee-body execution; warm successors start
 their own entry with only session-owned memory retained.
+
+
+`devices` owns admitted configuration/state, exact sorted ports and phase/session closure. Session snapshots model participation before releasing closed instances; verification sees both code outcomes and due model obligations. Warm continuation cannot redeclare a live id. All models use the shared execution/replay path and budget.

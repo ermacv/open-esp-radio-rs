@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 5;
+pub const EXECUTION_SCHEMA: u32 = 6;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 
@@ -43,8 +43,7 @@ pub struct Invocation {
     /// Clients lower multiword/variadic arguments and insert ABI padding explicitly.
     pub arguments: Vec<Option<u32>>,
     pub memory: Vec<ExecutionRegion>,
-    /// Explicit register-bank model: reads observe the latest written value.
-    pub mmio: Vec<RegisterCell>,
+    pub models: Vec<DeviceDeclaration>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -191,6 +190,17 @@ pub struct ExecutionObservation {
     pub stop: ExecutionStop,
     pub steps: u64,
     pub events: Vec<ExecutionEvent>,
+    pub models: Vec<ModelObservation>,
+}
+impl ExecutionObservation {
+    /// Goal reached with all environment obligations due at this boundary satisfied.
+    pub fn completed(&self) -> bool {
+        self.stop.completed()
+            && self
+                .models
+                .iter()
+                .all(|m| m.status == m.expected_status() && m.status != ModelStatus::Incomplete)
+    }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -356,7 +366,7 @@ impl ExecutionRequest {
                     }
                 }
                 input.entry_stack(&target.stack)?;
-                if input.memory.len() > 128 || input.mmio.len() > 1024 {
+                if input.memory.len() > 128 || input.models.len() > MAX_DEVICE_MODELS {
                     return Err(bad());
                 }
                 for (index, region) in input.memory.iter().enumerate() {
@@ -370,12 +380,9 @@ impl ExecutionRequest {
                         return Err(bad());
                     }
                 }
-                for cell in &input.mmio {
-                    if !matches!(cell.width, 1 | 2 | 4)
-                        || cell.address % u32::from(cell.width) != 0
-                        || u64::from(cell.address) + u64::from(cell.width) > u64::from(u32::MAX)
-                        || (cell.width < 4 && cell.value >> (cell.width * 8) != 0)
-                    {
+                for (index, model) in input.models.iter().enumerate() {
+                    model.validate()?;
+                    if input.models[..index].iter().any(|m| m.id == model.id) {
                         return Err(bad());
                     }
                 }
@@ -436,6 +443,11 @@ impl MemorySeed {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ExecutionEvidence {
+    Model {
+        case: u32,
+        replacement: bool,
+        observation: ModelObservation,
+    },
     Event {
         case: u32,
         replacement: bool,

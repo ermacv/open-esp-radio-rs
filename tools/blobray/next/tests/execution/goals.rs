@@ -305,11 +305,14 @@ fn comparison_of_observed_call_prefixes_keeps_known_differences() {
         },
     );
     r.cases[0].vendor.arguments = vec![Some(0x3000), Some(7)];
-    r.cases[0].vendor.mmio.push(RegisterCell {
-        address: 0x3000,
-        width: 4,
-        value: 0,
-    });
+    r.cases[0]
+        .vendor
+        .models
+        .push(register_bank(vec![RegisterCell {
+            address: 0x3000,
+            width: 4,
+            value: 0,
+        }]));
     r.cases[0].replacement = Some(r.cases[0].vendor.clone());
     let saved = f.run(r.clone(), budget()).execution.unwrap();
     assert_eq!(f.read(&saved)["summary"]["manifest"]["verdict"], "MATCH");

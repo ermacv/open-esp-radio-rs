@@ -119,21 +119,24 @@ fn atomic_unknowns_permissions_alignment_and_mmio_do_not_fallback() {
         for address in [0x3001, 0x5000, 0x6000] {
             let mut request = scenario(&f, Some(9));
             request.cases[0].vendor.arguments[0] = Some(address);
-            request.cases[0].vendor.mmio.push(RegisterCell {
-                address: 0x6000,
-                width: 4,
-                value: 9,
-            });
+            request.cases[0]
+                .vendor
+                .models
+                .push(register_bank(vec![RegisterCell {
+                    address: 0x6000,
+                    width: 4,
+                    value: 9,
+                }]));
             request.cases[0].replacement = Some(request.cases[0].vendor.clone());
             let run = f.run(request, budget());
             let result = f.read(&run.execution.unwrap());
             assert_eq!(result["summary"]["manifest"]["verdict"], "INCOMPLETE");
             assert_eq!(
-                result["records"][0]["value"]["stop"]["reason"]["access"],
+                result["records"][1]["value"]["stop"]["reason"]["access"],
                 "atomic"
             );
             assert_eq!(
-                result["records"][0]["value"]["stop"]["reason"]["address"],
+                result["records"][1]["value"]["stop"]["reason"]["address"],
                 address
             );
         }

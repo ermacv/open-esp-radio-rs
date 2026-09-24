@@ -2,7 +2,8 @@
 use crate::execution_memory::Session;
 use crate::*;
 use std::io::Write;
-pub const EXECUTION_ENVIRONMENT: &str = "static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/register-bank-1";
+pub const EXECUTION_ENVIRONMENT: &str =
+    "static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1";
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionWork {
@@ -107,6 +108,18 @@ fn evidence(
         )?;
         file.write_all(b"\n").map_err(storage_io)?;
     }
+    for model in &observation.models {
+        c.checkpoint(1)?;
+        write_control_message(
+            &mut *file,
+            &ExecutionEvidence::Model {
+                case,
+                replacement,
+                observation: model.clone(),
+            },
+        )?;
+        file.write_all(b"\n").map_err(storage_io)?;
+    }
     write_control_message(
         &mut *file,
         &ExecutionEvidence::Outcome {
@@ -186,6 +199,10 @@ pub(crate) fn prepare_execution_worker_in(
                 memory,
                 executor,
                 reset: case.reset,
+                close_chain: request
+                    .cases
+                    .get(index + 1)
+                    .is_none_or(|next| next.reset == SessionReset::Cold),
             };
             let left = engine.invoke(
                 &request.vendor,
@@ -238,7 +255,7 @@ pub(crate) fn prepare_execution_worker_in(
                 file.write_all(b"\n").map_err(storage_io)?;
             }
             let phase_complete =
-                left.stop.completed() && right.as_ref().is_none_or(|r| r.stop.completed());
+                left.completed() && right.as_ref().is_none_or(ExecutionObservation::completed);
             complete &= phase_complete;
             if !phase_complete {
                 blocked = true;
@@ -278,6 +295,7 @@ struct Engine<'a> {
     memory: &'a WorkingMemory,
     executor: &'a dyn Executor,
     reset: SessionReset,
+    close_chain: bool,
 }
 impl<'a> Engine<'a> {
     fn invoke(
@@ -291,11 +309,10 @@ impl<'a> Engine<'a> {
     ) -> Result<ExecutionObservation> {
         let case = c.position().table;
         if blocked {
-            return Ok(ExecutionObservation {
-                stop: ExecutionStop::BlockedByPriorPhase,
-                steps: 0,
-                events: Vec::new(),
-            });
+            let machine = slot.as_mut().ok_or_else(|| {
+                Error::new(ErrorCode::Integrity, "blocked phase has no prior session")
+            })?;
+            return machine.observation(ExecutionStop::BlockedByPriorPhase, 0, self.close_chain, c);
         }
         if slot.is_none() {
             if self.reset == SessionReset::Warm {
@@ -330,6 +347,6 @@ impl<'a> Engine<'a> {
             machine,
             c,
         )?;
-        Ok(machine.observation(stop, steps))
+        machine.observation(stop, steps, self.close_chain, c)
     }
 }

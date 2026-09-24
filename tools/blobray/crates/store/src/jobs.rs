@@ -312,7 +312,7 @@ impl Writer {
             .map_err(db)?;
         budget.validate()?;
         let record = RunRecord {
-            schema: 24,
+            schema: 25,
             operation,
             resolved_operation: None,
             image: None,
@@ -716,7 +716,7 @@ fn verify_file(
 pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
     let value: serde_json::Value = serde_json::from_str(raw).map_err(json)?;
     let schema = value.get("schema").and_then(serde_json::Value::as_u64);
-    if schema != Some(24) {
+    if schema != Some(25) {
         return Err(Error::new(
             ErrorCode::Incompatible,
             "unsupported run record schema",

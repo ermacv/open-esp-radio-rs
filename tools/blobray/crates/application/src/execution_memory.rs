@@ -23,7 +23,8 @@ pub(super) struct Session<'a> {
     regions: Vec<Region<'a>>,
     memory: &'a WorkingMemory,
     _metadata: MemoryReservation<'a>,
-    cells: Vec<RegisterCell>,
+    devices: crate::devices::Devices<'a>,
+    model_observations: Vec<ModelObservation>,
     events: Vec<ExecutionEvent>,
     max_events: usize,
     /// Exact four-byte reservation; never shared between implementations/phases.
@@ -31,15 +32,23 @@ pub(super) struct Session<'a> {
 }
 impl<'a> Session<'a> {
     pub fn new(memory: &'a WorkingMemory, max_events: u32, c: &mut dyn RunControl) -> Result<Self> {
-        let metadata = memory.reserve(1024 * 1024 + u64::from(max_events) * 128, c.position())?;
+        let metadata = memory.reserve(
+            1024 * 1024 + u64::from(max_events) * 128 + MAX_DEVICE_MODELS as u64 * 512,
+            c.position(),
+        )?;
         let mut regions = Vec::new();
         regions
             .try_reserve_exact(2048)
             .map_err(|_| Error::new(ErrorCode::ResourceLimited, "region allocation refused"))?;
-        let mut cells = Vec::new();
-        cells
-            .try_reserve_exact(1024)
-            .map_err(|_| Error::new(ErrorCode::ResourceLimited, "MMIO allocation refused"))?;
+        let mut model_observations = Vec::new();
+        model_observations
+            .try_reserve_exact(MAX_DEVICE_MODELS)
+            .map_err(|_| {
+                Error::new(
+                    ErrorCode::ResourceLimited,
+                    "model observation allocation refused",
+                )
+            })?;
         let mut events = Vec::new();
         events
             .try_reserve_exact(max_events as usize)
@@ -48,7 +57,8 @@ impl<'a> Session<'a> {
             regions,
             memory,
             _metadata: metadata,
-            cells,
+            devices: crate::devices::Devices::new(memory),
+            model_observations,
             events,
             max_events: max_events as usize,
             reservation: None,
@@ -78,6 +88,12 @@ impl<'a> Session<'a> {
             return Err(Error::new(
                 ErrorCode::InvalidRequest,
                 "invalid session region",
+            ));
+        }
+        if self.devices.overlaps(address, length as u64, c)? {
+            return Err(Error::new(
+                ErrorCode::Conflict,
+                "memory region overlaps a live device",
             ));
         }
         for region in &self.regions {
@@ -141,7 +157,6 @@ impl<'a> Session<'a> {
         self.reservation = None;
         self.finish_phase();
         self.events.clear();
-        self.cells.clear();
         self.region(
             Mapping {
                 address: target.stack.address,
@@ -206,39 +221,49 @@ impl<'a> Session<'a> {
                 )?;
             }
         }
-        for cell in &input.mmio {
-            c.checkpoint((self.regions.len() + self.cells.len() + 1) as u64)?;
-            let start = u64::from(cell.address);
-            let end = start + u64::from(cell.width);
-            if self.regions.iter().any(|r| {
-                start < u64::from(r.address) + r.bytes.len() as u64 && u64::from(r.address) < end
-            }) || self.cells.iter().any(|r| {
-                start < u64::from(r.address) + u64::from(r.width) && u64::from(r.address) < end
-            }) {
-                return Err(Error::new(
-                    ErrorCode::Conflict,
-                    "MMIO cells overlap memory or one another",
-                ));
-            }
-            self.cells.push(cell.clone());
-        }
+        let regions = &self.regions;
+        self.devices
+            .install(&input.models, c, &mut |address, width, c| {
+                c.checkpoint(regions.len() as u64 + 1)?;
+                let (start, end) = (u64::from(address), u64::from(address) + u64::from(width));
+                if regions.iter().any(|r| {
+                    start < u64::from(r.address) + r.bytes.len() as u64
+                        && u64::from(r.address) < end
+                }) {
+                    return Err(Error::new(
+                        ErrorCode::Conflict,
+                        "device overlaps captured memory, stack or RAM",
+                    ));
+                }
+                Ok(())
+            })?;
         Ok(stack)
     }
-    pub fn observation(&mut self, stop: ExecutionStop, steps: u64) -> ExecutionObservation {
-        ExecutionObservation {
+    pub fn observation(
+        &mut self,
+        stop: ExecutionStop,
+        steps: u64,
+        close_chain: bool,
+        c: &mut dyn RunControl,
+    ) -> Result<ExecutionObservation> {
+        self.devices
+            .finish(close_chain, &mut self.model_observations, c)?;
+        Ok(ExecutionObservation {
             stop,
             steps,
             events: std::mem::take(&mut self.events),
-        }
+            models: std::mem::take(&mut self.model_observations),
+        })
     }
     pub fn recycle(&mut self, mut observation: ExecutionObservation) {
         observation.events.clear();
         self.events = observation.events;
+        observation.models.clear();
+        self.model_observations = observation.models;
         self.finish_phase();
     }
     fn finish_phase(&mut self) {
         self.reservation = None;
-        self.cells.clear();
         self.regions.retain(|r| {
             !matches!(
                 r.kind,
@@ -289,7 +314,7 @@ impl ExecutionMemory for Session<'_> {
         access: MemoryAccess,
         c: &mut dyn RunControl,
     ) -> Result<Option<u32>> {
-        c.checkpoint((self.regions.len() + self.cells.len() + 1) as u64)?;
+        c.checkpoint(self.regions.len() as u64 + 1)?;
         if !matches!(access, MemoryAccess::Read | MemoryAccess::Fetch)
             || !matches!(width, 1 | 2 | 4)
             || !address.is_multiple_of(u32::from(width))
@@ -297,12 +322,11 @@ impl ExecutionMemory for Session<'_> {
             return Ok(None);
         }
         if access == MemoryAccess::Read
-            && let Some(cell) = self
-                .cells
-                .iter()
-                .find(|cell| cell.address == address && cell.width == width)
+            && let Some(value) = self.devices.read(address, width, c)?
         {
-            let value = cell.value;
+            let Some(value) = value else {
+                return Ok(None);
+            };
             self.event(
                 ExecutionEvent::Read {
                     address,
@@ -332,7 +356,7 @@ impl ExecutionMemory for Session<'_> {
         value: u32,
         c: &mut dyn RunControl,
     ) -> Result<bool> {
-        c.checkpoint((self.regions.len() + self.cells.len() + 1) as u64)?;
+        c.checkpoint(self.regions.len() as u64 + 1)?;
         if !matches!(width, 1 | 2 | 4) || !address.is_multiple_of(u32::from(width)) {
             return Ok(false);
         }
@@ -341,11 +365,10 @@ impl ExecutionMemory for Session<'_> {
         } else {
             value & ((1 << (width * 8)) - 1)
         };
-        if let Some(index) = self
-            .cells
-            .iter()
-            .position(|cell| cell.address == address && cell.width == width)
-        {
+        if let Some(written) = self.devices.write(address, width, value, c)? {
+            if !written {
+                return Ok(false);
+            }
             self.event(
                 ExecutionEvent::Write {
                     address,
@@ -354,7 +377,6 @@ impl ExecutionMemory for Session<'_> {
                 },
                 c,
             )?;
-            self.cells[index].value = value;
             return Ok(true);
         }
         let Some((i, offset)) = self.region_index(address, width) else {

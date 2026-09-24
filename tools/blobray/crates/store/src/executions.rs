@@ -256,18 +256,51 @@ pub fn validate_execution_records(
     let mut complete = true;
     let mut blocked = false;
     let mut phase_complete = true;
+    let mut models = [
+        crate::execution_models::Models::new(),
+        crate::execution_models::Models::new(),
+    ];
+    let mut prepared = None;
+    let mut models_started = false;
+    let mut environment_complete = true;
     let mut verdict = manifest.verdict.map(|_| ComparisonVerdict::Match);
-    visit_jsonl::<ExecutionEvidence>(source, c, |record, _| {
+    visit_jsonl::<ExecutionEvidence>(source, c, |record, c| {
         if case as usize >= manifest.request.cases.len() {
             return Err(integrity("extra execution case"));
         }
+        let phase = &manifest.request.cases[case as usize];
+        let must_block = phase.reset == SessionReset::Warm && blocked;
+        let close_chain = manifest
+            .request
+            .cases
+            .get(case as usize + 1)
+            .is_none_or(|next| next.reset == SessionReset::Cold);
+        if prepared != Some(case) {
+            models[0].begin(&phase.vendor.models, phase.reset, must_block, c)?;
+            if let Some(replacement) = &phase.replacement {
+                models[1].begin(&replacement.models, phase.reset, must_block, c)?;
+            }
+            prepared = Some(case);
+        }
         match record {
+            ExecutionEvidence::Model {
+                case: i,
+                replacement,
+                observation,
+            } => {
+                if i != case || replacement != side || outcome {
+                    return Err(integrity("model evidence order differs"));
+                }
+                models_started = true;
+                models[usize::from(side)].observe(&observation, close_chain, must_block, c)?;
+                environment_complete &= observation.status != ModelStatus::Incomplete;
+            }
             ExecutionEvidence::Event {
                 case: i,
                 replacement,
                 ..
             } => {
-                if i != case || replacement != side || outcome {
+                if i != case || replacement != side || outcome || models_started {
                     return Err(integrity("execution event order differs"));
                 }
                 events += 1;
@@ -322,8 +355,11 @@ pub fn validate_execution_records(
                         "execution outcome does not match its declared goal",
                     ));
                 }
-                complete &= stop.completed();
-                phase_complete &= stop.completed();
+                models[usize::from(side)].finish_side()?;
+                complete &= stop.completed() && environment_complete;
+                phase_complete &= stop.completed() && environment_complete;
+                models_started = false;
+                environment_complete = true;
                 if manifest.request.replacement.is_none() {
                     blocked = !phase_complete;
                     phase_complete = true;
@@ -339,6 +375,9 @@ pub fn validate_execution_records(
             ExecutionEvidence::Comparison { case: i, result } => {
                 if i != case || !outcome || verdict.is_none() {
                     return Err(integrity("comparison order differs"));
+                }
+                if result.verdict == ComparisonVerdict::Match && !phase_complete {
+                    return Err(integrity("MATCH has unmet execution/model obligations"));
                 }
                 verdict = Some(match (verdict.unwrap(), result.verdict) {
                     (ComparisonVerdict::Diff, _) | (_, ComparisonVerdict::Diff) => {
@@ -365,6 +404,7 @@ pub fn validate_execution_records(
         || events != 0
         || complete != manifest.complete
         || verdict != manifest.verdict
+        || !models.iter().all(crate::execution_models::Models::closed)
     {
         return Err(integrity("execution evidence summary differs"));
     }

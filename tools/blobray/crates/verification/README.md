@@ -4,7 +4,7 @@
 has no filesystem, store, executor, provider-selection or publication authority.
 Application supplies the two observations and the shared operation control.
 
-The `ordered-mmio-fence-u32/goal-2` relation compares the exact ordered MMIO reads,
+The `ordered-mmio-fence-u32/model-3` relation compares the exact ordered MMIO reads,
 writes and fence events, and optionally the low 32-bit return value. Ordinary
 RAM, call boundaries, elapsed time and the high return register are outside this
 relation. No events are normalized away. A completed shorter trace contradicts
@@ -29,3 +29,6 @@ goals when return comparison is disabled and both outcome kinds agree. An early
 return before a goal remains incomplete. Event-prefix differences remain evidence;
 equal incomplete prefixes cannot match. No target body or suspended continuation is
 inferred from reaching an early boundary.
+
+
+The model-3 relation requires a completed code goal and satisfied model obligations due at that phase. An open session transcript can continue warm; unconsumed values at closure cannot MATCH even when both programs return. A known observed event difference remains DIFF independently of incomplete coverage.

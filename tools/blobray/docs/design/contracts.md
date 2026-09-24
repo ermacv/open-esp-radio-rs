@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 24
-and database schema 23 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 25
+and database schema 24 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -741,7 +741,7 @@ same supervisor retains cancellation, capacity and atomic publication ownership.
 
 Domain owns `ExecutionRequest`, `ExecutionProducer`, observations and the injected
 `Executor`/`ExecutionMemory` ports. Artifacts lends validated static ELF segments;
-application owns captured leases, mutable session buffers, explicit register-bank
+application owns captured leases, mutable session buffers, explicit device
 state and all phase transitions. The RV32 backend owns concrete register/PC state;
 verification alone computes the ordered-observation verdict. Store validates
 receipt/record structure and atomically publishes the evidence with its run.
@@ -752,7 +752,7 @@ Domain validates stack geometry and computes entry SP; application initializes
 stack arguments in its freshly owned stack, and passes eight optional register
 words to the backend. Unknown argument slots override stack seeds. No register or
 stack word becomes zero by omission, and setup emits no guest events. The caller
-owns type/variadic lowering. Request and manifest schema 5 pin this interpretation;
+owns type/variadic lowering. Request and manifest schema 6 pin this interpretation;
 producer identity pins both backend unknown-value semantics and stack environment.
 
 `ExecutionMemory` also owns LR/SC reservation state, permission checks and indivisible
@@ -768,7 +768,7 @@ relation or a proof about multi-hart ordering.
 Each case owns an explicit cold/warm transition and each invocation selects its
 own captured-address-space entry. The first case is cold. Implementations have
 separate mutable state: writable ELF and session RAM survive warm transitions;
-phase RAM, stack, MMIO and reservations do not. RAM lifetime is part of its mapping
+phase RAM, stack and reservations do not. Models retain their own phase/session lifetime. RAM lifetime is part of its mapping
 identity and cannot change while that mapping is live. Phase buffers release after
 comparison/staged serialization. A warm successor to incomplete execution is blocked;
 a cold case discards prior state/dependencies and starts a fresh chain without
@@ -784,7 +784,7 @@ register/stack state; it never resolves symbols or retains ELF metadata.
 Returned, reached-symbol and observed-call are distinct completed outcomes. An early
 return before a non-return goal is incomplete; a completed early goal permits a warm
 successor but never promises the callee body ran. `complete` means all declared goals
-were met, not that every phase returned. Verification compares only the declared
+and model closure obligations were met; it does not require every phase to return. Verification compares only the declared
 observable prefixes; non-return goals cannot compare return registers. Store validates
 outcome/goal kind and cold/warm dependency blocking without owning ISA interpretation.
 
@@ -867,8 +867,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 23
-and journal schema 24 carry these identities. Old formats are rejected without
+Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 24
+and journal schema 25 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -1357,3 +1357,29 @@ excluded from the physical MMIO/fence relation. A successful query denotes deliv
 not exactness or termination proof. The same frozen IR and request reproduce the
 result after source-free backup/restore. Regression owners are Next
 `functions::trace`, linked call/tail tests and the authenticated PHY research scenario.
+
+
+### Implemented device ownership and completion
+
+`DeviceDeclaration` is a caller assumption with explicit applicability, stable
+content identity and phase/session lifetime. Application `devices` owns configuration
+clones, admitted mutable banks, transcript cursors and an exact sorted port index.
+The ISA backend sees only memory ports; it neither resolves models nor invents a
+response. Atomic accesses never fall back to device behavior. Model geometry cannot
+claim a mapped byte or the gaps between indexed ports.
+
+Each phase snapshots cumulative participation separately from its code outcome.
+Phase instances close there; session instances close at the last phase of a chain.
+Warm continuation omits live declarations; cold reset or expired phase ownership
+permits fresh ones. Closure releases owned configuration and mutable data, while
+bounded index capacity may remain for reuse. All allocation, traversal and access
+work shares the existing operation budget, with no global cache or new runtime.
+
+`ModelObservation` distinguishes open, complete and incomplete obligations. Required
+sequence/FIFO values must be consumed at closure; failed accesses preserve an issue.
+A returned goal cannot override incomplete environment evidence. Verification
+requires both code and due model obligations for MATCH. Store checks identity,
+monotonic counts, declared transcript totals, exact closure and required observation
+presence; it rejects MATCH with unmet obligations without executing model semantics.
+Models and code observations are persisted and replayed together. Full current
+mechanism syntax and claim limits belong to the [operator reference](../../next/README.md#concrete-execution-and-comparison).

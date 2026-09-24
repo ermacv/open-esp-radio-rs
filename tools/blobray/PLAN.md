@@ -507,10 +507,23 @@ compatibility model alongside the current register bank.
 
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
-| 08.1 | active | Native register-bank, constant/sequence read, W1C, read-clear, self-clearing, FIFO and indexed-bank mechanisms with explicit identity/applicability and phase/session lifetime. One supervised execution owns state, resource admission and model participation/closure evidence. Missing/extra/mismatched accesses, exhausted/unconsumed sequences, invalid geometry/overlap and cold/warm closure are tested; unmet model obligations cannot MATCH even if the entry returned. All mechanisms work through API/CLI/query/replay/source-free restore, with code outcomes distinct from model coverage. |
-| 08.2 | pending | Explicit external-call return words, private-stack/normal-memory outputs, bounded allocation and delay events. Exact selected bindings, ABI clobbers/stack words, consumed responses, modeled/code boundaries and provenance are checked. No implicit return, MMIO output fallback or hidden allocator. Unknown pointers, wrong ownership, capacity/exhaustion and unconsumed obligations remain explicit. A composed call/device/phase scenario, all mechanisms' positive/negative regressions and source-free restore/replay close stage 08. |
+| 08.1 | done | Native register-bank, constant/sequence read, W1C, read-clear, self-clearing, FIFO and indexed-bank mechanisms with explicit identity/applicability and phase/session lifetime. One supervised execution owns state, resource admission and model participation/closure evidence. Missing/extra/mismatched accesses, exhausted/unconsumed sequences, invalid geometry/overlap and cold/warm closure are tested; unmet model obligations cannot MATCH even if the entry returned. All mechanisms work through API/CLI/query/replay/source-free restore, with code outcomes distinct from model coverage. |
+| 08.2 | active | Explicit external-call return words, private-stack/normal-memory outputs, bounded allocation and delay events. Exact selected bindings, ABI clobbers/stack words, consumed responses, modeled/code boundaries and provenance are checked. No implicit return, MMIO output fallback or hidden allocator. Unknown pointers, wrong ownership, capacity/exhaustion and unconsumed obligations remain explicit. A composed call/device/phase scenario, all mechanisms' positive/negative regressions and source-free restore/replay close stage 08. |
 
 Hardware-specific mechanisms and calibrated expectations remain their assigned
 stages 11/12/14. A model declaration is an explicit execution assumption, never an
 automatic scientific review or hardware qualification. Shared FIFO services and
 reviewed interface dispatch remain stage 09 rather than a second device implementation.
+
+
+Stage 08.1 closes all eight standard device mechanisms through shared execution,
+comparison, query and replay. Independent expected values, exhausted/mismatched
+accesses, unconsumed obligations, cold/warm closure, port gaps and live ownership
+conflicts pass. A returned program with unmet model obligations remains incomplete;
+store rejects missing/forged identity, counts, closure and MATCH evidence. Model
+payload/state release, admission failure and cancellation before consumption pass.
+API/CLI and source-free backup/restore/replay preserve identities and outcomes.
+All seven affected packages/Next tests, Clippy, formatting, public/private docs and
+standalone extraction pass. Execution schema 6, database 24 and journal 25 bind
+model assumptions separately from code goals. Stage 08.2 is active; external calls
+and delay events remain its obligations, with no implicit response or legacy path.

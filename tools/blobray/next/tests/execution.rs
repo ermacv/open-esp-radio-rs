@@ -115,7 +115,7 @@ impl Fixture {
             entry: 0x1000,
             arguments: vec![Some(0); 8],
             memory: vec![],
-            mmio: vec![],
+            models: vec![],
         };
         ExecutionRequest {
             schema: EXECUTION_SCHEMA,
@@ -289,11 +289,11 @@ fn mmio_fence_and_capacity_are_observable() {
         let i = &mut r.cases[0].vendor;
         i.arguments[0] = Some(0x3000);
         i.arguments[1] = Some(123);
-        i.mmio.push(RegisterCell {
+        i.models.push(register_bank(vec![RegisterCell {
             address: 0x3000,
             width: 4,
             value: 0,
-        });
+        }]));
     }
     r.cases[0].replacement = Some(r.cases[0].vendor.clone());
     let run = f.run(r.clone(), budget());
@@ -503,3 +503,14 @@ fn ram(seed: MemorySeed) -> ExecutionRegion {
 mod goals;
 #[path = "execution/sessions.rs"]
 mod sessions;
+
+fn register_bank(cells: Vec<RegisterCell>) -> DeviceDeclaration {
+    DeviceDeclaration {
+        id: "registers".into(),
+        applicability: "fixture register-bank assumption".into(),
+        lifetime: RegionLifetime::Phase,
+        behavior: DeviceBehavior::RegisterBank { cells },
+    }
+}
+#[path = "execution/devices.rs"]
+mod devices;

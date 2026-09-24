@@ -1323,7 +1323,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
                 entry: 4096,
                 arguments: vec![Some(0); 8],
                 memory: vec![],
-                mmio: vec![],
+                models: vec![],
             },
             replacement: None,
         }],
@@ -1832,4 +1832,165 @@ fn check_ir_publication(
         )
         .unwrap();
     assert_eq!(memory.used(), 0);
+}
+
+#[test]
+fn retained_models_reject_missing_forged_identity_closure_and_match() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = Project::create(temp.path()).unwrap();
+    let revision = project
+        .writer()
+        .unwrap()
+        .commit(revision(&project))
+        .unwrap()
+        .revision_id;
+    let target = ExecutionTarget {
+        revision,
+        source: FunctionSource::Input { input: 0 },
+        companions: vec![],
+        abi: CallAbi::RiscvInteger,
+        stack: MemorySeed {
+            address: 8192,
+            length: 4096,
+            fill: None,
+            bytes: vec![],
+        },
+    };
+    let declaration = DeviceDeclaration {
+        id: "sequence".into(),
+        applicability: "fixture".into(),
+        lifetime: RegionLifetime::Phase,
+        behavior: DeviceBehavior::SequenceRead {
+            address: 0x3000,
+            width: 4,
+            values: vec![7, 9],
+        },
+    };
+    let input = Invocation {
+        entry: 4096,
+        goal: ExecutionGoal::Return,
+        arguments: vec![],
+        memory: vec![],
+        models: vec![declaration.clone()],
+    };
+    let mut rows = Vec::new();
+    for replacement in [false, true] {
+        rows.push(ExecutionEvidence::Event {
+            case: 0,
+            replacement,
+            event: ExecutionEvent::Read {
+                address: 0x3000,
+                width: 4,
+                value: 7,
+            },
+        });
+        rows.push(ExecutionEvidence::Model {
+            case: 0,
+            replacement,
+            observation: ModelObservation {
+                id: declaration.id.clone(),
+                definition: declaration.identity(&mut || Ok(())).unwrap(),
+                lifetime: RegionLifetime::Phase,
+                reads: 1,
+                writes: 0,
+                remaining_reads: 1,
+                remaining_writes: 0,
+                closed: true,
+                issue: None,
+                status: ModelStatus::Incomplete,
+            },
+        });
+        rows.push(ExecutionEvidence::Outcome {
+            case: 0,
+            replacement,
+            steps: 2,
+            stop: ExecutionStop::Returned {
+                low: Some(7),
+                high: None,
+            },
+        });
+    }
+    rows.push(ExecutionEvidence::Comparison {
+        case: 0,
+        result: CaseComparison {
+            verdict: ComparisonVerdict::Incomplete,
+            event: None,
+            return_difference: false,
+        },
+    });
+    let manifest = ExecutionManifest {
+        schema: EXECUTION_SCHEMA,
+        project: project.id().clone(),
+        request: ExecutionRequest {
+            schema: EXECUTION_SCHEMA,
+            vendor: target.clone(),
+            replacement: Some(target),
+            binding: Some(CompiledBinding::ProductionEntry),
+            cases: vec![ExecutionCase {
+                name: "one".into(),
+                reset: SessionReset::Cold,
+                vendor: input.clone(),
+                replacement: Some(input),
+            }],
+            max_events: 4,
+            compare_return: true,
+        },
+        producer: ExecutionProducer {
+            executor: "test/1".into(),
+            environment: "test/1".into(),
+            verifier: "test/1".into(),
+        },
+        records: ArtifactId::of_bytes(b"unused"),
+        verdict: Some(ComparisonVerdict::Incomplete),
+        complete: false,
+    };
+    let validate = |m: &ExecutionManifest, rows: &[ExecutionEvidence]| {
+        let mut bytes = Vec::new();
+        for row in rows {
+            serde_json::to_writer(&mut bytes, row).unwrap();
+            bytes.push(b'\n');
+        }
+        validate_execution_records(m, &bytes.as_slice(), &mut || Ok(()))
+    };
+    validate(&manifest, &rows).unwrap();
+    let model_index = rows
+        .iter()
+        .position(|r| matches!(r, ExecutionEvidence::Model { .. }))
+        .unwrap();
+    for variant in 0..5 {
+        let mut forged = rows.clone();
+        if variant == 0 {
+            forged.remove(model_index);
+        } else if let ExecutionEvidence::Model { observation, .. } = &mut forged[model_index] {
+            match variant {
+                1 => observation.definition = ArtifactId::of_bytes(b"other assumption"),
+                2 => {
+                    observation.closed = false;
+                    observation.status = ModelStatus::Open;
+                }
+                3 => observation.status = ModelStatus::Complete,
+                4 => {
+                    observation.remaining_reads = 0;
+                    observation.status = ModelStatus::Complete;
+                }
+                _ => unreachable!(),
+            }
+        }
+        assert_eq!(
+            validate(&manifest, &forged).unwrap_err().code,
+            ErrorCode::Integrity
+        );
+    }
+    let mut forged = rows;
+    for row in &mut forged {
+        if let ExecutionEvidence::Comparison { result, .. } = row {
+            result.verdict = ComparisonVerdict::Match;
+        }
+    }
+    let mut forged_manifest = manifest;
+    forged_manifest.verdict = Some(ComparisonVerdict::Match);
+    assert_eq!(
+        validate(&forged_manifest, &forged).unwrap_err().code,
+        ErrorCode::Integrity
+    );
 }

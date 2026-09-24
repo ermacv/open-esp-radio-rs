@@ -544,3 +544,13 @@ Export the result and retain its project backup to reproduce the same trace with
 source binaries. [Static trace scope and assumptions](../../next/README.md#static-observable-traces)
 define MATCH/DIFF/INCOMPLETE and the distinction from composed research and concrete
 execution.
+
+
+The implemented device workflow declares exact ports and applicability in the shared
+execution request, executes cold/warm phases, reads code and model outcomes, then
+replays the retained request after source removal or backup/restore. Sequence/FIFO
+obligations close at the declared lifetime; code return cannot turn missing model
+participation into MATCH. The [device regressions](../../next/tests/execution/devices.rs)
+cover all eight mechanisms, ownership conflicts, closure, forged records and restored
+replay. [Memory tests](../../crates/application/src/devices.rs) verify release of model
+payload/state and cancellation before response consumption.

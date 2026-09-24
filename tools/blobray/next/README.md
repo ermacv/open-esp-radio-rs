@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 23 and journal schema 24. Earlier and future
+Projects require metadata schema 24 and journal schema 25. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,9 +712,9 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 24 for every durable and read operation. Storage metadata
-uses schema 23; revision manifests use schema 1 and execution manifests use schema
-5. These are independent formats. Earlier journals are rejected by single-run,
+Run records use schema 25 for every durable and read operation. Storage metadata
+uses schema 24; revision manifests use schema 1 and execution manifests use schema
+6. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-24 run; an envelope version is not a journal
+execution 7) wrap the same schema-25 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1366,7 +1366,7 @@ claim a single mmap arena or a process-wide no-allocation guarantee.
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
 operation/query paths. No legacy engine or external limiter participates.
-Execution requests and manifests use schema 5; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
+Execution requests and manifests use schema 6; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 
 ```console
@@ -1382,7 +1382,7 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 5,
+  "schema": 6,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -1395,7 +1395,7 @@ with an exact captured occurrence):
   "cases": [{
     "name": "one-explicit-case",
     "reset": "cold",
-    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "mmio": [] },
+    "vendor": { "entry": 268435456, "goal": {"kind":"return"}, "arguments": [0, 0, 0, 0, 0, 0, 0, 0], "memory": [], "models": [] },
     "replacement": null
   }],
   "max_events": 4096,
@@ -1462,7 +1462,7 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 comparison relation still excludes final RAM itself.
 
-The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/register-bank-1` environment maps validated ELF
+The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
@@ -1475,13 +1475,53 @@ state. Changing a live mapping's owner/lifetime conflicts. A cold reset discards
 that mapping and permits a fresh declaration. Stack fill is an explicit condition;
 zero is never inferred from absent initialization.
 
-MMIO is an explicitly selected register-bank model. Each cell has `address`,
-`width` (1, 2 or 4 bytes) and `value`; a matching read returns the latest written
-value and both operations emit events. This model does not imply real hardware
-read side effects, FIFO behavior or timing. Cells must be aligned, disjoint and
-outside mapped RAM/code. Missing cells remain inaccessible; there are no implicit
-responses. This release has no external-call substitutions or pluggable device
-model registry.
+MMIO uses explicit `models` declarations. Each has a unique live `id`, caller
+`applicability` conditions, `lifetime` (`phase` or `session`) and tagged `behavior`.
+For example:
+
+```json
+{
+  "id": "status-script",
+  "applicability": "synthetic ready-on-second-read scenario",
+  "lifetime": "session",
+  "behavior": {"kind":"sequence-read","address":12288,"width":4,"values":[0,1]}
+}
+```
+
+| Behavior kind | Declared fields and exact semantics |
+| --- | --- |
+| `register-bank` | `cells` with address/width/value; reads return current values, writes replace them. |
+| `constant-read` | address/width/value; reads repeat the value, writes fail. |
+| `sequence-read` | address/width/values; each read consumes one value; exhaustion and writes fail. All values must be consumed before closure. |
+| `w1c` | address/width/initial/clear_mask/read_clear_mask; reads return the old value then clear read-clear bits; writes clear selected one bits. |
+| `read-clear` | address/width/initial/clear_mask; reads return then clear selected bits; writes fail. |
+| `self-clearing` | address/width/initial/store_mask/command_mask; writes replace store-mask bits, command bits clear immediately, other bits retain state. Masks cannot overlap and initial command bits must be clear. No timing is simulated. |
+| `fifo` | address/width/reads/writes; independent ordered input/output transcripts. Reads consume inputs; writes must match the next output. Both lists must be consumed. This is not a loopback queue service. |
+| `indexed-bank` | index_address/data_address/width/index/values; index-port accesses select/report a slot, data-port accesses read/write it. `index:null` is unknown until explicitly written; invalid indices fail. Gaps between the two ports remain unclaimed. |
+
+Widths are bytes (1, 2 or 4); values and masks must fit. Exact ports must be aligned,
+disjoint and outside mapped code/RAM/stack. Missing ports remain inaccessible;
+partial or mismatched-width accesses do not fall through to another owner. Successful
+accesses emit ordinary ordered MMIO events. Model gaps retain a memory stop plus
+`model` evidence with the explicit issue. Model declarations are assumptions, not
+accepted hardware facts or claims about real timing/peripherals. External-call
+substitution remains outside this implemented profile.
+
+Every instance retains its SHA-256 definition identity, including its id, conditions,
+lifetime and complete ordered configuration. `model` records precede the side's
+outcome and report cumulative successful reads/writes, remaining obligations, issue,
+closure and status. `open` permits warm continuation; `complete` means closed with
+no issue or remaining transcript; `incomplete` preserves failure or unmet closure
+obligations. Returning successfully with unconsumed required values cannot MATCH.
+Unused constant/register models can close complete; their zero participation is
+visible and does not prove that code touched them.
+
+Phase models close and release state after each phase. Session models retain state
+through warm phases and close before the next cold phase or operation end. Omit a
+live declaration on warm continuation; redeclaring its id conflicts, even if identical.
+An expired phase model's id/ports can be assigned anew. Both implementations own
+separate instances. A blocked warm phase performs no model accesses but still emits
+participation/closure evidence for existing instances.
 
 Every case is an explicit phase with a shared `reset` for both implementations
 and an `entry` in each invocation. Setup and action phases can select different
@@ -1489,7 +1529,7 @@ entries in the same captured address space. `cold` recreates captured images and
 discards all prior mutable state. `warm` retains writable ELF bytes and declared
 `session` RAM independently for each implementation. The first phase must be cold.
 
-Registers, stack, MMIO cells and LR reservations reset each phase. `phase` RAM and
+Registers, stack and LR reservations reset each phase; models follow their declared lifetime. `phase` RAM and
 stack buffers are released after observation serialization/comparison, before the
 next phase. Omitted phase RAM is inaccessible on the next warm phase; redeclaring
 it initializes a fresh region from its seed. Session RAM survives until a cold
@@ -1552,24 +1592,28 @@ compare RAM contents, calls or the high return register. `MATCH` applies only to
 the listed concrete scenarios, not all possible arguments or paths. `DIFF`
 retains the first differing event/return; `INCOMPLETE` retains missing execution
 obligations. Across cases, a known difference survives other incomplete coverage.
-`manifest.complete` means every phase reached its declared goal, independently of
-the verdict. Only a `returned` outcome proves the entry returned.
+`manifest.complete` means every phase reached its declared goal and all model
+obligations due at closure were met, independently of the verdict. Only a `returned` outcome proves the entry returned.
 A completed operation, including `DIFF` or `INCOMPLETE`, exits 0; admission,
 resource, integrity and execution infrastructure failures exit nonzero.
 
 All instruction loops share the admitted work/deadline control. Execute progress
 uses `table` for the case ordinal and `entry` for the last PC. Each session
-reserves metadata plus event capacity before allocation, and owns admitted byte
+reserves metadata plus event/model observation capacity before allocation, and owns admitted byte
 and initialization buffers for every region. Input ELF buffers are admitted
 separately and released after loading. Event vectors remain charged through
 comparison and serialization, then are reused or dropped with their session.
+Device configuration clones and mutable banks have separate admitted owners; phase
+closure releases them before the next phase. A sorted bounded exact-port index serves
+accesses; capacity retained for index reuse is distinct from live model state.
 No host call-stack recursion follows the analyzed program.
 
 Requests remain capped at 64 KiB, with 1–128 cases, at most 64 companions per
-target, 128 RAM seeds and 1024 MMIO cells per invocation, 2048 regions per session,
+target, 128 RAM seeds and 128 model declarations per invocation, 128 live models,
+4096 exact live ports, 4096 values per model list, 2048 regions per session,
 and 1–65536 events per implementation per case. `max_events` exhaustion is a
 resource failure with no publication; events are never silently truncated.
-Traces stream as bounded JSONL events/outcomes/comparisons into quota-owned
+Traces stream as bounded JSONL events/models/outcomes/comparisons into quota-owned
 staging. The coordinator checks the admitted recipe and stream structure before
 atomically committing the result reference and completed run. Cancellation,
 limits or corruption cannot publish partial evidence. Process-level OOM and

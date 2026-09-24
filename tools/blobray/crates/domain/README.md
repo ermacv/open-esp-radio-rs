@@ -121,7 +121,7 @@ results independently from operation completion. Their evaluation belongs to ana
 and application. Function schema 7 / policy 8 includes typed fences and outgoing tail
 inputs; display strings have no semantic authority.
 
-Concrete execution schema 5 uses bounded optional RV32 ABI words: a0–a7 followed
+Concrete execution schema 6 uses bounded optional RV32 ABI words: a0–a7 followed
 by ascending stack slots. `Invocation::entry_stack` validates placement within the
 declared stack; `register_arguments` preserves missing values as unknown. These
 are physical words, with type/variadic lowering owned by the caller.
@@ -138,3 +138,6 @@ Invocation goals distinguish return, reach-symbol and observe-call. `ExecutionSt
 lends resolved boundaries to the executor. Completed goal outcomes, premature return
 and ordinary gaps remain distinct; `ExecutionStop::completed` means the declared
 phase goal was reached. Non-return goals cannot compare return registers.
+
+
+Device declarations bind caller applicability, phase/session lifetime and every ordered configuration field to a stable content identity. Model observations separate code goals from participation and closure obligations; successful return alone cannot complete an unconsumed transcript.

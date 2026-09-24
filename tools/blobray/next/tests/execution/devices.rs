@@ -1,0 +1,648 @@
+use super::*;
+fn declaration(behavior: DeviceBehavior, lifetime: RegionLifetime) -> DeviceDeclaration {
+    DeviceDeclaration {
+        id: "fixture".into(),
+        applicability: "explicit synthetic device assumption".into(),
+        lifetime,
+        behavior,
+    }
+}
+fn request(f: &Fixture, behavior: DeviceBehavior) -> ExecutionRequest {
+    let mut r = f.request();
+    r.cases[0].vendor.arguments = vec![Some(0x3000), Some(5), Some(99)];
+    r.cases[0].vendor.models = vec![declaration(behavior, RegionLifetime::Phase)];
+    r.cases[0].replacement = Some(r.cases[0].vendor.clone());
+    r
+}
+fn read(f: &Fixture, id: &ArtifactId) -> (ExecutionManifest, Vec<ExecutionEvidence>) {
+    let result = f.read(id);
+    let manifest = serde_json::from_value(result["summary"]["manifest"].clone()).unwrap();
+    let rows = result["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| serde_json::from_value(r["value"].clone()).unwrap())
+        .collect();
+    (manifest, rows)
+}
+fn run(f: &Fixture, r: ExecutionRequest) -> (ExecutionManifest, Vec<ExecutionEvidence>) {
+    let record = f.run(r, budget());
+    assert_eq!(record.state, RunState::Completed, "{record:?}");
+    read(f, &record.execution.unwrap())
+}
+fn model(rows: &[ExecutionEvidence], phase: u32) -> &ModelObservation {
+    rows.iter()
+        .find_map(|r| match r {
+            ExecutionEvidence::Model {
+                case,
+                replacement: false,
+                observation,
+            } if *case == phase => Some(observation),
+            _ => None,
+        })
+        .unwrap()
+}
+fn stop(rows: &[ExecutionEvidence], phase: u32) -> &ExecutionStop {
+    rows.iter()
+        .find_map(|r| match r {
+            ExecutionEvidence::Outcome {
+                case,
+                replacement: false,
+                stop,
+                ..
+            } if *case == phase => Some(stop),
+            _ => None,
+        })
+        .unwrap()
+}
+#[test]
+fn all_standard_devices_have_independent_values_and_complete_participation() {
+    let cases = [
+        (
+            vec![0x00b51023, 0x00055503, 0x00008067],
+            DeviceBehavior::RegisterBank {
+                cells: vec![RegisterCell {
+                    address: 0x3000,
+                    width: 2,
+                    value: 0,
+                }],
+            },
+            0xffffabcd,
+            0xabcd,
+            1,
+            1,
+        ),
+        (
+            vec![0x00052503, 0x00008067],
+            DeviceBehavior::ConstantRead {
+                address: 0x3000,
+                width: 4,
+                value: 77,
+            },
+            5,
+            77,
+            1,
+            0,
+        ),
+        (
+            vec![0x00052283, 0x00052503, 0x00550533, 0x00008067],
+            DeviceBehavior::SequenceRead {
+                address: 0x3000,
+                width: 4,
+                values: vec![7, 9],
+            },
+            5,
+            16,
+            2,
+            0,
+        ),
+        (
+            vec![0x00b52023, 0x00052283, 0x00052503, 0x00008067],
+            DeviceBehavior::W1c {
+                address: 0x3000,
+                width: 4,
+                initial: 15,
+                clear_mask: 3,
+                read_clear_mask: 4,
+            },
+            1,
+            10,
+            2,
+            1,
+        ),
+        (
+            vec![0x00052283, 0x00052503, 0x00008067],
+            DeviceBehavior::ReadClear {
+                address: 0x3000,
+                width: 4,
+                initial: 15,
+                clear_mask: 3,
+            },
+            5,
+            12,
+            2,
+            0,
+        ),
+        (
+            vec![0x00b52023, 0x00052503, 0x00008067],
+            DeviceBehavior::SelfClearing {
+                address: 0x3000,
+                width: 4,
+                initial: 128,
+                store_mask: 3,
+                command_mask: 4,
+            },
+            5,
+            129,
+            1,
+            1,
+        ),
+        (
+            vec![
+                0x00b52023, 0x00052283, 0x00900593, 0x00b52023, 0x00052503, 0x00008067,
+            ],
+            DeviceBehavior::Fifo {
+                address: 0x3000,
+                width: 4,
+                reads: vec![7, 8],
+                writes: vec![5, 9],
+            },
+            5,
+            8,
+            2,
+            2,
+        ),
+        (
+            vec![0x00b52023, 0x00c52223, 0x00452503, 0x00008067],
+            DeviceBehavior::IndexedBank {
+                index_address: 0x3000,
+                data_address: 0x3004,
+                width: 4,
+                index: None,
+                values: vec![10, 20],
+            },
+            1,
+            99,
+            1,
+            2,
+        ),
+    ];
+    for (code, behavior, arg, expected, reads, writes) in cases {
+        let f = Fixture::new(&code);
+        let mut r = request(&f, behavior);
+        r.cases[0].vendor.arguments[1] = Some(arg);
+        r.cases[0].replacement = Some(r.cases[0].vendor.clone());
+        let identity = r.cases[0].vendor.models[0]
+            .identity(&mut || Ok(()))
+            .unwrap();
+        let (manifest, rows) = run(&f, r);
+        assert!(manifest.complete);
+        assert_eq!(manifest.verdict, Some(ComparisonVerdict::Match));
+        assert!(
+            matches!(stop(&rows, 0), ExecutionStop::Returned { low: Some(value), .. } if *value == expected)
+        );
+        let observed = model(&rows, 0);
+        assert_eq!(observed.definition, identity);
+        assert_eq!((observed.reads, observed.writes), (reads, writes));
+        assert_eq!(
+            (observed.remaining_reads, observed.remaining_writes),
+            (0, 0)
+        );
+        assert!(observed.closed);
+        assert_eq!(observed.status, ModelStatus::Complete);
+    }
+}
+#[test]
+fn unconsumed_obligations_cannot_match_a_successful_return() {
+    for behavior in [
+        DeviceBehavior::SequenceRead {
+            address: 0x3000,
+            width: 4,
+            values: vec![7, 9],
+        },
+        DeviceBehavior::Fifo {
+            address: 0x3000,
+            width: 4,
+            reads: vec![7],
+            writes: vec![5],
+        },
+    ] {
+        let f = Fixture::new(&[0x00052503, 0x00008067]);
+        let (manifest, rows) = run(&f, request(&f, behavior));
+        assert!(matches!(
+            stop(&rows, 0),
+            ExecutionStop::Returned { low: Some(7), .. }
+        ));
+        assert!(!manifest.complete);
+        assert_eq!(manifest.verdict, Some(ComparisonVerdict::Incomplete));
+        assert_eq!(model(&rows, 0).status, ModelStatus::Incomplete);
+        assert!(model(&rows, 0).remaining_reads + model(&rows, 0).remaining_writes > 0);
+    }
+}
+#[test]
+fn mismatched_and_exhausted_accesses_preserve_explicit_model_issues() {
+    for (code, behavior, issue) in [
+        (
+            vec![0x00052283, 0x00052503, 0x00008067],
+            DeviceBehavior::SequenceRead {
+                address: 0x3000,
+                width: 4,
+                values: vec![7],
+            },
+            DeviceIssue::ExhaustedReads,
+        ),
+        (
+            vec![0x00b52023, 0x00008067],
+            DeviceBehavior::ConstantRead {
+                address: 0x3000,
+                width: 4,
+                value: 7,
+            },
+            DeviceIssue::ReadOnly,
+        ),
+        (
+            vec![0x00b52023, 0x00008067],
+            DeviceBehavior::ReadClear {
+                address: 0x3000,
+                width: 4,
+                initial: 7,
+                clear_mask: 3,
+            },
+            DeviceIssue::ReadOnly,
+        ),
+        (
+            vec![0x00b52023, 0x00008067],
+            DeviceBehavior::Fifo {
+                address: 0x3000,
+                width: 4,
+                reads: vec![],
+                writes: vec![6],
+            },
+            DeviceIssue::WriteMismatch {
+                expected: 6,
+                actual: 5,
+            },
+        ),
+        (
+            vec![0x00b52023, 0x00008067],
+            DeviceBehavior::Fifo {
+                address: 0x3000,
+                width: 4,
+                reads: vec![],
+                writes: vec![],
+            },
+            DeviceIssue::UnexpectedWrite,
+        ),
+        (
+            vec![0x00452503, 0x00008067],
+            DeviceBehavior::IndexedBank {
+                index_address: 0x3000,
+                data_address: 0x3004,
+                width: 4,
+                index: None,
+                values: vec![7],
+            },
+            DeviceIssue::UnknownIndex,
+        ),
+        (
+            vec![0x00b52023, 0x00008067],
+            DeviceBehavior::IndexedBank {
+                index_address: 0x3000,
+                data_address: 0x3004,
+                width: 4,
+                index: Some(0),
+                values: vec![7],
+            },
+            DeviceIssue::IndexOutOfRange { index: 5 },
+        ),
+        (
+            vec![0x00054503, 0x00008067],
+            DeviceBehavior::W1c {
+                address: 0x3000,
+                width: 4,
+                initial: 7,
+                clear_mask: 3,
+                read_clear_mask: 0,
+            },
+            DeviceIssue::AccessWidth,
+        ),
+    ] {
+        let f = Fixture::new(&code);
+        let (manifest, rows) = run(&f, request(&f, behavior));
+        assert_eq!(manifest.verdict, Some(ComparisonVerdict::Incomplete));
+        assert!(matches!(
+            stop(&rows, 0),
+            ExecutionStop::Incomplete {
+                reason: ExecutionGap::Memory { .. },
+                ..
+            }
+        ));
+        assert_eq!(model(&rows, 0).issue, Some(issue));
+        assert_eq!(model(&rows, 0).status, ModelStatus::Incomplete);
+    }
+}
+#[test]
+fn session_sequences_stay_open_until_chain_closure_and_phase_sequences_block() {
+    for lifetime in [RegionLifetime::Session, RegionLifetime::Phase] {
+        let f = Fixture::new(&[0x00052503, 0x00008067]);
+        let mut r = request(
+            &f,
+            DeviceBehavior::SequenceRead {
+                address: 0x3000,
+                width: 4,
+                values: vec![7, 9],
+            },
+        );
+        r.cases[0].vendor.models[0].lifetime = lifetime;
+        r.cases[0].replacement = Some(r.cases[0].vendor.clone());
+        let mut next = r.cases[0].clone();
+        next.name = "continue".into();
+        next.reset = SessionReset::Warm;
+        next.vendor.models.clear();
+        next.replacement = Some(next.vendor.clone());
+        r.cases.push(next);
+        let (manifest, rows) = run(&f, r);
+        if lifetime == RegionLifetime::Session {
+            assert!(manifest.complete);
+            assert_eq!(manifest.verdict, Some(ComparisonVerdict::Match));
+            assert_eq!(model(&rows, 0).status, ModelStatus::Open);
+            assert!(!model(&rows, 0).closed);
+            assert_eq!(model(&rows, 1).status, ModelStatus::Complete);
+            assert_eq!(model(&rows, 1).reads, 2);
+            assert!(matches!(
+                stop(&rows, 1),
+                ExecutionStop::Returned { low: Some(9), .. }
+            ));
+        } else {
+            assert!(!manifest.complete);
+            assert_eq!(manifest.verdict, Some(ComparisonVerdict::Incomplete));
+            assert_eq!(model(&rows, 0).status, ModelStatus::Incomplete);
+            assert!(matches!(stop(&rows, 1), ExecutionStop::BlockedByPriorPhase));
+        }
+    }
+}
+#[test]
+fn indexed_ports_do_not_claim_the_gap_between_them() {
+    let f = Fixture::new(&[0x00452503, 0x00008067]);
+    let mut r = request(
+        &f,
+        DeviceBehavior::IndexedBank {
+            index_address: 0x3000,
+            data_address: 0x3010,
+            width: 4,
+            index: None,
+            values: vec![7],
+        },
+    );
+    r.cases[0].vendor.memory.push(ram(MemorySeed {
+        address: 0x3004,
+        length: 4,
+        fill: None,
+        bytes: 123u32.to_le_bytes().to_vec(),
+    }));
+    r.cases[0].replacement = Some(r.cases[0].vendor.clone());
+    let (manifest, rows) = run(&f, r);
+    assert_eq!(manifest.verdict, Some(ComparisonVerdict::Match));
+    assert!(matches!(
+        stop(&rows, 0),
+        ExecutionStop::Returned { low: Some(123), .. }
+    ));
+    assert_eq!((model(&rows, 0).reads, model(&rows, 0).writes), (0, 0));
+    assert!(
+        !rows
+            .iter()
+            .any(|r| matches!(r, ExecutionEvidence::Event { .. }))
+    );
+}
+
+#[test]
+fn model_identity_and_session_evidence_survive_cli_backup_and_replay() {
+    let f = Fixture::new(&[0x00052503, 0x00008067]);
+    let mut r = request(
+        &f,
+        DeviceBehavior::SequenceRead {
+            address: 0x3000,
+            width: 4,
+            values: vec![7, 9],
+        },
+    );
+    r.cases[0].vendor.models[0].lifetime = RegionLifetime::Session;
+    r.cases[0].replacement = Some(r.cases[0].vendor.clone());
+    let mut second = r.cases[0].clone();
+    second.name = "finish-sequence".into();
+    second.reset = SessionReset::Warm;
+    second.vendor.models.clear();
+    second.replacement = Some(second.vendor.clone());
+    r.cases.push(second);
+    let id = f.run(r.clone(), budget()).execution.unwrap();
+    let original = read(&f, &id);
+    let request_path = f._dir.path().join("devices.json");
+    fs::write(&request_path, serde_json::to_vec(&r).unwrap()).unwrap();
+    let compared = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args(["--format", "json", "compare", "--project"])
+        .arg(&f.project)
+        .arg("--request")
+        .arg(&request_path)
+        .args(["--limit-mode", "watchdog"])
+        .output()
+        .unwrap();
+    assert!(
+        compared.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compared.stderr)
+    );
+    let compared: serde_json::Value = serde_json::from_slice(&compared.stdout).unwrap();
+    assert_eq!(compared["run"]["execution"], id.as_str());
+    let backup = f._dir.path().join("devices.blobray");
+    let restored = f._dir.path().join("restored");
+    for (command, project, flag, path) in [
+        ("backup", &f.project, "--output", &backup),
+        ("restore", &restored, "--backup", &backup),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
+            .args([command, "--project"])
+            .arg(project)
+            .arg(flag)
+            .arg(path)
+            .args(["--limit-mode", "watchdog"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let replay = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args(["--format", "json", "replay", "--project"])
+        .arg(&restored)
+        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
+        .output()
+        .unwrap();
+    assert!(
+        replay.status.success(),
+        "{}",
+        String::from_utf8_lossy(&replay.stderr)
+    );
+    let replay: serde_json::Value = serde_json::from_slice(&replay.stdout).unwrap();
+    assert_eq!(replay["run"]["execution"], id.as_str());
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args(["--format", "json", "execution", "--project"])
+        .arg(&restored)
+        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let output: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let saved: ExecutionManifest =
+        serde_json::from_value(output["summary"]["manifest"].clone()).unwrap();
+    let rows: Vec<ExecutionEvidence> = output["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| serde_json::from_value(r["value"].clone()).unwrap())
+        .collect();
+    assert_eq!((saved, rows), original);
+    if let DeviceBehavior::SequenceRead { values, .. } =
+        &mut r.cases[0].replacement.as_mut().unwrap().models[0].behavior
+    {
+        values[1] = 10;
+    }
+    let (manifest, _) = run(&f, r);
+    assert!(manifest.complete);
+    assert_eq!(manifest.verdict, Some(ComparisonVerdict::Diff));
+}
+#[test]
+fn cold_closure_is_explicit_and_expired_ports_can_become_ram() {
+    let f = Fixture::new(&[0x00052503, 0x00008067]);
+    let mut r = request(
+        &f,
+        DeviceBehavior::SequenceRead {
+            address: 0x3000,
+            width: 4,
+            values: vec![7],
+        },
+    );
+    r.cases[0].vendor.models[0].lifetime = RegionLifetime::Session;
+    r.cases[0].replacement = Some(r.cases[0].vendor.clone());
+    let mut second = r.cases[0].clone();
+    second.name = "new-cold-device".into();
+    second.vendor.models[0].behavior = DeviceBehavior::ConstantRead {
+        address: 0x3000,
+        width: 4,
+        value: 42,
+    };
+    second.replacement = Some(second.vendor.clone());
+    r.cases.push(second);
+    let (manifest, rows) = run(&f, r);
+    assert_eq!(manifest.verdict, Some(ComparisonVerdict::Match));
+    assert!(model(&rows, 0).closed && model(&rows, 1).closed);
+    assert_ne!(model(&rows, 0).definition, model(&rows, 1).definition);
+    assert!(matches!(
+        stop(&rows, 1),
+        ExecutionStop::Returned { low: Some(42), .. }
+    ));
+    let mut r = request(
+        &f,
+        DeviceBehavior::ConstantRead {
+            address: 0x3000,
+            width: 4,
+            value: 7,
+        },
+    );
+    let mut second = r.cases[0].clone();
+    second.reset = SessionReset::Warm;
+    second.vendor.models.clear();
+    second.vendor.memory.push(ram(MemorySeed {
+        address: 0x3000,
+        length: 4,
+        fill: None,
+        bytes: 42u32.to_le_bytes().to_vec(),
+    }));
+    second.replacement = Some(second.vendor.clone());
+    r.cases.push(second);
+    let (manifest, rows) = run(&f, r);
+    assert_eq!(manifest.verdict, Some(ComparisonVerdict::Match));
+    assert!(matches!(
+        stop(&rows, 1),
+        ExecutionStop::Returned { low: Some(42), .. }
+    ));
+}
+#[test]
+fn invalid_declarations_and_live_ownership_conflicts_publish_nothing() {
+    let f = Fixture::new(&[0x00008067]);
+    let behavior = DeviceBehavior::ConstantRead {
+        address: 0x3000,
+        width: 4,
+        value: 7,
+    };
+    let prior = f
+        .run(request(&f, behavior.clone()), budget())
+        .execution
+        .unwrap();
+    for bad in [
+        DeviceBehavior::ConstantRead {
+            address: 0x3000,
+            width: 3,
+            value: 7,
+        },
+        DeviceBehavior::ConstantRead {
+            address: 0x3000,
+            width: 1,
+            value: 256,
+        },
+        DeviceBehavior::ConstantRead {
+            address: u32::MAX,
+            width: 1,
+            value: 7,
+        },
+        DeviceBehavior::SequenceRead {
+            address: 0x3000,
+            width: 4,
+            values: vec![],
+        },
+        DeviceBehavior::SelfClearing {
+            address: 0x3000,
+            width: 4,
+            initial: 0,
+            store_mask: 3,
+            command_mask: 1,
+        },
+        DeviceBehavior::IndexedBank {
+            index_address: 0x3000,
+            data_address: 0x3004,
+            width: 1,
+            index: None,
+            values: vec![0; 257],
+        },
+    ] {
+        match f.app.start_execution(
+            &f.project,
+            request(&f, bad),
+            &blobray_backend_riscv::RiscvExecutor,
+            budget(),
+        ) {
+            Ok(_) => panic!("invalid model admitted"),
+            Err(error) => assert_eq!(error.code, ErrorCode::InvalidRequest),
+        }
+    }
+    for which in 0..4 {
+        let mut r = request(&f, behavior.clone());
+        match which {
+            0 => {
+                let mut other = r.cases[0].vendor.models[0].clone();
+                other.id = "other".into();
+                r.cases[0].vendor.models.push(other);
+            }
+            1 => {
+                r.cases[0].vendor.models[0].behavior = DeviceBehavior::ConstantRead {
+                    address: 0x8000,
+                    width: 4,
+                    value: 7,
+                }
+            }
+            2 | 3 => {
+                r.cases[0].vendor.models[0].lifetime = RegionLifetime::Session;
+                r.cases[0].replacement = Some(r.cases[0].vendor.clone());
+                let mut second = r.cases[0].clone();
+                second.reset = SessionReset::Warm;
+                if which == 3 {
+                    second.vendor.models.clear();
+                    second.vendor.memory.push(ram(MemorySeed {
+                        address: 0x3000,
+                        length: 4,
+                        fill: Some(0),
+                        bytes: vec![],
+                    }));
+                }
+                second.replacement = Some(second.vendor.clone());
+                r.cases.push(second);
+            }
+            _ => unreachable!(),
+        }
+        let failed = f.run(r, budget());
+        assert_eq!(failed.error.unwrap().code, ErrorCode::Conflict);
+        assert!(failed.execution.is_none());
+    }
+    assert_eq!(read(&f, &prior).0.verdict, Some(ComparisonVerdict::Match));
+}

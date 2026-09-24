@@ -454,3 +454,6 @@ pub use event_route::*;
 
 mod trace;
 pub use trace::*;
+
+mod device;
+pub use device::*;

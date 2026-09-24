@@ -206,13 +206,17 @@ fn phase_release_drops_stack_and_temporary_ram_but_preserves_session_ram() {
     .unwrap();
     assert!(memory.observation().reserved_bytes > initial + 65536);
     s.write(0x1000, 4, 77, &mut || Ok(())).unwrap();
-    let observation = s.observation(
-        ExecutionStop::Returned {
-            low: None,
-            high: None,
-        },
-        0,
-    );
+    let observation = s
+        .observation(
+            ExecutionStop::Returned {
+                low: None,
+                high: None,
+            },
+            0,
+            true,
+            &mut || Ok(()),
+        )
+        .unwrap();
     s.recycle(observation);
     assert_eq!(memory.observation().reserved_bytes, initial);
     assert_eq!(

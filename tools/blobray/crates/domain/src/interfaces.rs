@@ -1,32 +1,10 @@
 //! Reviewed interface declarations. These are conditional contracts, not runtime facts.
 use crate::*;
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum InterfaceRoot {
-    /// Physical section location, including captured data with no symbol.
-    Section { section: u32, offset: u64 },
-    /// Physical symbol address; dereferencing stored pointer bytes is a path step.
-    Symbol { symbol: SymbolId, addend: i64 },
-    /// Argument of this exact captured function, never a name-based lookup.
-    FunctionArgument {
-        function: FunctionSelector,
-        argument: u8,
-    },
-    /// Literal RV32 address scoped by the occurrence; not a file/section offset or host pointer.
-    Address { address: u32 },
-}
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum InterfaceStep {
-    Offset { bytes: i32 },
-    LoadPointer { offset: i32 },
-    Index { argument: u8, stride: u32 },
-}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InterfaceIndexDomain {
-    pub argument: u8,
+    pub word: u8,
     /// Inclusive bounds are declared preconditions, not inferred runtime values.
     pub min: u32,
     pub max: u32,
@@ -59,8 +37,8 @@ pub struct InterfaceSlot {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InterfaceContract {
-    pub root: InterfaceRoot,
-    pub path: Vec<InterfaceStep>,
+    pub root: AccessRoot,
+    pub path: Vec<AccessStep>,
     pub layout_version: String,
     pub layout_bytes: u32,
     pub pointer_bytes: u8,
@@ -74,7 +52,7 @@ pub struct InterfaceContract {
 impl InterfaceContract {
     /// Variable storage of this declaration; the owning claim accounts for its Box.
     pub fn allocated_bytes(&self) -> u64 {
-        let mut bytes = (self.path.capacity() * std::mem::size_of::<InterfaceStep>()
+        let mut bytes = (self.path.capacity() * std::mem::size_of::<AccessStep>()
             + self.index_domains.capacity() * std::mem::size_of::<InterfaceIndexDomain>()
             + self.guards.capacity() * std::mem::size_of::<InterfaceGuard>()
             + self.slots.capacity() * std::mem::size_of::<InterfaceSlot>()
@@ -82,11 +60,9 @@ impl InterfaceContract {
             + self.purpose.capacity()
             + self.applicability.capacity()) as u64;
         bytes += match &self.root {
-            InterfaceRoot::Symbol { symbol, .. } => symbol.object.artifact.allocated_bytes(),
-            InterfaceRoot::FunctionArgument { function, .. } => {
-                function.object().artifact.allocated_bytes()
-            }
-            InterfaceRoot::Address { .. } | InterfaceRoot::Section { .. } => 0,
+            AccessRoot::Symbol { symbol, .. } => symbol.object.artifact.allocated_bytes(),
+            AccessRoot::EntryWord { function, .. } => function.object().artifact.allocated_bytes(),
+            AccessRoot::Address { .. } | AccessRoot::Section { .. } => 0,
         };
         for domain in &self.index_domains {
             bytes += domain.reason.capacity() as u64;
@@ -118,7 +94,7 @@ impl InterfaceContract {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum InterfaceInput {
-    /// Inspect saved facts only; ABI is an explicit assumption for argument roots.
+    /// Inspect saved facts only; ABI is an explicit assumption for word roots.
     Analysis {
         analysis: FunctionAnalysisId,
         abi: Option<CallAbi>,
@@ -139,26 +115,9 @@ pub struct InterfaceQuery {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InterfaceAccessPath {
-    pub root: InterfaceRoot,
-    pub path: Vec<InterfaceStep>,
+    pub root: AccessRoot,
+    pub path: Vec<AccessStep>,
     pub slot: u32,
-}
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum InterfaceIssue {
-    MissingCallInputs,
-    UnknownValue,
-    UnsupportedExpression,
-    UnmodeledCallResult,
-    AbiRequired,
-    UnsupportedArgument,
-    NonPointerLoad,
-    PathLimit,
-    OffsetOutOfRange,
-    NonzeroCallDisplacement,
-    NoPointerPath,
-    ForeignOccurrence,
-    UnresolvedPointer,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -186,7 +145,7 @@ pub struct InterfaceObservation {
     pub paths: Vec<InterfaceAccessPath>,
     pub target: Option<AbstractValue>,
     pub pointer: Option<PointerValue>,
-    pub issue: Option<InterfaceIssue>,
+    pub issue: Option<AccessIssue>,
     /// Candidates retain review state; no candidate executes a model or callee.
     pub bindings: Vec<InterfaceBinding>,
 }

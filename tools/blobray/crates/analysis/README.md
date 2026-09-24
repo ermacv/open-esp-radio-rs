@@ -52,3 +52,7 @@ silently removes an unknown callee stack possibility or chooses one callback.
 physical root/path/slot keys. It retains bounded alternative paths and explicit
 unsupported/missing-provenance issues, with admitted per-query indexes. It neither
 loads knowledge nor chooses an accepted binding; application owns those decisions.
+
+Saved navigation indexes one flat function record stream and interprets calls and
+physical access paths without storage, linking or binding authority. Cycles are
+reported as structural edges; unknown addresses remain explicit.

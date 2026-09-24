@@ -72,10 +72,10 @@ fn validate_evidence(
                         }
                     }
                     match &contract.root {
-                        InterfaceRoot::Symbol { symbol, .. } => {
+                        AccessRoot::Symbol { symbol, .. } => {
                             object.validate_data_symbol(&occurrence.object, symbol)?
                         }
-                        InterfaceRoot::FunctionArgument { function, .. } => {
+                        AccessRoot::EntryWord { function, .. } => {
                             let request = FunctionRequest {
                                 research: None,
                                 revision: Some(occurrence.revision.clone()),
@@ -85,10 +85,10 @@ fn validate_evidence(
                             };
                             object.with_function(&request, c, |_, _| Ok(()))?;
                         }
-                        InterfaceRoot::Section { section, offset } => {
+                        AccessRoot::Section { section, offset } => {
                             object.validate_section_root(*section, *offset)?
                         }
-                        InterfaceRoot::Address { .. } => (),
+                        AccessRoot::Address { .. } => (),
                     }
                     Ok(())
                 })?;

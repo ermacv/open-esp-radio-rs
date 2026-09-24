@@ -285,3 +285,16 @@ impl DataLayout {
         }
     }
 }
+
+/// A physical object span; absent file backing (e.g. NOBITS) never invents bytes.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DataLocation {
+    pub selector: DataSelector,
+    pub section: u32,
+    pub section_range: CodeRange,
+    pub file_range: Option<CodeRange>,
+    pub image_address: Option<u64>,
+    /// ELF section flag only; not a claim about runtime memory permissions.
+    pub section_writable: bool,
+}

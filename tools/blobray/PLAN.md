@@ -182,7 +182,7 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stages 00–03 are complete. Stage 04.1 is complete; stage 04.2 is ready with the partitions below.
+Stages 00–03 are complete. Stages 04.1–04.2 are complete; stage 04.3 is ready with the partitions below.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
 interface review/discovery, ambiguous bindings and authenticated ROM query/export
 reopening. All standalone Next packages/tests, Clippy, formatting and affected
@@ -289,8 +289,8 @@ scenarios; do not import legacy packs or add a second resolver:
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
 | 04.1 | done | Physical function signature/context declaration → validate/propose/review → query/export/source-free reopening. Share call ABI vocabulary with interfaces. Argument/return roles, context extents/fields/access roles and explicit preconditions remain conditional claims. Bad selectors, field bounds/types, contradictory preconditions and conflicting accepted contracts fail without publication; symbol/range, ordinary/thin/image and resource regressions pass. |
-| 04.2 | ready | Shared saved-research navigation for functions/callers/callees, data-object readers/writers and context-field accesses. Explicit selected analyses/publications/knowledge, bounded operation indexes, physical selectors and evidence references; ambiguous/unresolved targets remain visible, cycles terminate, no hidden analysis. CLI/API/export/reopen agree on synthetic and real queries. |
-| 04.3 | pending | Flow/effect slices and reviewed paths/event routes: selector delivery, static callback registration/delivery and broker subscription with exact participants, sites, fields/selectors and evidence. Structural paths, conditional reviewed routes and executable evidence remain distinct. Missing/ambiguous/mismatched steps, cycles and bounds cannot claim completion; complete query/review/export/reopen scenarios close the remaining stage 04 obligations. Runtime replay remains a later execution consumer, never synthesized by navigation. |
+| 04.2 | done | Shared saved-research navigation for functions/callers/callees, data-object readers/writers and context-field accesses. Explicit selected analyses/publications/knowledge, bounded operation indexes, physical selectors and evidence references; ambiguous/unresolved targets remain visible, cycles terminate, no hidden analysis. CLI/API/export/reopen agree on synthetic and real queries. |
+| 04.3 | ready | Flow/effect slices and reviewed paths/event routes: selector delivery, static callback registration/delivery and broker subscription with exact participants, sites, fields/selectors and evidence. Structural paths, conditional reviewed routes and executable evidence remain distinct. Missing/ambiguous/mismatched steps, cycles and bounds cannot claim completion; complete query/review/export/reopen scenarios close the remaining stage 04 obligations. Runtime replay remains a later execution consumer, never synthesized by navigation. |
 
 
 Stage 04.1 acceptance is covered by knowledge `functions::tests`, the Next
@@ -300,3 +300,12 @@ Affected package tests, Clippy, formatting and public/private docs pass. Review
 preserves analysis identity; resource/conflict failures preserve the selected base.
 Saved fact loading in research and interface discovery shares the same scoped
 JSON decoding envelope and admitted record owner.
+
+
+Stage 04.2 acceptance is covered by shared navigation CLI/API regressions for
+linked calls, NOBITS ranges, known/unknown context signatures and incoming stack
+words; application cycle/ambiguity/foreign-occurrence tests; domain ABI placement;
+store dependency-read reuse/corruption/lifetime checks. Affected tests, Clippy,
+formatting, public/private docs and standalone extraction pass. The authenticated
+PHY scenario checks 45 encode, 44 fill and three saturation saved calls and
+byte-identical restored navigation exports with explicit watchdog limits.

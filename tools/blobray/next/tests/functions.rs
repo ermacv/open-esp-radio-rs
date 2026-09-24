@@ -971,3 +971,6 @@ mod ranges;
 
 #[path = "functions/contracts.rs"]
 mod contracts;
+
+#[path = "functions/navigation.rs"]
+mod navigation;

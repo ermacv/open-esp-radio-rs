@@ -35,13 +35,13 @@ impl PreparedObject<'_, '_> {
         Ok(())
     }
 
-    pub fn with_data<T>(
+    /// Resolve an exact physical span, including NOBITS, without materializing bytes.
+    pub fn data_location(
         &mut self,
         occurrence: &ObjectId,
         selector: &DataSelector,
         control: &mut dyn RunControl,
-        consume: impl FnOnce(DataView<'_>, &mut dyn RunControl) -> Result<T>,
-    ) -> Result<T> {
+    ) -> Result<DataLocation> {
         if self.occurrence.as_ref().is_some_and(|id| id != occurrence) {
             return Err(invalid("prepared data belongs to another occurrence"));
         }
@@ -109,12 +109,56 @@ impl PreparedObject<'_, '_> {
             .checked_add(length)
             .filter(|end| *end <= section.size())
             .ok_or_else(|| invalid("data range exceeds section"))?;
-        let (file_offset, file_length) = section
-            .file_range()
+        let file_range = if let Some((file_offset, file_length)) = section.file_range() {
+            if end > file_length {
+                return Err(invalid("data range exceeds file backing"));
+            }
+            Some(CodeRange {
+                start: file_offset
+                    .checked_add(offset)
+                    .ok_or_else(|| invalid("file range overflow"))?,
+                length,
+            })
+        } else {
+            None
+        };
+        let allocated = matches!(section.flags(), object::SectionFlags::Elf { sh_flags } if sh_flags & u64::from(object::elf::SHF_ALLOC) != 0);
+        Ok(DataLocation {
+            selector: selector.clone(),
+            section: index.0 as u32,
+            section_range: CodeRange {
+                start: offset,
+                length,
+            },
+            file_range,
+            image_address: if self.file.kind() == object::ObjectKind::Executable && allocated {
+                Some(
+                    section
+                        .address()
+                        .checked_add(offset)
+                        .ok_or_else(|| invalid("data address overflow"))?,
+                )
+            } else {
+                None
+            },
+            section_writable: matches!(section.flags(), object::SectionFlags::Elf { sh_flags } if sh_flags & u64::from(object::elf::SHF_WRITE) != 0),
+        })
+    }
+    pub fn with_data<T>(
+        &mut self,
+        occurrence: &ObjectId,
+        selector: &DataSelector,
+        control: &mut dyn RunControl,
+        consume: impl FnOnce(DataView<'_>, &mut dyn RunControl) -> Result<T>,
+    ) -> Result<T> {
+        let location = self.data_location(occurrence, selector, control)?;
+        let index = object::SectionIndex(location.section as usize);
+        let offset = location.section_range.start;
+        let length = location.section_range.length;
+        let end = offset + length; // Checked by data_location.
+        let file_range = location
+            .file_range
             .ok_or_else(|| invalid("data has no captured file bytes (NOBITS)"))?;
-        if end > file_length {
-            return Err(invalid("data range exceeds file backing"));
-        }
         self.prepare_section(index, occurrence, control)?;
         let section = self.file.section_by_index(index).map_err(parse)?;
         let data = section.data().map_err(parse)?;
@@ -124,9 +168,7 @@ impl PreparedObject<'_, '_> {
                     ..usize::try_from(end).map_err(|_| invalid("data end overflow"))?,
             )
             .ok_or_else(|| invalid("missing data bytes"))?;
-        let file_start = file_offset
-            .checked_add(offset)
-            .ok_or_else(|| invalid("file range overflow"))?;
+        let file_start = file_range.start;
         let prepared = self.sections[index.0].as_ref().unwrap();
         let allocated = matches!(section.flags(), object::SectionFlags::Elf { sh_flags } if sh_flags & u64::from(object::elf::SHF_ALLOC) != 0);
         let mut writable = matches!(section.flags(), object::SectionFlags::Elf { sh_flags } if sh_flags & u64::from(object::elf::SHF_WRITE) != 0);

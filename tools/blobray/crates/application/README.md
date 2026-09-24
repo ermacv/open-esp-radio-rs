@@ -230,3 +230,8 @@ span plus an explicit knowledge revision. It owns one admitted record/object vie
 and one sorted path/slot binding index. It exposes every matching review state and
 unverified runtime condition without hidden analysis, callee selection or model
 execution. CLI and API share this query; JSON export retains reference identities.
+
+`ReadQuery::Navigate` owns explicit publication/analysis/knowledge selection,
+operation-local physical indexes, context argument mapping and streamed evidence.
+It releases each function record owner before reading the next; shared dependency
+handles belong to one store reader. Navigation never starts analysis implicitly.

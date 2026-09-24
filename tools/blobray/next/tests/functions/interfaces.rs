@@ -1,5 +1,5 @@
 use super::*;
-fn declaration(root: InterfaceRoot, payload: ArtifactId) -> InterfaceContract {
+fn declaration(root: AccessRoot, payload: ArtifactId) -> InterfaceContract {
     InterfaceContract {
         root,
         path: vec![],
@@ -72,19 +72,19 @@ fn native_interface_roots_validate_review_and_export_without_sources() {
                 panic!()
             };
             let root = match kind {
-                0 => InterfaceRoot::Symbol {
+                0 => AccessRoot::Symbol {
                     symbol: symbol.clone(),
                     addend: 0,
                 },
-                1 => InterfaceRoot::FunctionArgument {
+                1 => AccessRoot::EntryWord {
                     function: f.request.selector.clone(),
-                    argument: 0,
+                    word: 0,
                 },
-                2 => InterfaceRoot::Address { address: 0x1000 },
+                2 => AccessRoot::Address { address: 0x1000 },
                 _ => {
                     use object::{Object as _, ObjectSection as _};
                     let elf = object::File::parse(bytes.as_slice()).unwrap();
-                    InterfaceRoot::FunctionArgument {
+                    AccessRoot::EntryWord {
                         function: FunctionSelector::Range {
                             object: f.request.selector.object().clone(),
                             section: elf.section_by_name(".text.entry").unwrap().index().0 as u32,
@@ -93,7 +93,7 @@ fn native_interface_roots_validate_review_and_export_without_sources() {
                                 length: 8,
                             },
                         },
-                        argument: 0,
+                        word: 0,
                     }
                 }
             };
@@ -122,7 +122,7 @@ fn native_interface_roots_validate_review_and_export_without_sources() {
                 let KnowledgeClaim::Interface { contract } = &mut bad.claim else {
                     panic!()
                 };
-                let InterfaceRoot::Symbol { symbol, .. } = &mut contract.root else {
+                let AccessRoot::Symbol { symbol, .. } = &mut contract.root else {
                     panic!()
                 };
                 symbol.index = u64::MAX;
@@ -131,7 +131,7 @@ fn native_interface_roots_validate_review_and_export_without_sources() {
                 let KnowledgeClaim::Interface { contract } = &mut bad.claim else {
                     panic!()
                 };
-                let InterfaceRoot::FunctionArgument {
+                let AccessRoot::EntryWord {
                     function: FunctionSelector::Symbol { symbol },
                     ..
                 } = &mut contract.root
@@ -319,12 +319,12 @@ fn saved_callback_discovery_review_states_guards_and_export_share_one_query_cont
             serde_json::from_value(observed["paths"][0].clone()).unwrap();
         assert_eq!(
             path.root,
-            InterfaceRoot::FunctionArgument {
+            AccessRoot::EntryWord {
                 function: f.request.selector.clone(),
-                argument: 0
+                word: 0
             }
         );
-        assert_eq!(path.path, [InterfaceStep::LoadPointer { offset: 0 }]);
+        assert_eq!(path.path, [AccessStep::LoadPointer { offset: 0 }]);
         assert_eq!(path.slot, 8);
         let mut contract = declaration(path.root, payload);
         contract.path = path.path;
@@ -482,10 +482,7 @@ fn captured_symbol_less_pointer_slots_match_only_selected_structural_declaration
     };
     let raw = observe(&f, &request);
     assert_eq!(raw["records"].as_array().unwrap().len(), 4);
-    let mut contract = declaration(
-        InterfaceRoot::Section { section, offset: 0 },
-        payload.clone(),
-    );
+    let mut contract = declaration(AccessRoot::Section { section, offset: 0 }, payload.clone());
     contract.slots[0].signature = None;
     contract.slots[0].semantic = None;
     let proposal = KnowledgeProposal {
@@ -552,8 +549,8 @@ fn finite_table_roots_keep_both_accepted_bindings_without_selecting_a_callee() {
     let paths: Vec<InterfaceAccessPath> =
         serde_json::from_value(observation["paths"].clone()).unwrap();
     assert_eq!(paths.len(), 2, "{initial}");
-    assert_eq!(paths[0].root, InterfaceRoot::Address { address: 0x1008 });
-    assert_eq!(paths[1].root, InterfaceRoot::Address { address: 0x2008 });
+    assert_eq!(paths[0].root, AccessRoot::Address { address: 0x1008 });
+    assert_eq!(paths[1].root, AccessRoot::Address { address: 0x2008 });
     for (i, path) in paths.into_iter().enumerate() {
         let mut contract = declaration(path.root, payload.clone());
         contract.path = path.path;

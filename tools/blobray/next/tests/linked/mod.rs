@@ -1958,7 +1958,7 @@ fn image_interface_data_roots_use_the_same_physical_validation_during_review() {
         let KnowledgeClaim::Interface { contract } = &mut bad.claim else {
             panic!()
         };
-        let InterfaceRoot::Symbol { symbol, .. } = &mut contract.root else {
+        let AccessRoot::Symbol { symbol, .. } = &mut contract.root else {
             panic!()
         };
         match which {
@@ -2147,3 +2147,5 @@ fn image_function_contracts_reject_data_symbols_and_preserve_review_after_source
         );
     }
 }
+
+mod navigation;

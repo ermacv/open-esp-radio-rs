@@ -18,6 +18,7 @@ mod legacy;
 pub use legacy::LegacyRequest;
 mod interfaces;
 mod knowledge;
+mod navigation;
 pub use knowledge::{KnowledgeWork, prepare_knowledge_worker};
 mod companions;
 mod execution;

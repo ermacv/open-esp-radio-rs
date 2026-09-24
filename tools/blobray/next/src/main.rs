@@ -107,6 +107,17 @@ enum KnowledgeCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Navigate explicitly selected saved functions, calls, object accesses and context fields.
+    Navigate {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        request: PathBuf,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[command(flatten)]
+        limits: ResourceOptions,
+    },
     /// Discover captured pointer slots or saved indirect-call paths with explicit review selection.
     Interfaces {
         #[arg(long)]
@@ -850,6 +861,22 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 ),
                 Format::Human => println!("Project preserved at {}", project.display()),
             }
+        }
+        Command::Navigate {
+            project,
+            request,
+            output,
+            limits,
+        } => {
+            return read_query_output(
+                project,
+                ReadQuery::Navigate {
+                    request: read_json_file(&request)?,
+                },
+                limits,
+                format,
+                output,
+            );
         }
         Command::Interfaces {
             project,

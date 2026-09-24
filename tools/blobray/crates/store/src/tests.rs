@@ -764,6 +764,55 @@ fn check_function_publication(decoding: bool) {
             .manifest,
         manifest
     );
+
+    let memory = WorkingMemory::new(1024 * 1024).unwrap();
+    let mut reader = reopened.analysis_reader(&memory);
+    let id = record.analysis.as_ref().unwrap();
+    reader.analysis(id, &mut || Ok(())).unwrap();
+    assert!(memory.used() > 0);
+    // Dependency handles belong only to this reader, never to the returned lease.
+    let used = memory.used();
+    struct Bytes(u64);
+    impl RunControl for Bytes {
+        fn checkpoint(&mut self, _: u64) -> Result<()> {
+            Ok(())
+        }
+        fn bytes(&mut self, n: usize) -> Result<()> {
+            self.0 += n as u64;
+            Ok(())
+        }
+    }
+    let mut cached = Bytes(0);
+    let mut fresh = Bytes(0);
+    reader.analysis(id, &mut cached).unwrap();
+    reopened.analysis(id, &mut fresh).unwrap();
+    let root_size = reopened
+        .open_payload(
+            &manifest.recipe.revision.as_str().parse().unwrap(),
+            &mut || Ok(()),
+        )
+        .unwrap()
+        .len();
+    assert_eq!(
+        fresh.0 - cached.0,
+        2 * root_size,
+        "shared revision is neither re-read nor re-hashed"
+    );
+    assert_eq!(memory.used(), used);
+    // A cached revision must not hide subsequent corruption of function facts.
+    std::fs::write(
+        reopened
+            .root
+            .join("objects")
+            .join(manifest.records.as_str()),
+        b"corrupt",
+    )
+    .unwrap();
+    assert!(
+        matches!(reader.analysis(id, &mut || Ok(())), Err(e) if e.code == ErrorCode::Integrity)
+    );
+    drop(reader);
+    assert_eq!(memory.used(), 0);
 }
 
 fn staged_investigation(

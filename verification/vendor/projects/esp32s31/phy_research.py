@@ -171,6 +171,28 @@ for sample in range(3):
         assert 0 < phases[phase]["peak_reserved_bytes"] <= 256 * 1024 * 1024
     phase_samples.append({k: phases[k] for k in ("load_research", "compose_research")})
 (run / "linked-phase-measurements.json").write_text(json.dumps(phase_samples, indent=2))
+
+# Navigate exactly the saved linked root and its selected physical callees.
+# No whole-project implicit scope, linking or research is allowed in this read.
+nav_request = {"scope": {"revision": revision, "publications": [],
+    "analyses": [linked_analysis, *callees.values()], "knowledge": None},
+    "filter": {"kind": "functions", "function": None}}
+nav_functions = call("navigation-functions", ["navigate", "--request", doc("navigation-functions", nav_request)])
+nav_root = next(r["value"]["function"]["location"] for r in nav_functions["records"]
+    if r["value"]["kind"] == "function" and r["value"]["function"]["analysis"] == linked_analysis)
+assert nav_functions["summary"]["summary"]["selected_analyses"] == 4
+assert nav_functions["summary"]["summary"]["analyses_read"] == 0
+nav_request["filter"] = {"kind": "calls", "function": nav_root, "direction": "callees"}
+nav_calls = call("navigation-calls", ["navigate", "--request", doc("navigation-calls", nav_request)])
+nav_rows = [r["value"] for r in nav_calls["records"] if r["value"]["kind"] == "call"]
+assert nav_calls["summary"]["summary"]["analyses_read"] == 4
+for name, count in (("phy_encode_i2c_master",45), ("phy_i2c_master_fill",44), ("phy_get_data_sat",3)):
+    matched = [r for r in nav_rows if r["saved_resolution"] == callees[name]]
+    assert len(matched) == count
+    assert all(r["focus_match"] and any(c["analysis"] == callees[name] for c in r["candidates"]) for r in matched)
+    assert all(linked_facts[r["record"]]["offset"] == r["offset"] for r in matched)
+call("save-navigation", ["navigate", "--request", doc("navigation-export", nav_request),
+    "--output", str(run / "navigation-export.json")])
 usage = call("storage-usage", ["storage-usage"])
 assert usage["summary"]["usage"]["cas"]["logical_bytes"] > 0
 assert not usage["summary"]["usage"]["reachability_assessed"]
@@ -567,3 +589,8 @@ assert call("restored-interfaces", ["interfaces", "--request", doc("restored-int
 call("export-restored-callback", ["interfaces", "--request", doc("restored-interface-export", callback_query),
     "--output", str(run / "restored-interface-export.json")])
 assert (run / "callback-export.json").read_bytes() == (run / "restored-interface-export.json").read_bytes()
+
+assert call("restored-navigation", ["navigate", "--request", doc("restored-navigation", nav_request)]) == nav_calls
+call("save-restored-navigation", ["navigate", "--request", doc("restored-navigation-export", nav_request),
+    "--output", str(run / "restored-navigation-export.json")])
+assert (run / "navigation-export.json").read_bytes() == (run / "restored-navigation-export.json").read_bytes()

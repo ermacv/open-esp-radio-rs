@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 14 and journal schema 15. Earlier and future
+Projects require metadata schema 15 and journal schema 16. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,8 +712,8 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 15 for every durable and read operation. Storage metadata
-uses schema 14; revision manifests use schema 1 and execution manifests use schema
+Run records use schema 16 for every durable and read operation. Storage metadata
+uses schema 15; revision manifests use schema 1 and execution manifests use schema
 1. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-15 run; an envelope version is not a journal
+execution 7) wrap the same schema-16 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1701,15 +1701,16 @@ occurrence checks apply. Example `claim` within a `KnowledgeChange` proposal:
 ```
 
 Roots can instead be `symbol` with a physical `SymbolId` and signed `addend`, or
-`function-argument` with an exact `FunctionSelector` and zero-based `argument`,
+`entry-word` with an exact `FunctionSelector` and zero-based physical ABI `word`,
 or `section` with a physical section index and byte offset.
 Symbol-less function ranges are valid argument contexts. An address root is a
 literal RV32 address scoped by the occurrence, not an offset into the ELF file.
 Paths contain explicit `offset`, `load-pointer` and `index` steps. Each index
-names an argument and byte stride and requires a unique inclusive `min`/`max`
+names an incoming ABI word and byte stride and requires a unique inclusive `min`/`max`
 domain with a reason. Domains are declared caller preconditions, not inferred
-values. Argument positions 0..31 can be declared; this does not assert execution
-support for all stack arguments or signatures.
+values. Word positions 0..63 can be declared: 0..7 are a0..a7, and 8 starts at entry SP.
+They are not logical signature argument ordinals. This does not assert execution
+support for stack arguments or signatures.
 
 The declaration profile has four-byte pointers, aligned nonoverlapping slots,
 RV32 integer ABI, nonvariadic signatures, 8/16/32/64-bit integers, pointers and a
@@ -1753,9 +1754,9 @@ root. Captured pointer contents do not assert function boundaries or live values
 
 Analysis discovery reads retained instructions, call inputs and expression facts,
 including calls in ET_REL objects. It never schedules analysis or linking. Paths
-retain literal/section/symbol/function-argument roots, dereferences, byte offsets,
-bounded scaled argument indices and the final pointer slot. The current argument
-profile requires an explicit integer ABI and supports entry registers a0..a7.
+retain literal/section/symbol/entry-word roots, dereferences, byte offsets,
+bounded scaled entry-register indices and the final pointer slot. The profile
+requires an explicit integer ABI for a0..a7 and four-byte incoming stack-word loads.
 Missing facts, unsupported expressions, call results, non-pointer loads and path
 bounds produce explicit issues. A known or finite call destination can lack a
 retained pointer-load expression: `no-pointer-path` retains that target and does
@@ -1839,3 +1840,61 @@ Acceptance preserves a conditional interpretation and its evidence. It neither
 changes saved analysis facts nor marks preconditions as observed. Explicit-revision
 knowledge queries/exports work after removal of source archives and image inputs;
 project backup is still required for the complete retained evidence closure.
+
+
+### Navigation over saved research
+
+`navigate --request query.json [--output observations.json]` reads an explicit
+selection and optionally exports the same JSON to a new file atomically. Example:
+
+```json
+{
+  "scope": {
+    "revision": "<source-revision>",
+    "publications": ["<publication-id>"],
+    "analyses": [],
+    "knowledge": null
+  },
+  "filter": {"kind": "functions", "function": null}
+}
+```
+
+Copy a returned `function.location` into the optional `function` focus of
+`{"kind":"calls","direction":"callers","function":<location>}` or `callees`.
+A null focus returns all retained call/tail-transfer observations. Calls retain
+record ordinals, saved resolutions and every selected physical candidate. Multiple
+analyses of an entry stay distinct. Unresolved calls remain visible even in a
+callers query, with `focus_match: false`; they are not confirmed callers. Finite
+alternatives remain ambiguous when only some candidates are selected.
+
+An object filter is `{"kind":"object","occurrence":<KnowledgeOccurrence>,
+"selector":<DataSelector>,"access":"writers"}`. Use `readers` or null for both.
+Selectors use the same physical section/symbol/image ranges as data reading.
+NOBITS ranges are searchable with `file_range: null`; no bytes are fabricated.
+Results include partial overlaps and finite-address alternatives. Composed effects
+retain their origin analysis. Unqualified callee addresses have `foreign-occurrence`
+instead of inheriting the caller's object; explicitly scoped addresses can match.
+
+A context filter is `{"kind":"context","assertion":"<accepted-function-claim>",
+"field":{"argument":0,"name":"state"},"access":null,"arguments":[]}`.
+Select its knowledge revision explicitly. A null field selects all declared fields.
+Known signatures determine physical argument placement; an unknown signature needs
+an explicit `arguments` mapping, for example `[{"argument":1,"word":2}]`.
+`argument` is a logical ordinal, `word` an incoming ABI word. A contradictory mapping
+fails. Reading a pointer from its incoming stack slot is distinct from accessing
+its context fields. Reviewed field access roles do not replace observed access kinds.
+
+The supported nonvariadic RV32 scalar mapping counts 64-bit arguments as two words.
+A named argument may split a7/stack; a wholly stacked 64-bit scalar aligns to eight
+bytes. This follows the [RISC-V integer calling convention](https://riscv-non-isa.github.io/riscv-elf-psabi-doc/#_integer_calling_convention);
+it performs no execution and verifies no runtime precondition.
+
+The selection allows at most 64 publications and 4096 explicit analysis IDs;
+publication members and operation indexes remain memory/work limited. Duplicate
+analysis IDs are read once. `functions` decodes manifests without loading fact records (`analyses_read: 0`),
+while still verifying their retained stream digests. Call/access queries load one
+function's facts at a time. Unavailable entries,
+partial analyses, unresolved and ambiguous observations remain explicit. There is
+no general `complete`, PASS or proof of absence: neither unselected functions nor
+unclassified executable intervals are silently analyzed. Source removal, project
+move and backup/restore preserve this read/export scenario.

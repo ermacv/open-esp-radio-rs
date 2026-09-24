@@ -25,48 +25,56 @@ pub(super) fn validate(p: &KnowledgeProposal, d: &InterfaceContract) -> Result<(
         ));
     }
     match &d.root {
-        InterfaceRoot::Section { section, offset }
+        AccessRoot::Section { section, offset }
             if *section == 0 || offset.checked_add(u64::from(d.layout_bytes)).is_none() =>
         {
             return Err(invalid("invalid section interface root"));
         }
-        InterfaceRoot::Symbol { symbol, .. }
+        AccessRoot::Symbol { symbol, .. }
             if symbol.object != p.occurrence.object
                 || p.occurrence.symbol.as_ref().is_some_and(|s| s != symbol) =>
         {
             return Err(invalid("interface symbol root differs from occurrence"));
         }
-        InterfaceRoot::FunctionArgument { function, argument }
+        AccessRoot::EntryWord { function, word }
             if function.object() != &p.occurrence.object
-                || *argument >= 32
+                || *word >= 64
                 || p.occurrence
                     .symbol
                     .as_ref()
                     .is_some_and(|s| function.symbol() != Some(s)) =>
         {
             return Err(invalid(
-                "interface argument root differs from captured function or exceeds profile",
+                "interface word root differs from captured function or exceeds profile",
             ));
         }
         _ => (),
     }
     for (i, domain) in d.index_domains.iter().enumerate() {
-        if domain.argument >= 32 || domain.min > domain.max || !text(&domain.reason)
-            || d.index_domains[..i].iter().any(|x|x.argument == domain.argument)
-            || !d.path.iter().any(|s|matches!(s,InterfaceStep::Index { argument, .. } if *argument == domain.argument)) {
-            return Err(invalid("interface index domains must be unique, bounded and used by the path"));
+        if domain.word >= 64
+            || domain.min > domain.max
+            || !text(&domain.reason)
+            || d.index_domains[..i].iter().any(|x| x.word == domain.word)
+            || !d
+                .path
+                .iter()
+                .any(|s| matches!(s,AccessStep::Index { word, .. } if *word == domain.word))
+        {
+            return Err(invalid(
+                "interface index domains must be unique, bounded and used by the path",
+            ));
         }
     }
     for step in &d.path {
         match step {
-            InterfaceStep::LoadPointer { offset } if *offset % 4 != 0 => {
+            AccessStep::LoadPointer { offset } if *offset % 4 != 0 => {
                 return Err(invalid("interface pointer load must be aligned"));
             }
-            InterfaceStep::Index { argument, stride } => {
+            AccessStep::Index { word, stride } => {
                 let domain = d
                     .index_domains
                     .iter()
-                    .find(|d| d.argument == *argument)
+                    .find(|d| d.word == *word)
                     .ok_or_else(|| invalid("interface index has no declared domain"))?;
                 if *stride == 0
                     || !stride.is_multiple_of(4)
@@ -82,20 +90,20 @@ pub(super) fn validate(p: &KnowledgeProposal, d: &InterfaceContract) -> Result<(
     }
     // Literal roots have provable address bounds; pointer loads end that proof.
     let mut bounds = match d.root {
-        InterfaceRoot::Address { address } => Some((i64::from(address), i64::from(address))),
+        AccessRoot::Address { address } => Some((i64::from(address), i64::from(address))),
         _ => None,
     };
     for step in &d.path {
         if let Some((low, high)) = bounds {
             let (low, high, loaded) = match step {
-                InterfaceStep::Offset { bytes } => {
+                AccessStep::Offset { bytes } => {
                     (low + i64::from(*bytes), high + i64::from(*bytes), false)
                 }
-                InterfaceStep::Index { argument, stride } => {
+                AccessStep::Index { word, stride } => {
                     let domain = d
                         .index_domains
                         .iter()
-                        .find(|d| d.argument == *argument)
+                        .find(|d| d.word == *word)
                         .expect("domain validated above");
                     (
                         low + i64::from(domain.min) * i64::from(*stride),
@@ -103,7 +111,7 @@ pub(super) fn validate(p: &KnowledgeProposal, d: &InterfaceContract) -> Result<(
                         false,
                     )
                 }
-                InterfaceStep::LoadPointer { offset } => {
+                AccessStep::LoadPointer { offset } => {
                     (low + i64::from(*offset), high + i64::from(*offset), true)
                 }
             };
@@ -201,34 +209,30 @@ pub(super) fn overlap(a: &InterfaceContract, b: &InterfaceContract) -> bool {
         return true;
     }
     let roots_match = match (&a.root, &b.root) {
-        (InterfaceRoot::Address { .. }, InterfaceRoot::Address { .. }) => true,
-        (InterfaceRoot::Section { section: a, .. }, InterfaceRoot::Section { section: b, .. }) => {
-            a == b
-        }
-        (InterfaceRoot::Symbol { symbol: a, .. }, InterfaceRoot::Symbol { symbol: b, .. }) => {
-            a == b
-        }
+        (AccessRoot::Address { .. }, AccessRoot::Address { .. }) => true,
+        (AccessRoot::Section { section: a, .. }, AccessRoot::Section { section: b, .. }) => a == b,
+        (AccessRoot::Symbol { symbol: a, .. }, AccessRoot::Symbol { symbol: b, .. }) => a == b,
         (
-            InterfaceRoot::FunctionArgument {
+            AccessRoot::EntryWord {
                 function: a,
-                argument: x,
+                word: x,
             },
-            InterfaceRoot::FunctionArgument {
+            AccessRoot::EntryWord {
                 function: b,
-                argument: y,
+                word: y,
             },
         ) => a == b && x == y,
         _ => false,
     };
     let range = |d: &InterfaceContract| {
         let mut at = match &d.root {
-            InterfaceRoot::Address { address } => i128::from(*address),
-            InterfaceRoot::Symbol { addend, .. } => i128::from(*addend),
-            InterfaceRoot::Section { offset, .. } => i128::from(*offset),
+            AccessRoot::Address { address } => i128::from(*address),
+            AccessRoot::Symbol { addend, .. } => i128::from(*addend),
+            AccessRoot::Section { offset, .. } => i128::from(*offset),
             _ => 0,
         };
         for step in &d.path {
-            if let InterfaceStep::Offset { bytes } = step {
+            if let AccessStep::Offset { bytes } = step {
                 at += i128::from(*bytes);
             } else {
                 return None;
@@ -257,7 +261,7 @@ mod tests {
             },
             claim: KnowledgeClaim::Interface {
                 contract: Box::new(InterfaceContract {
-                    root: InterfaceRoot::Address { address: 0x1000 },
+                    root: AccessRoot::Address { address: 0x1000 },
                     path: vec![],
                     layout_version: "fixture/1".into(),
                     layout_bytes: 16,
@@ -336,36 +340,27 @@ mod tests {
                     value: 2,
                     purpose: "unmasked value".into(),
                 }),
-                7 => d.path.push(InterfaceStep::Index {
-                    argument: 1,
-                    stride: 4,
-                }),
+                7 => d.path.push(AccessStep::Index { word: 1, stride: 4 }),
                 8 => {
-                    d.path.push(InterfaceStep::Index {
-                        argument: 1,
-                        stride: 4,
-                    });
+                    d.path.push(AccessStep::Index { word: 1, stride: 4 });
                     d.index_domains.push(InterfaceIndexDomain {
-                        argument: 1,
+                        word: 1,
                         min: 4,
                         max: 3,
                         reason: "empty".into(),
                     });
                 }
                 9 => {
-                    d.path.push(InterfaceStep::Index {
-                        argument: 1,
-                        stride: 4,
-                    });
+                    d.path.push(AccessStep::Index { word: 1, stride: 4 });
                     d.index_domains.push(InterfaceIndexDomain {
-                        argument: 1,
+                        word: 1,
                         min: 0,
                         max: u32::MAX,
                         reason: "overflow".into(),
                     });
                 }
                 _ => {
-                    d.root = InterfaceRoot::Address {
+                    d.root = AccessRoot::Address {
                         address: u32::MAX - 3,
                     }
                 }
@@ -374,12 +369,9 @@ mod tests {
         }
         let mut valid = p;
         let d = contract(&mut valid);
-        d.path.push(InterfaceStep::Index {
-            argument: 1,
-            stride: 4,
-        });
+        d.path.push(AccessStep::Index { word: 1, stride: 4 });
         d.index_domains.push(InterfaceIndexDomain {
-            argument: 1,
+            word: 1,
             min: 0,
             max: 7,
             reason: "declared caller precondition".into(),
@@ -411,14 +403,12 @@ mod tests {
         let a = proposal();
         let mut b = a.clone();
         b.subject = "another.interface".to_owned().try_into().unwrap();
-        contract(&mut b).root = InterfaceRoot::Address { address: 0x100c };
+        contract(&mut b).root = AccessRoot::Address { address: 0x100c };
         assert!(conflicts(&a, &b));
-        contract(&mut b).root = InterfaceRoot::Address { address: 0x1010 };
+        contract(&mut b).root = AccessRoot::Address { address: 0x1010 };
         assert!(!conflicts(&a, &b));
-        contract(&mut b).root = InterfaceRoot::Address { address: 0x1000 };
-        contract(&mut b)
-            .path
-            .push(InterfaceStep::Offset { bytes: 4 });
+        contract(&mut b).root = AccessRoot::Address { address: 0x1000 };
+        contract(&mut b).path.push(AccessStep::Offset { bytes: 4 });
         assert!(conflicts(&a, &b));
         b.occurrence.source = FunctionSource::Input { input: 1 };
         assert!(!conflicts(&a, &b));

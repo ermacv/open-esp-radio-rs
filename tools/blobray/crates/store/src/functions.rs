@@ -1,6 +1,8 @@
 //! Retained function results. Interpretation belongs to the worker, never store.
 use super::*;
 use std::io::Write;
+type RootOpener<'a> =
+    dyn FnMut(&ArtifactId, &mut dyn RunControl) -> Result<std::rc::Rc<FileLease>> + 'a;
 pub struct FunctionLease {
     pub manifest: FunctionManifest,
     pub manifest_bytes: FileLease,
@@ -102,6 +104,24 @@ impl Project {
         id: &FunctionAnalysisId,
         control: &mut dyn RunControl,
     ) -> Result<FunctionLease> {
+        self.analysis_with_roots(id, control, &mut |id, c| {
+            Ok(std::rc::Rc::new(self.open_payload(id, c)?))
+        })
+    }
+    /// Operation-local verified immediate roots; function streams are never cached.
+    pub fn analysis_reader<'a>(&'a self, memory: &'a WorkingMemory) -> AnalysisReader<'a> {
+        AnalysisReader {
+            project: self,
+            memory,
+            roots: AdmittedVec::new(memory),
+        }
+    }
+    fn analysis_with_roots(
+        &self,
+        id: &FunctionAnalysisId,
+        control: &mut dyn RunControl,
+        root: &mut RootOpener<'_>,
+    ) -> Result<FunctionLease> {
         let connection = open_connection(&self.root, false)?;
         let schema: u32 = connection
             .pragma_query_value(None, "user_version", |r| r.get(0))
@@ -128,7 +148,7 @@ impl Project {
         if manifest.recipe.project != self.id || manifest.recipe.revision.as_str() != revision {
             return Err(integrity("analysis row and manifest disagree"));
         }
-        self.open_payload(&revision.parse()?, control)?;
+        root(&revision.parse()?, control)?;
         if let Some(research) = &manifest.recipe.research {
             if research.companions.len() > 64 {
                 return Err(integrity("too many research companions"));
@@ -136,17 +156,17 @@ impl Project {
             for id in std::iter::once(&research.publication).chain(&research.companions) {
                 // Check immediate retained roots without recursive traversal through
                 // publications -> analyses -> publications. Doctor checks each row.
-                let source = self.open_payload(&id.as_str().parse()?, control)?;
-                let publication = investigations::decode(&source, control)?;
+                let source = root(&id.as_str().parse()?, control)?;
+                let publication = investigations::decode(source.as_ref(), control)?;
                 if publication.plan.recipe.request.revision.as_ref()
                     != Some(&manifest.recipe.revision)
                 {
                     return Err(integrity("research dependency revision differs"));
                 }
-                self.open_payload(&publication.members, control)?;
+                root(&publication.members, control)?;
             }
             if let Some(id) = &research.knowledge {
-                self.open_payload(&id.as_str().parse()?, control)?;
+                root(&id.as_str().parse()?, control)?;
             }
         }
         // Ordinary member payload is inside the retained archive; the source revision
@@ -263,5 +283,57 @@ impl Writer {
         tx.commit().map_err(db)?;
         *run = completed;
         Ok(())
+    }
+}
+
+/// Read-scope ownership of at most 256 verified immediate dependency handles.
+/// No transitive retention guarantee or persistent/incremental cache is implied.
+pub struct AnalysisReader<'a> {
+    project: &'a Project,
+    memory: &'a WorkingMemory,
+    roots: AdmittedVec<'a, VerifiedRoot<'a>>,
+}
+struct VerifiedRoot<'a> {
+    id: ArtifactId,
+    source: std::rc::Rc<FileLease>,
+    _capacity: MemoryReservation<'a>,
+}
+impl AnalysisReader<'_> {
+    pub fn analysis(
+        &mut self,
+        id: &FunctionAnalysisId,
+        c: &mut dyn RunControl,
+    ) -> Result<FunctionLease> {
+        let project = self.project;
+        project.analysis_with_roots(id, c, &mut |id, c| {
+            c.checkpoint(self.roots.len().max(1).ilog2() as u64 + 1)?;
+            if let Ok(i) = self.roots.binary_search_by(|r| r.id.cmp(id)) {
+                return Ok(self.roots[i].source.clone());
+            }
+            if self.roots.len() >= 256 {
+                return Err(Error::new(
+                    ErrorCode::ResourceLimited,
+                    "analysis read scope exceeds 256 immediate dependency handles",
+                ));
+            }
+            let capacity = self.memory.reserve(
+                id.allocated_bytes()
+                    + std::mem::size_of::<FileLease>() as u64
+                    + 2 * std::mem::size_of::<usize>() as u64,
+                c.position(),
+            )?;
+            let source = std::rc::Rc::new(project.open_payload(id, c)?);
+            self.roots.push(
+                VerifiedRoot {
+                    id: id.clone(),
+                    source: source.clone(),
+                    _capacity: capacity,
+                },
+                c.position(),
+            )?;
+            c.checkpoint(self.roots.len() as u64 * (self.roots.len().ilog2() as u64 + 1))?;
+            self.roots.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+            Ok(source)
+        })
     }
 }

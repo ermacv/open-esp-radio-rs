@@ -9,6 +9,9 @@ use std::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum QuerySummary {
+    Navigation {
+        summary: Box<NavigationSummary>,
+    },
     Interfaces {
         summary: Box<InterfaceSummary>,
     },
@@ -260,6 +263,12 @@ pub trait QuerySink: InventorySink + DoctorSink {
         ))
     }
 
+    fn navigation(&mut self, _: &NavigationRecord, _: &mut dyn RunControl) -> Result<()> {
+        Err(Error::new(
+            ErrorCode::InvalidRequest,
+            "consumer does not support navigation records",
+        ))
+    }
     fn interface(&mut self, _: &InterfaceObservation, _: &mut dyn RunControl) -> Result<()> {
         Err(Error::new(
             ErrorCode::InvalidRequest,
@@ -280,6 +289,7 @@ pub trait QuerySink: InventorySink + DoctorSink {
 }
 #[derive(Serialize)]
 enum RecordRef<'a> {
+    Navigation(&'a NavigationRecord),
     Interface(&'a InterfaceObservation),
     Coverage(&'a ExtentCoverageRecord),
     Data(&'a DataRecord),
@@ -310,6 +320,7 @@ enum RecordRef<'a> {
 }
 #[derive(Deserialize)]
 enum Record {
+    Navigation(NavigationRecord),
     Interface(InterfaceObservation),
     Coverage(ExtentCoverageRecord),
     Data(DataRecord),
@@ -474,6 +485,16 @@ pub fn prepare_query_with_tools(
             file: disk.create(&stage.join("query-records"))?,
         };
         let summary = match &work.query {
+            ReadQuery::Navigate { request } => {
+                let project = Project::open(&work.project.to_path()?)?;
+                let summary =
+                    crate::navigation::query(&project, request, &memory, control, &mut |r, c| {
+                        spool.push(RecordRef::Navigation(r), c)
+                    })?;
+                QuerySummary::Navigation {
+                    summary: Box::new(summary),
+                }
+            }
             ReadQuery::Interfaces { request } => {
                 let project = Project::open(&work.project.to_path()?)?;
                 let summary = crate::interfaces::discover(
@@ -1110,6 +1131,7 @@ pub(crate) fn visit(
         let record: Record = serde_json::from_slice(&bytes)
             .map_err(|e| Error::new(ErrorCode::WorkerProtocol, e.to_string()))?;
         match record {
+            Record::Navigation(r) => sink.navigation(&r, control)?,
             Record::Interface(r) => sink.interface(&r, control)?,
             Record::TargetAudit(r) => sink.target_audit(&r, control)?,
             Record::Legacy(r) => sink.legacy(&r, control)?,

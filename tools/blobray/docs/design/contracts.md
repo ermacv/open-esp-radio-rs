@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 15
-and database schema 14 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 16
+and database schema 15 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -831,8 +831,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 14
-and journal schema 15 carry these identities. Old formats are rejected without
+Function schema 6 / policy 7, investigation schema 3 / policy 4, database schema 15
+and journal schema 16 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -957,8 +957,8 @@ unverified runtime preconditions; signatures and semantic keys can remain unknow
 The query has counts, not a general coverage or verification assessment.
 
 The current analysis profile recognizes saved indirect calls (also ET_REL), four-byte
-loads, constant offsets and scaled a0..a7 entry arguments under an explicit integer
-ABI. Known numeric/finite targets without retained load provenance produce
+loads, constant offsets, incoming stack words and scaled a0..a7 words under an explicit
+integer ABI. Known numeric/finite targets without retained load provenance produce
 `NoPointerPath`; unsupported expressions and foreign occurrences remain explicit.
 It does not reverse-engineer an originating table from a destination address, expand
 callee control flow or claim executable reachability. Data queries preserve captured
@@ -1032,3 +1032,59 @@ and `image_function_contracts_reject_data_symbols_and_preserve_review_after_sour
 cover ordinary/thin/image capture, shared CLI/API, resource/conflict atomicity and
 source-free review/export. Signature validation also remains covered by the native
 interface regressions through the shared `calls` validator.
+
+
+### Saved research navigation
+
+One application read query selects an explicit source revision, saved analyses and
+publications, and optional knowledge revision. It never chooses current heads or
+starts missing analysis. Function identities are source plus exact selector;
+results retain analysis IDs and record ordinals, including unresolved and ambiguous
+calls. Callers/callees describe retained structural may-edges, not execution traces.
+Multiple saved interpretations of one function are not silently collapsed.
+
+Application owns bounded operation indexes and reads each selected analysis's facts
+once. Decoding/workspace ends before the next function; retained call/selection
+metadata is admitted separately. Domain owns navigation values; analysis owns flat
+expression/access-path interpretation; artifacts validates selected object locations
+including NOBITS without inventing initialization bytes; store supplies retained
+readers only. Memory-object matching uses physical symbols/sections or explicitly
+qualified image addresses. Cross-object name matching cannot resolve an external
+symbol. Unresolved addresses cannot establish absence of access.
+
+Context-field queries require an explicitly selected accepted function contract.
+They match observed address expressions against its exact function ABI word and
+field extent. Read/write roles from review remain distinct from actual access kind;
+preconditions are still unverified. Partial overlaps, finite alternatives and
+unsupported paths stay visible with evidence. Read/export/reopen share this query
+and impose the same work, memory, deadline and delivery limits.
+
+
+`ReadQuery::Navigate` delivers `NavigationRecord` and `NavigationSummary` through
+shared query staging and optional atomic JSON export. An explicit accepted contract
+maps logical context arguments to physical incoming words; unknown signatures require
+caller-supplied mappings. A known signature rejects contradictory maps. `AccessRoot`
+and `AccessStep` are the shared physical vocabulary for interface and field paths;
+entry words and index domains use `word`, not logical `argument` ordinals. ABI
+placement and command examples are in the [operator reference](../../next/README.md#navigation-over-saved-research).
+
+`store::AnalysisReader` owns at most 256 admitted, verified immediate dependency
+handles until the query ends. Shared revision/publication/member roots are hashed
+once; every function manifest and fact stream is still opened and verified. It is
+neither an incremental cache nor a transitive retention pin. Snapshot and one-record
+construction envelopes, sorted indexes, pending calls and emitted variable payloads
+have separate admission. Failed admission/cancellation discards private query output.
+
+Structural calls retain unknown/ambiguous targets and out-of-selection saved IDs.
+A callers focus does not label unresolved edges as confirmed callers. Object queries
+match exact physical ranges, including NOBITS; unknown and unqualified composed
+addresses cannot prove non-access or inherit the caller's object. Context reads use
+observed load/store/atomic kinds rather than declared roles. These queries neither
+traverse an unbounded call graph nor schedule missing interpretation.
+
+Regressions: Next `selected_navigation_keeps_call_evidence_deduplicates_scope_and_never_starts_analysis`,
+`context_navigation_uses_logical_signature_arguments_and_explicit_unknown_mappings`,
+`bss_reader_writer_navigation_uses_physical_ranges_without_fabricating_data_bytes`;
+application `navigation::tests`; domain scalar ABI placement and store function
+publication reader tests. The authenticated PHY scenario checks saved linked callees
+and byte-identical navigation export after source removal and backup/restore.

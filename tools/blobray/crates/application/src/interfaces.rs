@@ -1,6 +1,6 @@
 //! One read-query owner for captured slots, saved call paths and selected declarations.
 use crate::*;
-use blobray_analysis::interfaces::PathKey;
+use blobray_analysis::paths::PathKey;
 struct Binding<'a> {
     key: PathKey,
     entry: &'a KnowledgeEntry,
@@ -222,17 +222,17 @@ pub(crate) fn discover(
             crate::data::with_object(project, occurrence, memory, c, |payload, object, c| {
                 object.with_data(&occurrence.object, selector, c, |view, c| {
                     let root = match selector {
-                        DataSelector::Symbol { symbol, .. } => InterfaceRoot::Symbol {
+                        DataSelector::Symbol { symbol, .. } => AccessRoot::Symbol {
                             symbol: symbol.clone(),
                             addend: 0,
                         },
-                        DataSelector::Image { address, .. } => InterfaceRoot::Address {
+                        DataSelector::Image { address, .. } => AccessRoot::Address {
                             address: u32::try_from(*address)
                                 .map_err(|_| invalid("interface address exceeds RV32"))?,
                         },
                         DataSelector::Section {
                             section, offset, ..
-                        } => InterfaceRoot::Section {
+                        } => AccessRoot::Section {
                             section: *section,
                             offset: *offset,
                         },
@@ -288,9 +288,9 @@ pub(crate) fn discover(
                                         slot,
                                     }],
                                     matches!(value, PointerValue::Unresolved { .. })
-                                        .then_some(InterfaceIssue::UnresolvedPointer),
+                                        .then_some(AccessIssue::UnresolvedPointer),
                                 ),
-                                Err(_) => (vec![], Some(InterfaceIssue::OffsetOutOfRange)),
+                                Err(_) => (vec![], Some(AccessIssue::OffsetOutOfRange)),
                             };
                             index.emit(
                                 InterfaceObservation {

@@ -449,3 +449,15 @@ interpretation and never rewrites the saved function analysis or supplies observ
 runtime preconditions. Field navigation and route witnesses consume explicit
 reviewed declarations through their own query contracts; declaration alone does
 not assert a call path, executable route or behavioral equivalence.
+
+
+### Selected research navigation
+
+Implemented: select a revision, saved publications/analyses and optional knowledge;
+list functions and declared contracts; inspect callers/callees or object readers/writers;
+select an accepted context declaration and inspect observed field accesses; export
+and reopen the same query after source removal. `navigate` shares the application
+read lifecycle and resource budget. Missing/partial facts and ambiguous addresses
+remain visible. No read performs hidden planning, linking or analysis, and no empty
+selection proves that the entire firmware lacks an effect. Reviewed routes and
+flow/effect slicing remain separate target capabilities until implemented.

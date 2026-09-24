@@ -1,186 +1,10 @@
 //! Bounded discovery from saved local facts. No source reads, publication or model execution.
+#[cfg(test)]
+use crate::paths::PathKey;
+use crate::paths::address_paths;
 use blobray_domain::*;
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-enum KeyStep {
-    Load(i128),
-    Index(u8, u32),
-    Offset(i128),
-}
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct PathKey {
-    root: InterfaceRoot,
-    steps: Vec<KeyStep>,
-}
-impl PathKey {
-    pub fn new(root: &InterfaceRoot, path: &[InterfaceStep], slot: u32) -> Self {
-        let mut root = root.clone();
-        let mut offset = match &mut root {
-            InterfaceRoot::Symbol { addend, .. } => {
-                let n = *addend;
-                *addend = 0;
-                i128::from(n)
-            }
-            InterfaceRoot::Address { address } => {
-                let n = *address;
-                *address = 0;
-                i128::from(n)
-            }
-            InterfaceRoot::Section { offset, .. } => {
-                let n = *offset;
-                *offset = 0;
-                i128::from(n)
-            }
-            _ => 0,
-        };
-        let mut steps = Vec::with_capacity(2 * path.len() + 1);
-        for step in path {
-            match step {
-                InterfaceStep::Offset { bytes } => offset += i128::from(*bytes),
-                InterfaceStep::LoadPointer { offset: bytes } => {
-                    steps.push(KeyStep::Load(offset + i128::from(*bytes)));
-                    offset = 0;
-                }
-                InterfaceStep::Index { argument, stride } => {
-                    if offset != 0 {
-                        steps.push(KeyStep::Offset(offset));
-                        offset = 0;
-                    }
-                    steps.push(KeyStep::Index(*argument, *stride));
-                }
-            }
-        }
-        steps.push(KeyStep::Offset(offset + i128::from(slot)));
-        Self { root, steps }
-    }
-    pub fn allocated_bytes(&self) -> u64 {
-        (self.steps.capacity() * std::mem::size_of::<KeyStep>()) as u64
-            + match &self.root {
-                InterfaceRoot::Symbol { symbol, .. } => symbol.object.artifact.allocated_bytes(),
-                InterfaceRoot::FunctionArgument { function, .. } => {
-                    function.object().artifact.allocated_bytes()
-                }
-                _ => 0,
-            }
-    }
-}
 fn integrity(message: &str) -> Error {
     Error::new(ErrorCode::Integrity, message)
-}
-fn argument(register: u8, abi: Option<CallAbi>) -> std::result::Result<u8, InterfaceIssue> {
-    if abi.is_none() {
-        return Err(InterfaceIssue::AbiRequired);
-    }
-    if (10..=17).contains(&register) {
-        Ok(register - 10)
-    } else {
-        Err(InterfaceIssue::UnsupportedArgument)
-    }
-}
-fn leaf(
-    v: &AbstractValue,
-    recipe: &FunctionRecipe,
-) -> std::result::Result<InterfaceRoot, InterfaceIssue> {
-    Ok(match v {
-        AbstractValue::Constant { value } => InterfaceRoot::Address { address: *value },
-        AbstractValue::ImageAddress { address } => InterfaceRoot::Address { address: *address },
-        AbstractValue::Section { section, offset } => InterfaceRoot::Section {
-            section: *section,
-            offset: u64::try_from(*offset).map_err(|_| InterfaceIssue::OffsetOutOfRange)?,
-        },
-        AbstractValue::Symbol { symbol, addend } if symbol.object == *recipe.selector.object() => {
-            InterfaceRoot::Symbol {
-                symbol: symbol.clone(),
-                addend: *addend,
-            }
-        }
-        AbstractValue::Symbol { .. } | AbstractValue::ScopedAddress { .. } => {
-            return Err(InterfaceIssue::ForeignOccurrence);
-        }
-        _ => return Err(InterfaceIssue::UnknownValue),
-    })
-}
-fn finish(
-    root: InterfaceRoot,
-    reverse: &[InterfaceStep],
-) -> std::result::Result<InterfaceAccessPath, InterfaceIssue> {
-    let mut path = Vec::with_capacity(reverse.len());
-    let mut offset = 0i64;
-    for step in reverse.iter().rev() {
-        match step {
-            InterfaceStep::Offset { bytes } => offset += i64::from(*bytes),
-            InterfaceStep::LoadPointer { offset: bytes } => {
-                let bytes = i32::try_from(offset + i64::from(*bytes))
-                    .map_err(|_| InterfaceIssue::OffsetOutOfRange)?;
-                path.push(InterfaceStep::LoadPointer { offset: bytes });
-                offset = 0;
-            }
-            step @ InterfaceStep::Index { .. } => {
-                if offset != 0 {
-                    path.push(InterfaceStep::Offset {
-                        bytes: i32::try_from(offset)
-                            .map_err(|_| InterfaceIssue::OffsetOutOfRange)?,
-                    });
-                    offset = 0;
-                }
-                path.push(*step);
-            }
-        }
-    }
-    if offset != 0 {
-        return Err(InterfaceIssue::NonzeroCallDisplacement);
-    }
-    let Some(InterfaceStep::LoadPointer { offset }) = path.pop() else {
-        return Err(InterfaceIssue::NoPointerPath);
-    };
-    let slot = u32::try_from(offset).map_err(|_| InterfaceIssue::OffsetOutOfRange)?;
-    if !slot.is_multiple_of(4) {
-        return Err(InterfaceIssue::NonPointerLoad);
-    }
-    Ok(InterfaceAccessPath { root, path, slot })
-}
-fn expression<'a>(id: u32, expressions: &[&'a Expression]) -> Result<&'a Expression> {
-    expressions
-        .get(id as usize)
-        .copied()
-        .ok_or_else(|| integrity("interface expression ID is absent"))
-}
-fn index_operand(
-    v: &AbstractValue,
-    expressions: &[&Expression],
-    abi: Option<CallAbi>,
-) -> Result<Option<(u8, u32)>> {
-    let AbstractValue::Expression { id } = v else {
-        return Ok(None);
-    };
-    let (register, stride) = match expression(*id, expressions)? {
-        Expression::EntryRegister { .. } => return Ok(None),
-        Expression::Integer {
-            op: IntegerOp::Mul | IntegerOp::Shl,
-            left: AbstractValue::Expression { id: arg },
-            right: AbstractValue::Constant { value },
-            ..
-        } if arg < id => {
-            let Expression::EntryRegister { register } = expression(*arg, expressions)? else {
-                return Ok(None);
-            };
-            let stride = if matches!(
-                expression(*id, expressions)?,
-                Expression::Integer {
-                    op: IntegerOp::Shl,
-                    ..
-                }
-            ) {
-                1u32 << (*value & 31)
-            } else {
-                *value
-            };
-            (*register, stride)
-        }
-        _ => return Ok(None),
-    };
-    Ok((stride != 0)
-        .then(|| argument(register, abi).ok().map(|arg| (arg, stride)))
-        .flatten())
 }
 fn paths(
     v: &AbstractValue,
@@ -188,98 +12,32 @@ fn paths(
     recipe: &FunctionRecipe,
     abi: Option<CallAbi>,
     c: &mut dyn RunControl,
-) -> Result<(Vec<InterfaceAccessPath>, Option<InterfaceIssue>)> {
-    let mut current = v;
-    let mut reverse = Vec::with_capacity(16);
-    let mut previous = None;
-    loop {
-        c.checkpoint(1)?;
-        if reverse.len() >= 16 {
-            return Ok((vec![], Some(InterfaceIssue::PathLimit)));
+) -> Result<(Vec<InterfaceAccessPath>, Option<AccessIssue>)> {
+    let (values, issue) = address_paths(v, expressions, recipe, abi, c)?;
+    if issue.is_some() {
+        return Ok((vec![], issue));
+    }
+    let mut paths = Vec::with_capacity(values.len());
+    for mut value in values {
+        if value.offset != 0 {
+            return Ok((vec![], Some(AccessIssue::NonzeroCallDisplacement)));
         }
-        let root = match current {
-            AbstractValue::Expression { id } => {
-                if previous.is_some_and(|old| *id >= old) {
-                    return Err(integrity(
-                        "interface path contains a forward or cyclic expression",
-                    ));
-                }
-                previous = Some(*id);
-                match expression(*id, expressions)? {
-                    Expression::EntryRegister { register } => match argument(*register, abi) {
-                        Ok(argument) => Ok(InterfaceRoot::FunctionArgument {
-                            function: recipe.selector.clone(),
-                            argument,
-                        }),
-                        Err(issue) => Err(issue),
-                    },
-                    Expression::Load {
-                        address, width: 4, ..
-                    } => {
-                        reverse.push(InterfaceStep::LoadPointer { offset: 0 });
-                        current = address;
-                        continue;
-                    }
-                    Expression::Load { .. } => Err(InterfaceIssue::NonPointerLoad),
-                    Expression::CallResult { .. } => Err(InterfaceIssue::UnmodeledCallResult),
-                    Expression::Integer { op, left, right } => {
-                        if *op == IntegerOp::Add {
-                            if let Some((argument, stride)) =
-                                index_operand(right, expressions, abi)?
-                            {
-                                reverse.push(InterfaceStep::Index { argument, stride });
-                                current = left;
-                                continue;
-                            }
-                            if let Some((argument, stride)) = index_operand(left, expressions, abi)?
-                            {
-                                reverse.push(InterfaceStep::Index { argument, stride });
-                                current = right;
-                                continue;
-                            }
-                        }
-                        let constant = match (op, left, right) {
-                            (IntegerOp::Add, v, AbstractValue::Constant { value }) => {
-                                Some((v, i64::from(*value as i32)))
-                            }
-                            (IntegerOp::Add, AbstractValue::Constant { value }, v) => {
-                                Some((v, i64::from(*value as i32)))
-                            }
-                            (IntegerOp::Sub, v, AbstractValue::Constant { value }) => {
-                                Some((v, -i64::from(*value as i32)))
-                            }
-                            _ => None,
-                        };
-                        if let Some((v, bytes)) = constant {
-                            let Ok(bytes) = i32::try_from(bytes) else {
-                                return Ok((vec![], Some(InterfaceIssue::OffsetOutOfRange)));
-                            };
-                            reverse.push(InterfaceStep::Offset { bytes });
-                            current = v;
-                            continue;
-                        }
-                        Err(InterfaceIssue::UnsupportedExpression)
-                    }
-                }
-            }
-            AbstractValue::Alternatives { values } => {
-                let mut found = Vec::with_capacity(values.values().len());
-                for v in values.values() {
-                    c.checkpoint(1)?;
-                    match leaf(&v.as_value(), recipe).and_then(|root| finish(root, &reverse)) {
-                        Ok(path) => found.push(path),
-                        Err(issue) => return Ok((vec![], Some(issue))),
-                    }
-                }
-                return Ok((found, None));
-            }
-            v => leaf(v, recipe),
+        let Some(AccessStep::LoadPointer { offset }) = value.path.pop() else {
+            return Ok((vec![], Some(AccessIssue::NoPointerPath)));
         };
-        return Ok(match root.and_then(|root| finish(root, &reverse)) {
-            Ok(path) => (vec![path], None),
-            Err(issue) => (vec![], Some(issue)),
+        let Ok(slot) = u32::try_from(offset) else {
+            return Ok((vec![], Some(AccessIssue::OffsetOutOfRange)));
+        };
+        if !slot.is_multiple_of(4) {
+            return Ok((vec![], Some(AccessIssue::NonPointerLoad)));
+        }
+        paths.push(InterfaceAccessPath {
+            root: value.root,
+            path: value.path,
+            slot,
         });
     }
+    Ok((paths, None))
 }
 /// Emits local indirect-transfer observations; known target values do not invent load provenance.
 pub fn discover(
@@ -369,11 +127,11 @@ pub fn discover(
         let record = transfer.map_or(instruction_record, |r| r.1);
         let target = transfer.map(|r| r.2.clone());
         let (paths, issue) = if displacement != 0 {
-            (vec![], Some(InterfaceIssue::NonzeroCallDisplacement))
+            (vec![], Some(AccessIssue::NonzeroCallDisplacement))
         } else if let Some(v) = input {
             paths(v, &expressions, recipe, abi, c)?
         } else {
-            (vec![], Some(InterfaceIssue::MissingCallInputs))
+            (vec![], Some(AccessIssue::MissingCallInputs))
         };
         emit(
             InterfaceObservation {
@@ -462,11 +220,11 @@ mod tests {
         assert_eq!(
             found,
             [InterfaceAccessPath {
-                root: InterfaceRoot::FunctionArgument {
+                root: AccessRoot::EntryWord {
                     function: recipe.selector.clone(),
-                    argument: 0
+                    word: 0
                 },
-                path: vec![InterfaceStep::LoadPointer { offset: 0 }],
+                path: vec![AccessStep::LoadPointer { offset: 0 }],
                 slot: 8
             }]
         );
@@ -480,7 +238,7 @@ mod tests {
             )
             .unwrap()
             .1,
-            Some(InterfaceIssue::AbiRequired)
+            Some(AccessIssue::AbiRequired)
         );
         let indexed = [
             Expression::EntryRegister { register: 11 },
@@ -510,11 +268,8 @@ mod tests {
         assert_eq!(
             found,
             [InterfaceAccessPath {
-                root: InterfaceRoot::Address { address: 0x1000 },
-                path: vec![InterfaceStep::Index {
-                    argument: 1,
-                    stride: 4
-                }],
+                root: AccessRoot::Address { address: 0x1000 },
+                path: vec![AccessStep::Index { word: 1, stride: 4 }],
                 slot: 0
             }]
         );
@@ -536,7 +291,7 @@ mod tests {
         .unwrap();
         assert_eq!(issue, None);
         assert_eq!(found.len(), 2);
-        assert_eq!(found[1].root, InterfaceRoot::Address { address: 0x2000 });
+        assert_eq!(found[1].root, AccessRoot::Address { address: 0x2000 });
     }
     fn records(expressions: Vec<Expression>, target: u32) -> Vec<FunctionRecord> {
         let mut out: Vec<_> = expressions
@@ -644,22 +399,22 @@ mod tests {
     #[test]
     fn canonical_path_keys_merge_static_offsets_without_equating_distinct_dereferences() {
         let a = PathKey::new(
-            &InterfaceRoot::Address { address: 0x1000 },
+            &AccessRoot::Address { address: 0x1000 },
             &[
-                InterfaceStep::Offset { bytes: 4 },
-                InterfaceStep::LoadPointer { offset: 4 },
+                AccessStep::Offset { bytes: 4 },
+                AccessStep::LoadPointer { offset: 4 },
             ],
             8,
         );
         let b = PathKey::new(
-            &InterfaceRoot::Address { address: 0x1008 },
-            &[InterfaceStep::LoadPointer { offset: 0 }],
+            &AccessRoot::Address { address: 0x1008 },
+            &[AccessStep::LoadPointer { offset: 0 }],
             8,
         );
         assert_eq!(a, b);
         assert_ne!(
             a,
-            PathKey::new(&InterfaceRoot::Address { address: 0x1008 }, &[], 8)
+            PathKey::new(&AccessRoot::Address { address: 0x1008 }, &[], 8)
         );
     }
 }

@@ -139,6 +139,7 @@ impl Project {
             }
         }
         self.validate_execution_interfaces(request, memory, c)?;
+        self.validate_execution_call_pairs(&manifest, memory, c)?;
         Ok(ExecutionLease {
             _capacity: capacity,
             records: self.open_payload(&manifest.records, c)?,
@@ -199,6 +200,8 @@ impl Writer {
         }
         self.project
             .validate_execution_interfaces(request, memory, c)?;
+        self.project
+            .validate_execution_call_pairs(&manifest, memory, c)?;
         validate_execution_records(
             &manifest,
             &stage.open_payload(&manifest.records, c)?,
@@ -282,6 +285,10 @@ pub fn validate_execution_records(
         crate::execution_services::Services::new(memory),
         crate::execution_services::Services::new(memory),
     ];
+    let mut relation_index = [
+        CallRelationIndex::new(None, &manifest.call_pairs, false, c)?,
+        CallRelationIndex::new(None, &manifest.call_pairs, true, c)?,
+    ];
     let mut prepared = None;
     let mut part = EvidencePart::Events;
     let mut memory_state = [MemoryState::new(), MemoryState::new()];
@@ -305,6 +312,10 @@ pub fn validate_execution_records(
             .is_none_or(|next| next.reset == SessionReset::Cold);
         if prepared != Some(case) {
             relation_complete = true;
+            relation_index = [
+                CallRelationIndex::new(phase.relation.as_ref(), &manifest.call_pairs, false, c)?,
+                CallRelationIndex::new(phase.relation.as_ref(), &manifest.call_pairs, true, c)?,
+            ];
             capture = [
                 crate::execution_capture::CaptureState::new(),
                 crate::execution_capture::CaptureState::new(),
@@ -431,7 +442,12 @@ pub fn validate_execution_records(
                         .map_or(0, |p| p.overrides.len()) as u64
                         + 1,
                 )?;
-                capture[usize::from(side)].event(input, &event)?;
+                capture[usize::from(side)].event(
+                    input,
+                    &event,
+                    Some(&relation_index[usize::from(side)]),
+                    c,
+                )?;
                 if let ExecutionEvent::RuntimeTable { instance, event } = &event {
                     tables[usize::from(side)].event(*instance, event, c)?;
                 }
@@ -494,7 +510,11 @@ pub fn validate_execution_records(
                     ));
                 }
                 capture[usize::from(side)].finish(input, &stop)?;
-                if phase.relation.as_ref().is_some_and(|r| r.calls) {
+                if phase
+                    .relation
+                    .as_ref()
+                    .is_some_and(ComparisonRelation::observes_calls)
+                {
                     relation_complete &= capture[usize::from(side)].known;
                 }
                 memory_state[usize::from(side)].finish(input, must_block)?;

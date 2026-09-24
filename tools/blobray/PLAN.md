@@ -182,7 +182,7 @@ Aliases/old grammar are not portability requirements.
 
 ## Current execution position
 
-Stages 00–09 and 10.1/10.2.1 are complete. Stage 10.2.2 is active.
+Stages 00–09 and 10.1/10.2 are complete. Stage 10.3.1 is active.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
 interface review/discovery, ambiguous bindings and authenticated ROM query/export
 reopening. All standalone Next packages/tests, Clippy, formatting and affected
@@ -592,8 +592,8 @@ required gates; no generic policy framework or compatibility path is introduced.
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
 | 10.1 | done | Explicit per-case comparison selection and bounded final normal-memory observations, alongside selected return words and existing ordered MMIO/fence/delay events. Physical paired ranges have exact lengths and identities; all selected bytes, including unchanged bytes and unknowns, are represented. RAM-only and high/low-return differences DIFF; equal known completed selections MATCH; unknown/unavailable/unfinished results remain INCOMPLETE. Excluded observations remain retained. Invalid/overlapping/overflowing selections fail, phase lifetime/resource/cancellation atomicity and source-free replay pass. No inferred layout equivalence. |
-| 10.2 | active | Ordered captured-code, modeled and service call observations with physical targets, ABI words and exact interleaving with selected observables. Explicit reviewed semantic call pairs support exact/selected/ignored argument policies; unlisted calls remain retained and their exclusion is visible. Missing/ambiguous/unreviewed pairs fail; reordered/missing calls and selected argument-only differences are caught; unknown words stay incomplete. Shared application API/CLI and source-free retained comparison pass. |
-| 10.3 | pending | Ordinary RAM access/atomic and branch timeline observations plus explicit reviewed ABI/layout projections for corresponding memory/arguments and control observations. Validate exact domains, widths, aliases/overlap, offsets and applicability; no dropped unknown/missing fields or automatic pointer normalization. Final-state-only equivalence stays distinct from ordered internal-state equivalence. Different layouts can match only under the selected valid projection; invalid/stale projection and branch/RAM-order changes are tested. |
+| 10.2 | done | Ordered captured-code, modeled and service call observations with physical targets, ABI words and exact interleaving with selected observables. Explicit reviewed semantic call pairs support exact/selected/ignored argument policies; unlisted calls remain retained and their exclusion is visible. Missing/ambiguous/unreviewed pairs fail; reordered/missing calls and selected argument-only differences are caught; unknown words stay incomplete. Shared application API/CLI and source-free retained comparison pass. |
+| 10.3 | active | Ordinary RAM access/atomic and branch timeline observations plus explicit reviewed ABI/layout projections for corresponding memory/arguments and control observations. Validate exact domains, widths, aliases/overlap, offsets and applicability; no dropped unknown/missing fields or automatic pointer normalization. Final-state-only equivalence stays distinct from ordered internal-state equivalence. Different layouts can match only under the selected valid projection; invalid/stale projection and branch/RAM-order changes are tested. |
 | 10.4 | pending | Reviewed effect contracts classify required, omitted, replaced and added MMIO/delay/fence effects, preserving reason and claim ceiling. Absent/unclassified/conflicting rules fail closed; known effect differences DIFF and incomplete execution cannot MATCH. Policy identity, raw excluded evidence, provenance and source-free replay remain retained. Compose all stage-10 relations, run the full execution/comparison/recovery suites and source-only checkpoint; close stage 10 only after all four sub-stages pass. |
 
 
@@ -612,7 +612,7 @@ Both remain required to close 10.2.
 | Sub-stage | Status | Acceptance |
 | --- | --- | --- |
 | 10.2.1 | done | Explicit bounded physical call/tail-transfer capture, known/unknown register and selected stack ABI words, exact target comparison and interleaving with selected MMIO/fence/delay. Captured code, call models and FIFO service boundaries are represented; observe-call goals retain their pre-dispatch semantics. Site/transfer provenance and excluded observations remain available. Target/order/argument-only differences, unknowns, invalid capture, resource/cancellation atomicity, API/CLI/source-free replay and all gates pass. No semantic pair is inferred. |
-| 10.2.2 | active | Native proposal/review of semantic call correspondence anchored to exact captured occurrences or explicit modeled binding identity. Explicit exact/selected/ignored word policies and selected pair scope; no name fallback or implicit ABI projection. Invalid, unaccepted, ambiguous, mismatched/stale pairs fail; all listed and unlisted calls remain provenance. Ordered reviewed comparison, generic/specialized API/CLI, source-free query/replay, resource/atomicity checks and all gates close 10.2. |
+| 10.2.2 | done | Native proposal/review of semantic call correspondence anchored to exact captured occurrences or explicit modeled binding identity. Explicit exact/selected/ignored word policies and selected pair scope; no name fallback or implicit ABI projection. Invalid, unaccepted, ambiguous, mismatched/stale pairs fail; all listed and unlisted calls remain provenance. Ordered reviewed comparison, generic/specialized API/CLI, source-free query/replay, resource/atomicity checks and all gates close 10.2. |
 
 
 Stage 10.2.1 closes opt-in physical call groups, exact targets/selected RV32 words,
@@ -624,3 +624,23 @@ Store rejects invented MATCH with unknown selected call words. All affected test
 standalone pass. Source-free API/CLI restore/replay and failed-run atomicity pass.
 Execution schema 11, database 29 and journal 30 identify this physical profile;
 semantic correspondence remains active stage 10.2.2.
+
+
+Stage 10.2.2 closes native call-pair proposal/review, exact/selected/ignored word
+policies, explicit unlisted-call scope and immutable accepted selection. Both
+captured endpoints, model/FIFO definition/binding/phase applicability, ambiguity,
+raw excluded/unknown words, source-free generic/specialized API/CLI restore/replay,
+resource atomicity and retained policy integrity are covered. All affected tests,
+88 Next execution tests, Clippy, formatting, public/private docs and standalone
+pass. Execution schema 12, database 30 and journal 31 identify this relation.
+Stage 10.2 is complete.
+
+Stage 10.3 has two complete acceptance units: acquiring/comparing the physical
+internal timeline and reviewing cross-layout/ABI correspondence. The physical
+checkpoint never claims equivalence under an unimplemented projection. Both are
+required before the effect-contract checkpoint; no original obligation is removed.
+
+| Sub-stage | Status | Acceptance |
+| --- | --- | --- |
+| 10.3.1 | active | Explicit bounded normal-memory read/write/atomic and conditional-branch observations, with exact ordered physical comparison interleaved with selected calls/MMIO/fence/delay. Include declared model/service normal-memory effects once; setup/inspection reads are provenance rather than invented guest transactions. Capture/compare selections are explicit; unknown/inaccessible/unfinished states cannot MATCH, excluded evidence stays available, and equal final state cannot hide a selected timeline difference. All widths, LR/SC/RMW, branch choices, model effects, phase ownership, resource/cancellation atomicity, retained validation and source-free API/CLI restore/replay pass with all gates. |
+| 10.3.2 | pending | Native reviewed ABI/layout projections for corresponding final-memory fields, call words and internal memory/control observations. Exact endpoint domains/widths/offsets/aliases/applicability and every selected field are validated; no implicit pointer normalization, dropped unknown/missing field, unreviewed mapping or name fallback. Different layouts/ABI word positions can match only under the selected valid projection; reordered RAM/branches and known projected differences remain DIFF. Generic/specialized API/CLI, immutable review/source/definition retention, invalid/stale/conflicting mappings, resource atomicity and source-free replay pass. Compose physical and projected relations, then close 10.3. |

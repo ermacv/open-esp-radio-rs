@@ -29,8 +29,8 @@ a failed/inconclusive check command returns failure. No `clean` alias or generic
 run-level `complete` field exists.
 
 Store validates assessment subject against the published result identity. A
-completed durable run contains exactly one result reference. Journal schema 30
-and database schema 29 are mandatory; incompatible projects/journals are rejected
+completed durable run contains exactly one result reference. Journal schema 31
+and database schema 30 are mandatory; incompatible projects/journals are rejected
 without conversion. Execution and revision manifests keep independent versions.
 
 `coverage.scope` is mandatory: `inventory-occurrences`, `function-extent`,
@@ -752,7 +752,7 @@ Domain validates stack geometry and computes entry SP; application initializes
 stack arguments in its freshly owned stack, and passes eight optional register
 words to the backend. Unknown argument slots override stack seeds. No register or
 stack word becomes zero by omission, and setup emits no guest events. The caller
-owns type/variadic lowering. Request and manifest schema 11 pin this interpretation;
+owns type/variadic lowering. Request and manifest schema 12 pin this interpretation;
 producer identity pins both backend unknown-value semantics and stack environment.
 
 `ExecutionMemory` also owns LR/SC reservation state, permission checks and indivisible
@@ -867,8 +867,8 @@ validates selector/section/extent against the admitted request before publishing
 and when reopening retained results. Coverage joins explicit ranges to section
 metadata and unions them with symbol extents, leaving other bytes unclassified.
 
-Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 29
-and journal schema 30 carry these identities. Old formats are rejected without
+Function schema 7 / policy 8, investigation schema 3 / policy 4, database schema 30
+and journal schema 31 carry these identities. Old formats are rejected without
 mutation or conversion. `functions::ranges` regressions cover table-free ordinary
 and thin archives, generic review, invalid ranges, source-free export and coverage;
 `reviewed_image_code_range_keeps_vma_identity_and_unions_symbol_coverage` covers
@@ -1660,5 +1660,70 @@ borrows grouped slices without allocating or rescanning preceding calls. The
 [capture regressions](../../next/tests/execution/capture.rs) exercise application,
 CLI, persistence, word/effect differences and resource atomicity;
 [store validation](../../crates/store/src/execution_capture.rs) rejects malformed
-groups. Reviewed semantic pairs and ABI/layout projections remain separate target
-relations and are not inferred by this physical profile.
+groups. Reviewed semantic pairs require a separately selected accepted correspondence;
+ABI/layout projections remain a target relation. Neither is inferred by this
+physical profile.
+
+### Reviewed call correspondence
+
+A native knowledge proposal owns an ordered vendor/replacement pair, explicit
+argument policy and applicability/reason. Each endpoint names its exact source
+revision/object and either a validated executable symbol/address or an explicit
+call-model/FIFO definition and binding. The proposal's primary occurrence is the
+vendor endpoint; application validates and retains both physical occurrences.
+Review does not assert modeled boundaries executed captured code.
+
+A comparison selects immutable accepted assertion IDs from explicit knowledge
+revisions. Application prepares the selected contracts once before execution;
+store verifies their selected review/source/definition applicability on publication
+and reopening. Execution retains the resolved contracts with their review IDs.
+There is no latest-head, name, address-only or unreviewed fallback. Exact policies
+select all declared words; selected policies name physical word indices; ignored
+arguments remain retained. ABI/layout reinterpretation is a separate relation.
+Unlisted calls require an explicit exact-or-excluded policy and stay in raw
+capture. Ambiguous endpoint/pair selections fail before publication.
+
+The implemented relation uses `reviewed_calls: {pairs, unlisted}` alongside
+`calls: false`; selecting both physical and reviewed call modes is invalid. Each
+pair reference has `knowledge` and `assertion`. At most 128 distinct selected
+reviews are retained per execution. `ExecutionManifest.call_pairs` contains one
+admitted copy per selected review, verified against the immutable accepted claim
+at publication and read time. Existing 64 KiB request/manifest bounds still apply;
+large selections fail explicitly without partial publication. The store owns
+review acquisition and admitted copies; application owns execution and physical
+proposal validation; the verifier receives only borrowed resolved contracts.
+
+A code endpoint requires its occurrence's exact symbol and executable address,
+including zero-sized physical symbols. A model endpoint uses the canonical
+`CallDeclaration::identity` and complete `CallBinding`; a service endpoint uses
+`FifoService::identity`, complete binding and `binding_index` (ordinal in the
+service's bindings array, not a table byte offset). A modeled endpoint has no
+function symbol. Its occurrence anchors captured execution context; the definition
+digest is an explicit conditional assumption, not a claim that this source
+contains the modeled implementation. The declaration remains in the execution
+request, where its identity, lifetime and active binding are checked. A changed
+response, initial queue state, binding or lifetime requires an applicable review.
+Phase-owned declarations expire; session declarations remain available until cold
+reset. Missing, conflicting or differently classified boundaries have no fallback.
+
+Argument policies are `exact: {words}`, `selected: {words: [indices]}` and
+`ignore`. Exact requires the declared capture count on both sides. Selected
+indices are unique physical word positions present in both captures; no position
+remapping, type conversion or pointer normalization occurs. Ignore retains all
+words but excludes them from equality. Unlisted calls require `exact` (same capture
+profile on both sides) or `exclude`; the explicit policy and raw calls remain
+visible in the result. Listed pairs are a selection domain, not a requirement to
+invoke every listed operation. Pair order is compared in the same selected event
+stream; missing or reordered observed calls differ when the shorter side's code
+goal completed. Unknown selected words remain incomplete.
+
+The domain's bounded borrowed `CallRelationIndex` supplies identical selection to
+verification and store knownness validation. Proposal/review uses shared physical
+occurrence acquisition for both endpoints; specialized proposal only supplies
+source evidence before entering the same generic validation/publication path.
+[Call-pair regressions](../../next/tests/execution/call_pairs.rs) cover generic and
+specialized API/CLI, both-source validation, frozen reviews, ambiguity, definition
+changes, phase ownership, all argument policies, unlisted calls and source-free
+restore/replay. Store tests reject changed/missing resolved policies and verify
+admitted owner release. Review authorizes this comparison assumption, not hardware
+qualification or proof of whole-function equivalence.

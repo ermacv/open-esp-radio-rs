@@ -1,10 +1,11 @@
 //! Comparison of explicitly selected concrete observations; no execution/store authority.
 use blobray_domain::*;
-pub const VERIFIER: &str = "selected-events-calls-returns-memory/model-6";
+pub const VERIFIER: &str = "selected-events-reviewed-calls-returns-memory/model-7";
 pub fn compare(
     left: &ExecutionObservation,
     right: &ExecutionObservation,
     relation: &ComparisonRelation,
+    pairs: &[ResolvedCallPair],
     control: &mut dyn RunControl,
 ) -> Result<CaseComparison> {
     let different = |difference| CaseComparison {
@@ -13,11 +14,11 @@ pub fn compare(
     };
     let mut known = true;
     control.checkpoint((left.events.len() + right.events.len()) as u64)?;
-    let mut le = Selected::new(&left.events, relation);
-    let mut re = Selected::new(&right.events, relation);
+    let mut le = Selected::new(&left.events, relation, pairs, false, control)?;
+    let mut re = Selected::new(&right.events, relation, pairs, true, control)?;
     let mut count = 0;
     loop {
-        let (a, b) = (le.next()?, re.next()?);
+        let (a, b) = (le.next(control)?, re.next(control)?);
         match (a, b) {
             (Some(a), Some(b)) => {
                 control.checkpoint(1)?;
@@ -26,27 +27,46 @@ pub fn compare(
                         Observation::Call {
                             target: a,
                             arguments: aa,
+                            selection: sa,
                         },
                         Observation::Call {
                             target: b,
                             arguments: ba,
+                            selection: sb,
                         },
                     ) => {
-                        if a != b {
+                        let policy = match (sa, sb) {
+                            (CallSelection::Reviewed(a), CallSelection::Reviewed(b))
+                                if a.review == b.review =>
+                            {
+                                Some(&a.correspondence.arguments)
+                            }
+                            (CallSelection::Physical, CallSelection::Physical) => None,
+                            _ => {
+                                return Ok(different(ComparisonDifference::Event { index: count }));
+                            }
+                        };
+                        if policy.is_none() && a != b {
                             return Ok(different(ComparisonDifference::CallTarget {
                                 index: count,
                                 vendor: a,
                                 replacement: b,
                             }));
                         }
-                        if aa.len() != ba.len() {
+                        if let Some(p) = policy {
+                            p.validate_capture(aa.len() as u16, ba.len() as u16)?;
+                        } else if aa.len() != ba.len() {
                             return Err(Error::new(
                                 ErrorCode::Integrity,
-                                "same physical target has different capture widths",
+                                "physical call capture widths differ",
                             ));
                         }
-                        for (word, (a, b)) in aa.iter().zip(ba).enumerate() {
-                            control.checkpoint(1)?;
+                        for word in 0..aa.len().max(ba.len()) {
+                            control.checkpoint(policy.map_or(1, CallArguments::selection_work))?;
+                            if policy.is_some_and(|p| !p.selects(word as u16)) {
+                                continue;
+                            }
+                            let (a, b) = (&aa[word], &ba[word]);
                             let value = |e: &ExecutionEvent| match e {
                                 ExecutionEvent::TransferArgument { value, .. } => value.value(),
                                 _ => unreachable!(),
@@ -169,20 +189,29 @@ enum Observation<'a> {
     Call {
         target: u32,
         arguments: &'a [ExecutionEvent],
+        selection: CallSelection<'a>,
     },
 }
 struct Selected<'a> {
     remaining: &'a [ExecutionEvent],
     relation: &'a ComparisonRelation,
+    index: CallRelationIndex<'a>,
 }
 impl<'a> Selected<'a> {
-    fn new(remaining: &'a [ExecutionEvent], relation: &'a ComparisonRelation) -> Self {
-        Self {
+    fn new(
+        remaining: &'a [ExecutionEvent],
+        relation: &'a ComparisonRelation,
+        pairs: &'a [ResolvedCallPair],
+        side: bool,
+        c: &mut dyn RunControl,
+    ) -> Result<Self> {
+        Ok(Self {
             remaining,
             relation,
-        }
+            index: CallRelationIndex::new(Some(relation), pairs, side, c)?,
+        })
     }
-    fn next(&mut self) -> Result<Option<Observation<'a>>> {
+    fn next(&mut self, c: &mut dyn RunControl) -> Result<Option<Observation<'a>>> {
         let invalid = || {
             Error::new(
                 ErrorCode::Integrity,
@@ -191,7 +220,13 @@ impl<'a> Selected<'a> {
         };
         while let Some((event, rest)) = self.remaining.split_first() {
             self.remaining = rest;
-            if let ExecutionEvent::CallTransfer { target, words, .. } = event {
+            if let ExecutionEvent::CallTransfer {
+                target,
+                words,
+                target_kind,
+                ..
+            } = event
+            {
                 if usize::from(*words) > MAX_EXECUTION_ARGUMENT_WORDS
                     || rest.len() < usize::from(*words)
                 {
@@ -203,10 +238,12 @@ impl<'a> Selected<'a> {
                     return Err(invalid());
                 }
                 self.remaining = rest;
-                if self.relation.calls {
+                let selection = self.index.select(*target, *target_kind, c)?;
+                if !matches!(selection, CallSelection::Excluded) {
                     return Ok(Some(Observation::Call {
                         target: *target,
                         arguments,
+                        selection,
                     }));
                 }
             } else if matches!(event, ExecutionEvent::TransferArgument { .. }) {
@@ -232,6 +269,7 @@ mod tests {
             right,
             &ComparisonRelation {
                 calls: false,
+                reviewed_calls: None,
                 returns: ReturnWords {
                     low: compare_return,
                     high: false,
@@ -244,6 +282,7 @@ mod tests {
                 },
                 memory: vec![],
             },
+            &[],
             c,
         )
     }
@@ -370,6 +409,7 @@ mod physical_calls {
             },
             memory: vec![],
             calls: true,
+            reviewed_calls: None,
         };
         let known = ObservedWord::Known { value: 7 };
         let a = observation(&[0x2000, 0x3000], known, true);
@@ -378,28 +418,155 @@ mod physical_calls {
             observation(&[0x2000], known, true),
         ] {
             assert_eq!(
-                compare(&a, &b, &r, &mut || Ok(())).unwrap().verdict,
+                compare(&a, &b, &r, &[], &mut || Ok(())).unwrap().verdict,
                 ComparisonVerdict::Diff
             );
         }
         let b = observation(&[0x2000], known, false);
         assert_eq!(
-            compare(&a, &b, &r, &mut || Ok(())).unwrap().verdict,
+            compare(&a, &b, &r, &[], &mut || Ok(())).unwrap().verdict,
             ComparisonVerdict::Incomplete
         );
         let b = observation(&[0x2000, 0x3000], ObservedWord::Unknown, true);
         assert_eq!(
-            compare(&a, &b, &r, &mut || Ok(())).unwrap().verdict,
+            compare(&a, &b, &r, &[], &mut || Ok(())).unwrap().verdict,
             ComparisonVerdict::Incomplete
         );
         let mut b = observation(&[0x2000, 0x4000], ObservedWord::Unknown, true);
         assert_eq!(
-            compare(&a, &b, &r, &mut || Ok(())).unwrap().verdict,
+            compare(&a, &b, &r, &[], &mut || Ok(())).unwrap().verdict,
             ComparisonVerdict::Diff
         );
         b.events.truncate(1);
         assert_eq!(
-            compare(&a, &b, &r, &mut || Ok(())).unwrap_err().code,
+            compare(&a, &b, &r, &[], &mut || Ok(())).unwrap_err().code,
+            ErrorCode::Integrity
+        );
+    }
+}
+
+#[cfg(test)]
+mod reviewed_calls {
+    use super::*;
+    #[test]
+    fn reviewed_pair_order_is_semantic_order_and_kind_mismatch_has_no_fallback() {
+        let id = ArtifactId::of_bytes(b"fixture");
+        let object = ObjectId {
+            artifact: id.clone(),
+            location: ObjectLocation::Standalone,
+        };
+        let occurrence = KnowledgeOccurrence {
+            revision: id.as_str().parse().unwrap(),
+            source: FunctionSource::Input { input: 0 },
+            object: object.clone(),
+            symbol: Some(SymbolId {
+                object,
+                table: SymbolTableKind::Static,
+                table_section: 3,
+                index: 1,
+            }),
+        };
+        let pair = |a, b| ResolvedCallPair {
+            review: CallPairReview {
+                knowledge: id.as_str().parse().unwrap(),
+                assertion: ArtifactId::of_bytes(&u32::to_le_bytes(a))
+                    .as_str()
+                    .parse()
+                    .unwrap(),
+            },
+            correspondence: CallCorrespondence {
+                vendor: CallEndpoint {
+                    occurrence: occurrence.clone(),
+                    boundary: ReviewedCallBoundary::Code { address: a },
+                },
+                replacement: CallEndpoint {
+                    occurrence: occurrence.clone(),
+                    boundary: ReviewedCallBoundary::Code { address: b },
+                },
+                arguments: CallArguments::Exact { words: 0 },
+                applicability: "fixture".into(),
+                reason: "fixture".into(),
+            },
+        };
+        let pairs = [pair(0x2000, 0x5000), pair(0x3000, 0x6000)];
+        let relation = ComparisonRelation {
+            returns: ReturnWords {
+                low: false,
+                high: false,
+            },
+            events: EventChannels {
+                mmio_read: false,
+                mmio_write: false,
+                fence: false,
+                delay: false,
+            },
+            memory: vec![],
+            calls: false,
+            reviewed_calls: Some(ReviewedCalls {
+                pairs: pairs.iter().map(|p| p.review.clone()).collect(),
+                unlisted: UnlistedCalls::Exclude,
+            }),
+        };
+        let observation = |targets: &[u32]| ExecutionObservation {
+            stop: ExecutionStop::Returned {
+                low: Some(0),
+                high: None,
+            },
+            steps: 1,
+            events: targets
+                .iter()
+                .map(|t| ExecutionEvent::CallTransfer {
+                    site: 0x1000,
+                    target: *t,
+                    tail: false,
+                    indirect: false,
+                    stack: Some(0x9000),
+                    target_kind: ObservedCallTarget::CapturedCode,
+                    words: 0,
+                })
+                .collect(),
+            models: vec![],
+            calls: vec![],
+            tables: vec![],
+            services: vec![],
+            final_memory: vec![],
+        };
+        let left = observation(&[0x2000, 0x3000]);
+        let right = observation(&[0x5000, 0x6000]);
+        assert_eq!(
+            compare(&left, &right, &relation, &pairs, &mut || Ok(()))
+                .unwrap()
+                .verdict,
+            ComparisonVerdict::Match
+        );
+        for targets in [vec![0x6000, 0x5000], vec![0x5000]] {
+            assert_eq!(
+                compare(
+                    &left,
+                    &observation(&targets),
+                    &relation,
+                    &pairs,
+                    &mut || Ok(())
+                )
+                .unwrap()
+                .verdict,
+                ComparisonVerdict::Diff
+            );
+        }
+        let mut malformed = right;
+        if let ExecutionEvent::CallTransfer { target_kind, .. } = &mut malformed.events[0] {
+            *target_kind = ObservedCallTarget::CallModel;
+        }
+        assert_eq!(
+            compare(&left, &malformed, &relation, &pairs, &mut || Ok(()))
+                .unwrap_err()
+                .code,
+            ErrorCode::Integrity
+        );
+        assert_eq!(
+            compare(&left, &malformed, &relation, &[], &mut || Ok(()))
+                .unwrap_err()
+                .code,
             ErrorCode::Integrity
         );
     }

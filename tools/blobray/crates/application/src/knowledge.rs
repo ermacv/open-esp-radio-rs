@@ -48,7 +48,9 @@ fn validate_evidence(
                 KnowledgeClaim::FunctionExtent { extent } => Some(extent),
                 _ => None,
             };
-            if let KnowledgeClaim::Function { contract } = &proposal.claim {
+            if let KnowledgeClaim::CallPair { correspondence } = &proposal.claim {
+                crate::call_pairs::endpoint(&capture, &correspondence.vendor, memory, c)?;
+            } else if let KnowledgeClaim::Function { contract } = &proposal.claim {
                 let request = FunctionRequest {
                     research: None,
                     revision: Some(occurrence.revision.clone()),
@@ -139,6 +141,14 @@ fn validate_evidence(
             }
             Ok(capture.payload.clone())
         })?;
+    if let KnowledgeClaim::CallPair { correspondence } = &proposal.claim {
+        roots.extend(crate::call_pairs::secondary(
+            project,
+            correspondence,
+            memory,
+            control,
+        )?);
+    }
     if let KnowledgeClaim::Path { path } = &proposal.claim {
         roots.extend(crate::flow::validate_path(
             project, proposal, path, memory, control,

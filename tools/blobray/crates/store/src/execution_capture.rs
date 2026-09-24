@@ -4,6 +4,7 @@ pub(super) struct CaptureState {
     next: u16,
     words: u16,
     stack: Option<u32>,
+    selected: [bool; MAX_EXECUTION_ARGUMENT_WORDS],
     last: Option<(u32, u32, bool)>,
     pub known: bool,
 }
@@ -13,6 +14,7 @@ impl CaptureState {
             next: 0,
             words: 0,
             stack: None,
+            selected: [true; MAX_EXECUTION_ARGUMENT_WORDS],
             last: None,
             known: true,
         }
@@ -32,7 +34,13 @@ impl CaptureState {
         }
         Ok(())
     }
-    pub fn event(&mut self, input: &Invocation, event: &ExecutionEvent) -> Result<()> {
+    pub fn event(
+        &mut self,
+        input: &Invocation,
+        event: &ExecutionEvent,
+        index: Option<&CallRelationIndex<'_>>,
+        c: &mut dyn RunControl,
+    ) -> Result<()> {
         if let ExecutionEvent::TransferArgument { word, value } = event {
             if *word != self.next || self.next == self.words {
                 return Err(integrity("physical call argument lacks ordered boundary"));
@@ -56,7 +64,9 @@ impl CaptureState {
             } else if *word >= 8 && self.stack.is_none_or(|s| !s.is_multiple_of(16)) {
                 return Err(integrity("physical stack argument has no aligned stack"));
             }
-            self.known &= value.value().is_some();
+            if self.selected[usize::from(*word)] {
+                self.known &= value.value().is_some();
+            }
             self.next += 1;
             return Ok(());
         }
@@ -69,6 +79,7 @@ impl CaptureState {
             tail,
             stack,
             words,
+            target_kind,
             ..
         } = event
         {
@@ -93,6 +104,15 @@ impl CaptureState {
                     "physical call boundary differs from capture profile",
                 ));
             }
+            let selection = match index {
+                Some(i) => i.select(*target, *target_kind, c)?,
+                None => CallSelection::Physical,
+            };
+            self.selected.fill(false);
+            c.checkpoint(u64::from(*words) * selection.selection_work() + 1)?;
+            for word in 0..*words {
+                self.selected[usize::from(word)] = selection.selects_word(word);
+            }
             self.next = 0;
             self.words = *words;
             self.stack = *stack;
@@ -104,6 +124,11 @@ impl CaptureState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    impl CaptureState {
+        fn test_event(&mut self, input: &Invocation, event: &ExecutionEvent) -> Result<()> {
+            self.event(input, event, None, &mut || Ok(()))
+        }
+    }
     #[test]
     fn capture_validation_rejects_unrequested_incomplete_reordered_and_invented_words() {
         let mut input = Invocation {
@@ -137,13 +162,19 @@ mod tests {
             high: None,
         };
         let mut s = CaptureState::new();
-        assert!(s.event(&input, &word(0, ObservedWord::Unknown)).is_err());
-        s.event(&input, &header).unwrap();
-        assert!(s.finish(&input, &done).is_err());
-        assert!(s.event(&input, &header).is_err());
-        assert!(s.event(&input, &word(1, ObservedWord::Unknown)).is_err());
         assert!(
-            s.event(
+            s.test_event(&input, &word(0, ObservedWord::Unknown))
+                .is_err()
+        );
+        s.test_event(&input, &header).unwrap();
+        assert!(s.finish(&input, &done).is_err());
+        assert!(s.test_event(&input, &header).is_err());
+        assert!(
+            s.test_event(&input, &word(1, ObservedWord::Unknown))
+                .is_err()
+        );
+        assert!(
+            s.test_event(
                 &input,
                 &word(
                     0,
@@ -154,12 +185,16 @@ mod tests {
             )
             .is_err()
         );
-        s.event(&input, &word(0, ObservedWord::Known { value: 7 }))
+        s.test_event(&input, &word(0, ObservedWord::Known { value: 7 }))
             .unwrap();
-        s.event(&input, &word(1, ObservedWord::Unknown)).unwrap();
+        s.test_event(&input, &word(1, ObservedWord::Unknown))
+            .unwrap();
         s.finish(&input, &done).unwrap();
         assert!(!s.known);
-        assert!(s.event(&input, &word(2, ObservedWord::Unknown)).is_err());
+        assert!(
+            s.test_event(&input, &word(2, ObservedWord::Unknown))
+                .is_err()
+        );
         assert!(
             s.finish(
                 &input,
@@ -197,9 +232,9 @@ mod tests {
                     _ => *words = 1,
                 }
             }
-            assert!(s.event(&input, &changed).is_err());
+            assert!(s.test_event(&input, &changed).is_err());
         }
         input.observe_calls = None;
-        assert!(s.event(&input, &header).is_err());
+        assert!(s.test_event(&input, &header).is_err());
     }
 }

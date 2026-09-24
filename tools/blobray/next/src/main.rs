@@ -33,6 +33,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum KnowledgeCommand {
+    /// Propose an exact captured/model call correspondence for explicit review.
+    ProposeCallPair {
+        #[arg(long)]
+        request: PathBuf,
+    },
     /// Propose an integer or pointer layout for exact captured bytes.
     ProposeData {
         #[arg(long)]
@@ -1102,11 +1107,14 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             command,
             limits,
         } => match command {
+            KnowledgeCommand::ProposeCallPair { request } => {
+                return propose_command(project, request, limits, format, ProposalInput::CallPair);
+            }
             KnowledgeCommand::ProposeData { request } => {
-                return propose_data_command(project, request, limits, format, false);
+                return propose_command(project, request, limits, format, ProposalInput::Data);
             }
             KnowledgeCommand::ProposeConstant { request } => {
-                return propose_data_command(project, request, limits, format, true);
+                return propose_command(project, request, limits, format, ProposalInput::Constant);
             }
             KnowledgeCommand::Accept {
                 assertion,
@@ -2745,20 +2753,35 @@ fn export_data_query(
     Ok(ExitCode::SUCCESS)
 }
 
-fn propose_data_command(
+enum ProposalInput {
+    Data,
+    Constant,
+    CallPair,
+}
+fn propose_command(
     project: PathBuf,
     request: PathBuf,
     limits: ResourceOptions,
     format: Format,
-    constant: bool,
+    kind: ProposalInput,
 ) -> Result<ExitCode> {
     let application = limits.application()?;
     let _diagnostics = TemporaryDiagnostics(&application, format);
     let signals = Signals::new()?;
-    let handle = if constant {
-        application.start_propose_constant(&project, read_json_file(&request)?, limits.budget()?)?
-    } else {
-        application.start_propose_data(&project, read_json_file(&request)?, limits.budget()?)?
+    let handle = match kind {
+        ProposalInput::Constant => application.start_propose_constant(
+            &project,
+            read_json_file(&request)?,
+            limits.budget()?,
+        )?,
+        ProposalInput::Data => {
+            application.start_propose_data(&project, read_json_file(&request)?, limits.budget()?)?
+        }
+        ProposalInput::CallPair => application.start_propose_call_pair(
+            &project,
+            read_json_file(&request)?,
+            limits.budget()?,
+        )?,
     };
     if !wait_handle(&handle, &signals, format) {
         return Ok(ExitCode::FAILURE);

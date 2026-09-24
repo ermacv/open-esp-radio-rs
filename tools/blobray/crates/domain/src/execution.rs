@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 11;
+pub const EXECUTION_SCHEMA: u32 = 12;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 
@@ -359,6 +359,7 @@ pub struct CaseComparison {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionManifest {
+    pub call_pairs: Vec<ResolvedCallPair>,
     pub schema: u32,
     pub project: ProjectId,
     pub request: ExecutionRequest,

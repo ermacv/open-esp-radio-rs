@@ -538,6 +538,7 @@ mod services;
 fn fixture_relation(low: bool) -> ComparisonRelation {
     ComparisonRelation {
         calls: false,
+        reviewed_calls: None,
         returns: ReturnWords { low, high: false },
         events: EventChannels {
             mmio_read: true,
@@ -554,3 +555,6 @@ mod comparison;
 
 #[path = "execution/capture.rs"]
 mod capture;
+
+#[path = "execution/call_pairs.rs"]
+mod call_pairs;

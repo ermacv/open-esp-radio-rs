@@ -4,7 +4,7 @@
 has no filesystem, store, executor, selection or publication authority. Application
 supplies observations, the exact case relation and shared operation control.
 
-`selected-events-calls-returns-memory/model-6` compares explicitly selected ordered
+`selected-events-reviewed-calls-returns-memory/model-7` compares explicitly selected ordered
 MMIO read/write, fence and modeled delay channels; selected low/high return words;
 exact paired final normal-memory ranges; and opt-in ordered physical call targets/words. Physical range lengths must agree;
 addresses may differ only because the caller selected that pair. No pointer, ABI
@@ -30,3 +30,11 @@ timelines, elapsed time and abstract service internals are
 outside this implemented relation. Results concern explicit cases and the declared
 compiled binding; they do not establish whole-domain equivalence or qualification.
 See [selected comparison contracts](../../docs/design/contracts.md#selected-final-memory-and-comparison-relations).
+
+An explicit `reviewed_calls` selection supplies immutable accepted call pairs to
+this pure verifier. The shared bounded domain index maps each side's physical
+boundary to a selected pair and applies exact/selected/ignored physical words.
+Unlisted calls are explicitly exact or excluded, with raw evidence retained.
+Pairs can relate distinct targets; they do not infer ABI/layout or pointer
+normalization. Store independently checks selected reviews and uses the same
+index for knownness admission. No knowledge lookup occurs inside verification.

@@ -78,7 +78,7 @@ pub(super) fn difference_valid(
         (ComparisonVerdict::Match | ComparisonVerdict::Incomplete, None) => true,
         (ComparisonVerdict::Diff, Some(ComparisonDifference::Event { index })) => {
             *index <= max_events
-                && (relation.calls
+                && (relation.observes_calls()
                     || relation.events.mmio_read
                     || relation.events.mmio_write
                     || relation.events.fence
@@ -121,7 +121,7 @@ pub(super) fn difference_valid(
                 vendor,
                 replacement,
             }),
-        ) => relation.calls && *index < max_events && vendor != replacement,
+        ) => relation.observes_calls() && *index < max_events && vendor != replacement,
         (
             ComparisonVerdict::Diff,
             Some(ComparisonDifference::CallArgument {
@@ -131,7 +131,7 @@ pub(super) fn difference_valid(
                 replacement,
             }),
         ) => {
-            relation.calls
+            relation.observes_calls()
                 && *index < max_events
                 && usize::from(*word) < MAX_EXECUTION_ARGUMENT_WORDS
                 && vendor != replacement
@@ -163,6 +163,7 @@ mod tests {
         };
         let relation = ComparisonRelation {
             calls: false,
+            reviewed_calls: None,
             returns: ReturnWords {
                 low: false,
                 high: false,

@@ -674,7 +674,7 @@ cargo blobray doctor --project /path/to/investigation \
 cargo blobray recover --project /path/to/investigation
 ```
 
-Projects require metadata schema 29 and journal schema 30. Earlier and future
+Projects require metadata schema 30 and journal schema 31. Earlier and future
 formats are rejected without conversion or mutation. There is no `upgrade`
 command or compatibility reader. Keep older projects intact; new investigations
 use a new project directory. Revision manifests keep their own schema 1.
@@ -712,9 +712,9 @@ selected base, resulting revision/completeness and diagnostic. Completed imports
 exit 0 even for incomplete inventory; all other run outcomes exit nonzero and
 write the run envelope to stderr. Inventory coverage is not a verification verdict.
 
-Run records use schema 30 for every durable and read operation. Storage metadata
-uses schema 29; revision manifests use schema 1 and execution manifests use schema
-11. These are independent formats. Earlier journals are rejected by single-run,
+Run records use schema 31 for every durable and read operation. Storage metadata
+uses schema 30; revision manifests use schema 1 and execution manifests use schema
+12. These are independent formats. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -733,7 +733,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-30 run; an envelope version is not a journal
+execution 7) wrap the same schema-31 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker
@@ -1366,7 +1366,7 @@ claim a single mmap arena or a process-wide no-allocation guarantee.
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
 operation/query paths. No legacy engine or external limiter participates.
-Execution requests and manifests use schema 11; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
+Execution requests and manifests use schema 12; journal/storage versions follow [JSON and checks](#json-and-checks). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 
 ```console
@@ -1382,7 +1382,7 @@ with an exact captured occurrence):
 
 ```json
 {
-  "schema": 11,
+  "schema": 12,
   "vendor": {
     "revision": "REVISION_SHA",
     "source": { "kind": "input", "input": 0 },
@@ -1462,7 +1462,7 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 comparison relation still excludes final RAM itself.
 
-The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1` environment maps validated ELF
+The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-1/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
@@ -1750,7 +1750,8 @@ For example, compare low return, ordered MMIO/fence/delay and one exact memory p
   "returns":{"low":true,"high":false},
   "events":{"mmio_read":true,"mmio_write":true,"fence":true,"delay":true},
   "memory":[{"vendor":0,"replacement":0}],
-  "calls":false
+  "calls":false,
+  "reviewed_calls":null
 }
 ```
 
@@ -2564,3 +2565,43 @@ of its body. Each `call-transfer` plus its `transfer-argument` rows consumes
 [physical call contracts](../docs/design/contracts.md#physical-call-observations)
 for lifetime and claim scope. Execute/compare/query/replay all use this same
 retained profile.
+
+## Reviewed call correspondence
+
+Use `knowledge propose-call-pair --request pair.json` (or
+`Application::start_propose_call_pair`) to propose an explicit correspondence.
+The request has `subject`, `correspondence`, `expected_base`, `actor` and `reason`.
+Correspondence contains `vendor`/`replacement` endpoints, `arguments`,
+`applicability` and `reason`. Each endpoint contains `occurrence` and `boundary`:
+
+- `{"kind":"code","address":4096}` requires the occurrence's exact executable
+  symbol, with no name lookup or inferred extent.
+- `{"kind":"model","binding":{...},"definition":"..."}` identifies a complete
+  explicit call binding and canonical call declaration digest.
+- `{"kind":"service","binding":{...},"definition":"...","binding_index":0}`
+  identifies a FIFO definition and binding-array ordinal. Modeled/service context
+  occurrences have `symbol: null`; they do not claim the source contains the model.
+
+The generic knowledge proposal accepts the same `call-pair` claim. Both paths
+validate and preserve both source occurrences; review uses the ordinary accept or
+reject action. Select the accepted immutable reference in a comparison relation:
+
+```json
+{"calls":false,"reviewed_calls":{"pairs":[{"knowledge":"<revision>","assertion":"<id>"}],"unlisted":"exclude"},"returns":{"low":false,"high":false},"events":{"mmio_read":true,"mmio_write":true,"fence":true,"delay":true},"memory":[]}
+```
+
+Reviewed `arguments` is `{"kind":"exact","words":8}`,
+`{"kind":"selected","words":[0,7]}` or `{"kind":"ignore"}`. Exact requires
+matching capture counts; selected indices must exist on both sides. No physical
+word remapping or pointer/layout interpretation is inferred. Unlisted calls use
+explicit `exact` or `exclude`; exact requires identical capture profiles on both
+sides. All calls and words remain retained. Listed operations need not all occur,
+but observed selected calls compare in order with selected MMIO/fence/delay.
+Unknown selected words prevent MATCH.
+
+`manifest.call_pairs` retains the selected accepted contracts and review IDs.
+Changed source, model definition, binding or lifetime cannot reuse an inapplicable
+pair. At most 128 distinct reviews are selected per execution, within the existing
+64 KiB request/manifest bounds. A reviewed relation is a scoped comparison
+assumption, not hardware qualification. See
+[reviewed call contracts](../docs/design/contracts.md#reviewed-call-correspondence).

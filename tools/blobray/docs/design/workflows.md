@@ -624,4 +624,21 @@ Compare call groups together with the required MMIO/fence/delay channels to reta
 their relative order. Unknown selected words yield INCOMPLETE. `observe-call`
 goals stop after boundary capture and before dispatch, so that prefix never proves
 callee-body behavior. Exact physical comparison does not map renamed or relocated
-semantic operations; reviewed correspondence remains a target profile.
+semantic operations; select reviewed correspondence explicitly for that scenario.
+
+### Compare reviewed call operations (implemented)
+
+Create a call-pair proposal through `knowledge propose-call-pair --request` or
+`Application::start_propose_call_pair`; the generic `KnowledgeAction::Propose`
+path accepts the same `call-pair` claim and enforces the same physical checks.
+Each endpoint names its captured context and exact code symbol/address or explicit
+model/service binding identity. Review the proposal with the ordinary knowledge
+accept/reject action. A proposed or rejected assertion cannot authorize comparison.
+
+Select accepted `knowledge`/`assertion` references in each case's `reviewed_calls`,
+choose exact/selected/ignored physical words in the reviewed claim, and explicitly
+choose exact or excluded unlisted calls. Execute/compare with `calls: false`.
+Read `manifest.call_pairs` and raw calls beside the verdict. Different addresses
+can correspond only through the selected pair. Changed source/definition or
+ambiguous selected endpoints fail before publication. Reading and replaying the
+retained result after source removal/restore uses the same frozen reviews.

@@ -34,6 +34,7 @@ fn memory_request(f: &Fixture) -> ExecutionRequest {
     r.cases[0].replacement = Some(other);
     r.cases[0].relation = Some(ComparisonRelation {
         calls: false,
+        reviewed_calls: None,
         returns: ReturnWords {
             low: false,
             high: false,

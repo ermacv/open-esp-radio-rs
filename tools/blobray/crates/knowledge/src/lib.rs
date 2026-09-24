@@ -22,6 +22,15 @@ pub fn validate_proposal(p: &KnowledgeProposal) -> Result<()> {
         return Err(invalid("symbol and object occurrence differ"));
     }
     match &p.claim {
+        KnowledgeClaim::CallPair { correspondence } => {
+            correspondence.validate()?;
+            if p.occurrence != correspondence.vendor.occurrence {
+                return Err(invalid(
+                    "call pair primary occurrence differs from vendor endpoint",
+                ));
+            }
+        }
+
         KnowledgeClaim::EventRoute { route } => {
             validate_event_route(route)?;
             if !p
@@ -196,6 +205,16 @@ pub fn conflicts(a: &KnowledgeProposal, b: &KnowledgeProposal) -> bool {
         return false;
     }
     match (&a.claim, &b.claim) {
+        (
+            KnowledgeClaim::CallPair { correspondence: x },
+            KnowledgeClaim::CallPair { correspondence: y },
+        ) => {
+            x != y
+                && (a.subject == b.subject
+                    || x.vendor == y.vendor
+                    || x.replacement == y.replacement)
+        }
+
         (KnowledgeClaim::EventRoute { route: x }, KnowledgeClaim::EventRoute { route: y }) => {
             a.subject == b.subject && x != y
         }

@@ -48,8 +48,12 @@ pub struct ComparisonRelation {
     pub events: EventChannels,
     pub memory: Vec<MemoryPair>,
     pub calls: bool,
+    pub reviewed_calls: Option<ReviewedCalls>,
 }
 impl ComparisonRelation {
+    pub fn observes_calls(&self) -> bool {
+        self.calls || self.reviewed_calls.is_some()
+    }
     pub fn validate(&self, vendor: &Invocation, replacement: &Invocation) -> Result<()> {
         let bad = || {
             Error::new(
@@ -65,7 +69,7 @@ impl ComparisonRelation {
                 && !self.events.fence
                 && !self.events.delay
                 && self.memory.is_empty()
-                && !self.calls)
+                && !self.observes_calls())
         {
             return Err(bad());
         }
@@ -79,6 +83,25 @@ impl ComparisonRelation {
             && (vendor.observe_calls.is_none() || vendor.observe_calls != replacement.observe_calls)
         {
             return Err(bad());
+        }
+        if let Some(r) = &self.reviewed_calls {
+            if self.calls
+                || vendor.observe_calls.is_none()
+                || replacement.observe_calls.is_none()
+                || r.pairs.is_empty()
+                || r.pairs.len() > MAX_CALL_PAIRS
+                || r.pairs
+                    .iter()
+                    .enumerate()
+                    .any(|(i, p)| r.pairs[..i].contains(p))
+            {
+                return Err(bad());
+            }
+            if r.unlisted == UnlistedCalls::Exact
+                && vendor.observe_calls != replacement.observe_calls
+            {
+                return Err(bad());
+            }
         }
         for (i, pair) in self.memory.iter().enumerate() {
             let (Some(a), Some(b)) = (

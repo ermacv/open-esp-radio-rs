@@ -30,6 +30,9 @@ fn resolve(
     c: &mut dyn RunControl,
 ) -> Result<Resolution> {
     let operation = match action {
+        ScenarioRequest::ProposeCallPair { request } => RunOperation::Knowledge {
+            change: crate::call_pairs::propose(project, request, memory, c)?,
+        },
         ScenarioRequest::ProposeData { request } => RunOperation::Knowledge {
             change: crate::data::propose_data(project, request, memory, c)?,
         },

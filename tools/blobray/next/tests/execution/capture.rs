@@ -25,6 +25,7 @@ fn select(r: &mut ExecutionRequest, words: u16) {
             },
             memory: vec![],
             calls: true,
+            reviewed_calls: None,
         });
     }
 }

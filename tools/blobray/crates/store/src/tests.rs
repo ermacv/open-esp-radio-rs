@@ -1371,6 +1371,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
     file.write_all(b"\n").unwrap();
     let records = stage.retain_temporary(file, &mut || Ok(())).unwrap();
     let mut manifest = ExecutionManifest {
+        call_pairs: vec![],
         schema: EXECUTION_SCHEMA,
         project: project.id().clone(),
         request,
@@ -1939,6 +1940,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
         },
     });
     let manifest = ExecutionManifest {
+        call_pairs: vec![],
         schema: EXECUTION_SCHEMA,
         project: project.id().clone(),
         request: ExecutionRequest {
@@ -1949,6 +1951,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
             cases: vec![ExecutionCase {
                 relation: Some(ComparisonRelation {
                     calls: false,
+                    reviewed_calls: None,
                     returns: ReturnWords {
                         low: true,
                         high: false,
@@ -2096,6 +2099,229 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
     forged_manifest.verdict = Some(ComparisonVerdict::Match);
     assert_eq!(
         validate(&forged_manifest, &forged).unwrap_err().code,
+        ErrorCode::Integrity
+    );
+}
+
+#[test]
+fn retained_call_pairs_require_exact_review_content_and_release_admitted_owners() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = Project::create(temp.path()).unwrap();
+    let id = ArtifactId::of_bytes(b"fixture");
+    let object = ObjectId {
+        artifact: id.clone(),
+        location: ObjectLocation::Standalone,
+    };
+    let occurrence = KnowledgeOccurrence {
+        revision: id.as_str().parse().unwrap(),
+        source: FunctionSource::Input { input: 0 },
+        object: object.clone(),
+        symbol: Some(SymbolId {
+            object,
+            table: SymbolTableKind::Static,
+            table_section: 3,
+            index: 1,
+        }),
+    };
+    let pair = CallCorrespondence {
+        vendor: CallEndpoint {
+            occurrence: occurrence.clone(),
+            boundary: ReviewedCallBoundary::Code { address: 0x1000 },
+        },
+        replacement: CallEndpoint {
+            occurrence: occurrence.clone(),
+            boundary: ReviewedCallBoundary::Code { address: 0x2000 },
+        },
+        arguments: CallArguments::Exact { words: 0 },
+        applicability: "fixture".into(),
+        reason: "reviewed fixture".into(),
+    };
+    let assertion: AssertionId = ArtifactId::of_bytes(b"assertion").as_str().parse().unwrap();
+    let mut base = None;
+    for action in [
+        KnowledgeAction::Propose {
+            proposal: KnowledgeProposal {
+                subject: "fixture".to_owned().try_into().unwrap(),
+                occurrence,
+                claim: KnowledgeClaim::CallPair {
+                    correspondence: Box::new(pair.clone()),
+                },
+                evidence: vec![EvidenceRef::Document {
+                    payload: id.clone(),
+                }],
+                note: None,
+            },
+        },
+        KnowledgeAction::Review {
+            assertion: assertion.clone(),
+            decision: ReviewDecision::Accept,
+            supersedes: None,
+        },
+    ] {
+        let mut writer = project.writer().unwrap();
+        let change = KnowledgeChange {
+            expected_base: base,
+            actor: "fixture".into(),
+            reason: "fixture".into(),
+            action,
+        };
+        let (mut run, path) = writer
+            .register_operation(
+                ResourceBudget::default(),
+                owner(),
+                RunOperation::Knowledge {
+                    change: change.clone(),
+                },
+                |_| {},
+            )
+            .unwrap();
+        let receipt = Staging::open(&path)
+            .unwrap()
+            .knowledge_receipt(
+                &KnowledgeManifest {
+                    schema: 2,
+                    project: project.id().clone(),
+                    change,
+                    assertion: assertion.clone(),
+                    evidence_roots: vec![],
+                },
+                &mut || Ok(()),
+            )
+            .unwrap();
+        run.state = RunState::Running;
+        writer.update_run(&run).unwrap();
+        run.state = RunState::Validating;
+        writer.update_run(&run).unwrap();
+        let retained = writer
+            .retain_knowledge(&run, &receipt, &mut || Ok(()))
+            .unwrap();
+        writer
+            .publish_knowledge(&mut run, retained, &mut || Ok(()))
+            .unwrap();
+        base = Some(receipt.revision);
+    }
+    let review = CallPairReview {
+        knowledge: base.unwrap(),
+        assertion,
+    };
+    let target = ExecutionTarget {
+        revision: id.as_str().parse().unwrap(),
+        source: FunctionSource::Input { input: 0 },
+        companions: vec![],
+        abi: CallAbi::RiscvInteger,
+        stack: MemorySeed {
+            address: 0x8000,
+            length: 4096,
+            fill: None,
+            bytes: vec![],
+        },
+    };
+    let input = Invocation {
+        entry: 0x1000,
+        goal: ExecutionGoal::Return,
+        arguments: vec![],
+        memory: vec![],
+        models: vec![],
+        calls: vec![],
+        tables: vec![],
+        services: vec![],
+        observe_memory: vec![],
+        observe_calls: Some(CallCapture {
+            include_tail: false,
+            argument_words: 0,
+            overrides: vec![],
+        }),
+    };
+    let request = ExecutionRequest {
+        schema: EXECUTION_SCHEMA,
+        vendor: target.clone(),
+        replacement: Some(target),
+        binding: Some(CompiledBinding::SharedCore),
+        max_events: 4,
+        cases: vec![ExecutionCase {
+            name: "fixture".into(),
+            reset: SessionReset::Cold,
+            vendor: input.clone(),
+            replacement: Some(input),
+            relation: Some(ComparisonRelation {
+                returns: ReturnWords {
+                    low: false,
+                    high: false,
+                },
+                events: EventChannels {
+                    mmio_read: false,
+                    mmio_write: false,
+                    fence: false,
+                    delay: false,
+                },
+                memory: vec![],
+                calls: false,
+                reviewed_calls: Some(ReviewedCalls {
+                    pairs: vec![review.clone()],
+                    unlisted: UnlistedCalls::Exclude,
+                }),
+            }),
+        }],
+    };
+    let memory = WorkingMemory::new(4 * 1024 * 1024).unwrap();
+    for _ in 0..3 {
+        let selected = project
+            .execution_call_pairs(&request, &memory, &mut || Ok(()))
+            .unwrap();
+        assert_eq!(
+            selected.pairs,
+            vec![ResolvedCallPair {
+                review: review.clone(),
+                correspondence: pair.clone()
+            }]
+        );
+        assert!(memory.used() > 0);
+        drop(selected);
+        assert_eq!(memory.used(), 0);
+    }
+    let small = WorkingMemory::new(1).unwrap();
+    assert!(matches!(
+        project.execution_call_pairs(&request, &small, &mut || Ok(())),
+        Err(Error {
+            code: ErrorCode::ResourceLimited,
+            ..
+        })
+    ));
+    assert_eq!(small.used(), 0);
+    let mut manifest = ExecutionManifest {
+        schema: EXECUTION_SCHEMA,
+        project: project.id().clone(),
+        request,
+        producer: ExecutionProducer {
+            executor: "test".into(),
+            environment: "test".into(),
+            verifier: "test".into(),
+        },
+        records: id,
+        verdict: Some(ComparisonVerdict::Match),
+        complete: true,
+        call_pairs: vec![ResolvedCallPair {
+            review,
+            correspondence: pair,
+        }],
+    };
+    project
+        .validate_execution_call_pairs(&manifest, &memory, &mut || Ok(()))
+        .unwrap();
+    manifest.call_pairs[0].correspondence.arguments = CallArguments::Ignore;
+    assert_eq!(
+        project
+            .validate_execution_call_pairs(&manifest, &memory, &mut || Ok(()))
+            .unwrap_err()
+            .code,
+        ErrorCode::Integrity
+    );
+    manifest.call_pairs.clear();
+    assert_eq!(
+        project
+            .validate_execution_call_pairs(&manifest, &memory, &mut || Ok(()))
+            .unwrap_err()
+            .code,
         ErrorCode::Integrity
     );
 }

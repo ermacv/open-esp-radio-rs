@@ -19,30 +19,53 @@ impl oer_esp32s31_phy::target_executor::PhyAsyncDelay for ProductionTraceDelay {
     }
 }
 
+/// RFPLL's explicit requested-time environment, with captured register-preserving
+/// delivery. Hardware time itself is outside this software comparison.
+struct RfpllTraceDelay;
+impl oer_esp32s31_phy::target_executor::PhyShortDelay for RfpllTraceDelay {
+    const MAX_MICROS: u32 = oer_esp32s31_phy::RomShortDelay::MAX_MICROS;
+    fn settle_micros(micros: u32) -> bool {
+        if micros == 0 || micros > Self::MAX_MICROS {
+            return false;
+        }
+        super::open_phy_trace_preserving_delay(micros);
+        true
+    }
+}
+impl oer_esp32s31_phy::target_executor::PhyAsyncDelay for RfpllTraceDelay {
+    type ShortDelay = Self;
+    fn after_micros(
+        _kind: oer_esp32s31_phy::executor::wait::Kind,
+        micros: u64,
+    ) -> impl Future<Output = ()> {
+        super::open_phy_trace_preserving_delay(micros as u32);
+        ready(())
+    }
+}
+
 /// Complete production search, including typed I2C transactions and settling.
-/// The verifier supplies the isolated PHY partition; no search policy lives
+/// The wrapper constructs its isolated PHY owner; no search policy lives
 /// in this ABI wrapper.
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_rfpll_trace_search(
-    registers: &mut oer_esp32s31_pac::RadioPhyRegisters,
-) -> i32 {
+pub extern "C" fn open_phy_rfpll_trace_search() -> i32 {
+    let mut radio =
+        oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
     embassy_futures::block_on(oer_esp32s31_phy::target_port::rfpll::search::<
-        ProductionTraceDelay,
-    >(registers))
+        RfpllTraceDelay,
+    >(radio.phy_hal_mut()))
     .map_or(i32::MIN, |outcome| i32::from(outcome.delta()))
 }
 
 /// Production frequency-control envelope; no grant or parent policy is modeled here.
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_rfpll_trace_maintain(
-    registers: &mut oer_esp32s31_pac::RadioPhyRegisters,
-    channel: u16,
-) -> i32 {
+pub extern "C" fn open_phy_rfpll_trace_maintain(channel: u16) -> i32 {
+    let mut radio =
+        oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
     embassy_futures::block_on(oer_esp32s31_phy::target_port::rfpll::maintain::<
-        ProductionTraceDelay,
-    >(registers, channel))
+        RfpllTraceDelay,
+    >(radio.phy_hal_mut(), channel))
     .map_or(i32::MIN, |outcome| i32::from(outcome.search.delta()))
 }
 

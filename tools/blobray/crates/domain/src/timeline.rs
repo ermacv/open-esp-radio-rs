@@ -139,7 +139,12 @@ impl MemoryTransaction {
             | Self::ReadModifyWrite { address, .. } => (address, 4, None),
         };
         if !matches!(width, 1 | 2 | 4)
-            || !address.is_multiple_of(u32::from(width))
+            || (matches!(
+                self,
+                Self::LoadReserved { .. }
+                    | Self::StoreConditional { .. }
+                    | Self::ReadModifyWrite { .. }
+            ) && !address.is_multiple_of(4))
             || u64::from(address) + u64::from(width) >= u64::from(u32::MAX - 1)
             || (width < 4 && value.is_some_and(|v| v >> (width * 8) != 0))
         {

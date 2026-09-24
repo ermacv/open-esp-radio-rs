@@ -810,11 +810,7 @@ fn image_mmio_knowledge_round_trip_has_native_commands_and_retained_evidence() {
     assert!(String::from_utf8_lossy(&output.stdout).contains("CONTROL"));
 }
 
-#[test]
-fn explicit_captured_rom_definition_links_and_resolves_across_publications() {
-    let source = fixture(false, true);
-    let image = prepared(&source);
-    let rom = export(&source, image);
+fn external_definition_fixture(rom: Vec<u8>) -> Fixture {
     let mut obj = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
     let section = obj.add_section(Vec::new(), b".text.entry".to_vec(), SectionKind::Text);
     obj.append_section_data(
@@ -873,6 +869,14 @@ fn explicit_captured_rom_definition_links_and_resolves_across_publications() {
         input: 1,
         symbol: helper,
     }];
+    f
+}
+
+#[test]
+fn explicit_captured_rom_definition_links_and_resolves_across_publications() {
+    let source = fixture(false, true);
+    let image = prepared(&source);
+    let mut f = external_definition_fixture(export(&source, image));
     let publication = analyze(&f, None);
     let image = prepared(&f);
     let pid = analyze(&f, Some(image));
@@ -908,6 +912,44 @@ fn explicit_captured_rom_definition_links_and_resolves_across_publications() {
             .link_plan(&f.project, f.request.clone(), &linker(), budget())
             .is_err()
     );
+}
+
+#[test]
+fn address_definition_does_not_authorize_analyzing_its_tls_carrier() {
+    let source = fixture(false, true);
+    let image = prepared(&source);
+    let mut rom = export(&source, image);
+    let old = u32::from_le_bytes(rom[28..32].try_into().unwrap()) as usize;
+    let count = u16::from_le_bytes(rom[44..46].try_into().unwrap());
+    let headers = rom[old..old + usize::from(count) * 32].to_vec();
+    let new = rom.len() as u32;
+    rom[28..32].copy_from_slice(&new.to_le_bytes());
+    rom[44..46].copy_from_slice(&(count + 1).to_le_bytes());
+    rom.extend_from_slice(&headers);
+    for value in [object::elf::PT_TLS, 0, 0, 0, 0, 0, 4, 4] {
+        rom.extend_from_slice(&value.to_le_bytes());
+    }
+    let f = external_definition_fixture(rom);
+    let image = prepared(&f);
+    assert!(!export(&f, image).is_empty());
+    let run = f
+        .app
+        .start_analyze_function(
+            &f.project,
+            FunctionRequest {
+                revision: Some(f.revision.clone()),
+                source: FunctionSource::Input { input: 1 },
+                selector: f.request.companions[0].symbol.clone().into(),
+                research: None,
+                extent: None,
+            },
+            budget(),
+        )
+        .unwrap()
+        .wait();
+    assert_eq!(run.state, RunState::Failed);
+    assert_eq!(run.error.unwrap().code, ErrorCode::Incompatible);
+    assert!(run.analysis.is_none());
 }
 
 #[test]

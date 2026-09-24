@@ -575,3 +575,6 @@ mod static_trace;
 
 #[path = "execution/command_bank.rs"]
 mod command_bank;
+
+#[path = "execution/unaligned.rs"]
+mod unaligned;

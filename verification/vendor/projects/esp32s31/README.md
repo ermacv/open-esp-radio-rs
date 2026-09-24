@@ -181,6 +181,59 @@ The combined runner retains all these results for source-free move,
 backup/restore and exact replay. This is a software prefix comparison under the
 declared environment, not complete RX calibration or hardware qualification.
 
+### RFPLL search and frequency maintenance
+
+Add `--rfpll --phy-sdk PATH` to the prefix invocation to run
+[the native RFPLL matrix](phy_rfpll_native.py). The additional linked SDK firmware
+must have SHA-256 `ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9`.
+It contributes the exact static `phy_printf` definition needed by the linked
+archive section. It is captured and retained but is not an execution companion:
+its TLS and overlapping code/data load segments exceed the current loader
+profile. Diagnostics are disabled in positive cases; enabling them must stop at
+an unmapped instruction fetch. No stub or successful diagnostic model is used.
+
+Search covers nine finite status/capacitor profiles, two stack fills and two busy
+prefixes (36 cases), including signed underflow and the 511-capacitor boundary.
+The ROM capacitor helpers and archive I2C callbacks execute captured code. The
+compiled wrappers acquire the production radio capability and invoke shipping
+search/maintenance owners. Finite lock-status samples are peripheral inputs;
+no model supplies the search result. Independent assertions require the exact
+signed result, command sequence and requested five-microsecond settles.
+
+The production delay adapter executes a guest save/restore shim around
+`open_phy_trace_delay_event`; the model binds that inner requested-time edge.
+Integer caller registers are preserved by captured instructions, avoiding
+unspecified call clobbers in inactive coroutine fields. Entry explicitly seeds
+unused temporaries as well as saved registers. The modeled ROM delay retains the
+ordinary external-call ABI. No general unknown-value handling is relaxed. ROM
+`memcpy` may use unaligned normal-memory words; the recorded execution environment
+explicitly admits those accesses while MMIO and atomics remain aligned.
+
+Maintenance includes eight zero-delta cases and forty positive/negative,
+underflow/overflow cases across channels 1, 13, 14, 2412 and 2484. Setup executes
+captured ROM `memcpy` to initialize the archive parameter object. The measured
+phase retains those bytes and executes real weak grant functions. Nonzero
+corrections read and rewrite all 85 frequency-memory entries, preserve unrelated
+bits and restore the selected channel. An independent transaction oracle checks
+all frequency and SDM reads/writes, including signed narrowing and high bits;
+requested delays must remain exactly two microseconds followed by the search
+settles. The stuck-command case returns the production timeout, leaves the first
+command pending and must not restore hardware frequency control.
+
+Native search comparison selects low return, all MMIO writes, fences and delays;
+maintenance selects those events without the vendor's void return. Raw reads are
+retained. The runner additionally compares the ordered frequency envelope:
+transport-aperture reads and its two mapping-control writes are excluded, while
+command-port writes and every other read/write/fence/delay remain. For nonzero
+maintenance only, the vendor's second frequency-control read is the installed
+layout query; its count and exact value are checked before excluding that one
+observation. Production owns that fixed layout. These additional assertions are
+not included in the native MATCH claim; an unfiltered polling comparison retains
+DIFF. Changed capacitor input, unknown callback pointer, unmapped diagnostics and
+event exhaustion have explicit DIFF/INCOMPLETE/no-publication checks. The combined
+runner retains the entire matrix for source-free backup, move, restore and exact
+replay. Software observations do not establish hardware/RF or grant qualification.
+
 ## Legacy configuration reference
 
 The configuration and command vocabulary below describe retained legacy inputs;

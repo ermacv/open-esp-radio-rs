@@ -1175,6 +1175,13 @@ selectors. Named CLI selection must be unique. At most 64 definitions are allowe
 undefined/nonfunction symbols, duplicate names, collisions with selected input
 definitions and addresses inside synthetic placements fail. Definitions are
 validated against captured executable bytes; no stub implementation is emitted.
+This address-only acquisition checks the exact physical symbol table, declared
+nonzero function extent, allocated code section and unique executable file-backed
+load mapping. Non-executable data sharing the virtual address, TLS/dynamic
+metadata and executable mappings elsewhere in the carrier do not become a runtime
+dependency. A definition neither loads that
+carrier nor proves its code can execute under the static-image profile; selecting
+it as an execution companion still applies all normal loader restrictions.
 Code placement uses ELF allocation/execution flags, including vendor sections
 whose names are not `.text`. Address assignments and selected occurrences enter
 the link identity. Other unresolved symbols remain linker failures.
@@ -1504,12 +1511,26 @@ stack word overrides even known stack seed bytes/fill. Alignment padding and
 remaining stack bytes retain only the declared seed initialization. Argument setup
 creates no guest memory/MMIO event. x0 is zero and ra is a reserved unmapped return
 sentinel. Other integer registers begin unknown. Loading an unknown byte,
-using an unknown register, an inaccessible/misaligned memory access or an
+using an unknown register, an inaccessible memory access or an
 unsupported instruction ends that phase with a typed `incomplete` observation
 and its PC. The current integer executor supports RV32IMAC arithmetic, branches,
 loads/stores, direct/indirect jumps, word atomics and ordinary fence events. FP,
 CSR/privileged execution, syscalls, dynamic loading and TLS are unsupported.
 Declared float ABI flags do not silently select floating-point execution.
+
+Ordinary RAM and ELF-backed data allow unaligned halfword/word loads and stores
+within one mapping, using little-endian byte order. Every loaded byte must be
+known and readable; a store validates the complete writable range before changing
+any byte. Crossing mapping/permission boundaries stays unavailable even when
+adjacent mappings exist. This `byte-addressed-memory-1` execution-environment
+policy supports captured routines such as ROM `memcpy`; it is not a claim about
+hardware handling, timing or concurrent atomicity. The
+[RISC-V load/store specification](https://docs.riscv.org/reference/isa/v20260120/unpriv/rv32.html)
+leaves misaligned ordinary accesses to the execution environment. Instruction
+fetches, MMIO and atomics retain their alignment requirements. Unaligned device
+accesses consume no model response and are never decomposed into byte accesses.
+Normal-memory timeline events preserve the original address and width. Any
+successful overlapping store, including an unaligned one, invalidates LR/SC.
 
 Word atomics use a single-hart, program-order environment with one exact four-byte
 reservation per session. LR.W replaces the reservation; SC.W checks write access
@@ -1531,7 +1552,7 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 selected final-RAM and normal-memory timeline relations can observe their updates.
 
-The `static-elf/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-3/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1` environment maps validated ELF
+The `static-elf/byte-addressed-memory-1/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-3/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1` environment maps validated ELF
 segments with their permissions and ELF-defined zero-fill. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte

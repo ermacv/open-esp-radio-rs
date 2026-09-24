@@ -507,7 +507,14 @@ impl ExecutionMemory for Session<'_> {
         c.checkpoint(self.regions.len() as u64 + 1)?;
         if !matches!(access, MemoryAccess::Read | MemoryAccess::Fetch)
             || !matches!(width, 1 | 2 | 4)
-            || !address.is_multiple_of(u32::from(width))
+        {
+            return Ok(None);
+        }
+        // Ordinary memory is byte-addressable in this execution environment.
+        // Misaligned MMIO never dispatches or decomposes into device accesses.
+        if !address.is_multiple_of(u32::from(width))
+            && (access == MemoryAccess::Fetch
+                || self.devices.overlaps(address, u64::from(width), c)?)
         {
             return Ok(None);
         }
@@ -567,7 +574,12 @@ impl ExecutionMemory for Session<'_> {
         c: &mut dyn RunControl,
     ) -> Result<bool> {
         c.checkpoint(self.regions.len() as u64 + 1)?;
-        if !matches!(width, 1 | 2 | 4) || !address.is_multiple_of(u32::from(width)) {
+        if !matches!(width, 1 | 2 | 4) {
+            return Ok(false);
+        }
+        if !address.is_multiple_of(u32::from(width))
+            && self.devices.overlaps(address, u64::from(width), c)?
+        {
             return Ok(false);
         }
         let value = if width == 4 {

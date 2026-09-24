@@ -110,3 +110,12 @@ path, guard or call model; those belong to application-owned execution sessions.
 `PreparedObject::executable_bytes` lends a bounded 2/4-byte prefix from an executable
 file-backed load mapping. ISA consumers validate instruction meaning through their
 decoder; artifact acquisition never supplies branch semantics.
+
+`inspect_link_definition` lends no program view: it validates a standalone static
+function symbol against captured RV32 ET_EXEC bytes and returns its address.
+The extent must have one executable, file-backed load mapping agreeing with the
+allocated code section. Non-executable mappings may overlap that address; they
+do not identify the selected function bytes. TLS/dynamic metadata or unrelated
+overlapping executable mappings are outside this acquisition's authority. Execution/function analysis still
+reject unsupported whole-image profiles. Hashing and traversal consume the run
+budget; admitted carrier bytes are released before returning the address.

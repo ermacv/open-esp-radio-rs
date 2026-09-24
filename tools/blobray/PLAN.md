@@ -188,8 +188,9 @@ four stage-10 comparison profiles and their combined acceptance. The 10.L linker
 resumed on explicit user instruction. Stage 11 is complete, including both
 command-memory and transport acceptance. Stage 12.1 is complete under the full
 calibration/RF assignment below. Stage 12.2 is complete, including PBus/DCODE
-execution, negative outcomes and preservation. The next unit is 12.3: RFPLL
-search, maintenance and frequency memory.
+execution, negative outcomes and preservation. Stage 12.3 is complete: RFPLL
+search, maintenance, frequency memory and restored replay. The next acceptance
+unit is 12.4, gain arithmetic and publication.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -810,7 +811,7 @@ current owner docs and the ordinary stage gates. No partial unit is completion.
 | --- | --- | --- |
 | 12.1 | done | Four finite leaves from `profiles/phy-calibration-leaves.toml`: TX-gain restore, forced digital gain, temperature-to-power and post-init AGC. Execute every declared input case with the current authenticated archive, independently expected writes/returns and compiled HAL/PHY. Preserve the restore-enabled domain and archive-versus-ROM temperature policy. Changed input DIFF, missing/unknown input INCOMPLETE, capacity/no-publication and restored replay must pass. |
 | 12.2 | done | PBus clear and DCODE: all profiles in `phy_rfpll/calibration.rs`, `phy_rfpll/dcode.rs` and the PBus rows of the calibration profile. Retained values, both settle branches, delayed readiness, crystal selectors and eight measured bytes; stuck PBus/channel/I2C cannot publish partial codes or restore unfinished state. |
-| 12.3 | pending | RFPLL search, maintenance and frequency memory: all cases in `phy_rfpll.rs` and `phy_rfpll/memory.rs`. Zero/nonzero signed corrections, search commands, requested settles, retained memory/control transactions and timeout without restored hardware control. Preserve the installed-layout query exclusion explicitly and retain raw observations. |
+| 12.3 | done | RFPLL search, maintenance and frequency memory: all cases in `phy_rfpll.rs` and `phy_rfpll/memory.rs`. Zero/nonzero signed corrections, search commands, requested settles, retained memory/control transactions and timeout without restored hardware control. Preserve the installed-layout query exclusion explicitly and retain raw observations. |
 | 12.4 | pending | Gain arithmetic and publication: `phy_rfpll/gain_calculation.rs`, `phy_rfpll/tx_gain.rs`, `phy_rfpll/bluetooth_gain.rs`. Actual current coefficient selection and ROM kernel inputs, signed narrowing, additive current versus subtractive ROM behavior, boundary curves, complete Wi-Fi/BT publishers and bank wrap. Independently authenticate coefficients; changing coefficients changes dependency identity. |
 | 12.5 | pending | Gain state and RF-test producer: `phy_rfpll/gain_state.rs`, `phy_rfpll/gain_producer.rs`. Execute real backup/destruction/recovery/init/consumption and the separately authenticated RF-test power producer, including rounding/saturation and gain/MAC publication. Preserve their characterization scope; vendor storage support is not inferred for production. Missing RF-test input remains an unmet obligation, never an omitted case. |
 | 12.6 | pending | Channel restoration: `phy_rfpll/channel.rs`. Actual callback installation, all temperature-prefix sensor ranges, full-root gain publication and committed channel/bandwidth/temperature; stuck readiness cannot publish gain or semantic output. Prefix and full-root evidence remain distinct. |
@@ -860,3 +861,34 @@ checks pass. The kernel cgroup test remains environment-gated; real acceptance
 uses explicitly selected watchdog mode. The combined stage-11/leaves/prefix route
 passes source removal, move, backup/restore and exact replay for all retained
 results. Full source-only remains the stage-12.10 checkpoint.
+
+
+12.3 acceptance: all 36 captured RFPLL search cases and 48 maintenance cases
+match compiled production under explicit relations. Independent expectations
+check signed results, search commands/settles and every transaction across 85
+frequency-memory words, including underflow/overflow and all five channel forms.
+The single installed-layout query exclusion is checked explicitly; raw polling
+DIFF remains retained. Production timeout leaves the command pending and software
+frequency control unrestored. Changed capacitor DIFF, unknown callbacks and
+unmapped diagnostics INCOMPLETE, and event-capacity/no-publication checks pass.
+All 89 retained RFPLL results reopen and replay with identical identities after
+source removal, move and backup/restore, together with the preceding I2C,
+calibration-leaf and PBus/DCODE matrix.
+
+Exact external definitions now acquire captured symbol/section/executable-mapping
+identity without acquiring a runnable carrier. TLS and overlapping data segments
+cannot grant execution authority; forged physical identities, competing executable
+mappings, resource exhaustion and cancellation are tested. The RFPLL SDK diagnostic
+definition is address-only; enabling that unprovided body remains INCOMPLETE.
+The explicit `byte-addressed-memory-1` environment supports captured ROM memcpy's
+unaligned ordinary data accesses within one mapping. Unknown bytes, permissions,
+region boundaries and aligned-only MMIO/atomics remain enforced; timeline and
+reservation regressions cover the same contract. The captured production delay
+adapter saves/restores registers around its modeled time-observation edge; general
+unknown-register handling remains strict.
+
+All 532 Next/core tests pass (the delegated-cgroup test remains environment-gated),
+along with affected strict Clippy, standalone, root/probe formatting, probe build
+and Clippy, and owned public/private API and Markdown checks. This closes the
+software RFPLL profile, without hardware, grant or RF qualification. No storage
+conversion or compatibility reader is introduced.

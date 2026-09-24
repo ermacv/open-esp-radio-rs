@@ -251,6 +251,15 @@ worker messages have distinct compatibility boundaries.
 | Review candidate | Base revision, proposed assertions, explicit decision and retained supporting records | Knowledge validates meaning and applicability. Application commits a candidate bound to its validated inputs; store rechecks expected base and reference closure. Conflict requires a new review decision, not an automatic rebase. |
 | Comparison | Two identified compiled implementations, prepared execution inputs, scenario and relation | Executor owns each session; verifier consumes observations and owns verdict construction. Application alone retains/publishes the resulting evidence. Models and frontends cannot supply the verdict. |
 
+External link definitions acquire one captured function address, not a runnable
+program view. Artifacts validates the selected static symbol table, nonzero
+extent, allocated executable section and unique file-backed executable mapping.
+Non-executable data sharing a virtual address, TLS/dynamic metadata and executable
+mappings unrelated to that extent remain carrier facts; they grant no loading or execution support. Application retains
+the exact source/symbol selection in the link identity and never emits a stub.
+Execution and research must separately admit any carrier they actually map or
+analyze under their existing whole-image profile.
+
 An import is the acquisition operation before a closed revision exists. Its
 admission freezes requested origins, order, expected digests and policy; capture
 then determines the new content identities. This request is not an analysis plan
@@ -757,6 +766,18 @@ words to the backend. Unknown argument slots override stack seeds. No register o
 stack word becomes zero by omission, and setup emits no guest events. The caller
 owns type/variadic lowering. The execution request and manifest format pins this interpretation;
 producer identity pins both backend unknown-value semantics and stack environment.
+
+The `byte-addressed-memory-1` environment admits ordinary unaligned 1/2/4-byte
+RAM or ELF-backed data accesses entirely inside one mapping. Reads require all
+bytes known/readable; stores validate the complete writable range before mutation.
+No access stitches adjacent mappings together or wraps RV32. Timeline records keep
+the original address and width; domain/store validation permits these ordinary
+transactions while continuing to require aligned atomics. Misaligned MMIO never
+consumes a response or splits into smaller operations. Instruction fetch alignment
+is unchanged. This policy is part of `ExecutionProducer.environment`, so replay
+cannot silently use the former aligned-only environment. It makes no hardware,
+timing or concurrent-atomicity assertion. Regression ownership is
+`execution/unaligned.rs` and `store::execution_timeline`.
 
 `ExecutionMemory` also owns LR/SC reservation state, permission checks and indivisible
 word updates. The backend supplies pure AMO arithmetic through a borrowed callback;

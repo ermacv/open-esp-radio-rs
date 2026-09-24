@@ -20,6 +20,7 @@ ROM_SHA = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
 OBJECT_SHA = "7e6ebb1353d1bd2c53b4b5b1176bbf795c57d899c3f07a26ce56e74b5803e9d9"
 TABLE_SHA = "927b3305a35468bb52f3de4e3305f4b4d0674831014376a094ceb00022bab183"
 SDK_SHA = "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
+PHY_SDK_SHA = "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
 
 # Independent instruction reading of the authenticated phy_i2c.o root and ROM
 # encode/fill leaves. Low words specify block/register in call order; these are
@@ -86,11 +87,19 @@ def main():
     parser.add_argument("--limit-mode", choices=["kernel", "watchdog"], required=True)
     parser.add_argument("--calibration-leaves", action="store_true",
                         help="also compare the four current calibration leaves")
+    parser.add_argument("--rfpll", action="store_true",
+                        help="include RFPLL search, maintenance and frequency-memory scenarios")
     parser.add_argument("--calibration-prefix", action="store_true",
                         help="also check the PBus/DCODE prefix (requires calibration leaves)")
     parser.add_argument("--sdk", type=pathlib.Path,
                         help="pinned linked SDK symbol companion, required for calibration leaves")
+    parser.add_argument("--phy-sdk", type=pathlib.Path,
+                        help="pinned SDK firmware symbol companion, required for RFPLL diagnostics binding")
     options = parser.parse_args()
+    if options.rfpll != (options.phy_sdk is not None):
+        parser.error("--rfpll and --phy-sdk must be supplied together")
+    if options.rfpll and not options.calibration_prefix:
+        parser.error("--rfpll requires --calibration-prefix")
     if options.calibration_prefix and not options.calibration_leaves:
         parser.error("--calibration-prefix requires --calibration-leaves")
     if options.calibration_leaves != (options.sdk is not None):
@@ -123,17 +132,21 @@ def main():
     sources = [options.library, options.rom, options.production]
     if options.sdk is not None:
         sources.append(options.sdk)
+    if options.phy_sdk is not None:
+        sources.append(options.phy_sdk)
     identities = [hashlib.sha256(p.read_bytes()).hexdigest() for p in sources]
     assert identities[:2] == [LIBRARY_SHA, ROM_SHA], identities
     if options.sdk is not None:
         assert identities[3] == SDK_SHA, identities[3]
+    if options.phy_sdk is not None:
+        assert identities[4] == PHY_SDK_SHA, identities[4]
     doc("inputs", dict(sha256=identities, scope="I2C software comparison",
-                       calibration_leaves=options.calibration_leaves, calibration_prefix=options.calibration_prefix))
+                       calibration_leaves=options.calibration_leaves, calibration_prefix=options.calibration_prefix, rfpll=options.rfpll))
     local = [run / f"input-{i}" for i in range(len(sources))]
     for source, destination in zip(sources, local):
         shutil.copyfile(source, destination)
     call("init", ["init"])
-    imports = [item for role, path in zip(("phy", "rom", "production", "sdk"), local)
+    imports = [item for role, path in zip(("phy", "rom", "production", "sdk", "phy-sdk"), local)
                for item in ("--input", role+"="+str(path))]
     revision = call("import", ["import"] + imports)["run"]["revision"]
     for path in local:
@@ -161,6 +174,8 @@ def main():
               "phy_get_i2c_data", "phy_i2c_enter_critical", "phy_i2c_exit_critical"]
     calibration_roots = ["phy_txgain_comp_pacfg_new", "phy_force_dig_gain",
                          "phy_temp_to_power_new", "phy_reg_update_new"] if options.calibration_leaves else []
+    if options.rfpll:
+        calibration_roots += ["phy_rfpll_cap_init_cal_new", "phy_rfpll_cap_track_new"]
     link = dict(revision=revision, inputs=[0], entry=entry("phy_i2c_master_cmd_mem_init"),
                 roots=[entry(name) for name in leaves + ["phy_get_i2c_read_mask_new", "phy_get_i2c_hostid_new"] + calibration_roots],
                 companions=[dict(input=1, symbol=symbol(1, name)["id"]) for name in
@@ -187,6 +202,11 @@ def main():
         link["companions"] += [dict(input=1, symbol=symbol(1, n)["id"]) for n in extra_rom]
         link["companions"] += [dict(input=3, symbol=symbol(3, n)["id"]) for n in
                                ("rtc_clk_xtal_freq_get",)]
+    if options.rfpll:
+        link["companions"] += [dict(input=1, symbol=symbol(1, n)["id"]) for n in
+                               ("phy_read_pll_cap", "phy_write_pll_cap", "phy_pll_cap_mem_update",
+                                "phy_abs_temp")]
+        link["companions"].append(dict(input=4, symbol=symbol(4, "phy_printf")["id"]))
     plan = run / "link-plan.json"
     call("plan", ["link-plan", "--request", doc("plan", link), "--linker", options.linker.resolve(), "--output", plan])
     image = call("prepare", ["prepare-image", "--plan", plan, "--linker", options.linker.resolve()])["run"]["image"]
@@ -212,9 +232,12 @@ def main():
     replacement = dict(revision=revision, source=dict(kind="input", input=2),
                        companions=[1], abi="riscv-integer", stack=stack)
     prefix = []
+    if options.rfpll:
+        from phy_rfpll_native import exercise
+        prefix += exercise(call, doc, symbol, roots, vendor, replacement, parameter)
     if options.calibration_prefix:
         from phy_calibration_prefix import exercise
-        prefix = exercise(call, doc, symbol, roots, vendor, replacement, parameter)
+        prefix += exercise(call, doc, symbol, roots, vendor, replacement, parameter)
     setup_entry = symbol(2, "open_phy_trace_initialize_parameters")["value"]
     seeded_entry = symbol(2, "open_phy_trace_seeded_entry")["value"]
     command_entry = symbol(2, "open_phy_trace_command_memory")["value"]

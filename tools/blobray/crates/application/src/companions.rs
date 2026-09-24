@@ -105,32 +105,8 @@ pub(crate) fn resolve(
             ));
         }
         let source = project.open_payload(&selection.symbol.object.artifact, c)?;
-        let request_fn = FunctionRequest {
-            research: None,
-            revision: request.revision.clone(),
-            source: FunctionSource::Input {
-                input: selection.input,
-            },
-            selector: (selection.symbol.clone()).into(),
-            extent: None,
-        };
-        let address = blobray_artifacts::with_function(
-            &source,
-            &selection.symbol.object.artifact,
-            &request_fn,
-            memory,
-            c,
-            |v, _| {
-                if v.address_space != CodeAddressSpace::Image {
-                    return Err(Error::new(
-                        ErrorCode::InvalidRequest,
-                        "companion is not image-addressed",
-                    ));
-                }
-                u32::try_from(v.extent.start)
-                    .map_err(|_| Error::new(ErrorCode::InvalidRequest, "companion outside RV32"))
-            },
-        )?;
+        let address =
+            blobray_artifacts::inspect_link_definition(&source, &selection.symbol, memory, c)?;
         if request.layout.code.contains(u64::from(address), 1)
             || request.layout.data.contains(u64::from(address), 1)
         {

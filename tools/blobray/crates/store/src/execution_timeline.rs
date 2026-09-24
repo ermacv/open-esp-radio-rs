@@ -73,10 +73,13 @@ mod tests {
                 width: 0,
                 value: MemoryReadValue::Unknown,
             },
-            MemoryTransaction::Read {
+            MemoryTransaction::LoadReserved {
                 address: 0x3001,
-                width: 4,
-                value: MemoryReadValue::Unknown,
+                order: ExecutionOrdering {
+                    acquire: false,
+                    release: false,
+                },
+                value: 1,
             },
             MemoryTransaction::Write {
                 address: 0x3000,
@@ -95,7 +98,7 @@ mod tests {
             );
         }
         let good = event(MemoryTransaction::Read {
-            address: 0x3000,
+            address: 0x3001,
             width: 4,
             value: MemoryReadValue::Unknown,
         });

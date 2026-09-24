@@ -3,7 +3,7 @@ use oer_esp32s31_phy::calibration::cold::{
     PhyColdI2cAction, PhyColdI2cOutcome, PhyColdI2cRequest, PhyColdI2cTransaction,
 };
 
-/// Isolated entry with explicit eight integer ABI words and zero callee-saved inputs.
+/// Isolated entry with explicit ABI words, zero saved registers and zero unused temporaries.
 ///
 /// # Safety
 /// Only enter as a guest root, since saved registers are overwritten. `entry`
@@ -22,6 +22,11 @@ pub unsafe extern "C" fn open_phy_trace_i2c_entry(entry: u32, words: &[u32; 8]) 
         "lw a5, 20(t1)",
         "lw a6, 24(t1)",
         "lw a7, 28(t1)",
+        "li t2, 0",
+        "li t3, 0",
+        "li t4, 0",
+        "li t5, 0",
+        "li t6, 0",
         "li s0, 0",
         "li s1, 0",
         "li s2, 0",

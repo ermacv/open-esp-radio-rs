@@ -2,7 +2,9 @@
 //! Archive framing and ELF inspection have one implementation each; consumers
 //! choose storage or presentation through synchronous borrowed-record ports.
 use blobray_domain::*;
+mod definition;
 mod image;
+pub use definition::inspect_link_definition;
 pub use image::{LinkRootFacts, ValidatedImage, inspect_link_input, validate_image};
 mod cursor;
 mod meter;

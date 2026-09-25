@@ -104,6 +104,24 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
+    /// Complete production temperature transition: DAC read, optional default
+    /// prime, one code sample and the conditional range write. Returns the
+    /// temperature, or `i32::MIN` when the transition fails closed or its
+    /// executor fails. Publishes no temperature observation.
+    pub fn open_phy_trace_temperature_sample() -> i32 {
+        let mut radio =
+            oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+        match embassy_futures::block_on(oer_esp32s31_phy::target_port::temperature::sample::<
+            ProductionTraceDelay,
+        >(radio.phy_hal_mut()))
+        {
+            Ok(Ok(outcome)) => i32::from(outcome.temperature),
+            _ => i32::MIN,
+        }
+    }
+}
+
+oer_probe_macros::probe! {
     /// Exact compiled production channel entry used by vendor comparison.
     ///
     /// The wrapper owns only the isolated probe image's peripheral tokens and ABI

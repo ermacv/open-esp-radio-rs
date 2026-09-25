@@ -93,6 +93,31 @@ pub fn full_transitions() -> Vec<Transition> {
     )
 }
 
+/// Every sensor code in every DAC window, with the first fill. Each boundary
+/// of the temperature conversion and of the next-DAC selection is reached
+/// without deriving it from vendor thresholds.
+pub fn sensor_transitions() -> Vec<Transition> {
+    SENSOR_WINDOWS
+        .iter()
+        .flat_map(|window| {
+            (0..=u8::MAX).map(|code| {
+                let fill = FILLS[0];
+                Transition {
+                    channel: 13,
+                    cbw: 1,
+                    dac: window.0 | u32::from(fill & 0xf0),
+                    code: u32::from(code),
+                    fill,
+                }
+            })
+        })
+        .collect()
+}
+
+/// Cases of one sensor transition: parameter initialization, callback
+/// installation, then the sample.
+const SENSOR_CASES: u32 = 3;
+
 /// Temperature-prefix matrix: every sensor DAC range with boundary codes.
 pub fn prefix_transitions() -> Vec<Transition> {
     transitions(
@@ -152,6 +177,10 @@ pub fn channel_models(transition: &Transition, ready: bool) -> Vec<DeviceDeclara
 
 /// Production channel entry compared with `phy_chip_set_chan`.
 const PRODUCTION_ENTRY: &str = "open_phy_channel_trace_state";
+/// ROM temperature-sensor transition, the callback target of `phy_tsens_temp_read`.
+pub const SENSOR_ROOT: &str = "phy_tsens_temp_read_local";
+/// Production temperature transition compared with `SENSOR_ROOT`.
+pub const SENSOR_ENTRY: &str = "open_phy_trace_temperature_sample";
 
 /// Channel image, its production probe and the reviewed transition claims.
 pub struct Channel {
@@ -160,6 +189,7 @@ pub struct Channel {
     production_delay: u32,
     effects: EffectReview,
     committed: ProjectionReview,
+    sensor_effects: EffectReview,
 }
 
 impl std::ops::Deref for Channel {
@@ -239,7 +269,20 @@ impl Channel {
             projection,
             "production publishes the committed channel, temperature and bandwidth",
         )?;
+        let sensor_contract = phy_contract(
+            image.session.input_endpoint(ROM_INPUT, SENSOR_ROOT)?,
+            image.production_endpoint(SENSOR_ENTRY)?,
+            plumbing(&[], MAX_EVENTS),
+            "one temperature-sensor transition under an explicit DAC and code",
+        );
+        let sensor_effects = image.review_effects(
+            "temperature-effects",
+            "esp32s31.phy.temperature-transition.effects",
+            sensor_contract,
+            "every sensor register effect compares exactly except analog I2C polling",
+        )?;
         Ok(Self {
+            sensor_effects,
             rom_delay: image.sym(1, "ets_delay_us"),
             production_delay: image.sym(2, "ets_delay_us"),
             image,
@@ -277,6 +320,56 @@ impl Channel {
         let mut phase = self.enter_probe(probe);
         phase.calls = delay_calls("channel-delay", self.production_delay);
         Ok(phase)
+    }
+
+    /// Zeroed parameters, captured callback installation for the ROM I2C
+    /// helpers, then one temperature-sensor transition of each side that must
+    /// return the same temperature with the same sensor effects.
+    fn sensor_rows(&self, t: &Transition) -> Result<Vec<ExecutionCase>> {
+        let mut vendor = self.enter(
+            self.sym(ROM_INPUT as usize, SENSOR_ROOT),
+            &[],
+            vec![],
+            vec![],
+            channel_models(t, true),
+        );
+        vendor.calls = delay_calls("sensor-delay", self.rom_delay);
+        let probe = self
+            .probes
+            .invoke(SENSOR_ENTRY, vec![], channel_models(t, true), vec![])?;
+        let mut production = self.enter_probe(probe);
+        production.calls = delay_calls("sensor-delay", self.production_delay);
+        let mut sample = case(
+            format!("sensor-{}", t.label()),
+            vendor,
+            Some(production),
+            SessionReset::Warm,
+            false,
+        );
+        let relation = sample.relation.as_mut().unwrap();
+        relation.effects = Some(self.sensor_effects.clone());
+        relation.returns.low = true;
+        let zero = vec![0u8; PHY_PARAM_BYTES as usize];
+        Ok(with_stack_fill(
+            vec![
+                case(
+                    "initialize",
+                    self.setup(&zero, false),
+                    Some(self.setup(&zero, true)),
+                    SessionReset::Cold,
+                    false,
+                ),
+                case(
+                    "install-captured-callbacks",
+                    self.install_callbacks(INSTALLED_CALLBACK_SLOT)?,
+                    Some(self.noop()),
+                    SessionReset::Warm,
+                    false,
+                ),
+                sample,
+            ],
+            t.fill,
+        ))
     }
 
     /// Zeroed parameters, captured callback installation, then the transition.
@@ -376,10 +469,11 @@ pub fn exercise(ctx: &mut Channel) -> Result<()> {
             rows.extend(ctx.rows(t, true)?);
         }
         let executed = ctx.compare(&format!("channel-{name}"), rows, FILLS[0])?;
+        let cases = crate::evidence::case_slices(&executed.records);
         for (i, t) in matrix.iter().enumerate() {
             let label = format!("{name}-{}", t.label());
             let root = i as u32 * TRANSITION_CASES + TRANSITION;
-            let vendor = phy_effects(&check_transition(&label, t, &executed.records, root));
+            let vendor = phy_effects(&check_transition(&label, t, cases[&root], root));
             if name == "full" {
                 assert!(gain_writes(&vendor) > 0, "{label}: no gain publication");
             } else {
@@ -387,8 +481,36 @@ pub fn exercise(ctx: &mut Channel) -> Result<()> {
             }
         }
     }
+    sensor(ctx)?;
     stuck_readiness(ctx)?;
     negative(ctx)
+}
+
+/// The temperature-sensor transition alone, over every code of every window:
+/// both sides return the oracle temperature with the same sensor effects.
+fn sensor(ctx: &mut Channel) -> Result<()> {
+    let matrix = sensor_transitions();
+    let mut rows = vec![];
+    for t in &matrix {
+        rows.extend(ctx.sensor_rows(t)?);
+    }
+    let executed = ctx.compare("channel-sensor", rows, FILLS[0])?;
+    let cases = crate::evidence::case_slices(&executed.records);
+    for (i, t) in matrix.iter().enumerate() {
+        let sample = i as u32 * SENSOR_CASES + SENSOR_CASES - 1;
+        let records = cases[&sample];
+        let (temperature, _) = sensor_expectation(t.dac)(t.code);
+        for side in [false, true] {
+            assert!(all_complete(records, sample, side), "{} {side}", t.label());
+        }
+        assert_eq!(
+            returned_low(records, sample, false),
+            Some(temperature as u32),
+            "{}: vendor temperature",
+            t.label()
+        );
+    }
+    Ok(())
 }
 
 /// Production containment: a channel that never reports readiness fails
@@ -533,6 +655,9 @@ mod tests {
     #[test]
     fn matrices_cover_channels_windows_and_fills() {
         assert_eq!(full_transitions().len(), 4 * 2 * FILLS.len());
+        let sensor = sensor_transitions();
+        assert_eq!(sensor.len(), SENSOR_WINDOWS.len() * 256);
+        assert!(sensor.len() as u32 * SENSOR_CASES <= blobray_domain::MAX_EXECUTION_CASES as u32);
         let prefix = prefix_transitions();
         assert_eq!(prefix.len(), SENSOR_WINDOWS.len() * 4 * FILLS.len());
         for t in &prefix {

@@ -445,7 +445,8 @@ cargo xtask vendor-scenario mutants --library /private/libphy.a \
   --sdk /private/bootloader.elf --phy-sdk /private/phy_tracking_reference.elf \
   --rftest /private/librftest.a --output target/verification/mutants \
   --limit-mode watchdog --workers 4 \
-  --target crates/hardware/esp32s31/phy/src/analog/temperature.rs:130-160
+  --target crates/hardware/esp32s31/phy/src/analog/temperature.rs:130-160 \
+  --scenario channel
 ```
 
 Tracked files must equal `HEAD`: each worker checks out a detached worktree of
@@ -456,7 +457,9 @@ debug line information maps them to source lines of `--scope` (default the
 production PHY crate), including inlined frames. Mutants apply only to those
 lines of the targets: an integer literal or scalar integer constant plus one, a comparison
 replaced by its boundary neighbor or negation, a negated branch condition,
-`min`/`max` exchanged and two adjacent register writes exchanged. Each mutant is
+`min`/`max` exchanged and two adjacent register writes exchanged. Repeated
+`--scenario` options restrict the baseline and every mutant to those scenarios,
+so a check that new cases kill known survivors runs only those cases. Each mutant is
 rebuilt and runs the scenarios whose baseline reached its lines; the first
 failing scenario kills it. A mutant whose executable sections equal the
 baseline's is equivalent and does not run; one that does not build is unviable.

@@ -218,6 +218,48 @@ pub fn phy_effects(observed: &[ExecutionEvent]) -> Vec<PhyEffect> {
         .collect()
 }
 
+/// Case number of a per-case record; coverage spans the whole request.
+fn record_case(record: &ExecutionEvidence) -> Option<u32> {
+    match record {
+        ExecutionEvidence::FinalMemory { case, .. }
+        | ExecutionEvidence::FifoService { case, .. }
+        | ExecutionEvidence::RuntimeTable { case, .. }
+        | ExecutionEvidence::CallModel { case, .. }
+        | ExecutionEvidence::Model { case, .. }
+        | ExecutionEvidence::Event { case, .. }
+        | ExecutionEvidence::Outcome { case, .. }
+        | ExecutionEvidence::Comparison { case, .. } => Some(*case),
+        ExecutionEvidence::Coverage { .. } => None,
+    }
+}
+
+/// The contiguous records of each case, keeping their case numbers, so a
+/// check of one case reads only its own records. Retained records are
+/// ordered by case.
+pub fn case_slices(
+    records: &[ExecutionEvidence],
+) -> std::collections::BTreeMap<u32, &[ExecutionEvidence]> {
+    let mut slices = std::collections::BTreeMap::new();
+    let mut start = 0;
+    while start < records.len() {
+        let Some(case) = record_case(&records[start]) else {
+            start += 1;
+            continue;
+        };
+        let end = start
+            + records[start..]
+                .iter()
+                .take_while(|r| record_case(r) == Some(case))
+                .count();
+        assert!(
+            slices.insert(case, &records[start..end]).is_none(),
+            "records of case {case} are not contiguous"
+        );
+        start = end;
+    }
+    slices
+}
+
 /// Records of consecutive case ranges of one request, each renumbered from
 /// zero: the first `counts[0]` cases form part 0, and so on. Coverage records
 /// span the whole request and are omitted. Checks written

@@ -106,6 +106,10 @@ enum Scenario {
         /// repository root; repeat for several. A run is always targeted.
         #[arg(long = "target", required = true)]
         targets: Vec<mutation_campaign::Target>,
+        /// Run only these scenarios, for the baseline and every mutant;
+        /// repeat for several. All scenarios when omitted.
+        #[arg(long = "scenario")]
+        scenarios: Vec<String>,
         /// Production source directory to mutate, relative to the repository root.
         #[arg(long, default_value = MUTATION_SCOPE)]
         scope: PathBuf,
@@ -300,11 +304,14 @@ const I2C_RFPLL_CLAIMS: [(&str, &str, &str); 3] = [
         "open_phy_rfpll_trace_track",
     ),
 ];
-const CHANNEL_CLAIMS: [(&str, &str, &str); 1] = [(
-    "archive",
-    "phy_chip_set_chan",
-    "open_phy_channel_trace_state",
-)];
+const CHANNEL_CLAIMS: [(&str, &str, &str); 2] = [
+    (
+        "archive",
+        "phy_chip_set_chan",
+        "open_phy_channel_trace_state",
+    ),
+    ("rom", channel::SENSOR_ROOT, channel::SENSOR_ENTRY),
+];
 const RX_GAIN_CLAIMS: [(&str, &str, &str); 1] = [(
     "archive",
     "phy_set_rx_gain_table",
@@ -730,6 +737,7 @@ fn mutants(scenario: Scenario) -> Result<ExitCode> {
         output,
         scope,
         targets,
+        scenarios,
         workers,
         budget,
     } = scenario
@@ -752,7 +760,7 @@ fn mutants(scenario: Scenario) -> Result<ExitCode> {
     let phy_sdk_args = path("--phy-sdk", &phy_sdk)?.to_vec();
     let mut i2c_args = path("--sdk", &sdk)?.to_vec();
     i2c_args.extend(phy_sdk_args.clone());
-    let suites = std::collections::BTreeMap::from([
+    let mut suites = std::collections::BTreeMap::from([
         ("gain".to_owned(), path("--rftest", &rftest)?.to_vec()),
         ("i2c".to_owned(), i2c_args),
         ("channel".to_owned(), vec![]),
@@ -760,6 +768,12 @@ fn mutants(scenario: Scenario) -> Result<ExitCode> {
         ("tx-dc".to_owned(), phy_sdk_args.clone()),
         ("tracking".to_owned(), phy_sdk_args),
     ]);
+    if let Some(unknown) = scenarios.iter().find(|s| !suites.contains_key(*s)) {
+        return Err(format!("unknown scenario {unknown}").into());
+    }
+    if !scenarios.is_empty() {
+        suites.retain(|name, _| scenarios.contains(name));
+    }
     std::fs::create_dir_all(&output)?;
     let campaign = mutation_campaign::Campaign {
         root: evidence::root()?,

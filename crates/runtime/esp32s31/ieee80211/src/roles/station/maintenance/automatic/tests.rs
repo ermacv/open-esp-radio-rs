@@ -14,6 +14,8 @@ fn outcome(common: bool, wifi: bool) -> PhyParamTrackingOutcome {
     PhyParamTrackingOutcome {
         clients: PhyParamTrackRequest::new(true, false),
         tracking_inhibited: false,
+        rfpll_corrected: false,
+        tx_power: Default::default(),
         calibration: CalibrationProgress {
             common,
             wifi,

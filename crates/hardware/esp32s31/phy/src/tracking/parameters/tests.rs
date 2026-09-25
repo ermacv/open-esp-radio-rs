@@ -18,10 +18,14 @@ fn completion(action: PhyParamTrackingAction) -> PhyParamTrackingCompletion {
         PhyParamTrackingAction::RfpllCapTrack { .. } => {
             PhyParamTrackingCompletion::RfpllCapTracked(PhyParamTrackingRfpllCompletion {
                 committed: (),
+                corrected: false,
             })
         }
         PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack { enabled, .. } => {
-            PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked { enabled }
+            PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked {
+                enabled,
+                gain_updated: false,
+            }
         }
         PhyParamTrackingAction::CalibrationTrack { clients, .. } => {
             PhyParamTrackingCompletion::CalibrationTracked(PhyParamTrackingCalibrationCompletion {
@@ -32,7 +36,10 @@ fn completion(action: PhyParamTrackingAction) -> PhyParamTrackingCompletion {
         }
         PhyParamTrackingAction::WifiI2cTrack => PhyParamTrackingCompletion::WifiI2cTracked,
         PhyParamTrackingAction::WifiTxPowerTrack { enabled, .. } => {
-            PhyParamTrackingCompletion::WifiTxPowerTracked { enabled }
+            PhyParamTrackingCompletion::WifiTxPowerTracked {
+                enabled,
+                gain_updated: false,
+            }
         }
         PhyParamTrackingAction::TemperatureRead => PhyParamTrackingCompletion::TemperatureRead,
         PhyParamTrackingAction::ExitCritical => PhyParamTrackingCompletion::ExitedCritical,
@@ -79,6 +86,8 @@ fn ieee802154_only_preserves_exact_child_order() {
             PhyParamTrackingAction::Complete(PhyParamTrackingOutcome {
                 clients: PhyParamTrackRequest::new(false, true),
                 tracking_inhibited: false,
+                rfpll_corrected: false,
+                tx_power: TxPowerProgress::default(),
                 calibration: CalibrationProgress::default(),
             }),
         ]
@@ -112,6 +121,8 @@ fn both_classes_run_bluetooth_before_wifi_and_temperature_last() {
             PhyParamTrackingAction::Complete(PhyParamTrackingOutcome {
                 clients: PhyParamTrackRequest::new(true, true),
                 tracking_inhibited: false,
+                rfpll_corrected: false,
+                tx_power: TxPowerProgress::default(),
                 calibration: CalibrationProgress::default(),
             }),
         ]
@@ -130,6 +141,8 @@ fn guard_exits_critical_section_without_running_children() {
             PhyParamTrackingAction::Complete(PhyParamTrackingOutcome {
                 clients: PhyParamTrackRequest::new(true, true),
                 tracking_inhibited: true,
+                rfpll_corrected: false,
+                tx_power: TxPowerProgress::default(),
                 calibration: CalibrationProgress::default(),
             }),
         ]
@@ -156,6 +169,8 @@ fn disabled_optional_branches_are_absent() {
             PhyParamTrackingAction::Complete(PhyParamTrackingOutcome {
                 clients: PhyParamTrackRequest::new(false, true),
                 tracking_inhibited: false,
+                rfpll_corrected: false,
+                tx_power: TxPowerProgress::default(),
                 calibration: CalibrationProgress::default(),
             }),
         ]
@@ -341,6 +356,7 @@ fn skipped_calibration_commits_without_hardware_or_reference_changes() {
         .advance(
             PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked {
                 enabled: policy.bluetooth_ieee802154_power_tracking_enabled,
+                gain_updated: false,
             },
         )
         .unwrap();
@@ -546,8 +562,45 @@ fn selected_rfpll_stops_before_power_and_calibration() {
         .unwrap();
     parent
         .advance(PhyParamTrackingCompletion::RfpllCapTracked(
-            PhyParamTrackingRfpllCompletion { committed: () },
+            PhyParamTrackingRfpllCompletion {
+                committed: (),
+                corrected: false,
+            },
         ))
         .unwrap();
     assert_eq!(parent.action(), PhyParamTrackingAction::ExitCritical);
+}
+
+#[test]
+fn outcome_reports_the_children_that_committed_an_update() {
+    let mut transition =
+        PhyParamTrackingTransition::new(PhyParamTrackRequest::new(true, true), POLICY);
+    let outcome = loop {
+        let completion = match transition.action() {
+            PhyParamTrackingAction::Complete(outcome) => break outcome,
+            PhyParamTrackingAction::RfpllCapTrack { .. } => {
+                PhyParamTrackingCompletion::RfpllCapTracked(PhyParamTrackingRfpllCompletion {
+                    committed: (),
+                    corrected: true,
+                })
+            }
+            // Only the Wi-Fi gain base changes.
+            PhyParamTrackingAction::WifiTxPowerTrack { enabled, .. } => {
+                PhyParamTrackingCompletion::WifiTxPowerTracked {
+                    enabled,
+                    gain_updated: true,
+                }
+            }
+            action => completion(action),
+        };
+        transition.advance(completion).unwrap();
+    };
+    assert!(outcome.rfpll_corrected);
+    assert_eq!(
+        outcome.tx_power,
+        TxPowerProgress {
+            wifi: true,
+            bluetooth_ieee802154: false,
+        }
+    );
 }

@@ -117,6 +117,7 @@ fn skipped_calibration_executor_never_calls_the_hardware_port() {
             .advance(
                 crate::tracking::parameters::PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked {
                     enabled: true,
+                    gain_updated: false,
                 },
             )
             .unwrap();

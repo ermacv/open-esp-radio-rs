@@ -178,10 +178,17 @@ pub enum PhyParamTrackingAction {
 pub enum PhyParamTrackingCompletion {
     EnteredCritical,
     RfpllCapTracked(PhyParamTrackingRfpllCompletion),
-    BluetoothIeee802154TxPowerTracked { enabled: bool },
+    /// `gain_updated`: the tracking gain base changed and was republished.
+    BluetoothIeee802154TxPowerTracked {
+        enabled: bool,
+        gain_updated: bool,
+    },
     CalibrationTracked(PhyParamTrackingCalibrationCompletion),
     WifiI2cTracked,
-    WifiTxPowerTracked { enabled: bool },
+    WifiTxPowerTracked {
+        enabled: bool,
+        gain_updated: bool,
+    },
     TemperatureRead,
     ExitedCritical,
 }
@@ -203,6 +210,8 @@ pub enum PhyParamTrackingCompletion {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyParamTrackingRfpllCompletion {
     committed: (),
+    /// A capacitance correction ran and committed a new reference temperature.
+    corrected: bool,
 }
 
 /// Opaque proof that the selected calibration-tracking child reached its
@@ -237,12 +246,24 @@ pub struct CalibrationProgress {
     pub bluetooth_ieee802154: bool,
 }
 
+/// TX-power tracking branches that changed and republished their gain base.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TxPowerProgress {
+    pub wifi: bool,
+    pub bluetooth_ieee802154: bool,
+}
+
 /// Observable outer-wrapper result. Child hardware postconditions are not
 /// implied by this value; each action must be backed by its own transition.
+/// Like the vendor progress word `phy_param_track_tot` returns, it reports
+/// which children committed an update.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyParamTrackingOutcome {
     pub clients: PhyParamTrackRequest,
     pub tracking_inhibited: bool,
+    /// The RFPLL capacitance correction ran and committed its reference.
+    pub rfpll_corrected: bool,
+    pub tx_power: TxPowerProgress,
     pub calibration: CalibrationProgress,
 }
 
@@ -272,6 +293,8 @@ pub struct PhyParamTrackingTransition {
     request: PhyParamTrackRequest,
     policy: PhyParamTrackingPolicy,
     step: PhyParamTrackingStep,
+    rfpll_corrected: bool,
+    tx_power: TxPowerProgress,
     calibration: CalibrationProgress,
 }
 
@@ -282,6 +305,11 @@ impl PhyParamTrackingTransition {
             request,
             policy,
             step: PhyParamTrackingStep::EnterCritical,
+            rfpll_corrected: false,
+            tx_power: TxPowerProgress {
+                wifi: false,
+                bluetooth_ieee802154: false,
+            },
             calibration: CalibrationProgress {
                 common: false,
                 wifi: false,
@@ -329,6 +357,8 @@ impl PhyParamTrackingTransition {
                 PhyParamTrackingAction::Complete(PhyParamTrackingOutcome {
                     clients: self.request,
                     tracking_inhibited: self.policy.tracking_inhibited,
+                    rfpll_corrected: self.rfpll_corrected,
+                    tx_power: self.tx_power,
                     calibration: self.calibration,
                 })
             }
@@ -362,12 +392,19 @@ impl PhyParamTrackingTransition {
             }
             (
                 PhyParamTrackingStep::RfpllCapTrack,
-                PhyParamTrackingCompletion::RfpllCapTracked(_),
-            ) => self.first_client_step(),
+                PhyParamTrackingCompletion::RfpllCapTracked(completion),
+            ) => {
+                self.rfpll_corrected = completion.corrected;
+                self.first_client_step()
+            }
             (
                 PhyParamTrackingStep::BluetoothIeee802154TxPowerTrack,
-                PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked { enabled },
+                PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked {
+                    enabled,
+                    gain_updated,
+                },
             ) if enabled == self.policy.bluetooth_ieee802154_power_tracking_enabled => {
+                self.tx_power.bluetooth_ieee802154 = gain_updated;
                 self.first_wifi_step()
             }
             (PhyParamTrackingStep::WifiI2cTrack, PhyParamTrackingCompletion::WifiI2cTracked) => {
@@ -375,8 +412,14 @@ impl PhyParamTrackingTransition {
             }
             (
                 PhyParamTrackingStep::WifiTxPowerTrack,
-                PhyParamTrackingCompletion::WifiTxPowerTracked { enabled: true },
-            ) => self.first_calibration_step(),
+                PhyParamTrackingCompletion::WifiTxPowerTracked {
+                    enabled: true,
+                    gain_updated,
+                },
+            ) => {
+                self.tx_power.wifi = gain_updated;
+                self.first_calibration_step()
+            }
             (
                 PhyParamTrackingStep::CalibrationTrack,
                 PhyParamTrackingCompletion::CalibrationTracked(completion),
@@ -568,7 +611,10 @@ impl<'state> PhyParamTrackingRfpllTransition<'state> {
         };
         self.state.commit_rfpll_tracking(outcome);
         Ok(PhyParamTrackingCompletion::RfpllCapTracked(
-            PhyParamTrackingRfpllCompletion { committed: () },
+            PhyParamTrackingRfpllCompletion {
+                committed: (),
+                corrected: outcome.correction.is_some(),
+            },
         ))
     }
 }
@@ -832,12 +878,19 @@ impl<'state> PhyParamTrackingTxPowerTransition<'state> {
             return Err(self);
         };
         self.state.apply_tx_power_tracking_outcome(outcome);
+        let gain_updated = outcome.gain_updated;
         Ok(match self.parent_action {
             PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack { enabled, .. } => {
-                PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked { enabled }
+                PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked {
+                    enabled,
+                    gain_updated,
+                }
             }
             PhyParamTrackingAction::WifiTxPowerTrack { enabled, .. } => {
-                PhyParamTrackingCompletion::WifiTxPowerTracked { enabled }
+                PhyParamTrackingCompletion::WifiTxPowerTracked {
+                    enabled,
+                    gain_updated,
+                }
             }
             _ => unreachable!(),
         })

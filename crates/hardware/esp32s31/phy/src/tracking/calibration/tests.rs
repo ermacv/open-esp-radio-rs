@@ -1015,7 +1015,12 @@ fn failed_calibration_cannot_publish_partial_results_even_after_cleanup() {
         .advance(PhyParamTrackingCompletion::EnteredCritical)
         .unwrap();
     parent
-        .advance(PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked { enabled: true })
+        .advance(
+            PhyParamTrackingCompletion::BluetoothIeee802154TxPowerTracked {
+                enabled: true,
+                gain_updated: false,
+            },
+        )
         .unwrap();
     let parent_action = parent.action();
     let mut state = crate::PhyState::new(crate::PhyConfig::production());

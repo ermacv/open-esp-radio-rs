@@ -226,6 +226,8 @@ fn automatic_observation_notifications_survive_an_inflight_operation_and_epoch_c
         Some(oer_esp32s31_phy::tracking::PhyParamTrackingOutcome {
             clients: oer_esp32s31_phy::tracking::PhyParamTrackRequest::new(true, false),
             tracking_inhibited: false,
+            rfpll_corrected: false,
+            tx_power: Default::default(),
             calibration: Default::default(),
         }),
     );

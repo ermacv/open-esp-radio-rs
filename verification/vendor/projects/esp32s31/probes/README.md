@@ -10,25 +10,27 @@ Build the comparison ELF from the repository root:
 ```console
 CARGO_TARGET_DIR="$PWD/target/verification/esp32s31-probes" \
 cargo build --manifest-path verification/vendor/projects/esp32s31/probes/Cargo.toml \
-  -p oer-verification-esp32s31-probes-elf \
+  -p oer-esp32s31-probe-radio-elf \
   --target riscv32imafc-unknown-none-elf --release
 
 CARGO_TARGET_DIR="$PWD/target/verification/esp32s31-register-probes" \
 cargo build --manifest-path verification/vendor/projects/esp32s31/probes/Cargo.toml \
-  -p oer-verification-esp32s31-register-probes-elf \
+  -p oer-esp32s31-probe-register-elf \
   --target riscv32imafc-unknown-none-elf --release
 
 CARGO_TARGET_DIR="$PWD/target/verification/esp32s31-bluetooth-probes" \
 cargo build --manifest-path verification/vendor/projects/esp32s31/probes/Cargo.toml \
-  -p oer-verification-esp32s31-bluetooth-probes-elf \
+  -p oer-esp32s31-probe-bluetooth-elf \
   --target riscv32imafc-unknown-none-elf --release
 ```
 
-`library/` owns stable retained wrappers and explicit C-layout projections.
-`elf/` owns only the comparison image entry point and linker layout. Neither is
-a board test, runtime adapter or public driver API. Bluetooth production probes
-live in the separate `bluetooth-library/` and `bluetooth-elf/` pair so BLE
-verification never depends on Wi-Fi/PHY probe wrappers.
+Each probe set is a `library/` and `elf/` pair: `radio/` covers Wi-Fi, PHY
+and coexistence, `register/` the PAC/HAL register accessors and `bluetooth/`
+the Bluetooth controller. `library/` owns stable retained wrappers and explicit
+C-layout projections; `elf/` owns only the comparison image entry point and
+linker layout. Neither is a board test, runtime adapter or public driver API.
+The separate Bluetooth pair keeps BLE verification independent of the Wi-Fi/PHY
+probe wrappers.
 
 ## Declaration and validated build
 

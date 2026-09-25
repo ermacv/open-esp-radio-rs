@@ -1,12 +1,12 @@
 [workspace]
 resolver = "3"
 members = [
-    "library",
-    "elf",
-    "register-library",
-    "register-elf",
-    "bluetooth-library",
-    "bluetooth-elf",
+    "bluetooth/elf",
+    "bluetooth/library",
+    "radio/elf",
+    "radio/library",
+    "register/elf",
+    "register/library",
 ]
 
 [workspace.package]

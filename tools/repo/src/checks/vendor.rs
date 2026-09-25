@@ -16,17 +16,17 @@ struct Probe {
 const PROBES: [Probe; 3] = [
     Probe {
         role: "rust-artifact",
-        package: "oer-verification-esp32s31-probes-elf",
+        package: "oer-esp32s31-probe-radio-elf",
         target_directory: "target/verification/esp32s31-probes",
     },
     Probe {
         role: "rust-artifact:wifi-registers",
-        package: "oer-verification-esp32s31-register-probes-elf",
+        package: "oer-esp32s31-probe-register-elf",
         target_directory: "target/verification/esp32s31-register-probes",
     },
     Probe {
         role: "rust-artifact:bluetooth",
-        package: "oer-verification-esp32s31-bluetooth-probes-elf",
+        package: "oer-esp32s31-probe-bluetooth-elf",
         target_directory: "target/verification/esp32s31-bluetooth-probes",
     },
 ];

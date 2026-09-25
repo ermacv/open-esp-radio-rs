@@ -31,7 +31,7 @@ pub mod tx_dc;
 /// Probe workspace and the probe ELF package whose path dependencies are
 /// the compiled production sources, relative to the repository root.
 pub const PROBES_MANIFEST: &str = "verification/vendor/projects/esp32s31/probes/Cargo.toml";
-pub const PROBES_PACKAGE: &str = "oer-verification-esp32s31-probes-elf";
+pub const PROBES_PACKAGE: &str = "oer-esp32s31-probe-radio-elf";
 pub const PROBES_TARGET: &str = "riscv32imafc-unknown-none-elf";
 
 /// Pinned `libphy.a` archive (ESP-IDF PHY source revision `b88e4b76`).

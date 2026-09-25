@@ -1,18 +1,15 @@
 [package]
-name = "oer-verification-esp32s31-register-probes"
+name = "oer-esp32s31-probe-radio-elf"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Isolated ESP32-S31 PAC/HAL register conformance probes"
+build = "build.rs"
+description = "Linked ESP32-S31 Rust probe image for compiled vendor verification"
 
 [dependencies]
-oer-probe-macros = { path = "../../../../harness/macros" }
-oer-esp32s31-hal = { workspace = true, features = ["validation-probes"] }
-
-[lib]
-crate-type = ["rlib", "staticlib"]
+oer-esp32s31-probe-radio = { path = "../library" }
 
 [lints.rust]
 unexpected_cfgs = "allow"
@@ -22,3 +19,6 @@ scope = "development"
 layer = "verification"
 platform = "chip"
 chip = "esp32s31"
+
+[build-dependencies]
+oer-probe-codegen = { path = "../../../../../harness/codegen" }

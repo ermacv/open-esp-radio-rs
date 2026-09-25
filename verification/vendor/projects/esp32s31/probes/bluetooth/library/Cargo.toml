@@ -1,5 +1,5 @@
 [package]
-name = "oer-verification-esp32s31-bluetooth-probes"
+name = "oer-esp32s31-probe-bluetooth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +8,7 @@ publish.workspace = true
 description = "Isolated ESP32-S31 Bluetooth production comparison probes"
 
 [dependencies]
-oer-probe-macros = { path = "../../../../harness/macros" }
+oer-probe-macros = { path = "../../../../../harness/macros" }
 oer-esp32s31-bluetooth.workspace = true
 oer-esp32s31-phy = { workspace = true, features = ["validation-probes"] }
 

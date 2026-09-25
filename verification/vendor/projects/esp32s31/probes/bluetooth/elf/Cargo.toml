@@ -1,5 +1,5 @@
 [package]
-name = "oer-verification-esp32s31-bluetooth-probes-elf"
+name = "oer-esp32s31-probe-bluetooth-elf"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ description = "Linked ESP32-S31 Bluetooth production comparison probe image"
 
 [dependencies]
 critical-section = "1.2.0"
-oer-verification-esp32s31-bluetooth-probes = { path = "../bluetooth-library" }
+oer-esp32s31-probe-bluetooth = { path = "../library" }
 
 [lints.rust]
 unexpected_cfgs = "allow"
@@ -22,4 +22,4 @@ platform = "chip"
 chip = "esp32s31"
 
 [build-dependencies]
-oer-probe-codegen = { path = "../../../../harness/codegen" }
+oer-probe-codegen = { path = "../../../../../harness/codegen" }

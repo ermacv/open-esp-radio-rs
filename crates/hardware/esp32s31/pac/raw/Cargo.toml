@@ -22,6 +22,9 @@ vcell = "0.1.3"
 # unsafe_op_in_unsafe_fn and permit unsafe_code only on reviewed operations.
 unsafe_op_in_unsafe_fn = "allow"
 
+[lints.clippy]
+disallowed_methods = "deny"
+
 [package.metadata.open-radio]
 scope = "production"
 layer = "hardware"

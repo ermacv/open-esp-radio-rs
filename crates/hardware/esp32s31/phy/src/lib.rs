@@ -1,6 +1,6 @@
 #![no_std]
 // The private `ieee802154_timing_boundary` module is the sole scoped override.
-#![deny(unsafe_code)]
+#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
 //! Source-only ESP32-S31 shared RF/PHY ownership frontier.
 //!

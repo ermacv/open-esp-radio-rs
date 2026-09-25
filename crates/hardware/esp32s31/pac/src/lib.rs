@@ -1,5 +1,5 @@
 #![no_std]
-#![deny(unsafe_code)]
+#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
 #[cfg(test)]
 extern crate std;

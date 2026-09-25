@@ -1,5 +1,5 @@
 #![no_std]
-#![deny(unsafe_code)]
+#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
 //! ESP-HAL ownership coordinator for shared ESP32-S31 radio platform resources.
 //!

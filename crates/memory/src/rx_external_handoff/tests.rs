@@ -38,12 +38,12 @@ fn dma_buffer_releases_before_handoff_credit_becomes_free() {
     let mut bytes = [0_u8; 64];
     let pointer = NonNull::new(bytes.as_mut_ptr()).unwrap();
     let owner = NonNull::from(&probe).cast::<()>();
-    // SAFETY: the stack allocation remains stable and exclusively owned
-    // until the network lease invokes the bound callback exactly once.
     #[allow(
         unsafe_code,
         reason = "test owns stable bytes and the exact callback context"
     )]
+    // SAFETY: the stack allocation remains stable and exclusively owned
+    // until the network lease invokes the bound callback exactly once.
     let buffer = unsafe {
         ExternalRxBuffer::new(
             pointer,

@@ -38,6 +38,9 @@ embassy-time-queue-utils = "0.3"
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 
+[lints.clippy]
+disallowed_methods = "deny"
+
 [package.metadata.open-radio]
 scope = "production"
 layer = "adapter"

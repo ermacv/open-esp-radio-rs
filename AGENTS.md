@@ -84,7 +84,9 @@ integer register images. Handwritten code outside the generated/restricted PAC
 must access MMIO only through typed PAC accessors; if an accessor is missing,
 review and publish the field in the SVD/PAC instead of adding a local mask or
 shift. Keep `unsafe` narrowly scoped and documented; the workspace denies
-`unsafe_op_in_unsafe_fn` and mutable calls in `debug_assert!`.
+`unsafe_op_in_unsafe_fn`, mutable calls in `debug_assert!` and the methods in
+`clippy.toml`. Lint policy lives in `[lints]` tables and crate-root attributes
+(see [crates/UNSAFE.md](crates/UNSAFE.md)), not in flags passed by tooling.
 
 ## Testing Guidelines
 

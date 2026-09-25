@@ -84,6 +84,9 @@ unsafe_op_in_unsafe_fn = "deny"
 # A mutable call inside `debug_assert!` disappears from optimized firmware.
 # Driver protocol state must advance identically in debug and release builds.
 debug_assert_with_mut_call = "deny"
+# `clippy.toml` lists methods radio code must not call, such as busy waiting
+# instead of yielding; an intentional use carries a local `allow` with a reason.
+disallowed_methods = "deny"
 
 [profile.release]
 opt-level = 3

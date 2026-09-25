@@ -48,62 +48,6 @@ fn timed_stage<T>(label: &str, work: impl FnOnce() -> Result<T>) -> Result<T> {
     result
 }
 
-fn production_lints(ctx: &Context) -> Result<()> {
-    let packages = common::production_packages(ctx)?;
-    let mut members = Vec::new();
-    let mut isolated = Vec::new();
-    for package in &packages {
-        if package.workspace_member && common::declared_profiles(&package.package)?.is_empty() {
-            members.push(package);
-        } else {
-            isolated.push(package);
-        }
-    }
-    if !members.is_empty() {
-        let mut command = ctx.cargo();
-        command.args(["clippy", "--quiet", "--locked", "--offline"]);
-        for package in members {
-            command.args(["--package", package.package.name.as_str()]);
-        }
-        command.args([
-            "--target",
-            TARGET,
-            "--lib",
-            "--all-features",
-            "--no-deps",
-            "--",
-            "-D",
-            "clippy::disallowed-methods",
-        ]);
-        process::run(&mut command)?;
-    }
-    for package in isolated {
-        for profile in common::maximal_profiles(&package.package)? {
-            process::run(
-                ctx.cargo()
-                    .args([
-                        "clippy",
-                        "--quiet",
-                        "--locked",
-                        "--offline",
-                        "--manifest-path",
-                    ])
-                    .arg(&package.manifest)
-                    .args([
-                        "--package",
-                        package.package.name.as_str(),
-                        "--target",
-                        TARGET,
-                        "--lib",
-                    ])
-                    .args(profile)
-                    .args(["--no-deps", "--", "-D", "clippy::disallowed-methods"]),
-            )?;
-        }
-    }
-    Ok(())
-}
-
 fn publication(ctx: &Context) -> Result<()> {
     process::run(
         ctx.cargo()
@@ -234,7 +178,6 @@ impl Lane {
                 Stage::NetworkDependencies,
                 Stage::Docs,
                 Stage::WorkspaceClippy,
-                Stage::ProductionLints,
                 Stage::Safety,
                 Stage::Architecture,
                 Stage::Bluetooth,
@@ -255,7 +198,6 @@ enum Stage {
     NetworkDependencies,
     Docs,
     WorkspaceClippy,
-    ProductionLints,
     Safety,
     Architecture,
     Bluetooth,
@@ -275,7 +217,6 @@ impl Stage {
             Self::NetworkDependencies => "network-dependencies",
             Self::Docs => "docs",
             Self::WorkspaceClippy => "workspace-clippy",
-            Self::ProductionLints => "production-lints",
             Self::Safety => "safety",
             Self::Architecture => "architecture",
             Self::Bluetooth => "bluetooth",
@@ -333,10 +274,7 @@ fn execute_stage(ctx: &Context, stage: Stage) -> Result<()> {
             "--",
             "-D",
             "warnings",
-            "-A",
-            "clippy::disallowed-methods",
         ])),
-        Stage::ProductionLints => production_lints(ctx),
         Stage::Safety => safety::run(ctx),
         Stage::Architecture => architecture::run(ctx),
         Stage::Bluetooth => bluetooth::run(ctx),

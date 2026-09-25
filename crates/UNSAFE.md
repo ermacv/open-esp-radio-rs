@@ -1,22 +1,31 @@
 # Unsafe boundaries
 
 Safe callers must not manufacture register, interrupt, descriptor or DMA
-ownership. Most driver crates forbid unsafe code. Trusted exceptions use
-`deny(unsafe_code)` with documented item-level allowances and retain
-`deny(unsafe_op_in_unsafe_fn)`; membership in an exception list is not blanket
-permission to add unsafe operations.
+ownership. The policy lives in standard Rust and Cargo lint settings, so every
+`cargo check`, `cargo build` and `cargo clippy` enforces it:
 
-Audited packages also deny `clippy::undocumented_unsafe_blocks`: every
+- Most production crates start with `#![forbid(unsafe_code)]`.
+- Trusted exceptions start with
+  `#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]`, permit unsafe
+  code only through documented item-level allowances and retain
+  `unsafe_op_in_unsafe_fn = "deny"` from `[workspace.lints]`. Membership in
+  the exception list is not blanket permission to add unsafe operations.
+- `[workspace.lints.clippy]` denies `disallowed_methods`; `clippy.toml` lists
+  them, and an intentional use carries a local `allow` with a reason.
+
+In audited packages every
 `unsafe` block and `unsafe impl` needs a `// SAFETY:` comment on the lines
 immediately before it, stating why its prerequisites hold. A forwarding
 call inside an `unsafe fn` names the `# Safety` contract it relies on. Put the
 comment below any `#[allow(unsafe_code, ...)]` attribute: Clippy 1.97 does
 not accept a comment above an attribute that spans several lines.
 
-The executable policy is
-[`cargo xtask check safety`](../tools/repo/src/checks/safety.rs). Its generated
-package handling, audited-unsafe list and direct-PAC-dependency list are
-separate controls. The table below maps package identities to source owners.
+`cargo clippy --workspace --all-targets` applies these lints on the host, and
+`cargo xtask check architecture` runs Clippy for every production feature
+profile on the target. [`cargo xtask check safety`](../tools/repo/src/checks/safety.rs)
+keeps the reviewed audited-unsafe list and the crate-root attributes in
+agreement and checks the direct-PAC-dependency list; generated PAC code has no
+crate-root unsafe attribute. The table below maps package identities to source owners.
 
 ## Generated access and trusted handwritten code
 

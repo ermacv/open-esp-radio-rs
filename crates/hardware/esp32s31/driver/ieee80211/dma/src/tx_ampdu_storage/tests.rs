@@ -68,6 +68,8 @@ impl Drop for TestBacking {
     unsafe_code,
     reason = "test backing owns one non-moving boxed allocation"
 )]
+// SAFETY: the boxed bytes never move or get released while this backing
+// exists, and the backing exposes no operation that frees them early.
 unsafe impl StableDmaBacking for TestBacking {
     fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
         if let Some(calls) = &self.region_calls {
@@ -88,6 +90,8 @@ unsafe impl StableDmaBacking for TestBacking {
     unsafe_code,
     reason = "test backing owns one non-moving boxed allocation"
 )]
+// SAFETY: the boxed bytes never move or get released while this backing
+// exists, and the backing exposes no operation that frees them early.
 unsafe impl StableDmaBacking for LargeTestBacking {
     fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
         // SAFETY: moving `LargeTestBacking` does not move its boxed allocation.

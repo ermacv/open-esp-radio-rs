@@ -117,6 +117,9 @@ tx-psram-dma-probe = [
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 
+[lints.clippy]
+disallowed_methods = "deny"
+
 [workspace]
 resolver = "3"
 

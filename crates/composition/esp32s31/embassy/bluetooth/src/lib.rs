@@ -98,7 +98,7 @@
 //! scheduling/observer overhead without establishing worst-case time bounds.
 
 #![no_std]
-#![deny(unsafe_code)]
+#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
 #[cfg(target_arch = "riscv32")]
 mod cold_start;

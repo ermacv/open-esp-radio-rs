@@ -1,5 +1,5 @@
 #![no_std]
-#![deny(unsafe_code)]
+#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
 //! Safe memory and ownership boundary for the ESP32-S31 IEEE 802.15.4 MAC DMA.
 //!

@@ -1,6 +1,6 @@
 use crate::{Context, Result, process};
 
-use super::{TARGET, common::*};
+use super::common::*;
 
 const GENERATED: &str = "oer-esp32s31-pac-raw";
 const AUDITED_UNSAFE: &[&str] = &[
@@ -39,80 +39,41 @@ const TEST_PACKAGES: &[&str] = &[
     "oer-esp32s31-wifi-dma",
 ];
 
-#[derive(Clone, Copy)]
-enum Policy {
-    Generated,
-    Audited,
-    Safe,
-}
-
-impl Policy {
-    fn for_package(name: &str) -> Self {
-        if name == GENERATED {
-            Self::Generated
-        } else if AUDITED_UNSAFE.contains(&name) {
-            Self::Audited
-        } else {
-            Self::Safe
-        }
-    }
-
-    fn command(self, ctx: &Context) -> std::process::Command {
-        let mut command = ctx.cargo();
-        command.args([
-            if matches!(self, Self::Generated) {
-                "check"
-            } else {
-                "clippy"
-            },
-            "--quiet",
-            "--locked",
-            "--offline",
-            "--target",
-            TARGET,
-            "--lib",
-        ]);
-        command
-    }
-
-    fn finish(self, command: &mut std::process::Command) -> Result<()> {
-        match self {
-            Self::Generated => (),
-            Self::Audited => {
-                command.args([
-                    "--no-deps",
-                    "--",
-                    "-D",
-                    "unsafe-code",
-                    "-D",
-                    "unsafe-op-in-unsafe-fn",
-                    "-D",
-                    "clippy::undocumented_unsafe_blocks",
-                ]);
-            }
-            Self::Safe => {
-                command.args(["--no-deps", "--", "-F", "unsafe-code"]);
-            }
-        }
-        process::run(command)
+/// The crate-root attribute that states each production library's unsafe
+/// policy. Rustc and Clippy enforce it in every build; this check keeps the
+/// reviewed audited list and the source attributes in agreement.
+fn required_attribute(name: &str) -> Option<&'static str> {
+    if name == GENERATED {
+        None
+    } else if AUDITED_UNSAFE.contains(&name) {
+        Some("#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]")
+    } else {
+        Some("#![forbid(unsafe_code)]")
     }
 }
 
-pub fn run(ctx: &Context) -> Result<()> {
-    let packages = production_packages(ctx)?;
-    let mut groups: [Vec<String>; 3] = Default::default();
-    for item in &packages {
-        let name = item.package.name.as_str();
-        if !item.package.targets.iter().any(|target| {
+fn library_root(package: &cargo_metadata::Package) -> Option<&std::path::Path> {
+    package
+        .targets
+        .iter()
+        .find(|target| {
             target.kind.iter().any(|kind| {
                 matches!(
                     kind,
                     cargo_metadata::TargetKind::Lib | cargo_metadata::TargetKind::RLib
                 )
             })
-        }) {
+        })
+        .map(|target| target.src_path.as_std_path())
+}
+
+pub fn run(ctx: &Context) -> Result<()> {
+    let packages = production_packages(ctx)?;
+    for item in &packages {
+        let name = item.package.name.as_str();
+        let Some(root) = library_root(&item.package) else {
             return Err(format!("driver package has no library target: {name}").into());
-        }
+        };
         if item
             .package
             .dependencies
@@ -122,40 +83,17 @@ pub fn run(ctx: &Context) -> Result<()> {
         {
             return Err(format!("package crosses closed-PAC ownership boundary: {name}").into());
         }
-        let policy = Policy::for_package(name);
-        if item.workspace_member && declared_profiles(&item.package)?.is_empty() {
-            groups[match policy {
-                Policy::Generated => 0,
-                Policy::Audited => 1,
-                Policy::Safe => 2,
-            }]
-            .push(name.to_owned());
-        } else {
-            for profile in maximal_profiles(&item.package)? {
-                let mut command = policy.command(ctx);
-                command
-                    .arg("--manifest-path")
-                    .arg(&item.manifest)
-                    .args(["--package", name])
-                    .args(profile);
-                policy.finish(&mut command)?;
-            }
+        if let Some(attribute) = required_attribute(name)
+            && !std::fs::read_to_string(root)?
+                .lines()
+                .any(|line| line.trim() == attribute)
+        {
+            return Err(format!(
+                "{name} must declare `{attribute}` at its crate root {}",
+                root.display()
+            )
+            .into());
         }
-    }
-    for (policy, names) in [Policy::Generated, Policy::Audited, Policy::Safe]
-        .into_iter()
-        .zip(groups)
-    {
-        // An empty selection must never fall back to linting an implicit workspace.
-        if names.is_empty() {
-            continue;
-        }
-        let mut command = policy.command(ctx);
-        command.arg("--all-features");
-        for name in names {
-            command.args(["--package", &name]);
-        }
-        policy.finish(&mut command)?;
     }
     let mut tests = ctx.cargo();
     tests.args(["test", "--quiet", "--locked", "--offline"]);

@@ -12,9 +12,11 @@ pub fn run(ctx: &Context) -> Result<()> {
     let packages = production_packages(ctx)?;
     validate_production_edges(&packages)?;
     let configurations = architecture_configurations(ctx, &packages, TARGET)?;
+    // Clippy compiles each isolated profile and applies every crate's own
+    // lint policy from its manifest `[lints]` and crate attributes.
     for configuration in &configurations {
         let mut command = ctx.cargo();
-        command.args(["check", "--quiet"]);
+        command.args(["clippy", "--quiet"]);
         configuration.apply(&mut command);
         process::run(&mut command)?;
     }

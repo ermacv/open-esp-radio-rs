@@ -6,7 +6,7 @@ use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_wifi_embassy::stack_boundary::stack_poll;
 
-use crate::wifi::{WifiScanFailure, WifiStartFailure, WifiStopReport};
+use oer_radio::wifi::{WifiScanFailure, WifiStartFailure, WifiStopReport};
 
 use super::message::{
     EmbassyWifiStartKind, EmbassyWifiSupervisorCommand, EmbassyWifiSupervisorResponse,
@@ -184,7 +184,7 @@ where
 /// derived without consuming that owner.
 pub async fn finish_embassy_wifi_active_role<M, E, O, S, F, Classify, FaultError>(
     endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
-    generation: crate::wifi::RadioSubsystemGeneration,
+    generation: oer_radio::wifi::RadioSubsystemGeneration,
     exit: EmbassyWifiActiveRoleExit<O>,
     classify: Classify,
     fault_error: FaultError,

@@ -24,7 +24,7 @@ Module map:
   security, receive admission and control ownership;
 - `profile`: local capability advertisement and channel lowering;
 - `ftm`, `hardware/beacon_monitor`: bounded hardware admission frontiers whose
-  physical activation limitations are stated in [FEATURES.md](../FEATURES.md).
+  physical activation limitations are stated in [FEATURES.md](../../../../hardware/esp32s31/driver/ieee80211/FEATURES.md).
 
 `crates/protocols/ieee80211/sta` owns portable MLME, reconnect and association
 preference policy. The chip profile determines eligible modes and lowers the

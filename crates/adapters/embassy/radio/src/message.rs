@@ -1,6 +1,6 @@
 //! Bounded command, completion and transport-error values.
 
-use crate::wifi::{
+use oer_radio::wifi::{
     AccessPointRequest, MonitorRequest, StationAccessPointRequest, StationRequest,
     WifiRadioRestartReport, WifiRadioRetainedCycleReport, WifiScanFailure, WifiScanReport,
     WifiScanRequest, WifiStartResult, WifiStopReport,

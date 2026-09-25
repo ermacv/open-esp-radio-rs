@@ -5,7 +5,7 @@ use core::future::Future;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_wifi_embassy::await_stack_boundary;
 
-use crate::wifi::{
+use oer_radio::wifi::{
     PhyRegistrationGeneration, RadioController, WifiRadioCalibrationPath, WifiRadioRestartReport,
     WifiRadioRetainedCycleReport, WifiScanFailure, WifiServicePlanningError, WifiServiceRequest,
     WifiStartFailure, WifiSupervisorConfiguration,
@@ -62,7 +62,7 @@ pub trait EmbassyWifiRoleEpochRunner<M: RawMutex> {
         endpoint: &'a mut EmbassyWifiSupervisorEndpoint<'_, M, Self::Error>,
         stopped: Self::Stopped,
         service: WifiServiceRequest,
-        generation: crate::wifi::RadioSubsystemGeneration,
+        generation: oer_radio::wifi::RadioSubsystemGeneration,
     ) -> impl Future<Output = EmbassyWifiRoleEpochOutcome<Self::Stopped, Self::Faulted>> + 'a;
 
     /// Close and cold-start the complete physical radio in the actor's stopped
@@ -191,7 +191,7 @@ where
     M: RawMutex,
     R: EmbassyWifiRoleEpochRunner<M>,
 {
-    let mut generation = crate::wifi::RadioSubsystemGeneration::INITIAL;
+    let mut generation = oer_radio::wifi::RadioSubsystemGeneration::INITIAL;
     let mut phy_registration_generation = PhyRegistrationGeneration::INITIAL;
     let mut stopped = Some(stopped);
     loop {

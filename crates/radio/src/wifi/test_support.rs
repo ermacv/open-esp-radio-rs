@@ -5,7 +5,7 @@ use oer_wifi_softmac::{
     MacServiceCapabilities,
 };
 
-pub(crate) const TEST_CAPABILITIES: MacServiceCapabilities = MacServiceCapabilities {
+pub const TEST_CAPABILITIES: MacServiceCapabilities = MacServiceCapabilities {
     interfaces: MacInterfaceCapabilities {
         station_interfaces: 1,
         access_point_interfaces: 0,
@@ -47,7 +47,7 @@ pub(crate) const TEST_CAPABILITIES: MacServiceCapabilities = MacServiceCapabilit
     },
 };
 
-pub(crate) const AP_TEST_CAPABILITIES: MacServiceCapabilities = MacServiceCapabilities {
+pub const AP_TEST_CAPABILITIES: MacServiceCapabilities = MacServiceCapabilities {
     interfaces: MacInterfaceCapabilities {
         station_interfaces: 1,
         access_point_interfaces: 1,
@@ -68,7 +68,7 @@ pub(crate) const AP_TEST_CAPABILITIES: MacServiceCapabilities = MacServiceCapabi
     ..TEST_CAPABILITIES
 };
 
-pub(crate) const STA_AP_TEST_CAPABILITIES: MacServiceCapabilities = MacServiceCapabilities {
+pub const STA_AP_TEST_CAPABILITIES: MacServiceCapabilities = MacServiceCapabilities {
     interfaces: MacInterfaceCapabilities {
         simultaneous_station_access_point: true,
         ..AP_TEST_CAPABILITIES.interfaces

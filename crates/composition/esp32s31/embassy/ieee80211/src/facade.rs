@@ -4,10 +4,8 @@ use crate::{WifiDevice, WifiDevices, monitor::MonitorFrames};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
-use oer_radio::{
-    runtime::embassy::{EmbassyWifiStartKind, EmbassyWifiSupervisorPort},
-    wifi::{WifiIdle, WifiServicePlanningError},
-};
+use oer_radio::wifi::{WifiIdle, WifiServicePlanningError};
+use oer_radio_embassy::{EmbassyWifiStartKind, EmbassyWifiSupervisorPort};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RadioError {

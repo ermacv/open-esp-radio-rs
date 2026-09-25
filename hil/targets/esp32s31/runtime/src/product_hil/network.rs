@@ -16,9 +16,9 @@ mod embassy;
 #[cfg(not(feature = "upstream-network"))]
 pub(super) use embassy::*;
 #[cfg(feature = "upstream-network")]
-use open_esp_radio_hil_target_core::network::{checksum, ipv4};
-#[cfg(feature = "upstream-network")]
 pub(super) use ipv4::{configure, info};
+#[cfg(feature = "upstream-network")]
+use open_esp_radio_hil_target_core::network::{checksum, ipv4};
 #[cfg(feature = "task-poll-telemetry")]
 pub(super) mod observation;
 #[cfg(feature = "task-poll-telemetry")]

@@ -17,7 +17,8 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
 
 - `crates/` contains production libraries and the thin `oer` facade. Portable
   protocols live in `crates/protocols/`; ESP32-S31 PAC, HAL, PHY and radio
-  backends live under `crates/hardware/esp32s31/`. Executor and board bindings
+  backends live under `crates/hardware/esp32s31/`; executor-free chip role
+  compositions (Wi-Fi STA/AP) live under `crates/roles/esp32s31/`. Executor and board bindings
   live in `crates/adapters/` and `crates/composition/`. Stable-memory contracts
   live in `crates/memory/`; network values live in `crates/network/interface/`
   and stack adapters in `crates/adapters/{embassy-net,xarxa}/`.

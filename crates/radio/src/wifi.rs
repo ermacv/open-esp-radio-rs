@@ -45,5 +45,7 @@ pub use {
     oer_ieee80211::station::association::Preference,
 };
 
-#[cfg(test)]
-pub(crate) mod test_support;
+/// Synthetic portable service profiles for this crate's and adapters' tests.
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod test_support;

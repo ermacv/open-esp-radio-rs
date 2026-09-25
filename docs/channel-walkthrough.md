@@ -119,7 +119,7 @@ STA policy can request a channel visit without knowing the register or RF table.
 
 ## 5. Connect the operation to the scan caller
 
-The chip's [ScanPhy](../crates/hardware/esp32s31/driver/ieee80211/sta/src/hardware/channel.rs)
+The chip's [ScanPhy](../crates/roles/esp32s31/ieee80211/sta/src/hardware/channel.rs)
 borrows persistent `RegisteredWifiPhy` state. Initial selection requires a cold,
 stopped MAC. A later switch performs stop, retune and restore. The cooperative
 path obtains serialized channel-only authority through `RadioAccess`.

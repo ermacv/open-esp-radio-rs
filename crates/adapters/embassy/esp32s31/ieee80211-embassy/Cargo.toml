@@ -21,7 +21,7 @@ diagnostics = ["oer-esp32s31-wifi-embassy/diagnostics"]
 tx-phase-telemetry = ["oer-esp32s31-wifi-embassy/tx-phase-telemetry"]
 
 [dev-dependencies]
-oer-esp32s31-wifi-sta = { path = "../../../../hardware/esp32s31/driver/ieee80211/sta" }
+oer-esp32s31-wifi-sta = { path = "../../../../roles/esp32s31/ieee80211/sta" }
 oer-wifi-softmac = { path = "../../../../protocols/ieee80211/softmac" }
 critical-section = { version = "1.2.0", features = ["std"] }
 

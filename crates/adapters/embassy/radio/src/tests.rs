@@ -15,7 +15,7 @@ use oer_wifi_sta::station::StaReconnectPolicy;
 use oer_wpa2::Pmk;
 use {oer_ieee80211::channel::WifiChannel, oer_ieee80211::station::association::Preference};
 
-use crate::wifi::{
+use oer_radio::wifi::{
     MonitorCapturePolicy, MonitorRequest, StationRequest, StationScanChannels, StationScanPolicy,
     StationSecurity, WIFI_SCAN_RESULT_CAPACITY, WifiMacAddress, WifiMonitorConfig,
     WifiRadioCalibrationPath, WifiScanReport, WifiScanRequest, WifiScanResult,
@@ -24,7 +24,7 @@ use crate::wifi::{
 };
 
 use super::*;
-use crate::wifi::test_support::TEST_CAPABILITIES;
+use oer_radio::wifi::test_support::TEST_CAPABILITIES;
 
 fn station_request() -> StationRequest {
     StationRequest::new(
@@ -141,7 +141,7 @@ impl EmbassyWifiRoleEpochRunner<NoopRawMutex> for FakeLocalEpochRunner {
         endpoint: &'a mut EmbassyWifiSupervisorEndpoint<'_, NoopRawMutex, Self::Error>,
         stopped: Self::Stopped,
         service: WifiServiceRequest,
-        generation: crate::wifi::RadioSubsystemGeneration,
+        generation: oer_radio::wifi::RadioSubsystemGeneration,
     ) -> EmbassyWifiRoleEpochOutcome<Self::Stopped, Self::Faulted> {
         if matches!(self.mode, FakeEpochMode::RejectOnce) {
             self.mode = FakeEpochMode::Normal;
@@ -257,14 +257,14 @@ fn controller_and_supervisor_exchange_typed_station_completion() {
         assert_eq!(request.ssid().as_bytes(), b"mailbox");
         endpoint
             .respond(EmbassyWifiSupervisorResponse::Station(Ok(
-                WifiStartReport::new(crate::wifi::RadioSubsystemGeneration::INITIAL),
+                WifiStartReport::new(oer_radio::wifi::RadioSubsystemGeneration::INITIAL),
             )))
             .await;
     };
     let (report, ()) = run(join(application, supervisor));
     assert_eq!(
         report.generation(),
-        crate::wifi::RadioSubsystemGeneration::INITIAL
+        oer_radio::wifi::RadioSubsystemGeneration::INITIAL
     );
 }
 
@@ -287,7 +287,7 @@ fn stopped_dispatch_validates_before_returning_a_start_transaction() {
         let dispatch = dispatch_embassy_wifi_stopped_command(
             &mut endpoint,
             configuration,
-            crate::wifi::RadioSubsystemGeneration::INITIAL,
+            oer_radio::wifi::RadioSubsystemGeneration::INITIAL,
             |_| (),
         )
         .await;
@@ -300,7 +300,7 @@ fn stopped_dispatch_validates_before_returning_a_start_transaction() {
         );
         endpoint
             .respond(EmbassyWifiSupervisorResponse::Station(Ok(
-                WifiStartReport::new(crate::wifi::RadioSubsystemGeneration::INITIAL.next()),
+                WifiStartReport::new(oer_radio::wifi::RadioSubsystemGeneration::INITIAL.next()),
             )))
             .await;
     };
@@ -320,7 +320,7 @@ fn stopped_dispatch_rejects_unprovisioned_start_without_moving_a_request() {
         let dispatch = dispatch_embassy_wifi_stopped_command(
             &mut endpoint,
             configuration,
-            crate::wifi::RadioSubsystemGeneration::INITIAL,
+            oer_radio::wifi::RadioSubsystemGeneration::INITIAL,
             |error| error,
         )
         .await;
@@ -328,7 +328,7 @@ fn stopped_dispatch_rejects_unprovisioned_start_without_moving_a_request() {
     };
     let (result, ()) = run(join(application, supervisor));
     match result {
-        Err(crate::wifi::WifiRoleStartFailure::Rejected {
+        Err(oer_radio::wifi::WifiRoleStartFailure::Rejected {
             wifi: _,
             request,
             error:
@@ -633,7 +633,7 @@ fn disappearing_supervisor_wakes_an_inflight_controller() {
     let (result, ()) = run(join(application, supervisor));
     assert!(matches!(
         result,
-        Err(crate::wifi::WifiRoleStartFailure::Faulted {
+        Err(oer_radio::wifi::WifiRoleStartFailure::Faulted {
             error: EmbassyWifiSupervisorError::SupervisorUnavailable
         })
     ));
@@ -656,7 +656,7 @@ fn supervisor_drop_does_not_overwrite_a_ready_completion() {
     {
         let mut respond =
             core::pin::pin!(endpoint.respond(EmbassyWifiSupervisorResponse::Station(Ok(
-                WifiStartReport::new(crate::wifi::RadioSubsystemGeneration::INITIAL.next(),)
+                WifiStartReport::new(oer_radio::wifi::RadioSubsystemGeneration::INITIAL.next(),)
             )),));
         assert!(poll_once(respond.as_mut()).is_ready());
     }
@@ -700,7 +700,7 @@ fn cancelled_transport_future_cannot_poison_the_next_command() {
         cancelled.wait().await;
         endpoint
             .respond(EmbassyWifiSupervisorResponse::Station(Ok(
-                WifiStartReport::new(crate::wifi::RadioSubsystemGeneration::INITIAL),
+                WifiStartReport::new(oer_radio::wifi::RadioSubsystemGeneration::INITIAL),
             )))
             .await;
 
@@ -710,7 +710,7 @@ fn cancelled_transport_future_cannot_poison_the_next_command() {
         ));
         endpoint
             .respond(EmbassyWifiSupervisorResponse::Monitor(Ok(
-                WifiStartReport::new(crate::wifi::RadioSubsystemGeneration::INITIAL.next()),
+                WifiStartReport::new(oer_radio::wifi::RadioSubsystemGeneration::INITIAL.next()),
             )))
             .await;
     };
@@ -741,7 +741,7 @@ fn cancellation_before_first_poll_publishes_no_command() {
     {
         let mut respond =
             core::pin::pin!(endpoint.respond(EmbassyWifiSupervisorResponse::Monitor(Ok(
-                WifiStartReport::new(crate::wifi::RadioSubsystemGeneration::INITIAL,)
+                WifiStartReport::new(oer_radio::wifi::RadioSubsystemGeneration::INITIAL,)
             )),));
         assert!(poll_once(respond.as_mut()).is_ready());
     }
@@ -773,7 +773,7 @@ fn reconciliation_applies_backpressure_without_duplicate_publication() {
     {
         let mut respond =
             core::pin::pin!(endpoint.respond(EmbassyWifiSupervisorResponse::Station(Ok(
-                WifiStartReport::new(crate::wifi::RadioSubsystemGeneration::INITIAL,)
+                WifiStartReport::new(oer_radio::wifi::RadioSubsystemGeneration::INITIAL,)
             )),));
         assert!(poll_once(respond.as_mut()).is_ready());
     }
@@ -794,7 +794,7 @@ fn reconciliation_applies_backpressure_without_duplicate_publication() {
     {
         let mut respond =
             core::pin::pin!(endpoint.respond(EmbassyWifiSupervisorResponse::Monitor(Ok(
-                WifiStartReport::new(crate::wifi::RadioSubsystemGeneration::INITIAL.next(),)
+                WifiStartReport::new(oer_radio::wifi::RadioSubsystemGeneration::INITIAL.next(),)
             )),));
         assert!(poll_once(respond.as_mut()).is_ready());
     }
@@ -855,7 +855,7 @@ fn ready_cancelled_completion_then_supervisor_drop_rejects_next_request() {
     {
         let mut respond =
             core::pin::pin!(endpoint.respond(EmbassyWifiSupervisorResponse::Station(Ok(
-                WifiStartReport::new(crate::wifi::RadioSubsystemGeneration::INITIAL,)
+                WifiStartReport::new(oer_radio::wifi::RadioSubsystemGeneration::INITIAL,)
             )),));
         assert!(poll_once(respond.as_mut()).is_ready());
     }
@@ -935,7 +935,7 @@ fn monitor_policy_remains_an_owned_typed_command() {
         assert_eq!(request.capture_policy().snapshot_length(), Some(256));
         endpoint
             .respond(EmbassyWifiSupervisorResponse::Monitor(Ok(
-                WifiStartReport::new(crate::wifi::RadioSubsystemGeneration::INITIAL),
+                WifiStartReport::new(oer_radio::wifi::RadioSubsystemGeneration::INITIAL),
             )))
             .await;
     };
@@ -973,7 +973,7 @@ fn active_role_stop_is_acknowledged_only_after_owner_future_returns() {
 
         let frontier = finish_embassy_wifi_active_role(
             &mut endpoint,
-            crate::wifi::RadioSubsystemGeneration::INITIAL,
+            oer_radio::wifi::RadioSubsystemGeneration::INITIAL,
             exit,
             EmbassyWifiRoleFrontier::<_, ()>::Stopped,
             |_| unreachable!("the test role returned a stopped owner"),
@@ -987,7 +987,7 @@ fn active_role_stop_is_acknowledged_only_after_owner_future_returns() {
     let (report, ()) = run(join(application, supervisor));
     assert_eq!(
         report.generation(),
-        crate::wifi::RadioSubsystemGeneration::INITIAL
+        oer_radio::wifi::RadioSubsystemGeneration::INITIAL
     );
     assert_eq!(stage.load(Ordering::Acquire), 2);
 }
@@ -1025,7 +1025,7 @@ fn simultaneous_role_and_command_readiness_prefers_the_pinned_owner() {
     assert_eq!(stage.load(Ordering::Acquire), 0);
     let frontier = run(finish_embassy_wifi_active_role(
         &mut endpoint,
-        crate::wifi::RadioSubsystemGeneration::INITIAL,
+        oer_radio::wifi::RadioSubsystemGeneration::INITIAL,
         exit,
         EmbassyWifiRoleFrontier::<_, ()>::Stopped,
         |_| unreachable!(),
@@ -1039,7 +1039,7 @@ fn simultaneous_role_and_command_readiness_prefers_the_pinned_owner() {
     let mut dispatch = core::pin::pin!(dispatch_embassy_wifi_stopped_command(
         &mut endpoint,
         WifiSupervisorConfiguration::new(TEST_CAPABILITIES),
-        crate::wifi::RadioSubsystemGeneration::INITIAL,
+        oer_radio::wifi::RadioSubsystemGeneration::INITIAL,
         |_| unreachable!(),
     ));
     assert!(matches!(
@@ -1078,7 +1078,7 @@ fn faulted_role_never_produces_a_successful_stop_response() {
         .await;
         finish_embassy_wifi_active_role(
             &mut endpoint,
-            crate::wifi::RadioSubsystemGeneration::INITIAL,
+            oer_radio::wifi::RadioSubsystemGeneration::INITIAL,
             exit,
             EmbassyWifiRoleFrontier::<(), _>::Faulted,
             |owner| {
@@ -1127,7 +1127,7 @@ fn active_role_rejects_a_new_start_with_the_untouched_request() {
 
     let (result, ()) = run(join(application, supervisor));
     match result {
-        Err(crate::wifi::WifiRoleStartFailure::Rejected {
+        Err(oer_radio::wifi::WifiRoleStartFailure::Rejected {
             wifi: _,
             request,
             error: EmbassyWifiSupervisorError::Service("already-running"),

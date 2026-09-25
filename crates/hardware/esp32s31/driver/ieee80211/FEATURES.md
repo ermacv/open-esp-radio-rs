@@ -24,7 +24,7 @@ The ignored output separates `domain-inventory.md`,
 never a readiness authority.
 
 Architecture navigation: [whole-radio map](../FEATURES.md),
-[STA composition](sta/README.md), [AP engine](ap/src/engine.rs),
+[STA composition](../../../../roles/esp32s31/ieee80211/sta/README.md), [AP engine](../../../../roles/esp32s31/ieee80211/ap/src/engine.rs),
 [MAC TX](mac/src/tx.rs), [MAC RX](mac/src/rx.rs), and
 [shared PHY](../../phy/FEATURES.md).
 

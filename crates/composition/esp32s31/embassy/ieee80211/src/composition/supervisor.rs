@@ -7,20 +7,17 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_radio::{
-    runtime::embassy::{
-        EmbassyWifiActiveRoleControl, EmbassyWifiActiveRoleExit, EmbassyWifiRoleEpochOutcome,
-        EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier, EmbassyWifiStartKind,
-        EmbassyWifiSupervisorControlResources, EmbassyWifiSupervisorEndpoint,
-        EmbassyWifiSupervisorPort, EmbassyWifiSupervisorPrepareFailure,
-        EmbassyWifiSupervisorResponse, EmbassyWifiSupervisorTask,
-        drive_embassy_wifi_active_role_pinned, finish_embassy_wifi_active_role,
-        prepare_embassy_wifi_supervisor,
-    },
-    wifi::{
-        RadioController, RadioSubsystemGeneration, StationRequest, WifiStartFailure,
-        WifiStartReport, WifiSupervisorConfiguration,
-    },
+use oer_radio::wifi::{
+    RadioController, RadioSubsystemGeneration, StationRequest, WifiStartFailure, WifiStartReport,
+    WifiSupervisorConfiguration,
+};
+use oer_radio_embassy::{
+    EmbassyWifiActiveRoleControl, EmbassyWifiActiveRoleExit, EmbassyWifiRoleEpochOutcome,
+    EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier, EmbassyWifiStartKind,
+    EmbassyWifiSupervisorControlResources, EmbassyWifiSupervisorEndpoint,
+    EmbassyWifiSupervisorPort, EmbassyWifiSupervisorPrepareFailure, EmbassyWifiSupervisorResponse,
+    EmbassyWifiSupervisorTask, drive_embassy_wifi_active_role_pinned,
+    finish_embassy_wifi_active_role, prepare_embassy_wifi_supervisor,
 };
 
 use oer_esp32s31_hal::owner::MacInterruptSetup;

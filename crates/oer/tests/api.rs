@@ -11,11 +11,11 @@ fn wifi_facade_preserves_implementation_type_identity() {
 #[test]
 fn embassy_radio_facade_preserves_supervisor_reexport_type_identity() {
     let _: fn(
-        radio::runtime::embassy::EmbassyWifiSupervisorCommand,
-    ) -> oer::radio::runtime::embassy::EmbassyWifiSupervisorCommand = |command| command;
+        radio_embassy::EmbassyWifiSupervisorCommand,
+    ) -> oer::embassy::radio::EmbassyWifiSupervisorCommand = |command| command;
     let _: fn(
-        oer::radio::runtime::embassy::EmbassyWifiSupervisorResponse<()>,
-    ) -> radio::runtime::embassy::EmbassyWifiSupervisorResponse<()> = |response| response;
+        oer::embassy::radio::EmbassyWifiSupervisorResponse<()>,
+    ) -> radio_embassy::EmbassyWifiSupervisorResponse<()> = |response| response;
 }
 
 #[cfg(feature = "wifi")]

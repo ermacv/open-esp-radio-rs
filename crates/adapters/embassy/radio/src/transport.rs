@@ -7,7 +7,7 @@ use embassy_sync::{
     channel::{Channel, Receiver, Sender, TrySendError},
 };
 
-use crate::wifi::{
+use oer_radio::wifi::{
     AccessPointRequest, MonitorRequest, RadioController, StationAccessPointRequest, StationRequest,
     WifiIdle, WifiRadioRestartReport, WifiRadioRetainedCycleReport, WifiScanFailure,
     WifiScanReport, WifiScanRequest, WifiStartFailure, WifiStartResult, WifiStopReport,

@@ -2344,6 +2344,7 @@ dependencies = [
  "oer-ieee80211",
  "oer-network",
  "oer-radio",
+ "oer-radio-embassy",
  "oer-wifi-ap",
  "oer-wifi-embassy",
  "oer-wifi-softmac",
@@ -2677,12 +2678,22 @@ dependencies = [
 name = "oer-radio"
 version = "0.1.0"
 dependencies = [
+ "oer-ieee80211",
+ "oer-wifi-ap",
+ "oer-wifi-softmac",
+ "oer-wifi-sta",
+ "oer-wpa2",
+]
+
+[[package]]
+name = "oer-radio-embassy"
+version = "0.1.0"
+dependencies = [
  "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "oer-ieee80211",
- "oer-wifi-ap",
+ "oer-radio",
  "oer-wifi-embassy",
- "oer-wifi-softmac",
  "oer-wifi-sta",
  "oer-wpa2",
 ]
@@ -2834,6 +2845,7 @@ dependencies = [
  "oer-memory",
  "oer-network",
  "oer-radio",
+ "oer-radio-embassy",
  "oer-wifi-ap",
  "oer-wifi-datapath",
  "oer-wifi-softmac",

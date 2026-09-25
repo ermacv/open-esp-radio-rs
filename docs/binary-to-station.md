@@ -83,7 +83,7 @@ The detailed boundaries are:
 | PAC | Typed register authority and permitted register-local operations | [PAC boundary](../crates/hardware/esp32s31/pac/README.md) |
 | HAL | Hardware sequencing, waits, delays and recovery | [HAL API source](../crates/hardware/esp32s31/hal/src/lib.rs) |
 | PHY | RF algorithms, channel configuration, tables and calibration | [PHY](../crates/hardware/esp32s31/phy/README.md) |
-| Chip driver | MAC/DMA/IRQ operations and hardware resource ownership | [Station backend](../crates/hardware/esp32s31/driver/ieee80211/sta/README.md) |
+| Chip driver | MAC/DMA/IRQ operations and hardware resource ownership | [Station backend](../crates/roles/esp32s31/ieee80211/sta/README.md) |
 | IEEE 802.11 / STA | Frame rules, protocol transitions and portable policy | [Station policy](../crates/protocols/ieee80211/sta/README.md) |
 | Runtime | Execution, timers, wakeups and owners retained across awaits | [Runtime](../crates/runtime/README.md) |
 | Composition / application | System assembly, requested role, network stack and user behavior | [Composition](../crates/composition/esp32s31/embassy/ieee80211/README.md), [station example](../examples/esp32s31-station/README.md) |
@@ -165,7 +165,7 @@ This is a call/authority view of one operation. The portable
 caller-selected channel plan through a backend port. It does not tune a radio.
 The [runtime binding](../crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/target.rs)
 connects `ScanPhyPort` to the chip's
-[`ScanPhy`](../crates/hardware/esp32s31/driver/ieee80211/sta/src/hardware/channel.rs).
+[`ScanPhy`](../crates/roles/esp32s31/ieee80211/sta/src/hardware/channel.rs).
 
 `ScanPhy` borrows persistent registered PHY state. Initial `select_channel`
 requires a cold, stopped MAC. `switch_channel` handles stop, retune and restore;

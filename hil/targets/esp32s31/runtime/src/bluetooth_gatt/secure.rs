@@ -1,7 +1,6 @@
 //! One application-owned RAM store around successive physical Controller epochs.
 #[path = "secure/retirement.rs"]
 mod retirement;
-use open_esp_radio_hil_target_core::bluetooth_gatt::secure::{reset_gate, state, store};
 use super::console;
 use bluetooth_example::security::{bonds::RamBondStore, epoch};
 use core::convert::Infallible;
@@ -12,6 +11,7 @@ use embassy_futures::{
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, signal::Signal};
 use oer_esp32s31_bluetooth_integration::{BluetoothColdStartOutput, entropy::BluetoothEntropy};
 use open_esp_radio_hil_protocol::{Command, Event, FeatureCapabilities};
+use open_esp_radio_hil_target_core::bluetooth_gatt::secure::{reset_gate, state, store};
 use state::State;
 
 type HostExit<'a> = epoch::Exit<

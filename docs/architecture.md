@@ -52,11 +52,15 @@ the public facade. These rules are independent of directory names and chip IDs.
 | --- | --- |
 | contract, protocol | contract, protocol |
 | hardware | contract, protocol, hardware |
-| adapter | contract, protocol, hardware, adapter, runtime |
-| runtime | contract, protocol, hardware, adapter, runtime, service |
-| service | contract, protocol, adapter, service |
+| role | contract, protocol, hardware, role |
+| service | contract, protocol, service |
+| adapter, runtime | contract, protocol, hardware, role, adapter, runtime, service |
 | composition, facade | all production layers except facade |
 
+Hardware owns chip resources and the wire codecs its registers carry. A role
+composes portable role protocols (station, access point, security) with that
+hardware, without an executor. A service declares executor-free ports; an
+adapter binds them to an executor, so a service never depends on an adapter.
 An adapter can implement a runtime interface, while a runtime can consume
 an adapter's executor-neutral contract. Cargo still rejects actual dependency
 cycles. Neither layer can depend on the final composition.
@@ -69,6 +73,7 @@ The production path is deliberately directional:
 | --- | --- | --- |
 | Portable protocol/service | Valid frames, role transitions, request planning and typed outcomes | Protocol values and affine logical state; never PAC ownership |
 | Chip HAL/driver | Semantic register transactions, DMA/IRQ state and physical transition results | PAC capabilities, stable-memory proofs and fail-stop hardware frontiers |
+| Chip role | Ordering of one role's association, security and data plane over the chip driver | Executor-free role owners and their returned hardware frontiers |
 | Concrete runtime | Which owner-bearing future is polled and how wakes, deadlines and bounded mailboxes progress | Active role/session owners across awaits and client cancellation |
 | Composition | One-time storage placement, board/chip roots, final IRQ bindings and application capability split | The sole hardware runner plus static resource claims |
 | Application/facade | Credentials, requested role, network/IP policy and sockets | Hardware-free control handles and application packet/socket owners |

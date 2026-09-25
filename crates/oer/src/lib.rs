@@ -49,6 +49,16 @@ pub mod chips {
     }
 }
 
+/// Executor bindings of the portable service contracts.
+#[cfg(any(
+    feature = "upstream-xarxa",
+    feature = "owned-xarxa",
+    feature = "embassy-smoltcp"
+))]
+pub mod embassy {
+    pub use radio_embassy as radio;
+}
+
 #[cfg(any(
     feature = "upstream-xarxa",
     feature = "owned-xarxa",

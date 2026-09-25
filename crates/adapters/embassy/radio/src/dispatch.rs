@@ -2,7 +2,7 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use crate::wifi::{
+use oer_radio::wifi::{
     WifiScanFailure, WifiServicePlanningError, WifiServiceRequest, WifiStartFailure,
     WifiStopReport, WifiSupervisorConfiguration,
 };
@@ -36,7 +36,7 @@ pub enum EmbassyWifiStoppedDispatch {
 pub async fn dispatch_embassy_wifi_stopped_command<M, E, PlanningError>(
     endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
     configuration: WifiSupervisorConfiguration,
-    generation: crate::wifi::RadioSubsystemGeneration,
+    generation: oer_radio::wifi::RadioSubsystemGeneration,
     mut planning_error: PlanningError,
 ) -> EmbassyWifiStoppedDispatch
 where

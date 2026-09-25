@@ -13,9 +13,9 @@
 //! With `wifi`, start at `wifi::WifiIdle`. A successful role start consumes
 //! the idle capability, and only a successful stop returns a reusable one.
 //! Rejected preparation returns the unchanged request and idle capability;
-//! a fault after materialization does not. With `wifi-embassy`,
-//! `runtime::embassy` supplies the one-command mailbox used by the concrete
-//! ESP32-S31 runner.
+//! a fault after materialization does not. Executor bindings live in adapter
+//! crates; `oer-radio-embassy` supplies the one-command mailbox used by the
+//! concrete ESP32-S31 runner. This crate depends on no executor or adapter.
 //!
 //! # Command and data planes
 //!
@@ -26,11 +26,9 @@
 //!
 //! # Cancellation
 //!
-//! Dropping an Embassy client future stops waiting; it does not retract a
-//! command already published to the actor. The port drains that command's
-//! response before publishing another command. Public role typestates are
-//! affine, so callers cannot interpret a dropped start/stop wait as recovery
-//! of the consumed capability.
+//! Public role typestates are affine, so callers cannot interpret a dropped
+//! start/stop wait in an executor binding as recovery of the consumed
+//! capability.
 //!
 //! The ESP32-S31 application examples under `examples/` are the buildable
 //! consumers. The concrete lifecycle, including hardware quarantine, is
@@ -39,7 +37,5 @@
 #[cfg(test)]
 extern crate std;
 
-#[cfg(feature = "wifi-embassy")]
-pub mod runtime;
 #[cfg(feature = "wifi")]
 pub mod wifi;

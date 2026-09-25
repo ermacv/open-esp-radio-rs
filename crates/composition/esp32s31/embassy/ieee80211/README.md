@@ -95,7 +95,7 @@ not automatically establish the corresponding AP or combined-role property.
   receive-policy restoration. It is not connected modem sleep or peer-facing
   Wi-Fi power save.
 
-The item-level contracts are in `oer-radio::runtime::embassy`,
+The item-level contracts are in `oer-radio-embassy`,
 `oer-esp32s31-wifi::runtime`, and the concrete role modules in this crate's
 source. `FEATURES.md` is navigation for scope and limitations; the generated
 qualification view remains the readiness authority.

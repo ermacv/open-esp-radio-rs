@@ -20,7 +20,7 @@ Cargo package identities are independent of this directory hierarchy.
 | Path | Responsibility |
 | --- | --- |
 | `oer/` | Thin public facade; reexports protocols, chip backends and selected compositions |
-| `radio/` | `wifi/` owns public requests and affine role lifecycle; `runtime/embassy` drives local control epochs |
+| `radio/` | `wifi/` owns public requests, affine role lifecycle and the executor-free service port |
 | `memory/` | Audited stable-memory proofs and affine buffer/queue handoff |
 | `network/dependencies/` | Reviewed Cargo source selection for network stacks; no adapter code |
 | `network/interface/` | Stack-neutral interface, link and error values |
@@ -30,10 +30,12 @@ Cargo package identities are independent of this directory hierarchy.
 | `protocols/bluetooth/hci/` | `wire` holds packet views; `transport/in_process` holds queues; `controller` retains bootstrap, command/response authority and `le` policies |
 | `protocols/ieee802154/` | `mac/frame` holds bounded bytes; `radio/{command,event,state,channel,capabilities}` holds portable contracts and one state machine |
 | `hardware/esp32s31/{pac,hal,phy}/` | PAC `ownership` and HAL `owner` retain hardware authority; domain modules hold register operations, transactions and RF algorithms |
-| `hardware/esp32s31/driver/ieee80211/{dma,mac,sta,ap}/` | S31 descriptor ownership, MAC `rx/tx/rate`, and chip role composition; `mac/tx/metadata` lowers portable traffic intent |
+| `hardware/esp32s31/driver/ieee80211/{dma,mac}/` | S31 descriptor ownership and MAC `rx/tx/rate`; `mac/tx/metadata` lowers portable traffic intent |
+| `roles/esp32s31/ieee80211/{sta,ap}/` | Executor-free chip station and access-point role composition over the MAC driver |
 | `hardware/esp32s31/driver/{bluetooth,coex,ieee802154}/` | Chip radio actors; Bluetooth `memory/` and IEEE 802.15.4 `{dma,irq,mac,runtime}/` hold their lower ownership boundaries |
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
 | `adapters/embassy/ieee80211/` | Generic Embassy Wi-Fi service contracts |
+| `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
 | `adapters/embassy/esp32s31/` | Executor/time platform ABI, coexistence mailbox, acknowledged IEEE 802.15.4 IRQ handoff and network stack bindings |
 | `runtime/embassy/esp32s31/{ieee80211,bluetooth}/` | Concrete radio execution; Wi-Fi role/datapath owners and Bluetooth controller/session owners, with their embedded time bindings |
 | `adapters/embassy-net/{owned,upstream}/` | Owned-packet and released-interface network adapters |

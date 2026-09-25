@@ -224,7 +224,7 @@ pub fn classification(package: &Package) -> Result<Classification<'_>> {
         platform,
     };
     let expected_scope = match class.layer {
-        "contract" | "protocol" | "hardware" | "adapter" | "runtime" | "service"
+        "contract" | "protocol" | "hardware" | "role" | "adapter" | "runtime" | "service"
         | "composition" | "facade" => "production",
         "experiment" => "experimental",
         "tool" | "hil" | "qualification" | "verification" | "application" | "platform" => {
@@ -297,22 +297,22 @@ pub fn validate_production_edges(packages: &[ProductionPackage]) -> Result<()> {
     Ok(())
 }
 
-/// Responsibilities are not a single stack: an adapter may implement a runtime
-/// interface, while a runtime may use an adapter for a lower executor contract.
-/// Neither may acquire the final composition or public facade above them.
+/// Responsibilities are not a single stack: an adapter may bind a service or
+/// runtime interface to an executor, while a runtime may use an adapter for a
+/// lower executor contract. Hardware owns chip resources and wire codecs; a
+/// role composes portable role protocols with that hardware. Services declare
+/// executor-free ports and never depend on the adapters that bind them. None
+/// may acquire the final composition or public facade above them.
 fn layer_allows(source: &str, target: &str) -> bool {
     match source {
         "contract" | "protocol" => matches!(target, "contract" | "protocol"),
         "hardware" => matches!(target, "contract" | "protocol" | "hardware"),
-        "adapter" => matches!(
+        "role" => matches!(target, "contract" | "protocol" | "hardware" | "role"),
+        "service" => matches!(target, "contract" | "protocol" | "service"),
+        "adapter" | "runtime" => matches!(
             target,
-            "contract" | "protocol" | "hardware" | "adapter" | "runtime"
+            "contract" | "protocol" | "hardware" | "role" | "adapter" | "runtime" | "service"
         ),
-        "runtime" => matches!(
-            target,
-            "contract" | "protocol" | "hardware" | "adapter" | "runtime" | "service"
-        ),
-        "service" => matches!(target, "contract" | "protocol" | "adapter" | "service"),
         "composition" | "facade" => target != "facade",
         _ => false,
     }

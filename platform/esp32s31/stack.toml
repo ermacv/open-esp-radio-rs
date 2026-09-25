@@ -149,7 +149,7 @@ reason = "the complete same-channel transaction retains the sole RX producer, TX
 
 [[reviewed_frames]]
 function_contains = "::attempt::StaAttempt<"
-source_ends_with = ["crates/hardware/esp32s31/driver/ieee80211/sta/src/attempt.rs", "oer-esp32s31-wifi-sta-0.1.0/src/attempt.rs"]
+source_ends_with = ["crates/roles/esp32s31/ieee80211/sta/src/attempt.rs", "oer-esp32s31-wifi-sta-0.1.0/src/attempt.rs"]
 max_bytes = 11264
 reason = "shared initial/reconnect attempt future retains the exact phase owner and one active WPA2 operation"
 
@@ -172,20 +172,20 @@ max_bytes = 13568
 reason = "station task future retains lifecycle command and returned owner state, including connected rate control, low-power/ESP-NOW and interface-scoped BlockAck state; the Wi-Fi frontier retains registered PHY state and its shared client scheduler through role transfers"
 
 [[reviewed_frames]]
-function_contains = "::runtime::embassy::actor::run_embassy_wifi_supervisor_actor"
-source_ends_with = ["crates/radio/src/runtime/embassy/actor.rs", "open-esp-radio-0.1.0/src/runtime/embassy/actor.rs"]
+function_contains = "::actor::run_embassy_wifi_supervisor_actor"
+source_ends_with = ["crates/adapters/embassy/radio/src/actor.rs", "oer-radio-embassy-0.1.0/src/actor.rs"]
 max_bytes = 10496
 reason = "the generic actor retains one optional stopped owner across commands and transfers it in place through the cold-restart transaction; diagnostic response unions add only value state, its caller polls it through an opaque stack boundary and the concrete runtime stack remains independently bounded by the selected platform memory profile"
 
 [[reviewed_frames]]
 function_contains = "EmbassyWifiSupervisorTask<"
-source_ends_with = ["crates/radio/src/runtime/embassy/actor.rs", "open-esp-radio-0.1.0/src/runtime/embassy/actor.rs"]
+source_ends_with = ["crates/adapters/embassy/radio/src/actor.rs", "oer-radio-embassy-0.1.0/src/actor.rs"]
 max_bytes = 12288
 reason = "radio supervisor retains the affine Wi-Fi role owner plus bounded dual-VIF network, service-epoch, rate-control and AP retry-report state"
 
 [[reviewed_frames]]
-function_contains = "::runtime::embassy::active::finish_embassy_wifi_active_role"
-source_ends_with = ["crates/radio/src/runtime/embassy/active.rs", "open-esp-radio-0.1.0/src/runtime/embassy/active.rs"]
+function_contains = "::active::finish_embassy_wifi_active_role"
+source_ends_with = ["crates/adapters/embassy/radio/src/active.rs", "oer-radio-embassy-0.1.0/src/active.rs"]
 max_bytes = 10752
 reason = "generic terminal transaction retains the exact expanded stopped-or-faulted role frontier until the application response is acknowledged; it runs on the PSRAM task stack and cannot expose a partial owner graph"
 

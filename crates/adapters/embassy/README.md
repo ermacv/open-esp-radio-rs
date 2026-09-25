@@ -6,6 +6,7 @@ Bluetooth execution lives in the [radio runtime domain](../../runtime/README.md)
 | Location | Responsibility |
 | --- | --- |
 | `esp32s31/runtime/src/{executor,time_driver}.rs` | Platform executor wake ABI and Embassy timer queue; applications supply interrupt and timer capabilities |
+| `radio/src/` | Mailbox and role-epoch actor binding the portable radio service port |
 | `ieee80211/src/monitor/` | Bounded capture and injection handoffs |
 | `ieee80211/src/{connected_tasks,station_network,stack_boundary}.rs` | Task shutdown, association-scoped network ownership and explicit polling boundary |
 | `esp32s31/ieee802154/src/` | Acknowledged IRQ token queue and cancellation-safe operation/DMA owners |
@@ -26,4 +27,5 @@ chip PHY remains executor-independent.
 Final memory profiles, static claims, IRQ binding and whole-radio lifecycles
 belong to [integration](../../composition/esp32s31/embassy/). The generic Wi-Fi
 adapter depends on radio-facade contracts and does not own the product
-supervisor. The [driver map](../../README.md) defines the ownership direction.
+supervisor. The radio adapter depends on the executor-free `oer-radio` service;
+the service never depends on an adapter. The [driver map](../../README.md) defines the ownership direction.

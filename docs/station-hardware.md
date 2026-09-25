@@ -13,7 +13,7 @@ following shorter map when returning to the code:
 
 1. [Runtime target binding](../crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/target.rs)
    implements the scan port and retains the caller's hardware owner.
-2. [Chip `ScanPhy`](../crates/hardware/esp32s31/driver/ieee80211/sta/src/hardware/channel.rs)
+2. [Chip `ScanPhy`](../crates/roles/esp32s31/ieee80211/sta/src/hardware/channel.rs)
    distinguishes initial channel selection from stop/retune/restore.
 3. [PHY channel algorithms](../crates/hardware/esp32s31/phy/src/channel.rs)
    use restricted HAL authority. Follow referenced helpers and data to their

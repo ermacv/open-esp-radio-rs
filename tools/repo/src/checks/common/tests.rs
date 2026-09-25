@@ -231,7 +231,7 @@ fn hardware_dependencies_cannot_cross_chip_identity() {
 #[test]
 fn hardware_cannot_depend_on_execution_or_composition_even_optionally() {
     for section in ["dependencies", "build-dependencies"] {
-        for layer in ["adapter", "runtime", "service", "composition"] {
+        for layer in ["role", "adapter", "runtime", "service", "composition"] {
             let repository = architecture_repository(section, layer);
             set_classification(
                 repository.path(),
@@ -250,6 +250,40 @@ fn hardware_cannot_depend_on_execution_or_composition_even_optionally() {
             let error = edge_result(repository.path()).unwrap_err().to_string();
             assert!(error.contains("forbidden architecture edge"), "{error}");
         }
+    }
+}
+
+#[test]
+fn services_declare_ports_that_adapters_bind_and_roles_stay_below_execution() {
+    for (source, target, allowed) in [
+        ("service", "adapter", false),
+        ("service", "runtime", false),
+        ("service", "role", false),
+        ("service", "hardware", false),
+        ("adapter", "service", true),
+        ("runtime", "service", true),
+        ("role", "hardware", true),
+        ("role", "protocol", true),
+        ("role", "adapter", false),
+        ("role", "runtime", false),
+        ("role", "service", false),
+        ("adapter", "role", true),
+        ("runtime", "role", true),
+        ("composition", "role", true),
+    ] {
+        let repository = architecture_repository("dependencies", target);
+        set_classification(
+            repository.path(),
+            "libraries/policy",
+            source,
+            "portable",
+            None,
+        );
+        assert_eq!(
+            edge_result(repository.path()).is_ok(),
+            allowed,
+            "{source} -> {target}"
+        );
     }
 }
 

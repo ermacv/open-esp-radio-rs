@@ -18,7 +18,7 @@ Module map:
 
 This is not a generic 802.11 frame crate and it is not an ESP32 backend.
 Frame parsing/building belongs in `crates/protocols/ieee80211/mac`; ESP32-S31 ordering
-and hardware ownership belong in `crates/hardware/esp32s31/driver/ieee80211/sta`; clocks, tasks,
+and hardware ownership belong in `crates/roles/esp32s31/ieee80211/sta`; clocks, tasks,
 DMA wakeups and network leases belong to the radio runtime; final resource
 claims and board composition belong to integration.
 

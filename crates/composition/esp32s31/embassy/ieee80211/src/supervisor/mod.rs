@@ -56,20 +56,17 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 use esp_hal::rng::{Rng, Trng};
 
-use oer_radio::{
-    runtime::embassy::{
-        EmbassyWifiRoleEpochOutcome, EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier,
-        EmbassyWifiStartKind, EmbassyWifiSupervisorCommand, EmbassyWifiSupervisorControlResources,
-        EmbassyWifiSupervisorEndpoint, EmbassyWifiSupervisorResponse,
-        finish_embassy_wifi_active_role,
-    },
-    wifi::{
-        AccessPointRequest, AccessPointSecurity, StationDiscovery, StationPowerMode,
-        StationRequest, StationSecurity, WIFI_SCAN_RESULT_CAPACITY, WifiAccessPointConfig,
-        WifiConfig, WifiScanFailure, WifiScanReport, WifiScanRequest, WifiScanResult,
-        WifiServicePlanningError, WifiServiceRequest, WifiStartFailure, WifiStartReport,
-        WifiStationConfig, WifiStopReport, WifiSupervisorConfiguration,
-    },
+use oer_radio::wifi::{
+    AccessPointRequest, AccessPointSecurity, StationDiscovery, StationPowerMode, StationRequest,
+    StationSecurity, WIFI_SCAN_RESULT_CAPACITY, WifiAccessPointConfig, WifiConfig, WifiScanFailure,
+    WifiScanReport, WifiScanRequest, WifiScanResult, WifiServicePlanningError, WifiServiceRequest,
+    WifiStartFailure, WifiStartReport, WifiStationConfig, WifiStopReport,
+    WifiSupervisorConfiguration,
+};
+use oer_radio_embassy::{
+    EmbassyWifiRoleEpochOutcome, EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier,
+    EmbassyWifiStartKind, EmbassyWifiSupervisorCommand, EmbassyWifiSupervisorControlResources,
+    EmbassyWifiSupervisorEndpoint, EmbassyWifiSupervisorResponse, finish_embassy_wifi_active_role,
 };
 
 use oer_esp32s31_phy::{NoopPhyTargetObserver, PhyTxTargetPowerProfile};

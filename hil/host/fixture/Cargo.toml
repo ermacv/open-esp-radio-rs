@@ -27,7 +27,7 @@ serde_json = "1.0"
 
 [dev-dependencies]
 oer-bluetooth-ll = { path = "../../../crates/protocols/bluetooth/le/ll" }
-oer-esp32s31-wifi-ap = { path = "../../../crates/hardware/esp32s31/driver/ieee80211/ap" }
+oer-esp32s31-wifi-ap = { path = "../../../crates/roles/esp32s31/ieee80211/ap" }
 
 [lints]
 workspace = true

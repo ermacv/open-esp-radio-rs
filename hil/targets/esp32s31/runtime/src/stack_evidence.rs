@@ -7,6 +7,12 @@ pub(crate) fn current_irq_snapshot() -> Option<StackWatermark> {
     {
         let capacity = crate::psram_task_stack::IRQ_STACK_BYTES as u32;
         let free = crate::psram_task_stack::current_hart_interrupt_stack_free_bytes() as u32;
+        // Source checks compile this image without the runner's stack policy;
+        // only runner-built images take snapshots, and those always carry it.
+        #[allow(
+            clippy::option_env_unwrap,
+            reason = "a snapshot from an image built without the HIL runner's policy is a bug"
+        )]
         let minimum = option_env!("OPEN_RADIO_IRQ_STACK_MINIMUM_FREE_BYTES")
             .expect("HIL runner must provide IRQ headroom policy")
             .parse::<u32>()

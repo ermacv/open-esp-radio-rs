@@ -28,17 +28,14 @@ pub(super) async fn shutdown(
             crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-platform-retirement\r\n")
         }
     };
-    let owner = {
-        let mut release = core::pin::pin!(owner.release_physical());
-        match super::poll_with_stack_boundary(release.as_mut()).await {
-            Ok(owner) => owner,
-            Err(failure) => {
-                core::hint::black_box(failure.error());
-                crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-physical-release\r\n")
-            }
+    let mut release = core::pin::pin!(owner.release_physical());
+    match super::poll_with_stack_boundary(release.as_mut()).await {
+        Ok(owner) => owner,
+        Err(failure) => {
+            core::hint::black_box(failure.error());
+            crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-physical-release\r\n")
         }
-    };
-    owner
+    }
 }
 
 pub(super) type Cold = oer_esp32s31_bluetooth_system::BluetoothHardwareColdReleased<

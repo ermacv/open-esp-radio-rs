@@ -154,6 +154,7 @@ For example:
 | `self-clearing` | address/width/initial/store_mask/command_mask; writes replace store-mask bits, command bits clear immediately, other bits retain state. Masks cannot overlap and initial command bits must be clear. No timing is simulated. |
 | `fifo` | address/width/reads/writes; independent ordered input/output transcripts. Reads consume inputs; writes must match the next output. Both lists must be consumed. This is not a loopback queue service. |
 | `indexed-bank` | index_address/data_address/width/index/values; index-port accesses select/report a slot, data-port accesses read/write it. `index:null` is unknown until explicitly written; invalid indices fail. Gaps between the two ports remain unclaimed. |
+| `retained-aperture` | start/length/initial over a word-aligned range of at most 16 MiB. Every naturally aligned 1-, 2- or 4-byte access in the range that no exact port of another live model claims is retained storage: a word reads `initial` until written, then its last value, and sub-word writes merge. Exact ports inside the range take precedence; misaligned accesses fail. At most 65,536 distinct words are retained per lifetime. Every access is an ordinary MMIO event, so reads of never-written words remain evidence. Apertures cannot overlap each other or memory. |
 | `command-bank` | Packed 32-bit command ports over a shared bounded bank. Exact field/control bits, initial state, samples and completion-read counts are caller inputs; details below. |
 
 `sequence-read` admits 1..4096 ordered runs, each with a nonzero `u32` count;
@@ -248,9 +249,18 @@ live call models. A call declaration contains:
     "outputs": [{"pointer_argument":0,"byte_offset":0,"width":4,"value":42,"scope":"normal-memory"}],
     "allocation": null,
     "delay_micros": {"kind":"constant","value":5}
-  }]
+  }],
+  "repetition": "finite"
 }
 ```
+
+`repetition` is `finite` or `unbounded`. A finite declaration answers exactly one
+call per response, in order; unused responses leave the model incomplete and an
+extra call is `exhausted-responses`. An unbounded declaration has exactly one
+response without outputs or allocation and answers every call with it, so it
+suits pure observations such as requested delays. Its observation reports the
+call count and zero remaining responses; every call, argument and delay remains
+evidence.
 
 The binding selects one exact aligned target address in this captured address space.
 `unmapped` requires that no memory/device owns its first two bytes. `captured-code`
@@ -514,7 +524,7 @@ same payload. Requests have 1–4096 cases (`MAX_EXECUTION_CASES`), at most 64 c
 target, 128 RAM seeds, 128 device and 128 call declarations per invocation,
 128 live models of each category, 4096 responses per call model, 256 outputs per response,
 4096 exact live ports, 4096 encoded values/runs per model list, 2048 regions per session,
-and 1–65536 events per implementation per case (`MAX_EXECUTION_EVENTS`).
+and 1–1,048,576 events per implementation per case (`MAX_EXECUTION_EVENTS`).
 Each distinct image or captured input is validated and loaded once per request,
 and every fresh session copies its segments, so cold phases do not reread
 retained sources. `max_events` exhaustion is a

@@ -19,6 +19,7 @@ fn request(f: &Fixture, responses: Vec<CallResponse>) -> ExecutionRequest {
     let mut r = f.request();
     r.max_events = 128;
     r.cases[0].vendor.calls = vec![CallDeclaration {
+        repetition: blobray_domain::CallRepetition::Finite,
         id: "external".into(),
         applicability: "synthetic external ABI assumption".into(),
         lifetime: RegionLifetime::Phase,
@@ -280,6 +281,25 @@ fn unconsumed_and_exhausted_calls_cannot_match_successful_code() {
     assert_eq!(model(&rows, 0).status, ModelStatus::Open);
     assert_eq!(model(&rows, 1).status, ModelStatus::Complete);
     assert_eq!(model(&rows, 1).calls, 2);
+}
+
+#[test]
+fn unbounded_pure_response_answers_every_call_and_completes() {
+    // Three calls to 0x2000: the prefix call, then two more after reloading t0.
+    let f = Fixture::new(&code(&[0x000022b7, 0x000280e7, 0x000022b7, 0x000280e7]));
+    let mut r = request(&f, vec![response(Some(1))]);
+    r.cases[0].vendor.calls[0].repetition = blobray_domain::CallRepetition::Unbounded;
+    r.cases[0].replacement = Some(r.cases[0].vendor.clone());
+    let (m, rows) = run(&f, r);
+    assert!(m.complete);
+    assert_eq!(m.verdict, Some(ComparisonVerdict::Match));
+    let observed = model(&rows, 0);
+    assert_eq!((observed.calls, observed.remaining), (3, 0));
+    assert_eq!(observed.status, ModelStatus::Complete);
+    // The same single response declared finitely is exhausted by the second call.
+    let (m, rows) = run(&f, request(&f, vec![response(Some(1))]));
+    assert!(!m.complete);
+    assert_eq!(model(&rows, 0).issue, Some(CallIssue::ExhaustedResponses));
 }
 
 #[test]

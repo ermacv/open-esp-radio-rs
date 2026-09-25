@@ -27,6 +27,19 @@ pub struct CallDeclaration {
     /// Physical ABI words recorded at each modeled call; no type/layout inference.
     pub argument_words: u16,
     pub responses: Vec<CallResponse>,
+    pub repetition: CallRepetition,
+}
+/// How many calls a declaration answers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CallRepetition {
+    /// Exactly one call per response, in order; unused responses leave the
+    /// model incomplete.
+    Finite,
+    /// Every call receives the single declared response. Only a pure
+    /// observation qualifies: no memory output and no allocation. The call
+    /// count and every observed argument and delay remain evidence.
+    Unbounded,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -151,6 +164,20 @@ pub enum CallDispatch {
     },
 }
 impl CallDeclaration {
+    /// The response of the call after `consumed` earlier calls, if any.
+    pub fn response(&self, consumed: u32) -> Option<&CallResponse> {
+        match self.repetition {
+            CallRepetition::Finite => self.responses.get(consumed as usize),
+            CallRepetition::Unbounded => self.responses.first(),
+        }
+    }
+    /// Declared responses still unused after `consumed` calls.
+    pub fn remaining(&self, consumed: u32) -> u32 {
+        match self.repetition {
+            CallRepetition::Finite => (self.responses.len() as u32).saturating_sub(consumed),
+            CallRepetition::Unbounded => 0,
+        }
+    }
     pub fn validate(&self) -> Result<()> {
         let bad = || {
             Error::new(
@@ -167,6 +194,9 @@ impl CallDeclaration {
             || self.binding.address >= u32::MAX - 1
             || usize::from(self.argument_words) > MAX_EXECUTION_ARGUMENT_WORDS
             || self.responses.len() > MAX_CALL_RESPONSES
+            || (self.repetition == CallRepetition::Unbounded
+                && !matches!(self.responses.as_slice(),
+                    [r] if r.outputs.is_empty() && r.allocation.is_none()))
         {
             return Err(bad());
         }
@@ -209,11 +239,11 @@ impl CallDeclaration {
                 .map(|r| r.outputs.len() * std::mem::size_of::<CallOutput>())
                 .sum::<usize>()) as u64
     }
-    /// Stable v1 tagged little-endian encoding of every declared field.
+    /// Stable v2 tagged little-endian encoding of every declared field.
     pub fn identity(&self, c: &mut dyn RunControl) -> Result<ArtifactId> {
         self.validate()?;
         let mut h = Sha256::new();
-        h.update(b"blobray-call-v1\0");
+        h.update(b"blobray-call-v2\0");
         for s in [&self.id, &self.applicability] {
             c.bytes(s.len())?;
             h.update((s.len() as u32).to_le_bytes());
@@ -238,6 +268,10 @@ impl CallDeclaration {
             u32::from(self.binding.allow_tail),
             u32::from(self.argument_words),
             self.responses.len() as u32,
+            match self.repetition {
+                CallRepetition::Finite => 0,
+                CallRepetition::Unbounded => 1,
+            },
         ] {
             put(n)?;
         }
@@ -294,6 +328,7 @@ mod tests {
     #[test]
     fn identity_includes_boundary_conditions_responses_and_effect_ownership() {
         let d = CallDeclaration {
+            repetition: CallRepetition::Finite,
             id: "fixture".into(),
             applicability: "fixture assumption".into(),
             lifetime: RegionLifetime::Session,
@@ -341,6 +376,56 @@ mod tests {
                 _ => unreachable!(),
             }
             assert_ne!(identity, changed.identity(&mut || Ok(())).unwrap());
+        }
+    }
+    #[test]
+    fn unbounded_repetition_admits_only_one_pure_response() {
+        let pure = CallResponse {
+            return_words: [Some(0), None],
+            outputs: vec![],
+            allocation: None,
+            delay_micros: Some(CallValue::Argument { word: 0 }),
+        };
+        let d = CallDeclaration {
+            repetition: CallRepetition::Unbounded,
+            id: "delay".into(),
+            applicability: "declared delay ABI".into(),
+            lifetime: RegionLifetime::Phase,
+            binding: CallBinding {
+                address: 0x2000,
+                boundary: CallBoundary::CapturedCode,
+                allow_tail: true,
+            },
+            argument_words: 1,
+            responses: vec![pure.clone()],
+        };
+        d.validate().unwrap();
+        assert_eq!(d.response(1000), Some(&pure));
+        assert_eq!(d.remaining(1000), 0);
+        let finite = CallDeclaration {
+            repetition: CallRepetition::Finite,
+            ..d.clone()
+        };
+        assert_eq!(finite.response(1), None);
+        assert_eq!(finite.remaining(0), 1);
+        assert_ne!(
+            finite.identity(&mut || Ok(())).unwrap(),
+            d.identity(&mut || Ok(())).unwrap()
+        );
+        for variant in 0..3 {
+            let mut bad = d.clone();
+            match variant {
+                0 => bad.responses.push(pure.clone()),
+                1 => bad.responses[0].outputs.push(CallOutput {
+                    pointer_argument: 0,
+                    byte_offset: 0,
+                    width: 4,
+                    value: 0,
+                    scope: CallOutputScope::NormalMemory,
+                }),
+                _ => bad.responses.clear(),
+            }
+            assert!(bad.validate().is_err(), "variant {variant}");
         }
     }
 }

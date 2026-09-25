@@ -2,14 +2,15 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 18;
+pub const EXECUTION_SCHEMA: u32 = 19;
 /// Upper bound of one canonical execution request payload. Requests are retained
 /// by identity; control messages, journal rows and manifests carry only the hash.
 pub const MAX_EXECUTION_REQUEST_BYTES: usize = 16 * 1024 * 1024;
 /// Maximum phases in one request; a whole finite matrix fits in one request.
 pub const MAX_EXECUTION_CASES: usize = 4096;
-/// Maximum recorded events of one execution phase.
-pub const MAX_EXECUTION_EVENTS: u32 = 65536;
+/// Maximum recorded events of one execution phase. A bounded poll loop that
+/// exhausts a 100,000-operation budget must be observable without truncation.
+pub const MAX_EXECUTION_EVENTS: u32 = 1 << 20;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 

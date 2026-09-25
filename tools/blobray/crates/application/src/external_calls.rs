@@ -93,7 +93,7 @@ impl<'m> Calls<'m> {
     }
     pub fn response(&self, slot: usize) -> Option<&CallResponse> {
         let i = self.instances[slot].as_ref().unwrap();
-        i.declaration.responses.get(i.consumed as usize)
+        i.declaration.response(i.consumed)
     }
     pub fn fail(&mut self, slot: usize, issue: CallIssue) -> CallDispatch {
         self.instances[slot].as_mut().unwrap().issue = Some(issue);
@@ -118,7 +118,7 @@ impl<'m> Calls<'m> {
                 definition: i.definition.clone(),
                 lifetime: i.declaration.lifetime,
                 calls: i.consumed,
-                remaining: i.declaration.responses.len() as u32 - i.consumed,
+                remaining: i.declaration.remaining(i.consumed),
                 closed,
                 issue: i.issue,
                 status: ModelStatus::Open,
@@ -139,6 +139,7 @@ mod tests {
     #[test]
     fn response_owners_release_on_closure_and_failed_admission() {
         let mut d = CallDeclaration {
+            repetition: blobray_domain::CallRepetition::Finite,
             id: "fixture".into(),
             applicability: "lifecycle".into(),
             lifetime: RegionLifetime::Session,

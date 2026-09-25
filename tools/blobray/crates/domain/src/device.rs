@@ -4,6 +4,10 @@ use sha2::{Digest, Sha256};
 pub const MAX_DEVICE_MODELS: usize = 128;
 pub const MAX_DEVICE_PORTS: usize = 4096;
 pub const MAX_DEVICE_VALUES: usize = 4096;
+/// Largest retained aperture, in bytes.
+pub const MAX_APERTURE_BYTES: u32 = 1 << 24;
+/// Distinct words an aperture may retain during one lifetime.
+pub const MAX_APERTURE_WORDS: usize = 1 << 16;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -63,6 +67,16 @@ pub enum DeviceBehavior {
         width: u8,
         index: Option<u32>,
         values: Vec<u32>,
+    },
+    /// Word-aligned MMIO range in which every naturally aligned 1-, 2- or
+    /// 4-byte access not claimed by an exact port of another model is retained
+    /// storage: a word reads `initial` until written, then its last value.
+    /// Every access remains an ordinary MMIO event, so reads of never-written
+    /// words stay visible evidence rather than a hidden assumption.
+    RetainedAperture {
+        start: u32,
+        length: u32,
+        initial: u32,
     },
 }
 
@@ -232,6 +246,16 @@ impl DeviceDeclaration {
                 }
                 scalar(*address, *width, reads)?;
                 scalar(*address, *width, writes)?;
+            }
+            DeviceBehavior::RetainedAperture { start, length, .. } => {
+                if !start.is_multiple_of(4)
+                    || !length.is_multiple_of(4)
+                    || *length == 0
+                    || *length > MAX_APERTURE_BYTES
+                    || u64::from(*start) + u64::from(*length) > u64::from(u32::MAX - 1)
+                {
+                    return Err(bad());
+                }
             }
             DeviceBehavior::IndexedBank {
                 index_address,
@@ -411,6 +435,15 @@ impl DeviceDeclaration {
                 }
                 for n in values {
                     put(*n)?;
+                }
+            }
+            DeviceBehavior::RetainedAperture {
+                start,
+                length,
+                initial,
+            } => {
+                for n in [9, *start, *length, *initial] {
+                    put(n)?;
                 }
             }
         }

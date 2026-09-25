@@ -193,6 +193,83 @@ fn all_standard_devices_have_independent_values_and_complete_participation() {
     }
 }
 #[test]
+fn retained_aperture_merges_subword_writes_and_yields_to_exact_ports() {
+    // sb a1,1(a0); lw t0,0(a0); lw t1,8(a0); add a0,t0,t1; ret
+    let f = Fixture::new(&[0x00b500a3, 0x00052283, 0x00852303, 0x00628533, 0x00008067]);
+    let aperture = DeviceBehavior::RetainedAperture {
+        start: 0x3000,
+        length: 0x100,
+        initial: 0x1122_3344,
+    };
+    let mut r = request(&f, aperture.clone());
+    r.cases[0].vendor.arguments[1] = Some(0xab);
+    r.cases[0].replacement = Some(r.cases[0].vendor.clone());
+    let (manifest, rows) = run(&f, r.clone());
+    assert!(manifest.complete);
+    // Byte 1 of the first word is written; the untouched word keeps `initial`.
+    let expected = 0x1122_ab44u32.wrapping_add(0x1122_3344);
+    assert!(matches!(
+        stop(&rows, 0),
+        ExecutionStop::Returned { low: Some(value), .. } if *value == expected
+    ));
+    let observed = model(&rows, 0);
+    assert_eq!((observed.reads, observed.writes), (2, 1));
+    assert_eq!(observed.status, ModelStatus::Complete);
+    // Every aperture access is an ordinary MMIO event with its value.
+    let reads: Vec<_> = rows
+        .iter()
+        .filter_map(|r| match r {
+            ExecutionEvidence::Event {
+                replacement: false,
+                event: ExecutionEvent::Read { address, value, .. },
+                ..
+            } => Some((*address, *value)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(reads, [(0x3000, 0x1122_ab44), (0x3008, 0x1122_3344)]);
+    // An exact port inside the aperture takes precedence.
+    let mut with_port = r.clone();
+    with_port.cases[0].vendor.models.push(DeviceDeclaration {
+        id: "status".into(),
+        ..declaration(
+            DeviceBehavior::ConstantRead {
+                address: 0x3008,
+                width: 4,
+                value: 77,
+            },
+            RegionLifetime::Phase,
+        )
+    });
+    with_port.cases[0].replacement = Some(with_port.cases[0].vendor.clone());
+    let (manifest, rows) = run(&f, with_port);
+    assert!(manifest.complete);
+    assert!(matches!(
+        stop(&rows, 0),
+        ExecutionStop::Returned { low: Some(value), .. } if *value == 0x1122_ab44 + 77
+    ));
+    // Misaligned access is a model gap, never a decomposed device access.
+    let f = Fixture::new(&[0x00252283, 0x00008067]);
+    let (manifest, rows) = run(&f, request(&f, aperture.clone()));
+    assert!(!manifest.complete);
+    assert!(matches!(stop(&rows, 0), ExecutionStop::Incomplete { .. }));
+    // Invalid geometry is rejected before execution.
+    for bad in [
+        DeviceBehavior::RetainedAperture {
+            start: 0x3002,
+            length: 0x100,
+            initial: 0,
+        },
+        DeviceBehavior::RetainedAperture {
+            start: 0x3000,
+            length: 0,
+            initial: 0,
+        },
+    ] {
+        assert!(declaration(bad, RegionLifetime::Phase).validate().is_err());
+    }
+}
+#[test]
 fn unconsumed_obligations_cannot_match_a_successful_return() {
     for behavior in [
         DeviceBehavior::SequenceRead {

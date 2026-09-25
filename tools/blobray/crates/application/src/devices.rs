@@ -7,6 +7,8 @@ struct Instance<'m> {
     _payload: MemoryReservation<'m>,
     cells: AdmittedVec<'m, RegisterCell>,
     values: AdmittedVec<'m, u32>,
+    /// Written words of a retained aperture, sorted by address.
+    words: AdmittedVec<'m, (u32, u32)>,
     value: u32,
     index: Option<u32>,
     reads: u64,
@@ -17,6 +19,8 @@ struct Instance<'m> {
     write_cursor: usize,
     issue: Option<DeviceIssue>,
 }
+/// Port slot of an access that falls back to a retained aperture.
+const APERTURE_SLOT: usize = usize::MAX;
 #[derive(Clone, Copy)]
 struct Port {
     address: u32,
@@ -28,6 +32,8 @@ pub(crate) struct Devices<'m> {
     memory: &'m WorkingMemory,
     instances: AdmittedVec<'m, Option<Instance<'m>>>,
     ports: AdmittedVec<'m, Port>,
+    /// Retained apertures as (start, end, model), sorted and disjoint.
+    apertures: AdmittedVec<'m, (u32, u64, usize)>,
 }
 impl<'m> Devices<'m> {
     pub fn new(memory: &'m WorkingMemory) -> Self {
@@ -35,6 +41,7 @@ impl<'m> Devices<'m> {
             memory,
             instances: AdmittedVec::new(memory),
             ports: AdmittedVec::new(memory),
+            apertures: AdmittedVec::new(memory),
         }
     }
     pub fn overlaps(&self, address: u32, length: u64, c: &mut dyn RunControl) -> Result<bool> {
@@ -43,16 +50,21 @@ impl<'m> Devices<'m> {
         let i = self
             .ports
             .partition_point(|p| u64::from(p.address) + u64::from(p.width) <= u64::from(address));
+        c.checkpoint(self.apertures.len() as u64 + 1)?;
         Ok(self
             .ports
             .get(i)
-            .is_some_and(|p| u64::from(p.address) < end))
+            .is_some_and(|p| u64::from(p.address) < end)
+            || self
+                .apertures
+                .iter()
+                .any(|(start, stop, _)| u64::from(*start) < end && u64::from(address) < *stop))
     }
     pub fn install(
         &mut self,
         declarations: &[DeviceDeclaration],
         c: &mut dyn RunControl,
-        check: &mut dyn FnMut(u32, u8, &mut dyn RunControl) -> Result<()>,
+        check: &mut dyn FnMut(u32, u64, &mut dyn RunControl) -> Result<()>,
     ) -> Result<()> {
         for declaration in declarations {
             c.checkpoint(self.instances.len() as u64 + 1)?;
@@ -82,12 +94,16 @@ impl<'m> Devices<'m> {
         }
         self.rebuild(c)?;
         for port in &*self.ports {
-            check(port.address, port.width, c)?;
+            check(port.address, u64::from(port.width), c)?;
+        }
+        for (start, end, _) in &*self.apertures {
+            check(*start, end - u64::from(*start), c)?;
         }
         Ok(())
     }
     fn rebuild(&mut self, c: &mut dyn RunControl) -> Result<()> {
         while self.ports.pop().is_some() {}
+        while self.apertures.pop().is_some() {}
         for (model, instance) in self.instances.iter().enumerate() {
             let Some(instance) = instance else {
                 continue;
@@ -136,7 +152,25 @@ impl<'m> Devices<'m> {
                 | DeviceBehavior::ReadClear { address, width, .. }
                 | DeviceBehavior::SelfClearing { address, width, .. }
                 | DeviceBehavior::Fifo { address, width, .. } => push(*address, *width, 0)?,
+                DeviceBehavior::RetainedAperture { start, length, .. } => {
+                    c.checkpoint(1)?;
+                    self.apertures.push(
+                        (*start, u64::from(*start) + u64::from(*length), model),
+                        c.position(),
+                    )?;
+                }
             }
+        }
+        self.apertures.sort_unstable_by_key(|a| a.0);
+        if self
+            .apertures
+            .windows(2)
+            .any(|a| a[0].1 > u64::from(a[1].0))
+        {
+            return Err(Error::new(
+                ErrorCode::Conflict,
+                "retained apertures overlap",
+            ));
         }
         c.checkpoint(self.ports.len() as u64 * (self.ports.len().max(1).ilog2() as u64 + 1))?;
         self.ports.sort_unstable_by_key(|p| p.address);
@@ -154,11 +188,28 @@ impl<'m> Devices<'m> {
         let index = self
             .ports
             .partition_point(|p| u64::from(p.address) + u64::from(p.width) <= u64::from(address));
-        Ok(self
+        let exact = self
             .ports
             .get(index)
             .copied()
-            .filter(|p| u64::from(p.address) < u64::from(address) + u64::from(width)))
+            .filter(|p| u64::from(p.address) < u64::from(address) + u64::from(width));
+        if exact.is_some() {
+            return Ok(exact);
+        }
+        // Exact ports take precedence; an aligned remainder falls to an aperture.
+        c.checkpoint(self.apertures.len() as u64 + 1)?;
+        Ok(self
+            .apertures
+            .iter()
+            .find(|(start, end, _)| {
+                *start <= address && u64::from(address) + u64::from(width) <= *end
+            })
+            .map(|(_, _, model)| Port {
+                address,
+                width,
+                model: *model,
+                slot: APERTURE_SLOT,
+            }))
     }
     /// Outer None means no device claims these bytes; inner None is a model gap.
     pub fn read(
@@ -174,6 +225,9 @@ impl<'m> Devices<'m> {
         if address != port.address || width != port.width {
             instance.issue = Some(DeviceIssue::AccessWidth);
             return Ok(Some(None));
+        }
+        if port.slot == APERTURE_SLOT {
+            return Ok(Some(instance.aperture_read(address, width, c)?));
         }
         Ok(Some(instance.read(port.slot, c)?))
     }
@@ -191,6 +245,9 @@ impl<'m> Devices<'m> {
         if address != port.address || width != port.width {
             instance.issue = Some(DeviceIssue::AccessWidth);
             return Ok(Some(false));
+        }
+        if port.slot == APERTURE_SLOT {
+            return instance.aperture_write(address, width, value, c).map(Some);
         }
         instance.write(port.slot, value, c).map(Some)
     }
@@ -231,6 +288,7 @@ impl<'m> Instance<'m> {
             _payload: payload,
             cells: AdmittedVec::new(memory),
             values: AdmittedVec::new(memory),
+            words: AdmittedVec::new(memory),
             value: 0,
             index: None,
             reads: 0,
@@ -309,6 +367,9 @@ impl<'m> Instance<'m> {
                 Ok(old)
             }
             DeviceBehavior::SelfClearing { .. } => Ok(self.value),
+            DeviceBehavior::RetainedAperture { .. } => {
+                unreachable!("apertures dispatch by address")
+            }
             DeviceBehavior::IndexedBank { .. } => match self.index {
                 Some(index) => Ok(if slot == 0 {
                     index
@@ -366,6 +427,9 @@ impl<'m> Instance<'m> {
                     Ok(())
                 }
             },
+            DeviceBehavior::RetainedAperture { .. } => {
+                unreachable!("apertures dispatch by address")
+            }
             DeviceBehavior::IndexedBank { .. } => {
                 if slot == 0 {
                     if value as usize >= self.values.len() {
@@ -392,6 +456,82 @@ impl<'m> Instance<'m> {
                 Ok(false)
             }
         }
+    }
+    /// Aligned read inside a retained aperture; misalignment is a model gap.
+    fn aperture_read(
+        &mut self,
+        address: u32,
+        width: u8,
+        c: &mut dyn RunControl,
+    ) -> Result<Option<u32>> {
+        c.checkpoint(self.words.len().max(1).ilog2() as u64 + 1)?;
+        let DeviceBehavior::RetainedAperture { initial, .. } = self.declaration.behavior else {
+            unreachable!()
+        };
+        if !address.is_multiple_of(u32::from(width)) {
+            self.issue = Some(DeviceIssue::AccessWidth);
+            return Ok(None);
+        }
+        let word = address & !3;
+        let value = match self.words.binary_search_by_key(&word, |w| w.0) {
+            Ok(i) => self.words[i].1,
+            Err(_) => initial,
+        };
+        self.reads = self.reads.checked_add(1).ok_or_else(|| {
+            Error::new(ErrorCode::ResourceLimited, "model read counter exhausted")
+        })?;
+        let shift = 8 * (address & 3);
+        Ok(Some(if width == 4 {
+            value
+        } else {
+            (value >> shift) & ((1 << (u32::from(width) * 8)) - 1)
+        }))
+    }
+    fn aperture_write(
+        &mut self,
+        address: u32,
+        width: u8,
+        value: u32,
+        c: &mut dyn RunControl,
+    ) -> Result<bool> {
+        c.checkpoint(self.words.len().max(1).ilog2() as u64 + 1)?;
+        let DeviceBehavior::RetainedAperture { initial, .. } = self.declaration.behavior else {
+            unreachable!()
+        };
+        if !address.is_multiple_of(u32::from(width)) {
+            self.issue = Some(DeviceIssue::AccessWidth);
+            return Ok(false);
+        }
+        let word = address & !3;
+        let (index, old) = match self.words.binary_search_by_key(&word, |w| w.0) {
+            Ok(i) => (Ok(i), self.words[i].1),
+            Err(i) => (Err(i), initial),
+        };
+        let merged = if width == 4 {
+            value
+        } else {
+            let shift = 8 * (address & 3);
+            let mask = ((1u32 << (u32::from(width) * 8)) - 1) << shift;
+            (old & !mask) | ((value << shift) & mask)
+        };
+        match index {
+            Ok(i) => self.words[i].1 = merged,
+            Err(i) => {
+                if self.words.len() == MAX_APERTURE_WORDS {
+                    return Err(Error::new(
+                        ErrorCode::ResourceLimited,
+                        "retained aperture word capacity exhausted",
+                    ));
+                }
+                self.words.push((word, merged), c.position())?;
+                c.checkpoint((self.words.len() - i) as u64)?;
+                self.words[i..].rotate_right(1);
+            }
+        }
+        self.writes = self.writes.checked_add(1).ok_or_else(|| {
+            Error::new(ErrorCode::ResourceLimited, "model write counter exhausted")
+        })?;
+        Ok(true)
     }
     fn observation(&self, closed: bool) -> ModelObservation {
         let (reads, writes) = match &self.declaration.behavior {

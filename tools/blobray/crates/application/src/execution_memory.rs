@@ -330,9 +330,9 @@ impl<'a> Session<'a> {
         }
         let regions = &self.regions;
         self.devices
-            .install(&input.models, c, &mut |address, width, c| {
+            .install(&input.models, c, &mut |address, length, c| {
                 c.checkpoint(regions.len() as u64 + 1)?;
-                let (start, end) = (u64::from(address), u64::from(address) + u64::from(width));
+                let (start, end) = (u64::from(address), u64::from(address) + length);
                 if regions.iter().any(|r| {
                     start < u64::from(r.address) + r.bytes.len() as u64
                         && u64::from(r.address) < end

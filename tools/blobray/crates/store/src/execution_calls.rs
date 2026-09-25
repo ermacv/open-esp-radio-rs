@@ -82,7 +82,9 @@ impl<'a> Calls<'a> {
             || o.calls != i.calls
             || (i.issue.is_some() && o.issue != i.issue)
             || (blocked && (o.calls != i.calls || o.issue != i.issue))
-            || o.calls.checked_add(o.remaining) != Some(i.declaration.responses.len() as u32)
+            || o.remaining != i.declaration.remaining(o.calls)
+            || (i.declaration.repetition == CallRepetition::Finite
+                && o.calls as usize > i.declaration.responses.len())
         {
             return Err(integrity("call identity, counters or closure differs"));
         }
@@ -160,7 +162,7 @@ impl Calls<'_> {
                 .ok_or_else(|| integrity("call trace has no selected binding"))?;
             let i = &self.live[slot];
             if *response != i.calls
-                || i.calls as usize >= i.declaration.responses.len()
+                || i.declaration.response(i.calls).is_none()
                 || *boundary != i.declaration.binding.boundary
                 || (*tail && !i.declaration.binding.allow_tail)
             {
@@ -193,7 +195,9 @@ impl Calls<'_> {
         };
         let i = &self.live[p.slot];
         let declaration = i.declaration;
-        let r = &declaration.responses[i.calls as usize];
+        let r = declaration
+            .response(i.calls)
+            .ok_or_else(|| integrity("call trace has no bound response"))?;
         if let ExecutionEvent::CallArgument { word, value } = event {
             if *word != p.words || *word >= declaration.argument_words {
                 return Err(integrity("call argument order differs"));
@@ -289,6 +293,7 @@ mod tests {
     #[test]
     fn model_trace_effects_returns_and_consumption_cannot_be_forged() {
         let d = CallDeclaration {
+            repetition: blobray_domain::CallRepetition::Finite,
             id: "fixture".into(),
             applicability: "fixture".into(),
             lifetime: RegionLifetime::Phase,

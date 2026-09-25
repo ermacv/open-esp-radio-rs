@@ -398,6 +398,7 @@ fn modeled_pair_identity_and_phase_ownership_are_part_of_applicability() {
             allow_tail: false,
         };
         let model = CallDeclaration {
+            repetition: blobray_domain::CallRepetition::Finite,
             id: "callee".into(),
             applicability: "test model".into(),
             lifetime: RegionLifetime::Session,

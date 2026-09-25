@@ -444,6 +444,7 @@ fn reviewed_modeled_callbacks_keep_session_lifetimes_and_restore_exactly() {
     r.cases[0].vendor.tables[0].lifetime = RegionLifetime::Session;
     r.cases[0].vendor.tables[0].slots[0].target = RuntimeSlotTarget::Model { address: 0x2000 };
     r.cases[0].vendor.calls = vec![CallDeclaration {
+        repetition: blobray_domain::CallRepetition::Finite,
         id: "callback-model".into(),
         applicability: "synthetic reviewed callback".into(),
         lifetime: RegionLifetime::Session,
@@ -573,6 +574,7 @@ fn model_outputs_change_live_slots_before_the_next_indirect_call() {
     let mut r = request(&f, selection);
     r.cases[0].vendor.tables[0].slots[0].target = RuntimeSlotTarget::Model { address: 0x2000 };
     r.cases[0].vendor.calls = vec![CallDeclaration {
+        repetition: blobray_domain::CallRepetition::Finite,
         id: "install-callback".into(),
         applicability: "synthetic slot update".into(),
         lifetime: RegionLifetime::Phase,
@@ -849,6 +851,7 @@ fn review_selection_and_model_abi_cannot_be_inferred_from_target_addresses() {
                 r.cases[0].vendor.tables[0].slots[0].target =
                     RuntimeSlotTarget::Model { address: 0x2000 };
                 r.cases[0].vendor.calls = vec![CallDeclaration {
+                    repetition: blobray_domain::CallRepetition::Finite,
                     id: "callback".into(),
                     applicability: "synthetic callback".into(),
                     lifetime: RegionLifetime::Phase,

@@ -611,6 +611,7 @@ fn missing_or_conflicting_service_bindings_fail_before_publication() {
             1 => r.cases[0].vendor.services[0].bindings[0].slot = 0,
             2 => {
                 r.cases[0].vendor.calls = vec![CallDeclaration {
+                    repetition: blobray_domain::CallRepetition::Finite,
                     id: "conflict".into(),
                     applicability: "fixture".into(),
                     lifetime: RegionLifetime::Phase,

@@ -13,6 +13,7 @@ use core::marker::PhantomData;
 
 pub mod calibration;
 pub mod rfpll;
+pub mod temperature;
 
 use crate::{
     HARDWARE_EDGE_LIMIT, PhyCalibrationTrackingPort, PhyParamTrackingPort,

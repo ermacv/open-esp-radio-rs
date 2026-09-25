@@ -38,8 +38,9 @@ use oer_bluetooth_hci::{
 
 use oer_bluetooth_ll::advertising::AdvertisingDelay;
 
-use oer_esp32s31_bluetooth::{
-    le::advertising::{
+use {
+    oer_esp32s31_bluetooth::scheduler::SchedulerRunInterruptStorage,
+    oer_esp32s31_bluetooth_controller::le::advertising::{
         LegacyAdvertisingDisableResponsePending, LegacyAdvertisingResetCompletionReady,
         LegacyConnectableAdvertisingActiveResponsePending,
         LegacyConnectableAdvertisingHciActiveSession,
@@ -58,7 +59,6 @@ use oer_esp32s31_bluetooth::{
         LegacyConnectableAdvertisingRecurringRetryCause,
         LegacyConnectableAdvertisingRecurringStopping, LegacyConnectableAdvertisingStopOrder,
     },
-    scheduler::SchedulerRunInterruptStorage,
 };
 
 use super::{

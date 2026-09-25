@@ -4,11 +4,11 @@
 mod single_item;
 
 #[cfg(target_arch = "riscv32")]
-pub(crate) use single_item::*;
+pub use single_item::*;
 
 use crate::scheduler::SchedulerSoftwareConfig;
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 use crate::scheduler::timeline::SchedulerWindowReservation;
 
 use oer_esp32s31_pac::BluetoothControllerTimeScale;
@@ -35,7 +35,7 @@ use {
     oer_esp32s31_hal::types::BluetoothControllerSramAddress,
 };
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 fn retain_matching_single_item_identity<Identity: Copy + Eq, Owner>(
     expected: Identity,
     observed: Identity,
@@ -53,7 +53,7 @@ fn retain_matching_single_item_identity<Identity: Copy + Eq, Owner>(
 /// The PAC proof establishes that no hardware-list head remains published.
 /// This owner adds the independently constructed source-owned software list,
 /// which starts empty and cannot be aliased through a vendor container.
-pub(crate) struct SchedulerExclusiveListEpoch {
+pub struct SchedulerExclusiveListEpoch {
     _hardware_lists_cleared: BluetoothSchedulerHardwareListsCleared,
     state: SchedulerExclusiveListState,
 }
@@ -92,7 +92,7 @@ impl SchedulerExclusiveListEpoch {
         }
     }
 
-    pub(crate) fn prepare_first_item(
+    pub fn prepare_first_item(
         &mut self,
         address: BluetoothControllerSramAddress,
     ) -> Result<(), SchedulerEmptyListMergeError> {
@@ -103,7 +103,7 @@ impl SchedulerExclusiveListEpoch {
         Ok(())
     }
 
-    pub(crate) fn cancel_first_item(&mut self, address: BluetoothControllerSramAddress) -> bool {
+    pub fn cancel_first_item(&mut self, address: BluetoothControllerSramAddress) -> bool {
         if self.state != (SchedulerExclusiveListState::FirstItemPrepared { address }) {
             return false;
         }
@@ -137,14 +137,11 @@ impl SchedulerExclusiveListEpoch {
         self.state = SchedulerExclusiveListState::FirstItemRunning { address };
     }
 
-    pub(crate) fn retains_running_first_item(
-        &self,
-        address: BluetoothControllerSramAddress,
-    ) -> bool {
+    pub fn retains_running_first_item(&self, address: BluetoothControllerSramAddress) -> bool {
         self.state == SchedulerExclusiveListState::FirstItemRunning { address }
     }
 
-    pub(crate) fn retain_completion_observed_first_item(
+    pub fn retain_completion_observed_first_item(
         &mut self,
         address: BluetoothControllerSramAddress,
     ) -> bool {
@@ -155,14 +152,14 @@ impl SchedulerExclusiveListEpoch {
         true
     }
 
-    pub(crate) fn retains_completion_observed_first_item(
+    pub fn retains_completion_observed_first_item(
         &self,
         address: BluetoothControllerSramAddress,
     ) -> bool {
         self.state == SchedulerExclusiveListState::FirstItemCompletionObserved { address }
     }
 
-    pub(crate) fn retain_hardware_head_empty_first_item(
+    pub fn retain_hardware_head_empty_first_item(
         &mut self,
         address: BluetoothControllerSramAddress,
     ) -> bool {
@@ -180,7 +177,7 @@ impl SchedulerExclusiveListEpoch {
         self.state == SchedulerExclusiveListState::FirstItemHardwareHeadEmptyObserved { address }
     }
 
-    pub(crate) fn unlink_software_list_first_item(
+    pub fn unlink_software_list_first_item(
         &mut self,
         address: BluetoothControllerSramAddress,
     ) -> bool {
@@ -194,17 +191,14 @@ impl SchedulerExclusiveListEpoch {
         true
     }
 
-    pub(crate) fn retains_unlinked_first_item(
-        &self,
-        address: BluetoothControllerSramAddress,
-    ) -> bool {
+    pub fn retains_unlinked_first_item(&self, address: BluetoothControllerSramAddress) -> bool {
         self.state
             == SchedulerExclusiveListState::FirstItemSoftwareListUnlinkedAwaitingRemovalGate {
                 address,
             }
     }
 
-    pub(crate) fn retain_software_list_removal_ready_first_item(
+    pub fn retain_software_list_removal_ready_first_item(
         &mut self,
         address: BluetoothControllerSramAddress,
     ) -> bool {
@@ -215,14 +209,14 @@ impl SchedulerExclusiveListEpoch {
         true
     }
 
-    pub(crate) fn retains_software_list_removal_ready_first_item(
+    pub fn retains_software_list_removal_ready_first_item(
         &self,
         address: BluetoothControllerSramAddress,
     ) -> bool {
         self.state == SchedulerExclusiveListState::FirstItemSoftwareListRemovalReady { address }
     }
 
-    pub(crate) fn commit_recycled_first_item(&mut self) {
+    pub fn commit_recycled_first_item(&mut self) {
         self.state = SchedulerExclusiveListState::Empty;
     }
 }
@@ -240,7 +234,7 @@ pub enum SchedulerEmptyListMergeError {
 /// acquired by the Controller and never cross the public DTM preparation
 /// boundary. This finite error retains only the logical acquisition outcome;
 /// the role-specific preparation failure continues to own every retry resource.
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ControllerTimeAcquisitionError {
     /// Another request or abandoned request still owns the latch worker.
@@ -282,22 +276,22 @@ impl From<BluetoothSchedulerHardwareListHeadError> for SchedulerHeadPublicationE
 /// and observed that the same capture retained another list. It cannot be
 /// constructed, copied or detached from the graph owner it protects.
 #[must_use = "the retained finished-list capture must be continued or preserved"]
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub struct SchedulerFinishedListDrainPending<Owner> {
     owner: Owner,
 }
 
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 impl<Owner> SchedulerFinishedListDrainPending<Owner> {
     const fn new(owner: Owner) -> Self {
         Self { owner }
     }
 
-    pub(crate) const fn owner(&self) -> &Owner {
+    pub const fn owner(&self) -> &Owner {
         &self.owner
     }
 
-    pub(crate) fn into_owner(self) -> Owner {
+    pub fn into_owner(self) -> Owner {
         self.owner
     }
 }
@@ -308,7 +302,7 @@ impl<Owner> SchedulerFinishedListDrainPending<Owner> {
 /// exhausted. `Pending` retains both that owner and the provenance required to
 /// consume the next list from the same capture.
 #[must_use = "the graph and any pending finished-list capture must be retained"]
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub enum SchedulerFinishedListDrainState<Owner> {
     /// The captured set is exhausted; no continuation is permitted.
     Drained(Owner),
@@ -316,9 +310,9 @@ pub enum SchedulerFinishedListDrainState<Owner> {
     Pending(SchedulerFinishedListDrainPending<Owner>),
 }
 
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 impl<Owner> SchedulerFinishedListDrainState<Owner> {
-    pub(crate) fn from_worker_step(owner: Owner, more: bool) -> Self {
+    pub fn from_worker_step(owner: Owner, more: bool) -> Self {
         if more {
             Self::Pending(SchedulerFinishedListDrainPending::new(owner))
         } else {
@@ -360,13 +354,13 @@ pub struct SchedulerInitialized<
 }
 
 #[cfg(target_arch = "riscv32")]
-pub(crate) struct SchedulerRestartParts<P, const MT: usize, const SC: usize> {
-    pub(crate) task: TaskResources,
-    pub(crate) platform: TeardownPendingPlatform<P>,
-    pub(crate) time_scale: BluetoothControllerTimeScale,
-    pub(crate) config: SchedulerSoftwareConfig,
-    pub(crate) scheduler_list: SchedulerExclusiveListEpoch,
-    pub(crate) runtime: ControllerRuntimeResources<MT, SC>,
+pub struct SchedulerRestartParts<P, const MT: usize, const SC: usize> {
+    pub task: TaskResources,
+    pub platform: TeardownPendingPlatform<P>,
+    pub time_scale: BluetoothControllerTimeScale,
+    pub config: SchedulerSoftwareConfig,
+    pub scheduler_list: SchedulerExclusiveListEpoch,
+    pub runtime: ControllerRuntimeResources<MT, SC>,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -458,10 +452,10 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     }
 }
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY> {
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn request_controller_time(
+    pub fn request_controller_time(
         &mut self,
     ) -> Result<
         crate::controller_time::ControllerTimeRequest,
@@ -472,7 +466,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_owned_controller_time(
+    pub fn cancel_owned_controller_time(
         &mut self,
         request: crate::controller_time::ControllerTimeRequest,
     ) -> Result<(), crate::controller_time::ControllerTimeEventError> {
@@ -480,7 +474,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recheck_owned_controller_time(
+    pub fn recheck_owned_controller_time(
         &mut self,
         request: crate::controller_time::ControllerTimeRequest,
     ) -> Result<
@@ -491,7 +485,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn drain_orphan_controller_time(
+    pub fn drain_orphan_controller_time(
         &mut self,
     ) -> Result<
         crate::controller_time::ControllerTimeEventStep,
@@ -500,8 +494,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         self.task.drain_orphan_controller_time()
     }
 
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn release_scheduler_reservation<State>(
+    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    pub fn release_scheduler_reservation<State>(
         &mut self,
         reservation: SchedulerWindowReservation<State>,
     ) {
@@ -516,7 +510,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         unsafe_code,
         reason = "the powered task owner and exclusive list identity jointly authorize the typed PAC publication"
     )]
-    pub(crate) fn publish_first_scheduler_item_head(
+    pub fn publish_first_scheduler_item_head(
         &mut self,
         address: BluetoothControllerSramAddress,
         index: BluetoothSchedulerHardwareListIndex,
@@ -526,7 +520,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn validate_first_scheduler_item_head(
+    pub fn validate_first_scheduler_item_head(
         &self,
         address: BluetoothControllerSramAddress,
     ) -> Result<BluetoothSchedulerHardwareListHead, SchedulerHeadPublicationError> {
@@ -541,7 +535,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         unsafe_code,
         reason = "validation retained the exact source-owned list identity and typed hardware-head encoding"
     )]
-    pub(crate) fn publish_validated_first_scheduler_item_head(
+    pub fn publish_validated_first_scheduler_item_head(
         &mut self,
         address: BluetoothControllerSramAddress,
         index: BluetoothSchedulerHardwareListIndex,
@@ -619,8 +613,8 @@ impl<P> ControllerHalInitialized<P> {
         self.initialize_scheduler_with(runtime, |task| task.clear_scheduler_hardware_list_heads())
     }
 
-    #[cfg(test)]
-    pub(crate) fn initialize_scheduler_for_validation<
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn initialize_scheduler_for_validation<
         const MODEM_TIMER_CAPACITY: usize,
         const SCHEDULER_CAPACITY: usize,
     >(

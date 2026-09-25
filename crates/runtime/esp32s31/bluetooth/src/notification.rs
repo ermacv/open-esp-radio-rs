@@ -14,14 +14,16 @@ use embassy_sync::{blocking_mutex::raw::RawMutex, waitqueue::GenericAtomicWaker}
 #[cfg(test)]
 use oer_esp32s31_bluetooth::interrupt::SchedulerWorkerWakeClass;
 
-use oer_esp32s31_bluetooth::{
-    interrupt::{SchedulerWakeCell, SchedulerWakePublication},
-    le::dtm::{
+use {
+    oer_esp32s31_bluetooth::{
+        interrupt::{SchedulerWakeCell, SchedulerWakePublication},
+        modem_lp_timer_queue::ModemLpTimerPublishedInterruptStep,
+        scheduler::SchedulerLockModifyEventPublication,
+    },
+    oer_esp32s31_bluetooth_controller::le::dtm::{
         DtmPostUnlinkMailboxPublication, DtmPostUnlinkWakeCell, PrimaryOrdinaryPublication,
         PrimarySerializedServiceStep,
     },
-    modem_lp_timer_queue::ModemLpTimerPublishedInterruptStep,
-    scheduler::SchedulerLockModifyEventPublication,
 };
 
 pub(crate) fn poll_borrowed_ready<M: RawMutex>(

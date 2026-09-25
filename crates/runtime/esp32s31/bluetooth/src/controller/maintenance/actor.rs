@@ -5,7 +5,7 @@ use crate::controller::{
     ControllerCommandBoundary as Boundary, ControllerCommandState as State,
     ControllerCommandTask as Actor, SchedulerRunInterruptStorage,
 };
-use oer_esp32s31_bluetooth::{
+use oer_esp32s31_bluetooth_controller::{
     controller::ControllerIdleCommandTask as Idle,
     le::peripheral::{
         PeripheralPhyMaintenanceRestoring as Restoring, PeripheralPhyMaintenanceStep as Step,
@@ -176,7 +176,8 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Actor<'a, S, N> {
     /// Exact lower admission failure retained in the actor, if any.
     pub fn phy_maintenance_admission_error(
         &self,
-    ) -> Option<oer_esp32s31_bluetooth::le::peripheral::PeripheralPhyMaintenanceError> {
+    ) -> Option<oer_esp32s31_bluetooth_controller::le::peripheral::PeripheralPhyMaintenanceError>
+    {
         match self.owner.current() {
             State::PeripheralMaintenanceFailed(failure) => Some(failure.error()),
             _ => None,

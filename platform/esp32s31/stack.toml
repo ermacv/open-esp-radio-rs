@@ -38,7 +38,7 @@ reported_frame_count = 30
 # Selectors omit crate hashes so the policy survives ordinary rebuilds.
 [[reviewed_frames]]
 function_contains = "::le::peripheral::active::PeripheralConnectionActiveSession<"
-source_ends_with = ["crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/active/lifecycle.rs"]
+source_ends_with = ["crates/roles/esp32s31/bluetooth/controller/src/le/peripheral/active/lifecycle.rs"]
 max_bytes = 10752
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
 reason = "the finite radio step retains the complete session, exact HCI order and successor/fault result while updating LL, encryption and ACL state. Radio execution and timeout retirement use separate call frames on CPU0; this is the same bounded production transition reviewed in the Bluetooth HIL policy, not an IRQ-stack allowance or a whole-call-chain proof"
@@ -52,7 +52,7 @@ reason = "Bluetooth registration retains the actual calibration transition and r
 
 [[reviewed_frames]]
 function_contains = "::active::maintenance::PeripheralPhyMaintenancePending<"
-source_ends_with = ["crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/active/maintenance.rs"]
+source_ends_with = ["crates/roles/esp32s31/bluetooth/controller/src/le/peripheral/active/maintenance.rs"]
 max_bytes = 10240
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
 reason = "one finite acquisition check retains the original connection and HCI owner across natural-gap admission, LL-gated budgeted successor proposals and lossless cancellation; there is no physical PHY execution in this frame. It runs inside the separately reviewed CPU0 dispatch and retains the existing Bluetooth HIL per-frame ceiling"
@@ -248,7 +248,7 @@ reason = "Bluetooth command dispatch retains typed mutually exclusive controller
 
 [[reviewed_frames]]
 function_contains = "::le::peripheral::active::PeripheralConnectionActiveSession<"
-source_ends_with = ["crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/active/hci.rs"]
+source_ends_with = ["crates/roles/esp32s31/bluetooth/controller/src/le/peripheral/active/hci.rs"]
 max_bytes = 11264
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
 reason = "active peripheral command routing consumes the live connection graph and returns one typed route while retaining one Host ACL packet, the bounded two-packet Controller ACL queue, the pre-RUN receive reservation and finite completion/controller-time stop frontiers across HCI backpressure"

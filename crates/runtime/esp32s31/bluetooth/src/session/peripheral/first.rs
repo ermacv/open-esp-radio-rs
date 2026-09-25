@@ -14,8 +14,9 @@ use oer_bluetooth_hci::{
     HciChannelError, LeControllerCommandEndpoint, LeControllerEndpointMismatch,
 };
 
-use oer_esp32s31_bluetooth::{
-    le::{
+use {
+    oer_esp32s31_bluetooth::scheduler::SchedulerRunInterruptStorage,
+    oer_esp32s31_bluetooth_controller::le::{
         advertising::{
             LegacyConnectableAdvertisingConnectionAcceptedReady,
             LegacyConnectableAdvertisingConnectionAcceptedResponsePending,
@@ -31,7 +32,6 @@ use oer_esp32s31_bluetooth::{
             LegacyConnectablePeripheralFirstHciRunning, LegacyConnectablePeripheralFirstHciStep,
         },
     },
-    scheduler::SchedulerRunInterruptStorage,
 };
 
 /// Executor disposition after all immediately-ready chip transitions were driven.

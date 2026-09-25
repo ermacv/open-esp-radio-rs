@@ -2,16 +2,19 @@
 
 use super::*;
 use crate::{BluetoothInterruptBindError, BluetoothInterruptDisabled};
-use oer_esp32s31_bluetooth::{
-    controller::ControllerTaskHciRetired, modem_timer::ControllerModemTimerRetired,
-    modem_timer_retirement::ControllerModemTimerRetirementError,
-};
 use oer_esp32s31_bluetooth_runtime::controller::{
     ControllerCommandPhase, ControllerCommandRetirementError,
 };
 use oer_esp32s31_radio_esp_hal::{
     EspHalBluetoothInterruptRouteError, EspHalBluetoothModemLpTimerRetirementError,
     EspHalBluetoothModemLpTimerStorageError,
+};
+use {
+    oer_esp32s31_bluetooth::{
+        modem_timer::ControllerModemTimerRetired,
+        modem_timer_retirement::ControllerModemTimerRetirementError,
+    },
+    oer_esp32s31_bluetooth_controller::controller::ControllerTaskHciRetired,
 };
 
 type RetiredTimer<const MT: usize> = ControllerModemTimerRetired<'static, PublishedStorage, MT>;
@@ -149,7 +152,7 @@ impl<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const
     ) -> Result<
         BluetoothHardwareOutputReleased<MT, SC, H2C, C2H, PC>,
         (
-            oer_esp32s31_bluetooth::controller::BluetoothControllerOutputReleaseError,
+            oer_esp32s31_bluetooth_controller::controller::BluetoothControllerOutputReleaseError,
             Self,
         ),
     > {
@@ -479,7 +482,7 @@ pub struct BluetoothHardwareColdReleased<
     const C2H: usize,
     const PC: usize,
 > {
-    owner: oer_esp32s31_bluetooth::controller::ControllerColdReleased<
+    owner: oer_esp32s31_bluetooth_controller::controller::ControllerColdReleased<
         'static,
         P,
         PublishedStorage,
@@ -499,7 +502,7 @@ pub struct BluetoothHardwareShutdownFailure<
     const C2H: usize,
     const PC: usize,
 > {
-    owner: oer_esp32s31_bluetooth::controller::ControllerPhysicalShutdownFailure<
+    owner: oer_esp32s31_bluetooth_controller::controller::ControllerPhysicalShutdownFailure<
         'static,
         P,
         PublishedStorage,
@@ -519,7 +522,9 @@ impl<
 > BluetoothHardwareShutdownFailure<P, MT, SC, H2C, C2H, PC>
 {
     /// First hardware or PHY failure; ownership remains in this value.
-    pub fn error(&self) -> oer_esp32s31_bluetooth::controller::ControllerPhysicalShutdownError {
+    pub fn error(
+        &self,
+    ) -> oer_esp32s31_bluetooth_controller::controller::ControllerPhysicalShutdownError {
         self.owner.error()
     }
 }
@@ -540,7 +545,7 @@ impl<
     ) -> (
         oer_esp32s31_bluetooth::resources::BluetoothStopped<P>,
         oer_esp32s31_phy::PhyState,
-        oer_esp32s31_bluetooth::controller::ControllerRetiredStorage<
+        oer_esp32s31_bluetooth_controller::controller::ControllerRetiredStorage<
             'static,
             PublishedStorage,
             SC,

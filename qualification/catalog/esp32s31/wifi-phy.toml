@@ -53,7 +53,7 @@ composition = "production"
 scope = "Service a real due shared-PHY request from the idle Bluetooth Controller after command, role, timer and hardware-output admission, then atomically restore both original ISR owners and the same HCI, counter and role epochs"
 limits = "The caller supplies an idle runner and disables its routes; queued Host traffic waits. An optional absolute tracking deadline rejects expired work and late completion without returning a runnable owner, but cannot preempt a blocking poll or prove a full pause bound. Once polled, the consuming physical transition must reach a terminal result. Failure retains the unrouted owner frontier and cancellation requires external reset. This fact does not establish automatic active-role windows or thermal/RF qualification"
 source-paths = [
-  "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/maintenance.rs",
+  "crates/roles/esp32s31/bluetooth/controller/src/controller/boot/maintenance.rs",
   "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/retirement/maintenance.rs",
   "crates/hardware/esp32s31/phy/src/tracking/deadline.rs",
 ]
@@ -71,9 +71,9 @@ limits = "The idle subset is owned by bluetooth-idle-phy-maintenance. The config
 source-paths = [
   "crates/hardware/esp32s31/phy/src/registered_bluetooth.rs",
   "crates/protocols/bluetooth/le/ll/src/connection/maintenance.rs",
-  "crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/active/maintenance.rs",
-  "crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/maintenance.rs",
-  "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/peripheral_connection.rs",
+  "crates/roles/esp32s31/bluetooth/controller/src/le/peripheral/active/maintenance.rs",
+  "crates/roles/esp32s31/bluetooth/controller/src/le/peripheral/maintenance.rs",
+  "crates/roles/esp32s31/bluetooth/controller/src/controller/boot/peripheral_connection.rs",
   "crates/runtime/esp32s31/bluetooth/src/controller/retirement.rs",
   "crates/runtime/esp32s31/bluetooth/src/controller/maintenance.rs",
   "crates/runtime/esp32s31/bluetooth/src/controller/maintenance/actor.rs",
@@ -95,7 +95,7 @@ composition = "production"
 scope = "Release the standalone idle Controller through exact-epoch HCI retirement, task and role-memory extraction, timer drain, IRQ/output quiescence, last-client RF close, temperature power-down, Controller reset and captured clock/power restoration to the actual cold radio owner"
 limits = "All roles must first reach their idle retirement frontier. Failures retain the actual physical and allocation owners; a consuming physical future must reach a terminal result or require external reset. Software storage remains borrowed and its ISR reservation remains occupied. This does not implement arbitrary active/faulted-role shutdown, shared-radio arbitration or retained RF wake"
 source-paths = [
-  "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/retirement/physical.rs",
+  "crates/roles/esp32s31/bluetooth/controller/src/controller/boot/retirement/physical.rs",
   "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/retirement.rs",
 ]
 
@@ -110,7 +110,7 @@ composition = "production"
 scope = "Restart after bluetooth-idle-powered-release using the returned cold radio, original BLE/DF and role allocations, exclusive runtime leases and continuous ISR storage reservation; restore both ISR owners atomically and issue a new HCI generation"
 limits = "Old Host handles, pending futures and ACL credit authorities remain closed. Failure retains its exact initialization frontier. No second StaticCell claim or general storage reclamation is available. This is standalone cold reconstruction, not retained wake, active connection continuity or hardware qualification"
 source-paths = [
-  "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/retirement/physical/restart.rs",
+  "crates/roles/esp32s31/bluetooth/controller/src/controller/boot/retirement/physical/restart.rs",
   "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/retirement/restart.rs",
 ]
 
@@ -1000,7 +1000,7 @@ domain = "phy"
 title = "Shared PHY inventory contract"
 source-document = "crates/hardware/esp32s31/phy/FEATURES.md"
 overview = "See the [whole-radio capability map](../driver/FEATURES.md) for shared ownership,\nclock/power lifecycle and cross-protocol composition limits.\n\nThis document covers RF, analog, calibration and shared-PHY ownership below\nprotocol MAC/LL. Protocol modulation/rate support belongs to the\n[Wi-Fi](../driver/ieee80211/FEATURES.md), [Bluetooth](../driver/bluetooth/FEATURES.md) and\n[IEEE 802.15.4](../driver/ieee802154/FEATURES.md) inventories. CSI capture, CTE IQ\nsample delivery and protocol antenna-selection policy remain there.\n[Coexistence](../driver/coex/FEATURES.md) owns shared-RF arbitration coverage.\n\n`IMPLEMENTED` means the exact PHY primitive has a complete source-owned\nimplementation for the stated scope. It does not imply that every protocol\ncomposes that primitive or that RF performance has been qualified.\n\nStatus definitions:\n\n- `IMPLEMENTED`: The named bounded algorithm/transition and its stated execution boundary are source-owned.\n- `PARTIAL`: A subset or lower mechanism exists without the complete named lifecycle/composition.\n- `FAIL-CLOSED`: A typed boundary deliberately prevents the stated activation or reuse.\n- `ABSENT`: No complete source owner implements the named operation.\n\nPrimitive rows describe the retained S31 calibration graphs and supported\ninputs, not arbitrary RF configurations. Most graphs use explicit actions,\nidentity-bound completions and finite deadlines. The\n[target port](src/target_port.rs) and [target executor](src/target_executor.rs)\ncomplete MMIO, analog-I2C, PBus, measurement and delay edges; a pure transition\ncompletion is not an observation of RF quality or even proof of PLL lock."
-packages = ["oer-esp32s31-bluetooth", "oer-esp32s31-coex", "oer-esp32s31-ieee802154", "oer-esp32s31-phy", "oer-esp32s31-ieee80211"]
+packages = ["oer-esp32s31-bluetooth", "oer-esp32s31-bluetooth-controller", "oer-esp32s31-coex", "oer-esp32s31-ieee802154", "oer-esp32s31-phy", "oer-esp32s31-ieee80211"]
 documents = ["crates/hardware/esp32s31/driver/FEATURES.md"]
 
 [[sections]]
@@ -1030,7 +1030,7 @@ domain = "phy"
 title = "Protocol consumer composition"
 source-document = "crates/hardware/esp32s31/phy/FEATURES.md"
 overview = "Statuses here apply to protocol composition, independently of primitive status.\n`PARTIAL` can mean an available target entry point without a public operational\ncaller. Shared registration does not prove that every calibration branch is\nselected, every channel is usable or all radio clients can run concurrently.\n\n\nThe relevant callers are [Wi-Fi cold start](../driver/ieee80211/src/cold_start.rs),\n[Bluetooth PHY setup](../driver/bluetooth/src/phy.rs),\n[registered shared radio](src/registered_radio.rs),\n[registered Bluetooth](src/registered_bluetooth.rs) and\n[registered IEEE 802.15.4](src/registered_ieee802154.rs).\nThe IEEE timing-ready state explicitly excludes full RF readiness, shared PLL\nrefcount ownership, IRQ routing, DMA ownership and operational MAC service."
-packages = ["oer-esp32s31-bluetooth", "oer-esp32s31-ieee80211", "oer-esp32s31-phy"]
+packages = ["oer-esp32s31-bluetooth", "oer-esp32s31-bluetooth-controller", "oer-esp32s31-ieee80211", "oer-esp32s31-phy"]
 
 [[sections]]
 id = "phy-lifecycle-boundaries"

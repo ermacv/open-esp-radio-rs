@@ -58,7 +58,7 @@ impl SchedulerTimingPolicy {
             < 0
     }
 
-    pub(crate) const fn sequence_lead_raw_delta(self) -> u32 {
+    pub const fn sequence_lead_raw_delta(self) -> u32 {
         self.sequence_lead_raw_delta
     }
 }
@@ -80,7 +80,7 @@ impl SchedulerRawWindow {
     }
 
     /// Bind a projected scheduler window before timeline admission.
-    pub(crate) const fn from_projected_scheduler_window(start: u32, end: u32) -> Option<Self> {
+    pub const fn from_projected_scheduler_window(start: u32, end: u32) -> Option<Self> {
         Self::new(start, end)
     }
 
@@ -142,11 +142,11 @@ pub enum SchedulerReservationError {
 
 /// Initial-event reservation after the admission sample and overlap resolution.
 #[derive(Debug)]
-pub(crate) enum SchedulerInitialAdmissionResolved {}
+pub enum SchedulerInitialAdmissionResolved {}
 
 /// Exact recurring-event reservation formed without initial admission or displacement.
 #[derive(Debug)]
-pub(crate) enum SchedulerRecurringReserved {}
+pub enum SchedulerRecurringReserved {}
 
 /// Reservation state after the phase-appropriate sequence deadline remains open.
 #[derive(Debug)]
@@ -188,7 +188,7 @@ impl<State> SchedulerWindowReservation<State> {
         self.window
     }
 
-    pub(crate) const fn timing_policy(&self) -> SchedulerTimingPolicy {
+    pub const fn timing_policy(&self) -> SchedulerTimingPolicy {
         self.timing_policy
     }
 
@@ -219,7 +219,7 @@ pub struct SchedulerReservationReleaseFailure<State> {
 /// Validated exact reservation release retaining an exclusive borrow of its
 /// occupied slot until the caller commits.
 #[must_use = "the prepared reservation release must be committed"]
-pub(crate) struct SchedulerReservationReleasePrepared<'timeline, State> {
+pub struct SchedulerReservationReleasePrepared<'timeline, State> {
     window: &'timeline mut Option<SchedulerRawWindow>,
     _reservation: SchedulerWindowReservation<State>,
 }
@@ -227,7 +227,7 @@ pub(crate) struct SchedulerReservationReleasePrepared<'timeline, State> {
 impl<State> SchedulerReservationReleasePrepared<'_, State> {
     /// Clear the already-validated slot without another fallible identity
     /// check.
-    pub(crate) fn commit(self) {
+    pub fn commit(self) {
         *self.window = None;
     }
 }
@@ -255,19 +255,19 @@ impl<State> core::fmt::Debug for SchedulerReservationReleaseFailure<State> {
 }
 
 /// Rejected sequence deadline retaining the exact pre-sequence reservation.
-pub(crate) struct SchedulerSequenceAuthorizationFailure<State> {
+pub struct SchedulerSequenceAuthorizationFailure<State> {
     reservation: SchedulerWindowReservation<State>,
     error: SchedulerSequenceAuthorizationError,
 }
 
 impl<State> SchedulerSequenceAuthorizationFailure<State> {
     /// Borrow the finite authorization failure reason.
-    pub(crate) const fn error(&self) -> SchedulerSequenceAuthorizationError {
+    pub const fn error(&self) -> SchedulerSequenceAuthorizationError {
         self.error
     }
 
     /// Recover the unchanged pre-sequence reservation for explicit release.
-    pub(crate) fn into_reservation(self) -> SchedulerWindowReservation<State> {
+    pub fn into_reservation(self) -> SchedulerWindowReservation<State> {
         self.reservation
     }
 }
@@ -283,7 +283,7 @@ impl<State> core::fmt::Debug for SchedulerSequenceAuthorizationFailure<State> {
 
 impl SchedulerWindowReservation<SchedulerInitialAdmissionResolved> {
     /// Consume the second fresh sample after initial admission and overlap traversal.
-    pub(crate) fn authorize_sequence(
+    pub fn authorize_sequence(
         self,
         sample: ControllerTimeSample,
     ) -> Result<
@@ -296,7 +296,7 @@ impl SchedulerWindowReservation<SchedulerInitialAdmissionResolved> {
 
 impl SchedulerWindowReservation<SchedulerRecurringReserved> {
     /// Consume the sole fresh deadline sample used by recurring insertion.
-    pub(crate) fn authorize_sequence(
+    pub fn authorize_sequence(
         self,
         sample: ControllerTimeSample,
     ) -> Result<
@@ -339,13 +339,13 @@ fn authorize_sequence<State>(
 /// recovered common scheduler behavior, including wrapping signed ordering.
 /// Slots are implementation storage only; their indices and generations never
 /// become controller-SRAM links.
-pub(crate) struct SchedulerTimeline<const CAPACITY: usize> {
+pub struct SchedulerTimeline<const CAPACITY: usize> {
     slots: [SchedulerTimelineSlot; CAPACITY],
 }
 
 impl<const CAPACITY: usize> SchedulerTimeline<CAPACITY> {
     /// Construct one empty fixed-capacity timeline.
-    pub(crate) const fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             slots: [SchedulerTimelineSlot::EMPTY; CAPACITY],
         }
@@ -356,7 +356,7 @@ impl<const CAPACITY: usize> SchedulerTimeline<CAPACITY> {
     /// The initial guarded deadline is checked before any overlap mutation.
     /// Each strict overlap moves the candidate to the occupied end while
     /// preserving its wrapping duration. Touching boundaries do not overlap.
-    pub(crate) fn reserve_initial_window(
+    pub fn reserve_initial_window(
         &mut self,
         raw_start: u32,
         raw_end: u32,
@@ -377,7 +377,7 @@ impl<const CAPACITY: usize> SchedulerTimeline<CAPACITY> {
     /// Passive scan recurrence is defined by its start-to-start interval. A
     /// collision must therefore reject the selected phase instead of silently
     /// displacing it and corrupting all following channel windows.
-    pub(crate) fn reserve_phase_locked_initial_window(
+    pub fn reserve_phase_locked_initial_window(
         &mut self,
         raw_start: u32,
         raw_end: u32,
@@ -407,7 +407,7 @@ impl<const CAPACITY: usize> SchedulerTimeline<CAPACITY> {
     /// The reviewed recurring helper bypasses the delay-if-overlap path. Until
     /// its removal policy has an affine model, any occupied collision rejects
     /// the candidate without changing either window.
-    pub(crate) fn reserve_recurring_window(
+    pub fn reserve_recurring_window(
         &mut self,
         raw_start: u32,
         raw_end: u32,
@@ -512,7 +512,7 @@ impl<const CAPACITY: usize> SchedulerTimeline<CAPACITY> {
     /// Rejection returns the unchanged affine reservation. A stale generation
     /// can never release a later occupant of the same slot or disappear into a
     /// lossy boolean result.
-    pub(crate) fn release<State>(
+    pub fn release<State>(
         &mut self,
         reservation: SchedulerWindowReservation<State>,
     ) -> Result<(), SchedulerReservationReleaseFailure<State>> {
@@ -526,7 +526,7 @@ impl<const CAPACITY: usize> SchedulerTimeline<CAPACITY> {
     /// The prepared release lets a composed owner finish earlier memory
     /// cleanup before the timeline becomes reusable, without repeating an
     /// identity check or introducing a post-cleanup failure path.
-    pub(crate) fn prepare_release<State>(
+    pub fn prepare_release<State>(
         &mut self,
         reservation: SchedulerWindowReservation<State>,
     ) -> Result<
@@ -552,7 +552,7 @@ impl<const CAPACITY: usize> SchedulerTimeline<CAPACITY> {
     }
 
     /// Whether no scheduler window remains reserved.
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.slots.iter().all(|slot| slot.window.is_none())
     }
 }

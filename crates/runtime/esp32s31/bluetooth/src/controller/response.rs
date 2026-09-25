@@ -10,7 +10,7 @@ pub enum ControllerIdleCompletion {
     LegacyAdvertisingStartRejected,
     #[cfg(target_arch = "riscv32")]
     LegacyConnectableAdvertisingStartRejected {
-        cause: oer_esp32s31_bluetooth::le::advertising::LegacyConnectableAdvertisingFirstRunnerRecoveredError,
+        cause: oer_esp32s31_bluetooth_controller::le::advertising::LegacyConnectableAdvertisingFirstRunnerRecoveredError,
     },
     LegacyAdvertisingDisable,
     LegacyConnectableAdvertisingDisable,
@@ -32,7 +32,7 @@ pub enum ControllerRetry {
     LegacyConnectableAdvertisingFirst,
     #[cfg(target_arch = "riscv32")]
     LegacyConnectableAdvertisingRecurring(
-        oer_esp32s31_bluetooth::le::advertising::LegacyConnectableAdvertisingRecurringRetryCause<()>,
+        oer_esp32s31_bluetooth_controller::le::advertising::LegacyConnectableAdvertisingRecurringRetryCause<()>,
     ),
     PeripheralConnectionFirst,
     LegacyAdvertisingRecurring,
@@ -61,7 +61,7 @@ where
     PhyMaintenancePeripheral,
     /// The actual guarded successor reached RUN in the same admission window.
     PhyMaintenanceRestored(
-        oer_esp32s31_bluetooth::le::peripheral::maintenance::PeripheralMaintenanceRun,
+        oer_esp32s31_bluetooth_controller::le::peripheral::maintenance::PeripheralMaintenanceRun,
     ),
     /// Maintenance has failed closed; the actor retains all lower owners.
     PhyMaintenanceFailed(super::maintenance::PhyMaintenanceError),
@@ -196,7 +196,9 @@ where
     /// Active radio failed after command order became ready.
     CommandReadyRadioFault(DtmActiveSessionFault<'runtime, S, CAPACITY, DtmOrderReady<'runtime>>),
     /// Test End quiescence failed closed with its exact transaction.
-    TestEndStoppingFault(oer_esp32s31_bluetooth::le::dtm::DtmStoppingFault<'runtime, S, CAPACITY>),
+    TestEndStoppingFault(
+        oer_esp32s31_bluetooth_controller::le::dtm::DtmStoppingFault<'runtime, S, CAPACITY>,
+    ),
     /// Reset quiescence failed closed with its exact transaction.
     ResetStoppingFault(DtmResetStoppingFault<'runtime, S, CAPACITY>),
     /// Active advertising failed closed while retaining its complete graph and HCI order.

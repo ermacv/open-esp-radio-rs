@@ -131,4 +131,4 @@ wake, preventing autonomous RF from outliving that deadline.
 Budgets need measured platform bounds; this API supplies no qualified thermal
 or blocking-poll defaults. Physical admission, shutdown and restart remain
 outside the command state machine; see the
-[Controller lifecycle](../../../hardware/esp32s31/driver/bluetooth/README.md#quiescent-phy-maintenance).
+[Controller lifecycle](../../../roles/esp32s31/bluetooth/controller/README.md#quiescent-phy-maintenance).

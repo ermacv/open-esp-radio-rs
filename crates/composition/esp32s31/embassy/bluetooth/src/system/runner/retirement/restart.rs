@@ -5,7 +5,7 @@ use crate::{
     BluetoothInterruptBindError, BluetoothInterruptFault, BluetoothRunners, BluetoothSystem,
     BluetoothSystemReady,
 };
-use oer_esp32s31_bluetooth::controller::{
+use oer_esp32s31_bluetooth_controller::controller::{
     ControllerRestartError, ControllerRestartFailure, ControllerRestarted,
 };
 use oer_esp32s31_bluetooth_runtime::controller::DtmRecheckStartError;

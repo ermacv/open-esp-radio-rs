@@ -124,7 +124,7 @@ impl PrimarySchedulerEvent {
     /// Consume this exact primary-event scheduler sample at the interrupt-side
     /// software-list removal gate.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn into_software_list_removal_gate(
+    pub fn into_software_list_removal_gate(
         self,
     ) -> BluetoothSchedulerSoftwareListRemovalInterruptStep {
         self.work.into_software_list_removal_gate()

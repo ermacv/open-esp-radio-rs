@@ -20,6 +20,7 @@ const WIFI: &[&str] = &[
 const BACKENDS: &[&str] = &[
     "oer-esp32s31-hal",
     "oer-esp32s31-bluetooth",
+    "oer-esp32s31-bluetooth-controller",
     "oer-esp32s31-ieee80211-mac",
     "oer-esp32s31-ieee80211-sta",
     "oer-esp32s31-ieee80211-ap",
@@ -28,6 +29,7 @@ const BLUETOOTH: &[&str] = &[
     "oer-bluetooth-hci",
     "oer-bluetooth-ll",
     "oer-esp32s31-bluetooth",
+    "oer-esp32s31-bluetooth-controller",
     "oer-esp32s31-bluetooth-system",
     "oer-esp32s31-bluetooth-runtime",
 ];
@@ -82,6 +84,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             features: Some("esp32s31-bluetooth"),
             required: &[
                 "oer-esp32s31-bluetooth",
+                "oer-esp32s31-bluetooth-controller",
                 "oer-bluetooth-hci",
                 "oer-bluetooth-ll",
             ],

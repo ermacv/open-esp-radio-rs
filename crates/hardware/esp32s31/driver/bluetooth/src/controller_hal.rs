@@ -89,8 +89,8 @@ impl<P> ClockedResources<P> {
         })
     }
 
-    #[cfg(test)]
-    pub(crate) fn initialize_controller_hal_with(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn initialize_controller_hal_with(
         self,
         initialize: impl FnOnce(&mut TaskResources, BluetoothControllerHalInitConfig),
     ) -> ControllerHalInitialized<P> {

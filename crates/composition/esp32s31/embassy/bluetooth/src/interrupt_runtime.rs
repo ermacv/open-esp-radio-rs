@@ -8,7 +8,7 @@ use crate::{
 };
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
-use oer_esp32s31_bluetooth::controller::ControllerPublishedInterruptService;
+use oer_esp32s31_bluetooth_controller::controller::ControllerPublishedInterruptService;
 
 use oer_esp32s31_bluetooth_runtime::notification::RuntimeNotifications;
 

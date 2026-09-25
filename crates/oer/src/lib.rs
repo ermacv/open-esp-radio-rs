@@ -38,8 +38,12 @@ pub mod chips {
         pub use chip_hal as hal;
 
         pub mod driver {
+            /// Bluetooth hardware engine with the LE Controller roles composed over it.
             #[cfg(feature = "esp32s31-bluetooth")]
-            pub use chip_bluetooth as bluetooth;
+            pub mod bluetooth {
+                pub use chip_bluetooth::*;
+                pub use chip_bluetooth_controller::{controller, le};
+            }
 
             #[cfg(feature = "esp32s31-wifi")]
             pub mod ieee80211 {

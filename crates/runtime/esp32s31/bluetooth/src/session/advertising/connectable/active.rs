@@ -4,8 +4,11 @@
 
 use core::ops::ControlFlow;
 
-use oer_esp32s31_bluetooth::{
-    le::advertising::{
+use {
+    oer_esp32s31_bluetooth::scheduler::{
+        BluetoothSchedulerFinishedHardwareListObserved, SchedulerRunInterruptStorage,
+    },
+    oer_esp32s31_bluetooth_controller::le::advertising::{
         LegacyConnectableAdvertisingActivePendingFailStop,
         LegacyConnectableAdvertisingActiveResponsePending,
         LegacyConnectableAdvertisingConnectionAcceptedResponsePending,
@@ -15,8 +18,6 @@ use oer_esp32s31_bluetooth::{
         LegacyConnectableAdvertisingResponsePending, LegacyConnectableAdvertisingStopping,
         LegacyConnectableAdvertisingStoppingStep,
     },
-    scheduler::BluetoothSchedulerFinishedHardwareListObserved,
-    scheduler::SchedulerRunInterruptStorage,
 };
 
 /// Five terminal continuations for an Embassy bounded ready drive.

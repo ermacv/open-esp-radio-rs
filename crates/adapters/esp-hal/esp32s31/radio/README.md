@@ -77,4 +77,4 @@ return atomically to the original claimed storage before the same service can
 bind routes again. The same atomic restoration supports completed powered
 restart. Restoration rejects live routes or occupied slots; it never releases
 the reservation or issues another publication lease. See the
-[Controller lifecycle](../../../../hardware/esp32s31/driver/bluetooth/README.md#quiescent-phy-maintenance).
+[Controller lifecycle](../../../../roles/esp32s31/bluetooth/controller/README.md#quiescent-phy-maintenance).

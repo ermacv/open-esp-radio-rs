@@ -14,6 +14,7 @@ embassy-time = "0.5.1"
 oer-bluetooth-hci = { path = "../../../protocols/bluetooth/hci" }
 oer-bluetooth-ll = { path = "../../../protocols/bluetooth/le/ll" }
 oer-esp32s31-bluetooth = { path = "../../../hardware/esp32s31/driver/bluetooth" }
+oer-esp32s31-bluetooth-controller = { path = "../../../roles/esp32s31/bluetooth/controller" }
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 oer-esp32s31-phy = { path = "../../../hardware/esp32s31/phy" }

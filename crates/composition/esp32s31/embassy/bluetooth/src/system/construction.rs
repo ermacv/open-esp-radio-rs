@@ -11,12 +11,12 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 use oer_bluetooth_hci::LeControllerHciEndpoints;
 
-use oer_esp32s31_bluetooth::{
-    controller::{
+use {
+    oer_esp32s31_bluetooth::modem_timer::ControllerModemTimerTask,
+    oer_esp32s31_bluetooth_controller::controller::{
         ControllerPublishedRuntimeEndpoints, ControllerPublishedRuntimeSplit,
         ControllerPublishedRuntimeSplitFailure, hci::ControllerHciBound,
     },
-    modem_timer::ControllerModemTimerTask,
 };
 
 use oer_esp32s31_bluetooth_runtime::controller::DtmAbsoluteRecheck;
@@ -54,7 +54,7 @@ pub struct BluetoothInterruptCompositionFailure<
     const PACKET_CAPACITY: usize,
 > {
     failure: BluetoothInterruptBindFailure,
-    _task: oer_esp32s31_bluetooth::controller::ControllerIdleCommandTask<
+    _task: oer_esp32s31_bluetooth_controller::controller::ControllerIdleCommandTask<
         'static,
         PublishedStorage,
         SCHEDULER_CAPACITY,

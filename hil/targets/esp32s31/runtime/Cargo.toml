@@ -28,8 +28,8 @@ phy-fault-injection = [
     "oer-esp32s31-bluetooth-system?/lifecycle-fault-injection",
     "oer-esp32s31-ieee80211-system?/lifecycle-fault-injection",
 ]
-bluetooth-radio = ["dep:oer-esp32s31-phy", "dep:heapless", "dep:bt-hci", "dep:oer-bluetooth-ll", "dep:oer-esp32s31-bluetooth", "dep:oer-esp32s31-bluetooth-runtime", "dep:oer-esp32s31-bluetooth-system", "dep:oer-esp32s31-bluetooth-memory", "dep:oer-esp32s31-radio-esp-hal", "dep:embassy-futures", "dep:embedded-io-async", "dep:oer-hil-protocol", "oer-hil-target-core/bluetooth"]
-bluetooth-hil = ["bluetooth-radio", "oer-esp32s31-bluetooth/dtm-diagnostics", "oer-esp32s31-bluetooth/rx-fault-injection"]
+bluetooth-radio = ["dep:oer-esp32s31-phy", "dep:heapless", "dep:bt-hci", "dep:oer-bluetooth-ll", "dep:oer-esp32s31-bluetooth", "dep:oer-esp32s31-bluetooth-controller", "dep:oer-esp32s31-bluetooth-runtime", "dep:oer-esp32s31-bluetooth-system", "dep:oer-esp32s31-bluetooth-memory", "dep:oer-esp32s31-radio-esp-hal", "dep:embassy-futures", "dep:embedded-io-async", "dep:oer-hil-protocol", "oer-hil-target-core/bluetooth"]
+bluetooth-hil = ["bluetooth-radio", "oer-esp32s31-bluetooth-controller/dtm-diagnostics", "oer-esp32s31-bluetooth-controller/rx-fault-injection"]
 bluetooth-gatt = ["bluetooth-radio", "dep:gatt-application", "dep:trouble-host"]
 bluetooth-secure-gatt = ["bluetooth-gatt", "gatt-application/secure", "dep:embassy-sync", "oer-hil-target-core/secure-gatt"]
 upstream-network = ["dep:embassy-net-upstream", "dep:xarxa", "oer-esp32s31-ieee80211-system/upstream-network", "oer-hil-target-core?/upstream-network"]
@@ -147,6 +147,7 @@ trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", 
 bt-hci = { version = "=0.10.1", optional = true }
 oer-bluetooth-ll = { path = "../../../../crates/protocols/bluetooth/le/ll", optional = true }
 oer-esp32s31-bluetooth = { path = "../../../../crates/hardware/esp32s31/driver/bluetooth", optional = true }
+oer-esp32s31-bluetooth-controller = { path = "../../../../crates/roles/esp32s31/bluetooth/controller", optional = true }
 oer-esp32s31-bluetooth-runtime = { path = "../../../../crates/runtime/esp32s31/bluetooth", optional = true }
 oer-esp32s31-bluetooth-system = { path = "../../../../crates/composition/esp32s31/embassy/bluetooth", optional = true }
 oer-esp32s31-bluetooth-memory = { path = "../../../../crates/hardware/esp32s31/driver/bluetooth/memory", optional = true }

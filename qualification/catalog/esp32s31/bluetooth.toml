@@ -643,7 +643,7 @@ composition = "production"
 scope = "Bounded Receiver and Transmitter Test sessions own first and recurring event publication RX accounting recycle and Test End through the Embassy DTM session"
 limits = "Matches the bounded DTM feature scope; general unrelated-list dispatch and the full Controller lifetime remain unimplemented outside this subset. RF qualification is a separate evidence requirement"
 source-paths = [
-  "crates/hardware/esp32s31/driver/bluetooth/src/le/dtm.rs",
+  "crates/roles/esp32s31/bluetooth/controller/src/le/dtm.rs",
   "crates/runtime/esp32s31/bluetooth/src/session/dtm/task.rs",
   "crates/runtime/esp32s31/bluetooth/src/session/dtm/active.rs",
 ]
@@ -2310,7 +2310,7 @@ section = "bluetooth-le-phy-rf-dtm"
 title = "LE 2M PHY"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "[DTM parameters](src/le/dtm/parameters.rs) own TX/RX selectors and scheduler geometry. Ordinary advertising/scanning and peripheral roles do not select 2M."
+scope-and-limitations = "[DTM parameters](../../../../roles/esp32s31/bluetooth/controller/src/le/dtm/parameters.rs) own TX/RX selectors and scheduler geometry. Ordinary advertising/scanning and peripheral roles do not select 2M."
 
 [[items]]
 id = "bluetooth-le-coded-s-8-125-kbit-s"
@@ -2350,7 +2350,7 @@ section = "bluetooth-le-phy-rf-dtm"
 title = "LE Receiver Test / Transmitter Test"
 status = "partial"
 level = "lower-primitive"
-scope-and-limitations = "[DTM](src/le/dtm.rs) commands, SRAM graphs, recurring events and RX accounting are composed with Embassy. Test End/Reset share finite common-scheduler cancellation with an absolute deadline, explicit aborted-item ownership and unlink/recycle. Quiet stop/restart hardware qualification remains pending."
+scope-and-limitations = "[DTM](../../../../roles/esp32s31/bluetooth/controller/src/le/dtm.rs) commands, SRAM graphs, recurring events and RX accounting are composed with Embassy. Test End/Reset share finite common-scheduler cancellation with an absolute deadline, explicit aborted-item ownership and unlink/recycle. Quiet stop/restart hardware qualification remains pending."
 
 [[items]]
 id = "bluetooth-enhanced-dtm-phy-selection"
@@ -2366,7 +2366,7 @@ section = "bluetooth-le-phy-rf-dtm"
 title = "DTM test patterns"
 status = "implemented"
 level = "lower-primitive"
-scope-and-limitations = "[TX payload preparation](src/le/dtm/payload.rs) owns the retained HCI test-pattern variants."
+scope-and-limitations = "[TX payload preparation](../../../../roles/esp32s31/bluetooth/controller/src/le/dtm/payload.rs) owns the retained HCI test-pattern variants."
 
 [[items]]
 id = "bluetooth-long-running-rf-phy-maintenance-including-dtm"
@@ -2388,7 +2388,7 @@ section = "bluetooth-legacy-advertising-scanning"
 title = "Legacy connectable advertising (`ADV_IND`)"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "[Connectable advertising](src/le/advertising/connectable.rs) owns configuration, response graph, recurrence and `CONNECT_IND` handoff. The S31 slice accepts exactly one selected primary channel."
+scope-and-limitations = "[Connectable advertising](../../../../roles/esp32s31/bluetooth/controller/src/le/advertising/connectable.rs) owns configuration, response graph, recurrence and `CONNECT_IND` handoff. The S31 slice accepts exactly one selected primary channel."
 
 [[items]]
 id = "bluetooth-advertiser-scan-response-scan-rsp"
@@ -2436,7 +2436,7 @@ section = "bluetooth-legacy-advertising-scanning"
 title = "Legacy passive scanning"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "[Passive scanning](src/le/scanning/passive.rs) composes recurring primary-channel LE 1M windows, public own address, accept-all policy, bounded reports and optional exact report-duplicate suppression. Privacy is disabled; unrelated finished-list dispatch remains incomplete."
+scope-and-limitations = "[Passive scanning](../../../../roles/esp32s31/bluetooth/controller/src/le/scanning/passive.rs) composes recurring primary-channel LE 1M windows, public own address, accept-all policy, bounded reports and optional exact report-duplicate suppression. Privacy is disabled; unrelated finished-list dispatch remains incomplete."
 
 [[items]]
 id = "bluetooth-active-scanning"
@@ -2532,7 +2532,7 @@ section = "bluetooth-le-roles-connections-reliability"
 title = "Recurring peripheral events"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "[Active lifecycle](src/le/peripheral/active/lifecycle.rs) drives completion, recycle, fresh controller time and successor RUN through lower recurrence. Before each successor RUN it reserves software capacity for the complete two-node hardware RX batch; the CPU-owned backpressure boundary races Host capacity with periodic supervision/procedure checks. A guarded window missed before publication is cancelled and rebuilt directly at a later established event with accumulated widening. Published completion, unlink and following Controller-time acquisition share an absolute progress deadline; an overdue live RUN enters bounded common stop, exact-head retirement, unlink and recycle, while a stalled time request fails closed. Requires an explicit local clock accuracy bound; initial establishment-window policy and hardware timing qualification remain open."
+scope-and-limitations = "[Active lifecycle](../../../../roles/esp32s31/bluetooth/controller/src/le/peripheral/active/lifecycle.rs) drives completion, recycle, fresh controller time and successor RUN through lower recurrence. Before each successor RUN it reserves software capacity for the complete two-node hardware RX batch; the CPU-owned backpressure boundary races Host capacity with periodic supervision/procedure checks. A guarded window missed before publication is cancelled and rebuilt directly at a later established event with accumulated widening. Published completion, unlink and following Controller-time acquisition share an absolute progress deadline; an overdue live RUN enters bounded common stop, exact-head retirement, unlink and recycle, while a stalled time request fails closed. Requires an explicit local clock accuracy bound; initial establishment-window policy and hardware timing qualification remain open."
 
 [[items]]
 id = "bluetooth-channel-selection-algorithm-1"

@@ -22,10 +22,7 @@ impl<'runtime, P> ControllerPlatformLease<'runtime, P> {
         slot.lease().map(|lease| Self { lease })
     }
 
-    pub(crate) fn bind(
-        self,
-        epoch: HciEpochIdentity<'runtime>,
-    ) -> ControllerRuntimePlatform<'runtime, P> {
+    pub fn bind(self, epoch: HciEpochIdentity<'runtime>) -> ControllerRuntimePlatform<'runtime, P> {
         ControllerRuntimePlatform {
             lease: self.lease,
             epoch,
@@ -57,10 +54,10 @@ pub struct ControllerRetiredPlatform<'runtime, P> {
 
 #[cfg(target_arch = "riscv32")]
 impl<'runtime, P> ControllerRetiredPlatform<'runtime, P> {
-    pub(crate) fn platform_mut(&mut self) -> &mut P {
+    pub fn platform_mut(&mut self) -> &mut P {
         self._platform.platform_mut()
     }
-    pub(crate) fn into_platform_after_shutdown(
+    pub fn into_platform_after_shutdown(
         self,
     ) -> (P, RuntimeOwnerLease<'runtime, TeardownPendingPlatform<P>>) {
         (self._platform.into_platform_after_shutdown(), self.lease)
@@ -69,7 +66,7 @@ impl<'runtime, P> ControllerRetiredPlatform<'runtime, P> {
 
 impl<'runtime, P> ControllerRuntimePlatform<'runtime, P> {
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn platform_mut_for_epoch(&mut self, epoch: HciEpochIdentity<'_>) -> Option<&mut P> {
+    pub fn platform_mut_for_epoch(&mut self, epoch: HciEpochIdentity<'_>) -> Option<&mut P> {
         self.epoch
             .same_epoch(epoch)
             .then(|| self.lease.platform_mut())
@@ -209,7 +206,7 @@ mod tests {
 
 #[cfg(target_arch = "riscv32")]
 impl<'runtime, P> ControllerPlatformLease<'runtime, P> {
-    pub(crate) fn restore(
+    pub fn restore(
         mut lease: RuntimeOwnerLease<'runtime, TeardownPendingPlatform<P>>,
         platform: TeardownPendingPlatform<P>,
     ) -> Self {

@@ -4,7 +4,7 @@ This reference describes the authenticated DTM descriptor, scheduler, timing
 and ownership contracts. DTM is a Lower Link Layer role; its implementation
 does not require the vendor allocator, callback registry or RTOS. Artifact
 facts remain bounded to the pinned inputs. Runtime composition and supported
-HCI commands belong to the [chip driver](../../../../../crates/hardware/esp32s31/driver/bluetooth/README.md).
+HCI commands belong to the [LE Controller](../../../../../crates/roles/esp32s31/bluetooth/controller/README.md).
 
 ## Pinned public inputs
 

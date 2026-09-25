@@ -6,7 +6,7 @@ use bt_hci::{
     cmd::le::{LeLongTermKeyRequestNegativeReply, LeLongTermKeyRequestReply},
     param::ConnHandle,
 };
-use oer_esp32s31_bluetooth::le::peripheral::rx_fault;
+use oer_esp32s31_bluetooth_controller::le::peripheral::rx_fault;
 use oer_hil_protocol::{BluetoothEncryptionEvidence, BluetoothSecurityFailure};
 use oer_hil_target_core::bluetooth::security::{self as policy, KeyReply};
 

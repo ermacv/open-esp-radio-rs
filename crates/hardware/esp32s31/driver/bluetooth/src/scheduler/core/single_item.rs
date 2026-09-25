@@ -27,7 +27,7 @@ use {
 
 use super::{SchedulerFinishedListDrainPending, SchedulerFinishedListDrainState};
 
-pub(crate) trait SingleItemSchedulerRole: Sized {
+pub trait SingleItemSchedulerRole: Sized {
     type RunningItem;
     type CompletionObservedItem;
     type Retained;
@@ -44,7 +44,7 @@ pub(crate) trait SingleItemSchedulerRole: Sized {
     ) -> BluetoothControllerSramAddress;
 }
 
-pub(crate) enum SingleItemRoleCompletionObservation<Role: SingleItemSchedulerRole> {
+pub enum SingleItemRoleCompletionObservation<Role: SingleItemSchedulerRole> {
     ListMismatch {
         running: Role::RunningItem,
         observed: BluetoothSchedulerFinishedHardwareListObserved,
@@ -53,14 +53,14 @@ pub(crate) enum SingleItemRoleCompletionObservation<Role: SingleItemSchedulerRol
     CompletionObserved(Role::CompletionObservedItem),
 }
 
-pub(crate) struct SingleItemSchedulerRunning<Role: SingleItemSchedulerRole> {
+pub struct SingleItemSchedulerRunning<Role: SingleItemSchedulerRole> {
     item: Role::RunningItem,
     run: BluetoothSchedulerHardwareRunCommandPublished,
     retained: Role::Retained,
 }
 
 impl<Role: SingleItemSchedulerRole> SingleItemSchedulerRunning<Role> {
-    pub(crate) const fn new(
+    pub const fn new(
         item: Role::RunningItem,
         run: BluetoothSchedulerHardwareRunCommandPublished,
         retained: Role::Retained,
@@ -72,19 +72,19 @@ impl<Role: SingleItemSchedulerRole> SingleItemSchedulerRunning<Role> {
         }
     }
 
-    pub(crate) fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+    pub fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
         Role::running_item_address(&self.item)
     }
 
-    pub(crate) const fn item(&self) -> &Role::RunningItem {
+    pub const fn item(&self) -> &Role::RunningItem {
         &self.item
     }
 
-    pub(crate) const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
         self.run.index()
     }
 
-    pub(crate) fn into_parts(
+    pub fn into_parts(
         self,
     ) -> (
         Role::RunningItem,
@@ -95,7 +95,7 @@ impl<Role: SingleItemSchedulerRole> SingleItemSchedulerRunning<Role> {
     }
 }
 
-pub(crate) struct SingleItemSchedulerCompletionObserved<Role: SingleItemSchedulerRole> {
+pub struct SingleItemSchedulerCompletionObserved<Role: SingleItemSchedulerRole> {
     item: Role::CompletionObservedItem,
     run: BluetoothSchedulerHardwareRunCommandPublished,
     retained: Role::Retained,
@@ -111,33 +111,33 @@ impl<Role: SingleItemSchedulerRole> SingleItemSchedulerCompletionObserved<Role> 
     }
 }
 
-pub(crate) struct SingleItemSchedulerRoleItemIdentityMismatch<Role: SingleItemSchedulerRole> {
+pub struct SingleItemSchedulerRoleItemIdentityMismatch<Role: SingleItemSchedulerRole> {
     _expected: BluetoothControllerSramAddress,
     _item: Role::CompletionObservedItem,
     _run: BluetoothSchedulerHardwareRunCommandPublished,
     _retained: Role::Retained,
 }
 
-pub(crate) struct SingleItemSchedulerHardwareHeadTransitionMismatch<Role: SingleItemSchedulerRole> {
+pub struct SingleItemSchedulerHardwareHeadTransitionMismatch<Role: SingleItemSchedulerRole> {
     _item: Role::CompletionObservedItem,
     _head: BluetoothSchedulerHardwareListHeadEmptyObserved,
     _retained: Role::Retained,
 }
 
-pub(crate) struct SingleItemSchedulerRemovalTransitionMismatch<Role: SingleItemSchedulerRole> {
+pub struct SingleItemSchedulerRemovalTransitionMismatch<Role: SingleItemSchedulerRole> {
     _item: Role::CompletionObservedItem,
     _removal: BluetoothSchedulerSoftwareListRemovalReady,
     _retained: Role::Retained,
 }
 
-pub(crate) struct SingleItemSchedulerHardwareHeadEmptyObserved<Role: SingleItemSchedulerRole> {
+pub struct SingleItemSchedulerHardwareHeadEmptyObserved<Role: SingleItemSchedulerRole> {
     item: Role::CompletionObservedItem,
     head: BluetoothSchedulerHardwareListHeadEmptyObserved,
     retained: Role::Retained,
 }
 
 impl<Role: SingleItemSchedulerRole> SingleItemSchedulerHardwareHeadEmptyObserved<Role> {
-    pub(crate) const fn new(
+    pub const fn new(
         item: Role::CompletionObservedItem,
         head: BluetoothSchedulerHardwareListHeadEmptyObserved,
         retained: Role::Retained,
@@ -158,7 +158,7 @@ impl<Role: SingleItemSchedulerRole> SingleItemSchedulerHardwareHeadEmptyObserved
     }
 }
 
-pub(crate) struct SingleItemSchedulerSoftwareListUnlinked<Role: SingleItemSchedulerRole> {
+pub struct SingleItemSchedulerSoftwareListUnlinked<Role: SingleItemSchedulerRole> {
     item: Role::CompletionObservedItem,
     head: BluetoothSchedulerHardwareListHeadEmptyObserved,
     retained: Role::Retained,
@@ -174,14 +174,14 @@ impl<Role: SingleItemSchedulerRole> SingleItemSchedulerSoftwareListUnlinked<Role
     }
 }
 
-pub(crate) struct SingleItemSchedulerSoftwareListRemovalReady<Role: SingleItemSchedulerRole> {
+pub struct SingleItemSchedulerSoftwareListRemovalReady<Role: SingleItemSchedulerRole> {
     item: Role::CompletionObservedItem,
     removal: BluetoothSchedulerSoftwareListRemovalReady,
     retained: Role::Retained,
 }
 
 impl<Role: SingleItemSchedulerRole> SingleItemSchedulerSoftwareListRemovalReady<Role> {
-    pub(crate) fn into_parts(
+    pub fn into_parts(
         self,
     ) -> (
         Role::CompletionObservedItem,
@@ -192,7 +192,7 @@ impl<Role: SingleItemSchedulerRole> SingleItemSchedulerSoftwareListRemovalReady<
     }
 }
 
-pub(crate) enum SingleItemSchedulerCompletionStep<Role: SingleItemSchedulerRole> {
+pub enum SingleItemSchedulerCompletionStep<Role: SingleItemSchedulerRole> {
     DrainAlreadyActive(SingleItemSchedulerRunning<Role>),
     SchedulerIdentityMismatch(SingleItemSchedulerRunning<Role>),
     RoleItemIdentityMismatch(SingleItemSchedulerRoleItemIdentityMismatch<Role>),
@@ -208,7 +208,7 @@ pub(crate) enum SingleItemSchedulerCompletionStep<Role: SingleItemSchedulerRole>
     ),
 }
 
-pub(crate) enum SingleItemSchedulerRunningDrainStep<Role: SingleItemSchedulerRole> {
+pub enum SingleItemSchedulerRunningDrainStep<Role: SingleItemSchedulerRole> {
     SchedulerIdentityMismatch(SchedulerFinishedListDrainPending<SingleItemSchedulerRunning<Role>>),
     DrainLost(SchedulerFinishedListDrainPending<SingleItemSchedulerRunning<Role>>),
     RoleItemIdentityMismatch(SingleItemSchedulerRoleItemIdentityMismatch<Role>),
@@ -223,7 +223,7 @@ pub(crate) enum SingleItemSchedulerRunningDrainStep<Role: SingleItemSchedulerRol
     ),
 }
 
-pub(crate) enum SingleItemSchedulerCompletionObservedDrainStep<Role: SingleItemSchedulerRole> {
+pub enum SingleItemSchedulerCompletionObservedDrainStep<Role: SingleItemSchedulerRole> {
     SchedulerIdentityMismatch(
         SchedulerFinishedListDrainPending<SingleItemSchedulerCompletionObserved<Role>>,
     ),
@@ -238,7 +238,7 @@ pub(crate) enum SingleItemSchedulerCompletionObservedDrainStep<Role: SingleItemS
     },
 }
 
-pub(crate) enum SingleItemSchedulerHardwareHeadRetirementStep<Role: SingleItemSchedulerRole> {
+pub enum SingleItemSchedulerHardwareHeadRetirementStep<Role: SingleItemSchedulerRole> {
     SchedulerIdentityMismatch(SingleItemSchedulerCompletionObserved<Role>),
     FinishedListDrainStillActive(SingleItemSchedulerCompletionObserved<Role>),
     ExpectedHeadStillPublished {
@@ -253,12 +253,12 @@ pub(crate) enum SingleItemSchedulerHardwareHeadRetirementStep<Role: SingleItemSc
     EmptyObserved(SingleItemSchedulerHardwareHeadEmptyObserved<Role>),
 }
 
-pub(crate) enum SingleItemSchedulerSoftwareListUnlinkStep<Role: SingleItemSchedulerRole> {
+pub enum SingleItemSchedulerSoftwareListUnlinkStep<Role: SingleItemSchedulerRole> {
     SchedulerIdentityMismatch(SingleItemSchedulerHardwareHeadEmptyObserved<Role>),
     Unlinked(SingleItemSchedulerSoftwareListUnlinked<Role>),
 }
 
-pub(crate) enum SingleItemSchedulerSoftwareListRemovalJoin<Role: SingleItemSchedulerRole> {
+pub enum SingleItemSchedulerSoftwareListRemovalJoin<Role: SingleItemSchedulerRole> {
     SchedulerIdentityMismatch {
         unlinked: SingleItemSchedulerSoftwareListUnlinked<Role>,
         event: PrimarySchedulerEvent,
@@ -268,7 +268,7 @@ pub(crate) enum SingleItemSchedulerSoftwareListRemovalJoin<Role: SingleItemSched
     Ready(SingleItemSchedulerSoftwareListRemovalReady<Role>),
 }
 
-pub(crate) enum SingleItemSchedulerSoftwareListRemovalRecheck<Role: SingleItemSchedulerRole> {
+pub enum SingleItemSchedulerSoftwareListRemovalRecheck<Role: SingleItemSchedulerRole> {
     SchedulerIdentityMismatch(SingleItemSchedulerSoftwareListUnlinked<Role>),
     StorageUnavailable(SingleItemSchedulerSoftwareListUnlinked<Role>),
     SchedulerStateMismatch(SingleItemSchedulerRemovalTransitionMismatch<Role>),
@@ -375,7 +375,7 @@ impl<const CAPACITY: usize> ControllerPoweredTaskRuntime<'_, CAPACITY> {
         }
     }
 
-    pub(crate) fn observe_single_item_completion<Role: SingleItemSchedulerRole>(
+    pub fn observe_single_item_completion<Role: SingleItemSchedulerRole>(
         &mut self,
         running: SingleItemSchedulerRunning<Role>,
         wake: crate::interrupt::SchedulerWakeBatch,
@@ -418,9 +418,7 @@ impl<const CAPACITY: usize> ControllerPoweredTaskRuntime<'_, CAPACITY> {
         }
     }
 
-    pub(crate) fn continue_single_item_running_finished_list_drain<
-        Role: SingleItemSchedulerRole,
-    >(
+    pub fn continue_single_item_running_finished_list_drain<Role: SingleItemSchedulerRole>(
         &mut self,
         pending: SchedulerFinishedListDrainPending<SingleItemSchedulerRunning<Role>>,
     ) -> SingleItemSchedulerRunningDrainStep<Role> {
@@ -457,9 +455,7 @@ impl<const CAPACITY: usize> ControllerPoweredTaskRuntime<'_, CAPACITY> {
         }
     }
 
-    pub(crate) fn continue_single_item_completed_finished_list_drain<
-        Role: SingleItemSchedulerRole,
-    >(
+    pub fn continue_single_item_completed_finished_list_drain<Role: SingleItemSchedulerRole>(
         &mut self,
         pending: SchedulerFinishedListDrainPending<SingleItemSchedulerCompletionObserved<Role>>,
     ) -> SingleItemSchedulerCompletionObservedDrainStep<Role> {
@@ -492,7 +488,7 @@ impl<const CAPACITY: usize> ControllerPoweredTaskRuntime<'_, CAPACITY> {
         }
     }
 
-    pub(crate) fn observe_single_item_hardware_head_retirement<Role: SingleItemSchedulerRole>(
+    pub fn observe_single_item_hardware_head_retirement<Role: SingleItemSchedulerRole>(
         &mut self,
         completed: SingleItemSchedulerCompletionObserved<Role>,
     ) -> SingleItemSchedulerHardwareHeadRetirementStep<Role> {
@@ -563,7 +559,7 @@ impl<const CAPACITY: usize> ControllerPoweredTaskRuntime<'_, CAPACITY> {
         }
     }
 
-    pub(crate) fn unlink_single_item_software_list<Role: SingleItemSchedulerRole>(
+    pub fn unlink_single_item_software_list<Role: SingleItemSchedulerRole>(
         &mut self,
         observed: SingleItemSchedulerHardwareHeadEmptyObserved<Role>,
     ) -> SingleItemSchedulerSoftwareListUnlinkStep<Role> {
@@ -590,7 +586,7 @@ impl<const CAPACITY: usize> ControllerPoweredTaskRuntime<'_, CAPACITY> {
         )
     }
 
-    pub(crate) fn join_single_item_software_list_removal<Role: SingleItemSchedulerRole>(
+    pub fn join_single_item_software_list_removal<Role: SingleItemSchedulerRole>(
         &mut self,
         unlinked: SingleItemSchedulerSoftwareListUnlinked<Role>,
         event: PrimarySchedulerEvent,
@@ -650,7 +646,7 @@ impl<const CAPACITY: usize> ControllerPoweredTaskRuntime<'_, CAPACITY> {
         }
     }
 
-    pub(crate) fn recheck_single_item_software_list_removal<Role: SingleItemSchedulerRole>(
+    pub fn recheck_single_item_software_list_removal<Role: SingleItemSchedulerRole>(
         &mut self,
         storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
         unlinked: SingleItemSchedulerSoftwareListUnlinked<Role>,

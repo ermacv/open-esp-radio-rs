@@ -4,12 +4,12 @@
 
 use core::future::Future;
 
-use oer_esp32s31_bluetooth::{
-    le::advertising::{
+use {
+    oer_esp32s31_bluetooth::scheduler::SchedulerRunInterruptStorage,
+    oer_esp32s31_bluetooth_controller::le::advertising::{
         LegacyAdvertisingFirstRunner, LegacyAdvertisingFirstRunnerFailure,
         LegacyAdvertisingFirstRunnerStep, LegacyAdvertisingFirstRunning,
     },
-    scheduler::SchedulerRunInterruptStorage,
 };
 
 #[must_use = "retain the wait, running owner, or exact failure"]

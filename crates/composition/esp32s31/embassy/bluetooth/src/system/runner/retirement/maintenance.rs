@@ -1,7 +1,7 @@
 //! Quiescent PHY maintenance and return to the same Controller runner.
 
 use super::*;
-use oer_esp32s31_bluetooth::controller::{
+use oer_esp32s31_bluetooth_controller::controller::{
     ControllerPhyMaintenanceError, ControllerPhyMaintenanceFailure,
 };
 use oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome;
@@ -219,7 +219,11 @@ fn take_idle<
 >(
     runner: &mut BluetoothHardwareRunner<MT, SC, H2C, C2H, PC>,
 ) -> Result<
-    oer_esp32s31_bluetooth::controller::ControllerIdleCommandTask<'static, PublishedStorage, SC>,
+    oer_esp32s31_bluetooth_controller::controller::ControllerIdleCommandTask<
+        'static,
+        PublishedStorage,
+        SC,
+    >,
     ControllerCommandRetirementError,
 > {
     let command = runner
@@ -244,7 +248,7 @@ fn finish<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, 
     mut runner: BluetoothHardwareRunner<MT, SC, H2C, C2H, PC>,
     interrupt: BluetoothInterruptDisabled,
     result: Result<
-        oer_esp32s31_bluetooth::controller::ControllerPhyMaintained<
+        oer_esp32s31_bluetooth_controller::controller::ControllerPhyMaintained<
             'static,
             PublishedStorage,
             SC,

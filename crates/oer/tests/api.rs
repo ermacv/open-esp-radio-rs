@@ -68,7 +68,7 @@ fn chip_bluetooth_namespace_preserves_backend_type_identity() {
     use oer::chips::esp32s31::driver::bluetooth;
 
     let _: fn(
-        chip_bluetooth::le::dtm::DtmDefaultTxPowerDbm,
+        chip_bluetooth_controller::le::dtm::DtmDefaultTxPowerDbm,
     ) -> bluetooth::le::dtm::DtmDefaultTxPowerDbm = |power| power;
 }
 

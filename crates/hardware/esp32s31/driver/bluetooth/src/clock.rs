@@ -76,7 +76,7 @@ pub struct ClockedResources<P> {
 }
 
 impl<P> ClockedResources<P> {
-    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
     pub(crate) fn into_parts(mut self) -> (ColdOwner, P) {
         self.cleanup_armed = false;
         (
@@ -89,8 +89,8 @@ impl<P> ClockedResources<P> {
         )
     }
 
-    #[cfg(test)]
-    pub(crate) fn for_validation(registers: ColdOwner, platform: P) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_validation(registers: ColdOwner, platform: P) -> Self {
         Self {
             registers: Some(registers),
             platform: Some(platform),

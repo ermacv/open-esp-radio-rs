@@ -1477,10 +1477,23 @@ dependencies = [
  "critical-section",
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "oer-bluetooth-hci",
- "oer-bluetooth-ll",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-hal",
  "oer-esp32s31-pac",
+ "oer-esp32s31-phy",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-controller"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-hal",
  "oer-esp32s31-phy",
 ]
 
@@ -1503,6 +1516,7 @@ dependencies = [
  "oer-bluetooth-hci",
  "oer-bluetooth-ll",
  "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-controller",
  "oer-esp32s31-phy",
 ]
 
@@ -1518,6 +1532,7 @@ dependencies = [
  "oer-bluetooth-hci",
  "oer-bluetooth-ll",
  "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-controller",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-bluetooth-runtime",
  "oer-esp32s31-phy",
@@ -1776,6 +1791,7 @@ dependencies = [
  "esp-hal",
  "oer-bluetooth-hci",
  "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-controller",
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
 ]
@@ -1831,6 +1847,7 @@ dependencies = [
  "log",
  "oer-bluetooth-ll",
  "oer-esp32s31-bluetooth",
+ "oer-esp32s31-bluetooth-controller",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-bluetooth-runtime",
  "oer-esp32s31-bluetooth-system",

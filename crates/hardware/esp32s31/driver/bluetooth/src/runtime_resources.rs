@@ -15,7 +15,7 @@ use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerRunEventPublished, BluetoothSchedulerRunInterruptsPrepared,
 };
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 use crate::{
     resources::TaskResources,
     scheduler::{core::SchedulerExclusiveListEpoch, timeline::SchedulerTimeline},
@@ -43,7 +43,7 @@ pub struct ControllerRuntimeResources<
     scheduler_lock_modify_events: SchedulerLockModifyEventCell,
     scheduler_lock_modify_worker: SchedulerLockModifyWorker,
     scheduler_finished_lists: SchedulerFinishedListWorker,
-    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
     scheduler_timeline: SchedulerTimeline<SCHEDULER_CAPACITY>,
     modem_lp_timer_queue: ModemLpTimerQueue<MODEM_TIMER_CAPACITY>,
     modem_lp_timer_epoch: BluetoothModemLpTimerEpoch,
@@ -94,6 +94,12 @@ impl<const MODEM_TIMER_CAPACITY: usize> ControllerModemTimerRuntime<'_, MODEM_TI
     pub fn queue_is_empty(&self) -> bool {
         self.queue.is_empty()
     }
+
+    /// Restore the started modem-timer epoch returned by a physical restart.
+    #[cfg(target_arch = "riscv32")]
+    pub fn restore_epoch(&mut self, epoch: BluetoothModemLpTimerEpoch) {
+        *self.epoch = epoch;
+    }
 }
 
 impl ControllerInterruptRuntime<'_> {
@@ -124,7 +130,7 @@ pub struct ControllerTaskRuntime<'runtime, const SCHEDULER_CAPACITY: usize = 4> 
     scheduler_lock_modify_events: &'runtime SchedulerLockModifyEventCell,
     scheduler_lock_modify_worker: &'runtime mut SchedulerLockModifyWorker,
     scheduler_finished_lists: &'runtime mut SchedulerFinishedListWorker,
-    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
     scheduler_timeline: &'runtime mut SchedulerTimeline<SCHEDULER_CAPACITY>,
 }
 
@@ -154,7 +160,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerTaskRuntime<'_, SCHEDULER_CAPACI
         self.scheduler_finished_lists
     }
 
-    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
     pub(crate) fn scheduler_timeline_mut(&mut self) -> &mut SchedulerTimeline<SCHEDULER_CAPACITY> {
         self.scheduler_timeline
     }
@@ -168,7 +174,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerTaskRuntime<'_, SCHEDULER_CAPACI
 /// register capability. The software-only [`ControllerTaskRuntime`]
 /// remains useful to executor adapters that do not perform hardware work.
 #[must_use = "the powered task endpoint retains the Controller task owner"]
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub struct ControllerPoweredTaskRuntime<'runtime, const SCHEDULER_CAPACITY: usize = 4> {
     pub(crate) runtime: ControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     pub(crate) task: crate::resources::runtime_owner::RuntimeOwnerLease<'runtime, TaskResources>,
@@ -179,7 +185,19 @@ pub struct ControllerPoweredTaskRuntime<'runtime, const SCHEDULER_CAPACITY: usiz
     pub(crate) _scheduler_list: &'runtime mut SchedulerExclusiveListEpoch,
 }
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+impl<'runtime, const SCHEDULER_CAPACITY: usize>
+    ControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>
+{
+    /// The HAL task owner lease of this powered Controller epoch.
+    pub fn task_owner(
+        &mut self,
+    ) -> &mut crate::resources::runtime_owner::RuntimeOwnerLease<'runtime, TaskResources> {
+        &mut self.task
+    }
+}
+
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY> {
     pub(crate) const fn new<'runtime>(
         runtime: ControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
@@ -211,15 +229,37 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         self.task.controller_time_needs_recheck()
     }
 
+    /// Whether scheduler workers hold no transaction that retirement would lose.
+    pub fn runtime_retirement_ready(&self) -> Result<(), ControllerRuntimeRetirementError> {
+        self.runtime.retirement_ready()
+    }
+
+    /// Discard coalesced readiness notifications after physical cold release,
+    /// with the original IRQ routes still absent.
+    pub fn clear_notifications_after_cold_release(&self) {
+        self.runtime.clear_notifications_after_cold_release();
+    }
+
+    /// Restore the scheduler policy and list epoch returned by a physical
+    /// restart of this powered Controller epoch.
+    pub fn restore_scheduler_epoch(
+        &mut self,
+        time_scale: oer_esp32s31_pac::BluetoothControllerTimeScale,
+        config: crate::scheduler::SchedulerSoftwareConfig,
+        scheduler_list: SchedulerExclusiveListEpoch,
+    ) {
+        self.time_scale = time_scale;
+        self.config = config;
+        *self._scheduler_list = scheduler_list;
+    }
+
     /// Scheduler time scale retained by this exact powered Controller epoch.
-    pub(crate) const fn controller_time_scale(
-        &self,
-    ) -> oer_esp32s31_pac::BluetoothControllerTimeScale {
+    pub const fn controller_time_scale(&self) -> oer_esp32s31_pac::BluetoothControllerTimeScale {
         self.time_scale
     }
 
     /// Source-owned scheduler policy retained by this powered epoch.
-    pub(crate) const fn scheduler_config(&self) -> crate::scheduler::SchedulerSoftwareConfig {
+    pub const fn scheduler_config(&self) -> crate::scheduler::SchedulerSoftwareConfig {
         self.config
     }
 
@@ -255,7 +295,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     /// Publish the synchronous scheduler event after the matching hardware head
     /// and dynamic-interrupt preparation proofs have both been obtained.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn publish_scheduler_run_event(
+    pub fn publish_scheduler_run_event(
         &mut self,
         head: BluetoothSchedulerHardwareListHeadPublished,
         interrupts: BluetoothSchedulerRunInterruptsPrepared,
@@ -265,7 +305,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
 
     /// Consume one scheduler-event proof into the typed hardware RUN command.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn publish_scheduler_hardware_run_command(
+    pub fn publish_scheduler_hardware_run_command(
         &mut self,
         event: BluetoothSchedulerRunEventPublished,
     ) -> BluetoothSchedulerHardwareRunCommandPublished {
@@ -278,8 +318,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     /// The list owner is borrowed into this task endpoint by the same scheduler
     /// split as the HAL task owner. A mismatched address therefore fails closed
     /// against the retained published-head identity.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn retain_running_first_item(
+    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    pub fn retain_running_first_item(
         &mut self,
         address: oer_esp32s31_hal::types::BluetoothControllerSramAddress,
     ) {
@@ -305,7 +345,7 @@ impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
             scheduler_lock_modify_events: SchedulerLockModifyEventCell::new(),
             scheduler_lock_modify_worker: SchedulerLockModifyWorker::new(),
             scheduler_finished_lists: SchedulerFinishedListWorker::new(),
-            #[cfg(any(target_arch = "riscv32", test))]
+            #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
             scheduler_timeline: SchedulerTimeline::new(),
             modem_lp_timer_queue: ModemLpTimerQueue::new(),
             modem_lp_timer_epoch: BluetoothModemLpTimerEpoch::new(),
@@ -327,9 +367,9 @@ impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     /// Whether no event, request, completion drain or timer has entered this
     /// epoch yet.
     pub fn is_pristine(&self) -> bool {
-        #[cfg(any(target_arch = "riscv32", test))]
+        #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
         let scheduler_timeline_is_empty = self.scheduler_timeline.is_empty();
-        #[cfg(not(any(target_arch = "riscv32", test)))]
+        #[cfg(not(any(target_arch = "riscv32", test, feature = "test-support")))]
         let scheduler_timeline_is_empty = true;
 
         !self.scheduler_wake.is_pending()
@@ -371,7 +411,7 @@ impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 scheduler_lock_modify_events,
                 scheduler_lock_modify_worker: &mut self.scheduler_lock_modify_worker,
                 scheduler_finished_lists: &mut self.scheduler_finished_lists,
-                #[cfg(any(target_arch = "riscv32", test))]
+                #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
                 scheduler_timeline: &mut self.scheduler_timeline,
             },
             ControllerModemTimerRuntime {
@@ -397,7 +437,7 @@ mod tests;
 
 #[cfg(target_arch = "riscv32")]
 impl<const MT: usize, const SC: usize> ControllerRuntimeResources<MT, SC> {
-    pub(crate) fn into_started_modem_epoch(self) -> BluetoothModemLpTimerEpoch {
+    pub fn into_started_modem_epoch(self) -> BluetoothModemLpTimerEpoch {
         self.modem_lp_timer_epoch
     }
 }
@@ -410,7 +450,7 @@ pub enum ControllerRuntimeRetirementError {
     Timeline,
 }
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 impl<const SC: usize> ControllerTaskRuntime<'_, SC> {
     pub(crate) fn retirement_ready(&self) -> Result<(), ControllerRuntimeRetirementError> {
         use ControllerRuntimeRetirementError as Error;
@@ -438,15 +478,15 @@ impl<const SC: usize> ControllerTaskRuntime<'_, SC> {
 ///
 /// Roles reach the powered runtime only through these methods, never through
 /// its fields, so its ownership invariants stay in this module.
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY> {
     /// Mutable access to the exclusive first-item epoch.
-    pub(crate) fn scheduler_list_mut(&mut self) -> &mut SchedulerExclusiveListEpoch {
+    pub fn scheduler_list_mut(&mut self) -> &mut SchedulerExclusiveListEpoch {
         self._scheduler_list
     }
 
     /// The software reservation timeline of this epoch.
-    pub(crate) fn scheduler_timeline_mut(&mut self) -> &mut SchedulerTimeline<SCHEDULER_CAPACITY> {
+    pub fn scheduler_timeline_mut(&mut self) -> &mut SchedulerTimeline<SCHEDULER_CAPACITY> {
         self.runtime.scheduler_timeline_mut()
     }
 }
@@ -454,7 +494,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
 #[cfg(target_arch = "riscv32")]
 impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY> {
     /// Serialize one finite common-stop step with the interrupt owner.
-    pub(crate) fn step_scheduler_stop(
+    pub fn step_scheduler_stop(
         &mut self,
         storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
         stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
@@ -466,14 +506,14 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     /// The finished-list worker of this epoch.
-    pub(crate) fn scheduler_finished_lists_mut(
+    pub fn scheduler_finished_lists_mut(
         &mut self,
     ) -> &mut crate::scheduler::finished_lists::SchedulerFinishedListWorker {
         self.runtime.scheduler_finished_lists_mut()
     }
 
     /// Capture one fenced finished-list transfer into this epoch's worker.
-    pub(crate) fn capture_scheduler_finished_lists(
+    pub fn capture_scheduler_finished_lists(
         &mut self,
         wake: crate::interrupt::SchedulerWakeBatch,
     ) -> Result<(), crate::scheduler::SchedulerFinishedListCaptureError> {
@@ -482,7 +522,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     /// Transfer the finished lists of a stopped scheduler.
-    pub(crate) fn transfer_stopped_scheduler_finished_lists(
+    pub fn transfer_stopped_scheduler_finished_lists(
         &mut self,
         stopped: &oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped,
     ) -> oer_esp32s31_hal::bluetooth::BluetoothSchedulerFinishedListObservation {
@@ -490,7 +530,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     /// Perform one fresh fenced hardware-head retirement observation.
-    pub(crate) fn observe_scheduler_hardware_list_head_retirement(
+    pub fn observe_scheduler_hardware_list_head_retirement(
         &mut self,
         run: oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareRunCommandPublished,
     ) -> oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadRetirementObservation {
@@ -499,7 +539,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     /// Recheck the software-list removal predicate with the interrupt owner.
-    pub(crate) fn recheck_scheduler_software_list_removal(
+    pub fn recheck_scheduler_software_list_removal(
         &mut self,
         storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
         head: oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadEmptyObserved,
@@ -512,7 +552,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     /// Retire the stopped hardware scheduler head.
-    pub(crate) fn retire_stopped_scheduler_head(
+    pub fn retire_stopped_scheduler_head(
         &mut self,
         stopped: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped,
         run: oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareRunCommandPublished,
@@ -521,7 +561,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     /// Finish removing the scheduler software list after an empty head.
-    pub(crate) fn finish_scheduler_software_list_removal(
+    pub fn finish_scheduler_software_list_removal(
         &mut self,
         idle: oer_esp32s31_hal::bluetooth::BluetoothSchedulerSoftwareListRemovalIdle,
         head: oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadEmptyObserved,

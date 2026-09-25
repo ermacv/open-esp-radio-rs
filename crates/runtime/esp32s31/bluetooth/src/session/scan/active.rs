@@ -2,14 +2,15 @@
 
 #![forbid(unsafe_code)]
 
-use oer_esp32s31_bluetooth::{
-    le::scanning::{
+use {
+    oer_esp32s31_bluetooth::scheduler::{
+        BluetoothSchedulerFinishedHardwareListObserved, SchedulerRunInterruptStorage,
+    },
+    oer_esp32s31_bluetooth_controller::le::scanning::{
         PassiveScanHciActiveFault, PassiveScanHciActiveSession, PassiveScanHciActiveStep,
         PassiveScanHciRecurringFailure, PassiveScanHciRecurringRunner,
         PassiveScanHciRecurringRunnerStep, PassiveScanHciReportsPending,
     },
-    scheduler::BluetoothSchedulerFinishedHardwareListObserved,
-    scheduler::SchedulerRunInterruptStorage,
 };
 
 /// First externally meaningful result after driving every ready radio edge.

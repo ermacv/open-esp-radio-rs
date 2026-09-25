@@ -1,7 +1,7 @@
 //! Executor-neutral policy for the final Bluetooth hardware runner.
 
 #[cfg(target_arch = "riscv32")]
-use oer_esp32s31_bluetooth::le::peripheral::PeripheralConnectionActiveFaultCause;
+use oer_esp32s31_bluetooth_controller::le::peripheral::PeripheralConnectionActiveFaultCause;
 use oer_esp32s31_bluetooth_runtime::controller::maintenance::PhyMaintenanceError;
 use oer_esp32s31_phy::tracking::fail_stop::SharedPhyFailStop;
 

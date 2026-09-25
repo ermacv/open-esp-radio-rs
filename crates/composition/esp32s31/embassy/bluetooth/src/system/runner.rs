@@ -76,7 +76,7 @@ impl LegacyAdvertisingDelaySource for BluetoothAdvertisingDelaySource {
     }
 }
 
-impl oer_esp32s31_bluetooth::le::peripheral::PeripheralEncryptionRandomSource
+impl oer_esp32s31_bluetooth_controller::le::peripheral::PeripheralEncryptionRandomSource
     for BluetoothAdvertisingDelaySource
 {
     fn next_encryption_random(
@@ -168,7 +168,7 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
         ControllerCommandBoundary::IdleRestored(
             oer_esp32s31_bluetooth_runtime::controller::ControllerIdleCompletion::LegacyConnectableAdvertisingStartRejected { cause },
         ) => {
-            use oer_esp32s31_bluetooth::le::advertising::LegacyConnectableAdvertisingFirstRunnerRecoveredError as E;
+            use oer_esp32s31_bluetooth_controller::le::advertising::LegacyConnectableAdvertisingFirstRunnerRecoveredError as E;
             use crate::diagnostics::BluetoothAdvertisingStartRejection as R;
             let reason = match cause {
                 E::Configuration(_) => R::Configuration,
@@ -432,7 +432,7 @@ impl<
     }
 
     pub(super) fn new(
-        task: oer_esp32s31_bluetooth::controller::ControllerIdleCommandTask<
+        task: oer_esp32s31_bluetooth_controller::controller::ControllerIdleCommandTask<
             'static,
             PublishedStorage,
             SCHEDULER_CAPACITY,

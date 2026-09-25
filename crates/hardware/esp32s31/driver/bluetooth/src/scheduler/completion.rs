@@ -8,13 +8,10 @@
 #![forbid(unsafe_code)]
 
 #[cfg(target_arch = "riscv32")]
-use crate::{
-    le::dtm::BluetoothPostUnlinkAwaiting,
-    scheduler::core::{
-        SingleItemSchedulerCompletionObserved, SingleItemSchedulerHardwareHeadEmptyObserved,
-        SingleItemSchedulerRole, SingleItemSchedulerRunning,
-        SingleItemSchedulerSoftwareListRemovalReady, SingleItemSchedulerSoftwareListUnlinked,
-    },
+use crate::scheduler::core::{
+    SingleItemSchedulerCompletionObserved, SingleItemSchedulerHardwareHeadEmptyObserved,
+    SingleItemSchedulerRole, SingleItemSchedulerRunning,
+    SingleItemSchedulerSoftwareListRemovalReady, SingleItemSchedulerSoftwareListUnlinked,
 };
 
 use crate::scheduler::{
@@ -22,7 +19,7 @@ use crate::scheduler::{
     core::{SchedulerFinishedListDrainPending, SchedulerFinishedListDrainState},
 };
 
-pub(crate) trait SingleItemCompletionRole {
+pub trait SingleItemCompletionRole {
     type Wake;
     type Running;
     type CompletionObserved;
@@ -40,20 +37,14 @@ where
     type Running = SingleItemSchedulerRunning<Role>;
     type CompletionObserved = SingleItemSchedulerCompletionObserved<Role>;
     type HardwareHeadEmpty = SingleItemSchedulerHardwareHeadEmptyObserved<Role>;
-    type PostUnlinkAwaiting =
-        BluetoothPostUnlinkAwaiting<SingleItemSchedulerSoftwareListUnlinked<Role>>;
+    type PostUnlinkAwaiting = crate::scheduler::post_unlink::BluetoothPostUnlinkAwaiting<
+        SingleItemSchedulerSoftwareListUnlinked<Role>,
+    >;
     type RemovalReady = SingleItemSchedulerSoftwareListRemovalReady<Role>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[cfg_attr(
-    not(target_arch = "riscv32"),
-    expect(
-        dead_code,
-        reason = "hardware completion backends construct the full fault taxonomy on ESP32-S31; host tests exercise the shared owner transitions"
-    )
-)]
-pub(crate) enum SingleItemCompletionFaultCause {
+pub enum SingleItemCompletionFaultCause {
     FinishedListDrainAlreadyActive,
     SchedulerIdentityMismatch,
     FinishedListDrainLost,
@@ -73,12 +64,33 @@ pub(crate) enum SingleItemCompletionFaultCause {
     PostUnlinkRecheckRearmMismatch,
 }
 
-pub(crate) struct SingleItemCompletionFault<Owner> {
+pub struct SingleItemCompletionFault<Owner> {
     pub(crate) cause: SingleItemCompletionFaultCause,
     pub(crate) _owner: Owner,
 }
 
-pub(crate) enum SingleItemRunningProgress<Role>
+impl<Owner> SingleItemCompletionFault<Owner> {
+    /// Retain `owner` after the shared completion protocol faulted.
+    pub const fn new(cause: SingleItemCompletionFaultCause, owner: Owner) -> Self {
+        Self {
+            cause,
+            _owner: owner,
+        }
+    }
+
+    /// Why the shared completion protocol retained the role owner.
+    pub const fn cause(&self) -> SingleItemCompletionFaultCause {
+        self.cause
+    }
+
+    /// Inspect the retained role owner in validation.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn owner_mut(&mut self) -> &mut Owner {
+        &mut self._owner
+    }
+}
+
+pub enum SingleItemRunningProgress<Role>
 where
     Role: SingleItemCompletionRole,
 {
@@ -90,21 +102,21 @@ where
     },
 }
 
-pub(crate) struct SingleItemCompletedDrainProgress<Role>
+pub struct SingleItemCompletedDrainProgress<Role>
 where
     Role: SingleItemCompletionRole,
 {
-    pub(crate) drain: SchedulerFinishedListDrainState<Role::CompletionObserved>,
-    pub(crate) observed: BluetoothSchedulerFinishedHardwareListObserved,
+    pub drain: SchedulerFinishedListDrainState<Role::CompletionObserved>,
+    pub observed: BluetoothSchedulerFinishedHardwareListObserved,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum SingleItemPostUnlinkDisposition {
+pub enum SingleItemPostUnlinkDisposition {
     Continue,
     Waiting,
 }
 
-pub(crate) enum SingleItemPostUnlinkProgress<Role>
+pub enum SingleItemPostUnlinkProgress<Role>
 where
     Role: SingleItemCompletionRole,
 {
@@ -115,7 +127,7 @@ where
     Ready(Role::RemovalReady),
 }
 
-pub(crate) trait SingleItemCompletionBackend<Role>
+pub trait SingleItemCompletionBackend<Role>
 where
     Role: SingleItemCompletionRole,
 {
@@ -172,7 +184,7 @@ where
 }
 
 /// Executor-neutral owner of one single-item scheduler completion lifecycle.
-pub(crate) struct SingleItemCompletion<Role>
+pub struct SingleItemCompletion<Role>
 where
     Role: SingleItemCompletionRole,
 {
@@ -180,12 +192,12 @@ where
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum SingleItemCompletionWaitKind {
+pub enum SingleItemCompletionWaitKind {
     Scheduler,
     PostUnlink,
 }
 
-pub(crate) enum SingleItemCompletionStep<Role, FaultOwner>
+pub enum SingleItemCompletionStep<Role, FaultOwner>
 where
     Role: SingleItemCompletionRole,
 {
@@ -203,14 +215,14 @@ impl<Role> SingleItemCompletion<Role>
 where
     Role: SingleItemCompletionRole,
 {
-    pub(crate) const fn new(running: Role::Running) -> Self {
+    pub const fn new(running: Role::Running) -> Self {
         Self {
             phase: SingleItemCompletionPhase::RunningAwaitingWake(running),
         }
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn into_scheduler_wait_running(self) -> Result<Role::Running, Self> {
+    pub fn into_scheduler_wait_running(self) -> Result<Role::Running, Self> {
         match self.phase {
             SingleItemCompletionPhase::RunningAwaitingWake(running) => Ok(running),
             phase => Err(Self { phase }),
@@ -218,13 +230,13 @@ where
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) const fn from_hardware_head_empty(observed: Role::HardwareHeadEmpty) -> Self {
+    pub const fn from_hardware_head_empty(observed: Role::HardwareHeadEmpty) -> Self {
         Self {
             phase: SingleItemCompletionPhase::HardwareHeadEmpty(observed),
         }
     }
 
-    pub(crate) const fn wait_kind(&self) -> Option<SingleItemCompletionWaitKind> {
+    pub const fn wait_kind(&self) -> Option<SingleItemCompletionWaitKind> {
         match &self.phase {
             SingleItemCompletionPhase::RunningAwaitingWake(_) => {
                 Some(SingleItemCompletionWaitKind::Scheduler)
@@ -236,7 +248,7 @@ where
         }
     }
 
-    pub(crate) fn step<Backend>(
+    pub fn step<Backend>(
         self,
         backend: &mut Backend,
     ) -> SingleItemCompletionStep<Role, Backend::FaultOwner>

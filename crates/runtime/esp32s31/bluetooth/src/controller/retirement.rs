@@ -12,7 +12,7 @@ pub enum ControllerCommandRetirementError {
     /// A radio, command or response lifecycle still owns the actor.
     NotIdle(ControllerCommandPhase),
     /// A role allocation/generation or the exact HCI epoch could not retire.
-    Task(oer_esp32s31_bluetooth::controller::ControllerTaskRetirementError),
+    Task(oer_esp32s31_bluetooth_controller::controller::ControllerTaskRetirementError),
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -20,7 +20,7 @@ use {
     super::{ControllerCommandState, ControllerCommandTask, SchedulerRunInterruptStorage},
     embassy_sync::blocking_mutex::raw::RawMutex,
     oer_bluetooth_hci::LeControllerCommandEndpoint,
-    oer_esp32s31_bluetooth::controller::ControllerTaskHciRetired,
+    oer_esp32s31_bluetooth_controller::controller::ControllerTaskHciRetired,
 };
 
 #[cfg(target_arch = "riscv32")]
@@ -58,7 +58,11 @@ impl<'runtime, S: SchedulerRunInterruptStorage, const CAPACITY: usize>
     pub fn try_into_idle(
         mut self,
     ) -> Result<
-        oer_esp32s31_bluetooth::controller::ControllerIdleCommandTask<'runtime, S, CAPACITY>,
+        oer_esp32s31_bluetooth_controller::controller::ControllerIdleCommandTask<
+            'runtime,
+            S,
+            CAPACITY,
+        >,
         (ControllerCommandRetirementError, Self),
     > {
         if self.maintenance.is_some() {

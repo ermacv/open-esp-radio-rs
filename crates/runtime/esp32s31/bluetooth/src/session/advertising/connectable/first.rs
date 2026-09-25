@@ -4,12 +4,12 @@
 
 use core::future::Future;
 
-use oer_esp32s31_bluetooth::{
-    le::advertising::{
+use {
+    oer_esp32s31_bluetooth::scheduler::SchedulerRunInterruptStorage,
+    oer_esp32s31_bluetooth_controller::le::advertising::{
         LegacyConnectableAdvertisingFirstRunner, LegacyConnectableAdvertisingFirstRunnerFailure,
         LegacyConnectableAdvertisingFirstRunnerStep, LegacyConnectableAdvertisingFirstRunning,
     },
-    scheduler::SchedulerRunInterruptStorage,
 };
 
 /// Finite executor disposition of one ready connectable runner.

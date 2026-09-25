@@ -33,8 +33,8 @@ impl SchedulerSoftwareConfig {
     /// The standalone scheduler initializes this one-byte policy to 107. DTM
     /// and advertising consume the same scheduler policy; it is not part of a
     /// role-specific command or descriptor ABI.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) const fn preparation_lead_micros(self) -> u32 {
+    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    pub const fn preparation_lead_micros(self) -> u32 {
         self.preparation_lead_micros
     }
 

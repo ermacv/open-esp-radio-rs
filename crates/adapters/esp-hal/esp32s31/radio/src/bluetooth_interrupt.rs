@@ -203,15 +203,25 @@ impl ReleasedEspHalBluetoothInterruptRegisters {
         const MT: usize,
     >(
         self,
-        task: oer_esp32s31_bluetooth::controller::ControllerTaskHciRetired<'runtime, S, SC>,
+        task: oer_esp32s31_bluetooth_controller::controller::ControllerTaskHciRetired<
+            'runtime,
+            S,
+            SC,
+        >,
         timer: oer_esp32s31_bluetooth::modem_timer::ControllerModemTimerRetired<'runtime, S, MT>,
         platform: oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRetiredPlatform<
             'runtime,
             P,
         >,
     ) -> Result<
-        oer_esp32s31_bluetooth::controller::ControllerColdReleased<'runtime, P, S, SC, MT>,
-        oer_esp32s31_bluetooth::controller::ControllerPhysicalShutdownFailure<
+        oer_esp32s31_bluetooth_controller::controller::ControllerColdReleased<
+            'runtime,
+            P,
+            S,
+            SC,
+            MT,
+        >,
+        oer_esp32s31_bluetooth_controller::controller::ControllerPhysicalShutdownFailure<
             'runtime,
             P,
             S,
@@ -244,7 +254,7 @@ impl RetiredEspHalBluetoothInterruptRegisters {
         const PC: usize,
     >(
         self,
-        task: oer_esp32s31_bluetooth::controller::ControllerIdleCommandTask<'a, S, SC>,
+        task: oer_esp32s31_bluetooth_controller::controller::ControllerIdleCommandTask<'a, S, SC>,
         timer: oer_esp32s31_bluetooth::modem_timer::ControllerModemTimerRetired<'a, S, MT>,
         platform: &mut oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<'a, P>,
         controller: &mut oer_bluetooth_hci::LeControllerCommandEndpoint<'a, M, H2C, C2H, PC>,
@@ -253,8 +263,13 @@ impl RetiredEspHalBluetoothInterruptRegisters {
         tracking_deadline: Option<oer_esp32s31_phy::tracking::deadline::TrackingDeadline>,
     ) -> impl core::future::Future<
         Output = Result<
-            oer_esp32s31_bluetooth::controller::ControllerPhyMaintained<'a, S, SC, MT>,
-            oer_esp32s31_bluetooth::controller::ControllerPhyMaintenanceFailure<'a, S, SC, MT>,
+            oer_esp32s31_bluetooth_controller::controller::ControllerPhyMaintained<'a, S, SC, MT>,
+            oer_esp32s31_bluetooth_controller::controller::ControllerPhyMaintenanceFailure<
+                'a,
+                S,
+                SC,
+                MT,
+            >,
         >,
     >
     where
@@ -292,7 +307,7 @@ impl RetiredEspHalBluetoothInterruptRegisters {
         const PC: usize,
     >(
         self,
-        connection: oer_esp32s31_bluetooth::le::peripheral::PeripheralPhyMaintenanceReady<
+        connection: oer_esp32s31_bluetooth_controller::le::peripheral::PeripheralPhyMaintenanceReady<
             'a,
             S,
             SC,
@@ -304,23 +319,23 @@ impl RetiredEspHalBluetoothInterruptRegisters {
         observer: impl oer_esp32s31_phy::PhyTargetObserver,
     ) -> impl core::future::Future<
         Output = Result<
-            oer_esp32s31_bluetooth::controller::ControllerPhyMaintained<
+            oer_esp32s31_bluetooth_controller::controller::ControllerPhyMaintained<
                 'a,
                 S,
                 SC,
                 MT,
-                oer_esp32s31_bluetooth::le::peripheral::PeripheralPhyMaintenanceRestoring<
+                oer_esp32s31_bluetooth_controller::le::peripheral::PeripheralPhyMaintenanceRestoring<
                     'a,
                     S,
                     SC,
                 >,
             >,
-            oer_esp32s31_bluetooth::controller::ControllerPhyMaintenanceFailure<
+            oer_esp32s31_bluetooth_controller::controller::ControllerPhyMaintenanceFailure<
                 'a,
                 S,
                 SC,
                 MT,
-                oer_esp32s31_bluetooth::le::peripheral::PeripheralPhyMaintenanceReady<'a, S, SC>,
+                oer_esp32s31_bluetooth_controller::le::peripheral::PeripheralPhyMaintenanceReady<'a, S, SC>,
             >,
         >,
     >
@@ -345,7 +360,11 @@ impl RetiredEspHalBluetoothInterruptRegisters {
     /// release. Rejection preserves both owners and never restores CPU routing.
     pub fn try_release_controller_output<S, const SC: usize>(
         self,
-        task: &mut oer_esp32s31_bluetooth::controller::ControllerTaskHciRetired<'_, S, SC>,
+        task: &mut oer_esp32s31_bluetooth_controller::controller::ControllerTaskHciRetired<
+            '_,
+            S,
+            SC,
+        >,
     ) -> Result<
         ReleasedEspHalBluetoothInterruptRegisters,
         (

@@ -183,7 +183,7 @@ use oer_esp32s31_bluetooth_memory::{
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use oer_esp32s31_bluetooth::le::{
+use oer_esp32s31_bluetooth_controller::le::{
     advertising::{
         LegacyAdvertisingDefaultTxPowerDbm, LegacyAdvertisingRuntimeResources,
         LegacyConnectableAdvertisingRuntimeResources,

@@ -1,11 +1,11 @@
 //! Lossless ownership transitions for standalone Bluetooth hardware.
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub mod platform_retirement;
-#[cfg(any(target_arch = "riscv32", test))]
-pub(crate) mod runtime_owner;
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+pub mod runtime_owner;
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 use core::mem::ManuallyDrop;
 
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
@@ -19,11 +19,16 @@ use oer_esp32s31_hal::bluetooth::TaskOwnerReuniteFailure;
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
 use oer_esp32s31_pac::BluetoothControllerHalInitConfig;
 
-#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+#[cfg(any(
+    target_arch = "riscv32",
+    test,
+    feature = "test-support",
+    feature = "validation-probes"
+))]
 use oer_esp32s31_hal::bluetooth::{
     InterruptSetupOwner as HalBluetoothInterruptSetupOwner, TaskOwner as HalBluetoothTaskOwner,
 };
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 use oer_esp32s31_hal::{
     bluetooth::RxMemoryListPublished,
     owner::{SharedPhyBorrow, SharedPhyHal},
@@ -51,7 +56,7 @@ use {
 
 use oer_esp32s31_pac::{RadioHardware, RadioPhyReleaseError};
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 use crate::controller_time::ControllerTimeWorker;
 #[cfg(test)]
 use crate::controller_time::ControllerTimeWorkerPhase;
@@ -66,7 +71,7 @@ use oer_esp32s31_bluetooth_memory::{
     LegacyConnectableAdvertisingMemoryGraphPublicationPrepared,
     LegacyConnectableAdvertisingMemoryGraphRxPublished, PassiveScanMemoryGraphCommandPublished,
 };
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 use oer_esp32s31_bluetooth_memory::{
     PassiveScanMemoryGraphPublicationMismatch, PassiveScanMemoryGraphPublicationPrepared,
     PassiveScanMemoryGraphPublished, PeripheralConnectionMemoryGraphPublicationMismatch,
@@ -85,7 +90,7 @@ pub struct BluetoothRadioHardware {
 
 impl BluetoothRadioHardware {
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn from_released(hardware: RadioHardware) -> Self {
+    pub fn from_released(hardware: RadioHardware) -> Self {
         Self { hardware }
     }
     /// Acquire the restricted radio singleton for standalone Bluetooth.
@@ -93,8 +98,8 @@ impl BluetoothRadioHardware {
         RadioHardware::take().map(|hardware| Self { hardware })
     }
 
-    #[cfg(test)]
-    pub(crate) fn for_validation() -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_validation() -> Self {
         Self {
             hardware: RadioHardware::for_validation(),
         }
@@ -181,7 +186,7 @@ impl<P> BluetoothStopped<P> {
         }
     }
 
-    pub(crate) fn into_parts(self) -> (HalBluetoothColdOwner, P) {
+    pub fn into_parts(self) -> (HalBluetoothColdOwner, P) {
         (self.registers, self.platform)
     }
 
@@ -201,12 +206,12 @@ impl<P> BluetoothStopped<P> {
 /// suppresses `P::drop`; a future verified teardown transaction must recover
 /// the platform owner and release the reservation.
 #[must_use = "the powered platform remains retained until verified PHY teardown"]
-#[cfg(any(target_arch = "riscv32", test))]
-pub(crate) struct TeardownPendingPlatform<P> {
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+pub struct TeardownPendingPlatform<P> {
     _platform: ManuallyDrop<P>,
 }
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 impl<P> TeardownPendingPlatform<P> {
     pub(crate) const fn new(platform: P) -> Self {
         Self {
@@ -230,7 +235,12 @@ impl<P> TeardownPendingPlatform<P> {
 ///
 /// This transition performs no MMIO. In particular it does not configure
 /// controller masks or a CPU interrupt route.
-#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+#[cfg(any(
+    target_arch = "riscv32",
+    test,
+    feature = "test-support",
+    feature = "validation-probes"
+))]
 pub(crate) fn separate_interrupt_owner(
     registers: HalBluetoothColdOwner,
 ) -> (TaskResources, InterruptBankOwner) {
@@ -238,7 +248,7 @@ pub(crate) fn separate_interrupt_owner(
     (
         TaskResources {
             registers: task,
-            #[cfg(any(target_arch = "riscv32", test))]
+            #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
             controller_time: ControllerTimeWorker::new_idle(),
         },
         InterruptBankOwner {
@@ -252,23 +262,28 @@ pub(crate) fn separate_interrupt_owner(
 /// No MMIO operation is exposed until its finite lifecycle transaction has
 /// independent vendor evidence.
 #[must_use = "the Bluetooth task owner must be reunited before release"]
-#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
-pub(crate) struct TaskResources {
+#[cfg(any(
+    target_arch = "riscv32",
+    test,
+    feature = "test-support",
+    feature = "validation-probes"
+))]
+pub struct TaskResources {
     registers: HalBluetoothTaskOwner,
     // Host validation images execute finite register probes without a time runner.
-    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
     controller_time: ControllerTimeWorker,
 }
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 impl TaskResources {
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn maintenance_registers(&mut self) -> &mut HalBluetoothTaskOwner {
+    pub fn maintenance_registers(&mut self) -> &mut HalBluetoothTaskOwner {
         &mut self.registers
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn release_after_phy_close(
+    pub fn release_after_phy_close(
         self,
         output: oer_esp32s31_hal::bluetooth::InterruptOutputReleasedOwner,
         timer: oer_esp32s31_hal::bluetooth::ModemLpTimerInterruptReadyOwner,
@@ -280,14 +295,14 @@ impl TaskResources {
     }
 
     /// Preserve pending or faulted time ownership before any terminal extraction.
-    pub(crate) fn controller_time_retirement_ready(
+    pub fn controller_time_retirement_ready(
         &self,
     ) -> Result<(), crate::controller_time::ControllerTimeRetirementError> {
         self.controller_time.retirement_ready()
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn release_controller_output(
+    pub fn release_controller_output(
         &mut self,
         output: oer_esp32s31_hal::bluetooth::InterruptOutputAfterRoutesOwner,
     ) -> Result<
@@ -301,7 +316,7 @@ impl TaskResources {
     }
 }
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 fn join_passive_scan_rx_publication(
     prepared: PassiveScanMemoryGraphPublicationPrepared,
     publication: RxMemoryListPublished,
@@ -309,7 +324,7 @@ fn join_passive_scan_rx_publication(
     prepared.into_published(publication)
 }
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 #[allow(
     clippy::result_large_err,
     reason = "the mismatch must return both affine publication owners without allocation"
@@ -324,7 +339,12 @@ fn join_peripheral_connection_rx_publication(
     prepared.into_rx_published(publication)
 }
 
-#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+#[cfg(any(
+    target_arch = "riscv32",
+    test,
+    feature = "test-support",
+    feature = "validation-probes"
+))]
 impl TaskResources {
     /// Publish the selected random Controller identity while every radio role is idle.
     ///
@@ -332,10 +352,7 @@ impl TaskResources {
     /// invoke this before transferring any advertising/scanning graph or
     /// publishing scheduler `RUN`; the HAL fixes the destination address slot.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn program_random_device_address_while_idle(
-        &mut self,
-        address: ControllerRandomAddress,
-    ) {
+    pub fn program_random_device_address_while_idle(&mut self, address: ControllerRandomAddress) {
         self.registers
             .borrow_bluetooth_controller()
             .program_random_device_address(address);
@@ -736,8 +753,8 @@ impl TaskResources {
     /// The returned HAL derives shared baseband state from the route PAC;
     /// selecting the Bluetooth route alone is not treated as proof that the
     /// shared settle condition is false.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn shared_phy_hal(&mut self) -> SharedPhyHal<'_> {
+    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    pub fn shared_phy_hal(&mut self) -> SharedPhyHal<'_> {
         self.registers.borrow_shared_phy()
     }
 
@@ -849,7 +866,12 @@ impl TaskResources {
 
 /// Inactive owner of the Bluetooth controller interrupt bank.
 #[must_use = "the interrupt owner must be installed or reunited"]
-#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+#[cfg(any(
+    target_arch = "riscv32",
+    test,
+    feature = "test-support",
+    feature = "validation-probes"
+))]
 pub(crate) struct InterruptBankOwner {
     _registers: HalBluetoothInterruptSetupOwner,
 }
@@ -890,7 +912,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         clippy::result_large_err,
         reason = "the powered task epoch and the owned graph discharge the publication contract"
     )]
-    pub(crate) fn publish_legacy_connectable_advertising_rx_memory(
+    pub fn publish_legacy_connectable_advertising_rx_memory(
         &mut self,
         prepared: LegacyConnectableAdvertisingMemoryGraphPublicationPrepared,
     ) -> Result<
@@ -910,7 +932,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         unsafe_code,
         reason = "the powered task epoch and the owned graph discharge the publication contract"
     )]
-    pub(crate) fn publish_passive_scan_rx_memory(
+    pub fn publish_passive_scan_rx_memory(
         &mut self,
         prepared: PassiveScanMemoryGraphPublicationPrepared,
     ) -> Result<PassiveScanMemoryGraphPublished, PassiveScanMemoryGraphPublicationMismatch> {
@@ -925,7 +947,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         clippy::result_large_err,
         reason = "the powered task epoch and the owned graph discharge the publication contract"
     )]
-    pub(crate) fn publish_peripheral_connection_rx_memory(
+    pub fn publish_peripheral_connection_rx_memory(
         &mut self,
         prepared: PeripheralConnectionMemoryGraphPublicationPrepared,
     ) -> Result<
@@ -942,7 +964,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         unsafe_code,
         reason = "the powered task epoch and the owned graph discharge the publication contract"
     )]
-    pub(crate) fn publish_passive_scan_command(
+    pub fn publish_passive_scan_command(
         &mut self,
         published: PassiveScanMemoryGraphPublished,
     ) -> PassiveScanMemoryGraphCommandPublished {

@@ -34,14 +34,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 use embedded_io_async::Read as _;
 use esp_hal::{Async, usb::usb_serial_jtag::UsbSerialJtag};
-use oer_esp32s31_bluetooth::{
-    le::{
-        dtm::{DtmDefaultTxPowerDbm, DtmRuntimeConfig},
-        peripheral::PeripheralConnectionRuntimeConfig,
-        scanning::PassiveScanRuntimeConfig,
-    },
-    resources::BluetoothRadioHardware,
-};
+use {oer_esp32s31_bluetooth_controller::le::{dtm::{DtmDefaultTxPowerDbm, DtmRuntimeConfig}, peripheral::PeripheralConnectionRuntimeConfig, scanning::PassiveScanRuntimeConfig}, oer_esp32s31_bluetooth::resources::BluetoothRadioHardware};
 use oer_esp32s31_bluetooth_memory::{
     DtmSchedulerAllocationConfig, PassiveScanDefaultTxPowerDbm,
     PassiveScanSchedulerAllocationConfig, PeripheralConnectionDefaultTxPowerDbm,
@@ -1322,7 +1315,7 @@ async fn execute(hci: &Host, operation: Operation) -> Outcome {
 }
 
 fn rx_diagnostics() -> oer_hil_protocol::BluetoothDtmRxDiagnostics {
-    let d = oer_esp32s31_bluetooth::le::dtm::diagnostics::snapshot();
+    let d = oer_esp32s31_bluetooth_controller::le::dtm::diagnostics::snapshot();
     oer_hil_protocol::BluetoothDtmRxDiagnostics {
         sequence_checks: d.sequence_checks,
         sequence_deadline_rejections: d.sequence_deadline_rejections,
@@ -1351,7 +1344,7 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
     let truncated = if snapshot.terminal {
         detail.push_str(snapshot.detail()).is_err() || snapshot.detail_truncated
     } else if snapshot.peripheral_runs > 0 {
-        let ll = oer_esp32s31_bluetooth::le::peripheral::diagnostics::snapshot();
+        let ll = oer_esp32s31_bluetooth_controller::le::peripheral::diagnostics::snapshot();
         write!(
             detail,
             "ll rx={} drop={} ctrl={} queued={} done={} maps={} op={:?} closed={} reason={:?} idle={}",
@@ -1368,7 +1361,7 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
         )
         .is_err()
     } else {
-        let rx = oer_esp32s31_bluetooth::le::advertising::diagnostics::snapshot();
+        let rx = oer_esp32s31_bluetooth_controller::le::advertising::diagnostics::snapshot();
         let nodes = rx.last_progress.map(|nodes| {
             nodes.map(|node| {
                 (
@@ -1401,7 +1394,7 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
         connection_complete_events: host_events.connections,
         disconnection_complete_events: host_events.disconnections,
         connection_update_complete_events: host_events.connection_updates,
-        channel_map_update_events: oer_esp32s31_bluetooth::le::peripheral::diagnostics::snapshot()
+        channel_map_update_events: oer_esp32s31_bluetooth_controller::le::peripheral::diagnostics::snapshot()
             .channel_map_updates,
         target_disconnect_commands: host_events.target_disconnect_commands,
         target_reset_commands: host_events.target_reset_commands,

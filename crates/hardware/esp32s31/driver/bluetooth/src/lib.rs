@@ -1,55 +1,55 @@
-//! ESP32-S31 Bluetooth hardware backend and executor-neutral radio sessions.
+//! ESP32-S31 Bluetooth hardware engine.
 //!
 //! PAC/HAL owns MMIO, and the separate memory crate owns controller-SRAM
-//! layouts and CPU/hardware ownership. This crate joins those contracts to
-//! portable LL policy, controller time, scheduler admission and publication.
-//! Its HCI composition preserves command order while radio events progress;
-//! the Embassy adapter owns executor waits and task storage.
+//! layouts and CPU/hardware ownership. This crate joins those contracts into
+//! the radio engine: clocks, controller HAL and time, BLE PHY, interrupts,
+//! the modem low-power timer, and the hardware scheduler with its timeline,
+//! finished lists and single-item primitives. It knows no Link Layer role.
 //!
-//! DTM, advertising and scanning have event lifecycles. Peripheral connection
-//! has a causal first-event path, active completion/recycle/recurrence and
-//! Host-visible establishment/teardown events. The Host-to-Controller ACL path
-//! owns one HCI packet through legacy LL fragmentation, retransmission and
-//! completed-packet credit return; Controller-to-Host ACL remains unavailable.
-//! Initialization and scheduler RUN are not RF evidence.
-//!
+//! The LE Controller and its roles (DTM, advertising, scanning, peripheral
+//! connection) compose these primitives in `oer-esp32s31-bluetooth-controller`.
 //! Shared single-item completion and timed preparation engines implement the
 //! common hardware protocol; RX/recycle and packet policy remain role-specific.
 //! The public lifecycle begins with one [`resources::BluetoothStopped`] aggregate retaining
-//! the platform lease and neutral radio root. Complete powered teardown and
-//! long-running PHY maintenance remain separate requirements.
+//! the platform lease and neutral radio root. Initialization and scheduler RUN
+//! are not RF evidence.
 //!
 //! See the chip `FEATURES.md` for implemented scopes, unsupported operations
 //! and the distinction between source coverage and hardware qualification.
 
 #![no_std]
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
+// `test-support` compiles the chip engine on the host for dependent crates'
+// tests. Items reached only from ESP32-S31 paths are unused in that build;
+// chip builds and this crate's own tests still report dead code.
+#![cfg_attr(
+    all(feature = "test-support", not(test), not(target_arch = "riscv32")),
+    allow(dead_code)
+)]
 
 #[cfg(test)]
 extern crate std;
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub mod baseband;
 pub mod ble_phy;
 pub mod clock;
 #[cfg(target_arch = "riscv32")]
 pub mod common_phy_state;
-pub mod controller;
 /// Controller HAL component initialization after clock setup.
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub mod controller_hal;
 /// Event-driven controller-time latch and scheduler-epoch projection.
 pub mod controller_time;
 pub mod interrupt;
-pub mod le;
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub mod low_power;
 pub mod modem_lp_timer_queue;
 /// Controller modem low-power timer task over the published timer owner.
 #[cfg(target_arch = "riscv32")]
 pub mod modem_timer;
 /// Drain-before-retire rule of the modem low-power timer.
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub mod modem_timer_retirement;
 #[cfg(target_arch = "riscv32")]
 pub mod phy;
@@ -57,37 +57,18 @@ pub mod resources;
 pub mod runtime_resources;
 pub mod scheduler;
 /// Controller-time preparation shared by timed scheduler admissions.
-#[cfg(any(target_arch = "riscv32", test))]
-pub(crate) mod timed_preparation;
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+pub mod timed_preparation;
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]
 pub mod validation;
 
 #[cfg(target_arch = "riscv32")]
-pub(crate) use ble_phy::AlwaysAwakeTimingReady;
+pub use ble_phy::AlwaysAwakeTimingReady;
 
-#[cfg(any(target_arch = "riscv32", test))]
-pub(crate) use controller_time::{ControllerSchedulerEpoch, ControllerTimeSample};
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+pub use controller_time::{ControllerSchedulerEpoch, ControllerTimeSample};
 
-#[cfg(target_arch = "riscv32")]
-pub(crate) use le::advertising::legacy::LegacyAdvertisingCancelledRestoreOutcome;
-
-#[cfg(any(target_arch = "riscv32", test))]
-pub(crate) use le::advertising::legacy::timing::{
-    LegacyAdvertisingEventWindow, LegacyAdvertisingRecurringTimingObservation,
-};
-
-pub(crate) use le::dtm::event::timing::{
-    DtmRxInitialEventWindow, DtmRxRecurringEventWindow, DtmTxEventWindow,
-};
-#[cfg(test)]
-pub(crate) use le::dtm::session::DtmSessionStopping;
-#[cfg(any(target_arch = "riscv32", test))]
-pub(crate) use le::dtm::{
-    link_state::DtmLinkStateReset,
-    scheduler::reservation::{DtmSchedulerReservation, DtmSchedulerSequenceAuthorizationFailure},
-};
-
-pub(crate) use scheduler::time::SchedulerInstant;
+pub use scheduler::time::SchedulerInstant;
 
 pub mod memory;

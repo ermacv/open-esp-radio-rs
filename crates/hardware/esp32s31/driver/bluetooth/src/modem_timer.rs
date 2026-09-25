@@ -167,7 +167,7 @@ impl<'runtime, S, const CAPACITY: usize> ControllerModemTimerTask<'runtime, S, C
 where
     S: ModemLpTimerSoftwareOwnerStorage,
 {
-    pub(crate) fn new(
+    pub fn new(
         storage: &'runtime S,
         runtime: ControllerModemTimerRuntime<'runtime, CAPACITY>,
     ) -> Self {
@@ -310,11 +310,11 @@ pub struct ControllerModemTimerRetired<'runtime, S, const CAPACITY: usize> {
 }
 
 impl<'runtime, S, const CAPACITY: usize> ControllerModemTimerRetired<'runtime, S, CAPACITY> {
-    pub(crate) fn matches_storage(&self, storage: &S) -> bool {
+    pub fn matches_storage(&self, storage: &S) -> bool {
         core::ptr::eq(self.storage, storage)
     }
 
-    pub(crate) fn from_maintenance_parts(
+    pub fn from_maintenance_parts(
         owner: ModemLpTimerInterruptReadyOwner,
         runtime: ControllerModemTimerRuntime<'runtime, CAPACITY>,
         storage: &'runtime S,
@@ -326,7 +326,7 @@ impl<'runtime, S, const CAPACITY: usize> ControllerModemTimerRetired<'runtime, S
         }
     }
 
-    pub(crate) fn into_shutdown_parts(
+    pub fn into_shutdown_parts(
         self,
     ) -> (
         ModemLpTimerInterruptReadyOwner,

@@ -17,8 +17,9 @@ use oer_bluetooth_hci::{
 
 use oer_bluetooth_ll::advertising::AdvertisingDelay;
 
-use oer_esp32s31_bluetooth::{
-    le::advertising::{
+use {
+    oer_esp32s31_bluetooth::scheduler::SchedulerRunInterruptStorage,
+    oer_esp32s31_bluetooth_controller::le::advertising::{
         BluetoothLegacyConnectableAdvertisingRecurringForwardOrder,
         LegacyAdvertisingDisableResponsePending, LegacyAdvertisingResetCompletionReady,
         LegacyConnectableAdvertisingActiveResponsePending,
@@ -41,7 +42,6 @@ use oer_esp32s31_bluetooth::{
         LegacyConnectableAdvertisingRecurringResponsePending,
         LegacyConnectableAdvertisingRecurringStopping, LegacyConnectableAdvertisingStopOrder,
     },
-    scheduler::SchedulerRunInterruptStorage,
 };
 
 /// Terminal continuations for one finite recurring-radio drive.

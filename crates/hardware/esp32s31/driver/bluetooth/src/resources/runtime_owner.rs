@@ -2,13 +2,13 @@
 
 use core::ops::{Deref, DerefMut};
 
-pub(crate) struct RuntimeOwnerSlot<T> {
+pub struct RuntimeOwnerSlot<T> {
     owner: Option<T>,
     claimed: bool,
 }
 
 impl<T> RuntimeOwnerSlot<T> {
-    pub(crate) const fn new(owner: T) -> Self {
+    pub const fn new(owner: T) -> Self {
         Self {
             owner: Some(owner),
             claimed: false,
@@ -24,7 +24,7 @@ impl<T> RuntimeOwnerSlot<T> {
         }
     }
 
-    pub(crate) fn as_mut(&mut self) -> Option<&mut T> {
+    pub fn as_mut(&mut self) -> Option<&mut T> {
         if self.claimed {
             None
         } else {
@@ -32,7 +32,7 @@ impl<T> RuntimeOwnerSlot<T> {
         }
     }
 
-    pub(crate) fn lease(&mut self) -> Option<RuntimeOwnerLease<'_, T>> {
+    pub fn lease(&mut self) -> Option<RuntimeOwnerLease<'_, T>> {
         if self.claimed {
             return None;
         }
@@ -49,15 +49,15 @@ impl<T> RuntimeOwnerSlot<T> {
 
 /// Dropping the lease leaves the slot claimed and its hardware retained.
 /// Only successful retirement removes the owner; no pointer is reconstructed.
-pub(crate) struct RuntimeOwnerLease<'slot, T> {
+pub struct RuntimeOwnerLease<'slot, T> {
     slot: &'slot mut RuntimeOwnerSlot<T>,
 }
 
 impl<T> RuntimeOwnerLease<'_, T> {
     /// Only the original exclusive borrow can refill its emptied runtime slot.
     /// The caller supplies the owner from a completed physical initialization.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn restore(&mut self, owner: T) -> Result<(), T> {
+    #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+    pub fn restore(&mut self, owner: T) -> Result<(), T> {
         if self.slot.owner.is_some() {
             return Err(owner);
         }
@@ -65,7 +65,7 @@ impl<T> RuntimeOwnerLease<'_, T> {
         Ok(())
     }
     /// A single barrier governs both owners; rejection extracts neither.
-    pub(crate) fn try_retire_with<U, Proof, Error>(
+    pub fn try_retire_with<U, Proof, Error>(
         &mut self,
         other: &mut RuntimeOwnerLease<'_, U>,
         barrier: impl FnOnce() -> Result<Proof, Error>,
@@ -74,7 +74,7 @@ impl<T> RuntimeOwnerLease<'_, T> {
             .map(|(owner, (other, proof))| (owner, other, proof))
     }
 
-    pub(crate) fn try_retire<Proof, Error>(
+    pub fn try_retire<Proof, Error>(
         &mut self,
         barrier: impl FnOnce() -> Result<Proof, Error>,
     ) -> Result<(T, Proof), Error> {

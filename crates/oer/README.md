@@ -20,7 +20,7 @@ Chip selection and protocol backends are separate:
 | --- | --- |
 | `esp32s31` | `chips::esp32s31::hal`; no Wi-Fi STA/AP or Bluetooth driver selection |
 | `esp32s31-wifi` | Wi-Fi protocols and `chips::esp32s31::driver::ieee80211::{mac,sta,ap}` |
-| `esp32s31-bluetooth` | Bluetooth protocols and `chips::esp32s31::driver::bluetooth` |
+| `esp32s31-bluetooth` | Bluetooth protocols and `chips::esp32s31::driver::bluetooth`: the hardware engine with its `controller` and `le` roles |
 | `upstream-xarxa`, `owned-xarxa` or `embassy-smoltcp` | Wi-Fi backend, `embassy::radio` service mailbox and `systems::esp32s31::embassy::wifi` with the selected network stack |
 | `embassy-esp32s31-bluetooth` | Bluetooth backend and `systems::esp32s31::embassy::bluetooth` |
 

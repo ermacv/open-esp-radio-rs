@@ -7,14 +7,7 @@ mod application;
 mod application;
 mod console;
 use embassy_time::Duration;
-use oer_esp32s31_bluetooth::{
-    le::{
-        dtm::{DtmDefaultTxPowerDbm, DtmRuntimeConfig},
-        peripheral::PeripheralConnectionRuntimeConfig,
-        scanning::PassiveScanRuntimeConfig,
-    },
-    resources::BluetoothRadioHardware,
-};
+use {oer_esp32s31_bluetooth_controller::le::{dtm::{DtmDefaultTxPowerDbm, DtmRuntimeConfig}, peripheral::PeripheralConnectionRuntimeConfig, scanning::PassiveScanRuntimeConfig}, oer_esp32s31_bluetooth::resources::BluetoothRadioHardware};
 use oer_esp32s31_bluetooth_memory::{
     DtmSchedulerAllocationConfig, PassiveScanDefaultTxPowerDbm,
     PassiveScanSchedulerAllocationConfig, PeripheralConnectionDefaultTxPowerDbm,

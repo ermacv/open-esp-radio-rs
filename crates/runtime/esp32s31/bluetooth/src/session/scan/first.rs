@@ -4,12 +4,12 @@
 
 use core::future::Future;
 
-use oer_esp32s31_bluetooth::{
-    le::scanning::{
+use {
+    oer_esp32s31_bluetooth::scheduler::SchedulerRunInterruptStorage,
+    oer_esp32s31_bluetooth_controller::le::scanning::{
         PassiveScanHciFirstRunner, PassiveScanHciFirstRunnerFailure, PassiveScanHciFirstRunnerStep,
         PassiveScanHciFirstRunning,
     },
-    scheduler::SchedulerRunInterruptStorage,
 };
 
 #[must_use = "retain the wait, running owner, or exact failure"]

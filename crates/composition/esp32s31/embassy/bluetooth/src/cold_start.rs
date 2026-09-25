@@ -6,6 +6,8 @@
 //! chip typestate chain; no register capability or partially initialized
 //! success state escapes this module.
 
+use oer_esp32s31_bluetooth_controller::controller::ControllerOutputActivation;
+
 use crate::{
     BluetoothBlePhyMemoryClaimError, BluetoothDirectionFindingMemoryClaimError,
     BluetoothDtmMemoryClaimError, BluetoothLegacyAdvertisingMemoryClaimError,
@@ -26,31 +28,35 @@ use oer_bluetooth_hci::{
     LeControllerHciResourcesError,
 };
 
-use oer_esp32s31_bluetooth::{
-    baseband::BasebandInitializationReport,
-    ble_phy::BlePhyInitializationReport,
-    clock::ClockEnableFailure,
-    common_phy_state::PhyInitializationReport,
-    controller::{
-        ControllerInterruptOwnerPublicationFailure, ControllerInterruptOwnersReady,
-        hci::ControllerHciBindFailure,
-    },
-    le::{
-        advertising::{
-            LegacyAdvertisingDefaultTxPowerDbm, LegacyAdvertisingRuntimeResources,
-            LegacyConnectableAdvertisingRuntimeResources,
+use {
+    oer_esp32s31_bluetooth::{
+        baseband::BasebandInitializationReport,
+        ble_phy::BlePhyInitializationReport,
+        clock::ClockEnableFailure,
+        common_phy_state::PhyInitializationReport,
+        low_power::ControllerLowPowerHardwareInitializationFailure,
+        phy::{
+            ControllerPhyClientAcquireFailure, ControllerPhyInitializationFailure,
+            PhyInitializationConfig,
         },
-        dtm::DtmRuntimeConfig,
-        peripheral::{PeripheralConnectionRuntimeConfig, PeripheralConnectionRuntimeResources},
-        scanning::{PassiveScanRuntimeConfig, PassiveScanRuntimeResources},
+        resources::{BluetoothRadioHardware, BluetoothStopped},
+        runtime_resources::ControllerRuntimeResources,
     },
-    low_power::ControllerLowPowerHardwareInitializationFailure,
-    phy::{
-        ControllerPhyClientAcquireFailure, ControllerPhyInitializationFailure,
-        PhyInitializationConfig,
+    oer_esp32s31_bluetooth_controller::{
+        controller::{
+            ControllerInterruptOwnerPublicationFailure, ControllerInterruptOwnersReady,
+            hci::ControllerHciBindFailure,
+        },
+        le::{
+            advertising::{
+                LegacyAdvertisingDefaultTxPowerDbm, LegacyAdvertisingRuntimeResources,
+                LegacyConnectableAdvertisingRuntimeResources,
+            },
+            dtm::DtmRuntimeConfig,
+            peripheral::{PeripheralConnectionRuntimeConfig, PeripheralConnectionRuntimeResources},
+            scanning::{PassiveScanRuntimeConfig, PassiveScanRuntimeResources},
+        },
     },
-    resources::{BluetoothRadioHardware, BluetoothStopped},
-    runtime_resources::ControllerRuntimeResources,
 };
 
 use oer_esp32s31_bluetooth_runtime::controller::{
@@ -182,7 +188,7 @@ impl BluetoothUnpoweredOwners {
 pub struct BluetoothClaimedMemory {
     ble_phy: BlePhyEngineCpuOwned,
     direction_finding: DirectionFindingWorkspaceCpuOwned,
-    dtm: oer_esp32s31_bluetooth::le::dtm::DtmRuntimeResources,
+    dtm: oer_esp32s31_bluetooth_controller::le::dtm::DtmRuntimeResources,
     legacy_advertising: LegacyAdvertisingRuntimeResources,
     passive_scan: PassiveScanRuntimeResources,
     peripheral_connection: PeripheralConnectionRuntimeResources,
@@ -195,7 +201,7 @@ impl BluetoothClaimedMemory {
     ) -> (
         BlePhyEngineCpuOwned,
         DirectionFindingWorkspaceCpuOwned,
-        oer_esp32s31_bluetooth::le::dtm::DtmRuntimeResources,
+        oer_esp32s31_bluetooth_controller::le::dtm::DtmRuntimeResources,
         LegacyAdvertisingRuntimeResources,
         PassiveScanRuntimeResources,
         PeripheralConnectionRuntimeResources,
@@ -290,7 +296,7 @@ pub struct BluetoothLegacyAdvertisingMemoryFailure {
     pub owners: BluetoothUnpoweredOwners,
     pub ble_phy: BlePhyEngineCpuOwned,
     pub direction_finding: DirectionFindingWorkspaceCpuOwned,
-    pub dtm: oer_esp32s31_bluetooth::le::dtm::DtmRuntimeResources,
+    pub dtm: oer_esp32s31_bluetooth_controller::le::dtm::DtmRuntimeResources,
 }
 
 /// Rejected passive-scanner graph claim retaining all preceding graph claims.
@@ -299,7 +305,7 @@ pub struct BluetoothPassiveScanMemoryFailure {
     pub owners: BluetoothUnpoweredOwners,
     pub ble_phy: BlePhyEngineCpuOwned,
     pub direction_finding: DirectionFindingWorkspaceCpuOwned,
-    pub dtm: oer_esp32s31_bluetooth::le::dtm::DtmRuntimeResources,
+    pub dtm: oer_esp32s31_bluetooth_controller::le::dtm::DtmRuntimeResources,
     pub legacy_advertising: LegacyAdvertisingRuntimeResources,
 }
 
@@ -309,7 +315,7 @@ pub struct BluetoothPeripheralConnectionMemoryFailure {
     pub owners: BluetoothUnpoweredOwners,
     pub ble_phy: BlePhyEngineCpuOwned,
     pub direction_finding: DirectionFindingWorkspaceCpuOwned,
-    pub dtm: oer_esp32s31_bluetooth::le::dtm::DtmRuntimeResources,
+    pub dtm: oer_esp32s31_bluetooth_controller::le::dtm::DtmRuntimeResources,
     pub legacy_advertising: LegacyAdvertisingRuntimeResources,
     pub passive_scan: PassiveScanRuntimeResources,
 }
@@ -320,7 +326,7 @@ pub struct BluetoothLegacyConnectableAdvertisingMemoryFailure {
     pub owners: BluetoothUnpoweredOwners,
     pub ble_phy: BlePhyEngineCpuOwned,
     pub direction_finding: DirectionFindingWorkspaceCpuOwned,
-    pub dtm: oer_esp32s31_bluetooth::le::dtm::DtmRuntimeResources,
+    pub dtm: oer_esp32s31_bluetooth_controller::le::dtm::DtmRuntimeResources,
     pub legacy_advertising: LegacyAdvertisingRuntimeResources,
     pub passive_scan: PassiveScanRuntimeResources,
     pub peripheral_connection: PeripheralConnectionRuntimeResources,
@@ -337,7 +343,7 @@ pub struct BluetoothRecheckStartFailure<
 > {
     error: DtmRecheckStartError,
     _controller: InterruptOwnersReady<MT, SC>,
-    _dtm: oer_esp32s31_bluetooth::le::dtm::DtmRuntimeResources,
+    _dtm: oer_esp32s31_bluetooth_controller::le::dtm::DtmRuntimeResources,
     _legacy_advertising: LegacyAdvertisingRuntimeResources,
     _passive_scan: PassiveScanRuntimeResources,
     _peripheral_connection: PeripheralConnectionRuntimeResources,

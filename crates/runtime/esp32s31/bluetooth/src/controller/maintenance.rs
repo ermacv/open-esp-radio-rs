@@ -5,7 +5,7 @@
 //! handoff edge: a hard deadline is a terminal observation, even while waiting
 //! for a Host command. All limits are explicit caller configuration.
 
-use oer_esp32s31_bluetooth::le::peripheral::maintenance::PeripheralMaintenanceBudget;
+use oer_esp32s31_bluetooth_controller::le::peripheral::maintenance::PeripheralMaintenanceBudget;
 
 /// Caller-selected bounds; these values need measured hardware qualification.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -133,7 +133,7 @@ mod actor;
 #[cfg(target_arch = "riscv32")]
 pub use actor::{ControllerMaintenanceContinuation, ControllerMaintenanceResumeFailure};
 #[cfg(target_arch = "riscv32")]
-pub(super) use oer_esp32s31_bluetooth::le::peripheral::{
+pub(super) use oer_esp32s31_bluetooth_controller::le::peripheral::{
     PeripheralPhyMaintenanceFailure as Failure, PeripheralPhyMaintenancePending as Pending,
     PeripheralPhyMaintenanceReady as Ready,
 };

@@ -25,7 +25,7 @@ where
         const PACKET_CAPACITY: usize,
         Recheck: DtmControllerTimeRecheck,
         DelaySource: LegacyAdvertisingDelaySource
-            + oer_esp32s31_bluetooth::le::peripheral::PeripheralEncryptionRandomSource,
+            + oer_esp32s31_bluetooth_controller::le::peripheral::PeripheralEncryptionRandomSource,
     >(
         &mut self,
         wakers: &RuntimeNotifications<WakeMutex>,

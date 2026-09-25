@@ -5,12 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "ESP32-S31 Bluetooth controller hardware boundary"
+description = "ESP32-S31 Bluetooth hardware engine: controller HAL and time, BLE PHY, interrupts and scheduler primitives"
 
 [features]
-lifecycle-fault-injection = ["oer-esp32s31-phy/lifecycle-fault-injection"]
-dtm-diagnostics = []
-rx-fault-injection = []
+# Validation constructors that role crates' host tests build hardware from.
+test-support = []
 validation-probes = [
     "oer-esp32s31-pac/validation-probes",
     "oer-esp32s31-phy/validation-probes",
@@ -20,7 +19,6 @@ validation-probes = [
 critical-section = "1.2.0"
 embassy-sync = "0.8.0"
 oer-bluetooth-hci = { path = "../../../../protocols/bluetooth/hci" }
-oer-bluetooth-ll = { path = "../../../../protocols/bluetooth/le/ll" }
 oer-esp32s31-hal = { path = "../../hal" }
 oer-esp32s31-bluetooth-memory = { path = "memory" }
 oer-esp32s31-pac = { path = "../../pac" }

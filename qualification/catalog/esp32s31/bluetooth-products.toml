@@ -64,8 +64,8 @@ source-paths = [
   "crates/runtime/esp32s31/bluetooth/src/controller/dispatch/connectable.rs",
   "crates/runtime/esp32s31/bluetooth/src/controller/dispatch/peripheral.rs",
   "crates/runtime/esp32s31/bluetooth/src/session/peripheral/active.rs",
-  "crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/connection.rs",
-  "crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/deadlines.rs",
+  "crates/roles/esp32s31/bluetooth/controller/src/le/peripheral/connection.rs",
+  "crates/roles/esp32s31/bluetooth/controller/src/le/peripheral/deadlines.rs",
   "crates/composition/esp32s31/embassy/bluetooth/src/system/runner.rs",
 ]
 

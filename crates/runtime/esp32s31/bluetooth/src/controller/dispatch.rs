@@ -241,7 +241,7 @@ where
         const PACKET_CAPACITY: usize,
         Recheck: DtmControllerTimeRecheck,
         DelaySource: LegacyAdvertisingDelaySource
-            + oer_esp32s31_bluetooth::le::peripheral::PeripheralEncryptionRandomSource,
+            + oer_esp32s31_bluetooth_controller::le::peripheral::PeripheralEncryptionRandomSource,
     >(
         &mut self,
         wakers: &RuntimeNotifications<WakeMutex>,
@@ -782,7 +782,7 @@ where
                         };
                         let radio_ready = match pending.radio_wait() {
                             Some(
-                                oer_esp32s31_bluetooth::le::scanning::PassiveScanActiveWait::Scheduler(
+                                oer_esp32s31_bluetooth_controller::le::scanning::PassiveScanActiveWait::Scheduler(
                                     wake,
                                 ),
                             ) => match select(
@@ -800,7 +800,7 @@ where
                                 }
                             },
                             Some(
-                                oer_esp32s31_bluetooth::le::scanning::PassiveScanActiveWait::PostUnlink(
+                                oer_esp32s31_bluetooth_controller::le::scanning::PassiveScanActiveWait::PostUnlink(
                                     wake,
                                 ),
                             ) => match select(
@@ -904,12 +904,12 @@ where
                         };
                         match stopping.radio_wait() {
                             Some(
-                                oer_esp32s31_bluetooth::le::scanning::PassiveScanActiveWait::Scheduler(
+                                oer_esp32s31_bluetooth_controller::le::scanning::PassiveScanActiveWait::Scheduler(
                                     wake,
                                 ),
                             ) => wakers.wait_scheduler_ready(wake).await,
                             Some(
-                                oer_esp32s31_bluetooth::le::scanning::PassiveScanActiveWait::PostUnlink(
+                                oer_esp32s31_bluetooth_controller::le::scanning::PassiveScanActiveWait::PostUnlink(
                                     wake,
                                 ),
                             ) => {
@@ -1204,7 +1204,7 @@ where
                     };
                     let radio_ready = match active.radio_wait() {
                         Some(
-                            oer_esp32s31_bluetooth::le::scanning::PassiveScanActiveWait::Scheduler(
+                            oer_esp32s31_bluetooth_controller::le::scanning::PassiveScanActiveWait::Scheduler(
                                 wake,
                             ),
                         ) => match select(
@@ -1221,7 +1221,7 @@ where
                             }
                         },
                         Some(
-                            oer_esp32s31_bluetooth::le::scanning::PassiveScanActiveWait::PostUnlink(
+                            oer_esp32s31_bluetooth_controller::le::scanning::PassiveScanActiveWait::PostUnlink(
                                 wake,
                             ),
                         ) => match select(

@@ -6,7 +6,7 @@ use crate::{BluetoothSystem, BluetoothSystemBuildError, compose_esp32s31_bluetoo
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
-use oer_esp32s31_bluetooth::controller::hci::ControllerHciBound;
+use oer_esp32s31_bluetooth_controller::controller::hci::ControllerHciBound;
 
 use oer_esp32s31_bluetooth_runtime::{
     controller::DtmAbsoluteRecheck, notification::RuntimeNotifications,

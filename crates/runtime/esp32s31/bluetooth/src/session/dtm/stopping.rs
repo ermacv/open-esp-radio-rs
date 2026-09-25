@@ -19,9 +19,11 @@ use oer_bluetooth_hci::{
 #[cfg(target_arch = "riscv32")]
 use crate::notification::RuntimeNotifications;
 #[cfg(target_arch = "riscv32")]
-use oer_esp32s31_bluetooth::{
-    le::dtm::{BluetoothDtmStoppingWait, DtmStoppingRunner, DtmTestEndResponsePending},
-    scheduler::SchedulerRunInterruptStorage,
+use {
+    oer_esp32s31_bluetooth::scheduler::SchedulerRunInterruptStorage,
+    oer_esp32s31_bluetooth_controller::le::dtm::{
+        BluetoothDtmStoppingWait, DtmStoppingRunner, DtmTestEndResponsePending,
+    },
 };
 
 /// Exact readiness source for one parked Test End quiescence runner.
@@ -181,7 +183,7 @@ where
     S: SchedulerRunInterruptStorage,
 {
     type SchedulerWake = oer_esp32s31_bluetooth::interrupt::SchedulerWakeCell;
-    type PostUnlinkWake = oer_esp32s31_bluetooth::le::dtm::DtmPostUnlinkWakeCell;
+    type PostUnlinkWake = oer_esp32s31_bluetooth_controller::le::dtm::DtmPostUnlinkWakeCell;
 
     fn stopping_wait(
         &self,
@@ -198,7 +200,7 @@ where
 impl<M: RawMutex>
     StoppingWaitBackend<
         oer_esp32s31_bluetooth::interrupt::SchedulerWakeCell,
-        oer_esp32s31_bluetooth::le::dtm::DtmPostUnlinkWakeCell,
+        oer_esp32s31_bluetooth_controller::le::dtm::DtmPostUnlinkWakeCell,
     > for RuntimeNotifications<M>
 {
     fn wait_scheduler<'wait>(
@@ -210,7 +212,7 @@ impl<M: RawMutex>
 
     fn wait_post_unlink<'wait>(
         &'wait self,
-        wake: &'wait oer_esp32s31_bluetooth::le::dtm::DtmPostUnlinkWakeCell,
+        wake: &'wait oer_esp32s31_bluetooth_controller::le::dtm::DtmPostUnlinkWakeCell,
     ) -> impl Future<Output = ()> + 'wait {
         self.wait_post_unlink_ready(wake)
     }

@@ -904,13 +904,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-bluetooth-ll"
-version = "0.1.0"
-dependencies = [
- "aes",
-]
-
-[[package]]
 name = "oer-embassy-net-owned"
 version = "0.1.0"
 dependencies = [
@@ -928,7 +921,6 @@ dependencies = [
  "critical-section",
  "embassy-sync 0.8.0",
  "oer-bluetooth-hci",
- "oer-bluetooth-ll",
  "oer-esp32s31-bluetooth-memory",
  "oer-esp32s31-hal",
  "oer-esp32s31-pac",

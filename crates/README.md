@@ -32,7 +32,8 @@ Cargo package identities are independent of this directory hierarchy.
 | `hardware/esp32s31/{pac,hal,phy}/` | PAC `ownership` and HAL `owner` retain hardware authority; domain modules hold register operations, transactions and RF algorithms |
 | `hardware/esp32s31/driver/ieee80211/{dma,mac}/` | S31 descriptor ownership and MAC `rx/tx/rate`; `mac/tx/metadata` lowers portable traffic intent |
 | `roles/esp32s31/ieee80211/{sta,ap}/` | Executor-free chip station and access-point role composition over the MAC driver |
-| `hardware/esp32s31/driver/{bluetooth,coex,ieee802154}/` | Chip radio actors; Bluetooth `memory/` and IEEE 802.15.4 `{dma,irq,mac}/` hold their lower ownership boundaries; the IEEE 802.15.4 root owns one affine MAC operation |
+| `roles/esp32s31/bluetooth/controller/` | Executor-free LE Controller: DTM, advertising, scanning and peripheral roles, bootstrap, retirement and PHY maintenance over the Bluetooth hardware engine |
+| `hardware/esp32s31/driver/{bluetooth,coex,ieee802154}/` | Chip radio actors; the Bluetooth root is the role-free hardware engine (clocks, PHY, IRQ, scheduler), its `memory/` and IEEE 802.15.4 `{dma,irq,mac}/` hold their lower ownership boundaries; the IEEE 802.15.4 root owns one affine MAC operation |
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
 | `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
 | `adapters/embassy/esp32s31/` | Executor/time platform ABI, coexistence mailbox and acknowledged IEEE 802.15.4 IRQ handoff |
@@ -107,9 +108,10 @@ and state; publication and cancellation remain at the owner boundary.
 Bluetooth integration `system` keeps public aggregates and separates final
 `construction`, the sole hardware `runner`, and terminal `quarantine`.
 Construction and quarantine do not acquire independent hardware authority.
-The [chip Bluetooth map](hardware/esp32s31/driver/bluetooth/README.md) places LE DTM,
+The [LE Controller map](roles/esp32s31/bluetooth/controller/README.md) places LE DTM,
 advertising, scanning and peripheral modules below their protocol namespaces.
-Shared controller, IRQ and scheduler ownership remains outside the LE roles.
+IRQ, scheduler and hardware ownership remains in the
+[hardware engine](hardware/esp32s31/driver/bluetooth/README.md), outside the LE roles.
 
 The chip Wi-Fi `rx/frontier` owns finite physical-ring transitions and borrows
 an abstract delay. Its `rx/transaction` synchronously borrows the live ring,

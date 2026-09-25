@@ -4,13 +4,17 @@
 //! reset because local active-RF shutdown is unproven. It never pauses a test.
 
 use super::*;
-use oer_esp32s31_bluetooth::{
-    controller::ControllerIdleCommandTask, le::peripheral::PeripheralPhyMaintenanceReady,
-    resources::platform_retirement::ControllerRuntimePlatform,
-    scheduler::SchedulerRunInterruptStorage,
-};
 use oer_esp32s31_bluetooth_runtime::controller::maintenance::PhyMaintenancePolicy;
 use oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome;
+use {
+    oer_esp32s31_bluetooth::{
+        resources::platform_retirement::ControllerRuntimePlatform,
+        scheduler::SchedulerRunInterruptStorage,
+    },
+    oer_esp32s31_bluetooth_controller::{
+        controller::ControllerIdleCommandTask, le::peripheral::PeripheralPhyMaintenanceReady,
+    },
+};
 
 #[allow(
     clippy::large_enum_variant,

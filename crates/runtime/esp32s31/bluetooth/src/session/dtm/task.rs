@@ -23,19 +23,21 @@ use oer_bluetooth_hci::{
     HciChannelError, HciEpochBound, HostToControllerFrame, LeControllerCommandEndpoint,
 };
 #[cfg(target_arch = "riscv32")]
-use oer_esp32s31_bluetooth::{
-    controller::ControllerIdleCommandTask,
-    le::dtm::{
-        DtmActiveCommandIntake, DtmActiveCommandMismatch, DtmActiveControllerCommandRoute,
-        DtmActiveResetBarrier, DtmActiveSessionFault, DtmActiveSessionRadioStep,
-        DtmCommandReadySession, DtmOrderReady, DtmResponsePending, DtmResponsePendingSession,
-        DtmResponsePublication, DtmStoppingFault, DtmStoppingRunner, DtmStoppingStep,
-        DtmTestEndResponsePending, DtmTestEndResponsePublication, DtmTestEndRestoreFailure,
-        DtmTestEndRestoreStep,
-    },
-    scheduler::SchedulerRunInterruptStorage,
-    scheduler::{
+use {
+    oer_esp32s31_bluetooth::scheduler::{
         BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListIndex,
+        SchedulerRunInterruptStorage,
+    },
+    oer_esp32s31_bluetooth_controller::{
+        controller::ControllerIdleCommandTask,
+        le::dtm::{
+            DtmActiveCommandIntake, DtmActiveCommandMismatch, DtmActiveControllerCommandRoute,
+            DtmActiveResetBarrier, DtmActiveSessionFault, DtmActiveSessionRadioStep,
+            DtmCommandReadySession, DtmOrderReady, DtmResponsePending, DtmResponsePendingSession,
+            DtmResponsePublication, DtmStoppingFault, DtmStoppingRunner, DtmStoppingStep,
+            DtmTestEndResponsePending, DtmTestEndResponsePublication, DtmTestEndRestoreFailure,
+            DtmTestEndRestoreStep,
+        },
     },
 };
 

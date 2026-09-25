@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// Minimal controller-time operations required by the shared preparation engine.
-pub(crate) trait TimedPreparationController: ControllerTimePendingOwner {
+pub trait TimedPreparationController: ControllerTimePendingOwner {
     fn request_timed_preparation_sample(
         &mut self,
     ) -> Result<ControllerTimeRequest, ControllerTimeAcquisitionError>;
@@ -29,7 +29,7 @@ pub(crate) trait TimedPreparationController: ControllerTimePendingOwner {
 /// This is deliberately not `Result`: restoration failure retains an affine
 /// owner and is a sealed lifecycle outcome, not a value-level error.
 #[derive(Debug)]
-pub(crate) enum TimedPreparationRollbackOutcome<R> {
+pub enum TimedPreparationRollbackOutcome<R> {
     Restored,
     FailStop(R),
 }
@@ -88,7 +88,7 @@ where
 
 /// Closed permanent-fault class shared by every timed role preparation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum TimedPreparationFailStopCause {
+pub enum TimedPreparationFailStopCause {
     ControllerTime(ControllerTimeAcquisitionError),
     Rollback,
     PhaseOwnership,
@@ -97,18 +97,18 @@ pub(crate) enum TimedPreparationFailStopCause {
 /// Sealed controller and optional rollback owner after an unsafe transition.
 #[must_use = "retain the complete fail-stop owner"]
 #[derive(Debug)]
-pub(crate) struct TimedPreparationFailStop<C, R> {
+pub struct TimedPreparationFailStop<C, R> {
     cause: TimedPreparationFailStopCause,
     controller: C,
     rollback: Option<R>,
 }
 
 impl<C, R> TimedPreparationFailStop<C, R> {
-    pub(crate) const fn cause(&self) -> TimedPreparationFailStopCause {
+    pub const fn cause(&self) -> TimedPreparationFailStopCause {
         self.cause
     }
 
-    pub(crate) fn into_parts(self) -> (C, Option<R>) {
+    pub fn into_parts(self) -> (C, Option<R>) {
         (self.controller, self.rollback)
     }
 }
@@ -116,7 +116,7 @@ impl<C, R> TimedPreparationFailStop<C, R> {
 /// One exact in-flight role preparation request.
 #[must_use = "recheck or explicitly cancel the timed preparation"]
 #[derive(Debug)]
-pub(crate) struct TimedPreparationPending<C, P, R>
+pub struct TimedPreparationPending<C, P, R>
 where
     C: TimedPreparationController,
 {
@@ -125,7 +125,7 @@ where
 
 /// Result of one bounded sample observation.
 #[must_use = "retain Waiting, consume Ready, or retain FailStop"]
-pub(crate) enum TimedPreparationStep<C, P, R>
+pub enum TimedPreparationStep<C, P, R>
 where
     C: TimedPreparationController,
 {
@@ -141,7 +141,7 @@ where
 /// Controller whose role graph is restored while its abandoned request drains.
 #[must_use = "drain the exact abandoned request before controller reuse"]
 #[derive(Debug)]
-pub(crate) struct TimedPreparationCancellationPending<C>
+pub struct TimedPreparationCancellationPending<C>
 where
     C: TimedPreparationController,
 {
@@ -150,7 +150,7 @@ where
 
 /// One bounded abandoned-request observation.
 #[must_use = "retain Waiting, consume Recovered, or retain FailStop"]
-pub(crate) enum TimedPreparationCancellationStep<C, R>
+pub enum TimedPreparationCancellationStep<C, R>
 where
     C: TimedPreparationController,
 {
@@ -173,7 +173,7 @@ impl<C, P, R> TimedPreparationPending<C, P, R>
 where
     C: TimedPreparationController,
 {
-    pub(crate) fn begin(
+    pub fn begin(
         mut controller: C,
         phase: P,
         rollback: TimedPreparationRollback<C, P, R>,
@@ -202,7 +202,7 @@ where
         })
     }
 
-    pub(crate) fn recheck(self) -> TimedPreparationStep<C, P, R> {
+    pub fn recheck(self) -> TimedPreparationStep<C, P, R> {
         let (mut owner, sample) = match self.core.recheck() {
             Ok(ControllerTimePendingCoreStep::Waiting(core)) => {
                 return TimedPreparationStep::Waiting(Self { core });
@@ -239,7 +239,7 @@ where
         }
     }
 
-    pub(crate) fn cancel(
+    pub fn cancel(
         self,
     ) -> Result<TimedPreparationCancellationPending<C>, TimedPreparationFailStop<C, R>> {
         match self.core.cancel() {
@@ -281,7 +281,7 @@ impl<C> TimedPreparationCancellationPending<C>
 where
     C: TimedPreparationController,
 {
-    pub(crate) fn recheck<R>(mut self) -> TimedPreparationCancellationStep<C, R> {
+    pub fn recheck<R>(mut self) -> TimedPreparationCancellationStep<C, R> {
         match self.controller.drain_orphan_controller_time() {
             Ok(ControllerTimePendingOrphanStep::Waiting) => {
                 TimedPreparationCancellationStep::Waiting(self)

@@ -3,18 +3,20 @@
 //! Portable policies remain available on hosts; hardware transactions and
 //! timeline admission retain their target-or-test availability.
 
-#[cfg(any(test, target_arch = "riscv32"))]
-pub(crate) mod completion;
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+pub mod completion;
 
 pub(crate) mod config;
-#[cfg(any(target_arch = "riscv32", test))]
-pub(crate) mod core;
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+pub mod core;
 pub(crate) mod finished_lists;
 pub(crate) mod insertion;
 pub(crate) mod lock_modify;
-pub(crate) mod time;
-#[cfg(any(target_arch = "riscv32", test))]
-pub(crate) mod timeline;
+/// Post-unlink mailbox that defers item reuse until the ISR observes the unlink.
+pub mod post_unlink;
+pub mod time;
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
+pub mod timeline;
 
 pub use config::SchedulerSoftwareConfig;
 
@@ -62,13 +64,13 @@ pub trait SchedulerRunInterruptStorage {
     >;
 }
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub use core::{ControllerTimeAcquisitionError, SchedulerEmptyListMergeError};
 #[cfg(target_arch = "riscv32")]
 pub use core::{SchedulerFinishedListDrainPending, SchedulerFinishedListDrainState};
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub use core::{SchedulerHeadPublicationError, SchedulerInitialized};
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 pub use timeline::{
     SchedulerRawWindow, SchedulerReservationError, SchedulerReservationReleaseError,
     SchedulerReservationReleaseFailure, SchedulerSequenceAuthorizationError,

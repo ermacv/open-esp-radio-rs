@@ -341,7 +341,7 @@ section = "whole-radio-coverage-index"
 title = "Bluetooth"
 kind = "source-reference"
 details = "Inventory: [LE and Classic](bluetooth/FEATURES.md)\n\nCurrent qualification authority: [bluetooth-le.toml](../../../../qualification/targets/esp32s31/bluetooth-le.toml); no Classic qualification claim"
-packages = ["oer-esp32s31-bluetooth"]
+packages = ["oer-esp32s31-bluetooth", "oer-esp32s31-bluetooth-controller"]
 documents = ["qualification/targets/esp32s31/bluetooth-le.toml"]
 
 [[references]]

@@ -61,7 +61,7 @@ use oer_esp32s31_bluetooth_memory::{BlePhyEngineCpuOwned, DirectionFindingWorksp
 
 use oer_esp32s31_phy::{NoopPhyTargetObserver, PhyCalibrationCache, PhyCalibrationSnapshot};
 
-use oer_esp32s31_radio_platform_esp_hal::{
+use oer_esp32s31_radio_esp_hal::{
     BluetoothPlatformBusy, EspHalBluetoothInterruptStorage, EspHalBluetoothPlatform,
     EspHalRadioPlatform,
 };
@@ -83,7 +83,7 @@ type HciBindFailure<
 > = ControllerHciBindFailure<
     Platform,
     CriticalSectionRawMutex,
-    oer_esp32s31_radio_platform_esp_hal::PublishedEspHalBluetoothInterruptOwners,
+    oer_esp32s31_radio_esp_hal::PublishedEspHalBluetoothInterruptOwners,
     MT,
     SC,
     H2C,

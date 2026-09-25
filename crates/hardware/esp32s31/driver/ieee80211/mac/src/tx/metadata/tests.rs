@@ -20,7 +20,7 @@ fn queue_class_and_descriptor_byte_match_every_priority() {
 
 #[test]
 fn portable_data_intent_preserves_every_existing_s31_queue_and_packet_profile() {
-    use oer_ieee80211::data::plan_data_encapsulation;
+    use oer_ieee80211_mac::data::plan_data_encapsulation;
 
     // Existing queue and packet-type profiles, ordered by IEEE 802.1D UP.
     // ACI discriminants have a different order and cannot be cast to queue IDs.
@@ -98,7 +98,7 @@ fn portable_data_intent_preserves_every_existing_s31_queue_and_packet_profile() 
 
 #[test]
 fn invalid_user_priorities_never_reach_s31_metadata_encoding() {
-    use oer_ieee80211::data::plan_data_encapsulation;
+    use oer_ieee80211_mac::data::plan_data_encapsulation;
 
     for priority in 8..=u8::MAX {
         assert_eq!(queue_class(priority), None);

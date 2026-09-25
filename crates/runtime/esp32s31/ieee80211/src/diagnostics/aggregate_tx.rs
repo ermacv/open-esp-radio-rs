@@ -4,10 +4,10 @@
 //! counters, histograms, storage or report formatting. Attaching an observer
 //! must not affect retry, queue, DMA ownership or scheduling decisions.
 
-pub use oer_esp32s31_wifi::ordinary_tx::{
+pub use oer_esp32s31_ieee80211::ordinary_tx::{
     OrdinaryTxOutcome, OrdinaryTxReport, OrdinaryTxRetryReport,
 };
-pub use oer_wifi_softmac::MacTxWork;
+pub use oer_ieee80211_softmac::MacTxWork;
 
 /// Why a network frame used the ordinary MPDU path instead of starting an
 /// aggregate exchange.
@@ -170,7 +170,7 @@ pub trait AggregateTxObserver: Sync {
     /// Reset-required/quarantined owners have no terminal receipt.
     fn observe_station_terminal(
         &self,
-        _status: oer_wifi_softmac::MacAmpduTxStatus<oer_esp32s31_wifi_mac::tx::TxPhyRate>,
+        _status: oer_ieee80211_softmac::MacAmpduTxStatus<oer_esp32s31_ieee80211_mac::tx::TxPhyRate>,
     ) {
     }
 

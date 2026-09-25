@@ -6,19 +6,19 @@
 
 use crate::security::ApPairwiseRxCandidate;
 
-use oer_esp32s31_wifi::protected_data_rx::{
+use oer_esp32s31_ieee80211::protected_data_rx::{
     ProtectedDataDecapsulation, ProtectedDataFragmentRxError, ProtectedDataRxView,
     UnprotectedDataFragmentRxError, UnprotectedDataRxView, view_protected_data,
     view_protected_data_fragment, view_unprotected_data, view_unprotected_data_fragment,
 };
 
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, RxSegment,
     ampdu::{RxBlockAckMpduKey, rx_block_ack_mpdu_key},
     view_normalized_rx_frame,
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     ccmp::{CcmpHeader, CcmpKeyId, CcmpReplayError, CcmpReplayLane},
     data::{DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter},
     fragmentation::{
@@ -29,9 +29,9 @@ use oer_ieee80211::{
     security::WifiSecurityMode,
 };
 
-use oer_wifi_ap::AP_MAX_CLIENTS;
+use oer_ieee80211_ap::AP_MAX_CLIENTS;
 
-use oer_wifi_softmac::MacRxMetadata;
+use oer_ieee80211_softmac::MacRxMetadata;
 
 const OPEN_FRAGMENT_CONTEXTS: usize = 2;
 

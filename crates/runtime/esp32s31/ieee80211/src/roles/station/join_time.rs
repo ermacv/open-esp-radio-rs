@@ -4,7 +4,7 @@ use core::future::Future;
 
 use embassy_time::{Instant, Timer};
 
-use oer_wifi_sta::join::StaJoinTimer;
+use oer_ieee80211_sta::join::StaJoinTimer;
 
 /// Production Embassy-time adapter.
 #[derive(Clone, Copy, Debug, Default)]

@@ -1,9 +1,9 @@
 //! Test the compiled target evidence/control module, not a host reimplementation.
 #![cfg(feature = "secure-gatt")]
-use open_esp_radio_hil_target_core::bluetooth_gatt::secure::{state, store};
+use oer_hil_target_core::bluetooth_gatt::secure::{state, store};
 mod reset_gate_tests;
-use bluetooth_example::security::gatt::Observation;
-use open_esp_radio_hil_protocol::*;
+use gatt_application::security::gatt::Observation;
+use oer_hil_protocol::*;
 
 fn snapshot(state: &state::State) -> BluetoothSecureGattEvidence {
     let Event::BluetoothSecureGatt(e) = state.command(Command::QueryBluetoothSecureGatt) else {
@@ -14,7 +14,7 @@ fn snapshot(state: &state::State) -> BluetoothSecureGattEvidence {
 
 #[test]
 fn application_failure_preserves_status_without_sensitive_host_payloads() {
-    use bluetooth_example::security::gatt::RunError;
+    use gatt_application::security::gatt::RunError;
     use trouble_host::{BleHostError, Error};
     let state = state::State::new();
     for (error, expected) in [
@@ -70,7 +70,7 @@ fn terminal_stop_clears_restart_intent_without_inventing_cold_release() {
 
 #[test]
 fn injected_load_failure_is_single_use_and_preserves_the_real_ram_record() {
-    use bluetooth_example::security::bonds::{BondStore, RamBondStore, StoreError};
+    use gatt_application::security::bonds::{BondStore, RamBondStore, StoreError};
     use trouble_host::{Address, BondInformation, Identity, LongTermKey, prelude::SecurityLevel};
     fn ready<F: Future>(future: F) -> F::Output {
         match core::pin::pin!(future).poll(&mut core::task::Context::from_waker(

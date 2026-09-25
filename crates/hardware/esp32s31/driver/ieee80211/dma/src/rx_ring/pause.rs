@@ -24,7 +24,7 @@ pub enum RxResumeError {
 ///
 /// A paused owner cannot process or recycle descriptors:
 /// ```compile_fail
-/// use oer_esp32s31_wifi_dma::rx_ring::RxRingPaused;
+/// use oer_esp32s31_ieee80211_dma::rx_ring::RxRingPaused;
 /// fn process(paused: &RxRingPaused<'_, 2>) {
 ///     paused.completed_descriptor_frontier();
 /// }

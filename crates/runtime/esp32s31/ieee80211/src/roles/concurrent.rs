@@ -23,7 +23,7 @@ use oer_memory::{
     AffineSpscTrySendError, TaggedStableDmaBacking,
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     rx::{
         RxError, RxIngressConfig, RxSegment,
@@ -36,9 +36,9 @@ use oer_esp32s31_wifi_mac::{
     },
 };
 
-use oer_ieee80211::vif::{StaApRxAddresses, StaApRxRoute, StaApVif, classify_sta_ap_rx};
+use oer_ieee80211_mac::vif::{StaApRxAddresses, StaApRxRoute, StaApVif, classify_sta_ap_rx};
 
-use oer_network::NetworkInterfaceId;
+use oer_network_interface::NetworkInterfaceId;
 
 mod control;
 mod rx_service;
@@ -151,7 +151,7 @@ where
 
 /// One upstream station peer plus every peer admitted by the SoftAP policy.
 pub const STA_AP_RX_BLOCK_ACK_PEER_CAPACITY: usize =
-    oer_esp32s31_wifi_ap::protocol::AP_MAX_CLIENTS + 1;
+    oer_esp32s31_ieee80211_ap::protocol::AP_MAX_CLIENTS + 1;
 
 /// Serialized software owner of the eight physical ordinary RX BlockAck banks.
 ///

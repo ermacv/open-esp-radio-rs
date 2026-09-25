@@ -79,7 +79,9 @@ follow `hil/targets/esp32s31/README.md`.
 
 ## Coding Style & Naming Conventions
 
-Use standard `rustfmt` formatting (four-space indentation). Follow Rust naming:
+Use standard `rustfmt` formatting (four-space indentation). Name packages by
+the `oer-<chip>-<domain>-<component>-<binding>` rule in
+[docs/architecture.md](docs/architecture.md#package-names). Follow Rust naming:
 `snake_case` functions/modules, `UpperCamelCase` types, and `SCREAMING_SNAKE_CASE`
 constants. Prefer typed ownership/state transitions over raw addresses or
 integer register images. Handwritten code outside the generated/restricted PAC

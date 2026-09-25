@@ -9,12 +9,12 @@
 use core::cell::RefCell;
 
 use critical_section::Mutex;
-use oer_esp32s31_wifi::protected_data_rx::{
+use oer_esp32s31_ieee80211::protected_data_rx::{
     ProtectedDataFragmentRxError, UnprotectedDataFragmentRxError, view_protected_data,
     view_protected_data_fragment, view_unprotected_data, view_unprotected_data_fragment,
 };
-use oer_esp32s31_wifi_dma::rx_ring::RxSegment;
-use oer_ieee80211::{
+use oer_esp32s31_ieee80211_dma::rx_ring::RxSegment;
+use oer_ieee80211_mac::{
     ccmp::{
         CcmpHeader, CcmpKeyId, CcmpReplayError, CcmpReplayLane, CcmpRxReplayCandidate,
         CcmpRxReplayState,
@@ -39,17 +39,17 @@ use oer_ieee80211::{
         parse_individual_twt_action,
     },
 };
-use oer_wifi_rsn::{EapolKeyFrame, EapolParseError};
-use oer_wifi_softmac::{
+use oer_ieee80211_rsn::{EapolKeyFrame, EapolParseError};
+use oer_ieee80211_softmac::{
     EspNowPeerId, EspNowReceiveError, EspNowReceivedV1, EspNowReceivedV2, EspNowRxEpoch,
     EspNowRxOutcome, EspNowV2ReceiveError, EspNowV2RxOutcome, MacRxMetadata,
 };
 #[cfg(test)]
-use oer_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence};
-use oer_wifi_sta::power_save::StaPsPollDelivery;
+use oer_ieee80211_softmac::{MacRxCryptoStatus, MacRxEvidence};
+use oer_ieee80211_sta::power_save::StaPsPollDelivery;
 use static_cell::StaticCell;
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     rx::ampdu::{RxBlockAckMpduKey, rx_block_ack_mpdu_key},
     rx::{
         PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, decode_normalized_rx_metadata,
@@ -59,7 +59,7 @@ use oer_esp32s31_wifi_mac::{
     tx::{HeTriggerScheduledRate, HeTriggerScheduledRateError},
 };
 
-use oer_esp32s31_wifi::esp_now::normalize_esp_now_rx_metadata;
+use oer_esp32s31_ieee80211::esp_now::normalize_esp_now_rx_metadata;
 
 const TRIGGER_FRAME_CONTROL: u16 = 0x0024;
 const NDPA_FRAME_CONTROL: u16 = 0x0054;
@@ -2116,7 +2116,7 @@ impl ConnectedRxDispatcher {
         result
     }
 
-    oer_esp32s31_wifi_dma::place_rx_hot_path! {
+    oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
       /// Dispatch an ordinary production WPA2 pairwise MPDU without routing
       /// it through the group-publication and fragment-reassembly owner graph.
       #[inline(never)]

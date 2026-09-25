@@ -1,7 +1,7 @@
 //! Product-level HIL composition.
 //!
 //! This module is deliberately an application of the public driver API. PAC,
-//! DMA, ISR and station internals stay in `oer-esp32s31-embassy-wifi`.
+//! DMA, ISR and station internals stay in `oer-esp32s31-ieee80211-system`.
 
 mod phy;
 
@@ -38,26 +38,26 @@ use oer::wifi::{
     WifiScanRequest as DriverWifiScanRequest, WifiSsid,
 };
 #[cfg(feature = "mac-irq-telemetry")]
-use oer_esp32s31_embassy_wifi::MacIrqObservation;
+use oer_esp32s31_ieee80211_system::MacIrqObservation;
 
 #[cfg(feature = "driver-observation")]
-use oer_esp32s31_embassy_wifi::{
+use oer_esp32s31_ieee80211_system::{
     AccessPointObservation, DiagnosticObservers, DiagnosticSnapshot, StationAttemptObservation,
 };
-use oer_esp32s31_embassy_wifi::{
+use oer_esp32s31_ieee80211_system::{
     AccessPointStatus, ConnectedDisconnectReason, Esp32s31MonitorBasebandFormat,
     Esp32s31MonitorPhyInfo, MonitorFrames, RadioConfig, RadioParts, RadioRunners, RadioSystem,
     ReceivedMonitorFrame, StationLinkState, StationStatus, SystemRunner, WifiControl, WifiDevice,
     WifiParts,
 };
 #[cfg(feature = "connected-datapath-poll-telemetry")]
-use oer_esp32s31_embassy_wifi::{ConnectedDatapathPollBatch, ConnectedDatapathPollObserver};
+use oer_esp32s31_ieee80211_system::{ConnectedDatapathPollBatch, ConnectedDatapathPollObserver};
 
 use oer_esp32s31_phy::{
     PhyCalibrationIdentity, PhyCalibrationPath, analog::rfpll::phy_get_rf_cal_version,
 };
 
-use oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
+use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 #[cfg(all(
     feature = "driver-observation",
     not(any(
@@ -66,14 +66,14 @@ use oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
         feature = "core0-rx-cycle-telemetry"
     ))
 ))]
-use open_esp_radio_hil_esp32s31_telemetry::rx_pipeline::RxCorrectnessObserver;
+use oer_hil_esp32s31_telemetry::rx_pipeline::RxCorrectnessObserver;
 
-use open_esp_radio_hil_esp32s31_telemetry::{
+use oer_hil_esp32s31_telemetry::{
     aggregate_tx::AggregateTxCounters, mac_irq::MacIrqClassificationCounters,
     rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
 };
 
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     Event as HilEvent, NetworkCredentials, NetworkIpv4Configuration, StartupArtifactDisposition,
     StationDisconnectReason, StationEpochEvidence, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN,
     WifiAccessPointEvidence, WifiAccessPointSecurity as HilWifiAccessPointSecurity,
@@ -85,7 +85,7 @@ use open_esp_radio_hil_protocol::{
     WifiStationAccessPointStopEvidence,
 };
 #[cfg(feature = "driver-observation")]
-use open_esp_radio_hil_protocol::{StationAttemptFailureReason, StationFailureStage};
+use oer_hil_protocol::{StationAttemptFailureReason, StationFailureStage};
 
 use crate::console::{
     PreInitializationRequest, WifiControlRequest, complete_access_point_start,
@@ -97,11 +97,11 @@ use crate::console::{
     publish_station_lifecycle, receive_wifi_control_request, runtime_log, set_wifi_role,
 };
 
-use oer_esp32s31_soc::L1CachePerformanceCounters;
+use oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters;
 
-use open_esp_radio_hil_protocol::StationLifecycleEvent;
+use oer_hil_protocol::StationLifecycleEvent;
 
-use oer_wifi_embassy::await_stack_boundary;
+use oer_ieee80211_runtime::await_stack_boundary;
 
 use static_cell::{ConstStaticCell, StaticCell};
 
@@ -115,7 +115,7 @@ mod rx_rejection;
 mod traffic;
 
 #[cfg(not(feature = "driver-observation"))]
-use open_esp_radio_hil_protocol::WifiMacRxHardwareEvidence;
+use oer_hil_protocol::WifiMacRxHardwareEvidence;
 #[cfg(any(
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"
@@ -138,8 +138,8 @@ struct AppNetworkStart {
     station_device: WifiDevice,
     access_point_device: WifiDevice,
     station_ipv4: NetworkIpv4Configuration,
-    rx_checksum: open_esp_radio_hil_protocol::WifiRxChecksumPolicy,
-    tx_udp_checksum: open_esp_radio_hil_protocol::WifiTxUdpChecksumPolicy,
+    rx_checksum: oer_hil_protocol::WifiRxChecksumPolicy,
+    tx_udp_checksum: oer_hil_protocol::WifiTxUdpChecksumPolicy,
     seed: u64,
     l1_cache: &'static L1CachePerformanceCounters,
 }
@@ -164,8 +164,7 @@ pub(in crate::product_hil) struct QualificationSample {
     pub rx_primary: Option<ObservedRxStatistics>,
     pub rx_interrupt_posts: u32,
     pub tx_vector: Option<ObservedTxVector>,
-    pub aggregate_tx:
-        Option<open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounterSnapshot>,
+    pub aggregate_tx: Option<oer_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounterSnapshot>,
 }
 
 mod rx_statistics;
@@ -799,9 +798,9 @@ pub(crate) static TASK_POLLS: TaskPollSet = TaskPollSet::new();
 
 #[cfg(feature = "connected-datapath-poll-telemetry")]
 fn record_connected_datapath_poll_batch(batch: ConnectedDatapathPollBatch) {
-    open_esp_radio_hil_esp32s31_telemetry::task_poll::TaskPollCounters::record_batch(
+    oer_hil_esp32s31_telemetry::task_poll::TaskPollCounters::record_batch(
         TASK_POLLS.radio(),
-        open_esp_radio_hil_esp32s31_telemetry::task_poll::TaskPollSnapshot {
+        oer_hil_esp32s31_telemetry::task_poll::TaskPollSnapshot {
             polls: batch.polls,
             poll_micros: batch.poll_micros,
             lifetime_max_micros: batch.maximum_poll_micros,
@@ -1286,16 +1285,16 @@ async fn station_lifecycle_task(mut status: StationStatus) {
                 if !connected {
                     let link = negotiated
                         .filter(|snapshot| matches!(snapshot.state, StationLinkState::Connected));
-                    let security =
-                        link.and_then(|snapshot| snapshot.link_security)
-                            .map(|security| match security {
-                                oer_esp32s31_embassy_wifi::StationLinkSecurity::Open => {
-                                    open_esp_radio_hil_protocol::StationLinkSecurity::Open
-                                }
-                                oer_esp32s31_embassy_wifi::StationLinkSecurity::Wpa2Personal => {
-                                    open_esp_radio_hil_protocol::StationLinkSecurity::Wpa2Personal
-                                }
-                            });
+                    let security = link.and_then(|snapshot| snapshot.link_security).map(
+                        |security| match security {
+                            oer_esp32s31_ieee80211_system::StationLinkSecurity::Open => {
+                                oer_hil_protocol::StationLinkSecurity::Open
+                            }
+                            oer_esp32s31_ieee80211_system::StationLinkSecurity::Wpa2Personal => {
+                                oer_hil_protocol::StationLinkSecurity::Wpa2Personal
+                            }
+                        },
+                    );
                     publish_station_lifecycle(StationLifecycleEvent::Connected {
                         generation,
                         association_bandwidth_mhz: link
@@ -1455,9 +1454,7 @@ fn station_request_with_preference(
     )
 }
 
-fn access_point_request(
-    request: &open_esp_radio_hil_protocol::WifiAccessPointRequest,
-) -> AccessPointRequest {
+fn access_point_request(request: &oer_hil_protocol::WifiAccessPointRequest) -> AccessPointRequest {
     let ssid = WifiSsid::new(request.credentials.ssid())
         .expect("validated HIL AP SSID must fit the driver request");
     let security = match request.security {
@@ -1504,7 +1501,7 @@ pub async fn run(
     platform: EspHalRadioPeripheral,
     trng: Trng,
     l1_cache: &'static L1CachePerformanceCounters,
-    watchdog: &'static oer_esp32s31_soc::watchdog::DeadlineWatchdog,
+    watchdog: &'static oer_esp32s31_soc_esp_hal::watchdog::DeadlineWatchdog,
 ) {
     DIAGNOSTIC_STAGE.store(10, Ordering::Release);
     #[cfg(not(any(
@@ -1558,7 +1555,7 @@ pub async fn run(
     configure_multi_flow_burst_datagrams(
         if matches!(
             tx_buffer,
-            open_esp_radio_hil_protocol::WifiTxBufferPolicy::OwnedSramPromotionBurstDiagnostic
+            oer_hil_protocol::WifiTxBufferPolicy::OwnedSramPromotionBurstDiagnostic
         ) {
             32
         } else {
@@ -1566,35 +1563,33 @@ pub async fn run(
         },
     );
     #[cfg(feature = "tx-psram-dma-probe")]
-    oer_esp32s31_embassy_wifi::configure_direct_psram_tx_dma_probe(matches!(
+    oer_esp32s31_ieee80211_system::configure_direct_psram_tx_dma_probe(matches!(
         tx_buffer,
-        open_esp_radio_hil_protocol::WifiTxBufferPolicy::PsramDirectDmaDiagnostic
+        oer_hil_protocol::WifiTxBufferPolicy::PsramDirectDmaDiagnostic
     ));
     #[cfg(feature = "core0-rx-coarse-telemetry")]
-    oer_esp32s31_embassy_wifi::configure_interrupt_driven_recycled_append_for_diagnostics(
+    oer_esp32s31_ieee80211_system::configure_interrupt_driven_recycled_append_for_diagnostics(
         matches!(
             rx_continuation,
-            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::LevelIrqDiagnostic
+            oer_hil_protocol::WifiRxContinuationPolicy::LevelIrqDiagnostic
         ),
     );
     #[cfg(feature = "core0-rx-coarse-telemetry")]
-    oer_esp32s31_embassy_wifi::configure_adaptive_recycled_rx_probe_for_diagnostics(matches!(
+    oer_esp32s31_ieee80211_system::configure_adaptive_recycled_rx_probe_for_diagnostics(matches!(
         rx_continuation,
-        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic
+        oer_hil_protocol::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic
     ));
     #[cfg(feature = "core0-rx-coarse-telemetry")]
-    oer_esp32s31_embassy_wifi::configure_recycled_rx_probe_delay_for_diagnostics(
+    oer_esp32s31_ieee80211_system::configure_recycled_rx_probe_delay_for_diagnostics(
         match rx_continuation {
-            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe64Diagnostic => 64,
-            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe128Diagnostic => 128,
-            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe256Diagnostic => 256,
-            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe512Diagnostic => 512,
-            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe1024Diagnostic => {
-                1024
-            }
-            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::ImmediateSoftwareProbe
-            | open_esp_radio_hil_protocol::WifiRxContinuationPolicy::LevelIrqDiagnostic
-            | open_esp_radio_hil_protocol::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic => 0,
+            oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe64Diagnostic => 64,
+            oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe128Diagnostic => 128,
+            oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe256Diagnostic => 256,
+            oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe512Diagnostic => 512,
+            oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe1024Diagnostic => 1024,
+            oer_hil_protocol::WifiRxContinuationPolicy::ImmediateSoftwareProbe
+            | oer_hil_protocol::WifiRxContinuationPolicy::LevelIrqDiagnostic
+            | oer_hil_protocol::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic => 0,
         },
     );
     let mut station_address = [0; 6];
@@ -1693,7 +1688,7 @@ pub async fn run(
 
     let started_at = Instant::now();
     let RadioSystem { radio, runners } =
-        await_stack_boundary!(oer_esp32s31_embassy_wifi::new(platform, trng, config))
+        await_stack_boundary!(oer_esp32s31_ieee80211_system::new(platform, trng, config))
             .unwrap_or_else(|error| panic!("production radio initialization failed: {error:?}"));
     let RadioRunners { hardware: runner } = runners;
     let RadioParts {
@@ -1818,28 +1813,26 @@ pub async fn run(
     // path which is not executing.
     #[cfg(feature = "core0-rx-coarse-telemetry")]
     let effective_rx_continuation = match rx_continuation {
-        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::ImmediateSoftwareProbe => {
+        oer_hil_protocol::WifiRxContinuationPolicy::ImmediateSoftwareProbe => {
             "immediate-software-probe"
         }
-        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::LevelIrqDiagnostic => "level-irq",
-        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe64Diagnostic => {
+        oer_hil_protocol::WifiRxContinuationPolicy::LevelIrqDiagnostic => "level-irq",
+        oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe64Diagnostic => {
             "delayed-probe-64us"
         }
-        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe128Diagnostic => {
+        oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe128Diagnostic => {
             "delayed-probe-128us"
         }
-        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe256Diagnostic => {
+        oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe256Diagnostic => {
             "delayed-probe-256us"
         }
-        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe512Diagnostic => {
+        oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe512Diagnostic => {
             "delayed-probe-512us"
         }
-        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe1024Diagnostic => {
+        oer_hil_protocol::WifiRxContinuationPolicy::DelayedProbe1024Diagnostic => {
             "delayed-probe-1024us"
         }
-        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic => {
-            "adaptive-probe"
-        }
+        oer_hil_protocol::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic => "adaptive-probe",
     };
     #[cfg(not(feature = "core0-rx-coarse-telemetry"))]
     let effective_rx_continuation = "adaptive-probe";
@@ -1883,7 +1876,7 @@ enum ProductWifiRole<P> {
 async fn start_station_access_point_role<P: oer::wifi::WifiSupervisorPort>(
     idle: oer::wifi::WifiIdle<P>,
     request_id: u32,
-    request: open_esp_radio_hil_protocol::WifiStationAccessPointRequest,
+    request: oer_hil_protocol::WifiStationAccessPointRequest,
 ) -> ProductWifiRole<P>
 where
     P::Error: core::fmt::Debug,
@@ -2051,7 +2044,7 @@ async fn wifi_role_task(
                         #[cfg(feature = "tx-psram-dma-probe")]
                         {
                             let observation =
-                                oer_esp32s31_embassy_wifi::direct_psram_tx_dma_probe_observation();
+                                oer_esp32s31_ieee80211_system::direct_psram_tx_dma_probe_observation();
                             runtime_log(format_args!(
                                 "OPEN_RADIO_HIL psram_tx_dma prepares={} first_address={:#010x} last_address={:#010x}",
                                 observation.prepares,

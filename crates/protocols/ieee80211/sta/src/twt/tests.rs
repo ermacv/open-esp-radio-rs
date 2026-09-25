@@ -1,5 +1,5 @@
 use super::*;
-use oer_ieee80211::twt::IndividualTwtFlowType;
+use oer_ieee80211_mac::twt::IndividualTwtFlowType;
 
 const CONFIG: IndividualTwtRequesterConfig =
     match IndividualTwtRequesterConfig::new(1_000, 100, 2, 2) {

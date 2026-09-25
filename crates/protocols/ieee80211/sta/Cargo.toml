@@ -1,5 +1,5 @@
 [package]
-name = "oer-wifi-sta"
+name = "oer-ieee80211-sta"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +8,7 @@ repository.workspace = true
 description = "Executor- and chip-independent Wi-Fi station MLME and policy"
 
 [dependencies]
-oer-ieee80211 = { path = "../mac" }
+oer-ieee80211-mac = { path = "../mac" }
 
 [lints]
 workspace = true

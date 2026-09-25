@@ -6,7 +6,7 @@
 
 use core::num::{NonZeroU16, NonZeroU32};
 
-use oer_network::NetworkInterfaceId;
+use oer_network_interface::NetworkInterfaceId;
 
 /// Valid 802.11 QoS traffic identifier.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

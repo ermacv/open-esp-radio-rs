@@ -1,6 +1,6 @@
 //! Synthetic service profiles for hardware-independent facade tests.
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     MacInterfaceCapabilities, MacOperationOwner, MacOperationOwnership, MacResourceLimits,
     MacServiceCapabilities,
 };

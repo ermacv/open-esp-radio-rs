@@ -126,9 +126,9 @@ fn adapter_service_publishes_the_original_buffer_before_its_future_is_polled() {
 
 use core::cell::{Cell, RefCell};
 
-use oer_esp32s31_wifi::rx::transaction::{self, Publisher};
+use oer_esp32s31_ieee80211::rx::transaction::{self, Publisher};
 
-use oer_esp32s31_wifi_mac::rx::pool::NetworkRxFrame;
+use oer_esp32s31_ieee80211_mac::rx::pool::NetworkRxFrame;
 
 type TransactionFrame<'pool> = NetworkRxFrame<'pool, 1, TRANSACTION_CAPACITY>;
 

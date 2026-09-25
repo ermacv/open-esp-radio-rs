@@ -1,7 +1,7 @@
 use super::*;
 use crate::datapath::DatapathRxProgress;
-use oer_esp32s31_wifi_dma::rx_storage::RxDmaStorage;
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_dma::rx_storage::RxDmaStorage;
+use oer_esp32s31_ieee80211_mac::{
     rx::pool::{RxDmaDeferredStageUnitOutcome, RxStageError, RxStagePool, RxStageTransactionError},
     rx::{PUBLIC_HEADER_SIZE, RxDma, RxRingError, RxRingLive},
 };
@@ -224,7 +224,7 @@ where
                     .descriptors()
                     .get(unit_head_index)
                     .map(|descriptor| {
-                        oer_esp32s31_wifi_dma::descriptor::length(descriptor.word0()) as usize
+                        oer_esp32s31_ieee80211_dma::descriptor::length(descriptor.word0()) as usize
                     })
                     .unwrap_or(0),
             };

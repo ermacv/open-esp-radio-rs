@@ -421,8 +421,8 @@ fn capture_serial(
                     // before Hello. Arbitrary boot text is not a wire failure.
                     if matches!(
                         error,
-                        open_esp_radio_hil_protocol::DecodeError::ProtocolVersion
-                            | open_esp_radio_hil_protocol::DecodeError::FramingVersion
+                        oer_hil_protocol::DecodeError::ProtocolVersion
+                            | oer_hil_protocol::DecodeError::FramingVersion
                     ) {
                         state.health.fail(error.to_string());
                     } else {

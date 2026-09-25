@@ -1,6 +1,6 @@
 //! Bounded physical MAC stop before RX ownership is withdrawn.
+use oer_esp32s31_ieee80211_mac::init::MacRuntimeStopHardware;
 use oer_esp32s31_phy::state::client::PhyTrackingTimer;
-use oer_esp32s31_wifi_mac::init::MacRuntimeStopHardware;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StopError {

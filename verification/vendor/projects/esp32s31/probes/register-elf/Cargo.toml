@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-verification-esp32s31-register-probes-elf"
+name = "oer-verification-esp32s31-register-probes-elf"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,7 @@ build = "build.rs"
 description = "Linked ESP32-S31 PAC/HAL register probe image"
 
 [dependencies]
-open-esp-radio-verification-esp32s31-register-probes = { path = "../register-library" }
+oer-verification-esp32s31-register-probes = { path = "../register-library" }
 
 [lints.rust]
 unexpected_cfgs = "allow"

@@ -1,8 +1,6 @@
 //! Diagnostic Host: retain one RX ACL credit without stopping HCI event reads.
 use super::*;
-use open_esp_radio_hil_protocol::{
-    BluetoothAclBackpressureEvidence, bluetooth_backpressure_packet,
-};
+use oer_hil_protocol::{BluetoothAclBackpressureEvidence, bluetooth_backpressure_packet};
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static ARMED: AtomicBool = AtomicBool::new(false);

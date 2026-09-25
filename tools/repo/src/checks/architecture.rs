@@ -6,10 +6,21 @@ mod facade;
 mod unsafe_policy;
 
 const INTEGRATION: &str = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml";
-const INTEGRATION_PACKAGE: &str = "oer-esp32s31-embassy-wifi";
+const INTEGRATION_PACKAGE: &str = "oer-esp32s31-ieee80211-system";
 const HIL_RUNTIME: &str = "hil/targets/esp32s31/runtime/Cargo.toml";
 
 pub fn run(ctx: &Context) -> Result<()> {
+    // The Blobray workspace names its own packages under its completion plan.
+    let blobray = ctx.root.join("tools/blobray").canonicalize()?;
+    for package in source_packages(ctx)? {
+        if package.manifest.starts_with(&blobray) {
+            continue;
+        }
+        validate_package_name(
+            package.package.name.as_str(),
+            classification(&package.package)?.layer,
+        )?;
+    }
     let packages = production_packages(ctx)?;
     validate_production_edges(&packages)?;
     unsafe_policy::check(&packages)?;
@@ -42,11 +53,11 @@ pub fn run(ctx: &Context) -> Result<()> {
     facade::check(ctx)?;
     let graph = cargo::metadata(ctx, &ctx.root.join("Cargo.toml"), &[], Some(TARGET), true)?;
     for name in [
-        "oer-wifi-ap",
-        "oer-wifi-sta",
-        "oer-wifi-softmac",
-        "oer-esp32s31-wifi-ap",
-        "oer-esp32s31-wifi-sta",
+        "oer-ieee80211-ap",
+        "oer-ieee80211-sta",
+        "oer-ieee80211-softmac",
+        "oer-esp32s31-ieee80211-ap",
+        "oer-esp32s31-ieee80211-sta",
     ] {
         for package in closure(&graph, &id_for_name(&graph, name)?)? {
             if package.name.as_str() == "esp-hal" || package.name.as_str().starts_with("embassy-") {
@@ -65,7 +76,7 @@ pub fn run(ctx: &Context) -> Result<()> {
         "--locked",
         "--offline",
         "--package",
-        "oer-esp32s31-wifi-runtime",
+        "oer-esp32s31-ieee80211-runtime",
     ]))?;
     process::run(
         ctx.cargo()
@@ -93,10 +104,10 @@ fn check_esp32s31_composition(ctx: &Context) -> Result<()> {
     for required in [
         "oer-esp32s31-hal",
         "oer-esp32s31-phy",
-        "oer-esp32s31-wifi",
-        "oer-esp32s31-wifi-mac",
-        "oer-esp32s31-wifi-ap",
-        "oer-esp32s31-wifi-sta",
+        "oer-esp32s31-ieee80211",
+        "oer-esp32s31-ieee80211-mac",
+        "oer-esp32s31-ieee80211-ap",
+        "oer-esp32s31-ieee80211-sta",
     ] {
         if !package.dependencies.iter().any(|d| d.name == required) {
             return Err(format!("integration lacks required direct dependency {required}").into());
@@ -195,12 +206,12 @@ pub fn reject_wifi_in_bluetooth(graph: &Graph, manifest: &std::path::Path) -> Re
     let root = graph.root(manifest)?;
     for id in graph.reachable(&root).keys() {
         let name = graph.package(id).name.as_str();
-        if name.starts_with("oer-wifi")
-            || name.starts_with("oer-ieee80211")
-            || name.starts_with("oer-esp32s31-wifi")
-            || name == "oer-esp32s31-embassy-wifi"
-            || name.starts_with("embassy-net")
-        {
+        // The package naming rule gives every Wi-Fi package the `ieee80211`
+        // domain token.
+        let wifi = name
+            .strip_prefix("oer-")
+            .is_some_and(|tokens| tokens.split('-').any(|token| token == "ieee80211"));
+        if wifi || name.starts_with("embassy-net") {
             return Err(format!("Bluetooth consumer depends on Wi-Fi package {name}").into());
         }
     }

@@ -21,7 +21,7 @@ use oer_esp32s31_hal::{
     },
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     ap_policy::ApRxPolicyHardware,
     ap_tsf::ApTsfHardware,
     crypto::{
@@ -291,7 +291,7 @@ impl StaLinkRxPolicyHardware for CooperativeRadioHardware<'_> {
     }
 }
 
-impl oer_esp32s31_wifi_mac::init::StaEspNowRxPolicyHardware for CooperativeRadioHardware<'_> {
+impl oer_esp32s31_ieee80211_mac::init::StaEspNowRxPolicyHardware for CooperativeRadioHardware<'_> {
     fn apply_sta_esp_now_policy(&mut self, bssid: [u8; 6]) {
         self.registers
             .access()
@@ -435,7 +435,7 @@ impl RxDma for CooperativeRadioHardware<'_> {
         RxDma::next_descriptor_low(&mut self.wifi_mac_hal())
     }
 
-    fn next_descriptor(&mut self) -> oer_esp32s31_wifi_dma::rx_dma::RxDmaNextDescriptor {
+    fn next_descriptor(&mut self) -> oer_esp32s31_ieee80211_dma::rx_dma::RxDmaNextDescriptor {
         RxDma::next_descriptor(&mut self.wifi_mac_hal())
     }
 
@@ -604,7 +604,7 @@ impl CooperativeRadioHardware<'_> {
     }
 }
 
-impl oer_esp32s31_wifi_mac::rx::hardware::RxBlockAckHardware for CooperativeRadioHardware<'_> {
+impl oer_esp32s31_ieee80211_mac::rx::hardware::RxBlockAckHardware for CooperativeRadioHardware<'_> {
     fn diagnostic_rx_block_ack_entry_snapshot(
         &mut self,
         hardware_index: u8,

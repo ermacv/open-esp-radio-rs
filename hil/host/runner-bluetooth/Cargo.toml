@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-hil-runner-bluetooth"
+name = "oer-hil-runner-bluetooth"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,12 +9,12 @@ publish = false
 description = "Bluetooth LE HIL workloads and the Linux Bluetooth fixture"
 
 [dependencies]
-hil-core = { package = "open-esp-radio-hil-runner-core", path = "../runner-core" }
+hil-core = { package = "oer-hil-runner-core", path = "../runner-core" }
 rustix = { version = "1.1.4", features = ["event", "fs", "net", "process", "stdio"] }
 oer-process = { path = "../../../tools/process" }
-open-esp-radio-hil-fixture = { path = "../fixture" }
+oer-hil-fixture = { path = "../fixture" }
 tempfile = "3"
-open-esp-radio-hil-protocol = { path = "../../protocol" }
+oer-hil-protocol = { path = "../../protocol" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 zbus = "=5.19.0"
@@ -23,7 +23,7 @@ async-io = "2.6"
 futures-lite = "2.6"
 
 [dev-dependencies]
-hil-core = { package = "open-esp-radio-hil-runner-core", path = "../runner-core", features = ["test-support"] }
+hil-core = { package = "oer-hil-runner-core", path = "../runner-core", features = ["test-support"] }
 
 [lints]
 workspace = true

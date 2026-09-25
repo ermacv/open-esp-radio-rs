@@ -1,5 +1,5 @@
 use super::*;
-use oer_ieee80211::management::MAX_SSID_LEN;
+use oer_ieee80211_mac::management::MAX_SSID_LEN;
 
 #[test]
 fn ssid_is_binary_and_length_checked() {

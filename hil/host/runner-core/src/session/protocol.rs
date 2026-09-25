@@ -45,7 +45,7 @@ impl SerialCapture {
             .body
         {
             Event::StackUsage(stack) => Ok(Some(stack)),
-            Event::Rejected(open_esp_radio_hil_protocol::RejectReason::InvalidState) => Ok(None),
+            Event::Rejected(oer_hil_protocol::RejectReason::InvalidState) => Ok(None),
             Event::Rejected(reason) => {
                 Err(format!("device rejected stack observation: {reason:?}").into())
             }
@@ -195,7 +195,7 @@ impl SerialCapture {
         let first_event = self.protocol_event_count();
         let response = self.send_command(
             0,
-            Command::Initialize(open_esp_radio_hil_protocol::InitializationConfiguration {
+            Command::Initialize(oer_hil_protocol::InitializationConfiguration {
                 ap_scheduler: target.settings.ap_scheduler,
                 ipv4: target.lab.station.ipv4(),
                 data_plane: target.settings.data_plane,
@@ -345,16 +345,13 @@ impl SerialCapture {
     /// both UDP payload directions can be correlated to this lifecycle stage.
     pub fn start_identified_udp_session(
         &self,
-        build: impl FnOnce(open_esp_radio_hil_protocol::UdpSessionPayloadIdentity) -> SessionConfig,
-    ) -> Result<(
-        SessionHandle,
-        open_esp_radio_hil_protocol::UdpSessionPayloadIdentity,
-    )> {
+        build: impl FnOnce(oer_hil_protocol::UdpSessionPayloadIdentity) -> SessionConfig,
+    ) -> Result<(SessionHandle, oer_hil_protocol::UdpSessionPayloadIdentity)> {
         let boot_id = self
             .latest_boot_id()
             .ok_or("device omitted the current boot identity")?;
         let session_id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
-        let identity = open_esp_radio_hil_protocol::UdpSessionPayloadIdentity::new(
+        let identity = oer_hil_protocol::UdpSessionPayloadIdentity::new(
             boot_id.rotate_left(32).wrapping_add(session_id),
         );
         let session = self.start_session_with_id(session_id, build(identity))?;
@@ -693,7 +690,7 @@ impl SerialCapture {
 
     pub fn station_pause_round_trip(
         &self,
-        operation: open_esp_radio_hil_protocol::StationPauseOperation,
+        operation: oer_hil_protocol::StationPauseOperation,
         timeout: Duration,
     ) -> Result<pause::Report> {
         let handle =
@@ -859,9 +856,9 @@ impl SerialCapture {
 
     pub fn probe_memory_benchmark(
         &self,
-        request: open_esp_radio_hil_protocol::MemoryBenchmarkRequest,
+        request: oer_hil_protocol::MemoryBenchmarkRequest,
         timeout: Duration,
-    ) -> Result<open_esp_radio_hil_protocol::MemoryBenchmarkEvidence> {
+    ) -> Result<oer_hil_protocol::MemoryBenchmarkEvidence> {
         let response = self.send_command(0, Command::ProbeMemoryBenchmark(request), timeout)?;
         match response.body {
             Event::MemoryBenchmarkCompleted(evidence) => Ok(evidence),
@@ -874,8 +871,8 @@ impl SerialCapture {
 
     pub fn bluetooth_dtm(
         &self,
-        operation: open_esp_radio_hil_protocol::BluetoothDtmOperation,
-    ) -> Result<open_esp_radio_hil_protocol::BluetoothDtmEvidence> {
+        operation: oer_hil_protocol::BluetoothDtmOperation,
+    ) -> Result<oer_hil_protocol::BluetoothDtmEvidence> {
         match self
             .send_command(0, Command::BluetoothDtm(operation), Duration::from_secs(5))?
             .body
@@ -885,7 +882,7 @@ impl SerialCapture {
         }
     }
 
-    pub fn bluetooth_gatt(&self) -> Result<open_esp_radio_hil_protocol::BluetoothGattEvidence> {
+    pub fn bluetooth_gatt(&self) -> Result<oer_hil_protocol::BluetoothGattEvidence> {
         match self
             .send_command(0, Command::QueryBluetoothGatt, Duration::from_secs(2))?
             .body
@@ -898,9 +895,7 @@ impl SerialCapture {
         }
     }
 
-    pub fn bluetooth_secure_gatt(
-        &self,
-    ) -> Result<open_esp_radio_hil_protocol::BluetoothSecureGattEvidence> {
+    pub fn bluetooth_secure_gatt(&self) -> Result<oer_hil_protocol::BluetoothSecureGattEvidence> {
         let evidence = self.bluetooth_secure_gatt_snapshot()?;
         self.require_bluetooth_irq_stack()?;
         Ok(evidence)
@@ -910,7 +905,7 @@ impl SerialCapture {
     /// callers selecting this path must explicitly own their sampling policy.
     pub fn bluetooth_secure_gatt_snapshot(
         &self,
-    ) -> Result<open_esp_radio_hil_protocol::BluetoothSecureGattEvidence> {
+    ) -> Result<oer_hil_protocol::BluetoothSecureGattEvidence> {
         match self
             .send_command(0, Command::QueryBluetoothSecureGatt, Duration::from_secs(2))?
             .body
@@ -966,7 +961,7 @@ impl SerialCapture {
         epoch: u32,
         release: bool,
     ) -> Result<()> {
-        use open_esp_radio_hil_protocol::BluetoothGattResetReadGate as Phase;
+        use oer_hil_protocol::BluetoothGattResetReadGate as Phase;
         if boot == 0 {
             return Err("Reset gate requires observed boot identity".into());
         }
@@ -1001,7 +996,7 @@ impl SerialCapture {
             )?
             .body
         {
-            Event::Rejected(open_esp_radio_hil_protocol::RejectReason::InvalidState) => Ok(()),
+            Event::Rejected(oer_hil_protocol::RejectReason::InvalidState) => Ok(()),
             response => Err(format!(
                 "terminal GATT epoch accepted restart or lost identity: {response:?}"
             )
@@ -1013,8 +1008,22 @@ impl SerialCapture {
         if boot == 0 {
             return Err("Reset read fault requires observed boot identity".into());
         }
-        match self.exchange(boot, 0, Command::FailBluetoothGattResetRead { epoch }, Duration::from_secs(2))?.body {
-            Event::BluetoothSecureGatt(e) if e.epoch == epoch && e.reset_read_gate == open_esp_radio_hil_protocol::BluetoothGattResetReadGate::FailureRequested => Ok(()),
+        match self
+            .exchange(
+                boot,
+                0,
+                Command::FailBluetoothGattResetRead { epoch },
+                Duration::from_secs(2),
+            )?
+            .body
+        {
+            Event::BluetoothSecureGatt(e)
+                if e.epoch == epoch
+                    && e.reset_read_gate
+                        == oer_hil_protocol::BluetoothGattResetReadGate::FailureRequested =>
+            {
+                Ok(())
+            }
             response => Err(format!("Reset read fault rejected: {response:?}").into()),
         }
     }
@@ -1022,7 +1031,7 @@ impl SerialCapture {
     pub fn confirm_bluetooth_gatt(
         &self,
         boot: u64,
-        decision: open_esp_radio_hil_protocol::BluetoothNumericDecision,
+        decision: oer_hil_protocol::BluetoothNumericDecision,
     ) -> Result<()> {
         if boot == 0 {
             return Err("Numeric Comparison requires the displayed boot identity".into());
@@ -1041,7 +1050,7 @@ impl SerialCapture {
         }
     }
 
-    pub fn boot_status(&self) -> Result<open_esp_radio_hil_protocol::BootEvidence> {
+    pub fn boot_status(&self) -> Result<oer_hil_protocol::BootEvidence> {
         match self
             .send_command(0, Command::GetBootStatus, Duration::from_secs(5))?
             .body
@@ -1051,10 +1060,7 @@ impl SerialCapture {
         }
     }
 
-    pub fn system_watchdog_test(
-        &self,
-        mode: open_esp_radio_hil_protocol::WatchdogTestMode,
-    ) -> Result<()> {
+    pub fn system_watchdog_test(&self, mode: oer_hil_protocol::WatchdogTestMode) -> Result<()> {
         match self
             .send_command(0, Command::SystemWatchdogTest(mode), Duration::from_secs(5))?
             .body
@@ -1066,8 +1072,8 @@ impl SerialCapture {
 
     pub fn phy_fault(
         &self,
-        command: open_esp_radio_hil_protocol::PhyFaultCommand,
-    ) -> Result<open_esp_radio_hil_protocol::PhyFaultEvidence> {
+        command: oer_hil_protocol::PhyFaultCommand,
+    ) -> Result<oer_hil_protocol::PhyFaultEvidence> {
         match self
             .send_command(0, Command::PhyFault(command), Duration::from_secs(2))?
             .body
@@ -1080,7 +1086,7 @@ impl SerialCapture {
     pub fn start_fault_calibration(&self) -> Result<()> {
         self.request_wifi_command(
             Command::PauseStation {
-                operation: open_esp_radio_hil_protocol::StationPauseOperation::Calibration,
+                operation: oer_hil_protocol::StationPauseOperation::Calibration,
             },
             "fault calibration",
         )
@@ -1091,14 +1097,13 @@ impl SerialCapture {
     /// taking any physical owner and remain on this boot.
     pub fn require_invalid_pause_rejected(&self) -> Result<()> {
         let report = self.station_pause_round_trip(
-            open_esp_radio_hil_protocol::StationPauseOperation::Synthetic {
+            oer_hil_protocol::StationPauseOperation::Synthetic {
                 duration_micros: 0,
                 notify_ap: false,
             },
             Duration::from_secs(2),
         )?;
-        if report.evidence.result
-            == open_esp_radio_hil_protocol::StationPauseResult::InvalidDuration
+        if report.evidence.result == oer_hil_protocol::StationPauseResult::InvalidDuration
             && report.evidence.tracking.is_none()
             && report.evidence.elapsed_micros == 0
         {
@@ -1128,8 +1133,8 @@ impl SerialCapture {
 
     pub fn bluetooth_peripheral(
         &self,
-        operation: open_esp_radio_hil_protocol::BluetoothPeripheralOperation,
-    ) -> Result<open_esp_radio_hil_protocol::BluetoothPeripheralEvidence> {
+        operation: oer_hil_protocol::BluetoothPeripheralOperation,
+    ) -> Result<oer_hil_protocol::BluetoothPeripheralEvidence> {
         match self
             .send_command(
                 0,
@@ -1145,11 +1150,11 @@ impl SerialCapture {
                     || evidence.is_restarted(operation)
                     || evidence.is_maintained(operation)
                     || (evidence.operation == operation && matches!((operation, evidence.result),
-                        (open_esp_radio_hil_protocol::BluetoothPeripheralOperation::AclBurst, open_esp_radio_hil_protocol::BluetoothPeripheralResult::AclBurstQueued)
-                        | (open_esp_radio_hil_protocol::BluetoothPeripheralOperation::EncryptedAcl { .. }, open_esp_radio_hil_protocol::BluetoothPeripheralResult::EncryptedAclConfigured { .. })
-                        | (open_esp_radio_hil_protocol::BluetoothPeripheralOperation::AclBackpressure { .. }, open_esp_radio_hil_protocol::BluetoothPeripheralResult::AclBackpressureConfigured { .. })
-                        | (open_esp_radio_hil_protocol::BluetoothPeripheralOperation::HoldAclCredit { .. }, open_esp_radio_hil_protocol::BluetoothPeripheralResult::AclCreditHoldConfigured { .. })
-                        | (open_esp_radio_hil_protocol::BluetoothPeripheralOperation::CalibrationTraffic { .. }, open_esp_radio_hil_protocol::BluetoothPeripheralResult::CalibrationTrafficConfigured { .. }))) =>
+                        (oer_hil_protocol::BluetoothPeripheralOperation::AclBurst, oer_hil_protocol::BluetoothPeripheralResult::AclBurstQueued)
+                        | (oer_hil_protocol::BluetoothPeripheralOperation::EncryptedAcl { .. }, oer_hil_protocol::BluetoothPeripheralResult::EncryptedAclConfigured { .. })
+                        | (oer_hil_protocol::BluetoothPeripheralOperation::AclBackpressure { .. }, oer_hil_protocol::BluetoothPeripheralResult::AclBackpressureConfigured { .. })
+                        | (oer_hil_protocol::BluetoothPeripheralOperation::HoldAclCredit { .. }, oer_hil_protocol::BluetoothPeripheralResult::AclCreditHoldConfigured { .. })
+                        | (oer_hil_protocol::BluetoothPeripheralOperation::CalibrationTraffic { .. }, oer_hil_protocol::BluetoothPeripheralResult::CalibrationTrafficConfigured { .. }))) =>
             {
                 self.require_bluetooth_irq_stack()?;
                 Ok(evidence)
@@ -1229,7 +1234,7 @@ impl SerialCapture {
 
     pub fn request_access_point_start(
         &self,
-        request: open_esp_radio_hil_protocol::WifiAccessPointRequest,
+        request: oer_hil_protocol::WifiAccessPointRequest,
     ) -> Result<WifiCommandHandle> {
         self.request_wifi_command(Command::StartAccessPoint(request), "access-point start")
     }
@@ -1240,7 +1245,7 @@ impl SerialCapture {
 
     pub fn request_station_access_point_start(
         &self,
-        request: open_esp_radio_hil_protocol::WifiStationAccessPointRequest,
+        request: oer_hil_protocol::WifiStationAccessPointRequest,
     ) -> Result<WifiCommandHandle> {
         self.request_wifi_command(
             Command::StartStationAccessPoint(request),
@@ -1424,7 +1429,7 @@ impl SerialCapture {
         &self,
         handle: WifiCommandHandle,
         timeout: Duration,
-    ) -> Result<open_esp_radio_hil_protocol::WifiAccessPointEvidence> {
+    ) -> Result<oer_hil_protocol::WifiAccessPointEvidence> {
         let event = self
             .wait_for_wifi_event(handle, timeout, |message| {
                 message.request_id == handle.request_id
@@ -1447,7 +1452,7 @@ impl SerialCapture {
         &self,
         handle: WifiCommandHandle,
         timeout: Duration,
-    ) -> Result<open_esp_radio_hil_protocol::WifiStationAccessPointStopEvidence> {
+    ) -> Result<oer_hil_protocol::WifiStationAccessPointStopEvidence> {
         let event = self
             .wait_for_wifi_event(handle, timeout, |message| {
                 message.request_id == handle.request_id
@@ -1826,7 +1831,7 @@ pub(super) fn beacon_loss_count_in(messages: &[Envelope<Event>]) -> usize {
                 && matches!(
                     message.body,
                     Event::StationLifecycle(StationLifecycleEvent::Disconnected {
-                        reason: open_esp_radio_hil_protocol::StationDisconnectReason::BeaconLoss,
+                        reason: oer_hil_protocol::StationDisconnectReason::BeaconLoss,
                         ..
                     })
                 )

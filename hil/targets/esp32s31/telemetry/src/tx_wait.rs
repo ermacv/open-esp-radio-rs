@@ -3,7 +3,7 @@
 //! No locks, interrupt masking, allocation or text formatting in the producer.
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
-use oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::TxWaitSample;
+use oer_esp32s31_ieee80211_runtime::diagnostics::aggregate_tx::TxWaitSample;
 
 macro_rules! record_fields {
     ($($field:ident),+ $(,)?) => {

@@ -1,15 +1,15 @@
 //! Typed ownership of one AP GTK and the bounded pairwise CCMP slot table.
 
-use oer_esp32s31_wifi_mac::crypto::{
+use oer_esp32s31_ieee80211_mac::crypto::{
     AP_PAIRWISE_SLOT_COUNT, ApGroupCcmpSlot, ApPairwiseCcmpSlot, CcmpTxPacketNumberError,
     CryptoKeyError, install_ap_group_ccmp, install_ap_pairwise_ccmp,
 };
 
-use oer_ieee80211::ccmp::{
+use oer_ieee80211_mac::ccmp::{
     CcmpPacketNumber, CcmpReplayError, CcmpReplayLane, CcmpRxReplayCandidate, CcmpRxReplayState,
 };
 
-use oer_wifi_rsn::{Ptk, frames::RsnGtk};
+use oer_ieee80211_rsn::{Ptk, frames::RsnGtk};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApSecurityError {
@@ -135,7 +135,7 @@ impl<'storage> ApSecurity<'storage> {
         storage: &'storage mut ApPairwiseKeyStorage,
     ) -> Result<Self, ApSecurityStartFailure<'storage>>
     where
-        H: oer_esp32s31_wifi_mac::crypto::CcmpKeyHardware,
+        H: oer_esp32s31_ieee80211_mac::crypto::CcmpKeyHardware,
     {
         if storage.pairwise.iter().any(Option::is_some) {
             return Err(ApSecurityStartFailure {
@@ -181,7 +181,7 @@ impl<'storage> ApSecurity<'storage> {
         ptk: &Ptk,
     ) -> Result<(), ApSecurityError>
     where
-        H: oer_esp32s31_wifi_mac::crypto::CcmpKeyHardware,
+        H: oer_esp32s31_ieee80211_mac::crypto::CcmpKeyHardware,
     {
         if matches!(self, Self::Open { .. }) {
             return Err(ApSecurityError::SecurityModeMismatch);
@@ -222,7 +222,7 @@ impl<'storage> ApSecurity<'storage> {
 
     pub fn clear_peer<H>(&mut self, hardware: &mut H, peer: [u8; 6]) -> Result<(), ApSecurityError>
     where
-        H: oer_esp32s31_wifi_mac::crypto::CcmpKeyHardware,
+        H: oer_esp32s31_ieee80211_mac::crypto::CcmpKeyHardware,
     {
         let Some(index) = self
             .slots()
@@ -385,7 +385,7 @@ impl<'storage> ApSecurity<'storage> {
         hardware: &mut H,
     ) -> (ApSecurityStopReport, &'storage mut ApPairwiseKeyStorage)
     where
-        H: oer_esp32s31_wifi_mac::crypto::CcmpKeyHardware,
+        H: oer_esp32s31_ieee80211_mac::crypto::CcmpKeyHardware,
     {
         let (storage, group) = match self {
             Self::Open { mut storage } => (

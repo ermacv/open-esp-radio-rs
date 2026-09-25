@@ -1,4 +1,4 @@
-use oer_wifi_rsn::{
+use oer_ieee80211_rsn::{
     EAPOL_KEY_FIXED_LEN, EAPOL_KEY_PACKET_LEN, EAPOL_PACKET_TYPE_KEY, RSN_KEY_DESCRIPTOR_TYPE,
 };
 

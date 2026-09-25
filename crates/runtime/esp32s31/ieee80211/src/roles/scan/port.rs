@@ -1,7 +1,7 @@
 //! Concrete scan-port composition for cold and quiesced connected STA epochs.
 //!
 //! The chip-independent lifecycle service owns plan progress and retry policy;
-//! [`StaScanBackend`](oer_esp32s31_wifi_sta::scan::StaScanBackend)
+//! [`StaScanBackend`](oer_esp32s31_ieee80211_sta::scan::StaScanBackend)
 //! owns the
 //! mandatory ESP32-S31 transaction order. This module binds that transaction
 //! to the returned PHY, cooperative register owner, RX ring and control-TX
@@ -18,23 +18,23 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use embassy_time::Timer;
 
-use oer_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
-use oer_esp32s31_wifi_mac::{rx::RxDma, tx::TxHardware};
+use oer_esp32s31_ieee80211_mac::{rx::RxDma, tx::TxHardware};
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     control_tx::ControlTxError,
     scan::{ActiveProbeOutcome, StaScanPort},
     scan_tx::{RunningScanTx, ScanProbeReport, ScanProbeRequest},
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     scan::{ScanRecord, ScanTable, best_matching_ssid_and_security},
     security::WifiSecurityMode,
     station::StaSequenceCounter,
 };
 
-use oer_wifi_sta::scan::StaScanChannelContext;
+use oer_ieee80211_sta::scan::StaScanChannelContext;
 
 /// PHY channel-switch capability required by a running scan.
 pub trait ScanPhyPort<H> {

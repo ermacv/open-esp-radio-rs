@@ -7,16 +7,16 @@
 
 use oer_esp32s31_hal::types::MacStaReceivePolicySnapshot;
 
-use oer_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
+use oer_esp32s31_ieee80211::cooperative_hardware::CooperativeRadioHardware;
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     crypto::{StaGroupCcmpKeyMaterial, StaGroupCcmpReplaceError, StaGroupCcmpSlot},
     init::MacRuntimeStopHardware,
     rx::hardware::{RxBlockAckHardware, S31RxBlockAckAgreementError},
     tx::TxHardware,
 };
 
-use oer_wifi_sta::{
+use oer_ieee80211_sta::{
     power_save::StaDozePermit,
     twt::{IndividualTwtAgreement, IndividualTwtProposal},
 };
@@ -224,7 +224,7 @@ pub trait ConnectedControlHardware:
         _replacement: &StaGroupCcmpKeyMaterial,
     ) -> Result<(), StaGroupCcmpReplaceError> {
         Err(StaGroupCcmpReplaceError::InvalidReplacement(
-            oer_esp32s31_wifi_mac::crypto::CryptoKeyError::HardwareRejected,
+            oer_esp32s31_ieee80211_mac::crypto::CryptoKeyError::HardwareRejected,
         ))
     }
 }

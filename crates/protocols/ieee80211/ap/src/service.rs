@@ -13,17 +13,17 @@ pub use crate::limits::{
     AccessPointClientLimitError,
 };
 
-use oer_ieee80211::ap::{ApAssociationSecurityObservation, ApPowerSaveObservation};
-use oer_ieee80211::beacon::{
+use oer_ieee80211_mac::ap::{ApAssociationSecurityObservation, ApPowerSaveObservation};
+use oer_ieee80211_mac::beacon::{
     TimAssociationId, TimBitmapError, TimVirtualBitmap, WPA2_PERSONAL_CCMP_PSK_RSN_IE,
 };
-use oer_ieee80211::block_ack::{
+use oer_ieee80211_mac::block_ack::{
     AddbaRequest, BlockAckAction, OperationalTxBlockAck, TxBlockAckAlarm, TxBlockAckConfig,
     TxBlockAckError, TxBlockAckResponse, TxBlockAckSession,
 };
-use oer_ieee80211::ht::HtPeerCapabilities;
-use oer_ieee80211::security::WifiSecurityMode;
-use oer_wifi_rsn::{
+use oer_ieee80211_mac::ht::HtPeerCapabilities;
+use oer_ieee80211_mac::security::WifiSecurityMode;
+use oer_ieee80211_rsn::{
     Akm, AssociationSecurityBinding, OwnedEapolFrame, Pmk, Ptk, PtkContext,
     aes::{SoftwareAesKeyWrapError, software_aes128_key_wrap},
     element::validate_rsn_element,

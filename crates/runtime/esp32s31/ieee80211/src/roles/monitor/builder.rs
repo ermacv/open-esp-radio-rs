@@ -28,22 +28,22 @@ use oer_esp32s31_hal::{owner::RadioRuntimeOwner, types::MacInterruptEnableState}
 
 use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
 
-use oer_esp32s31_wifi::{
+use oer_esp32s31_ieee80211::{
     mac_start::WifiMacStartReport,
     runtime::{WifiRoleOwner, WifiRuntimeContext},
     switch_esp32s31_wifi_channel,
 };
 
-use oer_esp32s31_wifi_dma::rx_storage::RxDmaStorageError;
+use oer_esp32s31_ieee80211_dma::rx_storage::RxDmaStorageError;
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     irq::MacInterruptRoute,
     rx::{RxDmaBufferAddresses, RxPhyInfo, RxRingHalted, RxRingLive},
 };
 
-use oer_ieee80211::channel::WifiChannel;
+use oer_ieee80211_mac::channel::WifiChannel;
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     MonitorChannelPolicy, MonitorChannelSequence, MonitorSink, WifiStandaloneMonitorPlan,
 };
 
@@ -853,10 +853,10 @@ where
     /// interface before borrowing sequence, DMA or IRQ state.
     pub fn admit_injection_frontier<const TX_BUFFER_SIZE: usize>(
         &self,
-        request: oer_wifi_softmac::MonitorInjectionRequest<'_>,
+        request: oer_ieee80211_softmac::MonitorInjectionRequest<'_>,
     ) -> Result<
-        oer_esp32s31_wifi::monitor_injection::MonitorInjectionAdmission,
-        oer_esp32s31_wifi::monitor_injection::MonitorInjectionAdmissionError,
+        oer_esp32s31_ieee80211::monitor_injection::MonitorInjectionAdmission,
+        oer_esp32s31_ieee80211::monitor_injection::MonitorInjectionAdmissionError,
     > {
         self.owner
             .service

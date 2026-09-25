@@ -20,11 +20,11 @@ use esp_hal::{
     system::Cpu,
     time::Instant,
 };
+use oer_esp32s31_ieee802154::Ieee802154MonotonicMicrosecondClock;
 use oer_esp32s31_ieee802154_irq::{
     Ieee802154AcknowledgedInterruptSink, Ieee802154InterruptDisposition,
     handle_ieee802154_interrupt,
 };
-use oer_esp32s31_ieee802154_runtime::Ieee802154MonotonicMicrosecondClock;
 use oer_esp32s31_pac::{
     Ieee802154InterruptRegisters, Ieee802154InterruptSetup, Ieee802154TaskRegisters,
 };

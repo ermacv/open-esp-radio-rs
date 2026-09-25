@@ -1,6 +1,6 @@
 use super::*;
 use core::cell::Cell;
-use oer_wifi_datapath::{FillStopReason, SelectedTxSource};
+use oer_ieee80211_datapath::{FillStopReason, SelectedTxSource};
 use std::rc::Rc;
 
 #[derive(Debug)]

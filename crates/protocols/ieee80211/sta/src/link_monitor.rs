@@ -5,7 +5,7 @@
 //! owns the resulting disconnect edge. Power-save policy can consume the same
 //! TIM observation without importing vendor PM contexts or RTOS timers.
 
-use oer_ieee80211::station_beacon::{StaBeaconObservation, StaTimObservation};
+use oer_ieee80211_mac::station_beacon::{StaBeaconObservation, StaTimObservation};
 
 const TU_MICROS: u64 = 1_024;
 

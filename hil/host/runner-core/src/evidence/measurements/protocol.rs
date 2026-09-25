@@ -1,7 +1,7 @@
 //! Projection of decoded protocol values into the host measurement vocabulary.
 
 use crate::evidence::run::{Measurement, MeasurementUnit as Unit};
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     Envelope, Event, EvidenceRecord, LinkHealth, StackUsage, TransportEvidence,
 };
 use std::collections::BTreeMap;
@@ -165,7 +165,7 @@ pub(super) fn observations(
                     ("first", Some(value.production_ed_first)),
                     ("second", value.production_ed_second),
                 ] {
-                    use open_esp_radio_hil_protocol::Ieee802154PolledEdOutcome as Ed;
+                    use oer_hil_protocol::Ieee802154PolledEdOutcome as Ed;
                     if let Some(
                         Ed::Complete { polls, .. }
                         | Ed::Aborted { polls, .. }
@@ -320,7 +320,7 @@ fn stack(records: &mut BTreeMap<String, Measurement>, prefix: &str, value: Stack
 fn stack_values<const N: usize>(
     records: &mut BTreeMap<String, Measurement>,
     prefix: &str,
-    values: [(&str, Option<open_esp_radio_hil_protocol::StackWatermark>); N],
+    values: [(&str, Option<oer_hil_protocol::StackWatermark>); N],
 ) {
     for (core, watermark) in values {
         let Some(watermark) = watermark else { continue };

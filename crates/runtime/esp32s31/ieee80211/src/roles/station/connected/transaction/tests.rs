@@ -89,7 +89,7 @@ impl ConnectedStationRunner<NoopRawMutex> for TestRunner {
         _control: &'a mut StationCommandReceiver<'_, NoopRawMutex>,
     ) -> impl Future<Output = ConnectedStationExit<Self::Error>> + 'a {
         ready(ConnectedStationExit::Disconnected(
-            oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss,
+            oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason::BeaconLoss,
         ))
     }
 
@@ -144,7 +144,7 @@ fn transaction_classifies_the_live_exit_before_revealing_parked_owners() {
             assert!(matches!(
                 exit,
                 ConnectedStationExit::Disconnected(
-                    oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss
+                    oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason::BeaconLoss
                 )
             ));
             assert_eq!(runner.services, 31);

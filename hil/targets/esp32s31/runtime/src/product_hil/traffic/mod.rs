@@ -13,9 +13,9 @@ mod tcp;
 mod udp;
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
-use open_esp_radio_hil_protocol::SessionLinkRequirements;
-use open_esp_radio_hil_protocol::Transport;
-use open_esp_radio_hil_protocol::WifiNetworkInterface;
+use oer_hil_protocol::SessionLinkRequirements;
+use oer_hil_protocol::Transport;
+use oer_hil_protocol::WifiNetworkInterface;
 
 use crate::console::{ActiveSession, receive_session_start};
 

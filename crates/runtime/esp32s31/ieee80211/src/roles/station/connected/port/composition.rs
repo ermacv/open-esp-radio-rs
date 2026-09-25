@@ -315,7 +315,7 @@ impl ConnectedStaPort {
         control.enable_beacon_loss(plan.beacon_loss);
         control
             .enable_hardware_beacon_monitor_frontier(
-                oer_esp32s31_wifi_sta::hardware::beacon_monitor::StationBeaconMonitorBinding::new(
+                oer_esp32s31_ieee80211_sta::hardware::beacon_monitor::StationBeaconMonitorBinding::new(
                     plan.link.bssid,
                     StaAssociationId::new(plan.link.association_id)
                         .expect("connected plan validated the infrastructure association ID"),
@@ -330,7 +330,7 @@ impl ConnectedStaPort {
             }
             control.enable_hardware_doze_boundary();
         }
-        if plan.security_mode() == oer_ieee80211::security::WifiSecurityMode::Wpa2Personal
+        if plan.security_mode() == oer_ieee80211_mac::security::WifiSecurityMode::Wpa2Personal
             && plan.config.block_ack.request_initial_tx_block_ack
             && matches!(plan.aggregate_tx_rate, TxPhyRate::Ht(_) | TxPhyRate::He(_))
         {

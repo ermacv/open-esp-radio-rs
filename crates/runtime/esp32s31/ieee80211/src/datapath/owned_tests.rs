@@ -1,7 +1,7 @@
 use core::task::{Context, Poll};
 
-use oer_ieee80211::data::EthernetFrameParts;
-use oer_network::{NetworkInterfaceId, RxEnqueueError};
+use oer_ieee80211_mac::data::EthernetFrameParts;
+use oer_network_interface::{NetworkInterfaceId, RxEnqueueError};
 
 use super::network::{DatapathNetworkRx, DatapathNetworkRxEndpoints, DatapathNetworkRxSet};
 

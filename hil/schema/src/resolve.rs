@@ -7,7 +7,7 @@ use std::{
     process::Command,
 };
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-const RUNNER: &str = "open-esp-radio-hil-runner";
+const RUNNER: &str = "oer-hil-runner";
 
 pub fn resolve(root: &Path, target: &str) -> Result<Value> {
     let output = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))

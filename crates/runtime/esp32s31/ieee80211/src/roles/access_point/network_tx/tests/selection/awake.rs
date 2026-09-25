@@ -4,9 +4,9 @@ use crate::roles::access_point::{
     retain_ap_power_save_action,
 };
 
-use oer_ieee80211::ap::ApPowerSaveObservation;
+use oer_ieee80211_mac::ap::ApPowerSaveObservation;
 
-use oer_wifi_datapath::DestinationTxQueues;
+use oer_ieee80211_datapath::DestinationTxQueues;
 
 use super::{super::support::with_authorized_ap, *};
 

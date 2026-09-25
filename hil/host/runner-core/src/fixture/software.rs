@@ -1,6 +1,6 @@
 //! Shared software-generation ownership across one fixture operation or HIL run.
 
-use open_esp_radio_hil_fixture_install::{OperationalLease, Provider};
+use oer_hil_fixture_install::{OperationalLease, Provider};
 
 use crate::Result;
 
@@ -41,7 +41,7 @@ impl SoftwareLease {
             providers.dedup();
             let mut leases = Vec::new();
             for provider in providers {
-                leases.push(open_esp_radio_hil_fixture_install::admit_system(provider)?);
+                leases.push(oer_hil_fixture_install::admit_system(provider)?);
             }
             Ok(Self { _leases: leases })
         }

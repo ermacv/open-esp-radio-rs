@@ -1,15 +1,15 @@
 //! RX descriptor metadata decoding and bounded raw MPDU extraction.
 
-use oer_esp32s31_wifi_dma::descriptor::{
+use oer_esp32s31_ieee80211_dma::descriptor::{
     BIT_31, descriptor_address_valid, length as descriptor_length, rx_done, size as descriptor_size,
 };
 #[cfg(all(target_pointer_width = "32", feature = "validation-raw-dma"))]
-pub use oer_esp32s31_wifi_dma::rx_ring::publish_cold_ring;
+pub use oer_esp32s31_ieee80211_dma::rx_ring::publish_cold_ring;
 #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
-pub use oer_esp32s31_wifi_dma::rx_ring::{build_cold_ring, disable_receive, rearm_descriptor};
+pub use oer_esp32s31_ieee80211_dma::rx_ring::{build_cold_ring, disable_receive, rearm_descriptor};
 #[cfg(not(target_pointer_width = "32"))]
-pub use oer_esp32s31_wifi_dma::rx_ring::{enable_receive, publish_cold_ring};
-pub use oer_esp32s31_wifi_dma::{
+pub use oer_esp32s31_ieee80211_dma::rx_ring::{enable_receive, publish_cold_ring};
+pub use oer_esp32s31_ieee80211_dma::{
     rx_dma::{
         RxDma, RxDmaBinding, RxDmaCursorObservation, RxDmaNextDescriptor, RxDmaReloadSettled,
         RxDmaWalkerEnabled, RxDmaWalkerStopped,
@@ -23,13 +23,13 @@ pub use oer_esp32s31_wifi_dma::{
     },
 };
 
-use oer_ieee80211::ccmp::CcmpHeader;
-use oer_ieee80211::he::{
+use oer_ieee80211_mac::ccmp::CcmpHeader;
+use oer_ieee80211_mac::he::{
     He20MuSigBMimoStreamError, He20MuSigBMimoUsers, He20MuSigBNonMimoStreamError,
     He20MuSigBNonMimoUsers, HeMuSigBUser,
 };
-use oer_ieee80211::ht::HtDuplicateMcs32;
-use oer_wifi_softmac::{MacRxEvidence, MacRxMetadata};
+use oer_ieee80211_mac::ht::HtDuplicateMcs32;
+use oer_ieee80211_softmac::{MacRxEvidence, MacRxMetadata};
 
 #[cfg(feature = "task-poll-telemetry")]
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -1080,7 +1080,7 @@ pub fn first_segment_layout(
     })
 }
 
-oer_esp32s31_wifi_dma::place_rx_hot_path! {
+oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
 #[inline(never)]
 fn extract_mpdu_allowing_consumed_trailer(
     segments: &[RxSegment<'_>],
@@ -1166,7 +1166,7 @@ fn extract_mpdu(
 ///
 /// This function owns only descriptor geometry and the IEEE frame-type
 /// admission check. Subtype-specific formats, including 802.11ax Trigger
-/// Common/User Info, belong to `oer-ieee80211`.
+/// Common/User Info, belong to `oer-ieee80211-mac`.
 pub fn extract_control(
     segments: &[RxSegment<'_>],
     config: RxIngressConfig,
@@ -1257,7 +1257,7 @@ pub fn extract_data(
     })
 }
 
-oer_esp32s31_wifi_dma::place_rx_hot_path! {
+oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
 /// Extracts one unfragmented CCMP data MPDU after hardware MIC verification.
 ///
 /// Unlike [`extract_data`], this entry requires the Protected bit. A returned
@@ -1286,7 +1286,7 @@ pub fn extract_ccmp_data(
     )
 }}
 
-oer_esp32s31_wifi_dma::place_rx_hot_path! {
+oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
 /// Validate and borrow one contiguous CCMP MPDU from independently owned RX
 /// storage.
 ///
@@ -1302,7 +1302,7 @@ pub fn view_ccmp_data<'frame>(
     view_ccmp_data_with_fragment_admission(segment, config, CcmpFragmentAdmission::Unfragmented)
 }}
 
-oer_esp32s31_wifi_dma::place_rx_hot_path! {
+oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
 /// Validate and borrow one fragmented CCMP MPDU after hardware MIC success.
 ///
 /// This is deliberately distinct from [`view_ccmp_data`]: callers cannot
@@ -1322,7 +1322,7 @@ enum CcmpFragmentAdmission {
     Fragmented,
 }
 
-oer_esp32s31_wifi_dma::place_rx_hot_path! {
+oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
 #[inline(never)]
 fn view_ccmp_data_with_fragment_admission<'frame>(
     segment: &RxSegment<'frame>,
@@ -1404,7 +1404,7 @@ fn view_ccmp_data_with_fragment_admission<'frame>(
     Ok(RxCcmpDataView { mpdu, frame })
 }}
 
-oer_esp32s31_wifi_dma::place_rx_hot_path! {
+oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
 #[inline(never)]
 fn validate_ccmp_data(
     mpdu: &[u8],

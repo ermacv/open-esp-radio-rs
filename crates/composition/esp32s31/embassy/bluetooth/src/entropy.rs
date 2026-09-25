@@ -1,7 +1,7 @@
 //! Binding the portable HCI entropy contract to a separately owned SoC service.
 
 use oer_bluetooth_hci::{LeRandomSource, LeRandomUnavailable};
-pub use oer_esp32s31_soc::entropy::Entropy;
+pub use oer_esp32s31_soc_esp_hal::entropy::Entropy;
 
 /// Caller-owned entropy binding, independent of the Bluetooth Controller epoch.
 ///

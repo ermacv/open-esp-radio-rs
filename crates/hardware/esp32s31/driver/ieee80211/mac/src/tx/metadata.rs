@@ -4,7 +4,7 @@
 //! belong to the chip representation. IEEE 802.11 framing retains typed WMM
 //! categories without depending on this encoding.
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     data::{DataEncapPlan, DataInterfaceRole, IEEE80211_QOS_DATA_HEADER_LEN},
     qos::{WmmAccessCategory, WmmUserPriority},
 };

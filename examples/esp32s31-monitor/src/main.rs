@@ -14,7 +14,7 @@ use esp_hal::{
 
 use oer::wifi::{MonitorRequest, WifiChannel, WifiMacAddress, WifiMonitorConfig};
 
-use oer_esp32s31_embassy_runtime::{self as platform_executor, Executor};
+use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
 
 use oer::systems::esp32s31::embassy::wifi::{
     self as integration, DeadlineBudget, DeadlineWatchdog, EspHalRadioPeripheral,

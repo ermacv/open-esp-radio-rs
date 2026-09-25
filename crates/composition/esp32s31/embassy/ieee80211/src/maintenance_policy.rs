@@ -94,7 +94,7 @@ fn enforce_with<E: ?Sized>(
 pub(crate) fn enforce<E: ?Sized>(failure: &E, reason: Option<SharedPhyFailStop>) {
     enforce_with(failure, reason, |reason, _retained| {
         let _reason = core::hint::black_box(reason);
-        oer_esp32s31_soc::reset_system()
+        oer_esp32s31_soc_esp_hal::reset_system()
     });
 }
 

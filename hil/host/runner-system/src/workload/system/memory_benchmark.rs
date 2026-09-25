@@ -2,7 +2,7 @@
 
 use crate::Result;
 use hil_core::context::Context;
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     MemoryBenchmarkEvidence, MemoryBenchmarkMode, MemoryBenchmarkRequest, MemoryBenchmarkSource,
     MemoryBenchmarkStop,
 };

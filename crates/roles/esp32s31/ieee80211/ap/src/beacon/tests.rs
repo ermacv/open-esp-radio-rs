@@ -1,4 +1,4 @@
-use oer_ieee80211::beacon::{TimAssociationId, TimVirtualBitmap};
+use oer_ieee80211_mac::beacon::{TimAssociationId, TimVirtualBitmap};
 
 use super::*;
 

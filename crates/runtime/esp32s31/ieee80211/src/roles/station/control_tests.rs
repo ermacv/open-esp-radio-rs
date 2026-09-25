@@ -20,7 +20,7 @@ use oer_esp32s31_hal::types::{
     MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     crypto::{
         CcmpKeyHardware, CryptoKeyError, StaGroupCcmpKeyMaterial, StaGroupCcmpReplaceError,
@@ -38,7 +38,7 @@ use oer_esp32s31_wifi_mac::{
     },
 };
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     connected_rx::{
         ConnectedRxEvent, ConnectedRxSink, StaCcmpRxReplayEpoch, StaCcmpRxReplayResource,
         StaCcmpRxReplayRxEndpoint,
@@ -49,7 +49,7 @@ use oer_esp32s31_wifi_sta::{
     },
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
     station::{StaDisconnect, StaDisconnectKind, StaTxSequenceCounters},
     station_beacon::{StaBeaconObservation, StaTimObservation},
@@ -60,11 +60,11 @@ use oer_ieee80211::{
     },
 };
 
-use oer_wifi_softmac::{MacRxMetadata, MacTxPlan};
+use oer_ieee80211_softmac::{MacRxMetadata, MacTxPlan};
 
-use oer_wifi_sta::power_save::StaPowerSaveState;
+use oer_ieee80211_sta::power_save::StaPowerSaveState;
 
-use oer_wifi_rsn::{
+use oer_ieee80211_rsn::{
     OwnedEapolFrame, Pmk, Ptk, PtkContext, RsnInterface,
     aes::{RsnSoftwareAes, software_aes128_key_wrap},
     frames::{OwnedRsnIe, RsnGtk, RsnPlainKeyData, RsnTxFrame},
@@ -97,12 +97,13 @@ fn owned_eapol(frame: &RsnTxFrame<512>) -> OwnedEapolFrame<512> {
 
 fn established_supplicant() -> (RsnConnectedSupplicant, Ptk) {
     let pmk = Pmk::from_bytes([0x22; 32]);
-    let peer_ptk = pmk.derive_ptk(oer_wifi_rsn::Akm::Psk, ptk_context());
+    let peer_ptk = pmk.derive_ptk(oer_ieee80211_rsn::Akm::Psk, ptk_context());
     let mut supplicant =
         RsnStaSupplicant::try_new(STATION, BSSID, SNONCE, &RSN, &RSN, &[]).unwrap();
     let mut aes = RsnSoftwareAes::new();
 
-    let message1 = RsnTxFrame::<512>::message1(oer_wifi_rsn::Akm::Psk, STATION, 1, ANONCE).unwrap();
+    let message1 =
+        RsnTxFrame::<512>::message1(oer_ieee80211_rsn::Akm::Psk, STATION, 1, ANONCE).unwrap();
     assert!(matches!(
         embassy_futures::block_on(supplicant.on_frame(owned_eapol(&message1), &pmk, &mut aes,)),
         Ok(RsnStaSupplicantAction::Transmit(_))
@@ -113,7 +114,7 @@ fn established_supplicant() -> (RsnConnectedSupplicant, Ptk) {
     let plain = RsnPlainKeyData::<64>::build(&rsn, &gtk).unwrap();
     let wrapped = software_aes128_key_wrap(peer_ptk.kek(), plain.as_bytes()).unwrap();
     let message3 = RsnTxFrame::<512>::message3(
-        oer_wifi_rsn::Akm::Psk,
+        oer_ieee80211_rsn::Akm::Psk,
         STATION,
         2,
         ANONCE,
@@ -147,7 +148,7 @@ fn group_message1(
     kde[8..].copy_from_slice(&key);
     let wrapped = software_aes128_key_wrap(ptk.kek(), &kde).unwrap();
     let frame = RsnTxFrame::<512>::group_message1(
-        oer_wifi_rsn::Akm::Psk,
+        oer_ieee80211_rsn::Akm::Psk,
         STATION,
         replay_counter,
         receive_sequence,
@@ -351,7 +352,7 @@ impl ConnectedControlHardware for Hardware {
 
     fn install_station_individual_twt(
         &mut self,
-        _agreement: &oer_wifi_sta::twt::IndividualTwtAgreement,
+        _agreement: &oer_ieee80211_sta::twt::IndividualTwtAgreement,
     ) -> Result<(), StationIndividualTwtHardwareError> {
         self.twt_install_count += 1;
         Ok(())
@@ -367,7 +368,7 @@ impl ConnectedControlHardware for Hardware {
     }
 }
 
-impl oer_esp32s31_wifi_mac::init::MacRuntimeStopHardware for Hardware {
+impl oer_esp32s31_ieee80211_mac::init::MacRuntimeStopHardware for Hardware {
     fn request_mac_runtime_stop(&mut self) {}
 
     fn mac_runtime_active_state(&mut self) -> u8 {
@@ -441,15 +442,17 @@ fn make_tx<'a>(
 
     let key = install_sta_pairwise_ccmp(hardware, BSSID, &[0x5a; 16]).unwrap();
     SingleMpduTx::new(
-        oer_esp32s31_wifi_sta::single_mpdu_tx::WifiTxResources {
+        oer_esp32s31_ieee80211_sta::single_mpdu_tx::WifiTxResources {
             slot,
             policy: WifiTxRuntimePolicy::vendor_defaults(),
             power: Power,
             entropy,
             timer: Timer::default(),
         },
-        oer_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxHandoff {
-            security: oer_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxSecurity::Wpa2Personal(key),
+        oer_esp32s31_ieee80211_sta::single_mpdu_tx::ConnectedTxHandoff {
+            security: oer_esp32s31_ieee80211_sta::single_mpdu_tx::ConnectedTxSecurity::Wpa2Personal(
+                key,
+            ),
             sequences: StaTxSequenceCounters::new(7),
             config: SingleMpduTxConfig {
                 station_address: STATION,
@@ -457,7 +460,9 @@ fn make_tx<'a>(
                 peer_qos: true,
                 exchange: MacTxPlan {
                     access_category: WmmAccessCategory::BestEffort,
-                    initial_rate: oer_esp32s31_wifi_mac::tx::TxPhyRate::Legacy(LegacyRate::Ofdm54M),
+                    initial_rate: oer_esp32s31_ieee80211_mac::tx::TxPhyRate::Legacy(
+                        LegacyRate::Ofdm54M,
+                    ),
                     publication_limit: attempt_limit,
                     publication_timeout_micros: 250_000,
                 },
@@ -476,7 +481,7 @@ fn finish_tx(
         tx.service(
             hardware,
             WifiTxWake::Interrupt {
-                events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
             },
         ),
         Ok(WifiTxProgress::Complete)
@@ -568,7 +573,7 @@ fn connected_runtime_binds_beacon_frontier_but_retains_software_monitor() {
         .enable_hardware_beacon_monitor_frontier(
             StationBeaconMonitorBinding::new(
                 BSSID,
-                oer_ieee80211::station_power_save::StaAssociationId::new(7).unwrap(),
+                oer_ieee80211_mac::station_power_save::StaAssociationId::new(7).unwrap(),
             ),
             policy,
         )
@@ -596,11 +601,11 @@ fn connected_runtime_binds_beacon_frontier_but_retains_software_monitor() {
     let frontier = control.hardware_beacon_monitor_frontier().unwrap();
     assert_eq!(
         frontier.reached(),
-        oer_esp32s31_wifi_sta::hardware::beacon_monitor::StationHardwareBeaconMonitorStage::BeaconMissLimitRepresentable
+        oer_esp32s31_ieee80211_sta::hardware::beacon_monitor::StationHardwareBeaconMonitorStage::BeaconMissLimitRepresentable
     );
     assert_eq!(
         frontier.blocker(),
-        oer_esp32s31_wifi_sta::hardware::beacon_monitor::StationHardwareBeaconMonitorBlocker::MissingBeaconMissTimeoutUnitConversion
+        oer_esp32s31_ieee80211_sta::hardware::beacon_monitor::StationHardwareBeaconMonitorBlocker::MissingBeaconMissTimeoutUnitConversion
     );
     assert!(!frontier.automatic_monitor_active());
     assert!(control.beacon_monitor().is_some());
@@ -673,7 +678,7 @@ fn peer_accepted_explicit_twt_kicks_teardown_into_connected_tx() {
             .individual_twt_requester()
             .unwrap()
             .status(IndividualTwtFlowId::new(2).unwrap()),
-        oer_wifi_sta::twt::IndividualTwtFlowStatus::TeardownTransmitting
+        oer_ieee80211_sta::twt::IndividualTwtFlowStatus::TeardownTransmitting
     );
     finish_tx(&mut hardware, &mut tx, 0);
     assert_eq!(
@@ -712,12 +717,12 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
         authenticator_nonce: WPA2_ANONCE,
         supplicant_nonce: WPA2_SNONCE,
     };
-    let ptk = pmk.derive_ptk(oer_wifi_rsn::Akm::Psk, ptk_context);
+    let ptk = pmk.derive_ptk(oer_ieee80211_rsn::Akm::Psk, ptk_context);
     let mut supplicant =
         RsnStaSupplicant::try_new(STATION, BSSID, WPA2_SNONCE, &WPA2_RSN, &WPA2_RSN, &[]).unwrap();
     let mut aes = RsnSoftwareAes::new();
     let message1 =
-        RsnTxFrame::<512>::message1(oer_wifi_rsn::Akm::Psk, STATION, 1, WPA2_ANONCE).unwrap();
+        RsnTxFrame::<512>::message1(oer_ieee80211_rsn::Akm::Psk, STATION, 1, WPA2_ANONCE).unwrap();
     let RsnStaSupplicantAction::Transmit(_) = embassy_futures::block_on(supplicant.on_frame(
         owned_station_eapol(&message1),
         &pmk,
@@ -731,7 +736,7 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
     let plain = RsnPlainKeyData::<64>::build(&rsn, &gtk).unwrap();
     let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes()).unwrap();
     let message3 = RsnTxFrame::<512>::message3(
-        oer_wifi_rsn::Akm::Psk,
+        oer_ieee80211_rsn::Akm::Psk,
         STATION,
         2,
         WPA2_ANONCE,
@@ -754,7 +759,7 @@ fn completed_wpa2_fixture(hardware: &mut Hardware) -> CompletedWpa2Fixture {
     };
 
     let wrong_replay = RsnTxFrame::<512>::message3(
-        oer_wifi_rsn::Akm::Psk,
+        oer_ieee80211_rsn::Akm::Psk,
         STATION,
         3,
         WPA2_ANONCE,
@@ -848,7 +853,7 @@ fn duplicate_message3_reuses_connected_key_and_pn_while_forged_frames_are_ignore
         Ok(parts) => parts,
         Err(_) => panic!("completed TX must be idle"),
     };
-    let oer_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxSecurity::Wpa2Personal(mut pairwise) =
+    let oer_esp32s31_ieee80211_sta::single_mpdu_tx::ConnectedTxSecurity::Wpa2Personal(mut pairwise) =
         handoff.security
     else {
         panic!("connected TX must retain its installed pairwise key")
@@ -955,7 +960,7 @@ fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
     let agreement = hardware.programmed.unwrap();
     let snapshot = RxBlockAckSnapshot {
         hardware_index: agreement.hardware_index,
-        interface: oer_esp32s31_wifi_mac::MacInterface::Station,
+        interface: oer_esp32s31_ieee80211_mac::MacInterface::Station,
         peer: BSSID,
         tid: 3,
         starting_sequence: 0x123,
@@ -1045,7 +1050,7 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
     let agreement = hardware.programmed.unwrap();
     let snapshot = RxBlockAckSnapshot {
         hardware_index: agreement.hardware_index,
-        interface: oer_esp32s31_wifi_mac::MacInterface::Station,
+        interface: oer_esp32s31_ieee80211_mac::MacInterface::Station,
         peer: BSSID,
         tid: 3,
         starting_sequence: 0x123,
@@ -1205,7 +1210,7 @@ fn beacon_loss_disconnects_only_after_bounded_active_probes() {
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
         Ok(DatapathControlProgress::Exit(
-            oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss
+            oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason::BeaconLoss
         ))
     );
     assert!(control.beacon_lost());
@@ -1284,7 +1289,7 @@ fn peer_deauthentication_disconnects_with_its_reason_code() {
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
         Ok(DatapathControlProgress::Exit(
-            oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::PeerDeauthentication {
+            oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason::PeerDeauthentication {
                 reason_code: 4,
             }
         ))
@@ -1326,7 +1331,7 @@ fn mailbox_overflow_fails_closed_before_processing_an_incomplete_event_stream() 
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
         Ok(DatapathControlProgress::Exit(
-            oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::ControlMailboxOverflow,
+            oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason::ControlMailboxOverflow,
         ))
     );
 }
@@ -1577,7 +1582,7 @@ fn doze_permit_requires_idle_beacon_and_acknowledged_pm_one() {
             next_dtim_tsf: 1_102_400,
             wake_tsf: 1_100_400,
             wake_after_beacons: 1,
-            wake_reason: oer_wifi_sta::power_save::StaDozeWakeReason::ListenIntervalAndDtim,
+            wake_reason: oer_ieee80211_sta::power_save::StaDozeWakeReason::ListenIntervalAndDtim,
             dtim_count: 1,
             dtim_period: 3,
         })
@@ -1766,7 +1771,7 @@ fn failed_pm_zero_disconnects_instead_of_releasing_queued_data() {
     assert_eq!(
         embassy_futures::block_on(control.service_with_context(&mut hardware, &mut tx, pending,)),
         Ok(DatapathControlProgress::Exit(
-            oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::ActiveStateRestoreFailed
+            oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason::ActiveStateRestoreFailed
         ))
     );
     assert_eq!(

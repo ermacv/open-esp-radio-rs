@@ -50,7 +50,7 @@ fn cancellation_during_unprivileged_build_never_reaches_sudo_apply() {
     .unwrap();
     fs::set_permissions(&sudo, fs::Permissions::from_mode(0o700)).unwrap();
 
-    let mut command = Command::new(env!("CARGO_BIN_EXE_open-esp-radio-hil-runner"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_oer-hil-runner"));
     command
         .args(["fixture", "install", "--provider", "linux-net"])
         .env("CARGO", cargo)
@@ -187,7 +187,7 @@ exit 23
     .unwrap();
     fs::set_permissions(&sudo, fs::Permissions::from_mode(0o700)).unwrap();
     let (mut master, slave) = terminal();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_open-esp-radio-hil-runner"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_oer-hil-runner"));
     command
         .args(["fixture", "install", "--provider", "linux-bluetooth"])
         .env(

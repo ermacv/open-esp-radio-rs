@@ -1,5 +1,5 @@
 [package]
-name = "oer-esp32s31-wifi-dma"
+name = "oer-esp32s31-ieee80211-dma"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -5,21 +5,21 @@
 //! duplicate checks to the portable receive epoch. It owns no monitor tap,
 //! association state, WPA2 keys or network-stack publication.
 
-use oer_esp32s31_wifi_dma::rx_ring::RxSegment;
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_dma::rx_ring::RxSegment;
+use oer_esp32s31_ieee80211_mac::rx::{
     PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, decode_normalized_rx_metadata,
     extract_management,
 };
-use oer_ieee80211::extensions::espressif::esp_now::{
+use oer_ieee80211_mac::extensions::espressif::esp_now::{
     ESP_NOW_ACTION_CATEGORY, ESP_NOW_ORGANIZATION_IDENTIFIER, EspNowVersionError,
     EspNowWireVersion, esp_now_wire_version,
 };
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     EspNowPeerId, EspNowReceiveError, EspNowReceivedV1, EspNowReceivedV2, EspNowRxEpoch,
     EspNowRxOutcome, EspNowV2ReceiveError, EspNowV2RxOutcome, MacRxMetadata,
 };
 
-use oer_esp32s31_wifi::esp_now::normalize_esp_now_rx_metadata;
+use oer_esp32s31_ieee80211::esp_now::normalize_esp_now_rx_metadata;
 
 const ACTION_FRAME_CONTROL: u16 = 0x00d0;
 

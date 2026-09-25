@@ -2,8 +2,9 @@
 
 use super::*;
 
-type ProductionHaltedRx = oer_esp32s31_wifi_mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>;
-type ProductionLiveRx = oer_esp32s31_wifi_mac::rx::RxRingLive<'static, RX_DESCRIPTOR_COUNT>;
+type ProductionHaltedRx =
+    oer_esp32s31_ieee80211_mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>;
+type ProductionLiveRx = oer_esp32s31_ieee80211_mac::rx::RxRingLive<'static, RX_DESCRIPTOR_COUNT>;
 
 pub(crate) enum ProductionRxRing {
     Halted(ProductionHaltedRx),

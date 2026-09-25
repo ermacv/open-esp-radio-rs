@@ -68,5 +68,5 @@ HOST-ONLY scopes and are not capabilities admitted by the radio/MAC gate.
 ## Ownership and readiness
 
 Canonical section: `ieee802154-ownership-and-readiness`. Lower HAL, PAC, DMA,
-actor, IRQ, runtime and Embassy owners do not by themselves compose the missing
+actor, IRQ, operation and Embassy owners do not by themselves compose the missing
 RF-ready public service.

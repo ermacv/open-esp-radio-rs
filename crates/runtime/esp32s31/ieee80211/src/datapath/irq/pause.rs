@@ -2,7 +2,7 @@
 
 use super::*;
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use oer_esp32s31_wifi_mac::irq::MacInterruptPauseRoute;
+use oer_esp32s31_ieee80211_mac::irq::MacInterruptPauseRoute;
 
 /// Detached CPU route and pending work, retained for the same radio epoch.
 ///
@@ -14,8 +14,8 @@ use oer_esp32s31_wifi_mac::irq::MacInterruptPauseRoute;
 /// A terminal-only route cannot silently become a resumable one:
 /// ```compile_fail
 /// use embassy_sync::blocking_mutex::raw::RawMutex;
-/// use oer_esp32s31_wifi_mac::irq::MacInterruptRoute;
-/// use oer_esp32s31_wifi_runtime::datapath::irq::InterruptEpoch;
+/// use oer_esp32s31_ieee80211_mac::irq::MacInterruptRoute;
+/// use oer_esp32s31_ieee80211_runtime::datapath::irq::InterruptEpoch;
 /// fn pause<R: MacInterruptRoute, M: RawMutex>(
 ///     epoch: InterruptEpoch<'_, R, M>, platform: &R::Platform,
 /// ) {
@@ -168,8 +168,8 @@ impl<'runtime, R: MacInterruptPauseRoute, M: RawMutex> PausedInterruptEpoch<'run
 ///
 /// ```compile_fail
 /// use embassy_sync::blocking_mutex::raw::RawMutex;
-/// use oer_esp32s31_wifi_mac::irq::MacInterruptPauseRoute;
-/// use oer_esp32s31_wifi_runtime::datapath::irq::PausedInterruptOperationFailure;
+/// use oer_esp32s31_ieee80211_mac::irq::MacInterruptPauseRoute;
+/// use oer_esp32s31_ieee80211_runtime::datapath::irq::PausedInterruptOperationFailure;
 /// fn resume_failed<R: MacInterruptPauseRoute, M: RawMutex, E>(
 ///     fault: PausedInterruptOperationFailure<'_, R, M, E>, platform: &R::Platform,
 /// ) {

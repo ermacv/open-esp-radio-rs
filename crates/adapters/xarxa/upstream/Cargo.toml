@@ -9,8 +9,8 @@ description = "Unmodified upstream Xarxa driver boundary with bounded packet-own
 
 [dependencies]
 embassy-sync = "0.8.0"
-oer-network = { path = "../../../network/interface" }
-oer-wifi-datapath = { path = "../../../protocols/ieee80211/datapath" }
+oer-network-interface = { path = "../../../network/interface" }
+oer-ieee80211-datapath = { path = "../../../protocols/ieee80211/datapath" }
 xarxa-driver = { git = "https://github.com/embassy-rs/xarxa", rev = "14c369bbcbe8ee7167488ac9c9e18be059d83555", features = ["async"] }
 
 [dev-dependencies]

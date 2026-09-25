@@ -9,7 +9,7 @@ use core::future::Future;
 
 use crate::connected_rx::{StaCcmpRxReplayEpoch, StaCcmpRxReplayError};
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     crypto::{
         CcmpKeyHardware, CcmpTxPacketNumberError, CryptoKeyError, StaGroupCcmpKeyMaterial,
         StaGroupCcmpSlot, StaPairwiseCcmpSlot, install_sta_group_ccmp, install_sta_pairwise_ccmp,
@@ -17,9 +17,9 @@ use oer_esp32s31_wifi_mac::{
     tx::{LegacyRate, LegacyTxQueue, TxCompletion, TxPhyRate},
 };
 
-use oer_ieee80211::station::{StaDataFrame, StaProtectedDataFrame, StaTxSequenceCounters};
+use oer_ieee80211_mac::station::{StaDataFrame, StaProtectedDataFrame, StaTxSequenceCounters};
 
-use oer_wifi_rsn::{
+use oer_ieee80211_rsn::{
     DEFAULT_EAPOL_FRAME_CAPACITY, OwnedEapolFrame, RsnInterface,
     frames::RsnTxFrame,
     keys::RsnKeyKind,

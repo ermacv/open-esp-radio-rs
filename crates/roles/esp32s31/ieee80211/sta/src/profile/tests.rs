@@ -1,5 +1,5 @@
 use super::*;
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     scan::ScanRecord,
     security::WifiSecurityMode,
     station::{AssociationRequest, HeUlMuPowerCapability, StaPowerCapability},

@@ -9,9 +9,9 @@ use crate::datapath::PinnedTxFrame;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
     init::{StaEspNowRxPolicyHardware, configure_sta_esp_now_receive_policy},
     rate::control::{StaRateControlAssociation, StaTxRatePolicy},
@@ -28,7 +28,7 @@ use oer_esp32s31_wifi_mac::{
     },
 };
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     connected_rx::{ConnectedRxConfig, StaCcmpRxReplayRxEndpoint},
     control_tx::ControlTransmitter,
     peer::{ConnectedStaPeer, StaConnectedLink},
@@ -36,17 +36,18 @@ use oer_esp32s31_wifi_sta::{
 };
 
 use {
-    oer_ieee80211::he::HeDcmConstellation, oer_ieee80211::qos::WmmAccessCategory,
-    oer_ieee80211::station::StaTxSequenceCounters, oer_ieee80211::station::association::PhyMode,
-    oer_ieee80211::station_power_save::StaAssociationId,
+    oer_ieee80211_mac::he::HeDcmConstellation, oer_ieee80211_mac::qos::WmmAccessCategory,
+    oer_ieee80211_mac::station::StaTxSequenceCounters,
+    oer_ieee80211_mac::station::association::PhyMode,
+    oer_ieee80211_mac::station_power_save::StaAssociationId,
 };
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     EspNowRxEpoch, MacServiceCapabilities, MacTxPlan, WifiPlan,
     interface::{BoundVirtualInterface, VifRole},
 };
 
-use oer_wifi_sta::{
+use oer_ieee80211_sta::{
     link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError},
     power_save::{StaPowerSavePolicy, StaPowerSavePolicyError},
     request::StationPowerMode,

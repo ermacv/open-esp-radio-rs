@@ -3,7 +3,7 @@
     reason = "scan port implementations keep explicit borrowed Future contracts"
 )]
 
-use oer_esp32s31_wifi_mac::init::{
+use oer_esp32s31_ieee80211_mac::init::{
     MacRuntimeStopHardware, MacSnifferHardware, activate_promiscuous_receive,
     deactivate_promiscuous_receive,
 };

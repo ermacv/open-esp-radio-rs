@@ -1,6 +1,6 @@
 //! Validate the already captured, correlated AP-stop accounting transaction.
 use super::*;
-use open_esp_radio_hil_protocol::WifiAirtimePeerEvidence;
+use oer_hil_protocol::WifiAirtimePeerEvidence;
 
 impl SerialCapture {
     /// Call after the stop completion. All accounting records must precede it;

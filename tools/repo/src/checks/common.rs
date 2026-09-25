@@ -61,6 +61,44 @@ pub fn package_for_manifest<'a>(metadata: &'a Metadata, manifest: &Path) -> Resu
     Ok(package)
 }
 
+/// Packages whose names Blobray code and provider contracts consume; they are
+/// renamed together with Blobray rather than by the repository naming rule.
+const BLOBRAY_OWNED_NAMES: &[&str] = &[
+    "open-esp-radio-register-model",
+    "open-radio-vendor-review",
+    "open-radio-vendor-chip-contracts-esp32s31-rev0",
+    "open-radio-vendor-chip-knowledge-esp32s31-rev0",
+    "open-radio-vendor-chip-models-esp32s31-rev0",
+    "open-radio-vendor-harness-esp32s31",
+    "open-radio-vendor-knowledge-esp32s31",
+    "open-radio-vendor-models-esp32s31",
+];
+
+/// Every package is `oer-<tokens>`; the public facade alone is `open-esp-radio`.
+pub fn validate_package_name(name: &str, layer: &str) -> Result<()> {
+    let valid = if layer == "facade" {
+        name == "open-esp-radio"
+    } else {
+        name.strip_prefix("oer-").is_some_and(|tokens| {
+            !tokens.is_empty()
+                && tokens.split('-').all(|token| {
+                    !token.is_empty()
+                        && token
+                            .bytes()
+                            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+                })
+        }) || BLOBRAY_OWNED_NAMES.contains(&name)
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(format!(
+            "package {name} does not follow the `oer-<tokens>` naming rule (docs/architecture.md)"
+        )
+        .into())
+    }
+}
+
 pub fn production_packages(ctx: &Context) -> Result<Vec<ProductionPackage>> {
     let workspace = cargo::metadata_no_deps(ctx, &ctx.root.join("Cargo.toml"))?;
     let mut manifests = BTreeSet::new();

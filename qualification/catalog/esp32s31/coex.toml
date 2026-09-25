@@ -77,11 +77,8 @@ domain = "coexistence"
 title = "Readiness authority"
 source-document = "crates/hardware/esp32s31/driver/coex/FEATURES.md"
 overview = "There is no standalone coex qualification target. Existing requirements live in\n[Bluetooth qualification](../../../../../qualification/targets/esp32s31/bluetooth-le.toml)\nand the radio compositions described by the [Wi-Fi](../ieee80211/FEATURES.md)\nand [IEEE 802.15.4](../ieee802154/FEATURES.md) inventories. The Bluetooth\n`coexistence` capability remains incomplete. Recovered tables and validation\nMMIO cannot satisfy missing protocol hooks, scheduler semantics or joint-radio\nHIL evidence. This inventory does not introduce qualification scenarios or\npromote readiness."
-packages = ["oer-esp32s31-wifi"]
-documents = [
-    "qualification/targets/esp32s31/bluetooth-le.toml",
-    "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md",
-]
+packages = ["oer-esp32s31-ieee802154", "oer-esp32s31-ieee80211"]
+documents = ["qualification/targets/esp32s31/bluetooth-le.toml"]
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-shared-rf-arbitration"

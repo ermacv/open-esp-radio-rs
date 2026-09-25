@@ -7,8 +7,8 @@ use embassy_sync::{
     signal::Signal,
 };
 
-use oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
-use oer_ieee80211::security::WifiSecurityMode;
+use oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason;
+use oer_ieee80211_mac::security::WifiSecurityMode;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StationLinkState {

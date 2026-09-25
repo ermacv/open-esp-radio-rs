@@ -1,6 +1,6 @@
 fn main() {
     oer_firmware::linker::configure_runtime(
-        "open-esp-radio-esp32s31-station",
+        "oer-example-esp32s31-station",
         &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../platform/esp32s31/linker"),
         true,
         true,

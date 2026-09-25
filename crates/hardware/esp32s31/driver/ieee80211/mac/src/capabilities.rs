@@ -6,7 +6,7 @@
 //! their real hardware/software boundary instead of being advertised by one
 //! ambiguous offload boolean.
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     MacInterfaceCapabilities, MacOperationOwner, MacOperationOwnership, MacResourceLimits,
     MacServiceCapabilities,
 };

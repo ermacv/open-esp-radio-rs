@@ -1,8 +1,8 @@
 use core::num::NonZeroU16;
 
-use oer_ieee80211::station::association::Preference;
+use oer_ieee80211_mac::station::association::Preference;
 
-use oer_wifi_sta::request::{StationScanChannels, StationScanPolicy};
+use oer_ieee80211_sta::request::{StationScanChannels, StationScanPolicy};
 
 use super::*;
 

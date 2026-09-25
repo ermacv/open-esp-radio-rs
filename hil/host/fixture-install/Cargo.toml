@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-hil-fixture-install"
+name = "oer-hil-fixture-install"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

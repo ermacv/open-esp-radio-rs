@@ -183,7 +183,7 @@ where
 
     let power_state = segment
         .buffer
-        .get(oer_esp32s31_wifi_mac::rx::PUBLIC_HEADER_SIZE..)
+        .get(oer_esp32s31_ieee80211_mac::rx::PUBLIC_HEADER_SIZE..)
         .and_then(|mpdu| mpdu.get(..2))
         .map(|bytes| admitted_ap_data_power_state(u16::from_le_bytes([bytes[0], bytes[1]])))
         .expect("ordinary AP data preflight validated its public frame control");
@@ -348,10 +348,10 @@ where
         Err(_error) => {
             observe_access_point!(state, observation, {
                 match _error {
-                    oer_esp32s31_wifi_mac::rx::RxError::MicFailure => {
+                    oer_esp32s31_ieee80211_mac::rx::RxError::MicFailure => {
                         observation.rx_mic_failures = observation.rx_mic_failures.saturating_add(1);
                     }
-                    oer_esp32s31_wifi_mac::rx::RxError::Quarantined => {
+                    oer_esp32s31_ieee80211_mac::rx::RxError::Quarantined => {
                         let duplicate_or_stale = state
                             .data_rx
                             .reorder_key(segment)
@@ -454,7 +454,7 @@ where
                 .get(qos_control_offset)
                 .is_some_and(|control| control & 0x80 != 0);
         let reorder_progress = {
-            let mut dispatch = |ordered: oer_esp32s31_wifi_mac::rx::RxSegment<'_>| {
+            let mut dispatch = |ordered: oer_esp32s31_ieee80211_mac::rx::RxSegment<'_>| {
                 #[cfg(feature = "task-poll-telemetry")]
                 let dispatch_started = crate::diagnostics::core0_rx_cycles::cycle_count();
                 AccessPointProtectedFrameDispatch::dispatch(
@@ -1183,7 +1183,7 @@ where
                 #[cfg(any(feature = "diagnostics", test))]
                 let duplicate_or_stale = matches!(
                     _error,
-                    oer_esp32s31_wifi_mac::rx::RxError::Quarantined
+                    oer_esp32s31_ieee80211_mac::rx::RxError::Quarantined
                 ) && self
                     .state
                     .data_rx
@@ -1191,11 +1191,11 @@ where
                     .is_some_and(|key| self.state.rx_reorder.is_duplicate_or_stale(key));
                 observe_access_point!(self, observation, {
                     match _error {
-                        oer_esp32s31_wifi_mac::rx::RxError::MicFailure => {
+                        oer_esp32s31_ieee80211_mac::rx::RxError::MicFailure => {
                             observation.rx_mic_failures =
                                 observation.rx_mic_failures.saturating_add(1);
                         }
-                        oer_esp32s31_wifi_mac::rx::RxError::Quarantined => {
+                        oer_esp32s31_ieee80211_mac::rx::RxError::Quarantined => {
                             if duplicate_or_stale {
                                 observation.protected_data_duplicates =
                                     observation.protected_data_duplicates.saturating_add(1);
@@ -1334,7 +1334,7 @@ where
         S: FnMut() -> ([u8; 32], u64),
     {
         let request = parse_ap_management_request(
-            &oer_esp32s31_wifi_ap::profile::ADVERTISEMENT,
+            &oer_esp32s31_ieee80211_ap::profile::ADVERTISEMENT,
             mpdu,
             self.mac.engine().service_address(),
         );
@@ -1438,7 +1438,7 @@ where
             now_micros,
             tx_frame,
         )?;
-        if let oer_esp32s31_wifi_ap::engine::ApManagementOutcome::PeerRemoved {
+        if let oer_esp32s31_ieee80211_ap::engine::ApManagementOutcome::PeerRemoved {
             peer,
         } = outcome
         {
@@ -1446,7 +1446,7 @@ where
         }
         Ok(matches!(
             outcome,
-            oer_esp32s31_wifi_ap::engine::ApManagementOutcome::Response { .. }
+            oer_esp32s31_ieee80211_ap::engine::ApManagementOutcome::Response { .. }
         ))
     }
 
@@ -1520,7 +1520,7 @@ where
 
     fn release_rx_reorder(
         &mut self,
-        identity: oer_esp32s31_wifi_mac::rx::ampdu::RxBlockAckIdentity,
+        identity: oer_esp32s31_ieee80211_mac::rx::ampdu::RxBlockAckIdentity,
         now_micros: u64,
     ) -> Result<(), AccessPointControlError> {
         let processor = &mut *self;

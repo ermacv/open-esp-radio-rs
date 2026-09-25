@@ -22,13 +22,13 @@ use core::{future::Future, marker::PhantomData};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_esp32s31_wifi_sta::attempt::{StaAttemptSecurity, StaAttemptStation, StaIdentity};
+use oer_esp32s31_ieee80211_sta::attempt::{StaAttemptSecurity, StaAttemptStation, StaIdentity};
 
-use oer_ieee80211::scan::ScanRecord;
+use oer_ieee80211_mac::scan::ScanRecord;
 
-use oer_wifi_embassy::await_stack_boundary;
+use oer_ieee80211_runtime::await_stack_boundary;
 
-use oer_wifi_sta::{
+use oer_ieee80211_sta::{
     request::StationDiscovery,
     station::{
         StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaBackoffReason,

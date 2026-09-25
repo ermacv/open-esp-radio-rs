@@ -1,21 +1,22 @@
 use core::future::{Future, ready};
 
-use oer_esp32s31_wifi::ordinary_tx::{WifiTxPowerPair, WifiTxPowerProfile};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxPowerPair, WifiTxPowerProfile};
 
-use oer_esp32s31_wifi_mac::tx::{TxCompletion, TxCookie};
+use oer_esp32s31_ieee80211_mac::tx::{TxCompletion, TxCookie};
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     association::StaAssociationProfile,
     join::{StaJoinObserver, StaJoinReceive, StaJoinTransmit},
 };
 
 use {
-    oer_ieee80211::scan::ScanRecord, oer_ieee80211::station::AssociationRequest,
-    oer_ieee80211::station::OpenAuthenticationRequest,
-    oer_ieee80211::station::association::PhyMode, oer_ieee80211::station::association::Preference,
+    oer_ieee80211_mac::scan::ScanRecord, oer_ieee80211_mac::station::AssociationRequest,
+    oer_ieee80211_mac::station::OpenAuthenticationRequest,
+    oer_ieee80211_mac::station::association::PhyMode,
+    oer_ieee80211_mac::station::association::Preference,
 };
 
-use oer_wifi_sta::join::{
+use oer_ieee80211_sta::join::{
     StaJoinBackend, StaJoinRxDirective, StaJoinRxObserver, association::StaAssociationAttempt,
     authentication::StaAuthenticationAttempt,
 };

@@ -15,16 +15,16 @@ pub use oer_radio::wifi::{
     MonitorChannelSequence, MonitorChannelSequenceError, MonitorRequest,
 };
 
-use oer_esp32s31_wifi_runtime::roles::monitor::{
+use oer_esp32s31_ieee80211_runtime::roles::monitor::{
     MonitorControlResources, MonitorExecutionResources, MonitorRxRing,
     MonitorStoppedExecutionResources, MonitorStorage, MonitorTask, MonitorTaskBuildFailure,
 };
 
-use oer_esp32s31_wifi_esp_hal::mac_interrupt_epoch::EspHalMacInterruptRoute;
+use oer_esp32s31_ieee80211_esp_hal::mac_interrupt_epoch::EspHalMacInterruptRoute;
 
-use oer_esp32s31_wifi_mac::rx::RxPhyInfo;
+use oer_esp32s31_ieee80211_mac::rx::RxPhyInfo;
 
-pub use oer_esp32s31_wifi_mac::rx::{
+pub use oer_esp32s31_ieee80211_mac::rx::{
     RxBasebandFormat as Esp32s31MonitorBasebandFormat, RxPhyInfo as Esp32s31MonitorPhyInfo,
 };
 
@@ -37,12 +37,12 @@ use crate::{
     supervisor::ProductionRxRing,
 };
 
-use oer_wifi_embassy::{
+use oer_ieee80211_runtime::{
     MonitorCaptureFrame, MonitorCapturePool, MonitorCaptureReceiver, MonitorCaptureResources,
     MonitorCaptureSink,
 };
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     MonitorDropReason, MonitorFrame, MonitorInjectionChannelBinding, MonitorPublishOutcome,
     MonitorSink, WifiChannel,
 };
@@ -214,7 +214,7 @@ pub(super) type MonitorStoppedResources = MonitorStoppedExecutionResources<
 >;
 pub(super) type ProductionMonitorTask = MonitorTask<
     'static,
-    oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral,
+    oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral,
     EspHalMacInterruptRoute,
     CriticalSectionRawMutex,
     CaptureSink,
@@ -224,7 +224,7 @@ pub(super) type ProductionMonitorTask = MonitorTask<
 >;
 pub(super) type ProductionMonitorBuildFailure = MonitorTaskBuildFailure<
     'static,
-    oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral,
+    oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral,
     EspHalMacInterruptRoute,
     CriticalSectionRawMutex,
     CaptureSink,

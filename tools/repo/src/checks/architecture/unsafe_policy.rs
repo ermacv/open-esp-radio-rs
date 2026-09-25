@@ -11,24 +11,24 @@ const AUDITED_UNSAFE: &[&str] = &[
     "oer-esp32s31-bluetooth",
     "oer-esp32s31-hal",
     "oer-esp32s31-pac",
-    "oer-esp32s31-soc",
+    "oer-esp32s31-soc-esp-hal",
     "oer-esp32s31-phy",
     "oer-esp32s31-ieee802154-dma",
-    "oer-esp32s31-ieee802154-runtime",
-    "oer-esp32s31-wifi-dma",
-    "oer-esp32s31-radio-platform-esp-hal",
-    "oer-esp32s31-embassy-runtime",
-    "oer-esp32s31-bluetooth-integration",
-    "oer-esp32s31-embassy-wifi",
+    "oer-esp32s31-ieee802154",
+    "oer-esp32s31-ieee80211-dma",
+    "oer-esp32s31-radio-esp-hal",
+    "oer-esp32s31-executor-embassy",
+    "oer-esp32s31-bluetooth-system",
+    "oer-esp32s31-ieee80211-system",
 ];
 const PAC_CONSUMERS: &[&str] = &[
     "oer-esp32s31-pac-raw",
     "oer-esp32s31-pac",
-    "oer-esp32s31-soc",
+    "oer-esp32s31-soc-esp-hal",
     "oer-esp32s31-hal",
     "oer-esp32s31-bluetooth",
     "oer-esp32s31-ieee802154-irq",
-    "oer-esp32s31-ieee802154-runtime",
+    "oer-esp32s31-ieee802154",
     "oer-esp32s31-ieee802154-esp-hal",
 ];
 /// The crate-root attribute that states each production library's unsafe
@@ -101,7 +101,7 @@ mod tests {
             Some("#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]")
         );
         assert_eq!(
-            required_attribute("oer-wifi-sta"),
+            required_attribute("oer-ieee80211-sta"),
             Some("#![forbid(unsafe_code)]")
         );
     }

@@ -1,6 +1,6 @@
 //! A fake serial link to the target for session and workload tests.
 use super::*;
-use open_esp_radio_hil_protocol::{Capabilities, FeatureCapabilities};
+use oer_hil_protocol::{Capabilities, FeatureCapabilities};
 use std::{
     io,
     sync::{

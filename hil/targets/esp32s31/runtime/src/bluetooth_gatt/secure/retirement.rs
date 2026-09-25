@@ -1,7 +1,7 @@
 //! Thin HIL composition of checked production retirement transitions.
-use oer_esp32s31_bluetooth_integration as radio;
+use oer_esp32s31_bluetooth_system as radio;
 type Runner = radio::BluetoothHardwareRunner<4, 1, 4, 4, 258>;
-type Platform = oer_esp32s31_radio_platform_esp_hal::EspHalBluetoothPlatform<'static>;
+type Platform = oer_esp32s31_radio_esp_hal::EspHalBluetoothPlatform<'static>;
 type PlatformOwner =
     oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<
         'static,
@@ -16,7 +16,7 @@ pub(super) async fn finish(
     identity: oer_esp32s31_phy::PhyCalibrationIdentity,
     state: &super::State,
 ) -> radio::BluetoothSystemReady<Platform, 4, 1, 4, 4, 258> {
-    use bluetooth_example::security::epoch::ShutdownAction;
+    use gatt_application::security::epoch::ShutdownAction;
     if exit.action() == ShutdownAction::Retain {
         state.stopped();
         retain((&runner, &platform, &exit)).await;

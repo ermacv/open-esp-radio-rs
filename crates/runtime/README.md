@@ -1,8 +1,9 @@
 # Radio execution
 
-`esp32s31/{ieee80211,bluetooth}` (`oer-esp32s31-wifi-runtime`,
+`esp32s31/{ieee80211,bluetooth}` (`oer-esp32s31-ieee80211-runtime`,
 `oer-esp32s31-bluetooth-runtime`) contains concrete radio execution as
-executor-independent `async` code. Directory boundaries describe the execution
+executor-independent `async` code; `ieee80211` (`oer-ieee80211-runtime`) holds the
+chip-independent Wi-Fi execution primitives they share. Directory boundaries describe the execution
 responsibility of each package.
 
 ## Execution and time contract
@@ -14,19 +15,20 @@ dependencies below adapters and compositions. The portable primitives are
 and `embassy-futures` (select/join). Time is the `embassy-time` interface:
 `Instant` and `Timer` read and wait on one global monotonic timebase supplied
 through `embassy-time-driver`. The final image links exactly one driver — the
-ESP32-S31 [platform timer queue](../adapters/embassy/esp32s31/runtime/) on the
+ESP32-S31 [platform timer queue](../adapters/embassy/esp32s31/executor/) on the
 chip, the `std` driver in host tests. A runtime never installs a driver and does
 not assume which executor wakes its timers.
 
 | Module | Responsibility |
 | --- | --- |
-| `ieee80211/src/roles/` | Role execution and retained TX/RX owners |
-| `ieee80211/src/roles/access_point/network_tx.rs` | One AP TX owner, publication and cancellation |
-| `ieee80211/src/roles/access_point/network_tx/{queue,power_save,aggregate,completion}.rs` | Lease queues, TIM/DTIM release, standby aggregation and completion on that same owner |
-| `ieee80211/src/datapath/` | Packet handoff and async composition around chip transactions |
-| `ieee80211/src/diagnostics/` | Optional execution observation |
-| `bluetooth/src/controller/` | One controller epoch, command/response boundaries and timer progress |
-| `bluetooth/src/session/` | Finite DTM, advertising, scanning and peripheral sessions |
+| `ieee80211/src/{monitor,connected_tasks,station_network,stack_boundary}` | Portable capture/injection handoffs, task shutdown, association-scoped network ownership and explicit polling boundary |
+| `esp32s31/ieee80211/src/roles/` | Role execution and retained TX/RX owners |
+| `esp32s31/ieee80211/src/roles/access_point/network_tx.rs` | One AP TX owner, publication and cancellation |
+| `esp32s31/ieee80211/src/roles/access_point/network_tx/{queue,power_save,aggregate,completion}.rs` | Lease queues, TIM/DTIM release, standby aggregation and completion on that same owner |
+| `esp32s31/ieee80211/src/datapath/` | Packet handoff and async composition around chip transactions |
+| `esp32s31/ieee80211/src/diagnostics/` | Optional execution observation |
+| `esp32s31/bluetooth/src/controller/` | One controller epoch, command/response boundaries and timer progress |
+| `esp32s31/bluetooth/src/session/` | Finite DTM, advertising, scanning and peripheral sessions |
 | Both `src/time/phy.rs` | `embassy-time` implementations of shared PHY time contracts |
 
 Hardware transactions and finite chip state remain below these packages. A

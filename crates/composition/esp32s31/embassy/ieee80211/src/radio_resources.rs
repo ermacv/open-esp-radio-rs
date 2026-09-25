@@ -29,35 +29,35 @@ use embassy_net_released as embassy_net;
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 #[cfg(feature = "owned-network")]
-use oer_embassy_net::{OwnedEndpointResources, OwnedNetworkDevice, OwnedNetworkTxFrame};
+use oer_embassy_net_owned::{OwnedEndpointResources, OwnedNetworkDevice, OwnedNetworkTxFrame};
 #[cfg(feature = "embassy-network")]
 use oer_embassy_net_upstream::{
     Device as EmbassyNetworkDevice, FrameStorage as EmbassyFrameStorage,
     Resources as EmbassyEndpointResources,
 };
 
-use oer_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorage;
+use oer_esp32s31_ieee80211_dma::tx_ampdu_storage::AmpduDmaStorage;
 #[cfg(feature = "owned-network")]
-use oer_esp32s31_wifi_runtime::datapath::network::DualOwnedDatapathNetwork;
+use oer_esp32s31_ieee80211_runtime::datapath::network::DualOwnedDatapathNetwork;
 
 #[cfg(feature = "embassy-network")]
-use oer_esp32s31_wifi_embassy_upstream::{DualEmbassyDatapathNetwork, EmbassyTxFrame};
-use oer_esp32s31_wifi_runtime::datapath::{
+use oer_esp32s31_ieee80211_embassy_net_upstream::{DualEmbassyDatapathNetwork, EmbassyTxFrame};
+use oer_esp32s31_ieee80211_runtime::datapath::{
     PinnedTxConsumer, PinnedTxFrame, PinnedTxPool, PinnedTxResources,
     tx::resources::AggregateTxResources,
 };
 
-use oer_esp32s31_wifi_mac::tx::ampdu::{
+use oer_esp32s31_ieee80211_mac::tx::ampdu::{
     HtAmpduTxError, HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage,
     TX_AMPDU_METADATA_SIZE,
 };
 
-use oer_wifi_embassy::station_network::{RunningStationNetwork, StationNetworkResources};
+use oer_ieee80211_runtime::station_network::{RunningStationNetwork, StationNetworkResources};
 
 use static_cell::{ConstStaticCell, StaticCell};
 
 pub(super) const NETWORK_TX_HEADROOM: usize =
-    TX_AMPDU_METADATA_SIZE + oer_ieee80211::station::STA_PROTECTED_QOS_ETHERNET_HEADROOM;
+    TX_AMPDU_METADATA_SIZE + oer_ieee80211_mac::station::STA_PROTECTED_QOS_ETHERNET_HEADROOM;
 // The protected MPDU starts immediately after the aggregate metadata and must
 // remain naturally aligned for the hardware TX path.
 const _: () = assert!(TX_AMPDU_METADATA_SIZE.is_multiple_of(core::mem::align_of::<u32>()));
@@ -432,7 +432,7 @@ fn prepare_psram_for_wifi_dma_read(storage: &mut [u8]) {
     // The diagnostic pool isolates every slot on 64-byte cache-line
     // boundaries. The ownership callback writes dirty CPU data back and
     // writes those complete lines back before they become DMA-owned.
-    oer_esp32s31_soc::writeback_psram_for_dma_read(storage)
+    oer_esp32s31_soc_esp_hal::writeback_psram_for_dma_read(storage)
         .expect("direct Wi-Fi TX DMA probe cache writeback must accept its PSRAM slot");
     let address = address as u32;
     let _ = DIRECT_PSRAM_TX_DMA_FIRST_ADDRESS.compare_exchange(
@@ -508,9 +508,10 @@ pub(crate) fn initialize_network(
         .init(PacketPool::new(ACCESS_POINT_RX_PACKET_STORAGE.take()))
         .allocator();
     let tx_consumer = initialize_physical_tx();
-    let station_interface = oer_esp32s31_wifi_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID;
+    let station_interface =
+        oer_esp32s31_ieee80211_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID;
     let access_point_interface =
-        oer_esp32s31_wifi_runtime::roles::concurrent::AP_NETWORK_INTERFACE_ID;
+        oer_esp32s31_ieee80211_runtime::roles::concurrent::AP_NETWORK_INTERFACE_ID;
     let (station_device, station_runner) =
         station_resources.split(station_interface, station_address, station_rx_allocator);
     let (access_point_device, access_point_runner) = access_point_resources.split(
@@ -542,9 +543,10 @@ pub(crate) fn initialize_network(
 ) -> (WifiDevices, WifiNetworkResources) {
     let station_resources = NETWORK_RESOURCES.take();
     let access_point_resources = ACCESS_POINT_NETWORK_RESOURCES.take();
-    let station_interface = oer_esp32s31_wifi_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID;
+    let station_interface =
+        oer_esp32s31_ieee80211_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID;
     let access_point_interface =
-        oer_esp32s31_wifi_runtime::roles::concurrent::AP_NETWORK_INTERFACE_ID;
+        oer_esp32s31_ieee80211_runtime::roles::concurrent::AP_NETWORK_INTERFACE_ID;
     let (station_device, station_runner) = station_resources.split(
         station_address,
         STATION_EMBASSY_RX_STORAGE.take(),

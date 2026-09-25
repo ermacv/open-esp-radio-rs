@@ -1,6 +1,6 @@
 //! Fixed initial-key or refresh-key failure probe. No application data is sent on the failed link.
 use super::{Adapter, PeerAddress};
-use open_esp_radio_hil_protocol::BluetoothSecurityFailure as Failure;
+use oer_hil_protocol::BluetoothSecurityFailure as Failure;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -20,7 +20,7 @@ use crate::{
 
 use embassy_sync::blocking_mutex::raw::{RawMutex, RawMutex as NetworkRawMutex};
 
-use oer_esp32s31_wifi_mac::{crypto::CcmpKeyHardware, irq::MacInterruptRoute};
+use oer_esp32s31_ieee80211_mac::{crypto::CcmpKeyHardware, irq::MacInterruptRoute};
 
 /// Consuming owner interface needed by the common shutdown transaction.
 ///

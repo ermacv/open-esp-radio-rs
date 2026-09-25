@@ -23,7 +23,7 @@ use oer_esp32s31_hal::{
     owner::RadioRuntimeOwner,
 };
 
-use oer_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
+use oer_esp32s31_ieee80211::cooperative_hardware::CooperativeRadioHardware;
 
 /// Whether RX promotion was attempted for the first or a later association.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

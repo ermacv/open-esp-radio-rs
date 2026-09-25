@@ -13,7 +13,7 @@ use crate::peer_policy::{StaPeerAssociationPlanError, StaPeerScanPolicy, StaWmmS
 
 use oer_esp32s31_hal::types::MacHeBeamformingReportProfileError;
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     edca::EdcaParametersError,
     he::{He20InstallError, He20PeerHardware, program_he20_peer_state},
     init::StaNoiseFloorHardware,
@@ -22,10 +22,11 @@ use oer_esp32s31_wifi_mac::{
 };
 
 use {
-    oer_ieee80211::extensions::wmm::WmmParameterSet, oer_ieee80211::he::He20Capabilities,
-    oer_ieee80211::he::He20PeerState, oer_ieee80211::he::HeDcmConstellation,
-    oer_ieee80211::ht::HtPeerCapabilities, oer_ieee80211::scan::ScanRecord,
-    oer_ieee80211::station::AssociationResponse, oer_ieee80211::station::association::PhyMode,
+    oer_ieee80211_mac::extensions::wmm::WmmParameterSet, oer_ieee80211_mac::he::He20Capabilities,
+    oer_ieee80211_mac::he::He20PeerState, oer_ieee80211_mac::he::HeDcmConstellation,
+    oer_ieee80211_mac::ht::HtPeerCapabilities, oer_ieee80211_mac::scan::ScanRecord,
+    oer_ieee80211_mac::station::AssociationResponse,
+    oer_ieee80211_mac::station::association::PhyMode,
 };
 
 /// TX-policy capability consumed by the associated-peer transition.

@@ -6,7 +6,7 @@
 //! arbitration.
 
 #[cfg(feature = "task-poll-telemetry")]
-use oer_esp32s31_wifi_sta::connected_rx::ConnectedRxDataCycleProfile;
+use oer_esp32s31_ieee80211_sta::connected_rx::ConnectedRxDataCycleProfile;
 
 use core::future::{Future, pending, ready};
 
@@ -14,7 +14,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use embassy_time::{Duration, Instant, Timer};
 
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     RxPhyInfo,
     ampdu::{
         RX_BLOCK_ACK_BANK_COUNT, RxAmpduError, RxAmpduMpdu, RxAmpduRelease, RxBlockAckReorderBanks,
@@ -22,14 +22,14 @@ use oer_esp32s31_wifi_mac::rx::{
     pool::{VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT},
 };
 
-use oer_esp32s31_wifi_sta::connected_rx::{
+use oer_esp32s31_ieee80211_sta::connected_rx::{
     ConnectedRxConfig, ConnectedRxDispatch, ConnectedRxDispatcher, ConnectedRxEvent,
     ConnectedRxSink, StaCcmpRxReplayError,
 };
 
-use oer_ieee80211::data::EthernetFrameParts;
+use oer_ieee80211_mac::data::EthernetFrameParts;
 
-use oer_wifi_softmac::MacRxMetadata;
+use oer_ieee80211_softmac::MacRxMetadata;
 
 #[cfg(test)]
 use crate::datapath::rx::staging::StagedRxQueue;
@@ -204,7 +204,7 @@ pub trait ConnectedRxProtocolSink<
 pub struct AlwaysReadyConnectedRxSink<S>(pub S);
 
 impl<S: ConnectedRxSink> ConnectedRxSink for AlwaysReadyConnectedRxSink<S> {
-    fn publish(&mut self, event: oer_esp32s31_wifi_sta::connected_rx::ConnectedRxEvent<'_>) {
+    fn publish(&mut self, event: oer_esp32s31_ieee80211_sta::connected_rx::ConnectedRxEvent<'_>) {
         self.0.publish(event);
     }
 
@@ -218,8 +218,8 @@ impl<S: ConnectedRxSink> ConnectedRxSink for AlwaysReadyConnectedRxSink<S> {
 
     fn publish_esp_now_v2(
         &mut self,
-        received: oer_wifi_softmac::EspNowReceivedV2<'_>,
-        metadata: oer_wifi_softmac::MacRxMetadata<oer_esp32s31_wifi_mac::rx::RxPhyInfo>,
+        received: oer_ieee80211_softmac::EspNowReceivedV2<'_>,
+        metadata: oer_ieee80211_softmac::MacRxMetadata<oer_esp32s31_ieee80211_mac::rx::RxPhyInfo>,
     ) {
         self.0.publish_esp_now_v2(received, metadata);
     }
@@ -246,7 +246,7 @@ impl<S: ConnectedRxSink, const CAPACITY: usize, const SLOTS: usize>
 struct DeferredEthernetFrames<'storage> {
     frames: PackedEthernetWriter<'storage>,
     metadata: Option<MacRxMetadata<RxPhyInfo>>,
-    power_save_delivery: Option<oer_wifi_sta::power_save::StaPsPollDelivery>,
+    power_save_delivery: Option<oer_ieee80211_sta::power_save::StaPsPollDelivery>,
     wants_power_save_delivery: bool,
 }
 

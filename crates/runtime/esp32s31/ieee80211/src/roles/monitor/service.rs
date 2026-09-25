@@ -32,7 +32,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use oer_esp32s31_hal::types::MacInterruptMask;
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     init::{
         MAC_COLD_RX_INTERRUPT_MASK, MacRuntimeStopHardware, MacSnifferHardware,
         activate_promiscuous_receive, deactivate_promiscuous_receive,
@@ -41,7 +41,7 @@ use oer_esp32s31_wifi_mac::{
     rx::{RxDma, RxPhyInfo},
 };
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     MonitorInjectionRequest, MonitorSink, WifiChannel, WifiStandaloneMonitorPlan,
 };
 
@@ -340,10 +340,10 @@ where
         plan: WifiStandaloneMonitorPlan,
         request: MonitorInjectionRequest<'_>,
     ) -> Result<
-        oer_esp32s31_wifi::monitor_injection::MonitorInjectionAdmission,
-        oer_esp32s31_wifi::monitor_injection::MonitorInjectionAdmissionError,
+        oer_esp32s31_ieee80211::monitor_injection::MonitorInjectionAdmission,
+        oer_esp32s31_ieee80211::monitor_injection::MonitorInjectionAdmissionError,
     > {
-        oer_esp32s31_wifi::monitor_injection::admit_esp32s31_monitor_injection::<
+        oer_esp32s31_ieee80211::monitor_injection::admit_esp32s31_monitor_injection::<
             RxPhyInfo,
             S,
             TX_BUFFER_SIZE,

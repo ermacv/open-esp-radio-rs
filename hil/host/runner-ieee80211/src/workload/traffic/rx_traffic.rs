@@ -1,0 +1,946 @@
+//! Host sender and report writer for production RX-only qualification.
+
+use hil_core::context::Context;
+use std::{env, fs, net::Ipv4Addr, path::Path, time::Duration};
+
+use oer_hil_protocol::{
+    Completion, Direction, FlowConfig, SessionConfig, SessionFlowConfig, SessionLinkRequirements,
+    Transport,
+};
+
+use crate::{
+    Result, evidence, fixture::local::air_monitor::LocalAirMonitorCapture,
+    fixture::local::air_monitor::LocalAirMonitorEvidence,
+    fixture::openwrt::tx_monitor::OpenWrtTxMonitorCapture,
+    fixture::openwrt::tx_monitor::OpenWrtTxMonitorEvidence, fixture::station_fixture::RxCapture,
+    workload::traffic::bidirectional::RxQualification,
+    workload::traffic::bidirectional::assess_rx_log,
+    workload::traffic::bidirectional::rx_order_markdown,
+    workload::traffic::bidirectional::rx_reorder_markdown,
+    workload::traffic::bidirectional::task_poll_markdown,
+    workload::traffic::bidirectional::udp_sequence_markdown,
+    workload::traffic::bidirectional::validate_ht40_rx_vector,
+    workload::traffic::host_network::BenchmarkIpv4Route,
+    workload::traffic::paced_udp::Config as PacedUdpConfig,
+    workload::traffic::paced_udp::send as send_paced_udp,
+};
+use hil_core::{
+    lab::config::StationFixtureConfig, scenario::HtGuardIntervalExpectation,
+    scenario::PhyExpectation, session::await_udp_rx_ready,
+};
+
+const DEFAULT_PORT: u16 = 4_323;
+const DEFAULT_RATE_BPS: u64 = 20_000_000;
+const DEFAULT_DURATION: Duration = Duration::from_secs(12);
+const DEFAULT_PAYLOAD: usize = 1_200;
+const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct Config {
+    pub require_post_maintenance_echo: bool,
+    pub maximum_rx_silence_ms: Option<u32>,
+    pub require_nonzero_rfpll_correction: bool,
+    pub station_pause: Option<oer_hil_protocol::StationPauseOperation>,
+    pub station_pause_after: Duration,
+    pub station_pause_attempts: u8,
+    pub station_pause_interval: Duration,
+    pub address: Ipv4Addr,
+    pub port: u16,
+    pub rate_bps: u64,
+    pub minimum_rate_bps: Option<u64>,
+    pub duration: Duration,
+    pub payload: usize,
+    pub expected_rx_format: u8,
+    pub phy: PhyExpectation,
+    pub maximum_idle_channel_utilization_255: Option<u8>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EvidencePolicy {
+    pub require_exact_delivery: bool,
+    pub require_no_beacon_loss: bool,
+    pub require_driver_observation: bool,
+    pub capture_openwrt_tx_monitor: bool,
+    pub capture_independent_laptop_monitor: bool,
+    pub minimum_mcs: Option<u8>,
+    pub guard_interval: HtGuardIntervalExpectation,
+    pub fixture_guard_interval: HtGuardIntervalExpectation,
+}
+
+pub fn run(
+    options: Config,
+    output: &Path,
+    context: &Context<'_>,
+    evidence_policy: EvidencePolicy,
+) -> Result<()> {
+    let mut options = options.validate()?;
+    let require_exact_delivery = evidence_policy.require_exact_delivery;
+    fs::create_dir_all(output)?;
+    let capture = context.capture(output)?;
+    let discovered_address = match await_udp_rx_ready(
+        &capture,
+        context.target(),
+        options.address,
+        options.port,
+        DEVICE_READY_TIMEOUT,
+    ) {
+        Ok(address) => address,
+        Err(error) => {
+            return capture.finish_with(Err(error));
+        }
+    };
+    options.address = discovered_address.address;
+    let host_route =
+        match BenchmarkIpv4Route::discover(options.address, &context.lab.station_fixture) {
+            Ok(route) => route,
+            Err(error) => {
+                return capture.finish_with(Err(error));
+            }
+        };
+    let same_boot_probes = env::var("OPEN_RADIO_RX_SAME_BOOT_PROBES")
+        .ok()
+        .and_then(|value| value.parse::<u8>().ok())
+        .unwrap_or(0);
+    for probe in 1..=same_boot_probes {
+        let probe_output = output.join(format!("same-boot-probe-{probe}"));
+        std::fs::create_dir_all(&probe_output)?;
+        let fixture_capture = RxCapture::start(
+            &context.lab.station_fixture,
+            std::net::SocketAddrV4::new(options.address, options.port),
+            &probe_output,
+            options.duration,
+            options.phy,
+            evidence_policy.fixture_guard_interval,
+            options.maximum_idle_channel_utilization_255,
+        )?;
+        let duration_millis = u32::try_from(options.duration.as_millis())?;
+        let session = capture.start_session(SessionConfig {
+            network_interface: oer_hil_protocol::WifiNetworkInterface::Station,
+            transport: Transport::Udp,
+            direction: Direction::Rx,
+            completion: Completion::DurationMillis(duration_millis),
+            flows: [
+                Some(SessionFlowConfig {
+                    flow_id: 0,
+                    peer: None,
+                    target_rx: Some(FlowConfig {
+                        payload_bytes: u16::try_from(options.payload)?,
+                        offered_rate_bps: Some(options.rate_bps),
+                        pacing_group_datagrams: None,
+                    }),
+                    target_tx: None,
+                    payload_identity: None,
+                }),
+                None,
+            ],
+            link_requirements: SessionLinkRequirements::NONE,
+        })?;
+        let host = send_paced_udp(PacedUdpConfig {
+            address: options.address,
+            port: options.port,
+            rate_bps: options.rate_bps,
+            duration: options.duration,
+            payload: options.payload,
+        })?;
+        host_route.verify_socket_source(host.source)?;
+        let structured = capture.wait_for_session(
+            session,
+            options.duration.saturating_add(Duration::from_secs(10)),
+        )?;
+        capture.acknowledge_session(session)?;
+        let fixture = fixture_capture.map(RxCapture::finish).transpose()?;
+        let throughput_kbps = structured
+            .transport
+            .rx_bytes
+            .saturating_mul(8)
+            .saturating_mul(1_000)
+            .checked_div(structured.transport.elapsed_micros.max(1))
+            .unwrap_or(0);
+        eprintln!(
+            "OPENRADIOHOST same_boot_probe={probe}/{same_boot_probes} rx_kbps={throughput_kbps} rx_units={} elapsed_us={}",
+            structured.transport.rx_units, structured.transport.elapsed_micros,
+        );
+        if let Some(fixture) = fixture {
+            eprintln!(
+                "OPENRADIOHOST same_boot_probe={probe}/{same_boot_probes} {}",
+                fixture.markdown().trim(),
+            );
+        }
+    }
+    let fixture_capture = RxCapture::start(
+        &context.lab.station_fixture,
+        std::net::SocketAddrV4::new(options.address, options.port),
+        output,
+        options.duration,
+        options.phy,
+        evidence_policy.fixture_guard_interval,
+        options.maximum_idle_channel_utilization_255,
+    )?;
+    let host_wire_capture = if context.lab.air_observer.is_some() {
+        Some(host_route.capture_wire(options.address, output, options.duration)?)
+    } else {
+        None
+    };
+    let remote_air_capture = crate::fixture::openwrt::air_monitor::Capture::start(
+        context.lab,
+        Some(options.address),
+        options.duration,
+        output,
+    )?;
+    let tx_monitor_capture = if evidence_policy.capture_openwrt_tx_monitor {
+        let StationFixtureConfig::OpenWrt(config) = &context.lab.station_fixture else {
+            return Err("OpenWrt TX-monitor evidence requires an OpenWrt station fixture".into());
+        };
+        Some(OpenWrtTxMonitorCapture::start(
+            config,
+            options.address,
+            options.port,
+            options.duration,
+            output,
+        )?)
+    } else {
+        None
+    };
+    let independent_air_capture = if evidence_policy.capture_independent_laptop_monitor {
+        let StationFixtureConfig::OpenWrt(config) = &context.lab.station_fixture else {
+            return Err("independent laptop evidence requires an OpenWrt station fixture".into());
+        };
+        Some(LocalAirMonitorCapture::start(
+            config,
+            options.address,
+            options.duration,
+            output,
+        )?)
+    } else {
+        None
+    };
+    let duration_millis = u32::try_from(options.duration.as_millis())?;
+    if options.station_pause.is_some() {
+        super::maintenance::require(&capture)?;
+    }
+    let station_cursor = capture.station_lifecycle_cursor();
+    let session = capture.start_session(SessionConfig {
+        network_interface: oer_hil_protocol::WifiNetworkInterface::Station,
+        transport: Transport::Udp,
+        direction: Direction::Rx,
+        completion: Completion::DurationMillis(duration_millis),
+        flows: [
+            Some(SessionFlowConfig {
+                flow_id: 0,
+                peer: None,
+                target_rx: Some(FlowConfig {
+                    payload_bytes: u16::try_from(options.payload)?,
+                    offered_rate_bps: Some(options.rate_bps),
+                    pacing_group_datagrams: None,
+                }),
+                target_tx: None,
+                payload_identity: None,
+            }),
+            None,
+        ],
+        link_requirements: SessionLinkRequirements::NONE,
+    })?;
+    let (host_result, pause_result) = if let Some(operation) = options.station_pause {
+        std::thread::scope(|scope| {
+            let sender = scope.spawn(|| {
+                send_paced_udp(PacedUdpConfig {
+                    address: options.address,
+                    port: options.port,
+                    rate_bps: options.rate_bps,
+                    duration: options.duration,
+                    payload: options.payload,
+                })
+            });
+            let pause = (|| {
+                let device_rx = capture.wait_for_udp_rx_started(session, Duration::from_secs(3))?;
+                super::maintenance::wait_after_progress(options.station_pause_after);
+                let host_rx: Option<u64> = None;
+                let result = super::maintenance::run(
+                    &capture,
+                    operation,
+                    options.require_nonzero_rfpll_correction,
+                    options.station_pause_attempts,
+                    options.station_pause_interval,
+                    output,
+                    serde_json::json!({"device_rx_datagrams": device_rx, "host_rx_datagrams": host_rx}),
+                );
+                context
+                    .measurements
+                    .check("wifi.maintenance.transaction-valid", result.is_ok());
+                result
+            })();
+            let host = sender
+                .join()
+                .unwrap_or_else(|_| Err("UDP sender thread panicked".into()));
+            (host, pause)
+        })
+    } else {
+        (
+            send_paced_udp(PacedUdpConfig {
+                address: options.address,
+                port: options.port,
+                rate_bps: options.rate_bps,
+                duration: options.duration,
+                payload: options.payload,
+            }),
+            Ok(()),
+        )
+    };
+    let host = host_result?;
+    host_route.verify_socket_source(host.source)?;
+    host_route.record(output, options.address, host.source)?;
+    let structured = match capture.wait_for_session(
+        session,
+        options.duration.saturating_add(Duration::from_secs(10)),
+    ) {
+        Ok(evidence) => evidence,
+        Err(error) => {
+            return capture.finish_with(Err(error));
+        }
+    };
+    if let Err(error) = capture.acknowledge_session(session) {
+        return capture.finish_with(Err(error));
+    }
+    if let Err(error) = pause_result {
+        return capture.finish_with(Err(error));
+    }
+    if options.require_post_maintenance_echo {
+        let resumed = super::icmp_latency::post_maintenance_echo(options.address, output);
+        context
+            .measurements
+            .check("wifi.maintenance.ip-exchange-resumed", resumed.is_ok());
+        if let Err(error) = resumed {
+            return capture.finish_with(Err(error));
+        }
+    }
+    if options.station_pause.is_some() {
+        let same_link = capture.require_station_unchanged_since(station_cursor);
+        context
+            .measurements
+            .check("wifi.maintenance.same-link", same_link.is_ok());
+        same_link?;
+    }
+    if let Some(wire) = host_wire_capture {
+        wire.finish()?;
+    }
+    if let Some(observer) = remote_air_capture {
+        observer.finish()?;
+    }
+    let fixture = fixture_capture.map(RxCapture::finish).transpose()?;
+    let tx_monitor_rx = tx_monitor_capture
+        .map(|capture| capture.finish(host.datagrams))
+        .transpose()?;
+    let independent_air_rx = independent_air_capture
+        .map(LocalAirMonitorCapture::finish)
+        .transpose()?;
+    let beacon_loss = evidence_policy
+        .require_no_beacon_loss
+        .then(|| capture.require_no_beacon_loss());
+    let log = capture.finish()?;
+    if let Some(result) = beacon_loss {
+        result?;
+    }
+    let minimum_bps = options
+        .minimum_rate_bps
+        .unwrap_or_else(|| options.rate_bps.saturating_mul(9) / 10);
+    let typed_rx_kbps = structured
+        .transport
+        .rx_bytes
+        .saturating_mul(8)
+        .saturating_mul(1_000)
+        .checked_div(structured.transport.elapsed_micros.max(1))
+        .unwrap_or(0);
+    record_rates(
+        &context.measurements,
+        typed_rx_kbps,
+        host.throughput_bps(),
+        minimum_bps,
+    );
+    super::continuity::record_rx_silence(
+        &context.measurements,
+        options.maximum_rx_silence_ms,
+        structured.transport,
+    );
+    super::continuity::require_rx_silence(options.maximum_rx_silence_ms, structured.transport)?;
+    if !evidence_policy.require_driver_observation {
+        if structured.radio.is_some()
+            || structured.tx_timing.is_some()
+            || structured.rx_delivery.is_some()
+            || structured.network_scheduler.is_some()
+        {
+            return Err("performance image published driver-internal evidence".into());
+        }
+        let expected_bytes = structured
+            .transport
+            .rx_units
+            .saturating_mul(options.payload as u64);
+        let link_failure = if options.phy == PhyExpectation::Ht40 {
+            fixture.as_ref().map_or_else(
+                || {
+                    Some(String::from(
+                        "HT40 performance requires a managed fixture link snapshot",
+                    ))
+                },
+                |fixture| {
+                    fixture
+                        .require_ht40_downlink()
+                        .err()
+                        .map(|error| error.to_string())
+                },
+            )
+        } else {
+            None
+        };
+        let transport_failure = if !structured.finished.summary.passed {
+            Some(String::from(
+                "target did not complete the typed RX session normally",
+            ))
+        } else if structured.transport.tx_bytes != 0 || structured.transport.tx_units != 0 {
+            Some(String::from(
+                "RX-only session reported unexpected transmitted traffic",
+            ))
+        } else if structured.transport.transport_errors != 0 {
+            Some(format!(
+                "typed RX session reported {} transport errors",
+                structured.transport.transport_errors
+            ))
+        } else if structured.transport.rx_bytes != expected_bytes {
+            Some(format!(
+                "typed RX byte count {} does not match {} full payload datagrams",
+                structured.transport.rx_bytes, structured.transport.rx_units
+            ))
+        } else if host.throughput_bps() < minimum_bps {
+            Some(String::from(
+                "host failed to offer at least 90% of the requested RX rate",
+            ))
+        } else if typed_rx_kbps < minimum_bps / 1_000 {
+            Some(format!(
+                "device RX {typed_rx_kbps} kbit/s is below the acceptance floor"
+            ))
+        } else {
+            None
+        };
+        let failure = link_failure.or(transport_failure);
+        let result = if failure.is_some() { "FAIL" } else { "PASS" };
+        let failure_report = failure
+            .as_ref()
+            .map(|failure| format!("- Acceptance failure: `{failure}`\n"))
+            .unwrap_or_default();
+        let fixture_report = fixture.as_ref().map_or_else(
+            || String::from("- AP-side link vector: `external AP; not observed`\n"),
+            |fixture| fixture.markdown(),
+        );
+        let air_report =
+            rx_air_evidence_markdown(tx_monitor_rx.as_ref(), independent_air_rx.as_ref());
+        fs::write(
+            output.join("report.md"),
+            format!(
+                "# Open-radio {} RX performance HIL\n\n\
+                 - Result: `{result}`\n\
+                 {failure_report}\
+                 - Evidence boundary: `transport, external host offer, stack watermark, requested air capture; driver observation not collected`\n\
+                 {fixture_report}\
+                 {air_report}\
+                 - Device: `{}`\n\
+                 - Requested/actual host offer: `{:.3}` / `{:.3} Mbit/s`\n\
+                 - Host payload: `{}` bytes in `{}` datagrams\n\
+                 - Target transport: `{}` bytes / `{}` datagrams / `{}` us (`{:.3} Mbit/s`)\n\
+                 - Stack minimum free: CPU0 `{}/{}` bytes (required `{}`); CPU1 `{}/{}` bytes (required `{}`)\n\
+                 - Evidence CRC32C: `0x{:08x}`\n\
+                 - Host pacing maximum lateness/catch-up/deadline resets: `{} us` / `{}` datagrams / `{}`\n\n\
+                 UART evidence is in [`uart.log`](uart.log).\n",
+                options.phy.id().to_uppercase(),
+                options.address,
+                options.rate_bps as f64 / 1_000_000.0,
+                host.throughput_bps() as f64 / 1_000_000.0,
+                host.bytes,
+                host.datagrams,
+                structured.transport.rx_bytes,
+                structured.transport.rx_units,
+                structured.transport.elapsed_micros,
+                typed_rx_kbps as f64 / 1_000.0,
+                structured.stack.cpu0.free_bytes,
+                structured.stack.cpu0.capacity_bytes,
+                structured.stack.cpu0.minimum_free_bytes,
+                structured.stack.cpu1.free_bytes,
+                structured.stack.cpu1.capacity_bytes,
+                structured.stack.cpu1.minimum_free_bytes,
+                structured.finished.evidence_crc32c,
+                host.maximum_lateness_us(),
+                host.maximum_catch_up_datagrams,
+                host.deadline_resets,
+            ),
+        )?;
+        if let Some(failure) = failure {
+            return Err(failure.into());
+        }
+        eprintln!(
+            "OPENRADIOHOST result=PASS mode={}-rx-performance offered_kbps={} host_kbps={} rx_kbps={typed_rx_kbps} report={}",
+            options.phy.id(),
+            options.rate_bps / 1_000,
+            host.throughput_bps() / 1_000,
+            output.join("report.md").display(),
+        );
+        return Ok(());
+    }
+    let raw_rx_radio = structured
+        .radio
+        .and_then(|evidence| evidence.rx)
+        .ok_or("session did not publish typed RX radio evidence")?;
+    let typed_radio_failure = if require_exact_delivery {
+        structured.require_rx_radio(options.expected_rx_format, host.datagrams)
+    } else {
+        structured.require_rx_radio_health(options.expected_rx_format)
+    }
+    .err()
+    .map(|error| error.to_string());
+    let typed_phy_failure = (options.phy == PhyExpectation::Ht40)
+        .then(|| {
+            validate_ht40_rx_vector(
+                &raw_rx_radio,
+                evidence_policy.minimum_mcs,
+                evidence_policy.guard_interval,
+            )
+        })
+        .transpose()
+        .err()
+        .map(|error| error.to_string());
+    // Text telemetry enriches the report when present. Typed transport/radio
+    // evidence alone decides qualification and therefore remains authoritative
+    // even if the bounded diagnostic stream is truncated.
+    let text_assessment = match assess_rx_log(&log, options.expected_rx_format) {
+        Ok(assessment) => Some(assessment),
+        Err(error) => {
+            eprintln!("diagnostic_text_warning={error}");
+            None
+        }
+    };
+    if let Some(failure) = text_assessment
+        .as_ref()
+        .and_then(|assessment| assessment.failure.as_deref())
+    {
+        eprintln!("diagnostic_text_warning={failure}");
+    }
+    let typed_rx = RxQualification::from_typed(structured.transport, raw_rx_radio);
+    let rx = text_assessment
+        .map(|assessment| assessment.rx.with_typed_radio(&typed_rx))
+        .unwrap_or(typed_rx);
+    let structured_failure = typed_phy_failure.or_else(|| {
+        let evidence = structured;
+        let expected_bytes = evidence
+            .transport
+            .rx_units
+            .saturating_mul(options.payload as u64);
+        if !evidence.finished.summary.passed {
+            Some(String::from(
+                "target did not complete the typed RX session normally",
+            ))
+        } else if evidence.transport.tx_bytes != 0 || evidence.transport.tx_units != 0 {
+            Some(String::from(
+                "RX-only session reported unexpected transmitted traffic",
+            ))
+        } else if evidence.transport.transport_errors != 0 {
+            Some(format!(
+                "typed RX session reported {} transport errors",
+                evidence.transport.transport_errors
+            ))
+        } else if evidence.transport.rx_bytes != expected_bytes {
+            Some(format!(
+                "typed RX byte count {} does not match {} full payload datagrams",
+                evidence.transport.rx_bytes, evidence.transport.rx_units
+            ))
+        } else if require_exact_delivery
+            && (evidence.transport.rx_units != host.datagrams
+                || evidence.transport.rx_bytes != host.bytes)
+        {
+            Some(format!(
+                "host/target RX delivery mismatch: host={}/{} target={}/{}",
+                host.bytes,
+                host.datagrams,
+                evidence.transport.rx_bytes,
+                evidence.transport.rx_units
+            ))
+        } else {
+            None
+        }
+    });
+    let typed_delivery_failure = if require_exact_delivery {
+        structured.rx_delivery.and_then(|delivery| {
+            let assessment = evidence::rx_delivery::assess(host.datagrams, delivery);
+            (!assessment.exact()).then_some(format!(
+                "typed RX delivery frontier is {}",
+                assessment.frontier()
+            ))
+        })
+    } else {
+        None
+    };
+    let acceptance_failure = if host.throughput_bps() < minimum_bps {
+        Some(String::from(
+            "host failed to offer at least 90% of the requested RX rate",
+        ))
+    } else if typed_rx_kbps < minimum_bps / 1_000 {
+        Some(format!(
+            "device RX {} kbit/s is below the acceptance floor",
+            typed_rx_kbps,
+        ))
+    } else {
+        None
+    };
+    let fixture_failure = if require_exact_delivery {
+        fixture.as_ref().and_then(|fixture| {
+            let expected = host.datagrams.saturating_add(1);
+            (fixture.wireless_packets() != expected).then_some({
+                format!(
+                    "host/AP Wi-Fi egress mismatch: expected={} observed={} packets",
+                    expected,
+                    fixture.wireless_packets()
+                )
+            })
+        })
+    } else {
+        None
+    };
+    let failure = fixture_failure
+        .or(typed_delivery_failure)
+        .or(typed_radio_failure)
+        .or(structured_failure)
+        .or(acceptance_failure);
+    let result = if failure.is_some() { "FAIL" } else { "PASS" };
+    let failure_report = failure
+        .as_ref()
+        .map(|failure| format!("- Acceptance failure: `{failure}`\n"))
+        .unwrap_or_default();
+    let structured_report = format!(
+        "- Typed session evidence: `{}` bytes / `{}` datagrams / `{}` us; CRC32C `0x{:08x}`\n\
+                 - Stack minimum free: CPU0 `{}/{}` bytes (required `{}`); CPU1 `{}/{}` bytes (required `{}`)\n",
+        structured.transport.rx_bytes,
+        structured.transport.rx_units,
+        structured.transport.elapsed_micros,
+        structured.finished.evidence_crc32c,
+        structured.stack.cpu0.free_bytes,
+        structured.stack.cpu0.capacity_bytes,
+        structured.stack.cpu0.minimum_free_bytes,
+        structured.stack.cpu1.free_bytes,
+        structured.stack.cpu1.capacity_bytes,
+        structured.stack.cpu1.minimum_free_bytes,
+    );
+    let fixture_report = fixture.as_ref().map_or_else(
+        || String::from("- AP-side evidence: `external AP; not observed`\n"),
+        |fixture| fixture.markdown(),
+    );
+    let air_report = rx_air_evidence_markdown(tx_monitor_rx.as_ref(), independent_air_rx.as_ref());
+    let pipeline = rx.pipeline;
+    let irq = rx.irq;
+    let average_service_us = pipeline.service_us as f64 / pipeline.admitted_frames.max(1) as f64;
+    let average_reload_us = pipeline.reload_us as f64 / pipeline.reload_transactions.max(1) as f64;
+    let average_dispatch_us = pipeline.dispatch_us as f64 / pipeline.protocol_frames.max(1) as f64;
+    let average_publish_us =
+        pipeline.network_publish_us as f64 / pipeline.network_publications.max(1) as f64;
+    let average_wait_us =
+        pipeline.network_ready_wait_us as f64 / pipeline.network_ready_waits.max(1) as f64;
+    let average_irq_service_us =
+        pipeline.rx_irq_to_service_us as f64 / pipeline.rx_irq_service_samples.max(1) as f64;
+    let task_poll_report = task_poll_markdown(rx.task_polls);
+    let udp_sequence_report = udp_sequence_markdown(rx.sequence, host.datagrams);
+    let rx_order_report = rx_order_markdown(rx.order);
+    let rx_reorder_report = rx_reorder_markdown(rx.reorder);
+    let typed_delivery_report = structured
+        .rx_delivery
+        .map(|evidence| evidence::rx_delivery::markdown(host.datagrams, evidence))
+        .unwrap_or_else(|| {
+            String::from(
+                "## Typed RX delivery frontier\n\nNot collected in this image. Use the explicit RX-delivery profile.\n\n",
+            )
+        });
+    fs::write(
+        output.join("report.md"),
+        format!(
+            "# Open-radio {} RX-only HIL\n\n\
+             - Result: `{result}`\n\
+             {failure_report}\
+             - Delivery contract: `{}`\n\
+             - Device: `{}`\n\
+             - Requested/actual host offer: `{:.3}` / `{:.3} Mbit/s`\n\
+             - Host payload: `{}` bytes in `{}` datagrams\n\
+             {structured_report}\
+             {fixture_report}\
+             {air_report}\
+             - Host pacing maximum lateness/catch-up/deadline resets: `{} us` / `{}` datagrams / `{}`\n\
+             - Device RX median: `{:.3} Mbit/s` across `{}` samples; received UDP datagrams: `{}`\n\
+             - Enqueued/software-dropped frames: `{}` / `{}`\n\
+             - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\
+             - Complete HT benchmark vectors: MCS0..7 LGI40 `{:?}`, SGI40 `{:?}`, HT20 `{:?}`, other `{}`\n\
+             - Benchmark UDP datagrams marked S-MPDU / not S-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
+             - Connected beacons marked S-MPDU / not S-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
+             - Benchmark UDP datagrams marked A-MPDU / not A-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
+             - A-MPDU provenance hardware true/false, protocol true/false: `{}` / `{}`, `{}` / `{}`\n\
+             - Hardware BUFFER_FULL/FIFO_OVERFLOW: `{}` / `{}`\n\n\
+             {udp_sequence_report}\
+             {rx_order_report}\
+             {rx_reorder_report}\
+             {typed_delivery_report}\
+             ## RX pipeline\n\n\
+             - DMA service calls/frontier/admitted: `{}` / `{}` / `{}`; max frontier/admitted: `{}` / `{}`\n\
+             - Service-observed BUFFER_FULL increments/samples: `{}` / `{}`; between/during: `{}` / `{}` increments across `{}` / `{}` services; last boot service/phase/counter/frontier/admitted/pool/queue/service time: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{} us`\n\
+             - Frontier service buckets 0 / 1 / 2-3 / 4-7 / 8-15 / 16-31 / 32+: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}`\n\
+             - RX IRQ posts/wake epochs/hard entries/coalesced/sampled services/clock-skew rejects: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; sampled IRQ-to-service: `{:.2} us` average, `{}` us boot maximum\n\
+             - MAC entry causes spurious / RX-work-only / RX-mixed / TX-only / TX-mixed / auxiliary-or-unknown-only: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; classified `{}` entries; extra snapshots `{}`, loop saturations `{}`, auxiliary STATUS OR `0x{:08x}`, unknown STATUS OR `0x{:08x}`\n\
+             - Staged bytes: `{}`; invalid empty/oversize units recycled: `{}` / `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
+             - Safe reload transactions: `{}`; `{:.2} us` average, `{}` us boot maximum; `{}` us total\n\
+             - Backpressured services (bulk-preserve): `{}` (`{}`); pool/queue credit limited: `{}` / `{}`; maximum deferred frames: `{}`; backpressured pool/queue minimum: `{}` / `{}`; all-service pool/queue floor: `{}` / `{}`\n\
+             - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
+             - A-MSDU MPDUs/subframes: `{}` / `{}`; raw unit buckets <=1700 / 1701-3400 / >3400 bytes: `{}` / `{}` / `{}`; boot maximum: `{}` bytes\n\
+             - Network publications/bytes: `{}` / `{}`; copy+publish: `{:.2} us/frame` average, `{}` us boot maximum\n\
+             - Network-ready waits: `{}`; `{:.2} us` average, `{}` us boot maximum\n\n\
+             {task_poll_report}\
+             UART evidence is in [`uart.log`](uart.log).\n",
+            options.phy.id().to_uppercase(),
+            if require_exact_delivery {
+                "exact"
+            } else {
+                "performance-health"
+            },
+            options.address,
+            options.rate_bps as f64 / 1_000_000.0,
+            host.throughput_bps() as f64 / 1_000_000.0,
+            host.bytes,
+            host.datagrams,
+            host.maximum_lateness_us(),
+            host.maximum_catch_up_datagrams,
+            host.deadline_resets,
+            rx.throughput_median_kbps as f64 / 1_000.0,
+            rx.sample_count,
+            rx.received_datagrams,
+            rx.enqueued,
+            rx.dropped,
+            rx.he_mcs_histogram,
+            rx.other_phy_frames,
+            rx.ht40_long_gi_mcs,
+            rx.ht40_short_gi_mcs,
+            rx.ht20_mcs,
+            rx.ht_other_frames,
+            rx.s_mpdu.s_mpdu_datagrams,
+            rx.s_mpdu.not_s_mpdu_datagrams,
+            rx.s_mpdu.unavailable_datagrams,
+            rx.s_mpdu.s_mpdu_beacons,
+            rx.s_mpdu.not_s_mpdu_beacons,
+            rx.s_mpdu.unavailable_beacons,
+            rx.ampdu.ampdu_datagrams,
+            rx.ampdu.not_ampdu_datagrams,
+            rx.ampdu.unavailable_datagrams,
+            rx.ampdu.hardware_ampdu_datagrams,
+            rx.ampdu.hardware_not_ampdu_datagrams,
+            rx.ampdu.protocol_ampdu_datagrams,
+            rx.ampdu.protocol_not_ampdu_datagrams,
+            rx.buffer_full,
+            rx.fifo_overflow,
+            pipeline.service_calls,
+            pipeline.frontier_frames,
+            pipeline.admitted_frames,
+            pipeline.maximum_frontier,
+            pipeline.maximum_admitted,
+            pipeline.dma_buffer_full_increments,
+            pipeline.dma_buffer_full_service_samples,
+            pipeline.dma_buffer_full_between_services,
+            pipeline.dma_buffer_full_during_services,
+            pipeline.dma_buffer_full_between_service_samples,
+            pipeline.dma_buffer_full_during_service_samples,
+            pipeline.dma_buffer_full_last_service,
+            pipeline.dma_buffer_full_last_phase,
+            pipeline.dma_buffer_full_last_counter,
+            pipeline.dma_buffer_full_last_frontier,
+            pipeline.dma_buffer_full_last_admitted,
+            pipeline.dma_buffer_full_last_pool_credits,
+            pipeline.dma_buffer_full_last_queue_credits,
+            pipeline.dma_buffer_full_last_service_us,
+            pipeline.frontier_zero_services,
+            pipeline.frontier_one_services,
+            pipeline.frontier_two_three_services,
+            pipeline.frontier_four_seven_services,
+            pipeline.frontier_eight_fifteen_services,
+            pipeline.frontier_sixteen_thirty_one_services,
+            pipeline.frontier_thirty_two_plus_services,
+            pipeline.rx_irq_posts,
+            pipeline.rx_irq_epochs,
+            pipeline.mac_irq_entries,
+            pipeline.rx_irq_coalesced_posts,
+            pipeline.rx_irq_service_samples,
+            pipeline.rx_irq_clock_skew_samples,
+            average_irq_service_us,
+            pipeline.rx_irq_to_service_max_us,
+            irq.spurious_entries,
+            irq.rx_only_entries,
+            irq.rx_mixed_entries,
+            irq.tx_only_entries,
+            irq.tx_mixed_entries,
+            irq.other_only_entries,
+            irq.classified_entries(),
+            irq.extra_nonzero_snapshots,
+            irq.saturated_entries,
+            irq.auxiliary_entries,
+            irq.unhandled_entries,
+            pipeline.staged_bytes,
+            pipeline.stage_empty_discards,
+            pipeline.stage_too_long_discards,
+            average_service_us,
+            pipeline.service_max_us,
+            pipeline.reload_transactions,
+            average_reload_us,
+            pipeline.reload_max_us,
+            pipeline.reload_us,
+            pipeline.backpressured_services,
+            pipeline.bulk_capacity_blocked_services,
+            pipeline.pool_credit_limited_services,
+            pipeline.queue_credit_limited_services,
+            pipeline.maximum_deferred_frames,
+            pipeline.minimum_backpressured_pool_credits,
+            pipeline.minimum_backpressured_queue_credits,
+            pipeline.minimum_pool_credits,
+            pipeline.minimum_queue_credits,
+            pipeline.protocol_frames,
+            pipeline.protocol_data_frames,
+            average_dispatch_us,
+            pipeline.dispatch_max_us,
+            pipeline.protocol_amsdu_mpdus,
+            pipeline.protocol_amsdu_subframes,
+            pipeline.protocol_units_le_1700,
+            pipeline.protocol_units_1701_3400,
+            pipeline.protocol_units_over_3400,
+            pipeline.protocol_unit_max_bytes,
+            pipeline.network_publications,
+            pipeline.network_published_bytes,
+            average_publish_us,
+            pipeline.network_publish_max_us,
+            pipeline.network_ready_waits,
+            average_wait_us,
+            pipeline.network_ready_wait_max_us,
+        ),
+    )?;
+    if let Some(failure) = failure {
+        return Err(failure.into());
+    }
+    eprintln!(
+        "OPENRADIOHOST result=PASS mode={}-rx offered_kbps={} host_kbps={} \
+         rx_median_kbps={} enqueued={} dropped=0 report={}",
+        options.phy.id(),
+        options.rate_bps / 1_000,
+        host.throughput_bps() / 1_000,
+        typed_rx_kbps,
+        rx.enqueued,
+        output.join("report.md").display(),
+    );
+    Ok(())
+}
+
+fn rx_air_evidence_markdown(
+    tx_monitor: Option<&OpenWrtTxMonitorEvidence>,
+    independent: Option<&LocalAirMonitorEvidence>,
+) -> String {
+    let ap = tx_monitor.map_or_else(
+        || String::from("- OpenWrt TX monitor: `not collected`\n"),
+        |evidence| {
+            format!(
+                "- OpenWrt TX monitor frames/kernel drops: `{}` / `{}`; UDP unique/duplicates/unrecovered: `{}` / `{}` / `{}`; MAC retry publications: `{}`\n",
+                evidence.captured_frames,
+                evidence.kernel_dropped,
+                evidence.unique_units,
+                evidence.duplicates,
+                evidence.unrecovered,
+                evidence.mac_retry_publications,
+            )
+        },
+    );
+    let observer = independent.map_or_else(
+        || String::from("- Independent air observer: `not collected`\n"),
+        |evidence| {
+            format!(
+                "- Independent air observer frames/kernel drops: `{}` / `{}`; logical decoded data MPDUs/retry attempts/missing metadata: `{}` / `{}` / `{}`; BlockAck full/tail/hole/unique MPDUs/backward starts: `{}` / `{}` / `{}` / `{}` / `{}`\n",
+                evidence.captured_frames,
+                evidence.kernel_dropped,
+                evidence.logical_data_units,
+                evidence.retry_attempts,
+                evidence.missing_mac_metadata,
+                evidence.full_block_ack_frames,
+                evidence.tail_block_ack_frames,
+                evidence.hole_block_ack_frames,
+                evidence.unique_block_acked_mpdus,
+                evidence.backward_block_ack_starts,
+            )
+        },
+    );
+    format!("{ap}{observer}")
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            require_post_maintenance_echo: false,
+            maximum_rx_silence_ms: None,
+            require_nonzero_rfpll_correction: false,
+            station_pause: None,
+            station_pause_after: Duration::ZERO,
+            station_pause_attempts: 1,
+            station_pause_interval: Duration::ZERO,
+            address: Ipv4Addr::UNSPECIFIED,
+            port: DEFAULT_PORT,
+            rate_bps: DEFAULT_RATE_BPS,
+            minimum_rate_bps: None,
+            duration: DEFAULT_DURATION,
+            payload: DEFAULT_PAYLOAD,
+            expected_rx_format: 4,
+            phy: PhyExpectation::He20,
+            maximum_idle_channel_utilization_255: None,
+        }
+    }
+}
+impl Config {
+    fn validate(self) -> Result<Self> {
+        if !(Duration::from_secs(5)..=Duration::from_secs(300)).contains(&self.duration) {
+            return Err("traffic duration must be in 5..=300 seconds".into());
+        }
+        if !(64..=1472).contains(&self.payload) {
+            return Err("UDP payload must be in 64..=1472 bytes".into());
+        }
+        if self.maximum_idle_channel_utilization_255 == Some(0) {
+            return Err("maximum idle channel utilization must be nonzero".into());
+        }
+        if [Some(self.rate_bps), self.minimum_rate_bps]
+            .into_iter()
+            .flatten()
+            .any(|rate| !(100_000..=500_000_000).contains(&rate))
+        {
+            return Err("traffic rate is outside the supported range".into());
+        }
+        if self.port == 0 {
+            return Err("port must be nonzero".into());
+        }
+        if self
+            .minimum_rate_bps
+            .is_some_and(|floor| floor > self.rate_bps)
+        {
+            return Err("throughput floor cannot exceed offered rate".into());
+        }
+
+        Ok(self)
+    }
+}
+
+fn record_rates(
+    recorder: &hil_core::evidence::measurements::Recorder,
+    target_kbps: u64,
+    host_bps: u64,
+    minimum_bps: u64,
+) {
+    // The existing target gate compares integer kbit/s, while the host gate
+    // compares bit/s. Preserve both resolutions in the reported thresholds.
+    recorder.rate(
+        "udp.rx.target-rate",
+        target_kbps.saturating_mul(1_000),
+        Some(minimum_bps / 1_000 * 1_000),
+    );
+    recorder.rate("udp.rx.host-offer-rate", host_bps, Some(minimum_bps));
+}
+
+#[cfg(test)]
+mod tests;

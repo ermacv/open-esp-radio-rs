@@ -1,4 +1,4 @@
-use oer_ieee80211::ap::ApProtectedDataFrame;
+use oer_ieee80211_mac::ap::ApProtectedDataFrame;
 
 use super::*;
 

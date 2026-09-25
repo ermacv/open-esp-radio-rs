@@ -1,10 +1,8 @@
 //! Plaintext application and its read-only observation surface.
 use super::console;
-use bluetooth_example::gatt::{self, Observation};
 use core::cell::Cell;
-use open_esp_radio_hil_protocol::{
-    BluetoothGattEvidence, Command, Event, FeatureCapabilities, RejectReason,
-};
+use gatt_application::gatt::{self, Observation};
+use oer_hil_protocol::{BluetoothGattEvidence, Command, Event, FeatureCapabilities, RejectReason};
 use trouble_host::{Controller, Stack, prelude::DefaultPacketPool};
 
 struct Profile(Cell<BluetoothGattEvidence>);

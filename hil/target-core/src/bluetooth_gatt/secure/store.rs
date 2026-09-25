@@ -1,8 +1,8 @@
 //! HIL-only failure of an external application service, not a radio fault hook.
 //! The retained RAM backend is never changed by an injected load failure.
 use super::state::State;
-use bluetooth_example::security::bonds::{BondStore, RamBondStore, StoreError};
 use core::convert::Infallible;
+use gatt_application::security::bonds::{BondStore, RamBondStore, StoreError};
 use trouble_host::{BondInformation, Identity};
 
 #[derive(Debug, Eq, PartialEq)]

@@ -31,18 +31,18 @@ use embassy_time::Timer;
 
 use oer_esp32s31_hal::{ieee80211::arena::RadioOwnerArena, owner::RadioRuntimeOwner};
 
-use oer_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
+use oer_esp32s31_ieee80211::cooperative_hardware::CooperativeRadioHardware;
 #[cfg(feature = "diagnostics")]
-use oer_esp32s31_wifi_dma::descriptor::{rx_done, rx_rearm_word};
+use oer_esp32s31_ieee80211_dma::descriptor::{rx_done, rx_rearm_word};
 #[cfg(feature = "diagnostics")]
-use oer_esp32s31_wifi_runtime::roles::station::rx_protocol::ConnectedRxProtocolSink;
+use oer_esp32s31_ieee80211_runtime::roles::station::rx_protocol::ConnectedRxProtocolSink;
 #[cfg(feature = "diagnostics")]
-use oer_esp32s31_wifi_sta::connected_rx::{
+use oer_esp32s31_ieee80211_sta::connected_rx::{
     ConnectedRxEvent, ConnectedRxSink as MacConnectedRxSink,
 };
 
-use oer_esp32s31_wifi_runtime::roles::station::epoch::StoppedStaRx;
-use oer_esp32s31_wifi_runtime::{
+use oer_esp32s31_ieee80211_runtime::roles::station::epoch::StoppedStaRx;
+use oer_esp32s31_ieee80211_runtime::{
     datapath::{
         DatapathRunner, DatapathServices,
         network::DatapathNetwork,
@@ -78,7 +78,7 @@ use oer_esp32s31_wifi_runtime::{
     },
 };
 
-use oer_esp32s31_wifi_esp_hal::{
+use oer_esp32s31_ieee80211_esp_hal::{
     EspHalRadioPeripheral,
     mac_interrupt_epoch::{
         prepare_active_connected_sta_without_power_save,
@@ -86,22 +86,22 @@ use oer_esp32s31_wifi_esp_hal::{
     },
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     crypto::{StaGroupCcmpKeyMaterial, StaGroupCcmpSlot, StaPairwiseCcmpSlot},
     init::MacRuntimeStopHardware,
     rx::{RxIngressConfig, RxRingError, pool::RxStagePool},
     tx::{HeEdcaTxopLimit, HtGuardInterval, HtMcs, LegacyRate, ampdu::HtAmpduTxError},
 };
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     attempt::{StaAttemptSecurity, StaAttemptSecurityMaterial, StaInstalledSecurity},
     connected_rx::{StaCcmpRxReplayResource, StaCcmpRxReplayStartFailure},
     single_mpdu_tx::ConnectedTxSecurity,
 };
 
-use oer_ieee80211::station::StaTxSequenceCounters;
+use oer_ieee80211_mac::station::StaTxSequenceCounters;
 
-use oer_wifi_embassy::{await_stack_boundary, station_network::RunningStationNetwork};
+use oer_ieee80211_runtime::{await_stack_boundary, station_network::RunningStationNetwork};
 
 use static_cell::{ConstStaticCell, StaticCell};
 
@@ -170,7 +170,7 @@ type ConnectedRxProtocolStoppedOwner = ConnectedProtocolStopped<
     RX_REORDER_BACKING_SLOT_COUNT,
 >;
 type ConnectedLiveRx =
-    ConnectedRx<oer_esp32s31_wifi_dma::rx_ring::RxRingLive<'static, RX_DESCRIPTOR_COUNT>>;
+    ConnectedRx<oer_esp32s31_ieee80211_dma::rx_ring::RxRingLive<'static, RX_DESCRIPTOR_COUNT>>;
 type ConnectedStoppedRx = StoppedReceive<
     'static,
     'static,
@@ -196,14 +196,14 @@ type ConnectedRx<R> = StagedRxProducer<
     RX_STAGE_SLOT_COUNT,
     RX_BUFFER_SIZE,
     { RX_BUFFER_SIZE + 4 },
-    oer_esp32s31_wifi_runtime::datapath::rx::dma::FullRxStageAdmission,
+    oer_esp32s31_ieee80211_runtime::datapath::rx::dma::FullRxStageAdmission,
     R,
 >;
 type ConnectedRxService = ConnectedStaRxService<ConnectedLiveRx, ConnectedRxProtocol>;
 type ConnectedParkedRxService =
     ConnectedStaRxParked<ConnectedLiveRx, ConnectedRxProtocolStoppedOwner>;
 pub(super) type ProductionAccessPointRxProducer =
-    oer_esp32s31_wifi_runtime::roles::access_point::AccessPointReceiveProducer<
+    oer_esp32s31_ieee80211_runtime::roles::access_point::AccessPointReceiveProducer<
         'static,
         'static,
         'static,
@@ -217,7 +217,7 @@ pub(super) type ProductionAccessPointRxProducer =
         { RX_BUFFER_SIZE + 4 },
     >;
 pub(super) type ProductionAccessPointRxConsumer =
-    oer_esp32s31_wifi_runtime::roles::access_point::AccessPointRxConsumer<
+    oer_esp32s31_ieee80211_runtime::roles::access_point::AccessPointRxConsumer<
         'static,
         'static,
         CriticalSectionRawMutex,
@@ -231,7 +231,7 @@ pub(super) fn access_point_rx_pipeline(
     storage: &'static RxStorage,
     retained: Option<ConnectedRxEpochResources>,
     #[cfg(feature = "diagnostics")] pipeline_observer: Option<
-        &'static dyn oer_esp32s31_wifi_runtime::diagnostics::rx_pipeline::RxPipelineObserver,
+        &'static dyn oer_esp32s31_ieee80211_runtime::diagnostics::rx_pipeline::RxPipelineObserver,
     >,
 ) -> (
     ProductionAccessPointRxProducer,
@@ -244,11 +244,11 @@ pub(super) fn access_point_rx_pipeline(
             None => retained,
         };
         return match ring {
-            ProductionRxRing::Halted(ring) => oer_esp32s31_wifi_runtime::roles::access_point::AccessPointReceiveProducer::from_halted_resources(
+            ProductionRxRing::Halted(ring) => oer_esp32s31_ieee80211_runtime::roles::access_point::AccessPointReceiveProducer::from_halted_resources(
                 ring,
                 retained,
             ),
-            ProductionRxRing::Live(ring) => oer_esp32s31_wifi_runtime::roles::access_point::AccessPointReceiveProducer::from_live_resources(
+            ProductionRxRing::Live(ring) => oer_esp32s31_ieee80211_runtime::roles::access_point::AccessPointReceiveProducer::from_live_resources(
                 ring,
                 retained,
             ),
@@ -257,7 +257,7 @@ pub(super) fn access_point_rx_pipeline(
     #[cfg(feature = "diagnostics")]
     if let Some(observer) = pipeline_observer {
         return match ring {
-            ProductionRxRing::Halted(ring) => oer_esp32s31_wifi_runtime::roles::access_point::AccessPointReceiveProducer::from_halted_with_pipeline_observer(
+            ProductionRxRing::Halted(ring) => oer_esp32s31_ieee80211_runtime::roles::access_point::AccessPointReceiveProducer::from_halted_with_pipeline_observer(
                 ring,
                 storage,
                 &RX_STAGE_POOL,
@@ -265,7 +265,7 @@ pub(super) fn access_point_rx_pipeline(
                 EmbassyRxDmaObservationDelay,
                 observer,
             ),
-            ProductionRxRing::Live(ring) => oer_esp32s31_wifi_runtime::roles::access_point::AccessPointReceiveProducer::from_live_with_pipeline_observer(
+            ProductionRxRing::Live(ring) => oer_esp32s31_ieee80211_runtime::roles::access_point::AccessPointReceiveProducer::from_live_with_pipeline_observer(
                 ring,
                 storage,
                 &RX_STAGE_POOL,
@@ -277,7 +277,7 @@ pub(super) fn access_point_rx_pipeline(
     }
     match ring {
         ProductionRxRing::Halted(ring) => {
-            oer_esp32s31_wifi_runtime::roles::access_point::AccessPointReceiveProducer::from_halted(
+            oer_esp32s31_ieee80211_runtime::roles::access_point::AccessPointReceiveProducer::from_halted(
                 ring,
                 storage,
                 &RX_STAGE_POOL,
@@ -286,7 +286,7 @@ pub(super) fn access_point_rx_pipeline(
             )
         }
         ProductionRxRing::Live(ring) => {
-            oer_esp32s31_wifi_runtime::roles::access_point::AccessPointReceiveProducer::from_live(
+            oer_esp32s31_ieee80211_runtime::roles::access_point::AccessPointReceiveProducer::from_live(
                 ring,
                 storage,
                 &RX_STAGE_POOL,
@@ -445,7 +445,7 @@ pub(super) type ConnectedRxEpochResources = RxEpochResources<
 type ConnectedLiveTx = ConnectedTx<
     'static,
     'static,
-    oer_esp32s31_wifi_runtime::datapath::PinnedTxFrame<
+    oer_esp32s31_ieee80211_runtime::datapath::PinnedTxFrame<
         'static,
         CriticalSectionRawMutex,
         NETWORK_FRAME_CAPACITY,
@@ -455,7 +455,7 @@ type ConnectedLiveTx = ConnectedTx<
     >,
     oer_esp32s31_phy::PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_esp32s31_wifi_runtime::datapath::tx::time::EmbassyWifiTxTimer,
+    oer_esp32s31_ieee80211_runtime::datapath::tx::time::EmbassyWifiTxTimer,
     TX_AMPDU_FRAME_COUNT,
     TX_AMPDU_BUFFER_SIZE,
     { crate::resources::profile::ESP32S31_DEFAULT_TX_BUFFER_SIZE },
@@ -499,7 +499,7 @@ type ConnectedTxAssemblyFailure = ConnectedStaTxHandoffFailure<
     RadioTxBacking,
     oer_esp32s31_phy::PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_esp32s31_wifi_runtime::datapath::tx::time::EmbassyWifiTxTimer,
+    oer_esp32s31_ieee80211_runtime::datapath::tx::time::EmbassyWifiTxTimer,
     TX_AMPDU_FRAME_COUNT,
     TX_AMPDU_BUFFER_SIZE,
     { crate::resources::profile::ESP32S31_DEFAULT_TX_BUFFER_SIZE },
@@ -512,7 +512,7 @@ type ConnectedAssemblyComposition = ConnectedStaCompositionFailure<
     ConnectedTxAssemblyFailure,
 >;
 type ConnectedAssemblyFailure =
-    oer_esp32s31_wifi_runtime::roles::station::connected::ConnectedDriverAssemblyFailure<
+    oer_esp32s31_ieee80211_runtime::roles::station::connected::ConnectedDriverAssemblyFailure<
         NetworkRunner,
         ConnectedAssemblyComposition,
         ConnectedServicesMapper,
@@ -523,11 +523,11 @@ type ConnectedDriverStarted = ConnectedEpochStarted<
     RadioAmpduStorage,
     &'static ControlResources,
 >;
-type ReturnedConnectedTxResources = oer_esp32s31_wifi_sta::control_tx::WifiTxResources<
+type ReturnedConnectedTxResources = oer_esp32s31_ieee80211_sta::control_tx::WifiTxResources<
     'static,
     oer_esp32s31_phy::PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_esp32s31_wifi_runtime::datapath::tx::time::EmbassyWifiTxTimer,
+    oer_esp32s31_ieee80211_runtime::datapath::tx::time::EmbassyWifiTxTimer,
     { crate::resources::profile::ESP32S31_DEFAULT_TX_BUFFER_SIZE },
 >;
 type ConnectedDriverTeardownFailure = ConnectionTeardownFailure<
@@ -579,13 +579,13 @@ pub(super) static STAGED_RX_QUEUE: StagedRxQueue<
     RX_STAGE_SLOT_COUNT,
 > = StagedRxQueue::new();
 pub(super) static STA_AP_STAGED_RX_QUEUE:
-    oer_esp32s31_wifi_runtime::roles::concurrent::StaApStagedRxQueue<
+    oer_esp32s31_ieee80211_runtime::roles::concurrent::StaApStagedRxQueue<
         'static,
         CriticalSectionRawMutex,
         RX_STAGE_SLOT_COUNT,
         RX_STAGE_CAPACITY,
         RX_STAGE_SLOT_COUNT,
-    > = oer_esp32s31_wifi_runtime::roles::concurrent::StaApStagedRxQueue::new();
+    > = oer_esp32s31_ieee80211_runtime::roles::concurrent::StaApStagedRxQueue::new();
 pub(super) static RX_REORDER_COMMANDS: RxReorderCommandResources<CriticalSectionRawMutex> =
     RxReorderCommandResources::new();
 pub(super) static RX_REORDER_STORAGE: RxReorderFrameStorage<
@@ -798,7 +798,7 @@ where
 {
     fn staged_rx_admission(
         &self,
-    ) -> oer_esp32s31_wifi_runtime::roles::station::rx_protocol::StagedRxAdmission {
+    ) -> oer_esp32s31_ieee80211_runtime::roles::station::rx_protocol::StagedRxAdmission {
         self.inner.staged_rx_admission()
     }
 
@@ -812,15 +812,19 @@ where
 
     fn publish_staged(
         &mut self,
-        frame: oer_esp32s31_wifi_runtime::datapath::rx::staging::StagedRxFrame<'_, CAPACITY, SLOTS>,
-        ethernet: oer_esp32s31_wifi_runtime::datapath::rx::staging::StagedEthernetPublication,
-    ) -> oer_esp32s31_wifi_runtime::datapath::rx::staging::StagedRxDisposition {
+        frame: oer_esp32s31_ieee80211_runtime::datapath::rx::staging::StagedRxFrame<
+            '_,
+            CAPACITY,
+            SLOTS,
+        >,
+        ethernet: oer_esp32s31_ieee80211_runtime::datapath::rx::staging::StagedEthernetPublication,
+    ) -> oer_esp32s31_ieee80211_runtime::datapath::rx::staging::StagedRxDisposition {
         {
             let raw = frame.segment().buffer;
             let payload =
                 &raw[ethernet.payload_offset..ethernet.payload_offset + ethernet.payload_length];
             let event = ConnectedRxEvent::Ethernet {
-                frame: oer_ieee80211::data::EthernetFrameParts {
+                frame: oer_ieee80211_mac::data::EthernetFrameParts {
                     destination: ethernet.destination,
                     source: ethernet.source,
                     ether_type: ethernet.ether_type,
@@ -839,7 +843,7 @@ where
 }
 
 #[cfg(feature = "diagnostics")]
-fn event_frame(event: ConnectedRxEvent<'_>) -> oer_ieee80211::data::EthernetFrameParts<'_> {
+fn event_frame(event: ConnectedRxEvent<'_>) -> oer_ieee80211_mac::data::EthernetFrameParts<'_> {
     match event {
         ConnectedRxEvent::Ethernet { frame, .. } => frame,
         _ => unreachable!("the staged observation is always an Ethernet event"),
@@ -998,7 +1002,7 @@ pub(super) type ConnectedNetworkStarted<'state, 'security> = StartedNetworkConne
 /// Normal outcome returned after all connected owners are quiescent.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedStationOutcome {
-    Disconnected(oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason),
+    Disconnected(oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason),
     ReconnectRequested,
     StationStopped(StationCommand),
     HardwareFailure,
@@ -1013,21 +1017,21 @@ pub struct ConnectedStationReturn<'state, 'security> {
 }
 
 pub(crate) struct ConnectedDriverAssemblyFault {
-    _role: oer_esp32s31_wifi::runtime::WifiRoleOwner<EspHalRadioPeripheral>,
+    _role: oer_esp32s31_ieee80211::runtime::WifiRoleOwner<EspHalRadioPeripheral>,
     _interrupt: MacInterruptEpoch,
-    _dma: oer_esp32s31_wifi_runtime::roles::station::StationDmaResources<
+    _dma: oer_esp32s31_ieee80211_runtime::roles::station::StationDmaResources<
         'static,
         RxStorage,
         RX_DESCRIPTOR_COUNT,
     >,
     _tx_storage: &'static mut TxStorage,
-    _scan_table: &'static mut oer_ieee80211::scan::ScanTable,
+    _scan_table: &'static mut oer_ieee80211_mac::scan::ScanTable,
     _stack: (),
     _initial_network_task: Option<()>,
     _control_resources: &'static ControlResources,
     _group_security: ConnectedStaGroupSecurity,
     _material: StaAttemptSecurityMaterial,
-    _interface: oer_wifi_softmac::interface::BoundVirtualInterface,
+    _interface: oer_ieee80211_softmac::interface::BoundVirtualInterface,
     _failure: ConnectedAssemblyFailure,
 }
 
@@ -1052,15 +1056,15 @@ pub(crate) enum ConnectedStationReplaySetupFailure {
 pub enum ConnectedStationFault<'state, 'security> {
     Pause {
         _failure: &'static pause::Failure,
-        _role: Option<oer_esp32s31_wifi::runtime::WifiRoleOwner<EspHalRadioPeripheral>>,
-        _dma: oer_esp32s31_wifi_runtime::roles::station::StationDmaResources<
+        _role: Option<oer_esp32s31_ieee80211::runtime::WifiRoleOwner<EspHalRadioPeripheral>>,
+        _dma: oer_esp32s31_ieee80211_runtime::roles::station::StationDmaResources<
             'static,
             RxStorage,
             RX_DESCRIPTOR_COUNT,
         >,
         _tx_storage: &'state mut TxStorage,
-        _scan_table: &'state mut oer_ieee80211::scan::ScanTable,
-        _interface: oer_wifi_softmac::interface::BoundVirtualInterface,
+        _scan_table: &'state mut oer_ieee80211_mac::scan::ScanTable,
+        _interface: oer_ieee80211_softmac::interface::BoundVirtualInterface,
         _sta_ap_rx_batch: &'static mut [u8],
         _initial_connected: Option<InitialConnectedStaticResources>,
         _access_point_airtime: Option<&'static mut super::AccessPointAirtimeResources>,
@@ -1081,10 +1085,10 @@ pub enum ConnectedStationFault<'state, 'security> {
         _stack: (),
         _network: NetworkRunner,
         _initial_network_task: Option<()>,
-        _plan: oer_esp32s31_wifi_runtime::roles::station::connected::ConnectedStaPlan,
+        _plan: oer_esp32s31_ieee80211_runtime::roles::station::connected::ConnectedStaPlan,
         _installed_security: StaInstalledSecurity,
         _security: StaAttemptSecurity<'security>,
-        _error: oer_esp32s31_wifi_sta::tx_epoch::StaTxEpochError,
+        _error: oer_esp32s31_ieee80211_sta::tx_epoch::StaTxEpochError,
     },
     SecurityOwnershipMismatch {
         _runtime: ProductionStationRuntime<'state>,
@@ -1092,7 +1096,7 @@ pub enum ConnectedStationFault<'state, 'security> {
         _stack: (),
         _network: NetworkRunner,
         _initial_network_task: Option<()>,
-        _plan: oer_esp32s31_wifi_runtime::roles::station::connected::ConnectedStaPlan,
+        _plan: oer_esp32s31_ieee80211_runtime::roles::station::connected::ConnectedStaPlan,
         _installed_security: StaInstalledSecurity,
         _sequences: StaTxSequenceCounters,
         _material: StaAttemptSecurityMaterial,
@@ -1104,7 +1108,7 @@ pub enum ConnectedStationFault<'state, 'security> {
         _stack: (),
         _network: NetworkRunner,
         _initial_network_task: Option<()>,
-        _plan: oer_esp32s31_wifi_runtime::roles::station::connected::ConnectedStaPlan,
+        _plan: oer_esp32s31_ieee80211_runtime::roles::station::connected::ConnectedStaPlan,
         _failure: ConnectedStationReplaySetupFailure,
         _sequences: StaTxSequenceCounters,
         _material: StaAttemptSecurityMaterial,
@@ -1117,7 +1121,7 @@ pub enum ConnectedStationFault<'state, 'security> {
         _stack: (),
         _network: NetworkRunner,
         _initial_network_task: Option<()>,
-        _plan: oer_esp32s31_wifi_runtime::roles::station::connected::ConnectedStaPlan,
+        _plan: oer_esp32s31_ieee80211_runtime::roles::station::connected::ConnectedStaPlan,
         _installed_security: StaInstalledSecurity,
         _security: StaAttemptSecurity<'security>,
     },
@@ -1130,21 +1134,21 @@ pub enum ConnectedStationFault<'state, 'security> {
         _stack: (),
         _network: NetworkRunner,
         _initial_network_task: Option<()>,
-        _plan: oer_esp32s31_wifi_runtime::roles::station::connected::ConnectedStaPlan,
+        _plan: oer_esp32s31_ieee80211_runtime::roles::station::connected::ConnectedStaPlan,
         _installed_security: StaInstalledSecurity,
         _security: StaAttemptSecurity<'security>,
     },
     DriverTeardown {
-        _role: oer_esp32s31_wifi::runtime::WifiRoleOwner<EspHalRadioPeripheral>,
+        _role: oer_esp32s31_ieee80211::runtime::WifiRoleOwner<EspHalRadioPeripheral>,
         _interrupt: MacInterruptEpoch,
-        _dma: oer_esp32s31_wifi_runtime::roles::station::StationDmaResources<
+        _dma: oer_esp32s31_ieee80211_runtime::roles::station::StationDmaResources<
             'static,
             RxStorage,
             RX_DESCRIPTOR_COUNT,
         >,
         _tx_storage: &'state mut TxStorage,
-        _scan_table: &'state mut oer_ieee80211::scan::ScanTable,
-        _interface: oer_wifi_softmac::interface::BoundVirtualInterface,
+        _scan_table: &'state mut oer_ieee80211_mac::scan::ScanTable,
+        _interface: oer_ieee80211_softmac::interface::BoundVirtualInterface,
         _sta_ap_rx_batch: &'static mut [u8],
         _initial_connected: Option<InitialConnectedStaticResources>,
         #[cfg(feature = "diagnostics")]
@@ -1152,7 +1156,7 @@ pub enum ConnectedStationFault<'state, 'security> {
         _network: RunningWifiNetwork,
         _control_resources: &'static ControlResources,
         _outcome: ConnectedStationOutcome,
-        _interrupt_drain: oer_esp32s31_wifi_runtime::datapath::irq::MacInterruptEpochDrain,
+        _interrupt_drain: oer_esp32s31_ieee80211_runtime::datapath::irq::MacInterruptEpochDrain,
         _error: &'static mut ConnectedDriverTeardownFailure,
         _material: StaAttemptSecurityMaterial,
     },
@@ -1161,7 +1165,7 @@ pub enum ConnectedStationFault<'state, 'security> {
         _network: RunningWifiNetwork,
         _control_resources: &'static ControlResources,
         _outcome: ConnectedStationOutcome,
-        _interrupt_drain: oer_esp32s31_wifi_runtime::datapath::irq::MacInterruptEpochDrain,
+        _interrupt_drain: oer_esp32s31_ieee80211_runtime::datapath::irq::MacInterruptEpochDrain,
         _hardware: ConnectedHardware,
         _parked_rx: ConnectedParkedRx,
         _tx_resources: ReturnedConnectedTxResources,
@@ -1176,14 +1180,14 @@ pub enum ConnectedStationFault<'state, 'security> {
         _network: RunningWifiNetwork,
         _control_resources: &'static ControlResources,
         _outcome: ConnectedStationOutcome,
-        _interrupt_drain: oer_esp32s31_wifi_runtime::datapath::irq::MacInterruptEpochDrain,
+        _interrupt_drain: oer_esp32s31_ieee80211_runtime::datapath::irq::MacInterruptEpochDrain,
         _hardware: ConnectedHardware,
         _parked_rx: ConnectedParkedRx,
         _aggregate: RadioAmpduStorage,
         _control_observation: Esp32s31ConnectedControlShutdown,
         _security_stop: ConnectedStaSecurityStopReport,
         _sequences: StaTxSequenceCounters,
-        _error: oer_esp32s31_wifi_sta::tx_epoch::StaTxEpochError,
+        _error: oer_esp32s31_ieee80211_sta::tx_epoch::StaTxEpochError,
         _returned_control: ControlTx,
         _material: StaAttemptSecurityMaterial,
     },
@@ -1333,7 +1337,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                 }
             }
             .map_err(|_| {
-                oer_esp32s31_wifi_runtime::datapath::irq::MacInterruptEpochActivateError::AlreadyActive
+                oer_esp32s31_ieee80211_runtime::datapath::irq::MacInterruptEpochActivateError::AlreadyActive
             })
         } else {
             match interrupt.setup_mut() {
@@ -1344,12 +1348,12 @@ pub(crate) async fn run_connected<'state, 'security>(
                     ConnectedEpochResources::Reconnected(reconnected) => {
                         let access = reconnected.hardware_mut().register_access();
                         access.try_prepare_connected_sta_without_power_save(setup).map_err(|_| {
-                            oer_esp32s31_wifi_runtime::datapath::irq::MacInterruptEpochActivateError::AlreadyActive
+                            oer_esp32s31_ieee80211_runtime::datapath::irq::MacInterruptEpochActivateError::AlreadyActive
                         })
                     }
                 },
                 Err(_) => Err(
-                    oer_esp32s31_wifi_runtime::datapath::irq::MacInterruptEpochActivateError::AlreadyActive,
+                    oer_esp32s31_ieee80211_runtime::datapath::irq::MacInterruptEpochActivateError::AlreadyActive,
                 ),
             }
         };
@@ -1678,7 +1682,7 @@ pub(crate) async fn run_connected<'state, 'security>(
     };
 
     let network_rx = network_runner
-        .rx_publisher(oer_esp32s31_wifi_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID);
+        .rx_publisher(oer_esp32s31_ieee80211_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID);
     let (control_publisher, control_receiver) = control_resources.split();
     let rx_sink = EmbassyNetConnectedRxSink::new(network_rx, control_publisher);
     #[cfg(feature = "diagnostics")]
@@ -1769,7 +1773,7 @@ pub(crate) async fn run_connected<'state, 'security>(
     let mut radio_runner = DatapathRunner::new(
         &IRQ_RUNTIME,
         network_runner,
-        oer_esp32s31_wifi_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID,
+        oer_esp32s31_ieee80211_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID,
         drivers.services,
     );
     if let StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } = &mut material {
@@ -2013,7 +2017,7 @@ pub(crate) async fn run_connected<'state, 'security>(
                 ConnectedStaTeardownFailure::TxActive { .. } => "connected TX remained active",
             };
             diagnostics_event!("open-radio: {message}; quarantined");
-            let oer_esp32s31_wifi_runtime::roles::station::connected::ConnectedServiceTeardownFailure {
+            let oer_esp32s31_ieee80211_runtime::roles::station::connected::ConnectedServiceTeardownFailure {
                 exit,
                 interrupt,
                 interrupt_drain,

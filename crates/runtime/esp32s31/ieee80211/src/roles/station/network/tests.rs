@@ -1,7 +1,7 @@
 use core::sync::atomic::{AtomicU64, Ordering};
-use oer_embassy_net::{NetworkInterfaceId, NoopRawMutex, OwnedEndpointResources};
-use oer_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
-use oer_ieee80211::data::EthernetFrameParts;
+use oer_embassy_net_owned::{NetworkInterfaceId, NoopRawMutex, OwnedEndpointResources};
+use oer_esp32s31_ieee80211_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
+use oer_ieee80211_mac::data::EthernetFrameParts;
 use xarxa_driver::{PacketPool, PacketPoolStorage};
 
 use super::*;
@@ -67,7 +67,7 @@ fn sink_has_rx_only_capability_and_reports_bounded_backpressure() {
         },
         raw: &ethernet,
         amsdu: false,
-        metadata: oer_wifi_softmac::MacRxMetadata::unavailable(),
+        metadata: oer_ieee80211_softmac::MacRxMetadata::unavailable(),
     };
 
     sink.publish(event);
@@ -112,7 +112,7 @@ fn sink_has_rx_only_capability_and_reports_bounded_backpressure() {
         },
         raw: &ethernet,
         amsdu: false,
-        metadata: oer_wifi_softmac::MacRxMetadata::unavailable(),
+        metadata: oer_ieee80211_softmac::MacRxMetadata::unavailable(),
     };
     sink.publish(eapol);
     assert_eq!(sink.observer().0, 4);

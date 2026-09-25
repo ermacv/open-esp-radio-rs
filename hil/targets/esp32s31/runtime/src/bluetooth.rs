@@ -6,7 +6,7 @@ mod retirement;
 mod security;
 mod watchdog;
 
-use open_esp_radio_hil_target_core::bluetooth::command_pump;
+use oer_hil_target_core::bluetooth::command_pump;
 
 use bt_hci::{
     ControllerToHostPacket,
@@ -42,17 +42,17 @@ use oer_esp32s31_bluetooth::{
     },
     resources::BluetoothRadioHardware,
 };
-use oer_esp32s31_bluetooth_integration::{
-    BluetoothColdStartConfig, BluetoothHostAclCredits, BluetoothHostController, BluetoothSystem,
-    BluetoothSystemStorage, start_esp32s31_bluetooth,
-};
 use oer_esp32s31_bluetooth_memory::{
     DtmSchedulerAllocationConfig, PassiveScanDefaultTxPowerDbm,
     PassiveScanSchedulerAllocationConfig, PeripheralConnectionDefaultTxPowerDbm,
 };
 use oer_esp32s31_bluetooth_runtime::controller::DtmRecheckPeriod;
-use oer_esp32s31_radio_platform_esp_hal::{EspHalBluetoothPlatform, EspHalRadioPlatform};
-use open_esp_radio_hil_protocol::{
+use oer_esp32s31_bluetooth_system::{
+    BluetoothColdStartConfig, BluetoothHostAclCredits, BluetoothHostController, BluetoothSystem,
+    BluetoothSystemStorage, start_esp32s31_bluetooth,
+};
+use oer_esp32s31_radio_esp_hal::{EspHalBluetoothPlatform, EspHalRadioPlatform};
+use oer_hil_protocol::{
     BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES, BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS,
     BluetoothDtmEvidence as Evidence, BluetoothDtmOperation as Operation,
     BluetoothDtmResult as Outcome, BluetoothPeripheralOperation as PeripheralOperation,
@@ -335,7 +335,7 @@ pub(super) fn start(
     platform: EspHalRadioPlatform,
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     rng: esp_hal::peripherals::RNG<'static>,
-    service: &'static oer_esp32s31_soc::watchdog::DeadlineWatchdog,
+    service: &'static oer_esp32s31_soc_esp_hal::watchdog::DeadlineWatchdog,
     watchdog: Option<watchdog::DtmWatchdog>,
 ) -> ! {
     let platform = PLATFORM.init(platform);
@@ -360,7 +360,7 @@ async fn task(
     usb: esp_hal::peripherals::USB_DEVICE<'static>,
     boot_id: u64,
     watchdog: Option<watchdog::DtmWatchdog>,
-    service: &'static oer_esp32s31_soc::watchdog::DeadlineWatchdog,
+    service: &'static oer_esp32s31_soc_esp_hal::watchdog::DeadlineWatchdog,
 ) {
     // Diagnostic assumption: the board's retained main XTAL meets the BLE
     // 500-ppm limit. Use the broadest permitted bound, including margin over
@@ -489,7 +489,7 @@ async fn run_session(
             system = BluetoothSystem {
                 hci,
                 host_acl_credits,
-                runners: oer_esp32s31_bluetooth_integration::BluetoothRunners { hardware },
+                runners: oer_esp32s31_bluetooth_system::BluetoothRunners { hardware },
             };
             continue;
         }
@@ -546,7 +546,7 @@ async fn run_session(
             system = BluetoothSystem {
                 hci,
                 host_acl_credits,
-                runners: oer_esp32s31_bluetooth_integration::BluetoothRunners { hardware },
+                runners: oer_esp32s31_bluetooth_system::BluetoothRunners { hardware },
             };
             continue;
         }
@@ -776,8 +776,8 @@ impl Console {
             };
             let control = match command.body {
                 Command::PhyFault(
-                    control @ (open_esp_radio_hil_protocol::PhyFaultCommand::Status
-                    | open_esp_radio_hil_protocol::PhyFaultCommand::Release),
+                    control @ (oer_hil_protocol::PhyFaultCommand::Status
+                    | oer_hil_protocol::PhyFaultCommand::Release),
                 ) if command.session_id == 0 && command.validate_target(self.boot_id).is_ok() => {
                     Some(control)
                 }
@@ -843,7 +843,7 @@ impl Console {
             if !matches!(
                 with_timeout(
                     Duration::from_secs(2),
-                    open_esp_radio_hil_protocol::write_frame(usb, bytes)
+                    oer_hil_protocol::write_frame(usb, bytes)
                 )
                 .await,
                 Ok(Ok(()))
@@ -903,7 +903,7 @@ impl Console {
                 ..FeatureCapabilities::default()
             },
             maximum_payload_bytes: 37,
-            maximum_wire_frame_bytes: open_esp_radio_hil_protocol::MAX_WIRE_FRAME_BYTES as u16,
+            maximum_wire_frame_bytes: oer_hil_protocol::MAX_WIRE_FRAME_BYTES as u16,
         }
     }
 
@@ -1029,10 +1029,7 @@ impl Console {
             }
             let response = match command.body {
                 Command::PhyFault(control) => {
-                    if matches!(
-                        control,
-                        open_esp_radio_hil_protocol::PhyFaultCommand::Arm(_)
-                    ) {
+                    if matches!(control, oer_hil_protocol::PhyFaultCommand::Arm(_)) {
                         if active
                             || !self.peripheral_probe
                             || PERIPHERAL_HOST_EVENTS
@@ -1179,7 +1176,7 @@ impl Console {
                     cpu1: None,
                 },
                 Command::BluetoothPeripheral(operation) => {
-                    let execution = oer_esp32s31_bluetooth_integration::diagnostics::snapshot();
+                    let execution = oer_esp32s31_bluetooth_system::diagnostics::snapshot();
                     let host_events = PERIPHERAL_HOST_EVENTS.snapshot();
                     let start = match operation {
                         PeripheralOperation::StartAdvertising {
@@ -1324,9 +1321,9 @@ async fn execute(hci: &Host, operation: Operation) -> Outcome {
     }
 }
 
-fn rx_diagnostics() -> open_esp_radio_hil_protocol::BluetoothDtmRxDiagnostics {
+fn rx_diagnostics() -> oer_hil_protocol::BluetoothDtmRxDiagnostics {
     let d = oer_esp32s31_bluetooth::le::dtm::diagnostics::snapshot();
-    open_esp_radio_hil_protocol::BluetoothDtmRxDiagnostics {
+    oer_hil_protocol::BluetoothDtmRxDiagnostics {
         sequence_checks: d.sequence_checks,
         sequence_deadline_rejections: d.sequence_deadline_rejections,
         last_sequence_lead_ticks: d.last_sequence_lead_ticks,
@@ -1347,7 +1344,7 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
     if !stack.has_required_headroom() {
         super::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-cpu0-stack-headroom\r\n");
     }
-    let snapshot = oer_esp32s31_bluetooth_integration::diagnostics::snapshot();
+    let snapshot = oer_esp32s31_bluetooth_system::diagnostics::snapshot();
     let host_events = PERIPHERAL_HOST_EVENTS.snapshot();
     use core::fmt::Write as _;
     let mut detail = heapless::String::<128>::new();
@@ -1390,7 +1387,7 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
         .is_err()
     };
     let truncated = write!(detail, " stack_free={}", stack.free_bytes).is_err() || truncated;
-    Event::BluetoothPeripheral(open_esp_radio_hil_protocol::BluetoothPeripheralEvidence {
+    Event::BluetoothPeripheral(oer_hil_protocol::BluetoothPeripheralEvidence {
         operation,
         result,
         advertising_runs: snapshot.advertising_runs,
@@ -1507,45 +1504,42 @@ async fn start_advertising(hci: &Host, initialize: bool) -> Result<[u8; 6], Peri
 }
 
 #[inline(never)]
-fn maintenance_measurements() -> Option<open_esp_radio_hil_protocol::BluetoothPhyMaintenanceEvidence>
-{
+fn maintenance_measurements() -> Option<oer_hil_protocol::BluetoothPhyMaintenanceEvidence> {
     use oer_esp32s31_phy::tracking::observation::Operation;
-    let m = oer_esp32s31_bluetooth_integration::maintenance_observation::snapshot()?;
+    let m = oer_esp32s31_bluetooth_system::maintenance_observation::snapshot()?;
     let timing = |operation: Operation| {
         let t = m.operations[operation as usize];
-        open_esp_radio_hil_protocol::BluetoothPhyOperation {
+        oer_hil_protocol::BluetoothPhyOperation {
             completed: t.completed,
             maximum_micros: t.maximum_micros,
         }
     };
-    Some(
-        open_esp_radio_hil_protocol::BluetoothPhyMaintenanceEvidence {
-            transactions: m.transactions,
-            restored: m.restored,
-            common_calibrations: m.common_calibrations,
-            latest_rx_quality: m.latest_rx_quality.map(crate::phy_evidence::rx_quality),
-            bluetooth_calibrations: m.bluetooth_calibrations,
-            maximum_execution_micros: m.maximum_execution_micros,
-            maximum_restoration_micros: m.maximum_restoration_micros,
-            maximum_to_run_micros: m.maximum_to_run_micros,
-            maximum_poll_micros: m.maximum_poll_micros,
-            admitted_at_micros: m.admitted_at_micros,
-            quiesced_at_micros: m.quiesced_at_micros,
-            phy_started_at_micros: m.phy_started_at_micros,
-            phy_finished_at_micros: m.phy_finished_at_micros,
-            execution_deadline_micros: m.execution_deadline_micros,
-            restoration_deadline_micros: m.restoration_deadline_micros,
-            physical_finished_at_micros: m.physical_finished_at_micros,
-            run_at_micros: m.run_at_micros,
-            dcode: timing(Operation::Dcode),
-            rx_gain: timing(Operation::RxGain),
-            tx_dc_pwdet: timing(Operation::TxDcPwdet),
-            rfpll: timing(Operation::Rfpll),
-            calibration: timing(Operation::Calibration),
-            temperature: timing(Operation::Temperature),
-            invalid: m.invalid,
-        },
-    )
+    Some(oer_hil_protocol::BluetoothPhyMaintenanceEvidence {
+        transactions: m.transactions,
+        restored: m.restored,
+        common_calibrations: m.common_calibrations,
+        latest_rx_quality: m.latest_rx_quality.map(crate::phy_evidence::rx_quality),
+        bluetooth_calibrations: m.bluetooth_calibrations,
+        maximum_execution_micros: m.maximum_execution_micros,
+        maximum_restoration_micros: m.maximum_restoration_micros,
+        maximum_to_run_micros: m.maximum_to_run_micros,
+        maximum_poll_micros: m.maximum_poll_micros,
+        admitted_at_micros: m.admitted_at_micros,
+        quiesced_at_micros: m.quiesced_at_micros,
+        phy_started_at_micros: m.phy_started_at_micros,
+        phy_finished_at_micros: m.phy_finished_at_micros,
+        execution_deadline_micros: m.execution_deadline_micros,
+        restoration_deadline_micros: m.restoration_deadline_micros,
+        physical_finished_at_micros: m.physical_finished_at_micros,
+        run_at_micros: m.run_at_micros,
+        dcode: timing(Operation::Dcode),
+        rx_gain: timing(Operation::RxGain),
+        tx_dc_pwdet: timing(Operation::TxDcPwdet),
+        rfpll: timing(Operation::Rfpll),
+        calibration: timing(Operation::Calibration),
+        temperature: timing(Operation::Temperature),
+        invalid: m.invalid,
+    })
 }
 
 fn platform_reset_reason() -> ResetReason {
@@ -1554,7 +1548,7 @@ fn platform_reset_reason() -> ResetReason {
 
 #[cfg(feature = "bluetooth-watchdog-reset")]
 pub(super) fn diagnostic_watchdog(
-    service: &'static oer_esp32s31_soc::watchdog::DeadlineWatchdog,
+    service: &'static oer_esp32s31_soc_esp_hal::watchdog::DeadlineWatchdog,
 ) -> Option<watchdog::DtmWatchdog> {
     Some(watchdog::DtmWatchdog::new(service))
 }

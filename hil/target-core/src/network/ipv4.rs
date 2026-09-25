@@ -3,7 +3,7 @@ use embassy_net::{
     iface::Iface,
     wire::{IpAddress, IpCidr, Ipv4Address, Ipv4Cidr},
 };
-use open_esp_radio_hil_protocol::{NetworkInfo, NetworkIpv4Configuration, WifiNetworkInterface};
+use oer_hil_protocol::{NetworkInfo, NetworkIpv4Configuration, WifiNetworkInterface};
 pub fn configure(iface: Iface<'_>, config: Option<NetworkIpv4Configuration>) {
     iface.set_dhcpv4(None);
     iface.set_ip_addrs([]).expect("empty address list fits");

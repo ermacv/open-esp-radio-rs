@@ -13,11 +13,11 @@ use oer_memory::StableDmaBacking;
 
 use oer_esp32s31_hal::types::MacInterface;
 
-use oer_esp32s31_wifi::ampdu_tx::{
+use oer_esp32s31_ieee80211::ampdu_tx::{
     AmpduTxRoleAdapter, HtAmpduTxRolePolicy, HtAmpduTxRolePolicyError,
 };
 
-use oer_esp32s31_wifi_mac::tx::{
+use oer_esp32s31_ieee80211_mac::tx::{
     HtRate, LegacyTxQueue, TxCookie,
     ampdu::{
         AmpduFrameLayout, AmpduFrameSize, HtAmpduFrameRequest, HtAmpduHardware, HtAmpduTxError,
@@ -28,9 +28,9 @@ use oer_esp32s31_wifi_mac::tx::{
     runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
 };
 
-use oer_wifi_ap::ApAssociationIdentity;
+use oer_ieee80211_ap::ApAssociationIdentity;
 
-use oer_wifi_softmac::MacTxWork;
+use oer_ieee80211_softmac::MacTxWork;
 
 mod budget;
 
@@ -305,7 +305,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             dma_offset,
             AmpduFrameSize::new(
                 frame.encoded.length,
-                oer_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8,
+                oer_esp32s31_ieee80211::ordinary_tx::TX_CCMP_MIC_SIZE as u8,
             ),
         )
         .ok_or(ApAmpduError::Geometry)?;
@@ -347,9 +347,9 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         hardware: &mut H,
     ) -> Result<ApPreparedAmpdu, ApAmpduError>
     where
-        P: oer_esp32s31_wifi::ordinary_tx::WifiTxPowerProfile,
-        E: oer_esp32s31_wifi::ordinary_tx::WifiTxEntropy,
-        T: oer_esp32s31_wifi::ordinary_tx::WifiTxTimer,
+        P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
+        E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
+        T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
     {
         let prepared = self.prepared()?;
         ordinary
@@ -392,9 +392,9 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         hardware: &mut H,
     ) -> Result<ApAmpduProgress, ApAmpduError>
     where
-        P: oer_esp32s31_wifi::ordinary_tx::WifiTxPowerProfile,
-        E: oer_esp32s31_wifi::ordinary_tx::WifiTxEntropy,
-        T: oer_esp32s31_wifi::ordinary_tx::WifiTxTimer,
+        P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
+        E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
+        T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
     {
         let ApAmpduState::Hardware {
             cookie,

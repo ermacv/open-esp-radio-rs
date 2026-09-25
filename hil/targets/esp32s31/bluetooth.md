@@ -3,7 +3,8 @@
 ## Trouble applications
 
 `bluetooth-gatt` is a separate plaintext Trouble Host image. It compiles the
-actual [standalone application](../../../examples/esp32s31-bluetooth-controller/src/gatt.rs),
+actual [GATT application library](../../../examples/bluetooth-gatt/src/gatt.rs)
+shared with the standalone example,
 not the diagnostic ATT responder. The `bluetooth-trouble-gatt` scenario uses
 the Linux fixed-ATT fixture to discover service/characteristic handles, read,
 write and reconnect three times on the same Host/Controller epoch. USB exposes

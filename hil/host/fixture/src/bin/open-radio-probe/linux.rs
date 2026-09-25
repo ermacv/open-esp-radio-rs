@@ -1,5 +1,5 @@
 use super::model::{self, Config, Report};
-use open_esp_radio_hil_fixture::linux_socket::LinkAddress;
+use oer_hil_fixture::linux_socket::LinkAddress;
 use rustix::{
     event::{PollFd, PollFlags, Timespec, poll},
     net::{

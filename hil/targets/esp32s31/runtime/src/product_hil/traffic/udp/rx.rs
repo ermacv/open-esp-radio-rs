@@ -12,21 +12,21 @@ use embassy_time::Duration;
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"
 ))]
-use oer_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
+use oer_esp32s31_ieee80211_system::CORE0_PERFORMANCE;
 #[cfg(feature = "core0-rx-cycle-telemetry")]
-use oer_esp32s31_embassy_wifi::{
+use oer_esp32s31_ieee80211_system::{
     CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
 };
 #[cfg(feature = "core0-rx-cycle-telemetry")]
-use oer_esp32s31_soc::L1CachePerformanceCounters;
-use open_esp_radio_hil_esp32s31_telemetry::{
+use oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters;
+use oer_hil_esp32s31_telemetry::{
     rx_evidence::{RX_HE_MCS_BUCKETS, RX_HT_MCS_BUCKETS},
     rx_pipeline::RxPipelineCounters,
     task_poll::TaskPollSet,
 };
 #[cfg(feature = "rx-delivery-telemetry")]
-use open_esp_radio_hil_protocol::RxReorderDeliveryEvidence;
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::RxReorderDeliveryEvidence;
+use oer_hil_protocol::{
     Direction as HilDirection, Event as HilEvent, RadioEvidence, RxRadioEvidence, ServiceInfo,
     SessionReady, Transport as HilTransport,
 };
@@ -59,7 +59,7 @@ pub(in crate::product_hil) struct UdpRxSessionSource {
 
 #[derive(Clone, Copy)]
 pub(in crate::product_hil) struct UdpRxBenchmarkConfig {
-    pub network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface,
+    pub network_interface: oer_hil_protocol::WifiNetworkInterface,
     pub local_port: u16,
     pub queue_depth: usize,
     pub payload_capacity: usize,

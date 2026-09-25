@@ -9,11 +9,11 @@ use crate::{
     scan::ActiveProbeOutcome,
 };
 
-use oer_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
-use oer_esp32s31_wifi_mac::tx::{TxCompletion, TxHardware};
+use oer_esp32s31_ieee80211_mac::tx::{TxCompletion, TxHardware};
 
-use oer_ieee80211::management::ProbeRequest;
+use oer_ieee80211_mac::management::ProbeRequest;
 
 /// Complete inputs for one active-scan Probe Request publication.
 pub struct ScanProbeRequest<'a> {
@@ -173,9 +173,9 @@ where
             .transmit_probe_request(
                 hardware,
                 ProbeRequest {
-                    destination: oer_ieee80211::management::BROADCAST_ADDRESS,
+                    destination: oer_ieee80211_mac::management::BROADCAST_ADDRESS,
                     source,
-                    bssid: oer_ieee80211::management::BROADCAST_ADDRESS,
+                    bssid: oer_ieee80211_mac::management::BROADCAST_ADDRESS,
                     sequence_number,
                     ssid,
                     supported_rates,

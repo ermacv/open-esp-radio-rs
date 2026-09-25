@@ -1,8 +1,8 @@
 //! Prospective AP HT length admission before DMA promotion and CCMP encoding.
 
-use oer_esp32s31_wifi_mac::tx::ampdu::{HtAmpduLengthAccumulator, HtAmpduLengthError};
+use oer_esp32s31_ieee80211_mac::tx::ampdu::{HtAmpduLengthAccumulator, HtAmpduLengthError};
 
-use oer_ieee80211::ap::AP_PROTECTED_QOS_ETHERNET_OVERHEAD;
+use oer_ieee80211_mac::ap::AP_PROTECTED_QOS_ETHERNET_OVERHEAD;
 
 use super::*;
 
@@ -31,12 +31,14 @@ impl ApAmpduBudget {
     /// by this A-MPDU builder; it does not authorize a peer/key or reserve DMA.
     /// Revalidate the actual packet if the queue changes before its claim.
     pub fn admit_ethernet_len(&mut self, ethernet_bytes: usize) -> Result<bool, ApAmpduError> {
-        if ethernet_bytes < oer_ieee80211::data::ETHERNET_HEADER_LEN {
+        if ethernet_bytes < oer_ieee80211_mac::data::ETHERNET_HEADER_LEN {
             return Err(ApAmpduError::Geometry);
         }
         let psdu = ethernet_bytes
             .checked_add(AP_PROTECTED_QOS_ETHERNET_OVERHEAD)
-            .and_then(|length| length.checked_add(oer_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE))
+            .and_then(|length| {
+                length.checked_add(oer_esp32s31_ieee80211::ordinary_tx::TX_CCMP_MIC_SIZE)
+            })
             .and_then(|length| length.checked_add(4)) // MAC-generated FCS
             .and_then(|length| u16::try_from(length).ok())
             .filter(|length| *length <= 0x3fff)

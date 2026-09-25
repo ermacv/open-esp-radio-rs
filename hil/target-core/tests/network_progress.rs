@@ -9,7 +9,7 @@ use embassy_net::driver::{Driver, PacketBuf};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_xarxa_upstream::{LinkState, NetworkInterfaceId, Resources};
 
-use open_esp_radio_hil_target_core::network::progress;
+use oer_hil_target_core::network::progress;
 
 #[test]
 fn observation_preserves_queue_backpressure_and_exact_packet_ownership() {

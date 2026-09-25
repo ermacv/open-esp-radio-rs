@@ -10,7 +10,7 @@ use crate::datapath::rx::reorder::{
     RX_REORDER_SLOT_DOMAIN, RxReorderFrame, RxReorderFrameStorage, RxReorderStorageError,
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     rx::{
         RxSegment,

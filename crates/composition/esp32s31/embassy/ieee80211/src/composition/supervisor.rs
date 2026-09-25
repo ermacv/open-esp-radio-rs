@@ -24,16 +24,16 @@ use oer_esp32s31_hal::owner::MacInterruptSetup;
 
 use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver};
 
-use oer_esp32s31_wifi_runtime::roles::{
+use oer_esp32s31_ieee80211_runtime::roles::{
     monitor::{MonitorController, MonitorStopped, MonitorTask, MonitorTaskExit},
     station::{StationAttemptRunner, StationController, StationExit, StationTask},
 };
 
-use oer_esp32s31_wifi_mac::{irq::MacInterruptRoute, rx::RxPhyInfo};
+use oer_esp32s31_ieee80211_mac::{irq::MacInterruptRoute, rx::RxPhyInfo};
 
-use oer_wifi_embassy::await_stack_boundary;
+use oer_ieee80211_runtime::await_stack_boundary;
 
-use oer_wifi_softmac::{MonitorChannelPolicy, MonitorSink};
+use oer_ieee80211_softmac::{MonitorChannelPolicy, MonitorSink};
 
 /// Application-facing ESP32-S31 radio actor. Internal supervisor endpoints
 /// never escape this value.

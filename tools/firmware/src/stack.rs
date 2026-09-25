@@ -1,6 +1,6 @@
 use std::{env, path::Path, process::Command};
 
-use open_esp_radio_memory_report::{StackBudget, StackReport, analyze_stack};
+use oer_memory_report::{StackBudget, StackReport, analyze_stack};
 
 use crate::Result;
 

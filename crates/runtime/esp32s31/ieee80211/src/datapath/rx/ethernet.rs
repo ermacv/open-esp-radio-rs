@@ -5,7 +5,7 @@
 //! scratch so a role adapter can release the DMA unit and resume publication
 //! later without dropping a suffix of the aggregate.
 
-use oer_ieee80211::data::EthernetFrameParts;
+use oer_ieee80211_mac::data::EthernetFrameParts;
 
 const RECORD_PREFIX_SIZE: usize = 2;
 const ETHERNET_HEADER_SIZE: usize = 14;

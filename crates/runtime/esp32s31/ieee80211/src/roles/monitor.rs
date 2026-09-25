@@ -32,6 +32,6 @@ pub use crate::roles::monitor::{
     },
 };
 
-pub use oer_esp32s31_wifi::monitor_injection::{
+pub use oer_esp32s31_ieee80211::monitor_injection::{
     MonitorInjectionAdmission, MonitorInjectionAdmissionError, MonitorInjectionUnsupported,
 };

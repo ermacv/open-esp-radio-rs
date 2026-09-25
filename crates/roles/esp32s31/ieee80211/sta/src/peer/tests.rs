@@ -1,17 +1,17 @@
-const TEST_HT_CAPABILITIES: oer_ieee80211::ht::HtLocalCapabilities =
-    oer_ieee80211::ht::HtLocalCapabilities::new(0x100c, 0x03, 0xff, 0x01);
+const TEST_HT_CAPABILITIES: oer_ieee80211_mac::ht::HtLocalCapabilities =
+    oer_ieee80211_mac::ht::HtLocalCapabilities::new(0x100c, 0x03, 0xff, 0x01);
 
 use oer_esp32s31_hal::types::{
     MacAssociationId, MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile,
     MacHeErSuAckRateProfile, MacMinimumMpduStartSpacing,
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     rate::schedule::RateScheduleKind,
     tx::protection::{ErpProtectionMode, HeTxopDurationRtsThreshold, HtProtectionMode},
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     channel::{WifiChannel, WifiChannelWidth},
     extensions::wmm::parse_wmm_parameter_element,
     ht::{HtDuplicateMcs32, ht_capability_ie, ht_operation_ie},

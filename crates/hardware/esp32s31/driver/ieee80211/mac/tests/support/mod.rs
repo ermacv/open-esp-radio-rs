@@ -66,7 +66,7 @@ pub(super) struct MockMmio {
     pub(super) tx_collision_pending: [bool; 4],
     pub(super) tx_queue_attached: [bool; 4],
     pub(super) tx_detach_fails: [bool; 4],
-    pub(super) tx_protection: [oer_esp32s31_wifi_mac::tx::MacTxProtection; 4],
+    pub(super) tx_protection: [oer_esp32s31_ieee80211_mac::tx::MacTxProtection; 4],
     pub(super) rx_last_descriptor_low: u32,
     pub(super) rx_next_descriptor_low: u32,
     pub(super) rx_walker_enabled: bool,
@@ -168,8 +168,8 @@ impl RxDma for MockMmio {
         self.rx_next_descriptor_low
     }
 
-    fn next_descriptor(&mut self) -> oer_esp32s31_wifi_dma::rx_dma::RxDmaNextDescriptor {
-        oer_esp32s31_wifi_dma::rx_dma::RxDmaNextDescriptor::validation(
+    fn next_descriptor(&mut self) -> oer_esp32s31_ieee80211_dma::rx_dma::RxDmaNextDescriptor {
+        oer_esp32s31_ieee80211_dma::rx_dma::RxDmaNextDescriptor::validation(
             self.next_descriptor_low(),
             false,
         )
@@ -199,11 +199,11 @@ impl RxDma for MockMmio {
     fn try_with_reload_settled<R>(
         &mut self,
         settled: impl for<'confirmation> FnOnce(
-            oer_esp32s31_wifi_mac::rx::RxDmaReloadSettled<'confirmation>,
+            oer_esp32s31_ieee80211_mac::rx::RxDmaReloadSettled<'confirmation>,
         ) -> R,
     ) -> Option<R> {
         (!self.reload_pending())
-            .then(|| settled(oer_esp32s31_wifi_mac::rx::RxDmaReloadSettled::validation()))
+            .then(|| settled(oer_esp32s31_ieee80211_mac::rx::RxDmaReloadSettled::validation()))
     }
 
     fn configure_descriptor_window(&mut self, _: &RxDmaBinding) {
@@ -230,7 +230,7 @@ impl RxDma for MockMmio {
         &mut self,
         _: &RxDmaBinding,
         enabled: impl for<'confirmation> FnOnce(
-            oer_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled<'confirmation>,
+            oer_esp32s31_ieee80211_mac::rx::RxDmaWalkerEnabled<'confirmation>,
         ) -> R,
     ) -> Option<R> {
         self.operations.push(Operation::ObserveRxWalkerEnabled);
@@ -242,7 +242,7 @@ impl RxDma for MockMmio {
         self.record_fence();
         self.operations.push(Operation::ObserveRxWalkerEnabled);
         self.rx_walker_enabled
-            .then(|| enabled(oer_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled::validation()))
+            .then(|| enabled(oer_esp32s31_ieee80211_mac::rx::RxDmaWalkerEnabled::validation()))
     }
 
     fn try_with_walker_stopped<R>(

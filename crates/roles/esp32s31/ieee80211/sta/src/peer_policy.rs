@@ -1,6 +1,6 @@
 //! Value-only scan-to-associated STA peer policy.
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     edca::{EdcaParametersError, EdcaQueues},
     rate::control::{
         HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociation,
@@ -12,13 +12,13 @@ use oer_esp32s31_wifi_mac::{
     tx::{HeMcs, HtPeerAmpduParameters},
 };
 use {
-    oer_ieee80211::extensions::wmm::WmmParameterSet, oer_ieee80211::he::He20Capabilities,
-    oer_ieee80211::he::He20PeerState, oer_ieee80211::he::HeDcmConstellation,
-    oer_ieee80211::he::HeElementError, oer_ieee80211::he::HeMcsNssSupport,
-    oer_ieee80211::he::parse_he20_capabilities, oer_ieee80211::he::parse_he20_operation,
-    oer_ieee80211::he::parse_he20_peer_state, oer_ieee80211::ht::HtPeerCapabilities,
-    oer_ieee80211::scan::ScanRecord, oer_ieee80211::station::AssociationResponse,
-    oer_ieee80211::station::association::PhyMode,
+    oer_ieee80211_mac::extensions::wmm::WmmParameterSet, oer_ieee80211_mac::he::He20Capabilities,
+    oer_ieee80211_mac::he::He20PeerState, oer_ieee80211_mac::he::HeDcmConstellation,
+    oer_ieee80211_mac::he::HeElementError, oer_ieee80211_mac::he::HeMcsNssSupport,
+    oer_ieee80211_mac::he::parse_he20_capabilities, oer_ieee80211_mac::he::parse_he20_operation,
+    oer_ieee80211_mac::he::parse_he20_peer_state, oer_ieee80211_mac::ht::HtPeerCapabilities,
+    oer_ieee80211_mac::scan::ScanRecord, oer_ieee80211_mac::station::AssociationResponse,
+    oer_ieee80211_mac::station::association::PhyMode,
 };
 
 /// Origin of the active WMM parameters for one station link.

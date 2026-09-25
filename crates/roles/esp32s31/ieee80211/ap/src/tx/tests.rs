@@ -8,9 +8,9 @@ use oer_esp32s31_hal::types::{
     MacTxQueueDetached,
 };
 
-use oer_esp32s31_wifi::ordinary_tx::WifiTxPowerPair;
+use oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerPair;
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot, TxSlotState, runtime::WifiTxRuntimePolicy},
 };
@@ -119,7 +119,7 @@ fn peer_rate_mapping_preserves_every_advertised_bg_rate() {
 
 #[test]
 fn peer_ht_rate_requires_matching_bss_and_peer_width() {
-    use oer_ieee80211::ht::{ht_capability_ie, ht_peer_capabilities};
+    use oer_ieee80211_mac::ht::{ht_capability_ie, ht_peer_capabilities};
 
     let ht40 = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
     let wide_peer =
@@ -150,11 +150,11 @@ fn peer_ht_rate_requires_matching_bss_and_peer_width() {
 
 #[test]
 fn ap_mcs32_request_reaches_the_shared_frontier_without_replacing_fallback() {
-    use oer_esp32s31_wifi_mac::tx::{
+    use oer_esp32s31_ieee80211_mac::tx::{
         HtDuplicateTxEvidenceGaps, HtDuplicateTxRejection, HtDuplicateTxUnavailable,
     };
 
-    use oer_ieee80211::ht::{HtDuplicateMcs32, ht_capability_ie, ht_peer_capabilities};
+    use oer_ieee80211_mac::ht::{HtDuplicateMcs32, ht_capability_ie, ht_peer_capabilities};
 
     let channel = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
     let mut capability = ht_capability_ie(crate::profile::HT_CAPABILITIES, channel);
@@ -222,7 +222,7 @@ fn idle_ap_tx_lends_and_resumes_the_exact_ordinary_owner() {
 
 #[test]
 fn required_protection_blocks_ap_aggregate_and_ordinary_retry_series() {
-    use oer_esp32s31_wifi_mac::tx::protection::{
+    use oer_esp32s31_ieee80211_mac::tx::protection::{
         ErpProtectionMode, HtProtectionMode, TxProtectionAdmissionError, TxProtectionMechanism,
         TxProtectionReason, TxProtectionRequest, WifiTxProtectionPolicy,
     };
@@ -316,7 +316,7 @@ fn beacon_is_one_publication_and_resources_return_only_after_completion() {
     let progress = tx.service(
         &mut hardware,
         WifiTxWake::Interrupt {
-            events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+            events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
         },
     );
     assert_eq!(progress, Ok(WifiTxProgress::Complete));

@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 
 use crate::rx::storage::{ESP32S31_RX_WALKER_ENABLE_SETTLE_US, ReceiveDmaStorage};
 
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     RxDescriptorSnapshot, RxDma, RxDmaBufferAddresses, RxRingError, RxRingHalted, RxRingLive,
     RxRingStopped, RxSegment,
 };

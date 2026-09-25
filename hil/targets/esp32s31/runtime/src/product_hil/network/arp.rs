@@ -5,7 +5,7 @@
 use super::super::rx_qualification::observe_stack_arp;
 use core::task::Waker;
 use embassy_net::driver::{self, Driver, PacketBuf};
-use open_esp_radio_hil_esp32s31_telemetry::arp_frontier::Stage;
+use oer_hil_esp32s31_telemetry::arp_frontier::Stage;
 
 pub(crate) struct Device<D>(D);
 impl<D> Device<D> {

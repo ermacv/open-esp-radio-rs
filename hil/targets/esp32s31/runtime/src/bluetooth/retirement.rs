@@ -3,7 +3,7 @@
 //! Separate synchronous frames keep the large success/failure owners out of
 //! the executor poll frame and prevent adjacent transition results accumulating.
 
-use oer_esp32s31_bluetooth_integration::{
+use oer_esp32s31_bluetooth_system::{
     BluetoothHardwareRunner as Runner, BluetoothHardwareTimerRetired as Retired,
 };
 
@@ -13,10 +13,10 @@ pub(super) async fn shutdown(
     runner: Runner<4, 1, 4, 4, 258>,
     platform: oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<
         'static,
-        oer_esp32s31_radio_platform_esp_hal::EspHalBluetoothPlatform<'static>,
+        oer_esp32s31_radio_esp_hal::EspHalBluetoothPlatform<'static>,
     >,
 ) -> Cold {
-    use oer_esp32s31_bluetooth_integration::BluetoothPlatformJoin;
+    use oer_esp32s31_bluetooth_system::BluetoothPlatformJoin;
 
     let retired = retire_controller(runner);
     // Keep the result in its construction slot: extracting the joined owner
@@ -41,16 +41,16 @@ pub(super) async fn shutdown(
     owner
 }
 
-pub(super) type Cold = oer_esp32s31_bluetooth_integration::BluetoothHardwareColdReleased<
-    oer_esp32s31_radio_platform_esp_hal::EspHalBluetoothPlatform<'static>,
+pub(super) type Cold = oer_esp32s31_bluetooth_system::BluetoothHardwareColdReleased<
+    oer_esp32s31_radio_esp_hal::EspHalBluetoothPlatform<'static>,
     4,
     1,
     4,
     4,
     258,
 >;
-pub(super) type Ready = oer_esp32s31_bluetooth_integration::BluetoothSystemReady<
-    oer_esp32s31_radio_platform_esp_hal::EspHalBluetoothPlatform<'static>,
+pub(super) type Ready = oer_esp32s31_bluetooth_system::BluetoothSystemReady<
+    oer_esp32s31_radio_esp_hal::EspHalBluetoothPlatform<'static>,
     4,
     1,
     4,
@@ -120,7 +120,7 @@ pub(super) async fn restart(
         }
     };
     let Ready { system, platform } = ready;
-    let oer_esp32s31_bluetooth_integration::BluetoothSystem {
+    let oer_esp32s31_bluetooth_system::BluetoothSystem {
         hci,
         host_acl_credits,
         runners,
@@ -131,10 +131,10 @@ pub(super) async fn restart(
     };
     Ready {
         platform,
-        system: oer_esp32s31_bluetooth_integration::BluetoothSystem {
+        system: oer_esp32s31_bluetooth_system::BluetoothSystem {
             hci,
             host_acl_credits,
-            runners: oer_esp32s31_bluetooth_integration::BluetoothRunners { hardware },
+            runners: oer_esp32s31_bluetooth_system::BluetoothRunners { hardware },
         },
     }
 }
@@ -144,20 +144,14 @@ pub(super) async fn restart(
 #[inline(never)]
 fn retire_controller(
     runner: Runner<4, 1, 4, 4, 258>,
-) -> oer_esp32s31_bluetooth_integration::BluetoothHardwareOutputReleased<4, 1, 4, 4, 258> {
+) -> oer_esp32s31_bluetooth_system::BluetoothHardwareOutputReleased<4, 1, 4, 4, 258> {
     release_output(retire_interrupts(retire_hci(retire(runner))))
 }
 
 #[inline(never)]
 fn release_output(
-    retired: oer_esp32s31_bluetooth_integration::BluetoothHardwareInterruptsRetired<
-        4,
-        1,
-        4,
-        4,
-        258,
-    >,
-) -> oer_esp32s31_bluetooth_integration::BluetoothHardwareOutputReleased<4, 1, 4, 4, 258> {
+    retired: oer_esp32s31_bluetooth_system::BluetoothHardwareInterruptsRetired<4, 1, 4, 4, 258>,
+) -> oer_esp32s31_bluetooth_system::BluetoothHardwareOutputReleased<4, 1, 4, 4, 258> {
     match retired.try_release_controller_output() {
         Ok(owner) => owner,
         Err(_) => crate::fail(c"OPEN_RADIO_HIL runtime=FAIL reason=bluetooth-output-release\r\n"),
@@ -166,8 +160,8 @@ fn release_output(
 
 #[inline(never)]
 fn retire_interrupts(
-    retired: oer_esp32s31_bluetooth_integration::BluetoothHardwareRetired<4, 1, 4, 4, 258>,
-) -> oer_esp32s31_bluetooth_integration::BluetoothHardwareInterruptsRetired<4, 1, 4, 4, 258> {
+    retired: oer_esp32s31_bluetooth_system::BluetoothHardwareRetired<4, 1, 4, 4, 258>,
+) -> oer_esp32s31_bluetooth_system::BluetoothHardwareInterruptsRetired<4, 1, 4, 4, 258> {
     match retired.try_retire_interrupts() {
         Ok(owner) => owner,
         Err(_) => {
@@ -185,7 +179,7 @@ fn retire_hci<
     const PC: usize,
 >(
     retired: Retired<MT, SC, H2C, C2H, PC>,
-) -> oer_esp32s31_bluetooth_integration::BluetoothHardwareRetired<MT, SC, H2C, C2H, PC> {
+) -> oer_esp32s31_bluetooth_system::BluetoothHardwareRetired<MT, SC, H2C, C2H, PC> {
     match retired.try_retire_hci() {
         Ok(owner) => owner,
         Err((error, _owner)) => {
@@ -336,7 +330,7 @@ pub(super) async fn run_active(
     credits: &super::HostAclCredits,
     console: &mut super::Console,
     announce: bool,
-    platform: &mut oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<'static, oer_esp32s31_radio_platform_esp_hal::EspHalBluetoothPlatform<'static>>,
+    platform: &mut oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<'static, oer_esp32s31_radio_esp_hal::EspHalBluetoothPlatform<'static>>,
 ) -> (Runner<4, 1, 4, 4, 258>, u32, super::PeripheralOperation) {
     let requested = core::cell::Cell::new(None);
     let hardware = {
@@ -372,7 +366,7 @@ pub(super) async fn run_active(
 /// Track on the original powered epoch, then execute Reset through the same Host.
 pub(super) async fn maintain(
     runner: Runner<4, 1, 4, 4, 258>,
-    platform: &mut oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<'static, oer_esp32s31_radio_platform_esp_hal::EspHalBluetoothPlatform<'static>>,
+    platform: &mut oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<'static, oer_esp32s31_radio_esp_hal::EspHalBluetoothPlatform<'static>>,
     hci: &super::Host,
     calibration_threshold: Option<u8>,
 ) -> (

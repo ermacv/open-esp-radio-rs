@@ -12,7 +12,7 @@ use crate::{
         StationIpv4Definition,
     },
 };
-use open_esp_radio_hil_protocol::WifiChannelWidth;
+use oer_hil_protocol::WifiChannelWidth;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[cfg(test)]
 use std::{fs, path::Path};
 
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     BluetoothPeripheralTermination, WifiAccessPointSecurity, WifiDataPlanePlacement,
     WifiRxChecksumPolicy, WifiRxContinuationPolicy, WifiTxBufferPolicy, WifiTxUdpChecksumPolicy,
 };
@@ -171,7 +171,7 @@ pub enum Workload {
         active_maintenance: bool,
     },
     BluetoothSecurityFailure {
-        failure: open_esp_radio_hil_protocol::BluetoothSecurityFailure,
+        failure: oer_hil_protocol::BluetoothSecurityFailure,
         /// Diagnose plaintext control progress after initial key rejection.
         #[serde(default)]
         read_version_before_disconnect: bool,
@@ -237,7 +237,7 @@ pub enum Workload {
     Udp {
         direction: Direction,
         #[serde(default)]
-        station_pause: Option<open_esp_radio_hil_protocol::StationPauseOperation>,
+        station_pause: Option<oer_hil_protocol::StationPauseOperation>,
         /// Delay after both traffic endpoints report progress and before the
         /// maintenance request. This keeps thermal preconditioning explicit
         /// in the scenario instead of relying on an unrecorded host sleep.
@@ -443,7 +443,7 @@ pub struct Scenario {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comparison: Option<comparison::ControlledComparison>,
     #[serde(default)]
-    pub ap_scheduler: open_esp_radio_hil_protocol::WifiApScheduler,
+    pub ap_scheduler: oer_hil_protocol::WifiApScheduler,
     pub schema: u16,
     pub id: String,
     pub description: String,

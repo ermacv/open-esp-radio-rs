@@ -1,6 +1,6 @@
 # ESP32-S31 SoC services
 
-This adapter retains the `oer-esp32s31-soc` package name
+This adapter retains the `oer-esp32s31-soc-esp-hal` package name
 and its public root imports. It uses the pinned esp-hal peripheral witnesses
 and upstream register accessors for non-radio SoC services. Radio register
 ownership remains in `crates/hardware/esp32s31/pac`.
@@ -65,7 +65,7 @@ coordinator between those APIs; the adapter does not establish that simultaneous
 Focused checks from the repository root:
 
 ```console
-cargo test --locked --offline -p oer-esp32s31-soc
-cargo check --locked --offline -p oer-esp32s31-soc --target riscv32imafc-unknown-none-elf --features axi-gdma-mem2mem
-cargo check --locked --offline -p oer-esp32s31-soc --target riscv32imafc-unknown-none-elf --features psram-dma-diagnostic
+cargo test --locked --offline -p oer-esp32s31-soc-esp-hal
+cargo check --locked --offline -p oer-esp32s31-soc-esp-hal --target riscv32imafc-unknown-none-elf --features axi-gdma-mem2mem
+cargo check --locked --offline -p oer-esp32s31-soc-esp-hal --target riscv32imafc-unknown-none-elf --features psram-dma-diagnostic
 ```

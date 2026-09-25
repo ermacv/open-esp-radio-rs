@@ -12,7 +12,7 @@ use oer_esp32s31_bluetooth_runtime::{
     controller::DtmAbsoluteRecheck, notification::RuntimeNotifications,
 };
 
-use oer_esp32s31_radio_platform_esp_hal::PublishedEspHalBluetoothInterruptOwners;
+use oer_esp32s31_radio_esp_hal::PublishedEspHalBluetoothInterruptOwners;
 
 use static_cell::StaticCell;
 

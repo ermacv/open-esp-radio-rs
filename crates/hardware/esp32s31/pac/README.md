@@ -35,7 +35,7 @@ The separate upstream chain is the pinned `esp-pacs` dependency used by
 [`adapters/esp-hal/esp32s31`](../../../adapters/esp-hal/esp32s31/README.md).
 The [`soc` adapter](../../../adapters/esp-hal/esp32s31/soc/README.md) owns
 typed upstream-register operations, cache/MMU and GDMA transactions. It is
-the handwritten `oer-esp32s31-soc` package. It neither generates
+the handwritten `oer-esp32s31-soc-esp-hal` package. It neither generates
 nor replaces this radio PAC.
 
 The two chains use their reviewed dependency revisions. A capability exposed

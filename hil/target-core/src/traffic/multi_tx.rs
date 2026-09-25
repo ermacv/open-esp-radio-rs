@@ -1,8 +1,6 @@
 //! Independent offered-load state with bounded, event-driven socket service.
 use core::task::{Context, Poll};
-use open_esp_radio_hil_protocol::{
-    FlowTransportEvidence, Ipv4Endpoint, SESSION_FLOW_CAPACITY, SessionConfig,
-};
+use oer_hil_protocol::{FlowTransportEvidence, Ipv4Endpoint, SESSION_FLOW_CAPACITY, SessionConfig};
 
 #[derive(Clone, Copy)]
 pub struct Publication {

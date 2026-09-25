@@ -11,13 +11,13 @@ pub use config::{
     WifiMonitorConfig, WifiPlan, WifiStandaloneEspNowPlan, WifiStandaloneMonitorPlan,
     WifiStationConfig,
 };
-pub use oer_wifi_rsn::Pmk;
-pub use oer_wifi_softmac::{
+pub use oer_ieee80211_rsn::Pmk;
+pub use oer_ieee80211_softmac::{
     MONITOR_CHANNEL_SEQUENCE_CAPACITY, MacRxEvidence, MonitorChannelPolicy, MonitorChannelSequence,
     MonitorChannelSequenceError, MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType,
     MonitorFrameTypeMask, MonitorPublishOutcome, MonitorSink,
 };
-pub use oer_wifi_sta::station::{StaLifecycleStage, StaReconnectPolicy};
+pub use oer_ieee80211_sta::station::{StaLifecycleStage, StaReconnectPolicy};
 pub use requests::{
     AccessPointBeaconInterval, AccessPointBeaconIntervalError, AccessPointClientLimit,
     AccessPointClientLimitError, AccessPointDtimPeriod, AccessPointDtimPeriodError,
@@ -39,10 +39,10 @@ pub use supervisor::{
     WifiStation, WifiStationAccessPoint, WifiStopReport, WifiSupervisorPort,
 };
 pub use {
-    oer_ieee80211::channel::WifiChannel, oer_ieee80211::channel::WifiChannelError,
-    oer_ieee80211::channel::WifiChannelWidth, oer_ieee80211::security::WifiSecurityMode,
-    oer_ieee80211::ssid::WifiSsid, oer_ieee80211::ssid::WifiSsidError,
-    oer_ieee80211::station::association::Preference,
+    oer_ieee80211_mac::channel::WifiChannel, oer_ieee80211_mac::channel::WifiChannelError,
+    oer_ieee80211_mac::channel::WifiChannelWidth, oer_ieee80211_mac::security::WifiSecurityMode,
+    oer_ieee80211_mac::ssid::WifiSsid, oer_ieee80211_mac::ssid::WifiSsidError,
+    oer_ieee80211_mac::station::association::Preference,
 };
 
 /// Synthetic portable service profiles for this crate's and adapters' tests.

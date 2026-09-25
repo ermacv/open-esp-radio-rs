@@ -6,14 +6,14 @@ use crate::datapath::PinnedTxFrame;
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-use oer_esp32s31_wifi_ap::ampdu::{ApAmpduBudget, ApAmpduTx};
+use oer_esp32s31_ieee80211_ap::ampdu::{ApAmpduBudget, ApAmpduTx};
 
-use oer_esp32s31_wifi_mac::tx::{
+use oer_esp32s31_ieee80211_mac::tx::{
     HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, TxPhyRate,
     ampdu::{HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage},
 };
 
-use oer_wifi_softmac::tx_cost::PpduTiming;
+use oer_ieee80211_softmac::tx_cost::PpduTiming;
 
 use super::{super::super::AccessPointDatapathError, *};
 

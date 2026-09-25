@@ -141,7 +141,7 @@ fn failed_resume_retains_queued_storage_until_terminal_stop_is_possible() {
         .expect("failed enable");
     assert_eq!(
         failure.resume_error(),
-        oer_esp32s31_wifi_dma::rx_ring::RxResumeError::EnableUnconfirmed
+        oer_esp32s31_ieee80211_dma::rx_ring::RxResumeError::EnableUnconfirmed
     );
     let (failure, error) = failure
         .try_stop(&mut hardware)
@@ -153,6 +153,6 @@ fn failed_resume_retains_queued_storage_until_terminal_stop_is_possible() {
     assert!(failure.try_stop(&mut hardware).is_ok());
     assert_eq!(
         storage.lifecycle_state(),
-        oer_esp32s31_wifi_dma::rx_ring::RxDmaArenaState::ResetRequired
+        oer_esp32s31_ieee80211_dma::rx_ring::RxDmaArenaState::ResetRequired
     );
 }

@@ -179,9 +179,9 @@ mod tests {
     fn unpadded_v0_disambiguator_preserves_the_exact_reviewed_function() {
         assert_eq!(
             without_crate_disambiguators(
-                "esp_hal[c21304bb353fc7d6]::soc::implementation::cpu_control::start_core1_init::<open_esp_radio_hil_esp32s31_runtime[bd01774463a7ff5]::runtime_main::{closure#0}>"
+                "esp_hal[c21304bb353fc7d6]::soc::implementation::cpu_control::start_core1_init::<oer_hil_esp32s31_runtime[bd01774463a7ff5]::runtime_main::{closure#0}>"
             ),
-            "esp_hal::soc::implementation::cpu_control::start_core1_init::<open_esp_radio_hil_esp32s31_runtime::runtime_main::{closure#0}>"
+            "esp_hal::soc::implementation::cpu_control::start_core1_init::<oer_hil_esp32s31_runtime::runtime_main::{closure#0}>"
         );
         assert_eq!(
             without_crate_disambiguators("crate[0]::entry"),

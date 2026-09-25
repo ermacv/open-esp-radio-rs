@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-hil-esp32s31-runtime"
+name = "oer-hil-esp32s31-runtime"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ build = "build.rs"
 [features]
 # Experimental direct RX-gain transaction SRAM placement for an otherwise
 # identical diagnostic image.
-phy-rx-hot-sram = ["oer-esp32s31-phy?/rx-gain-hot-sram", "oer-esp32s31-embassy-wifi?/phy-rx-hot-sram"]
+phy-rx-hot-sram = ["oer-esp32s31-phy?/rx-gain-hot-sram", "oer-esp32s31-ieee80211-system?/phy-rx-hot-sram"]
 default = ["code-psram", "profile-psram-data"]
 code-flash = []
 code-psram = []
@@ -18,27 +18,27 @@ profile-psram-data = []
 profile-sram-data = []
 psram-task-stack = ["oer-esp32s31-runtime/psram-task-stack"]
 boot-smoke = []
-system-watchdog = ["dep:open-esp-radio-hil-protocol", "dep:embedded-io-async"]
+system-watchdog = ["dep:oer-hil-protocol", "dep:embedded-io-async"]
 # Explicit diagnostic policy; no production thermal budget is implied.
 bluetooth-phy-maintenance = ["bluetooth-hil"]
 # Autonomous MWDT fault injection; never selects automatic maintenance.
 bluetooth-watchdog-reset = ["bluetooth-hil", "phy-fault-injection"]
 phy-fault-injection = [
     "oer-esp32s31-phy/lifecycle-fault-injection",
-    "oer-esp32s31-bluetooth-integration?/lifecycle-fault-injection",
-    "oer-esp32s31-embassy-wifi?/lifecycle-fault-injection",
+    "oer-esp32s31-bluetooth-system?/lifecycle-fault-injection",
+    "oer-esp32s31-ieee80211-system?/lifecycle-fault-injection",
 ]
-bluetooth-radio = ["dep:oer-esp32s31-phy", "dep:heapless", "dep:bt-hci", "dep:oer-bluetooth-ll", "dep:oer-esp32s31-bluetooth", "dep:oer-esp32s31-bluetooth-runtime", "dep:oer-esp32s31-bluetooth-integration", "dep:oer-esp32s31-bluetooth-memory", "dep:oer-esp32s31-radio-platform-esp-hal", "dep:embassy-futures", "dep:embedded-io-async", "dep:open-esp-radio-hil-protocol", "open-esp-radio-hil-target-core/bluetooth"]
+bluetooth-radio = ["dep:oer-esp32s31-phy", "dep:heapless", "dep:bt-hci", "dep:oer-bluetooth-ll", "dep:oer-esp32s31-bluetooth", "dep:oer-esp32s31-bluetooth-runtime", "dep:oer-esp32s31-bluetooth-system", "dep:oer-esp32s31-bluetooth-memory", "dep:oer-esp32s31-radio-esp-hal", "dep:embassy-futures", "dep:embedded-io-async", "dep:oer-hil-protocol", "oer-hil-target-core/bluetooth"]
 bluetooth-hil = ["bluetooth-radio", "oer-esp32s31-bluetooth/dtm-diagnostics", "oer-esp32s31-bluetooth/rx-fault-injection"]
-bluetooth-gatt = ["bluetooth-radio", "dep:bluetooth-example", "dep:trouble-host"]
-bluetooth-secure-gatt = ["bluetooth-gatt", "bluetooth-example/secure-gatt-application", "dep:embassy-sync", "open-esp-radio-hil-target-core/secure-gatt"]
-upstream-network = ["dep:embassy-net-upstream", "dep:xarxa", "oer-esp32s31-embassy-wifi/upstream-network", "open-esp-radio-hil-target-core?/upstream-network"]
-embassy-network = ["dep:embassy-net-released", "oer-esp32s31-embassy-wifi/embassy-network", "open-esp-radio-hil-target-core?/embassy-network"]
-owned-network = ["dep:embassy-net-owned", "dep:xarxa-owned", "oer-esp32s31-embassy-wifi/owned-network", "open-esp-radio-hil-target-core?/owned-network"]
+bluetooth-gatt = ["bluetooth-radio", "dep:gatt-application", "dep:trouble-host"]
+bluetooth-secure-gatt = ["bluetooth-gatt", "gatt-application/secure", "dep:embassy-sync", "oer-hil-target-core/secure-gatt"]
+upstream-network = ["dep:embassy-net-upstream", "dep:xarxa", "oer-esp32s31-ieee80211-system/upstream-network", "oer-hil-target-core?/upstream-network"]
+embassy-network = ["dep:embassy-net-released", "oer-esp32s31-ieee80211-system/embassy-network", "oer-hil-target-core?/embassy-network"]
+owned-network = ["dep:embassy-net-owned", "dep:xarxa-owned", "oer-esp32s31-ieee80211-system/owned-network", "oer-hil-target-core?/owned-network"]
 open-radio-hil = [
-    "dep:oer-wifi-softmac",
-    "dep:oer-esp32s31-wifi-mac",
-    "dep:oer-esp32s31-wifi-runtime",
+    "dep:oer-ieee80211-softmac",
+    "dep:oer-esp32s31-ieee80211-mac",
+    "dep:oer-esp32s31-ieee80211-runtime",
     "oer-esp32s31-runtime/multicore",
     "dep:embassy-futures",
     "dep:embassy-sync",
@@ -46,38 +46,38 @@ open-radio-hil = [
     "dep:log",
     "dep:heapless",
     "dep:oer",
-    "dep:oer-network",
-    "dep:oer-esp32s31-embassy-wifi",
+    "dep:oer-network-interface",
+    "dep:oer-esp32s31-ieee80211-system",
     "dep:oer-esp32s31-phy",
-    "dep:oer-esp32s31-wifi-esp-hal",
-    "dep:open-esp-radio-hil-protocol",
-    "dep:open-esp-radio-hil-target-core",
-    "dep:open-esp-radio-hil-esp32s31-telemetry",
-    "dep:oer-wifi-embassy",
+    "dep:oer-esp32s31-ieee80211-esp-hal",
+    "dep:oer-hil-protocol",
+    "dep:oer-hil-target-core",
+    "dep:oer-hil-esp32s31-telemetry",
+    "dep:oer-ieee80211-runtime",
     "dep:postcard",
     "dep:serde",
 ]
 driver-observation = [
-    "oer-esp32s31-embassy-runtime/timer-observation",
-    "oer-esp32s31-embassy-wifi/diagnostics",
+    "oer-esp32s31-executor-embassy/timer-observation",
+    "oer-esp32s31-ieee80211-system/diagnostics",
     "oer-esp32s31-phy/registration-diagnostics",
 ]
 # Intrusive hard-IRQ classification. This is never part of correctness or
 # performance images because it extends the SRAM-closed MAC ISR call graph.
 mac-irq-telemetry = [
     "driver-observation",
-    "oer-esp32s31-embassy-wifi/mac-irq-diagnostics",
+    "oer-esp32s31-ieee80211-system/mac-irq-diagnostics",
 ]
 tx-wait-probe = [
     "mac-irq-telemetry",
-    "oer-esp32s31-embassy-wifi/tx-wait-probe",
-    "open-esp-radio-hil-esp32s31-telemetry/tx-wait-probe",
+    "oer-esp32s31-ieee80211-system/tx-wait-probe",
+    "oer-hil-esp32s31-telemetry/tx-wait-probe",
 ]
 # Common low-overhead observer used by both residence and task-poll images.
 # Keep it independent from the TX architecture probes: task-poll scenarios do
 # not select those probes and must not pay for their DMA-visible owners.
 connected-datapath-poll-telemetry = [
-    "oer-esp32s31-embassy-wifi/connected-datapath-cycle-telemetry",
+    "oer-esp32s31-ieee80211-system/connected-datapath-cycle-telemetry",
 ]
 # Minimal diagnostic overlay for measuring continuous Embassy Future::poll
 # residence. Keep the rejected/experimental TX backing implementations out of
@@ -92,12 +92,12 @@ tx-architecture-probes = [
     "gdma-mem2mem-probe",
 ]
 tx-psram-dma-probe = [
-    "oer-esp32s31-embassy-wifi/tx-psram-dma-probe",
+    "oer-esp32s31-ieee80211-system/tx-psram-dma-probe",
 ]
 # Diagnostic-only PSRAM-to-SRAM promotion benchmark. It claims AXI-GDMA
 # channel 0 before radio startup and releases it before any workload begins.
-memory-benchmark = ["open-radio-hil", "oer-esp32s31-soc/psram-dma-diagnostic"]
-gdma-mem2mem-probe = ["oer-esp32s31-soc/psram-dma-diagnostic"]
+memory-benchmark = ["open-radio-hil", "oer-esp32s31-soc-esp-hal/psram-dma-diagnostic"]
+gdma-mem2mem-probe = ["oer-esp32s31-soc-esp-hal/psram-dma-diagnostic"]
 # General task-poll diagnostic. Driver observation remains available for the
 # existing RX/TX/AP diagnostic scenarios, but Core0 per-phase accounting is
 # deliberately separate below.
@@ -110,21 +110,21 @@ task-poll-telemetry = [
 # reads, atomics, and larger linked image measurably perturb the result.
 core0-rx-cycle-telemetry = [
     "task-poll-telemetry",
-    "oer-esp32s31-embassy-wifi/task-poll-telemetry",
+    "oer-esp32s31-ieee80211-system/task-poll-telemetry",
 ]
 # Production-like Core0 accounting: no driver observers and no per-frame
 # instrumentation, only radio/runner/DMA/protocol batch samples.
 core0-rx-coarse-telemetry = [
     "connected-datapath-poll-telemetry",
-    "oer-esp32s31-embassy-wifi/core0-rx-coarse-telemetry",
+    "oer-esp32s31-ieee80211-system/core0-rx-coarse-telemetry",
 ]
 # Diagnostic overlay proving each UDP RX delivery frontier from software
 # reorder output through network admission and application consumption.
 rx-delivery-telemetry = ["driver-observation"]
 rx-ownership-telemetry = [
-    "oer-esp32s31-embassy-wifi/rx-ownership-observation",
-    "open-esp-radio-hil-esp32s31-telemetry/rx-ownership-observation",
-    "dep:oer-esp32s31-wifi-dma",
+    "oer-esp32s31-ieee80211-system/rx-ownership-observation",
+    "oer-hil-esp32s31-telemetry/rx-ownership-observation",
+    "dep:oer-esp32s31-ieee80211-dma",
 ]
 # Diagnostic-only, bounded discriminator for the IEEE 802.15.4 EVENT_STATUS
 # timer bits. It reads both source-132 route controls but never writes a route
@@ -141,19 +141,19 @@ ieee802154-ed-event-probe = [
 ]
 
 [dependencies]
-oer-esp32s31-wifi-dma = { path = "../../../../crates/hardware/esp32s31/driver/ieee80211/dma", optional = true, features = ["rx-ownership-observation"] }
-bluetooth-example = { package = "open-esp-radio-esp32s31-bluetooth-controller-example", path = "../../../../examples/esp32s31-bluetooth-controller", optional = true, default-features = false, features = ["gatt-application"] }
+oer-esp32s31-ieee80211-dma = { path = "../../../../crates/hardware/esp32s31/driver/ieee80211/dma", optional = true, features = ["rx-ownership-observation"] }
+gatt-application = { package = "oer-example-bluetooth-gatt", path = "../../../../examples/bluetooth-gatt", optional = true }
 trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", optional = true, default-features = false, features = ["default-packet-pool", "gatt", "peripheral"] }
 bt-hci = { version = "=0.10.1", optional = true }
 oer-bluetooth-ll = { path = "../../../../crates/protocols/bluetooth/le/ll", optional = true }
 oer-esp32s31-bluetooth = { path = "../../../../crates/hardware/esp32s31/driver/bluetooth", optional = true }
 oer-esp32s31-bluetooth-runtime = { path = "../../../../crates/runtime/esp32s31/bluetooth", optional = true }
-oer-esp32s31-bluetooth-integration = { path = "../../../../crates/composition/esp32s31/embassy/bluetooth", optional = true }
+oer-esp32s31-bluetooth-system = { path = "../../../../crates/composition/esp32s31/embassy/bluetooth", optional = true }
 oer-esp32s31-bluetooth-memory = { path = "../../../../crates/hardware/esp32s31/driver/bluetooth/memory", optional = true }
-oer-esp32s31-radio-platform-esp-hal = { path = "../../../../crates/adapters/esp-hal/esp32s31/radio", optional = true, features = ["esp32s31"] }
-oer-wifi-softmac = { workspace = true, optional = true }
-oer-esp32s31-wifi-mac = { workspace = true, optional = true }
-oer-esp32s31-wifi-runtime = { workspace = true, optional = true }
+oer-esp32s31-radio-esp-hal = { path = "../../../../crates/adapters/esp-hal/esp32s31/radio", optional = true, features = ["esp32s31"] }
+oer-ieee80211-softmac = { workspace = true, optional = true }
+oer-esp32s31-ieee80211-mac = { workspace = true, optional = true }
+oer-esp32s31-ieee80211-runtime = { workspace = true, optional = true }
 xarxa-owned = { workspace = true, optional = true }
 xarxa = { workspace = true, optional = true }
 embassy-executor.workspace = true
@@ -168,19 +168,19 @@ esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
 log = { workspace = true, optional = true }
 heapless = { workspace = true, optional = true }
 oer = { workspace = true, optional = true }
-oer-network = { workspace = true, optional = true }
-oer-esp32s31-embassy-wifi = { workspace = true, optional = true }
+oer-network-interface = { workspace = true, optional = true }
+oer-esp32s31-ieee80211-system = { workspace = true, optional = true }
 oer-esp32s31-hal = { workspace = true, optional = true }
 oer-esp32s31-phy = { workspace = true, optional = true }
-oer-esp32s31-soc.workspace = true
-oer-esp32s31-embassy-runtime.workspace = true
-oer-esp32s31-wifi-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
-open-esp-radio-hil-protocol = { workspace = true, optional = true, features = ["async-io"] }
-open-esp-radio-hil-target-core = { path = "../../../target-core", optional = true }
+oer-esp32s31-soc-esp-hal.workspace = true
+oer-esp32s31-executor-embassy.workspace = true
+oer-esp32s31-ieee80211-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
+oer-hil-protocol = { workspace = true, optional = true, features = ["async-io"] }
+oer-hil-target-core = { path = "../../../target-core", optional = true }
 oer-esp32s31-board = { path = "../../../../platform/esp32s31/board" }
 oer-esp32s31-runtime = { path = "../../../../platform/esp32s31/runtime" }
-open-esp-radio-hil-esp32s31-telemetry = { workspace = true, optional = true }
-oer-wifi-embassy = { workspace = true, optional = true }
+oer-hil-esp32s31-telemetry = { workspace = true, optional = true }
+oer-ieee80211-runtime = { workspace = true, optional = true }
 postcard = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 static_cell.workspace = true

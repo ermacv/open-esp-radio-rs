@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-hil-runner"
+name = "oer-hil-runner"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,24 +9,24 @@ publish = false
 description = "Host build, placement-audit and HIL runner for open ESP radio"
 
 [dependencies]
-hil-core = { package = "open-esp-radio-hil-runner-core", path = "../runner-core" }
-hil-wifi = { package = "open-esp-radio-hil-runner-wifi", path = "../runner-wifi" }
-hil-bluetooth = { package = "open-esp-radio-hil-runner-bluetooth", path = "../runner-bluetooth" }
-hil-system = { package = "open-esp-radio-hil-runner-system", path = "../runner-system" }
-hil-ieee802154 = { package = "open-esp-radio-hil-runner-ieee802154", path = "../runner-ieee802154" }
+hil-core = { package = "oer-hil-runner-core", path = "../runner-core" }
+hil-wifi = { package = "oer-hil-runner-ieee80211", path = "../runner-ieee80211" }
+hil-bluetooth = { package = "oer-hil-runner-bluetooth", path = "../runner-bluetooth" }
+hil-system = { package = "oer-hil-runner-system", path = "../runner-system" }
+hil-ieee802154 = { package = "oer-hil-runner-ieee802154", path = "../runner-ieee802154" }
 rustix = { version = "1.1.4", features = ["event", "fs", "net", "process", "stdio"] }
 oer-process = { path = "../../../tools/process" }
-open-esp-radio-hil-fixture-install = { path = "../fixture-install" }
+oer-hil-fixture-install = { path = "../fixture-install" }
 clap = { version = "4.5", features = ["derive"] }
 tempfile = "3"
-open-esp-radio-hil-protocol = { path = "../../protocol" }
+oer-hil-protocol = { path = "../../protocol" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 [dev-dependencies]
 libc = "0.2"
 toml = "1.1"
-hil-core = { package = "open-esp-radio-hil-runner-core", path = "../runner-core", features = ["test-support"] }
+hil-core = { package = "oer-hil-runner-core", path = "../runner-core", features = ["test-support"] }
 
 [lints]
 workspace = true
@@ -37,7 +37,7 @@ layer = "hil"
 platform = "host"
 
 [build-dependencies]
-open-esp-radio-hil-schema = { path = "../../schema", features = ["producer"] }
+oer-hil-schema = { path = "../../schema", features = ["producer"] }
 serde_json = "1.0"
 sha2 = "0.10"
 toml_edit = { version = "=0.25.13", features = ["serde"] }

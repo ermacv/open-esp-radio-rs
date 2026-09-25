@@ -58,7 +58,7 @@ packed-command responses; neither model claims physical timing or RF behavior.
 cargo xtask build vendor-probes --chip esp32s31
 cargo xtask vendor-scenario i2c --library /private/libphy.a \
   --rom /private/esp32s31_rev0_rom.elf \
-  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
+  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-verification-esp32s31-probes-elf \
   --linker /usr/bin/ld.lld --limit-mode watchdog \
   --sdk /private/bootloader.elf --phy-sdk /private/phy_tracking_reference.elf \
   --output target/blobray-phy-i2c
@@ -265,7 +265,7 @@ repository root; `xtask` builds `blobray` and the scenarios and supplies
 ```console
 cargo xtask vendor-scenario gain --library /private/libphy.a \
   --rom /private/esp32s31_rev0_rom.elf \
-  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
+  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-verification-esp32s31-probes-elf \
   --linker /usr/bin/ld.lld --rftest /private/librftest.a \
   --output target/blobray-research/gain --limit-mode watchdog
 ```
@@ -635,7 +635,7 @@ definition is proposed from that firmware after the ROM.
 ```console
 cargo xtask vendor-scenario rx-gain --library /private/libphy.a \
   --rom /private/esp32s31_rev0_rom.elf \
-  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
+  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-verification-esp32s31-probes-elf \
   --phy-sdk /private/phy_tracking_reference.elf \
   --linker /usr/bin/ld.lld --output target/blobray-research/rx-gain --limit-mode watchdog
 ```
@@ -703,7 +703,7 @@ compares channel restoration. Inputs are the same as for the gain scenario, with
 ```console
 cargo xtask vendor-scenario channel --library /private/libphy.a \
   --rom /private/esp32s31_rev0_rom.elf \
-  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
+  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-verification-esp32s31-probes-elf \
   --linker /usr/bin/ld.lld --output target/blobray-research/channel --limit-mode watchdog
 ```
 

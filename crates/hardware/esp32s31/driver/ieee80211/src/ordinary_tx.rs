@@ -10,7 +10,7 @@ use core::pin::Pin;
 pub use crate::tx::{
     WifiTxEntropy, WifiTxPowerPair, WifiTxPowerProfile, WifiTxResources, WifiTxTimer,
 };
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     edca::EdcaContentionParameters,
     tx::protection::{TxProtectionAdmissionError, TxProtectionReceiver},
@@ -24,7 +24,7 @@ use oer_esp32s31_wifi_mac::{
         TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState,
     },
 };
-use oer_wifi_softmac::{MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus};
+use oer_ieee80211_softmac::{MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus};
 
 use crate::tx::{WifiTxProgress, WifiTxWake};
 
@@ -447,7 +447,7 @@ where
 
     /// Submitted work for the current/last exchange, retained through retries
     /// and timeout detach; independent of terminal delivery status.
-    pub fn work(&self) -> oer_wifi_softmac::MacTxWork {
+    pub fn work(&self) -> oer_ieee80211_softmac::MacTxWork {
         self.slot.as_ref().get_ref().work()
     }
 
@@ -621,9 +621,9 @@ where
             WifiTxWake::Deadline => 0,
         };
         let tx_events = interrupt_events
-            & (oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE
-                | oer_esp32s31_wifi_mac::irq::EVENT_TX_TIMEOUT
-                | oer_esp32s31_wifi_mac::irq::EVENT_COLLISION);
+            & (oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE
+                | oer_esp32s31_ieee80211_mac::irq::EVENT_TX_TIMEOUT
+                | oer_esp32s31_ieee80211_mac::irq::EVENT_COLLISION);
         if tx_events.count_ones() > 1 {
             return self
                 .reset_required(active, TxResetReason::ConflictingInterruptEvents(tx_events));
@@ -636,7 +636,9 @@ where
             return self.finish_completion(hardware, active, completion);
         }
 
-        use oer_esp32s31_wifi_mac::irq::{EVENT_COLLISION, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT};
+        use oer_esp32s31_ieee80211_mac::irq::{
+            EVENT_COLLISION, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT,
+        };
         if tx_events == EVENT_TX_COMPLETE {
             return self.reset_required(active, TxResetReason::CompletionInterruptWithoutState);
         }
@@ -780,7 +782,7 @@ where
             OrdinaryRetryDecision::Complete => {
                 let success = matches!(
                     disposition,
-                    oer_esp32s31_wifi_mac::tx::TxCompletionDisposition::Success
+                    oer_esp32s31_ieee80211_mac::tx::TxCompletionDisposition::Success
                 );
                 let report = OrdinaryTxReport {
                     status: MacTxStatus {
@@ -806,7 +808,7 @@ where
                 Ok(WifiTxProgress::Complete)
             }
             OrdinaryRetryDecision::Retry { set_retry_bit } => {
-                use oer_esp32s31_wifi_mac::tx::TxCompletionDisposition;
+                use oer_esp32s31_ieee80211_mac::tx::TxCompletionDisposition;
                 match disposition {
                     TxCompletionDisposition::AckTimeout => {
                         active.retries.ack_timeouts = active.retries.ack_timeouts.saturating_add(1);

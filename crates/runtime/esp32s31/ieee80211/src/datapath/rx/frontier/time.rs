@@ -2,7 +2,7 @@ use core::future::Future;
 
 use embassy_time::Timer;
 
-pub use oer_esp32s31_wifi::rx::time::RxFrontierDelay;
+pub use oer_esp32s31_ieee80211::rx::time::RxFrontierDelay;
 
 /// Production Embassy-time delay adapter.
 #[derive(Clone, Copy, Debug, Default)]

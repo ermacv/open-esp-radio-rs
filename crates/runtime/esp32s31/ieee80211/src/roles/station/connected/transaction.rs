@@ -22,11 +22,11 @@ use crate::{
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_esp32s31_wifi_mac::{crypto::CcmpKeyHardware, irq::MacInterruptRoute};
+use oer_esp32s31_ieee80211_mac::{crypto::CcmpKeyHardware, irq::MacInterruptRoute};
 
-use oer_esp32s31_wifi_sta::hardware::control::ConnectedControlHardware;
+use oer_esp32s31_ieee80211_sta::hardware::control::ConnectedControlHardware;
 
-use oer_wifi_embassy::await_stack_boundary;
+use oer_ieee80211_runtime::await_stack_boundary;
 
 use super::{
     ConnectedEpochQuiesceFailure, ConnectedEpochQuiesced, ConnectedEpochRunnerOwner,
@@ -90,7 +90,7 @@ where
     B: crate::datapath::DatapathServices<
             N::TxFrame,
             N::PhysicalTxFrame,
-            Exit = oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason,
+            Exit = oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason,
         > + ConnectedStationIngress,
     RX: crate::datapath::network::DatapathNetworkRxSet,
 {

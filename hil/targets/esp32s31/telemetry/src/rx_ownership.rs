@@ -4,7 +4,7 @@
 //! Completed samples may cross a measurement boundary; `carry_in` records how
 //! many allocations were already detached/released when counters were reset.
 
-use oer_esp32s31_wifi_dma::rx_observation::RxOwnershipEdge;
+use oer_esp32s31_ieee80211_dma::rx_observation::RxOwnershipEdge;
 
 #[derive(Clone, Copy)]
 enum Slot {

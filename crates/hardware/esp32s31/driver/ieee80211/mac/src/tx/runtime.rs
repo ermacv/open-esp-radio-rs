@@ -5,8 +5,8 @@
 //! wait for interrupts, access MMIO, mutate DMA storage or produce entropy;
 //! those remain separate hardware/executor boundaries.
 
-use oer_ieee80211::extensions::wmm::WmmParameterSet;
-use oer_ieee80211::qos::{
+use oer_ieee80211_mac::extensions::wmm::WmmParameterSet;
+use oer_ieee80211_mac::qos::{
     WmmAccessCategory, WmmTrafficClass, WmmUserPriority, classify_ethernet_wmm,
 };
 

@@ -48,7 +48,7 @@ pub(super) use crate::resources::profile::{
 };
 
 #[cfg(feature = "diagnostics")]
-use oer_esp32s31_wifi_runtime::roles::station::StationEngineObserver;
+use oer_esp32s31_ieee80211_runtime::roles::station::StationEngineObserver;
 
 use embassy_executor::Spawner;
 
@@ -71,7 +71,7 @@ use oer_radio_embassy::{
 
 use oer_esp32s31_phy::{NoopPhyTargetObserver, PhyTxTargetPowerProfile};
 
-use oer_esp32s31_wifi::{
+use oer_esp32s31_ieee80211::{
     cold_start::WifiColdStartConfig as Esp32s31WifiStartConfig,
     lower_wifi_channel,
     mac_start::WifiMacStartConfig,
@@ -82,18 +82,18 @@ use oer_esp32s31_wifi::{
     tx::ControlTxConfig,
 };
 
-use oer_esp32s31_wifi_runtime::roles::monitor::{
+use oer_esp32s31_ieee80211_runtime::roles::monitor::{
     MonitorChannelSwitchError, MonitorRadio, MonitorTaskExit, prepare_esp32s31_monitor_task,
 };
 
 #[cfg(feature = "diagnostics")]
-use oer_wifi_sta::station::StaBackoffReason;
+use oer_ieee80211_sta::station::StaBackoffReason;
 
 use oer_esp32s31_hal::owner::{Radio, RadioRuntimeOwner};
 
-use oer_esp32s31_wifi_ap::{engine::ApEngine, transaction::ApMac, tx::ApTxConfig};
+use oer_esp32s31_ieee80211_ap::{engine::ApEngine, transaction::ApMac, tx::ApTxConfig};
 
-use oer_esp32s31_wifi_runtime::{
+use oer_esp32s31_ieee80211_runtime::{
     datapath::rx::{
         dma::ReceiveDmaStorage,
         frontier::{EmbassyRxFrontierDelay, ReceiveFrontier},
@@ -130,15 +130,15 @@ use oer_esp32s31_wifi_runtime::{
     time::phy::{EmbassyPhyClock, EmbassyPhyDelay},
 };
 
-use oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
+use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     init::activate_promiscuous_receive,
     rx::{RxDmaBufferAddresses, RxRingError},
     tx::TxSlot,
 };
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     attempt::{
         StaAttemptObserver, StaAttemptSecurity, StaAttemptStage, StaAttemptStation, StaIdentity,
     },
@@ -147,24 +147,24 @@ use oer_esp32s31_wifi_sta::{
     tx_epoch::StaTxEpoch,
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     channel::WifiChannel,
     scan::{SCAN_RECORD_CAPACITY, ScanObservation, ScanTable},
     station::StaTxSequenceCounters,
 };
 
-use oer_wifi_ap::AccessPointService;
+use oer_ieee80211_ap::AccessPointService;
 
-use oer_wifi_embassy::await_stack_boundary;
+use oer_ieee80211_runtime::await_stack_boundary;
 
-use oer_wifi_softmac::interface::BoundVirtualInterface;
+use oer_ieee80211_softmac::interface::BoundVirtualInterface;
 
-use oer_wifi_sta::station::{
+use oer_ieee80211_sta::station::{
     StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaFailureDisposition,
     StaNextCandidate,
 };
 
-use oer_wifi_rsn::frames::RsnGtk;
+use oer_ieee80211_rsn::frames::RsnGtk;
 
 use static_cell::{ConstStaticCell, StaticCell};
 
@@ -226,7 +226,7 @@ pub(super) type ControlTx = ControlTransmitter<
     'static,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_esp32s31_wifi_runtime::datapath::tx::time::EmbassyWifiTxTimer,
+    oer_esp32s31_ieee80211_runtime::datapath::tx::time::EmbassyWifiTxTimer,
     TX_BUFFER_SIZE,
 >;
 pub(super) type TxStorage = StaTxEpoch<ControlTx>;
@@ -270,14 +270,15 @@ static TX_STATE: StaticCell<TxStorage> = StaticCell::new();
 // Fifteen WPA2 peer state machines exceed the permitted cooperative task
 // frame. They are CPU-only state (not DMA descriptors), so a separate normal
 // static keeps them out of both task stacks and the DMA-only WIFI_MEMORY arena.
-static AP_PEER_STORAGE: ConstStaticCell<oer_wifi_ap::AccessPointPeerStorage> =
-    ConstStaticCell::new(oer_wifi_ap::AccessPointPeerStorage::new());
+static AP_PEER_STORAGE: ConstStaticCell<oer_ieee80211_ap::AccessPointPeerStorage> =
+    ConstStaticCell::new(oer_ieee80211_ap::AccessPointPeerStorage::new());
 // Per-peer retry/sequence history is another AP-epoch table. Its address must
 // stay stable while RX processing awaits IRQ and network work.
-static AP_RX_DISPATCHER: StaticCell<oer_esp32s31_wifi_ap::rx::ApRxDispatcher> = StaticCell::new();
+static AP_RX_DISPATCHER: StaticCell<oer_esp32s31_ieee80211_ap::rx::ApRxDispatcher> =
+    StaticCell::new();
 pub(super) static PRODUCTION_RX_BLOCK_ACK:
-    oer_esp32s31_wifi_runtime::roles::concurrent::StaApRxBlockAck =
-    match oer_esp32s31_wifi_runtime::roles::concurrent::StaApRxBlockAck::with_maximum_window(
+    oer_esp32s31_ieee80211_runtime::roles::concurrent::StaApRxBlockAck =
+    match oer_esp32s31_ieee80211_runtime::roles::concurrent::StaApRxBlockAck::with_maximum_window(
         crate::resources::profile::ESP32S31_DEFAULT_RX_REORDER_WINDOW as u16,
     ) {
         Ok(sessions) => sessions,
@@ -285,7 +286,7 @@ pub(super) static PRODUCTION_RX_BLOCK_ACK:
     };
 // Software packet owners are retained across async polls, but never DMA-addressed.
 static AP_TX_STORAGE: StaticCell<
-    oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AccessPointTxStorage<
+    oer_esp32s31_ieee80211_runtime::roles::access_point::network_tx::AccessPointTxStorage<
         RadioNetworkTxBacking,
     >,
 > = StaticCell::new();
@@ -293,7 +294,7 @@ static AP_AIRTIME_RESOURCES: StaticCell<AccessPointAirtimeResources> = StaticCel
 static AP_RX_REORDER: StaticCell<AccessPointRxReorder<'static, RX_BUFFER_SIZE>> = StaticCell::new();
 #[cfg(feature = "diagnostics")]
 static AP_OBSERVATION_STORAGE: StaticCell<
-    oer_esp32s31_wifi_runtime::diagnostics::access_point::AccessPointObservationStorage,
+    oer_esp32s31_ieee80211_runtime::diagnostics::access_point::AccessPointObservationStorage,
 > = StaticCell::new();
 // Simultaneous STA+AP cannot borrow the station scan and Ethernet scratch.
 // These are role-local CPU buffers; DMA never addresses them directly.
@@ -304,8 +305,9 @@ static AP_TX_FRAME: ConstStaticCell<[u8; RX_STAGE_CAPACITY]> =
 // Hardware pairwise-key capabilities are stable epoch state. Keeping their
 // bounded table static avoids duplicating all 15 tokens in async rollback
 // variants while `stop` still clears every hardware slot before returning it.
-static AP_PAIRWISE_KEYS: ConstStaticCell<oer_esp32s31_wifi_ap::security::ApPairwiseKeyStorage> =
-    ConstStaticCell::new(oer_esp32s31_wifi_ap::security::ApPairwiseKeyStorage::new());
+static AP_PAIRWISE_KEYS: ConstStaticCell<
+    oer_esp32s31_ieee80211_ap::security::ApPairwiseKeyStorage,
+> = ConstStaticCell::new(oer_esp32s31_ieee80211_ap::security::ApPairwiseKeyStorage::new());
 
 #[derive(Clone, Copy, Debug, Default)]
 struct ProductionScanObserver;
@@ -345,8 +347,8 @@ struct ProductionConnectedPhase {
     epoch: ConnectedStationEpoch,
     network: WifiNetworkResources,
     station: StaAttemptStation,
-    peer: oer_esp32s31_wifi_sta::peer::ConnectedStaPeer,
-    installed_security: oer_esp32s31_wifi_sta::attempt::StaInstalledSecurity,
+    peer: oer_esp32s31_ieee80211_sta::peer::ConnectedStaPeer,
+    installed_security: oer_esp32s31_ieee80211_sta::attempt::StaInstalledSecurity,
 }
 
 type ProductionStationOwner<'state, 'security> =
@@ -718,7 +720,7 @@ enum ProductionStandaloneScanReturnFault {
         _station: ProductionStationRoleResources,
         _access_point: ProductionAccessPointResources,
         _monitor: ProductionMonitorResources,
-        _error: oer_esp32s31_wifi_sta::tx_epoch::StaTxEpochError,
+        _error: oer_esp32s31_ieee80211_sta::tx_epoch::StaTxEpochError,
         _returned_control: ControlTx,
     },
     ReceiveNotLive {
@@ -821,8 +823,8 @@ fn try_reclaim_production_station<'security>(
 // model callbacks or ledger. Both stay together in stable CPU storage.
 pub(super) struct AccessPointAirtimeResources {
     configuration:
-        oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AccessPointAirtimeConfiguration,
-    storage: oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AccessPointAirtimeStorage,
+        oer_esp32s31_ieee80211_runtime::roles::access_point::network_tx::AccessPointAirtimeConfiguration,
+    storage: oer_esp32s31_ieee80211_runtime::roles::access_point::network_tx::AccessPointAirtimeStorage,
 }
 
 pub(super) struct ProductionStationBoardResources {
@@ -912,7 +914,7 @@ pub async fn new(
     })?;
     crate::WatchdogConfig::complete(protection.take().expect("startup protection"));
     let station_interface = WifiConfig::station(WifiStationConfig::new(station_mac))
-        .validate(oer_esp32s31_wifi_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES)
+        .validate(oer_esp32s31_ieee80211_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES)
         .map_err(|_| NewError::StationRole)?
         .station()
         .ok_or(NewError::StationRole)?;
@@ -951,7 +953,7 @@ pub async fn new(
     let monitor_memory =
         MonitorMemory::new(rx_storage, buffer_addresses).map_err(|_| NewError::RxDmaLayout)?;
     let descriptor_base = monitor_memory.descriptor_base();
-    let tx_dma = oer_esp32s31_wifi_dma::tx_storage::TxDmaStorage::pin_static(memory.tx_dma)
+    let tx_dma = oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorage::pin_static(memory.tx_dma)
         .map_err(|_| NewError::TxDmaLayout)?;
     let tx_slot = Pin::static_mut(TX_SLOT_STORAGE.init_with(|| TxSlot::from_dma(tx_dma)));
     diagnostics_event!(
@@ -994,7 +996,7 @@ pub async fn new(
         network: station_network,
         board: ProductionStationBoardResources {
             access_point_airtime: access_point_airtime.map(|configuration| AP_AIRTIME_RESOURCES.init_with(|| AccessPointAirtimeResources {
-                storage: oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AccessPointAirtimeStorage::new(configuration.quantum_micros).with_observer(configuration.observer),
+                storage: oer_esp32s31_ieee80211_runtime::roles::access_point::network_tx::AccessPointAirtimeStorage::new(configuration.quantum_micros).with_observer(configuration.observer),
                 configuration,
             })),
             interface: station_interface,
@@ -1017,7 +1019,7 @@ pub async fn new(
         physical,
         station,
         ProductionAccessPointResources {
-            tx_storage: AP_TX_STORAGE.init_with(oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AccessPointTxStorage::new),
+            tx_storage: AP_TX_STORAGE.init_with(oer_esp32s31_ieee80211_runtime::roles::access_point::network_tx::AccessPointTxStorage::new),
             address: access_point_mac.bytes(),
             beacon: memory.ap_beacon,
             rx_frame: AP_RX_FRAME.take().as_mut_slice(),
@@ -1025,16 +1027,16 @@ pub async fn new(
             peer_storage: AP_PEER_STORAGE.take(),
             pairwise_storage: AP_PAIRWISE_KEYS.take(),
             rx_dispatcher: AP_RX_DISPATCHER.init_with(|| {
-                oer_esp32s31_wifi_ap::rx::ApRxDispatcher::new(
-                    oer_esp32s31_wifi_ap::rx::ApRxConfig {
+                oer_esp32s31_ieee80211_ap::rx::ApRxDispatcher::new(
+                    oer_esp32s31_ieee80211_ap::rx::ApRxConfig {
                         access_point: access_point_mac.bytes(),
-                        ingress: oer_esp32s31_wifi_mac::rx::RxIngressConfig {
+                        ingress: oer_esp32s31_ieee80211_mac::rx::RxIngressConfig {
                             ring_entry_limit: 1,
                             csi_config: 0,
                             flags: 0,
                         },
                         security:
-                            oer_ieee80211::security::WifiSecurityMode::Wpa2Personal,
+                            oer_ieee80211_mac::security::WifiSecurityMode::Wpa2Personal,
                     },
                 )
             }),
@@ -1047,7 +1049,7 @@ pub async fn new(
         monitor.role,
     );
     let configuration = WifiSupervisorConfiguration::new(
-        oer_esp32s31_wifi_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
+        oer_esp32s31_ieee80211_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
     )
     .with_station(WifiStationConfig::new(station_mac))
     .with_access_point(WifiAccessPointConfig::new(access_point_mac))

@@ -1,5 +1,5 @@
 //! Exercise the target's real event completion future with a host waker.
-use open_esp_radio_hil_target_core::console::progress;
+use oer_hil_target_core::console::progress;
 use std::{
     future::Future,
     sync::{
@@ -50,7 +50,7 @@ fn already_written_and_wrapped_sequences_need_no_new_notification() {
     );
 }
 
-use open_esp_radio_hil_target_core::console::writer;
+use oer_hil_target_core::console::writer;
 
 #[test]
 fn protocol_writer_waits_for_release_without_busy_or_stale_self_wakes() {

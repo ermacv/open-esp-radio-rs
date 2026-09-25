@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use open_esp_radio_hil_protocol::{TimebaseProbeEvidence, TimebaseProbeRequest};
+use oer_hil_protocol::{TimebaseProbeEvidence, TimebaseProbeRequest};
 use serde::Serialize;
 
 use crate::Result;

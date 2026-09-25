@@ -8,7 +8,7 @@ use bt_hci::{
     param::{ConnHandle, Status},
 };
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     BLUETOOTH_REFRESH_EDIV, BLUETOOTH_REFRESH_LTK, BLUETOOTH_REFRESH_RAND, BLUETOOTH_TEST_EDIV,
     BLUETOOTH_TEST_LTK, BLUETOOTH_TEST_RAND, BluetoothEncryptionEvidence, BluetoothSecurityFailure,
 };

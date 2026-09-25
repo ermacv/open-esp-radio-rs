@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     Capabilities, Command, DecodeCounters, Direction, Envelope, Event, EvidenceRecord, Finished,
     FlowTransportEvidence, FrameDecoder, FrameEncoder, Ieee802154EdEventProbeEvidence,
     Ieee802154EdEventProbeRequest, Ieee802154EventStatusProbeEvidence,
@@ -268,7 +268,7 @@ pub struct WifiCommandHandle {
 pub struct StationConnectionObservation {
     pub generation: u32,
     pub association_bandwidth_mhz: Option<u16>,
-    pub security: Option<open_esp_radio_hil_protocol::StationLinkSecurity>,
+    pub security: Option<oer_hil_protocol::StationLinkSecurity>,
     pub event_cursor_after: usize,
 }
 

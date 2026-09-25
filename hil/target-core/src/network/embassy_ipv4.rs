@@ -1,6 +1,6 @@
 //! Role-local configuration shared by released and owned Embassy APIs.
 use embassy_net::{ConfigV4, Ipv4Address, Ipv4Cidr, Stack, StaticConfigV4};
-use open_esp_radio_hil_protocol::{NetworkInfo, NetworkIpv4Configuration, WifiNetworkInterface};
+use oer_hil_protocol::{NetworkInfo, NetworkIpv4Configuration, WifiNetworkInterface};
 #[derive(Clone, Copy)]
 pub struct Iface<'a>(pub Stack<'a>);
 impl<'a> Iface<'a> {

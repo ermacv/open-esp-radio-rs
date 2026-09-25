@@ -5,7 +5,7 @@
 //! planning. Chip code must separately prove that it can install the accepted
 //! agreement before any TWT Setup frame is published.
 
-use oer_ieee80211::twt::{
+use oer_ieee80211_mac::twt::{
     INDIVIDUAL_TWT_FLOW_CAPACITY, INDIVIDUAL_TWT_SETUP_BODY_LEN, INDIVIDUAL_TWT_TEARDOWN_BODY_LEN,
     IndividualTwtAction, IndividualTwtControl, IndividualTwtFlowId, IndividualTwtParameterSet,
     IndividualTwtSetup, IndividualTwtSetupCommand, IndividualTwtTeardown, TwtWakeDurationUnit,
@@ -134,7 +134,7 @@ pub struct IndividualTwtAgreement {
     pub control: IndividualTwtControl,
     pub trigger: bool,
     pub implicit: bool,
-    pub flow_type: oer_ieee80211::twt::IndividualTwtFlowType,
+    pub flow_type: oer_ieee80211_mac::twt::IndividualTwtFlowType,
     pub protection: bool,
     pub target_wake_time_tsf: u64,
     pub wake_interval_micros: u64,

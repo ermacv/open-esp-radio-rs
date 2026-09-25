@@ -20,7 +20,7 @@ use bt_hci::{
     controller::Controller,
 };
 #[cfg(feature = "advertising-smoke")]
-use open_esp_radio_esp32s31_bluetooth_controller_example::AdvertisingSmokeCase;
+use oer_example_esp32s31_bluetooth_controller::AdvertisingSmokeCase;
 
 #[cfg(feature = "trouble-gatt")]
 use embassy_time::Duration;
@@ -58,7 +58,7 @@ use oer::systems::esp32s31::embassy::bluetooth::{
 #[cfg(not(feature = "trouble-gatt"))]
 use oer::systems::esp32s31::embassy::bluetooth::{BluetoothHostController, BluetoothSystem};
 
-use oer_esp32s31_embassy_runtime::Executor;
+use oer_esp32s31_executor_embassy::Executor;
 
 use static_cell::StaticCell;
 
@@ -117,7 +117,7 @@ extern "C" fn runtime_main() -> ! {
     static WATCHDOG: StaticCell<DeadlineWatchdog> = StaticCell::new();
     let watchdog = WATCHDOG.init(DeadlineWatchdog::new(peripherals.TIMG1));
     let timer_group = TimerGroup::new(peripherals.TIMG0);
-    oer_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
+    oer_esp32s31_executor_embassy::init(OneShotTimer::new(timer_group.timer0));
     let platform = RADIO_PLATFORM.init(EspHalRadioPlatform::new(
         peripherals.MODEM_SYSCON,
         peripherals.MODEM_LPCON,
@@ -209,7 +209,7 @@ async fn bluetooth_controller_task(
     #[cfg(feature = "trouble-gatt")]
     {
         #[cfg(feature = "trouble-secure-gatt")]
-        let mut bonds = open_esp_radio_esp32s31_bluetooth_controller_example::security::bonds::RamBondStore::<1>::new();
+        let mut bonds = gatt_application::security::bonds::RamBondStore::<1>::new();
         let resources = TROUBLE_RESOURCES.init(HostResources::new());
         let system = output.system.into_trouble(resources);
         let stack = system.stack;
@@ -219,14 +219,13 @@ async fn bluetooth_controller_task(
             .expect("fresh HCI entropy binding");
         let mut host_runner = stack.runner();
         #[cfg(not(feature = "trouble-secure-gatt"))]
-        let application =
-            open_esp_radio_esp32s31_bluetooth_controller_example::gatt::run(&stack, |event| {
-                esp_println::println!("open-radio: Trouble {:?}", event)
-            });
+        let application = gatt_application::gatt::run(&stack, |event| {
+            esp_println::println!("open-radio: Trouble {:?}", event)
+        });
 
         #[cfg(feature = "trouble-secure-gatt")]
         let application = async {
-            use open_esp_radio_esp32s31_bluetooth_controller_example::security::{
+            use gatt_application::security::{
                 comparison::NumericComparison,
                 console::{self, Observations},
                 gatt,

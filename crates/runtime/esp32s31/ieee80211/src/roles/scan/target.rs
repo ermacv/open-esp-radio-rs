@@ -18,9 +18,9 @@ use oer_esp32s31_hal::owner::RadioRuntimeOwner;
 
 use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
 
-use oer_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
+use oer_esp32s31_ieee80211::cooperative_hardware::CooperativeRadioHardware;
 
-use oer_esp32s31_wifi_sta::hardware::channel::ScanPhy;
+use oer_esp32s31_ieee80211_sta::hardware::channel::ScanPhy;
 
 impl<'state, 'arena, P, O, D> ScanPhyPort<CooperativeRadioHardware<'arena>>
     for ScanPhy<'state, P, O, D>
@@ -60,7 +60,7 @@ where
 impl<H, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: usize>
     ScanReceivePort<H> for ScanRx<'_, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
-    H: oer_esp32s31_wifi_mac::rx::RxDma,
+    H: oer_esp32s31_ieee80211_mac::rx::RxDma,
 {
     type Error = RxFrontierError;
 

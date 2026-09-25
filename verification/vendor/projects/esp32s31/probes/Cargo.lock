@@ -911,13 +911,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-embassy-net"
+name = "oer-embassy-net-owned"
 version = "0.1.0"
 dependencies = [
  "embassy-net-driver",
  "embassy-sync 0.8.0",
- "oer-network",
- "oer-wifi-datapath",
+ "oer-ieee80211-datapath",
+ "oer-network-interface",
  "xarxa-driver",
 ]
 
@@ -959,6 +959,113 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-ieee80211"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "oer-esp32s31-ieee80211-dma",
+ "oer-esp32s31-ieee80211-mac",
+ "oer-esp32s31-phy",
+ "oer-ieee80211-mac",
+ "oer-ieee80211-softmac",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee80211-ap"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "oer-esp32s31-ieee80211",
+ "oer-esp32s31-ieee80211-mac",
+ "oer-esp32s31-phy",
+ "oer-ieee80211-ap",
+ "oer-ieee80211-mac",
+ "oer-ieee80211-rsn",
+ "oer-ieee80211-softmac",
+ "oer-memory",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee80211-dma"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "oer-memory",
+ "pin-project",
+ "vcell",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee80211-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "esp-hal",
+ "oer-esp32s31-coex",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-ieee80211",
+ "oer-esp32s31-ieee80211-mac",
+ "oer-esp32s31-phy",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee80211-mac"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "oer-esp32s31-ieee80211-dma",
+ "oer-ieee80211-mac",
+ "oer-ieee80211-softmac",
+ "oer-memory",
+ "pin-project",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee80211-runtime"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "oer-embassy-net-owned",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-ieee80211",
+ "oer-esp32s31-ieee80211-ap",
+ "oer-esp32s31-ieee80211-dma",
+ "oer-esp32s31-ieee80211-mac",
+ "oer-esp32s31-ieee80211-sta",
+ "oer-esp32s31-phy",
+ "oer-ieee80211-datapath",
+ "oer-ieee80211-mac",
+ "oer-ieee80211-rsn",
+ "oer-ieee80211-runtime",
+ "oer-ieee80211-softmac",
+ "oer-ieee80211-sta",
+ "oer-memory",
+ "oer-network-interface",
+ "static_cell",
+]
+
+[[package]]
+name = "oer-esp32s31-ieee80211-sta"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-ieee80211",
+ "oer-esp32s31-ieee80211-dma",
+ "oer-esp32s31-ieee80211-mac",
+ "oer-esp32s31-phy",
+ "oer-ieee80211-mac",
+ "oer-ieee80211-rsn",
+ "oer-ieee80211-softmac",
+ "oer-ieee80211-sta",
+ "static_cell",
+]
+
+[[package]]
 name = "oer-esp32s31-ieee802154-irq"
 version = "0.1.0"
 dependencies = [
@@ -989,122 +1096,67 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-wifi"
+name = "oer-ieee80211-ap"
 version = "0.1.0"
 dependencies = [
- "oer-esp32s31-hal",
- "oer-esp32s31-phy",
- "oer-esp32s31-wifi-dma",
- "oer-esp32s31-wifi-mac",
- "oer-ieee80211",
- "oer-wifi-softmac",
+ "oer-ieee80211-mac",
+ "oer-ieee80211-rsn",
 ]
 
 [[package]]
-name = "oer-esp32s31-wifi-ap"
+name = "oer-ieee80211-datapath"
 version = "0.1.0"
 dependencies = [
- "oer-esp32s31-hal",
- "oer-esp32s31-phy",
- "oer-esp32s31-wifi",
- "oer-esp32s31-wifi-mac",
- "oer-ieee80211",
  "oer-memory",
- "oer-wifi-ap",
- "oer-wifi-rsn",
- "oer-wifi-softmac",
+ "oer-network-interface",
 ]
 
 [[package]]
-name = "oer-esp32s31-wifi-dma"
+name = "oer-ieee80211-mac"
 version = "0.1.0"
-dependencies = [
- "oer-esp32s31-hal",
- "oer-memory",
- "pin-project",
- "vcell",
-]
 
 [[package]]
-name = "oer-esp32s31-wifi-esp-hal"
+name = "oer-ieee80211-rsn"
 version = "0.1.0"
 dependencies = [
- "critical-section",
- "esp-hal",
- "oer-esp32s31-coex",
- "oer-esp32s31-hal",
- "oer-esp32s31-phy",
- "oer-esp32s31-wifi",
- "oer-esp32s31-wifi-mac",
-]
-
-[[package]]
-name = "oer-esp32s31-wifi-mac"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-hal",
- "oer-esp32s31-wifi-dma",
- "oer-ieee80211",
- "oer-memory",
- "oer-wifi-softmac",
- "pin-project",
- "subtle",
+ "aes",
+ "hmac",
+ "pbkdf2",
+ "sha1",
  "zeroize",
 ]
 
 [[package]]
-name = "oer-esp32s31-wifi-runtime"
+name = "oer-ieee80211-runtime"
 version = "0.1.0"
 dependencies = [
- "embassy-futures",
  "embassy-sync 0.8.0",
  "embassy-time",
- "oer-embassy-net",
- "oer-esp32s31-hal",
- "oer-esp32s31-phy",
- "oer-esp32s31-wifi",
- "oer-esp32s31-wifi-ap",
- "oer-esp32s31-wifi-dma",
- "oer-esp32s31-wifi-mac",
- "oer-esp32s31-wifi-sta",
- "oer-ieee80211",
+ "oer-ieee80211-softmac",
  "oer-memory",
- "oer-network",
- "oer-wifi-datapath",
- "oer-wifi-embassy",
- "oer-wifi-rsn",
- "oer-wifi-softmac",
- "oer-wifi-sta",
- "static_cell",
 ]
 
 [[package]]
-name = "oer-esp32s31-wifi-sta"
+name = "oer-ieee80211-softmac"
 version = "0.1.0"
 dependencies = [
- "critical-section",
- "oer-esp32s31-hal",
- "oer-esp32s31-phy",
- "oer-esp32s31-wifi",
- "oer-esp32s31-wifi-dma",
- "oer-esp32s31-wifi-mac",
- "oer-ieee80211",
- "oer-wifi-rsn",
- "oer-wifi-softmac",
- "oer-wifi-sta",
- "static_cell",
+ "oer-ieee80211-mac",
+ "zeroize",
 ]
 
 [[package]]
-name = "oer-ieee80211"
+name = "oer-ieee80211-sta"
 version = "0.1.0"
+dependencies = [
+ "oer-ieee80211-mac",
+]
 
 [[package]]
 name = "oer-memory"
 version = "0.1.0"
 
 [[package]]
-name = "oer-network"
+name = "oer-network-interface"
 version = "0.1.0"
 
 [[package]]
@@ -1128,59 +1180,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-wifi-ap"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211",
- "oer-wifi-rsn",
-]
-
-[[package]]
-name = "oer-wifi-datapath"
-version = "0.1.0"
-dependencies = [
- "oer-memory",
- "oer-network",
-]
-
-[[package]]
-name = "oer-wifi-embassy"
-version = "0.1.0"
-dependencies = [
- "embassy-sync 0.8.0",
- "embassy-time",
- "oer-memory",
- "oer-wifi-softmac",
-]
-
-[[package]]
-name = "oer-wifi-rsn"
-version = "0.1.0"
-dependencies = [
- "aes",
- "hmac",
- "pbkdf2",
- "sha1",
- "zeroize",
-]
-
-[[package]]
-name = "oer-wifi-softmac"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211",
- "zeroize",
-]
-
-[[package]]
-name = "oer-wifi-sta"
-version = "0.1.0"
-dependencies = [
- "oer-ieee80211",
-]
-
-[[package]]
-name = "open-esp-radio-verification-esp32s31-bluetooth-probes"
+name = "oer-verification-esp32s31-bluetooth-probes"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-bluetooth",
@@ -1189,16 +1189,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-verification-esp32s31-bluetooth-probes-elf"
+name = "oer-verification-esp32s31-bluetooth-probes-elf"
 version = "0.1.0"
 dependencies = [
  "critical-section",
  "oer-probe-codegen",
- "open-esp-radio-verification-esp32s31-bluetooth-probes",
+ "oer-verification-esp32s31-bluetooth-probes",
 ]
 
 [[package]]
-name = "open-esp-radio-verification-esp32s31-probes"
+name = "oer-verification-esp32s31-probes"
 version = "0.1.0"
 dependencies = [
  "embassy-futures",
@@ -1206,28 +1206,28 @@ dependencies = [
  "esp-hal",
  "oer-esp32s31-coex",
  "oer-esp32s31-hal",
+ "oer-esp32s31-ieee80211",
+ "oer-esp32s31-ieee80211-dma",
+ "oer-esp32s31-ieee80211-esp-hal",
+ "oer-esp32s31-ieee80211-mac",
+ "oer-esp32s31-ieee80211-runtime",
  "oer-esp32s31-pac",
  "oer-esp32s31-phy",
- "oer-esp32s31-wifi",
- "oer-esp32s31-wifi-dma",
- "oer-esp32s31-wifi-esp-hal",
- "oer-esp32s31-wifi-mac",
- "oer-esp32s31-wifi-runtime",
+ "oer-ieee80211-softmac",
  "oer-memory",
  "oer-probe-macros",
- "oer-wifi-softmac",
 ]
 
 [[package]]
-name = "open-esp-radio-verification-esp32s31-probes-elf"
+name = "oer-verification-esp32s31-probes-elf"
 version = "0.1.0"
 dependencies = [
  "oer-probe-codegen",
- "open-esp-radio-verification-esp32s31-probes",
+ "oer-verification-esp32s31-probes",
 ]
 
 [[package]]
-name = "open-esp-radio-verification-esp32s31-register-probes"
+name = "oer-verification-esp32s31-register-probes"
 version = "0.1.0"
 dependencies = [
  "oer-esp32s31-hal",
@@ -1235,11 +1235,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-verification-esp32s31-register-probes-elf"
+name = "oer-verification-esp32s31-register-probes-elf"
 version = "0.1.0"
 dependencies = [
  "oer-probe-codegen",
- "open-esp-radio-verification-esp32s31-register-probes",
+ "oer-verification-esp32s31-register-probes",
 ]
 
 [[package]]

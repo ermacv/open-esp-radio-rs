@@ -1,7 +1,7 @@
 //! Four Host credits during repeated full calibration on a 7.5-ms plaintext ACL.
 use crate::{Result, fixture::bluetooth::att, fixture::bluetooth::model::PeerAddress};
 use hil_core::{context::Context, session::SerialCapture};
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     BluetoothPeripheralEvidence as Evidence, BluetoothPeripheralOperation as Op,
     BluetoothPeripheralResult as Outcome, BluetoothPeripheralTermination,
     bluetooth_calibration_notification,
@@ -177,7 +177,7 @@ fn wait_credits(capture: &SerialCapture, expected: u32) -> Result<Evidence> {
 fn validate_calibrations(before: &Evidence, after: &Evidence, minimum: u16) -> Result<()> {
     // No observation exists before the first physical transaction. This is a
     // zero baseline only when the independent active-completion count is zero.
-    let zero = open_esp_radio_hil_protocol::BluetoothPhyMaintenanceEvidence::default();
+    let zero = oer_hil_protocol::BluetoothPhyMaintenanceEvidence::default();
     let b = match before.phy_maintenance.as_ref() {
         Some(b) => b,
         None if before.phy_peripheral_maintenance == 0 => &zero,
@@ -217,21 +217,20 @@ mod tests {
     #[test]
     fn peer_interval_mismatch_is_explicit_and_not_a_fallback() {
         let mut evidence = super::super::peripheral_tests::evidence();
-        evidence.calibration_traffic = Some(
-            open_esp_radio_hil_protocol::BluetoothCalibrationTrafficEvidence {
+        evidence.calibration_traffic =
+            Some(oer_hil_protocol::BluetoothCalibrationTrafficEvidence {
                 enabled: true,
                 connected: true,
                 interval_micros: 45_000,
                 ..Default::default()
-            },
-        );
+            });
         let error = validate_live(&evidence).unwrap_err().to_string();
         assert!(error.contains("7500 us"));
         assert!(error.contains("45000 us"));
     }
     #[test]
     fn calibration_gate_requires_new_full_work_and_valid_restoration() {
-        use open_esp_radio_hil_protocol::BluetoothPhyMaintenanceEvidence as M;
+        use oer_hil_protocol::BluetoothPhyMaintenanceEvidence as M;
         let before = super::super::peripheral_tests::evidence();
         let mut after = before.clone();
         after.phy_peripheral_maintenance = 8;

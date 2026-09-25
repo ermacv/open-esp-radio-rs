@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-verification-esp32s31-probes"
+name = "oer-verification-esp32s31-probes"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,12 +17,12 @@ oer-memory.workspace = true
 oer-esp32s31-hal.workspace = true
 oer-esp32s31-pac.workspace = true
 oer-esp32s31-phy = { workspace = true, features = ["validation-probes"] }
-oer-esp32s31-wifi-mac.workspace = true
-oer-esp32s31-wifi.workspace = true
-oer-esp32s31-wifi-dma.workspace = true
-oer-esp32s31-wifi-runtime.workspace = true
-oer-wifi-softmac.workspace = true
-oer-esp32s31-wifi-esp-hal = { path = "../../../../../../crates/adapters/esp-hal/esp32s31/ieee80211", features = ["esp32s31"] }
+oer-esp32s31-ieee80211-mac.workspace = true
+oer-esp32s31-ieee80211.workspace = true
+oer-esp32s31-ieee80211-dma.workspace = true
+oer-esp32s31-ieee80211-runtime.workspace = true
+oer-ieee80211-softmac.workspace = true
+oer-esp32s31-ieee80211-esp-hal = { path = "../../../../../../crates/adapters/esp-hal/esp32s31/ieee80211", features = ["esp32s31"] }
 
 [lib]
 crate-type = ["rlib", "staticlib"]

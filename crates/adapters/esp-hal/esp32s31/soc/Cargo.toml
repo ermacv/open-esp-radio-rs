@@ -1,5 +1,5 @@
 [package]
-name = "oer-esp32s31-soc"
+name = "oer-esp32s31-soc-esp-hal"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

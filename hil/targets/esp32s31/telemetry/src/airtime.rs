@@ -1,8 +1,8 @@
 //! Bounded AP-epoch history. Association generations are never merged/evicted.
-use oer_esp32s31_wifi_runtime::roles::access_point::network_tx::{
+use oer_esp32s31_ieee80211_runtime::roles::access_point::network_tx::{
     AccessPointAirtimePeer, AirtimeAction, AirtimeObservation,
 };
-use open_esp_radio_hil_protocol::{WifiAirtimePeer, WifiAirtimePeerEvidence, WifiAirtimeReport};
+use oer_hil_protocol::{WifiAirtimePeer, WifiAirtimePeerEvidence, WifiAirtimeReport};
 
 #[derive(Clone, Copy)]
 pub struct AirtimeHistory {

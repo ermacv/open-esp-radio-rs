@@ -9,7 +9,7 @@ use oer_esp32s31_bluetooth::controller::{
     ControllerRestartError, ControllerRestartFailure, ControllerRestarted,
 };
 use oer_esp32s31_bluetooth_runtime::controller::DtmRecheckStartError;
-use oer_esp32s31_radio_platform_esp_hal::EspHalBluetoothInterruptStorageError;
+use oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptStorageError;
 
 type Restarted<
     P,
@@ -264,7 +264,7 @@ fn finish_outcome<
         ControllerRestartFailure<'static, P, PublishedStorage, SC, MT>,
     >,
     bindings: RetiredBindings<H2C, C2H, PC>,
-    protection: oer_esp32s31_soc::watchdog::DeadlineLease<'static>,
+    protection: oer_esp32s31_soc_esp_hal::watchdog::DeadlineLease<'static>,
 ) -> Result<
     BluetoothSystemReady<P, MT, SC, H2C, C2H, PC>,
     BluetoothHardwareRestartFailure<P, MT, SC, H2C, C2H, PC>,

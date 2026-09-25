@@ -1,8 +1,8 @@
 //! Model hardware for AP runtime publication/completion tests.
 use core::future::{Future, ready};
 use oer_esp32s31_hal::types::*;
-use oer_esp32s31_wifi::ordinary_tx::{WifiTxPowerPair, WifiTxPowerProfile, WifiTxTimer};
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxPowerPair, WifiTxPowerProfile, WifiTxTimer};
+use oer_esp32s31_ieee80211_mac::{
     crypto::CcmpKeyHardware,
     rx::hardware::{RxBlockAckHardware, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     tx::ampdu::HtAmpduHardware,
@@ -36,7 +36,7 @@ impl CcmpKeyHardware for Hardware {
     fn clear_ccmp_entry(&mut self, _index: u8) {}
 }
 
-impl oer_esp32s31_wifi_mac::tx::TxHardware for Hardware {
+impl oer_esp32s31_ieee80211_mac::tx::TxHardware for Hardware {
     fn prepare_bound_legacy_tx(
         &mut self,
         _dma: &dyn PreparedTxDma,
@@ -163,11 +163,11 @@ impl WifiTxTimer for Timer {
     }
 }
 
-impl oer_esp32s31_wifi_mac::ap_policy::ApRxPolicyHardware for Hardware {
+impl oer_esp32s31_ieee80211_mac::ap_policy::ApRxPolicyHardware for Hardware {
     fn apply_ap_link_policy(&mut self, _: [u8; 6]) {}
     fn disable_ap_link_policy(&mut self) {}
 }
-impl oer_esp32s31_wifi_mac::ap_tsf::ApTsfHardware for Hardware {
+impl oer_esp32s31_ieee80211_mac::ap_tsf::ApTsfHardware for Hardware {
     fn reset_and_start_access_point_tsf(&mut self) {}
     fn stop_access_point_tsf(&mut self) {}
 }

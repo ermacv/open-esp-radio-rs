@@ -1,7 +1,7 @@
 #![no_main]
 #![no_std]
 
-extern crate open_esp_radio_verification_esp32s31_probes as _;
+extern crate oer_verification_esp32s31_probes as _;
 include!(concat!(env!("OUT_DIR"), "/probe_catalog.rs"));
 
 #[allow(

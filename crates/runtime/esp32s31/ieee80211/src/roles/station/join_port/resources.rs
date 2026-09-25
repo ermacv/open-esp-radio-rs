@@ -1,9 +1,9 @@
 use {
-    oer_ieee80211::scan::ScanRecord, oer_ieee80211::security::WifiSecurityMode,
-    oer_ieee80211::station::association::Preference,
+    oer_ieee80211_mac::scan::ScanRecord, oer_ieee80211_mac::security::WifiSecurityMode,
+    oer_ieee80211_mac::station::association::Preference,
 };
 
-use oer_wifi_sta::request::StationListenInterval;
+use oer_ieee80211_sta::request::StationListenInterval;
 
 /// Driver resources borrowed for one join runner lifetime.
 pub struct StaJoinRadio<'hardware, 'transmit, H, R, T> {

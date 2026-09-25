@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-pub use oer_wifi_softmac::tx_cost::TxContention;
+pub use oer_ieee80211_softmac::tx_cost::TxContention;
 
 use core::{
     num::{NonZeroU32, NonZeroU64},
@@ -27,15 +27,15 @@ use oer_esp32s31_hal::types::{
     MacTxQueueDetached,
 };
 
-pub use oer_esp32s31_wifi_dma::tx_storage::TxDmaState as TxSlotState;
+pub use oer_esp32s31_ieee80211_dma::tx_storage::TxDmaState as TxSlotState;
 #[cfg(not(target_pointer_width = "32"))]
-use oer_esp32s31_wifi_dma::tx_storage::TxDmaStorage;
+use oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorage;
 
-use oer_esp32s31_wifi_dma::tx_storage::{PinnedTxDmaStorage, TxDmaStorageError};
+use oer_esp32s31_ieee80211_dma::tx_storage::{PinnedTxDmaStorage, TxDmaStorageError};
 
-use oer_ieee80211::qos::WmmAccessCategory;
+use oer_ieee80211_mac::qos::WmmAccessCategory;
 
-pub use oer_ieee80211::trigger::HeResourceUnit;
+pub use oer_ieee80211_mac::trigger::HeResourceUnit;
 
 use crate::rate::{
     control::dot11g_schedule_for_legacy_rate,
@@ -47,7 +47,7 @@ use crate::rate::{
 
 use oer_esp32s31_hal::{ieee80211::mac::WifiMacHal, owner::RadioRuntimeOwner};
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     he::HeDcmConstellation,
     ht::HtDuplicateMcs32,
     trigger::{
@@ -3190,7 +3190,7 @@ impl LegacyTxConfig {
 pub struct TxSlot<const BUFFER_SIZE: usize> {
     dma: PinnedTxDmaStorage<BUFFER_SIZE>,
     generation_cursor: u32,
-    work: oer_wifi_softmac::MacTxWork,
+    work: oer_ieee80211_softmac::MacTxWork,
     active: TxCookie,
     queue: LegacyTxQueue,
 }
@@ -3201,7 +3201,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         Self {
             dma,
             generation_cursor: 0,
-            work: oer_wifi_softmac::MacTxWork::new(),
+            work: oer_ieee80211_softmac::MacTxWork::new(),
             active: TxCookie(0),
             queue: LegacyTxQueue::Voice,
         }
@@ -3225,7 +3225,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
 
     /// Receipt remains in pinned CPU metadata across retry detach/abort. Read
     /// at the terminal edge before a new ordinary exchange resets it.
-    pub const fn work(&self) -> oer_wifi_softmac::MacTxWork {
+    pub const fn work(&self) -> oer_ieee80211_softmac::MacTxWork {
         self.work
     }
 
@@ -3234,7 +3234,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         if slot.state() != TxSlotState::Free {
             return Err(TxError::Busy);
         }
-        slot.work = oer_wifi_softmac::MacTxWork::new();
+        slot.work = oer_ieee80211_softmac::MacTxWork::new();
         Ok(())
     }
 

@@ -7,13 +7,14 @@ use embassy_futures::block_on;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
 use {
-    oer_ieee80211::scan::ScanRecord, oer_ieee80211::security::WifiSecurityMode,
-    oer_ieee80211::station::StaTxSequenceCounters, oer_ieee80211::station::association::Preference,
+    oer_ieee80211_mac::scan::ScanRecord, oer_ieee80211_mac::security::WifiSecurityMode,
+    oer_ieee80211_mac::station::StaTxSequenceCounters,
+    oer_ieee80211_mac::station::association::Preference,
 };
 
-use oer_wifi_sta::request::{StationScanChannels, StationScanPolicy, WifiSsid};
+use oer_ieee80211_sta::request::{StationScanChannels, StationScanPolicy, WifiSsid};
 
-use oer_wifi_rsn::Pmk;
+use oer_ieee80211_rsn::Pmk;
 
 use super::*;
 
@@ -400,7 +401,7 @@ fn phase_owner_returns_runtime_target_and_security_without_reconstruction() {
             pmk,
             [0x5a; 32],
             sequences,
-            oer_esp32s31_wifi_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
+            oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
         ),
     );
     let (runtime, phase, security) = owner.into_parts();
@@ -446,7 +447,7 @@ fn common_engine_rejects_running_scan_without_refresh_before_port_entry() {
             pmk,
             [0x33; 32],
             sequences,
-            oer_esp32s31_wifi_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
+            oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
         ),
     );
     let control = StationControlResources::<NoopRawMutex>::new();
@@ -500,7 +501,7 @@ fn common_engine_selects_candidate_before_dispatching_initial_join() {
             pmk,
             [0x55; 32],
             sequences,
-            oer_esp32s31_wifi_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
+            oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
         ),
     );
     let control = StationControlResources::<NoopRawMutex>::new();
@@ -557,7 +558,7 @@ fn common_engine_dispatches_join_ready_scan_owner_to_reconnected_phase() {
             pmk,
             [0x44; 32],
             sequences,
-            oer_esp32s31_wifi_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
+            oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
         ),
     );
     let control = StationControlResources::<NoopRawMutex>::new();
@@ -605,7 +606,7 @@ fn running_scan_completion_prepares_reconnect_only_for_a_selected_candidate() {
         pmk,
         [0; 32],
         sequences,
-        oer_esp32s31_wifi_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
+        oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::PairwiseCcmp,
     );
     let original = StaAttemptStation {
         station_address: [2, 0, 0, 0, 0, 8],

@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     RxObservedMask, RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxRingTopologySnapshot,
 };
 

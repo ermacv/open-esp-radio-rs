@@ -1,5 +1,5 @@
 [package]
-name = "oer-wifi-datapath"
+name = "oer-ieee80211-datapath"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,7 @@ description = "Radio-native packet ownership and materialization contracts"
 
 [dependencies]
 oer-memory = { path = "../../../memory" }
-oer-network = { path = "../../../network/interface" }
+oer-network-interface = { path = "../../../network/interface" }
 
 [features]
 default = []
@@ -19,7 +19,7 @@ ownership-telemetry = []
 workspace = true
 
 [dev-dependencies]
-oer-wifi-softmac = { path = "../softmac" }
+oer-ieee80211-softmac = { path = "../softmac" }
 
 [package.metadata.open-radio]
 scope = "production"

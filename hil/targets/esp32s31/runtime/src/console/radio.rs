@@ -4,7 +4,7 @@
 //! for images that contain a radio/network product owner.
 
 use super::*;
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     STARTUP_ARTIFACT_CHUNK_MAX_LEN, StartupArtifactDisposition, StartupArtifactStatus,
     StationEpochEvidence, StationLifecycleEvent, WifiAccessPointEvidence, WifiMonitorEvidence,
     WifiMonitorFrameChunk, WifiRoleFailureEvidence, WifiRoleTransitionEvidence, WifiScanEvidence,
@@ -194,7 +194,7 @@ pub async fn complete_wifi_role_transition(request_id: u32, evidence: WifiRoleTr
 
 pub async fn complete_wifi_radio_restart(
     request_id: u32,
-    evidence: open_esp_radio_hil_protocol::WifiRadioRestartEvidence,
+    evidence: oer_hil_protocol::WifiRadioRestartEvidence,
 ) {
     let sequence = queue_event_reliably(0, request_id, Event::WifiRadioRestarted(evidence)).await;
     wait_until_serialized(sequence).await;
@@ -202,7 +202,7 @@ pub async fn complete_wifi_radio_restart(
 
 pub async fn complete_wifi_radio_retained_cycle(
     request_id: u32,
-    evidence: open_esp_radio_hil_protocol::WifiRadioRetainedCycleEvidence,
+    evidence: oer_hil_protocol::WifiRadioRetainedCycleEvidence,
 ) {
     let sequence =
         queue_event_reliably(0, request_id, Event::WifiRadioRetainedCycled(evidence)).await;
@@ -284,8 +284,8 @@ pub async fn publish_station_lifecycle(event: StationLifecycleEvent) {
 pub async fn complete_session(
     session_id: u64,
     flow_evidence: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
-    radio: Option<open_esp_radio_hil_protocol::RadioEvidence>,
-    tx_timing: Option<open_esp_radio_hil_protocol::TxAggregateTimingEvidence>,
+    radio: Option<oer_hil_protocol::RadioEvidence>,
+    tx_timing: Option<oer_hil_protocol::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
 ) {
@@ -306,12 +306,12 @@ pub async fn complete_session(
 /// Correlated result of the same-connection physical pause request.
 pub async fn complete_station_pause(
     request_id: u32,
-    evidence: open_esp_radio_hil_protocol::StationPauseEvidence,
-    tx_waits: Option<open_esp_radio_hil_protocol::PhyTxWaitEvidence>,
-    timer: Option<open_esp_radio_hil_protocol::TimerWindowEvidence>,
-    service: Option<open_esp_radio_hil_protocol::StationTrackingServiceEvidence>,
-    temperature: Option<open_esp_radio_hil_protocol::TemperatureEvidence>,
-    rfpll: Option<open_esp_radio_hil_protocol::RfpllEvidence>,
+    evidence: oer_hil_protocol::StationPauseEvidence,
+    tx_waits: Option<oer_hil_protocol::PhyTxWaitEvidence>,
+    timer: Option<oer_hil_protocol::TimerWindowEvidence>,
+    service: Option<oer_hil_protocol::StationTrackingServiceEvidence>,
+    temperature: Option<oer_hil_protocol::TemperatureEvidence>,
+    rfpll: Option<oer_hil_protocol::RfpllEvidence>,
 ) {
     if let Some(temperature) = temperature {
         publish_event_reliably(

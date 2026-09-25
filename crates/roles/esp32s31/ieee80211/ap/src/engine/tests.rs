@@ -1,12 +1,12 @@
 use oer_esp32s31_hal::types::MacKeyInstallOutcome;
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     ap_policy::ApRxPolicyHardware, ap_tsf::ApTsfHardware, crypto::CcmpKeyHardware,
 };
 
-use oer_ieee80211::ccmp::{CcmpHeader, CcmpPacketNumber, CcmpReplayError};
+use oer_ieee80211_mac::ccmp::{CcmpHeader, CcmpPacketNumber, CcmpReplayError};
 
-use oer_wifi_rsn::{
+use oer_ieee80211_rsn::{
     OwnedEapolFrame, Pmk, PtkContext, RsnInterface,
     frames::{OwnedRsnIe, RsnGtk, RsnTxFrame},
 };
@@ -60,14 +60,14 @@ impl ApTsfHardware for Hardware {
 
 fn service(
     ap: [u8; 6],
-    storage: &mut oer_wifi_ap::AccessPointPeerStorage,
+    storage: &mut oer_ieee80211_ap::AccessPointPeerStorage,
 ) -> AccessPointService<'_> {
     AccessPointService::new(
         ap,
         Pmk::derive(b"password", b"ap").unwrap(),
         RsnGtk::new(1, true, [0x55; 16]).unwrap(),
-        oer_wifi_ap::AccessPointClientLimit::new(2).unwrap(),
-        oer_wifi_ap::AccessPointInactiveTimeout::default(),
+        oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
+        oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
         storage,
     )
 }
@@ -77,7 +77,7 @@ fn active_epoch_owns_policy_group_key_management_and_stop_frontier() {
     let ap = [2, 0, 0, 0, 0, 1];
     let peer = [2, 0, 0, 0, 0, 2];
     let mut beacon = [0; WPA2_BEACON_CAPACITY];
-    let mut peers = oer_wifi_ap::AccessPointPeerStorage::new();
+    let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = ApPairwiseKeyStorage::new();
     let ssid = WifiSsid::new(b"ap").unwrap();
     let mut hardware = Hardware::default();
@@ -136,7 +136,7 @@ fn associated_peer_stop_emits_vendor_ordered_disconnects_before_removal() {
     let ap = [2, 0, 0, 0, 0, 1];
     let peer = [2, 0, 0, 0, 0, 2];
     let mut beacon = [0; WPA2_BEACON_CAPACITY];
-    let mut peers = oer_wifi_ap::AccessPointPeerStorage::new();
+    let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = ApPairwiseKeyStorage::new();
     let ssid = WifiSsid::new(b"ap").unwrap();
     let mut hardware = Hardware::default();
@@ -251,7 +251,10 @@ fn associated_peer_stop_emits_vendor_ordered_disconnects_before_removal() {
     let disassociation = engine
         .encode_peer_disconnect(close, ApPeerDisconnectKind::Disassociation, 2, &mut output)
         .unwrap();
-    assert_eq!(disassociation, oer_ieee80211::ap::AP_PEER_DISCONNECT_LEN);
+    assert_eq!(
+        disassociation,
+        oer_ieee80211_mac::ap::AP_PEER_DISCONNECT_LEN
+    );
     assert_eq!(&output[..2], &0x00a0_u16.to_le_bytes());
     assert_eq!(&output[24..26], &2_u16.to_le_bytes());
 
@@ -263,7 +266,10 @@ fn associated_peer_stop_emits_vendor_ordered_disconnects_before_removal() {
             &mut output,
         )
         .unwrap();
-    assert_eq!(deauthentication, oer_ieee80211::ap::AP_PEER_DISCONNECT_LEN);
+    assert_eq!(
+        deauthentication,
+        oer_ieee80211_mac::ap::AP_PEER_DISCONNECT_LEN
+    );
     assert_eq!(&output[..2], &0x00c0_u16.to_le_bytes());
     assert_eq!(&output[24..26], &2_u16.to_le_bytes());
 
@@ -285,7 +291,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     let ap = [2, 0, 0, 0, 0, 1];
     let peer = [2, 0, 0, 0, 0, 2];
     let mut beacon = [0; WPA2_BEACON_CAPACITY];
-    let mut peers = oer_wifi_ap::AccessPointPeerStorage::new();
+    let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = ApPairwiseKeyStorage::new();
     let ssid = WifiSsid::new(b"ap").unwrap();
     let mut hardware = Hardware::default();
@@ -319,7 +325,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     association[16..22].copy_from_slice(&ap);
     association[28..34].copy_from_slice(&[1, 4, 12, 24, 48, 108]);
     association[34..56].copy_from_slice(&RSN);
-    association[56..].copy_from_slice(&oer_ieee80211::ht::ht_capability_ie(
+    association[56..].copy_from_slice(&oer_ieee80211_mac::ht::ht_capability_ie(
         crate::profile::HT_CAPABILITIES,
         WifiChannel::mhz20(6).unwrap(),
     ));
@@ -335,7 +341,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     engine.begin_wpa2::<512>(peer).unwrap();
 
     let ptk = Pmk::derive(b"password", b"ap").unwrap().derive_ptk(
-        oer_wifi_rsn::Akm::Psk,
+        oer_ieee80211_rsn::Akm::Psk,
         PtkContext {
             authenticator_address: ap,
             supplicant_address: peer,
@@ -344,7 +350,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
         },
     );
     let rsn = OwnedRsnIe::<64>::try_copy(&RSN).unwrap();
-    let message2 = RsnTxFrame::<512>::message2(oer_wifi_rsn::Akm::Psk, ap, 9, SNONCE, &rsn)
+    let message2 = RsnTxFrame::<512>::message2(oer_ieee80211_rsn::Akm::Psk, ap, 9, SNONCE, &rsn)
         .unwrap()
         .authenticate(&ptk);
     let message2 =
@@ -365,7 +371,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     assert_eq!(&message3_mpdu[10..16], &ap);
     assert_eq!(&message3_mpdu[22..24], &[0, 0]);
     assert_eq!(&message3_mpdu[30..32], &[0x88, 0x8e]);
-    let message4 = RsnTxFrame::<512>::message4(oer_wifi_rsn::Akm::Psk, ap, 10)
+    let message4 = RsnTxFrame::<512>::message4(oer_ieee80211_rsn::Akm::Psk, ap, 10)
         .unwrap()
         .authenticate(&ptk);
     let message4 =
@@ -422,7 +428,7 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
         "ordinary admission and coalesced activity share one peer binding"
     );
 
-    let repeated_message4 = RsnTxFrame::<512>::message4(oer_wifi_rsn::Akm::Psk, ap, 10)
+    let repeated_message4 = RsnTxFrame::<512>::message4(oer_ieee80211_rsn::Akm::Psk, ap, 10)
         .unwrap()
         .authenticate(&ptk);
     let repeated_message4 = OwnedEapolFrame::<512>::try_copy(
@@ -479,13 +485,13 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
         .service
         .on_tx_block_ack_action(
             peer,
-            oer_ieee80211::block_ack::BlockAckAction::AddbaResponse {
+            oer_ieee80211_mac::block_ack::BlockAckAction::AddbaResponse {
                 dialog_token: request.dialog_token,
                 status: 0,
-                tid: oer_wifi_ap::AP_TX_BLOCK_ACK_TID,
+                tid: oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID,
                 immediate: true,
                 amsdu: true,
-                window: oer_wifi_ap::AP_TX_BLOCK_ACK_WINDOW,
+                window: oer_ieee80211_ap::AP_TX_BLOCK_ACK_WINDOW,
                 timeout_tu: 0,
             },
         )
@@ -518,11 +524,11 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     assert_eq!(&amsdu[..2], &0x4288_u16.to_le_bytes());
     assert_eq!(amsdu[24], 0x80);
     assert_eq!(&amsdu[26..34], &[6, 0, 0, 0x20, 0, 0, 0, 0]);
-    let mut subframes = oer_ieee80211::data::amsdu_subframes(
-        oer_ieee80211::data::DataInterfaceRole::Station,
+    let mut subframes = oer_ieee80211_mac::data::amsdu_subframes(
+        oer_ieee80211_mac::data::DataInterfaceRole::Station,
         &amsdu[..encoded_amsdu.length],
-        oer_ieee80211::data::IEEE80211_QOS_DATA_HEADER_LEN + 8,
-        encoded_amsdu.length - oer_ieee80211::data::IEEE80211_QOS_DATA_HEADER_LEN - 8,
+        oer_ieee80211_mac::data::IEEE80211_QOS_DATA_HEADER_LEN + 8,
+        encoded_amsdu.length - oer_ieee80211_mac::data::IEEE80211_QOS_DATA_HEADER_LEN - 8,
     )
     .unwrap();
     assert_eq!(subframes.next().unwrap().unwrap().payload, &[1, 2, 3, 4]);
@@ -568,23 +574,23 @@ fn open_ht_peer_uses_bounded_qos_amsdu_without_key_or_block_ack_owner() {
     let ap = [2, 0, 0, 0, 0, 1];
     let peer = [2, 0, 0, 0, 0, 2];
     let mut beacon = [0; WPA2_BEACON_CAPACITY];
-    let mut peers = oer_wifi_ap::AccessPointPeerStorage::new();
+    let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = ApPairwiseKeyStorage::new();
     let mut service = AccessPointService::new_open(
         ap,
-        oer_wifi_ap::AccessPointClientLimit::new(2).unwrap(),
-        oer_wifi_ap::AccessPointInactiveTimeout::default(),
+        oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
+        oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
         &mut peers,
     );
     service.authenticate_open(peer, 1);
-    let ht_ie = oer_ieee80211::ht::ht_capability_ie(
+    let ht_ie = oer_ieee80211_mac::ht::ht_capability_ie(
         crate::profile::HT_CAPABILITIES,
         WifiChannel::mhz20(6).unwrap(),
     );
     service
         .associate_open(
             peer,
-            oer_ieee80211::ap::ApAssociationSecurityObservation {
+            oer_ieee80211_mac::ap::ApAssociationSecurityObservation {
                 privacy: false,
                 rsn_ie: None,
                 rsn_ie_count: 0,
@@ -593,9 +599,9 @@ fn open_ht_peer_uses_bounded_qos_amsdu_without_key_or_block_ack_owner() {
                 legacy_wpa_present: false,
                 malformed_elements: false,
             },
-            oer_wifi_ap::ApAssociationCapabilities {
+            oer_ieee80211_ap::ApAssociationCapabilities {
                 maximum_legacy_rate_500kbps: 108,
-                ht: oer_ieee80211::ht::ht_peer_capabilities(&ht_ie),
+                ht: oer_ieee80211_mac::ht::ht_peer_capabilities(&ht_ie),
                 qos_supported: true,
             },
             2,

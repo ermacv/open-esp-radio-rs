@@ -32,7 +32,7 @@
 //!
 //! The ESP32-S31 application examples under `examples/` are the buildable
 //! consumers. The concrete lifecycle, including hardware quarantine, is
-//! documented by `oer-esp32s31-embassy-wifi`.
+//! documented by `oer-esp32s31-ieee80211-system`.
 
 #[cfg(test)]
 extern crate std;

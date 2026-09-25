@@ -2,22 +2,22 @@
 #[path = "secure/retirement.rs"]
 mod retirement;
 use super::console;
-use bluetooth_example::security::{bonds::RamBondStore, epoch};
 use core::convert::Infallible;
 use embassy_futures::{
     join::join,
     select::{Either, select},
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, signal::Signal};
-use oer_esp32s31_bluetooth_integration::{BluetoothColdStartOutput, entropy::BluetoothEntropy};
-use open_esp_radio_hil_protocol::{Command, Event, FeatureCapabilities};
-use open_esp_radio_hil_target_core::bluetooth_gatt::secure::{reset_gate, state, store};
+use gatt_application::security::{bonds::RamBondStore, epoch};
+use oer_esp32s31_bluetooth_system::{BluetoothColdStartOutput, entropy::BluetoothEntropy};
+use oer_hil_protocol::{Command, Event, FeatureCapabilities};
+use oer_hil_target_core::bluetooth_gatt::secure::{reset_gate, state, store};
 use state::State;
 
 type HostExit<'a> = epoch::Exit<
     reset_gate::GatedController<
         'a,
-        oer_esp32s31_bluetooth_integration::BluetoothHostController<4, 4, 258>,
+        oer_esp32s31_bluetooth_system::BluetoothHostController<4, 4, 258>,
     >,
     store::InjectedBondLoadFailure,
 >;
@@ -33,10 +33,10 @@ impl console::Profile for State {
         let mut event = State::command(self, command);
         if let Event::BluetoothSecureGatt(value) = &mut event {
             value.traffic.cpu0_stack = Some(crate::cpu0_stack_usage_snapshot());
-            use oer_esp32s31_bluetooth_integration::diagnostics::{
+            use oer_esp32s31_bluetooth_system::diagnostics::{
                 self, BluetoothAdvertisingStartRejection as S,
             };
-            use open_esp_radio_hil_protocol::BluetoothAdvertisingStartRejection as D;
+            use oer_hil_protocol::BluetoothAdvertisingStartRejection as D;
             value.advertising_start_rejection = diagnostics::snapshot()
                 .last_advertising_start_rejection
                 .map(|reason| match reason {
@@ -134,13 +134,13 @@ fn poll_into<F: Future>(
 // Host construction and its consuming stop handoff have a separate poll frame
 // from the physical close/restart owner transfers. Storage remains caller-owned.
 async fn run_host<'a>(
-    system: &mut Option<oer_esp32s31_bluetooth_integration::BluetoothSystem<4, 1, 4, 4, 258>>,
+    system: &mut Option<oer_esp32s31_bluetooth_system::BluetoothSystem<4, 1, 4, 4, 258>>,
     resources: &mut trouble_host::HostResources<trouble_host::prelude::DefaultPacketPool, 1, 3>,
     bonds: &mut RamBondStore<1>,
     state: &'a State,
 ) -> (
     HostExit<'a>,
-    oer_esp32s31_bluetooth_integration::BluetoothHardwareRunner<4, 1, 4, 4, 258>,
+    oer_esp32s31_bluetooth_system::BluetoothHardwareRunner<4, 1, 4, 4, 258>,
 ) {
     let composed = initialize_host(system.take().expect("fresh Controller"), resources, state);
     let finished = Signal::<NoopRawMutex, ()>::new();
@@ -178,8 +178,8 @@ fn record_shutdown(state: &State, exit: &HostExit<'_>) {
     if let epoch::Cause::Application(error) = &exit.cause {
         state.application_failure(error);
     }
-    use bluetooth_example::security::{bonds::StoreError, gatt::RunError};
-    use open_esp_radio_hil_protocol::{
+    use gatt_application::security::{bonds::StoreError, gatt::RunError};
+    use oer_hil_protocol::{
         BluetoothGattResetOutcome as Reset, BluetoothGattShutdown, BluetoothGattStopCause as Cause,
     };
     let cause = match &exit.cause {
@@ -207,19 +207,19 @@ fn record_shutdown(state: &State, exit: &HostExit<'_>) {
 // facade. No second Controller, transport queues or hardware owner is created.
 #[inline(never)]
 fn initialize_host<'r, 's>(
-    system: oer_esp32s31_bluetooth_integration::BluetoothSystem<4, 1, 4, 4, 258>,
+    system: oer_esp32s31_bluetooth_system::BluetoothSystem<4, 1, 4, 4, 258>,
     resources: &'r mut trouble_host::HostResources<trouble_host::prelude::DefaultPacketPool, 1, 3>,
     state: &'s State,
-) -> oer_esp32s31_bluetooth_integration::BluetoothTroubleSystem<
+) -> oer_esp32s31_bluetooth_system::BluetoothTroubleSystem<
     'r,
     reset_gate::GatedController<
         's,
-        oer_esp32s31_bluetooth_integration::BluetoothHostController<4, 4, 258>,
+        oer_esp32s31_bluetooth_system::BluetoothHostController<4, 4, 258>,
     >,
     trouble_host::prelude::DefaultPacketPool,
-    oer_esp32s31_bluetooth_integration::BluetoothHardwareRunner<4, 1, 4, 4, 258>,
+    oer_esp32s31_bluetooth_system::BluetoothHardwareRunner<4, 1, 4, 4, 258>,
 > {
-    oer_esp32s31_bluetooth_integration::BluetoothTroubleSystem {
+    oer_esp32s31_bluetooth_system::BluetoothTroubleSystem {
         stack: trouble_host::new(
             reset_gate::GatedController {
                 inner: system.hci,

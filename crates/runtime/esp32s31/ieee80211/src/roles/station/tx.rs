@@ -16,7 +16,7 @@ use core::marker::PhantomData;
 
 #[cfg(test)]
 #[cfg(all(test, feature = "owned-network"))]
-use oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE;
+use oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE;
 
 use core::{
     future::Future,
@@ -28,7 +28,7 @@ use crate::datapath::{MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTx
 
 use oer_esp32s31_hal::types::MacInterface;
 
-use oer_esp32s31_wifi::{
+use oer_esp32s31_ieee80211::{
     ampdu_tx::{
         AmpduTxRoleAdapter, HtAmpduPublicationInputs, HtAmpduTxRolePolicy,
         HtAmpduTxRolePolicyError, ht_ampdu_publication_config,
@@ -36,7 +36,7 @@ use oer_esp32s31_wifi::{
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     rate::control::{AmpduRateObservationError, StaRateControlAssociation, StaTxRatePolicy},
     tx::{
         AmpduTxConfig, HeAmpduTxConfig, HeEdcaTxopLimit, HeTriggerBasedTxConfig, LegacyTxQueue,
@@ -54,12 +54,12 @@ use oer_esp32s31_wifi_mac::{
     },
 };
 
-use oer_esp32s31_wifi_sta::single_mpdu_tx::{
+use oer_esp32s31_ieee80211_sta::single_mpdu_tx::{
     ActionTxConfig, ConnectedTxHandoff, SingleMpduTx, SingleMpduTxError, SingleMpduTxOutcome,
     SingleMpduTxParked, WifiTxResources,
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     data::DataHeControl,
     station::{
         STA_PROTECTED_QOS_ETHERNET_HEADROOM, STA_PROTECTED_QOS_ETHERNET_OVERHEAD,
@@ -68,9 +68,9 @@ use oer_ieee80211::{
     station_power_save::{StaAssociationId, StaPowerManagement},
 };
 
-use oer_wifi_datapath::PhysicalTxSource;
+use oer_ieee80211_datapath::PhysicalTxSource;
 
-use oer_wifi_softmac::{MacAmpduTxResult, MacAmpduTxStatus, MacTxQueueState, MacTxResult};
+use oer_ieee80211_softmac::{MacAmpduTxResult, MacAmpduTxStatus, MacTxQueueState, MacTxResult};
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::{
@@ -90,7 +90,7 @@ use crate::{
     },
 };
 
-use oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
+use oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason;
 
 const AMPDU_ABORT_SETTLE_US: u64 = 16;
 const HE_TRIGGER_DATA_TID: u8 = 0;
@@ -119,7 +119,7 @@ pub enum RequestTxError<Request> {
 /// station boundary.
 pub struct ConnectedTxTeardownParts<R, A> {
     pub resources: R,
-    pub security: oer_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxSecurity,
+    pub security: oer_esp32s31_ieee80211_sta::single_mpdu_tx::ConnectedTxSecurity,
     pub sequences: StaTxSequenceCounters,
     pub aggregate: A,
 }

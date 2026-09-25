@@ -10,24 +10,24 @@ use core::{
     num::{NonZeroU8, NonZeroU16},
 };
 
-use oer_ieee80211::{channel::WifiChannel, security::WifiSecurityMode, ssid::WifiSsid};
-pub use oer_wifi_ap::{
+pub use oer_ieee80211_ap::{
     AccessPointClientLimit, AccessPointClientLimitError, AccessPointInactiveTimeout,
     AccessPointInactiveTimeoutError,
 };
-use oer_wifi_rsn::Pmk;
-use oer_wifi_softmac::{
+use oer_ieee80211_mac::{channel::WifiChannel, security::WifiSecurityMode, ssid::WifiSsid};
+use oer_ieee80211_rsn::Pmk;
+use oer_ieee80211_softmac::{
     ESP_NOW_DEFAULT_PEER_CAPACITY, EspNowConfig, EspNowConfigError, EspNowPeerConfig, EspNowPeerId,
     EspNowPeerTableError, EspNowPhyMode, EspNowProtocol, MacServiceCapabilities,
     MonitorChannelPolicy, MonitorChannelSequence, WifiAccessPointConfig, WifiConfig,
     WifiConfigError, WifiStandaloneEspNowPlan, WifiStationConfig,
 };
-pub use oer_wifi_sta::request::{
+pub use oer_ieee80211_sta::request::{
     StationDiscovery, StationListenInterval, StationPowerMode, StationPowerSavePolicy,
     StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
     StationScanChannelsError, StationScanPolicy,
 };
-use oer_wifi_sta::station::StaReconnectPolicy;
+use oer_ieee80211_sta::station::StaReconnectPolicy;
 
 use crate::wifi::{WifiMonitorConfig, WifiPlan};
 

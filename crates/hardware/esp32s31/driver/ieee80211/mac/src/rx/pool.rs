@@ -13,12 +13,12 @@ use core::{
 };
 
 use crate::rx::{RxPhyInfo, decode_normalized_rx_metadata};
-use oer_esp32s31_wifi_dma::{
+use oer_esp32s31_ieee80211_dma::{
     rx_ring::{RxRingError, RxSegment},
     rx_storage::{RxDmaCompletedUnit, RxDmaDetachedUnit},
 };
+use oer_ieee80211_softmac::MacRxMetadata;
 use oer_memory::{ExternalRxHandoffPool, ExternalRxRadioLease};
-use oer_wifi_softmac::MacRxMetadata;
 
 pub const VENDOR_LARGE_RX_SLOT_COUNT: usize = 32;
 pub const VENDOR_LARGE_RX_PAYLOAD_CAPACITY: usize = 1_700;
@@ -78,7 +78,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         }
     }
 
-    oer_esp32s31_wifi_dma::place_rx_hot_path! {
+    oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
     /// Transfer one completed single-descriptor DMA buffer to the upper RX
     /// owner without copying payload bytes.
     ///
@@ -137,7 +137,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
             .map(RxDmaDeferredStageUnitOutcome::Staged)
     }}
 
-    oer_esp32s31_wifi_dma::place_rx_hot_path! {
+    oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
     /// Admit an allocation detached from its completed descriptor.
     ///
     /// The descriptor remains observed while this affine allocation is owned

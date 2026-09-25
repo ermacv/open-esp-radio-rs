@@ -12,9 +12,9 @@ use crate::datapath::{
     services::DatapathNetworkTxService,
 };
 
-use oer_esp32s31_wifi_mac::tx::TxHardware;
+use oer_esp32s31_ieee80211_mac::tx::TxHardware;
 
-use oer_esp32s31_wifi_sta::single_mpdu_tx::{
+use oer_esp32s31_ieee80211_sta::single_mpdu_tx::{
     SingleMpduTx, SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
 };
 

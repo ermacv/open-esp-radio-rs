@@ -125,14 +125,13 @@ fn qualification_binary(ctx: &Context) -> Result<PathBuf> {
         "--profile",
         "qualification",
         "--package",
-        "open-esp-radio-qualification-check",
+        "oer-qualification",
         "--bin",
-        "open-esp-radio-qualification-check",
+        "oer-qualification",
     ]))?;
-    let binary = target.join("qualification").join(format!(
-        "open-esp-radio-qualification-check{}",
-        std::env::consts::EXE_SUFFIX
-    ));
+    let binary = target
+        .join("qualification")
+        .join(format!("oer-qualification{}", std::env::consts::EXE_SUFFIX));
     if !binary.is_file() {
         return Err(format!("qualification binary missing: {}", binary.display()).into());
     }

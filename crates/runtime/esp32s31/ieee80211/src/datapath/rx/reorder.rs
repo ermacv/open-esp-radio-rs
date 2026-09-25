@@ -16,8 +16,8 @@ use embassy_sync::{
     channel::{Channel, Receiver, Sender, TrySendError},
     mutex::{Mutex, MutexGuard},
 };
-use oer_esp32s31_wifi_mac::rx::RxSegment;
-pub use oer_esp32s31_wifi_mac::rx::ampdu::{
+use oer_esp32s31_ieee80211_mac::rx::RxSegment;
+pub use oer_esp32s31_ieee80211_mac::rx::ampdu::{
     RxBlockAckIdentity, RxBlockAckSnapshot, RxReorderCommand, RxReorderCommandError,
 };
 

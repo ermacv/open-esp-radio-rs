@@ -1,6 +1,6 @@
 //! Role-neutral aggregate-TX scheduler and transaction facts.
 
-use oer_esp32s31_wifi_mac::irq::{EVENT_COLLISION, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT};
+use oer_esp32s31_ieee80211_mac::irq::{EVENT_COLLISION, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT};
 
 use crate::datapath::WifiTxWake;
 

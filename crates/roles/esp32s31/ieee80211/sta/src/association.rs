@@ -1,15 +1,17 @@
 //! ESP32-S31 STA Association policy derived from scan and PHY calibration.
 
-use oer_esp32s31_wifi::tx::WifiTxPowerProfile;
+use oer_esp32s31_ieee80211::tx::WifiTxPowerProfile;
 
 use {
-    oer_ieee80211::scan::ScanRecord, oer_ieee80211::station::HeUlMuPowerCapability,
-    oer_ieee80211::station::HeUlMuPowerCapabilityError, oer_ieee80211::station::StaPowerCapability,
-    oer_ieee80211::station::StaPowerCapabilityError, oer_ieee80211::station::association::PhyMode,
-    oer_ieee80211::station::association::Preference,
+    oer_ieee80211_mac::scan::ScanRecord, oer_ieee80211_mac::station::HeUlMuPowerCapability,
+    oer_ieee80211_mac::station::HeUlMuPowerCapabilityError,
+    oer_ieee80211_mac::station::StaPowerCapability,
+    oer_ieee80211_mac::station::StaPowerCapabilityError,
+    oer_ieee80211_mac::station::association::PhyMode,
+    oer_ieee80211_mac::station::association::Preference,
 };
 
-use oer_wifi_sta::request::StationListenInterval;
+use oer_ieee80211_sta::request::StationListenInterval;
 
 /// Recovered minimum power advertised by the ESP32-S31 HE STA.
 ///

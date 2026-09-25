@@ -416,13 +416,13 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
     .unwrap();
     fs::write(
         root.join("hil/host/runner/Cargo.toml"),
-        "[package]\nname = 'open-esp-radio-hil-runner'\nversion = '0.1.0'\nedition = '2024'\n",
+        "[package]\nname = 'oer-hil-runner'\nversion = '0.1.0'\nedition = '2024'\n",
     )
     .unwrap();
     fs::write(root.join("hil/host/runner/src/main.rs"), "fn main() {}\n").unwrap();
     fs::write(
         root.join("Cargo.lock"),
-        "version = 4\n[[package]]\nname = 'open-esp-radio-hil-runner'\nversion = '0.1.0'\n",
+        "version = 4\n[[package]]\nname = 'oer-hil-runner'\nversion = '0.1.0'\n",
     )
     .unwrap();
     let mut manifest: serde_json::Value = read_json(&run.join("manifest.json")).unwrap();
@@ -499,7 +499,7 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
 pub(super) fn prepare_observer(root: &Path) -> serde_json::Value {
     let registry = read_json(&root.join("hil/schema/observer-inputs.json")).unwrap();
     let configuration = observer::required_configuration(root, &registry).unwrap();
-    use open_esp_radio_hil_schema::resolve;
+    use oer_hil_schema::resolve;
     let mut resolved = resolve::resolve(
         root,
         configuration["environment"]["TARGET"].as_str().unwrap(),

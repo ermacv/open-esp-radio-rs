@@ -165,7 +165,7 @@ impl<'storage> ApEngine<'storage> {
         };
         let sequence_number = if peer_qos {
             self.service
-                .current_qos_sequence(destination, oer_wifi_ap::AP_TX_BLOCK_ACK_TID)
+                .current_qos_sequence(destination, oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID)
                 .expect("AP TX data TID is representable")
         } else {
             self.service.current_data_sequence()
@@ -224,7 +224,7 @@ impl<'storage> ApEngine<'storage> {
         let consumed_sequence_number = match prepared.sequence_space {
             ApDataSequenceSpace::Qos => self
                 .service
-                .next_qos_sequence(prepared.peer, oer_wifi_ap::AP_TX_BLOCK_ACK_TID)
+                .next_qos_sequence(prepared.peer, oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID)
                 .expect("AP TX data TID is representable"),
             ApDataSequenceSpace::NonQos => self.service.next_data_sequence(),
         };
@@ -272,7 +272,7 @@ impl<'storage> ApEngine<'storage> {
         let protected = self.service.security_mode() != WifiSecurityMode::Open;
         if protected
             && !status.tx_block_ack.is_some_and(|agreement| {
-                agreement.tid == oer_wifi_ap::AP_TX_BLOCK_ACK_TID && agreement.amsdu
+                agreement.tid == oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID && agreement.amsdu
             })
         {
             return Ok(None);
@@ -280,7 +280,7 @@ impl<'storage> ApEngine<'storage> {
 
         let sequence_number = self
             .service
-            .current_qos_sequence(destination, oer_wifi_ap::AP_TX_BLOCK_ACK_TID)
+            .current_qos_sequence(destination, oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID)
             .expect("AP A-MSDU TID is representable");
         let ethernet_frames = [first, second];
         let placeholder_ccmp = protected.then_some([0; 8]);
@@ -288,7 +288,7 @@ impl<'storage> ApEngine<'storage> {
             access_point: self.service.address(),
             peer: destination,
             sequence_number,
-            user_priority: oer_wifi_ap::AP_TX_BLOCK_ACK_TID,
+            user_priority: oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID,
             more_data: false,
             ccmp_header: placeholder_ccmp,
             ethernet_frames: &ethernet_frames,
@@ -335,7 +335,7 @@ impl<'storage> ApEngine<'storage> {
         }
         let consumed = self
             .service
-            .next_qos_sequence(prepared.peer, oer_wifi_ap::AP_TX_BLOCK_ACK_TID)
+            .next_qos_sequence(prepared.peer, oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID)
             .expect("AP A-MSDU TID is representable");
         debug_assert_eq!(consumed, prepared.sequence_number);
         Ok(ApProtectedFrame {
@@ -377,13 +377,13 @@ impl<'storage> ApEngine<'storage> {
         let hardware_key_selector = binding.security.hardware_index();
         let sequence_number = self
             .service
-            .current_qos_sequence(peer, oer_wifi_ap::AP_TX_BLOCK_ACK_TID)
+            .current_qos_sequence(peer, oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID)
             .expect("AP TX data TID is representable");
         let encoded = ApProtectedDataFrame {
             access_point: self.service.address(),
             peer,
             sequence_number,
-            user_priority: oer_wifi_ap::AP_TX_BLOCK_ACK_TID,
+            user_priority: oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID,
             peer_qos: true,
             more_data: false,
             ccmp_header: [0; 8],
@@ -397,7 +397,7 @@ impl<'storage> ApEngine<'storage> {
         storage[ccmp_offset..ccmp_offset + ccmp_header.len()].copy_from_slice(&ccmp_header);
         let consumed = self
             .service
-            .next_qos_sequence(peer, oer_wifi_ap::AP_TX_BLOCK_ACK_TID)
+            .next_qos_sequence(peer, oer_ieee80211_ap::AP_TX_BLOCK_ACK_TID)
             .expect("AP TX data TID is representable");
         debug_assert_eq!(consumed, sequence_number);
         Ok(ApAggregateFrame {

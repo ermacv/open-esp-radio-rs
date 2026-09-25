@@ -1,6 +1,6 @@
 //! Exact, session-scoped UDP RX delivery evidence for qualification images.
 
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     RxConsumerLedgerEvidence, RxDeliveryEvidence, RxForwardGapEvidence, RxMacOrderEvidence,
     RxReorderDeliveryEvidence, RxSequenceStageEvidence,
 };

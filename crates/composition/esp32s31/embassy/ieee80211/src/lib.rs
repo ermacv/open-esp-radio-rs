@@ -38,18 +38,18 @@ pub use watchdog::WatchdogConfig;
 
 // Inputs of `new`, `RadioConfig` and `WatchdogConfig`, so an application can
 // construct the composition through this crate (or the `oer` facade) alone.
+#[cfg(target_arch = "riscv32")]
+pub use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 pub use oer_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
 #[cfg(target_arch = "riscv32")]
-pub use oer_esp32s31_soc::watchdog::{DeadlineBudget, DeadlineWatchdog};
-#[cfg(target_arch = "riscv32")]
-pub use oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
-pub use oer_wifi_embassy::await_stack_boundary;
+pub use oer_esp32s31_soc_esp_hal::watchdog::{DeadlineBudget, DeadlineWatchdog};
+pub use oer_ieee80211_runtime::await_stack_boundary;
 mod network_diagnostics;
 pub mod resources;
 
 pub use network_diagnostics::NetworkInterface;
 #[cfg(target_arch = "riscv32")]
-pub use oer_esp32s31_wifi_runtime::roles::access_point::network_tx::{
+pub use oer_esp32s31_ieee80211_runtime::roles::access_point::network_tx::{
     AccessPointAirtimeConfiguration, AccessPointAirtimeSelection,
 };
 
@@ -196,25 +196,25 @@ pub use monitor::{
 };
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 #[cfg(target_arch = "riscv32")]
-pub use oer_esp32s31_wifi_runtime::datapath::{
+pub use oer_esp32s31_ieee80211_runtime::datapath::{
     TX_PERFORMANCE, TxPerformanceSnapshot, configure_adaptive_recycled_rx_probe_for_diagnostics,
     configure_recycled_rx_probe_delay_for_diagnostics,
     rx::dma::configure_interrupt_driven_recycled_append_for_diagnostics,
 };
 #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
 #[cfg(target_arch = "riscv32")]
-pub use oer_esp32s31_wifi_runtime::diagnostics::core0_rx_performance::{
+pub use oer_esp32s31_ieee80211_runtime::diagnostics::core0_rx_performance::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
 };
 #[cfg(feature = "diagnostics")]
 #[cfg(target_arch = "riscv32")]
-pub use oer_esp32s31_wifi_runtime::diagnostics::network::{
+pub use oer_esp32s31_ieee80211_runtime::diagnostics::network::{
     RxNetworkDeliveryEvent, RxNetworkDeliveryObserver, RxObservedEthernetFrame,
     RxQosSequenceObservation,
 };
 #[cfg(feature = "task-poll-telemetry")]
 #[cfg(target_arch = "riscv32")]
-pub use oer_esp32s31_wifi_runtime::diagnostics::{
+pub use oer_esp32s31_ieee80211_runtime::diagnostics::{
     core0_ap_rx_cycles::{CORE0_AP_RX_CYCLES, Core0ApRxCycleSnapshot},
     core0_rx_cycles::{CORE0_RX_CYCLES, Core0RxCycleSnapshot, cycle_count},
     core0_rx_reorder_cycles::{CORE0_REORDER_CYCLES, Core0ReorderSnapshot},
@@ -224,7 +224,7 @@ pub use oer_esp32s31_wifi_runtime::diagnostics::{
     },
 };
 #[cfg(target_arch = "riscv32")]
-pub use oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
+pub use oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason;
 #[cfg(not(feature = "upstream-network"))]
 #[cfg(target_arch = "riscv32")]
 pub use radio_resources::WifiStackResources;
@@ -318,15 +318,15 @@ impl ConnectedDatapathPollObserver {
 pub struct RadioConfig {
     #[cfg(feature = "rx-ownership-observation")]
     pub(crate) rx_ownership_observer:
-        Option<&'static dyn oer_esp32s31_wifi_dma::rx_observation::RxOwnershipObserver>,
+        Option<&'static dyn oer_esp32s31_ieee80211_dma::rx_observation::RxOwnershipObserver>,
     pub(crate) watchdog: &'static WatchdogConfig,
     pub(crate) access_point_airtime: Option<
-        oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AccessPointAirtimeConfiguration,
+        oer_esp32s31_ieee80211_runtime::roles::access_point::network_tx::AccessPointAirtimeConfiguration,
     >,
     pub(crate) station_mac: oer_radio::wifi::WifiMacAddress,
     pub(crate) access_point_mac: oer_radio::wifi::WifiMacAddress,
     pub(crate) calibration: oer_esp32s31_phy::PhyCalibrationIdentity,
-    pub(crate) initial_channel: oer_ieee80211::channel::WifiChannel,
+    pub(crate) initial_channel: oer_ieee80211_mac::channel::WifiChannel,
     pub(crate) calibration_cache: Option<oer_esp32s31_phy::PhyCalibrationCache>,
     pub(crate) maximum_tx_power_quarter_dbm: Option<i8>,
     pub(crate) station_tracking: Option<TrackingConfig>,
@@ -343,7 +343,7 @@ impl RadioConfig {
         station_mac: oer_radio::wifi::WifiMacAddress,
         access_point_mac: oer_radio::wifi::WifiMacAddress,
         calibration: oer_esp32s31_phy::PhyCalibrationIdentity,
-        initial_channel: oer_ieee80211::channel::WifiChannel,
+        initial_channel: oer_ieee80211_mac::channel::WifiChannel,
     ) -> Self {
         Self {
             watchdog,
@@ -371,7 +371,7 @@ impl RadioConfig {
     #[cfg(feature = "rx-ownership-observation")]
     pub fn with_rx_ownership_observer(
         mut self,
-        observer: &'static dyn oer_esp32s31_wifi_dma::rx_observation::RxOwnershipObserver,
+        observer: &'static dyn oer_esp32s31_ieee80211_dma::rx_observation::RxOwnershipObserver,
     ) -> Self {
         self.rx_ownership_observer = Some(observer);
         self
@@ -391,7 +391,7 @@ impl RadioConfig {
     /// retains the ledger through faults. Simultaneous STA+AP is outside this policy.
     pub fn with_access_point_airtime(
         mut self,
-        configuration: oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AccessPointAirtimeConfiguration,
+        configuration: oer_esp32s31_ieee80211_runtime::roles::access_point::network_tx::AccessPointAirtimeConfiguration,
     ) -> Self {
         self.access_point_airtime = Some(configuration);
         self
@@ -448,17 +448,17 @@ pub struct DiagnosticObservers {
     /// this unset; only dedicated pipeline diagnostics may charge the RX hot
     /// path for these observations.
     pub rx_pipeline: Option<
-        &'static dyn oer_esp32s31_wifi_runtime::diagnostics::rx_pipeline::RxPipelineObserver,
+        &'static dyn oer_esp32s31_ieee80211_runtime::diagnostics::rx_pipeline::RxPipelineObserver,
     >,
     /// Low-frequency typed BlockAck agreement observer used by correctness
     /// images without attaching the per-frame pipeline profiler.
     pub rx_reorder: Option<
-        &'static dyn oer_esp32s31_wifi_runtime::diagnostics::rx_pipeline::RxReorderAgreementObserver,
+        &'static dyn oer_esp32s31_ieee80211_runtime::diagnostics::rx_pipeline::RxReorderAgreementObserver,
     >,
-    pub aggregate_tx: &'static dyn oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::AggregateTxObserver,
+    pub aggregate_tx: &'static dyn oer_esp32s31_ieee80211_runtime::diagnostics::aggregate_tx::AggregateTxObserver,
     pub connected_rx: &'static dyn ConnectedRxObserver,
     pub rx_delivery: Option<
-        &'static dyn oer_esp32s31_wifi_runtime::diagnostics::network::RxNetworkDeliveryObserver,
+        &'static dyn oer_esp32s31_ieee80211_runtime::diagnostics::network::RxNetworkDeliveryObserver,
     >,
     #[cfg(feature = "mac-irq-diagnostics")]
     pub mac_irq: fn(MacIrqObservation),
@@ -554,7 +554,7 @@ pub struct AccessPointObservation {
     pub tx_ht40_mcs7_aggregates: u32,
     pub data_frames_transmitted: u32,
     pub ht_duplicate_tx_requests: u32,
-    pub ht_duplicate_tx_selection: oer_esp32s31_wifi_mac::tx::HtDuplicateTxSelection,
+    pub ht_duplicate_tx_selection: oer_esp32s31_ieee80211_mac::tx::HtDuplicateTxSelection,
     pub data_tx_attempts: u32,
     pub data_tx_retried_frames: u32,
     pub data_tx_maximum_attempts: u8,
@@ -593,14 +593,14 @@ pub struct AccessPointObservation {
 pub enum StationAttemptObservation {
     AttemptFailed {
         attempt: u16,
-        stage: oer_wifi_sta::station::StaLifecycleStage,
+        stage: oer_ieee80211_sta::station::StaLifecycleStage,
     },
     RetryExhausted {
         attempts: u16,
-        stage: oer_wifi_sta::station::StaLifecycleStage,
+        stage: oer_ieee80211_sta::station::StaLifecycleStage,
     },
 }
 
-pub use oer_esp32s31_wifi_runtime::roles::access_point::{
+pub use oer_esp32s31_ieee80211_runtime::roles::access_point::{
     AccessPointRxRejection, AccessPointRxRejectionReason,
 };

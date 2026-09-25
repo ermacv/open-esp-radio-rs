@@ -1,9 +1,9 @@
 //! PHY maintenance at a completed logical role boundary.
 use super::*;
+use oer_esp32s31_ieee80211::runtime::{WifiMaintenanceError, WifiMaintenanceFailure};
+use oer_esp32s31_ieee80211_runtime::datapath::maintenance::{StopError, stop_mac};
 use oer_esp32s31_phy::state::client::{PhyPllTrackClock, PhyTrackTimeError};
 use oer_esp32s31_phy::tracking::schedule::Schedule;
-use oer_esp32s31_wifi::runtime::{WifiMaintenanceError, WifiMaintenanceFailure};
-use oer_esp32s31_wifi_runtime::datapath::maintenance::{StopError, stop_mac};
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Reason {
@@ -12,9 +12,9 @@ pub(super) enum Reason {
     RxOwner,
     RxRestoreOwner,
     Mac(StopError),
-    Rx(oer_esp32s31_wifi_mac::rx::RxRingError),
-    RxPrepare(oer_esp32s31_wifi_mac::rx::RxRingError),
-    RxStart(oer_esp32s31_wifi_mac::rx::RxRingError),
+    Rx(oer_esp32s31_ieee80211_mac::rx::RxRingError),
+    RxPrepare(oer_esp32s31_ieee80211_mac::rx::RxRingError),
+    RxStart(oer_esp32s31_ieee80211_mac::rx::RxRingError),
     Interrupt,
     InterruptOwner,
     InterruptRestore,
@@ -309,7 +309,7 @@ pub(super) async fn maintain(
         let (_, platform) = owner.radio_mut();
         if let Err(error) = interrupts.activate_or_resume_rx_moderated(
             platform,
-            oer_esp32s31_wifi_mac::init::MAC_COLD_RX_INTERRUPT_MASK,
+            oer_esp32s31_ieee80211_mac::init::MAC_COLD_RX_INTERRUPT_MASK,
         ) {
             diagnostics_event!("open-radio: PHY IRQ restore failed: {:?}", error);
             return Err(Failure::radio(

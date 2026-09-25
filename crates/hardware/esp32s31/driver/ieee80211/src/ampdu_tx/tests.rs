@@ -1,5 +1,5 @@
 use super::*;
-use oer_esp32s31_wifi_mac::tx::{HtChannelWidth, HtGuardInterval, HtMcs};
+use oer_esp32s31_ieee80211_mac::tx::{HtChannelWidth, HtGuardInterval, HtMcs};
 
 #[test]
 fn role_adapter_changes_only_interface_and_key_authority() {

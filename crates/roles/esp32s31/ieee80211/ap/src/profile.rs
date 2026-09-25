@@ -1,6 +1,6 @@
 //! ESP32-S31 access-point advertisement selected by the chip AP owner.
 
-use oer_ieee80211::ht::HtLocalCapabilities;
+use oer_ieee80211_mac::ht::HtLocalCapabilities;
 
 /// Exact local advertisement used by AP beacons and association responses.
 ///
@@ -28,14 +28,14 @@ pub const HT_CAPABILITIES: HtLocalCapabilities = HtLocalCapabilities::new(0x100c
 // does not require future hardware pools to have the same size. It is not a runtime
 // comparison or an additional capability claim.
 const _: () = assert!(
-    oer_wifi_ap::limits::AP_MAX_CLIENTS
-        <= oer_esp32s31_wifi_mac::crypto::AP_PAIRWISE_SLOT_COUNT as usize
+    oer_ieee80211_ap::limits::AP_MAX_CLIENTS
+        <= oer_esp32s31_ieee80211_mac::crypto::AP_PAIRWISE_SLOT_COUNT as usize
 );
 
 /// Reviewed legacy rates, capability flags and WMM response parameters.
 /// Beacon and association encoders consume this same local advertisement.
-pub const ADVERTISEMENT: oer_ieee80211::ap::profile::Advertisement = {
-    use oer_ieee80211::{
+pub const ADVERTISEMENT: oer_ieee80211_mac::ap::profile::Advertisement = {
+    use oer_ieee80211_mac::{
         ap::profile::{Advertisement, LegacyRates, WmmParameters},
         extensions::wmm::WmmAcParameters,
     };

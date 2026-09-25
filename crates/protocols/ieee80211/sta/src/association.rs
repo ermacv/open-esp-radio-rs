@@ -4,7 +4,7 @@
 //! This policy neither advertises capabilities nor encodes a PHY channel command.
 
 /// Shared with the wire encoder; no duplicate policy enum or upward dependency.
-pub use oer_ieee80211::station::association::{PhyMode, Preference};
+pub use oer_ieee80211_mac::station::association::{PhyMode, Preference};
 
 /// Choose a mode after the caller has intersected local and peer capabilities.
 /// HT20 is the baseline; a later association encoder may still reject the peer.

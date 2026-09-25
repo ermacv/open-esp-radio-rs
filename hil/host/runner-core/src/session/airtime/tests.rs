@@ -1,5 +1,5 @@
 use super::*;
-use open_esp_radio_hil_protocol::{WifiAccessPointEvidence, WifiAirtimePeer, WifiAirtimeReport};
+use oer_hil_protocol::{WifiAccessPointEvidence, WifiAirtimePeer, WifiAirtimeReport};
 
 fn peer() -> WifiAirtimePeerEvidence {
     WifiAirtimePeerEvidence {

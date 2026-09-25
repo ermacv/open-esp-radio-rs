@@ -5,7 +5,7 @@ use super::*;
 #[test]
 fn power_save_tickets_preserve_owned_admission_through_rollback_and_completion() {
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-    use oer_embassy_net::{NetworkInterfaceId, OwnedEndpointResources};
+    use oer_embassy_net_owned::{NetworkInterfaceId, OwnedEndpointResources};
     use std::boxed::Box;
     use xarxa_driver::{PacketPool, PacketPoolStorage};
 

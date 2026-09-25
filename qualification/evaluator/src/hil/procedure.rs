@@ -2,7 +2,7 @@
 //! parsing, validation and evidence decisions remain with their respective owner.
 use serde_json::Value;
 
-pub(crate) use open_esp_radio_hil_schema::scenario::normalize;
+pub(crate) use oer_hil_schema::scenario::normalize;
 
 /// Compare the executed experiment independently of firmware/source identity.
 /// Only named numeric criteria independently evaluated by the consumer may vary.

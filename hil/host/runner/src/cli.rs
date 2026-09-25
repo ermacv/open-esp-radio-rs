@@ -122,7 +122,7 @@ pub(crate) enum ApScheduler {
     Deficit,
 }
 
-impl From<ApScheduler> for open_esp_radio_hil_protocol::WifiApScheduler {
+impl From<ApScheduler> for oer_hil_protocol::WifiApScheduler {
     fn from(value: ApScheduler) -> Self {
         match value {
             ApScheduler::Rr => Self::RrHtResponse24,
@@ -247,7 +247,7 @@ pub(crate) enum FixtureCommand {
     Install {
         /// Finite Linux fixture provider to provision.
         #[arg(long, value_enum)]
-        provider: open_esp_radio_hil_fixture_install::Provider,
+        provider: oer_hil_fixture_install::Provider,
         /// Print the offline plan without executing any installer step.
         #[arg(long)]
         dry_run: bool,

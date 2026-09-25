@@ -5,7 +5,7 @@
 //! semantic name. Recording the observed transformation is safer than
 //! inventing one while the fixed C node layout is still being migrated.
 
-use oer_ieee80211::data::DataInterfaceRole;
+use oer_ieee80211_mac::data::DataInterfaceRole;
 
 use crate::tx::metadata::descriptor_priority_byte;
 

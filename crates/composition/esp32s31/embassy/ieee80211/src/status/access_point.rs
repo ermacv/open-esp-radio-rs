@@ -7,7 +7,7 @@ use embassy_sync::{
     signal::Signal,
 };
 
-use oer_wifi_ap::{AP_MAX_CLIENTS, AccessPointServiceStatus, ApPeerStatus};
+use oer_ieee80211_ap::{AP_MAX_CLIENTS, AccessPointServiceStatus, ApPeerStatus};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AccessPointStatusSnapshot {

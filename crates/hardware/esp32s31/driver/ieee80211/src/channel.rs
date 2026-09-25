@@ -8,7 +8,7 @@ use oer_esp32s31_phy::{
     switch_registered_wifi_channel,
 };
 
-use oer_ieee80211::channel::{WifiChannel, WifiChannelWidth};
+use oer_ieee80211_mac::channel::{WifiChannel, WifiChannelWidth};
 
 /// Exact arguments accepted by the recovered ESP32-S31 PHY channel root.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

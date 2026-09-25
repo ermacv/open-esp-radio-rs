@@ -8,7 +8,7 @@ pub(crate) use embassy_net::{Runner, iface::Iface};
 
 use embassy_net::{Stack, StackStorage};
 
-use oer_esp32s31_embassy_wifi::{WifiDevice, WifiNetworkDevice};
+use oer_esp32s31_ieee80211_system::{WifiDevice, WifiNetworkDevice};
 pub(crate) struct Resources {
     stack: StackStorage<'static>,
     driver: Option<NetworkDevice>,
@@ -37,7 +37,7 @@ pub(crate) fn new(
     device: WifiDevice,
     resources: &'static mut Resources,
     settings: super::Settings,
-    _role: open_esp_radio_hil_protocol::WifiNetworkInterface,
+    _role: oer_hil_protocol::WifiNetworkInterface,
 ) -> (Iface<'static>, Runner<'static>) {
     let (stack, runner) = Stack::new(&mut resources.stack, settings.seed);
     let driver = checksum::Device::new(

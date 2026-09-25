@@ -6,18 +6,18 @@
 
 #[cfg(feature = "task-poll-telemetry")]
 use core::sync::atomic::{AtomicU32, Ordering};
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     RxCcmpDataView, RxError, RxIngressConfig, RxPhyInfo, RxSegment, decode_normalized_rx_metadata,
     view_ccmp_data, view_ccmp_data_fragment, view_normalized_rx_frame,
 };
-use oer_ieee80211::ccmp::CcmpHeader;
-use oer_ieee80211::data::{
+use oer_ieee80211_mac::ccmp::CcmpHeader;
+use oer_ieee80211_mac::data::{
     DataDecapError, DataDecapsulation, DataInterfaceRole, decapsulate_data_frames,
 };
-use oer_ieee80211::fragmentation::{
+use oer_ieee80211_mac::fragmentation::{
     OpenDataFragment, OpenDataFragmentError, parse_ccmp_data_fragment, parse_open_data_fragment,
 };
-use oer_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence, MacRxMetadata};
+use oer_ieee80211_softmac::{MacRxCryptoStatus, MacRxEvidence, MacRxMetadata};
 
 const RETRY: u16 = 0x0800;
 const QOS_SUBTYPE: u16 = 0x0080;
@@ -128,7 +128,7 @@ fn protected_data_view<'frame>(
     protected_data_view_body!(raw, data)
 }
 
-oer_esp32s31_wifi_dma::place_rx_hot_path! {
+oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
 /// Decode the normalized metadata which every ordinary protected MPDU needs.
 ///
 /// Keep the original PSRAM function present for the cold fragment path so this

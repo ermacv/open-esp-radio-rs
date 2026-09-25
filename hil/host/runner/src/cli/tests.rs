@@ -24,13 +24,10 @@ fn source_snapshot_accepts_only_explicit_repeated_file_arguments() {
 #[test]
 fn ap_scheduler_is_a_runtime_choice_and_can_reuse_the_same_firmware() {
     for (name, expected) in [
-        (
-            "rr",
-            open_esp_radio_hil_protocol::WifiApScheduler::RrHtResponse24,
-        ),
+        ("rr", oer_hil_protocol::WifiApScheduler::RrHtResponse24),
         (
             "deficit",
-            open_esp_radio_hil_protocol::WifiApScheduler::DeficitHtResponse24,
+            oer_hil_protocol::WifiApScheduler::DeficitHtResponse24,
         ),
     ] {
         let cli = Cli::try_parse_from([
@@ -50,10 +47,7 @@ fn ap_scheduler_is_a_runtime_choice_and_can_reuse_the_same_firmware() {
         else {
             panic!("explicit policy expected")
         };
-        assert_eq!(
-            open_esp_radio_hil_protocol::WifiApScheduler::from(policy),
-            expected
-        );
+        assert_eq!(oer_hil_protocol::WifiApScheduler::from(policy), expected);
     }
     assert!(
         Cli::try_parse_from([
@@ -313,7 +307,7 @@ fn bluetooth_dtm_v1_requires_explicit_selection() {
 
 #[test]
 fn fixture_install_requires_a_finite_provider_and_preserves_the_net_alias() {
-    use open_esp_radio_hil_fixture_install::Provider;
+    use oer_hil_fixture_install::Provider;
 
     for (name, expected) in [
         ("linux-net", Provider::LinuxNet),

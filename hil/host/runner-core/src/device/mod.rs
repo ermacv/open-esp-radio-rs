@@ -29,7 +29,7 @@ fn device_status_at(output: &Path, lab: &crate::lab::config::LabConfig) -> Resul
         let observation = capture.observe(std::time::Duration::from_secs(10))?;
         Ok(serde_json::json!({
             "schema": 1,
-            "protocol_version": open_esp_radio_hil_protocol::PROTOCOL_VERSION,
+            "protocol_version": oer_hil_protocol::PROTOCOL_VERSION,
             "observation": observation,
             "uart_log": output.join("uart.log"),
         }))

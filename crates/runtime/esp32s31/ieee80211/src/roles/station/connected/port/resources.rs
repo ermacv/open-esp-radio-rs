@@ -82,7 +82,7 @@ pub struct ConnectedStaTxResources<
         AGGREGATE_SLOTS,
         AGGREGATE_BUFFER_SIZE,
     >,
-    pub security: oer_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxSecurity,
+    pub security: oer_esp32s31_ieee80211_sta::single_mpdu_tx::ConnectedTxSecurity,
     pub sequences: StaTxSequenceCounters,
     /// Optional observation-only hook supplied by the composition root.
     #[cfg(any(feature = "diagnostics", test))]

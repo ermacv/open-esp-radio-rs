@@ -21,7 +21,7 @@ use oer_esp32s31_hal::{
     },
 };
 
-use {oer_ieee80211::he::HeDcmConstellation, oer_ieee80211::station::association::PhyMode};
+use {oer_ieee80211_mac::he::HeDcmConstellation, oer_ieee80211_mac::station::association::PhyMode};
 
 /// Instruction-evidenced fields of one 12-byte rate schedule record.
 ///

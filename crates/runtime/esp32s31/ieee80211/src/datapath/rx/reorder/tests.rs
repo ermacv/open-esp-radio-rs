@@ -8,7 +8,7 @@ fn mailbox_preserves_owned_agreement_edges_in_order() {
     let (sender, receiver) = resources.split();
     let snapshot = RxBlockAckSnapshot {
         hardware_index: 0,
-        interface: oer_esp32s31_wifi_mac::MacInterface::Station,
+        interface: oer_esp32s31_ieee80211_mac::MacInterface::Station,
         peer: [2, 0, 0, 0, 0, 1],
         tid: 3,
         starting_sequence: 0x0ffe,
@@ -19,7 +19,7 @@ fn mailbox_preserves_owned_agreement_edges_in_order() {
     try_send_rx_reorder_command(&sender, start).unwrap();
     try_send_rx_reorder_command(&sender, stop).unwrap();
     let stop_station =
-        RxReorderCommand::StopInterface(oer_esp32s31_wifi_mac::MacInterface::Station);
+        RxReorderCommand::StopInterface(oer_esp32s31_ieee80211_mac::MacInterface::Station);
     try_send_rx_reorder_command(&sender, stop_station).unwrap();
 
     assert_eq!(try_receive_rx_reorder_command(&receiver), Some(start));
@@ -40,7 +40,7 @@ fn full_mailbox_returns_the_unpublished_command() {
             &sender,
             RxReorderCommand::Stop(RxBlockAckIdentity {
                 hardware_index: hardware_index as u8,
-                interface: oer_esp32s31_wifi_mac::MacInterface::Station,
+                interface: oer_esp32s31_ieee80211_mac::MacInterface::Station,
                 peer: [2, 0, 0, 0, 0, 1],
                 tid: 0,
             }),
@@ -50,10 +50,10 @@ fn full_mailbox_returns_the_unpublished_command() {
     assert_eq!(
         try_send_rx_reorder_command(
             &sender,
-            RxReorderCommand::StopInterface(oer_esp32s31_wifi_mac::MacInterface::Station,),
+            RxReorderCommand::StopInterface(oer_esp32s31_ieee80211_mac::MacInterface::Station,),
         ),
         Err(RxReorderCommandError::Full(
-            RxReorderCommand::StopInterface(oer_esp32s31_wifi_mac::MacInterface::Station,)
+            RxReorderCommand::StopInterface(oer_esp32s31_ieee80211_mac::MacInterface::Station,)
         ))
     );
 }

@@ -15,21 +15,21 @@ use oer_esp32s31_bluetooth::{
     },
     resources::BluetoothRadioHardware,
 };
-use oer_esp32s31_bluetooth_integration::entropy::BluetoothEntropy;
-use oer_esp32s31_bluetooth_integration::{
-    BluetoothColdStartConfig, BluetoothSystemStorage, start_esp32s31_bluetooth,
-};
-#[cfg(not(feature = "bluetooth-secure-gatt"))]
-use oer_esp32s31_bluetooth_integration::{
-    BluetoothHardwareRunner, BluetoothHostController, BluetoothSystem, BluetoothTroubleSystem,
-};
 use oer_esp32s31_bluetooth_memory::{
     DtmSchedulerAllocationConfig, PassiveScanDefaultTxPowerDbm,
     PassiveScanSchedulerAllocationConfig, PeripheralConnectionDefaultTxPowerDbm,
 };
 use oer_esp32s31_bluetooth_runtime::controller::DtmRecheckPeriod;
-use oer_esp32s31_radio_platform_esp_hal::{EspHalBluetoothPlatform, EspHalRadioPlatform};
-use oer_esp32s31_soc::watchdog::DeadlineWatchdog;
+use oer_esp32s31_bluetooth_system::entropy::BluetoothEntropy;
+use oer_esp32s31_bluetooth_system::{
+    BluetoothColdStartConfig, BluetoothSystemStorage, start_esp32s31_bluetooth,
+};
+#[cfg(not(feature = "bluetooth-secure-gatt"))]
+use oer_esp32s31_bluetooth_system::{
+    BluetoothHardwareRunner, BluetoothHostController, BluetoothSystem, BluetoothTroubleSystem,
+};
+use oer_esp32s31_radio_esp_hal::{EspHalBluetoothPlatform, EspHalRadioPlatform};
+use oer_esp32s31_soc_esp_hal::watchdog::DeadlineWatchdog;
 use static_cell::StaticCell;
 use trouble_host::prelude::*;
 
@@ -47,7 +47,7 @@ pub(crate) fn start(
     service: &'static DeadlineWatchdog,
 ) -> ! {
     let platform = PLATFORM.init(platform);
-    let entropy = oer_esp32s31_soc::entropy::Entropy::new(rng);
+    let entropy = oer_esp32s31_soc_esp_hal::entropy::Entropy::new(rng);
     let boot = u64::from_le_bytes(entropy.random_bytes().expect("HIL boot entropy")).max(1);
     let entropy = ENTROPY.init(BluetoothEntropy::new(entropy));
     let hardware = BluetoothRadioHardware::take().expect("unique Bluetooth hardware");

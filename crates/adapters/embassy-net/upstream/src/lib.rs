@@ -25,7 +25,7 @@ use core::{
 pub use embassy_net_driver::{Driver, RxToken, TxToken};
 pub use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
 pub use embassy_sync::signal::Signal;
-pub use oer_network::{
+pub use oer_network_interface::{
     ETHERNET_HEADER_LEN, FrameLengthError, LinkState, NetworkInterfaceId, RxEnqueueError,
 };
 

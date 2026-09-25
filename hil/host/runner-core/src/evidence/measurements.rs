@@ -4,7 +4,7 @@
 //! even when teardown or a gate fails; replayed evidence is counted only once.
 
 use crate::{Result, evidence::run::Measurement};
-use open_esp_radio_hil_protocol::{Envelope, Event};
+use oer_hil_protocol::{Envelope, Event};
 use std::{
     collections::BTreeMap,
     path::{Component, Path},

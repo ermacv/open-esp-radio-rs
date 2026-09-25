@@ -4,9 +4,9 @@ use core::marker::PhantomData;
 
 use oer_esp32s31_phy::RegisteredWifiPhy;
 
-use oer_esp32s31_wifi_mac::rx::RxDmaBufferAddresses;
+use oer_esp32s31_ieee80211_mac::rx::RxDmaBufferAddresses;
 
-use oer_ieee80211::scan::ScanTable;
+use oer_ieee80211_mac::scan::ScanTable;
 
 /// RX DMA arena and the address layout derived from that exact allocation.
 ///

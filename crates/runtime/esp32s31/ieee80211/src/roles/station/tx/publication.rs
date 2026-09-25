@@ -40,7 +40,7 @@ where
     ) -> Result<WifiTxProgress, RequestTxError<I::Request>>
     where
         H: HtAmpduHardware,
-        I: oer_wifi_datapath::TxRequestSource<Frame = B>,
+        I: oer_ieee80211_datapath::TxRequestSource<Frame = B>,
     {
         if self.active() || self.has_prepared_network_tx() {
             return Err(RequestTxError::Busy(request));
@@ -61,7 +61,7 @@ where
         source: &I,
     ) -> Result<(), I::Request>
     where
-        I: oer_wifi_datapath::TxRequestSource<Frame = B>,
+        I: oer_ieee80211_datapath::TxRequestSource<Frame = B>,
     {
         if !self.can_prepare_network_tx() {
             return Err(request);
@@ -212,7 +212,7 @@ where
             .checked_add(STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
             .ok_or(AggregateTxError::BufferSizeOverflow)?;
         let dma_capacity = B::MIN_STORAGE_CAPACITY;
-        let hardware_mic_length = oer_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let hardware_mic_length = oer_esp32s31_ieee80211::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         let frame_size = AmpduFrameSize::new(frame_length, hardware_mic_length);
         let maximum_aggregate_bytes = self.ordinary.policy().ht_ampdu().maximum_aggregate_bytes();
         match self.config.rate {
@@ -270,7 +270,7 @@ where
         frame.ethernet_length() >= 14
             && frame.ethernet_offset()
                 >= STA_PROTECTED_QOS_ETHERNET_HEADROOM
-                    + oer_esp32s31_wifi_mac::tx::ampdu::TX_AMPDU_METADATA_SIZE
+                    + oer_esp32s31_ieee80211_mac::tx::ampdu::TX_AMPDU_METADATA_SIZE
     }
 
     fn defer_network_frame(&mut self, frame: B) {
@@ -442,8 +442,8 @@ where
         if let Some(observer) = self.observer {
             let bandwidth_mhz = match self.config.rate {
                 TxPhyRate::Ht(rate) => match rate.channel_width {
-                    oer_esp32s31_wifi_mac::tx::HtChannelWidth::Mhz20 => 20,
-                    oer_esp32s31_wifi_mac::tx::HtChannelWidth::Mhz40 => 40,
+                    oer_esp32s31_ieee80211_mac::tx::HtChannelWidth::Mhz20 => 20,
+                    oer_esp32s31_ieee80211_mac::tx::HtChannelWidth::Mhz40 => 40,
                 },
                 TxPhyRate::He(_) | TxPhyRate::Legacy(_) => 20,
             };
@@ -557,7 +557,7 @@ where
             .checked_add(STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
             .ok_or(AggregateTxError::BufferSizeOverflow)?;
         let dma_capacity = B::MIN_STORAGE_CAPACITY;
-        let hardware_mic_length = oer_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let hardware_mic_length = oer_esp32s31_ieee80211::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         match self.config.rate {
             TxPhyRate::Ht(rate) => Ok(ampdu.can_commit_referenced_ht_frame(
                 cookie,
@@ -743,7 +743,7 @@ where
             .checked_add(STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
             .ok_or(AggregateTxError::BufferSizeOverflow)?;
         let dma_capacity = B::MIN_STORAGE_CAPACITY;
-        let hardware_mic_length = oer_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let hardware_mic_length = oer_esp32s31_ieee80211::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         let frame_size = AmpduFrameSize::new(frame_length, hardware_mic_length);
         match self.config.rate {
             TxPhyRate::Ht(rate) => Ok(self.ampdu.active().can_commit_referenced_ht_frame(
@@ -779,7 +779,7 @@ where
             sta_protected_amsdu_pair_frame_length(first_ethernet_length, second_ethernet_length)
                 .map_err(AggregateTxError::Encode)?;
         let dma_capacity = B::MIN_STORAGE_CAPACITY;
-        let hardware_mic_length = oer_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let hardware_mic_length = oer_esp32s31_ieee80211::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         let frame_size = AmpduFrameSize::new(frame_length, hardware_mic_length);
         match self.config.rate {
             TxPhyRate::Ht(rate) => Ok(self.ampdu.active().can_commit_referenced_ht_frame(
@@ -858,7 +858,7 @@ where
             encode_started,
             Core0PerformanceSample::read(),
         );
-        let metadata_size = oer_esp32s31_wifi_mac::tx::ampdu::TX_AMPDU_METADATA_SIZE;
+        let metadata_size = oer_esp32s31_ieee80211_mac::tx::ampdu::TX_AMPDU_METADATA_SIZE;
         let dma_offset = encoded.offset.checked_sub(metadata_size).ok_or(
             AggregateTxError::DmaPrefixGeometry {
                 encoded_offset: encoded.offset,
@@ -866,7 +866,7 @@ where
             },
         )?;
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
-        let hardware_mic_length = oer_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let hardware_mic_length = oer_esp32s31_ieee80211::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         let layout = AmpduFrameLayout::new(
             dma_offset,
             AmpduFrameSize::new(encoded.length, hardware_mic_length),
@@ -942,7 +942,7 @@ where
             encode_started,
             Core0PerformanceSample::read(),
         );
-        let metadata_size = oer_esp32s31_wifi_mac::tx::ampdu::TX_AMPDU_METADATA_SIZE;
+        let metadata_size = oer_esp32s31_ieee80211_mac::tx::ampdu::TX_AMPDU_METADATA_SIZE;
         let dma_offset = encoded.offset.checked_sub(metadata_size).ok_or(
             AggregateTxError::DmaPrefixGeometry {
                 encoded_offset: encoded.offset,
@@ -950,7 +950,7 @@ where
             },
         )?;
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
-        let hardware_mic_length = oer_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let hardware_mic_length = oer_esp32s31_ieee80211::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         let frame_size = AmpduFrameSize::new(encoded.length, hardware_mic_length);
         let layout = AmpduFrameLayout::new(dma_offset, frame_size).ok_or(
             AggregateTxError::DmaPrefixGeometry {

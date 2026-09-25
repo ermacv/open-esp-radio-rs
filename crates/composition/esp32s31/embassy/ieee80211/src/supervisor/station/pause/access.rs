@@ -12,8 +12,8 @@ use oer_esp32s31_hal::{
     },
     owner::{MacInterruptCheckpoint, maintenance},
 };
-use oer_esp32s31_wifi_runtime::datapath::services::SingleRoleServices;
-use oer_esp32s31_wifi_runtime::time::phy::EmbassyPhyDelay;
+use oer_esp32s31_ieee80211_runtime::datapath::services::SingleRoleServices;
+use oer_esp32s31_ieee80211_runtime::time::phy::EmbassyPhyDelay;
 
 type ParkedRunner = ConnectedDatapathRunner<ConnectedDriverServices<PausedRx, ()>>;
 /// Cold datapath state never participates in the nested PHY future. On failure
@@ -40,7 +40,7 @@ pub(crate) enum Failure {
     Tracking {
         _runner: &'static Storage,
         _republish: RadioOwnerRepublish<'static>,
-        _failure: oer_esp32s31_wifi::runtime::WifiRoleMaintenanceFailure<
+        _failure: oer_esp32s31_ieee80211::runtime::WifiRoleMaintenanceFailure<
             EspHalRadioPeripheral,
             MacInterruptCheckpoint,
         >,
@@ -202,7 +202,7 @@ pub(super) async fn round_trip(
         );
         #[cfg(feature = "lifecycle-fault-injection")]
         let work = oer_esp32s31_phy::fault_injection::drive(work);
-        let (owner, returned, outcome) = match oer_wifi_embassy::await_stack_boundary!(work) {
+        let (owner, returned, outcome) = match oer_ieee80211_runtime::await_stack_boundary!(work) {
             Ok(result) => result,
             Err(failure) => return Err(retain_tracking(storage, republish, failure)),
         };
@@ -265,7 +265,7 @@ pub(super) async fn round_trip(
 fn retain_tracking(
     runner: &'static Storage,
     republish: RadioOwnerRepublish<'static>,
-    failure: oer_esp32s31_wifi::runtime::WifiRoleMaintenanceFailure<
+    failure: oer_esp32s31_ieee80211::runtime::WifiRoleMaintenanceFailure<
         EspHalRadioPeripheral,
         MacInterruptCheckpoint,
     >,

@@ -1,10 +1,10 @@
 //! Physical round trip after the worker has drained active TX.
 use super::*;
-use oer_esp32s31_wifi_dma::rx_ring::{RxRingPaused, RxRingResumeFailure};
-use oer_esp32s31_wifi_esp_hal::mac_interrupt_epoch::{
+use oer_esp32s31_ieee80211_dma::rx_ring::{RxRingPaused, RxRingResumeFailure};
+use oer_esp32s31_ieee80211_esp_hal::mac_interrupt_epoch::{
     EspHalMacInterruptRoute, EspHalMacInterruptRouteError,
 };
-use oer_esp32s31_wifi_runtime::{
+use oer_esp32s31_ieee80211_runtime::{
     datapath::{
         irq::{
             MacInterruptEpochActivateError, MacInterruptEpochQuiesceError, PausedInterruptEpoch,
@@ -18,7 +18,7 @@ mod access;
 mod observation;
 use super::pause_request::timeline::Edge;
 
-pub(super) type Role = oer_esp32s31_wifi::runtime::WifiRoleOwner<EspHalRadioPeripheral>;
+pub(super) type Role = oer_esp32s31_ieee80211::runtime::WifiRoleOwner<EspHalRadioPeripheral>;
 type TrackingOutcome = Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>;
 
 type PausedRx = ConnectedRx<RxRingPaused<'static, RX_DESCRIPTOR_COUNT>>;
@@ -94,7 +94,7 @@ pub(crate) enum Failure {
         _error: MacInterruptEpochActivateError<EspHalMacInterruptRouteError>,
     },
     Access {
-        _failure: oer_esp32s31_wifi_runtime::datapath::irq::PausedInterruptOperationFailure<
+        _failure: oer_esp32s31_ieee80211_runtime::datapath::irq::PausedInterruptOperationFailure<
             'static,
             EspHalMacInterruptRoute,
             CriticalSectionRawMutex,
@@ -202,7 +202,7 @@ pub(super) async fn round_trip(
     } else {
         irq
     };
-    let (irq, result) = oer_wifi_embassy::await_stack_boundary!(physical_round_trip(
+    let (irq, result) = oer_ieee80211_runtime::await_stack_boundary!(physical_round_trip(
         irq, role, operation, runner, storage
     ))?;
     if !notify_ap {
@@ -231,8 +231,8 @@ async fn exchange(
     irq: MacInterruptEpoch,
     runner: &mut Option<ConnectedDatapathRunner>,
 ) -> Result<MacInterruptEpoch, &'static Failure> {
-    use oer_esp32s31_wifi_runtime::datapath::services::DatapathServiceError;
-    let result = oer_wifi_embassy::await_stack_boundary!(
+    use oer_esp32s31_ieee80211_runtime::datapath::services::DatapathServiceError;
+    let result = oer_ieee80211_runtime::await_stack_boundary!(
         runner
             .as_mut()
             .expect("live PM runner")
@@ -302,7 +302,7 @@ async fn physical_round_trip(
             // cannot recover a resumable route.
             let (irq, tracking) = match irq
                 .try_with_authority(async |interrupts| {
-                    oer_wifi_embassy::await_stack_boundary!(access::round_trip(
+                    oer_ieee80211_runtime::await_stack_boundary!(access::round_trip(
                         interrupts,
                         &storage.paused,
                         storage.access,
@@ -330,7 +330,7 @@ async fn physical_round_trip(
 
 #[inline(never)]
 fn retain_access(
-    failure: oer_esp32s31_wifi_runtime::datapath::irq::PausedInterruptOperationFailure<
+    failure: oer_esp32s31_ieee80211_runtime::datapath::irq::PausedInterruptOperationFailure<
         'static,
         EspHalMacInterruptRoute,
         CriticalSectionRawMutex,

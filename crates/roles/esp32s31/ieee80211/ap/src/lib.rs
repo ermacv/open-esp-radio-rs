@@ -20,4 +20,4 @@ pub mod security;
 pub mod transaction;
 pub mod tx;
 
-pub use oer_wifi_ap as protocol;
+pub use oer_ieee80211_ap as protocol;

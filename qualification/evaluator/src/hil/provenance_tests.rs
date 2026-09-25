@@ -68,9 +68,8 @@ fn qualification_checks_every_firmware_source_against_current_pins() {
     let lock = ["esp-hal", "esp-sync", "esp-bootloader-esp-idf", "embassy-net", "embassy-net-driver", "xarxa-driver"]
         .map(|name| format!("[[package]]\nname = {name:?}\nversion = \"1.0.0\"\nsource = \"git+https://example.invalid/source?rev={pin}#{pin}\"\n"))
         .join("\n");
-    let lock = format!(
-        "version = 4\n{lock}\n[[package]]\nname = 'open-esp-radio-hil-runner'\nversion = '0.1.0'\n"
-    );
+    let lock =
+        format!("version = 4\n{lock}\n[[package]]\nname = 'oer-hil-runner'\nversion = '0.1.0'\n");
     fs::write(root.join("Cargo.lock"), lock).unwrap();
     let mut pinned = canonical.clone();
     pinned["files"][0]["sha256"] = json!(sha256_file(&root.join("Cargo.lock")).unwrap());

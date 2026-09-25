@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-hil-fixture"
+name = "oer-hil-fixture"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -18,16 +18,16 @@ embedded-io-async = "0.7.0"
 fs2 = "0.4"
 libc = "0.2"
 rustix = { version = "1.1.4", features = ["event", "fs", "net", "process"] }
-oer-ieee80211 = { path = "../../../crates/protocols/ieee80211/mac" }
+oer-ieee80211-mac = { path = "../../../crates/protocols/ieee80211/mac" }
 oer-process = { path = "../../../tools/process" }
-open-esp-radio-hil-fixture-install = { path = "../fixture-install" }
-open-esp-radio-hil-protocol = { path = "../../protocol" }
+oer-hil-fixture-install = { path = "../fixture-install" }
+oer-hil-protocol = { path = "../../protocol" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 [dev-dependencies]
 oer-bluetooth-ll = { path = "../../../crates/protocols/bluetooth/le/ll" }
-oer-esp32s31-wifi-ap = { path = "../../../crates/roles/esp32s31/ieee80211/ap" }
+oer-esp32s31-ieee80211-ap = { path = "../../../crates/roles/esp32s31/ieee80211/ap" }
 
 [lints]
 workspace = true

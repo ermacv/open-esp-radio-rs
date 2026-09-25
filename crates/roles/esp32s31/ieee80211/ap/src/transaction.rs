@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-use oer_esp32s31_wifi::{
+use oer_esp32s31_ieee80211::{
     ordinary_tx::{
         OrdinaryTxOutcome, TX_CCMP_MIC_SIZE, TX_FCS_SIZE, TX_METADATA_SIZE, WifiTxEntropy,
         WifiTxPowerProfile, WifiTxResources, WifiTxTimer,
@@ -22,17 +22,17 @@ use oer_esp32s31_wifi::{
     tx::{WifiTxProgress, WifiTxWake},
 };
 
-use oer_esp32s31_wifi_mac::tx::{
+use oer_esp32s31_ieee80211_mac::tx::{
     HtDuplicateCertificationRequest, HtDuplicateTxSelection, HtRate, LegacyRate, TxHardware,
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     ap::ApPeerDisconnectKind, block_ack::TxBlockAckAlarm, security::WifiSecurityMode,
 };
 
-use oer_wifi_ap::{ApPeerClose, ApPeerPowerState, ApServiceError};
+use oer_ieee80211_ap::{ApPeerClose, ApPeerPowerState, ApServiceError};
 
-use oer_wifi_rsn::frames::RsnTxFrame;
+use oer_ieee80211_rsn::frames::RsnTxFrame;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingPublication {
@@ -143,7 +143,7 @@ pub struct ApDataTxObservation {
 
 #[cfg(any(feature = "diagnostics", test))]
 impl ApDataTxObservation {
-    fn observe(&mut self, report: oer_esp32s31_wifi::ordinary_tx::OrdinaryTxReport) {
+    fn observe(&mut self, report: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxReport) {
         let attempts = report.status.attempts;
         self.attempts = self.attempts.saturating_add(u32::from(attempts));
         self.retried_frames = self.retried_frames.saturating_add(u32::from(attempts > 1));
@@ -332,7 +332,7 @@ where
     T: WifiTxTimer,
 {
     /// Submitted ordinary work, read before another exchange starts.
-    pub fn work(&self) -> oer_wifi_softmac::MacTxWork {
+    pub fn work(&self) -> oer_ieee80211_softmac::MacTxWork {
         self.transmit.work()
     }
 
@@ -434,7 +434,7 @@ where
             self.engine
                 .prepare_beacon_publication(now_micros)
                 .ok_or(ApMacError::Engine(ApEngineError::Beacon(
-                    oer_ieee80211::beacon::ApBeaconBuildError::InvalidSequenceNumber,
+                    oer_ieee80211_mac::beacon::ApBeaconBuildError::InvalidSequenceNumber,
                 )))?;
         self.transmit
             .start_encoded(hardware, ApTxClass::Beacon, publication.frame)?;
@@ -802,7 +802,7 @@ where
         let (kind, reason) = match stage {
             ApPeerDisconnectStage::Disassociation => (
                 ApPeerDisconnectKind::Disassociation,
-                if close.kind == oer_wifi_ap::ApPeerCloseKind::InactivityTimeout {
+                if close.kind == oer_ieee80211_ap::ApPeerCloseKind::InactivityTimeout {
                     4
                 } else {
                     2
@@ -894,7 +894,7 @@ where
                     if matches!(pending, PendingPublication::ProbeResponse { .. })
                         && report.completion.is_some_and(|completion| {
                             completion.disposition()
-                                == oer_esp32s31_wifi_mac::tx::TxCompletionDisposition::AckTimeout
+                                == oer_esp32s31_ieee80211_mac::tx::TxCompletionDisposition::AckTimeout
                         })
                     {
                         self.observer.observation.tx_failures.probe_ack_timeouts = self

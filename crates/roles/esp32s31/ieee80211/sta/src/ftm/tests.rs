@@ -1,6 +1,6 @@
 use super::*;
-use oer_ieee80211::ftm::{FtmBurstDuration, FtmFormatAndBandwidth, FtmRequestParameters};
-use oer_wifi_sta::ftm::{FtmRequester, FtmRequesterConfig, FtmRequesterService};
+use oer_ieee80211_mac::ftm::{FtmBurstDuration, FtmFormatAndBandwidth, FtmRequestParameters};
+use oer_ieee80211_sta::ftm::{FtmRequester, FtmRequesterConfig, FtmRequesterService};
 
 fn transmission() -> FtmRequestTransmission {
     let parameters = FtmRequestParameters::new(

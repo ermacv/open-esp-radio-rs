@@ -4,11 +4,11 @@ use crate::datapath::{DatapathTxConsumer, PinnedTxPool, PinnedTxResources};
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-use oer_embassy_net::{NetworkInterfaceId, OwnedEndpointResources};
+use oer_embassy_net_owned::{NetworkInterfaceId, OwnedEndpointResources};
 
-use oer_ieee80211::ap::ApPowerSaveObservation;
+use oer_ieee80211_mac::ap::ApPowerSaveObservation;
 
-use oer_wifi_datapath::DestinationTxQueues;
+use oer_ieee80211_datapath::DestinationTxQueues;
 
 use std::boxed::Box;
 

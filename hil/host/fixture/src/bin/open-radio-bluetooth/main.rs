@@ -7,7 +7,7 @@ mod connection_reset;
 mod dtm;
 #[cfg(target_os = "linux")]
 mod hci;
-use open_esp_radio_hil_fixture::bluetooth::model;
+use oer_hil_fixture::bluetooth::model;
 #[cfg(target_os = "linux")]
 mod owner;
 #[cfg(target_os = "linux")]
@@ -23,7 +23,7 @@ enum TerminationArg {
     TargetReset,
 }
 
-impl From<TerminationArg> for open_esp_radio_hil_protocol::BluetoothPeripheralTermination {
+impl From<TerminationArg> for oer_hil_protocol::BluetoothPeripheralTermination {
     fn from(value: TerminationArg) -> Self {
         match value {
             TerminationArg::PeerReset => Self::PeerReset,
@@ -61,7 +61,7 @@ enum Command {
         #[arg(long)]
         peer: model::PeerAddress,
         #[arg(long)]
-        failure: open_esp_radio_hil_protocol::BluetoothSecurityFailure,
+        failure: oer_hil_protocol::BluetoothSecurityFailure,
         /// After missing-key rejection, require remote-version completion before Disconnect.
         #[arg(long)]
         read_version_before_disconnect: bool,
@@ -100,8 +100,8 @@ fn main() {
         return;
     }
     #[cfg(target_os = "linux")]
-    let _software = match open_esp_radio_hil_fixture_install::launcher::enter(
-        open_esp_radio_hil_fixture_install::launcher::LaunchTarget::Bluetooth,
+    let _software = match oer_hil_fixture_install::launcher::enter(
+        oer_hil_fixture_install::launcher::LaunchTarget::Bluetooth,
     ) {
         Ok(lease) => lease,
         Err(error) => {
@@ -142,7 +142,7 @@ fn main() {
         report.read_version_before_disconnect = read_version_before_disconnect;
         let result = (|| -> Result<()> {
             if read_version_before_disconnect
-                && failure != open_esp_radio_hil_protocol::BluetoothSecurityFailure::MissingKey
+                && failure != oer_hil_protocol::BluetoothSecurityFailure::MissingKey
             {
                 return Err("remote-version diagnostic requires missing-key rejection".into());
             }

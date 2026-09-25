@@ -338,7 +338,7 @@ fn create_unique_directory(parent: &Path, base: &str) -> Result<PathBuf> {
     Err("cannot allocate a unique HIL run directory".into())
 }
 
-use open_esp_radio_hil_schema::artifacts as observer_artifacts;
+use oer_hil_schema::artifacts as observer_artifacts;
 
 /// Build identity of the executable that records runs.
 #[derive(Clone, Copy, Debug)]
@@ -363,7 +363,7 @@ fn runner_build() -> Result<RunnerBuild> {
     #[cfg(test)]
     let _ = RUNNER_BUILD.set(RunnerBuild {
         record: "{}",
-        package: "open-esp-radio-hil-runner",
+        package: "oer-hil-runner",
         version: "0.0.0",
     });
     RUNNER_BUILD
@@ -412,7 +412,7 @@ pub fn runner_provenance() -> Result<RunnerProvenance> {
         ),
         package: runner.package.to_owned(),
         version: runner.version.to_owned(),
-        protocol_version: open_esp_radio_hil_protocol::PROTOCOL_VERSION,
+        protocol_version: oer_hil_protocol::PROTOCOL_VERSION,
         host_os: std::env::consts::OS.to_owned(),
         host_arch: std::env::consts::ARCH.to_owned(),
         tools: ["rustc", "cargo", "espflash"]

@@ -1,12 +1,12 @@
 //! Destructive tests of the SoC deadline service, without a radio owner.
-use oer_esp32s31_soc::watchdog::DeadlineLease;
+use oer_esp32s31_soc_esp_hal::watchdog::DeadlineLease;
 /// Deliberately leave the real SoC service armed; no radio implementation is
 /// replaced. This verifies service cancellation, not an injected PHY failure.
 pub(super) async fn inject(
-    mode: open_esp_radio_hil_protocol::WatchdogTestMode,
+    mode: oer_hil_protocol::WatchdogTestMode,
     lease: DeadlineLease<'static>,
 ) -> ! {
-    use open_esp_radio_hil_protocol::WatchdogTestMode as Mode;
+    use oer_hil_protocol::WatchdogTestMode as Mode;
     match mode {
         Mode::Complete => unreachable!("completed before acknowledgement"),
         Mode::BlockedPoll =>

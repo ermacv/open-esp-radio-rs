@@ -129,15 +129,15 @@ fn run(case: Case) {
 
     use hardware::{Hardware, Power, Timer};
 
-    use oer_embassy_net::{NetworkInterfaceId, OwnedEndpointResources};
+    use oer_embassy_net_owned::{NetworkInterfaceId, OwnedEndpointResources};
 
     use oer_esp32s31_hal::types::MacTxCompletionObservation;
 
-    use oer_esp32s31_wifi::ordinary_tx::WifiTxResources;
+    use oer_esp32s31_ieee80211::ordinary_tx::WifiTxResources;
 
-    use oer_esp32s31_wifi_ap::tx::ApTxConfig;
+    use oer_esp32s31_ieee80211_ap::tx::ApTxConfig;
 
-    use oer_esp32s31_wifi_mac::tx::{
+    use oer_esp32s31_ieee80211_mac::tx::{
         TxSlot,
         ampdu::{HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage},
         runtime::WifiTxRuntimePolicy,
@@ -218,7 +218,7 @@ fn run(case: Case) {
         );
         let mut ledger = AccessPointAirtimeStorage::new(us(1000));
         if matches!(case, Case::SelectionCapacity | Case::FifoReservationFailure) {
-            use oer_wifi_datapath::airtime::AirtimeCandidate;
+            use oer_ieee80211_datapath::airtime::AirtimeCandidate;
             // A prior quarantined owner can leave both reservations outstanding.
             let mut scheduler = ledger.scheduler();
             let candidate = AirtimeCandidate {
@@ -250,13 +250,13 @@ fn run(case: Case) {
         if case == Case::AggregateRetry {
             use oer_esp32s31_hal::types::MacHtAmpduCompletionObservation;
 
-            use oer_esp32s31_wifi_ap::engine::ApAggregateFrame;
+            use oer_esp32s31_ieee80211_ap::engine::ApAggregateFrame;
 
-            use oer_esp32s31_wifi_mac::tx::{HtChannelWidth, HtGuardInterval, HtMcs, HtRate};
+            use oer_esp32s31_ieee80211_mac::tx::{HtChannelWidth, HtGuardInterval, HtMcs, HtRate};
 
-            use oer_ieee80211::ap::EncodedApFrame;
+            use oer_ieee80211_mac::ap::EncodedApFrame;
 
-            use oer_wifi_datapath::SelectedBurstMaterializer;
+            use oer_ieee80211_datapath::SelectedBurstMaterializer;
 
             use super::super::super::AggregateServicePhase;
             // Model already-encoded AP MPDUs: this exercises runtime completion,
@@ -317,7 +317,7 @@ fn run(case: Case) {
                 true,
             ));
             let complete = WifiTxWake::Interrupt {
-                events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
             };
             assert_eq!(
                 owner.service(&mut aggregate, &mut control, &mut hardware, complete),
@@ -434,7 +434,7 @@ fn run(case: Case) {
                 ),
                 Err(AccessPointDatapathError::Airtime(
                     AccessPointAirtimeError::Ledger(
-                        oer_wifi_datapath::airtime::AirtimeError::ReservationCapacity
+                        oer_ieee80211_datapath::airtime::AirtimeError::ReservationCapacity
                     )
                 ))
             ));
@@ -450,7 +450,7 @@ fn run(case: Case) {
                 owner.take_scheduled_active_or_network(control.mac.engine_mut(), &source),
                 Err(AccessPointDatapathError::Airtime(
                     AccessPointAirtimeError::Ledger(
-                        oer_wifi_datapath::airtime::AirtimeError::ReservationCapacity
+                        oer_ieee80211_datapath::airtime::AirtimeError::ReservationCapacity
                     )
                 ))
             ));
@@ -530,9 +530,9 @@ fn run(case: Case) {
                 );
             }
             if case == Case::PsPollPriority {
-                use oer_esp32s31_wifi_ap::protocol::ApPowerSaveAction;
+                use oer_esp32s31_ieee80211_ap::protocol::ApPowerSaveAction;
 
-                use oer_ieee80211::ap::ApPowerSaveObservation;
+                use oer_ieee80211_mac::ap::ApPowerSaveObservation;
                 let action = control
                     .mac
                     .engine_mut()
@@ -592,7 +592,7 @@ fn run(case: Case) {
 
         if case == Case::DetachFailure {
             let timeout = WifiTxWake::Interrupt {
-                events: oer_esp32s31_wifi_mac::irq::EVENT_TX_TIMEOUT,
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_TIMEOUT,
             };
             assert_eq!(
                 owner.service(&mut aggregate, &mut control, &mut hardware, timeout),
@@ -630,7 +630,7 @@ fn run(case: Case) {
             &mut control,
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
             },
         );
         if case == Case::UnknownCost {

@@ -1,7 +1,7 @@
 //! Affine publication boundary; endpoint state remains with the adapter.
 
 use super::{CompletedUnit, Preview};
-use oer_esp32s31_wifi_mac::rx::pool::NetworkRxFrame;
+use oer_esp32s31_ieee80211_mac::rx::pool::NetworkRxFrame;
 
 /// A single ordered publisher borrowing the original staged DMA allocation.
 ///
@@ -18,8 +18,8 @@ pub trait Publisher<'pool, const CAPACITY: usize, const SLOTS: usize> {
     /// The caller can forward the result while preserving rejection ownership:
     ///
     /// ```no_run
-    /// use oer_esp32s31_wifi::rx::transaction::Publisher;
-    /// use oer_esp32s31_wifi_mac::rx::pool::NetworkRxFrame;
+    /// use oer_esp32s31_ieee80211::rx::transaction::Publisher;
+    /// use oer_esp32s31_ieee80211_mac::rx::pool::NetworkRxFrame;
     ///
     /// fn publish<'pool, P: Publisher<'pool, 64, 1>>(
     ///     publisher: &P,
@@ -32,8 +32,8 @@ pub trait Publisher<'pool, const CAPACITY: usize, const SLOTS: usize> {
     /// After transfer, only an `Err` result can restore the caller's frame:
     ///
     /// ```compile_fail,E0382
-    /// use oer_esp32s31_wifi::rx::transaction::Publisher;
-    /// use oer_esp32s31_wifi_mac::rx::pool::NetworkRxFrame;
+    /// use oer_esp32s31_ieee80211::rx::transaction::Publisher;
+    /// use oer_esp32s31_ieee80211_mac::rx::pool::NetworkRxFrame;
     ///
     /// fn publish<'pool, P: Publisher<'pool, 64, 1>>(
     ///     publisher: &P,

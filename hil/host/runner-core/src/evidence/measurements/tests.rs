@@ -1,10 +1,10 @@
 use super::*;
 use crate::evidence::run::{Comparison, MeasurementUnit};
-use open_esp_radio_hil_protocol::{EvidenceRecord, FlowTransportEvidence, TransportEvidence};
+use oer_hil_protocol::{EvidenceRecord, FlowTransportEvidence, TransportEvidence};
 
 #[test]
 fn memory_counter_scopes_preserve_full_values_without_cpu_percentages() {
-    use open_esp_radio_hil_protocol::{
+    use oer_hil_protocol::{
         MemoryBenchmarkEvidence, MemoryBenchmarkMode, MemoryBenchmarkRequest,
         MemoryBenchmarkSource, MemoryBenchmarkStop,
     };

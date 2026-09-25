@@ -65,7 +65,7 @@ where
             return Err(frame);
         };
         let bank = self.runtime.reorder_banks.find(
-            oer_esp32s31_wifi_mac::MacInterface::Station,
+            oer_esp32s31_ieee80211_mac::MacInterface::Station,
             key.peer,
             key.tid,
         );
@@ -173,7 +173,7 @@ where
             return Some(self.dispatch_owned_frame(frame).await);
         };
         let bank = self.runtime.reorder_banks.find(
-            oer_esp32s31_wifi_mac::MacInterface::Station,
+            oer_esp32s31_ieee80211_mac::MacInterface::Station,
             key.peer,
             key.tid,
         );

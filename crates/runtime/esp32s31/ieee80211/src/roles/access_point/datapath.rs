@@ -404,7 +404,7 @@ where
         + TxHardware
         + ApRuntimeHardware
         + RxBlockAckHardware
-        + oer_esp32s31_wifi_mac::tx::ampdu::HtAmpduHardware,
+        + oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
     RX: AccessPointRxProducer<H, COUNT>,
     C: AccessPointRxProtocolConsumer,
     O: FnMut(AccessPointServiceStatus),

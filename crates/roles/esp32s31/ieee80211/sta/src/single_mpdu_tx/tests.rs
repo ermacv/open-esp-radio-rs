@@ -8,7 +8,7 @@ use oer_esp32s31_hal::types::{
     MacTxDetachReason, MacTxQueueDetached,
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
     tx::{
@@ -21,12 +21,12 @@ use oer_esp32s31_wifi_mac::{
     },
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     channel::WifiChannel,
     extensions::espressif::esp_now::{EspNowDestination, EspNowRandomValue, EspNowUnicastAddress},
 };
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     EspNowConfig, EspNowPeerConfig, EspNowPhyMode, EspNowProtocol, MacTxResult,
     interface::{BoundVirtualInterface, ChannelContextId, VifId, VifRole, VirtualInterface},
 };
@@ -210,7 +210,7 @@ fn esp_now_protocol(
     phy_mode: EspNowPhyMode,
 ) -> (
     EspNowProtocol<1>,
-    oer_wifi_softmac::EspNowPeerId,
+    oer_ieee80211_softmac::EspNowPeerId,
     BoundVirtualInterface,
     WifiChannel,
 ) {
@@ -256,7 +256,7 @@ fn completion_releases_the_slot_and_network_lease_boundary() {
         tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
             },
         ),
         Ok(WifiTxProgress::Complete)
@@ -276,8 +276,8 @@ fn completion_releases_the_slot_and_network_lease_boundary() {
 #[test]
 fn rejected_lr_frontier_does_not_consume_the_shared_sequence() {
     for rate in [
-        oer_wifi_softmac::EspressifLongRangeRate::Kbps250,
-        oer_wifi_softmac::EspressifLongRangeRate::Kbps500,
+        oer_ieee80211_softmac::EspressifLongRangeRate::Kbps250,
+        oer_ieee80211_softmac::EspressifLongRangeRate::Kbps500,
     ] {
         let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware::default();
@@ -369,7 +369,7 @@ fn required_erp_protection_fails_before_sequence_dma_or_publication() {
 
 #[test]
 fn late_retry_protection_fails_before_sequence_dma_or_publication() {
-    use oer_esp32s31_wifi_mac::tx::{HtChannelWidth, HtGuardInterval, HtMcs, HtRate};
+    use oer_esp32s31_ieee80211_mac::tx::{HtChannelWidth, HtGuardInterval, HtMcs, HtRate};
 
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
@@ -438,7 +438,7 @@ fn dscp_selects_the_matching_hardware_queue_qos_tid_and_sequence_space() {
         tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
             },
         ),
         Ok(WifiTxProgress::Pending)
@@ -454,7 +454,7 @@ fn dscp_selects_the_matching_hardware_queue_qos_tid_and_sequence_space() {
         tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
             },
         ),
         Ok(WifiTxProgress::Complete)
@@ -515,7 +515,7 @@ fn active_connected_owner_rejects_teardown_without_losing_transaction() {
         tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
             },
         ),
         Ok(WifiTxProgress::Complete)
@@ -549,7 +549,7 @@ fn connected_action_uses_the_shared_slot_as_plaintext_voice_tx() {
         tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
             },
         ),
         Ok(WifiTxProgress::Complete)
@@ -590,7 +590,7 @@ fn power_save_null_uses_shared_retried_tx_and_exact_pm_bit() {
         tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
             },
         ),
         Ok(WifiTxProgress::Complete)
@@ -626,7 +626,7 @@ fn missing_cts_exhausts_short_retries_and_releases_the_queue_for_the_next_frame(
     tx.start(&mut hardware, &ethernet()).unwrap();
     let sequence_after_encode = tx.sequences.peek_qos(0);
     let wake = WifiTxWake::Interrupt {
-        events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+        events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
     };
 
     for failure in 1..=VENDOR_SHORT_RETRY_LIMIT {
@@ -698,7 +698,7 @@ fn ack_timeout_republishes_the_same_encoded_mpdu_with_retry_bit() {
         tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
             },
         ),
         Ok(WifiTxProgress::Pending)
@@ -727,7 +727,7 @@ fn ack_timeout_republishes_the_same_encoded_mpdu_with_retry_bit() {
         tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
             },
         ),
         Ok(WifiTxProgress::Complete)
@@ -761,7 +761,7 @@ fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() 
     let submitted = tx.work();
     hardware.timeout = true;
     let timeout = WifiTxWake::Interrupt {
-        events: oer_esp32s31_wifi_mac::irq::EVENT_TX_TIMEOUT,
+        events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_TIMEOUT,
     };
 
     assert_eq!(
@@ -784,7 +784,7 @@ fn timeout_retains_dma_until_settle_deadline_without_waiting_or_republication() 
         timeout,
         WifiTxWake::Deadline,
         WifiTxWake::Interrupt {
-            events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+            events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
         },
     ] {
         assert_eq!(tx.service(&mut hardware, wake), Ok(WifiTxProgress::Pending));
@@ -853,7 +853,7 @@ fn collision_retries_without_marking_an_untransmitted_mpdu_as_retry() {
     tx.start(&mut hardware, &ethernet()).unwrap();
     hardware.collision = true;
     let collision = WifiTxWake::Interrupt {
-        events: oer_esp32s31_wifi_mac::irq::EVENT_COLLISION,
+        events: oer_esp32s31_ieee80211_mac::irq::EVENT_COLLISION,
     };
 
     for collision_number in 1..=VENDOR_SHORT_RETRY_LIMIT {

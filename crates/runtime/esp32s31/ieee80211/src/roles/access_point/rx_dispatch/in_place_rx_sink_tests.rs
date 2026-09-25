@@ -1,5 +1,5 @@
 
-use oer_wifi_softmac::MacRxMetadata;
+use oer_ieee80211_softmac::MacRxMetadata;
 
 use super::*;
 

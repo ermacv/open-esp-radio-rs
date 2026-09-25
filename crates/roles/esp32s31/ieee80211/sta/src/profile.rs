@@ -5,10 +5,11 @@
 //! it does not choose hardware capabilities or S31 channel encodings.
 
 use {
-    oer_ieee80211::he::parse_he20_capabilities, oer_ieee80211::he::parse_he20_operation,
-    oer_ieee80211::scan::HtSecondaryChannel, oer_ieee80211::scan::ScanRecord,
-    oer_ieee80211::station::AssociationCapabilities, oer_ieee80211::station::association::PhyMode,
-    oer_ieee80211::station::association::Preference,
+    oer_ieee80211_mac::he::parse_he20_capabilities, oer_ieee80211_mac::he::parse_he20_operation,
+    oer_ieee80211_mac::scan::HtSecondaryChannel, oer_ieee80211_mac::scan::ScanRecord,
+    oer_ieee80211_mac::station::AssociationCapabilities,
+    oer_ieee80211_mac::station::association::PhyMode,
+    oer_ieee80211_mac::station::association::Preference,
 };
 
 // One-stream HT20 with short guard interval. Channel-width, STBC, LDPC,
@@ -173,7 +174,7 @@ pub fn select_association(access_point: &ScanRecord, preference: Preference) -> 
     let he20_supported = parse_he20_capabilities(access_point.he_capability_ie_bytes())
         .is_ok_and(|capability| capability.supports_bidirectional_mcs9())
         && parse_he20_operation(access_point.he_operation_ie_bytes()).is_ok();
-    let phy = oer_wifi_sta::association::select_phy(
+    let phy = oer_ieee80211_sta::association::select_phy(
         preference,
         access_point.ht40_secondary_channel().is_some(),
         he20_supported,

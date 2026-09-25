@@ -1,4 +1,6 @@
-use oer_esp32s31_wifi_mac::init::{StaLinkRxPolicyHardware, configure_sta_link_receive_policy};
+use oer_esp32s31_ieee80211_mac::init::{
+    StaLinkRxPolicyHardware, configure_sta_link_receive_policy,
+};
 
 use super::{StaJoinRadio, StaJoinStation, StaJoinStorage};
 

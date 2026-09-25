@@ -13,11 +13,11 @@ Separate Cargo packages bound the privilege and radio-family scopes:
 
 | Package | Binaries | Role |
 | --- | --- | --- |
-| `runner/` (`open-esp-radio-hil-runner`) | `open-esp-radio-hil-runner` | Unprivileged CLI, run orchestration, workload dispatch and the cross-family fixture preflight |
-| `runner-core/` (`open-esp-radio-hil-runner-core`) | none | Scenarios, laboratory, UART session, workload context, images and sealed run evidence |
-| `runner-wifi/`, `runner-bluetooth/`, `runner-system/`, `runner-ieee802154/` | none | One radio family's workloads and fixtures; each depends on `runner-core`, never on another family |
-| `fixture/` (`open-esp-radio-hil-fixture`) | `open-radio-bluetooth`, `open-radio-probe` | Finite Linux helpers; the library is their versioned request/report contract with the runner |
-| `fixture-install/` (`open-esp-radio-hil-fixture-install`) | `open-radio-fixture-install` and the three fixed launchers | Root-executed installation and admission; the runner uses the same library to plan and prepare |
+| `runner/` (`oer-hil-runner`) | `oer-hil-runner` | Unprivileged CLI, run orchestration, workload dispatch and the cross-family fixture preflight |
+| `runner-core/` (`oer-hil-runner-core`) | none | Scenarios, laboratory, UART session, workload context, images and sealed run evidence |
+| `runner-ieee80211/`, `runner-bluetooth/`, `runner-system/`, `runner-ieee802154/` | none | One radio family's workloads and fixtures; each depends on `runner-core`, never on another family |
+| `fixture/` (`oer-hil-fixture`) | `open-radio-bluetooth`, `open-radio-probe` | Finite Linux helpers; the library is their versioned request/report contract with the runner |
+| `fixture-install/` (`oer-hil-fixture-install`) | `open-radio-fixture-install` and the three fixed launchers | Root-executed installation and admission; the runner uses the same library to plan and prepare |
 
 The installer package depends on no radio, Bluetooth or HIL execution crate, so
 its dependency graph is the whole root-executed installation surface.

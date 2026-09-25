@@ -125,9 +125,9 @@ where
         H: RxDma
             + TxHardware
             + ApRuntimeHardware
-            + oer_esp32s31_wifi_mac::init::MacRuntimeStopHardware
+            + oer_esp32s31_ieee80211_mac::init::MacRuntimeStopHardware
             + RxBlockAckHardware
-            + oer_esp32s31_wifi_mac::tx::ampdu::HtAmpduHardware,
+            + oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
         R: AccessPointRxProducer<H, COUNT>,
         C: AccessPointRxProtocolConsumer,
         F: Future<Output = ()>,
@@ -143,26 +143,26 @@ where
             .map_err(AccessPointRunError::Control)?;
         // The descriptor walker is fully armed. Resume the vendor MAC
         // frontend before exposing its interrupt route to the CPU.
-        oer_esp32s31_wifi_mac::init::MacRuntimeStopHardware::resume_mac_runtime(
+        oer_esp32s31_ieee80211_mac::init::MacRuntimeStopHardware::resume_mac_runtime(
             hardware,
         );
         if let Err(error) = interrupts
             .activate_or_resume_rx_moderated(platform, MAC_COLD_RX_INTERRUPT_MASK)
         {
-            oer_esp32s31_wifi_mac::ap_policy::disable_ap_receive_policy(hardware);
-            oer_esp32s31_wifi_mac::init::MacRuntimeStopHardware::request_mac_runtime_stop(
+            oer_esp32s31_ieee80211_mac::ap_policy::disable_ap_receive_policy(hardware);
+            oer_esp32s31_ieee80211_mac::init::MacRuntimeStopHardware::request_mac_runtime_stop(
                 hardware,
             );
             embassy_time::Timer::after_micros(20).await;
-            while oer_esp32s31_wifi_mac::init::MacRuntimeStopHardware::mac_runtime_active_state(hardware) != 0 {
+            while oer_esp32s31_ieee80211_mac::init::MacRuntimeStopHardware::mac_runtime_active_state(hardware) != 0 {
                 embassy_time::Timer::after_micros(1).await;
             }
             loop {
                 match self.stop(hardware) {
                     Ok(()) => break,
                     Err(AccessPointControlError::Receive(
-                        oer_esp32s31_wifi_mac::rx::pool::RxStageTransactionError::Ring(
-                            oer_esp32s31_wifi_mac::rx::RxRingError::Busy,
+                        oer_esp32s31_ieee80211_mac::rx::pool::RxStageTransactionError::Ring(
+                            oer_esp32s31_ieee80211_mac::rx::RxRingError::Busy,
                         ),
                     )) => yield_now().await,
                     Err(stop) => return Err(AccessPointRunError::Control(stop)),
@@ -263,11 +263,11 @@ where
         // complete physical RX epoch, not during a same-channel role handoff.
         #[cfg(feature = "diagnostics")]
         log_access_point_queue_zero("logical-stop", services.hardware);
-        oer_esp32s31_wifi_mac::ap_policy::disable_ap_receive_policy(
+        oer_esp32s31_ieee80211_mac::ap_policy::disable_ap_receive_policy(
             services.hardware,
         );
         embassy_time::Timer::after_micros(20).await;
-        while oer_esp32s31_wifi_mac::init::MacRuntimeStopHardware::mac_runtime_active_state(
+        while oer_esp32s31_ieee80211_mac::init::MacRuntimeStopHardware::mac_runtime_active_state(
             services.hardware,
         ) != 0
         {
@@ -294,8 +294,8 @@ where
             match self.stop(hardware) {
                 Ok(()) => break,
                 Err(AccessPointControlError::Receive(
-                    oer_esp32s31_wifi_mac::rx::pool::RxStageTransactionError::Ring(
-                        oer_esp32s31_wifi_mac::rx::RxRingError::Busy,
+                    oer_esp32s31_ieee80211_mac::rx::pool::RxStageTransactionError::Ring(
+                        oer_esp32s31_ieee80211_mac::rx::RxRingError::Busy,
                     ),
                 )) => yield_now().await,
                 Err(error) => return Err(AccessPointRunError::Control(error)),

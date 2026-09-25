@@ -30,7 +30,7 @@ impl DatapathNetworkRx for Network {
 
     fn try_send_parts(
         &mut self,
-        frame: oer_ieee80211::data::EthernetFrameParts<'_>,
+        frame: oer_ieee80211_mac::data::EthernetFrameParts<'_>,
     ) -> Result<(), RxEnqueueError> {
         if self.exhausted {
             return Err(RxEnqueueError::PoolExhausted);
@@ -67,7 +67,7 @@ impl DatapathNetworkRx for Network {
     #[cfg(feature = "diagnostics")]
     fn try_send_parts_observed(
         &mut self,
-        frame: oer_ieee80211::data::EthernetFrameParts<'_>,
+        frame: oer_ieee80211_mac::data::EthernetFrameParts<'_>,
         before_publish: &mut dyn FnMut(),
     ) -> Result<(), RxEnqueueError> {
         let result = self.try_send_parts(frame);
@@ -80,7 +80,7 @@ impl DatapathNetworkRx for Network {
 
 fn event(ether_type: u16) -> ConnectedRxEvent<'static> {
     ConnectedRxEvent::Ethernet {
-        frame: oer_ieee80211::data::EthernetFrameParts {
+        frame: oer_ieee80211_mac::data::EthernetFrameParts {
             destination: [1; 6],
             source: [2; 6],
             ether_type,
@@ -88,7 +88,7 @@ fn event(ether_type: u16) -> ConnectedRxEvent<'static> {
         },
         raw: &[0; 32],
         amsdu: false,
-        metadata: oer_wifi_softmac::MacRxMetadata::unavailable(),
+        metadata: oer_ieee80211_softmac::MacRxMetadata::unavailable(),
     }
 }
 

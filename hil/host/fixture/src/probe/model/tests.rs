@@ -21,12 +21,12 @@ fn generated_frames_are_accepted_by_the_production_probe_parser() {
         let r = request(i).unwrap();
         let frame = super::super::frame::encode(&config, bssid, r);
         assert_eq!(
-            oer_ieee80211::ap::parse_ap_management_request(
-                &oer_esp32s31_wifi_ap::profile::ADVERTISEMENT,
+            oer_ieee80211_mac::ap::parse_ap_management_request(
+                &oer_esp32s31_ieee80211_ap::profile::ADVERTISEMENT,
                 &frame[9..],
                 bssid
             ),
-            Some(oer_ieee80211::ap::ApManagementRequest::Probe {
+            Some(oer_ieee80211_mac::ap::ApManagementRequest::Probe {
                 peer: r.source,
                 ssid: b"test"
             })

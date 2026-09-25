@@ -9,11 +9,11 @@ use crate::datapath::rx::{
     frontier::{ReceiveFrontier, RxFrontierDelay, RxFrontierDirective, RxFrontierError},
 };
 
-use oer_esp32s31_wifi_mac::rx::{RxDma, RxIngressConfig, extract_data};
+use oer_esp32s31_ieee80211_mac::rx::{RxDma, RxIngressConfig, extract_data};
 
-use oer_esp32s31_wifi_sta::wpa2::{Wpa2Receive, Wpa2Station, copy_station_eapol};
+use oer_esp32s31_ieee80211_sta::wpa2::{Wpa2Receive, Wpa2Station, copy_station_eapol};
 
-use oer_wifi_rsn::runner::RsnRxProgress;
+use oer_ieee80211_rsn::runner::RsnRxProgress;
 
 /// Retained RX owner bound to its stable DMA allocation for WPA2.
 pub struct Wpa2Rx<

@@ -20,18 +20,18 @@ publish = false
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["esp32s31", "unstable"] }
-oer-esp32s31-wifi-runtime = { path = "../../../../../crates/runtime/esp32s31/ieee80211" }
-oer-esp32s31-radio-platform-esp-hal = { path = "../../../../../crates/adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
+oer-esp32s31-ieee80211-runtime = { path = "../../../../../crates/runtime/esp32s31/ieee80211" }
+oer-esp32s31-radio-esp-hal = { path = "../../../../../crates/adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
 oer-memory = { path = "../../../../../crates/memory" }
 oer-esp32s31-hal = { path = "../../../../../crates/hardware/esp32s31/hal", features = ["validation-probes"] }
 oer-esp32s31-bluetooth = { path = "../../../../../crates/hardware/esp32s31/driver/bluetooth", features = ["validation-probes"] }
 oer-esp32s31-coex = { path = "../../../../../crates/hardware/esp32s31/driver/coex" }
 oer-esp32s31-pac = { path = "../../../../../crates/hardware/esp32s31/pac", features = ["validation-probes"] }
 oer-esp32s31-phy = { path = "../../../../../crates/hardware/esp32s31/phy" }
-oer-esp32s31-wifi-mac = { path = "../../../../../crates/hardware/esp32s31/driver/ieee80211/mac", features = ["validation-probes", "validation-raw-dma"] }
-oer-esp32s31-wifi = { path = "../../../../../crates/hardware/esp32s31/driver/ieee80211" }
-oer-esp32s31-wifi-dma = { path = "../../../../../crates/hardware/esp32s31/driver/ieee80211/dma" }
-oer-wifi-softmac = { path = "../../../../../crates/protocols/ieee80211/softmac" }
+oer-esp32s31-ieee80211-mac = { path = "../../../../../crates/hardware/esp32s31/driver/ieee80211/mac", features = ["validation-probes", "validation-raw-dma"] }
+oer-esp32s31-ieee80211 = { path = "../../../../../crates/hardware/esp32s31/driver/ieee80211" }
+oer-esp32s31-ieee80211-dma = { path = "../../../../../crates/hardware/esp32s31/driver/ieee80211/dma" }
+oer-ieee80211-softmac = { path = "../../../../../crates/protocols/ieee80211/softmac" }
 
 [profile.release]
 codegen-units = 1

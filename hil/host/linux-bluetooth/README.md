@@ -296,7 +296,7 @@ with the ordinary sealed HIL run. No helper reinstall is required for this path.
 Linux HCI fixture and adapter lease as peripheral recovery. Reinstall the helper
 with `cargo hil fixture install --provider linux-bluetooth --adapter hci0` after
 updating its schema. Its finite `connect-reset --encrypted` mode starts AES-CCM
-with the public test LTK/Rand/EDIV from `open-esp-radio-hil-protocol`, requires
+with the public test LTK/Rand/EDIV from `oer-hil-protocol`, requires
 successful Command Status followed by Encryption Change for the exact handle,
 and only then sends application data. No arbitrary keys or HCI commands are
 accepted by the launcher interface.

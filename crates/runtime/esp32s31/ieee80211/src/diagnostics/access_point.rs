@@ -2,7 +2,7 @@
 
 use crate::roles::access_point::AccessPointControlObservation;
 
-use oer_esp32s31_wifi_ap::{engine::ApEngineObservation, transaction::ApMacObservation};
+use oer_esp32s31_ieee80211_ap::{engine::ApEngineObservation, transaction::ApMacObservation};
 
 /// Value-only AP protocol evidence emitted at the terminal owner edge.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

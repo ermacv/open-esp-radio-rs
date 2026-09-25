@@ -18,7 +18,7 @@ use crate::{
     tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxProgress, WifiTxTimer},
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     rate::{
         low::{MacLowRateGateProbe, MacLowRateTransitionError},
         schedule::{RateScheduleKind, RateScheduleRef},
@@ -30,11 +30,11 @@ use oer_esp32s31_wifi_mac::{
     },
 };
 
-use oer_ieee80211::{channel::WifiChannel, qos::WmmAccessCategory};
+use oer_ieee80211_mac::{channel::WifiChannel, qos::WmmAccessCategory};
 
-use oer_wifi_softmac::EspressifLongRangeRate;
+use oer_ieee80211_softmac::EspressifLongRangeRate;
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     EspNowEncryptedPeerId, EspNowHtGuardInterval, EspNowHtMcs, EspNowLmk, EspNowOfdmRate,
     EspNowPhyMode, EspNowPreparedEncryptedV1Tx, EspNowPreparedV1Tx, EspNowPreparedV2Tx,
     MacRxEvidence, MacRxMetadata, MacTxPlan, interface::BoundVirtualInterface,
@@ -639,8 +639,8 @@ pub enum EspNowTxError {
         required: usize,
         available: usize,
     },
-    Wire(oer_ieee80211::extensions::espressif::esp_now::EspNowV1WireError),
-    V2Wire(oer_ieee80211::extensions::espressif::esp_now::EspNowV2WireError),
+    Wire(oer_ieee80211_mac::extensions::espressif::esp_now::EspNowV1WireError),
+    V2Wire(oer_ieee80211_mac::extensions::espressif::esp_now::EspNowV2WireError),
     Tx(OrdinaryTxError),
 }
 

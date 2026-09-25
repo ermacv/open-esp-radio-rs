@@ -36,19 +36,21 @@ use crate::{
 
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::TryReceiveError};
 
-use oer_esp32s31_wifi_dma::descriptor::{BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT};
+use oer_esp32s31_ieee80211_dma::descriptor::{BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT};
 
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     PUBLIC_HEADER_SIZE, RxDmaBinding, RxDmaWalkerStopped, RxIngressConfig, RxRingStopped,
 };
 
-use oer_esp32s31_wifi_sta::connected_rx::{
+use oer_esp32s31_ieee80211_sta::connected_rx::{
     ConnectedRxConfig, ConnectedRxEvent, ConnectedRxSink, StaCcmpRxReplayEpoch,
 };
 
-use oer_ieee80211::{data::EthernetFrameParts, security::WifiSecurityMode, vif::StaApRxAddresses};
+use oer_ieee80211_mac::{
+    data::EthernetFrameParts, security::WifiSecurityMode, vif::StaApRxAddresses,
+};
 
-use oer_network::RxEnqueueError;
+use oer_network_interface::RxEnqueueError;
 
 use std::boxed::Box;
 
@@ -291,15 +293,15 @@ impl DatapathNetworkRxSet for PairedNetworkRx {
 
     fn get_mut(
         &mut self,
-        _interface: oer_network::NetworkInterfaceId,
+        _interface: oer_network_interface::NetworkInterfaceId,
     ) -> Option<&mut dyn DatapathNetworkRx> {
         None
     }
 
     fn pair_mut(
         &mut self,
-        _first: oer_network::NetworkInterfaceId,
-        _second: oer_network::NetworkInterfaceId,
+        _first: oer_network_interface::NetworkInterfaceId,
+        _second: oer_network_interface::NetworkInterfaceId,
     ) -> Option<(&mut dyn DatapathNetworkRx, &mut dyn DatapathNetworkRx)> {
         None
     }
@@ -720,8 +722,8 @@ impl RxDma for MockRxDma {
         }
     }
 
-    fn next_descriptor(&mut self) -> oer_esp32s31_wifi_dma::rx_dma::RxDmaNextDescriptor {
-        oer_esp32s31_wifi_dma::rx_dma::RxDmaNextDescriptor::validation(
+    fn next_descriptor(&mut self) -> oer_esp32s31_ieee80211_dma::rx_dma::RxDmaNextDescriptor {
+        oer_esp32s31_ieee80211_dma::rx_dma::RxDmaNextDescriptor::validation(
             self.next_descriptor_low(),
             false,
         )
@@ -729,14 +731,14 @@ impl RxDma for MockRxDma {
     fn with_ordered_cursor<R>(
         &mut self,
         observed: impl for<'confirmation> FnOnce(
-            oer_esp32s31_wifi_mac::rx::RxDmaCursorObservation<'confirmation>,
+            oer_esp32s31_ieee80211_mac::rx::RxDmaCursorObservation<'confirmation>,
         ) -> R,
     ) -> R {
         let last = self.last_descriptor_low();
         self.fence();
         let next = self.next_descriptor_low();
         self.fence();
-        observed(oer_esp32s31_wifi_mac::rx::RxDmaCursorObservation::validation(last, next))
+        observed(oer_esp32s31_ieee80211_mac::rx::RxDmaCursorObservation::validation(last, next))
     }
     fn walker_enabled(&mut self) -> bool {
         self.walker
@@ -747,11 +749,11 @@ impl RxDma for MockRxDma {
     fn try_with_reload_settled<R>(
         &mut self,
         settled: impl for<'confirmation> FnOnce(
-            oer_esp32s31_wifi_mac::rx::RxDmaReloadSettled<'confirmation>,
+            oer_esp32s31_ieee80211_mac::rx::RxDmaReloadSettled<'confirmation>,
         ) -> R,
     ) -> Option<R> {
         (!self.reload_pending())
-            .then(|| settled(oer_esp32s31_wifi_mac::rx::RxDmaReloadSettled::validation()))
+            .then(|| settled(oer_esp32s31_ieee80211_mac::rx::RxDmaReloadSettled::validation()))
     }
     fn configure_descriptor_window(&mut self, _: &RxDmaBinding) {}
     fn write_descriptor_base(&mut self, _: &RxDmaBinding, address: u32) {
@@ -769,7 +771,7 @@ impl RxDma for MockRxDma {
         &mut self,
         _: &RxDmaBinding,
         enabled: impl for<'confirmation> FnOnce(
-            oer_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled<'confirmation>,
+            oer_esp32s31_ieee80211_mac::rx::RxDmaWalkerEnabled<'confirmation>,
         ) -> R,
     ) -> Option<R> {
         if self.fail_enable {
@@ -777,7 +779,7 @@ impl RxDma for MockRxDma {
         }
         self.walker = true;
         Some(enabled(
-            oer_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled::validation(),
+            oer_esp32s31_ieee80211_mac::rx::RxDmaWalkerEnabled::validation(),
         ))
     }
     fn try_with_walker_stopped<R>(
@@ -1739,7 +1741,7 @@ fn exercise_negotiated_rx_block_ack(in_order: bool) {
         &reorder_sender,
         RxReorderCommand::Start(RxBlockAckSnapshot {
             hardware_index: 0,
-            interface: oer_esp32s31_wifi_mac::MacInterface::Station,
+            interface: oer_esp32s31_ieee80211_mac::MacInterface::Station,
             peer: [8, 9, 10, 11, 12, 13],
             tid: 0,
             starting_sequence: 100,

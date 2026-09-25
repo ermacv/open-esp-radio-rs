@@ -1,5 +1,5 @@
 [package]
-name = "oer-ieee80211"
+name = "oer-ieee80211-mac"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

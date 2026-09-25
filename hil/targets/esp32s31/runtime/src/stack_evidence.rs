@@ -1,6 +1,6 @@
 //! Each hart scans its own inactive IRQ stack and publishes a typed result.
 
-use open_esp_radio_hil_protocol::StackWatermark;
+use oer_hil_protocol::StackWatermark;
 
 pub(crate) fn current_irq_snapshot() -> Option<StackWatermark> {
     #[cfg(feature = "psram-task-stack")]

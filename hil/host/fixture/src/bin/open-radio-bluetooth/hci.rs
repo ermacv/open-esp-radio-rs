@@ -7,7 +7,7 @@ use bt_hci::{
     cmd::SyncCmd,
     event::{CommandCompleteWithStatus, Event},
 };
-use open_esp_radio_hil_fixture::linux_socket::HciAddress;
+use oer_hil_fixture::linux_socket::HciAddress;
 use rustix::{
     event::{PollFd, PollFlags, Timespec, poll},
     io::Errno,
@@ -358,13 +358,13 @@ mod tests {
             super::super::model::Adapter(0),
             peer,
             0,
-            open_esp_radio_hil_protocol::BluetoothPeripheralTermination::PeerReset,
+            oer_hil_protocol::BluetoothPeripheralTermination::PeerReset,
         );
         let outcome = super::super::connection_reset::run(
             &Socket(client.into()),
             peer,
             0,
-            open_esp_radio_hil_protocol::BluetoothPeripheralTermination::PeerReset,
+            oer_hil_protocol::BluetoothPeripheralTermination::PeerReset,
             &mut report,
         )
         .unwrap();
@@ -385,7 +385,7 @@ mod tests {
         assert!(report.acl_sent && report.acl_echo_received);
         assert_eq!(
             report.acl_payload_bytes,
-            Some(open_esp_radio_hil_protocol::BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES as u16)
+            Some(oer_hil_protocol::BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES as u16)
         );
         assert_eq!(report.acl_echo_hci_packets, Some(10));
         assert!(report.acl_echo_after_micros.is_some());

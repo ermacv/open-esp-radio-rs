@@ -1,8 +1,8 @@
 //! Exercise the target's actual conditioning and validation on host memory.
 
-use open_esp_radio_hil_target_core::memory_benchmark as data;
+use oer_hil_target_core::memory_benchmark as data;
 
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     MemoryBenchmarkMode, MemoryBenchmarkRequest, MemoryBenchmarkSource, MemoryBenchmarkStop,
 };
 

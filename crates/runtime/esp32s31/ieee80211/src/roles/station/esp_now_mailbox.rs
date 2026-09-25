@@ -16,20 +16,20 @@ use embassy_sync::{
     channel::{Channel, Receiver, Sender, TrySendError},
 };
 
-use oer_esp32s31_wifi_mac::rx::RxPhyInfo;
+use oer_esp32s31_ieee80211_mac::rx::RxPhyInfo;
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     connected_rx::{ConnectedRxEvent, ConnectedRxSink},
     standalone_esp_now_rx::{
         StandaloneEspNowRxEvent, StandaloneEspNowRxSink, StandaloneEspNowV2RxEvent,
     },
 };
 
-use oer_ieee80211::extensions::espressif::esp_now::{
+use oer_ieee80211_mac::extensions::espressif::esp_now::{
     ESP_NOW_V2_MAX_PAYLOAD_LEN, EspNowDestination, EspNowRandomValue, EspNowUnicastAddress,
 };
 
-use oer_wifi_softmac::{EspNowOwnedReceivedV1, EspNowPeerId, EspNowReceivedV2, MacRxMetadata};
+use oer_ieee80211_softmac::{EspNowOwnedReceivedV1, EspNowPeerId, EspNowReceivedV2, MacRxMetadata};
 
 /// Owned datagram delivered after strict protocol admission and duplicate
 /// suppression. `epoch` lets an application reject a handle retained beyond
@@ -201,7 +201,7 @@ impl<M: RawMutex, const CAPACITY: usize> EspNowRxPublisher<'_, M, CAPACITY> {
 
     pub fn try_publish(
         &self,
-        received: oer_wifi_softmac::EspNowReceivedV1<'_>,
+        received: oer_ieee80211_softmac::EspNowReceivedV1<'_>,
         metadata: MacRxMetadata<RxPhyInfo>,
     ) -> EspNowRxPublishOutcome {
         if self.generation.load(Ordering::Acquire) != self.epoch {

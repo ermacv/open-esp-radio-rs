@@ -1,9 +1,9 @@
 //! Bounded AP beacon storage and executor-time TSF publication.
 
 #[cfg(test)]
-use oer_ieee80211::beacon::dtim;
+use oer_ieee80211_mac::beacon::dtim;
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     beacon::{
         ApBeaconBuildError, TimPartialVirtualBitmap, WPA2_BEACON_CAPACITY, stamp,
         write_tim_partial_virtual_bitmap, write_wpa2_ht_beacon,

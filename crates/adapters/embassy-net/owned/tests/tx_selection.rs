@@ -1,5 +1,5 @@
-use oer_embassy_net::{NetworkInterfaceId, NoopRawMutex, OwnedEndpointResources};
-use oer_wifi_datapath::DestinationTxQueues;
+use oer_embassy_net_owned::{NetworkInterfaceId, NoopRawMutex, OwnedEndpointResources};
+use oer_ieee80211_datapath::DestinationTxQueues;
 use std::{
     sync::{
         Arc,

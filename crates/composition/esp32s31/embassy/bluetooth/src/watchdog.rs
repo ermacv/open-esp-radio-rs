@@ -1,5 +1,5 @@
 //! Explicit board budgets and binding to the non-radio deadline service.
-use oer_esp32s31_soc::watchdog::{DeadlineBudget, DeadlineLease, DeadlineWatchdog};
+use oer_esp32s31_soc_esp_hal::watchdog::{DeadlineBudget, DeadlineLease, DeadlineWatchdog};
 
 /// Board-selected engineering limits; no qualified defaults are supplied.
 /// The shared service must be reserved for this composition's serialized PHY
@@ -39,7 +39,7 @@ impl WatchdogConfig {
         // Never feed it or grant another radio operation in that epoch.
         match self.watchdog.arm(budget) {
             Ok(lease) => lease,
-            Err(_) => oer_esp32s31_soc::reset_system(),
+            Err(_) => oer_esp32s31_soc_esp_hal::reset_system(),
         }
     }
     pub(crate) fn startup(self) -> DeadlineLease<'static> {
@@ -53,14 +53,14 @@ impl WatchdogConfig {
             .unwrap_or(u64::from(self.maintenance.as_micros()))
             .min(u64::from(self.maintenance.as_micros())) as u32;
         let Some(micros) = core::num::NonZeroU32::new(micros) else {
-            oer_esp32s31_soc::reset_system()
+            oer_esp32s31_soc_esp_hal::reset_system()
         };
         self.begin(DeadlineBudget::from_micros(micros))
     }
     #[inline(never)]
     pub(crate) fn complete(lease: DeadlineLease<'_>) {
         if lease.complete().is_err() {
-            oer_esp32s31_soc::reset_system();
+            oer_esp32s31_soc_esp_hal::reset_system();
         }
     }
 }

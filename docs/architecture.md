@@ -69,6 +69,23 @@ An adapter can implement a runtime interface, while a runtime can consume
 an adapter's executor-neutral contract. Cargo still rejects actual dependency
 cycles. Neither layer can depend on the final composition.
 
+## Package names
+
+Every package is named `oer-` followed by lowercase tokens in this order: an
+optional chip (`esp32s31`), the domain (`ieee80211`, `bluetooth`, `ieee802154`,
+`coex`, `radio`, `memory`, `network`, `hil`, `example`, …), an optional
+component (`mac`, `sta`, `rsn`, `runtime`, `system`, …) and, for adapters, the
+binding (`embassy`, `esp-hal`, `embassy-net-upstream`, `xarxa-upstream`). The
+directory repeats the same tokens under its layer directory; grouping
+directories such as `driver/`, `security/`, `le/` or the binding directory of
+an adapter add structure without renaming. Wi-Fi is `ieee80211` in package and
+directory names alike; the facade module `oer::wifi` and `Wifi*` types keep the
+user-facing name. Compositions end in `-system`. The public facade
+`open-esp-radio` (library `oer`) is the only branded name. The architecture
+check enforces the prefix. The Blobray workspace names its own packages, and
+the packages outside it whose names Blobray consumes are renamed together with
+Blobray; the check lists them explicitly.
+
 ## From policy to an application
 
 The production path is deliberately directional:
@@ -135,7 +152,7 @@ and final Embassy compositions independently. Exporting a composition does not
 claim hardware qualification; component capability limits still apply.
 
 Internal radio packages use the `oer-` prefix and identify their domain and,
-where required, chip: `oer-memory`, `oer-wifi-sta`, `oer-esp32s31-hal`.
+where required, chip: `oer-memory`, `oer-ieee80211-sta`, `oer-esp32s31-hal`.
 Rust imports use those dependency names; internal crates do not route imports
 through `oer`. Module paths carry context so types can use names such as
 `sta::association::{PhyMode, Preference}`. State names retain ownership and

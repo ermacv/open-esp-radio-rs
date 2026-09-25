@@ -7,7 +7,7 @@
 
 use oer_esp32s31_hal::types::MacInterface;
 
-use oer_esp32s31_wifi::{
+use oer_esp32s31_ieee80211::{
     ampdu_tx::{AmpduTxRoleAdapter, HtAmpduPublicationInputs, ht_ampdu_publication_config},
     ordinary_tx::{
         OrdinaryTxError, OrdinaryTxInterface, OrdinaryTxOutcome, OrdinaryTxOwner, OrdinaryTxPlan,
@@ -17,7 +17,7 @@ use oer_esp32s31_wifi::{
     tx::{WifiTxProgress, WifiTxWake},
 };
 
-use oer_esp32s31_wifi_mac::tx::{
+use oer_esp32s31_ieee80211_mac::tx::{
     HtAmpduTxConfig, HtChannelWidth, HtDuplicateCertificationRequest, HtDuplicateRate,
     HtDuplicateTxLinkCapabilities, HtDuplicateTxSelection, HtGuardInterval, HtMcs, HtRate,
     LegacyRate, LegacyTxQueue, TxHardware, TxPhyRate,
@@ -26,12 +26,12 @@ use oer_esp32s31_wifi_mac::tx::{
     select_esp32s31_ht_duplicate_tx,
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     channel::{WifiChannel, WifiChannelWidth},
     ht::HtPeerCapabilities,
 };
 
-use oer_wifi_softmac::{MacTxPlan, MacTxQueueState};
+use oer_ieee80211_softmac::{MacTxPlan, MacTxQueueState};
 
 /// Runtime-independent publication policy for the initial AP implementation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -130,7 +130,7 @@ where
     T: WifiTxTimer,
 {
     /// Submitted ordinary work, read before another exchange starts.
-    pub fn work(&self) -> oer_wifi_softmac::MacTxWork {
+    pub fn work(&self) -> oer_ieee80211_softmac::MacTxWork {
         self.ordinary.work()
     }
 

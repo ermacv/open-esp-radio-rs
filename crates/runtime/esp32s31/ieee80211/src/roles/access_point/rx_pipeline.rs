@@ -7,12 +7,12 @@ use core::future::Future;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     PUBLIC_HEADER_SIZE, RxDescriptorSnapshot, RxDma, RxRingHalted, RxRingLive, RxSegment,
     pool::{RxStagePool, RxStageTransactionError},
 };
 
-use oer_ieee80211::security::WifiSecurityMode;
+use oer_ieee80211_mac::security::WifiSecurityMode;
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::rx_pipeline::RxPipelineObserver;

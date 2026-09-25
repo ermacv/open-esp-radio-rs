@@ -7,7 +7,7 @@
 
 use core::{future::Future, marker::PhantomData};
 
-use oer_wifi_sta::scan::{
+use oer_ieee80211_sta::scan::{
     StaCandidateScanBackend, StaScanChannelContext, StaScanSelectionOutcome, StaScanStepOutcome,
 };
 

@@ -2,7 +2,7 @@
 
 use std::{path::Path, process::Command};
 
-use open_esp_radio_hil_fixture_install::{INSTALLER_BINARY, Provider, build_plan, prepare};
+use oer_hil_fixture_install::{INSTALLER_BINARY, Provider, build_plan, prepare};
 
 use crate::Result;
 
@@ -43,9 +43,9 @@ pub(crate) fn run(
             "build",
             "--locked",
             "-p",
-            "open-esp-radio-hil-fixture-install",
+            "oer-hil-fixture-install",
             "-p",
-            "open-esp-radio-hil-fixture",
+            "oer-hil-fixture",
         ]);
         for binary in provider_binaries {
             build.args(["--bin", binary]);

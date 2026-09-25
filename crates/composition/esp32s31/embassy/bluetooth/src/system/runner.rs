@@ -111,7 +111,7 @@ pub struct BluetoothHardwareRunner<
 > {
     command: Option<ControllerCommandTask<'static, PublishedStorage, SCHEDULER_CAPACITY>>,
     watchdog: &'static crate::WatchdogConfig,
-    restoration_protection: Option<oer_esp32s31_soc::watchdog::DeadlineLease<'static>>,
+    restoration_protection: Option<oer_esp32s31_soc_esp_hal::watchdog::DeadlineLease<'static>>,
     controller: LeControllerCommandEndpoint<
         'static,
         CriticalSectionRawMutex,

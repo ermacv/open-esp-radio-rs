@@ -70,7 +70,7 @@ use esp_hal::{
     interrupt::software::SoftwareInterrupt,
     timer::{OneShotTimer, timg::TimerGroup},
 };
-use oer_esp32s31_embassy_runtime::Executor;
+use oer_esp32s31_executor_embassy::Executor;
 use static_cell::StaticCell;
 
 #[cfg(feature = "bluetooth-hil")]
@@ -193,7 +193,7 @@ static APP_EXECUTOR: StaticCell<Executor<1>> = StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
 static TRNG_SOURCE: StaticCell<esp_hal::rng::TrngSource<'static>> = StaticCell::new();
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-static L1_CACHE_PERFORMANCE: StaticCell<oer_esp32s31_soc::L1CachePerformanceCounters> =
+static L1_CACHE_PERFORMANCE: StaticCell<oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters> =
     StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
 static APP_SEND_SPAWNER: StaticCell<SendSpawner> = StaticCell::new();
@@ -333,12 +333,12 @@ extern "C" fn runtime_main() -> ! {
     let _psram = unsafe { oer_esp32s31_runtime::adopt_psram(peripherals.PSRAM) };
     exception::install_stack_guard(ptr::addr_of!(_stack_end) as usize);
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
-    let l1_cache = L1_CACHE_PERFORMANCE.init(oer_esp32s31_soc::L1CachePerformanceCounters::new(
-        peripherals.CACHE,
-    ));
+    let l1_cache = L1_CACHE_PERFORMANCE.init(
+        oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters::new(peripherals.CACHE),
+    );
 
     let timer_group = TimerGroup::new(peripherals.TIMG0);
-    oer_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
+    oer_esp32s31_executor_embassy::init(OneShotTimer::new(timer_group.timer0));
     #[cfg(any(
         feature = "bluetooth-radio",
         all(feature = "open-radio-hil", not(feature = "memory-benchmark"))
@@ -395,7 +395,7 @@ extern "C" fn runtime_main() -> ! {
     #[cfg(feature = "bluetooth-gatt")]
     bluetooth_gatt::start(
         executor,
-        oer_esp32s31_radio_platform_esp_hal::EspHalRadioPlatform::new(
+        oer_esp32s31_radio_esp_hal::EspHalRadioPlatform::new(
             peripherals.MODEM_SYSCON,
             peripherals.MODEM_LPCON,
             peripherals.HP_SYS_CLKRST,
@@ -413,7 +413,7 @@ extern "C" fn runtime_main() -> ! {
     #[cfg(feature = "bluetooth-hil")]
     bluetooth::start(
         executor,
-        oer_esp32s31_radio_platform_esp_hal::EspHalRadioPlatform::new(
+        oer_esp32s31_radio_esp_hal::EspHalRadioPlatform::new(
             peripherals.MODEM_SYSCON,
             peripherals.MODEM_LPCON,
             peripherals.HP_SYS_CLKRST,
@@ -467,7 +467,7 @@ extern "C" fn runtime_main() -> ! {
         let boot_id = (u64::from(trng.random()) << 32) | u64::from(trng.random());
         console::init_protocol(boot_id);
         #[cfg(not(feature = "memory-benchmark"))]
-        let radio = oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral::new(
+        let radio = oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral::new(
             peripherals.WIFI,
             peripherals.MODEM_SYSCON,
             peripherals.MODEM_LPCON,
@@ -571,10 +571,10 @@ async fn boot_smoke(mut console: boot_smoke_console::BootSmokeConsole) {
 async fn open_radio_hil_task(
     spawner: embassy_executor::Spawner,
     protocol_spawner: SendSpawner,
-    radio: oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral,
+    radio: oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral,
     trng: esp_hal::rng::Trng,
-    l1_cache: &'static oer_esp32s31_soc::L1CachePerformanceCounters,
-    watchdog: &'static oer_esp32s31_soc::watchdog::DeadlineWatchdog,
+    l1_cache: &'static oer_esp32s31_soc_esp_hal::L1CachePerformanceCounters,
+    watchdog: &'static oer_esp32s31_soc_esp_hal::watchdog::DeadlineWatchdog,
     #[cfg(feature = "gdma-mem2mem-probe")] gdma_channel: esp_hal::peripherals::DMA_AXI_CH0<'static>,
 ) {
     #[cfg(feature = "gdma-mem2mem-probe")]
@@ -700,9 +700,9 @@ fn paint_app_core_stack() {
 }
 
 #[cfg(feature = "open-radio-hil")]
-pub(crate) async fn stack_usage_snapshot() -> open_esp_radio_hil_protocol::StackUsage {
+pub(crate) async fn stack_usage_snapshot() -> oer_hil_protocol::StackUsage {
     let (cpu1, cpu1_irq) = stack_evidence::cpu1_snapshot().await;
-    open_esp_radio_hil_protocol::StackUsage {
+    oer_hil_protocol::StackUsage {
         cpu0: cpu0_stack_usage_snapshot(),
         cpu1,
         cpu0_irq: stack_evidence::current_irq_snapshot(),
@@ -711,7 +711,7 @@ pub(crate) async fn stack_usage_snapshot() -> open_esp_radio_hil_protocol::Stack
 }
 
 #[cfg(feature = "open-radio-hil")]
-pub(crate) fn cpu1_stack_usage_snapshot() -> open_esp_radio_hil_protocol::StackWatermark {
+pub(crate) fn cpu1_stack_usage_snapshot() -> oer_hil_protocol::StackWatermark {
     #[cfg(feature = "psram-task-stack")]
     let bottom = psram_task_stack::cpu1_task_stack_bottom();
     #[cfg(not(feature = "psram-task-stack"))]
@@ -726,7 +726,7 @@ pub(crate) fn cpu1_stack_usage_snapshot() -> open_esp_radio_hil_protocol::StackW
 }
 
 #[cfg(any(feature = "open-radio-hil", feature = "bluetooth-radio"))]
-pub(crate) fn cpu0_stack_usage_snapshot() -> open_esp_radio_hil_protocol::StackWatermark {
+pub(crate) fn cpu0_stack_usage_snapshot() -> oer_hil_protocol::StackWatermark {
     let cpu0_bottom = symbol(ptr::addr_of!(_stack_end));
     let cpu0_top = symbol(ptr::addr_of!(_stack_start));
     let cpu0_paint_start = cpu0_bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES;
@@ -748,7 +748,7 @@ fn measure_stack(
     paint_end: u32,
     top: u32,
     minimum_free_bytes: u32,
-) -> open_esp_radio_hil_protocol::StackWatermark {
+) -> oer_hil_protocol::StackWatermark {
     if bottom >= paint_start || paint_start >= paint_end || paint_end > top {
         fail(c"OPEN_RADIO_HIL runtime=FAIL reason=stack-paint-layout\r\n");
     }
@@ -762,7 +762,7 @@ fn measure_stack(
         }
         address += 4;
     }
-    open_esp_radio_hil_protocol::StackWatermark {
+    oer_hil_protocol::StackWatermark {
         capacity_bytes: top - bottom,
         free_bytes: lowest_used - paint_start,
         used_bytes: (top - bottom) - (lowest_used - paint_start),

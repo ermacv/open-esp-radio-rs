@@ -1,7 +1,7 @@
 use super::*;
 use crate::TxQueues;
 use core::num::NonZeroU16;
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     MacTxWork,
     tx_cost::{PpduTiming, TxCost, TxProtection, TxResponse},
 };

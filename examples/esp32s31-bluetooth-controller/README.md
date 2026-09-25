@@ -105,12 +105,13 @@ measurements or assigned product identity. `trouble-gatt` and
 `advertising-smoke` are mutually exclusive because each consumes the sole Host
 side of the HCI transport.
 
-`src/gatt.rs` is the actual application used by both this binary and the
-separate `bluetooth-gatt` HIL image. Its observer receives values only and never
-owns HCI or supplies ATT replies. The library-only `gatt-application` feature
-excludes standalone `firmware` dependencies, linker setup and panic/logging
-handlers; HIL supplies its own board entry. Host tests exercise the actual attribute
-table and fixed advertising payload. Run `cargo hil run bluetooth-trouble-gatt`
+The application is the separate portable
+[GATT application library](../bluetooth-gatt/README.md), used by
+both this binary and the `bluetooth-gatt` HIL image; neither depends on the
+other. Its observer receives values only and never owns HCI or supplies ATT
+replies. This example's `gatt-application` feature only selects that library;
+HIL supplies its own board entry. The library's host tests exercise the actual
+attribute table and fixed advertising payload. Run `cargo hil run bluetooth-trouble-gatt`
 from the repository root to exercise Linux ATT discovery, read/write and three
 graceful disconnect/reconnect cycles without reconstructing the Controller.
 The value survives these connections. HIL records task/IRQ stack headroom and
@@ -128,9 +129,9 @@ not make this plaintext attribute table protected.
 
 ## Authenticated GATT profile
 
-`trouble-secure-gatt` composes `security::gatt::run`, an exclusively owned USB
-console and the same Host/Controller runners. The library-only
-`secure-gatt-application` feature exposes that application without board entry.
+`trouble-secure-gatt` composes the library's `security::gatt::run`, an
+exclusively owned USB console and the same Host/Controller runners. The
+`secure-gatt-application` feature selects the library's `secure` feature.
 It requires LE Secure Connections Numeric Comparison with `DisplayYesNo`;
 Just Works, passkey entry, OOB and legacy pairing are not fallbacks. The pinned
 Host rejects SC peers offering keys shorter than 128 bits.

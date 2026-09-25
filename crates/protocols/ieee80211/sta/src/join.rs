@@ -1,6 +1,6 @@
 //! Executor-independent infrastructure-STA Authentication and Association.
 //!
-//! Wire parsing and response values live in `oer-ieee80211`. This
+//! Wire parsing and response values live in `oer-ieee80211-mac`. This
 //! module owns Authentication/Association state, retry policy and the ordering
 //! and absolute deadlines of finite hardware transactions, receiving time
 //! through an explicit port.
@@ -10,8 +10,8 @@
 
 use core::future::Future;
 
-use oer_ieee80211::security::WifiSecurityMode;
-use oer_ieee80211::station::{AssociationResponse, StaSequenceCounter};
+use oer_ieee80211_mac::security::WifiSecurityMode;
+use oer_ieee80211_mac::station::{AssociationResponse, StaSequenceCounter};
 
 use self::association::{
     StaAssociationAttempt, StaAssociationEvent, StaAssociationFailure, StaAssociationRuntime,

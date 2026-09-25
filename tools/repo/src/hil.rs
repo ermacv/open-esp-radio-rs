@@ -1,6 +1,6 @@
 //! Build and launch the HIL observer with a receipt from Cargo's actual artifacts.
 use crate::{Context, Result};
-use open_esp_radio_hil_schema::{artifacts, compile::compile};
+use oer_hil_schema::{artifacts, compile::compile};
 use sha2::{Digest, Sha256};
 use std::{ffi::OsString, fs, process::Command};
 

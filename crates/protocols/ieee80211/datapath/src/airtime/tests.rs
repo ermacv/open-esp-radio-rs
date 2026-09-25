@@ -133,7 +133,7 @@ fn idle_peer_does_not_bank_credit_or_erase_retry_debt() {
 #[test]
 fn late_completion_cannot_debit_a_new_association() {
     use crate::{RadioEgressKey, RadioPeer, TrafficIdentifier};
-    use oer_network::NetworkInterfaceId;
+    use oer_network_interface::NetworkInterfaceId;
     let key = |generation| {
         RadioEgressKey::new(
             NetworkInterfaceId::new(1),

@@ -23,9 +23,9 @@ use oer_esp32s31_hal::owner::RadioRuntimeOwner;
 
 use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
 
-use oer_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
+use oer_esp32s31_ieee80211::cooperative_hardware::CooperativeRadioHardware;
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     crypto::CcmpKeyHardware,
     he::He20PeerHardware,
     init::{MacRuntimeStopHardware, StaLinkRxPolicyHardware, StaNoiseFloorHardware},
@@ -34,7 +34,7 @@ use oer_esp32s31_wifi_mac::{
     tx::TxHardware,
 };
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     attempt::{
         StaAttemptConnected, StaAttemptPort, StaAttemptReport, StaAttemptSecurity,
         StaAttemptSecurityExecution, StaAttemptStateError, StaAttemptStation, StaAttemptStepError,
@@ -54,17 +54,17 @@ use oer_esp32s31_wifi_sta::{
     },
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     security::WifiSecurityMode,
     station::{AssociationResponse, StaSecurityError, select_wpa2_psk_rsn},
 };
 
-use oer_wifi_sta::{
+use oer_ieee80211_sta::{
     join::{StaJoinError, StaJoinRunner},
     station::StaFailureDisposition,
 };
 
-use oer_wifi_rsn::{
+use oer_ieee80211_rsn::{
     aes::{RsnSoftwareAes, SoftwareAesKeyUnwrapError},
     runner::{
         RsnEstablished, RsnHandshakeConfig, RsnHandshakeError, RsnHandshakeRunner,

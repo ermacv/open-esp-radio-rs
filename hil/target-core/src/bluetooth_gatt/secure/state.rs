@@ -1,11 +1,11 @@
 //! Single-executor evidence and UI routing, compiled unchanged by host tests.
-use bluetooth_example::security::{
+use core::cell::Cell;
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, signal::Signal};
+use gatt_application::security::{
     comparison::{Challenge, NumericComparison},
     gatt::Observation,
 };
-use core::cell::Cell;
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, signal::Signal};
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     BluetoothGattShutdown, BluetoothNumericChallenge, BluetoothSecureGattEvidence, Command, Event,
     RejectReason,
 };
@@ -47,10 +47,10 @@ impl State {
     }
     pub fn application_failure<C, S>(
         &self,
-        failure: &bluetooth_example::security::gatt::RunError<C, S>,
+        failure: &gatt_application::security::gatt::RunError<C, S>,
     ) {
-        use bluetooth_example::security::gatt::RunError;
-        use open_esp_radio_hil_protocol::BluetoothGattApplicationFailure as F;
+        use gatt_application::security::gatt::RunError;
+        use oer_hil_protocol::BluetoothGattApplicationFailure as F;
         use trouble_host::{BleHostError, Error};
         let failure = match failure {
             RunError::Host(BleHostError::Controller(_)) => F::Controller,
@@ -147,7 +147,7 @@ impl State {
                     && !self.evidence.get().bond_load_fault_armed
                     && !matches!(
                         self.reset_gate.phase(),
-                        open_esp_radio_hil_protocol::BluetoothGattResetReadGate::Armed
+                        oer_hil_protocol::BluetoothGattResetReadGate::Armed
                     )
                     && self.evidence.get().bond_load_failures == 0 =>
             {

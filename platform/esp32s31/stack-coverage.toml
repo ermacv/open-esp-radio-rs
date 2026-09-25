@@ -25,7 +25,7 @@ source = "platform/esp32s31/runtime/src/entry.rs"
 reason = "Assembly boot and fallback stack initialization run before normal tasks; no compiler frame is claimed."
 
 [[reviewed]]
-symbols = ["_runtime_enter_cpu1_psram", "esp_hal::soc::implementation::cpu_control::start_core1_init::<open_esp_radio_hil_esp32s31_runtime::runtime_main::{closure#0}>"]
+symbols = ["_runtime_enter_cpu1_psram", "esp_hal::soc::implementation::cpu_control::start_core1_init::<oer_hil_esp32s31_runtime::runtime_main::{closure#0}>"]
 category = "assembly"
 source = "platform/esp32s31/runtime/src/stacks.rs; esp-hal@890fd49 esp-hal/src/soc/esp32s31/cpu_control.rs start_core1_init #[naked]"
 reason = "Reviewed secondary-core stack/PMA boot entries use assembly, then jump to separately compiled Rust. The full concrete Rust symbol is matched ignoring only v0 crate disambiguators; start_core1_init_impl is not exempt."

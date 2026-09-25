@@ -1,5 +1,5 @@
 use super::*;
-use oer_esp32s31_wifi::tx::WifiTxPowerPair;
+use oer_esp32s31_ieee80211::tx::WifiTxPowerPair;
 
 const HE20_MCS9_CAPABILITY: [u8; 24] = [
     255, 22, 35, 0x03, 0x18, 0x9c, 0xca, 0x10, 0x80, 0x00, 0x10, 0x8a, 0x1b, 0x0d, 0xc0, 0x1f,

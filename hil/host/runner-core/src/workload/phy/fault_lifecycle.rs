@@ -1,6 +1,6 @@
 //! Real PHY owner checkpoints, independently terminated by the SoC service.
 use crate::{Result, context::Context, session::SerialCapture};
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     PhyFaultCommand as Control, PhyFaultMode as Mode, PhyFaultPhase as Phase, ResetReason,
 };
 use std::{
@@ -23,7 +23,7 @@ pub trait Scenario {
         &self,
         capture: &SerialCapture,
         mode: Mode,
-    ) -> Result<open_esp_radio_hil_protocol::PhyFaultEvidence>;
+    ) -> Result<oer_hil_protocol::PhyFaultEvidence>;
 }
 
 pub fn run<S: Scenario>(output: &Path, context: &Context<'_>, scenario: S) -> Result<()> {
@@ -80,10 +80,7 @@ pub fn run<S: Scenario>(output: &Path, context: &Context<'_>, scenario: S) -> Re
     Ok(())
 }
 
-fn wait_phase(
-    capture: &SerialCapture,
-    phase: Phase,
-) -> Result<open_esp_radio_hil_protocol::PhyFaultEvidence> {
+fn wait_phase(capture: &SerialCapture, phase: Phase) -> Result<oer_hil_protocol::PhyFaultEvidence> {
     let started = Instant::now();
     loop {
         let observed = capture.phy_fault(Control::Status)?;

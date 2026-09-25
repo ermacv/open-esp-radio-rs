@@ -41,7 +41,7 @@ impl ApTxFlowKey {
             destination: identity.address(),
             association_epoch: identity.association_epoch(),
             association_id: association_id as u8,
-            tid: oer_esp32s31_wifi_ap::protocol::AP_TX_BLOCK_ACK_TID,
+            tid: oer_esp32s31_ieee80211_ap::protocol::AP_TX_BLOCK_ACK_TID,
         }
     }
 
@@ -59,7 +59,7 @@ impl ApTxFlowKey {
             destination,
             association_epoch: 0,
             association_id: 0,
-            tid: oer_esp32s31_wifi_ap::protocol::AP_TX_BLOCK_ACK_TID,
+            tid: oer_esp32s31_ieee80211_ap::protocol::AP_TX_BLOCK_ACK_TID,
         }
     }
 

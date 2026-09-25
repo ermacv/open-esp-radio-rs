@@ -7,9 +7,9 @@ use core::{fmt, marker::PhantomData};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_wifi_embassy::await_stack_boundary;
+use oer_ieee80211_runtime::await_stack_boundary;
 
-use oer_wifi_sta::station::{
+use oer_ieee80211_sta::station::{
     StaAttemptFailure, StaLifecycleExit, StaLifecycleProgress, StaLifecycleService,
     StaReconnectPolicy,
 };

@@ -4,7 +4,7 @@
 //! closes data admission, drives each Null through terminal TX, and separately
 //! owns local MAC/DMA quiescence. Even failed PM=1 needs PM=0 recovery: a lost
 //! ACK does not prove that the AP did not accept the advertisement.
-use oer_ieee80211::station_power_save::StaPowerManagement;
+use oer_ieee80211_mac::station_power_save::StaPowerManagement;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Action {

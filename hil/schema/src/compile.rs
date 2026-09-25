@@ -50,9 +50,9 @@ pub fn compile(root: &Path) -> Result<Compilation> {
             profile,
             "--locked",
             "-p",
-            "open-esp-radio-hil-runner",
+            "oer-hil-runner",
             "--bin",
-            "open-esp-radio-hil-runner",
+            "oer-hil-runner",
             "--message-format=json-render-diagnostics",
         ])
         .stdin(Stdio::null())
@@ -68,7 +68,7 @@ pub fn compile(root: &Path) -> Result<Compilation> {
         let message: Value = serde_json::from_str(line)?;
         if message["reason"] == "compiler-artifact" || message["reason"] == "build-script-executed"
         {
-            if message["target"]["name"] == "open-esp-radio-hil-runner" {
+            if message["target"]["name"] == "oer-hil-runner" {
                 executable = message["executable"].as_str().map(PathBuf::from);
             }
             artifacts.push(message);

@@ -1,11 +1,11 @@
 #[inline(never)]
 pub(super) fn phy_timing_evidence(
     report: &oer_esp32s31_phy::tracking::observation::Report,
-) -> open_esp_radio_hil_protocol::PhyTimingEvidence {
+) -> oer_hil_protocol::PhyTimingEvidence {
     use oer_esp32s31_phy::tracking::observation::Operation;
     let timing = |operation| {
         let value = report.timing(operation);
-        open_esp_radio_hil_protocol::PhyOperationTiming {
+        oer_hil_protocol::PhyOperationTiming {
             started: value.started,
             completed: value.completed,
             failed: value.failed,
@@ -15,7 +15,7 @@ pub(super) fn phy_timing_evidence(
     };
     let polls = |operation| {
         let value = report.poll_timing(operation).unwrap_or_default();
-        open_esp_radio_hil_protocol::PhyPollTiming {
+        oer_hil_protocol::PhyPollTiming {
             pending: value.pending,
             suspended_micros: value.suspended_micros,
             maximum_suspension_micros: value.maximum_suspension_micros,
@@ -24,9 +24,9 @@ pub(super) fn phy_timing_evidence(
             maximum_micros: value.maximum_micros,
         }
     };
-    open_esp_radio_hil_protocol::PhyTimingEvidence {
+    oer_hil_protocol::PhyTimingEvidence {
         tracking: timing(Operation::Tracking),
-        dcode_waits: open_esp_radio_hil_protocol::PhyDcodeWaitEvidence {
+        dcode_waits: oer_hil_protocol::PhyDcodeWaitEvidence {
             i2c: bus_wait_evidence(report.dcode_waits.i2c),
             rfpll_i2c: bus_wait_evidence(report.dcode_waits.rfpll_i2c),
             rfpll_settle: wait_timing_evidence(report.dcode_waits.rfpll_settle),
@@ -57,11 +57,11 @@ pub(super) fn phy_timing_evidence(
 #[inline(never)]
 fn rx_gain_evidence(
     report: &oer_esp32s31_phy::tracking::observation::Report,
-) -> open_esp_radio_hil_protocol::PhyRxGainEvidence {
+) -> oer_hil_protocol::PhyRxGainEvidence {
     use oer_esp32s31_phy::tracking::observation::Operation;
     let timing = |operation| {
         let value = report.timing(operation);
-        open_esp_radio_hil_protocol::PhyOperationTiming {
+        oer_hil_protocol::PhyOperationTiming {
             started: value.started,
             completed: value.completed,
             failed: value.failed,
@@ -69,9 +69,9 @@ fn rx_gain_evidence(
             maximum_micros: value.maximum_micros,
         }
     };
-    open_esp_radio_hil_protocol::PhyRxGainEvidence {
+    oer_hil_protocol::PhyRxGainEvidence {
         execution: report.rx_gain_execution.map(|execution| {
-            open_esp_radio_hil_protocol::PhyRxGainExecutionEvidence {
+            oer_hil_protocol::PhyRxGainExecutionEvidence {
                 quality: execution.quality.map(crate::phy_evidence::rx_quality),
                 minimum_searches: execution.minimum_searches,
                 minimum_operations: execution.minimum_operations,
@@ -89,8 +89,8 @@ fn rx_gain_evidence(
 
 fn wait_timing_evidence(
     value: oer_esp32s31_phy::executor::wait::Timing,
-) -> open_esp_radio_hil_protocol::PhyWaitTiming {
-    open_esp_radio_hil_protocol::PhyWaitTiming {
+) -> oer_hil_protocol::PhyWaitTiming {
+    oer_hil_protocol::PhyWaitTiming {
         count: value.count,
         requested_micros: value.requested_micros,
         elapsed_micros: value.elapsed_micros,
@@ -100,8 +100,8 @@ fn wait_timing_evidence(
 
 fn bus_wait_evidence(
     value: oer_esp32s31_phy::executor::wait::Bus,
-) -> open_esp_radio_hil_protocol::PhyBusWaitEvidence {
-    open_esp_radio_hil_protocol::PhyBusWaitEvidence {
+) -> oer_hil_protocol::PhyBusWaitEvidence {
+    oer_hil_protocol::PhyBusWaitEvidence {
         bus_busy: value.bus_busy,
         timing: wait_timing_evidence(value.timing),
     }
@@ -109,8 +109,8 @@ fn bus_wait_evidence(
 
 pub(super) fn tx_wait_evidence(
     report: oer_esp32s31_phy::executor::wait::tx::Report,
-) -> open_esp_radio_hil_protocol::PhyTxWaitEvidence {
-    open_esp_radio_hil_protocol::PhyTxWaitEvidence {
+) -> oer_hil_protocol::PhyTxWaitEvidence {
+    oer_hil_protocol::PhyTxWaitEvidence {
         pbus: bus_wait_evidence(report.pbus),
         search: wait_timing_evidence(report.search),
         tone: wait_timing_evidence(report.tone),
@@ -123,16 +123,16 @@ pub(super) fn tx_wait_evidence(
 
 #[cfg(feature = "driver-observation")]
 pub(super) fn timer_evidence(
-    report: oer_esp32s31_embassy_runtime::timer_observation::Report,
-) -> open_esp_radio_hil_protocol::TimerWindowEvidence {
-    let timing = |value: oer_esp32s31_embassy_runtime::timer_observation::Timing| {
-        open_esp_radio_hil_protocol::TimerPhaseTiming {
+    report: oer_esp32s31_executor_embassy::timer_observation::Report,
+) -> oer_hil_protocol::TimerWindowEvidence {
+    let timing = |value: oer_esp32s31_executor_embassy::timer_observation::Timing| {
+        oer_hil_protocol::TimerPhaseTiming {
             count: value.count,
             total_micros: value.total_micros,
             maximum_micros: value.maximum_micros,
         }
     };
-    open_esp_radio_hil_protocol::TimerWindowEvidence {
+    oer_hil_protocol::TimerWindowEvidence {
         elapsed_micros: report.elapsed_micros,
         invalid: report.invalid,
         registrations: report.registrations,
@@ -162,12 +162,12 @@ pub(super) fn timer_evidence(
 /// The timer defines the measured workload interval, not a readiness guess.
 pub(super) async fn run_service_window() -> Result<
     (
-        oer_esp32s31_embassy_wifi::PauseReport,
-        open_esp_radio_hil_protocol::StationTrackingServiceEvidence,
+        oer_esp32s31_ieee80211_system::PauseReport,
+        oer_hil_protocol::StationTrackingServiceEvidence,
     ),
-    oer_esp32s31_embassy_wifi::PauseError,
+    oer_esp32s31_ieee80211_system::PauseError,
 > {
-    use oer_esp32s31_embassy_wifi as wifi;
+    use oer_esp32s31_ieee80211_system as wifi;
     struct Disable;
     impl Drop for Disable {
         fn drop(&mut self) {
@@ -179,15 +179,13 @@ pub(super) async fn run_service_window() -> Result<
         core::num::NonZeroU64::new(1_000_000).unwrap(),
     )))?;
     let disable = Disable;
-    embassy_time::Timer::after_micros(
-        open_esp_radio_hil_protocol::STATION_TRACKING_SERVICE_WINDOW_MICROS,
-    )
-    .await;
+    embassy_time::Timer::after_micros(oer_hil_protocol::STATION_TRACKING_SERVICE_WINDOW_MICROS)
+        .await;
     drop(disable);
     // Serialized explicit access waits behind any operation already admitted.
     let mut pause = wifi::station_pause_round_trip(wifi::PauseOperation::Access).await?;
     let report = wifi::station_tracking_report();
-    let evidence = open_esp_radio_hil_protocol::StationTrackingServiceEvidence {
+    let evidence = oer_hil_protocol::StationTrackingServiceEvidence {
         operations: report.operations,
         deferred: report.deferred,
         common_calibrated: report.common_calibrated,
@@ -207,8 +205,8 @@ pub(super) async fn run_service_window() -> Result<
 
 pub(super) fn rfpll_evidence(
     value: oer_esp32s31_phy::tracking::rfpll::Observation,
-) -> open_esp_radio_hil_protocol::RfpllEvidence {
-    open_esp_radio_hil_protocol::RfpllEvidence {
+) -> oer_hil_protocol::RfpllEvidence {
+    oer_hil_protocol::RfpllEvidence {
         temperature: value.request.current_temperature,
         sample_age_micros: value.sample_age_micros,
         reference_before: value.request.reference_temperature,
@@ -216,7 +214,7 @@ pub(super) fn rfpll_evidence(
         threshold: value.request.threshold(),
         channel: value.request.current_channel,
         correction: value.outcome.correction.map(|correction| {
-            open_esp_radio_hil_protocol::RfpllCorrectionEvidence {
+            oer_hil_protocol::RfpllCorrectionEvidence {
                 initial_cap: correction.search.initial_cap,
                 selected_cap: correction.search.selected_cap,
                 accepted_samples: correction.search.accepted_samples,
@@ -232,13 +230,13 @@ pub(super) fn rfpll_evidence(
 /// Keep maintenance reports and their serialization outside the role-task poll frame.
 pub(super) async fn run_station_pause(
     request_id: u32,
-    operation: open_esp_radio_hil_protocol::StationPauseOperation,
+    operation: oer_hil_protocol::StationPauseOperation,
 ) {
-    use oer_esp32s31_embassy_wifi::{PauseError, PauseOperation};
-    use oer_wifi_embassy::await_stack_boundary;
-    use open_esp_radio_hil_protocol::{StationPauseEvidence, StationPauseResult};
+    use oer_esp32s31_ieee80211_system::{PauseError, PauseOperation};
+    use oer_hil_protocol::{StationPauseEvidence, StationPauseResult};
+    use oer_ieee80211_runtime::await_stack_boundary;
     #[cfg(feature = "driver-observation")]
-    let timer_window = oer_esp32s31_embassy_runtime::timer_observation::Window::begin();
+    let timer_window = oer_esp32s31_executor_embassy::timer_observation::Window::begin();
     #[cfg(feature = "driver-observation")]
     {
         super::rx_qualification::MAINTENANCE_PHASE.store(1, core::sync::atomic::Ordering::Relaxed);
@@ -253,8 +251,7 @@ pub(super) async fn run_station_pause(
     let mut rfpll = None;
     let mut temperature = None;
     let mut service = None;
-    let result = if operation == open_esp_radio_hil_protocol::StationPauseOperation::TrackingService
-    {
+    let result = if operation == oer_hil_protocol::StationPauseOperation::TrackingService {
         match await_stack_boundary!(self::run_service_window()) {
             Ok((report, observed)) => {
                 service = Some(observed);
@@ -264,7 +261,7 @@ pub(super) async fn run_station_pause(
         }
     } else {
         use oer_esp32s31_phy::tracking::maintenance::Operation as PhyOperation;
-        use open_esp_radio_hil_protocol::StationPauseOperation as Wire;
+        use oer_hil_protocol::StationPauseOperation as Wire;
         let operation = match operation {
             Wire::Access => PauseOperation::Access,
             Wire::Synthetic {
@@ -282,18 +279,16 @@ pub(super) async fn run_station_pause(
             Wire::CommonCalibration => PauseOperation::CommonCalibration,
             Wire::TxCalibration => PauseOperation::TxCalibration,
             Wire::Rfpll => PauseOperation::Rfpll {
-                maximum_age_micros:
-                    open_esp_radio_hil_protocol::STATION_RFPLL_SAMPLE_MAX_AGE_MICROS,
+                maximum_age_micros: oer_hil_protocol::STATION_RFPLL_SAMPLE_MAX_AGE_MICROS,
             },
             Wire::RfpllCheck => PauseOperation::Operation(PhyOperation::Rfpll),
             Wire::RfpllObserved => PauseOperation::ObservedOperation {
                 operation: PhyOperation::Rfpll,
-                maximum_age_micros:
-                    open_esp_radio_hil_protocol::STATION_RFPLL_SAMPLE_MAX_AGE_MICROS,
+                maximum_age_micros: oer_hil_protocol::STATION_RFPLL_SAMPLE_MAX_AGE_MICROS,
             },
             Wire::TrackingService => unreachable!(),
         };
-        await_stack_boundary!(oer_esp32s31_embassy_wifi::station_pause_round_trip(
+        await_stack_boundary!(oer_esp32s31_ieee80211_system::station_pause_round_trip(
             operation
         ))
     };
@@ -319,14 +314,15 @@ pub(super) async fn run_station_pause(
             temperature = report
                 .timings()
                 .and_then(|value| value.temperature)
-                .map(|value| open_esp_radio_hil_protocol::TemperatureEvidence {
+                .map(|value| oer_hil_protocol::TemperatureEvidence {
                     temperature: value.temperature,
                     sensor_index: value.sensor_index,
                     next_dac: value.next_dac,
                 });
             StationPauseEvidence {
-                timeline: report.timeline().map(|value| {
-                    open_esp_radio_hil_protocol::StationPauseTimeline {
+                timeline: report
+                    .timeline()
+                    .map(|value| oer_hil_protocol::StationPauseTimeline {
                         requested: value.requested,
                         drained: value.drained,
                         quiesced: value.quiesced,
@@ -335,11 +331,10 @@ pub(super) async fn run_station_pause(
                         hardware_restored: value.hardware_restored,
                         protocol_restored: value.protocol_restored,
                         worker_released: value.worker_released,
-                    }
-                }),
+                    }),
                 timings: report.timings().map(phy_timing_evidence),
                 tracking: report.tracking.map(|outcome| {
-                    open_esp_radio_hil_protocol::StationPhyTrackingEvidence {
+                    oer_hil_protocol::StationPhyTrackingEvidence {
                         inhibited: outcome.tracking_inhibited,
                         common_calibrated: outcome.calibration.common,
                         wifi_calibrated: outcome.calibration.wifi,
@@ -385,7 +380,7 @@ pub(super) async fn run_station_pause(
         crate::console::publish_event_reliably(
             0,
             request_id,
-            open_esp_radio_hil_protocol::Event::StationPhyRxGain(detail),
+            oer_hil_protocol::Event::StationPhyRxGain(detail),
         )
         .await;
     }

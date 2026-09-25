@@ -1,7 +1,7 @@
 //! Peripheral link and idle-maintenance obligations for PHY fault tests.
 use super::*;
 use hil_core::workload::phy::fault_lifecycle::{self, Scenario};
-use open_esp_radio_hil_protocol::{PhyFaultCommand, PhyFaultEvidence, PhyFaultMode};
+use oer_hil_protocol::{PhyFaultCommand, PhyFaultEvidence, PhyFaultMode};
 
 pub fn run(output: &Path, context: &Context<'_>) -> Result<()> {
     fault_lifecycle::run(output, context, Peripheral)
@@ -54,12 +54,10 @@ impl Scenario for Peripheral {
         capture.phy_fault(PhyFaultCommand::Arm(mode))
     }
 }
-fn require_calibrated(
-    result: open_esp_radio_hil_protocol::BluetoothPeripheralResult,
-) -> Result<()> {
+fn require_calibrated(result: oer_hil_protocol::BluetoothPeripheralResult) -> Result<()> {
     if matches!(
         result,
-        open_esp_radio_hil_protocol::BluetoothPeripheralResult::Maintained {
+        oer_hil_protocol::BluetoothPeripheralResult::Maintained {
             common_calibrated: true,
             bluetooth_calibrated: true,
             ..
@@ -78,7 +76,7 @@ mod tests {
     fn normal_control_requires_both_calibrations() {
         for common_calibrated in [false, true] {
             for bluetooth_calibrated in [false, true] {
-                let result = open_esp_radio_hil_protocol::BluetoothPeripheralResult::Maintained {
+                let result = oer_hil_protocol::BluetoothPeripheralResult::Maintained {
                     cycles: 1,
                     due_tracking_completed: true,
                     tracking_inhibited: false,

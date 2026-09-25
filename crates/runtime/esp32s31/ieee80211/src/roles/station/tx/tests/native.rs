@@ -12,7 +12,7 @@ use oer_network_engine::{
     ResolvedIpv4Route,
 };
 
-use oer_wifi_datapath::{
+use oer_ieee80211_datapath::{
     AdmissionClass, EgressSelection, FillStopReason, PhysicalTxSource, RadioEgressKey, RadioPeer,
     SelectedTxSource, TrafficIdentifier, TxRequest, TxRequestSource,
 };
@@ -81,10 +81,10 @@ impl<S: PhysicalTxSource> TxRequestSource for NativeSource<S> {
     }
 
     #[cfg(feature = "tx-phase-telemetry")]
-    fn ownership_snapshot(&self) -> oer_wifi_datapath::MaterializationOwnershipSnapshot {
+    fn ownership_snapshot(&self) -> oer_ieee80211_datapath::MaterializationOwnershipSnapshot {
         // This fixture is used only by the aggregate test, which retains all
         // taken frames until terminal completion, after the source is dropped.
-        oer_wifi_datapath::MaterializationOwnershipSnapshot {
+        oer_ieee80211_datapath::MaterializationOwnershipSnapshot {
             free: self.remaining.get(),
             radio_owned: TEST_QUEUE_DEPTH - self.remaining.get(),
         }

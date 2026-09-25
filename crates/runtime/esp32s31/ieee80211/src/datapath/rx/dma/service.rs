@@ -55,13 +55,13 @@ where
         &'a mut self,
         hardware: &'a mut H,
     ) -> impl Future<Output = Result<DatapathRxProgress, Self::Error>> + 'a {
-        ready(oer_esp32s31_wifi::rx::transaction::service(
+        ready(oer_esp32s31_ieee80211::rx::transaction::service(
             &mut self.ring,
             self.storage,
             self.pool,
             &self.frames,
             &self.admission,
-            oer_esp32s31_wifi::rx::transaction::Counters {
+            oer_esp32s31_ieee80211::rx::transaction::Counters {
                 descriptors: &mut self.serviced_descriptors,
                 units: &mut self.serviced_units,
                 bytes: &mut self.serviced_bytes,

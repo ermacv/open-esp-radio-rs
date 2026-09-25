@@ -26,7 +26,7 @@ fn fixture() -> tempfile::TempDir {
         r#"#!/bin/sh
 printf '%s\n' "$@" > "$FIXTURE_ROOT/cargo-args"
 printf '%s' "${CARGO_NET_OFFLINE-unset}" > "$FIXTURE_ROOT/offline"
-printf '{"reason":"compiler-artifact","target":{"name":"open-esp-radio-hil-runner"},"executable":"%s/runner"}\n' "$FIXTURE_ROOT"
+printf '{"reason":"compiler-artifact","target":{"name":"oer-hil-runner"},"executable":"%s/runner"}\n' "$FIXTURE_ROOT"
 "#,
     );
     executable(

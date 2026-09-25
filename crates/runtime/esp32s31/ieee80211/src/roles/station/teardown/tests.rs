@@ -1,6 +1,6 @@
 use oer_esp32s31_hal::types::MacKeyInstallOutcome;
 
-use oer_esp32s31_wifi_mac::crypto::{install_sta_group_ccmp, install_sta_pairwise_ccmp};
+use oer_esp32s31_ieee80211_mac::crypto::{install_sta_group_ccmp, install_sta_pairwise_ccmp};
 
 use super::*;
 
@@ -52,7 +52,7 @@ impl ConnectedStaRxPark<Hardware> for Rx {
 
 struct Tx {
     active: bool,
-    key: Option<oer_esp32s31_wifi_mac::crypto::StaPairwiseCcmpSlot>,
+    key: Option<oer_esp32s31_ieee80211_mac::crypto::StaPairwiseCcmpSlot>,
 }
 
 impl ConnectedStaTxTeardown for Tx {

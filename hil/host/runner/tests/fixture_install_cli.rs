@@ -15,7 +15,7 @@ fn dry_run(arguments: &[&str]) -> std::process::Output {
     let _sudo = trap(directory.path(), "sudo");
     let invalid_lab = directory.path().join("private-lab.toml");
     fs::write(&invalid_lab, "this is not TOML = [").unwrap();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_open-esp-radio-hil-runner"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_oer-hil-runner"));
     command
         .args(["--lab-config", invalid_lab.to_str().unwrap(), "fixture"])
         .args(arguments)

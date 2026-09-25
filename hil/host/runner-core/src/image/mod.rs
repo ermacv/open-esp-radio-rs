@@ -10,8 +10,8 @@ use std::{
 };
 
 use crate::Result;
+use oer_hil_protocol::FeatureCapabilities;
 use oer_process::CommandExt as _;
-use open_esp_radio_hil_protocol::FeatureCapabilities;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -27,7 +27,7 @@ pub use class::ImageClass;
 pub use reproducibility::verify_rebuild;
 
 pub const TARGET: &str = "riscv32imafc-unknown-none-elf";
-const RUNTIME_BIN: &str = "open-esp-radio-hil-esp32s31-runtime";
+const RUNTIME_BIN: &str = "oer-hil-esp32s31-runtime";
 use oer_firmware::{BOOTSTRAP_BIN, audit_application_image, pack_runtime};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -495,7 +495,7 @@ fn build_resolved(
 
     let runtime_features = class.build_features(network);
     let stack_policy_path = root.join("hil/targets/esp32s31/stack.toml");
-    let stack_budget = open_esp_radio_memory_report::StackBudget::load(&stack_policy_path)?;
+    let stack_budget = oer_memory_report::StackBudget::load(&stack_policy_path)?;
     let mut runtime = cargo_command();
     runtime
         .current_dir(root)
@@ -531,10 +531,10 @@ fn build_resolved(
     let stack_report_path = output.join("runtime-stack.txt");
     fs::write(
         &stack_report_path,
-        open_esp_radio_memory_report::render_stack_report(&stack_report),
+        oer_memory_report::render_stack_report(&stack_report),
     )?;
     eprintln!("stack_report={}", stack_report_path.display());
-    open_esp_radio_memory_report::audit_stack(&stack_report)?;
+    oer_memory_report::audit_stack(&stack_report)?;
 
     let mut objcopy = Command::new(program_from_env("LLVM_OBJCOPY", "llvm-objcopy"));
     objcopy
@@ -571,13 +571,13 @@ fn build_resolved(
     let bootstrap_stack_report_path = output.join("bootstrap-stack.txt");
     fs::write(
         &bootstrap_stack_report_path,
-        open_esp_radio_memory_report::render_stack_report(&bootstrap_stack_report),
+        oer_memory_report::render_stack_report(&bootstrap_stack_report),
     )?;
     eprintln!(
         "bootstrap_stack_report={}",
         bootstrap_stack_report_path.display()
     );
-    open_esp_radio_memory_report::audit_stack(&bootstrap_stack_report)?;
+    oer_memory_report::audit_stack(&bootstrap_stack_report)?;
 
     let mut save_image = Command::new(program_from_env("ESPFLASH", "espflash"));
     oer_firmware::save_image_command(&mut save_image, root, &bootstrap_elf, &application_image);

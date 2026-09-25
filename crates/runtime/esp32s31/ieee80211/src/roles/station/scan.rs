@@ -16,14 +16,14 @@ use crate::roles::scan::{
 
 use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError, RegisteredWifiPhy};
 
-use oer_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     init::{MacRuntimeStopHardware, MacSnifferHardware},
     tx::TxHardware,
 };
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     attempt::{StaAttemptSecurity, StaIdentity},
     control_tx::{ControlTransmitter, ControlTxError},
     hardware::channel::ScanPhy,
@@ -31,13 +31,13 @@ use oer_esp32s31_wifi_sta::{
     scan_tx::{RunningScanTx, ScanTxSummary},
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     scan::{ScanRecord, ScanTable},
     security::WifiSecurityMode,
     station::StaSequenceCounter,
 };
 
-use oer_wifi_sta::{
+use oer_ieee80211_sta::{
     request::{StationDiscovery, WifiSsid},
     scan::{StaCandidateScanExit, StaCandidateScanService, StaScanPlanError, StaScanProgress},
     station::{StaAttemptFailure, StaAttemptOutcome, StaFailureDisposition, StaLifecycleStage},

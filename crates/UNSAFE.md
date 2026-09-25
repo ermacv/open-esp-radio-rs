@@ -43,7 +43,7 @@ generated capability catalog in `src/generated.rs`. The
 Rust outputs from ownership modules and raw sidecars. Non-radio register
 access through upstream `esp-hal`/`esp-pacs` belongs to
 `adapters/esp-hal/esp32s31/soc/`, which also contains cache/MMU and GDMA
-transactions. Its Cargo package is `oer-esp32s31-soc`; its implementation
+transactions. Its Cargo package is `oer-esp32s31-soc-esp-hal`; its implementation
 is handwritten code.
 
 The executable policy permits scoped unsafe exceptions in these handwritten
@@ -58,10 +58,10 @@ packages. Prefixes below omit `oer-` only to keep the mapping readable.
 | `esp32s31-soc` | `adapters/esp-hal/esp32s31/soc/` |
 | `esp32s31-phy` | `hardware/esp32s31/phy/` |
 | `esp32s31-ieee802154-dma` | `hardware/esp32s31/driver/ieee802154/dma/` |
-| `esp32s31-ieee802154-runtime` | `hardware/esp32s31/driver/ieee802154/runtime/` |
+| `esp32s31-ieee802154` | `hardware/esp32s31/driver/ieee802154/` |
 | `esp32s31-wifi-dma` | `hardware/esp32s31/driver/ieee80211/dma/` |
 | `esp32s31-radio-platform-esp-hal` | `adapters/esp-hal/esp32s31/radio/` |
-| `esp32s31-embassy-runtime` | `adapters/embassy/esp32s31/runtime/` |
+| `esp32s31-executor-embassy` | `adapters/embassy/esp32s31/executor/` |
 | `esp32s31-bluetooth-integration` | `composition/esp32s31/embassy/bluetooth/` |
 | `esp32s31-embassy-wifi` | `composition/esp32s31/embassy/ieee80211/` |
 
@@ -75,7 +75,7 @@ smallest operation; a safe state machine in an audited crate remains safe.
 Direct dependencies on the semantic radio PAC are restricted independently
 of unsafe syntax. The current allowed paths are `pac/raw`, `pac` and `hal`
 under `hardware/esp32s31/`; `bluetooth`, `ieee802154/irq` and
-`ieee802154/runtime` under `hardware/esp32s31/driver/`; and
+`ieee802154` under `hardware/esp32s31/driver/`; and
 `adapters/esp-hal/esp32s31/{soc,ieee802154}/`.
 In particular, the IEEE 802.15.4 IRQ crate's dependency permission does not
 permit unsafe code. Check the executable lists when changing these boundaries.

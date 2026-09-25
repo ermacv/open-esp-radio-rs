@@ -53,7 +53,7 @@ pub(crate) fn run() -> Result<()> {
                 },
         } => {
             let _software = hil_core::fixture::software::SoftwareLease::acquire_one(
-                open_esp_radio_hil_fixture_install::Provider::LinuxBluetooth,
+                oer_hil_fixture_install::Provider::LinuxBluetooth,
             )?;
             hil_bluetooth::fixture::bluetooth::check(&root, adapter, dtm_version)
         }
@@ -66,7 +66,7 @@ pub(crate) fn run() -> Result<()> {
                 },
         } => {
             let _software = hil_core::fixture::software::SoftwareLease::acquire_one(
-                open_esp_radio_hil_fixture_install::Provider::LinuxBluetooth,
+                oer_hil_fixture_install::Provider::LinuxBluetooth,
             )?;
             hil_bluetooth::fixture::bluetooth::connect_reset(&root, adapter, peer, hold_ms)
         }

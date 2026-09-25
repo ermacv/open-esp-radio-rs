@@ -77,7 +77,7 @@ impl<'owner, K: Copy> AirtimeReservation<'owner, K> {
 /// It cannot use the unpublished-reservation cancellation API.
 /// ```compile_fail,E0308
 /// use core::num::NonZeroU32;
-/// use oer_wifi_datapath::airtime::{AirtimeStorage, AirtimeCandidate};
+/// use oer_ieee80211_datapath::airtime::{AirtimeStorage, AirtimeCandidate};
 /// let us = NonZeroU32::new(100).unwrap();
 /// let mut storage = AirtimeStorage::<_, 1>::new(us);
 /// let mut scheduler = storage.scheduler();
@@ -155,7 +155,7 @@ pub enum AirtimeError {
 /// A live reservation prevents replacement of its storage:
 /// ```compile_fail,E0505
 /// use core::num::NonZeroU32;
-/// use oer_wifi_datapath::airtime::{AirtimeStorage, AirtimeCandidate};
+/// use oer_ieee80211_datapath::airtime::{AirtimeStorage, AirtimeCandidate};
 /// let us = NonZeroU32::new(100).unwrap();
 /// let mut storage = AirtimeStorage::<_, 1>::new(us);
 /// let mut scheduler = storage.scheduler();

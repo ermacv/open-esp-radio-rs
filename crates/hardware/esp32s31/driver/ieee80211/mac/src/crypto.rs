@@ -11,7 +11,7 @@ use oer_esp32s31_hal::{
     types::{MacCcmpKeyIdentity, MacKeyInstallOutcome},
 };
 
-use oer_ieee80211::ccmp::ccmp_header;
+use oer_ieee80211_mac::ccmp::ccmp_header;
 
 use subtle::ConstantTimeEq;
 

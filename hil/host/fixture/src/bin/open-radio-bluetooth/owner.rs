@@ -9,7 +9,7 @@ use bt_hci::cmd::{
     controller_baseband::Reset,
     info::{ReadBdAddr, ReadLocalVersionInformation},
 };
-use open_esp_radio_hil_fixture::linux_socket::HciAddress;
+use oer_hil_fixture::linux_socket::HciAddress;
 use std::{
     fs::{self, File, OpenOptions},
     io::Write as _,
@@ -311,7 +311,7 @@ pub(super) fn connect_reset(
     adapter: Adapter,
     peer: super::model::PeerAddress,
     hold_ms: u16,
-    termination: open_esp_radio_hil_protocol::BluetoothPeripheralTermination,
+    termination: oer_hil_protocol::BluetoothPeripheralTermination,
     report: &mut super::model::ConnectionReset,
 ) -> Result<()> {
     if hold_ms > 5_000 {

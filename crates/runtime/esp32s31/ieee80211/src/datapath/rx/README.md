@@ -1,6 +1,6 @@
 # RX ownership boundary
 
-`oer_esp32s31_wifi::rx` composes finite prepared/live/halted descriptor
+`oer_esp32s31_ieee80211::rx` composes finite prepared/live/halted descriptor
 transitions, an abstract delay and the storage profile. The local `frontier`
 module reexports those contracts and supplies the Embassy timer binding.
 The lower `hardware/esp32s31/driver/ieee80211/dma` crate owns descriptor publication,

@@ -13,7 +13,7 @@ use oer_memory::{
     DmaIndexReturn, PinnedDmaTxRadioLease, ReturningStableDmaBacking, StableDmaBacking,
     TaggedStableDmaBacking,
 };
-use oer_network::NetworkInterfaceId;
+use oer_network_interface::NetworkInterfaceId;
 
 pub mod airtime;
 

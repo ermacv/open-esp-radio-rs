@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-verification-esp32s31-bluetooth-probes"
+name = "oer-verification-esp32s31-bluetooth-probes"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

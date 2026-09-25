@@ -75,12 +75,14 @@ jobs:
           key: test-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
           restore-keys: test-${{ runner.os }}-
       - run: cargo test --workspace --locked
+      # The GATT application's `secure` module is off by default; test it too.
+      - run: cargo test --locked -p oer-example-bluetooth-gatt --all-features
       # The HIL target core compiles its network modules against exactly one
       # stack, so each configuration is a separate test run.
       - name: HIL target core configurations
         run: |
           for features in secure-gatt upstream-network embassy-network owned-network; do
-            cargo test --locked -p open-esp-radio-hil-target-core --features "$features"
+            cargo test --locked -p oer-hil-target-core --features "$features"
           done
 
   # Repository policy gates: locked metadata and network dependency boundaries.
@@ -127,7 +129,7 @@ jobs:
       - run: cargo xtask check architecture
       # A compile_fail doctest proves that publishing borrowed DMA memory
       # needs `unsafe`; the API exists only on the chip target.
-      - run: cargo test --doc --locked -p oer-esp32s31-soc --features axi-gdma-mem2mem --target riscv32imafc-unknown-none-elf
+      - run: cargo test --doc --locked -p oer-esp32s31-soc-esp-hal --features axi-gdma-mem2mem --target riscv32imafc-unknown-none-elf
 
   # Network profiles that no other job compiles: the HIL runtime with each
   # network stack, and the Wi-Fi composition with a single network feature.

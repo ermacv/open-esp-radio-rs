@@ -2,7 +2,7 @@
 use core::convert::Infallible;
 use embedded_io_async::Read;
 use esp_hal::{Async, usb::usb_serial_jtag::UsbSerialJtag};
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     Capabilities, Command, Envelope, Event, FeatureCapabilities, FrameDecoder, FrameEncoder,
     LinkHealth, RejectReason,
 };
@@ -31,7 +31,7 @@ impl Console {
                 ..profile.features()
             },
             maximum_payload_bytes: 0,
-            maximum_wire_frame_bytes: open_esp_radio_hil_protocol::MAX_WIRE_FRAME_BYTES as u16,
+            maximum_wire_frame_bytes: oer_hil_protocol::MAX_WIRE_FRAME_BYTES as u16,
         }
     }
 
@@ -44,10 +44,7 @@ impl Console {
         let usb = &mut self.usb;
         let sequence = &mut self.sequence;
         async move {
-            if open_esp_radio_hil_protocol::write_frame(usb, bytes)
-                .await
-                .is_err()
-            {
+            if oer_hil_protocol::write_frame(usb, bytes).await.is_err() {
                 core::future::pending::<()>().await;
             }
             *sequence = sequence.checked_add(1).expect("HIL sequence exhausted");

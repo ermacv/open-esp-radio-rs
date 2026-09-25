@@ -1,5 +1,5 @@
 use super::*;
-use oer_wifi_embassy::await_stack_boundary;
+use oer_ieee80211_runtime::await_stack_boundary;
 
 enum BoundaryExit<E> {
     Boundary,
@@ -212,7 +212,7 @@ where
                             continue;
                         }
                         DatapathControlProgress::Exit(exit) => {
-                            self.set_scope_link_state(oer_network::LinkState::Down);
+                            self.set_scope_link_state(oer_network_interface::LinkState::Down);
                             return Ok(BoundaryExit::Role(exit));
                         }
                         DatapathControlProgress::Idle => {}
@@ -229,7 +229,7 @@ where
                         continue;
                     }
                     DatapathStopProgress::Stopped => {
-                        self.set_scope_link_state(oer_network::LinkState::Down);
+                        self.set_scope_link_state(oer_network_interface::LinkState::Down);
                         return Ok(BoundaryExit::Boundary);
                     }
                 }
@@ -295,7 +295,7 @@ where
                     DatapathControlProgress::Exit(exit) => {
                         self.cancel_prepared_network_tx()?;
                         self.prepared_tx_interface = None;
-                        self.set_scope_link_state(oer_network::LinkState::Down);
+                        self.set_scope_link_state(oer_network_interface::LinkState::Down);
                         return Ok(BoundaryExit::Role(exit));
                     }
                     DatapathControlProgress::Idle => {}

@@ -55,7 +55,7 @@ impl FinalImageBuild {
         let start = temporary.join(format!("{}-image-build.start", class.id()));
         fs::write(&start, b"image-build-start")?;
         let child = owned::Child::spawn_with_shutdown_grace(
-            ctx.command(ctx.root.join("target/debug/open-esp-radio-hil-runner"))
+            ctx.command(ctx.root.join("target/debug/oer-hil-runner"))
                 .env_remove("ESP_HAL_ROOT")
                 .env_remove("EMBASSY_ROOT")
                 .env_remove("OPEN_RADIO_XARXA_ROOT")
@@ -269,7 +269,7 @@ pub fn run(ctx: &Context) -> Result<()> {
                 "--locked",
                 "--offline",
                 "-p",
-                "open-esp-radio-hil-runner",
+                "oer-hil-runner",
             ]),
     )?;
     process::run(crate::blobray::cargo(ctx, "build").args([

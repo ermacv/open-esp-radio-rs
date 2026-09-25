@@ -22,28 +22,28 @@ use embassy_time::{Instant, Timer};
 
 use oer_memory::StableDmaBacking;
 
-use oer_esp32s31_wifi::{
+use oer_esp32s31_ieee80211::{
     ampdu_tx::HtAmpduTxRolePolicy,
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
     tx::{WifiTxProgress, WifiTxWake},
 };
 
-use oer_esp32s31_wifi_ap::protocol::{
+use oer_esp32s31_ieee80211_ap::protocol::{
     AP_MAX_CLIENTS, AccessPointServiceStatus, ApAssociationIdentity, ApBufferedGroupRelease,
     ApBufferedUnicastRelease, ApDownlinkDisposition, ApPeerClose, ApPeerPhase, ApPeerPowerState,
     ApPowerSaveAction, ApWpa2RetryProgress,
 };
 
 #[cfg(any(feature = "diagnostics", test))]
-use oer_esp32s31_wifi_ap::transaction::ApMacObservation;
+use oer_esp32s31_ieee80211_ap::transaction::ApMacObservation;
 #[cfg(any(feature = "diagnostics", test))]
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     rx::{HtDuplicateRxClassification, HtSignal, RxDescriptorSnapshot},
     tx::{HtChannelWidth, HtMcs, HtRate},
 };
-use oer_network::{FrameLengthError, LinkState, RxEnqueueError};
+use oer_network_interface::{FrameLengthError, LinkState, RxEnqueueError};
 
-use oer_esp32s31_wifi_ap::{
+use oer_esp32s31_ieee80211_ap::{
     ampdu::{ApAggregateAdmission, ApAmpduError, ApAmpduProgress},
     engine::{ApEngine, ApWpa2Outcome},
     rx::{
@@ -53,7 +53,7 @@ use oer_esp32s31_wifi_ap::{
     transaction::{ApMac, ApMacError, ApMacParked, ApPeerDisconnectStage, ApTxCompletionAction},
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     init::MAC_COLD_RX_INTERRUPT_MASK,
     irq::MacInterruptRoute,
@@ -69,7 +69,7 @@ use oer_esp32s31_wifi_mac::{
     tx::TxHardware,
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     ap::{
         ApManagementRequest, ApPowerSaveObservation,
         observe_ap_null_data_power_save_for_access_point, observe_ap_power_save_for_access_point,
@@ -83,11 +83,11 @@ use oer_ieee80211::{
     security::WifiSecurityMode,
 };
 
-use oer_wifi_embassy::await_stack_boundary;
+use oer_ieee80211_runtime::await_stack_boundary;
 
-use oer_wifi_softmac::MacRxEvidence;
+use oer_ieee80211_softmac::MacRxEvidence;
 
-use oer_wifi_rsn::{OwnedEapolFrame, RsnInterface};
+use oer_ieee80211_rsn::{OwnedEapolFrame, RsnInterface};
 
 #[cfg(feature = "tx-phase-telemetry")]
 use crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE;
@@ -123,7 +123,7 @@ use crate::{
     roles::concurrent::StaApRxBlockAck,
 };
 #[cfg(any(feature = "diagnostics", test))]
-use oer_esp32s31_wifi_ap::ampdu::ApAmpduCompletion;
+use oer_esp32s31_ieee80211_ap::ampdu::ApAmpduCompletion;
 
 const EAPOL_ETHERTYPE: u16 = 0x888e;
 const EAPOL_CAPACITY: usize = 512;
@@ -241,4 +241,4 @@ include!("access_point/ethernet_diagnostics.rs");
 #[cfg(test)]
 mod lifecycle_tests;
 
-use oer_esp32s31_wifi_ap::hardware::ApRuntimeHardware;
+use oer_esp32s31_ieee80211_ap::hardware::ApRuntimeHardware;

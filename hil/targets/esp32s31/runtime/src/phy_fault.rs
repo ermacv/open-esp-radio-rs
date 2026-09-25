@@ -1,12 +1,12 @@
 //! Wire adaptation only. Production PHY owns checkpoints, composition owns
 //! the deadline, and no diagnostic command can renew that deadline.
-use open_esp_radio_hil_protocol::{Event, PhyFaultCommand, RejectReason};
+use oer_hil_protocol::{Event, PhyFaultCommand, RejectReason};
 
 pub(super) fn control(command: PhyFaultCommand) -> Event {
     #[cfg(feature = "phy-fault-injection")]
     {
         use oer_esp32s31_phy::fault_injection::{self as fault, Mode, Phase};
-        use open_esp_radio_hil_protocol::{
+        use oer_hil_protocol::{
             PhyFaultEvidence, PhyFaultMode as WireMode, PhyFaultPhase as WirePhase,
         };
         let accepted = match command {

@@ -15,15 +15,15 @@ use embassy_sync::blocking_mutex::raw::{RawMutex, RawMutex as NetworkRawMutex};
 
 use oer_esp32s31_hal::owner::{ConnectedStaInterruptPrepared, MacInterruptSetup};
 
-use oer_esp32s31_wifi_mac::{init::MAC_COLD_RX_INTERRUPT_MASK, irq::MacInterruptRoute};
+use oer_esp32s31_ieee80211_mac::{init::MAC_COLD_RX_INTERRUPT_MASK, irq::MacInterruptRoute};
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     attempt::{StaAttemptSecurity, StaInstalledSecurity},
     connected_control::ConnectedDisconnectReason,
     peer::ConnectedStaPeer,
 };
 
-use oer_wifi_softmac::interface::BoundVirtualInterface;
+use oer_ieee80211_softmac::interface::BoundVirtualInterface;
 
 use super::{StationCommand, StationCommandReceiver};
 

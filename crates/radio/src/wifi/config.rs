@@ -4,7 +4,7 @@
 //! and coexistence will gain their own owner types when a concrete runner
 //! exists; placeholder switches are deliberately absent.
 
-pub use oer_wifi_softmac::{
+pub use oer_ieee80211_softmac::{
     WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError,
     WifiMonitorConfig, WifiPlan, WifiStandaloneEspNowPlan, WifiStandaloneMonitorPlan,
     WifiStationConfig,

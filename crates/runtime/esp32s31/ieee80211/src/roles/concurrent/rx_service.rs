@@ -19,12 +19,12 @@ use crate::datapath::{
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     RxDma, RxError,
     pool::{RxStageTransactionError, VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT},
 };
 
-use oer_ieee80211::vif::StaApRxRoute;
+use oer_ieee80211_mac::vif::StaApRxRoute;
 
 use super::{RoutedRxDisposition, StaApRxConsumer, StaApRxTurn};
 

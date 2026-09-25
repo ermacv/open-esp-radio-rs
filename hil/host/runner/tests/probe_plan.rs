@@ -2,7 +2,7 @@
 #[test]
 fn preview_writes_machine_json_to_stdout_without_loading_lab_configuration() {
     let directory = tempfile::tempdir().unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_open-esp-radio-hil-runner"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_oer-hil-runner"))
         .arg("--lab-config")
         .arg(directory.path().join("absent.toml"))
         .args(["fixture", "probe-plan"])
@@ -31,7 +31,7 @@ fn plan_and_catalog_commands_ignore_an_invalid_lab_configuration() {
         &["scenario", "list"][..],
         &["scenario", "validate", "boot-smoke"][..],
     ] {
-        let output = std::process::Command::new(env!("CARGO_BIN_EXE_open-esp-radio-hil-runner"))
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_oer-hil-runner"))
             .arg("--lab-config")
             .arg(&invalid_lab)
             .args(arguments)

@@ -8,7 +8,7 @@
 
 use core::{array, fmt};
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     channel::WifiChannel,
     extensions::espressif::esp_now::{
         ESP_NOW_CCMP_HEADER_LEN, ESP_NOW_CCMP_MIC_LEN, ESP_NOW_MANAGEMENT_HEADER_LEN,

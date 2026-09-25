@@ -1,17 +1,17 @@
 //! The target wrapper around real Host/HCI code, with actual queued responses.
 use super::{snapshot, state};
-use bluetooth_example::security::{
-    bonds::RamBondStore, comparison::NumericComparison, epoch, gatt::Observation,
-};
 use bt_hci::controller::ExternalController;
 use core::{
     pin::pin,
     task::{Context, Poll, Waker},
 };
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use gatt_application::security::{
+    bonds::RamBondStore, comparison::NumericComparison, epoch, gatt::Observation,
+};
 use oer_bluetooth_hci::*;
-use open_esp_radio_hil_protocol::{BluetoothGattResetReadGate as Phase, Command, Event};
-use open_esp_radio_hil_target_core::bluetooth_gatt::secure::reset_gate::GatedController;
+use oer_hil_protocol::{BluetoothGattResetReadGate as Phase, Command, Event};
+use oer_hil_target_core::bluetooth_gatt::secure::reset_gate::GatedController;
 use trouble_host::prelude::*;
 
 #[test]
@@ -190,7 +190,7 @@ fn exercise(cancel: bool, fail: bool) {
                 assert!(matches!(
                     exit.reset,
                     Err(epoch::ResetError::Receive(
-                        open_esp_radio_hil_target_core::bluetooth_gatt::secure::reset_gate::ReadError::Injected
+                        oer_hil_target_core::bluetooth_gatt::secure::reset_gate::ReadError::Injected
                     ))
                 ));
             } else {

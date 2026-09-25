@@ -73,7 +73,7 @@ fn ap_clients_do_not_hide_the_initial_station_dependency() {
         boots: 1,
         timeout_seconds: 30,
         client: AccessPointClient::Laptop,
-        security: open_esp_radio_hil_protocol::WifiAccessPointSecurity::Wpa2Personal,
+        security: oer_hil_protocol::WifiAccessPointSecurity::Wpa2Personal,
         traffic: crate::scenario::AccessPointTraffic::None,
     });
     let required = Requirements::for_scenario(&scenario);
@@ -112,11 +112,11 @@ fn bluetooth_requires_its_adapter_without_a_network() {
             active_maintenance: false,
         },
         Workload::BluetoothSecurityFailure {
-            failure: open_esp_radio_hil_protocol::BluetoothSecurityFailure::MissingKey,
+            failure: oer_hil_protocol::BluetoothSecurityFailure::MissingKey,
             read_version_before_disconnect: false,
         },
         Workload::BluetoothSecurityFailure {
-            failure: open_esp_radio_hil_protocol::BluetoothSecurityFailure::WrongKey,
+            failure: oer_hil_protocol::BluetoothSecurityFailure::WrongKey,
             read_version_before_disconnect: false,
         },
         Workload::BluetoothAclCalibration {
@@ -132,7 +132,7 @@ fn bluetooth_requires_its_adapter_without_a_network() {
             boots: 1,
             connections: 2,
             hold_millis: 100,
-            termination: open_esp_radio_hil_protocol::BluetoothPeripheralTermination::PeerReset,
+            termination: oer_hil_protocol::BluetoothPeripheralTermination::PeerReset,
             retire_after: false,
             restart_between_connections: false,
             maintain_between_connections: false,

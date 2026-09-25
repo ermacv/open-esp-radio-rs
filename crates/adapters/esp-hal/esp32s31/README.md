@@ -14,7 +14,7 @@ portable radio policy and the generated radio PAC live elsewhere.
 The radio SVD, raw accessor backend and restricted semantic capability catalog
 have their own [PAC provenance](../../../hardware/esp32s31/pac/README.md). The
 publisher belongs to host tooling. The `soc` adapter is the handwritten
-`oer-esp32s31-soc` package.
+`oer-esp32s31-soc-esp-hal` package.
 
 Executor/time ABI bindings live under `adapters/embassy`; complete radio tasks
 live under `runtime`; final static resources and board composition

@@ -1,7 +1,7 @@
 use super::*;
 use core::task::{Context, Poll, Waker};
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, signal::Signal};
-use oer_embassy_net::OwnedEndpointResources;
+use oer_embassy_net_owned::OwnedEndpointResources;
 use std::boxed::Box;
 use xarxa_driver::{PacketPool, PacketPoolStorage};
 

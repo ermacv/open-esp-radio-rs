@@ -525,8 +525,8 @@ impl Core0RxCycleCounters {
 
     pub fn snapshot(&self) -> Core0RxCycleSnapshot {
         let (protocol_protected_view_calls, protocol_protected_view_cycles) =
-            oer_esp32s31_wifi::protected_data_rx::protected_data_view_cycle_snapshot();
-        let ccmp_view = oer_esp32s31_wifi_mac::rx::ccmp_view_cycle_snapshot();
+            oer_esp32s31_ieee80211::protected_data_rx::protected_data_view_cycle_snapshot();
+        let ccmp_view = oer_esp32s31_ieee80211_mac::rx::ccmp_view_cycle_snapshot();
         Core0RxCycleSnapshot {
             services: self.services.load(Ordering::Relaxed),
             units: self.units.load(Ordering::Relaxed),
@@ -656,7 +656,7 @@ impl Core0RxCycleCounters {
     #[inline(always)]
     pub(crate) fn record_data_profile(
         &self,
-        profile: oer_esp32s31_wifi_sta::connected_rx::ConnectedRxDataCycleProfile,
+        profile: oer_esp32s31_ieee80211_sta::connected_rx::ConnectedRxDataCycleProfile,
     ) {
         let telemetry_started = cycle_count();
         self.data_calls.fetch_add(profile.calls, Ordering::Relaxed);

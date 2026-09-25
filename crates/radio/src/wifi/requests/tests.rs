@@ -2,8 +2,11 @@ use super::*;
 use crate::wifi::test_support::{
     AP_TEST_CAPABILITIES, STA_AP_TEST_CAPABILITIES, TEST_CAPABILITIES,
 };
-use oer_wifi_softmac::{WifiConfig, WifiMacAddress, WifiStationConfig};
-use {oer_ieee80211::channel::WifiChannelWidth, oer_ieee80211::station::association::Preference};
+use oer_ieee80211_softmac::{WifiConfig, WifiMacAddress, WifiStationConfig};
+use {
+    oer_ieee80211_mac::channel::WifiChannelWidth,
+    oer_ieee80211_mac::station::association::Preference,
+};
 
 fn station_request() -> StationRequest {
     StationRequest::new(

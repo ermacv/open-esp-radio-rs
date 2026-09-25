@@ -33,7 +33,7 @@ pub fn configure_qualification_receive_buffer(socket: &UdpSocket) -> io::Result<
 /// packet with no subsequent ancillary message. Read before and after collection.
 #[cfg(target_os = "linux")]
 pub fn kernel_drops(socket: &UdpSocket) -> io::Result<Option<u32>> {
-    open_esp_radio_hil_fixture::linux_socket::dropped_packets(socket).map(Some)
+    oer_hil_fixture::linux_socket::dropped_packets(socket).map(Some)
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -45,7 +45,7 @@ pub fn kernel_drops(_socket: &UdpSocket) -> io::Result<Option<u32>> {
 /// A retry deadline is failure recovery, never an assumed readiness delay.
 pub fn confirm_reverse_flow(socket: &UdpSocket, timeout: std::time::Duration) -> crate::Result<()> {
     use crate::transport::events::{EventPoll, deadline_after};
-    use open_esp_radio_hil_protocol::UdpProbe;
+    use oer_hil_protocol::UdpProbe;
     use std::{
         sync::atomic::{AtomicU64, Ordering},
         time::{Duration, Instant, SystemTime, UNIX_EPOCH},

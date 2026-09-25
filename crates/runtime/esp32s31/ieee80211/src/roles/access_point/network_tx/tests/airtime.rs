@@ -4,9 +4,9 @@ use core::num::NonZeroU32;
 
 use crate::datapath::PinnedTxFrame;
 
-use oer_esp32s31_wifi::tx::WifiTxProgress;
+use oer_esp32s31_ieee80211::tx::WifiTxProgress;
 
-use oer_wifi_softmac::MacTxWork;
+use oer_ieee80211_softmac::MacTxWork;
 
 use super::{
     super::{

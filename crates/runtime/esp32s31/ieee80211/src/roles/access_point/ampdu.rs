@@ -4,7 +4,7 @@ use crate::datapath::tx::resources::{AggregateTxArenaPair, AggregateTxResources}
 
 use oer_memory::StableDmaBacking;
 
-use oer_esp32s31_wifi_ap::ampdu::ApAmpduTx;
+use oer_esp32s31_ieee80211_ap::ampdu::ApAmpduTx;
 
 /// AP lease of the role-neutral aggregate arenas.
 ///
@@ -74,22 +74,22 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
 
     pub fn publish_standby<P, E, T, const ORDINARY_BUFFER_SIZE: usize, H>(
         &mut self,
-        ordinary: &mut oer_esp32s31_wifi_ap::tx::ApTx<'_, P, E, T, ORDINARY_BUFFER_SIZE>,
+        ordinary: &mut oer_esp32s31_ieee80211_ap::tx::ApTx<'_, P, E, T, ORDINARY_BUFFER_SIZE>,
         hardware: &mut H,
     ) -> Result<
-        oer_esp32s31_wifi_ap::ampdu::ApPreparedAmpdu,
-        oer_esp32s31_wifi_ap::ampdu::ApAmpduError,
+        oer_esp32s31_ieee80211_ap::ampdu::ApPreparedAmpdu,
+        oer_esp32s31_ieee80211_ap::ampdu::ApAmpduError,
     >
     where
-        P: oer_esp32s31_wifi::ordinary_tx::WifiTxPowerProfile,
-        E: oer_esp32s31_wifi::ordinary_tx::WifiTxEntropy,
-        T: oer_esp32s31_wifi::ordinary_tx::WifiTxTimer,
-        H: oer_esp32s31_wifi_mac::tx::ampdu::HtAmpduHardware,
+        P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
+        E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
+        T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
+        H: oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
     {
         let standby = self
             .arenas
             .standby_mut()
-            .ok_or(oer_esp32s31_wifi_ap::ampdu::ApAmpduError::Idle)?;
+            .ok_or(oer_esp32s31_ieee80211_ap::ampdu::ApAmpduError::Idle)?;
         let prepared = standby.publish(ordinary, hardware)?;
         assert!(
             self.arenas.swap_active_standby(),

@@ -10,15 +10,15 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_esp32s31_wifi_dma::tx_storage::TxDmaStorage;
+use oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorage;
 
-use oer_esp32s31_wifi_runtime::{
+use oer_esp32s31_ieee80211_runtime::{
     datapath::rx::dma::ReceiveDmaStorage, roles::station::StationControlResources,
 };
 
-use oer_esp32s31_wifi_mac::rx::PUBLIC_HEADER_SIZE;
+use oer_esp32s31_ieee80211_mac::rx::PUBLIC_HEADER_SIZE;
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     beacon::WPA2_BEACON_CAPACITY, extensions::espressif::esp_now::ESP_NOW_V2_MAX_MPDU_LEN,
     scan::ScanTable,
 };
@@ -38,9 +38,9 @@ pub const ESP32S31_DEFAULT_SCAN_RECORD_CAPACITY: usize = 32;
 
 pub const ESP32S31_DEFAULT_RX_STAGE_CAPACITY: usize = 1_700;
 
-const ESP_NOW_V2_TX_MINIMUM_CAPACITY: usize = (oer_esp32s31_wifi::ordinary_tx::TX_METADATA_SIZE
+const ESP_NOW_V2_TX_MINIMUM_CAPACITY: usize = (oer_esp32s31_ieee80211::ordinary_tx::TX_METADATA_SIZE
     + ESP_NOW_V2_MAX_MPDU_LEN
-    + oer_esp32s31_wifi::ordinary_tx::TX_FCS_SIZE
+    + oer_esp32s31_ieee80211::ordinary_tx::TX_FCS_SIZE
     + 3)
     & !3;
 const _: () = assert!(ESP32S31_DEFAULT_TX_BUFFER_SIZE >= ESP_NOW_V2_TX_MINIMUM_CAPACITY);
@@ -78,7 +78,7 @@ pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 64;
 // 67-slot DMA execution pool and does not reserve capacity per AP peer.
 // Changing it must never resize the physical SRAM pool.
 pub const ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH: usize =
-    oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AP_SOFTWARE_TX_CAPACITY;
+    oer_esp32s31_ieee80211_runtime::roles::access_point::network_tx::AP_SOFTWARE_TX_CAPACITY;
 // One independently polled Xarxa instance owns one general pool and one
 // driver-RX pool. The general pool covers the software TX horizon plus
 // neighbor/control transients. The RX pool covers the driver queue plus

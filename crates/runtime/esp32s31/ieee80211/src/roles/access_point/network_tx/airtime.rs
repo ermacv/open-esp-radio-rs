@@ -5,20 +5,20 @@
 
 use core::num::NonZeroU32;
 
-use oer_esp32s31_wifi_ap::ampdu::ApAmpduBudget;
+use oer_esp32s31_ieee80211_ap::ampdu::ApAmpduBudget;
 
-use oer_esp32s31_wifi_mac::tx::HtRate;
+use oer_esp32s31_ieee80211_mac::tx::HtRate;
 
 use super::*;
 
-pub use oer_wifi_datapath::airtime::{AirtimeAction, AirtimeObservation};
+pub use oer_ieee80211_datapath::airtime::{AirtimeAction, AirtimeObservation};
 
-use oer_wifi_datapath::airtime::{
+use oer_ieee80211_datapath::airtime::{
     AirtimeCandidate, AirtimeCompletion, AirtimeError, AirtimeInFlight, AirtimeReservation,
     AirtimeScheduler, AirtimeStorage,
 };
 
-use oer_wifi_softmac::{MacTxWork, tx_cost::PpduTiming};
+use oer_ieee80211_softmac::{MacTxWork, tx_cost::PpduTiming};
 
 /// Group traffic has one BSS account, separate from associated unicast peers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

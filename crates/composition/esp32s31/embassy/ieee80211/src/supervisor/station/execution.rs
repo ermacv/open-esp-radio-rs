@@ -20,12 +20,12 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 use exchange::Exchange;
 
-use oer_esp32s31_wifi_runtime::{
+use oer_esp32s31_ieee80211_runtime::{
     datapath::execution::{Control, Exit},
     roles::station::connected::{StationCommand, StationCommandReceiver},
 };
 
-use oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
+use oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason;
 
 use static_cell::StaticCell;
 
@@ -204,7 +204,7 @@ pub(super) async fn wait_connected_datapath_completion(
     Option<StationCommand>,
     super::PauseOperation,
     bool,
-    Option<oer_esp32s31_soc::watchdog::DeadlineLease<'static>>,
+    Option<oer_esp32s31_soc_esp_hal::watchdog::DeadlineLease<'static>>,
 ) {
     use super::PauseOperation;
     match select3(
@@ -257,7 +257,7 @@ pub(super) async fn run(
     (
         crate::interrupts::MacInterruptEpoch,
         Result<
-            oer_esp32s31_wifi_runtime::datapath::DatapathRunnerExit<ConnectedDisconnectReason>,
+            oer_esp32s31_ieee80211_runtime::datapath::DatapathRunnerExit<ConnectedDisconnectReason>,
             ConnectedDatapathError,
         >,
         Option<StationCommand>,
@@ -265,8 +265,8 @@ pub(super) async fn run(
     &'static super::pause::Failure,
 > {
     use super::{PauseError, pause, pause_request};
-    use oer_esp32s31_wifi_runtime::datapath::DatapathRunnerExit;
-    use oer_wifi_embassy::await_stack_boundary;
+    use oer_esp32s31_ieee80211_runtime::datapath::DatapathRunnerExit;
+    use oer_ieee80211_runtime::await_stack_boundary;
     let _pause_availability = pause_request::REQUESTS.open(tracking);
     let mut requested_command = None;
     mailbox.start(runner);
@@ -375,7 +375,7 @@ pub(super) async fn run(
 }
 
 fn complete_protection(
-    protection: &mut Option<oer_esp32s31_soc::watchdog::DeadlineLease<'static>>,
+    protection: &mut Option<oer_esp32s31_soc_esp_hal::watchdog::DeadlineLease<'static>>,
 ) {
     if let Some(protection) = protection.take() {
         crate::WatchdogConfig::complete(protection);

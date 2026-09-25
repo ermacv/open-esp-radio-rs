@@ -10,13 +10,13 @@ use crate::{
     hardware::control::ConnectedControlHardware,
 };
 
-use oer_esp32s31_wifi::datapath::DatapathControlProgress;
+use oer_esp32s31_ieee80211::datapath::DatapathControlProgress;
 
-use oer_esp32s31_wifi_mac::crypto::{
+use oer_esp32s31_ieee80211_mac::crypto::{
     CryptoKeyError, StaGroupCcmpKeyMaterial, StaGroupCcmpReplaceError, StaGroupCcmpSlot,
 };
 
-use oer_wifi_rsn::{
+use oer_ieee80211_rsn::{
     OwnedEapolFrame,
     aes::{RsnSoftwareAes, SoftwareAesKeyUnwrapError},
     keys::RsnKeyKind,
@@ -189,7 +189,7 @@ impl ConnectedWpa2Security {
         &mut self,
         hardware: &mut H,
         tx: &mut X,
-        frame: oer_wifi_rsn::OwnedEapolFrame,
+        frame: oer_ieee80211_rsn::OwnedEapolFrame,
     ) -> DatapathControlProgress<ConnectedDisconnectReason> {
         self.duplicate_message3 = self.duplicate_message3.saturating_add(1);
         let response = match self.supplicant.on_duplicate_message3(frame) {
@@ -218,7 +218,7 @@ impl ConnectedWpa2Security {
         &mut self,
         hardware: &mut H,
         tx: &mut X,
-        frame: oer_wifi_rsn::OwnedEapolFrame,
+        frame: oer_ieee80211_rsn::OwnedEapolFrame,
     ) -> DatapathControlProgress<ConnectedDisconnectReason> {
         self.group_message1 = self.group_message1.saturating_add(1);
         let action = match self

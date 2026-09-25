@@ -3,7 +3,7 @@
 //! AP and STA lease these exact owners; neither role may manufacture or
 //! discard descriptor or network-lease retention storage at a transition.
 
-use oer_esp32s31_wifi_mac::tx::ampdu::{HtAmpduTxResources, RetainedAmpduDmaStorage};
+use oer_esp32s31_ieee80211_mac::tx::ampdu::{HtAmpduTxResources, RetainedAmpduDmaStorage};
 
 /// Unique owner of the active and optional standby aggregate arenas.
 ///

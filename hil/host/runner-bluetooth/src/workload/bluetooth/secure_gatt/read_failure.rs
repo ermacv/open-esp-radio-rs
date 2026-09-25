@@ -1,6 +1,6 @@
 //! A failed Reset must retain the old epoch, not claim RF-close or restart.
 use super::{Duration, Evidence, Instant, Observation, Result, wait};
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     BluetoothGattResetOutcome as Reset, BluetoothGattResetReadGate as Gate, BluetoothGattShutdown,
     BluetoothGattStopCause as Cause,
 };

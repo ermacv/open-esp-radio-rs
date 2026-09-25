@@ -1,5 +1,5 @@
 [package]
-name = "oer-esp32s31-wifi"
+name = "oer-esp32s31-ieee80211"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,16 +10,16 @@ description = "Role-neutral ESP32-S31 Wi-Fi device composition"
 [dependencies]
 oer-esp32s31-hal = { path = "../../hal" }
 oer-esp32s31-phy = { path = "../../phy" }
-oer-esp32s31-wifi-dma = { path = "dma" }
-oer-esp32s31-wifi-mac = { path = "mac" }
-oer-ieee80211 = { path = "../../../../protocols/ieee80211/mac" }
-oer-wifi-softmac = { path = "../../../../protocols/ieee80211/softmac" }
+oer-esp32s31-ieee80211-dma = { path = "dma" }
+oer-esp32s31-ieee80211-mac = { path = "mac" }
+oer-ieee80211-mac = { path = "../../../../protocols/ieee80211/mac" }
+oer-ieee80211-softmac = { path = "../../../../protocols/ieee80211/softmac" }
 
 [features]
 default = []
 task-poll-telemetry = [
     "dep:riscv",
-    "oer-esp32s31-wifi-mac/task-poll-telemetry",
+    "oer-esp32s31-ieee80211-mac/task-poll-telemetry",
 ]
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]

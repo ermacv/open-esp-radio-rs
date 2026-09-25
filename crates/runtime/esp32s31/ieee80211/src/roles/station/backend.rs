@@ -13,9 +13,9 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use embassy_time::Timer;
 
-use oer_wifi_embassy::await_stack_boundary;
+use oer_ieee80211_runtime::await_stack_boundary;
 
-use oer_wifi_sta::station::{
+use oer_ieee80211_sta::station::{
     StaAttemptContext, StaAttemptOutcome, StaBackoffOutcome, StaBackoffReason, StaLifecycleBackend,
 };
 

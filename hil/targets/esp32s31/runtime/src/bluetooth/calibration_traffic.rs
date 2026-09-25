@@ -1,9 +1,7 @@
 //! HIL Host workload only: four-credit plaintext ATT notifications.
 //! Production HCI, LL and PHY owners execute every RF transition.
 use super::*;
-use open_esp_radio_hil_protocol::{
-    BluetoothCalibrationTrafficEvidence, bluetooth_calibration_notification,
-};
+use oer_hil_protocol::{BluetoothCalibrationTrafficEvidence, bluetooth_calibration_notification};
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static MTU: AtomicBool = AtomicBool::new(false);
 static INTERVAL: AtomicU32 = AtomicU32::new(0);

@@ -9,12 +9,12 @@ use oer_memory::{
     AffineSpscTrySendError,
 };
 
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     RxPhyInfo,
     pool::{NetworkRxFrame, VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT},
 };
 
-use oer_wifi_softmac::MacRxMetadata;
+use oer_ieee80211_softmac::MacRxMetadata;
 
 /// Unique owner of one staged RX unit.
 pub type StagedRxFrame<

@@ -2,9 +2,9 @@ use core::future::{Future, ready};
 
 use crate::rx::storage::ReceiveDmaStorage;
 
-use oer_esp32s31_wifi_dma::descriptor::{BIT_30, DESCRIPTOR_BYTES};
+use oer_esp32s31_ieee80211_dma::descriptor::{BIT_30, DESCRIPTOR_BYTES};
 
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     RxDma, RxDmaBinding, RxDmaWalkerStopped, RxRingHalted, RxRingStopped,
 };
 
@@ -51,8 +51,8 @@ impl RxDma for Hardware {
     fn next_descriptor_low(&mut self) -> u32 {
         self.next_descriptor_low
     }
-    fn next_descriptor(&mut self) -> oer_esp32s31_wifi_dma::rx_dma::RxDmaNextDescriptor {
-        oer_esp32s31_wifi_dma::rx_dma::RxDmaNextDescriptor::validation(
+    fn next_descriptor(&mut self) -> oer_esp32s31_ieee80211_dma::rx_dma::RxDmaNextDescriptor {
+        oer_esp32s31_ieee80211_dma::rx_dma::RxDmaNextDescriptor::validation(
             self.next_descriptor_low,
             false,
         )
@@ -60,14 +60,14 @@ impl RxDma for Hardware {
     fn with_ordered_cursor<R>(
         &mut self,
         observed: impl for<'confirmation> FnOnce(
-            oer_esp32s31_wifi_mac::rx::RxDmaCursorObservation<'confirmation>,
+            oer_esp32s31_ieee80211_mac::rx::RxDmaCursorObservation<'confirmation>,
         ) -> R,
     ) -> R {
         let last = self.last_descriptor_low();
         self.fence();
         let next = self.next_descriptor_low();
         self.fence();
-        observed(oer_esp32s31_wifi_mac::rx::RxDmaCursorObservation::validation(last, next))
+        observed(oer_esp32s31_ieee80211_mac::rx::RxDmaCursorObservation::validation(last, next))
     }
     fn walker_enabled(&mut self) -> bool {
         self.walker
@@ -78,11 +78,11 @@ impl RxDma for Hardware {
     fn try_with_reload_settled<R>(
         &mut self,
         settled: impl for<'confirmation> FnOnce(
-            oer_esp32s31_wifi_mac::rx::RxDmaReloadSettled<'confirmation>,
+            oer_esp32s31_ieee80211_mac::rx::RxDmaReloadSettled<'confirmation>,
         ) -> R,
     ) -> Option<R> {
         (!self.reload_pending())
-            .then(|| settled(oer_esp32s31_wifi_mac::rx::RxDmaReloadSettled::validation()))
+            .then(|| settled(oer_esp32s31_ieee80211_mac::rx::RxDmaReloadSettled::validation()))
     }
     fn configure_descriptor_window(&mut self, _: &RxDmaBinding) {}
     fn write_descriptor_base(&mut self, _: &RxDmaBinding, address: u32) {
@@ -101,7 +101,7 @@ impl RxDma for Hardware {
         &mut self,
         _: &RxDmaBinding,
         enabled: impl for<'confirmation> FnOnce(
-            oer_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled<'confirmation>,
+            oer_esp32s31_ieee80211_mac::rx::RxDmaWalkerEnabled<'confirmation>,
         ) -> R,
     ) -> Option<R> {
         if self.walker {
@@ -113,7 +113,7 @@ impl RxDma for Hardware {
             }
             self.enable_count += 1;
             Some(enabled(
-                oer_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled::validation(),
+                oer_esp32s31_ieee80211_mac::rx::RxDmaWalkerEnabled::validation(),
             ))
         }
     }

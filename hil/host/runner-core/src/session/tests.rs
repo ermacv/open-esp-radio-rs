@@ -1,5 +1,5 @@
 use super::capture::test_support::hello;
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     DecodeCounters, Direction, Envelope, Event, Finished, FlowTransportEvidence, RadioEvidence,
     ResultSummary, RxRadioEvidence, SessionLinkRequirements, SessionReady, StackUsage,
     StackWatermark, StationLifecycleEvent, TransportEvidence,
@@ -73,7 +73,7 @@ fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {
                 minimum_free_bytes: 1,
             },
         },
-        link: open_esp_radio_hil_protocol::LinkHealth {
+        link: oer_hil_protocol::LinkHealth {
             rx_frames: 1,
             rx_cobs_errors: 0,
             rx_checksum_errors: 0,
@@ -392,7 +392,7 @@ fn beacon_loss_qualification_ignores_previous_boots() {
             0,
             Event::StationLifecycle(StationLifecycleEvent::Disconnected {
                 generation: 0,
-                reason: open_esp_radio_hil_protocol::StationDisconnectReason::BeaconLoss,
+                reason: oer_hil_protocol::StationDisconnectReason::BeaconLoss,
             }),
         ),
         hello(8, 0),
@@ -417,7 +417,7 @@ fn beacon_loss_qualification_ignores_previous_boots() {
         0,
         Event::StationLifecycle(StationLifecycleEvent::Disconnected {
             generation: 0,
-            reason: open_esp_radio_hil_protocol::StationDisconnectReason::BeaconLoss,
+            reason: oer_hil_protocol::StationDisconnectReason::BeaconLoss,
         }),
     ));
     assert_eq!(beacon_loss_count_in(&messages), 1);
@@ -425,7 +425,7 @@ fn beacon_loss_qualification_ignores_previous_boots() {
 
 #[test]
 fn tx_radio_requires_exact_balance_including_interval_boundary_owners() {
-    use open_esp_radio_hil_protocol::{TxAggregateTimingEvidence, TxRadioEvidence};
+    use oer_hil_protocol::{TxAggregateTimingEvidence, TxRadioEvidence};
     let check = |publications, pending_start, pending_end| {
         let mut session = session_with_rx(RxRadioEvidence::default());
         session.radio.as_mut().unwrap().tx = Some(TxRadioEvidence {
@@ -501,7 +501,7 @@ fn pause_requires_same_connection_even_after_fast_reconnect_or_reboot() {
         0,
         Event::StationLifecycle(StationLifecycleEvent::Disconnected {
             generation: 3,
-            reason: open_esp_radio_hil_protocol::StationDisconnectReason::BeaconLoss,
+            reason: oer_hil_protocol::StationDisconnectReason::BeaconLoss,
         }),
     ));
     assert!(station_unchanged_since_in(&events, cursor).is_err());

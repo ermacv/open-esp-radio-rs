@@ -1,6 +1,6 @@
 //! Source conditioning, disjoint packet geometry and complete validation.
 
-use open_esp_radio_hil_protocol::{MemoryBenchmarkRequest, MemoryBenchmarkStop};
+use oer_hil_protocol::{MemoryBenchmarkRequest, MemoryBenchmarkStop};
 
 const GUARD: u8 = 0xa5;
 pub const OFFSET: usize = 36;

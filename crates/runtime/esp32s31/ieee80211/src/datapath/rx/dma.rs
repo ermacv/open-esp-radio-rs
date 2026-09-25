@@ -20,12 +20,12 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use embassy_time::Instant;
 
-pub use oer_esp32s31_wifi::rx::storage::{
+pub use oer_esp32s31_ieee80211::rx::storage::{
     ESP32S31_RX_BUFFER_SIZE, ESP32S31_RX_BUFFER_STORAGE_SIZE, ESP32S31_RX_DESCRIPTOR_COUNT,
     ESP32S31_RX_WALKER_ENABLE_SETTLE_US, ReceiveDmaBuffer, ReceiveDmaStorage,
 };
 
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     RxDescriptorSnapshot, RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped,
     pool::{
         RxStagePool, RxStageTransactionError, VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
@@ -33,7 +33,7 @@ use oer_esp32s31_wifi_mac::rx::{
     },
 };
 
-use oer_ieee80211::vif::{StaApRxRoute, StaApVif, classify_sta_ap_rx};
+use oer_ieee80211_mac::vif::{StaApRxRoute, StaApVif, classify_sta_ap_rx};
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::rx_pipeline::RxPipelineObserver;
@@ -72,7 +72,7 @@ fn interrupt_driven_recycled_append_for_diagnostics() -> bool {
     INTERRUPT_DRIVEN_RECYCLED_APPEND.load(Ordering::Relaxed)
 }
 
-pub use oer_esp32s31_wifi::rx::transaction::{
+pub use oer_esp32s31_ieee80211::rx::transaction::{
     Admission as Esp32s31RxStageAdmissionPolicy, AdmitAll as FullRxStageAdmission,
     AdmitUnreserved as UnreservedRxStageAdmission, CompletedUnit as Esp32s31RxCompletedUnit,
     CreditPolicy as RxStageCreditPolicy, IngressClass as Esp32s31RxIngressClass,
@@ -97,8 +97,8 @@ pub enum StagedRxPublisher<
     Standalone(StagedRxSender<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>),
     StaAp {
         frames: StaApStagedRxSender<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
-        ingress: oer_esp32s31_wifi_mac::rx::RxIngressConfig,
-        addresses: oer_ieee80211::vif::StaApRxAddresses,
+        ingress: oer_esp32s31_ieee80211_mac::rx::RxIngressConfig,
+        addresses: oer_ieee80211_mac::vif::StaApRxAddresses,
     },
 }
 
@@ -119,8 +119,8 @@ impl<
 
     pub const fn sta_ap(
         frames: StaApStagedRxSender<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
-        ingress: oer_esp32s31_wifi_mac::rx::RxIngressConfig,
-        addresses: oer_ieee80211::vif::StaApRxAddresses,
+        ingress: oer_esp32s31_ieee80211_mac::rx::RxIngressConfig,
+        addresses: oer_ieee80211_mac::vif::StaApRxAddresses,
     ) -> Self {
         Self::StaAp {
             frames,
@@ -359,7 +359,7 @@ impl<
     const QUEUE_DEPTH: usize,
     const STAGE_CAPACITY: usize,
     const STAGE_SLOTS: usize,
-> oer_esp32s31_wifi::rx::transaction::Publisher<'pool, STAGE_CAPACITY, STAGE_SLOTS>
+> oer_esp32s31_ieee80211::rx::transaction::Publisher<'pool, STAGE_CAPACITY, STAGE_SLOTS>
     for StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>
 {
     const DEPTH: usize = QUEUE_DEPTH;

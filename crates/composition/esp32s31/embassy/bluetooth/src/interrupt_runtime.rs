@@ -12,7 +12,7 @@ use oer_esp32s31_bluetooth::controller::ControllerPublishedInterruptService;
 
 use oer_esp32s31_bluetooth_runtime::notification::RuntimeNotifications;
 
-use oer_esp32s31_radio_platform_esp_hal::{
+use oer_esp32s31_radio_esp_hal::{
     BoundEspHalBluetoothInterruptEpoch, EspHalBluetoothInterruptDisposition,
     EspHalBluetoothInterruptRouteError, EspHalBluetoothInterruptSource,
     EspHalBluetoothModemLpTimerStorageError, EspHalBluetoothSharedInterruptDispatchError,
@@ -165,8 +165,8 @@ impl BluetoothInterruptDisabled {
     pub(crate) fn retire_registers(
         &self,
     ) -> Result<
-        oer_esp32s31_radio_platform_esp_hal::RetiredEspHalBluetoothInterruptRegisters,
-        oer_esp32s31_radio_platform_esp_hal::EspHalBluetoothInterruptRetirementError,
+        oer_esp32s31_radio_esp_hal::RetiredEspHalBluetoothInterruptRegisters,
+        oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRetirementError,
     > {
         self.dispatch
             .service

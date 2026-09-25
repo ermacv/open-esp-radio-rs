@@ -2,7 +2,7 @@
 
 use std::{path::Path, time::Duration};
 
-use open_esp_radio_hil_protocol::WifiApScheduler;
+use oer_hil_protocol::WifiApScheduler;
 
 use crate::{Result, fixture};
 use hil_core::{

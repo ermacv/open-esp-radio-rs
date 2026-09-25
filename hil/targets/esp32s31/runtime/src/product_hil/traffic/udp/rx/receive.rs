@@ -2,9 +2,9 @@
 
 use embassy_futures::yield_now;
 use embassy_time::{Duration, Instant, with_timeout};
-use open_esp_radio_hil_esp32s31_telemetry::task_poll::{TaskPollSet, TaskPollSetSnapshot};
-use open_esp_radio_hil_esp32s31_telemetry::udp_rx_window::RxWindow;
-use open_esp_radio_hil_protocol::{
+use oer_hil_esp32s31_telemetry::task_poll::{TaskPollSet, TaskPollSetSnapshot};
+use oer_hil_esp32s31_telemetry::udp_rx_window::RxWindow;
+use oer_hil_protocol::{
     Completion, FlowTransportEvidence, SESSION_FLOW_CAPACITY, UdpSessionPayloadIdentity,
 };
 
@@ -48,8 +48,7 @@ pub(super) async fn run(
         unreachable!("protocol owner accepts only duration-completed sessions")
     };
     let elapsed_us = u64::from(duration) * 1_000;
-    let mut delivery_start =
-        open_esp_radio_hil_esp32s31_telemetry::udp_rx_window::DeliveryStart::default();
+    let mut delivery_start = oer_hil_esp32s31_telemetry::udp_rx_window::DeliveryStart::default();
     let single_flow = session.config.active_flow_count() == 1;
     let mut flows = session.config.flows.map(|flow| {
         flow.map(|flow| Flow {
@@ -91,17 +90,17 @@ pub(super) async fn run(
     let mut task_poll_end = None;
     #[cfg(any(feature = "upstream-network", feature = "embassy-network"))]
     let interface = match session.config.network_interface {
-        open_esp_radio_hil_protocol::WifiNetworkInterface::Station => {
-            oer_esp32s31_embassy_wifi::NetworkInterface::Station
+        oer_hil_protocol::WifiNetworkInterface::Station => {
+            oer_esp32s31_ieee80211_system::NetworkInterface::Station
         }
-        open_esp_radio_hil_protocol::WifiNetworkInterface::AccessPoint => {
-            oer_esp32s31_embassy_wifi::NetworkInterface::AccessPoint
+        oer_hil_protocol::WifiNetworkInterface::AccessPoint => {
+            oer_esp32s31_ieee80211_system::NetworkInterface::AccessPoint
         }
     };
     #[cfg(feature = "upstream-network")]
-    let pool_drops_start = oer_esp32s31_embassy_wifi::rx_pool_drops(interface);
+    let pool_drops_start = oer_esp32s31_ieee80211_system::rx_pool_drops(interface);
     #[cfg(feature = "embassy-network")]
-    let resources_start = oer_esp32s31_embassy_wifi::embassy_resources(interface);
+    let resources_start = oer_esp32s31_ieee80211_system::embassy_resources(interface);
     loop {
         let now = Instant::now().as_micros();
         if now >= window.end() && task_poll_end.is_none() {
@@ -190,7 +189,7 @@ pub(super) async fn run(
             crate::console::publish_event_reliably(
                 session.session_id,
                 0,
-                open_esp_radio_hil_protocol::Event::UdpRxStarted { datagrams: 256 },
+                oer_hil_protocol::Event::UdpRxStarted { datagrams: 256 },
             )
             .await;
         }
@@ -218,7 +217,7 @@ pub(super) async fn run(
         session.session_id,
         interface,
         resources_start,
-        oer_esp32s31_embassy_wifi::embassy_resources(interface),
+        oer_esp32s31_ieee80211_system::embassy_resources(interface),
     ))
     .await;
     #[cfg(feature = "upstream-network")]
@@ -226,7 +225,7 @@ pub(super) async fn run(
         "ORX_POOL session={} interface={:?} rx_pool_drops={:?}",
         session.session_id,
         interface,
-        oer_esp32s31_embassy_wifi::rx_pool_drops(interface)
+        oer_esp32s31_ieee80211_system::rx_pool_drops(interface)
             .zip(pool_drops_start)
             .map(|(end, start)| end.wrapping_sub(start)),
     ))
@@ -274,7 +273,7 @@ pub(super) async fn run(
     }
     let terminal_seen = flows.iter().flatten().all(|flow| flow.terminal);
     let flow_evidence = flows.map(|flow| flow.map(|flow| flow.evidence));
-    let aggregate = open_esp_radio_hil_protocol::TransportEvidence::from_flows(flow_evidence);
+    let aggregate = oer_hil_protocol::TransportEvidence::from_flows(flow_evidence);
     Outcome {
         bytes: aggregate.rx_bytes,
         datagrams: aggregate.rx_units,

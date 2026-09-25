@@ -1,6 +1,6 @@
 //! The executed host observer has its own build subject, separate from firmware.
 use super::*;
-pub(super) use open_esp_radio_hil_schema::observer as build_inputs;
+pub(super) use oer_hil_schema::observer as build_inputs;
 use serde_json::{Value, json};
 
 /// One prepared configuration shared by archive loading and reviews. Loading it
@@ -135,12 +135,10 @@ fn lock_dependencies(resolved: &Value) -> Result<Value> {
                 .values()
                 .find(|m| m["package"]["name"] == package["name"])
                 .ok_or("local dependency manifest missing")?;
-            Some(
-                open_esp_radio_hil_schema::cargo_inputs::dependency_names_in(
-                    manifest,
-                    &resolved["manifests"]["Cargo.toml"],
-                )?,
-            )
+            Some(oer_hil_schema::cargo_inputs::dependency_names_in(
+                manifest,
+                &resolved["manifests"]["Cargo.toml"],
+            )?)
         } else {
             None
         };
@@ -448,7 +446,7 @@ pub(super) fn reviewed(
 }
 
 #[cfg(test)]
-pub(super) use open_esp_radio_hil_schema::observer::required_configuration;
+pub(super) use oer_hil_schema::observer::required_configuration;
 
 fn profile_configuration(resolved: &Value) -> Value {
     let Some(mut name) = resolved["selected_profile"].as_str() else {
@@ -529,10 +527,10 @@ mod tests {
         let family = |kind: &str| {
             let names = build_inputs::dependencies(&registry, kind).unwrap();
             [
-                "open-esp-radio-hil-runner-wifi",
-                "open-esp-radio-hil-runner-bluetooth",
-                "open-esp-radio-hil-runner-system",
-                "open-esp-radio-hil-runner-ieee802154",
+                "oer-hil-runner-ieee80211",
+                "oer-hil-runner-bluetooth",
+                "oer-hil-runner-system",
+                "oer-hil-runner-ieee802154",
             ]
             .into_iter()
             .filter(|package| names.contains(*package))
@@ -553,15 +551,12 @@ mod tests {
             assert!(
                 build_inputs::dependencies(&registry, kind)
                     .unwrap()
-                    .contains("open-esp-radio-hil-runner-core")
+                    .contains("oer-hil-runner-core")
             );
         }
-        assert_eq!(family("udp"), ["open-esp-radio-hil-runner-wifi"]);
-        assert_eq!(
-            family("bluetooth-dtm"),
-            ["open-esp-radio-hil-runner-bluetooth"]
-        );
-        assert_eq!(family("boot-smoke"), ["open-esp-radio-hil-runner-system"]);
+        assert_eq!(family("udp"), ["oer-hil-runner-ieee80211"]);
+        assert_eq!(family("bluetooth-dtm"), ["oer-hil-runner-bluetooth"]);
+        assert_eq!(family("boot-smoke"), ["oer-hil-runner-system"]);
         assert!(!data_inputs(&root).unwrap().is_empty());
     }
 
@@ -570,10 +565,10 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let projection = json!({"manifests": {
             "hil/host/runner/Cargo.toml": {},
-            "hil/host/runner-wifi/Cargo.toml": {},
+            "hil/host/runner-ieee80211/Cargo.toml": {},
         }});
         let prefixes = source_inputs(&root, &projection).unwrap();
-        let wifi = Path::new("hil/host/runner-wifi/src/workload/traffic/rx_traffic.rs");
+        let wifi = Path::new("hil/host/runner-ieee80211/src/workload/traffic/rx_traffic.rs");
         assert!(selected(wifi, &prefixes));
         assert!(selected(
             Path::new("hil/host/runner/src/execution.rs"),
@@ -588,7 +583,7 @@ mod tests {
             &prefixes
         ));
         assert!(!selected(
-            Path::new("hil/host/runner-wifi/src/workload/traffic/tests.rs"),
+            Path::new("hil/host/runner-ieee80211/src/workload/traffic/tests.rs"),
             &prefixes
         ));
         assert!(!selected(Path::new("Cargo.lock"), &prefixes));

@@ -9,7 +9,7 @@ use crate::{
 };
 use hil_core::scenario::SecureGattShutdown;
 use hil_core::{context::Context, session::SerialCapture};
-use open_esp_radio_hil_protocol::BluetoothSecureGattEvidence as Evidence;
+use oer_hil_protocol::BluetoothSecureGattEvidence as Evidence;
 use std::{
     path::Path,
     time::{Duration, Instant},

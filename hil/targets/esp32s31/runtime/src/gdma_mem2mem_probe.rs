@@ -14,7 +14,9 @@ use core::{
 };
 
 use esp_hal::peripherals::DMA_AXI_CH0;
-use oer_esp32s31_soc::{AxiGdmaDescriptor, AxiGdmaMem2Mem, AxiGdmaMem2MemSegment, BurstSize};
+use oer_esp32s31_soc_esp_hal::{
+    AxiGdmaDescriptor, AxiGdmaMem2Mem, AxiGdmaMem2MemSegment, BurstSize,
+};
 
 const FRAME_SIZE: usize = 1536;
 const FRAMES_PER_BATCH: usize = 32;

@@ -31,7 +31,7 @@ fn deadline_is_computed_without_an_executor_timer() {
 
 #[test]
 fn connected_ftm_request_is_consumed_at_hardware_frontier() {
-    use oer_ieee80211::ftm::{FtmBurstDuration, FtmFormatAndBandwidth, FtmRequestParameters};
+    use oer_ieee80211_mac::ftm::{FtmBurstDuration, FtmFormatAndBandwidth, FtmRequestParameters};
 
     let parameters = FtmRequestParameters::new(
         0,
@@ -50,7 +50,9 @@ fn connected_ftm_request_is_consumed_at_hardware_frontier() {
     assert_eq!(frontier.attempt, 1);
     assert_eq!(
         frontier.protocol_event,
-        FtmRequesterEvent::Failed(oer_wifi_sta::ftm::FtmSessionFailure::HardwareAdmissionRejected)
+        FtmRequesterEvent::Failed(
+            oer_ieee80211_sta::ftm::FtmSessionFailure::HardwareAdmissionRejected
+        )
     );
     assert_eq!(
         frontier.hardware_error,

@@ -7,7 +7,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use oer_esp32s31_hal::types::{MacInterruptMask, MacPowerInterruptObservation};
 
-use oer_esp32s31_wifi_mac::irq::MacInterruptRoute;
+use oer_esp32s31_ieee80211_mac::irq::MacInterruptRoute;
 
 use super::{EmbassyMacIrqDrain, EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime};
 

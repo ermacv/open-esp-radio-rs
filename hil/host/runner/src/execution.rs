@@ -122,7 +122,7 @@ fn execute_workload_inner(
                 boots: 1,
                 connections: 2,
                 hold_millis: if *active_maintenance { 1000 } else { 0 },
-                termination: open_esp_radio_hil_protocol::BluetoothPeripheralTermination::PeerReset,
+                termination: oer_hil_protocol::BluetoothPeripheralTermination::PeerReset,
                 retire_after: true,
                 restart_between_connections: false,
                 maintain_between_connections: false,
@@ -145,13 +145,13 @@ fn execute_workload_inner(
             hil_bluetooth::workload::bluetooth::deadline::run(
                 output,
                 context,
-                open_esp_radio_hil_protocol::ResetReason::Software,
+                oer_hil_protocol::ResetReason::Software,
             )
         }
         Workload::BluetoothWatchdogReset => hil_bluetooth::workload::bluetooth::deadline::run(
             output,
             context,
-            open_esp_radio_hil_protocol::ResetReason::MainWatchdog1,
+            oer_hil_protocol::ResetReason::MainWatchdog1,
         ),
         Workload::SystemWatchdog => hil_system::workload::system::watchdog::run(output, context),
         Workload::BluetoothPhyWatchdog => {
@@ -437,9 +437,9 @@ fn execute_workload_inner(
             chunk_bytes,
         } => {
             let direction = match direction {
-                Direction::Rx => open_esp_radio_hil_protocol::Direction::Rx,
-                Direction::Tx => open_esp_radio_hil_protocol::Direction::Tx,
-                Direction::Bidirectional => open_esp_radio_hil_protocol::Direction::Bidirectional,
+                Direction::Rx => oer_hil_protocol::Direction::Rx,
+                Direction::Tx => oer_hil_protocol::Direction::Tx,
+                Direction::Bidirectional => oer_hil_protocol::Direction::Bidirectional,
             };
             let defaults = traffic::tcp_traffic::Config::for_direction(direction);
             let config = traffic::tcp_traffic::Config {

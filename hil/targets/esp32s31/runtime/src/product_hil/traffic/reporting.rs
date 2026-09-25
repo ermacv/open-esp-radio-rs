@@ -5,7 +5,7 @@ use core::future::Future;
 use embassy_futures::yield_now;
 use embassy_time::Instant;
 #[cfg(feature = "core0-rx-cycle-telemetry")]
-use oer_esp32s31_embassy_wifi::{
+use oer_esp32s31_ieee80211_system::{
     CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
     Core0ApRxCycleSnapshot, Core0ReorderSnapshot, Core0RxCycleSnapshot,
     Core0RxServiceHistogramSnapshot,
@@ -14,18 +14,18 @@ use oer_esp32s31_embassy_wifi::{
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"
 ))]
-use oer_esp32s31_embassy_wifi::{
+use oer_esp32s31_ieee80211_system::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
 };
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-use oer_esp32s31_embassy_wifi::{TX_PERFORMANCE, TxPerformanceSnapshot};
-use open_esp_radio_hil_esp32s31_telemetry::{
+use oer_esp32s31_ieee80211_system::{TX_PERFORMANCE, TxPerformanceSnapshot};
+use oer_hil_esp32s31_telemetry::{
     aggregate_tx::AggregateTxCounterSnapshot,
     mac_irq::MacIrqClassificationSnapshot,
     rx_pipeline::{RxPipelineCounterSnapshot, RxPipelineCounters},
     task_poll::{TaskPollCounters, TaskPollSet, TaskPollSetSnapshot, TaskPollSnapshot},
 };
-use open_esp_radio_hil_protocol::{RadioEvidence, TxAggregateTimingEvidence, TxRadioEvidence};
+use oer_hil_protocol::{RadioEvidence, TxAggregateTimingEvidence, TxRadioEvidence};
 
 use crate::console::runtime_log_reliably;
 
@@ -1299,9 +1299,7 @@ pub(in crate::product_hil) async fn observe_open_radio_core0_task_polls<F: Futur
 }
 
 #[cfg(feature = "tx-wait-probe")]
-pub(super) async fn log_tx_wait_trace(
-    trace: &open_esp_radio_hil_esp32s31_telemetry::tx_wait::Trace,
-) {
+pub(super) async fn log_tx_wait_trace(trace: &oer_hil_esp32s31_telemetry::tx_wait::Trace) {
     for (index, sample) in trace.records().enumerate() {
         let at = (u64::from(sample.at_high) << 32) | u64::from(sample.at_low);
         runtime_log_reliably(format_args!(

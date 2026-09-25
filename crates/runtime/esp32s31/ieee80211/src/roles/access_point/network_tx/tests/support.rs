@@ -2,7 +2,7 @@
 
 use oer_esp32s31_hal::types::{MacCcmpKeyIdentity, MacKeyInstallOutcome};
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     ap_policy::ApRxPolicyHardware, ap_tsf::ApTsfHardware, crypto::CcmpKeyHardware,
 };
 
@@ -57,9 +57,9 @@ pub(super) fn with_authorized_ap_capabilities(
     ht: bool,
     test: impl FnOnce(super::super::ApEngine<'_>),
 ) {
-    use oer_esp32s31_wifi_ap::{protocol::*, security::ApPairwiseKeyStorage};
+    use oer_esp32s31_ieee80211_ap::{protocol::*, security::ApPairwiseKeyStorage};
 
-    use oer_ieee80211::{
+    use oer_ieee80211_mac::{
         ap::ApAssociationSecurityObservation, beacon::WPA2_BEACON_CAPACITY, channel::WifiChannel,
         ssid::WifiSsid,
     };
@@ -70,8 +70,8 @@ pub(super) fn with_authorized_ap_capabilities(
         AccessPointInactiveTimeout::default(),
         &mut peers,
     );
-    let ht_ie = oer_ieee80211::ht::ht_capability_ie(
-        oer_esp32s31_wifi_ap::profile::HT_CAPABILITIES,
+    let ht_ie = oer_ieee80211_mac::ht::ht_capability_ie(
+        oer_esp32s31_ieee80211_ap::profile::HT_CAPABILITIES,
         WifiChannel::mhz20(13).unwrap(),
     );
     for peer in [[4; 6], [6; 6]] {
@@ -90,7 +90,7 @@ pub(super) fn with_authorized_ap_capabilities(
                 },
                 ApAssociationCapabilities {
                     maximum_legacy_rate_500kbps: 108,
-                    ht: ht.then(|| oer_ieee80211::ht::ht_peer_capabilities(&ht_ie).unwrap()),
+                    ht: ht.then(|| oer_ieee80211_mac::ht::ht_peer_capabilities(&ht_ie).unwrap()),
                     qos_supported: ht,
                 },
                 1,

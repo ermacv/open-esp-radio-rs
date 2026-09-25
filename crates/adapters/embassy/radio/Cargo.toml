@@ -12,13 +12,13 @@ readme = "README.md"
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 oer-radio = { path = "../../../radio", default-features = false, features = ["wifi"] }
-oer-wifi-embassy = { path = "../ieee80211" }
+oer-ieee80211-runtime = { path = "../../../runtime/ieee80211" }
 
 [dev-dependencies]
-oer-ieee80211 = { path = "../../../protocols/ieee80211/mac" }
+oer-ieee80211-mac = { path = "../../../protocols/ieee80211/mac" }
 oer-radio = { path = "../../../radio", default-features = false, features = ["wifi", "test-support"] }
-oer-wifi-sta = { path = "../../../protocols/ieee80211/sta" }
-oer-wifi-rsn = { path = "../../../protocols/ieee80211/security/rsn" }
+oer-ieee80211-sta = { path = "../../../protocols/ieee80211/sta" }
+oer-ieee80211-rsn = { path = "../../../protocols/ieee80211/security/rsn" }
 
 [lints]
 workspace = true

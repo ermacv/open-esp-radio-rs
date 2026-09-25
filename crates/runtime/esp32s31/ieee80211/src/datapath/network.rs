@@ -7,11 +7,11 @@ use embassy_futures::select::select;
 #[cfg(feature = "owned-network")]
 use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(feature = "owned-network")]
-use oer_embassy_net::{
+use oer_embassy_net_owned::{
     OwnedLinkController, OwnedNetworkRunner, OwnedNetworkTxFrame, OwnedRxPublisher,
 };
-pub use oer_ieee80211::data::EthernetFrameParts;
-use oer_network::{LinkState, NetworkInterfaceId, RxEnqueueError};
+pub use oer_ieee80211_mac::data::EthernetFrameParts;
+use oer_network_interface::{LinkState, NetworkInterfaceId, RxEnqueueError};
 
 #[cfg(feature = "owned-network")]
 use super::{DatapathTxConsumer, PinnedTxConsumer, PinnedTxFrame};
@@ -652,7 +652,7 @@ impl<
     const RX_QUEUE_DEPTH: usize,
     const NETWORK_TX_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
-> oer_wifi_embassy::station_network::StationNetworkLink
+> oer_ieee80211_runtime::station_network::StationNetworkLink
     for DualOwnedDatapathNetwork<
         'resources,
         M,

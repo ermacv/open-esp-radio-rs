@@ -4,7 +4,7 @@
 //! counters, sampling, storage, report formatting or a HIL clock. Attaching an
 //! observer must not affect ownership, backpressure or scheduling decisions.
 
-pub use oer_esp32s31_wifi::rx::transaction::{
+pub use oer_esp32s31_ieee80211::rx::transaction::{
     Discard as RxStageDiscard, ServiceObservation as RxServiceObservation,
 };
 

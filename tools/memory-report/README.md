@@ -1,6 +1,6 @@
 # ELF memory report
 
-`open-esp-radio-memory-report` is a target-neutral, read-only ELF analyzer. It
+`oer-memory-report` is a target-neutral, read-only ELF analyzer. It
 keeps two kinds of evidence separate:
 
 - the ELF is authoritative for addresses, section sizes and symbol sizes;

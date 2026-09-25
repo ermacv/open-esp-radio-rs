@@ -2,12 +2,12 @@
 
 use core::{cell::Cell, pin::Pin};
 
+use oer_ieee80211_datapath::{BatchWriteError, PhysicalTxSource, ReservedTxBatch};
 use oer_memory::{
     AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, DmaIndexReturn, PinnedDmaTxPool,
     PinnedDmaTxRadioLease, ReturningStableDmaBacking, TaggedStableDmaBacking,
 };
-use oer_network::NetworkInterfaceId;
-use oer_wifi_datapath::{BatchWriteError, PhysicalTxSource, ReservedTxBatch};
+use oer_network_interface::NetworkInterfaceId;
 
 /// Static free-credit storage for one fused pinned TX allocator.
 pub struct PinnedBatchResources<const QUEUE_DEPTH: usize> {

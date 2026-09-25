@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-qualification-check"
+name = "oer-qualification"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,7 @@ publish = false
 description = "Fail-closed qualification evaluator for the open radio driver"
 
 [dependencies]
-open-esp-radio-hil-schema = { path = "../../hil/schema" }
+oer-hil-schema = { path = "../../hil/schema" }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 sha2 = "=0.10.9"
@@ -17,7 +17,7 @@ toml_edit = { version = "=0.25.13", features = ["serde"] }
 tar = { version = "0.4", default-features = false }
 
 [dev-dependencies]
-open-esp-radio-hil-schema = { path = "../../hil/schema", features = ["producer"] }
+oer-hil-schema = { path = "../../hil/schema", features = ["producer"] }
 
 [lints]
 workspace = true

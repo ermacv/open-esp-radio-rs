@@ -1,5 +1,5 @@
 use super::*;
-use open_esp_radio_hil_protocol::{StationPauseEvidence, StationPauseResult};
+use oer_hil_protocol::{StationPauseEvidence, StationPauseResult};
 
 #[test]
 fn detail_requires_matching_request_boot_session_and_preceding_completion() {
@@ -62,7 +62,7 @@ fn detail_requires_matching_request_boot_session_and_preceding_completion() {
 
 #[test]
 fn timer_detail_is_distinct_from_tx_detail_and_requires_its_own_correlation() {
-    use open_esp_radio_hil_protocol::TimerWindowEvidence;
+    use oer_hil_protocol::TimerWindowEvidence;
     let timer_event = Envelope::new(
         7,
         1,
@@ -183,7 +183,7 @@ fn service_detail_is_correlated_and_cannot_arrive_after_completion() {
 
 #[test]
 fn rfpll_terminal_detail_rejects_duplicates_and_unrelated_or_late_records() {
-    let value = open_esp_radio_hil_protocol::RfpllEvidence {
+    let value = oer_hil_protocol::RfpllEvidence {
         sample_age_micros: None,
         temperature: 10,
         reference_before: 10,
@@ -244,7 +244,7 @@ fn rfpll_terminal_detail_rejects_duplicates_and_unrelated_or_late_records() {
 
 #[test]
 fn temperature_detail_is_correlated_before_completion() {
-    let value = open_esp_radio_hil_protocol::TemperatureEvidence {
+    let value = oer_hil_protocol::TemperatureEvidence {
         temperature: 61,
         sensor_index: 2,
         next_dac: 15,
@@ -281,7 +281,7 @@ fn rx_gain_requires_matching_request_boot_session_and_preceding_completion() {
         1,
         0,
         42,
-        Event::StationPhyRxGain(open_esp_radio_hil_protocol::PhyRxGainEvidence::default()),
+        Event::StationPhyRxGain(oer_hil_protocol::PhyRxGainEvidence::default()),
     );
     let completion = Envelope::new(
         7,
@@ -298,7 +298,7 @@ fn rx_gain_requires_matching_request_boot_session_and_preceding_completion() {
     );
     assert_eq!(
         rx_gain(&[detail.clone(), completion.clone()], &completion).unwrap(),
-        Some(open_esp_radio_hil_protocol::PhyRxGainEvidence::default())
+        Some(oer_hil_protocol::PhyRxGainEvidence::default())
     );
     assert_eq!(
         rx_gain(&[completion.clone(), detail.clone()], &completion).unwrap(),

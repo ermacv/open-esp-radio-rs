@@ -1,6 +1,6 @@
 # ESP32-S31 Wi-Fi product integration
 
-`oer-esp32s31-embassy-wifi` composes the public radio lifecycle,
+`oer-esp32s31-ieee80211-system` composes the public radio lifecycle,
 static resources, IRQ bindings and selected network adapter. Applications own
 board identity, credentials, IP configuration and sockets. The
 [network implementation guide](../../../../../docs/network-implementations.md)
@@ -96,7 +96,7 @@ not automatically establish the corresponding AP or combined-role property.
   Wi-Fi power save.
 
 The item-level contracts are in `oer-radio-embassy`,
-`oer-esp32s31-wifi::runtime`, and the concrete role modules in this crate's
+`oer-esp32s31-ieee80211::runtime`, and the concrete role modules in this crate's
 source. `FEATURES.md` is navigation for scope and limitations; the generated
 qualification view remains the readiness authority.
 

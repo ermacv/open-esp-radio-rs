@@ -9,7 +9,7 @@
 
 pub use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
 pub use embassy_sync::signal::Signal;
-pub use oer_network::{
+pub use oer_network_interface::{
     ETHERNET_HEADER_LEN, FrameLengthError, LinkState, NetworkInterfaceId, RxEnqueueError,
 };
 
@@ -20,7 +20,7 @@ pub use owned::{
     OwnedNetworkTxFrame, OwnedRxPublisher, OwnedTxFrameSource,
 };
 
-impl<M: RawMutex> oer_wifi_datapath::SoftwareTxFrame for OwnedNetworkTxFrame<'_, M> {
+impl<M: RawMutex> oer_ieee80211_datapath::SoftwareTxFrame for OwnedNetworkTxFrame<'_, M> {
     fn interface(&self) -> NetworkInterfaceId {
         OwnedNetworkTxFrame::interface(self)
     }

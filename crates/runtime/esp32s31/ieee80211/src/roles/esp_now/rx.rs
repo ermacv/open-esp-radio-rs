@@ -5,19 +5,19 @@ use crate::datapath::rx::{
     frontier::{EmbassyRxFrontierDelay, ReceiveFrontier, RxFrontierError, RxFrontierPhase},
 };
 
-use oer_esp32s31_wifi_dma::rx_ring::RxSegment;
+use oer_esp32s31_ieee80211_dma::rx_ring::RxSegment;
 
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     RxDma, RxDmaBufferAddresses, RxIngressConfig, RxRingError, RxRingHalted,
 };
 
-use oer_esp32s31_wifi_sta::standalone_esp_now_rx::{
+use oer_esp32s31_ieee80211_sta::standalone_esp_now_rx::{
     StandaloneEspNowRxDispatch, StandaloneEspNowRxDispatcher, StandaloneEspNowRxSink,
 };
 
-use oer_ieee80211::channel::WifiChannel;
+use oer_ieee80211_mac::channel::WifiChannel;
 
-use oer_wifi_softmac::{EspNowRxEpoch, interface::BoundVirtualInterface};
+use oer_ieee80211_softmac::{EspNowRxEpoch, interface::BoundVirtualInterface};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct StandaloneEspNowRxProgress {
@@ -40,7 +40,10 @@ pub trait StandaloneEspNowReceive<H, S, const PEERS: usize> {
 
     fn station(&self) -> BoundVirtualInterface;
     fn home_channel(&self) -> WifiChannel;
-    fn peer_snapshot_matches(&self, protocol: &oer_wifi_softmac::EspNowProtocol<PEERS>) -> bool;
+    fn peer_snapshot_matches(
+        &self,
+        protocol: &oer_ieee80211_softmac::EspNowProtocol<PEERS>,
+    ) -> bool;
     fn phase(&self) -> RxFrontierPhase;
     fn start(&mut self, hardware: &mut H) -> Result<(), Self::Error>;
     fn service(
@@ -244,7 +247,10 @@ impl<
         self.dispatcher.epoch().config().home_channel()
     }
 
-    fn peer_snapshot_matches(&self, protocol: &oer_wifi_softmac::EspNowProtocol<PEERS>) -> bool {
+    fn peer_snapshot_matches(
+        &self,
+        protocol: &oer_ieee80211_softmac::EspNowProtocol<PEERS>,
+    ) -> bool {
         protocol.owns_rx_epoch(self.dispatcher.epoch())
     }
 

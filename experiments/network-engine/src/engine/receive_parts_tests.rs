@@ -6,7 +6,7 @@ use core::{
 };
 use std::{vec, vec::Vec};
 
-use oer_wifi_datapath::{BatchWriteError, RadioPeer};
+use oer_ieee80211_datapath::{BatchWriteError, RadioPeer};
 
 use super::*;
 

@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-hil-schema"
+name = "oer-hil-schema"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

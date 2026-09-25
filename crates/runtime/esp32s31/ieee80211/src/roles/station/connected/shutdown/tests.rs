@@ -7,7 +7,7 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 use oer_esp32s31_hal::types::MacKeyInstallOutcome;
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     crypto::{install_sta_group_ccmp, install_sta_pairwise_ccmp},
     irq::MacInterruptRoute,
 };
@@ -126,7 +126,7 @@ impl ConnectedStaRxPark<TeardownHardware> for TeardownRx {
 
 struct TeardownTx {
     active: bool,
-    pairwise: Option<oer_esp32s31_wifi_mac::crypto::StaPairwiseCcmpSlot>,
+    pairwise: Option<oer_esp32s31_ieee80211_mac::crypto::StaPairwiseCcmpSlot>,
 }
 
 impl ConnectedStaTxTeardown for TeardownTx {
@@ -141,10 +141,10 @@ impl ConnectedStaTxTeardown for TeardownTx {
         }
         Ok(ConnectedTxTeardownParts {
             resources: 5,
-            security: oer_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxSecurity::Wpa2Personal(
+            security: oer_esp32s31_ieee80211_sta::single_mpdu_tx::ConnectedTxSecurity::Wpa2Personal(
                 self.pairwise.take().expect("test TX owns its pairwise key"),
             ),
-            sequences: oer_ieee80211::station::StaTxSequenceCounters::new(6),
+            sequences: oer_ieee80211_mac::station::StaTxSequenceCounters::new(6),
             aggregate: 7,
         })
     }

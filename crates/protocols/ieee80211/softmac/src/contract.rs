@@ -1,6 +1,6 @@
 //! Split-MAC offload boundaries, service capabilities and normalized statuses.
 
-use oer_ieee80211::qos::WmmAccessCategory;
+use oer_ieee80211_mac::qos::WmmAccessCategory;
 
 use crate::interface;
 

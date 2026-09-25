@@ -7,9 +7,9 @@ use crate::diagnostics::core0_rx_cycles::{Core0RxCyclePhase, Core0RxCycleProfile
 use crate::diagnostics::core0_rx_performance::Core0PerformanceDmaProfile as Core0RxCycleProfile;
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::rx_pipeline::{RxPipelineObservation, RxPipelineObserver};
-use oer_esp32s31_wifi::rx::transaction::{Discard, Hooks, Phase, ServiceObservation};
+use oer_esp32s31_ieee80211::rx::transaction::{Discard, Hooks, Phase, ServiceObservation};
 #[cfg(feature = "diagnostics")]
-use oer_esp32s31_wifi_mac::rx::RxRingError;
+use oer_esp32s31_ieee80211_mac::rx::RxRingError;
 
 pub(super) struct Context<'a> {
     #[cfg(any(feature = "diagnostics", test))]

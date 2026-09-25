@@ -4,11 +4,11 @@ use crate::datapath::{DatapathTxConsumer, PinnedTxPool, PinnedTxResources};
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-use oer_embassy_net::{NetworkInterfaceId, OwnedEndpointResources};
+use oer_embassy_net_owned::{NetworkInterfaceId, OwnedEndpointResources};
 
-use oer_esp32s31_wifi_ap::{protocol::*, security::ApPairwiseKeyStorage};
+use oer_esp32s31_ieee80211_ap::{protocol::*, security::ApPairwiseKeyStorage};
 
-use oer_ieee80211::{beacon::WPA2_BEACON_CAPACITY, channel::WifiChannel, ssid::WifiSsid};
+use oer_ieee80211_mac::{beacon::WPA2_BEACON_CAPACITY, channel::WifiChannel, ssid::WifiSsid};
 
 use std::boxed::Box;
 

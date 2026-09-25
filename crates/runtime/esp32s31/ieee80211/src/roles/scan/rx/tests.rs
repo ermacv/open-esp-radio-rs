@@ -11,13 +11,13 @@ use crate::{
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     RxDmaBinding, RxDmaWalkerStopped, RxRingStopped, pool::RxStagePool,
 };
 
-use oer_wifi_embassy::{MonitorCapturePool, MonitorCaptureResources};
+use oer_ieee80211_runtime::{MonitorCapturePool, MonitorCaptureResources};
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     MonitorDropReason, MonitorFrame, MonitorPublishOutcome, MonitorSink, WifiConfig,
     WifiMonitorConfig,
     interface::{ChannelContextId, MonitorTapPoint},
@@ -70,8 +70,8 @@ impl RxDma for MockRxDma {
         }
     }
 
-    fn next_descriptor(&mut self) -> oer_esp32s31_wifi_dma::rx_dma::RxDmaNextDescriptor {
-        oer_esp32s31_wifi_dma::rx_dma::RxDmaNextDescriptor::validation(
+    fn next_descriptor(&mut self) -> oer_esp32s31_ieee80211_dma::rx_dma::RxDmaNextDescriptor {
+        oer_esp32s31_ieee80211_dma::rx_dma::RxDmaNextDescriptor::validation(
             self.next_descriptor_low(),
             false,
         )
@@ -80,14 +80,14 @@ impl RxDma for MockRxDma {
     fn with_ordered_cursor<R>(
         &mut self,
         observed: impl for<'confirmation> FnOnce(
-            oer_esp32s31_wifi_mac::rx::RxDmaCursorObservation<'confirmation>,
+            oer_esp32s31_ieee80211_mac::rx::RxDmaCursorObservation<'confirmation>,
         ) -> R,
     ) -> R {
         let last = self.last_descriptor_low();
         self.fence();
         let next = self.next_descriptor_low();
         self.fence();
-        observed(oer_esp32s31_wifi_mac::rx::RxDmaCursorObservation::validation(last, next))
+        observed(oer_esp32s31_ieee80211_mac::rx::RxDmaCursorObservation::validation(last, next))
     }
 
     fn walker_enabled(&mut self) -> bool {
@@ -101,11 +101,11 @@ impl RxDma for MockRxDma {
     fn try_with_reload_settled<R>(
         &mut self,
         settled: impl for<'confirmation> FnOnce(
-            oer_esp32s31_wifi_mac::rx::RxDmaReloadSettled<'confirmation>,
+            oer_esp32s31_ieee80211_mac::rx::RxDmaReloadSettled<'confirmation>,
         ) -> R,
     ) -> Option<R> {
         (!self.reload_pending())
-            .then(|| settled(oer_esp32s31_wifi_mac::rx::RxDmaReloadSettled::validation()))
+            .then(|| settled(oer_esp32s31_ieee80211_mac::rx::RxDmaReloadSettled::validation()))
     }
 
     fn configure_descriptor_window(&mut self, _: &RxDmaBinding) {}
@@ -126,7 +126,7 @@ impl RxDma for MockRxDma {
         &mut self,
         _: &RxDmaBinding,
         enabled: impl for<'confirmation> FnOnce(
-            oer_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled<'confirmation>,
+            oer_esp32s31_ieee80211_mac::rx::RxDmaWalkerEnabled<'confirmation>,
         ) -> R,
     ) -> Option<R> {
         if self.fail_enable {
@@ -134,7 +134,7 @@ impl RxDma for MockRxDma {
         } else {
             self.walker = true;
             Some(enabled(
-                oer_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled::validation(),
+                oer_esp32s31_ieee80211_mac::rx::RxDmaWalkerEnabled::validation(),
             ))
         }
     }
@@ -172,10 +172,10 @@ struct MonitorObserver {
     drop_all: bool,
 }
 
-impl MonitorSink<oer_esp32s31_wifi_mac::rx::RxPhyInfo> for MonitorObserver {
+impl MonitorSink<oer_esp32s31_ieee80211_mac::rx::RxPhyInfo> for MonitorObserver {
     fn try_publish(
         &mut self,
-        frame: MonitorFrame<'_, oer_esp32s31_wifi_mac::rx::RxPhyInfo>,
+        frame: MonitorFrame<'_, oer_esp32s31_ieee80211_mac::rx::RxPhyInfo>,
     ) -> MonitorPublishOutcome {
         assert_eq!(frame.tap, MonitorTapPoint::Normalized);
         assert_eq!(frame.channel_context, ChannelContextId::PRIMARY);
@@ -217,7 +217,7 @@ fn write_test_beacon(
 fn complete_test_beacon(
     storage: &ReceiveDmaStorage<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>,
 ) {
-    use oer_esp32s31_wifi_dma::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
+    use oer_esp32s31_ieee80211_dma::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
 
     const FRAME_LENGTH: usize = 43;
     const SIGNAL_LENGTH: usize = FRAME_LENGTH + 4;
@@ -229,9 +229,9 @@ fn complete_test_beacon(
     );
 }
 
-fn monitor_plan() -> oer_wifi_softmac::WifiStandaloneMonitorPlan {
+fn monitor_plan() -> oer_ieee80211_softmac::WifiStandaloneMonitorPlan {
     WifiConfig::monitor(WifiMonitorConfig::normalized())
-        .validate(oer_esp32s31_wifi_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES)
+        .validate(oer_esp32s31_ieee80211_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES)
         .unwrap()
         .standalone_monitor()
         .unwrap()
@@ -408,7 +408,7 @@ fn monitor_capture_owns_its_copy_while_current_last_remains_dma_visible() {
     let pool = MonitorCapturePool::<64, 2>::new();
     let resources = MonitorCaptureResources::<
         NoopRawMutex,
-        oer_esp32s31_wifi_mac::rx::RxPhyInfo,
+        oer_esp32s31_ieee80211_mac::rx::RxPhyInfo,
         2,
         64,
         2,

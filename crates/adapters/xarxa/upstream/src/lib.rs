@@ -15,7 +15,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::channel::{Channel, TrySendError};
 use embassy_sync::signal::Signal;
 use embassy_sync::waitqueue::GenericAtomicWaker;
-pub use oer_network::{FrameLengthError, LinkState, NetworkInterfaceId, RxEnqueueError};
+pub use oer_network_interface::{FrameLengthError, LinkState, NetworkInterfaceId, RxEnqueueError};
 pub use xarxa_driver as driver;
 use xarxa_driver::{Driver, PacketBuf};
 
@@ -170,7 +170,7 @@ impl<M: RawMutex> TxFrame<'_, M> {
     }
 }
 
-impl<M: RawMutex> oer_wifi_datapath::SoftwareTxFrame for TxFrame<'_, M> {
+impl<M: RawMutex> oer_ieee80211_datapath::SoftwareTxFrame for TxFrame<'_, M> {
     fn interface(&self) -> NetworkInterfaceId {
         self.interface
     }

@@ -9,7 +9,7 @@ fn missing_refresh_key_has_a_separate_finite_scenario() {
     assert!(matches!(
         scenario.workload,
         Workload::BluetoothSecurityFailure {
-            failure: open_esp_radio_hil_protocol::BluetoothSecurityFailure::MissingRefreshKey,
+            failure: oer_hil_protocol::BluetoothSecurityFailure::MissingRefreshKey,
             read_version_before_disconnect: false,
         }
     ));
@@ -197,7 +197,7 @@ fn missing_key_version_diagnostic_is_separate_and_rejects_wrong_key_mode() {
     else {
         panic!("separate diagnostic profile expected");
     };
-    *failure = open_esp_radio_hil_protocol::BluetoothSecurityFailure::WrongKey;
+    *failure = oer_hil_protocol::BluetoothSecurityFailure::WrongKey;
     assert!(diagnostic.validate().is_err());
 }
 
@@ -208,9 +208,9 @@ fn ap_scheduler_policy_is_archived_and_restricted_to_standalone_ht() {
     let mut scenario = catalog.get("diagnostic-ap-mixed-tx-work").unwrap().clone();
     assert_eq!(
         scenario.ap_scheduler,
-        open_esp_radio_hil_protocol::WifiApScheduler::Disabled
+        oer_hil_protocol::WifiApScheduler::Disabled
     );
-    scenario.ap_scheduler = open_esp_radio_hil_protocol::WifiApScheduler::DeficitHtResponse24;
+    scenario.ap_scheduler = oer_hil_protocol::WifiApScheduler::DeficitHtResponse24;
     assert!(scenario.validate().is_ok());
     let decoded: Scenario =
         serde_json::from_str(&serde_json::to_string(&scenario).unwrap()).unwrap();
@@ -403,7 +403,7 @@ fn repository_catalog_is_valid_and_unique() {
         Workload::Udp {
             direction: Direction::Rx,
             rx_rate_bps: Some(65_000_000),
-            station_pause: Some(open_esp_radio_hil_protocol::StationPauseOperation::Calibration),
+            station_pause: Some(oer_hil_protocol::StationPauseOperation::Calibration),
             ..
         }
     ));
@@ -441,19 +441,19 @@ fn repository_catalog_is_valid_and_unique() {
         ("diagnostic-station-rx-baseline-delivery", None),
         (
             "diagnostic-station-phy-access-delivery-rx",
-            Some(open_esp_radio_hil_protocol::StationPauseOperation::Access),
+            Some(oer_hil_protocol::StationPauseOperation::Access),
         ),
         (
             "diagnostic-station-phy-rxcal-delivery-rx",
-            Some(open_esp_radio_hil_protocol::StationPauseOperation::CommonCalibration),
+            Some(oer_hil_protocol::StationPauseOperation::CommonCalibration),
         ),
         (
             "diagnostic-station-phy-txcal-delivery-rx",
-            Some(open_esp_radio_hil_protocol::StationPauseOperation::TxCalibration),
+            Some(oer_hil_protocol::StationPauseOperation::TxCalibration),
         ),
         (
             "diagnostic-station-phy-combined-delivery-rx",
-            Some(open_esp_radio_hil_protocol::StationPauseOperation::Calibration),
+            Some(oer_hil_protocol::StationPauseOperation::Calibration),
         ),
     ];
     for (id, expected_pause) in delivery_matrix {
@@ -509,7 +509,7 @@ fn repository_catalog_is_valid_and_unique() {
     assert_eq!(control_pause, None);
     assert_eq!(
         calibration_pause,
-        Some(open_esp_radio_hil_protocol::StationPauseOperation::Calibration)
+        Some(oer_hil_protocol::StationPauseOperation::Calibration)
     );
     let mut normalized = ceiling_calibration.workload.clone();
     let Workload::Udp { station_pause, .. } = &mut normalized else {
@@ -540,22 +540,22 @@ fn repository_catalog_is_valid_and_unique() {
     };
     assert_eq!(
         *station_pause,
-        Some(open_esp_radio_hil_protocol::StationPauseOperation::Calibration)
+        Some(oer_hil_protocol::StationPauseOperation::Calibration)
     );
     *station_pause = None;
     assert_eq!(high_load_control.workload, normalized);
     for (id, expected_pause) in [
         (
             "diagnostic-station-phy-access-high-load-delivery-rx",
-            open_esp_radio_hil_protocol::StationPauseOperation::Access,
+            oer_hil_protocol::StationPauseOperation::Access,
         ),
         (
             "diagnostic-station-phy-rxcal-high-load-delivery-rx",
-            open_esp_radio_hil_protocol::StationPauseOperation::CommonCalibration,
+            oer_hil_protocol::StationPauseOperation::CommonCalibration,
         ),
         (
             "diagnostic-station-phy-txcal-high-load-delivery-rx",
-            open_esp_radio_hil_protocol::StationPauseOperation::TxCalibration,
+            oer_hil_protocol::StationPauseOperation::TxCalibration,
         ),
     ] {
         let scenario = catalog.get(id).unwrap();
@@ -593,19 +593,15 @@ fn repository_catalog_is_valid_and_unique() {
     };
     assert_eq!(
         *station_pause,
-        Some(
-            open_esp_radio_hil_protocol::StationPauseOperation::Synthetic {
-                duration_micros: 20_000,
-                notify_ap: true,
-            }
-        )
-    );
-    *station_pause = Some(
-        open_esp_radio_hil_protocol::StationPauseOperation::Synthetic {
+        Some(oer_hil_protocol::StationPauseOperation::Synthetic {
             duration_micros: 20_000,
-            notify_ap: false,
-        },
+            notify_ap: true,
+        })
     );
+    *station_pause = Some(oer_hil_protocol::StationPauseOperation::Synthetic {
+        duration_micros: 20_000,
+        notify_ap: false,
+    });
     assert_eq!(no_pm.workload, normalized);
     assert_eq!(
         catalog
@@ -1549,7 +1545,7 @@ fn calibration_scenario_accepts_each_direction_with_matching_rates() {
     };
     assert_eq!(
         *station_pause,
-        Some(open_esp_radio_hil_protocol::StationPauseOperation::Calibration)
+        Some(oer_hil_protocol::StationPauseOperation::Calibration)
     );
     *direction = Direction::Rx;
     *rx_rate_bps = tx_rate_bps.take();
@@ -1624,7 +1620,7 @@ fn nonzero_rfpll_criterion_is_restricted_to_observed_rfpll_workloads() {
 
 #[test]
 fn synthetic_absence_profiles_keep_the_same_load_and_validate_duration() {
-    use open_esp_radio_hil_protocol::StationPauseOperation;
+    use oer_hil_protocol::StationPauseOperation;
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
     let catalog = Catalog::load(&root).unwrap();
     let mut scenario = catalog

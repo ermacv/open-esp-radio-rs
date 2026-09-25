@@ -31,7 +31,7 @@ impl Scenario {
         {
             return Err("probe load requires diagnostic-task-poll, laptop plus OpenWrt peers, and 12-second multi-client UDP TX".into());
         }
-        if self.ap_scheduler != open_esp_radio_hil_protocol::WifiApScheduler::Disabled
+        if self.ap_scheduler != oer_hil_protocol::WifiApScheduler::Disabled
             && (!matches!(self.workload, Workload::AccessPoint { .. })
                 || !self.link.as_ref().is_some_and(|link| {
                     matches!(link.phy, PhyExpectation::Ht20 | PhyExpectation::Ht40)
@@ -488,7 +488,7 @@ impl Scenario {
             Workload::WifiPhyWatchdog => {
                 if self.image != ImageClass::DiagnosticPhyFault
                     || self.data_plane
-                        != open_esp_radio_hil_protocol::WifiDataPlanePlacement::SplitRadioNetwork
+                        != oer_hil_protocol::WifiDataPlanePlacement::SplitRadioNetwork
                     || self.link.is_none()
                     || self.criteria != Criteria::default()
                     || self.evidence != EvidenceConfig::default()
@@ -499,7 +499,7 @@ impl Scenario {
             Workload::BluetoothSecurityFailure {
                 failure,
                 read_version_before_disconnect: true,
-            } if *failure != open_esp_radio_hil_protocol::BluetoothSecurityFailure::MissingKey => {
+            } if *failure != oer_hil_protocol::BluetoothSecurityFailure::MissingKey => {
                 return self.criteria_error(
                     "plaintext verification requires initial missing-key rejection",
                 );
@@ -764,7 +764,7 @@ impl Scenario {
                 ..
             } => {
                 bounded(*duration_seconds, 5, 300, self, "duration_seconds")?;
-                if matches!(station_pause, Some(open_esp_radio_hil_protocol::StationPauseOperation::Synthetic { duration_micros, .. }) if *duration_micros == 0 || *duration_micros > 200_000)
+                if matches!(station_pause, Some(oer_hil_protocol::StationPauseOperation::Synthetic { duration_micros, .. }) if *duration_micros == 0 || *duration_micros > 200_000)
                 {
                     return Err("synthetic station pause must be between 1 and 200000 us".into());
                 }
@@ -791,7 +791,7 @@ impl Scenario {
                 if attempts > 1 {
                     if !matches!(
                         station_pause,
-                        Some(open_esp_radio_hil_protocol::StationPauseOperation::RfpllObserved)
+                        Some(oer_hil_protocol::StationPauseOperation::RfpllObserved)
                     ) || !self.criteria.require_nonzero_rfpll_correction
                     {
                         return Err("repeated station pause attempts require strict RFPLL-observed qualification".into());
@@ -1298,9 +1298,7 @@ impl Scenario {
             && !matches!(
                 self.workload,
                 Workload::Udp {
-                    station_pause: Some(
-                        open_esp_radio_hil_protocol::StationPauseOperation::RfpllObserved
-                    ),
+                    station_pause: Some(oer_hil_protocol::StationPauseOperation::RfpllObserved),
                     ..
                 }
             )

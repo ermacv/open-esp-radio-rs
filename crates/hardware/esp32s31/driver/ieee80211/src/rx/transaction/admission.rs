@@ -1,7 +1,7 @@
 //! Value-only admission contract for a real completed DMA unit.
 
 use super::Discard;
-use oer_esp32s31_wifi_mac::rx::pool::RxStageTransactionError;
+use oer_esp32s31_ieee80211_mac::rx::pool::RxStageTransactionError;
 
 /// Explicit bulk/critical capacity policy, independent of vendor pool sizes.
 ///
@@ -9,7 +9,7 @@ use oer_esp32s31_wifi_mac::rx::pool::RxStageTransactionError;
 /// ordinary credit, so a one-slot pool or queue requires explicit zero reserve.
 ///
 /// ```
-/// use oer_esp32s31_wifi::rx::transaction::CreditPolicy;
+/// use oer_esp32s31_ieee80211::rx::transaction::CreditPolicy;
 /// assert_eq!(CreditPolicy::new(1).validate(2, 2).unwrap().critical_reserved_credits(), 1);
 /// assert!(CreditPolicy::new(1).validate(32, 1).is_err());
 /// assert_eq!(CreditPolicy::new(0).validate(32, 1).unwrap().critical_reserved_credits(), 0);

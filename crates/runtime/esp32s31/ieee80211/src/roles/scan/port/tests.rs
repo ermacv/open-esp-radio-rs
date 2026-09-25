@@ -4,11 +4,11 @@ use core::{
     task::{Context, Poll},
 };
 
-use oer_esp32s31_wifi_sta::scan::{StaScanBackend, StaScanConfig};
+use oer_esp32s31_ieee80211_sta::scan::{StaScanBackend, StaScanConfig};
 
-use oer_ieee80211::scan::ScanObservation;
+use oer_ieee80211_mac::scan::ScanObservation;
 
-use oer_wifi_sta::scan::{StaCandidateScanExit, StaCandidateScanService};
+use oer_ieee80211_sta::scan::{StaCandidateScanExit, StaCandidateScanService};
 
 use std::vec::Vec;
 
@@ -32,7 +32,7 @@ struct Hardware {
     actions: Vec<Action>,
 }
 
-impl oer_esp32s31_wifi_mac::init::MacSnifferHardware for Hardware {
+impl oer_esp32s31_ieee80211_mac::init::MacSnifferHardware for Hardware {
     fn configure_open_promiscuous_receive(&mut self) {
         self.actions.push(Action::AdmissionOn);
     }
@@ -42,7 +42,7 @@ impl oer_esp32s31_wifi_mac::init::MacSnifferHardware for Hardware {
     }
 }
 
-impl oer_esp32s31_wifi_mac::init::MacRuntimeStopHardware for Hardware {
+impl oer_esp32s31_ieee80211_mac::init::MacRuntimeStopHardware for Hardware {
     fn request_mac_runtime_stop(&mut self) {
         self.actions.push(Action::StopMac);
     }

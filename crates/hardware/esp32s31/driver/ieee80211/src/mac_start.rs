@@ -4,12 +4,12 @@ use crate::cold_start::{WifiColdStart, WifiColdStartReport};
 
 use oer_esp32s31_phy::{PhyCalibrationCache, PhyTxTargetPowerProfile, RegisteredPhyRadio};
 
-use oer_esp32s31_wifi_mac::init::{
+use oer_esp32s31_ieee80211_mac::init::{
     MacCoexPtiSource, MacColdStartError, MacColdStartOutcome, MacDelayEntropy,
     MacSlowClockCalibrationSource, MacTxPowerSource, initialize_wifi_mac,
 };
 
-use oer_wifi_softmac::WifiMacAddress;
+use oer_ieee80211_softmac::WifiMacAddress;
 
 /// Platform operations needed to join the calibrated PHY power table to the
 /// finite MAC initializer.
@@ -145,7 +145,7 @@ where
         initialize_wifi_mac(
             platform,
             &mut mac,
-            oer_esp32s31_wifi_mac::init::MacColdStartConfig {
+            oer_esp32s31_ieee80211_mac::init::MacColdStartConfig {
                 handshake_sample_limit: config.handshake_sample_limit,
                 station_address: config.station_address.bytes(),
                 access_point_address: config.access_point_address.bytes(),

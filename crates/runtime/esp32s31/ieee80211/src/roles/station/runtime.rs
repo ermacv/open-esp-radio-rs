@@ -13,12 +13,12 @@ use core::future::Future;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_esp32s31_wifi::{
+use oer_esp32s31_ieee80211::{
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
     tx::WifiTxWake,
 };
 
-use oer_esp32s31_wifi_mac::tx::ampdu::HtAmpduHardware;
+use oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware;
 
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
@@ -858,7 +858,7 @@ where
     'resources: 'ampdu,
 {
     type Error = StaApStationControlError;
-    type Exit = oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
+    type Exit = oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason;
 
     fn service_station_control<'a>(
         &'a mut self,

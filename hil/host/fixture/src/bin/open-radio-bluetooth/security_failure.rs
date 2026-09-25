@@ -19,8 +19,8 @@ mod peer {
         event::Event,
         param::{ConnHandle, EncryptionEnabledLevel, Status},
     };
-    use open_esp_radio_hil_protocol::BluetoothSecurityFailure as Failure;
-    use open_esp_radio_hil_protocol::{
+    use oer_hil_protocol::BluetoothSecurityFailure as Failure;
+    use oer_hil_protocol::{
         BLUETOOTH_REFRESH_EDIV, BLUETOOTH_REFRESH_LTK, BLUETOOTH_REFRESH_RAND, BLUETOOTH_TEST_EDIV,
         BLUETOOTH_TEST_LTK, BLUETOOTH_TEST_RAND,
     };
@@ -67,7 +67,7 @@ mod peer {
                     ))?;
                 }
                 Action::SendData => {
-                    let payload = open_esp_radio_hil_protocol::bluetooth_peripheral_acl_payload();
+                    let payload = oer_hil_protocol::bluetooth_peripheral_acl_payload();
                     user.send_acl(&AclPacket::new(
                         handle,
                         AclPacketBoundary::FirstNonFlushable,

@@ -11,12 +11,12 @@ use embassy_futures::block_on;
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-use oer_esp32s31_wifi_runtime::roles::station::{
+use oer_esp32s31_ieee80211_runtime::roles::station::{
     StationAttemptRunner, StationCommandReceiver, StationConfiguration, StationControlResources,
     StationExit, StationStartResources, StationStopReason, prepare_esp32s31_station_task,
 };
 
-use oer_wifi_sta::station::{StaAttemptContext, StaAttemptOutcome, StaReconnectPolicy};
+use oer_ieee80211_sta::station::{StaAttemptContext, StaAttemptOutcome, StaReconnectPolicy};
 
 #[derive(Debug, Eq, PartialEq)]
 struct StationOwner {

@@ -43,8 +43,8 @@ api = { package = "embassy-net", path = "../stack" }
 device = { package = "embassy-net-driver", path = "../helper" }
 platform = { package = "esp-hal", path = "../crates/hardware/test-radio" }
 released-embassy = { package = "oer-embassy-net-upstream", path = "../released-embassy", optional = true }
-bridge = { package = "oer-esp32s31-wifi-embassy-upstream", path = "../bridge", optional = true }
-owned = { package = "oer-embassy-net", path = "../owned", optional = true }
+bridge = { package = "oer-esp32s31-ieee80211-embassy-net-upstream", path = "../bridge", optional = true }
+owned = { package = "oer-embassy-net-owned", path = "../owned", optional = true }
 [features]
 default = ["embassy-network"]
 embassy-network = ["dep:released-embassy", "dep:bridge"]
@@ -59,8 +59,8 @@ owned-network = ["dep:owned"]
     fixture.package("stack", "embassy-net", "");
     fixture.package("crates/hardware/test-radio", "esp-hal", "");
     fixture.package("released-embassy", "oer-embassy-net-upstream", "");
-    fixture.package("bridge", "oer-esp32s31-wifi-embassy-upstream", "");
-    fixture.package("owned", "oer-embassy-net", "");
+    fixture.package("bridge", "oer-esp32s31-ieee80211-embassy-net-upstream", "");
+    fixture.package("owned", "oer-embassy-net-owned", "");
     fixture
 }
 

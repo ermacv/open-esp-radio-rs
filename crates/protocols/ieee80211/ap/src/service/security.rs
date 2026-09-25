@@ -130,7 +130,7 @@ impl<'peers> AccessPointService<'peers> {
             // hostapd extends only the acknowledged initial M1 window. M3
             // retains the short first timeout, then uses the subsequent one.
             if acknowledged
-                && transmit.message == oer_wifi_rsn::state::RsnTxMessage::PairwiseMessage1
+                && transmit.message == oer_ieee80211_rsn::state::RsnTxMessage::PairwiseMessage1
             {
                 alarm = existing
                     .wpa2_retry
@@ -181,7 +181,7 @@ impl<'peers> AccessPointService<'peers> {
             RsnRetryAction::Transmit { frame, next_alarm } => {
                 self.checked_peer_mut(peer_address)?.wpa2_retry_alarm = Some(next_alarm);
                 let frame = match frame.message {
-                    oer_wifi_rsn::state::RsnTxMessage::PairwiseMessage1 => {
+                    oer_ieee80211_rsn::state::RsnTxMessage::PairwiseMessage1 => {
                         let state = self
                             .checked_peer(peer_address)?
                             .wpa2
@@ -189,7 +189,7 @@ impl<'peers> AccessPointService<'peers> {
                             .ok_or(ApServiceError::WrongPeerPhase)?;
                         build_ap_action_frame(state, frame, [0; 8], &[])?
                     }
-                    oer_wifi_rsn::state::RsnTxMessage::PairwiseMessage3 => {
+                    oer_ieee80211_rsn::state::RsnTxMessage::PairwiseMessage3 => {
                         let ApWpa2Progress::Transmit(frame) =
                             self.build_pending_transmit(peer_address, frame)?
                         else {
@@ -290,7 +290,7 @@ impl<'peers> AccessPointService<'peers> {
     fn complete_message2<const N: usize>(
         &mut self,
         peer: [u8; 6],
-        ticket: oer_wifi_rsn::state::RsnTicket,
+        ticket: oer_ieee80211_rsn::state::RsnTicket,
         context: Wpa2StatePtkContext,
         message2: OwnedEapolFrame<N>,
     ) -> Result<ApWpa2Progress<N>, ApWpa2Error> {
@@ -385,7 +385,7 @@ impl<'peers> AccessPointService<'peers> {
     fn build_pending_transmit<const N: usize>(
         &self,
         peer: [u8; 6],
-        transmit: oer_wifi_rsn::state::RsnTransmit,
+        transmit: oer_ieee80211_rsn::state::RsnTransmit,
     ) -> Result<ApWpa2Progress<N>, ApWpa2Error> {
         let existing = self.checked_peer(peer)?;
         let state = existing

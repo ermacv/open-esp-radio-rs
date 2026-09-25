@@ -15,24 +15,25 @@ use crate::{
     wpa2::{Wpa2HandshakeTelemetry, Wpa2Message4Protection},
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     crypto::{StaGroupCcmpKeyMaterial, StaGroupCcmpSlot, StaPairwiseCcmpSlot},
     tx::TxCompletion,
 };
 
 use {
-    oer_ieee80211::channel::WifiChannel, oer_ieee80211::channel::WifiChannelError,
-    oer_ieee80211::channel::WifiChannelWidth, oer_ieee80211::scan::ScanRecord,
-    oer_ieee80211::security::WifiSecurityMode, oer_ieee80211::station::StaTxSequenceCounters,
-    oer_ieee80211::station::association::Preference,
+    oer_ieee80211_mac::channel::WifiChannel, oer_ieee80211_mac::channel::WifiChannelError,
+    oer_ieee80211_mac::channel::WifiChannelWidth, oer_ieee80211_mac::scan::ScanRecord,
+    oer_ieee80211_mac::security::WifiSecurityMode,
+    oer_ieee80211_mac::station::StaTxSequenceCounters,
+    oer_ieee80211_mac::station::association::Preference,
 };
 
-use oer_wifi_sta::{
+use oer_ieee80211_sta::{
     join::{StaAssociationSuccess, StaAuthenticationSuccess},
     station::{StaFailureDisposition, StaLifecycleStage},
 };
 
-use oer_wifi_rsn::{Pmk, runner::RsnKeyInstallMetadata, supplicant::RsnConnectedSupplicant};
+use oer_ieee80211_rsn::{Pmk, runner::RsnKeyInstallMetadata, supplicant::RsnConnectedSupplicant};
 
 /// Immutable local/candidate policy for one attempt.
 #[derive(Clone, Copy)]

@@ -1,6 +1,6 @@
 //! Qualified storage geometry and aliases over the affine DMA arena.
 
-use oer_esp32s31_wifi_dma::rx_storage::{RxDmaBuffer, RxDmaStorage};
+use oer_esp32s31_ieee80211_dma::rx_storage::{RxDmaBuffer, RxDmaStorage};
 
 /// Descriptor count and allocation geometry qualified by the ordinary S31
 /// large-RX profile.

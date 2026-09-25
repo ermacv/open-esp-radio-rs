@@ -3,7 +3,7 @@
 //! and sealed run evidence.
 //!
 //! Radio-family workloads and their fixtures live in the domain packages that
-//! depend on this crate; the `open-esp-radio-hil-runner` binary composes them.
+//! depend on this crate; the `oer-hil-runner` binary composes them.
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
 pub mod archive;

@@ -45,7 +45,7 @@ use oer::wifi::{
     StationSecurity, WifiChannel, WifiMacAddress, WifiScanRequest, WifiSsid,
 };
 
-use oer_esp32s31_embassy_runtime::{self as platform_executor, Executor};
+use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
 
 use oer::systems::esp32s31::embassy::wifi::{
     self as integration, DeadlineBudget, DeadlineWatchdog, EspHalRadioPeripheral,

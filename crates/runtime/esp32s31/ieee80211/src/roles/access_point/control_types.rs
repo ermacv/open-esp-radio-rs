@@ -100,7 +100,7 @@ enum AccessPointRxProtocolClass {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AccessPointControlError {
-    Receive(oer_esp32s31_wifi_mac::rx::pool::RxStageTransactionError),
+    Receive(oer_esp32s31_ieee80211_mac::rx::pool::RxStageTransactionError),
     Mac(ApMacError),
     /// The caller-provided RX scratch cannot retain one fully decoded batch.
     ReceiveBatchCapacity,
@@ -173,7 +173,7 @@ pub struct AccessPointStopped<
         &'storage RxReorderFrameStorage<DMA_BUFFER_SIZE, RX_REORDER_BACKING_SLOT_COUNT>,
     #[cfg(feature = "diagnostics")]
     pub observation_storage: &'static mut AccessPointObservationStorage,
-    pub engine: oer_esp32s31_wifi_ap::engine::ApEngineStop<'beacon>,
+    pub engine: oer_esp32s31_ieee80211_ap::engine::ApEngineStop<'beacon>,
 }
 
 /// Quiescent AP protocol owners returned by a paired STA+AP DATAPATH.
@@ -201,7 +201,7 @@ pub struct AccessPointProtocolStopped<
         &'storage RxReorderFrameStorage<DMA_BUFFER_SIZE, RX_REORDER_BACKING_SLOT_COUNT>,
     #[cfg(feature = "diagnostics")]
     pub observation_storage: &'static mut AccessPointObservationStorage,
-    pub engine: oer_esp32s31_wifi_ap::engine::ApEngineStop<'beacon>,
+    pub engine: oer_esp32s31_ieee80211_ap::engine::ApEngineStop<'beacon>,
 }
 
 /// AP role-local owners after ordinary TX has returned to the paired
@@ -216,7 +216,7 @@ pub struct AccessPointProtocolFinished<'storage, 'beacon, const DMA_BUFFER_SIZE:
         &'storage RxReorderFrameStorage<DMA_BUFFER_SIZE, RX_REORDER_BACKING_SLOT_COUNT>,
     #[cfg(feature = "diagnostics")]
     pub observation_storage: &'static mut AccessPointObservationStorage,
-    pub engine: oer_esp32s31_wifi_ap::engine::ApEngineStop<'beacon>,
+    pub engine: oer_esp32s31_ieee80211_ap::engine::ApEngineStop<'beacon>,
 }
 
 impl<'storage, 'beacon, 'slot, P, E, T, const DMA_BUFFER_SIZE: usize, const TX_BUFFER_SIZE: usize>
@@ -254,10 +254,10 @@ impl<'storage, 'beacon, 'slot, P, E, T, const DMA_BUFFER_SIZE: usize, const TX_B
     }
 }
 
-impl From<oer_esp32s31_wifi_mac::rx::pool::RxStageTransactionError>
+impl From<oer_esp32s31_ieee80211_mac::rx::pool::RxStageTransactionError>
     for AccessPointControlError
 {
-    fn from(error: oer_esp32s31_wifi_mac::rx::pool::RxStageTransactionError) -> Self {
+    fn from(error: oer_esp32s31_ieee80211_mac::rx::pool::RxStageTransactionError) -> Self {
         Self::Receive(error)
     }
 }
@@ -286,10 +286,10 @@ impl From<AccessPointRxReorderError> for AccessPointControlError {
     }
 }
 
-impl From<oer_esp32s31_wifi_ap::engine::ApEngineError>
+impl From<oer_esp32s31_ieee80211_ap::engine::ApEngineError>
     for AccessPointControlError
 {
-    fn from(error: oer_esp32s31_wifi_ap::engine::ApEngineError) -> Self {
+    fn from(error: oer_esp32s31_ieee80211_ap::engine::ApEngineError) -> Self {
         Self::Mac(ApMacError::Engine(error))
     }
 }

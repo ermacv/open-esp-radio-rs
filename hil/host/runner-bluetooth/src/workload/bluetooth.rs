@@ -11,7 +11,7 @@ pub mod security_failure;
 
 use crate::{Result, fixture::bluetooth};
 use hil_core::{context::Context, session::SerialCapture};
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS, BluetoothDtmOperation as Operation, BluetoothDtmResult,
     BluetoothPeripheralEvidence, BluetoothPeripheralOperation, BluetoothPeripheralTermination,
 };
@@ -312,7 +312,7 @@ pub fn run_peripheral(
 pub fn configure_encryption(
     capture: &SerialCapture,
     enabled: bool,
-    failure: Option<open_esp_radio_hil_protocol::BluetoothSecurityFailure>,
+    failure: Option<oer_hil_protocol::BluetoothSecurityFailure>,
 ) -> Result<()> {
     if enabled {
         let caps = capture.request_capabilities(Duration::from_secs(10))?;
@@ -326,7 +326,7 @@ pub fn configure_encryption(
             })?;
         if !matches!(
             configured.result,
-            open_esp_radio_hil_protocol::BluetoothPeripheralResult::EncryptedAclConfigured {
+            oer_hil_protocol::BluetoothPeripheralResult::EncryptedAclConfigured {
                 enabled: true, failure: observed
             } if observed == failure
         ) {
@@ -473,7 +473,7 @@ fn probe_peripheral(
                 }
             }
             let expected = u32::from(cycle);
-            if !matches!(maintained.result, open_esp_radio_hil_protocol::BluetoothPeripheralResult::Maintained { cycles, .. } if cycles == expected)
+            if !matches!(maintained.result, oer_hil_protocol::BluetoothPeripheralResult::Maintained { cycles, .. } if cycles == expected)
             {
                 return Err("Bluetooth maintenance counter did not advance in this boot".into());
             }
@@ -482,7 +482,7 @@ fn probe_peripheral(
         if restart_between_connections && cycle < connections {
             let restarted = capture.bluetooth_peripheral(BluetoothPeripheralOperation::Restart)?;
             let expected = u32::from(cycle);
-            if !matches!(restarted.result, open_esp_radio_hil_protocol::BluetoothPeripheralResult::Restarted { cycles, .. } if cycles == expected)
+            if !matches!(restarted.result, oer_hil_protocol::BluetoothPeripheralResult::Restarted { cycles, .. } if cycles == expected)
             {
                 return Err("Bluetooth restart counter did not advance in this boot".into());
             }
@@ -654,7 +654,7 @@ mod peripheral_tests {
     }
 
     use super::*;
-    use open_esp_radio_hil_protocol::BluetoothPeripheralResult;
+    use oer_hil_protocol::BluetoothPeripheralResult;
 
     pub(super) fn evidence() -> BluetoothPeripheralEvidence {
         BluetoothPeripheralEvidence {
@@ -858,19 +858,17 @@ mod peripheral_tests {
         assert!(require_active_maintenance(4, &current).is_err());
         current.phy_peripheral_maintenance = 4;
         assert!(require_active_maintenance(3, &current).is_err());
-        current.phy_maintenance = Some(
-            open_esp_radio_hil_protocol::BluetoothPhyMaintenanceEvidence {
-                restored: 3,
-                quiesced_at_micros: Some(10),
-                phy_started_at_micros: Some(20),
-                phy_finished_at_micros: Some(50),
-                physical_finished_at_micros: Some(60),
-                execution_deadline_micros: Some(90),
-                run_at_micros: Some(100),
-                restoration_deadline_micros: Some(200),
-                ..Default::default()
-            },
-        );
+        current.phy_maintenance = Some(oer_hil_protocol::BluetoothPhyMaintenanceEvidence {
+            restored: 3,
+            quiesced_at_micros: Some(10),
+            phy_started_at_micros: Some(20),
+            phy_finished_at_micros: Some(50),
+            physical_finished_at_micros: Some(60),
+            execution_deadline_micros: Some(90),
+            run_at_micros: Some(100),
+            restoration_deadline_micros: Some(200),
+            ..Default::default()
+        });
         assert!(require_active_maintenance(3, &current).is_err());
         current.phy_maintenance.as_mut().unwrap().restored = 4;
         require_active_maintenance(3, &current).unwrap();
@@ -1005,7 +1003,7 @@ fn require_active_maintenance(baseline: u32, current: &BluetoothPeripheralEviden
 fn require_encrypted_cycle(
     cycle: u8,
     key_refresh: bool,
-    baseline: open_esp_radio_hil_protocol::BluetoothEncryptionEvidence,
+    baseline: oer_hil_protocol::BluetoothEncryptionEvidence,
     snapshot: &BluetoothPeripheralEvidence,
 ) -> Result<()> {
     let e = snapshot
@@ -1040,7 +1038,7 @@ fn require_encrypted_cycle(
 #[cfg(test)]
 mod encrypted_tests {
     use super::*;
-    use open_esp_radio_hil_protocol::BluetoothEncryptionEvidence;
+    use oer_hil_protocol::BluetoothEncryptionEvidence;
     #[test]
     fn recovery_keeps_failure_counters_and_requires_new_successful_encryption() {
         for wrong in [false, true] {
@@ -1184,7 +1182,7 @@ mod encrypted_tests {
 #[cfg(test)]
 mod session_tests {
     use hil_core::session::test_support::*;
-    use open_esp_radio_hil_protocol::{Command, Envelope, Event};
+    use oer_hil_protocol::{Command, Envelope, Event};
     use std::{thread, time::Duration};
 
     #[test]
@@ -1217,11 +1215,9 @@ mod session_tests {
             assert_eq!(
                 request.body,
                 Command::BluetoothPeripheral(
-                    open_esp_radio_hil_protocol::BluetoothPeripheralOperation::EncryptedAcl {
+                    oer_hil_protocol::BluetoothPeripheralOperation::EncryptedAcl {
                         enabled: true,
-                        failure: Some(
-                            open_esp_radio_hil_protocol::BluetoothSecurityFailure::MissingKey
-                        ),
+                        failure: Some(oer_hil_protocol::BluetoothSecurityFailure::MissingKey),
                     }
                 )
             );
@@ -1231,14 +1227,14 @@ mod session_tests {
                     2,
                     0,
                     request.request_id,
-                    Event::Rejected(open_esp_radio_hil_protocol::RejectReason::InvalidState),
+                    Event::Rejected(oer_hil_protocol::RejectReason::InvalidState),
                 ))))
                 .unwrap();
         });
         let error = super::configure_encryption(
             &capture,
             true,
-            Some(open_esp_radio_hil_protocol::BluetoothSecurityFailure::MissingKey),
+            Some(oer_hil_protocol::BluetoothSecurityFailure::MissingKey),
         )
         .unwrap_err();
         target.join().unwrap();

@@ -12,7 +12,7 @@ fn main() {
         "select one code profile"
     );
     oer_firmware::linker::configure_runtime(
-        "open-esp-radio-hil-esp32s31-runtime",
+        "oer-hil-esp32s31-runtime",
         &manifest.join("../../../../platform/esp32s31/linker"),
         data,
         code,

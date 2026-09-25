@@ -1,7 +1,7 @@
 //! Real DTM sessions end through the selected autonomous platform reset.
 use crate::{Result, fixture::bluetooth};
 use hil_core::context::Context;
-use open_esp_radio_hil_protocol::{BluetoothDtmOperation as Op, ResetReason as Reset};
+use oer_hil_protocol::{BluetoothDtmOperation as Op, ResetReason as Reset};
 use std::{path::Path, time::Duration};
 
 pub fn run(output: &Path, context: &Context<'_>, expected_reset: Reset) -> Result<()> {
@@ -145,10 +145,7 @@ fn rf_evidence(
     }
 }
 
-fn image_matches(
-    expected: Reset,
-    features: open_esp_radio_hil_protocol::FeatureCapabilities,
-) -> bool {
+fn image_matches(expected: Reset, features: oer_hil_protocol::FeatureCapabilities) -> bool {
     match expected {
         Reset::Software => features.bluetooth_phy_maintenance && !features.bluetooth_watchdog_reset,
         Reset::MainWatchdog1 => {
@@ -256,7 +253,7 @@ mod tests {
     fn reset_mechanisms_cannot_substitute_for_each_other_or_mix() {
         for automatic in [false, true] {
             for watchdog in [false, true] {
-                let features = open_esp_radio_hil_protocol::FeatureCapabilities {
+                let features = oer_hil_protocol::FeatureCapabilities {
                     bluetooth_phy_maintenance: automatic,
                     bluetooth_watchdog_reset: watchdog,
                     ..Default::default()

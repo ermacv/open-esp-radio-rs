@@ -2,8 +2,8 @@
 //! Retry causes count re-publications, not the final failure or hardware retries.
 
 use core::sync::atomic::{AtomicU32, Ordering};
-use oer_esp32s31_wifi_mac::tx::TxCompletionDisposition;
-use oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::OrdinaryTxOutcome;
+use oer_esp32s31_ieee80211_mac::tx::TxCompletionDisposition;
+use oer_esp32s31_ieee80211_runtime::diagnostics::aggregate_tx::OrdinaryTxOutcome;
 
 pub(super) struct Counters {
     reported: AtomicU32,
@@ -114,11 +114,11 @@ impl StationOrdinarySnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oer_esp32s31_wifi_mac::tx::{LegacyRate, TxPhyRate};
-    use oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::{
+    use oer_esp32s31_ieee80211_mac::tx::{LegacyRate, TxPhyRate};
+    use oer_esp32s31_ieee80211_runtime::diagnostics::aggregate_tx::{
         OrdinaryTxReport, OrdinaryTxRetryReport,
     };
-    use oer_wifi_softmac::{MacTxResult, MacTxStatus};
+    use oer_ieee80211_softmac::{MacTxResult, MacTxStatus};
 
     #[test]
     fn cts_recovery_is_distinct_from_ack_retry_timeout_and_missing_report() {
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn terminal_cts_failure_is_not_a_republication_or_recovery() {
-        use oer_esp32s31_wifi_mac::tx::{TxCompletion, TxCookie};
+        use oer_esp32s31_ieee80211_mac::tx::{TxCompletion, TxCookie};
 
         let counters = Counters::new();
         // Cross a counter wrap while retaining the terminal classification.

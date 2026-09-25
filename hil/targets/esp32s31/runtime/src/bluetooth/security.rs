@@ -7,8 +7,8 @@ use bt_hci::{
     param::ConnHandle,
 };
 use oer_esp32s31_bluetooth::le::peripheral::rx_fault;
-use open_esp_radio_hil_protocol::{BluetoothEncryptionEvidence, BluetoothSecurityFailure};
-use open_esp_radio_hil_target_core::bluetooth::security::{self as policy, KeyReply};
+use oer_hil_protocol::{BluetoothEncryptionEvidence, BluetoothSecurityFailure};
+use oer_hil_target_core::bluetooth::security::{self as policy, KeyReply};
 
 pub(super) use policy::enabled;
 

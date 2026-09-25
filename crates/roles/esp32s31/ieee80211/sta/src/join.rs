@@ -1,7 +1,7 @@
 //! ESP32-S31 semantic ports for pre-connected STA join.
 //!
 //! Portable Authentication/Association retry and deadline policy lives in
-//! `oer-wifi-sta::join`. These interfaces describe the narrower
+//! `oer-ieee80211-sta::join`. These interfaces describe the narrower
 //! chip operations needed to bind that policy to ESP32-S31. They deliberately
 //! contain no DMA owner, executor timer, task primitive or board fixture.
 
@@ -9,11 +9,11 @@ use core::future::Future;
 
 use crate::association::{StaAssociationProfile, StaAssociationProfileError};
 
-use oer_esp32s31_wifi::tx::WifiTxPowerProfile;
+use oer_esp32s31_ieee80211::tx::WifiTxPowerProfile;
 
-use oer_esp32s31_wifi_mac::tx::TxCompletion;
+use oer_esp32s31_ieee80211_mac::tx::TxCompletion;
 
-use oer_ieee80211::station::{AssociationRequest, OpenAuthenticationRequest};
+use oer_ieee80211_mac::station::{AssociationRequest, OpenAuthenticationRequest};
 
 /// RX capability consumed by a concrete ESP32-S31 join adapter.
 pub trait StaJoinReceive<H> {
@@ -33,7 +33,7 @@ pub trait StaJoinReceive<H> {
         observer: &mut O,
     ) -> Result<(), Self::Error>
     where
-        O: oer_wifi_sta::join::StaJoinRxObserver;
+        O: oer_ieee80211_sta::join::StaJoinRxObserver;
 }
 
 /// Control-TX capability consumed by a concrete ESP32-S31 join adapter.

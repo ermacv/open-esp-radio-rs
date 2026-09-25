@@ -38,7 +38,7 @@ where
             if let Some(scratch) = self.reorder_scratch.as_deref_mut() {
                 let length = source.buffer.len();
                 scratch[..length].copy_from_slice(source.buffer);
-                let segment = oer_esp32s31_wifi_mac::rx::RxSegment {
+                let segment = oer_esp32s31_ieee80211_mac::rx::RxSegment {
                     descriptor_address: source.descriptor_address,
                     descriptor_word0: source.descriptor_word0,
                     buffer: &scratch[..length],
@@ -254,7 +254,7 @@ where
 
     async fn dispatch_segment(
         &mut self,
-        segment: oer_esp32s31_wifi_mac::rx::RxSegment<'_>,
+        segment: oer_esp32s31_ieee80211_mac::rx::RxSegment<'_>,
         runtime_received_at_micros: Option<u64>,
     ) -> ConnectedRxDispatch {
         if self.runtime.dispatcher.may_publish_amsdu(segment) {
@@ -274,7 +274,7 @@ where
 
     async fn dispatch_amsdu(
         &mut self,
-        segment: oer_esp32s31_wifi_mac::rx::RxSegment<'_>,
+        segment: oer_esp32s31_ieee80211_mac::rx::RxSegment<'_>,
     ) -> ConnectedRxDispatch {
         #[cfg(any(feature = "diagnostics", test))]
         let dispatch_started = self.pipeline_observer.map(|observer| observer.now_micros());
@@ -426,8 +426,8 @@ impl<S: ConnectedRxSink> ConnectedRxSink for StagedEthernetCapture<'_, S> {
 
     fn publish_esp_now_v2(
         &mut self,
-        received: oer_wifi_softmac::EspNowReceivedV2<'_>,
-        metadata: oer_wifi_softmac::MacRxMetadata<oer_esp32s31_wifi_mac::rx::RxPhyInfo>,
+        received: oer_ieee80211_softmac::EspNowReceivedV2<'_>,
+        metadata: oer_ieee80211_softmac::MacRxMetadata<oer_esp32s31_ieee80211_mac::rx::RxPhyInfo>,
     ) {
         self.sink.publish_esp_now_v2(received, metadata);
     }
@@ -441,7 +441,7 @@ async fn dispatch_non_amsdu_segment<
     dispatcher: &mut ConnectedRxDispatcher,
     sink: &mut S,
     mpdu: &mut [u8],
-    segment: oer_esp32s31_wifi_mac::rx::RxSegment<'_>,
+    segment: oer_esp32s31_ieee80211_mac::rx::RxSegment<'_>,
     runtime_received_at_micros: Option<u64>,
     #[cfg(any(feature = "diagnostics", test))] pipeline_observer: Option<&dyn RxPipelineObserver>,
 ) -> ConnectedRxDispatch {

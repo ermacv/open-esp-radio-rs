@@ -4,12 +4,12 @@ use crate::{Context, Result, cargo, graph::Graph};
 use cargo_metadata::{DependencyKind, Package};
 use std::{collections::BTreeSet, path::Path};
 
-const NETWORK: &str = "oer-network";
-const OWNED: &str = "oer-embassy-net";
+const NETWORK: &str = "oer-network-interface";
+const OWNED: &str = "oer-embassy-net-owned";
 const RELEASED_EMBASSY: &str = "oer-embassy-net-upstream";
-const BRIDGE: &str = "oer-esp32s31-wifi-embassy-upstream";
+const BRIDGE: &str = "oer-esp32s31-ieee80211-embassy-net-upstream";
 const UPSTREAM: &str = "oer-xarxa-upstream";
-const UPSTREAM_BRIDGE: &str = "oer-esp32s31-wifi-xarxa-upstream";
+const UPSTREAM_BRIDGE: &str = "oer-esp32s31-ieee80211-xarxa-upstream";
 const XARXA_SOURCE: &str = "git+https://github.com/embassy-rs/xarxa?rev=14c369bbcbe8ee7167488ac9c9e18be059d83555#14c369bbcbe8ee7167488ac9c9e18be059d83555";
 const EMBASSY_SOURCE: &str = "git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc#c0fdd08e94138105fba8be3133c4ced91afc30fc";
 const TARGET: &str = "riscv32imafc-unknown-none-elf";
@@ -426,7 +426,7 @@ pub fn profiles() -> [Profile; 22] {
         },
         Profile {
             boundary: UpstreamBridge,
-            manifest: "crates/adapters/embassy/esp32s31/ieee80211-upstream/Cargo.toml",
+            manifest: "crates/adapters/xarxa/esp32s31/ieee80211-upstream/Cargo.toml",
             features: &[],
         },
         Profile {
@@ -490,7 +490,7 @@ pub fn profiles() -> [Profile; 22] {
         },
         Profile {
             boundary: ReleasedEmbassyBridge,
-            manifest: "crates/adapters/embassy/esp32s31/ieee80211-embassy/Cargo.toml",
+            manifest: "crates/adapters/embassy-net/esp32s31/ieee80211-upstream/Cargo.toml",
             features: &[],
         },
         Profile {

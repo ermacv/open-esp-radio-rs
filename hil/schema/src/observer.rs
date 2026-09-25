@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-const RUNNER: &str = "open-esp-radio-hil-runner";
+const RUNNER: &str = "oer-hil-runner";
 
 /// Project Cargo's resolved normal/build graph, retaining shared feature unification.
 /// The registry assigns direct dependencies to the mechanisms that use them.

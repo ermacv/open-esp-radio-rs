@@ -12,7 +12,7 @@ use embassy_futures::{block_on, join::join};
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-use oer_wifi_sta::station::{
+use oer_ieee80211_sta::station::{
     StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaFailureDisposition,
     StaLifecycleStage, StaReconnectPolicy,
 };
@@ -100,7 +100,7 @@ fn peer_disconnect_coalesces_a_pending_reconnect_without_leaking_it() {
     assert!(matches!(
         coalesce_disconnected_station_command::<(), _>(
             &mut receiver,
-            oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss,
+            oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason::BeaconLoss,
         ),
         ConnectedStationExit::ReconnectRequested {
             source: StationReconnectSource::CoalescedDisconnect,
@@ -127,7 +127,7 @@ fn detached_datapath_exit_coalesces_an_already_consumed_reconnect() {
     let exit = complete_esp32s31_connected_datapath_exit::<(), _>(
         &mut receiver,
         Ok(crate::datapath::DatapathRunnerExit::Role(
-            oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss,
+            oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason::BeaconLoss,
         )),
         Some(StationCommand::Reconnect),
     );
@@ -146,7 +146,7 @@ fn detached_datapath_exit_records_an_already_consumed_stop() {
     let exit = complete_esp32s31_connected_datapath_exit::<(), _>(
         &mut receiver,
         Ok(crate::datapath::DatapathRunnerExit::Role(
-            oer_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss,
+            oer_esp32s31_ieee80211_sta::connected_control::ConnectedDisconnectReason::BeaconLoss,
         )),
         Some(StationCommand::Stop),
     );

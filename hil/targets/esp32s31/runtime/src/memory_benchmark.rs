@@ -5,7 +5,7 @@
 //! A failed case quarantines these static allocations until the next reset.
 
 mod counters;
-use open_esp_radio_hil_target_core::memory_benchmark as data;
+use oer_hil_target_core::memory_benchmark as data;
 
 use data::{ARENA_CAPACITY, Layout, MAX_FRAMES, OFFSET};
 
@@ -19,11 +19,11 @@ use counters::{Counters, memory_fence};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embassy_time::{Duration, Instant, with_timeout};
 use esp_hal::peripherals::DMA_AXI_CH0;
-use oer_esp32s31_soc::{
+use oer_esp32s31_soc_esp_hal::{
     AxiGdmaDescriptor, AxiGdmaMem2Mem, AxiGdmaMem2MemSegment, AxiGdmaMem2MemTransferError,
     BurstSize,
 };
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     Event, MemoryBenchmarkEvidence, MemoryBenchmarkMode, MemoryBenchmarkRequest,
     MemoryBenchmarkSource, MemoryBenchmarkStop, RejectReason,
 };

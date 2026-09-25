@@ -19,7 +19,7 @@ fn fixture_check_exercises_monitor_capture_and_restores_without_a_serial_device(
     config
         .write_all(toml::to_string(&lab).unwrap().as_bytes())
         .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_open-esp-radio-hil-runner"))
+    let output = Command::new(env!("CARGO_BIN_EXE_oer-hil-runner"))
         .arg("--lab-config")
         .arg(config.path())
         .args([

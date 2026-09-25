@@ -6,7 +6,7 @@
 
 use core::future::Future;
 
-pub use oer_esp32s31_wifi::tx::ControlTxConfig;
+pub use oer_esp32s31_ieee80211::tx::ControlTxConfig;
 
 use crate::{
     join::StaJoinTransmit,
@@ -17,7 +17,7 @@ use crate::{
     wpa2::HandshakeTransmit,
 };
 
-use oer_esp32s31_wifi::{
+use oer_esp32s31_ieee80211::{
     esp_now::{
         EspNowTxConfig, EspNowTxError, start_esp_now_v1_plaintext, start_esp_now_v2_plaintext,
     },
@@ -28,7 +28,7 @@ use oer_esp32s31_wifi::{
     tx::{WifiTxProgress, WifiTxWake},
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     edca::EdcaParametersError,
     tx::{
         HtPeerAmpduParameters, LegacyRate, LegacyTxQueue, TxCompletion, TxError, TxHardware,
@@ -38,7 +38,7 @@ use oer_esp32s31_wifi_mac::{
     },
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     channel::WifiChannel,
     extensions::{espressif::esp_now::EspNowRandomValue, wmm::WmmParameterSet},
     management::{ProbeRequest, ProbeRequestError},
@@ -48,14 +48,14 @@ use oer_ieee80211::{
     },
 };
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     EspNowPeerId, EspNowProtocol, EspNowSendError, EspNowV2SendError, MacTxPlan,
     interface::BoundVirtualInterface,
 };
 
 pub use crate::single_mpdu_tx::ConnectedTxHandoff;
 
-pub use oer_esp32s31_wifi::ordinary_tx::WifiTxResources;
+pub use oer_esp32s31_ieee80211::ordinary_tx::WifiTxResources;
 
 // SOURCE: complete `libnet80211.a[ieee80211_output.o]` passes
 // coexistence events 5/6 for Probe and Authentication/Association. Complete
@@ -282,7 +282,7 @@ where
 
     /// Whether the retained ordinary TX owner has no in-flight or quarantined work.
     pub fn is_idle(&self) -> bool {
-        self.ordinary.queue_state() == oer_wifi_softmac::contract::MacTxQueueState::Ready
+        self.ordinary.queue_state() == oer_ieee80211_softmac::contract::MacTxQueueState::Ready
     }
 
     pub fn wait_deadline(&mut self) -> impl Future<Output = ()> + '_ {
@@ -469,7 +469,7 @@ where
         self,
         handoff: ConnectedTxHandoff,
     ) -> Result<SingleMpduTx<'slot, P, E, T, BUFFER_SIZE>, (Self, ConnectedTxHandoff)> {
-        if self.ordinary.queue_state() != oer_wifi_softmac::MacTxQueueState::Ready {
+        if self.ordinary.queue_state() != oer_ieee80211_softmac::MacTxQueueState::Ready {
             return Err((self, handoff));
         }
         let ConnectedTxHandoff {
@@ -526,7 +526,7 @@ where
                 },
                 hardware_mic_length: publication.hardware_mic_length,
                 hardware_key_selector: publication.hardware_key_selector,
-                interface: oer_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
+                interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                 scheduler_priority: publication.scheduler_priority,
                 packet_priority: publication.packet_priority,
             },

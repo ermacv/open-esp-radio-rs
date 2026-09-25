@@ -476,3 +476,24 @@ fn source_package_discovery_covers_independent_and_ignored_workspace_members() {
         BTreeSet::from(["island-package", "new-package"])
     );
 }
+
+#[test]
+fn package_names_share_one_prefix_and_only_the_facade_is_branded() {
+    for (name, layer) in [
+        ("oer-ieee80211-sta", "protocol"),
+        ("oer-esp32s31-ieee80211-embassy-net-upstream", "adapter"),
+        ("oer-hil-runner", "hil"),
+        ("open-esp-radio", "facade"),
+    ] {
+        validate_package_name(name, layer).unwrap();
+    }
+    for (name, layer) in [
+        ("open-esp-radio-hil-runner", "hil"),
+        ("oer-Wifi", "protocol"),
+        ("oer--mac", "protocol"),
+        ("oer-", "protocol"),
+        ("oer-radio", "facade"),
+    ] {
+        assert!(validate_package_name(name, layer).is_err(), "{name}");
+    }
+}

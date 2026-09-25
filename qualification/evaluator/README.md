@@ -2,7 +2,7 @@
 
 This Cargo package independently evaluates the capability programs
 in [qualification](../README.md). Its package name is
-`open-esp-radio-qualification-check`; the repository entrypoint is
+`oer-qualification`; the repository entrypoint is
 `cargo qualification`.
 
 | Operation | Result |

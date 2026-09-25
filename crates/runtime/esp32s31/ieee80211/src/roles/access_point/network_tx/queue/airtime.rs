@@ -1,6 +1,6 @@
 //! Merge packet-free demand before the optional deficit selection.
 
-use oer_wifi_datapath::DestinationTxQueues;
+use oer_ieee80211_datapath::DestinationTxQueues;
 
 use super::{
     super::airtime::{AccessPointAirtimeError, Accounting},
@@ -78,7 +78,7 @@ impl<B: MaterializedTxFrame, N: SoftwareTxFrame> AccessPointNetworkTx<'_, B, N> 
             } else {
                 let slot = candidates.iter_mut().find(|entry| entry.is_none()).ok_or(
                     AccessPointAirtimeError::Ledger(
-                        oer_wifi_datapath::airtime::AirtimeError::AccountCapacity,
+                        oer_ieee80211_datapath::airtime::AirtimeError::AccountCapacity,
                     ),
                 )?;
                 *slot = Some((candidate, key));

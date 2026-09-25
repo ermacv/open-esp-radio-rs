@@ -1,11 +1,11 @@
 //! ESP32-S31 BlockAck policy and fixed-slot completion adapter.
 //!
 //! Frame parsing and one generic agreement state machine live in
-//! [`oer_ieee80211::block_ack`]. This module retains only the
+//! [`oer_ieee80211_mac::block_ack`]. This module retains only the
 //! vendor STA TID policy, the S31 three-register completion snapshot and the
 //! fixed hardware-slot batch. It still owns no DMA address or register access.
 
-pub use oer_ieee80211::block_ack::{
+pub use oer_ieee80211_mac::block_ack::{
     ADDBA_ACTION_BODY_LEN, ADDBA_REQUEST_ACTION, ADDBA_RESPONSE_ACTION, AddbaRequest,
     BLOCK_ACK_CATEGORY, BlockAckAction, DELBA_ACTION, OperationalTxBlockAck, TxBlockAckAlarm,
     TxBlockAckConfig, TxBlockAckDialogToken, TxBlockAckError, TxBlockAckResponse,

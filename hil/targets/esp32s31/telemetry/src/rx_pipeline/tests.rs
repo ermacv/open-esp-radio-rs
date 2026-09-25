@@ -1,7 +1,7 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::{RxCorrectnessObserver, RxPipelineCounters, RxServiceObservation};
-use oer_esp32s31_wifi_runtime::diagnostics::rx_pipeline::{
+use oer_esp32s31_ieee80211_runtime::diagnostics::rx_pipeline::{
     RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver,
     RxReorderAgreementObservation, RxReorderAgreementObserver, RxStageDiscard,
 };

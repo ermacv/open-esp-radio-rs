@@ -5,7 +5,7 @@ mod operation;
 
 // This model has no hardware status banks or power masks to destroy. Real
 // routes must supply their distinct preservation transactions explicitly.
-impl oer_esp32s31_wifi_mac::irq::MacInterruptPauseRoute for Route {
+impl oer_esp32s31_ieee80211_mac::irq::MacInterruptPauseRoute for Route {
     type Paused = u8;
 
     fn pause(&mut self, platform: &Self::Platform) -> Result<Self::Paused, Self::Error> {
@@ -167,7 +167,7 @@ impl MacInterruptRoute for DistinctRoute {
     }
 }
 
-impl oer_esp32s31_wifi_mac::irq::MacInterruptPauseRoute for DistinctRoute {
+impl oer_esp32s31_ieee80211_mac::irq::MacInterruptPauseRoute for DistinctRoute {
     type Paused = Retained;
 
     fn pause(&mut self, _: &Self::Platform) -> Result<Retained, RouteError> {

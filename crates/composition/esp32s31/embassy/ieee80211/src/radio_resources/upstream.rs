@@ -26,7 +26,7 @@ pub fn rx_pool_drops(interface: NetworkInterface) -> Option<u32> {
 }
 
 pub type WifiNetworkDevice = Device<'static, CriticalSectionRawMutex, RX_DEPTH, TX_DEPTH>;
-pub(super) type RadioNetworkRunner = oer_esp32s31_wifi_xarxa_upstream::Network<
+pub(super) type RadioNetworkRunner = oer_esp32s31_ieee80211_xarxa_upstream::Network<
     'static,
     CriticalSectionRawMutex,
     NETWORK_FRAME_CAPACITY,
@@ -41,7 +41,7 @@ pub(crate) fn initialize_network(
     station_address: [u8; 6],
     access_point_address: [u8; 6],
 ) -> (WifiDevices, WifiNetworkResources) {
-    use oer_esp32s31_wifi_runtime::roles::concurrent::{
+    use oer_esp32s31_ieee80211_runtime::roles::concurrent::{
         AP_NETWORK_INTERFACE_ID, STA_NETWORK_INTERFACE_ID,
     };
     let (station, station_endpoint) = STATION

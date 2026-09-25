@@ -28,7 +28,7 @@ impl<
         self.ordinary.peek_qos_sequence(tid)
     }
 
-    fn start_action<H: oer_esp32s31_wifi_mac::tx::TxHardware>(
+    fn start_action<H: oer_esp32s31_ieee80211_mac::tx::TxHardware>(
         &mut self,
         hardware: &mut H,
         body: &[u8],
@@ -42,7 +42,7 @@ impl<
         Ok(DatapathControlProgress::TxPending)
     }
 
-    fn start_power_management_null<H: oer_esp32s31_wifi_mac::tx::TxHardware>(
+    fn start_power_management_null<H: oer_esp32s31_ieee80211_mac::tx::TxHardware>(
         &mut self,
         hardware: &mut H,
         power_management: StaPowerManagement,
@@ -56,7 +56,7 @@ impl<
         Ok(DatapathControlProgress::TxPending)
     }
 
-    fn start_ps_poll<H: oer_esp32s31_wifi_mac::tx::TxHardware>(
+    fn start_ps_poll<H: oer_esp32s31_ieee80211_mac::tx::TxHardware>(
         &mut self,
         hardware: &mut H,
         association_id: StaAssociationId,
@@ -69,7 +69,7 @@ impl<
         Ok(DatapathControlProgress::TxPending)
     }
 
-    fn start_beacon_probe<H: oer_esp32s31_wifi_mac::tx::TxHardware>(
+    fn start_beacon_probe<H: oer_esp32s31_ieee80211_mac::tx::TxHardware>(
         &mut self,
         hardware: &mut H,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
@@ -81,7 +81,7 @@ impl<
         Ok(DatapathControlProgress::TxPending)
     }
 
-    fn start_protected_eapol<H: oer_esp32s31_wifi_mac::tx::TxHardware>(
+    fn start_protected_eapol<H: oer_esp32s31_ieee80211_mac::tx::TxHardware>(
         &mut self,
         hardware: &mut H,
         payload: &[u8],
@@ -98,7 +98,7 @@ impl<
         self.set_block_ack_agreement(tid, agreement);
     }
 
-    fn publish_he_trigger_response<H: oer_esp32s31_wifi_mac::tx::TxHardware>(
+    fn publish_he_trigger_response<H: oer_esp32s31_ieee80211_mac::tx::TxHardware>(
         &mut self,
         _hardware: &mut H,
         request: HeTriggerRuntimeRequest,
@@ -150,7 +150,7 @@ impl<
         Err(ConnectedHeControlRuntimeRejection::TbPhyPublicationUnverified)
     }
 
-    fn publish_he_ndpa_feedback<H: oer_esp32s31_wifi_mac::tx::TxHardware>(
+    fn publish_he_ndpa_feedback<H: oer_esp32s31_ieee80211_mac::tx::TxHardware>(
         &mut self,
         _hardware: &mut H,
         request: HeNdpaRuntimeRequest,
@@ -176,21 +176,24 @@ impl<
 > crate::roles::station::esp_now_tx::EspNowConnectedTx
     for ConnectedTx<'_, '_, B, P, E, T, SLOTS, AMPDU_BUFFER_SIZE, ORDINARY_BUFFER_SIZE>
 {
-    fn start_esp_now_v1_plaintext<H: oer_esp32s31_wifi_mac::tx::TxHardware, const PEERS: usize>(
+    fn start_esp_now_v1_plaintext<
+        H: oer_esp32s31_ieee80211_mac::tx::TxHardware,
+        const PEERS: usize,
+    >(
         &mut self,
         hardware: &mut H,
-        protocol: &oer_wifi_softmac::EspNowProtocol<PEERS>,
+        protocol: &oer_ieee80211_softmac::EspNowProtocol<PEERS>,
         request: &crate::roles::station::esp_now_tx::EspNowOwnedV1Tx,
-        active_channel: oer_ieee80211::channel::WifiChannel,
-        active_station: oer_wifi_softmac::interface::BoundVirtualInterface,
-        config: oer_esp32s31_wifi::esp_now::EspNowTxConfig,
-    ) -> Result<WifiTxProgress, oer_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduEspNowTxError>
+        active_channel: oer_ieee80211_mac::channel::WifiChannel,
+        active_station: oer_ieee80211_softmac::interface::BoundVirtualInterface,
+        config: oer_esp32s31_ieee80211::esp_now::EspNowTxConfig,
+    ) -> Result<WifiTxProgress, oer_esp32s31_ieee80211_sta::single_mpdu_tx::SingleMpduEspNowTxError>
     {
         if self.active() {
             return Err(
-                oer_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduEspNowTxError::Backend(
-                    oer_esp32s31_wifi::esp_now::EspNowTxError::Tx(
-                        oer_esp32s31_wifi::ordinary_tx::OrdinaryTxError::Busy,
+                oer_esp32s31_ieee80211_sta::single_mpdu_tx::SingleMpduEspNowTxError::Backend(
+                    oer_esp32s31_ieee80211::esp_now::EspNowTxError::Tx(
+                        oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxError::Busy,
                     ),
                 ),
             );
@@ -211,21 +214,24 @@ impl<
         Ok(progress)
     }
 
-    fn start_esp_now_v2_plaintext<H: oer_esp32s31_wifi_mac::tx::TxHardware, const PEERS: usize>(
+    fn start_esp_now_v2_plaintext<
+        H: oer_esp32s31_ieee80211_mac::tx::TxHardware,
+        const PEERS: usize,
+    >(
         &mut self,
         hardware: &mut H,
-        protocol: &oer_wifi_softmac::EspNowProtocol<PEERS>,
+        protocol: &oer_ieee80211_softmac::EspNowProtocol<PEERS>,
         request: crate::roles::station::esp_now_tx::EspNowV2TxRequest<'_>,
-        active_channel: oer_ieee80211::channel::WifiChannel,
-        active_station: oer_wifi_softmac::interface::BoundVirtualInterface,
-        config: oer_esp32s31_wifi::esp_now::EspNowTxConfig,
-    ) -> Result<WifiTxProgress, oer_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduEspNowTxError>
+        active_channel: oer_ieee80211_mac::channel::WifiChannel,
+        active_station: oer_ieee80211_softmac::interface::BoundVirtualInterface,
+        config: oer_esp32s31_ieee80211::esp_now::EspNowTxConfig,
+    ) -> Result<WifiTxProgress, oer_esp32s31_ieee80211_sta::single_mpdu_tx::SingleMpduEspNowTxError>
     {
         if self.active() {
             return Err(
-                oer_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduEspNowTxError::Backend(
-                    oer_esp32s31_wifi::esp_now::EspNowTxError::Tx(
-                        oer_esp32s31_wifi::ordinary_tx::OrdinaryTxError::Busy,
+                oer_esp32s31_ieee80211_sta::single_mpdu_tx::SingleMpduEspNowTxError::Backend(
+                    oer_esp32s31_ieee80211::esp_now::EspNowTxError::Tx(
+                        oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxError::Busy,
                     ),
                 ),
             );

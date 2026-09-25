@@ -59,7 +59,7 @@ fn ap_entropy_is_consumed_only_for_a_fresh_wpa2_association() {
 
     let association = ApManagementRequest::Association {
         peer: [2, 0, 0, 0, 0, 1],
-        security: oer_ieee80211::ap::ApAssociationSecurityObservation {
+        security: oer_ieee80211_mac::ap::ApAssociationSecurityObservation {
             privacy: true,
             rsn_ie: Some(&[1]),
             rsn_ie_count: 1,

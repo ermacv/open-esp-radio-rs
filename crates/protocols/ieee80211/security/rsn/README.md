@@ -1,6 +1,6 @@
 # RSN security
 
-`oer-wifi-rsn` holds the allocation-free, hardware-independent RSN (IEEE 802.11
+`oer-ieee80211-rsn` holds the allocation-free, hardware-independent RSN (IEEE 802.11
 robust security network) protocol shared by WPA2 and WPA3 suites. It owns no
 executor, timer, key slot or transmit path; chip role crates execute its typed
 transmit and key-install requests.

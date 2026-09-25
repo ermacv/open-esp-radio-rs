@@ -1,4 +1,4 @@
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     ccmp::{CcmpKeyId, CcmpPacketNumber},
     data::DataDecapError,
 };

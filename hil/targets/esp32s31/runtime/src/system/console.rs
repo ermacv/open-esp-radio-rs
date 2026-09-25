@@ -1,8 +1,8 @@
 //! Sole transport owner for the radio-free SoC diagnostic image.
 use embedded_io_async::Read;
 use esp_hal::{Async, usb::usb_serial_jtag::UsbSerialJtag};
-use oer_esp32s31_soc::watchdog::{DeadlineBudget, DeadlineWatchdog};
-use open_esp_radio_hil_protocol::{
+use oer_esp32s31_soc_esp_hal::watchdog::{DeadlineBudget, DeadlineWatchdog};
+use oer_hil_protocol::{
     Capabilities, Command, Envelope, Event, FeatureCapabilities, FrameDecoder, FrameEncoder,
     LinkHealth, RejectReason, WatchdogTestMode,
 };
@@ -42,7 +42,7 @@ impl Console {
                 ..FeatureCapabilities::default()
             },
             maximum_payload_bytes: 0,
-            maximum_wire_frame_bytes: open_esp_radio_hil_protocol::MAX_WIRE_FRAME_BYTES as u16,
+            maximum_wire_frame_bytes: oer_hil_protocol::MAX_WIRE_FRAME_BYTES as u16,
         }
     }
 
@@ -57,10 +57,7 @@ impl Console {
         async move {
             // A transport failure cannot fabricate watchdog completion or a
             // software-reset substitute for the expected hardware reset.
-            if open_esp_radio_hil_protocol::write_frame(usb, bytes)
-                .await
-                .is_err()
-            {
+            if oer_hil_protocol::write_frame(usb, bytes).await.is_err() {
                 core::future::pending::<()>().await;
             }
             *sequence = sequence.checked_add(1).expect("HIL sequence exhausted");

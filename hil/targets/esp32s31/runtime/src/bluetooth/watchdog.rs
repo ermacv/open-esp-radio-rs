@@ -1,6 +1,6 @@
 //! Explicit diagnostic client of the same SoC service used by production.
 //! HCI Reset/Test End cannot renew the first DTM-triggered ten-second deadline.
-use oer_esp32s31_soc::watchdog::{DeadlineBudget, DeadlineLease, DeadlineWatchdog};
+use oer_esp32s31_soc_esp_hal::watchdog::{DeadlineBudget, DeadlineLease, DeadlineWatchdog};
 
 pub(crate) struct DtmWatchdog {
     service: &'static DeadlineWatchdog,

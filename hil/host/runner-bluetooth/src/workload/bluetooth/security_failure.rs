@@ -2,7 +2,7 @@
 use super::{PeripheralConfig, configure_encryption, probe_peripheral};
 use crate::{Result, fixture::bluetooth};
 use hil_core::{context::Context, session::SerialCapture};
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     BluetoothPeripheralEvidence as Evidence, BluetoothPeripheralOperation as Op,
     BluetoothPeripheralTermination as Termination, BluetoothSecurityFailure as Failure,
 };
@@ -159,7 +159,7 @@ fn complete_failure(e: &Evidence, failure: Failure) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_esp_radio_hil_protocol::BluetoothEncryptionEvidence;
+    use oer_hil_protocol::BluetoothEncryptionEvidence;
     #[test]
     fn failure_requires_real_rejection_or_mic_failure_and_zero_application_delivery() {
         for failure in [

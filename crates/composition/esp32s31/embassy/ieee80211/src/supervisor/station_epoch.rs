@@ -119,7 +119,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         )
         .await;
         let decision = scan.decision;
-        let oer_esp32s31_wifi_runtime::roles::station::StationScanReturned {
+        let oer_esp32s31_ieee80211_runtime::roles::station::StationScanReturned {
             hardware,
             receive,
             control,
@@ -200,7 +200,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             installed_security,
         } = connected;
         let interface = runtime.board().interface;
-        let returned = oer_wifi_embassy::await_stack_boundary!(run_connected(
+        let returned = oer_ieee80211_runtime::await_stack_boundary!(run_connected(
             control,
             ConnectedStationResources::new(
                 runtime,
@@ -242,7 +242,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             ConnectedStationOutcome::HardwareFailure => StaAttemptOutcome::Failed {
                 owner,
                 failure: StaAttemptFailure::new(
-                    oer_wifi_sta::station::StaLifecycleStage::Hardware,
+                    oer_ieee80211_sta::station::StaLifecycleStage::Hardware,
                     StaFailureDisposition::Terminal,
                     StaAttemptStage::ConnectedEntry,
                 ),
@@ -325,7 +325,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 error: StaAttemptStage::Candidate,
             },
         };
-        let oer_esp32s31_wifi_runtime::roles::station::StationScanReturned {
+        let oer_esp32s31_ieee80211_runtime::roles::station::StationScanReturned {
             hardware,
             receive,
             control,
@@ -539,8 +539,8 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                         security,
                     ),
                     failure: StaAttemptFailure::new(
-                        oer_wifi_sta::station::StaLifecycleStage::Hardware,
-                        oer_wifi_sta::station::StaFailureDisposition::Terminal,
+                        oer_ieee80211_sta::station::StaLifecycleStage::Hardware,
+                        oer_ieee80211_sta::station::StaFailureDisposition::Terminal,
                         StaAttemptStage::Candidate,
                     ),
                 });
@@ -833,7 +833,7 @@ pub(super) type ProductionStationExit = StationExit<
 >;
 
 pub(super) fn restore_production_station_frontier(
-    resources: oer_esp32s31_wifi_runtime::roles::station::StationReturnedResources<
+    resources: oer_esp32s31_ieee80211_runtime::roles::station::StationReturnedResources<
         ProductionStationOwner<'static, 'static>,
         ProductionStationRunner<'static, 'static>,
     >,
@@ -878,7 +878,7 @@ impl ProductionWifiEpochRunner {
                     tx_slot,
                     power,
                     tx_entropy as fn() -> u32,
-                    oer_esp32s31_wifi_runtime::datapath::tx::time::EmbassyWifiTxTimer,
+                    oer_esp32s31_ieee80211_runtime::datapath::tx::time::EmbassyWifiTxTimer,
                     ControlTxConfig {
                         unicast_attempt_limit: 4,
                         completion_timeout_us: TX_COMPLETION_TIMEOUT_US,
@@ -903,7 +903,7 @@ impl ProductionWifiEpochRunner {
                     pmk,
                     supplicant_nonce,
                     sequences,
-                    oer_esp32s31_wifi_sta::wpa2::Wpa2Message4Protection::Unprotected,
+                    oer_esp32s31_ieee80211_sta::wpa2::Wpa2Message4Protection::Unprotected,
                 )
             }
         }

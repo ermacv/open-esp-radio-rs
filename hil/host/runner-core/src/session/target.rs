@@ -1,6 +1,6 @@
 //! Laboratory inputs and per-scenario initialization the target protocol needs.
 
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     WifiDataPlanePlacement, WifiRxChecksumPolicy, WifiRxContinuationPolicy, WifiTxBufferPolicy,
     WifiTxUdpChecksumPolicy,
 };
@@ -17,7 +17,7 @@ pub struct Target<'a> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Settings {
-    pub ap_scheduler: open_esp_radio_hil_protocol::WifiApScheduler,
+    pub ap_scheduler: oer_hil_protocol::WifiApScheduler,
     pub data_plane: WifiDataPlanePlacement,
     pub rx_checksum: WifiRxChecksumPolicy,
     pub tx_udp_checksum: WifiTxUdpChecksumPolicy,

@@ -1,11 +1,11 @@
 //! Role-neutral network publication observations.
 
 #[cfg(feature = "diagnostics")]
-use oer_esp32s31_wifi_mac::rx::PUBLIC_HEADER_SIZE;
+use oer_esp32s31_ieee80211_mac::rx::PUBLIC_HEADER_SIZE;
 #[cfg(feature = "diagnostics")]
-use oer_ieee80211::data::EthernetFrameParts;
+use oer_ieee80211_mac::data::EthernetFrameParts;
 #[cfg(feature = "diagnostics")]
-use oer_network::RxEnqueueError;
+use oer_network_interface::RxEnqueueError;
 
 /// Stable, decoded Ethernet view exposed to diagnostic consumers.
 #[cfg(feature = "diagnostics")]

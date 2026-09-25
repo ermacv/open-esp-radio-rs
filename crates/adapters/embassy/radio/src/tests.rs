@@ -11,9 +11,11 @@ use embassy_futures::select::{Either, select};
 use embassy_futures::{block_on, join::join};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::signal::Signal;
-use oer_wifi_rsn::Pmk;
-use oer_wifi_sta::station::StaReconnectPolicy;
-use {oer_ieee80211::channel::WifiChannel, oer_ieee80211::station::association::Preference};
+use oer_ieee80211_rsn::Pmk;
+use oer_ieee80211_sta::station::StaReconnectPolicy;
+use {
+    oer_ieee80211_mac::channel::WifiChannel, oer_ieee80211_mac::station::association::Preference,
+};
 
 use oer_radio::wifi::{
     MonitorCapturePolicy, MonitorRequest, StationRequest, StationScanChannels, StationScanPolicy,

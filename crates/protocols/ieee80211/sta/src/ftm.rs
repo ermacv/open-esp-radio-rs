@@ -6,7 +6,7 @@
 //! RX/TX timestamp capture before publishing the request returned by
 //! [`FtmRequester::service`].
 
-use oer_ieee80211::ftm::{
+use oer_ieee80211_mac::ftm::{
     FTM_INITIAL_REQUEST_BODY_LEN, FtmBurstDuration, FtmFormatAndBandwidth, FtmMeasurement,
     FtmRequestParameters, FtmResponseParameters, FtmResponseStatus, FtmTimestampPs, FtmToaError,
     FtmTodError, encode_initial_request,
@@ -402,7 +402,7 @@ enum FtmRequesterPhase {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct LastMeasurement {
-    fields: oer_ieee80211::ftm::FtmMeasurementFields,
+    fields: oer_ieee80211_mac::ftm::FtmMeasurementFields,
     parameters: Option<FtmResponseParameters>,
     information_elements: OwnedInformationElements,
 }

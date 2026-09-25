@@ -1,6 +1,6 @@
 use std::vec::Vec;
 
-use oer_esp32s31_wifi_dma::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
+use oer_esp32s31_ieee80211_dma::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
 
 use super::*;
 
@@ -19,7 +19,7 @@ fn replay_resource() -> (StaCcmpRxReplayRxEndpoint, StaCcmpRxReplayControlEndpoi
 
 fn ccmp_header(packet_number: u64, key_id: u8) -> CcmpHeader {
     CcmpHeader::new(
-        oer_ieee80211::ccmp::CcmpPacketNumber::new(packet_number).unwrap(),
+        oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(packet_number).unwrap(),
         CcmpKeyId::new(key_id).unwrap(),
     )
 }
@@ -629,7 +629,7 @@ fn protected_fragment(
     frame[22..24].copy_from_slice(&((sequence << 4) | u16::from(fragment)).to_le_bytes());
     frame[24..32].copy_from_slice(
         &CcmpHeader::new(
-            oer_ieee80211::ccmp::CcmpPacketNumber::new(packet_number).unwrap(),
+            oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(packet_number).unwrap(),
             CcmpKeyId::PAIRWISE,
         )
         .encode(),
@@ -834,7 +834,7 @@ fn station_ccmp_fragments_commit_each_pn_before_one_final_publication() {
 
     first_storage[FRAME_OFFSET + 24..FRAME_OFFSET + 32].copy_from_slice(
         &CcmpHeader::new(
-            oer_ieee80211::ccmp::CcmpPacketNumber::new(4).unwrap(),
+            oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(4).unwrap(),
             CcmpKeyId::PAIRWISE,
         )
         .encode(),
@@ -851,14 +851,14 @@ fn station_ccmp_fragments_commit_each_pn_before_one_final_publication() {
             protection: ConnectedRxProtection::Pairwise,
             error: ConnectedRxError::Fragment(OpenDataFragmentError::RetryPacketNumberMismatch {
                 fragment_number: 0,
-                expected: oer_ieee80211::ccmp::CcmpPacketNumber::new(3).unwrap(),
-                observed: oer_ieee80211::ccmp::CcmpPacketNumber::new(4).unwrap(),
+                expected: oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(3).unwrap(),
+                observed: oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(4).unwrap(),
             }),
         }
     );
     first_storage[FRAME_OFFSET + 24..FRAME_OFFSET + 32].copy_from_slice(
         &CcmpHeader::new(
-            oer_ieee80211::ccmp::CcmpPacketNumber::new(3).unwrap(),
+            oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(3).unwrap(),
             CcmpKeyId::PAIRWISE,
         )
         .encode(),
@@ -918,7 +918,7 @@ fn station_ccmp_fragments_commit_each_pn_before_one_final_publication() {
         .expect("test dispatcher owns one replay epoch");
     assert_eq!(
         replay.pairwise.highest(CcmpReplayLane::NonQos),
-        oer_ieee80211::ccmp::CcmpPacketNumber::new(4)
+        oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(4)
     );
 }
 
@@ -1009,7 +1009,7 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
         .expect("test dispatcher owns one replay epoch");
     assert_eq!(
         replay.pairwise.highest(CcmpReplayLane::NonQos),
-        oer_ieee80211::ccmp::CcmpPacketNumber::new(3),
+        oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(3),
         "duplicate admission must precede replay commit"
     );
 
@@ -1064,7 +1064,7 @@ fn protected_retry_cannot_turn_an_ordinary_mpdu_into_a_fragment_train() {
         .expect("test dispatcher owns one replay epoch");
     assert_eq!(
         replay.pairwise.highest(CcmpReplayLane::NonQos),
-        oer_ieee80211::ccmp::CcmpPacketNumber::new(5)
+        oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(5)
     );
 }
 
@@ -1098,7 +1098,7 @@ fn replay_rejection_cannot_evict_two_durable_ccmp_fragment_trains() {
         ));
     }
     assert_eq!(dispatcher.fragments.active_contexts(), 2);
-    let pn4 = oer_ieee80211::ccmp::CcmpPacketNumber::new(4).unwrap();
+    let pn4 = oer_ieee80211_mac::ccmp::CcmpPacketNumber::new(4).unwrap();
     assert_eq!(
         dispatcher.dispatch_with_runtime_received_at(
             segment(&replayed, replayed_signal),
@@ -1447,8 +1447,8 @@ fn dispatches_protected_ethernet_and_owns_duplicate_history() {
 #[test]
 fn wpa2_admits_only_plaintext_eapol_from_the_exact_associated_link() {
     const HEADER: usize = 24;
-    let message3 = oer_wifi_rsn::frames::RsnTxFrame::<512>::message3(
-        oer_wifi_rsn::Akm::Psk,
+    let message3 = oer_ieee80211_rsn::frames::RsnTxFrame::<512>::message3(
+        oer_ieee80211_rsn::Akm::Psk,
         STATION,
         2,
         [4; 32],
@@ -1680,7 +1680,7 @@ fn routes_only_peer_disconnects_addressed_to_this_station() {
     assert_eq!(
         sink.peer_disconnects,
         [StaDisconnect {
-            kind: oer_ieee80211::station::StaDisconnectKind::Deauthentication,
+            kind: oer_ieee80211_mac::station::StaDisconnectKind::Deauthentication,
             reason_code: 7,
         }]
     );

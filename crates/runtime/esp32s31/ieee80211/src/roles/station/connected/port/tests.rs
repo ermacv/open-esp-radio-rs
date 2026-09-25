@@ -12,7 +12,7 @@ use crate::{
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     rate::control::{
         HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociation,
         StaRateControlAssociationInput, StaRateControlPhy,
@@ -20,11 +20,11 @@ use oer_esp32s31_wifi_mac::{
     tx::{HtDuplicateTxEvidenceGaps, HtDuplicateTxRejection, HtDuplicateTxUnavailable},
 };
 
-use oer_esp32s31_wifi_sta::connected_rx::{
+use oer_esp32s31_ieee80211_sta::connected_rx::{
     ConnectedRxEvent, ConnectedRxSink, StaCcmpRxReplayEpoch, StaCcmpRxReplayResource,
 };
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     WifiConfig, WifiMacAddress, WifiMonitorConfig, WifiStationConfig,
     interface::{BoundVirtualInterface, ChannelContextId, VifId, VifRole, VirtualInterface},
 };
@@ -206,7 +206,7 @@ fn ccmp_replay_plan_rejections_return_the_exact_rx_endpoint() {
             open_peer,
             config(),
             open_interface,
-            oer_ieee80211::security::WifiSecurityMode::Open,
+            oer_ieee80211_mac::security::WifiSecurityMode::Open,
         )
         .unwrap();
     let open_resource = Box::leak(Box::new(StaCcmpRxReplayResource::new()));

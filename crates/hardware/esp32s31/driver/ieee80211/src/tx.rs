@@ -7,8 +7,8 @@
 
 use core::{future::Future, pin::Pin};
 
+use oer_esp32s31_ieee80211_mac::{tx::TxSlot, tx::runtime::WifiTxRuntimePolicy};
 use oer_esp32s31_phy::PhyTxTargetPowerProfile;
-use oer_esp32s31_wifi_mac::{tx::TxSlot, tx::runtime::WifiTxRuntimePolicy};
 
 /// State of one finite ESP32-S31 Wi-Fi TX transaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1,6 +1,6 @@
-use oer_esp32s31_wifi_mac::rx::{PUBLIC_HEADER_SIZE, RxSegment};
+use oer_esp32s31_ieee80211_mac::rx::{PUBLIC_HEADER_SIZE, RxSegment};
 
-use oer_ieee80211::ccmp::{CcmpPacketNumber, CcmpRxReplayState};
+use oer_ieee80211_mac::ccmp::{CcmpPacketNumber, CcmpRxReplayState};
 
 use super::*;
 

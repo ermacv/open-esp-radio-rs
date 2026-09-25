@@ -10,17 +10,17 @@ Build the comparison ELF from the repository root:
 ```console
 CARGO_TARGET_DIR="$PWD/target/verification/esp32s31-probes" \
 cargo build --manifest-path verification/vendor/projects/esp32s31/probes/Cargo.toml \
-  -p open-esp-radio-verification-esp32s31-probes-elf \
+  -p oer-verification-esp32s31-probes-elf \
   --target riscv32imafc-unknown-none-elf --release
 
 CARGO_TARGET_DIR="$PWD/target/verification/esp32s31-register-probes" \
 cargo build --manifest-path verification/vendor/projects/esp32s31/probes/Cargo.toml \
-  -p open-esp-radio-verification-esp32s31-register-probes-elf \
+  -p oer-verification-esp32s31-register-probes-elf \
   --target riscv32imafc-unknown-none-elf --release
 
 CARGO_TARGET_DIR="$PWD/target/verification/esp32s31-bluetooth-probes" \
 cargo build --manifest-path verification/vendor/projects/esp32s31/probes/Cargo.toml \
-  -p open-esp-radio-verification-esp32s31-bluetooth-probes-elf \
+  -p oer-verification-esp32s31-bluetooth-probes-elf \
   --target riscv32imafc-unknown-none-elf --release
 ```
 

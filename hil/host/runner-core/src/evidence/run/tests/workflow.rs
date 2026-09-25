@@ -95,13 +95,12 @@ fn producer_evaluator_and_resumed_plan_transfer_wifi_across_ble_but_reject_phy_c
     write(
         root,
         "hil/host/runner/Cargo.toml",
-        "[package]\nname = 'open-esp-radio-hil-runner'\nversion = '0.1.0'\nedition = '2024'\n",
+        "[package]\nname = 'oer-hil-runner'\nversion = '0.1.0'\nedition = '2024'\n",
     );
     let registry: Value =
         serde_json::from_slice(&fs::read(root.join("hil/schema/observer-inputs.json")).unwrap())
             .unwrap();
-    let configuration =
-        open_esp_radio_hil_schema::observer::required_configuration(root, &registry).unwrap();
+    let configuration = oer_hil_schema::observer::required_configuration(root, &registry).unwrap();
     write(
         root,
         "hil/host/runner/src/main.rs",
@@ -110,8 +109,7 @@ fn producer_evaluator_and_resumed_plan_transfer_wifi_across_ble_but_reject_phy_c
             serde_json::to_string(&json!({"compiler":configuration["compiler"],"environment":configuration["environment"]})).unwrap()
         ),
     );
-    let host_lock =
-        format!("{lock}\n[[package]]\nname = 'open-esp-radio-hil-runner'\nversion = '0.1.0'\n");
+    let host_lock = format!("{lock}\n[[package]]\nname = 'oer-hil-runner'\nversion = '0.1.0'\n");
     write(root, "Cargo.lock", &host_lock);
     write(root, "hil/targets/esp32s31/Cargo.lock", lock);
     write(root, ".gitignore", "target/\n");
@@ -120,7 +118,7 @@ fn producer_evaluator_and_resumed_plan_transfer_wifi_across_ble_but_reject_phy_c
     write(root, "ble/src/lib.rs", "fn ble() {}\n");
     let repository = crate::repository_root().unwrap();
     let alias = format!(
-        "[alias]\nqualification = [\"run\",\"--quiet\",\"--manifest-path\",{:?},\"-p\",\"open-esp-radio-qualification-check\",\"--\"]\n",
+        "[alias]\nqualification = [\"run\",\"--quiet\",\"--manifest-path\",{:?},\"-p\",\"oer-qualification\",\"--\"]\n",
         repository.join("Cargo.toml").to_str().unwrap()
     );
     write(root, ".cargo/config.toml", &alias);
@@ -263,8 +261,8 @@ source-paths = ["phy.rs"]
             )
         })
         .collect::<std::collections::BTreeMap<_, _>>();
-    observer["build"]["resolved"] = json!({"nodes":[{"depth":0,"package":{"name":"open-esp-radio-hil-runner","version":"0.1.0"},"features":[]}],"manifests":manifests,"cargo_config":{}});
-    let compilation = open_esp_radio_hil_schema::compile::compile(root).unwrap();
+    observer["build"]["resolved"] = json!({"nodes":[{"depth":0,"package":{"name":"oer-hil-runner","version":"0.1.0"},"features":[]}],"manifests":manifests,"cargo_config":{}});
+    let compilation = oer_hil_schema::compile::compile(root).unwrap();
     super::super::observer_artifacts::apply(
         &mut observer["build"]["resolved"],
         &compilation.artifacts,

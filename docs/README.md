@@ -64,7 +64,7 @@ hardware evidence.
 For API semantics, consult module/item rustdoc: the published
 [host](https://ermacv.github.io/open-esp-radio-rs/api/host/oer/index.html),
 [ESP32-S31](https://ermacv.github.io/open-esp-radio-rs/api/esp32s31/oer_esp32s31_phy/index.html)
-and [ESP32-S31 Wi-Fi composition](https://ermacv.github.io/open-esp-radio-rs/api/esp32s31-wifi/oer_esp32s31_embassy_wifi/index.html)
+and [ESP32-S31 Wi-Fi composition](https://ermacv.github.io/open-esp-radio-rs/api/esp32s31-wifi/oer_esp32s31_ieee80211_system/index.html)
 documentation, or `cargo xtask doc` from the repository root. Each package is
 documented once, for the target and features in its `[package.metadata.docs.rs]`.
 CLI references use each binary's `--help`; they are separate from library rustdoc.

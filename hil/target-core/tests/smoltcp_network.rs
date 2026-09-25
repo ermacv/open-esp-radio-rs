@@ -10,7 +10,7 @@ use std::{
     task::{Context, Waker},
 };
 
-use open_esp_radio_hil_target_core::network::{embassy_ipv4 as ipv4, progress, sockets};
+use oer_hil_target_core::network::{embassy_ipv4 as ipv4, progress, sockets};
 
 type Device = oer_embassy_net_upstream::Device<'static, NoopRawMutex, 1536, 2>;
 type Radio = oer_embassy_net_upstream::RadioRunner<'static, NoopRawMutex, 1536, 2>;
@@ -61,9 +61,7 @@ fn tokens_are_counted_only_on_consumption_and_ownership_returns() {
 
 #[test]
 fn role_configurations_are_independent_and_udp_uses_released_socket_storage() {
-    use open_esp_radio_hil_protocol::{
-        NetworkIpv4Configuration as Config, WifiNetworkInterface as Role,
-    };
+    use oer_hil_protocol::{NetworkIpv4Configuration as Config, WifiNetworkInterface as Role};
     let (sta, _) = pair();
     let (ap, radio) = pair();
     radio.set_link_state(LinkState::Up);

@@ -28,15 +28,15 @@ use oer_esp32s31_hal::{
     owner::RadioRuntimeOwner,
 };
 
-use oer_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
+use oer_esp32s31_ieee80211::cooperative_hardware::CooperativeRadioHardware;
 
-use oer_esp32s31_wifi_mac::irq::MacInterruptRoute;
+use oer_esp32s31_ieee80211_mac::irq::MacInterruptRoute;
 
-use oer_esp32s31_wifi_sta::attempt::{StaAttemptSecurity, StaAttemptStation, StaIdentity};
+use oer_esp32s31_ieee80211_sta::attempt::{StaAttemptSecurity, StaAttemptStation, StaIdentity};
 
-use oer_ieee80211::channel::{WifiChannel, WifiChannelError};
+use oer_ieee80211_mac::channel::{WifiChannel, WifiChannelError};
 
-use oer_wifi_embassy::station_network::{RunningStationNetwork, StationNetworkResources};
+use oer_ieee80211_runtime::station_network::{RunningStationNetwork, StationNetworkResources};
 
 use super::{
     StationRuntimeResources, StationServiceOwner, StationServicePhase, StationStorageResources,

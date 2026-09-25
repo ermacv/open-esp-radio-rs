@@ -1,6 +1,6 @@
 use super::super::test_support::{BSSID, LOCAL, authentication_response, deauthentication};
 use super::*;
-use oer_ieee80211::station::StaDisconnectKind;
+use oer_ieee80211_mac::station::StaDisconnectKind;
 
 #[test]
 fn authentication_runtime_owns_attempt_sequence_deadline_and_timeout_limit() {

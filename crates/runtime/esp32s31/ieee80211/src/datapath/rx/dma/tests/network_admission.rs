@@ -4,7 +4,7 @@ use core::task::{Context, Poll, Waker};
 
 use crate::roles::station::network::EmbassyNetConnectedRxSink;
 
-use oer_embassy_net::{NetworkInterfaceId, OwnedEndpointResources};
+use oer_embassy_net_owned::{NetworkInterfaceId, OwnedEndpointResources};
 
 use std::{sync::Arc, task::Wake};
 

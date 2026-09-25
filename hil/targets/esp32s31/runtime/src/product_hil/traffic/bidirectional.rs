@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     Direction, FlowTransportEvidence, RadioEvidence, RxDeliveryEvidence, SESSION_FLOW_CAPACITY,
     TxAggregateTimingEvidence,
 };

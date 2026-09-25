@@ -1,6 +1,6 @@
 # HIL target core
 
-`open-esp-radio-hil-target-core` holds the HIL target logic that does not
+`oer-hil-target-core` holds the HIL target logic that does not
 depend on the chip: transport workload pieces, memory-benchmark data
 conditioning, console serialization, network-boundary counters and IPv4
 policy, and the Bluetooth fixed-key Host policy, command pump and secure-GATT
@@ -26,9 +26,9 @@ hooks and the HCI reply exchange stay in the runtime around
 Run the tests for each configuration:
 
 ```console
-cargo test -p open-esp-radio-hil-target-core
-cargo test -p open-esp-radio-hil-target-core --features secure-gatt
-cargo test -p open-esp-radio-hil-target-core --features upstream-network
-cargo test -p open-esp-radio-hil-target-core --features embassy-network
-cargo test -p open-esp-radio-hil-target-core --features owned-network
+cargo test -p oer-hil-target-core
+cargo test -p oer-hil-target-core --features secure-gatt
+cargo test -p oer-hil-target-core --features upstream-network
+cargo test -p oer-hil-target-core --features embassy-network
+cargo test -p oer-hil-target-core --features owned-network
 ```

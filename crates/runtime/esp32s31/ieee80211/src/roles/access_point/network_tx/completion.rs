@@ -75,12 +75,12 @@ where
         H: TxHardware
             + ApRuntimeHardware
             + RxBlockAckHardware
-            + oer_esp32s31_wifi_mac::tx::ampdu::HtAmpduHardware,
+            + oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
     {
         if self.aggregate_phase.is_none() {
             #[cfg(any(feature = "diagnostics", test))]
             let data = control.mac.pending_publication_kind()
-                == Some(oer_esp32s31_wifi_ap::transaction::ApPendingPublicationKind::Data);
+                == Some(oer_esp32s31_ieee80211_ap::transaction::ApPendingPublicationKind::Data);
             let progress = match control.service_tx(hardware, wake) {
                 Ok(progress) => progress,
                 Err(error) => {

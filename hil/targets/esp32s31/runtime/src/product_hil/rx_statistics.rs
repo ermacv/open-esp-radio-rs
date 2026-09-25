@@ -1,7 +1,7 @@
 //! Value-only RX observations and conversion into HIL wire evidence.
 
 #[cfg(feature = "driver-observation")]
-use open_esp_radio_hil_protocol::WifiMacRxHardwareEvidence;
+use oer_hil_protocol::WifiMacRxHardwareEvidence;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in crate::product_hil) struct ObservedRxStatistics {
@@ -101,8 +101,8 @@ impl ObservedRxStatistics {
 mod tests;
 
 #[cfg(feature = "driver-observation")]
-impl From<oer_esp32s31_embassy_wifi::DiagnosticRxStatistics> for ObservedRxStatistics {
-    fn from(statistics: oer_esp32s31_embassy_wifi::DiagnosticRxStatistics) -> Self {
+impl From<oer_esp32s31_ieee80211_system::DiagnosticRxStatistics> for ObservedRxStatistics {
+    fn from(statistics: oer_esp32s31_ieee80211_system::DiagnosticRxStatistics) -> Self {
         Self {
             mpdu_count: statistics.mpdu_count,
             data_success: statistics.data_success,

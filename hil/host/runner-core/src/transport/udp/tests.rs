@@ -19,7 +19,7 @@ fn sending_a_probe_is_not_reverse_path_confirmation() {
 
 #[test]
 fn reverse_confirmation_rejects_stale_nonce_and_retries_a_lost_reply() {
-    use open_esp_radio_hil_protocol::UdpProbe;
+    use oer_hil_protocol::UdpProbe;
     use std::{thread, time::Duration};
     let peer = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();

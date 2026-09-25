@@ -1,8 +1,8 @@
 use oer_esp32s31_hal::types::MacKeyInstallOutcome;
 
-use oer_esp32s31_wifi_mac::crypto::CcmpKeyHardware;
+use oer_esp32s31_ieee80211_mac::crypto::CcmpKeyHardware;
 
-use oer_wifi_rsn::{Pmk, PtkContext};
+use oer_ieee80211_rsn::{Pmk, PtkContext};
 
 use super::*;
 
@@ -35,7 +35,7 @@ fn teardown_clears_pairwise_before_group_and_cannot_alias_a_second_peer() {
     let mut pairwise = ApPairwiseKeyStorage::new();
     let mut security = ApSecurity::install_group(&mut hardware, &gtk, &mut pairwise).unwrap();
     let ptk = Pmk::derive(b"password", b"ssid").unwrap().derive_ptk(
-        oer_wifi_rsn::Akm::Psk,
+        oer_ieee80211_rsn::Akm::Psk,
         PtkContext {
             authenticator_address: [2; 6],
             supplicant_address: [3; 6],
@@ -85,7 +85,7 @@ fn all_public_aids_own_disjoint_pairwise_slots() {
     let mut pairwise = ApPairwiseKeyStorage::new();
     let mut security = ApSecurity::install_group(&mut hardware, &gtk, &mut pairwise).unwrap();
     let ptk = Pmk::derive(b"password", b"ssid").unwrap().derive_ptk(
-        oer_wifi_rsn::Akm::Psk,
+        oer_ieee80211_rsn::Akm::Psk,
         PtkContext {
             authenticator_address: [2; 6],
             supplicant_address: [3; 6],
@@ -142,7 +142,7 @@ fn rx_replay_is_per_tid_and_fenced_across_pairwise_key_reinstall() {
     let mut pairwise = ApPairwiseKeyStorage::new();
     let mut security = ApSecurity::install_group(&mut hardware, &gtk, &mut pairwise).unwrap();
     let ptk = Pmk::derive(b"password", b"ssid").unwrap().derive_ptk(
-        oer_wifi_rsn::Akm::Psk,
+        oer_ieee80211_rsn::Akm::Psk,
         PtkContext {
             authenticator_address: [2; 6],
             supplicant_address: peer,

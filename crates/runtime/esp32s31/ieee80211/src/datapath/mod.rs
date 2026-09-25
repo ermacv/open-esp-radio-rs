@@ -17,12 +17,12 @@ use embassy_futures::{
 };
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::{Duration, Instant, Timer};
-pub use oer_esp32s31_wifi::datapath::{
+pub use oer_esp32s31_ieee80211::datapath::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxWorkCounters,
     DatapathStopProgress,
 };
-pub use oer_esp32s31_wifi::tx::{WifiTxProgress, WifiTxWake};
-use oer_network::{LinkState, NetworkInterfaceId};
+pub use oer_esp32s31_ieee80211::tx::{WifiTxProgress, WifiTxWake};
+use oer_network_interface::{LinkState, NetworkInterfaceId};
 
 pub mod irq;
 pub mod maintenance;
@@ -36,8 +36,8 @@ pub mod tx;
 mod tx_performance;
 
 #[cfg(feature = "tx-phase-telemetry")]
-pub use oer_wifi_datapath::MaterializationOwnershipSnapshot;
-pub use oer_wifi_datapath::{MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame};
+pub use oer_ieee80211_datapath::MaterializationOwnershipSnapshot;
+pub use oer_ieee80211_datapath::{MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame};
 #[cfg(feature = "owned-network")]
 pub use sram_tx::DatapathTxConsumer;
 pub use sram_tx::{

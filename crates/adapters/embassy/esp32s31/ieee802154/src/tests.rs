@@ -5,12 +5,12 @@ use core::{
 
 use embassy_futures::block_on;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use oer_esp32s31_ieee802154::{MacOperation, ValidationMacCommandExecutor};
 use oer_esp32s31_ieee802154_irq::{
     Ieee802154Event, Ieee802154EventMask, Ieee802154EventObservationError,
     acknowledged_interrupt_for_validation,
 };
 use oer_esp32s31_ieee802154_mac::{MacNoDmaResources, MacReady};
-use oer_esp32s31_ieee802154_runtime::{MacRuntime, ValidationMacCommandExecutor};
 
 use super::*;
 
@@ -40,8 +40,8 @@ fn publish_unclassified<M: RawMutex, const DEPTH: usize>(
     ))
 }
 
-fn active_cca() -> MacRuntimeActive<MacNoDmaResources, ValidationMacCommandExecutor> {
-    MacRuntime::for_validation()
+fn active_cca() -> MacOperationActive<MacNoDmaResources, ValidationMacCommandExecutor> {
+    MacOperation::for_validation()
         .start(MacReady::new().request_clear_channel_assessment())
         .unwrap()
 }

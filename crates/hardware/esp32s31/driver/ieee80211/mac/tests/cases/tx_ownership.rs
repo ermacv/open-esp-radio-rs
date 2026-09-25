@@ -2,8 +2,8 @@ use crate::{support::*, *};
 
 #[test]
 fn each_publication_carries_its_protection_across_phy_and_queue_changes() {
-    use oer_esp32s31_wifi_mac::rx::HeGuardIntervalAndLtf;
-    use oer_esp32s31_wifi_mac::tx::{HeSmpduTxConfig, HtTxConfig, MacTxProtection};
+    use oer_esp32s31_ieee80211_mac::rx::HeGuardIntervalAndLtf;
+    use oer_esp32s31_ieee80211_mac::tx::{HeSmpduTxConfig, HtTxConfig, MacTxProtection};
 
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = MockMmio::default();

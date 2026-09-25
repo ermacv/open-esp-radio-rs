@@ -19,9 +19,9 @@ use oer::wifi::{
     WifiMacAddress, WifiSsid,
 };
 
-use open_esp_radio_esp32s31_access_point::{dhcp, network, services};
+use oer_example_esp32s31_access_point::{dhcp, network, services};
 
-use oer_esp32s31_embassy_runtime::{self as platform_executor, Executor};
+use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
 
 use oer::systems::esp32s31::embassy::wifi::{
     self as integration, DeadlineBudget, DeadlineWatchdog, EspHalRadioPeripheral,

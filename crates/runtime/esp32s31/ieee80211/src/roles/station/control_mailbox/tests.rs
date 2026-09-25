@@ -1,13 +1,13 @@
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use oer_esp32s31_wifi_mac::tx::ampdu::BlockAckAction;
-use oer_esp32s31_wifi_sta::connected_rx::{
+use oer_esp32s31_ieee80211_mac::tx::ampdu::BlockAckAction;
+use oer_esp32s31_ieee80211_sta::connected_rx::{
     ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink,
 };
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     data::EthernetFrameParts,
     station::{StaDisconnect, StaDisconnectKind},
 };
-use oer_wifi_sta::power_save::StaPsPollDelivery;
+use oer_ieee80211_sta::power_save::StaPsPollDelivery;
 
 use super::*;
 
@@ -30,7 +30,7 @@ fn synchronous_queue_copies_actions_but_never_borrowed_ethernet() {
         },
         raw: &[0; 14],
         amsdu: false,
-        metadata: oer_wifi_softmac::MacRxMetadata::unavailable(),
+        metadata: oer_ieee80211_softmac::MacRxMetadata::unavailable(),
     });
     queue.publish(ConnectedRxEvent::BlockAck {
         action,
@@ -132,8 +132,8 @@ fn connected_eapol_uses_the_security_lane_and_never_the_control_fifo() {
     let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
     let (mut publisher, receiver) = resources.split();
     let ap = [2, 0, 0, 0, 0, 2];
-    let packet = oer_wifi_rsn::frames::RsnTxFrame::<512>::group_message1(
-        oer_wifi_rsn::Akm::Psk,
+    let packet = oer_ieee80211_rsn::frames::RsnTxFrame::<512>::group_message1(
+        oer_ieee80211_rsn::Akm::Psk,
         [2, 0, 0, 0, 0, 1],
         3,
         [0; 8],
@@ -150,7 +150,7 @@ fn connected_eapol_uses_the_security_lane_and_never_the_control_fifo() {
         },
         raw: &[],
         amsdu: false,
-        metadata: oer_wifi_softmac::MacRxMetadata::unavailable(),
+        metadata: oer_ieee80211_softmac::MacRxMetadata::unavailable(),
     });
 
     assert_eq!(receiver.try_receive(), None);
@@ -170,8 +170,8 @@ fn protected_eapol_overflow_remains_fail_closed() {
     let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
     let (mut publisher, receiver) = resources.split();
     let ap = [2, 0, 0, 0, 0, 2];
-    let packet = oer_wifi_rsn::frames::RsnTxFrame::<512>::group_message1(
-        oer_wifi_rsn::Akm::Psk,
+    let packet = oer_ieee80211_rsn::frames::RsnTxFrame::<512>::group_message1(
+        oer_ieee80211_rsn::Akm::Psk,
         [2, 0, 0, 0, 0, 1],
         3,
         [0; 8],
@@ -187,7 +187,7 @@ fn protected_eapol_overflow_remains_fail_closed() {
         },
         raw: &[],
         amsdu: false,
-        metadata: oer_wifi_softmac::MacRxMetadata::unavailable(),
+        metadata: oer_ieee80211_softmac::MacRxMetadata::unavailable(),
     };
 
     publisher.publish(event());
@@ -208,8 +208,8 @@ fn plaintext_eapol_full_and_copy_rejection_are_peer_local_drops() {
     let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
     let (mut publisher, receiver) = resources.split();
     let ap = [2, 0, 0, 0, 0, 2];
-    let first = oer_wifi_rsn::frames::RsnTxFrame::<512>::message3(
-        oer_wifi_rsn::Akm::Psk,
+    let first = oer_ieee80211_rsn::frames::RsnTxFrame::<512>::message3(
+        oer_ieee80211_rsn::Akm::Psk,
         [2, 0, 0, 0, 0, 1],
         3,
         [4; 32],
@@ -217,8 +217,8 @@ fn plaintext_eapol_full_and_copy_rejection_are_peer_local_drops() {
         &[0x55; 8],
     )
     .unwrap();
-    let second = oer_wifi_rsn::frames::RsnTxFrame::<512>::message3(
-        oer_wifi_rsn::Akm::Psk,
+    let second = oer_ieee80211_rsn::frames::RsnTxFrame::<512>::message3(
+        oer_ieee80211_rsn::Akm::Psk,
         [2, 0, 0, 0, 0, 1],
         4,
         [5; 32],
@@ -261,8 +261,8 @@ fn protected_security_precedes_an_earlier_plaintext_candidate() {
     let (mut publisher, receiver) = resources.split();
     let station = [2, 0, 0, 0, 0, 1];
     let ap = [2, 0, 0, 0, 0, 2];
-    let message3 = oer_wifi_rsn::frames::RsnTxFrame::<512>::message3(
-        oer_wifi_rsn::Akm::Psk,
+    let message3 = oer_ieee80211_rsn::frames::RsnTxFrame::<512>::message3(
+        oer_ieee80211_rsn::Akm::Psk,
         station,
         3,
         [4; 32],
@@ -270,8 +270,8 @@ fn protected_security_precedes_an_earlier_plaintext_candidate() {
         &[0x55; 8],
     )
     .unwrap();
-    let group_message1 = oer_wifi_rsn::frames::RsnTxFrame::<512>::group_message1(
-        oer_wifi_rsn::Akm::Psk,
+    let group_message1 = oer_ieee80211_rsn::frames::RsnTxFrame::<512>::group_message1(
+        oer_ieee80211_rsn::Akm::Psk,
         station,
         4,
         [0; 8],
@@ -292,7 +292,7 @@ fn protected_security_precedes_an_earlier_plaintext_candidate() {
         },
         raw: &[],
         amsdu: false,
-        metadata: oer_wifi_softmac::MacRxMetadata::unavailable(),
+        metadata: oer_ieee80211_softmac::MacRxMetadata::unavailable(),
     });
 
     assert!(!receiver.overflowed());

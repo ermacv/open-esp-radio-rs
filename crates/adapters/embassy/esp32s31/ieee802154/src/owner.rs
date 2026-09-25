@@ -1,16 +1,16 @@
 //! Affine Embassy task and hard-IRQ owners.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
+use oer_esp32s31_ieee802154::{
+    MacCommandExecutor, MacOperation, MacOperationActive, MacOperationCompletion,
+    MacOperationDmaResolutionFailure, MacOperationResolved, MacOperationResources,
+    MacOperationStartFailure,
+};
 use oer_esp32s31_ieee802154_dma::{RxArm, TxAckNotRequested, TxAckRequested, TxArmed, TxCompleted};
 use oer_esp32s31_ieee802154_mac::{
     MacActive, MacCompletion, MacDeferredNext, MacEnergyDetectionDuration, MacNoDmaResources,
     MacReady, MacResolvedRx, MacResolvedTxWithAck, MacRxResolutionFailure, MacTransmitAccess,
     MacTxWithAckResolutionFailure, MacTxWithAckResources,
-};
-use oer_esp32s31_ieee802154_runtime::{
-    MacCommandExecutor, MacRuntime, MacRuntimeActive, MacRuntimeCompletion,
-    MacRuntimeDmaResolutionFailure, MacRuntimeResolved, MacRuntimeResources,
-    MacRuntimeStartFailure,
 };
 
 use crate::{
@@ -33,7 +33,7 @@ pub struct EmbassyIeee802154Ready<
     const DEPTH: usize,
     Executor: MacCommandExecutor,
 > {
-    runtime: MacRuntime<Executor>,
+    runtime: MacOperation<Executor>,
     ready: MacReady,
     irq: &'irq EmbassyIeee802154IrqRuntime<M, DEPTH>,
 }
@@ -48,7 +48,7 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Executor: MacCommandExecutor>
     /// this adapter deliberately has no PAC/raw-address constructor and does
     /// not infer hardware readiness from reset state.
     pub const fn from_runtime(
-        runtime: MacRuntime<Executor>,
+        runtime: MacOperation<Executor>,
         ready: MacReady,
         irq: &'irq EmbassyIeee802154IrqRuntime<M, DEPTH>,
     ) -> Self {
@@ -63,7 +63,7 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Executor: MacCommandExecutor>
     pub fn into_parts(
         self,
     ) -> (
-        MacRuntime<Executor>,
+        MacOperation<Executor>,
         MacReady,
         &'irq EmbassyIeee802154IrqRuntime<M, DEPTH>,
     ) {
@@ -76,7 +76,7 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Executor: MacCommandExecutor>
         armed: RxArm<'pool, COUNT>,
     ) -> Result<
         EmbassyIeee802154Active<'irq, M, DEPTH, RxArm<'pool, COUNT>, Executor>,
-        MacRuntimeStartFailure<RxArm<'pool, COUNT>, Executor>,
+        MacOperationStartFailure<RxArm<'pool, COUNT>, Executor>,
     > {
         let Self {
             runtime,
@@ -98,7 +98,7 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Executor: MacCommandExecutor>
         access: MacTransmitAccess,
     ) -> Result<
         EmbassyIeee802154Active<'irq, M, DEPTH, TxArmed<'owner, TxAckNotRequested>, Executor>,
-        MacRuntimeStartFailure<TxArmed<'owner, TxAckNotRequested>, Executor>,
+        MacOperationStartFailure<TxArmed<'owner, TxAckNotRequested>, Executor>,
     > {
         let Self {
             runtime,
@@ -117,7 +117,7 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Executor: MacCommandExecutor>
         access: MacTransmitAccess,
     ) -> Result<
         EmbassyIeee802154Active<'irq, M, DEPTH, MacTxWithAckResources<'tx, 'rx, COUNT>, Executor>,
-        MacRuntimeStartFailure<MacTxWithAckResources<'tx, 'rx, COUNT>, Executor>,
+        MacOperationStartFailure<MacTxWithAckResources<'tx, 'rx, COUNT>, Executor>,
     > {
         let Self {
             runtime,
@@ -133,7 +133,7 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Executor: MacCommandExecutor>
         self,
     ) -> Result<
         EmbassyIeee802154Active<'irq, M, DEPTH, MacNoDmaResources, Executor>,
-        MacRuntimeStartFailure<MacNoDmaResources, Executor>,
+        MacOperationStartFailure<MacNoDmaResources, Executor>,
     > {
         let Self {
             runtime,
@@ -150,7 +150,7 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Executor: MacCommandExecutor>
         duration: MacEnergyDetectionDuration,
     ) -> Result<
         EmbassyIeee802154Active<'irq, M, DEPTH, MacNoDmaResources, Executor>,
-        MacRuntimeStartFailure<MacNoDmaResources, Executor>,
+        MacOperationStartFailure<MacNoDmaResources, Executor>,
     > {
         let Self {
             runtime,
@@ -161,13 +161,13 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Executor: MacCommandExecutor>
         Self::start(runtime, irq, active)
     }
 
-    fn start<Resources: MacRuntimeResources>(
-        runtime: MacRuntime<Executor>,
+    fn start<Resources: MacOperationResources>(
+        runtime: MacOperation<Executor>,
         irq: &'irq EmbassyIeee802154IrqRuntime<M, DEPTH>,
         active: MacActive<Resources>,
     ) -> Result<
         EmbassyIeee802154Active<'irq, M, DEPTH, Resources, Executor>,
-        MacRuntimeStartFailure<Resources, Executor>,
+        MacOperationStartFailure<Resources, Executor>,
     > {
         let active = runtime.start(active)?;
         Ok(EmbassyIeee802154Active::new(active, irq))
@@ -263,7 +263,7 @@ pub enum EmbassyIeee802154DmaRunToReadyError<Failure, Executor: MacCommandExecut
     Operation(EmbassyIeee802154OperationError),
     /// A terminal batch was accepted, but the DMA lifecycle transition failed
     /// and quarantined the command and buffer owners.
-    Resolution(MacRuntimeDmaResolutionFailure<Failure, Executor>),
+    Resolution(MacOperationDmaResolutionFailure<Failure, Executor>),
 }
 
 impl<'irq, M: RawMutex, const DEPTH: usize, Executor: MacCommandExecutor>
@@ -295,7 +295,7 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Resources, Executor: MacCommandExecu
     EmbassyIeee802154Active<'irq, M, DEPTH, Resources, Executor>
 {
     const fn new(
-        active: MacRuntimeActive<Resources, Executor>,
+        active: MacOperationActive<Resources, Executor>,
         irq: &'irq EmbassyIeee802154IrqRuntime<M, DEPTH>,
     ) -> Self {
         Self {
@@ -324,7 +324,7 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Resources, Executor: MacCommandExecu
     /// Cancellation preserves the active runtime inside `self`.
     pub async fn run(
         &mut self,
-    ) -> Result<MacRuntimeCompletion<Resources, Executor>, EmbassyIeee802154OperationError> {
+    ) -> Result<MacOperationCompletion<Resources, Executor>, EmbassyIeee802154OperationError> {
         self.operation.run(self.irq).await
     }
 
@@ -334,7 +334,7 @@ impl<'irq, M: RawMutex, const DEPTH: usize, Resources, Executor: MacCommandExecu
     /// An acknowledged/lost/invalid IRQ or actor rejection irreversibly
     /// quarantines the runtime and DMA resources, so this returns `None` after
     /// such an operation error.
-    pub fn into_active(self) -> Option<MacRuntimeActive<Resources, Executor>> {
+    pub fn into_active(self) -> Option<MacOperationActive<Resources, Executor>> {
         self.operation.into_active()
     }
 }
@@ -434,7 +434,7 @@ fn embassy_dma_resolved<
     Reclaimed,
     Executor: MacCommandExecutor,
 >(
-    resolved: MacRuntimeResolved<Reclaimed, Executor>,
+    resolved: MacOperationResolved<Reclaimed, Executor>,
     irq: &'irq EmbassyIeee802154IrqRuntime<M, DEPTH>,
 ) -> EmbassyIeee802154DmaResolved<'irq, M, DEPTH, Reclaimed, Executor> {
     let (runtime, ready, reclaimed, completion, next) = resolved.into_parts();

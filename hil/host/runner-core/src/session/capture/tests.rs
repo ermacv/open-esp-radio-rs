@@ -22,16 +22,12 @@ fn rx_delivery_wait_ignores_other_sessions_and_requires_actual_data() {
         (
             3,
             9,
-            Event::SessionReady(open_esp_radio_hil_protocol::SessionReady {
-                direction: open_esp_radio_hil_protocol::Direction::Rx,
+            Event::SessionReady(oer_hil_protocol::SessionReady {
+                direction: oer_hil_protocol::Direction::Rx,
                 tx_block_ack_tid: None,
             }),
         ),
-        (
-            4,
-            9,
-            Event::Failed(open_esp_radio_hil_protocol::FailureCode::Network),
-        ),
+        (4, 9, Event::Failed(oer_hil_protocol::FailureCode::Network)),
     ] {
         input
             .send(Ok(frame(Envelope::new(7, sequence, id, 0, event))))
@@ -158,7 +154,7 @@ fn observation_discovers_a_running_boot_without_initializing_or_clearing_results
                     completed_session_id: Some(9),
                 }),
                 Command::QueryStackUsage => {
-                    Event::Rejected(open_esp_radio_hil_protocol::RejectReason::InvalidState)
+                    Event::Rejected(oer_hil_protocol::RejectReason::InvalidState)
                 }
                 Command::QueryLinkHealth => Event::LinkHealth(LinkHealth {
                     rx_frames: 12,
@@ -469,7 +465,7 @@ fn lifecycle_cursor_advances_and_does_not_repeat_events() {
 
 #[test]
 fn old_network_snapshot_remains_visible_after_a_new_stage_cursor() {
-    use open_esp_radio_hil_protocol::{NetworkInfo, WifiNetworkInterface};
+    use oer_hil_protocol::{NetworkInfo, WifiNetworkInterface};
 
     let output = Output::new();
     let (capture, input) = capture(&output, false);
@@ -538,7 +534,7 @@ fn old_network_snapshot_remains_visible_after_a_new_stage_cursor() {
 
 #[test]
 fn connected_observation_requires_a_new_lifecycle_edge_and_keeps_negotiated_link() {
-    use open_esp_radio_hil_protocol::StationLinkSecurity;
+    use oer_hil_protocol::StationLinkSecurity;
 
     let output = Output::new();
     let (capture, input) = capture(&output, false);
@@ -621,7 +617,7 @@ fn connected_observation_requires_a_new_lifecycle_edge_and_keeps_negotiated_link
 
 #[test]
 fn network_recovery_requires_readiness_after_the_new_connected_edge() {
-    use open_esp_radio_hil_protocol::{NetworkInfo, StationLinkSecurity};
+    use oer_hil_protocol::{NetworkInfo, StationLinkSecurity};
 
     let output = Output::new();
     let (capture, input) = capture(&output, false);
@@ -692,9 +688,7 @@ fn network_recovery_requires_readiness_after_the_new_connected_edge() {
 
 #[test]
 fn real_rx_probe_can_pass_without_any_target_to_host_payload() {
-    use open_esp_radio_hil_protocol::{
-        Direction, NetworkInfo, ServiceInfo, Transport, WifiNetworkInterface,
-    };
+    use oer_hil_protocol::{Direction, NetworkInfo, ServiceInfo, Transport, WifiNetworkInterface};
 
     let output = Output::new();
     let (capture, input) = capture(&output, false);
@@ -805,7 +799,7 @@ fn target_session_failure_does_not_turn_into_an_evidence_timeout() {
             1,
             9,
             0,
-            Event::Failed(open_esp_radio_hil_protocol::FailureCode::Network),
+            Event::Failed(oer_hil_protocol::FailureCode::Network),
         ))))
         .unwrap();
     let session = SessionHandle {
@@ -825,7 +819,7 @@ fn target_session_failure_does_not_turn_into_an_evidence_timeout() {
 
 #[test]
 fn monitor_failure_is_correlated_and_terminal() {
-    use open_esp_radio_hil_protocol::{
+    use oer_hil_protocol::{
         WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation,
     };
     let output = Output::new();
@@ -857,7 +851,7 @@ fn monitor_failure_is_correlated_and_terminal() {
 
 #[test]
 fn retained_radio_failure_is_correlated_and_terminal() {
-    use open_esp_radio_hil_protocol::{
+    use oer_hil_protocol::{
         WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation,
     };
     let output = Output::new();
@@ -890,7 +884,7 @@ fn retained_radio_failure_is_correlated_and_terminal() {
 
 #[test]
 fn wifi_command_completion_is_scoped_to_accepted_boot_request_and_session() {
-    use open_esp_radio_hil_protocol::{WifiRole, WifiRoleTransitionEvidence};
+    use oer_hil_protocol::{WifiRole, WifiRoleTransitionEvidence};
 
     let output = Output::new();
     let (input, rx) = serial_pair();
@@ -955,7 +949,7 @@ fn wifi_command_completion_is_scoped_to_accepted_boot_request_and_session() {
 
 #[test]
 fn wifi_completion_before_acceptance_cannot_satisfy_a_new_operation() {
-    use open_esp_radio_hil_protocol::{WifiRole, WifiRoleTransitionEvidence};
+    use oer_hil_protocol::{WifiRole, WifiRoleTransitionEvidence};
 
     let output = Output::new();
     let (input, rx) = serial_pair();
@@ -998,7 +992,7 @@ fn wifi_completion_before_acceptance_cannot_satisfy_a_new_operation() {
 
 #[test]
 fn late_and_duplicate_wifi_completions_do_not_close_a_successor_request() {
-    use open_esp_radio_hil_protocol::{WifiRole, WifiRoleTransitionEvidence};
+    use oer_hil_protocol::{WifiRole, WifiRoleTransitionEvidence};
 
     let output = Output::new();
     let (capture, input) = capture(&output, false);
@@ -1076,7 +1070,7 @@ fn finalization_failure_keeps_the_primary_cause_and_both_messages() {
 }
 
 fn result_events(rx_frames: u32) -> Vec<Event> {
-    use open_esp_radio_hil_protocol::{ResultSummary, StackWatermark};
+    use oer_hil_protocol::{ResultSummary, StackWatermark};
     let transport = TransportEvidence {
         rx_maximum_silence_micros: None,
         rx_bytes: 8,
@@ -1216,7 +1210,7 @@ fn changed_replay_is_rejected_before_result_removal() {
 
 #[test]
 fn reverse_probe_requires_network_and_bound_service_on_the_same_interface() {
-    use open_esp_radio_hil_protocol::{NetworkInfo, ServiceInfo};
+    use oer_hil_protocol::{NetworkInfo, ServiceInfo};
     let output = Output::new();
     let (capture, input) = capture(&output, false);
     activate(&capture, &input);
@@ -1303,9 +1297,9 @@ fn reverse_probe_requires_network_and_bound_service_on_the_same_interface() {
         .unwrap();
     peer.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
     let responder = std::thread::spawn(move || {
-        let mut bytes = [0; open_esp_radio_hil_protocol::UdpProbe::LENGTH];
+        let mut bytes = [0; oer_hil_protocol::UdpProbe::LENGTH];
         let (length, source) = peer.recv_from(&mut bytes).unwrap();
-        let mut probe = open_esp_radio_hil_protocol::UdpProbe::decode(&bytes[..length]).unwrap();
+        let mut probe = oer_hil_protocol::UdpProbe::decode(&bytes[..length]).unwrap();
         assert!(!probe.response);
         probe.response = true;
         peer.send_to(&probe.encode(), source).unwrap();

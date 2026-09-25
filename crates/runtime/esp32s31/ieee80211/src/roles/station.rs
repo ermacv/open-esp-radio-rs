@@ -73,7 +73,7 @@ pub use self::control::{
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_hal::ieee80211::arena::RadioOwnerRepublish;
 #[cfg(target_arch = "riscv32")]
-use oer_esp32s31_wifi::runtime::WifiRoleOwner;
+use oer_esp32s31_ieee80211::runtime::WifiRoleOwner;
 #[cfg(target_arch = "riscv32")]
 pub use reclaim::{
     StationInterruptEpochState, StationPhaseRebindFailure, StationPhaseReclaimError,

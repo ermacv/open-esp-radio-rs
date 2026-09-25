@@ -21,9 +21,9 @@ use oer_esp32s31_phy::{
     RegisteredPhyRfWakePoisoned,
 };
 
-use oer_esp32s31_wifi_mac::sta_ap_registers::disable_all_role_receive_registers;
+use oer_esp32s31_ieee80211_mac::sta_ap_registers::disable_all_role_receive_registers;
 
-use oer_ieee80211::channel::WifiChannel;
+use oer_ieee80211_mac::channel::WifiChannel;
 
 /// Evidence captured while closing the cold polling interrupt phase.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

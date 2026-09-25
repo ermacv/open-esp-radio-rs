@@ -36,7 +36,7 @@ use oer_esp32s31_bluetooth_runtime::{
     notification::RuntimeNotifications,
 };
 
-use oer_esp32s31_radio_platform_esp_hal::{
+use oer_esp32s31_radio_esp_hal::{
     EspHalBluetoothModemLpTimerStorageError, PublishedEspHalBluetoothInterruptOwners,
 };
 

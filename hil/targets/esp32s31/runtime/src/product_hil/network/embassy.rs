@@ -4,11 +4,9 @@ use super::{observation, progress};
 
 use embassy_net::Config;
 
-use oer_esp32s31_embassy_wifi::{WifiDevice, WifiNetworkDevice};
+use oer_esp32s31_ieee80211_system::{WifiDevice, WifiNetworkDevice};
 
-use open_esp_radio_hil_protocol::{
-    WifiNetworkInterface, WifiRxChecksumPolicy, WifiTxUdpChecksumPolicy,
-};
+use oer_hil_protocol::{WifiNetworkInterface, WifiRxChecksumPolicy, WifiTxUdpChecksumPolicy};
 #[cfg(feature = "task-poll-telemetry")]
 type Device = progress::Device<WifiNetworkDevice>;
 #[cfg(not(feature = "task-poll-telemetry"))]
@@ -22,7 +20,7 @@ pub(crate) type Resources = embassy_net::StackResources<16>;
 #[cfg(feature = "owned-network")]
 pub(crate) type Resources = embassy_net::StackResources<Device>;
 
-use open_esp_radio_hil_target_core::network::embassy_ipv4 as ipv4;
+use oer_hil_target_core::network::embassy_ipv4 as ipv4;
 
 pub(crate) use ipv4::{Iface, configure, info};
 pub(crate) fn new(

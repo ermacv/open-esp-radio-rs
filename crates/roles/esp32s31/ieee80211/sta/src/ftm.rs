@@ -8,9 +8,9 @@
 
 use oer_esp32s31_hal::{owner::SharedPhyAccess, phy::agc as phy_agc};
 
-use oer_ieee80211::ftm::{FtmRequest, FtmTrigger};
+use oer_ieee80211_mac::ftm::{FtmRequest, FtmTrigger};
 
-use oer_wifi_sta::ftm::FtmRequestTransmission;
+use oer_ieee80211_sta::ftm::FtmRequestTransmission;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StationFtmFrontierStatus {

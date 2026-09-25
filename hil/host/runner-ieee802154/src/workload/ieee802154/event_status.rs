@@ -9,7 +9,7 @@
 use hil_core::context::Context;
 use std::{fs, path::Path, time::Duration};
 
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
     Ieee802154EventStatusProbeStop, Ieee802154ObservedEventState,
     Ieee802154ValidationEventEnableState,

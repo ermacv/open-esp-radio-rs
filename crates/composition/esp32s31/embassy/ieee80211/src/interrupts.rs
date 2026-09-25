@@ -10,17 +10,17 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 #[cfg(feature = "mac-irq-diagnostics")]
 use embassy_sync::once_lock::OnceLock;
 #[cfg(feature = "mac-irq-diagnostics")]
-use oer_esp32s31_wifi_mac::irq::{
+use oer_esp32s31_ieee80211_mac::irq::{
     EVENT_COLLISION, EVENT_RX_SUCCESS, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT, IrqSink,
 };
 
 use oer_esp32s31_hal::owner::MacInterruptSetup;
 
-use oer_esp32s31_wifi_runtime::datapath::irq::{
+use oer_esp32s31_ieee80211_runtime::datapath::irq::{
     EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, InterruptEpoch,
 };
 
-use oer_esp32s31_wifi_esp_hal::mac_interrupt_epoch::{
+use oer_esp32s31_ieee80211_esp_hal::mac_interrupt_epoch::{
     EspHalMacInterruptRoute, service_mac_interrupt, service_power_interrupt,
 };
 
@@ -29,7 +29,7 @@ pub type MacInterruptEpoch =
 
 pub(crate) static IRQ_RUNTIME: EmbassyMacIrqRuntime<CriticalSectionRawMutex> =
     EmbassyMacIrqRuntime::new_with_rx_moderation(
-        oer_esp32s31_wifi_esp_hal::mac_interrupt_epoch::unmask_active_mac_rx_delivery_interrupts,
+        oer_esp32s31_ieee80211_esp_hal::mac_interrupt_epoch::unmask_active_mac_rx_delivery_interrupts,
     );
 static POWER_IRQ_RUNTIME: EmbassyPowerIrqRuntime<CriticalSectionRawMutex> =
     EmbassyPowerIrqRuntime::new();
@@ -106,7 +106,7 @@ impl IrqSink for DiagnosticMacIrqSink {
 fn mac_interrupt() {
     #[cfg(feature = "task-poll-telemetry")]
     let core0_cycle_started =
-        oer_esp32s31_wifi_runtime::diagnostics::core0_rx_cycles::cycle_count();
+        oer_esp32s31_ieee80211_runtime::diagnostics::core0_rx_cycles::cycle_count();
     #[cfg(feature = "mac-irq-diagnostics")]
     let report = service_mac_interrupt(&DiagnosticMacIrqSink);
     #[cfg(not(feature = "mac-irq-diagnostics"))]
@@ -120,7 +120,7 @@ fn mac_interrupt() {
     });
     #[cfg(feature = "task-poll-telemetry")]
     {
-        use oer_esp32s31_wifi_runtime::diagnostics::core0_rx_cycles::{
+        use oer_esp32s31_ieee80211_runtime::diagnostics::core0_rx_cycles::{
             CORE0_RX_CYCLES, cycle_count,
         };
 

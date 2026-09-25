@@ -4,7 +4,7 @@ use core::future::Future;
 #[cfg(target_arch = "riscv32")]
 use core::marker::PhantomData;
 
-use oer_ieee80211::channel::WifiChannel;
+use oer_ieee80211_mac::channel::WifiChannel;
 
 /// Retune capability lent to the standalone scheduler.
 ///
@@ -33,7 +33,7 @@ pub trait StandaloneEspNowChannelControl<H, P> {
 /// method; connected ESP-NOW has no path to construct or consume it.
 #[cfg(target_arch = "riscv32")]
 pub struct StandaloneEspNowPhyChannelControl<'context, 'observer, D, O> {
-    context: &'context mut oer_esp32s31_wifi::runtime::WifiRuntimeContext,
+    context: &'context mut oer_esp32s31_ieee80211::runtime::WifiRuntimeContext,
     observer: &'observer mut O,
     _delay: PhantomData<D>,
 }
@@ -41,7 +41,7 @@ pub struct StandaloneEspNowPhyChannelControl<'context, 'observer, D, O> {
 #[cfg(target_arch = "riscv32")]
 impl<'context, 'observer, D, O> StandaloneEspNowPhyChannelControl<'context, 'observer, D, O> {
     pub fn new(
-        context: &'context mut oer_esp32s31_wifi::runtime::WifiRuntimeContext,
+        context: &'context mut oer_esp32s31_ieee80211::runtime::WifiRuntimeContext,
         observer: &'observer mut O,
     ) -> Self {
         Self {
@@ -75,7 +75,7 @@ where
         platform: &'a mut P,
         channel: WifiChannel,
     ) -> Result<(), Self::Error> {
-        oer_esp32s31_wifi::switch_esp32s31_wifi_channel::<D, _, _>(
+        oer_esp32s31_ieee80211::switch_esp32s31_wifi_channel::<D, _, _>(
             self.context.phy_mut(),
             channel,
             platform,

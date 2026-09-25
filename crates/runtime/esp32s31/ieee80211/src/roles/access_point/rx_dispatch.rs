@@ -177,7 +177,7 @@ impl AccessPointProtectedFrameDispatch {
     #[inline(never)]
     fn dispatch(
         data_rx: &mut ApRxDispatcher,
-        ordered: oer_esp32s31_wifi_mac::rx::RxSegment<'_>,
+        ordered: oer_esp32s31_ieee80211_mac::rx::RxSegment<'_>,
         mut admit: impl FnMut(ApRxAdmissionRequest) -> ApRxAdmission,
         peer: Option<[u8; 6]>,
         current_buffer: usize,
@@ -282,9 +282,9 @@ impl AccessPointProtectedFrameDispatch {
     #[inline(never)]
     fn dispatch_ordinary(
         data_rx: &mut ApRxDispatcher,
-        ordered: oer_esp32s31_wifi_mac::rx::RxSegment<'_>,
+        ordered: oer_esp32s31_ieee80211_mac::rx::RxSegment<'_>,
         mut admit: impl FnMut(
-            oer_esp32s31_wifi_ap::rx::ApOrdinaryPairwiseRxRequest,
+            oer_esp32s31_ieee80211_ap::rx::ApOrdinaryPairwiseRxRequest,
         ) -> ApRxAdmission,
         _peer: [u8; 6],
         #[cfg(any(feature = "diagnostics", test))] now_micros: u64,

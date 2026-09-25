@@ -19,7 +19,7 @@ use owned_embassy_net_driver::{
 };
 use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPoolWaiter};
 
-use oer_wifi_datapath::{DestinationTxHead, DestinationTxQueues};
+use oer_ieee80211_datapath::{DestinationTxHead, DestinationTxQueues};
 
 mod tx_budget;
 mod tx_queue;

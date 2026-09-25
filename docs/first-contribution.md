@@ -25,7 +25,7 @@ test failure or a reason to change the lockfile.
 ## Follow one scan and its error return
 
 ```console
-cargo test -p oer-wifi-sta scan::tests --locked --offline
+cargo test -p oer-ieee80211-sta scan::tests --locked --offline
 ```
 
 The current selector runs six tests. Confirm a nonzero executed-test count and

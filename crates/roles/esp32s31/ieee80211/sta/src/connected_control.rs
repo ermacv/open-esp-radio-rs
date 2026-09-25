@@ -16,9 +16,9 @@ use crate::{
     single_mpdu_tx::{ActionTxConfig, SingleMpduTx, SingleMpduTxError, SingleMpduTxOutcome},
 };
 
-use oer_esp32s31_wifi::datapath::{DatapathControlContext, DatapathControlProgress};
+use oer_esp32s31_ieee80211::datapath::{DatapathControlContext, DatapathControlProgress};
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     rx::{
         ampdu::{
@@ -37,14 +37,14 @@ use oer_esp32s31_wifi_mac::{
     },
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     station::{StaDisconnect, StaDisconnectKind},
     station_power_save::{StaAssociationId, StaPowerManagement},
     trigger::TriggerCommonInfo,
     twt::{INDIVIDUAL_TWT_FLOW_CAPACITY, IndividualTwtAction, IndividualTwtFlowId},
 };
 
-use oer_wifi_sta::{
+use oer_ieee80211_sta::{
     ftm::{
         FtmRequester, FtmRequesterConfig, FtmRequesterError, FtmRequesterEvent, FtmRequesterService,
     },
@@ -367,9 +367,9 @@ pub trait ConnectedControlTx {
 impl<P, E, T, const BUFFER_SIZE: usize> ConnectedControlTx
     for SingleMpduTx<'_, P, E, T, BUFFER_SIZE>
 where
-    P: oer_esp32s31_wifi::ordinary_tx::WifiTxPowerProfile,
-    E: oer_esp32s31_wifi::ordinary_tx::WifiTxEntropy,
-    T: oer_esp32s31_wifi::ordinary_tx::WifiTxTimer,
+    P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
+    E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
+    T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
 {
     fn take_last_outcome(&mut self) -> Option<SingleMpduTxOutcome> {
         SingleMpduTx::take_last_outcome(self)
@@ -562,7 +562,7 @@ pub struct ConnectedControlCore {
     beacon_probe_attempts: u8,
     beacon_lost: bool,
     power_save: Option<StaPowerSavePlanner>,
-    absence: Option<oer_wifi_sta::absence::Exchange>,
+    absence: Option<oer_ieee80211_sta::absence::Exchange>,
     ps_poll_association_id: Option<StaAssociationId>,
     pending_doze_permit: Option<StaDozePermit>,
     power_save_wake_deadline_micros: Option<u64>,
@@ -614,7 +614,7 @@ impl ConnectedControlCore {
         if self.absence.is_some() || self.power_save.is_some() || self.in_flight.is_some() {
             return false;
         }
-        self.absence = Some(oer_wifi_sta::absence::Exchange::new());
+        self.absence = Some(oer_ieee80211_sta::absence::Exchange::new());
         true
     }
 
@@ -637,7 +637,7 @@ impl ConnectedControlCore {
         hardware: &mut H,
         tx: &mut X,
     ) -> Result<DatapathControlProgress<ConnectedDisconnectReason>, ConnectedControlError> {
-        use oer_wifi_sta::absence::Action;
+        use oer_ieee80211_sta::absence::Action;
         let exchange = self
             .absence
             .as_mut()
@@ -861,7 +861,7 @@ impl ConnectedControlCore {
             || self.initial_tx_block_ack.into_iter().any(|pending| pending)
     }
 
-    oer_esp32s31_wifi_dma::place_rx_hot_path! {
+    oer_esp32s31_ieee80211_dma::place_rx_hot_path! {
       /// Return the first owned control deadline without allocating executor state.
       #[inline(never)]
       pub fn next_alarm_deadline(&self) -> Option<u64> {

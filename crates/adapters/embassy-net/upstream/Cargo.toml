@@ -10,7 +10,7 @@ description = "Bounded copied-frame adapter for the unchanged Embassy network dr
 [dependencies]
 embassy-net-driver = "0.2.0"
 embassy-sync = "0.8.0"
-oer-network = { path = "../../../network/interface" }
+oer-network-interface = { path = "../../../network/interface" }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }

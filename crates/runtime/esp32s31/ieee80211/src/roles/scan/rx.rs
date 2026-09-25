@@ -20,12 +20,12 @@ use crate::datapath::rx::{
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     RxDma, RxDmaBufferAddresses, RxIngressConfig, RxRingError, RxRingHalted, RxRingLive,
     extract_management,
 };
 
-use oer_ieee80211::scan::{ScanObservation, ScanTable};
+use oer_ieee80211_mac::scan::{ScanObservation, ScanTable};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ScanRxProgress {

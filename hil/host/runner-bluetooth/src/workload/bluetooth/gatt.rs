@@ -1,7 +1,7 @@
 //! Independent Linux ATT peer for the shared plaintext Trouble application.
 use crate::{Result, fixture::bluetooth::att, fixture::bluetooth::model::PeerAddress};
 use hil_core::{context::Context, session::SerialCapture};
-use open_esp_radio_hil_protocol::BluetoothGattEvidence as Evidence;
+use oer_hil_protocol::BluetoothGattEvidence as Evidence;
 use std::{
     path::Path,
     time::{Duration, Instant},

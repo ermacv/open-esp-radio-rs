@@ -6,7 +6,7 @@ use core::cell::RefCell;
 #[cfg(feature = "diagnostics")]
 use embassy_sync::blocking_mutex::Mutex;
 #[cfg(feature = "diagnostics")]
-use oer_esp32s31_wifi_runtime::diagnostics::access_point::{
+use oer_esp32s31_ieee80211_runtime::diagnostics::access_point::{
     AccessPointTerminalObservation, AccessPointTerminalObserver,
 };
 

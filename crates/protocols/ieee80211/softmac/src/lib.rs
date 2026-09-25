@@ -29,7 +29,7 @@ pub mod tx_work;
 
 pub use tx_work::MacTxWork;
 
-pub use oer_ieee80211::channel::WifiChannel;
+pub use oer_ieee80211_mac::channel::WifiChannel;
 
 pub use configuration::{
     WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError,

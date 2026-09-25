@@ -96,12 +96,15 @@ where
         ampdu: AggregateTxResources<'ampdu, B, SLOTS, AMPDU_BUFFER_SIZE>,
         config: AggregateTxConfig,
     ) -> Result<Self, AggregateTxError> {
-        use oer_esp32s31_wifi_mac::rate::control::{
+        use oer_esp32s31_ieee80211_mac::rate::control::{
             HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociationInput,
             StaRateControlPhy,
         };
 
-        use {oer_ieee80211::he::HeDcmConstellation, oer_ieee80211::station::association::PhyMode};
+        use {
+            oer_ieee80211_mac::he::HeDcmConstellation,
+            oer_ieee80211_mac::station::association::PhyMode,
+        };
 
         let (
             association_phy,
@@ -113,8 +116,8 @@ where
         ) = match config.rate {
             TxPhyRate::Ht(rate) => (
                 match rate.channel_width {
-                    oer_esp32s31_wifi_mac::tx::HtChannelWidth::Mhz20 => PhyMode::Ht20,
-                    oer_esp32s31_wifi_mac::tx::HtChannelWidth::Mhz40 => PhyMode::Ht40,
+                    oer_esp32s31_ieee80211_mac::tx::HtChannelWidth::Mhz20 => PhyMode::Ht20,
+                    oer_esp32s31_ieee80211_mac::tx::HtChannelWidth::Mhz40 => PhyMode::Ht40,
                 },
                 StaRateControlPhy::Ht,
                 Some(rate.mcs),
@@ -150,15 +153,15 @@ where
         let rate_policy = StaTxRatePolicy {
             association_phy,
             high_throughput_enabled: !matches!(config.rate, TxPhyRate::Legacy(_)),
-            fallback_legacy_rate: oer_esp32s31_wifi_mac::tx::LegacyRate::Ofdm54M,
-            fallback_ht_mcs: oer_esp32s31_wifi_mac::tx::HtMcs::Mcs7,
-            fallback_ht_guard_interval: oer_esp32s31_wifi_mac::tx::HtGuardInterval::Long800Ns,
+            fallback_legacy_rate: oer_esp32s31_ieee80211_mac::tx::LegacyRate::Ofdm54M,
+            fallback_ht_mcs: oer_esp32s31_ieee80211_mac::tx::HtMcs::Mcs7,
+            fallback_ht_guard_interval: oer_esp32s31_ieee80211_mac::tx::HtGuardInterval::Long800Ns,
             ht_mcs_override,
             ht_guard_interval_override,
             he_mcs_override,
             he_guard_interval_and_ltf_override,
             he_dcm_override: None,
-            he_800ns_gi_ltf: oer_esp32s31_wifi_mac::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
+            he_800ns_gi_ltf: oer_esp32s31_ieee80211_mac::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
             peer_supports_ht_short_guard_interval: true,
             peer_supports_ldpc: false,
             peer_dcm_receive: HeDcmConstellation::NotSupported,
@@ -209,12 +212,13 @@ where
     }
 
     pub fn set_block_ack_agreement(&mut self, tid: u8, agreement: Option<(u16, bool)>) {
-        let agreement =
-            if self.ordinary.security_mode() == oer_ieee80211::security::WifiSecurityMode::Open {
-                None
-            } else {
-                agreement
-            };
+        let agreement = if self.ordinary.security_mode()
+            == oer_ieee80211_mac::security::WifiSecurityMode::Open
+        {
+            None
+        } else {
+            agreement
+        };
         // The S31 capability bounds negotiated TX windows to 32. Keep the
         // hot owner at the former boolean table size by storing the A-MSDU
         // capability in bit 7; an impossible wider value disables
@@ -288,7 +292,7 @@ where
     }
 
     pub(super) fn aggregate_frame_limit(&self, tid: u8) -> usize {
-        if self.ordinary.security_mode() == oer_ieee80211::security::WifiSecurityMode::Open {
+        if self.ordinary.security_mode() == oer_ieee80211_mac::security::WifiSecurityMode::Open {
             return 0;
         }
         if matches!(self.config.rate, TxPhyRate::Ht(_)) {
@@ -307,7 +311,7 @@ where
         &self,
         tid: u8,
     ) -> Result<Option<HtAmpduTxRolePolicy>, AggregateTxError> {
-        if self.ordinary.security_mode() == oer_ieee80211::security::WifiSecurityMode::Open {
+        if self.ordinary.security_mode() == oer_ieee80211_mac::security::WifiSecurityMode::Open {
             return Ok(None);
         }
         let TxPhyRate::Ht(rate) = self.config.rate else {
@@ -329,14 +333,14 @@ where
     }
 
     /// Ordinary work, including a single-MPDU fallback from an aggregate.
-    pub fn ordinary_work(&self) -> oer_wifi_softmac::MacTxWork {
+    pub fn ordinary_work(&self) -> oer_ieee80211_softmac::MacTxWork {
         self.ordinary.work()
     }
 
     /// Published aggregate work in the selected arena. Read at the terminal
     /// edge before preparing another exchange; a successful begin resets it.
     /// Ordinary MPDU TX/fallback is outside this receipt.
-    pub fn aggregate_work(&self) -> oer_wifi_softmac::MacTxWork {
+    pub fn aggregate_work(&self) -> oer_ieee80211_softmac::MacTxWork {
         self.ampdu.active().work()
     }
 

@@ -4,7 +4,7 @@ use core::future::Future;
 
 use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use oer_wifi_embassy::stack_boundary::stack_poll;
+use oer_ieee80211_runtime::stack_boundary::stack_poll;
 
 use oer_radio::wifi::{WifiScanFailure, WifiStartFailure, WifiStopReport};
 

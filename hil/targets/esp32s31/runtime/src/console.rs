@@ -4,7 +4,7 @@
 //! output remains available for the boot and panic paths, where the executor
 //! and the asynchronous logging transport may not be running yet.
 
-use open_esp_radio_hil_target_core::console::{progress, writer};
+use oer_hil_target_core::console::{progress, writer};
 
 use core::{
     cell::RefCell,
@@ -25,10 +25,10 @@ use esp_hal::{
     usb::usb_serial_jtag::{UsbSerialJtag, UsbSerialJtagTx},
 };
 #[cfg(feature = "ieee802154-ed-event-probe")]
-use open_esp_radio_hil_protocol::Ieee802154EdEventProbeRequest;
+use oer_hil_protocol::Ieee802154EdEventProbeRequest;
 #[cfg(feature = "ieee802154-event-status-probe")]
-use open_esp_radio_hil_protocol::Ieee802154EventStatusProbeRequest;
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::Ieee802154EventStatusProbeRequest;
+use oer_hil_protocol::{
     Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, FailureCode, Finished,
     FlowTransportEvidence, FrameDecoder, FrameEncoder, LinkHealth, NetworkCredentials,
     NetworkIpv4Configuration, RejectReason, ResultSummary, RxDeliveryEvidence,
@@ -140,7 +140,7 @@ static WIFI_CONTROL_REQUESTS: Channel<CriticalSectionRawMutex, WifiControlReques
 pub enum WifiControlRequest {
     Pause {
         request_id: u32,
-        operation: open_esp_radio_hil_protocol::StationPauseOperation,
+        operation: oer_hil_protocol::StationPauseOperation,
     },
     Cycle {
         request_id: u32,
@@ -203,14 +203,14 @@ pub struct ActiveSession {
     )
 )]
 pub struct StartupConfiguration {
-    pub ap_scheduler: open_esp_radio_hil_protocol::WifiApScheduler,
+    pub ap_scheduler: oer_hil_protocol::WifiApScheduler,
     pub request_id: u32,
     pub ipv4: NetworkIpv4Configuration,
-    pub data_plane: open_esp_radio_hil_protocol::WifiDataPlanePlacement,
-    pub rx_checksum: open_esp_radio_hil_protocol::WifiRxChecksumPolicy,
-    pub tx_udp_checksum: open_esp_radio_hil_protocol::WifiTxUdpChecksumPolicy,
-    pub tx_buffer: open_esp_radio_hil_protocol::WifiTxBufferPolicy,
-    pub rx_continuation: open_esp_radio_hil_protocol::WifiRxContinuationPolicy,
+    pub data_plane: oer_hil_protocol::WifiDataPlanePlacement,
+    pub rx_checksum: oer_hil_protocol::WifiRxChecksumPolicy,
+    pub tx_udp_checksum: oer_hil_protocol::WifiTxUdpChecksumPolicy,
+    pub tx_buffer: oer_hil_protocol::WifiTxBufferPolicy,
+    pub rx_continuation: oer_hil_protocol::WifiRxContinuationPolicy,
     pub l1_cache_counters: bool,
     pub phy_calibration_artifact: Option<StartupArtifact>,
 }
@@ -317,8 +317,8 @@ struct SessionResult {
     session_id: u64,
     flow_evidence: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
     evidence: TransportEvidence,
-    radio: Option<open_esp_radio_hil_protocol::RadioEvidence>,
-    tx_timing: Option<open_esp_radio_hil_protocol::TxAggregateTimingEvidence>,
+    radio: Option<oer_hil_protocol::RadioEvidence>,
+    tx_timing: Option<oer_hil_protocol::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
 }
@@ -329,7 +329,7 @@ struct SessionResult {
 struct RetainedSessionResult {
     measurement: SessionResult,
     link: LinkHealth,
-    stack: open_esp_radio_hil_protocol::StackUsage,
+    stack: oer_hil_protocol::StackUsage,
 }
 
 #[derive(Clone, Copy)]
@@ -907,7 +907,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
     // opaque session ID and no two live slots may target the same interface.
     let mut sessions = [None::<ProtocolSession>; 2];
     let mut startup_artifact = StartupArtifactAssembler::new();
-    let mut ap_scheduler = open_esp_radio_hil_protocol::WifiApScheduler::Disabled;
+    let mut ap_scheduler = oer_hil_protocol::WifiApScheduler::Disabled;
     loop {
         match select(COMMANDS.receive(), SESSION_RESULTS.receive()).await {
             Either::First(command) => {
@@ -1151,7 +1151,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             ) {
                             (Event::Rejected(reason), false)
                         } else if configuration.ap_scheduler
-                            != open_esp_radio_hil_protocol::WifiApScheduler::Disabled
+                            != oer_hil_protocol::WifiApScheduler::Disabled
                             && !cfg!(feature = "owned-network")
                         {
                             (Event::Rejected(RejectReason::Unsupported), false)
@@ -1302,7 +1302,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(
                             session_id,
                             request_id,
-                            Event::OperationStatus(open_esp_radio_hil_protocol::OperationStatus {
+                            Event::OperationStatus(oer_hil_protocol::OperationStatus {
                                 state: session.map_or(state, |session| session.state),
                                 configured_session_id: session
                                     .map(|session| session.active.session_id),
@@ -1674,8 +1674,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                     }
                     Command::StartStationAccessPoint(request) => {
                         let response = if !capabilities.features.simultaneous_station_access_point
-                            || ap_scheduler
-                                != open_esp_radio_hil_protocol::WifiApScheduler::Disabled
+                            || ap_scheduler != oer_hil_protocol::WifiApScheduler::Disabled
                         {
                             Event::Rejected(RejectReason::Unsupported)
                         } else if request.validate().is_err() {
@@ -2198,7 +2197,7 @@ pub fn init_logger() {
 mod tests {
     use super::{Event, TextBuffer, confirms_wifi_serialization};
     use core::fmt::Write;
-    use open_esp_radio_hil_protocol::{WifiRadioCalibrationPath, WifiRadioRestartEvidence};
+    use oer_hil_protocol::{WifiRadioCalibrationPath, WifiRadioRestartEvidence};
 
     #[test]
     fn text_buffer_keeps_space_for_nul() {

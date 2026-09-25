@@ -7,7 +7,7 @@
 //! driver object from duplicated constants. Construction of a concrete async
 //! TX implementation belongs to its runtime adapter.
 
-use oer_esp32s31_wifi::tx::ControlTxConfig;
+use oer_esp32s31_ieee80211::tx::ControlTxConfig;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaTxEpochError {

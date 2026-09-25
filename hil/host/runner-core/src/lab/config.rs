@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointSecurity, WifiChannelWidth,
 };
 use serde::Deserialize;
@@ -19,7 +19,7 @@ pub struct LabConfig {
     path: PathBuf,
     cell_id: String,
     pub device: DeviceConfig,
-    pub bluetooth_adapter: Option<open_esp_radio_hil_fixture::bluetooth::model::Adapter>,
+    pub bluetooth_adapter: Option<oer_hil_fixture::bluetooth::model::Adapter>,
     pub station: StationConfig,
     pub access_point: AccessPointConfig,
     pub station_fixture: StationFixtureConfig,
@@ -592,8 +592,8 @@ impl AccessPointConfig {
     pub fn protocol_request(
         &self,
         security: WifiAccessPointSecurity,
-    ) -> Result<open_esp_radio_hil_protocol::WifiAccessPointRequest> {
-        Ok(open_esp_radio_hil_protocol::WifiAccessPointRequest {
+    ) -> Result<oer_hil_protocol::WifiAccessPointRequest> {
+        Ok(oer_hil_protocol::WifiAccessPointRequest {
             credentials: NetworkCredentials::try_new(
                 self.ssid.as_bytes(),
                 self.passphrase.as_bytes(),

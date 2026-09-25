@@ -1,5 +1,5 @@
 use super::*;
-use oer_wifi_softmac::MacTxStatus;
+use oer_ieee80211_softmac::MacTxStatus;
 
 fn status(result: MacAmpduTxResult, acknowledged: u16) -> MacAmpduTxStatus<()> {
     MacAmpduTxStatus {

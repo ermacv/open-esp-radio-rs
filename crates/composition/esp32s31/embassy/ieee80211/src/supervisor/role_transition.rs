@@ -191,117 +191,122 @@ pub(super) fn try_split_wifi_stopped_resources(
     } = returned;
     let (dma, tx_epoch, scan_table, scan_frame, ethernet) = storage.into_parts();
     let station_address = board.interface.interface.address;
-    let (ring, phase, aggregate_tx) =
-        match phase {
-            StationStoppedPhaseResources::InitialScan {
-                receive,
-                network,
-                identity,
-            } => {
-                let ring = match receive.phase() {
-                    oer_esp32s31_wifi_runtime::datapath::rx::frontier::RxFrontierPhase::Live => {
-                        ProductionRxRing::Live(
-                            receive.into_live().unwrap_or_else(|_| {
-                                unreachable!("live scan phase owns a live ring")
-                            }),
-                        )
-                    }
-                    _ => ProductionRxRing::Halted(receive.into_halted().unwrap_or_else(|_| {
+    let (ring, phase, aggregate_tx) = match phase {
+        StationStoppedPhaseResources::InitialScan {
+            receive,
+            network,
+            identity,
+        } => {
+            let ring = match receive.phase() {
+                oer_esp32s31_ieee80211_runtime::datapath::rx::frontier::RxFrontierPhase::Live => {
+                    ProductionRxRing::Live(
+                        receive
+                            .into_live()
+                            .unwrap_or_else(|_| unreachable!("live scan phase owns a live ring")),
+                    )
+                }
+                _ => {
+                    ProductionRxRing::Halted(receive.into_halted().unwrap_or_else(|_| {
                         unreachable!("quiescent scan phase owns a halted ring")
-                    })),
-                };
-                let aggregate_tx = board
-                    .initial_connected
-                    .as_mut()
-                    .expect("initial scan retains initial connected resources")
-                    .take_aggregate();
-                (
-                    ring,
-                    ProductionStationReturnedPhase::InitialScan { network, identity },
-                    aggregate_tx,
-                )
-            }
-            StationStoppedPhaseResources::InitialJoin {
-                receive,
-                network,
-                station,
-            } => {
-                let ring = match receive.phase() {
-                    oer_esp32s31_wifi_runtime::datapath::rx::frontier::RxFrontierPhase::Live => {
-                        ProductionRxRing::Live(
-                            receive.try_into_live().unwrap_or_else(|_| {
-                                unreachable!("live join phase owns a live ring")
-                            }),
-                        )
-                    }
-                    _ => ProductionRxRing::Halted(receive.try_into_halted().unwrap_or_else(|_| {
+                    }))
+                }
+            };
+            let aggregate_tx = board
+                .initial_connected
+                .as_mut()
+                .expect("initial scan retains initial connected resources")
+                .take_aggregate();
+            (
+                ring,
+                ProductionStationReturnedPhase::InitialScan { network, identity },
+                aggregate_tx,
+            )
+        }
+        StationStoppedPhaseResources::InitialJoin {
+            receive,
+            network,
+            station,
+        } => {
+            let ring = match receive.phase() {
+                oer_esp32s31_ieee80211_runtime::datapath::rx::frontier::RxFrontierPhase::Live => {
+                    ProductionRxRing::Live(
+                        receive
+                            .try_into_live()
+                            .unwrap_or_else(|_| unreachable!("live join phase owns a live ring")),
+                    )
+                }
+                _ => {
+                    ProductionRxRing::Halted(receive.try_into_halted().unwrap_or_else(|_| {
                         unreachable!("quiescent join phase owns a halted ring")
-                    })),
-                };
-                let aggregate_tx = board
-                    .initial_connected
-                    .as_mut()
-                    .expect("initial join retains initial connected resources")
-                    .take_aggregate();
-                (
-                    ring,
-                    ProductionStationReturnedPhase::InitialJoin { network, station },
-                    aggregate_tx,
-                )
-            }
-            StationStoppedPhaseResources::Disconnected {
-                network,
-                receive,
+                    }))
+                }
+            };
+            let aggregate_tx = board
+                .initial_connected
+                .as_mut()
+                .expect("initial join retains initial connected resources")
+                .take_aggregate();
+            (
+                ring,
+                ProductionStationReturnedPhase::InitialJoin { network, station },
                 aggregate_tx,
-                control,
-                station,
-                registers,
-            } => {
-                let (ring, rx) = receive.into_physical_parts();
-                (
-                    ring,
-                    ProductionStationReturnedPhase::Disconnected {
-                        network,
-                        rx: Some(rx),
-                        control,
-                        station,
-                        registers,
-                    },
-                    aggregate_tx,
-                )
-            }
-            StationStoppedPhaseResources::Reconnected {
-                network,
-                receive,
-                rx,
+            )
+        }
+        StationStoppedPhaseResources::Disconnected {
+            network,
+            receive,
+            aggregate_tx,
+            control,
+            station,
+            registers,
+        } => {
+            let (ring, rx) = receive.into_physical_parts();
+            (
+                ring,
+                ProductionStationReturnedPhase::Disconnected {
+                    network,
+                    rx: Some(rx),
+                    control,
+                    station,
+                    registers,
+                },
                 aggregate_tx,
-                control,
-                station,
-                registers,
-            } => {
-                let ring = match receive.phase() {
-                    oer_esp32s31_wifi_runtime::datapath::rx::frontier::RxFrontierPhase::Live => {
-                        ProductionRxRing::Live(receive.try_into_live().unwrap_or_else(|_| {
+            )
+        }
+        StationStoppedPhaseResources::Reconnected {
+            network,
+            receive,
+            rx,
+            aggregate_tx,
+            control,
+            station,
+            registers,
+        } => {
+            let ring = match receive.phase() {
+                oer_esp32s31_ieee80211_runtime::datapath::rx::frontier::RxFrontierPhase::Live => {
+                    ProductionRxRing::Live(
+                        receive.try_into_live().unwrap_or_else(|_| {
                             unreachable!("live reconnect phase owns a live ring")
-                        }))
-                    }
-                    _ => ProductionRxRing::Halted(receive.try_into_halted().unwrap_or_else(|_| {
-                        unreachable!("quiescent reconnect phase owns a halted ring")
-                    })),
-                };
-                (
-                    ring,
-                    ProductionStationReturnedPhase::Reconnected {
-                        network,
-                        rx: Some(rx),
-                        control,
-                        station,
-                        registers,
-                    },
-                    aggregate_tx,
-                )
-            }
-        };
+                        }),
+                    )
+                }
+                _ => ProductionRxRing::Halted(receive.try_into_halted().unwrap_or_else(|_| {
+                    unreachable!("quiescent reconnect phase owns a halted ring")
+                })),
+            };
+            (
+                ring,
+                ProductionStationReturnedPhase::Reconnected {
+                    network,
+                    rx: Some(rx),
+                    control,
+                    station,
+                    registers,
+                },
+                aggregate_tx,
+            )
+        }
+    };
     Ok((
         ProductionWifiPhysicalResources {
             dma,

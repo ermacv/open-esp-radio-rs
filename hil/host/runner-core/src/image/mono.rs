@@ -121,7 +121,7 @@ pub fn capture(root: &Path, class: ImageClass) -> Result<()> {
         if !entry.file_type()?.is_file() || entry.path().extension().is_none_or(|s| s != "json") {
             return Err("unexpected compiler mono output; inspect the retained capture".into());
         }
-        let report = open_esp_radio_memory_report::analyze_mono(&entry.path())?;
+        let report = oer_memory_report::analyze_mono(&entry.path())?;
         files.push(serde_json::json!({"identity":identity(&entry.path())?,
             "compiler_output_empty":report.compiler_output_empty,
             "definitions":report.definitions.len()}));
@@ -135,7 +135,7 @@ pub fn capture(root: &Path, class: ImageClass) -> Result<()> {
     {
         return Err("compiler produced no definition estimates; capture is incomplete".into());
     }
-    let linked = open_esp_radio_memory_report::analyze_code(&artifacts.runtime_elf)?;
+    let linked = oer_memory_report::analyze_code(&artifacts.runtime_elf)?;
     crate::durable::atomic_json(&directory.join("linked-code.json"), &linked)?;
     let report = serde_json::json!({"schema":1,"status":"complete","commit":commit,"class":class.id(),
         "target":TARGET,"rustc":rustc,"cargo":cargo,

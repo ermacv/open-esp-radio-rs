@@ -4,7 +4,7 @@
     feature = "ieee802154-event-status-probe",
     feature = "ieee802154-ed-event-probe"
 ))]
-use oer_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
+use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 
 #[cfg(feature = "ieee802154-event-status-probe")]
 use oer_esp32s31_hal::ieee802154::{
@@ -45,14 +45,14 @@ use oer_esp32s31_hal::{
 };
 
 #[cfg(feature = "ieee802154-ed-event-probe")]
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
     Ieee802154PolledEdMaskState, Ieee802154PolledEdOutcome, Ieee802154PolledEdStage,
     Ieee802154RxAbortObservation, Ieee802154RxAbortReason, Ieee802154ValidationEdDurationState,
     Ieee802154ValidationRxAbortEnableState,
 };
 #[cfg(feature = "ieee802154-event-status-probe")]
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
     Ieee802154EventStatusProbeStop,
 };
@@ -60,9 +60,7 @@ use open_esp_radio_hil_protocol::{
     feature = "ieee802154-event-status-probe",
     feature = "ieee802154-ed-event-probe"
 ))]
-use open_esp_radio_hil_protocol::{
-    Ieee802154ObservedEventState, Ieee802154ValidationEventEnableState,
-};
+use oer_hil_protocol::{Ieee802154ObservedEventState, Ieee802154ValidationEventEnableState};
 
 #[cfg(any(
     feature = "ieee802154-event-status-probe",

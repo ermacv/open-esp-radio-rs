@@ -1,6 +1,6 @@
 //! HIL-owned engineering budgets, not qualified production limits.
 use core::num::NonZeroU32;
-use oer_esp32s31_soc::watchdog::{DeadlineBudget, DeadlineWatchdog};
+use oer_esp32s31_soc_esp_hal::watchdog::{DeadlineBudget, DeadlineWatchdog};
 use static_cell::StaticCell;
 
 static SERVICE: StaticCell<DeadlineWatchdog> = StaticCell::new();
@@ -23,10 +23,9 @@ pub(super) fn init(timg: esp_hal::peripherals::TIMG1<'static>) -> &'static Deadl
 #[cfg(feature = "bluetooth-radio")]
 pub(super) fn bluetooth(
     service: &'static DeadlineWatchdog,
-) -> &'static oer_esp32s31_bluetooth_integration::WatchdogConfig {
-    static CONFIG: StaticCell<oer_esp32s31_bluetooth_integration::WatchdogConfig> =
-        StaticCell::new();
-    CONFIG.init(oer_esp32s31_bluetooth_integration::WatchdogConfig::new(
+) -> &'static oer_esp32s31_bluetooth_system::WatchdogConfig {
+    static CONFIG: StaticCell<oer_esp32s31_bluetooth_system::WatchdogConfig> = StaticCell::new();
+    CONFIG.init(oer_esp32s31_bluetooth_system::WatchdogConfig::new(
         service,
         STARTUP,
         MAINTENANCE,
@@ -37,9 +36,9 @@ pub(super) fn bluetooth(
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 pub(super) fn wifi(
     service: &'static DeadlineWatchdog,
-) -> &'static oer_esp32s31_embassy_wifi::WatchdogConfig {
-    static CONFIG: StaticCell<oer_esp32s31_embassy_wifi::WatchdogConfig> = StaticCell::new();
-    CONFIG.init(oer_esp32s31_embassy_wifi::WatchdogConfig::new(
+) -> &'static oer_esp32s31_ieee80211_system::WatchdogConfig {
+    static CONFIG: StaticCell<oer_esp32s31_ieee80211_system::WatchdogConfig> = StaticCell::new();
+    CONFIG.init(oer_esp32s31_ieee80211_system::WatchdogConfig::new(
         service,
         STARTUP,
         MAINTENANCE,

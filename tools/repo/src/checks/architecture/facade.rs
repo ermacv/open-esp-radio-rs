@@ -6,29 +6,29 @@ use super::super::{TARGET, common::*};
 
 const MANIFEST: &str = "crates/oer/Cargo.toml";
 const WIFI: &[&str] = &[
-    "oer-wifi-sta",
-    "oer-wifi-ap",
-    "oer-wifi-softmac",
-    "oer-esp32s31-wifi-mac",
-    "oer-esp32s31-wifi-sta",
-    "oer-esp32s31-wifi-ap",
-    "oer-esp32s31-wifi-runtime",
-    "oer-esp32s31-embassy-wifi",
+    "oer-ieee80211-sta",
+    "oer-ieee80211-ap",
+    "oer-ieee80211-softmac",
+    "oer-esp32s31-ieee80211-mac",
+    "oer-esp32s31-ieee80211-sta",
+    "oer-esp32s31-ieee80211-ap",
+    "oer-esp32s31-ieee80211-runtime",
+    "oer-esp32s31-ieee80211-system",
     "embassy-net",
     "xarxa",
 ];
 const BACKENDS: &[&str] = &[
     "oer-esp32s31-hal",
     "oer-esp32s31-bluetooth",
-    "oer-esp32s31-wifi-mac",
-    "oer-esp32s31-wifi-sta",
-    "oer-esp32s31-wifi-ap",
+    "oer-esp32s31-ieee80211-mac",
+    "oer-esp32s31-ieee80211-sta",
+    "oer-esp32s31-ieee80211-ap",
 ];
 const BLUETOOTH: &[&str] = &[
     "oer-bluetooth-hci",
     "oer-bluetooth-ll",
     "oer-esp32s31-bluetooth",
-    "oer-esp32s31-bluetooth-integration",
+    "oer-esp32s31-bluetooth-system",
     "oer-esp32s31-bluetooth-runtime",
 ];
 const IEEE802154: &[&str] = &["oer-ieee802154"];
@@ -45,17 +45,17 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
     for profile in [
         Profile {
             features: Some(""),
-            required: &["oer-memory", "oer-network", "oer-radio"],
+            required: &["oer-memory", "oer-network-interface", "oer-radio"],
             forbidden: &[WIFI, BLUETOOTH, IEEE802154],
         },
         Profile {
             features: None,
-            required: &["oer-wifi-sta", "oer-wifi-ap"],
+            required: &["oer-ieee80211-sta", "oer-ieee80211-ap"],
             forbidden: &[BACKENDS, BLUETOOTH, IEEE802154],
         },
         Profile {
             features: Some("wifi"),
-            required: &["oer-wifi-sta", "oer-wifi-ap"],
+            required: &["oer-ieee80211-sta", "oer-ieee80211-ap"],
             forbidden: &[BACKENDS, BLUETOOTH, IEEE802154],
         },
         Profile {
@@ -75,7 +75,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
         },
         Profile {
             features: Some("esp32s31-wifi"),
-            required: &["oer-esp32s31-wifi-sta", "oer-esp32s31-wifi-ap"],
+            required: &["oer-esp32s31-ieee80211-sta", "oer-esp32s31-ieee80211-ap"],
             forbidden: &[BLUETOOTH],
         },
         Profile {
@@ -95,7 +95,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
         Profile {
             features: Some("embassy-esp32s31-bluetooth"),
             required: &[
-                "oer-esp32s31-bluetooth-integration",
+                "oer-esp32s31-bluetooth-system",
                 "oer-esp32s31-bluetooth-runtime",
             ],
             forbidden: &[WIFI],

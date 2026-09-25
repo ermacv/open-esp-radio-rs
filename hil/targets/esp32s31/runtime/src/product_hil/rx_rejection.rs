@@ -4,7 +4,7 @@ use core::cell::Cell;
 #[cfg(feature = "driver-observation")]
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 #[cfg(feature = "driver-observation")]
-use oer_esp32s31_embassy_wifi::AccessPointRxRejection;
+use oer_esp32s31_ieee80211_system::AccessPointRxRejection;
 
 #[cfg(feature = "driver-observation")]
 static FIRST: Mutex<CriticalSectionRawMutex, Cell<Option<AccessPointRxRejection>>> =
@@ -21,12 +21,12 @@ pub(super) fn observe(record: Option<AccessPointRxRejection>) {
     }
 }
 
-pub(super) fn snapshot() -> Option<open_esp_radio_hil_protocol::WifiRxRejection> {
+pub(super) fn snapshot() -> Option<oer_hil_protocol::WifiRxRejection> {
     #[cfg(feature = "driver-observation")]
     {
         FIRST
             .lock(Cell::get)
-            .map(open_esp_radio_hil_esp32s31_telemetry::rx_rejection::evidence)
+            .map(oer_hil_esp32s31_telemetry::rx_rejection::evidence)
     }
     #[cfg(not(feature = "driver-observation"))]
     {

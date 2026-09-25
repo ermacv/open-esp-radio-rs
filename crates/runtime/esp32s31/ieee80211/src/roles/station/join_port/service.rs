@@ -5,14 +5,14 @@
 
 use core::future::Future;
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     association::esp32s31_sta_association_profile,
     join::{StaJoinObserver, StaJoinPortError, StaJoinReceive, StaJoinTransmit},
 };
 
-use oer_ieee80211::station::{AssociationRequest, OpenAuthenticationRequest};
+use oer_ieee80211_mac::station::{AssociationRequest, OpenAuthenticationRequest};
 
-use oer_wifi_sta::join::{
+use oer_ieee80211_sta::join::{
     StaJoinBackend, StaJoinRxObserver, association::StaAssociationAttempt,
     authentication::StaAuthenticationAttempt,
 };

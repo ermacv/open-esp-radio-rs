@@ -19,12 +19,13 @@ use embassy_sync::{
     blocking_mutex::raw::RawMutex,
     channel::{Channel, TrySendError},
 };
+use oer_esp32s31_ieee802154::{
+    AcknowledgedMacEventBatch, MacCommandExecutor, MacInterruptBatchError, MacOperationActive,
+    MacOperationBatchOutcome, MacOperationBatchRejected, MacOperationCompletion,
+    MacOperationQuarantined,
+};
 use oer_esp32s31_ieee802154_irq::{
     Ieee802154AcknowledgedInterrupt, Ieee802154AcknowledgedInterruptSink,
-};
-use oer_esp32s31_ieee802154_runtime::{
-    AcknowledgedMacEventBatch, MacCommandExecutor, MacInterruptBatchError, MacRuntimeActive,
-    MacRuntimeBatchOutcome, MacRuntimeBatchRejected, MacRuntimeCompletion, MacRuntimeQuarantined,
 };
 
 mod owner;
@@ -149,7 +150,7 @@ pub enum EmbassyIeee802154OperationProgress<R, E: MacCommandExecutor> {
     /// The operation remains active and is retained by its owner.
     Pending,
     /// A terminal MAC event completed the operation.
-    Completed(MacRuntimeCompletion<R, E>),
+    Completed(MacOperationCompletion<R, E>),
 }
 
 /// Cancellation-safe owner of one IRQ-driven MAC operation.
@@ -159,7 +160,7 @@ pub enum EmbassyIeee802154OperationProgress<R, E: MacCommandExecutor> {
 /// command-register or DMA ownership. After the await, decoding and actor
 /// advancement are synchronous and contain no cancellation point.
 pub struct EmbassyIeee802154Operation<R, E: MacCommandExecutor> {
-    active: Option<MacRuntimeActive<R, E>>,
+    active: Option<MacOperationActive<R, E>>,
     quarantine: Option<EmbassyIeee802154OperationQuarantine<R, E>>,
 }
 
@@ -168,13 +169,13 @@ pub struct EmbassyIeee802154Operation<R, E: MacCommandExecutor> {
     reason = "quarantined affine owners are deliberately retained without a recovery API"
 )]
 enum EmbassyIeee802154OperationQuarantine<R, E: MacCommandExecutor> {
-    LostOrUndecodable(MacRuntimeQuarantined<R, E>),
-    Rejected(MacRuntimeBatchRejected<R, E>),
+    LostOrUndecodable(MacOperationQuarantined<R, E>),
+    Rejected(MacOperationBatchRejected<R, E>),
 }
 
 impl<R, E: MacCommandExecutor> EmbassyIeee802154Operation<R, E> {
-    /// Bind an already started task-side runtime to the Embassy bottom half.
-    pub const fn new(active: MacRuntimeActive<R, E>) -> Self {
+    /// Bind an already started task-side MAC operation to the Embassy bottom half.
+    pub const fn new(active: MacOperationActive<R, E>) -> Self {
         Self {
             active: Some(active),
             quarantine: None,
@@ -187,7 +188,7 @@ impl<R, E: MacCommandExecutor> EmbassyIeee802154Operation<R, E> {
     }
 
     /// Return whether an acknowledged, lost, or rejected IRQ irreversibly
-    /// quarantined the exact runtime and resources.
+    /// quarantined the exact operation and resources.
     pub const fn is_quarantined(&self) -> bool {
         self.quarantine.is_some()
     }
@@ -197,7 +198,7 @@ impl<R, E: MacCommandExecutor> EmbassyIeee802154Operation<R, E> {
     ///
     /// After an IRQ overflow, decode failure, or actor rejection this returns
     /// `None`; the exact owner remains irreversibly quarantined.
-    pub fn into_active(self) -> Option<MacRuntimeActive<R, E>> {
+    pub fn into_active(self) -> Option<MacOperationActive<R, E>> {
         self.active
     }
 
@@ -238,11 +239,11 @@ impl<R, E: MacCommandExecutor> EmbassyIeee802154Operation<R, E> {
             }
         };
         match active.process_batch(batch) {
-            Ok(MacRuntimeBatchOutcome::Pending(active)) => {
+            Ok(MacOperationBatchOutcome::Pending(active)) => {
                 self.active = Some(active);
                 Ok(EmbassyIeee802154OperationProgress::Pending)
             }
-            Ok(MacRuntimeBatchOutcome::Completed(completed)) => {
+            Ok(MacOperationBatchOutcome::Completed(completed)) => {
                 Ok(EmbassyIeee802154OperationProgress::Completed(completed))
             }
             Err(rejected) => {
@@ -259,7 +260,7 @@ impl<R, E: MacCommandExecutor> EmbassyIeee802154Operation<R, E> {
     pub async fn run<M: RawMutex, const DEPTH: usize>(
         &mut self,
         irq: &EmbassyIeee802154IrqRuntime<M, DEPTH>,
-    ) -> Result<MacRuntimeCompletion<R, E>, EmbassyIeee802154OperationError> {
+    ) -> Result<MacOperationCompletion<R, E>, EmbassyIeee802154OperationError> {
         loop {
             match self.advance(irq).await? {
                 EmbassyIeee802154OperationProgress::Pending => {}

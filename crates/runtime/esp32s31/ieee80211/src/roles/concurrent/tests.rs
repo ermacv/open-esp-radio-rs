@@ -1,6 +1,6 @@
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-use oer_esp32s31_wifi_dma::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
+use oer_esp32s31_ieee80211_dma::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
 
 use super::*;
 

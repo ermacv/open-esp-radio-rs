@@ -10,14 +10,14 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use embassy_futures::select::select6;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
-use oer_esp32s31_wifi_sta::connected_rx::{
+use oer_esp32s31_ieee80211_sta::connected_rx::{
     ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink,
 };
-use oer_wifi_rsn::{OwnedEapolFrame, RsnInterface};
+use oer_ieee80211_rsn::{OwnedEapolFrame, RsnInterface};
 
 const EAPOL_ETHERTYPE: u16 = 0x888e;
 
-pub(super) use oer_esp32s31_wifi_sta::connected::security::ConnectedSecurityFrame;
+pub(super) use oer_esp32s31_ieee80211_sta::connected::security::ConnectedSecurityFrame;
 
 /// Explicit observer for profiles that intentionally ignore control-plane
 /// events. Production association/BlockAck state should supply a real sink.

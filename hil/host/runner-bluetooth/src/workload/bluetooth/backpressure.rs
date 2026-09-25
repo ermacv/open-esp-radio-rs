@@ -1,7 +1,7 @@
 //! Exhaust one Host RX credit, observe supervision, drain, and reuse the handle.
 use crate::{Result, fixture::bluetooth::att, fixture::bluetooth::model::PeerAddress};
 use hil_core::{context::Context, session::SerialCapture};
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     BluetoothPeripheralEvidence as Evidence, BluetoothPeripheralOperation as Op,
     BluetoothPeripheralResult as Outcome, BluetoothPeripheralTermination,
     bluetooth_backpressure_packet,
@@ -249,19 +249,17 @@ mod tests {
         let mut e = super::super::peripheral_tests::evidence();
         e.disconnection_complete_events = 1;
         e.last_disconnect_reason = Some(0x08);
-        e.acl_backpressure = Some(
-            open_esp_radio_hil_protocol::BluetoothAclBackpressureEvidence {
-                enabled: true,
-                held: true,
-                received: 2,
-                returned: 1,
-                held_at_millis: 1000,
-                disconnected_at_millis: 3000,
-                disconnected_while_held: true,
-                supervision_timeout_millis: 2000,
-                ..Default::default()
-            },
-        );
+        e.acl_backpressure = Some(oer_hil_protocol::BluetoothAclBackpressureEvidence {
+            enabled: true,
+            held: true,
+            received: 2,
+            returned: 1,
+            held_at_millis: 1000,
+            disconnected_at_millis: 3000,
+            disconnected_while_held: true,
+            supervision_timeout_millis: 2000,
+            ..Default::default()
+        });
         validate_timeout(&e).unwrap();
         for case in 0..13 {
             let mut bad = e.clone();
@@ -294,19 +292,17 @@ mod tests {
         assert!(!maintenance_before_hold(&baseline, &baseline).unwrap());
         let mut restored = baseline.clone();
         restored.phy_peripheral_maintenance = 3;
-        restored.phy_maintenance = Some(
-            open_esp_radio_hil_protocol::BluetoothPhyMaintenanceEvidence {
-                restored: 3,
-                quiesced_at_micros: Some(10),
-                phy_started_at_micros: Some(20),
-                phy_finished_at_micros: Some(150),
-                physical_finished_at_micros: Some(160),
-                execution_deadline_micros: Some(180),
-                restoration_deadline_micros: Some(200),
-                run_at_micros: Some(190),
-                ..Default::default()
-            },
-        );
+        restored.phy_maintenance = Some(oer_hil_protocol::BluetoothPhyMaintenanceEvidence {
+            restored: 3,
+            quiesced_at_micros: Some(10),
+            phy_started_at_micros: Some(20),
+            phy_finished_at_micros: Some(150),
+            physical_finished_at_micros: Some(160),
+            execution_deadline_micros: Some(180),
+            restoration_deadline_micros: Some(200),
+            run_at_micros: Some(190),
+            ..Default::default()
+        });
         assert!(maintenance_before_hold(&baseline, &restored).unwrap());
         let mut pending = restored.clone();
         let m = pending.phy_maintenance.as_mut().unwrap();

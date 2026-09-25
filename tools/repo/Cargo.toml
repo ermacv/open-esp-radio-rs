@@ -8,14 +8,14 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-open-esp-radio-hil-schema = { path = "../../hil/schema", features = ["producer"] }
+oer-hil-schema = { path = "../../hil/schema", features = ["producer"] }
 oer-probe-codegen = { path = "../../verification/vendor/harness/codegen" }
 oer-process = { path = "../process" }
 fs2 = "0.4"
 sha2 = "0.10"
 serialport = { version = "4.8.1", default-features = false }
 oer-firmware = { path = "../firmware" }
-open-esp-radio-memory-report = { path = "../memory-report" }
+oer-memory-report = { path = "../memory-report" }
 cargo_metadata = "=0.23.1"
 clap = { version = "=4.5.48", features = ["derive"] }
 object = { version = "=0.39.1", default-features = false, features = ["archive", "elf", "read", "std"] }

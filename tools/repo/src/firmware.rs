@@ -43,9 +43,8 @@ pub fn build(
         .join(network.map_or("none", |n| n.id()));
     let workspace = workspace::Workspace::acquire(&directory_output)?;
     let output = workspace.output();
-    let budget = open_esp_radio_memory_report::StackBudget::load(
-        &ctx.root.join("platform/esp32s31/stack.toml"),
-    )?;
+    let budget =
+        oer_memory_report::StackBudget::load(&ctx.root.join("platform/esp32s31/stack.toml"))?;
     let runtime_target = workspace.cache().join("runtime");
     // A patched network resolves into this private copy, never the example's catalog.
     let runtime_lock =
@@ -147,17 +146,10 @@ pub fn build(
     Ok(workspace.finish())
 }
 
-fn audit_stack(
-    elf: &Path,
-    output: &Path,
-    budget: &open_esp_radio_memory_report::StackBudget,
-) -> Result<()> {
+fn audit_stack(elf: &Path, output: &Path, budget: &oer_memory_report::StackBudget) -> Result<()> {
     let report = oer_firmware::stack::analyze_elf_stack(elf, budget)?;
-    fs::write(
-        output,
-        open_esp_radio_memory_report::render_stack_report(&report),
-    )?;
-    open_esp_radio_memory_report::audit_stack(&report)?;
+    fs::write(output, oer_memory_report::render_stack_report(&report))?;
+    oer_memory_report::audit_stack(&report)?;
     Ok(())
 }
 

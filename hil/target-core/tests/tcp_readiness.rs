@@ -1,5 +1,5 @@
 //! Test the production accept/readiness ordering without a hardware timer.
-use open_esp_radio_hil_target_core::traffic::connection;
+use oer_hil_target_core::traffic::connection;
 use std::{
     cell::Cell,
     future::{Future, poll_fn},

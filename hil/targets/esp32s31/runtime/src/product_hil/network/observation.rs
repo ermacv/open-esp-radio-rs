@@ -1,8 +1,8 @@
 //! Per-interface diagnostic storage and post-workload logging.
 use super::progress::{Counters, Event, Snapshot};
 use crate::console::runtime_log_reliably;
-use open_esp_radio_hil_esp32s31_telemetry::wait;
-use open_esp_radio_hil_protocol::WifiNetworkInterface;
+use oer_hil_esp32s31_telemetry::wait;
+use oer_hil_protocol::WifiNetworkInterface;
 
 static STATION: Counters = Counters::new();
 static ACCESS_POINT: Counters = Counters::new();

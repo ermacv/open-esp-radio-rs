@@ -1,5 +1,5 @@
 [package]
-name = "oer-wifi-ap"
+name = "oer-ieee80211-ap"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,8 +8,8 @@ repository.workspace = true
 description = "Executor- and chip-independent single-peer Wi-Fi access-point MLME"
 
 [dependencies]
-oer-ieee80211 = { path = "../mac" }
-oer-wifi-rsn = { path = "../security/rsn" }
+oer-ieee80211-mac = { path = "../mac" }
+oer-ieee80211-rsn = { path = "../security/rsn" }
 
 [lints]
 workspace = true

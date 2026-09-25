@@ -169,9 +169,9 @@ pub use oer_esp32s31_bluetooth_memory::{
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_bluetooth_runtime::controller::DtmRecheckPeriod;
 #[cfg(target_arch = "riscv32")]
-pub use oer_esp32s31_radio_platform_esp_hal::{EspHalBluetoothPlatform, EspHalRadioPlatform};
+pub use oer_esp32s31_radio_esp_hal::{EspHalBluetoothPlatform, EspHalRadioPlatform};
 #[cfg(target_arch = "riscv32")]
-pub use oer_esp32s31_soc::watchdog::{DeadlineBudget, DeadlineWatchdog};
+pub use oer_esp32s31_soc_esp_hal::watchdog::{DeadlineBudget, DeadlineWatchdog};
 
 #[cfg(not(target_arch = "riscv32"))]
 use oer_esp32s31_bluetooth_memory::{

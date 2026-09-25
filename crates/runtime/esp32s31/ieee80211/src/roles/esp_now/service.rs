@@ -38,12 +38,12 @@ use embassy_futures::{
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_esp32s31_wifi::{
+use oer_esp32s31_ieee80211::{
     esp_now::{EspNowTxConfig, EspNowTxError},
     tx::{WifiTxProgress, WifiTxWake},
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     init::{
         MAC_COLD_RX_INTERRUPT_MASK, StaEspNowRxPolicyHardware,
         configure_standalone_esp_now_receive_policy,
@@ -52,16 +52,16 @@ use oer_esp32s31_wifi_mac::{
     tx::TxHardware,
 };
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     control_tx::ControlTransmitter,
     single_mpdu_tx::{
         SingleMpduEspNowTxError, SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
     },
 };
 
-use oer_ieee80211::{channel::WifiChannel, station::StaSequenceCounter};
+use oer_ieee80211_mac::{channel::WifiChannel, station::StaSequenceCounter};
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     EspNowPeerChannelPolicy, EspNowPhyMode, EspNowProtocol, WifiStandaloneEspNowPlan,
     interface::BoundVirtualInterface,
 };

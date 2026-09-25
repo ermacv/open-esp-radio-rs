@@ -1,8 +1,8 @@
-use oer_network::NetworkInterfaceId;
-use oer_wifi_datapath::{
+use oer_ieee80211_datapath::{
     AdmissionClass, EgressFlowKey, EgressSelection, EgressWorkProvider, EnqueueError, FillFailure,
     FillOutcome, FixedEgressQueue, RadioEgressKey, ReservedTxBatch, TrafficIdentifier,
 };
+use oer_network_interface::NetworkInterfaceId;
 
 use crate::{
     InlinePayload, Ipv4Address, MacAddress, ResolvedIpv4Route, UdpEndpoint,
@@ -218,7 +218,7 @@ impl<
         )))
     }
 
-    pub fn visit_demands(&self, visitor: impl FnMut(oer_wifi_datapath::EgressDemand)) {
+    pub fn visit_demands(&self, visitor: impl FnMut(oer_ieee80211_datapath::EgressDemand)) {
         self.queue.visit_demands(visitor);
     }
 
@@ -555,7 +555,7 @@ impl<const FLOWS: usize, const WORK: usize, const CAPACITY: usize, Payload: AsRe
 {
     type WriteError = FrameWriteError;
 
-    fn visit_demands(&self, visitor: impl FnMut(oer_wifi_datapath::EgressDemand)) {
+    fn visit_demands(&self, visitor: impl FnMut(oer_ieee80211_datapath::EgressDemand)) {
         self.queue.visit_demands(visitor);
     }
 

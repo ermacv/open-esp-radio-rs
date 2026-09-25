@@ -1,13 +1,13 @@
 #![forbid(unsafe_code)]
 
 use crate::product_hil::network::sockets::{Stack, accept, listen, new_tcp};
-use open_esp_radio_hil_target_core::traffic::connection;
+use oer_hil_target_core::traffic::connection;
 
 use embassy_futures::join::join;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
-use open_esp_radio_hil_esp32s31_telemetry::rx_pipeline::RxPipelineCounters;
-use open_esp_radio_hil_protocol::{
+use oer_hil_esp32s31_telemetry::rx_pipeline::RxPipelineCounters;
+use oer_hil_protocol::{
     Completion as HilCompletion, Direction as HilDirection, Event as HilEvent,
     FlowTransportEvidence, ServiceInfo, SessionReady, Transport as HilTransport, TransportEvidence,
     WifiNetworkInterface, fill_stream_pattern, stream_pattern_matches,

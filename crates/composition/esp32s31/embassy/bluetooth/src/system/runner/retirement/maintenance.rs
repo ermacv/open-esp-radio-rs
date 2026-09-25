@@ -5,7 +5,7 @@ use oer_esp32s31_bluetooth::controller::{
     ControllerPhyMaintenanceError, ControllerPhyMaintenanceFailure,
 };
 use oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome;
-use oer_esp32s31_radio_platform_esp_hal::{
+use oer_esp32s31_radio_esp_hal::{
     EspHalBluetoothInterruptRetirementError, EspHalBluetoothInterruptStorageError,
 };
 
@@ -51,8 +51,7 @@ enum FailureOwners<
         runner: BluetoothHardwareRunner<MT, SC, H2C, C2H, PC>,
         interrupt: BluetoothInterruptDisabled,
         timer: Option<RetiredTimer<MT>>,
-        registers:
-            Option<oer_esp32s31_radio_platform_esp_hal::RetiredEspHalBluetoothInterruptRegisters>,
+        registers: Option<oer_esp32s31_radio_esp_hal::RetiredEspHalBluetoothInterruptRegisters>,
     },
     Physical {
         remainder: MaintenanceRemainder<H2C, C2H, PC>,
@@ -63,7 +62,7 @@ enum FailureOwners<
 
 struct MaintenanceRemainder<const H2C: usize, const C2H: usize, const PC: usize> {
     _watchdog: &'static crate::WatchdogConfig,
-    _restoration_protection: Option<oer_esp32s31_soc::watchdog::DeadlineLease<'static>>,
+    _restoration_protection: Option<oer_esp32s31_soc_esp_hal::watchdog::DeadlineLease<'static>>,
     _controller: LeControllerCommandEndpoint<'static, CriticalSectionRawMutex, H2C, C2H, PC>,
     _modem_driver: ModemTimerDriver<'static, CriticalSectionRawMutex>,
     _packet: [u8; PC],
@@ -253,7 +252,7 @@ fn finish<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, 
         >,
         ControllerPhyMaintenanceFailure<'static, PublishedStorage, SC, MT>,
     >,
-    protection: oer_esp32s31_soc::watchdog::DeadlineLease<'static>,
+    protection: oer_esp32s31_soc_esp_hal::watchdog::DeadlineLease<'static>,
 ) -> Result<
     (
         BluetoothHardwareRunner<MT, SC, H2C, C2H, PC>,

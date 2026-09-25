@@ -649,7 +649,7 @@ where
                 });
             }
         };
-        let oer_esp32s31_wifi_ap::transaction::ApMacParts { engine, transmit } = parts;
+        let oer_esp32s31_ieee80211_ap::transaction::ApMacParts { engine, transmit } = parts;
         let engine = engine.stop(hardware);
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(terminal_observer) = terminal_observer {

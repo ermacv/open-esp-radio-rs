@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-hil-runner-system"
+name = "oer-hil-runner-system"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,9 +9,9 @@ publish = false
 description = "System HIL workloads: boot, timebase, watchdog and memory benchmarks"
 
 [dependencies]
-hil-core = { package = "open-esp-radio-hil-runner-core", path = "../runner-core" }
+hil-core = { package = "oer-hil-runner-core", path = "../runner-core" }
 oer-process = { path = "../../../tools/process" }
-open-esp-radio-hil-protocol = { path = "../../protocol" }
+oer-hil-protocol = { path = "../../protocol" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 

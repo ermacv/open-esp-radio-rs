@@ -234,7 +234,7 @@ fn command_line() -> String {
 #[cfg(test)]
 mod tests;
 
-fn bluetooth_key(adapter: open_esp_radio_hil_fixture::bluetooth::model::Adapter) -> Result<String> {
+fn bluetooth_key(adapter: oer_hil_fixture::bluetooth::model::Adapter) -> Result<String> {
     Ok(format!(
         "bluetooth:{}",
         Path::new("/sys/class/bluetooth")
@@ -245,7 +245,7 @@ fn bluetooth_key(adapter: open_esp_radio_hil_fixture::bluetooth::model::Adapter)
 }
 
 pub fn acquire_bluetooth(
-    adapter: open_esp_radio_hil_fixture::bluetooth::model::Adapter,
+    adapter: oer_hil_fixture::bluetooth::model::Adapter,
 ) -> Result<ResourceLease> {
     use sha2::{Digest, Sha256};
     ResourceLease::acquire_directory(&oer_firmware::device::lease_directory()?.join(format!(

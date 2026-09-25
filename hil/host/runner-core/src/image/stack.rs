@@ -1,6 +1,6 @@
 pub fn enable_stack_checks(
     command: &mut std::process::Command,
-    budget: &open_esp_radio_memory_report::StackBudget,
+    budget: &oer_memory_report::StackBudget,
 ) {
     oer_firmware::stack::enable_stack_checks(command, budget);
     command
@@ -19,8 +19,8 @@ pub fn enable_stack_checks(
 }
 pub fn analyze_elf_stack(
     elf: &std::path::Path,
-    budget: &open_esp_radio_memory_report::StackBudget,
-) -> crate::Result<open_esp_radio_memory_report::StackReport> {
+    budget: &oer_memory_report::StackBudget,
+) -> crate::Result<oer_memory_report::StackReport> {
     oer_firmware::stack::analyze_elf_stack(elf, budget)
         .map_err(|error| -> Box<dyn std::error::Error + Send + Sync> { error })
 }

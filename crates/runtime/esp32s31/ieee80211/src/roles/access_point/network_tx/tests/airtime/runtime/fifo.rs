@@ -1,6 +1,6 @@
 //! Control destination inspection while retaining the production source owners.
-use oer_network::NetworkInterfaceId;
-use oer_wifi_datapath::{DestinationTxHead, DestinationTxQueues, SelectedBurstMaterializer};
+use oer_ieee80211_datapath::{DestinationTxHead, DestinationTxQueues, SelectedBurstMaterializer};
+use oer_network_interface::NetworkInterfaceId;
 
 pub(super) struct Fifo<'a, S, const EMPTY_SNAPSHOT: bool = false>(pub(super) &'a S);
 
@@ -42,7 +42,7 @@ impl<S: SelectedBurstMaterializer, const EMPTY_SNAPSHOT: bool> SelectedBurstMate
     }
 
     #[cfg(feature = "tx-phase-telemetry")]
-    fn ownership_snapshot(&self) -> oer_wifi_datapath::MaterializationOwnershipSnapshot {
+    fn ownership_snapshot(&self) -> oer_ieee80211_datapath::MaterializationOwnershipSnapshot {
         self.0.ownership_snapshot()
     }
 

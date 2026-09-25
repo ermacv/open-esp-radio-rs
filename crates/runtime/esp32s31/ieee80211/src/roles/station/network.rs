@@ -5,7 +5,7 @@ use core::{
     marker::PhantomData,
 };
 
-use oer_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
+use oer_esp32s31_ieee80211_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
 
 #[cfg(feature = "diagnostics")]
 use crate::diagnostics::network::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
@@ -119,7 +119,7 @@ impl<N: DatapathNetworkRx, O: ConnectedRxSink> ConnectedRxSink
                     if let Some(observer) = self.delivery_observer {
                         observer.dropped(RxNetworkDeliveryEvent::decoded(frame, Some(raw)), error);
                     }
-                    if error == oer_network::RxEnqueueError::PoolExhausted {
+                    if error == oer_network_interface::RxEnqueueError::PoolExhausted {
                         RxNetworkPublicationOutcome::PoolExhausted
                     } else {
                         RxNetworkPublicationOutcome::Dropped
@@ -146,8 +146,8 @@ impl<N: DatapathNetworkRx, O: ConnectedRxSink> ConnectedRxSink
 
     fn publish_esp_now_v2(
         &mut self,
-        received: oer_wifi_softmac::EspNowReceivedV2<'_>,
-        metadata: oer_wifi_softmac::MacRxMetadata<oer_esp32s31_wifi_mac::rx::RxPhyInfo>,
+        received: oer_ieee80211_softmac::EspNowReceivedV2<'_>,
+        metadata: oer_ieee80211_softmac::MacRxMetadata<oer_esp32s31_ieee80211_mac::rx::RxPhyInfo>,
     ) {
         self.observer.publish_esp_now_v2(received, metadata);
     }
@@ -184,7 +184,7 @@ impl<
             let payload =
                 &raw[ethernet.payload_offset..ethernet.payload_offset + ethernet.payload_length];
             let event = ConnectedRxEvent::Ethernet {
-                frame: oer_ieee80211::data::EthernetFrameParts {
+                frame: oer_ieee80211_mac::data::EthernetFrameParts {
                     destination: ethernet.destination,
                     source: ethernet.source,
                     ether_type: ethernet.ether_type,

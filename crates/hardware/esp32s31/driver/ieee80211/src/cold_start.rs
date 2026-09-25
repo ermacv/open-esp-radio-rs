@@ -22,7 +22,7 @@ use oer_esp32s31_phy::{
     state::client::{PhyModemClient, PhyPllTrackClock},
     tracking::parameters::PhyParamTrackingOutcome,
 };
-use oer_ieee80211::channel::WifiChannel;
+use oer_ieee80211_mac::channel::WifiChannel;
 
 /// Application-selected inputs for one cold radio start.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

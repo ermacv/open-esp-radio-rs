@@ -128,7 +128,7 @@ mod tests {
         e.host_acl_received_packets = received;
         e.host_acl_transmitted_packets = acknowledged;
         e.phy_peripheral_maintenance = maintenance;
-        e.encryption = Some(open_esp_radio_hil_protocol::BluetoothEncryptionEvidence {
+        e.encryption = Some(oer_hil_protocol::BluetoothEncryptionEvidence {
             enabled: true,
             encrypted: true,
             key_requests: 1,
@@ -136,12 +136,10 @@ mod tests {
             encryption_changes: 1,
             ..Default::default()
         });
-        e.phy_maintenance = Some(
-            open_esp_radio_hil_protocol::BluetoothPhyMaintenanceEvidence {
-                restored: maintenance,
-                ..Default::default()
-            },
-        );
+        e.phy_maintenance = Some(oer_hil_protocol::BluetoothPhyMaintenanceEvidence {
+            restored: maintenance,
+            ..Default::default()
+        });
         e
     }
 

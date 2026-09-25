@@ -1,8 +1,8 @@
 //! Admission follows the software owner, including time retained by the radio.
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use oer_embassy_net::{NetworkInterfaceId, OwnedEndpointResources};
-use oer_wifi_datapath::DestinationTxQueues;
+use oer_embassy_net_owned::{NetworkInterfaceId, OwnedEndpointResources};
+use oer_ieee80211_datapath::DestinationTxQueues;
 use std::{
     sync::{
         Arc,

@@ -1,10 +1,10 @@
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-use oer_esp32s31_wifi_mac::rx::RxIngressConfig;
+use oer_esp32s31_ieee80211_mac::rx::RxIngressConfig;
 
-use oer_esp32s31_wifi_sta::connected_rx::ConnectedRxConfig;
+use oer_esp32s31_ieee80211_sta::connected_rx::ConnectedRxConfig;
 
-use oer_ieee80211::security::WifiSecurityMode;
+use oer_ieee80211_mac::security::WifiSecurityMode;
 
 use std::boxed::Box;
 

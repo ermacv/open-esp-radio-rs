@@ -1,7 +1,7 @@
 //! Terminal receipts only; no intermediate BA or live-tail inference.
 use core::sync::atomic::{AtomicU32, Ordering};
-use oer_wifi_softmac::{MacAmpduTxResult, MacAmpduTxStatus, MacTxResult};
-use open_esp_radio_hil_protocol::StationTxTerminalEvidence;
+use oer_hil_protocol::StationTxTerminalEvidence;
+use oer_ieee80211_softmac::{MacAmpduTxResult, MacAmpduTxStatus, MacTxResult};
 
 pub(super) struct Counters {
     exchanges: AtomicU32,

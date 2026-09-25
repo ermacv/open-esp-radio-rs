@@ -6,7 +6,7 @@ use std::{
     path::Path,
 };
 
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     STARTUP_ARTIFACT_CHUNK_MAX_LEN, StartupArtifactChunk, startup_artifact_crc32c,
 };
 

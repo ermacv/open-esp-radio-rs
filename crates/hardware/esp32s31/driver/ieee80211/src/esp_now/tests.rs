@@ -6,11 +6,11 @@ fn capability_surface_is_live_for_every_standard_phy_and_closed_for_lr() {
         EspNowPhyMode::LegacyDsss1M,
         EspNowPhyMode::StandardP2pOfdm(EspNowOfdmRate::Mbps6),
         EspNowPhyMode::StandardP2pOfdm(EspNowOfdmRate::Mbps54),
-        EspNowPhyMode::StandardP2pHt20(oer_wifi_softmac::EspNowHt20Rate::new(
+        EspNowPhyMode::StandardP2pHt20(oer_ieee80211_softmac::EspNowHt20Rate::new(
             EspNowHtMcs::Mcs0,
             EspNowHtGuardInterval::Short400Ns,
         )),
-        EspNowPhyMode::StandardP2pHt20(oer_wifi_softmac::EspNowHt20Rate::new(
+        EspNowPhyMode::StandardP2pHt20(oer_ieee80211_softmac::EspNowHt20Rate::new(
             EspNowHtMcs::Mcs7,
             EspNowHtGuardInterval::Long800Ns,
         )),
@@ -18,8 +18,8 @@ fn capability_surface_is_live_for_every_standard_phy_and_closed_for_lr() {
         assert_eq!(esp32s31_esp_now_phy_support(mode), EspNowPhySupport::Live);
     }
     for rate in [
-        oer_wifi_softmac::EspressifLongRangeRate::Kbps250,
-        oer_wifi_softmac::EspressifLongRangeRate::Kbps500,
+        oer_ieee80211_softmac::EspressifLongRangeRate::Kbps250,
+        oer_ieee80211_softmac::EspressifLongRangeRate::Kbps500,
     ] {
         assert_eq!(
             esp32s31_esp_now_phy_support(EspNowPhyMode::LongRange(rate)),
@@ -63,7 +63,7 @@ fn lr_rx_rate_is_quarantined_from_the_truncated_public_field() {
     metadata.rate = MacRxEvidence::HardwareObserved(lr_raw);
 
     let lr = normalize_esp_now_rx_metadata(
-        EspNowPhyMode::LongRange(oer_wifi_softmac::EspressifLongRangeRate::Kbps500),
+        EspNowPhyMode::LongRange(oer_ieee80211_softmac::EspressifLongRangeRate::Kbps500),
         metadata,
     );
     assert_eq!(lr.normalized.rate, MacRxEvidence::Unavailable);

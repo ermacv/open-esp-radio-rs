@@ -1,6 +1,6 @@
 //! Open Authentication attempts, deadline results and retry ownership.
 
-use oer_ieee80211::station::{
+use oer_ieee80211_mac::station::{
     StaDisconnect, StaSequenceCounter, parse_open_authentication_response, parse_sta_disconnect,
 };
 

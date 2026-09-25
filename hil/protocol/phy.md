@@ -99,7 +99,7 @@ requires its presence for a measured pause and validates alarm/IRQ/dispatch
 count reconciliation. Duplicate, unrelated or late records cannot satisfy the
 request. The existing frame-size bound applies to this event independently.
 
-The [platform timer contract](../../crates/adapters/embassy/esp32s31/runtime/src/timer_observation/README.md)
+The [platform timer contract](../../crates/adapters/embassy/esp32s31/executor/src/timer_observation/README.md)
 defines timestamp boundaries, partial windows and observer overhead. These are
 shared-timer measurements; they do not attribute every IRQ to PHY or measure
 wake-to-PHY-poll latency. A control pause may contain legitimate timer work from

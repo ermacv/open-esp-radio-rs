@@ -36,16 +36,16 @@ use embassy_sync::{
     channel::{Channel, Receiver, Sender, TrySendError},
 };
 
-use oer_esp32s31_wifi::esp_now::EspNowTxConfig;
+use oer_esp32s31_ieee80211::esp_now::EspNowTxConfig;
 
-use oer_esp32s31_wifi_mac::tx::TxHardware;
+use oer_esp32s31_ieee80211_mac::tx::TxHardware;
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     connected_control::ConnectedDisconnectReason,
     single_mpdu_tx::{SingleMpduEspNowTxError, SingleMpduTxError, SingleMpduTxOutcome},
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     channel::WifiChannel,
     extensions::espressif::esp_now::{
         ESP_NOW_V1_MAX_PAYLOAD_LEN, ESP_NOW_V2_MAX_PAYLOAD_LEN, EspNowRandomValue, EspNowV1Payload,
@@ -53,7 +53,7 @@ use oer_ieee80211::{
     },
 };
 
-use oer_wifi_softmac::{EspNowPeerId, EspNowProtocol, interface::BoundVirtualInterface};
+use oer_ieee80211_softmac::{EspNowPeerId, EspNowProtocol, interface::BoundVirtualInterface};
 
 /// One fully owned plaintext ESP-NOW v1 application request.
 ///

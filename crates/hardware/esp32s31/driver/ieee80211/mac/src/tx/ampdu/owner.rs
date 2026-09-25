@@ -5,14 +5,14 @@ extern crate alloc;
 
 #[cfg(not(target_pointer_width = "32"))]
 use alloc::boxed::Box;
-use oer_wifi_softmac::tx_cost::TxContention;
+use oer_ieee80211_softmac::tx_cost::TxContention;
 
 use core::{ops::Deref, pin::Pin};
 
 use oer_esp32s31_hal::types::{
     MacHeTxProgram, MacHtTxProgram, MacTxDetachOutcome, MacTxDetachReason,
 };
-use oer_esp32s31_wifi_dma::tx_ampdu_storage::{
+use oer_esp32s31_ieee80211_dma::tx_ampdu_storage::{
     AmpduDmaState, AmpduDmaStorage, AmpduDmaStorageError, PinnedAmpduDmaStorage, RetainedAmpduDma,
     RetainedAmpduDmaStorage,
 };

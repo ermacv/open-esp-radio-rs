@@ -5,11 +5,11 @@ mod selected;
 use core::num::{NonZeroU16, NonZeroU32};
 use std::{boxed::Box, vec::Vec};
 
-use oer_memory::PinnedDmaTxPool;
-use oer_wifi_datapath::{
+use oer_ieee80211_datapath::{
     AdmissionClass, EgressDemand, EgressFlowKey, EgressSelection, MaterializedTxFrame,
     RadioEgressKey, RadioPeer, TrafficIdentifier,
 };
+use oer_memory::PinnedDmaTxPool;
 
 use super::*;
 use crate::{
@@ -202,7 +202,7 @@ fn oversized_payload_preserves_source_and_physical_reservation() {
         .unwrap();
     assert_eq!(
         outcome.stop,
-        oer_wifi_datapath::FillStopReason::FrameTooLong { capacity: 1600 }
+        oer_ieee80211_datapath::FillStopReason::FrameTooLong { capacity: 1600 }
     );
     assert_eq!(outcome.frames, 1);
     assert_eq!(outcome.bytes, 47);

@@ -7,7 +7,7 @@
 
 use core::future::Future;
 
-use oer_esp32s31_wifi::{
+use oer_esp32s31_ieee80211::{
     esp_now::{
         EspNowTxConfig, EspNowTxError, start_esp_now_v1_plaintext, start_esp_now_v2_plaintext,
     },
@@ -17,7 +17,7 @@ use oer_esp32s31_wifi::{
     },
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     crypto::{CcmpTxPacketNumberError, StaPairwiseCcmpSlot},
     tx::{
         LegacyTxQueue, TxError, TxHardware, TxPhyRate,
@@ -26,7 +26,7 @@ use oer_esp32s31_wifi_mac::{
     },
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     channel::WifiChannel,
     extensions::espressif::esp_now::EspNowRandomValue,
     management::ProbeRequest,
@@ -38,18 +38,18 @@ use oer_ieee80211::{
     station_power_save::{StaAssociationId, StaNullDataFrame, StaPowerManagement, StaPsPollFrame},
 };
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     EspNowPeerId, EspNowProtocol, EspNowSendError, EspNowV2SendError, MacTxPlan, MacTxQueueState,
     interface::BoundVirtualInterface,
 };
 
-pub use oer_esp32s31_wifi::ordinary_tx::{
+pub use oer_esp32s31_ieee80211::ordinary_tx::{
     OrdinaryTxOutcome as SingleMpduTxOutcome, OrdinaryTxReport as SingleMpduTxReport,
     TxResetReason, WifiTxEntropy, WifiTxPowerPair, WifiTxPowerProfile, WifiTxResources,
     WifiTxTimer,
 };
 
-use oer_esp32s31_wifi::tx::{WifiTxProgress, WifiTxWake};
+use oer_esp32s31_ieee80211::tx::{WifiTxProgress, WifiTxWake};
 
 /// Association-derived inputs for the first ordinary connected-data slice.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -244,7 +244,7 @@ where
     T: WifiTxTimer,
 {
     /// Ordinary publications, including per-attempt length/rate and retries.
-    pub fn work(&self) -> oer_wifi_softmac::MacTxWork {
+    pub fn work(&self) -> oer_ieee80211_softmac::MacTxWork {
         self.ordinary.work()
     }
 
@@ -308,7 +308,7 @@ where
     }
 
     /// Exact ordinary descriptor lifecycle retained for bounded diagnostics.
-    pub fn slot_state(&self) -> oer_esp32s31_wifi_mac::tx::TxSlotState {
+    pub fn slot_state(&self) -> oer_esp32s31_ieee80211_mac::tx::TxSlotState {
         self.ordinary.slot_state()
     }
 
@@ -348,7 +348,10 @@ where
     pub fn contention_publication(
         &mut self,
         queue: LegacyTxQueue,
-    ) -> (oer_esp32s31_wifi_mac::edca::EdcaContentionParameters, u16) {
+    ) -> (
+        oer_esp32s31_ieee80211_mac::edca::EdcaContentionParameters,
+        u16,
+    ) {
         self.ordinary.contention_publication(queue)
     }
 
@@ -537,7 +540,7 @@ where
         frame_length: usize,
         hardware_mic_length: usize,
         rate: TxPhyRate,
-        access_category: oer_ieee80211::qos::WmmAccessCategory,
+        access_category: oer_ieee80211_mac::qos::WmmAccessCategory,
     ) -> Result<WifiTxProgress, SingleMpduTxError> {
         if self.security_mode() == WifiSecurityMode::Open || hardware_mic_length == 0 {
             return Err(SingleMpduTxError::SecurityModeMismatch);
@@ -557,7 +560,7 @@ where
                     },
                     hardware_mic_length,
                     hardware_key_selector: self.security.hardware_key_selector(),
-                    interface: oer_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
+                    interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: queue.vendor_data_scheduler_priority(),
                     packet_priority: queue.vendor_data_packet_priority(),
                 },
@@ -610,7 +613,7 @@ where
             .expect("validated Ethernet destination");
         self.ordinary.require_unprotected_retry_series(
             self.config.exchange.initial_rate,
-            oer_esp32s31_wifi_mac::tx::runtime::OrdinaryRetryRatePolicy::Normal,
+            oer_esp32s31_ieee80211_mac::tx::runtime::OrdinaryRetryRatePolicy::Normal,
             self.config.exchange.publication_limit,
             destination[0] & 1 != 0,
         )?;
@@ -671,7 +674,7 @@ where
                     },
                     hardware_mic_length,
                     hardware_key_selector,
-                    interface: oer_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
+                    interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: queue.vendor_data_scheduler_priority(),
                     packet_priority: queue.vendor_data_packet_priority(),
                 },
@@ -723,14 +726,14 @@ where
                     exchange: MacTxPlan {
                         access_category: LegacyTxQueue::Voice.access_category(),
                         initial_rate: TxPhyRate::Legacy(
-                            oer_esp32s31_wifi_mac::tx::LegacyRate::Dsss1MLong,
+                            oer_esp32s31_ieee80211_mac::tx::LegacyRate::Dsss1MLong,
                         ),
                         publication_limit: self.config.exchange.publication_limit,
                         publication_timeout_micros: self.config.exchange.publication_timeout_micros,
                     },
                     hardware_mic_length: TX_CCMP_MIC_SIZE,
                     hardware_key_selector: key.hardware_index(),
-                    interface: oer_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
+                    interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: LegacyTxQueue::Voice.vendor_data_scheduler_priority(),
                     packet_priority: LegacyTxQueue::Voice.vendor_data_packet_priority(),
                 },
@@ -774,14 +777,14 @@ where
                     exchange: MacTxPlan {
                         access_category: LegacyTxQueue::Voice.access_category(),
                         initial_rate: TxPhyRate::Legacy(
-                            oer_esp32s31_wifi_mac::tx::LegacyRate::Dsss1MLong,
+                            oer_esp32s31_ieee80211_mac::tx::LegacyRate::Dsss1MLong,
                         ),
                         publication_limit: self.config.exchange.publication_limit,
                         publication_timeout_micros: self.config.exchange.publication_timeout_micros,
                     },
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,
-                    interface: oer_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
+                    interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: config.scheduler_priority,
                     packet_priority: config.packet_priority,
                 },
@@ -929,14 +932,14 @@ where
                     exchange: MacTxPlan {
                         access_category: LegacyTxQueue::Voice.access_category(),
                         initial_rate: TxPhyRate::Legacy(
-                            oer_esp32s31_wifi_mac::tx::LegacyRate::Dsss1MLong,
+                            oer_esp32s31_ieee80211_mac::tx::LegacyRate::Dsss1MLong,
                         ),
                         publication_limit: 1,
                         publication_timeout_micros: self.config.exchange.publication_timeout_micros,
                     },
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,
-                    interface: oer_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
+                    interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: ActionTxConfig::VENDOR_MANAGEMENT.scheduler_priority,
                     packet_priority: ActionTxConfig::VENDOR_MANAGEMENT.packet_priority,
                 },
@@ -978,14 +981,14 @@ where
                     exchange: MacTxPlan {
                         access_category: LegacyTxQueue::Voice.access_category(),
                         initial_rate: TxPhyRate::Legacy(
-                            oer_esp32s31_wifi_mac::tx::LegacyRate::Dsss1MLong,
+                            oer_esp32s31_ieee80211_mac::tx::LegacyRate::Dsss1MLong,
                         ),
                         publication_limit: self.config.exchange.publication_limit,
                         publication_timeout_micros: self.config.exchange.publication_timeout_micros,
                     },
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,
-                    interface: oer_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
+                    interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: ActionTxConfig::VENDOR_MANAGEMENT.scheduler_priority,
                     packet_priority: ActionTxConfig::VENDOR_MANAGEMENT.packet_priority,
                 },
@@ -1026,14 +1029,14 @@ where
                     exchange: MacTxPlan {
                         access_category: LegacyTxQueue::Voice.access_category(),
                         initial_rate: TxPhyRate::Legacy(
-                            oer_esp32s31_wifi_mac::tx::LegacyRate::Dsss1MLong,
+                            oer_esp32s31_ieee80211_mac::tx::LegacyRate::Dsss1MLong,
                         ),
                         publication_limit: self.config.exchange.publication_limit,
                         publication_timeout_micros: self.config.exchange.publication_timeout_micros,
                     },
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,
-                    interface: oer_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
+                    interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: ActionTxConfig::VENDOR_MANAGEMENT.scheduler_priority,
                     packet_priority: ActionTxConfig::VENDOR_MANAGEMENT.packet_priority,
                 },

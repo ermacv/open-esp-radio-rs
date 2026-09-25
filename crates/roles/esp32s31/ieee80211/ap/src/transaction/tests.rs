@@ -8,9 +8,9 @@ use oer_esp32s31_hal::types::{
     MacTxDetachReason, MacTxQueueDetached,
 };
 
-use oer_esp32s31_wifi::ordinary_tx::{OrdinaryTxError, WifiTxPowerPair};
+use oer_esp32s31_ieee80211::ordinary_tx::{OrdinaryTxError, WifiTxPowerPair};
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     ap_policy::ApRxPolicyHardware,
     crypto::CcmpKeyHardware,
     tx::{
@@ -23,14 +23,14 @@ use oer_esp32s31_wifi_mac::{
     },
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     ap::ApAssociationSecurityObservation, beacon::WPA2_BEACON_CAPACITY, channel::WifiChannel,
     ssid::WifiSsid,
 };
 
-use oer_wifi_ap::{AccessPointService, ApAssociationCapabilities};
+use oer_ieee80211_ap::{AccessPointService, ApAssociationCapabilities};
 
-use oer_wifi_rsn::{Pmk, frames::RsnGtk};
+use oer_ieee80211_rsn::{Pmk, frames::RsnGtk};
 
 use super::*;
 
@@ -59,7 +59,7 @@ impl CcmpKeyHardware for Hardware {
     fn clear_ccmp_entry(&mut self, _index: u8) {}
 }
 
-impl oer_esp32s31_wifi_mac::ap_tsf::ApTsfHardware for Hardware {
+impl oer_esp32s31_ieee80211_mac::ap_tsf::ApTsfHardware for Hardware {
     fn reset_and_start_access_point_tsf(&mut self) {}
 
     fn stop_access_point_tsf(&mut self) {}
@@ -136,7 +136,7 @@ fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
     let ap = [2, 0, 0, 0, 0, 1];
     let mut hardware = Hardware::default();
     let mut beacon = [0; WPA2_BEACON_CAPACITY];
-    let mut peers = oer_wifi_ap::AccessPointPeerStorage::new();
+    let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = crate::security::ApPairwiseKeyStorage::new();
     let engine = ApEngine::start(
         &mut hardware,
@@ -144,14 +144,14 @@ fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
             ap,
             Pmk::derive(b"password", b"ap").unwrap(),
             RsnGtk::new(1, true, [7; 16]).unwrap(),
-            oer_wifi_ap::AccessPointClientLimit::new(2).unwrap(),
-            oer_wifi_ap::AccessPointInactiveTimeout::default(),
+            oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
+            oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
             &mut peers,
         ),
         &mut beacon,
         &mut pairwise,
         &WifiSsid::new(b"ap").unwrap(),
-        oer_ieee80211::channel::WifiChannel::mhz20(6).unwrap(),
+        oer_ieee80211_mac::channel::WifiChannel::mhz20(6).unwrap(),
         100,
         2,
     )
@@ -178,7 +178,7 @@ fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
         .service_tx(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
             },
             1,
         )
@@ -196,12 +196,12 @@ fn mixed_bss_protection_rejects_ordinary_and_amsdu_before_sequence_pn_or_dma() {
     let legacy = [2, 0, 0, 0, 0, 3];
     let mut hardware = Hardware::default();
     let mut beacon = [0; WPA2_BEACON_CAPACITY];
-    let mut peers = oer_wifi_ap::AccessPointPeerStorage::new();
+    let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = crate::security::ApPairwiseKeyStorage::new();
     let mut service = AccessPointService::new_open(
         ap,
-        oer_wifi_ap::AccessPointClientLimit::new(2).unwrap(),
-        oer_wifi_ap::AccessPointInactiveTimeout::default(),
+        oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
+        oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
         &mut peers,
     );
     let open = ApAssociationSecurityObservation {
@@ -214,7 +214,7 @@ fn mixed_bss_protection_rejects_ordinary_and_amsdu_before_sequence_pn_or_dma() {
         malformed_elements: false,
     };
     service.authenticate_open(target, 1);
-    let ht_ie = oer_ieee80211::ht::ht_capability_ie(
+    let ht_ie = oer_ieee80211_mac::ht::ht_capability_ie(
         crate::profile::HT_CAPABILITIES,
         WifiChannel::mhz20(6).unwrap(),
     );
@@ -224,7 +224,7 @@ fn mixed_bss_protection_rejects_ordinary_and_amsdu_before_sequence_pn_or_dma() {
             open,
             ApAssociationCapabilities {
                 maximum_legacy_rate_500kbps: 108,
-                ht: oer_ieee80211::ht::ht_peer_capabilities(&ht_ie),
+                ht: oer_ieee80211_mac::ht::ht_peer_capabilities(&ht_ie),
                 qos_supported: true,
             },
             2,

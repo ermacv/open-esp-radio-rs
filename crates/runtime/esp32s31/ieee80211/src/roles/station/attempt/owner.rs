@@ -17,7 +17,7 @@ pub enum StaAttemptTargetError<J, W> {
 }
 
 /// Coherent owner consumed by
-/// [`StaAttempt`](oer_esp32s31_wifi_sta::attempt::StaAttempt).
+/// [`StaAttempt`](oer_esp32s31_ieee80211_sta::attempt::StaAttempt).
 pub struct StaAttemptTargetOwner<
     'hardware,
     'transmit,
@@ -40,7 +40,7 @@ pub struct StaAttemptTargetOwner<
     pub(super) transmit: &'transmit mut T,
     pub(super) frame: &'scratch mut [u8],
     pub(super) station: StaAttemptStation,
-    pub(super) listen_interval: oer_wifi_sta::request::StationListenInterval,
+    pub(super) listen_interval: oer_ieee80211_sta::request::StationListenInterval,
     pub(super) security: StaAttemptSecurity<'security>,
     pub(super) prepared_peer: Option<PreparedStaPeer>,
     pub(super) association: Option<AssociationResponse>,
@@ -97,7 +97,7 @@ impl<
         >,
         storage: StaAttemptStorage<'scratch>,
         station: StaAttemptStation,
-        listen_interval: oer_wifi_sta::request::StationListenInterval,
+        listen_interval: oer_ieee80211_sta::request::StationListenInterval,
         security: StaAttemptSecurity<'security>,
     ) -> Self {
         Self {

@@ -2,14 +2,14 @@
 use core::cell::RefCell;
 use core::num::NonZeroU32;
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
-use oer_esp32s31_wifi_mac::tx::{LegacyRate, TxPhyRate};
-use oer_esp32s31_wifi_runtime::roles::access_point::network_tx::{
+use oer_esp32s31_ieee80211_mac::tx::{LegacyRate, TxPhyRate};
+use oer_esp32s31_ieee80211_runtime::roles::access_point::network_tx::{
     AccessPointAirtimeConfiguration, AccessPointAirtimePeer, AccessPointAirtimeSelection,
     AirtimeObservation,
 };
-use oer_wifi_softmac::{MacTxWork, tx_cost::PpduTiming};
-use open_esp_radio_hil_esp32s31_telemetry::airtime::AirtimeHistory;
-use open_esp_radio_hil_protocol::WifiApScheduler;
+use oer_hil_esp32s31_telemetry::airtime::AirtimeHistory;
+use oer_hil_protocol::WifiApScheduler;
+use oer_ieee80211_softmac::{MacTxWork, tx_cost::PpduTiming};
 
 static HISTORY: Mutex<CriticalSectionRawMutex, RefCell<Option<AirtimeHistory>>> =
     Mutex::new(RefCell::new(None));
@@ -34,7 +34,7 @@ pub(super) fn reset() {
 /// Called after the radio stop edge. Copy each bounded record under the lock,
 /// then await the existing reliable event transport with no lock held.
 pub(super) async fn report(request_id: u32) {
-    use open_esp_radio_hil_protocol::Event;
+    use oer_hil_protocol::Event;
     for index in 0..8 {
         let peer = HISTORY.lock(|history| history.borrow().as_ref().and_then(|h| h.peers[index]));
         if let Some(peer) = peer {

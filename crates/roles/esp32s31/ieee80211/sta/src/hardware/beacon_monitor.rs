@@ -13,9 +13,9 @@
 
 use oer_esp32s31_hal::types::MacStaReceivePolicySnapshot;
 
-use oer_ieee80211::station_power_save::StaAssociationId;
+use oer_ieee80211_mac::station_power_save::StaAssociationId;
 
-use oer_wifi_sta::link_monitor::StaBeaconLossConfig;
+use oer_ieee80211_sta::link_monitor::StaBeaconLossConfig;
 
 /// Exact peer identity owned by one connected station association.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -32,14 +32,14 @@ Cargo package identities are independent of this directory hierarchy.
 | `hardware/esp32s31/{pac,hal,phy}/` | PAC `ownership` and HAL `owner` retain hardware authority; domain modules hold register operations, transactions and RF algorithms |
 | `hardware/esp32s31/driver/ieee80211/{dma,mac}/` | S31 descriptor ownership and MAC `rx/tx/rate`; `mac/tx/metadata` lowers portable traffic intent |
 | `roles/esp32s31/ieee80211/{sta,ap}/` | Executor-free chip station and access-point role composition over the MAC driver |
-| `hardware/esp32s31/driver/{bluetooth,coex,ieee802154}/` | Chip radio actors; Bluetooth `memory/` and IEEE 802.15.4 `{dma,irq,mac,runtime}/` hold their lower ownership boundaries |
+| `hardware/esp32s31/driver/{bluetooth,coex,ieee802154}/` | Chip radio actors; Bluetooth `memory/` and IEEE 802.15.4 `{dma,irq,mac}/` hold their lower ownership boundaries; the IEEE 802.15.4 root owns one affine MAC operation |
 | `adapters/esp-hal/esp32s31/{soc,radio,ieee80211,ieee802154}/` | Upstream SoC access, singleton acquisition and concrete hardware bindings |
-| `adapters/embassy/ieee80211/` | Generic Embassy Wi-Fi service contracts |
 | `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
-| `adapters/embassy/esp32s31/` | Executor/time platform ABI, coexistence mailbox, acknowledged IEEE 802.15.4 IRQ handoff and network stack bindings |
+| `adapters/embassy/esp32s31/` | Executor/time platform ABI, coexistence mailbox and acknowledged IEEE 802.15.4 IRQ handoff |
+| `runtime/ieee80211/` | Portable Wi-Fi execution primitives: monitor handoffs, task shutdown, station network ownership and poll boundaries |
 | `runtime/esp32s31/{ieee80211,bluetooth}/` | Executor-independent radio execution over `embassy-time`; Wi-Fi role/datapath owners and Bluetooth controller/session owners |
-| `adapters/embassy-net/{owned,upstream}/` | Owned-packet and released-interface network adapters |
-| `adapters/xarxa/upstream/` | Original Xarxa driver, packet-owner queues and explicit pool-allocation failure |
+| `adapters/embassy-net/{owned,upstream}/`, `adapters/embassy-net/esp32s31/ieee80211-upstream/` | Owned-packet and released-interface network adapters; the chip bridge binds the released interface to Wi-Fi execution |
+| `adapters/xarxa/upstream/`, `adapters/xarxa/esp32s31/ieee80211-upstream/` | Original Xarxa driver, packet-owner queues and explicit pool-allocation failure; the chip bridge binds it to Wi-Fi execution |
 | `../experiments/network-engine/` | Experimental synchronous network engine; currently consumed only by a driver test |
 | `composition/esp32s31/embassy/{ieee80211,bluetooth}/` | Static resources, one-time claims, final bindings and the concrete whole-radio lifecycle runners |
 
@@ -49,7 +49,8 @@ is a dependency-free value boundary. The compatibility adapter uses the
 released Embassy token contract; the owned adapter uses the pinned Git
 Embassy/Xarxa contract and its maintained packet-pool extensions. The upstream
 Xarxa adapter uses the original global pool and driver API. Its ESP32-S31
-bridge lives in `adapters/embassy/esp32s31/ieee80211-upstream`; all integrations
+bridge lives in `adapters/xarxa/esp32s31/ieee80211-upstream` and the released
+Embassy bridge in `adapters/embassy-net/esp32s31/ieee80211-upstream`; all integrations
 share the existing radio scheduler and final SRAM allocator.
 `../experiments/network-engine` contains an experimental engine and physical materializer;
 its only external repository

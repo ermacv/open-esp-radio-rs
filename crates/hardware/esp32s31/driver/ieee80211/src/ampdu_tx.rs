@@ -6,8 +6,8 @@
 //! a station publication.
 
 use oer_esp32s31_hal::types::MacInterface;
-use oer_esp32s31_wifi_mac::tx::ampdu::TX_BLOCK_ACK_MAX_WINDOW;
-use oer_esp32s31_wifi_mac::tx::{HtAmpduTxConfig, HtProtectionSpacing, HtRate};
+use oer_esp32s31_ieee80211_mac::tx::ampdu::TX_BLOCK_ACK_MAX_WINDOW;
+use oer_esp32s31_ieee80211_mac::tx::{HtAmpduTxConfig, HtProtectionSpacing, HtRate};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AmpduTxRoleAdapter {

@@ -17,14 +17,14 @@ use crate::{
     },
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     ap_policy::{configure_ap_receive_policy, disable_ap_receive_policy},
     ap_tsf::{reset_and_start_access_point_tsf, stop_access_point_tsf},
     crypto::CryptoKeyError,
     tx::protection::{ErpProtectionMode, HtProtectionMode, WifiTxProtectionPolicy},
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     ap::{
         ApActionFrame, ApAmsduFrame, ApAssociationResponseError, ApDataFrame, ApDataFrameError,
         ApManagementRequest, ApPeerDisconnectKind, ApPowerSaveObservation, ApProtectedDataFrame,
@@ -41,19 +41,19 @@ use oer_ieee80211::{
     ssid::WifiSsid,
 };
 
-use oer_wifi_ap::{
+use oer_ieee80211_ap::{
     AccessPointService, ApAssociationCapabilities, ApAssociationIdentity, ApBufferedGroupRelease,
     ApBufferedUnicastRelease, ApDownlinkAdmission, ApDownlinkDisposition, ApMlmeAction,
     ApPeerBinding, ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApPeerPowerState, ApPeerStatus,
     ApPowerSaveAction, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
 };
 
-use oer_wifi_rsn::{OwnedEapolFrame, frames::RsnTxFrame};
+use oer_ieee80211_rsn::{OwnedEapolFrame, frames::RsnTxFrame};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApEngineError {
     Beacon(ApBeaconBuildError),
-    Probe(oer_ieee80211::ap::probe::ResponseError),
+    Probe(oer_ieee80211_mac::ap::probe::ResponseError),
     Crypto(CryptoKeyError),
     Security(ApSecurityError),
     Service(ApServiceError),
@@ -654,7 +654,7 @@ impl<'storage> ApEngine<'storage> {
         self.service.associated_count()
     }
 
-    pub fn service_status(&self) -> oer_wifi_ap::AccessPointServiceStatus {
+    pub fn service_status(&self) -> oer_ieee80211_ap::AccessPointServiceStatus {
         self.service.status()
     }
 

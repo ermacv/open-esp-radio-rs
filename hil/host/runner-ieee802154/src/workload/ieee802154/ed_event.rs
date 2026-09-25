@@ -7,13 +7,13 @@
 use hil_core::context::Context;
 use std::{fs, path::Path, time::Duration};
 
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
     Ieee802154ObservedEventState, Ieee802154PolledEdOutcome, Ieee802154ValidationEdDurationState,
     Ieee802154ValidationEventEnableState, Ieee802154ValidationRxAbortEnableState,
 };
 #[cfg(test)]
-use open_esp_radio_hil_protocol::{Ieee802154RxAbortObservation, Ieee802154RxAbortReason};
+use oer_hil_protocol::{Ieee802154RxAbortObservation, Ieee802154RxAbortReason};
 use serde::Serialize;
 
 use crate::Result;

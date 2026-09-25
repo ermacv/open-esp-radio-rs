@@ -32,7 +32,7 @@ network = { package = "embassy-net", path = "../stack" }
 driver = { package = "xarxa-driver", path = "../helper" }
 xarxa = { path = "../xarxa" }
 endpoint = { package = "oer-xarxa-upstream", path = "../endpoint" }
-bridge = { package = "oer-esp32s31-wifi-xarxa-upstream", path = "../bridge" }
+bridge = { package = "oer-esp32s31-ieee80211-xarxa-upstream", path = "../bridge" }
 [features]
 default = ["upstream-network"]
 upstream-network = []
@@ -45,7 +45,7 @@ embassy-network = []
         ("helper", "xarxa-driver"),
         ("xarxa", "xarxa"),
         ("endpoint", "oer-xarxa-upstream"),
-        ("bridge", "oer-esp32s31-wifi-xarxa-upstream"),
+        ("bridge", "oer-esp32s31-ieee80211-xarxa-upstream"),
     ] {
         fixture.package(path, name, "");
     }

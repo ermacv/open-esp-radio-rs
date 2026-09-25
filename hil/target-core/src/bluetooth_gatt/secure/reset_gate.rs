@@ -21,7 +21,7 @@ use core::{
 };
 use embassy_sync::waitqueue::WakerRegistration;
 use embedded_io_async::{Error as IoError, ErrorKind, ErrorType};
-use open_esp_radio_hil_protocol::BluetoothGattResetReadGate as Phase;
+use oer_hil_protocol::BluetoothGattResetReadGate as Phase;
 
 pub struct Gate {
     phase: Cell<Phase>,

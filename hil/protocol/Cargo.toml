@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-hil-protocol"
+name = "oer-hil-protocol"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

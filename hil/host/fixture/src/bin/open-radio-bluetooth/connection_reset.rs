@@ -23,7 +23,7 @@ use bt_hci::{
         LeEventMask,
     },
 };
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     BLUETOOTH_PERIPHERAL_ACL_PAYLOAD_BYTES, BLUETOOTH_PERIPHERAL_UPDATED_INTERVAL_MILLIS,
     BluetoothPeripheralTermination, bluetooth_peripheral_acl_payload,
     bluetooth_peripheral_acl_payload_for_sequence,
@@ -808,7 +808,7 @@ fn enable_encryption(
     report: &mut ConnectionReset,
     refresh: bool,
 ) -> Result<()> {
-    use open_esp_radio_hil_protocol::{
+    use oer_hil_protocol::{
         BLUETOOTH_REFRESH_EDIV, BLUETOOTH_REFRESH_LTK, BLUETOOTH_REFRESH_RAND, BLUETOOTH_TEST_EDIV,
         BLUETOOTH_TEST_LTK, BLUETOOTH_TEST_RAND,
     };

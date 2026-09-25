@@ -237,8 +237,8 @@ where
             STAGE_CAPACITY,
             STAGE_SLOTS,
         >,
-        ingress: oer_esp32s31_wifi_mac::rx::RxIngressConfig,
-        addresses: oer_ieee80211::vif::StaApRxAddresses,
+        ingress: oer_esp32s31_ieee80211_mac::rx::RxIngressConfig,
+        addresses: oer_ieee80211_mac::vif::StaApRxAddresses,
         delay: D,
     ) -> Self {
         Self::from_halted_resources(
@@ -276,8 +276,8 @@ where
             STAGE_CAPACITY,
             STAGE_SLOTS,
         >,
-        ingress: oer_esp32s31_wifi_mac::rx::RxIngressConfig,
-        addresses: oer_ieee80211::vif::StaApRxAddresses,
+        ingress: oer_esp32s31_ieee80211_mac::rx::RxIngressConfig,
+        addresses: oer_ieee80211_mac::vif::StaApRxAddresses,
     ) -> Result<
         Self,
         StoppedReceive<
@@ -341,8 +341,8 @@ where
             STAGE_CAPACITY,
             STAGE_SLOTS,
         >,
-        ingress: oer_esp32s31_wifi_mac::rx::RxIngressConfig,
-        addresses: oer_ieee80211::vif::StaApRxAddresses,
+        ingress: oer_esp32s31_ieee80211_mac::rx::RxIngressConfig,
+        addresses: oer_ieee80211_mac::vif::StaApRxAddresses,
     ) -> Result<
         Self,
         StagedRxProducer<

@@ -40,7 +40,7 @@ radio-facing adapters and the underlying IEEE 802.11 driver.
 | Upstream Xarxa | `embassy-net` from [original Embassy](https://github.com/embassy-rs/embassy/tree/c0fdd08e94138105fba8be3133c4ced91afc30fc/embassy-net); `xarxa` and `xarxa-driver` from [original Xarxa](https://github.com/embassy-rs/xarxa/tree/14c369bbcbe8ee7167488ac9c9e18be059d83555) | `oer-xarxa-upstream` |
 | Patched Xarxa | Same Embassy and `xarxa-driver`; only `xarxa` comes from the [backpressure patch](https://github.com/ermacv/xarxa/tree/bbf4a670f5c673ba11fbb6b1a4c3a1dbac0cc7a7) | Same `oer-xarxa-upstream` |
 | Embassy + smoltcp | Registry `embassy-net` 0.9.1, `embassy-net-driver` 0.2.0 and transitive `smoltcp` | `oer-embassy-net-upstream` |
-| Owned Xarxa/Embassy | `embassy-net` and `embassy-net-driver` from the [owned Embassy fork](https://github.com/ermacv/embassy/tree/1fa0957c07398f83c9795b645a5a6ceda1270f91); `xarxa` from the [owned UDP capacity-wake revision](https://github.com/ermacv/xarxa/tree/0d41d8e80cb617d355cf6981b6ff76635c44cadc), retaining `xarxa-driver` and its pool at [the driver pin](https://github.com/ermacv/xarxa/tree/122e97146fc0a174ef3310f4526defc37663bed4) | `oer-embassy-net` |
+| Owned Xarxa/Embassy | `embassy-net` and `embassy-net-driver` from the [owned Embassy fork](https://github.com/ermacv/embassy/tree/1fa0957c07398f83c9795b645a5a6ceda1270f91); `xarxa` from the [owned UDP capacity-wake revision](https://github.com/ermacv/xarxa/tree/0d41d8e80cb617d355cf6981b6ff76635c44cadc), retaining `xarxa-driver` and its pool at [the driver pin](https://github.com/ermacv/xarxa/tree/122e97146fc0a174ef3310f4526defc37663bed4) | `oer-embassy-net-owned` |
 
 The original and owned Git revisions are reviewed pins, not tracking branches
 or a promise of compatibility with every later upstream revision. Dependency
@@ -51,11 +51,11 @@ published crate. Optional inactive forks can remain in `Cargo.lock`. The
 selected normal/build dependency graph determines what a firmware uses.
 
 The product crate
-[`oer-esp32s31-embassy-wifi`](../crates/composition/esp32s31/embassy/ieee80211/README.md)
+[`oer-esp32s31-ieee80211-system`](../crates/composition/esp32s31/embassy/ieee80211/README.md)
 selects adapters and static resources. Its chip-specific bridges are
-`oer-esp32s31-wifi-xarxa-upstream` and
-`oer-esp32s31-wifi-embassy-upstream`; the shared radio runner is
-`oer-esp32s31-wifi-runtime`. The [network source map](../crates/network/README.md)
+`oer-esp32s31-ieee80211-xarxa-upstream` and
+`oer-esp32s31-ieee80211-embassy-net-upstream`; the shared radio runner is
+`oer-esp32s31-ieee80211-runtime`. The [network source map](../crates/network/README.md)
 and [driver map](../crates/README.md) locate these packages. Applications own
 sockets and IP policy; adapter crates do not acquire independent PHY/DMA owners.
 

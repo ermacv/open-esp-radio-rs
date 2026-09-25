@@ -1,7 +1,7 @@
 //! Owned EDCA contention state for the four ordinary TX queues.
 
-use oer_ieee80211::extensions::wmm::{WmmAcParameters, WmmParameterSet};
-use oer_ieee80211::qos::WmmAccessCategory;
+use oer_ieee80211_mac::extensions::wmm::{WmmAcParameters, WmmParameterSet};
+use oer_ieee80211_mac::qos::WmmAccessCategory;
 
 use crate::tx::LegacyTxQueue;
 

@@ -8,7 +8,7 @@ use oer_esp32s31_bluetooth::controller::{
 use oer_esp32s31_bluetooth_runtime::controller::{
     ControllerCommandPhase, ControllerCommandRetirementError,
 };
-use oer_esp32s31_radio_platform_esp_hal::{
+use oer_esp32s31_radio_esp_hal::{
     EspHalBluetoothInterruptRouteError, EspHalBluetoothModemLpTimerRetirementError,
     EspHalBluetoothModemLpTimerStorageError,
 };
@@ -115,7 +115,7 @@ pub struct BluetoothHardwareInterruptsRetired<
     const PC: usize,
 > {
     hardware: BluetoothHardwareRetired<MT, SC, H2C, C2H, PC>,
-    _registers: oer_esp32s31_radio_platform_esp_hal::RetiredEspHalBluetoothInterruptRegisters,
+    _registers: oer_esp32s31_radio_esp_hal::RetiredEspHalBluetoothInterruptRegisters,
 }
 
 /// Retired Controller after physical scheduler-source and IRQ-output release.
@@ -129,7 +129,7 @@ pub struct BluetoothHardwareOutputReleased<
     const PC: usize,
 > {
     hardware: BluetoothHardwareRetired<MT, SC, H2C, C2H, PC>,
-    _registers: oer_esp32s31_radio_platform_esp_hal::ReleasedEspHalBluetoothInterruptRegisters,
+    _registers: oer_esp32s31_radio_esp_hal::ReleasedEspHalBluetoothInterruptRegisters,
 }
 
 impl<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
@@ -186,7 +186,7 @@ impl<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const
     ) -> Result<
         BluetoothHardwareInterruptsRetired<MT, SC, H2C, C2H, PC>,
         (
-            oer_esp32s31_radio_platform_esp_hal::EspHalBluetoothInterruptRetirementError,
+            oer_esp32s31_radio_esp_hal::EspHalBluetoothInterruptRetirementError,
             Self,
         ),
     > {

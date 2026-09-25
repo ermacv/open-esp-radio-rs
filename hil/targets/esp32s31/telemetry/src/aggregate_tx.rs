@@ -13,7 +13,7 @@ use work::WorkCounters;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::{
+use oer_esp32s31_ieee80211_runtime::diagnostics::aggregate_tx::{
     AggregateBuildStop, AggregateTxObservation, AggregateTxObserver, NetworkSingleMpduReason,
     PreparedTxSchedulerPhase,
 };
@@ -986,14 +986,16 @@ impl AggregateTxCounters {
 impl AggregateTxObserver for AggregateTxCounters {
     fn observe_station_ordinary(
         &self,
-        outcome: Option<oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::OrdinaryTxOutcome>,
+        outcome: Option<
+            oer_esp32s31_ieee80211_runtime::diagnostics::aggregate_tx::OrdinaryTxOutcome,
+        >,
     ) {
         self.station_ordinary.record(outcome);
     }
 
     fn observe_station_terminal(
         &self,
-        status: oer_wifi_softmac::MacAmpduTxStatus<oer_esp32s31_wifi_mac::tx::TxPhyRate>,
+        status: oer_ieee80211_softmac::MacAmpduTxStatus<oer_esp32s31_ieee80211_mac::tx::TxPhyRate>,
     ) {
         self.terminal.record(status);
     }
@@ -1001,7 +1003,7 @@ impl AggregateTxObserver for AggregateTxCounters {
     #[cfg(feature = "tx-wait-probe")]
     fn observe_wait_probe(
         &self,
-        sample: oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::TxWaitSample,
+        sample: oer_esp32s31_ieee80211_runtime::diagnostics::aggregate_tx::TxWaitSample,
     ) {
         self.wait_trace.record(sample);
     }
@@ -1139,7 +1141,7 @@ impl AggregateTxObserver for AggregateTxCounters {
 
     fn observe_access_point_retention_drop(
         &self,
-        reason: oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::NetworkTxRetentionDropReason,
+        reason: oer_esp32s31_ieee80211_runtime::diagnostics::aggregate_tx::NetworkTxRetentionDropReason,
     ) {
         self.tx_retention.observe(reason);
     }
@@ -1271,7 +1273,7 @@ impl PreparedTxSchedulerTimingSnapshot {
 /// remain exact monotonic observations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AggregateTxCounterSnapshot {
-    pub station_terminal: open_esp_radio_hil_protocol::StationTxTerminalEvidence,
+    pub station_terminal: oer_hil_protocol::StationTxTerminalEvidence,
     pub secondary_socket: crate::tx_progress::Snapshot,
     pub secondary_claim: crate::tx_progress::Snapshot,
     pub ap_udp_claimed: u32,

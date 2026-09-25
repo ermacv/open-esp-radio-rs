@@ -836,9 +836,9 @@ impl Core0PerformanceCounters {
     #[cfg(feature = "core0-rx-coarse-telemetry")]
     pub(crate) fn record_rx_progress(
         &self,
-        progress: oer_esp32s31_wifi::datapath::DatapathRxProgress,
+        progress: oer_esp32s31_ieee80211::datapath::DatapathRxProgress,
     ) {
-        use oer_esp32s31_wifi::datapath::DatapathRxProgress;
+        use oer_esp32s31_ieee80211::datapath::DatapathRxProgress;
 
         let counter = match progress {
             DatapathRxProgress::Drained => &self.rx_progress_drained,
@@ -879,7 +879,7 @@ impl Core0PerformanceCounters {
     pub(crate) fn record_adaptive_probe_selection(
         &self,
         delay_micros: u64,
-        work: oer_esp32s31_wifi::datapath::DatapathRxWorkCounters,
+        work: oer_esp32s31_ieee80211::datapath::DatapathRxWorkCounters,
     ) {
         let delay_counter = match delay_micros {
             64 => &self.adaptive_probe_delay_64,

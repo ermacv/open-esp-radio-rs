@@ -5,12 +5,12 @@ use core::{
     cell::UnsafeCell,
     sync::atomic::{AtomicBool, Ordering},
 };
-use oer_esp32s31_wifi_dma::rx_observation::{RxOwnershipEdge, RxOwnershipObserver};
-use open_esp_radio_hil_esp32s31_telemetry::rx_ownership::{Snapshot, Tracker};
+use oer_esp32s31_ieee80211_dma::rx_observation::{RxOwnershipEdge, RxOwnershipObserver};
+use oer_hil_esp32s31_telemetry::rx_ownership::{Snapshot, Tracker};
 
 // Size follows the production arena without storing payloads.
 const CAPACITY: usize =
-    oer_esp32s31_embassy_wifi::resources::profile::ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT;
+    oer_esp32s31_ieee80211_system::resources::profile::ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT;
 
 pub(super) static RECORDER: Recorder = Recorder {
     busy: AtomicBool::new(false),

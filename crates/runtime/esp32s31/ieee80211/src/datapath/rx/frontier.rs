@@ -8,7 +8,7 @@
 
 mod time;
 
-pub use oer_esp32s31_wifi::rx::frontier::{
+pub use oer_esp32s31_ieee80211::rx::frontier::{
     ReceiveFrontier, RxFrontierContinuation, RxFrontierDirective, RxFrontierError,
     RxFrontierIntoLiveFailure, RxFrontierPhase, RxFrontierProgress, RxFrontierSchedulerSnapshot,
     RxFrontierServiceProgress,

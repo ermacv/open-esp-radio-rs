@@ -51,7 +51,7 @@ impl<'storage> ApEngine<'storage> {
         let retry = frame.get(1).is_some_and(|byte| byte & 0x08 != 0);
         match request {
             ApManagementRequest::Probe { peer, ssid } => {
-                if !oer_ieee80211::ap::probe::matches_ssid(self.beacon.advertisement(), ssid) {
+                if !oer_ieee80211_mac::ap::probe::matches_ssid(self.beacon.advertisement(), ssid) {
                     return Ok(ApManagementOutcome::Ignored);
                 }
                 // Global admission budget: changing the sender MAC cannot create
@@ -61,7 +61,7 @@ impl<'storage> ApEngine<'storage> {
                     return Ok(ApManagementOutcome::Ignored);
                 }
                 let sequence = self.service.next_management_sequence();
-                let len = oer_ieee80211::ap::probe::write_response(
+                let len = oer_ieee80211_mac::ap::probe::write_response(
                     self.beacon.advertisement(),
                     peer,
                     sequence,

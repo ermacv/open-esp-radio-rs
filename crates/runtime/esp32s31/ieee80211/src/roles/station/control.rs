@@ -21,13 +21,13 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use embassy_time::{Instant, Timer};
 
-pub use oer_esp32s31_wifi_mac::rx::ampdu::{RxReorderCommand, RxReorderCommandError};
+pub use oer_esp32s31_ieee80211_mac::rx::ampdu::{RxReorderCommand, RxReorderCommandError};
 
-use oer_esp32s31_wifi_sta::connected_rx::ConnectedRxControlEvent;
+use oer_esp32s31_ieee80211_sta::connected_rx::ConnectedRxControlEvent;
 
-use oer_ieee80211::twt::IndividualTwtFlowId;
+use oer_ieee80211_mac::twt::IndividualTwtFlowId;
 
-use oer_wifi_sta::{
+use oer_ieee80211_sta::{
     ftm::FtmRequesterConfig,
     link_monitor::{StaBeaconLossConfig, StaBeaconMonitor},
     power_save::{
@@ -40,7 +40,7 @@ use oer_wifi_sta::{
     },
 };
 
-pub use oer_esp32s31_wifi_sta::{
+pub use oer_esp32s31_ieee80211_sta::{
     connected_control::{
         ConnectedControlCore, ConnectedControlError, ConnectedControlPorts,
         ConnectedControlReorder, ConnectedControlTx, ConnectedControlTxFailure,
@@ -82,14 +82,14 @@ pub trait ConnectedControlTimer {
 }
 
 impl<P, E, T, const BUFFER_SIZE: usize> ConnectedControlTimer
-    for oer_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduTx<'_, P, E, T, BUFFER_SIZE>
+    for oer_esp32s31_ieee80211_sta::single_mpdu_tx::SingleMpduTx<'_, P, E, T, BUFFER_SIZE>
 where
-    P: oer_esp32s31_wifi::ordinary_tx::WifiTxPowerProfile,
-    E: oer_esp32s31_wifi::ordinary_tx::WifiTxEntropy,
-    T: oer_esp32s31_wifi::ordinary_tx::WifiTxTimer,
+    P: oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerProfile,
+    E: oer_esp32s31_ieee80211::ordinary_tx::WifiTxEntropy,
+    T: oer_esp32s31_ieee80211::ordinary_tx::WifiTxTimer,
 {
     fn wait_until_micros(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        oer_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduTx::wait_until_micros(
+        oer_esp32s31_ieee80211_sta::single_mpdu_tx::SingleMpduTx::wait_until_micros(
             self,
             deadline_micros,
         )
@@ -108,7 +108,7 @@ pub struct ConnectedControlShutdown {
     pub hardware_beacon_monitor: Option<StationHardwareBeaconMonitorStopped>,
 }
 
-pub use oer_esp32s31_wifi_sta::connected::security::{
+pub use oer_esp32s31_ieee80211_sta::connected::security::{
     ConnectedWpa2Security, ConnectedWpa2SecurityEvidence, ConnectedWpa2SecurityFailure,
 };
 
@@ -184,7 +184,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
         peer: [u8; 6],
         he_enabled: bool,
-        tx_block_ack: oer_esp32s31_wifi_mac::tx::ampdu::StaTxBlockAckSessions,
+        tx_block_ack: oer_esp32s31_ieee80211_mac::tx::ampdu::StaTxBlockAckSessions,
     ) -> Self {
         Self {
             receiver,
@@ -204,7 +204,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
         peer: [u8; 6],
         he_enabled: bool,
-        tx_block_ack: oer_esp32s31_wifi_mac::tx::ampdu::StaTxBlockAckSessions,
+        tx_block_ack: oer_esp32s31_ieee80211_mac::tx::ampdu::StaTxBlockAckSessions,
         rx_block_ack: &'resources StaApRxBlockAck,
     ) -> Self {
         Self {
@@ -251,7 +251,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
     pub fn with_rx_block_ack_maximum_window(
         mut self,
         maximum_window: u16,
-    ) -> Result<Self, oer_esp32s31_wifi_mac::rx::ampdu::RxBlockAckSessionsError> {
+    ) -> Result<Self, oer_esp32s31_ieee80211_mac::rx::ampdu::RxBlockAckSessionsError> {
         match &mut self.rx_block_ack {
             ConnectedRxBlockAck::Local(sessions) => {
                 *sessions = StaApRxBlockAck::with_maximum_window(maximum_window)?;
@@ -259,7 +259,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
             ConnectedRxBlockAck::Shared(sessions) => {
                 if sessions.maximum_window() != maximum_window {
                     return Err(
-                        oer_esp32s31_wifi_mac::rx::ampdu::RxBlockAckSessionsError::InvalidWindow(
+                        oer_esp32s31_ieee80211_mac::rx::ampdu::RxBlockAckSessionsError::InvalidWindow(
                             maximum_window,
                         ),
                     );
@@ -312,7 +312,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
 
     pub fn enable_ps_poll(
         &mut self,
-        association_id: oer_ieee80211::station_power_save::StaAssociationId,
+        association_id: oer_ieee80211_mac::station_power_save::StaAssociationId,
     ) {
         self.core.enable_ps_poll(association_id);
     }
@@ -355,7 +355,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
 
     pub fn with_he_trigger_based(
         mut self,
-        config: Option<oer_esp32s31_wifi_mac::tx::HeTriggerBasedTxConfig>,
+        config: Option<oer_esp32s31_ieee80211_mac::tx::HeTriggerBasedTxConfig>,
     ) -> Self {
         self.core = self.core.with_he_trigger_based(config);
         self
@@ -386,13 +386,15 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         self.rx_block_ack.sessions()
     }
 
-    pub const fn tx_block_ack(&self) -> &oer_esp32s31_wifi_mac::tx::ampdu::StaTxBlockAckSessions {
+    pub const fn tx_block_ack(
+        &self,
+    ) -> &oer_esp32s31_ieee80211_mac::tx::ampdu::StaTxBlockAckSessions {
         self.core.tx_block_ack()
     }
 
     pub const fn last_event(
         &self,
-    ) -> Option<oer_esp32s31_wifi_sta::connected_rx::ConnectedRxControlEvent> {
+    ) -> Option<oer_esp32s31_ieee80211_sta::connected_rx::ConnectedRxControlEvent> {
         self.core.last_event()
     }
 
@@ -482,8 +484,8 @@ impl<'resources, M: RawMutex, const CAPACITY: usize> ConnectedControl<'resources
         prepared: StaPreparedDoze,
         hardware: &mut H,
     ) -> Result<
-        oer_wifi_sta::power_save::StaDozeRestore,
-        oer_wifi_sta::power_save::StaDozeEntryFailure<StationDozeHardwareError>,
+        oer_ieee80211_sta::power_save::StaDozeRestore,
+        oer_ieee80211_sta::power_save::StaDozeEntryFailure<StationDozeHardwareError>,
     >
     where
         H: ConnectedControlHardware,

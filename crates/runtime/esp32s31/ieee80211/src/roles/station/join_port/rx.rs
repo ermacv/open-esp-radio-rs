@@ -5,14 +5,14 @@ use crate::datapath::rx::{
     },
 };
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     init::MacRuntimeStopHardware,
     rx::{RxDma, RxIngressConfig, RxSegment, extract_management},
 };
 
-use oer_esp32s31_wifi_sta::join::StaJoinReceive;
+use oer_esp32s31_ieee80211_sta::join::StaJoinReceive;
 
-use oer_wifi_sta::join::{StaJoinRxDirective, StaJoinRxObserver};
+use oer_ieee80211_sta::join::{StaJoinRxDirective, StaJoinRxObserver};
 
 /// RX owner bound to the stable DMA storage used by every finite join phase.
 pub struct StaJoinRx<

@@ -22,13 +22,13 @@ use oer_memory::{
 #[cfg(feature = "tx-phase-telemetry")]
 use super::tx_performance::{TX_PERFORMANCE, TxPerformanceSample};
 #[cfg(feature = "owned-network")]
-use oer_embassy_net::{OwnedNetworkTxFrame, OwnedTxFrameSource};
-use oer_network::NetworkInterfaceId;
+use oer_embassy_net_owned::{OwnedNetworkTxFrame, OwnedTxFrameSource};
 #[cfg(feature = "tx-phase-telemetry")]
-use oer_wifi_datapath::MaterializationOwnershipSnapshot;
-use oer_wifi_datapath::SoftwareTxFrame;
+use oer_ieee80211_datapath::MaterializationOwnershipSnapshot;
+use oer_ieee80211_datapath::SoftwareTxFrame;
 #[cfg(feature = "owned-network")]
-use oer_wifi_datapath::{MaterializedPairResult, SelectedBurstMaterializer};
+use oer_ieee80211_datapath::{MaterializedPairResult, SelectedBurstMaterializer};
+use oer_network_interface::NetworkInterfaceId;
 
 /// Permanently located storage for DMA-visible TX frames.
 pub type PinnedTxPool<
@@ -384,7 +384,7 @@ impl<
 
     fn destination_queues(
         &self,
-    ) -> Option<&dyn oer_wifi_datapath::DestinationTxQueues<Frame = Self::SoftwareFrame>> {
+    ) -> Option<&dyn oer_ieee80211_datapath::DestinationTxQueues<Frame = Self::SoftwareFrame>> {
         Some(self.source)
     }
 

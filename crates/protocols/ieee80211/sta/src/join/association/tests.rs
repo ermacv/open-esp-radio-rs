@@ -1,6 +1,6 @@
 use super::super::test_support::{BSSID, LOCAL, association_response, deauthentication};
 use super::*;
-use oer_ieee80211::station::StaDisconnectKind;
+use oer_ieee80211_mac::station::StaDisconnectKind;
 
 #[test]
 fn association_retry_schedule_is_finite_inside_vendor_deadline() {

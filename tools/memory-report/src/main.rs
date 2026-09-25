@@ -3,7 +3,7 @@
 use std::{path::PathBuf, process::ExitCode};
 
 use clap::{Parser, Subcommand, ValueEnum};
-use open_esp_radio_memory_report::{
+use oer_memory_report::{
     MemoryPolicy, Result, StackBudget, analyze, analyze_code, analyze_mono, analyze_stack, audit,
     audit_stack, diff, diff_code, render_audit, render_code_diff, render_code_report, render_diff,
     render_mono_report, render_report, render_stack_report,

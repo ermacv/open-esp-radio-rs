@@ -1,5 +1,5 @@
 [package]
-name = "oer-embassy-net"
+name = "oer-embassy-net-owned"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,8 +10,8 @@ description = "Owned-packet boundary for the optimized open ESP radio Embassy/Xa
 [dependencies]
 owned-embassy-net-driver = { package = "embassy-net-driver", git = "https://github.com/ermacv/embassy.git", rev = "1fa0957c07398f83c9795b645a5a6ceda1270f91" }
 embassy-sync = "0.8.0"
-oer-network = { path = "../../../network/interface" }
-oer-wifi-datapath = { path = "../../../protocols/ieee80211/datapath" }
+oer-network-interface = { path = "../../../network/interface" }
+oer-ieee80211-datapath = { path = "../../../protocols/ieee80211/datapath" }
 xarxa-driver = { git = "https://github.com/ermacv/xarxa.git", rev = "122e97146fc0a174ef3310f4526defc37663bed4", features = ["async"] }
 
 [dev-dependencies]

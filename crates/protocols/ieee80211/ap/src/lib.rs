@@ -4,7 +4,7 @@
 //! Executor- and chip-independent access-point protocol owner.
 //!
 //! This crate implements a bounded Open or WPA2-Personal peer table. Frame
-//! codecs remain in `oer-ieee80211`; MMIO, DMA, IRQ, hardware key
+//! codecs remain in `oer-ieee80211-mac`; MMIO, DMA, IRQ, hardware key
 //! slots and Embassy deadlines remain in chip/runtime crates. Replay and key
 //! ownership exist only in WPA2 epochs.
 

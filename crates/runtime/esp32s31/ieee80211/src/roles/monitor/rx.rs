@@ -15,12 +15,12 @@ use crate::datapath::rx::{
     frontier::{EmbassyRxFrontierDelay, ReceiveFrontier, RxFrontierError, RxFrontierPhase},
 };
 
-use oer_esp32s31_wifi_mac::rx::{
+use oer_esp32s31_ieee80211_mac::rx::{
     RxDma, RxDmaBufferAddresses, RxIngressConfig, RxPhyInfo, RxRingError, RxRingHalted, RxRingLive,
     view_normalized_rx_frame,
 };
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     MonitorDropReason, MonitorFilter, MonitorFrame, MonitorPublishOutcome, MonitorSink,
     WifiStandaloneMonitorPlan,
     interface::{ChannelContextId, MonitorTapPoint},

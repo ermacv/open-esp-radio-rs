@@ -1,5 +1,5 @@
 [package]
-name = "oer-esp32s31-bluetooth-integration"
+name = "oer-esp32s31-bluetooth-system"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -30,8 +30,8 @@ esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4d
 oer-bluetooth-hci = { path = "../../../../protocols/bluetooth/hci" }
 oer-bluetooth-ll = { path = "../../../../protocols/bluetooth/le/ll" }
 oer-esp32s31-bluetooth-runtime = { path = "../../../../runtime/esp32s31/bluetooth" }
-oer-esp32s31-radio-platform-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
-oer-esp32s31-soc = { path = "../../../../adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
+oer-esp32s31-radio-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
+oer-esp32s31-soc-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
 
 [lints]
 workspace = true

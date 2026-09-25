@@ -21,9 +21,9 @@ use esp_hal::{
 
 use oer_esp32s31_phy::PhyTxTargetPowerProfile;
 
-use oer_esp32s31_wifi::mac_start::WifiMacPlatform;
+use oer_esp32s31_ieee80211::mac_start::WifiMacPlatform;
 
-use oer_esp32s31_wifi_mac::init::{
+use oer_esp32s31_ieee80211_mac::init::{
     MacCoexEvent, MacCoexPti, MacCoexPtiSource, MacDelayEntropy, MacSlowClockCalibration,
     MacSlowClockCalibrationSource, MacTxPowerPair, MacTxPowerSource,
 };

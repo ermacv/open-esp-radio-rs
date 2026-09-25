@@ -228,7 +228,7 @@ where
 
     pub fn unresolved_airtime_work(
         &self,
-    ) -> Option<(AccessPointAirtimePeer, oer_wifi_softmac::MacTxWork)> {
+    ) -> Option<(AccessPointAirtimePeer, oer_ieee80211_softmac::MacTxWork)> {
         self.airtime
             .as_ref()
             .and_then(airtime::Accounting::unresolved_work)
@@ -433,7 +433,7 @@ where
         H: TxHardware
             + ApRuntimeHardware
             + RxBlockAckHardware
-            + oer_esp32s31_wifi_mac::tx::ampdu::HtAmpduHardware,
+            + oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
     {
         if let Some(accounting) = self.airtime.as_ref() {
             accounting.require_active_idle()?;
@@ -746,7 +746,7 @@ where
         H: TxHardware
             + ApRuntimeHardware
             + RxBlockAckHardware
-            + oer_esp32s31_wifi_mac::tx::ampdu::HtAmpduHardware,
+            + oer_esp32s31_ieee80211_mac::tx::ampdu::HtAmpduHardware,
     {
         if let Some(accounting) = self.airtime.as_ref() {
             accounting.require_active_idle()?;

@@ -18,7 +18,7 @@ use crate::{
 
 use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, RegisteredWifiPhy};
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     crypto::CcmpKeyHardware,
     he::He20PeerHardware,
     init::{MacRuntimeStopHardware, StaLinkRxPolicyHardware, StaNoiseFloorHardware},
@@ -27,7 +27,7 @@ use oer_esp32s31_wifi_mac::{
     tx::TxHardware,
 };
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     attempt::{
         AssociationAttemptOutcome, StaAttempt, StaAttemptObserver, StaAttemptProgress,
         StaAttemptReport, StaAttemptSecurity, StaAttemptStage, StaAttemptStation,
@@ -39,7 +39,7 @@ use oer_esp32s31_wifi_sta::{
     wpa2::HandshakeTransmit,
 };
 
-use oer_wifi_sta::station::StaFailureDisposition;
+use oer_ieee80211_sta::station::StaFailureDisposition;
 
 /// Concrete primitive error returned by the shared join transaction.
 pub type StationJoinError<H, T> =
@@ -120,7 +120,7 @@ pub struct StationJoinResources<
     pub transmit: &'transmit mut T,
     pub frame: &'scratch mut [u8],
     pub station: StaAttemptStation,
-    pub listen_interval: oer_wifi_sta::request::StationListenInterval,
+    pub listen_interval: oer_ieee80211_sta::request::StationListenInterval,
     pub security: StaAttemptSecurity<'security>,
     pub attempt_observer: AO,
 }

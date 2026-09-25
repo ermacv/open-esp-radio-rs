@@ -307,8 +307,8 @@ pub(super) fn validate_stack_usage(usage: StackUsage) -> Result<()> {
 }
 
 pub(super) fn validate_bluetooth_irq_stack(
-    cpu0: Option<open_esp_radio_hil_protocol::StackWatermark>,
-    cpu1: Option<open_esp_radio_hil_protocol::StackWatermark>,
+    cpu0: Option<oer_hil_protocol::StackWatermark>,
+    cpu1: Option<oer_hil_protocol::StackWatermark>,
 ) -> Result<()> {
     match (cpu0, cpu1) {
         (Some(irq), None) if irq.has_required_headroom() => Ok(()),

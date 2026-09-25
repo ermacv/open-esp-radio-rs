@@ -1,15 +1,15 @@
 //! Privileged, finite probe generator. It never reconfigures the managed peer.
 #![forbid(unsafe_code)]
 #[cfg(any(target_os = "linux", test))]
-use open_esp_radio_hil_fixture::probe::frame;
+use oer_hil_fixture::probe::frame;
 #[cfg(target_os = "linux")]
 mod linux;
-use open_esp_radio_hil_fixture::probe::model;
+use oer_hil_fixture::probe::model;
 
 fn main() {
     #[cfg(target_os = "linux")]
-    let _software = match open_esp_radio_hil_fixture_install::launcher::enter(
-        open_esp_radio_hil_fixture_install::launcher::LaunchTarget::Probe,
+    let _software = match oer_hil_fixture_install::launcher::enter(
+        oer_hil_fixture_install::launcher::LaunchTarget::Probe,
     ) {
         Ok(lease) => lease,
         Err(error) => {

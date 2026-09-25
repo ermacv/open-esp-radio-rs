@@ -3,11 +3,11 @@
 
 use super::*;
 use core::num::NonZeroU32;
-use oer_wifi_datapath::{
+use oer_ieee80211_datapath::{
     SelectedBurstMaterializer,
     airtime::{AirtimeCandidate, AirtimeError, AirtimeStorage},
 };
-use oer_wifi_softmac::MacTxWork;
+use oer_ieee80211_softmac::MacTxWork;
 
 #[test]
 fn airtime_software_and_physical_credits_have_independent_release_edges() {

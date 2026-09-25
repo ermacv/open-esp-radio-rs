@@ -7,7 +7,7 @@ use oer_esp32s31_hal::types::{
     MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
     MacTxDetachReason, MacTxQueueDetached,
 };
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
     tx::protection::{
@@ -16,11 +16,11 @@ use oer_esp32s31_wifi_mac::{
     },
     tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot, TxSlotState},
 };
-use oer_ieee80211::station::StaTxSequenceCounters;
+use oer_ieee80211_mac::station::StaTxSequenceCounters;
 
 use super::*;
 use crate::single_mpdu_tx::{ConnectedTxSecurity, SingleMpduTxConfig};
-use oer_esp32s31_wifi::ordinary_tx::WifiTxPowerPair;
+use oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerPair;
 
 #[derive(Default)]
 struct Hardware {
@@ -408,7 +408,7 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
                 },
                 hardware_mic_length: 0,
                 hardware_key_selector: 0,
-                interface: oer_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
+                interface: oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxInterface::Station,
                 scheduler_priority: 1,
                 packet_priority: 1,
             },

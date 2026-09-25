@@ -1,5 +1,5 @@
 use super::*;
-use oer_ieee80211::ftm::{
+use oer_ieee80211_mac::ftm::{
     FTM_MEASUREMENT_PREFIX_LEN, FTM_PARAMETERS_ELEMENT_LEN, FtmMeasurementFields,
     encode_measurement,
 };

@@ -1,7 +1,7 @@
 //! Automated HIL comparison of independent DUT and Linux challenges.
 //! This is a test operator, not a production user-consent policy.
 use crate::Result;
-use open_esp_radio_hil_protocol::{BluetoothNumericChallenge, BluetoothNumericDecision};
+use oer_hil_protocol::{BluetoothNumericChallenge, BluetoothNumericDecision};
 
 pub(super) fn decision(
     boot: u64,

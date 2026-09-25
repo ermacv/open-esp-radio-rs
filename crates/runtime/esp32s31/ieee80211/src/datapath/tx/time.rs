@@ -1,7 +1,7 @@
 //! Embassy time adapter for the executor-independent ESP32-S31 STA TX port.
 
 use embassy_time::{Instant, Timer};
-use oer_esp32s31_wifi::tx::WifiTxTimer;
+use oer_esp32s31_ieee80211::tx::WifiTxTimer;
 
 /// Production Embassy time adapter for ordinary STA transmit transactions.
 #[derive(Clone, Copy, Debug, Default)]

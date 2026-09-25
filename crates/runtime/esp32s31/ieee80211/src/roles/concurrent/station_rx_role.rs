@@ -6,7 +6,7 @@
 //! Connected-station RX role for a common STA+AP DATAPATH owner.
 
 #[cfg(test)]
-use oer_esp32s31_wifi_mac::rx::pool::VENDOR_LARGE_RX_SLOT_COUNT;
+use oer_esp32s31_ieee80211_mac::rx::pool::VENDOR_LARGE_RX_SLOT_COUNT;
 
 use core::future::{Future, ready};
 
@@ -24,11 +24,13 @@ use crate::{
     },
 };
 
-use oer_esp32s31_wifi_mac::rx::pool::VENDOR_LARGE_RX_PAYLOAD_CAPACITY;
+use oer_esp32s31_ieee80211_mac::rx::pool::VENDOR_LARGE_RX_PAYLOAD_CAPACITY;
 
-use oer_esp32s31_wifi_sta::connected_rx::{ConnectedRxDispatch, ConnectedRxEvent, ConnectedRxSink};
+use oer_esp32s31_ieee80211_sta::connected_rx::{
+    ConnectedRxDispatch, ConnectedRxEvent, ConnectedRxSink,
+};
 
-use oer_network::{FrameLengthError, RxEnqueueError};
+use oer_network_interface::{FrameLengthError, RxEnqueueError};
 
 use super::{StaApStationRxRole, StagedRxFrame};
 
@@ -85,7 +87,7 @@ impl<'storage, O> StaApStationRxSink<'storage, O> {
         (self.storage, self.observer)
     }
 
-    fn retain_ethernet(&mut self, frame: oer_ieee80211::data::EthernetFrameParts<'_>) {
+    fn retain_ethernet(&mut self, frame: oer_ieee80211_mac::data::EthernetFrameParts<'_>) {
         if frame.ether_type == 0x888e {
             return;
         }
@@ -154,8 +156,8 @@ impl<O: ConnectedRxSink> ConnectedRxSink for StaApStationRxSink<'_, O> {
 
     fn publish_esp_now_v2(
         &mut self,
-        received: oer_wifi_softmac::EspNowReceivedV2<'_>,
-        metadata: oer_wifi_softmac::MacRxMetadata<oer_esp32s31_wifi_mac::rx::RxPhyInfo>,
+        received: oer_ieee80211_softmac::EspNowReceivedV2<'_>,
+        metadata: oer_ieee80211_softmac::MacRxMetadata<oer_esp32s31_ieee80211_mac::rx::RxPhyInfo>,
     ) {
         self.observer.publish_esp_now_v2(received, metadata);
     }
@@ -186,7 +188,7 @@ impl<O: ConnectedRxSink, const CAPACITY: usize, const SLOTS: usize>
             let payload =
                 &raw[ethernet.payload_offset..ethernet.payload_offset + ethernet.payload_length];
             self.publish(ConnectedRxEvent::Ethernet {
-                frame: oer_ieee80211::data::EthernetFrameParts {
+                frame: oer_ieee80211_mac::data::EthernetFrameParts {
                     destination: ethernet.destination,
                     source: ethernet.source,
                     ether_type: ethernet.ether_type,

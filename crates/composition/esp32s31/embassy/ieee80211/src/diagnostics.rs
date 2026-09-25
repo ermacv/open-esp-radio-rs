@@ -6,13 +6,15 @@
 
 #![cfg(feature = "diagnostics")]
 
-use oer_esp32s31_wifi_runtime::diagnostics::network::RxObservedEthernetFrame;
+use oer_esp32s31_ieee80211_runtime::diagnostics::network::RxObservedEthernetFrame;
 
-use oer_esp32s31_wifi_mac::rx::{HeSuSignal, HtDuplicateRxClassification, HtSignal, RxPhyInfo};
+use oer_esp32s31_ieee80211_mac::rx::{
+    HeSuSignal, HtDuplicateRxClassification, HtSignal, RxPhyInfo,
+};
 
-use oer_esp32s31_wifi_sta::connected_rx::ConnectedRxEvent;
+use oer_esp32s31_ieee80211_sta::connected_rx::ConnectedRxEvent;
 
-use oer_wifi_softmac::{MacRxEvidence, MacRxMetadata};
+use oer_ieee80211_softmac::{MacRxEvidence, MacRxMetadata};
 
 /// Evidence provenance retained by a decoded diagnostic fact.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -122,7 +124,7 @@ pub enum ConnectedRxObservation<'frame> {
     Ethernet {
         frame: RxObservedEthernetFrame<'frame>,
         qos_sequence:
-            Option<oer_esp32s31_wifi_runtime::diagnostics::network::RxQosSequenceObservation>,
+            Option<oer_esp32s31_ieee80211_runtime::diagnostics::network::RxQosSequenceObservation>,
         s_mpdu: ReceiveEvidence<bool>,
         ampdu: ReceiveEvidence<bool>,
         phy: ReceiveEvidence<DecodedRxPhyObservation>,
@@ -144,7 +146,9 @@ impl<'frame> ConnectedRxObservation<'frame> {
             } => Self::Ethernet {
                 frame: frame.into(),
                 qos_sequence:
-                    oer_esp32s31_wifi_runtime::diagnostics::network::decode_public_qos_sequence(raw),
+                    oer_esp32s31_ieee80211_runtime::diagnostics::network::decode_public_qos_sequence(
+                        raw,
+                    ),
                 s_mpdu: metadata.s_mpdu.into(),
                 ampdu: metadata.ampdu.into(),
                 phy: if include_phy {

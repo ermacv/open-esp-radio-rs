@@ -1,6 +1,6 @@
 //! Fault-close evidence is separate from normal reconnect and from RF loss.
 use super::{Duration, Evidence, Instant, Observation, Owner, Result};
-use open_esp_radio_hil_protocol::{
+use oer_hil_protocol::{
     BluetoothGattResetOutcome as Reset, BluetoothGattShutdown, BluetoothGattStopCause as Cause,
 };
 
@@ -103,7 +103,7 @@ mod tests {
             cold_releases: 2,
             old_hci_closed: true,
             bond_load_failures: 1,
-            traffic: open_esp_radio_hil_protocol::BluetoothGattEvidence {
+            traffic: oer_hil_protocol::BluetoothGattEvidence {
                 disconnections: 1,
                 ..Default::default()
             },

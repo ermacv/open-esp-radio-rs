@@ -10,7 +10,7 @@ use crate::datapath::{
     network::{DatapathNetwork, OwnedDatapathNetwork},
 };
 
-use oer_embassy_net::{
+use oer_embassy_net_owned::{
     NetworkInterfaceId, NoopRawMutex, OwnedEndpointResources, OwnedNetworkDevice,
 };
 
@@ -21,9 +21,9 @@ use oer_esp32s31_hal::types::{
     MacTxDetachReason, MacTxQueueDetached,
 };
 
-use oer_esp32s31_wifi::ordinary_tx::{WifiTxPowerPair, WifiTxResources};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxPowerPair, WifiTxResources};
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
     rx::HeGuardIntervalAndLtf,
     tx::{
@@ -38,18 +38,18 @@ use oer_esp32s31_wifi_mac::{
     },
 };
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     connected_control::ConnectedControlTx,
     single_mpdu_tx::{ActionTxConfig, ConnectedTxHandoff, ConnectedTxSecurity, SingleMpduTxConfig},
 };
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     extensions::wmm::parse_wmm_parameter_element,
     qos::WmmAccessCategory,
     station::{STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaTxSequenceCounters},
 };
 
-use oer_wifi_softmac::MacTxPlan;
+use oer_ieee80211_softmac::MacTxPlan;
 
 use super::*;
 
@@ -61,15 +61,16 @@ mod terminal;
 #[derive(Default)]
 struct RecordingAggregateTxObserver {
     observations: std::sync::Mutex<std::vec::Vec<AggregateTxObservation>>,
-    ordinary:
-        std::sync::Mutex<std::vec::Vec<Option<oer_esp32s31_wifi::ordinary_tx::OrdinaryTxOutcome>>>,
+    ordinary: std::sync::Mutex<
+        std::vec::Vec<Option<oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxOutcome>>,
+    >,
     terminal: std::sync::Mutex<std::vec::Vec<MacAmpduTxStatus<TxPhyRate>>>,
 }
 
 impl AggregateTxObserver for RecordingAggregateTxObserver {
     fn observe_station_ordinary(
         &self,
-        outcome: Option<oer_esp32s31_wifi::ordinary_tx::OrdinaryTxOutcome>,
+        outcome: Option<oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxOutcome>,
     ) {
         self.ordinary.lock().unwrap().push(outcome);
     }
@@ -105,8 +106,8 @@ impl RecordingAggregateTxObserver {
 const STATION: [u8; 6] = [2, 3, 4, 5, 6, 7];
 const BSSID: [u8; 6] = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25];
 const TEST_FRAME_CAPACITY: usize = 64;
-const TEST_HEADROOM: usize =
-    oer_esp32s31_wifi_mac::tx::ampdu::TX_AMPDU_METADATA_SIZE + STA_PROTECTED_QOS_ETHERNET_HEADROOM;
+const TEST_HEADROOM: usize = oer_esp32s31_ieee80211_mac::tx::ampdu::TX_AMPDU_METADATA_SIZE
+    + STA_PROTECTED_QOS_ETHERNET_HEADROOM;
 const TEST_TRAILER: usize = 12;
 const TEST_QUEUE_DEPTH: usize = 3;
 const TEST_SLOTS: usize = 3;
@@ -217,7 +218,7 @@ impl CcmpKeyHardware for Hardware {
     fn clear_ccmp_entry(&mut self, _index: u8) {}
 }
 
-impl oer_esp32s31_wifi_mac::tx::TxHardware for Hardware {
+impl oer_esp32s31_ieee80211_mac::tx::TxHardware for Hardware {
     fn prepare_bound_legacy_tx(
         &mut self,
         _dma: &dyn PreparedTxDma,
@@ -1610,7 +1611,7 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
 
 #[test]
 fn aggregate_abort_retains_frames_until_deadline_and_quarantines_failed_detach() {
-    use oer_esp32s31_wifi_mac::irq::EVENT_TX_TIMEOUT;
+    use oer_esp32s31_ieee80211_mac::irq::EVENT_TX_TIMEOUT;
 
     for detach_succeeds in [true, false] {
         let (mut device, network) = make_network();
@@ -1879,7 +1880,7 @@ fn research_sram_batch_uses_station_encode_retry_and_terminal_credit_return() {
 
     use oer_network_engine::PinnedBatchResources;
 
-    use oer_wifi_datapath::ReservedTxBatch;
+    use oer_ieee80211_datapath::ReservedTxBatch;
 
     type ResearchPool =
         PinnedDmaTxPool<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, TEST_QUEUE_DEPTH>;

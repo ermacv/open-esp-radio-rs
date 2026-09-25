@@ -7,13 +7,13 @@
 
 use core::pin::Pin;
 
-use oer_esp32s31_wifi::tx::{
+use oer_esp32s31_ieee80211::tx::{
     ControlTxConfig, WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer,
 };
 
-use oer_esp32s31_wifi_mac::tx::{TxSlot, runtime::WifiTxRuntimePolicy};
+use oer_esp32s31_ieee80211_mac::tx::{TxSlot, runtime::WifiTxRuntimePolicy};
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     control_tx::ControlTransmitter,
     tx_epoch::{StaTxEpoch, StaTxEpochError},
 };

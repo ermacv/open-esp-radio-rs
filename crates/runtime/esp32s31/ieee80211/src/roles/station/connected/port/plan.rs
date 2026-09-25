@@ -11,7 +11,7 @@ pub struct ConnectedStaRateConfig {
     pub ht_guard_interval_override: Option<HtGuardInterval>,
     pub he_mcs_override: Option<HeMcs>,
     pub he_guard_interval_and_ltf_override:
-        Option<oer_esp32s31_wifi_mac::rx::HeGuardIntervalAndLtf>,
+        Option<oer_esp32s31_ieee80211_mac::rx::HeGuardIntervalAndLtf>,
     pub he_dcm_override: Option<HeDcmRate>,
 }
 
@@ -58,8 +58,8 @@ pub struct ConnectedStaRxPolicy {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedStaConfigError {
     SecurityModeMismatch {
-        installed: oer_ieee80211::security::WifiSecurityMode,
-        material: oer_ieee80211::security::WifiSecurityMode,
+        installed: oer_ieee80211_mac::security::WifiSecurityMode,
+        material: oer_ieee80211_mac::security::WifiSecurityMode,
     },
     MissingStationInterface,
     InterfaceRole(VifRole),
@@ -111,7 +111,7 @@ pub struct ConnectedStaPlan {
     pub(super) power_save: Option<StaPowerSavePolicy>,
     pub(super) esp_now_rx: Option<EspNowRxEpoch>,
     pub(super) ccmp_rx_replay: Option<StaCcmpRxReplayRxEndpoint>,
-    pub(super) security: oer_ieee80211::security::WifiSecurityMode,
+    pub(super) security: oer_ieee80211_mac::security::WifiSecurityMode,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -146,7 +146,7 @@ pub enum ConnectedStaEspNowRxError {
 }
 
 impl ConnectedStaPlan {
-    pub const fn security_mode(&self) -> oer_ieee80211::security::WifiSecurityMode {
+    pub const fn security_mode(&self) -> oer_ieee80211_mac::security::WifiSecurityMode {
         self.security
     }
 
@@ -218,7 +218,7 @@ impl ConnectedStaPlan {
         &mut self,
         replay: StaCcmpRxReplayRxEndpoint,
     ) -> Result<(), ConnectedStaCcmpReplayFailure> {
-        if self.security != oer_ieee80211::security::WifiSecurityMode::Wpa2Personal {
+        if self.security != oer_ieee80211_mac::security::WifiSecurityMode::Wpa2Personal {
             return Err(ConnectedStaCcmpReplayFailure {
                 error: ConnectedStaCcmpReplayError::RequiresWpa2,
                 replay,
@@ -362,7 +362,7 @@ impl ConnectedStaPort {
         peer: ConnectedStaPeer,
         config: ConnectedStaConfig,
         interface: BoundVirtualInterface,
-        security: oer_ieee80211::security::WifiSecurityMode,
+        security: oer_ieee80211_mac::security::WifiSecurityMode,
     ) -> Result<ConnectedStaPlan, ConnectedStaPrepareFailure> {
         Self::prepare_for_interface_with_storage_security_and_ht_duplicate_certification::<
             AGGREGATE_SLOTS,
@@ -388,7 +388,7 @@ impl ConnectedStaPort {
             peer,
             config,
             interface,
-            oer_ieee80211::security::WifiSecurityMode::Wpa2Personal,
+            oer_ieee80211_mac::security::WifiSecurityMode::Wpa2Personal,
             request,
         )
     }
@@ -401,13 +401,13 @@ impl ConnectedStaPort {
         peer: ConnectedStaPeer,
         mut config: ConnectedStaConfig,
         interface: BoundVirtualInterface,
-        security: oer_ieee80211::security::WifiSecurityMode,
+        security: oer_ieee80211_mac::security::WifiSecurityMode,
         request: Option<HtDuplicateCertificationRequest>,
     ) -> Result<ConnectedStaPlan, ConnectedStaPrepareFailure> {
         // Trigger-based publication assumes the QoS/BA-connected contract.
         // Open owns neither, so erase even a syntactically valid opt-in before
         // it can reach control or TX runtime state.
-        if security == oer_ieee80211::security::WifiSecurityMode::Open {
+        if security == oer_ieee80211_mac::security::WifiSecurityMode::Open {
             config.tx.he_trigger_based = None;
         }
         if interface.interface.role != VifRole::Station {
@@ -468,7 +468,7 @@ impl ConnectedStaPort {
                 peer,
             });
         }
-        if security == oer_ieee80211::security::WifiSecurityMode::Wpa2Personal
+        if security == oer_ieee80211_mac::security::WifiSecurityMode::Wpa2Personal
             && !peer.link.peer_qos
         {
             return Err(ConnectedStaPrepareFailure {
@@ -581,9 +581,9 @@ const fn sta_tx_rate_policy(
         he_guard_interval_and_ltf_override: config.he_guard_interval_and_ltf_override,
         he_dcm_override: config.he_dcm_override,
         he_800ns_gi_ltf: if use_peer_capabilities && link.peer_supports_one_ltf_800ns_gi {
-            oer_esp32s31_wifi_mac::rx::HeGuardIntervalAndLtf::OneLtf800Ns
+            oer_esp32s31_ieee80211_mac::rx::HeGuardIntervalAndLtf::OneLtf800Ns
         } else {
-            oer_esp32s31_wifi_mac::rx::HeGuardIntervalAndLtf::TwoLtf800Ns
+            oer_esp32s31_ieee80211_mac::rx::HeGuardIntervalAndLtf::TwoLtf800Ns
         },
         peer_supports_ht_short_guard_interval: link.peer_supports_ht_short_guard_interval,
         peer_supports_ldpc: use_peer_capabilities && link.peer_supports_ldpc,

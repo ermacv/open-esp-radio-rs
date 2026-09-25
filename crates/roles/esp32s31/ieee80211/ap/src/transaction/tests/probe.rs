@@ -19,7 +19,7 @@ fn exercise_probe_completion(status: u8) {
     let ap = [2, 0, 0, 0, 0, 1];
     let mut hardware = Hardware::default();
     let mut beacon = [0; WPA2_BEACON_CAPACITY];
-    let mut peers = oer_wifi_ap::AccessPointPeerStorage::new();
+    let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
     let mut pairwise = crate::security::ApPairwiseKeyStorage::new();
     let engine = ApEngine::start(
         &mut hardware,
@@ -27,14 +27,14 @@ fn exercise_probe_completion(status: u8) {
             ap,
             Pmk::derive(b"password", b"ap").unwrap(),
             RsnGtk::new(1, true, [7; 16]).unwrap(),
-            oer_wifi_ap::AccessPointClientLimit::new(2).unwrap(),
-            oer_wifi_ap::AccessPointInactiveTimeout::default(),
+            oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
+            oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
             &mut peers,
         ),
         &mut beacon,
         &mut pairwise,
         &WifiSsid::new(b"ap").unwrap(),
-        oer_ieee80211::channel::WifiChannel::mhz20(6).unwrap(),
+        oer_ieee80211_mac::channel::WifiChannel::mhz20(6).unwrap(),
         100,
         2,
     )
@@ -94,12 +94,12 @@ fn exercise_probe_completion(status: u8) {
             .service_tx(
                 &mut hardware,
                 WifiTxWake::Interrupt {
-                    events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+                    events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
                 },
                 102 + attempt,
             )
             .unwrap();
-        if progress == oer_esp32s31_wifi::tx::WifiTxProgress::Complete {
+        if progress == oer_esp32s31_ieee80211::tx::WifiTxProgress::Complete {
             terminal = Some(action);
             break;
         }
@@ -162,7 +162,7 @@ fn exercise_probe_completion(status: u8) {
     mac.service_tx(
         &mut hardware,
         WifiTxWake::Interrupt {
-            events: oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
+            events: oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE,
         },
         10_102,
     )

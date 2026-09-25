@@ -5,30 +5,30 @@
   ],
   "dependencies": {
     "common": [
-      "open-esp-radio-hil-runner-core",
+      "oer-hil-runner-core",
       "rustix",
       "oer-process",
-      "open-esp-radio-hil-fixture-install",
+      "oer-hil-fixture-install",
       "clap",
       "tempfile",
-      "open-esp-radio-hil-protocol",
+      "oer-hil-protocol",
       "serde",
       "serde_json",
-      "open-esp-radio-hil-schema",
+      "oer-hil-schema",
       "sha2",
       "toml_edit"
     ],
     "ieee80211": [
-      "open-esp-radio-hil-runner-wifi"
+      "oer-hil-runner-ieee80211"
     ],
     "bluetooth": [
-      "open-esp-radio-hil-runner-bluetooth"
+      "oer-hil-runner-bluetooth"
     ],
     "system": [
-      "open-esp-radio-hil-runner-system"
+      "oer-hil-runner-system"
     ],
     "ieee802154": [
-      "open-esp-radio-hil-runner-ieee802154"
+      "oer-hil-runner-ieee802154"
     ]
   },
   "workload_domains": {

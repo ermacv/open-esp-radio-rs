@@ -4,7 +4,7 @@
 //! Only the live specialization can service RX or republish returned buffers.
 
 use super::*;
-use oer_esp32s31_wifi_dma::rx_ring::{RxResumeError, RxRingPaused, RxRingResumeFailure};
+use oer_esp32s31_ieee80211_dma::rx_ring::{RxResumeError, RxRingPaused, RxRingResumeFailure};
 
 impl<
     'storage,

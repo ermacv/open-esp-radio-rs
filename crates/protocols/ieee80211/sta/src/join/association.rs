@@ -1,6 +1,6 @@
 //! Association epoch, retransmission schedule and terminal response policy.
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     security::WifiSecurityMode,
     station::{
         AssociationResponse, StaDisconnect, StaSequenceCounter, parse_association_response,

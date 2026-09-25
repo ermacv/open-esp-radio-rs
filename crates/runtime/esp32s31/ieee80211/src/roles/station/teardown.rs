@@ -21,9 +21,9 @@ use crate::{
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use oer_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
-use oer_esp32s31_wifi_mac::{
+use oer_esp32s31_ieee80211_mac::{
     crypto::{
         CcmpKeyHardware, StaCcmpClearReport, StaGroupCcmpKeyMaterial, StaGroupCcmpSlot,
         clear_sta_ccmp_slots,
@@ -31,12 +31,12 @@ use oer_esp32s31_wifi_mac::{
     rx::{RxDma, RxRingError},
 };
 
-use oer_esp32s31_wifi_sta::{
+use oer_esp32s31_ieee80211_sta::{
     connected_rx::StaCcmpRxReplayControlEndpoint,
     single_mpdu_tx::{ConnectedTxSecurity, WifiTxResources},
 };
 
-use oer_ieee80211::station::StaTxSequenceCounters;
+use oer_ieee80211_mac::station::StaTxSequenceCounters;
 
 /// RX owner already parked by a wider physical composition.
 ///

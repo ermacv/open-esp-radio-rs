@@ -3,18 +3,18 @@
 #[cfg(any(feature = "diagnostics", test))]
 use super::{AccessPointControlObservation, ApRxDispatch, ApRxError};
 #[cfg(any(feature = "diagnostics", test))]
-use oer_esp32s31_wifi_mac::rx::{RxIngressConfig, RxSegment, view_normalized_rx_frame};
+use oer_esp32s31_ieee80211_mac::rx::{RxIngressConfig, RxSegment, view_normalized_rx_frame};
 #[cfg(any(feature = "diagnostics", test))]
-use oer_ieee80211::ccmp::CcmpHeader;
+use oer_ieee80211_mac::ccmp::CcmpHeader;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AccessPointRxRejectionReason {
-    Data(oer_ieee80211::data::DataDecapError),
+    Data(oer_ieee80211_mac::data::DataDecapError),
     PeerQosMismatch,
     PairwiseKeyId(u8),
-    Replay(oer_ieee80211::ccmp::CcmpReplayError),
+    Replay(oer_ieee80211_mac::ccmp::CcmpReplayError),
     KeyGenerationMismatch,
-    Fragment(oer_ieee80211::fragmentation::OpenDataFragmentError),
+    Fragment(oer_ieee80211_mac::fragmentation::OpenDataFragmentError),
     ReorderStorageExhausted,
     ReorderFrameTooLong,
     DeferredOutputCapacity,

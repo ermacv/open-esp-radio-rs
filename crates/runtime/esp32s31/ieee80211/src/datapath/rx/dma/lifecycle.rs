@@ -228,8 +228,8 @@ impl<
             STAGE_CAPACITY,
             STAGE_SLOTS,
         >,
-        ingress: oer_esp32s31_wifi_mac::rx::RxIngressConfig,
-        addresses: oer_ieee80211::vif::StaApRxAddresses,
+        ingress: oer_esp32s31_ieee80211_mac::rx::RxIngressConfig,
+        addresses: oer_ieee80211_mac::vif::StaApRxAddresses,
         delay: D,
     ) -> Self {
         Self {
@@ -509,8 +509,8 @@ impl<
             STAGE_CAPACITY,
             STAGE_SLOTS,
         >,
-        ingress: oer_esp32s31_wifi_mac::rx::RxIngressConfig,
-        addresses: oer_ieee80211::vif::StaApRxAddresses,
+        ingress: oer_esp32s31_ieee80211_mac::rx::RxIngressConfig,
+        addresses: oer_ieee80211_mac::vif::StaApRxAddresses,
     ) -> Self {
         Self {
             ring_lifetime: PhantomData,
@@ -619,7 +619,7 @@ impl<
     /// Preserve exact immutable layout evidence after a fail-closed RX exit.
     pub fn first_buffer_address_mismatch(
         &self,
-    ) -> Option<oer_esp32s31_wifi_dma::rx_storage::RxBufferAddressMismatch> {
+    ) -> Option<oer_esp32s31_ieee80211_dma::rx_storage::RxBufferAddressMismatch> {
         self.storage
             .first_buffer_address_mismatch(self.ring.buffer_addresses())
     }

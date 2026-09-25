@@ -7,7 +7,7 @@
 //! station TSF clock domain so executor queue latency cannot move the wake
 //! edge past the next mandatory listen/DTIM TBTT.
 
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     station_beacon::{StaBeaconObservation, StaTimObservation},
     station_power_save::StaPowerManagement,
 };

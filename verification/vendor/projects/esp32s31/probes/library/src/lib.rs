@@ -14,7 +14,7 @@ use oer_esp32s31_hal::owner::RadioRuntimeOwner;
 
 use oer_esp32s31_pac::RadioPhyRegisters;
 
-use oer_esp32s31_wifi_mac::ap_tsf::{reset_and_start_access_point_tsf, stop_access_point_tsf};
+use oer_esp32s31_ieee80211_mac::ap_tsf::{reset_and_start_access_point_tsf, stop_access_point_tsf};
 
 mod calibration_leaves;
 mod i2c;
@@ -668,7 +668,7 @@ oer_probe_macros::probe! {
     /// rate at byte `0x0c`. The wrapper performs only that ABI projection; rate
     /// selection is owned by the compiled production function.
     pub fn open_libpp_tx_retry_trace_rc_get_rate(_rate_context: u32, descriptor_address: u32) {
-        use oer_esp32s31_wifi_mac::tx::{
+        use oer_esp32s31_ieee80211_mac::tx::{
             LegacyRate, TxPhyRate,
             runtime::{OrdinaryRetryCounters, select_ordinary_retry_rate},
         };
@@ -737,7 +737,7 @@ oer_probe_macros::probe! {
 oer_probe_macros::probe! {
     /// ABI projection around the exact production status-four classifier.
     pub fn open_libpp_tx_retry_trace_lmac_process_tx_error(queue: u32, detail: u32, _selector: u32) {
-        use oer_esp32s31_wifi_mac::tx::{TxCompletion, TxCompletionDisposition, TxCookie};
+        use oer_esp32s31_ieee80211_mac::tx::{TxCompletion, TxCompletionDisposition, TxCookie};
 
         let completion = TxCompletion::new_validation(TxCookie(0), 4, detail as u8);
         match completion.disposition() {
@@ -765,9 +765,9 @@ const ORDINARY_TX_PROBE_BUFFER_SIZE: usize = 256;
 
 struct OrdinaryTxProbePower;
 
-impl oer_esp32s31_wifi::tx::WifiTxPowerProfile for OrdinaryTxProbePower {
-    fn power_pair(&self, _rate_code: u8) -> oer_esp32s31_wifi::tx::WifiTxPowerPair {
-        oer_esp32s31_wifi::tx::WifiTxPowerPair {
+impl oer_esp32s31_ieee80211::tx::WifiTxPowerProfile for OrdinaryTxProbePower {
+    fn power_pair(&self, _rate_code: u8) -> oer_esp32s31_ieee80211::tx::WifiTxPowerPair {
+        oer_esp32s31_ieee80211::tx::WifiTxPowerPair {
             primary: 1,
             alternate: 1,
         }
@@ -776,7 +776,7 @@ impl oer_esp32s31_wifi::tx::WifiTxPowerProfile for OrdinaryTxProbePower {
 
 struct OrdinaryTxProbeEntropy;
 
-impl oer_esp32s31_wifi::tx::WifiTxEntropy for OrdinaryTxProbeEntropy {
+impl oer_esp32s31_ieee80211::tx::WifiTxEntropy for OrdinaryTxProbeEntropy {
     fn next_u32(&mut self) -> u32 {
         0
     }
@@ -784,7 +784,7 @@ impl oer_esp32s31_wifi::tx::WifiTxEntropy for OrdinaryTxProbeEntropy {
 
 struct OrdinaryTxProbeTimer;
 
-impl oer_esp32s31_wifi::tx::WifiTxTimer for OrdinaryTxProbeTimer {
+impl oer_esp32s31_ieee80211::tx::WifiTxTimer for OrdinaryTxProbeTimer {
     fn now_micros(&self) -> u64 {
         1
     }
@@ -810,10 +810,10 @@ struct OrdinaryTxProbeHardware {
     publications: u8,
 }
 
-impl oer_esp32s31_wifi_mac::tx::TxHardware for OrdinaryTxProbeHardware {
+impl oer_esp32s31_ieee80211_mac::tx::TxHardware for OrdinaryTxProbeHardware {
     fn prepare_bound_legacy_tx(
         &mut self,
-        _dma: &dyn oer_esp32s31_wifi_mac::tx::PreparedTxDma,
+        _dma: &dyn oer_esp32s31_ieee80211_mac::tx::PreparedTxDma,
         _queue: u8,
         _program: oer_esp32s31_hal::types::MacLegacyTxProgram,
     ) -> bool {
@@ -822,7 +822,7 @@ impl oer_esp32s31_wifi_mac::tx::TxHardware for OrdinaryTxProbeHardware {
 
     fn start_bound_legacy_tx(
         &mut self,
-        _dma: &dyn oer_esp32s31_wifi_mac::tx::HardwareOwnedTxDma,
+        _dma: &dyn oer_esp32s31_ieee80211_mac::tx::HardwareOwnedTxDma,
         queue: u8,
     ) {
         self.publications = self.publications.saturating_add(1);
@@ -864,7 +864,7 @@ impl oer_esp32s31_wifi_mac::tx::TxHardware for OrdinaryTxProbeHardware {
     }
 }
 
-type OrdinaryTxProbeOwner = oer_esp32s31_wifi::ordinary_tx::OrdinaryTxOwner<
+type OrdinaryTxProbeOwner = oer_esp32s31_ieee80211::ordinary_tx::OrdinaryTxOwner<
     'static,
     OrdinaryTxProbePower,
     OrdinaryTxProbeEntropy,
@@ -885,12 +885,12 @@ unsafe impl<T> Sync for OrdinaryTxProbeCell<T> {}
 
 #[unsafe(link_section = ".dma.bss.ordinary_tx")]
 static ORDINARY_TX_DMA: OrdinaryTxProbeCell<
-    oer_esp32s31_wifi_dma::tx_storage::TxDmaStorage<ORDINARY_TX_PROBE_BUFFER_SIZE>,
+    oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorage<ORDINARY_TX_PROBE_BUFFER_SIZE>,
 > = OrdinaryTxProbeCell(core::cell::UnsafeCell::new(
-    oer_esp32s31_wifi_dma::tx_storage::TxDmaStorage::new(),
+    oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorage::new(),
 ));
 static ORDINARY_TX_SLOT: OrdinaryTxProbeCell<
-    core::mem::MaybeUninit<oer_esp32s31_wifi_mac::tx::TxSlot<ORDINARY_TX_PROBE_BUFFER_SIZE>>,
+    core::mem::MaybeUninit<oer_esp32s31_ieee80211_mac::tx::TxSlot<ORDINARY_TX_PROBE_BUFFER_SIZE>>,
 > = OrdinaryTxProbeCell(core::cell::UnsafeCell::new(core::mem::MaybeUninit::uninit()));
 static ORDINARY_TX_PROBE: OrdinaryTxProbeCell<(
     bool,
@@ -901,20 +901,20 @@ static ORDINARY_TX_PROBE: OrdinaryTxProbeCell<(
 )));
 
 fn initialize_ordinary_tx_probe() -> Result<OrdinaryTxProbeState, u32> {
-    use oer_esp32s31_wifi::{
+    use oer_esp32s31_ieee80211::{
         ordinary_tx::{OrdinaryTxInterface, OrdinaryTxOwner, OrdinaryTxPlan},
         tx::{WifiTxProgress, WifiTxResources},
     };
 
-    use oer_esp32s31_wifi_mac::tx::{
+    use oer_esp32s31_ieee80211_mac::tx::{
         LegacyRate, LegacyTxQueue, TxPhyRate, TxSlot, runtime::WifiTxRuntimePolicy,
     };
 
-    use oer_wifi_softmac::MacTxPlan;
+    use oer_ieee80211_softmac::MacTxPlan;
 
     // SAFETY: initialization runs once in the single-threaded probe image;
     // the resulting DMA owner permanently consumes this static allocation.
-    let dma = oer_esp32s31_wifi_dma::tx_storage::TxDmaStorage::pin_static(unsafe {
+    let dma = oer_esp32s31_ieee80211_dma::tx_storage::TxDmaStorage::pin_static(unsafe {
         &mut *ORDINARY_TX_DMA.0.get()
     })
     .map_err(|_| 10_u32)?;
@@ -963,7 +963,7 @@ fn initialize_ordinary_tx_probe() -> Result<OrdinaryTxProbeState, u32> {
 /// Drive one ACK-timeout edge through the exact compiled production TX owner.
 #[inline(never)]
 fn ordinary_tx_ack_timeout_state(output_address: u32) -> u32 {
-    use oer_esp32s31_wifi::tx::{WifiTxProgress, WifiTxWake};
+    use oer_esp32s31_ieee80211::tx::{WifiTxProgress, WifiTxWake};
 
     if output_address == 0 {
         return 4;
@@ -982,10 +982,10 @@ fn ordinary_tx_ack_timeout_state(output_address: u32) -> u32 {
     // Route the hardware completion through the exact production Embassy
     // interrupt handoff. This keeps the compiled comparison from bypassing
     // the adapter boundary by constructing `WifiTxWake` directly.
-    let irq = oer_esp32s31_wifi_runtime::datapath::irq::EmbassyMacIrqRuntime::<
+    let irq = oer_esp32s31_ieee80211_runtime::datapath::irq::EmbassyMacIrqRuntime::<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
     >::new();
-    irq.publish(oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE);
+    irq.publish(oer_esp32s31_ieee80211_mac::irq::EVENT_TX_COMPLETE);
     let Some(events) = irq.try_take_tx() else {
         return 8;
     };
@@ -1012,7 +1012,7 @@ fn ordinary_tx_ack_timeout_state(output_address: u32) -> u32 {
             contention_exponent: state
                 .owner
                 .policy()
-                .contention_exponent(oer_esp32s31_wifi_mac::tx::LegacyTxQueue::BestEffort),
+                .contention_exponent(oer_esp32s31_ieee80211_mac::tx::LegacyTxQueue::BestEffort),
         })
     };
     0

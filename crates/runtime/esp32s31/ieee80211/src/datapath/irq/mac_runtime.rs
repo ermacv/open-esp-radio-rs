@@ -1,7 +1,7 @@
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use embassy_sync::{blocking_mutex::raw::RawMutex, signal::Signal};
-use oer_esp32s31_wifi_mac::irq::{IrqSink, IrqState, IrqWork, next_irq_work};
+use oer_esp32s31_ieee80211_mac::irq::{IrqSink, IrqState, IrqWork, next_irq_work};
 
 /// Driver-owned S31 MAC interrupt handoff for one Embassy radio task.
 ///

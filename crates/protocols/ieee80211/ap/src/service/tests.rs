@@ -1,13 +1,13 @@
-const TEST_HT_CAPABILITIES: oer_ieee80211::ht::HtLocalCapabilities =
-    oer_ieee80211::ht::HtLocalCapabilities::new(0x100c, 0x03, 0xff, 0x01);
+const TEST_HT_CAPABILITIES: oer_ieee80211_mac::ht::HtLocalCapabilities =
+    oer_ieee80211_mac::ht::HtLocalCapabilities::new(0x100c, 0x03, 0xff, 0x01);
 
 use super::*;
-use oer_ieee80211::{
+use oer_ieee80211_mac::{
     beacon::WPA2_PERSONAL_CCMP_PSK_RSN_IE,
     channel::WifiChannel,
     ht::{ht_capability_ie, ht_peer_capabilities},
 };
-use oer_wifi_rsn::{
+use oer_ieee80211_rsn::{
     EapolKeyMessage, OwnedEapolFrame, PtkContext, RsnInterface,
     aes::software_aes128_key_unwrap,
     frames::{OwnedAssociationSecurityIes, OwnedRsnIe, RsnGtk, RsnTxFrame, parse_gtk_key_data},
@@ -50,7 +50,7 @@ fn signed_message2(
     supplicant_nonce: [u8; 32],
 ) -> OwnedEapolFrame<512> {
     let ptk = Pmk::derive(b"password", b"test-ap").unwrap().derive_ptk(
-        oer_wifi_rsn::Akm::Psk,
+        oer_ieee80211_rsn::Akm::Psk,
         PtkContext {
             authenticator_address: AP,
             supplicant_address: PEER,
@@ -61,7 +61,7 @@ fn signed_message2(
     let rsn_ie = OwnedRsnIe::<64>::try_copy(rsn_ie).unwrap();
     let security_ies = OwnedAssociationSecurityIes::<128>::try_copy(&rsn_ie, rsnxe).unwrap();
     let message2 = RsnTxFrame::<512>::message2_with_security_ies(
-        oer_wifi_rsn::Akm::Psk,
+        oer_ieee80211_rsn::Akm::Psk,
         AP,
         9,
         supplicant_nonce,
@@ -577,7 +577,7 @@ fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
     assert_eq!(retried_message1.as_bytes(), message1.as_bytes());
 
     let ptk = Pmk::derive(b"password", b"test-ap").unwrap().derive_ptk(
-        oer_wifi_rsn::Akm::Psk,
+        oer_ieee80211_rsn::Akm::Psk,
         PtkContext {
             authenticator_address: AP,
             supplicant_address: PEER,
@@ -586,7 +586,7 @@ fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
         },
     );
     let rsn = OwnedRsnIe::<64>::try_copy(&SUPPLICANT_RSN).unwrap();
-    let message2 = RsnTxFrame::<512>::message2(oer_wifi_rsn::Akm::Psk, AP, 9, SNONCE, &rsn)
+    let message2 = RsnTxFrame::<512>::message2(oer_ieee80211_rsn::Akm::Psk, AP, 9, SNONCE, &rsn)
         .unwrap()
         .authenticate(&ptk);
     let message2 =
@@ -623,7 +623,7 @@ fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
         Err(RsnFrameError::RsnIeMismatch)
     ));
 
-    let message4 = RsnTxFrame::<512>::message4(oer_wifi_rsn::Akm::Psk, AP, 10)
+    let message4 = RsnTxFrame::<512>::message4(oer_ieee80211_rsn::Akm::Psk, AP, 10)
         .unwrap()
         .authenticate(&ptk);
     let message4 =
@@ -695,7 +695,7 @@ fn unauthenticated_eapol_cannot_poison_or_refresh_a_securing_peer() {
         .unwrap();
     let original_deadline = service.peer_status(PEER).unwrap().deadline_micros;
 
-    let replay_mismatch = RsnTxFrame::<512>::message4(oer_wifi_rsn::Akm::Psk, AP, 77).unwrap();
+    let replay_mismatch = RsnTxFrame::<512>::message4(oer_ieee80211_rsn::Akm::Psk, AP, 77).unwrap();
     let replay_mismatch = OwnedEapolFrame::<512>::try_copy(
         RsnInterface::AccessPoint,
         PEER,
@@ -707,7 +707,8 @@ fn unauthenticated_eapol_cannot_poison_or_refresh_a_securing_peer() {
         ApWpa2Progress::None
     ));
 
-    let unsupported = RsnTxFrame::<512>::message1(oer_wifi_rsn::Akm::Psk, AP, 9, ANONCE).unwrap();
+    let unsupported =
+        RsnTxFrame::<512>::message1(oer_ieee80211_rsn::Akm::Psk, AP, 9, ANONCE).unwrap();
     let unsupported =
         OwnedEapolFrame::<512>::try_copy(RsnInterface::AccessPoint, PEER, unsupported.as_bytes())
             .unwrap();
@@ -753,7 +754,7 @@ fn unauthenticated_eapol_cannot_poison_or_refresh_a_securing_peer() {
     ));
 
     let ptk = Pmk::derive(b"password", b"test-ap").unwrap().derive_ptk(
-        oer_wifi_rsn::Akm::Psk,
+        oer_ieee80211_rsn::Akm::Psk,
         PtkContext {
             authenticator_address: AP,
             supplicant_address: PEER,
@@ -761,7 +762,7 @@ fn unauthenticated_eapol_cannot_poison_or_refresh_a_securing_peer() {
             supplicant_nonce: SNONCE,
         },
     );
-    let valid_m4 = RsnTxFrame::<512>::message4(oer_wifi_rsn::Akm::Psk, AP, 10)
+    let valid_m4 = RsnTxFrame::<512>::message4(oer_ieee80211_rsn::Akm::Psk, AP, 10)
         .unwrap()
         .authenticate(&ptk);
     let valid_m4 =

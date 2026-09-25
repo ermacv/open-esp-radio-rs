@@ -11,9 +11,9 @@ use oer_esp32s31_hal::types::{
     MacTxQueueDetached,
 };
 
-use oer_esp32s31_wifi::ordinary_tx::WifiTxPowerPair;
+use oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerPair;
 
-use oer_esp32s31_wifi_mac::tx::{
+use oer_esp32s31_ieee80211_mac::tx::{
     HardwareOwnedTxDma, PreparedTxDma, TxSlot, runtime::WifiTxRuntimePolicy,
 };
 
@@ -167,9 +167,9 @@ fn running_scan_tx_returns_the_control_owner_after_a_probe() {
     block_on(control.transmit_probe_request(
         &mut hardware,
         ProbeRequest {
-            destination: oer_ieee80211::management::BROADCAST_ADDRESS,
+            destination: oer_ieee80211_mac::management::BROADCAST_ADDRESS,
             source: [2, 3, 4, 5, 6, 7],
-            bssid: oer_ieee80211::management::BROADCAST_ADDRESS,
+            bssid: oer_ieee80211_mac::management::BROADCAST_ADDRESS,
             sequence_number: 10,
             ssid: b"",
             supported_rates: &[0x82, 0x84],

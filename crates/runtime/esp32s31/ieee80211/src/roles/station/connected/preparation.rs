@@ -9,9 +9,9 @@ use crate::roles::station::connected::port::{
     ConnectedStaConfigError, ConnectedStaPlan, ConnectedStaPort,
 };
 
-use oer_esp32s31_wifi_sta::attempt::{StaAttemptSecurity, StaInstalledSecurity};
+use oer_esp32s31_ieee80211_sta::attempt::{StaAttemptSecurity, StaInstalledSecurity};
 
-use oer_wifi_embassy::station_network::{
+use oer_ieee80211_runtime::station_network::{
     StationNetworkLink, StationNetworkResources, start_station_network,
 };
 
@@ -75,8 +75,8 @@ impl<'security, R, E, S, N, T> StartedNetworkConnection<'security, R, E, S, N, T
     pub const fn security_modes(
         &self,
     ) -> (
-        oer_ieee80211::security::WifiSecurityMode,
-        oer_ieee80211::security::WifiSecurityMode,
+        oer_ieee80211_mac::security::WifiSecurityMode,
+        oer_ieee80211_mac::security::WifiSecurityMode,
     ) {
         (self.installed_security.mode(), self.security.mode())
     }

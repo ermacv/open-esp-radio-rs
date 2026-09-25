@@ -1,9 +1,9 @@
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use oer_embassy_net::{LinkState, NetworkInterfaceId, OwnedEndpointResources};
-use oer_esp32s31_wifi_runtime::datapath::network::{
+use oer_embassy_net_owned::{LinkState, NetworkInterfaceId, OwnedEndpointResources};
+use oer_esp32s31_ieee80211_runtime::datapath::network::{
     DatapathNetwork, DualOwnedDatapathNetwork, OwnedDatapathNetwork,
 };
-use oer_esp32s31_wifi_runtime::datapath::{PinnedTxPool, PinnedTxResources, SoftwareTxFrame};
+use oer_esp32s31_ieee80211_runtime::datapath::{PinnedTxPool, PinnedTxResources, SoftwareTxFrame};
 use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPool, PacketPoolStorage};
 
 #[path = "owned_datapath_network/airtime.rs"]

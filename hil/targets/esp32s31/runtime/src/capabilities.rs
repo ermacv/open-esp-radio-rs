@@ -1,6 +1,6 @@
 //! HIL image capabilities, independent of whether the product task is linked.
 
-use open_esp_radio_hil_protocol::{Capabilities, FeatureCapabilities, MAX_WIRE_FRAME_BYTES};
+use oer_hil_protocol::{Capabilities, FeatureCapabilities, MAX_WIRE_FRAME_BYTES};
 
 pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool =
     cfg!(feature = "connected-datapath-poll-telemetry");

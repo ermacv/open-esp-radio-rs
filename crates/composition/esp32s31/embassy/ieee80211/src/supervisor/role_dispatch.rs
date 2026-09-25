@@ -90,18 +90,19 @@ impl ProductionWifiEpochRunner {
             channel_count += 1;
         }
         let scan_request = StationScanRequest::new(
-            oer_esp32s31_wifi_sta::scan::StaScanConfig::new(request.dwell_millis())
+            oer_esp32s31_ieee80211_sta::scan::StaScanConfig::new(request.dwell_millis())
                 .expect("WifiScanRequest stores a nonzero dwell"),
             &channels[..channel_count],
             station.station_address(),
             &[],
             &ESP32S31_STATION_PROBE_RATES,
-            oer_ieee80211::security::WifiSecurityMode::Wpa2Personal,
+            oer_ieee80211_mac::security::WifiSecurityMode::Wpa2Personal,
         )
         .with_descriptor_capacity(ESP32S31_STATION_PROBE_DESCRIPTOR_CAPACITY)
         .without_candidate_selection();
-        let mut sequence =
-            oer_ieee80211::station::StaSequenceCounter::new((self.trng.random() & 0x0fff) as u16);
+        let mut sequence = oer_ieee80211_mac::station::StaSequenceCounter::new(
+            (self.trng.random() & 0x0fff) as u16,
+        );
         let (scan_table, scan_frame) = station.scan_storage();
         let scan = run_esp32s31_station_scan(
             StationScanResources {
@@ -122,7 +123,7 @@ impl ProductionWifiEpochRunner {
         )
         .await;
         let completed = matches!(scan.decision, StationScanDecision::NoCandidate { .. });
-        let oer_esp32s31_wifi_runtime::roles::station::StationScanReturned {
+        let oer_esp32s31_ieee80211_runtime::roles::station::StationScanReturned {
             hardware: registers,
             receive,
             control,

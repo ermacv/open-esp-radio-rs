@@ -21,7 +21,7 @@ use oer_esp32s31_hal::{
     types::{MacInterruptMask, MacPowerInterruptObservation, MacPowerWakeCause},
 };
 
-use oer_esp32s31_wifi_mac::irq::{
+use oer_esp32s31_ieee80211_mac::irq::{
     IrqSink, MacInterruptPauseRoute, MacInterruptRoute, PowerIrqSink, handle_mac_irq,
     handle_power_irq,
 };

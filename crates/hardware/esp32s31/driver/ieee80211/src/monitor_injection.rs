@@ -8,9 +8,9 @@
 
 use crate::ordinary_tx::{TX_FCS_SIZE, TX_METADATA_SIZE};
 
-use oer_esp32s31_wifi_mac::tx::LegacyRate;
+use oer_esp32s31_ieee80211_mac::tx::LegacyRate;
 
-use oer_wifi_softmac::{
+use oer_ieee80211_softmac::{
     MonitorInjectionChannelBinding, MonitorInjectionRate, MonitorInjectionRequest, MonitorSink,
     WifiStandaloneMonitorPlan,
 };

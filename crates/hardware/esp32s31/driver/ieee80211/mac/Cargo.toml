@@ -31,6 +31,11 @@ riscv = { version = "0.15", optional = true }
 [lints]
 workspace = true
 
+[package.metadata.docs.rs]
+# Chip APIs exist only for the chip target; document them there alone.
+default-target = "riscv32imafc-unknown-none-elf"
+targets = []
+
 [package.metadata.open-radio]
 scope = "production"
 layer = "hardware"

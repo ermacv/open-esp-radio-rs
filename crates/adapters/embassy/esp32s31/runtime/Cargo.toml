@@ -41,6 +41,11 @@ unsafe_op_in_unsafe_fn = "deny"
 [lints.clippy]
 disallowed_methods = "deny"
 
+[package.metadata.docs.rs]
+# Chip APIs exist only for the chip target; document them there alone.
+default-target = "riscv32imafc-unknown-none-elf"
+targets = []
+
 [package.metadata.open-radio]
 scope = "production"
 layer = "adapter"

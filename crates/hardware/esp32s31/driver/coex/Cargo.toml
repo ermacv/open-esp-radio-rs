@@ -10,6 +10,11 @@ description = "Allocation-free ESP32-S31 radio coexistence policy and timer owne
 [lints]
 workspace = true
 
+[package.metadata.docs.rs]
+# Chip APIs exist only for the chip target; document them there alone.
+default-target = "riscv32imafc-unknown-none-elf"
+targets = []
+
 [package.metadata.open-radio]
 scope = "production"
 layer = "hardware"

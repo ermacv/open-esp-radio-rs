@@ -11,7 +11,7 @@ pub mod standalone;
 pub mod vendor;
 
 mod artifacts;
-mod common;
+pub(crate) mod common;
 
 pub use metadata::run as metadata;
 pub use network::run as network;

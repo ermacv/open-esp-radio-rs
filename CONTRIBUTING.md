@@ -42,13 +42,12 @@ Run commands from the repository root unless the component guide says otherwise.
 | --- | --- |
 | Markdown or catalog | `cargo xtask check docs`; for portal behavior also follow [portal checks](tools/docs/README.md) |
 | Rust behavior | `cargo test -p PACKAGE FILTER --locked --offline`, confirming the selector executes tests; `cargo fmt --all -- --check` |
-| Public API | `cargo xtask check docs --package PACKAGE` plus focused behavior/compile tests |
-| Private API | Add `--private` to the package documentation check |
+| Public API | `cargo xtask doc` plus focused behavior/compile tests; chip crates document their target through `[package.metadata.docs.rs]` |
 | Hardware, ownership or dependency boundary | Relevant target, architecture, safety and artifact checks from [repository tooling](tools/repo/README.md) |
 | Register publication | `cargo registers generate --manifest registers/esp32s31/publication/registers.toml --check` |
 | Hardware readiness claim | Applicable dated [HIL](hil/README.md) evidence and independent [qualification](qualification/README.md) |
 
-`cargo xtask check docs --full` is the complete API checkpoint;
+`cargo xtask doc` is the complete API checkpoint;
 `cargo xtask check source-only` is the full source checkpoint. Run them when the
 change or final checkpoint requires their coverage, not after every paragraph.
 Passing a focused check is not full repository coverage. Documentation examples

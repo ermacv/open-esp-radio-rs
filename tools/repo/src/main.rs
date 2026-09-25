@@ -31,6 +31,9 @@ enum Task {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<std::ffi::OsString>,
     },
+    /// Build API documentation from each package's `[package.metadata.docs.rs]`
+    /// with `RUSTDOCFLAGS=-D warnings`, then run host doctests.
+    Doc,
     Check {
         #[command(subcommand)]
         check: Check,
@@ -135,6 +138,7 @@ fn run() -> Result<std::process::ExitCode> {
         Task::Build {
             build: Build::Hostapd,
         } => oer_xtask::hostapd::build(&ctx),
+        Task::Doc => oer_xtask::doc::run(&ctx),
         Task::Check { check } => match check {
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),
             Check::Architecture => checks::architecture::run(&ctx),

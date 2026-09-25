@@ -7,6 +7,11 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/ermacv/open-esp-radio-rs"
 description = "Product-level ESP32-S31 Wi-Fi composition for Embassy and esp-hal"
 
+[package.metadata.docs.rs]
+# Chip APIs exist only for the chip target; document them there alone.
+default-target = "riscv32imafc-unknown-none-elf"
+targets = []
+
 [package.metadata.open-radio]
 scope = "production"
 layer = "composition"

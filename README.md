@@ -90,10 +90,10 @@ cargo fmt --all -- --check
 cargo xtask check docs
 ```
 
-For API changes, use `cargo xtask check docs --package PACKAGE`; add `--private`
-when reviewing private API. Run focused package tests and the relevant target
-profile while iterating. `cargo xtask check docs --full` builds the complete API
-matrix.
+For API changes, run `cargo xtask doc`: one `cargo doc --no-deps` per
+documentation target with `RUSTDOCFLAGS=-D warnings`, as each package's
+`[package.metadata.docs.rs]` selects, and `cargo test --doc --workspace`. Run
+focused package tests and the relevant target profile while iterating.
 
 Use `cargo xtask check source-only` for the complete source checkpoint. It also needs the embedded target and the selected
 toolchain's `llvm-tools-preview` component. It checks dependency and ownership

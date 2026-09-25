@@ -56,10 +56,11 @@ cargo qualification validate --manifest qualification/targets/esp32s31/wifi-sta.
 cargo xtask check source-only
 ```
 
-Use `cargo xtask check docs` for Markdown/catalog changes and
-`cargo xtask check docs --package <package>` for API changes. Add `--private`
-when private API is affected. `cargo xtask check docs --full` and
-`cargo xtask check source-only` are full checkpoints, not the default after
+Use `cargo xtask check docs` for Markdown/catalog changes and `cargo xtask doc`
+for API changes: it runs `cargo doc --no-deps` with `RUSTDOCFLAGS=-D warnings`
+for every package's `[package.metadata.docs.rs]` target and features, plus
+`cargo test --doc --workspace`. `cargo xtask check source-only` is a full
+checkpoint, not the default after
 an individual edit. Run the relevant target, architecture, safety and artifact
 checks when changing their ownership boundaries; a partial check is not full
 repository coverage.

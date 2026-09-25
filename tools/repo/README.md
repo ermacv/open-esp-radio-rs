@@ -27,6 +27,7 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask check examples` | Target type checks of the four examples, station/AP network profiles, both BLE smoke configurations and host application-library tests |
 | `cargo xtask check docs --list` | List the fast static plan without running checks; combine with `--full` or `--package` to inspect those plans |
 | `cargo xtask check docs` | Check owned Markdown links and static qualification catalogs/programs; no rustdoc, doctests or MCU builds |
+| `cargo xtask doc` | Build API documentation as docs.rs would: one `cargo doc --no-deps` per `[package.metadata.docs.rs]` target with `RUSTDOCFLAGS=-D warnings`, then `cargo test --doc --workspace` |
 | `cargo xtask check docs --package oer-memory` | Also build public rustdoc and run applicable doctests for the selected package’s supported profiles; repeat `--package` for more packages, add `--private` for private API |
 | `cargo xtask check docs --full` | Check every public/private rustdoc profile, host doctest and MCU consumer, plus links and static views; at most two independent rustdoc caches run concurrently |
 | `cargo xtask check docs --full --jobs 1 --export-html` | Use one rustdoc worker and additionally copy complete isolated HTML snapshots; the required gate does not need this export |

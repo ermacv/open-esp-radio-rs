@@ -9,6 +9,7 @@ use std::{
 pub mod blobray;
 pub mod cargo;
 pub mod checks;
+pub mod doc;
 pub mod firmware;
 pub mod graph;
 pub mod hil;

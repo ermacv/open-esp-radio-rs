@@ -106,14 +106,15 @@ meaning of evidence or inventing a replacement proof.
 Use the repository's pinned toolchain for examples and API documentation.
 `cargo xtask check docs` checks owned local Markdown links and checks/renders
 static qualification catalogs and programs. It does not build API documentation.
-For API changes, use `cargo xtask check docs --package PACKAGE`: public rustdoc
-and applicable host doctests run for that package's supported feature profiles.
-Repeat `--package` to select more packages; `--private` includes their private API.
-
-`cargo xtask check docs --full` checks the complete public/private rustdoc matrix,
-host doctests and MCU compile-only consumers. Run this expensive mode separately
-and explicitly; `cargo xtask check source-only` includes only static documentation
-checks, never public/private rustdoc builds. Add `--list` to any scope to inspect its plan
+API documentation follows docs.rs conventions: each package is documented once,
+for the target and features in its `[package.metadata.docs.rs]` table. Portable
+and host packages use the host; chip packages set
+`default-target = "riscv32imafc-unknown-none-elf"`, because their API exists
+only there. `cargo xtask doc` runs one `cargo doc --no-deps` per documentation
+target with `RUSTDOCFLAGS=-D warnings`, so broken intra-doc links fail, and
+`cargo test --doc --workspace` for all host doctests. Private items are
+documented locally with `cargo doc --document-private-items`.
+`cargo xtask check source-only` includes only static documentation checks. Add `--list` to any scope to inspect its plan
 without executing checks. `--export-html` exports isolated rustdoc snapshots for
 package/full scopes.
 

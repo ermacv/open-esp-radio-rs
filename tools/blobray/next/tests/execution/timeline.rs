@@ -207,7 +207,6 @@ fn unknown_and_inaccessible_reads_are_not_equal_known_transactions() {
     );
     let (m, rows) = run(&f, r.clone());
     assert_eq!(m.verdict, Some(ComparisonVerdict::Incomplete));
-    assert!(!m.complete);
     assert!(matches!(
         transactions(&rows)[0].1,
         MemoryTransaction::Read {

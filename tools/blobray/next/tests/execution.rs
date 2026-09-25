@@ -528,7 +528,8 @@ fn signed_loads_and_phase_stack_reset_are_explicit() {
     let run = f.run(r, budget());
     let facts = f.read(&run.execution.unwrap());
     assert_eq!(facts["records"][0]["value"]["stop"]["kind"], "returned");
-    assert_eq!(facts["records"][1]["value"]["stop"]["kind"], "incomplete");
+    // The reset stack byte is unknown, so the loaded return word is too.
+    assert!(facts["records"][1]["value"]["stop"]["low"].is_null());
 }
 
 #[test]

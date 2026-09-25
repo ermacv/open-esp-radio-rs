@@ -44,8 +44,8 @@ fn root_callee_saved_registers_start_known_and_arguments_stay_explicit() {
         .map(|r| r["value"]["result"]["verdict"].as_str().unwrap())
         .collect();
     assert_eq!(verdicts, ["MATCH", "MATCH"]);
-    // An argument register that is not supplied stays unknown: `sw a1, 0(sp)`.
-    let f = Fixture::new(&[0xff010113, 0x00b12023, 0x01010113, 0x00008067]);
+    // An argument register that is not supplied stays unknown: `mv a0, a1`.
+    let f = Fixture::new(&[0x00058513, 0x00008067]);
     let mut request = f.request();
     request.cases[0].vendor.arguments = vec![Some(0)];
     request.cases[0].replacement = Some(request.cases[0].vendor.clone());
@@ -57,8 +57,8 @@ fn root_callee_saved_registers_start_known_and_arguments_stay_explicit() {
         .iter()
         .find(|r| r["value"]["kind"] == "outcome")
         .unwrap()["value"]["stop"];
-    assert_eq!(stop["reason"]["kind"], "unknown-register");
-    assert_eq!(stop["reason"]["register"], 11);
+    assert_eq!(stop["kind"], "returned");
+    assert!(stop["low"].is_null(), "{stop}");
 }
 
 fn phases(f: &Fixture, lifetime: RegionLifetime) -> ExecutionRequest {

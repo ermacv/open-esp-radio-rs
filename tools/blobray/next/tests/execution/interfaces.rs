@@ -364,11 +364,9 @@ fn partial_slot_writes_update_target_associations_and_unknowns_do_not_become_cal
     assert!(rows.iter().any(|r| matches!(
         r,
         ExecutionEvidence::Outcome {
+            // The unknown slot loads an unknown target, which cannot be called.
             stop: ExecutionStop::Incomplete {
-                reason: ExecutionGap::Memory {
-                    address: 0x300c,
-                    access: MemoryAccess::Read
-                },
+                reason: ExecutionGap::UnknownRegister { register: 6 },
                 ..
             },
             ..

@@ -49,14 +49,15 @@ fn register_and_stack_words_execute_compare_and_replay_through_both_frontends() 
 
 #[test]
 fn unknown_words_override_seeded_stack_and_omitted_registers_stay_unknown() {
-    for (code, words, expected) in [
-        (vec![0x00012503, 0x00008067], vec![None; 9], "memory"),
-        (
-            vec![0x00158513, 0x00008067],
-            vec![Some(5)],
-            "unknown-register",
-        ),
-    ] {
+    for (code, words) in [
+        // An unknown stack word loads an unknown value; an omitted register
+        // (`addi a0, a1, 1`) makes the result unknown. Neither is provable.
+        vec![0x00012503, 0x00008067],
+        vec![0x00158513, 0x00008067],
+    ]
+    .into_iter()
+    .zip([vec![None; 9], vec![Some(5)]])
+    {
         let f = Fixture::new(&code);
         let mut request = f.request();
         request.vendor.stack.fill = Some(0xff);
@@ -68,12 +69,8 @@ fn unknown_words_override_seeded_stack_and_omitted_registers_stay_unknown() {
         let result = f.read(&run.execution.unwrap());
         assert_eq!(result["summary"]["manifest"]["verdict"], "INCOMPLETE");
         let stop = &result["records"][0]["value"]["stop"];
-        assert_eq!(stop["reason"]["kind"], expected);
-        if expected == "memory" {
-            assert_eq!(stop["reason"]["address"], 0x8ff0);
-        } else {
-            assert_eq!(stop["reason"]["register"], 11);
-        }
+        assert_eq!(stop["kind"], "returned");
+        assert!(stop["low"].is_null(), "{stop}");
     }
     // A supplied unknown word is harmless when code overwrites it before use.
     let f = Fixture::new(&[0x00500513, 0x00008067]);
@@ -113,10 +110,7 @@ fn stack_alignment_capacity_and_unknown_padding_are_explicit() {
     let run = f.run(request, budget());
     let result = f.read(&run.execution.unwrap());
     assert_eq!(result["summary"]["manifest"]["verdict"], "INCOMPLETE");
-    assert_eq!(
-        result["records"][0]["value"]["stop"]["reason"]["address"],
-        0x8ff4
-    );
+    assert!(result["records"][0]["value"]["stop"]["low"].is_null());
 }
 
 #[test]
@@ -234,7 +228,7 @@ fn case_stack_fill_replaces_the_target_fill_for_both_sides() {
         assert_eq!(returned[side].1["low"], 0x5a5a_5a5a_u32);
         assert_eq!(returned[2 + side].1["low"], 0xa5a5_a5a5_u32);
         // Without a case fill, the target's unknown stack stays unknown.
-        assert_eq!(returned[4 + side].1["kind"], "incomplete");
+        assert!(returned[4 + side].1["low"].is_null());
     }
     assert_eq!(result["summary"]["manifest"]["verdict"], "INCOMPLETE");
 }

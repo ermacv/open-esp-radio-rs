@@ -89,13 +89,11 @@ fn explicit_return_words_clobbers_and_captured_boundaries_are_distinct() {
     assert_eq!(model(&rows, 0).calls, 1);
     let f = Fixture::new(&code(&[0x00060513])); // consume caller-saved a2 after model
     let (m, rows) = run(&f, request(&f, vec![response(Some(7))]));
-    assert!(!m.complete);
+    // The clobbered register stays unknown through the move into the return.
+    assert_eq!(m.verdict, Some(ComparisonVerdict::Incomplete));
     assert!(matches!(
         stop(&rows, 0),
-        ExecutionStop::Incomplete {
-            reason: ExecutionGap::UnknownRegister { register: 12 },
-            ..
-        }
+        ExecutionStop::Returned { low: None, .. }
     ));
     assert_eq!(model(&rows, 0).status, ModelStatus::Complete);
     let f = Fixture::new(&[0x00008413, 0x00c000ef, 0x00040067, 0x00000013, 0x00000073]);

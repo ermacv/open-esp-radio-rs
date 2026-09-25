@@ -471,3 +471,47 @@ fn projected_final_state_depends_on_its_last_writers() {
         set(&[0x1004, 0x1010, 0x1014, 0x1020])
     );
 }
+
+/// A store of the unknown `tp` through `a3`, then the returned 5.
+const UNKNOWN_STORE: [u32; 3] = [
+    0x0046a023, // 0x1000 sw tp, 0(a3)
+    0x00500513, // 0x1004 li a0, 5
+    0x00008067, // 0x1008 ret
+];
+
+#[test]
+fn an_unknown_register_stored_to_memory_leaves_it_unknown() {
+    let mut returns = relation();
+    returns.returns.low = true;
+    let mut input = flow_invocation();
+    input.observe_memory[0].address = RAM;
+    let result = compare(&UNKNOWN_STORE, input, returns.clone(), &[]).unwrap();
+    assert_eq!(result.verdict, Some(ComparisonVerdict::Match));
+    let chunk = result
+        .records
+        .iter()
+        .find_map(|r| match r {
+            ExecutionEvidence::FinalMemory {
+                replacement: true,
+                chunk,
+                ..
+            } => Some(*chunk),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(chunk.known & 0xf, 0, "the stored bytes are unknown");
+    // A device would observe the value, so it never accepts an unknown one.
+    let mut device = device_invocation(0);
+    device.arguments[3] = Some(MMIO);
+    let result = compare(&UNKNOWN_STORE, device, returns, &[]).unwrap();
+    assert!(result.records.iter().any(|r| matches!(
+        r,
+        ExecutionEvidence::Outcome {
+            stop: ExecutionStop::Incomplete {
+                reason: ExecutionGap::UnknownRegister { register: 4 },
+                ..
+            },
+            ..
+        }
+    )));
+}

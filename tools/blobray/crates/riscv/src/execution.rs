@@ -54,7 +54,7 @@ fn decode(bytes: &[u8]) -> Option<Decoded> {
 }
 impl Executor for RiscvExecutor {
     fn identity(&self) -> &'static str {
-        "rv32imac/execution-11/rv-asm-0.2.1"
+        "rv32imac/execution-12/rv-asm-0.2.1"
     }
     fn execute(
         &self,
@@ -298,11 +298,12 @@ impl Executor for RiscvExecutor {
                                 Operand::Register(r) => regs[r as usize],
                             }
                         };
-                        let (Some(a), Some(b)) = (operand(left), operand(right)) else {
-                            let r=match [left,right].into_iter().find(|o|matches!(o,Operand::Register(r) if regs[*r as usize].is_none())).unwrap(){Operand::Register(r)=>r,_=>unreachable!()};
-                            stop!(ExecutionGap::UnknownRegister { register: r });
+                        // An unknown operand yields an unknown result; only a
+                        // decision, an address or an observed value stops.
+                        regs[dest as usize] = match (operand(left), operand(right)) {
+                            (Some(a), Some(b)) => Some(integer(op, a, b)),
+                            _ => None,
                         };
-                        regs[dest as usize] = Some(integer(op, a, b));
                     }
                     SemanticOp::Upper {
                         dest,
@@ -330,27 +331,39 @@ impl Executor for RiscvExecutor {
                         }
                         let address = reg!(base).wrapping_add_signed(displacement);
                         if kind == MemoryKind::Load {
-                            let Some(mut value) =
-                                memory.read(address, width, MemoryAccess::Read, control)?
-                            else {
-                                stop!(ExecutionGap::Memory {
+                            let loaded = match memory.load(address, width, control)? {
+                                MemoryReadValue::Known { value } => Some(match (signed, width) {
+                                    (true, 1) => value as i8 as i32 as u32,
+                                    (true, 2) => value as i16 as i32 as u32,
+                                    _ => value,
+                                }),
+                                // Unknown bytes load an unknown value.
+                                MemoryReadValue::Unknown => None,
+                                MemoryReadValue::Unavailable => stop!(ExecutionGap::Memory {
                                     address,
                                     access: MemoryAccess::Read
-                                });
+                                }),
                             };
-                            if signed {
-                                value = match width {
-                                    1 => value as i8 as i32 as u32,
-                                    2 => value as i16 as i32 as u32,
-                                    _ => value,
-                                };
+                            regs[dest.unwrap() as usize] = loaded;
+                        } else {
+                            let source = source.unwrap();
+                            let written = match regs[source as usize] {
+                                Some(value) => memory.write(address, width, value, control)?,
+                                // An unknown value stored to memory stays
+                                // unknown there; only a device refuses it.
+                                None => {
+                                    if !memory.write_unknown(address, width, control)? {
+                                        stop!(ExecutionGap::UnknownRegister { register: source });
+                                    }
+                                    true
+                                }
+                            };
+                            if !written {
+                                stop!(ExecutionGap::Memory {
+                                    address,
+                                    access: MemoryAccess::Write
+                                });
                             }
-                            regs[dest.unwrap() as usize] = Some(value);
-                        } else if !memory.write(address, width, reg!(source.unwrap()), control)? {
-                            stop!(ExecutionGap::Memory {
-                                address,
-                                access: MemoryAccess::Write
-                            });
                         }
                     }
                     _ => stop!(ExecutionGap::UnsupportedInstruction),

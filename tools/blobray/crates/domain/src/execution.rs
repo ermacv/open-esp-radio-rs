@@ -445,6 +445,30 @@ pub trait ExecutionMemory {
         value: u32,
         control: &mut dyn RunControl,
     ) -> Result<bool>;
+    /// One data load: a known value, unknown bytes (such as a stored unknown
+    /// register or uninitialized memory), or an unavailable address.
+    fn load(
+        &mut self,
+        address: u32,
+        width: u8,
+        control: &mut dyn RunControl,
+    ) -> Result<MemoryReadValue> {
+        Ok(
+            match self.read(address, width, MemoryAccess::Read, control)? {
+                Some(value) => MemoryReadValue::Known { value },
+                None => MemoryReadValue::Unavailable,
+            },
+        )
+    }
+    /// Store `width` bytes of an unknown register, such as uninitialized
+    /// padding: the bytes become unknown. A device, which would observe the
+    /// value, never accepts one; false is an invalid access.
+    fn write_unknown(
+        &mut self,
+        address: u32,
+        width: u8,
+        control: &mut dyn RunControl,
+    ) -> Result<bool>;
     fn event(&mut self, event: ExecutionEvent, control: &mut dyn RunControl) -> Result<()>;
 
     /// Read one aligned known word and replace this session's reservation.

@@ -76,10 +76,15 @@ padding slots; the executor does not guess argument types. An explicit unknown
 stack word overrides even known stack seed bytes/fill. Alignment padding and
 remaining stack bytes retain only the declared seed initialization. Argument setup
 creates no guest memory/MMIO event. x0 is zero and ra is a reserved unmapped return
-sentinel. Other integer registers begin unknown. Loading an unknown byte,
-using an unknown register, an inaccessible memory access or an
-unsupported instruction ends that phase with a typed `incomplete` observation
-and its PC. The current integer executor supports RV32IMAC arithmetic, branches,
+sentinel. Other integer registers begin unknown. An unknown value propagates:
+arithmetic on it, a load of unknown bytes and a store of it to memory yield
+unknown values, as compiled code may copy uninitialized padding, and returned
+or compared unknown values leave the comparison `INCOMPLETE`. An unknown value
+that decides execution or leaves the guest (a branch condition, a jump target,
+a memory address, an atomic operand, a device write or a store a recorded
+write timeline or runtime table would observe), an inaccessible memory access
+or an unsupported instruction ends that phase with a typed `incomplete`
+observation and its PC. The current integer executor supports RV32IMAC arithmetic, branches,
 loads/stores, direct/indirect jumps, word atomics and ordinary fence events. FP,
 CSR/privileged execution, syscalls, dynamic loading and TLS are unsupported.
 Declared float ABI flags do not silently select floating-point execution.

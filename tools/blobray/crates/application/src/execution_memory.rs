@@ -155,6 +155,89 @@ impl<'a> Session<'a> {
             steps: None,
         })
     }
+    /// One read and its value: known, unknown or unavailable.
+    pub(super) fn read_value(
+        &mut self,
+        address: u32,
+        width: u8,
+        access: MemoryAccess,
+        c: &mut dyn RunControl,
+    ) -> Result<MemoryReadValue> {
+        c.checkpoint(self.regions.len() as u64 + 1)?;
+        if !matches!(access, MemoryAccess::Read | MemoryAccess::Fetch)
+            || !matches!(width, 1 | 2 | 4)
+        {
+            return Ok(MemoryReadValue::Unavailable);
+        }
+        // Ordinary memory is byte-addressable in this execution environment.
+        // Misaligned MMIO never dispatches or decomposes into device accesses.
+        if !address.is_multiple_of(u32::from(width))
+            && (access == MemoryAccess::Fetch
+                || self.devices.overlaps(address, u64::from(width), c)?)
+        {
+            return Ok(MemoryReadValue::Unavailable);
+        }
+        if access == MemoryAccess::Read
+            && let Some(value) = self.devices.read(address, width, c)?
+        {
+            let Some(value) = value else {
+                return Ok(MemoryReadValue::Unavailable);
+            };
+            self.log(
+                crate::execution_steps::StepEntry::Read {
+                    address,
+                    width,
+                    device: true,
+                },
+                c,
+            )?;
+            self.event(
+                ExecutionEvent::Read {
+                    address,
+                    width,
+                    value,
+                },
+                c,
+            )?;
+            return Ok(MemoryReadValue::Known { value });
+        }
+        let Some((i, offset)) = self.region_index(address, width) else {
+            return Ok(MemoryReadValue::Unavailable);
+        };
+        let r = &self.regions[i];
+        let required = if access == MemoryAccess::Fetch { 1 } else { 4 };
+        let value = if r.flags & required == 0 {
+            MemoryReadValue::Unavailable
+        } else if r.known[offset..offset + width as usize].contains(&0) {
+            MemoryReadValue::Unknown
+        } else {
+            let mut bytes = [0; 4];
+            bytes[..width as usize].copy_from_slice(&r.bytes[offset..offset + width as usize]);
+            MemoryReadValue::Known {
+                value: u32::from_le_bytes(bytes),
+            }
+        };
+        if access == MemoryAccess::Read {
+            self.log(
+                crate::execution_steps::StepEntry::Read {
+                    address,
+                    width,
+                    device: false,
+                },
+                c,
+            )?;
+            self.trace_memory(
+                MemoryTransaction::Read {
+                    address,
+                    width,
+                    value,
+                },
+                c,
+            )?;
+        }
+        Ok(value)
+    }
+
     /// Replace `patch.original` with `patch.replacement` in executable image
     /// code. A patch outside one executable image region, or whose original
     /// bytes differ from the loaded ones, is invalid.
@@ -672,82 +755,13 @@ impl ExecutionMemory for Session<'_> {
         access: MemoryAccess,
         c: &mut dyn RunControl,
     ) -> Result<Option<u32>> {
-        c.checkpoint(self.regions.len() as u64 + 1)?;
-        if !matches!(access, MemoryAccess::Read | MemoryAccess::Fetch)
-            || !matches!(width, 1 | 2 | 4)
-        {
-            return Ok(None);
-        }
-        // Ordinary memory is byte-addressable in this execution environment.
-        // Misaligned MMIO never dispatches or decomposes into device accesses.
-        if !address.is_multiple_of(u32::from(width))
-            && (access == MemoryAccess::Fetch
-                || self.devices.overlaps(address, u64::from(width), c)?)
-        {
-            return Ok(None);
-        }
-        if access == MemoryAccess::Read
-            && let Some(value) = self.devices.read(address, width, c)?
-        {
-            let Some(value) = value else {
-                return Ok(None);
-            };
-            self.log(
-                crate::execution_steps::StepEntry::Read {
-                    address,
-                    width,
-                    device: true,
-                },
-                c,
-            )?;
-            self.event(
-                ExecutionEvent::Read {
-                    address,
-                    width,
-                    value,
-                },
-                c,
-            )?;
-            return Ok(Some(value));
-        }
-        let Some((i, offset)) = self.region_index(address, width) else {
-            return Ok(None);
-        };
-        let r = &self.regions[i];
-        let required = if access == MemoryAccess::Fetch { 1 } else { 4 };
-        let value = if r.flags & required == 0 {
-            MemoryReadValue::Unavailable
-        } else if r.known[offset..offset + width as usize].contains(&0) {
-            MemoryReadValue::Unknown
-        } else {
-            let mut bytes = [0; 4];
-            bytes[..width as usize].copy_from_slice(&r.bytes[offset..offset + width as usize]);
-            MemoryReadValue::Known {
-                value: u32::from_le_bytes(bytes),
-            }
-        };
-        if access == MemoryAccess::Read {
-            self.log(
-                crate::execution_steps::StepEntry::Read {
-                    address,
-                    width,
-                    device: false,
-                },
-                c,
-            )?;
-            self.trace_memory(
-                MemoryTransaction::Read {
-                    address,
-                    width,
-                    value,
-                },
-                c,
-            )?;
-        }
-        Ok(match value {
+        Ok(match self.read_value(address, width, access, c)? {
             MemoryReadValue::Known { value } => Some(value),
             _ => None,
         })
+    }
+    fn load(&mut self, address: u32, width: u8, c: &mut dyn RunControl) -> Result<MemoryReadValue> {
+        self.read_value(address, width, MemoryAccess::Read, c)
     }
 
     fn write(
@@ -819,6 +833,33 @@ impl ExecutionMemory for Session<'_> {
                 address,
                 width,
                 value,
+            },
+            c,
+        )?;
+        Ok(true)
+    }
+    fn write_unknown(&mut self, address: u32, width: u8, c: &mut dyn RunControl) -> Result<bool> {
+        c.checkpoint(self.regions.len() as u64 + 1)?;
+        if !matches!(width, 1 | 2 | 4) || self.devices.overlaps(address, u64::from(width), c)? {
+            return Ok(false);
+        }
+        let Some((i, offset)) = self.region_index(address, width) else {
+            return Ok(false);
+        };
+        // A recorded write timeline or a runtime table would observe the value.
+        if self.regions[i].flags & 2 == 0
+            || self.timeline.writes
+            || matches!(self.regions[i].kind, RegionKind::Table(_))
+        {
+            return Ok(false);
+        }
+        self.invalidate_reservation(address, width);
+        self.regions[i].known[offset..offset + width as usize].fill(0);
+        self.log(
+            crate::execution_steps::StepEntry::Write {
+                address,
+                width,
+                device: false,
             },
             c,
         )?;

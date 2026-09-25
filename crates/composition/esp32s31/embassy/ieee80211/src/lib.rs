@@ -29,7 +29,7 @@
 //! Cancellation leaves the timer armed; no periodic feed or default exists.
 //! This does not qualify a worst-case reset-to-RF-off bound.
 
-#[cfg(any(test, target_arch = "riscv32"))]
+#[cfg(target_arch = "riscv32")]
 mod maintenance_policy;
 #[cfg(target_arch = "riscv32")]
 mod watchdog;

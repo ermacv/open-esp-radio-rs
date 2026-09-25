@@ -1,5 +1,5 @@
 //! Event-driven control for the connected Wi-Fi maintenance service.
-use super::PauseError;
+use super::policy::PauseError;
 use core::cell::RefCell;
 use embassy_sync::{
     blocking_mutex::{Mutex, raw::CriticalSectionRawMutex},
@@ -46,7 +46,7 @@ struct State {
     observation_requested: bool,
     status: Status,
 }
-pub(crate) struct Control {
+pub struct Control {
     state: Mutex<CriticalSectionRawMutex, RefCell<State>>,
     changed: Signal<CriticalSectionRawMutex, ()>,
 }
@@ -214,3 +214,12 @@ impl Control {
         self.changed.wait().await;
     }
 }
+
+impl Default for Control {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests;

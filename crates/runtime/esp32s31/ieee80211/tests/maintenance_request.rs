@@ -1,12 +1,6 @@
-//! Exercise the production request channel, including cancellation and epoch end.
-#[path = "../src/maintenance_policy.rs"]
-mod maintenance_policy;
-#[allow(
-    dead_code,
-    reason = "host tests include the request module without its target-only supervisor consumer"
-)]
-#[path = "../src/supervisor/station/pause_request.rs"]
-mod pause_request;
+//! Exercise the connected-station maintenance request channel, including
+//! cancellation and epoch end.
+use oer_esp32s31_ieee80211_runtime::roles::station::maintenance as pause_request;
 use pause_request::{PauseError, PauseOperation, PauseReport, Requests};
 use std::{
     future::Future,
@@ -115,9 +109,7 @@ fn explicit_request_after_automatic_selection_survives_until_next_round_trip() {
 fn cancellation_cannot_reuse_an_inflight_request_or_deliver_a_stale_completion() {
     let requests = Requests::new();
     let mut cx = Context::from_waker(Waker::noop());
-    let mut unavailable = std::pin::pin!(pause_request::station_pause_round_trip(
-        PauseOperation::Access
-    ));
+    let mut unavailable = std::pin::pin!(requests.request(PauseOperation::Access));
     assert_eq!(
         unavailable.as_mut().poll(&mut cx),
         Poll::Ready(Err(PauseError::Unavailable))

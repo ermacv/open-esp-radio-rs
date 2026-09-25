@@ -70,7 +70,7 @@ impl Failure {
         self.reason
     }
     pub(super) fn enforce_disposition(&self) {
-        use crate::maintenance_policy::StoppedFailure;
+        use oer_esp32s31_ieee80211_runtime::roles::station::maintenance::StoppedFailure;
         let state = match self.reason {
             Reason::Deadline(_)
             | Reason::TxNotIdle

@@ -4,7 +4,7 @@
 //! Request queuing precedes this timeline. Nested PHY timings must not be
 //! added to its intervals: they are already contained in the work interval.
 
-/// Monotonic microsecond timestamps from the composition clock.
+/// Monotonic microsecond timestamps from the supervising clock.
 ///
 /// Present only for a complete physical round trip. The last edge means the
 /// restored worker was handed back for scheduling, not that it was polled or
@@ -31,7 +31,7 @@ pub struct PauseTimeline {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Edge {
+pub enum Edge {
     Requested,
     Drained,
     Quiesced,
@@ -46,7 +46,7 @@ pub(crate) enum Edge {
 /// a success-shaped report. Reset is explicit at the next admitted request.
 #[derive(Default)]
 #[cfg(any(feature = "diagnostics", test))]
-pub(crate) struct Recorder {
+pub struct Recorder {
     times: [u64; 8],
     next: usize,
     invalid: bool,

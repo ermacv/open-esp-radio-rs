@@ -1,202 +1,10 @@
-#[path = "pause_request/automatic.rs"]
-mod automatic;
-#[path = "pause_request/timeline.rs"]
-pub(super) mod timeline;
-pub use automatic::{Report as TrackingReport, Status as TrackingStatus};
-pub use oer_esp32s31_phy::tracking::service::Config as TrackingConfig;
-pub use timeline::PauseTimeline;
-// Same-connection maintenance requests; no shared RF grant.
-use core::cell::RefCell;
-use embassy_sync::{
-    blocking_mutex::{Mutex, raw::CriticalSectionRawMutex},
-    mutex::Mutex as AsyncMutex,
-    signal::Signal,
+//! The product's single connected-station maintenance request owner.
+
+use oer_esp32s31_ieee80211_runtime::roles::station::maintenance::Requests;
+pub use oer_esp32s31_ieee80211_runtime::roles::station::maintenance::{
+    PauseError, PauseOperation, PauseReport, PauseTimeline, TrackingConfig, TrackingReport,
+    TrackingStatus, timeline,
 };
-
-pub use crate::maintenance_policy::PauseError;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PauseOperation {
-    Access,
-    /// Diagnostic absence, with no PHY algorithm. PM notification is optional
-    /// for the matched control. This is not an automatic maintenance policy.
-    Synthetic {
-        duration_micros: u32,
-        notify_ap: bool,
-    },
-    Tracking,
-    Calibration,
-    CommonCalibration,
-    TxCalibration,
-    Rfpll {
-        maximum_age_micros: u64,
-    },
-    Operation(oer_esp32s31_phy::tracking::maintenance::Operation),
-    /// Recheck the age of a completed sensor acquisition after RF admission.
-    ObservedOperation {
-        operation: oer_esp32s31_phy::tracking::maintenance::Operation,
-        maximum_age_micros: u64,
-    },
-    Automatic(oer_esp32s31_phy::tracking::maintenance::Operation),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PauseReport {
-    /// Detailed observations exist only in diagnostic firmware. Keeping the
-    /// payload out of the type removes it from the request signal and normal
-    /// runtime futures when diagnostics are disabled.
-    #[cfg(feature = "diagnostics")]
-    pub timings: Option<oer_esp32s31_phy::tracking::observation::Report>,
-    /// Complete composition handoffs, including TX drain and worker release.
-    #[cfg(feature = "diagnostics")]
-    pub timeline: Option<PauseTimeline>,
-    /// Stop/resume plus optional PM exchanges; excludes requester queuing and prior TX drain.
-    pub elapsed_micros: u64,
-    pub tracking: Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
-}
-
-impl PauseReport {
-    /// Return the full physical transaction timeline in diagnostic firmware.
-    pub const fn timeline(&self) -> Option<&PauseTimeline> {
-        #[cfg(feature = "diagnostics")]
-        {
-            self.timeline.as_ref()
-        }
-        #[cfg(not(feature = "diagnostics"))]
-        {
-            None
-        }
-    }
-
-    /// Return detailed timing observations when this firmware includes them.
-    ///
-    /// Keeping this accessor available in every feature profile lets HIL and
-    /// other generic consumers use one API without retaining the diagnostic
-    /// payload in production request storage.
-    pub const fn timings(&self) -> Option<&oer_esp32s31_phy::tracking::observation::Report> {
-        #[cfg(feature = "diagnostics")]
-        {
-            self.timings.as_ref()
-        }
-        #[cfg(not(feature = "diagnostics"))]
-        {
-            None
-        }
-    }
-
-    /// Discard observations when a caller replaces the measured interval with
-    /// a wider aggregate interval. This is a no-op in compact production
-    /// builds, where the diagnostic payload does not exist.
-    pub fn discard_timings(&mut self) {
-        #[cfg(feature = "diagnostics")]
-        {
-            self.timings = None;
-            self.timeline = None;
-        }
-    }
-}
-
-struct State {
-    available: bool,
-    pending: bool,
-}
-
-pub(super) struct Requests {
-    pub automatic: automatic::Control,
-    state: Mutex<CriticalSectionRawMutex, RefCell<State>>,
-    client: AsyncMutex<CriticalSectionRawMutex, ()>,
-    requested: Signal<CriticalSectionRawMutex, PauseOperation>,
-    completed: Signal<CriticalSectionRawMutex, Result<PauseReport, PauseError>>,
-}
-
-impl Requests {
-    pub const fn new() -> Self {
-        Self {
-            automatic: automatic::Control::new(),
-            state: Mutex::new(RefCell::new(State {
-                available: false,
-                pending: false,
-            })),
-            client: AsyncMutex::new(()),
-            requested: Signal::new(),
-            completed: Signal::new(),
-        }
-    }
-
-    pub async fn request(&self, operation: PauseOperation) -> Result<PauseReport, PauseError> {
-        if matches!(operation, PauseOperation::Synthetic { duration_micros, .. } if duration_micros == 0 || duration_micros > 200_000)
-        {
-            return Err(PauseError::InvalidDuration);
-        }
-        let _client = self.client.try_lock().map_err(|_| PauseError::Busy)?;
-        self.state.lock(|state| {
-            let mut state = state.borrow_mut();
-            if !state.available {
-                return Err(PauseError::Unavailable);
-            }
-            if state.pending {
-                return Err(PauseError::Busy);
-            }
-            self.completed.reset();
-            state.pending = true;
-            self.requested.signal(operation);
-            Ok(())
-        })?;
-        // Cancellation releases the client lock but leaves the in-flight
-        // request pending until the supervisor completes it or closes the epoch.
-        self.completed.wait().await
-    }
-
-    pub fn open(&self, tracking: Option<TrackingConfig>) -> Availability<'_> {
-        self.state.lock(|state| {
-            let mut state = state.borrow_mut();
-            assert!(!state.available && !state.pending);
-            state.available = true;
-        });
-        self.automatic.configure(tracking);
-        Availability(self)
-    }
-
-    pub async fn wait(&self) -> PauseOperation {
-        self.requested.wait().await
-    }
-
-    /// Explicit work wins when both sources are ready. The automatic future
-    /// may reserve service state when polled, so the losing source must not
-    /// be polled after an explicit request has been accepted.
-    pub async fn wait_next<T>(
-        &self,
-        automatic: impl core::future::Future<Output = T>,
-    ) -> embassy_futures::select::Either<PauseOperation, T> {
-        embassy_futures::select::select(self.wait(), automatic).await
-    }
-
-    pub fn finish(&self, result: Result<PauseReport, PauseError>) {
-        self.state.lock(|state| {
-            let mut state = state.borrow_mut();
-            if state.pending {
-                state.pending = false;
-                self.completed.signal(result);
-            }
-        });
-    }
-}
-
-pub(super) struct Availability<'a>(&'a Requests);
-impl Drop for Availability<'_> {
-    fn drop(&mut self) {
-        self.0.state.lock(|state| {
-            let mut state = state.borrow_mut();
-            state.available = false;
-            self.0.automatic.end_epoch();
-            self.0.requested.reset();
-            if state.pending {
-                state.pending = false;
-                self.0.completed.signal(Err(PauseError::Interrupted));
-            }
-        });
-    }
-}
 
 pub(super) static REQUESTS: Requests = Requests::new();
 
@@ -215,34 +23,19 @@ pub async fn station_pause_round_trip(
 /// No dynamic configuration survives leaving the connected role. The next
 /// epoch starts from the policy carried by `RadioConfig`.
 pub fn configure_station_tracking(config: Option<TrackingConfig>) -> Result<(), PauseError> {
-    REQUESTS.state.lock(|state| {
-        if !state.borrow().available {
-            return Err(PauseError::Unavailable);
-        }
-        if config.is_some() && matches!(REQUESTS.automatic.status(), TrackingStatus::Pending(_)) {
-            return Err(PauseError::Busy);
-        }
-        REQUESTS.automatic.configure(config);
-        Ok(())
-    })
+    REQUESTS.configure_tracking(config)
 }
 
 /// Ask the enabled service to acquire a new PHY sensor observation. This is
 /// an event, not a supplied temperature, calibration completion or RF grant.
 pub fn request_station_temperature_observation() -> Result<(), PauseError> {
-    REQUESTS.state.lock(|state| {
-        if !state.borrow().available {
-            return Err(PauseError::Unavailable);
-        }
-        REQUESTS.automatic.notify();
-        Ok(())
-    })
+    REQUESTS.request_temperature_observation()
 }
 
 pub fn station_tracking_status() -> TrackingStatus {
-    REQUESTS.automatic.status()
+    REQUESTS.tracking_status()
 }
 
 pub fn station_tracking_report() -> TrackingReport {
-    REQUESTS.automatic.measurements()
+    REQUESTS.tracking_report()
 }

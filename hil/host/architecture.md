@@ -25,9 +25,7 @@ provider's installation state. Operational admission checks the journal,
 selector, receipt and selected artifact under the shared lease. Fixed finite
 launchers perform this admission and bind a concrete generation before direct
 network, probe or Bluetooth helper execution; they neither recover nor install.
-During transition, apply also conflicts with a still-present active lease from
-the former volatile `/run` layout. These locks never acquire a device or replace
-the physical fixture leases below.
+These locks never acquire a device or replace the physical fixture leases below.
 
 The runner entry point in `runner/src/main.rs` only wires modules and maps the
 top-level result to the process exit status. `runner/src/command.rs` owns CLI
@@ -409,11 +407,7 @@ completion JSON retains its outcome and artifact paths, sets `history_report`
 and `history_html` to null, and reports `history_failure`. Retrying the derived
 view does not change the sealed bundle.
 
-`cargo hil report verify [run-id]
-cargo hil archive export <archive-id> --run <run-id>
-cargo hil archive verify|import <archive.tar.gz>
-cargo hil archive publish <archive.tar.gz> --repo <owner/repository>
-cargo hil archive fetch <archive-id> --repo <owner/repository>` performs a read-only offline integrity
+`cargo hil report verify [run-id]` performs a read-only offline integrity
 check. With no run ID it checks every bundle. It validates manifest/suite
 structure, canonical relative paths, regular-file boundaries, attachment byte
 lengths and SHA-256 digests, plus the archived application image for every

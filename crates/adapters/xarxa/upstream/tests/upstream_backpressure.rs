@@ -4,7 +4,7 @@
 //! wakeups to persist after an upstream fix. No hardware or packet loss is
 //! needed to reach backpressure; downstream disposal then tests recovery.
 
-use embassy_net::{
+use embassy_net_upstream::{
     Stack, StackStorage,
     udp::UdpSocket,
     wire::{IpAddress, IpCidr},
@@ -130,7 +130,7 @@ fn exercise_backpressure() -> (usize, usize) {
     let mut pool_socket = UdpSocket::new(stack).unwrap();
     pool_socket.bind(1236).unwrap();
     let mut held = Vec::new();
-    while let Some(packet) = xarxa::driver::PacketBuf::try_new() {
+    while let Some(packet) = embassy_net_upstream::driver::PacketBuf::try_new() {
         held.push(packet);
     }
     assert!(!held.is_empty());

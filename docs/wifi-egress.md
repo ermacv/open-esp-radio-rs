@@ -107,7 +107,7 @@ reports wake-driven poll counts while the radio consumer is stopped, then
 checks send recovery and quiescence after downstream packet disposal:
 
 ```console
-cargo test -p open-esp-radio-hil-runner --test upstream_backpressure -- --nocapture
+cargo test -p oer-xarxa-upstream --test upstream_backpressure -- --nocapture
 ```
 
 The task-poll and MAC IRQ [HIL diagnostics](../hil/targets/esp32s31/README.md)

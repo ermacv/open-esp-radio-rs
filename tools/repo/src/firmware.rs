@@ -207,7 +207,7 @@ pub fn check_network_backpressure(ctx: &Context) -> Result<()> {
     command.args([
         "test",
         "-p",
-        "open-esp-radio-hil-runner",
+        "oer-xarxa-upstream",
         "--test",
         "upstream_backpressure",
     ]);

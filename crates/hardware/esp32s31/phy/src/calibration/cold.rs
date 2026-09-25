@@ -8,12 +8,14 @@
 ///
 /// The compiled vendor archive returns this independent value verbatim.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub const fn phy_get_rfdata_num() -> u32 {
     0x20c
 }
 
 /// Required pinned `libphy.a::phy_internal_delay` vendor-ABI no-op leaf.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub const fn phy_internal_delay() -> u32 {
     0
 }
@@ -57,9 +59,7 @@ use crate::{
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_hal::owner::SharedPhyAccess;
 
-pub use crate::state::{
-    PhyDot11pConfiguration, PhyRegisterTemperatureControl, PhyState, PhyTemperatureTrackingDebug,
-};
+pub use crate::state::{PhyRegisterTemperatureControl, PhyState};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyColdI2cRequest {
@@ -315,6 +315,7 @@ impl PhyColdI2cBinding {
         })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn outer_action(&self) -> PhyRfInitPrefixAction {
         self.outer_action
     }
@@ -323,14 +324,17 @@ impl PhyColdI2cBinding {
         self.transaction.action()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn read_started(&mut self) -> Result<(), PhyColdI2cError> {
         self.transaction.read_started()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn write_started(&mut self) -> Result<(), PhyColdI2cError> {
         self.transaction.write_started()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_read_result(
         &mut self,
         result: Result<u8, PhyI2cError>,
@@ -338,6 +342,7 @@ impl PhyColdI2cBinding {
         self.transaction.observe_read_result(result)
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_write_result(
         &mut self,
         result: Result<(), PhyI2cError>,
@@ -1386,6 +1391,7 @@ impl PhyColdTimerBinding {
         })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn outer_action(&self) -> PhyRfInitPrefixAction {
         self.outer_action
     }
@@ -1937,6 +1943,7 @@ const fn phy_sdm_deadline_expired(
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(any(test, feature = "validation-probes"))]
 pub enum PhyColdPbusAction {
     Start(PhyPbusForceTest),
     AwaitCompletionEdge(PhyPbusForceTest),
@@ -2006,10 +2013,12 @@ impl PhyColdPbusBinding {
         })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn outer_action(&self) -> PhyRfInitPrefixAction {
         self.outer_action
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> PhyColdPbusAction {
         match self.phase {
             PhyColdPbusPhase::Start => PhyColdPbusAction::Start(self.transaction),
@@ -2130,6 +2139,7 @@ impl PhyColdPbusBinding {
         }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn into_timeout_completion(
         self,
     ) -> Result<PhyRfInitPrefixCompletion, PhyColdLoweringError> {
@@ -2223,6 +2233,7 @@ impl PhyRfColdInit {
         &self.state
     }
 
+    #[cfg(feature = "validation-probes")]
     pub const fn action(&self) -> PhyRfInitPrefixAction {
         self.transition.action()
     }

@@ -20,7 +20,7 @@ fn registered_phy() -> RegisteredBluetoothPhy {
         registered: RegisteredPhyState::from_wrapper_test_model(PhyState::new(
             PhyConfig::production(),
         )),
-        clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+        clients: PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS),
     }
 }
 
@@ -237,7 +237,7 @@ fn missing_bluetooth_release_returns_the_unchanged_owner() {
         registered: RegisteredPhyState::from_wrapper_test_model(PhyState::new(
             PhyConfig::production(),
         )),
-        clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+        clients: PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS),
     };
     let failure = owner
         .release_phy_client()

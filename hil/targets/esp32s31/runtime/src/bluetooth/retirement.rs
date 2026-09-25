@@ -368,7 +368,7 @@ pub(super) async fn maintain(
     calibration_threshold: Option<u8>,
 ) -> (
     Runner<4, 1, 4, 4, 258>,
-    Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
+    Option<oer_esp32s31_phy::tracking::PhyParamTrackingOutcome>,
 ) {
     let retired = retire(runner);
     let (runner, outcome) = {

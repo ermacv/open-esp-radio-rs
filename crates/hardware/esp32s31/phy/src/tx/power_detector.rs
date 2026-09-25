@@ -14,7 +14,9 @@
 //! deadline. The ROM spin loop and synchronous microsecond delays are not
 //! copied.
 
-use crate::{analog::pbus::PhyPbusForceTest, calibration::estimator::phy_linear_to_db};
+use crate::analog::pbus::PhyPbusForceTest;
+#[cfg(any(test, feature = "validation-probes"))]
+use crate::calibration::estimator::phy_linear_to_db;
 
 // Complete rev0 ROM `phy_pwdet_ref_code+0x24` and `+0x50` load `a0 = 4`
 // before calling the runtime-table `phy_get_tone_sar_dout_` leaf. That leaf
@@ -27,12 +29,14 @@ pub const PHY_PWDET_SAMPLES_PER_REFERENCE: u8 = 4;
 /// The ESP32-S31 archive body is exactly one `ret` instruction; power-detector
 /// ownership is instead expressed by the surrounding Rust state machine.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub const fn phy_pwdet_always_en() {}
 
 /// Required pinned `libphy.a` vendor-ABI no-op leaf.
 ///
 /// Like [`phy_pwdet_always_en`], the vendor body has no observable operation.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub const fn phy_pwdet_onetime_en() {}
 
 const ENTER_PBUS_COUNT: u8 = 15;
@@ -127,6 +131,13 @@ pub enum PhyPwdetAction {
 pub enum PhyPwdetCompletion {
     PbusDebugModeConfigured,
     PbusCompleted(PhyPbusForceTest),
+    #[cfg_attr(
+        not(any(test, feature = "validation-probes")),
+        allow(
+            dead_code,
+            reason = "only the validation binding constructs this timeout"
+        )
+    )]
     PbusTimedOut(PhyPbusForceTest),
     TxClockConfigured {
         enabled: bool,
@@ -154,6 +165,13 @@ pub enum PhyPwdetCompletion {
         sample_index: u8,
         ready: bool,
     },
+    #[cfg_attr(
+        not(any(test, feature = "validation-probes")),
+        allow(
+            dead_code,
+            reason = "only the validation binding constructs this timeout"
+        )
+    )]
     SarReadyDeadlineElapsed {
         measurement_index: u8,
         sample_index: u8,
@@ -349,6 +367,7 @@ pub const fn sar_signal_reference(sample: u16, reference_codes: [i16; 2]) -> [i1
 /// This transform is consumed by later TX calibration code. Complete rev0
 /// ROM `phy_pwdet_ref_code` does not call it: that root stores the raw
 /// four-sample averages returned by `phy_get_tone_sar_dout_`.
+#[cfg(feature = "validation-probes")]
 pub fn calculate_pwdet_reference(sample_average: u16, reference_codes: [i16; 2]) -> i16 {
     let signal = sar_signal_reference(sample_average, reference_codes);
     phy_linear_to_db(i32::from(signal[0]), 3)
@@ -935,6 +954,7 @@ impl PhyPwdetMmioBinding {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(any(test, feature = "validation-probes"))]
 pub enum PhyPwdetPbusBindingAction {
     Start(PhyPbusForceTest),
     SampleCompletion(PhyPbusForceTest),
@@ -978,6 +998,7 @@ impl PhyPwdetPbusBinding {
         }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> PhyPwdetPbusBindingAction {
         match self.hardware.action() {
             crate::analog::pbus::PhyPbusHardwareAction::Start(_) => {
@@ -992,10 +1013,12 @@ impl PhyPwdetPbusBinding {
         }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn started(&mut self) -> Result<(), PhyPwdetPbusBindingError> {
         self.hardware.started().map_err(map_pbus_hardware_error)
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_completed(
         &mut self,
         completed: bool,
@@ -1050,6 +1073,7 @@ impl PhyPwdetPbusBinding {
             .map_err(map_pbus_hardware_error)
     }
 
+    #[cfg(feature = "validation-probes")]
     pub const fn into_timeout_completion(self) -> PhyPwdetCompletion {
         PhyPwdetCompletion::PbusTimedOut(self.transaction)
     }

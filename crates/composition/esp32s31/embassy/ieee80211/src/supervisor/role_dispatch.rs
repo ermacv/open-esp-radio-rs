@@ -109,7 +109,7 @@ impl ProductionWifiEpochRunner {
                 phy,
                 platform,
                 phy_observer: NoopPhyTargetObserver,
-                phy_delay: EmbassyPhyDelay,
+                phy_delay: EmbassyPhyTime,
                 hardware: materialized.registers,
                 receive,
                 control,
@@ -403,7 +403,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                     };
                     let mut observer = NoopPhyTargetObserver;
                     if let Err(error) = await_stack_boundary!(
-                        task.switch_channel::<EmbassyPhyDelay, _>(channel, &mut observer),
+                        task.switch_channel::<EmbassyPhyTime, _>(channel, &mut observer),
                     ) {
                         let faulted = ProductionWifiFault::MonitorChannel {
                             _error: error,
@@ -428,7 +428,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                         &mut controller,
                         task,
                         channel_policy,
-                        EmbassyPhyDelay,
+                        EmbassyPhyTime,
                         &mut observer,
                         RadioError::RoleActive,
                     ));
@@ -519,7 +519,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                 }
             };
             let (wifi, resources) = frontier.into_parts();
-            let released = match await_stack_boundary!(wifi.release_radio::<EmbassyPhyDelay>()) {
+            let released = match await_stack_boundary!(wifi.release_radio::<EmbassyPhyTime>()) {
                 Ok(released) => released,
                 Err(failure) => {
                     enforce_lifecycle(&failure, failure.phy_hardware_ambiguous());
@@ -545,26 +545,25 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                 }
             };
             let protection = self.watchdog.startup();
-            let mut clock = EmbassyPhyClock;
-            let ready =
-                match await_stack_boundary!(restart_esp32s31_radio::<_, EmbassyPhyDelay, _>(
-                    cold,
-                    self.radio_start,
-                    NoopPhyTargetObserver,
-                    &mut clock,
-                )) {
-                    Ok(ready) => ready,
-                    Err(failure) => {
-                        enforce_lifecycle(&failure, failure.phy_hardware_ambiguous());
-                        crate::WatchdogConfig::complete(protection);
-                        return Err(RADIO_LIFECYCLE_FAULT.init(
-                            ProductionRadioLifecycleFault::Restart {
-                                _failure: failure,
-                                _resources: resources,
-                            },
-                        ));
-                    }
-                };
+            let mut clock = EmbassyPhyTime;
+            let ready = match await_stack_boundary!(restart_esp32s31_radio::<_, EmbassyPhyTime, _>(
+                cold,
+                self.radio_start,
+                NoopPhyTargetObserver,
+                &mut clock,
+            )) {
+                Ok(ready) => ready,
+                Err(failure) => {
+                    enforce_lifecycle(&failure, failure.phy_hardware_ambiguous());
+                    crate::WatchdogConfig::complete(protection);
+                    return Err(RADIO_LIFECYCLE_FAULT.init(
+                        ProductionRadioLifecycleFault::Restart {
+                            _failure: failure,
+                            _resources: resources,
+                        },
+                    ));
+                }
+            };
             let calibration_path = match ready
                 .wifi()
                 .start_report()
@@ -572,14 +571,14 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                 .registration
                 .calibration_path
             {
-                oer_esp32s31_phy::calibration::registration::PhyCalibrationPath::PartialFromCache => {
+                oer_esp32s31_phy::PhyCalibrationPath::PartialFromCache => {
                     oer_radio::wifi::WifiRadioCalibrationPath::RestoredCache
                 }
-                oer_esp32s31_phy::calibration::registration::PhyCalibrationPath::FullAfterRejectedCache => {
+                oer_esp32s31_phy::PhyCalibrationPath::FullAfterRejectedCache => {
                     oer_radio::wifi::WifiRadioCalibrationPath::RejectedCache
                 }
-                oer_esp32s31_phy::calibration::registration::PhyCalibrationPath::FullForCache
-                | oer_esp32s31_phy::calibration::registration::PhyCalibrationPath::FullUncached => {
+                oer_esp32s31_phy::PhyCalibrationPath::FullForCache
+                | oer_esp32s31_phy::PhyCalibrationPath::FullUncached => {
                     oer_radio::wifi::WifiRadioCalibrationPath::Full
                 }
             };
@@ -617,9 +616,9 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                 }
             };
             let (wifi, resources) = frontier.into_parts();
-            let mut clock = EmbassyPhyClock;
+            let mut clock = EmbassyPhyTime;
             let wifi = match await_stack_boundary!(
-                wifi.cycle_retained_rf::<EmbassyPhyDelay, _>(&mut clock)
+                wifi.cycle_retained_rf::<EmbassyPhyTime, _>(&mut clock)
             ) {
                 Ok(wifi) => wifi,
                 Err(failure) => {

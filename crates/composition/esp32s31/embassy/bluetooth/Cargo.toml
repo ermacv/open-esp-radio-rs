@@ -23,6 +23,7 @@ trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", 
 [dev-dependencies]
 embedded-io = "0.7.1"
 oer-esp32s31-bluetooth-runtime = { path = "../../../../runtime/esp32s31/bluetooth" }
+oer-esp32s31-phy-runtime = { path = "../../../../runtime/esp32s31/phy" }
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 embassy-futures = "0.1.2"
@@ -31,6 +32,7 @@ esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4d
 oer-bluetooth-hci = { path = "../../../../protocols/bluetooth/hci" }
 oer-bluetooth-ll = { path = "../../../../protocols/bluetooth/le/ll" }
 oer-esp32s31-bluetooth-runtime = { path = "../../../../runtime/esp32s31/bluetooth" }
+oer-esp32s31-phy-runtime = { path = "../../../../runtime/esp32s31/phy" }
 oer-esp32s31-radio-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/radio", features = ["esp32s31"] }
 oer-esp32s31-soc-esp-hal = { path = "../../../../adapters/esp-hal/esp32s31/soc", features = ["esp32s31"] }
 

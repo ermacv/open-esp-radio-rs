@@ -139,7 +139,7 @@ fn lowering_failure_identifies_the_pending_action_without_calling_the_port() {
                 .as_mut()
                 .poll(&mut Context::from_waker(Waker::noop())),
             Poll::Ready(Err(PhyRegisterRunError::Lowering {
-                action,
+                stage: super::PhyRegisterStage::I2cMasterResetSample,
                 error: PhyRegisterBindingError::UnsupportedAction,
             })),
         );

@@ -13,11 +13,11 @@ use core::marker::PhantomData;
 
 pub mod calibration;
 pub mod rfpll;
+#[cfg(feature = "validation-probes")]
 pub mod temperature;
 
 use crate::{
-    HARDWARE_EDGE_LIMIT, PhyCalibrationTrackingPort, PhyParamTrackingPort,
-    PhyParamTrackingRunError, PhyRegisterPort, PhyRegisterRunError,
+    HARDWARE_EDGE_LIMIT, PhyParamTrackingRunError, PhyRegisterRunError,
     analog::{
         dcode::{PhyDcodeCompletion, PhyDcodeExternalBinding},
         i2c::{PhyRfInitPrefixAction, PhyRfInitPrefixCompletion},
@@ -49,17 +49,22 @@ use crate::{
         PhyChipChannelFailure, PhyChipChannelOutcome, PhyChipChannelRequest,
         PhyChipChannelTransition, PhyWifiTxGainImage, PhyWifiTxGainRequest,
     },
+    executor::{
+        PhyCalibrationTrackingPort, PhyParamTrackingPort, PhyRegisterPort,
+        run_phy_calibration_tracking, run_phy_param_tracking, run_phy_register,
+    },
     registered_bluetooth::{
         RegisteredBluetoothPhy, RegisteredBluetoothPhyClient,
         RegisteredBluetoothPhyPendingTracking, RegisteredBluetoothPhyTrackPoisoned,
     },
-    registered_radio::{
+    registered_ieee802154::{
         RegisteredIeee802154Client, RegisteredIeee802154Clocked,
         RegisteredIeee802154PendingTracking, RegisteredIeee802154TrackPoisoned,
+    },
+    registered_radio::{
         RegisteredPhyPendingTracking, RegisteredPhyRadio, RegisteredPhyTrackPoisoned,
         TargetRegisteredPhyEpoch,
     },
-    run_phy_calibration_tracking, run_phy_param_tracking, run_phy_register,
     rx::{
         dc_offset::{
             PhyRxDcMinimumCompletion, PhyRxDcMinimumExternalBinding, PhyRxDcoCompletion,
@@ -147,7 +152,7 @@ pub(crate) use radio_lifecycle::{
 
 pub(crate) async fn close_bluetooth_rf<P, D: PhyAsyncDelay>(
     platform: &mut P,
-    registers: &mut SharedPhyHal<'_>,
+    registers: &mut SharedPhyHal<'_, oer_esp32s31_hal::owner::route::Bluetooth>,
     state: &mut PhyState,
 ) -> Result<(), PhyRfCloseTemperatureFailure> {
     radio_lifecycle::observe_temperature_with_hal::<P, D>(platform, registers, state).await?;
@@ -269,7 +274,7 @@ pub struct PhyTargetPortCounters {
 /// The powered radio and inner model transition are deliberately inseparable.
 /// Callers can construct only a fresh production attempt and pass it once to
 /// [`run_target_phy_register`]. There is no conversion from a caller-driven
-/// [`PhyRegisterTransition`], because such a transition may already contain
+/// `PhyRegisterTransition`, because such a transition may already contain
 /// synthetic completions.
 #[must_use = "a target PHY attempt uniquely owns the powered radio"]
 pub struct TargetPhyRegisterAttempt<P> {
@@ -690,16 +695,20 @@ impl<P> TargetPhyRegisterFailure<P> {
 /// The field is private to this module, so no sibling module can mint it even
 /// though the proof constructor can name the type through crate visibility.
 pub(crate) struct TargetRegistrationWitness {
-    _private: (),
+    epoch: oer_esp32s31_hal::owner::PhyRegistrationEpoch,
 }
 
 impl TargetRegistrationWitness {
-    const fn new() -> Self {
-        Self { _private: () }
+    const fn new(epoch: oer_esp32s31_hal::owner::PhyRegistrationEpoch) -> Self {
+        Self { epoch }
+    }
+
+    pub(crate) const fn epoch(&self) -> oer_esp32s31_hal::owner::PhyRegistrationEpoch {
+        self.epoch
     }
 }
 
-/// Complete target-side implementation of [`PhyRegisterPort`].
+/// Complete target-side implementation of the registration graph port.
 pub struct TargetPhyRegisterPort<'a, P, R, D, O = NoopPhyTargetObserver> {
     platform: &'a mut P,
     registers: &'a mut R,
@@ -753,6 +762,9 @@ impl<P> TargetPhyParamTrackingSuccess<P> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TargetPhyParamTrackingError {
+    /// The registration no longer describes the borrowed PHY partition; the
+    /// request was poisoned before any hardware access.
+    EpochMismatch,
     Run(PhyParamTrackingRunError<PhyTargetPortError>),
     Deadline(crate::tracking::deadline::TrackingDeadlineError),
     MissingCompletedOwner,
@@ -2675,7 +2687,7 @@ where
 )]
 pub async fn run_target_bluetooth_phy_param_tracking<P, D, O>(
     platform: &mut P,
-    registers: &mut SharedPhyHal<'_>,
+    registers: &mut SharedPhyHal<'_, oer_esp32s31_hal::owner::route::Bluetooth>,
     mut tracking: RegisteredBluetoothPhyPendingTracking,
     observer: O,
 ) -> Result<TargetBluetoothPhyParamTrackingSuccess, TargetBluetoothPhyParamTrackingFailure>
@@ -2683,6 +2695,12 @@ where
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
+    if !tracking.describes(&*registers) {
+        return Err(TargetBluetoothPhyParamTrackingFailure {
+            poisoned: tracking.fail(),
+            error: TargetPhyParamTrackingError::EpochMismatch,
+        });
+    }
     let result = {
         let (state, pending) = tracking.target_tracking_parts();
         let mut port = TargetPhyParamTrackingPort::<_, _, D, _>::new(platform, registers, observer);
@@ -2728,7 +2746,7 @@ where
 #[must_use = "deadline failure retains the poisoned Bluetooth PHY epoch"]
 pub async fn run_target_bluetooth_phy_param_tracking_until<P, D, O>(
     platform: &mut P,
-    registers: &mut SharedPhyHal<'_>,
+    registers: &mut SharedPhyHal<'_, oer_esp32s31_hal::owner::route::Bluetooth>,
     mut tracking: RegisteredBluetoothPhyPendingTracking,
     observer: O,
     deadline: crate::tracking::deadline::TrackingDeadline,
@@ -2737,6 +2755,12 @@ where
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
+    if !tracking.describes(&*registers) {
+        return Err(TargetBluetoothPhyParamTrackingFailure {
+            poisoned: tracking.fail(),
+            error: TargetPhyParamTrackingError::EpochMismatch,
+        });
+    }
     let result = {
         let (state, pending) = tracking.target_tracking_parts();
         let mut port = TargetPhyParamTrackingPort::<_, _, D, _>::new(platform, registers, observer);
@@ -2904,7 +2928,7 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver> PhyR
 )]
 pub async fn run_target_bluetooth_phy_register<P, D, O>(
     platform: &mut P,
-    registers: &mut SharedPhyHal<'_>,
+    registers: &mut SharedPhyHal<'_, oer_esp32s31_hal::owner::route::Bluetooth>,
     config: TargetBluetoothPhyRegisterConfig,
     observer: O,
 ) -> Result<TargetBluetoothPhyRegisterSuccess, TargetBluetoothPhyRegisterFailure>
@@ -2921,6 +2945,7 @@ where
         calibration_cache,
     );
 
+    let epoch = registers.begin_registration_epoch();
     let (result, counters) = {
         let mut port = TargetPhyRegisterPort::<_, _, D, _>::new(platform, registers, observer);
         let result = run_phy_register(&mut transition, &mut port).await;
@@ -2952,7 +2977,7 @@ where
     Ok(TargetBluetoothPhyRegisterSuccess {
         registered_owner: RegisteredBluetoothPhy::from_target_completion(
             state,
-            TargetRegistrationWitness::new(),
+            TargetRegistrationWitness::new(epoch),
         ),
         calibration_cache,
         outcome,
@@ -2998,6 +3023,7 @@ where
         calibration_cache,
     );
 
+    let epoch = owner.common_phy_parts().1.begin_registration_epoch();
     let (result, counters) = {
         let (platform, mut registers) = owner.common_phy_parts();
         let mut port = TargetPhyRegisterPort::<_, _, D, _>::new(platform, &mut registers, observer);
@@ -3033,7 +3059,7 @@ where
         registered_owner: RegisteredIeee802154Clocked::from_target_completion(
             owner,
             state,
-            TargetRegistrationWitness::new(),
+            TargetRegistrationWitness::new(epoch),
         ),
         calibration_cache,
         outcome,
@@ -3043,7 +3069,7 @@ where
 
 /// Drive one opaque fresh attempt through the concrete ESP32-S31 target port.
 ///
-/// Unlike [`crate::run_phy_register`], this function does not accept a caller-
+/// Unlike the model driver `run_phy_register`, this function does not accept a caller-
 /// supplied port or a raw caller-driven transition. The exact transition that
 /// receives every concrete target completion and the exact powered radio epoch
 /// remain hidden inside `attempt`. Terminal success produces one result which
@@ -3065,6 +3091,7 @@ where
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
 {
+    let epoch = attempt.radio.phy_hal_mut().begin_registration_epoch();
     let (result, counters) = {
         let (platform, registers) = attempt.radio.phy_hal_parts();
         let mut port = TargetPhyRegisterPort::<_, _, D, _>::new(platform, registers, observer);
@@ -3100,7 +3127,7 @@ where
         registered_epoch: TargetRegisteredPhyEpoch::from_target_completion(
             attempt.radio,
             state,
-            TargetRegistrationWitness::new(),
+            TargetRegistrationWitness::new(epoch),
         ),
         calibration_cache,
         outcome,
@@ -3109,9 +3136,11 @@ where
 }
 
 /// Select a PHY channel with the same finite target contract used by cold
-/// registration.
-/// Select a PHY channel through a temporary borrow of the complete HAL owner.
-pub async fn select_phy_channel_with_hal<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
+/// registration, through a temporary borrow of the complete HAL owner.
+///
+/// The raw state is not a registration proof, so this entry stays inside the
+/// crate; callers select channels through a registered owner.
+pub(crate) async fn select_phy_channel_with_hal<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
     state: &mut PhyState,
     channel_or_frequency: u16,
     cbw: u8,
@@ -3123,6 +3152,9 @@ pub async fn select_phy_channel_with_hal<D: PhyAsyncDelay, P, O: PhyTargetObserv
 }
 
 /// Select a channel while retaining Wi-Fi's registered state and scheduler.
+///
+/// A registration that no longer describes the channel HAL's PHY partition
+/// is rejected before any hardware access.
 pub async fn select_registered_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
     phy: &mut crate::RegisteredWifiPhy,
     channel_or_frequency: u16,
@@ -3130,6 +3162,9 @@ pub async fn select_registered_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObs
     channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,
     observer: &mut O,
 ) -> Result<(), PhyTargetPortError> {
+    if !phy.clients.describes(&*channel) {
+        return Err(PhyTargetPortError::RegistrationEpochMismatch);
+    }
     select_phy_channel_with_hal::<D, _, _>(
         phy.registered.target_state_mut(),
         channel_or_frequency,
@@ -3141,6 +3176,9 @@ pub async fn select_registered_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObs
 }
 
 /// Stopped-role channel transition without exposing replaceable PHY state.
+///
+/// A registration that no longer describes the channel HAL's PHY partition
+/// is rejected before any hardware access.
 pub async fn switch_registered_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
     phy: &mut crate::RegisteredWifiPhy,
     channel_or_frequency: u16,
@@ -3148,6 +3186,9 @@ pub async fn switch_registered_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObs
     channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,
     observer: &mut O,
 ) -> Result<(), PhyTargetPortError> {
+    if !phy.clients.describes(&*channel) {
+        return Err(PhyTargetPortError::RegistrationEpochMismatch);
+    }
     switch_phy_channel_with_hal_and_mac_restart::<D, _, _>(
         phy.registered.target_state_mut(),
         channel_or_frequency,
@@ -3159,7 +3200,7 @@ pub async fn switch_registered_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObs
 }
 
 /// Stop, retune and restart through a temporary borrow of the HAL owner.
-pub async fn switch_phy_channel_with_hal_and_mac_restart<
+pub(crate) async fn switch_phy_channel_with_hal_and_mac_restart<
     D: PhyAsyncDelay,
     P,
     O: PhyTargetObserver,

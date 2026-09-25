@@ -157,7 +157,7 @@ impl Control {
         &self,
         operation: Operation,
         elapsed_micros: u64,
-        outcome: Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
+        outcome: Option<oer_esp32s31_phy::tracking::PhyParamTrackingOutcome>,
     ) {
         self.state.lock(|state| {
             let mut state = state.borrow_mut();

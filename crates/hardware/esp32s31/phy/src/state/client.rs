@@ -5,7 +5,7 @@
 //! Bluetooth plus IEEE 802.15.4 a shared timestamp. This module reproduces only
 //! those software decisions. It performs no MMIO and does not arm a real
 //! timer. A due request retains the unique owner while the exact outer
-//! [`crate::tracking::parameters::PhyParamTrackingTransition`] is executed.
+//! parameter-tracking transition is executed.
 //! Its recovered TX-power, Wi-Fi PHY-I2C, calibration, RFPLL and temperature
 //! children compose into live-state owners; calibration hardware effects stay
 //! explicit unresolved actions until their target bindings are owned.
@@ -17,11 +17,6 @@
 //! public source's short-circuit due checks and then samples each active class
 //! again while refreshing timestamps; the periodic callback performs only the
 //! per-class refresh samples.
-
-#![allow(
-    dead_code,
-    reason = "the model awaits fallible timer, PHY-lock, and tracking-child executors"
-)]
 
 use core::fmt;
 
@@ -163,6 +158,9 @@ impl PhyClientSnapshot {
 pub struct PhyClientState {
     bits: u8,
     tracker_model_armed: bool,
+    // Registration that minted this client set. It occupies alignment padding
+    // beside the flags, so detached owners carry it without growing.
+    epoch: Option<oer_esp32s31_hal::owner::PhyRegistrationEpoch>,
     wifi_previous_micros: u64,
     bluetooth_ieee802154_previous_micros: u64,
     period_micros: u64,
@@ -173,8 +171,41 @@ impl PhyClientState {
     ///
     /// This constructor is crate-controlled so application code cannot create
     /// an unrelated client mask and present it beside registered hardware.
-    pub(crate) const fn for_registered_epoch(period_micros: u64) -> Self {
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn for_registration(
+        period_micros: u64,
+        epoch: oer_esp32s31_hal::owner::PhyRegistrationEpoch,
+    ) -> Self {
+        Self::empty(period_micros, Some(epoch))
+    }
+
+    /// Mint an empty scheduler for the registration currently describing a
+    /// coupled hardware owner.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn for_registration_of(
+        period_micros: u64,
+        hardware: &impl oer_esp32s31_hal::owner::SharedPhyAccess,
+    ) -> Self {
+        Self::empty(period_micros, hardware.registration_epoch())
+    }
+
+    /// Mint an empty model with no registration identity.
+    ///
+    /// Host models and validation fixtures use this constructor. The result
+    /// never describes a hardware partition, so it cannot authorize a hardware
+    /// operation that checks [`Self::describes`].
+    #[cfg(any(test, feature = "validation-probes"))]
+    pub(crate) const fn without_registration(period_micros: u64) -> Self {
+        Self::empty(period_micros, None)
+    }
+
+    #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+    const fn empty(
+        period_micros: u64,
+        epoch: Option<oer_esp32s31_hal::owner::PhyRegistrationEpoch>,
+    ) -> Self {
         Self {
+            epoch,
             bits: 0,
             tracker_model_armed: false,
             wifi_previous_micros: 0,
@@ -189,7 +220,21 @@ impl PhyClientState {
     /// global or vendor-owned client mask.
     #[cfg(test)]
     const fn new_empty(period_micros: u64) -> Self {
-        Self::for_registered_epoch(period_micros)
+        Self::without_registration(period_micros)
+    }
+
+    /// Whether the registration that minted this client set still describes
+    /// the borrowed PHY partition.
+    ///
+    /// Owners that travel apart from their hardware check this before every
+    /// hardware operation. A later registration on the same partition, or a
+    /// return of the partition to the cold radio root, makes it false. A model
+    /// without registration identity never describes hardware.
+    pub(crate) fn describes(
+        &self,
+        hardware: &impl oer_esp32s31_hal::owner::SharedPhyAccess,
+    ) -> bool {
+        self.epoch.is_some() && hardware.registration_epoch() == self.epoch
     }
 
     pub const fn snapshot(&self) -> PhyClientSnapshot {
@@ -293,6 +338,7 @@ impl PhyClientState {
 
     /// Selected Wi-Fi work retains client ownership but does not acknowledge
     /// unrelated periodic work or advance its timestamps.
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn begin_wifi_operation(
         self,
         policy: PhyParamTrackingPolicy,
@@ -597,13 +643,22 @@ impl fmt::Debug for PhyPendingTracking {
 }
 
 impl PhyPendingTracking {
+    /// Whether this request's registration still describes `hardware`.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn describes(
+        &self,
+        hardware: &impl oer_esp32s31_hal::owner::SharedPhyAccess,
+    ) -> bool {
+        self.owner.describes(hardware)
+    }
+
     /// Ordinary model fixture; no registration or physical admission proof.
     #[cfg(feature = "validation-probes")]
     pub(crate) fn for_validation(
         request: PhyParamTrackRequest,
         policy: PhyParamTrackingPolicy,
     ) -> Self {
-        let mut owner = PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS);
+        let mut owner = PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS);
         owner.bits = if request.wifi() { WIFI_BIT } else { 0 }
             | if request.bluetooth_ieee802154() {
                 BLUETOOTH_BIT
@@ -627,11 +682,11 @@ impl PhyPendingTracking {
         }
     }
 
-    pub const fn action(&self) -> PhyParamTrackingAction {
+    pub(crate) const fn action(&self) -> PhyParamTrackingAction {
         self.transition.action()
     }
 
-    pub fn advance(
+    pub(crate) fn advance(
         &mut self,
         completion: PhyParamTrackingCompletion,
     ) -> Result<(), PhyParamTrackingTransitionError> {
@@ -643,7 +698,7 @@ impl PhyPendingTracking {
     }
 
     /// Lower the current RFPLL-cap action into its complete typed child.
-    pub fn begin_rfpll_cap_tracking<'state>(
+    pub(crate) fn begin_rfpll_cap_tracking<'state>(
         &self,
         state: &'state mut crate::state::PhyState,
     ) -> Result<PhyParamTrackingRfpllTransition<'state>, PhyParamTrackingChildError> {
@@ -652,7 +707,7 @@ impl PhyPendingTracking {
 
     /// Lower the current calibration action while retaining all three live
     /// semantic temperature references until terminal commit.
-    pub fn begin_calibration_tracking<'state>(
+    pub(crate) fn begin_calibration_tracking<'state>(
         &self,
         state: &'state mut crate::state::PhyState,
     ) -> Result<PhyParamTrackingCalibrationTransition<'state>, PhyParamTrackingChildError> {
@@ -661,7 +716,7 @@ impl PhyPendingTracking {
 
     /// Lower the current outer TX-power action into its complete typed child.
     /// Every other outer action fails closed instead of becoming a no-op.
-    pub fn begin_tx_power_tracking<'state>(
+    pub(crate) fn begin_tx_power_tracking<'state>(
         &self,
         state: &'state mut crate::state::PhyState,
     ) -> Result<PhyParamTrackingTxPowerTransition<'state>, PhyParamTrackingChildError> {
@@ -669,7 +724,7 @@ impl PhyPendingTracking {
     }
 
     /// Lower the current Wi-Fi PHY-I2C action into its complete typed child.
-    pub fn begin_wifi_i2c_tracking<'state>(
+    pub(crate) fn begin_wifi_i2c_tracking<'state>(
         &self,
         state: &'state mut crate::state::PhyState,
     ) -> Result<PhyParamTrackingWifiI2cTransition<'state>, PhyParamTrackingChildError> {
@@ -677,7 +732,7 @@ impl PhyPendingTracking {
     }
 
     /// Lower the current final sensor action into its complete typed child.
-    pub fn begin_temperature_read<'state>(
+    pub(crate) fn begin_temperature_read<'state>(
         &self,
         state: &'state mut crate::state::PhyState,
     ) -> Result<PhyParamTrackingTemperatureTransition<'state>, PhyParamTrackingChildError> {

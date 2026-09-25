@@ -32,7 +32,7 @@ not assume which executor wakes its timers.
 | `esp32s31/ieee80211/src/diagnostics/` | Optional execution observation |
 | `esp32s31/bluetooth/src/controller/` | One controller epoch, command/response boundaries and timer progress |
 | `esp32s31/bluetooth/src/session/` | Finite DTM, advertising, scanning and peripheral sessions |
-| Both `src/time/phy.rs` | `embassy-time` implementations of shared PHY time contracts |
+| `esp32s31/phy/` | The one `embassy-time` implementation of the PHY delay, tracking clock and tracking timer used by every radio composition |
 
 Hardware transactions and finite chip state remain below these packages. A
 runtime retains their affine owners across borrowed waits, returns the same

@@ -127,8 +127,8 @@ use oer_esp32s31_ieee80211_runtime::{
             try_restore_esp32s31_station_phase, tx_epoch::StaTxEpochExt,
         },
     },
-    time::phy::{EmbassyPhyClock, EmbassyPhyDelay},
 };
+use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 
 use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 
@@ -888,13 +888,13 @@ pub async fn new(
     if let Some(maximum) = maximum_tx_power_quarter_dbm {
         wifi_start = wifi_start.with_maximum_tx_power_quarter_dbm(maximum);
     }
-    let mut phy_clock = EmbassyPhyClock;
+    let mut phy_clock = EmbassyPhyTime;
     let radio_start = RadioStartConfig::new(
         wifi_start,
         WifiMacStartConfig::new(MAC_HANDSHAKE_SAMPLE_LIMIT, station_mac, access_point_mac),
     );
     let mut protection = Some(watchdog.startup());
-    let ready = await_stack_boundary!(start_esp32s31_radio::<_, EmbassyPhyDelay, _>(
+    let ready = await_stack_boundary!(start_esp32s31_radio::<_, EmbassyPhyTime, _>(
         owned,
         radio_start,
         calibration_cache,

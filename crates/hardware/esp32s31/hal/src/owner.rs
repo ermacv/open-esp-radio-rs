@@ -15,6 +15,7 @@ use super::*;
 mod interrupt_checkpoint;
 pub mod maintenance;
 pub use interrupt_checkpoint::MacInterruptCheckpoint;
+pub use oer_esp32s31_pac::PhyRegistrationEpoch;
 
 /// Powered-lifecycle PHY capability.
 ///
@@ -45,13 +46,69 @@ impl WifiBasebandEnableObservation {
     }
 }
 
+/// Protocol routes that can lend the shared radio PHY.
+///
+/// The route is part of every [`SharedPhyHal`] type, so an operation that is
+/// valid only for one protocol cannot accept a borrow minted by another. For
+/// example, Wi-Fi maintenance access cannot register or close the Bluetooth
+/// PHY client.
+pub mod route {
+    mod sealed {
+        pub trait Route {}
+    }
+
+    /// Closed set of routes; downstream crates cannot add a lender.
+    pub trait Route: sealed::Route {}
+
+    /// Borrowed from checked Wi-Fi maintenance access.
+    pub enum Wifi {}
+    /// Borrowed from the Bluetooth task owner.
+    pub enum Bluetooth {}
+    /// Borrowed from the IEEE 802.15.4 task owner.
+    pub enum Ieee802154 {}
+
+    impl sealed::Route for Wifi {}
+    impl sealed::Route for Bluetooth {}
+    impl sealed::Route for Ieee802154 {}
+    impl Route for Wifi {}
+    impl Route for Bluetooth {}
+    impl Route for Ieee802154 {}
+}
+
 /// Narrow borrowed HAL capability for the protocol-neutral radio PHY.
 ///
 /// This value cannot acquire, release, or recover the underlying PAC owner.
-/// Its lifetime is bounded by the active Wi-Fi, Bluetooth, or IEEE 802.15.4
-/// route.
-pub struct SharedPhyHal<'owner> {
+/// Its lifetime is bounded by the active route `R` that lent it.
+///
+/// A borrow keeps its route through ordinary moves:
+///
+/// ```
+/// use oer_esp32s31_hal::owner::{SharedPhyHal, route};
+/// fn keep(phy: SharedPhyHal<'_, route::Wifi>) -> SharedPhyHal<'_, route::Wifi> {
+///     phy
+/// }
+/// ```
+///
+/// A borrow from one route is a different type from a borrow of another:
+///
+/// ```compile_fail
+/// use oer_esp32s31_hal::owner::{SharedPhyHal, route};
+/// fn relabel(phy: SharedPhyHal<'_, route::Wifi>) -> SharedPhyHal<'_, route::Bluetooth> {
+///     phy
+/// }
+/// ```
+pub struct SharedPhyHal<'owner, R: route::Route> {
     pub(crate) registers: &'owner mut RadioPhyRegisters,
+    route: core::marker::PhantomData<fn() -> R>,
+}
+
+impl<'owner, R: route::Route> SharedPhyHal<'owner, R> {
+    pub(crate) fn new(registers: &'owner mut RadioPhyRegisters) -> Self {
+        Self {
+            registers,
+            route: core::marker::PhantomData,
+        }
+    }
 }
 
 pub(crate) mod sealed {
@@ -104,10 +161,8 @@ pub trait SharedPhyBorrow: sealed::SharedPhyBorrow {
     ///
     /// The returned capability samples shared Wi-Fi-baseband state through
     /// the retained route PAC owner.
-    fn borrow_shared_phy(&mut self) -> SharedPhyHal<'_> {
-        SharedPhyHal {
-            registers: sealed::SharedPhyBorrow::radio_phy_mut(self),
-        }
+    fn borrow_shared_phy(&mut self) -> SharedPhyHal<'_, route::Bluetooth> {
+        SharedPhyHal::new(sealed::SharedPhyBorrow::radio_phy_mut(self))
     }
 }
 
@@ -124,10 +179,8 @@ pub trait Ieee802154SharedPhyBorrow: sealed::Ieee802154SharedPhyBorrow {
     ///
     /// The returned capability samples shared Wi-Fi-baseband state through
     /// the retained route PAC owner.
-    fn borrow_shared_phy(&mut self) -> SharedPhyHal<'_> {
-        SharedPhyHal {
-            registers: sealed::Ieee802154SharedPhyBorrow::radio_phy_mut(self),
-        }
+    fn borrow_shared_phy(&mut self) -> SharedPhyHal<'_, route::Ieee802154> {
+        SharedPhyHal::new(sealed::Ieee802154SharedPhyBorrow::radio_phy_mut(self))
     }
 }
 
@@ -139,6 +192,14 @@ impl Ieee802154SharedPhyBorrow for Ieee802154TaskRegisters {}
 /// borrow but cannot implement this trait for an arbitrary owner or recover
 /// the underlying PAC.
 pub trait SharedPhyAccess: sealed::SharedPhyAccess {
+    /// The registration that currently describes this PHY partition.
+    ///
+    /// A registration result held apart from its hardware is valid for this
+    /// borrow only while its recorded epoch equals this value.
+    fn registration_epoch(&self) -> Option<PhyRegistrationEpoch> {
+        sealed::SharedPhyAccess::pac(self).registration_epoch()
+    }
+
     fn set_phy_calibration_clock(&mut self, enabled: bool) {
         sealed::SharedPhyAccess::pac_mut(self).set_phy_calibration_clock(enabled);
     }
@@ -283,7 +344,15 @@ pub trait SharedPhyContext: SharedPhyAccess + sealed::SharedPhyContext {
 /// even when entered by the standalone Bluetooth lifecycle. Implementations
 /// sample it through the retained PAC owner; this capability conveys no Wi-Fi
 /// MAC or protocol-role ownership.
-pub trait PhyInitializationAccess: SharedPhyContext + sealed::PhyInitializationAccess {}
+pub trait PhyInitializationAccess: SharedPhyContext + sealed::PhyInitializationAccess {
+    /// Begin a registration and retire every earlier epoch of this partition.
+    ///
+    /// Registration calls this before its first hardware edge. Any other call
+    /// only invalidates existing registration results; it cannot mint one.
+    fn begin_registration_epoch(&mut self) -> PhyRegistrationEpoch {
+        sealed::SharedPhyAccess::pac_mut(self).begin_registration_epoch()
+    }
+}
 
 impl sealed::SharedPhyAccess for PhyHal {
     fn pac(&self) -> &RadioPhyRegisters {
@@ -313,7 +382,7 @@ impl sealed::PhyInitializationAccess for PhyHal {}
 
 impl PhyInitializationAccess for PhyHal {}
 
-impl sealed::SharedPhyAccess for SharedPhyHal<'_> {
+impl<R: route::Route> sealed::SharedPhyAccess for SharedPhyHal<'_, R> {
     fn pac(&self) -> &RadioPhyRegisters {
         self.registers
     }
@@ -323,18 +392,18 @@ impl sealed::SharedPhyAccess for SharedPhyHal<'_> {
     }
 }
 
-impl sealed::SharedPhyContext for SharedPhyHal<'_> {
+impl<R: route::Route> sealed::SharedPhyContext for SharedPhyHal<'_, R> {
     fn wifi_baseband_enable_observation(&self) -> WifiBasebandEnableObservation {
         WifiBasebandEnableObservation::from_pac_readback(self.registers.wifi_baseband_is_enabled())
     }
 }
 
-impl SharedPhyAccess for SharedPhyHal<'_> {}
-impl SharedPhyContext for SharedPhyHal<'_> {}
+impl<R: route::Route> SharedPhyAccess for SharedPhyHal<'_, R> {}
+impl<R: route::Route> SharedPhyContext for SharedPhyHal<'_, R> {}
 
-impl sealed::PhyInitializationAccess for SharedPhyHal<'_> {}
+impl<R: route::Route> sealed::PhyInitializationAccess for SharedPhyHal<'_, R> {}
 
-impl PhyInitializationAccess for SharedPhyHal<'_> {}
+impl<R: route::Route> PhyInitializationAccess for SharedPhyHal<'_, R> {}
 
 impl sealed::SharedPhyAccess for RadioPhyRegisters {
     fn pac(&self) -> &RadioPhyRegisters {

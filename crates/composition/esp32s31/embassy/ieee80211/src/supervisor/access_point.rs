@@ -202,7 +202,7 @@ impl ProductionWifiEpochRunner {
             let lowered_channel = lower_wifi_channel(requested_channel);
             let observer = NoopPhyTargetObserver;
             let (phy, platform) = materialized.owner.radio_mut();
-            let mut channel = ScanPhy::<_, _, EmbassyPhyDelay>::new(phy, platform, observer);
+            let mut channel = ScanPhy::<_, _, EmbassyPhyTime>::new(phy, platform, observer);
             if await_stack_boundary!(channel.select_channel(
                 lowered_channel.channel_or_frequency,
                 lowered_channel.cbw,

@@ -217,6 +217,10 @@ pub enum PhyPowerControlPointAction {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "each completion names the tone action it answers: ConfigureTone, ToneSar, StopTone"
+)]
 pub enum PhyPowerControlPointCompletion {
     ToneConfigured {
         identity: u8,
@@ -1085,10 +1089,12 @@ impl PhyTxPowerI2cBinding {
         self.transaction.action()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn write_started(&mut self) -> Result<(), crate::calibration::cold::PhyColdI2cError> {
         self.transaction.write_started()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_write_result(
         &mut self,
         result: Result<(), crate::analog::i2c::PhyI2cError>,

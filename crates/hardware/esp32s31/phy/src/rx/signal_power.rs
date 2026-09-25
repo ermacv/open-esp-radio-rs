@@ -11,6 +11,7 @@
 
 /// Required pinned `libphy.a` vendor-ABI no-op leaf; the body is one `ret`.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub const fn noise_check_loop() {}
 
 use crate::calibration::estimator::{

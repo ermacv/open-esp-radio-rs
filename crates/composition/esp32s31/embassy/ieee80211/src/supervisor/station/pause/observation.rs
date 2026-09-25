@@ -73,14 +73,11 @@ impl PhyTargetObserver for Observer<'_> {
     const OBSERVE_RFPLL_AGE: bool = true;
     const OBSERVE_DELAYS: bool = true;
     #[inline(never)]
-    fn rfpll_completed(&mut self, observation: oer_esp32s31_phy::tracking::rfpll::Observation) {
+    fn rfpll_completed(&mut self, observation: oer_esp32s31_phy::tracking::RfpllObservation) {
         self.0.borrow_mut().observe_rfpll(observation);
     }
     #[inline(never)]
-    fn temperature_completed(
-        &mut self,
-        outcome: oer_esp32s31_phy::analog::temperature::PhyTemperatureOutcome,
-    ) {
+    fn temperature_completed(&mut self, outcome: oer_esp32s31_phy::PhyTemperatureOutcome) {
         self.0.borrow_mut().observe_temperature(outcome);
     }
     #[inline(never)]

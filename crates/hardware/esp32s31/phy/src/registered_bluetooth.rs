@@ -22,7 +22,7 @@ use crate::{
         PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackEvaluation,
         PhyTrackEvaluationFailure, PhyTrackPoisoned, PhyTrackTimeError,
     },
-    tracking::parameters::{PhyParamTrackRequest, PhyParamTrackingAction},
+    tracking::parameters::PhyParamTrackRequest,
 };
 
 /// Target-registered common PHY before the Bluetooth client is acquired.
@@ -43,10 +43,12 @@ impl RegisteredBluetoothPhy {
         state: PhyState,
         witness: crate::target_port::TargetRegistrationWitness,
     ) -> Self {
+        let epoch = witness.epoch();
         Self {
             registered: RegisteredPhyState::from_target_completion(state, witness),
-            clients: PhyClientState::for_registered_epoch(
+            clients: PhyClientState::for_registration(
                 crate::state::client::DEFAULT_PLL_TRACK_PERIOD_MICROS,
+                epoch,
             ),
         }
     }
@@ -388,8 +390,9 @@ impl RegisteredBluetoothPhyClientRelease {
     ///
     /// The caller retains the matching platform, stopped Controller/BTBB,
     /// inactive IRQ routes and drained timers for this exact registration.
-    /// No second client may use RF during the operation. Non-final release is
-    /// rejected before MMIO. The temperature preflight and close graph are the
+    /// No second client may use RF during the operation. Non-final release and
+    /// a registration that no longer describes `registers` are rejected before
+    /// MMIO. The temperature preflight and close graph are the
     /// same target implementation used by the Wi-Fi radio lifecycle.
     ///
     /// # Cancellation
@@ -403,13 +406,23 @@ impl RegisteredBluetoothPhyClientRelease {
     pub async fn close_rf<P, D: crate::PhyAsyncDelay>(
         mut self,
         platform: &mut P,
-        registers: &mut oer_esp32s31_hal::owner::SharedPhyHal<'_>,
+        registers: &mut oer_esp32s31_hal::owner::SharedPhyHal<
+            '_,
+            oer_esp32s31_hal::owner::route::Bluetooth,
+        >,
     ) -> Result<RegisteredBluetoothPhyRfClosed, BluetoothPhyRfCloseFailure> {
         if !self.is_last() {
             return Err(BluetoothPhyRfCloseFailure {
                 _owner: self,
                 error: crate::PhyTargetPortError::HardwareInvariant,
                 retryable: true,
+            });
+        }
+        if !self.outcome.owner().describes(&*registers) {
+            return Err(BluetoothPhyRfCloseFailure {
+                _owner: self,
+                error: crate::PhyTargetPortError::RegistrationEpochMismatch,
+                retryable: false,
             });
         }
         if let Err(error) = crate::target_port::close_bluetooth_rf::<P, D>(
@@ -606,7 +619,8 @@ pub struct RegisteredBluetoothPhyPendingTracking {
 
 impl RegisteredBluetoothPhyPendingTracking {
     /// Inspect the next semantic target operation.
-    pub const fn action(&self) -> PhyParamTrackingAction {
+    #[cfg(test)]
+    pub(crate) const fn action(&self) -> crate::tracking::parameters::PhyParamTrackingAction {
         self.pending.action()
     }
 
@@ -618,6 +632,15 @@ impl RegisteredBluetoothPhyPendingTracking {
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn target_tracking_parts(&mut self) -> (&mut PhyState, &mut PhyPendingTracking) {
         (self.registered.target_state_mut(), &mut self.pending)
+    }
+
+    /// Whether this tracking belongs to the registration of `hardware`.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn describes(
+        &self,
+        hardware: &impl oer_esp32s31_hal::owner::SharedPhyAccess,
+    ) -> bool {
+        self.pending.describes(hardware)
     }
 
     #[cfg(target_arch = "riscv32")]

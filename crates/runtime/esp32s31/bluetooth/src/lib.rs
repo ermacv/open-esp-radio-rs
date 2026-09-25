@@ -14,6 +14,5 @@ extern crate std;
 
 pub mod controller;
 pub mod session;
-pub mod time;
 
 pub mod notification;

@@ -322,6 +322,10 @@ pub enum PhyChipChannelCompletion {
         phase: PhyChipChannelI2cPhase,
         address: PhyI2cAddress,
     },
+    #[cfg_attr(
+        not(any(test, feature = "validation-probes")),
+        allow(dead_code, reason = "only validation bindings construct this variant")
+    )]
     I2cDeadlineExceeded {
         address: PhyI2cAddress,
     },
@@ -1039,14 +1043,17 @@ impl PhyChipChannelI2cBinding {
         self.transaction.action()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn read_started(&mut self) -> Result<(), crate::calibration::cold::PhyColdI2cError> {
         self.transaction.read_started()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn write_started(&mut self) -> Result<(), crate::calibration::cold::PhyColdI2cError> {
         self.transaction.write_started()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_read_result(
         &mut self,
         result: Result<u8, crate::analog::i2c::PhyI2cError>,
@@ -1057,6 +1064,7 @@ impl PhyChipChannelI2cBinding {
         self.transaction.observe_read_result(result)
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_write_result(
         &mut self,
         result: Result<(), crate::analog::i2c::PhyI2cError>,

@@ -16,6 +16,7 @@
 //! retained wake. The ROM `memcpy` calls and `phy_param` ABI cell remain
 //! unnecessary.
 
+#[cfg(any(test, feature = "validation-probes"))]
 pub const PHY_PBUS_MEMORY_ENTRY_COUNT: u8 = 60;
 
 const GROUP_COUNT: u8 = 12;
@@ -94,10 +95,12 @@ pub struct PhyPbusMemoryEntry {
 }
 
 impl PhyPbusMemoryEntry {
+    #[cfg(test)]
     pub const fn group(self) -> u8 {
         self.group
     }
 
+    #[cfg(test)]
     pub const fn index(self) -> u8 {
         self.index
     }
@@ -485,6 +488,7 @@ impl PhyPbusMemoryMmioBinding {
         }
     }
 
+    #[cfg(feature = "validation-probes")]
     pub const fn action(&self) -> PhyPbusMemoryAction {
         self.action
     }

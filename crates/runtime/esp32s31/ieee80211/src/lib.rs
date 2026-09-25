@@ -13,6 +13,3 @@ extern crate std;
 pub mod datapath;
 pub mod diagnostics;
 pub mod roles;
-
-#[cfg(any(target_arch = "riscv32", test))]
-pub mod time;

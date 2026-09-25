@@ -17,26 +17,11 @@ use crate::{
         PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackEvaluation,
         PhyTrackEvaluationFailure, PhyTrackPoisoned, PhyTrackTimeError,
     },
-    tracking::parameters::{PhyParamTrackRequest, PhyParamTrackingAction},
+    tracking::parameters::PhyParamTrackRequest,
 };
 
-#[path = "registered_ieee802154.rs"]
-mod ieee802154;
 #[cfg(target_arch = "riscv32")]
-#[path = "registered_radio/wifi_integration.rs"]
 mod wifi_integration;
-
-pub use ieee802154::{
-    RegisteredIeee802154Client, RegisteredIeee802154ClientAcquire,
-    RegisteredIeee802154ClientAcquireFailure, RegisteredIeee802154Clocked,
-    RegisteredIeee802154FoundationConfigured, RegisteredIeee802154FoundationTransitionFailure,
-    RegisteredIeee802154MacPolicyConfigured, RegisteredIeee802154MacPolicyRecovery,
-    RegisteredIeee802154MacPolicyTransitionFailure, RegisteredIeee802154OperationCompleted,
-    RegisteredIeee802154OperationFailed, RegisteredIeee802154PendingTrack,
-    RegisteredIeee802154PendingTracking, RegisteredIeee802154Reset,
-    RegisteredIeee802154ResetTransitionFailure, RegisteredIeee802154TimingReady,
-    RegisteredIeee802154TrackPoisoned,
-};
 
 /// Unique powered-radio owner carrying proof of target PHY registration.
 ///
@@ -323,11 +308,16 @@ impl<P> TargetRegisteredPhyEpoch<P> {
         self.phy.state()
     }
 
-    pub(crate) fn into_registered_radio(self) -> RegisteredPhyRadio<P> {
+    pub(crate) fn into_registered_radio(mut self) -> RegisteredPhyRadio<P> {
+        // The coupled radio still carries the epoch its registration began.
+        let clients = PhyClientState::for_registration_of(
+            DEFAULT_PLL_TRACK_PERIOD_MICROS,
+            &*self.radio.phy_hal_mut(),
+        );
         RegisteredPhyRadio {
             radio: self.radio,
             phy: self.phy,
-            clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+            clients,
         }
     }
 }
@@ -944,7 +934,8 @@ pub struct RegisteredPhyPendingTracking<P> {
 }
 
 impl<P> RegisteredPhyPendingTracking<P> {
-    pub const fn action(&self) -> PhyParamTrackingAction {
+    #[cfg(test)]
+    pub(crate) const fn action(&self) -> crate::tracking::parameters::PhyParamTrackingAction {
         self.pending.action()
     }
 

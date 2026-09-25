@@ -4,22 +4,18 @@ use oer_esp32s31_ieee80211_dma::rx_ring::{RxRingPaused, RxRingResumeFailure};
 use oer_esp32s31_ieee80211_esp_hal::mac_interrupt_epoch::{
     EspHalMacInterruptRoute, EspHalMacInterruptRouteError,
 };
-use oer_esp32s31_ieee80211_runtime::{
-    datapath::{
-        irq::{
-            MacInterruptEpochActivateError, MacInterruptEpochQuiesceError, PausedInterruptEpoch,
-        },
-        maintenance::{StopError, stop_mac},
-    },
-    time::phy::EmbassyPhyClock,
+use oer_esp32s31_ieee80211_runtime::datapath::{
+    irq::{MacInterruptEpochActivateError, MacInterruptEpochQuiesceError, PausedInterruptEpoch},
+    maintenance::{StopError, stop_mac},
 };
+use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 
 mod access;
 mod observation;
 use super::pause_request::timeline::Edge;
 
 pub(super) type Role = oer_esp32s31_ieee80211::runtime::WifiRoleOwner<EspHalRadioPeripheral>;
-type TrackingOutcome = Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>;
+type TrackingOutcome = Option<oer_esp32s31_phy::tracking::PhyParamTrackingOutcome>;
 
 type PausedRx = ConnectedRx<RxRingPaused<'static, RX_DESCRIPTOR_COUNT>>;
 type FailedRx = ConnectedRx<RxRingResumeFailure<'static, RX_DESCRIPTOR_COUNT>>;
@@ -278,7 +274,7 @@ async fn physical_round_trip(
             .expect("paused worker returned its runner")
             .services_mut()
             .hardware_mut(),
-        &mut EmbassyPhyClock,
+        &mut EmbassyPhyTime,
         100_000,
     )
     .await

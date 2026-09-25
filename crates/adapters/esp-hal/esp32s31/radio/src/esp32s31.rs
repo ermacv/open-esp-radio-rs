@@ -12,7 +12,7 @@ use esp_hal::{
     },
 };
 use oer_bluetooth_hci::BluetoothPublicDeviceAddress;
-use oer_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
+use oer_esp32s31_phy::{PhyCalibrationIdentity, phy_get_rf_cal_version};
 
 use crate::{
     bluetooth_address::bluetooth_public_address_from_base,

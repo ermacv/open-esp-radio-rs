@@ -24,7 +24,7 @@ use crate::{
     },
     tracking::rfpll::{
         self,
-        search::{self, Action, Completion, Status},
+        search::{Action, Completion, Status},
     },
 };
 
@@ -127,10 +127,11 @@ fn complete<D: PhyAsyncDelay>(
 /// Run the bounded search while retaining the caller's exclusive PHY borrow.
 /// A hardware failure leaves that borrow with the caller for fault containment;
 /// this entry does not imply that normal RF operation may resume.
+#[cfg(any(test, feature = "validation-probes"))]
 pub async fn search<D: PhyAsyncDelay>(
     registers: &mut impl SharedPhyAccess,
-) -> Result<search::Outcome, PhyTargetPortError> {
-    let mut search = search::Search::new();
+) -> Result<rfpll::search::Outcome, PhyTargetPortError> {
+    let mut search = rfpll::search::Search::new();
     loop {
         let action = search.action();
         if let Action::Complete(outcome) = action {
@@ -144,6 +145,7 @@ pub async fn search<D: PhyAsyncDelay>(
 
 /// Search, update every frequency-memory entry when the measured delta is
 /// nonzero, and restore the current channel index before returning success.
+#[cfg(any(test, feature = "validation-probes"))]
 pub async fn correct<D: PhyAsyncDelay>(
     registers: &mut impl SharedPhyAccess,
     current_channel: u16,
@@ -173,6 +175,7 @@ pub async fn correct<D: PhyAsyncDelay>(
 /// enable selects mode zero. These are different from the ROM's frequency-
 /// disable bit; the existing typed baseband-mode accessor implements the new
 /// operations without duplicating the physical register's identity.
+#[cfg(any(test, feature = "validation-probes"))]
 pub async fn maintain<D: PhyAsyncDelay>(
     registers: &mut impl SharedPhyAccess,
     current_channel: u16,
@@ -244,6 +247,7 @@ pub(super) async fn complete_thermal<D: PhyAsyncDelay>(
 /// Execute an admitted thermal transaction, retaining exclusive access across
 /// all waits. Success is available only after restoration (or a hardware-free
 /// skip). Error or cancellation requires the caller to contain the failed epoch.
+#[cfg(any(test, feature = "validation-probes"))]
 pub async fn track<D: PhyAsyncDelay>(
     registers: &mut impl SharedPhyAccess,
     request: rfpll::thermal::Request,

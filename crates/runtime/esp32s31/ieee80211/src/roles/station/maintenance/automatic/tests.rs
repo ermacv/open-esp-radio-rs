@@ -1,6 +1,6 @@
 use core::num::NonZeroU64;
 
-use oer_esp32s31_phy::tracking::parameters::{
+use oer_esp32s31_phy::tracking::{
     CalibrationProgress, PhyParamTrackRequest, PhyParamTrackingOutcome,
 };
 

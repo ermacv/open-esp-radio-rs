@@ -1,4 +1,5 @@
 use super::{EmbassyPhyTime, EmbassyPhyTimeError, checked_deadline_micros, validate_tick_rate};
+use core::mem::size_of;
 
 #[test]
 fn production_time_adapter_is_zero_sized() {

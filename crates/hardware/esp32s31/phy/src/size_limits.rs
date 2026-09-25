@@ -3,9 +3,9 @@
 use core::mem::size_of;
 
 use crate::{
-    PhyCalibrationCache, PhyRegisterTransition, PhyState, RegisteredPhyPoweredIdle,
-    RegisteredPhyRadio, RegisteredPhyRfClosed, RegisteredPhyState, RegisteredWifiPhy,
-    calibration::baseband::PhyBbInitTransition,
+    PhyCalibrationCache, PhyState, RegisteredPhyPoweredIdle, RegisteredPhyRadio,
+    RegisteredPhyRfClosed, RegisteredPhyState, RegisteredWifiPhy,
+    calibration::{baseband::PhyBbInitTransition, registration::PhyRegisterTransition},
     rx::{
         gain::{PhyRxGainInitExternalBinding, PhyRxGainInitTransition, PhyRxGainPublishTransition},
         gain_calibration::{PhyRxDcCalibrationExternalBinding, PhyRxGainDcExternalBinding},

@@ -53,6 +53,73 @@ pub struct RadioPhyRegisters {
     pub(crate) shared_clock: crate::modem::shared_clock::SharedModemClockState,
     pub(crate) platform_clock_power: crate::modem::platform::PlatformClockPowerState,
     pub(crate) restore_slot: baseband::RadioPhyRestoreSlot,
+    pub(crate) registration: RegistrationEpochState,
+}
+
+/// Identity of one PHY registration on the unique radio-PHY partition.
+///
+/// A registration issues a new epoch before it touches hardware. The epoch
+/// stays current until another registration begins or the partition returns
+/// to [`RadioHardware`]. A registration result held apart from its hardware
+/// is valid for that hardware only while its epoch equals
+/// [`RadioPhyRegisters::registration_epoch`].
+///
+/// The value is 32 bits wide so that the registered PHY owners carrying it
+/// keep their size; those owners live inside reviewed async stack frames.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyRegistrationEpoch(core::num::NonZeroU32);
+
+/// Software registration bookkeeping carried with the physical partition.
+///
+/// One word holds the last issued epoch in its low 31 bits and whether that
+/// epoch is current in its top bit, so every radio owner carries it without
+/// growing.
+pub(crate) struct RegistrationEpochState(u32);
+
+impl RegistrationEpochState {
+    const CURRENT: u32 = 1 << 31;
+    const COUNTER: u32 = Self::CURRENT - 1;
+
+    const fn new() -> Self {
+        Self(0)
+    }
+
+    const fn issued(&self) -> u32 {
+        self.0 & Self::COUNTER
+    }
+}
+
+impl RadioPhyRegisters {
+    /// Begin a registration and retire every earlier epoch of this partition.
+    ///
+    /// Call this before the first registration hardware edge: a failed or
+    /// abandoned attempt has still changed the hardware that older results
+    /// describe.
+    pub fn begin_registration_epoch(&mut self) -> PhyRegistrationEpoch {
+        // Each registration runs a full calibration graph, so 2^31 of them
+        // cannot occur in one boot. Wrapping past zero keeps this total.
+        let next = self.registration.issued().wrapping_add(1) & RegistrationEpochState::COUNTER;
+        let issued = core::num::NonZeroU32::new(next).unwrap_or(core::num::NonZeroU32::MIN);
+        self.registration = RegistrationEpochState(issued.get() | RegistrationEpochState::CURRENT);
+        PhyRegistrationEpoch(issued)
+    }
+
+    /// The registration that currently describes this partition, if any.
+    pub const fn registration_epoch(&self) -> Option<PhyRegistrationEpoch> {
+        if self.registration.0 & RegistrationEpochState::CURRENT == 0 {
+            return None;
+        }
+        match core::num::NonZeroU32::new(self.registration.issued()) {
+            Some(issued) => Some(PhyRegistrationEpoch(issued)),
+            None => None,
+        }
+    }
+
+    /// Retire the current registration as the partition leaves its route.
+    fn into_unregistered(mut self) -> Self {
+        self.registration = RegistrationEpochState(self.registration.issued());
+        self
+    }
 }
 
 /// Why a cold protocol route cannot release the neutral radio root.
@@ -177,6 +244,7 @@ impl RadioHardware {
                 shared_clock: crate::modem::shared_clock::SharedModemClockState::new(),
                 platform_clock_power: crate::modem::platform::PlatformClockPowerState::new(),
                 restore_slot: baseband::RadioPhyRestoreSlot::new(),
+                registration: RegistrationEpochState::new(),
             },
             coexistence,
             bluetooth,
@@ -859,7 +927,7 @@ impl WifiColdRegisters {
         Ok(RadioHardware {
             wifi_mac,
             wifi_interrupts,
-            radio_phy,
+            radio_phy: radio_phy.into_unregistered(),
             coexistence,
             bluetooth,
             bluetooth_modem_lp_timer,
@@ -1179,7 +1247,7 @@ impl Ieee802154TaskRegisters {
         RadioHardware {
             wifi_mac,
             wifi_interrupts,
-            radio_phy,
+            radio_phy: radio_phy.into_unregistered(),
             coexistence,
             bluetooth,
             bluetooth_modem_lp_timer,
@@ -1843,7 +1911,7 @@ impl BluetoothTaskRegisters {
         RadioHardware {
             wifi_mac,
             wifi_interrupts,
-            radio_phy,
+            radio_phy: radio_phy.into_unregistered(),
             coexistence,
             bluetooth,
             bluetooth_modem_lp_timer,

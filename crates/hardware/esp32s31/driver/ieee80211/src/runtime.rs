@@ -114,19 +114,21 @@ impl<P> WifiStopped<P> {
         )
         .reunite_powered();
         radio.disable_wifi_rx();
-        match phy.release_wifi_client() {
-            Ok(release) => Ok(release.reunite(radio).into_disposition()),
+        match phy.release_wifi_client(radio) {
+            Ok(release) => Ok(release.into_disposition()),
             Err(failure) => {
+                let error = WifiPhyClientReleaseError::Phy(failure.error());
+                let (phy, mut radio) = failure.into_parts();
                 radio.enable_wifi_rx();
                 let (platform, registers, interrupt_setup) =
                     radio.into_running().into_runtime_parts();
                 Err(WifiPhyClientReleaseFailure {
-                    error: WifiPhyClientReleaseError::Client(failure.error()),
+                    error,
                     owner: Self {
                         platform,
                         registers,
                         interrupt_setup,
-                        phy: failure.into_owner(),
+                        phy,
                         start_report,
                         transition_report,
                         current_channel,
@@ -255,7 +257,7 @@ impl<P> WifiStopped<P> {
     ) -> Result<
         (
             Self,
-            Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
+            Option<oer_esp32s31_phy::tracking::PhyParamTrackingOutcome>,
         ),
         WifiMaintenanceFailure<P>,
     > {
@@ -433,7 +435,7 @@ pub struct WifiPhyClientReleaseFailure<P> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WifiPhyClientReleaseError {
     Hardware(oer_esp32s31_hal::owner::maintenance::Error),
-    Client(oer_esp32s31_phy::state::client::PhyClientReleaseError),
+    Phy(oer_esp32s31_phy::RegisteredWifiPhyClientReleaseError),
 }
 
 impl<P> WifiPhyClientReleaseFailure<P> {
@@ -549,7 +551,7 @@ impl<P> WifiRoleOwner<P> {
         (
             Self,
             oer_esp32s31_hal::owner::maintenance::WifiAccess<I>,
-            Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
+            Option<oer_esp32s31_phy::tracking::PhyParamTrackingOutcome>,
         ),
         WifiRoleMaintenanceFailure<P, I>,
     > {

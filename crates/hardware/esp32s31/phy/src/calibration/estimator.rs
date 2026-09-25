@@ -19,6 +19,7 @@
 
 /// Split one packed DC value exactly as pinned archive `get_dc_value`.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub fn get_dc_value(output: &mut [u16; 2], value: u32) {
     output[0] = (value >> 16) as u16;
     output[1] = value as u16;
@@ -185,6 +186,10 @@ pub enum PhyDcIqCompletion {
     },
     /// One uninterrupted, bounded execution of the ROM-shaped readiness
     /// polling loop. The private payload can only be minted by its binding.
+    #[cfg_attr(
+        not(any(test, feature = "validation-probes")),
+        allow(dead_code, reason = "only validation bindings construct this variant")
+    )]
     ReadinessBatchObserved(PhyDcIqReadinessBatch),
     ReadinessTimedOut(PhyDcIqEstimateRequest),
     AccumulatorsRead {
@@ -631,6 +636,7 @@ impl PhyDcIqMmioBinding {
         }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> PhyDcIqAction {
         self.action
     }
@@ -771,6 +777,7 @@ impl PhyDcIqReadinessBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn execute_target(
         self,
         registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,

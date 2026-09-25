@@ -10,8 +10,8 @@ use oer_esp32s31_phy::{
     PhyAsyncDelay, PhyTargetObserver, RegisteredBluetoothPhyTrackEvaluationFailure,
     TargetBluetoothPhyParamTrackingFailure, TargetPhyParamTrackingError,
     state::client::{PhyPllTrackClock, PhyTrackTimeError},
+    tracking::PhyParamTrackingOutcome,
     tracking::deadline::{TrackingDeadline, TrackingDeadlineError},
-    tracking::parameters::PhyParamTrackingOutcome,
 };
 
 /// Exact failed maintenance edge; no failed edge returns a runnable task.

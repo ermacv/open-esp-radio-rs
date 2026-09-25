@@ -48,7 +48,7 @@ impl<P> RegisteredPhyRadio<P> {
     ) -> Result<(), crate::PhyTargetPortError> {
         self.radio.enable_wifi_rx();
         let mut hardware = self.radio.channel_hal();
-        crate::select_phy_channel_with_hal::<D, _, _>(
+        crate::target_port::select_phy_channel_with_hal::<D, _, _>(
             self.phy.target_state_mut(),
             channel,
             cbw,

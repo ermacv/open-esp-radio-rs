@@ -2230,10 +2230,10 @@ pub enum PhyRxGainCalibrationBindingError {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyRxDcCalibrationHardwareInvariant {
-    RestoreOwnedByOtherCalibration,
-    RestoreNestingExceeded,
-    RestoreNotPending,
+pub enum PhyRxDcCalibrationRestoreInvariant {
+    OwnedByOtherCalibration,
+    NestingExceeded,
+    NotPending,
 }
 
 // Compact operation identity; coefficient products stay in the transition.
@@ -2266,6 +2266,7 @@ impl PhyRxDcCalibrationMmioBinding {
         Ok(Self { operation })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> PhyRxDcCalibrationAction {
         match self.operation {
             CalibrationMmio::PrepareControlRestore => {
@@ -2282,16 +2283,16 @@ impl PhyRxDcCalibrationMmioBinding {
     pub fn execute_target(
         self,
         registers: &mut impl oer_esp32s31_hal::owner::SharedPhyContext,
-    ) -> Result<PhyRxDcCalibrationCompletion, PhyRxDcCalibrationHardwareInvariant> {
+    ) -> Result<PhyRxDcCalibrationCompletion, PhyRxDcCalibrationRestoreInvariant> {
         match self.operation {
             CalibrationMmio::PrepareControlRestore => {
                 oer_esp32s31_hal::phy::rx_dco::prepare_control_restore(registers).map_err(
                     |error| match error {
                         oer_esp32s31_hal::types::RxDcoControlPrepareError::RestorePending => {
-                            PhyRxDcCalibrationHardwareInvariant::RestoreOwnedByOtherCalibration
+                            PhyRxDcCalibrationRestoreInvariant::OwnedByOtherCalibration
                         }
                         oer_esp32s31_hal::types::RxDcoControlPrepareError::RestoreStackFull => {
-                            PhyRxDcCalibrationHardwareInvariant::RestoreNestingExceeded
+                            PhyRxDcCalibrationRestoreInvariant::NestingExceeded
                         }
                     },
                 )?;
@@ -2314,7 +2315,7 @@ impl PhyRxDcCalibrationMmioBinding {
             }
             CalibrationMmio::RestoreControl => {
                 oer_esp32s31_hal::phy::rx_dco::restore_control(registers)
-                    .map_err(|_| PhyRxDcCalibrationHardwareInvariant::RestoreNotPending)?;
+                    .map_err(|_| PhyRxDcCalibrationRestoreInvariant::NotPending)?;
                 Ok(PhyRxDcCalibrationCompletion::ControlRestored)
             }
         }
@@ -2368,6 +2369,7 @@ impl PhyRxGainDcMmioBinding {
         Ok(Self { operation })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> PhyRxGainDcAction {
         match self.operation {
             DcMmio::ConfigureRegisters { enabled } => {
@@ -2455,14 +2457,17 @@ impl PhyRxDcCalibrationPbusBinding {
         })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> crate::analog::pbus::PhyPbusHardwareAction {
         self.hardware.action()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn started(&mut self) -> Result<(), crate::analog::pbus::PhyPbusHardwareBindingError> {
         self.hardware.started()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_completed(
         &mut self,
         completed: bool,
@@ -2590,14 +2595,17 @@ impl PhyRxGainDcPbusBinding {
         })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> crate::analog::pbus::PhyPbusHardwareAction {
         self.hardware.action()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn started(&mut self) -> Result<(), crate::analog::pbus::PhyPbusHardwareBindingError> {
         self.hardware.started()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_completed(
         &mut self,
         completed: bool,

@@ -1,6 +1,18 @@
 #![no_std]
 // The private `ieee802154_timing_boundary` module is the sole scoped override.
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
+// The registration and tracking graphs run only through the chip target
+// ports, which exist only for `riscv32`. Host builds type-check the graphs and
+// their hardware bindings, and tests drive the models, but nothing on the host
+// calls every binding. Dead code is enforced by the chip build.
+#![cfg_attr(
+    not(target_arch = "riscv32"),
+    allow(
+        dead_code,
+        unused_imports,
+        reason = "host builds type-check the graphs that only chip target ports drive"
+    )
+)]
 
 //! Source-only ESP32-S31 shared RF/PHY ownership frontier.
 //!
@@ -40,28 +52,48 @@ extern crate std;
 pub mod executor;
 #[cfg(feature = "lifecycle-fault-injection")]
 pub mod fault_injection;
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(target_arch = "riscv32", feature = "validation-probes"))]
 pub mod target_executor;
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(target_arch = "riscv32", not(feature = "validation-probes")))]
+mod target_executor;
+#[cfg(all(target_arch = "riscv32", feature = "validation-probes"))]
 pub mod target_port;
+#[cfg(all(target_arch = "riscv32", not(feature = "validation-probes")))]
+mod target_port;
 
+#[cfg(feature = "validation-probes")]
 pub mod analog;
+#[cfg(not(feature = "validation-probes"))]
+mod analog;
+#[cfg(feature = "validation-probes")]
 pub mod calibration;
+#[cfg(not(feature = "validation-probes"))]
+mod calibration;
+#[cfg(feature = "validation-probes")]
 pub mod channel;
+#[cfg(not(feature = "validation-probes"))]
+mod channel;
 mod hardware;
 mod ieee802154_timing_boundary;
 #[cfg(any(target_arch = "riscv32", test))]
 mod lifecycle;
+#[cfg(feature = "validation-probes")]
 pub mod rx;
+#[cfg(not(feature = "validation-probes"))]
+mod rx;
 pub mod state;
 pub mod tracking;
+#[cfg(feature = "validation-probes")]
 pub mod tx;
+#[cfg(not(feature = "validation-probes"))]
+mod tx;
 
 mod registered_bluetooth;
+mod registered_ieee802154;
 mod registered_radio;
 mod registered_wifi;
 pub use registered_wifi::{
-    RegisteredWifiPhy, RegisteredWifiPhyClientRelease, RegisteredWifiPhyClientReleaseFailure,
+    RegisteredWifiPhy, RegisteredWifiPhyClientReleaseError, RegisteredWifiPhyClientReleaseFailure,
     WifiPhyMaintenanceRequest,
 };
 #[cfg(target_arch = "riscv32")]
@@ -70,17 +102,28 @@ mod size_limits;
 #[cfg(feature = "validation-probes")]
 pub mod validation;
 
+/// Vendor RF-calibration version stamped into calibration caches.
+pub use analog::rfpll::phy_get_rf_cal_version;
+// Value results of registration children that protocol reports and HIL
+// evidence carry. The transitions that produce them stay crate-private.
+#[cfg(feature = "registration-diagnostics")]
+pub use calibration::registration::RfCalibrationDiagnostics;
 pub use calibration::registration::{
-    PhyCalibrationIdentity, PhyCalibrationPath, PhyRegisterAction, PhyRegisterCompletion,
-    PhyRegisterExternalBinding, PhyRegisterFailure, PhyRegisterLocalStep, PhyRegisterOutcome,
-    PhyRegisterTransition, RegisteredPhyState,
+    PhyCalibrationIdentity, PhyCalibrationPath, PhyRegisterBindingError, PhyRegisterFailure,
+    PhyRegisterOutcome, PhyRegisterStage, RegisteredPhyState,
 };
+#[cfg(feature = "validation-probes")]
+pub use calibration::registration::{
+    PhyRegisterAction, PhyRegisterCompletion, PhyRegisterExternalBinding, PhyRegisterLocalStep,
+    PhyRegisterTransition,
+};
+#[cfg(feature = "validation-probes")]
 pub use executor::{
-    PhyCalibrationTrackingPort, PhyCalibrationTrackingRunError, PhyParamTrackingPort,
-    PhyParamTrackingRunError, PhyRegisterPort, PhyRegisterRunError, run_phy_calibration_tracking,
-    run_phy_param_tracking, run_phy_register,
+    PhyCalibrationTrackingPort, PhyParamTrackingPort, PhyRegisterPort,
+    run_phy_calibration_tracking, run_phy_param_tracking, run_phy_register,
 };
-#[cfg(any(target_arch = "riscv32", test))]
+pub use executor::{PhyCalibrationTrackingRunError, PhyParamTrackingRunError, PhyRegisterRunError};
+#[cfg(all(any(target_arch = "riscv32", test), feature = "validation-probes"))]
 pub use lifecycle::{
     PhyRfWakeAction, PhyRfWakeCompletion, PhyRfWakeOperation, PhyRfWakeOutcome,
     PhyRfWakeTransition, PhyRfWakeTransitionError,
@@ -95,7 +138,7 @@ pub use registered_bluetooth::{
     RegisteredBluetoothPhyTrackEvaluation, RegisteredBluetoothPhyTrackEvaluationFailure,
     RegisteredBluetoothPhyTrackPoisoned,
 };
-pub use registered_radio::{
+pub use registered_ieee802154::{
     RegisteredIeee802154Client, RegisteredIeee802154ClientAcquire,
     RegisteredIeee802154ClientAcquireFailure, RegisteredIeee802154Clocked,
     RegisteredIeee802154FoundationConfigured, RegisteredIeee802154FoundationTransitionFailure,
@@ -104,8 +147,10 @@ pub use registered_radio::{
     RegisteredIeee802154OperationFailed, RegisteredIeee802154PendingTrack,
     RegisteredIeee802154PendingTracking, RegisteredIeee802154Reset,
     RegisteredIeee802154ResetTransitionFailure, RegisteredIeee802154TimingReady,
-    RegisteredIeee802154TrackPoisoned, RegisteredPhyClientAcquire,
-    RegisteredPhyClientAcquireFailure, RegisteredPhyClientRelease,
+    RegisteredIeee802154TrackPoisoned,
+};
+pub use registered_radio::{
+    RegisteredPhyClientAcquire, RegisteredPhyClientAcquireFailure, RegisteredPhyClientRelease,
     RegisteredPhyClientReleaseDisposition, RegisteredPhyClientReleaseFailure,
     RegisteredPhyPendingTrack, RegisteredPhyPendingTracking, RegisteredPhyPoweredIdle,
     RegisteredPhyRadio, RegisteredPhyRfClosed, RegisteredPhyTrackEvaluation,
@@ -122,6 +167,14 @@ pub use state::{
     PhyCalibrationSnapshot, PhyCommonCalibration, PhyConfig, PhyState, PhyWifiCalibration,
 };
 pub use tx::power::{PhyTxTargetPowerPair, PhyTxTargetPowerProfile};
+pub use {
+    analog::{
+        dcode::PhyDcodeOutcome, pbus::PhyPbusClearOutcome, temperature::PhyTemperatureOutcome,
+    },
+    channel::PhyChipChannelFailure,
+    rx::{gain::PhyRxGainInitOutcome, gain_calibration::PhyRxGainDcQuality},
+    tx::dc_power_detector::PhyTxDcPwdetOutcome,
+};
 /// Shared finite observation/attempt bound used by target executors and host
 /// checks of typed timeout paths. This is not a microsecond duration: direct
 /// readiness sampling and timer-backed bus retries have different costs.
@@ -139,13 +192,15 @@ pub use target_port::{
     TargetIeee802154PhyParamTrackingFailure, TargetIeee802154PhyParamTrackingSuccess,
     TargetIeee802154PhyRegisterConfig, TargetIeee802154PhyRegisterError,
     TargetIeee802154PhyRegisterFailure, TargetIeee802154PhyRegisterSuccess,
-    TargetPhyCalibrationTrackingPort, TargetPhyParamTrackingError, TargetPhyParamTrackingFailure,
-    TargetPhyParamTrackingPort, TargetPhyParamTrackingSuccess, TargetPhyRegisterAttempt,
-    TargetPhyRegisterError, TargetPhyRegisterFailure, TargetPhyRegisterPort,
+    TargetPhyParamTrackingError, TargetPhyParamTrackingFailure, TargetPhyParamTrackingSuccess,
+    TargetPhyRegisterAttempt, TargetPhyRegisterError, TargetPhyRegisterFailure,
     TargetPhyRegisterSuccess, TargetPhyRegisterTerminalParts,
     run_target_bluetooth_phy_param_tracking, run_target_bluetooth_phy_param_tracking_until,
     run_target_bluetooth_phy_register, run_target_ieee802154_phy_param_tracking,
     run_target_ieee802154_phy_register, run_target_phy_param_tracking, run_target_phy_register,
-    select_phy_channel_with_hal, select_registered_wifi_channel,
-    switch_phy_channel_with_hal_and_mac_restart, switch_registered_wifi_channel,
+    select_registered_wifi_channel, switch_registered_wifi_channel,
+};
+#[cfg(all(target_arch = "riscv32", feature = "validation-probes"))]
+pub use target_port::{
+    TargetPhyCalibrationTrackingPort, TargetPhyParamTrackingPort, TargetPhyRegisterPort,
 };

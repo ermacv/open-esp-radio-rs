@@ -53,9 +53,7 @@ use oer_esp32s31_ieee80211_system::{
 #[cfg(feature = "connected-datapath-poll-telemetry")]
 use oer_esp32s31_ieee80211_system::{ConnectedDatapathPollBatch, ConnectedDatapathPollObserver};
 
-use oer_esp32s31_phy::{
-    PhyCalibrationIdentity, PhyCalibrationPath, analog::rfpll::phy_get_rf_cal_version,
-};
+use oer_esp32s31_phy::{PhyCalibrationIdentity, PhyCalibrationPath, phy_get_rf_cal_version};
 
 use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
 #[cfg(all(

@@ -20,7 +20,7 @@ use oer_esp32s31_phy::{
     TargetBluetoothPhyRegisterFailure, TargetPhyParamTrackingError,
     run_target_bluetooth_phy_param_tracking, run_target_bluetooth_phy_register,
     state::client::{PhyClientAcquireError, PhyClientAcquireOrdering, PhyPllTrackClock},
-    tracking::parameters::PhyParamTrackRequest,
+    tracking::PhyParamTrackRequest,
 };
 
 type Controller<P, const MT: usize, const SC: usize> =

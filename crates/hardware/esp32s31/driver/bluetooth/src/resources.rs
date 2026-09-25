@@ -31,7 +31,7 @@ use oer_esp32s31_hal::bluetooth::{
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 use oer_esp32s31_hal::{
     bluetooth::RxMemoryListPublished,
-    owner::{SharedPhyBorrow, SharedPhyHal},
+    owner::{SharedPhyBorrow, SharedPhyHal, route},
 };
 #[cfg(target_arch = "riscv32")]
 use {
@@ -754,7 +754,7 @@ impl TaskResources {
     /// selecting the Bluetooth route alone is not treated as proof that the
     /// shared settle condition is false.
     #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
-    pub fn shared_phy_hal(&mut self) -> SharedPhyHal<'_> {
+    pub fn shared_phy_hal(&mut self) -> SharedPhyHal<'_, route::Bluetooth> {
         self.registers.borrow_shared_phy()
     }
 

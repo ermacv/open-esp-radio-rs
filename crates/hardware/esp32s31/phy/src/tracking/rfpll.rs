@@ -3,9 +3,9 @@
 //! Reference: esp-phy-lib `b88e4b76e090ae59c51cb00b916d38def895b396`,
 //! libphy SHA-256 `d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580`,
 //! `phy_rfpll_cap_init_cal_new` and `phy_rfpll_cap_correct_new`.
-//! This finite child is separate from the ROM status-based ±2 correction in
-//! [`crate::analog::rfpll`]. It does not enable automatic tracking or grant
-//! access to RF. The target-only `crate::target_port::rfpll` executes the
+//! This finite child is the production RFPLL capacitor correction. It does
+//! not enable automatic tracking or grant access to RF. The target-only
+//! `crate::target_port::rfpll` executes the
 //! search, memory child and current frequency-control envelope through typed
 //! HAL operations when the caller already holds exclusive PHY access. The
 //! outer RFPLL action selects this transaction; registered policy keeps that

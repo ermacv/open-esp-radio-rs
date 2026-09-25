@@ -827,13 +827,13 @@ pub enum PhyRxDcoBindingError {
 
 /// An RX-DCO restore-stack invariant was violated by target execution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyRxDcoHardwareInvariant {
+pub enum PhyRxDcoRestoreInvariant {
     /// Another calibration owns the shared PAC restore slot.
-    RestoreOwnedByOtherCalibration,
+    OwnedByOtherCalibration,
     /// More than the reviewed outer-plus-inner nesting was attempted.
-    RestoreNestingExceeded,
+    NestingExceeded,
     /// Cleanup reached restore without a matching successful prepare.
-    RestoreNotPending,
+    NotPending,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -855,16 +855,16 @@ impl PhyRxDcoMmioBinding {
     pub fn execute_target(
         self,
         registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
-    ) -> Result<PhyRxDcoCompletion, PhyRxDcoHardwareInvariant> {
+    ) -> Result<PhyRxDcoCompletion, PhyRxDcoRestoreInvariant> {
         match self.action {
             PhyRxDcoAction::PrepareRxDcoControlRestore => {
                 oer_esp32s31_hal::phy::rx_dco::prepare_control_restore(registers).map_err(
                     |error| match error {
                         oer_esp32s31_hal::types::RxDcoControlPrepareError::RestorePending => {
-                            PhyRxDcoHardwareInvariant::RestoreOwnedByOtherCalibration
+                            PhyRxDcoRestoreInvariant::OwnedByOtherCalibration
                         }
                         oer_esp32s31_hal::types::RxDcoControlPrepareError::RestoreStackFull => {
-                            PhyRxDcoHardwareInvariant::RestoreNestingExceeded
+                            PhyRxDcoRestoreInvariant::NestingExceeded
                         }
                     },
                 )?;
@@ -885,7 +885,7 @@ impl PhyRxDcoMmioBinding {
             }),
             PhyRxDcoAction::RestoreRxDcoControl => {
                 oer_esp32s31_hal::phy::rx_dco::restore_control(registers)
-                    .map_err(|_| PhyRxDcoHardwareInvariant::RestoreNotPending)?;
+                    .map_err(|_| PhyRxDcoRestoreInvariant::NotPending)?;
                 Ok(PhyRxDcoCompletion::RxDcoControlRestored)
             }
             _ => unreachable!(),
@@ -910,14 +910,17 @@ impl PhyRxDcoPbusBinding {
         })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> crate::analog::pbus::PhyPbusHardwareAction {
         self.hardware.action()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn started(&mut self) -> Result<(), crate::analog::pbus::PhyPbusHardwareBindingError> {
         self.hardware.started()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_completed(
         &mut self,
         completed: bool,

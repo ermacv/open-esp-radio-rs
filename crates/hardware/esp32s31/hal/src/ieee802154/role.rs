@@ -51,7 +51,7 @@ use crate::{
             Ieee802154PanIdentity, configure_ieee802154_mac_policy,
         },
     },
-    owner::{Ieee802154SharedPhyBorrow, SharedPhyHal},
+    owner::{Ieee802154SharedPhyBorrow, SharedPhyHal, route},
     power::{self, PowerError},
 };
 
@@ -709,7 +709,7 @@ impl<P> Ieee802154Clocked<P> {
     /// same `TargetPhyRegisterPort` used by standalone Bluetooth while the
     /// inactive IEEE interrupt owner stays retained here.
     #[doc(hidden)]
-    pub fn common_phy_parts(&mut self) -> (&mut P, SharedPhyHal<'_>) {
+    pub fn common_phy_parts(&mut self) -> (&mut P, SharedPhyHal<'_, route::Ieee802154>) {
         let backend = self.inner.backend_mut();
         let shared_phy = backend.task.borrow_shared_phy();
         (&mut backend.platform, shared_phy)

@@ -8,7 +8,7 @@ use embassy_time::Instant;
 
 /// Only minimum hardware settles may spend this bounded interval in a poll.
 /// Readiness retries retain their original timer cadence, regardless of size.
-pub(super) const fn synchronous_settle(
+pub(crate) const fn synchronous_settle(
     kind: oer_esp32s31_phy::executor::wait::Kind,
     micros: u64,
     limit: u64,
@@ -16,13 +16,16 @@ pub(super) const fn synchronous_settle(
     matches!(kind, oer_esp32s31_phy::executor::wait::Kind::Settle) && micros != 0 && micros <= limit
 }
 
-pub(super) enum HardwareDelay<F, C, S> {
+pub(crate) enum HardwareDelay<F, C, S> {
     Timer(Deadline<F, C>),
     /// The target primitive owns the calibrated cycle deadline.
     Settle {
         micros: u32,
         delay: S,
     },
+    /// The absolute deadline wraps the monotonic epoch. The wait fail-stops:
+    /// it never completes and registers no wake.
+    Unrepresentable,
 }
 
 impl<F: Future<Output = ()> + Unpin, C: Fn() -> Instant + Unpin, S: FnMut(u32) + Unpin> Future
@@ -37,6 +40,7 @@ impl<F: Future<Output = ()> + Unpin, C: Fn() -> Instant + Unpin, S: FnMut(u32) +
                 delay(*micros);
                 Poll::Ready(())
             }
+            Self::Unrepresentable => Poll::Pending,
         }
     }
 }
@@ -45,10 +49,10 @@ impl<F: Future<Output = ()> + Unpin, C: Fn() -> Instant + Unpin, S: FnMut(u32) +
 // Timer deliberately yields once even if already expired. Check the absolute
 // deadline before polling it; future deadlines still use its ordinary wake
 // registration. This does not spin or shorten the requested hardware delay.
-pub(super) struct Deadline<F, C> {
-    pub(super) deadline: Instant,
-    pub(super) timer: F,
-    pub(super) now: C,
+pub(crate) struct Deadline<F, C> {
+    pub(crate) deadline: Instant,
+    pub(crate) timer: F,
+    pub(crate) now: C,
 }
 
 impl<F: Future<Output = ()> + Unpin, C: Fn() -> Instant + Unpin> Future for Deadline<F, C> {
@@ -69,7 +73,7 @@ mod tests;
 
 /// Observe completion against the same start/deadline used by the timer.
 /// Lateness includes timer polling and timestamp sampling, not just scheduling.
-pub(super) fn measure<F, C, O>(
+pub(crate) fn measure<F, C, O>(
     mut future: F,
     start: Instant,
     requested_micros: u64,

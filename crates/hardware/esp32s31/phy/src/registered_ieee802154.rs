@@ -107,7 +107,7 @@ use crate::{
         PhyClientAcquireOutcome, PhyClientSnapshot, PhyClientState, PhyModemClient,
         PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackPoisoned,
     },
-    tracking::parameters::{PhyParamTrackRequest, PhyParamTrackingAction},
+    tracking::parameters::PhyParamTrackRequest,
 };
 
 /// Registered whole-radio owner after IEEE 802.15.4 clock readback.
@@ -134,10 +134,11 @@ impl<P> RegisteredIeee802154Clocked<P> {
         state: PhyState,
         witness: crate::target_port::TargetRegistrationWitness,
     ) -> Self {
+        let epoch = witness.epoch();
         Self {
             role,
             registered: RegisteredPhyState::from_target_completion(state, witness),
-            clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+            clients: PhyClientState::for_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS, epoch),
         }
     }
 
@@ -325,7 +326,8 @@ pub struct RegisteredIeee802154PendingTracking<P> {
 }
 
 impl<P> RegisteredIeee802154PendingTracking<P> {
-    pub const fn action(&self) -> PhyParamTrackingAction {
+    #[cfg(test)]
+    pub(crate) const fn action(&self) -> crate::tracking::parameters::PhyParamTrackingAction {
         self.pending.action()
     }
 
@@ -338,7 +340,7 @@ impl<P> RegisteredIeee802154PendingTracking<P> {
         &mut self,
     ) -> (
         &mut P,
-        SharedPhyHal<'_>,
+        SharedPhyHal<'_, oer_esp32s31_hal::owner::route::Ieee802154>,
         &mut PhyState,
         &mut PhyPendingTracking,
     ) {
@@ -1020,5 +1022,4 @@ fn map_prerequisites<Before, After>(
 }
 
 #[cfg(test)]
-#[path = "registered_ieee802154/tests.rs"]
 mod tests;

@@ -55,7 +55,7 @@ pub struct PauseReport {
     pub timeline: Option<PauseTimeline>,
     /// Stop/resume plus optional PM exchanges; excludes requester queuing and prior TX drain.
     pub elapsed_micros: u64,
-    pub tracking: Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
+    pub tracking: Option<oer_esp32s31_phy::tracking::PhyParamTrackingOutcome>,
 }
 
 impl PauseReport {

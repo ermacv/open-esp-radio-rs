@@ -1,3 +1,4 @@
+use crate::tracking::parameters::PhyParamTrackingAction;
 use crate::{PhyConfig, state::client::DEFAULT_PLL_TRACK_PERIOD_MICROS};
 
 use oer_esp32s31_hal::owner::Radio;
@@ -25,7 +26,7 @@ fn registered_radio_with_state(state: PhyState) -> RegisteredPhyRadio<TestPlatfo
     RegisteredPhyRadio {
         radio,
         phy: RegisteredPhyState::from_wrapper_test_model(state),
-        clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+        clients: PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS),
     }
 }
 

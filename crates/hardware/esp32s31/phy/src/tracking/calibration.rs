@@ -145,6 +145,7 @@ pub struct PhyCalibrationDcodeCompletion {
 
 impl PhyCalibrationDcodeCompletion {
     /// Inspect measured codes or terminal failure without publishing parent state.
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn result(
         &self,
     ) -> Result<crate::analog::dcode::PhyDcodeOutcome, crate::analog::dcode::PhyDcodeFailure> {
@@ -305,6 +306,7 @@ pub struct PhyCalibrationTrackingTransition {
 }
 
 impl PhyCalibrationTrackingTransition {
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn new(
         request: PhyCalibrationTrackingRequest,
         parameters: PhyCalibrationTrackingParameters,
@@ -817,6 +819,7 @@ impl PhyCalibrationTxGainBinding {
         Ok(Self { publication })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> PhyCalibrationTrackingAction {
         match self.publication {
             PhyCalibrationTxGainPublication::Wifi { channel, .. } => {
@@ -885,6 +888,7 @@ impl PhyCalibrationTxDcPwdetTransition {
         Ok(Self { class, child })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn class(&self) -> PhyCalibrationTrackClass {
         self.class
     }
@@ -896,6 +900,7 @@ impl PhyCalibrationTxDcPwdetTransition {
         }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn advance(
         &mut self,
         completion: crate::tx::dc_power_detector::PhyTxDcPwdetCompletion,
@@ -906,6 +911,7 @@ impl PhyCalibrationTxDcPwdetTransition {
         }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn lower_external(
         &self,
     ) -> Result<
@@ -1008,10 +1014,12 @@ impl PhyCalibrationRxGainTransition {
         })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn action(&self) -> crate::rx::gain::PhyRxGainInitAction {
         self.child.action()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn advance(
         &mut self,
         completion: crate::rx::gain::PhyRxGainInitCompletion,
@@ -1019,6 +1027,7 @@ impl PhyCalibrationRxGainTransition {
         self.child.advance(completion)
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn lower_external(
         &self,
     ) -> Result<
@@ -1069,6 +1078,7 @@ impl PhyCalibrationDcodeTransition {
         self.child.advance(completion)
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn lower_external(
         &self,
     ) -> Result<
@@ -1113,6 +1123,7 @@ impl PhyCalibrationPbusClearTransition {
         self.child.advance(completion)
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn advance_external(
         &mut self,
         completion: crate::analog::i2c::PhyRfInitPrefixCompletion,
@@ -1124,6 +1135,7 @@ impl PhyCalibrationPbusClearTransition {
         self.advance(completion)
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn lower_external(
         &self,
     ) -> Result<
@@ -1158,6 +1170,7 @@ impl PhyCalibrationForceTxRxTransition {
         })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn parent_action(&self) -> PhyCalibrationTrackingAction {
         PhyCalibrationTrackingAction::ForceTxRxOff {
             enabled: self.enabled,
@@ -1236,6 +1249,7 @@ impl PhyCalibrationTrackingRegisterBinding {
         Ok(Self { action })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> PhyCalibrationTrackingAction {
         match self.action {
             RegisterAction::SetForcedDigitalGain { enabled } => {
@@ -1302,6 +1316,7 @@ impl PhyCalibrationTrackingMacBasebandBinding {
         }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> PhyCalibrationTrackingAction {
         if self.enabled {
             PhyCalibrationTrackingAction::EnableMacBaseband

@@ -16,7 +16,7 @@ impl PhyPllTrackClock for Clock {
     }
 }
 fn clients(active: &[PhyModemClient]) -> PhyClientSnapshot {
-    let mut owner = PhyClientState::for_registered_epoch(1000);
+    let mut owner = PhyClientState::without_registration(1000);
     for client in active {
         owner = owner
             .acquire(*client, &mut Clock)
@@ -160,7 +160,7 @@ fn inspection_rejects_reversed_clock_and_uses_updated_state_on_reinspection() {
             2000
         }
     }
-    let later = PhyClientState::for_registered_epoch(1000)
+    let later = PhyClientState::without_registration(1000)
         .acquire(PhyModemClient::Wifi, &mut Later)
         .unwrap_or_else(|_| panic!("acquire"))
         .into_owner()

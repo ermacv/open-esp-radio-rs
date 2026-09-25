@@ -223,15 +223,11 @@ fn automatic_observation_notifications_survive_an_inflight_operation_and_epoch_c
     requests.automatic.completed(
         Operation::Temperature,
         5,
-        Some(
-            oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome {
-                clients: oer_esp32s31_phy::tracking::parameters::PhyParamTrackRequest::new(
-                    true, false,
-                ),
-                tracking_inhibited: false,
-                calibration: Default::default(),
-            },
-        ),
+        Some(oer_esp32s31_phy::tracking::PhyParamTrackingOutcome {
+            clients: oer_esp32s31_phy::tracking::PhyParamTrackRequest::new(true, false),
+            tracking_inhibited: false,
+            calibration: Default::default(),
+        }),
     );
     assert_eq!(requests.automatic.snapshot(), (None, true));
     assert_eq!(requests.automatic.measurements().operations[0], 1);

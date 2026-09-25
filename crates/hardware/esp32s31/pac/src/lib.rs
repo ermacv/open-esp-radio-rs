@@ -267,8 +267,9 @@ pub use ownership::{
     BluetoothTaskRegisters, BluetoothTaskReuniteError, BluetoothTaskReuniteFailure,
     Ieee802154ColdRegisters, Ieee802154InterruptRegisters, Ieee802154InterruptSetup,
     Ieee802154TaskRegisters, MacInterruptEvents, MacInterruptObservation, MacInterruptSnapshot,
-    MacPowerInterruptObservation, MacPowerInterruptSnapshot, RadioHardware, RadioPhyRegisters,
-    RadioPhyReleaseError, RadioPhyReleaseFailure, WifiColdRegisters, WifiRadioRegisters,
+    MacPowerInterruptObservation, MacPowerInterruptSnapshot, PhyRegistrationEpoch, RadioHardware,
+    RadioPhyRegisters, RadioPhyReleaseError, RadioPhyReleaseFailure, WifiColdRegisters,
+    WifiRadioRegisters,
 };
 
 pub(crate) use ownership::device_fence;

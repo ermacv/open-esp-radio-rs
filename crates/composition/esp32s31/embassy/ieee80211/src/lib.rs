@@ -40,7 +40,7 @@ pub use watchdog::WatchdogConfig;
 // construct the composition through this crate (or the `oer` facade) alone.
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
-pub use oer_esp32s31_phy::{PhyCalibrationIdentity, analog::rfpll::phy_get_rf_cal_version};
+pub use oer_esp32s31_phy::{PhyCalibrationIdentity, phy_get_rf_cal_version};
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_soc_esp_hal::watchdog::{DeadlineBudget, DeadlineWatchdog};
 pub use oer_ieee80211_runtime::await_stack_boundary;

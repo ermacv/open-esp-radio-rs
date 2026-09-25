@@ -131,6 +131,18 @@ fn reset_dac_is_primed_to_the_first_rom_range_before_sampling() {
         })
         .unwrap();
     assert_eq!(transition.action(), PhyTemperatureAction::SampleCode);
+    // The primed sample uses the first ROM window: DAC 5, calibration -2.
+    transition
+        .advance(PhyTemperatureCompletion::CodeSampled { value: 128 })
+        .unwrap();
+    assert_eq!(
+        transition.action(),
+        PhyTemperatureAction::Complete(PhyTemperatureOutcome {
+            temperature: 91,
+            sensor_index: 0,
+            next_dac: 5,
+        })
+    );
 }
 
 #[test]

@@ -1,5 +1,7 @@
 name: Documentation
 
+# Pushes and pull requests check the guides and API documentation. A manual
+# run from main also publishes them to GitHub Pages.
 on:
   push:
     branches: [main]
@@ -13,96 +15,62 @@ concurrency:
   group: docs-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
+env:
+  CARGO_INCREMENTAL: '0'
+  MDBOOK_VERSION: 0.5.4
+  MDBOOK_MERMAID_VERSION: 0.17.1
+
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
-    env:
-      CARGO_INCREMENTAL: '0'
-      CARGO_PROFILE_DEV_DEBUG: '0'
-      CARGO_PROFILE_RELEASE_DEBUG: '0'
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - name: Make room for the complete documentation matrix
-        run: |
-          # This fresh hosted runner does not need mobile, .NET or Haskell SDKs.
-          # Keep the system toolchain and install the selected Node version below.
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/share/swift /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache
-          df -h .
       - name: Require main for publication
         if: github.event_name == 'workflow_dispatch'
         run: test "$GITHUB_REF" = refs/heads/main
-      - name: Read pinned Node version
-        id: node
-        run: /usr/bin/python3 -c 'import json, os; open(os.environ["GITHUB_OUTPUT"], "a").write("version=" + json.load(open("tools/docs/portal.json"))["node"] + "\n")'
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ steps.node.outputs.version }}
-          cache: npm
-          cache-dependency-path: tools/docs/package-lock.json
-      - name: Cache documentation tools and Cargo downloads
+      - name: Cache Cargo downloads and mdBook tools
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target/docs/tooling
-          key: docs-tools-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', 'tools/docs/portal.json') }}
-          restore-keys: docs-tools-${{ runner.os }}-
-      - name: Install portal dependencies
-        run: npm ci --prefix tools/docs
-      - name: Prepare toolchain, tools, browser and locked public dependencies
-        run: node tools/docs/setup.mjs
-      - name: Install browser system libraries
-        run: npx --prefix tools/docs playwright install-deps chromium
-      - name: Portal regression tests
-        run: npm --prefix tools/docs test
-      - name: Documentation exporter regressions
-        run: cargo test -p oer-xtask --lib checks::docs::tests --locked --offline
-      - name: Host tutorials
-        run: node tools/docs/tutorials.mjs
-      - name: Build guides and static status
-        if: github.event_name != 'workflow_dispatch'
-        run: node tools/docs/build.mjs
-      - name: Check affected APIs
-        if: github.event_name != 'workflow_dispatch'
-        env:
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PUSH_BASE: ${{ github.event.before }}
+            ~/.cargo/bin/mdbook
+            ~/.cargo/bin/mdbook-mermaid
+          key: docs-${{ runner.os }}-${{ env.MDBOOK_VERSION }}-${{ env.MDBOOK_MERMAID_VERSION }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
+          restore-keys: docs-${{ runner.os }}-${{ env.MDBOOK_VERSION }}-${{ env.MDBOOK_MERMAID_VERSION }}-
+      - name: Fetch locked dependencies
         run: |
-          base_commit="${PR_BASE:-$PUSH_BASE}"
-          if [ -z "$base_commit" ] || [ "$base_commit" = 0000000000000000000000000000000000000000 ]; then
-            cargo xtask check docs --full
-          else
-            node tools/docs/check-changes.mjs "$base_commit"
-          fi
-      - name: Build complete public/private API portal
-        if: github.event_name == 'workflow_dispatch'
-        run: node tools/docs/build.mjs --full
-      - name: Validate rendered links, diagrams and search
-        run: node tools/docs/check.mjs
-      - name: Retain preview and validation artifacts
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: documentation-${{ github.sha }}
-          path: |
-            target/docs/portal/site
-            target/docs/portal/build.json
-            target/docs/portal/check.json
-            target/docs/portal/api-plan.log
-            target/docs/static/report.json
-            target/docs/packages/report.json
-            target/docs/gate/report.json
-          retention-days: 7
-      - name: Package complete Pages site
-        if: github.event_name == 'workflow_dispatch'
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path crates/composition/esp32s31/embassy/ieee80211/Cargo.toml
+      - name: API documentation and doctests
+        run: cargo xtask doc
+      - name: Markdown links and qualification catalogs
+        run: cargo xtask check docs
+      - name: Install mdBook
+        run: |
+          mdbook --version | grep -q "v$MDBOOK_VERSION" || cargo install --locked mdbook --version "$MDBOOK_VERSION"
+          mdbook-mermaid --version | grep -q "$MDBOOK_MERMAID_VERSION" || cargo install --locked mdbook-mermaid --version "$MDBOOK_MERMAID_VERSION"
+      - name: Guides
+        run: |
+          mdbook-mermaid install docs
+          mdbook build docs
+          mdbook test docs
+      - name: Assemble site
+        run: |
+          site=target/pages
+          rm -rf "$site"
+          cp -r target/book "$site"
+          mkdir -p "$site/api"
+          cp -r target/doc "$site/api/host"
+          cp -r target/riscv32imafc-unknown-none-elf/doc "$site/api/esp32s31"
+          cp -r crates/composition/esp32s31/embassy/ieee80211/target/riscv32imafc-unknown-none-elf/doc "$site/api/esp32s31-wifi"
+      - name: Package site
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:
-          path: target/docs/portal/site
+          path: target/pages
 
   deploy:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'

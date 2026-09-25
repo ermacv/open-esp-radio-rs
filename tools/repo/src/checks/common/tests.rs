@@ -356,27 +356,6 @@ fn declared_alternatives_preserve_minimum_and_default_compilation() {
         error.contains("invalid supported feature profile"),
         "{error}"
     );
-
-    let mut explicit_only = package.clone();
-    explicit_only.metadata["open-radio"]["scope"] = "development".into();
-    explicit_only.metadata["open-radio"]["layer"] = "hil".into();
-    explicit_only.metadata["open-radio"]["default-configuration"] = false.into();
-    let profiles = documentation_profiles(&explicit_only).unwrap();
-    assert_eq!(profiles.len(), 2);
-    assert!(
-        profiles
-            .iter()
-            .all(|profile| profile[0] == "--no-default-features")
-    );
-
-    explicit_only.metadata["open-radio"]["supported-feature-profiles"] = serde_json::json!([]);
-    let error = documentation_profiles(&explicit_only)
-        .unwrap_err()
-        .to_string();
-    assert!(
-        error.contains("disables its default configuration"),
-        "{error}"
-    );
 }
 
 #[test]

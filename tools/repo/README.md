@@ -9,8 +9,7 @@ Run from the repository root:
 
 ```console
 cargo xtask check docs
-cargo xtask check docs --package oer-memory
-```
+cargo xtask ```
 
 The PHY archive contains LLVM bitcode. Install `rustup component add
 llvm-tools-preview` for the selected toolchain; the audit uses its bundled
@@ -25,12 +24,8 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask check network-backpressure` | Resolve the pinned minimal Xarxa patch and test UDP device-capacity quiescence/recovery with the production adapter |
 | `cargo xtask check network --dependencies-only` | Check the same dependency boundaries without compiling profiles |
 | `cargo xtask check examples` | Target type checks of the four examples, station/AP network profiles, both BLE smoke configurations and host application-library tests |
-| `cargo xtask check docs --list` | List the fast static plan without running checks; combine with `--full` or `--package` to inspect those plans |
-| `cargo xtask check docs` | Check owned Markdown links and static qualification catalogs/programs; no rustdoc, doctests or MCU builds |
+| `cargo xtask check docs` | Check owned Markdown local links and check/render the static qualification catalogs and programs; API documentation is `cargo xtask doc` |
 | `cargo xtask doc` | Build API documentation as docs.rs would: one `cargo doc --no-deps` per `[package.metadata.docs.rs]` target with `RUSTDOCFLAGS=-D warnings`, then `cargo test --doc --workspace` |
-| `cargo xtask check docs --package oer-memory` | Also build public rustdoc and run applicable doctests for the selected package’s supported profiles; repeat `--package` for more packages, add `--private` for private API |
-| `cargo xtask check docs --full` | Check every public/private rustdoc profile, host doctest and MCU consumer, plus links and static views; at most two independent rustdoc caches run concurrently |
-| `cargo xtask check docs --full --jobs 1 --export-html` | Use one rustdoc worker and additionally copy complete isolated HTML snapshots; the required gate does not need this export |
 | `cargo xtask check source-only` | Compose repository suites once, including static links/catalogs, Cargo/Clippy, publication and both final performance/correctness Wi-Fi image builds and audits; no public/private API documentation build |
 | `cargo xtask check blobray-standalone` | Extract generic Blobray source, check path-dependency containment and compile every target, including its launcher |
 | `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it and `--monitor` opens the console |
@@ -41,46 +36,28 @@ The root Cargo alias selects this package. `--root PATH` selects an explicit
 repository checkout. A nested independent workspace does not acquire the root
 workspace's package membership through `--manifest-path`.
 
-Architecture, example and documentation checks resolve their Cargo jobs from
-the same typed configuration model. Package metadata owns supported feature
-alternatives; the model keeps workspace, package/target, host or MCU target,
-feature selection and Cargo build profile separate. A package or target that
-cannot take a documentation action is listed with its reason instead of being
-silently omitted.
+Architecture and example checks resolve their Cargo jobs from the same typed
+configuration model. Package metadata owns supported feature alternatives; the
+model keeps workspace, package/target, host or MCU target, feature selection and
+Cargo build profile separate. API documentation instead follows each package's
+standard `[package.metadata.docs.rs]` table.
 
 Use focused package tests and target builds for the code being changed. Run
-`check docs` for prose/catalog changes and `check docs --package PACKAGE` for
-API changes. `check source-only` is the source/image integration checkpoint;
-`check docs --full` runs separately and explicitly. Neither is required after every local edit. Shared contracts,
+`check docs` for prose/catalog changes and `cargo xtask doc` for API changes.
+`check source-only` is the source/image integration checkpoint and is not
+required after every local edit. Shared contracts,
 Cargo feature policy, generated PAC and firmware layout changes need the relevant
 broader architecture, safety and artifact checks. Partial checks do not establish
 full repository coverage.
 
-Documentation reports explicitly identify `static`, `packages` or `full` scope.
-Static and package runs write to `target/docs/static/` and `target/docs/packages/`;
-they never overwrite the full report. The qualification tool shares the root
-Cargo cache across scopes. Catalog checks do not scan HIL/vendor evidence.
+`check docs` covers tracked Markdown, owner documents below `docs/`, package
+`README.md` files and Cargo `readme` targets; arbitrary untracked working notes
+are not repository documentation. External URLs are counted as
+`external-not-checked`; no network requests are made. Catalog checking and
+rendering neither load runtime evidence nor evaluate readiness, and the command
+performs no hardware operations.
 
-The full docs gate uses the pinned toolchain and target with locked, offline
-Cargo operations. Its ignored outputs live below `target/docs/gate/`: the
-resolved `job-plan.json` maps every logical requirement to an executed Cargo
-job, Cargo-generated rustdoc HTML stays in `cache/`, static catalog views are
-under `catalogs/`, and `report.json` is written only after every stage succeeds.
-Only `--export-html` copies full, separate public/private HTML snapshots into
-`rustdoc/`; it does not replace any required rustdoc check. The report records
-stage and per-job microsecond timings with Cargo execution separated from
-metadata queries and HTML snapshot copying. Featureless packages and
-packages with only an empty default feature reuse equivalent Cargo profiles;
-distinct dependency/feature graphs remain separate. Workers never write the same Cargo rustdoc target directory
-concurrently. The gate checks tracked Markdown,
-owner documents below `docs/`, package `README.md` files and Cargo `readme`
-targets. Arbitrary untracked working notes are not repository documentation.
-External URLs are counted as `external-not-checked`; no network requests are
-made. Static catalog checking and rendering neither load runtime evidence nor
-evaluate readiness, and the command performs no hardware operations.
-Rustdoc type-checking of the bootstrap uses an owned empty compile input for
-its required `PSRAM_RUNTIME_BIN`; it is never linked, packed or presented as a
-firmware image. `source-only` first builds the HIL runner, then runs
+`source-only` first builds the HIL runner, then runs
 independent jobs concurrently: the final images and three lanes, `root`
 (repository gates, Clippy, safety, architecture and publication over
 `target/`), `blobray` (core tests and the audit host in `tools/blobray/target`)
@@ -98,8 +75,6 @@ build cannot be replaced by a previous application image or a successful
 performance build. This gate does not run on hardware or measure runtime stack
 high-water.
 Within `source-only`, documentation checks only static links and catalogs.
-Standalone `check docs --full` performs its API, doctest and MCU consumer checks
-itself; no saved PASS report is reused.
 
 Network dependency checks distinguish released Embassy, original upstream,
 maintained owned and research contracts. Released Embassy products

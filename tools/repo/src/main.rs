@@ -56,27 +56,8 @@ enum Check {
     /// Check the pinned minimal Xarxa patch with the original Embassy and driver.
     NetworkBackpressure,
     Examples,
-    /// Check links and static catalogs; select packages or --full for API builds.
-    Docs {
-        /// Check every public/private API profile, doctest and MCU consumer.
-        #[arg(long, conflicts_with_all = ["package", "private"])]
-        full: bool,
-        /// Check public API and doctests for these packages' supported profiles.
-        #[arg(short, long, value_name = "PACKAGE", action = clap::ArgAction::Append)]
-        package: Vec<String>,
-        /// Include private API documentation for the selected packages.
-        #[arg(long, requires = "package")]
-        private: bool,
-        /// List the selected plan and inapplicable actions without running checks.
-        #[arg(long)]
-        list: bool,
-        /// Copy complete, isolated HTML snapshots after required rustdoc checks.
-        #[arg(long)]
-        export_html: bool,
-        /// At most two independent rustdoc Cargo cache groups in flight.
-        #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..=2))]
-        jobs: u8,
-    },
+    /// Check local Markdown links and the static qualification catalogs.
+    Docs,
     SourceOnly {
         /// Internal: run one independent lane of the checkpoint.
         #[arg(long, hide = true)]
@@ -146,26 +127,7 @@ fn run() -> Result<std::process::ExitCode> {
             Check::Network { dependencies_only } => checks::network::run(&ctx, dependencies_only),
             Check::NetworkBackpressure => oer_xtask::firmware::check_network_backpressure(&ctx),
             Check::Examples => checks::examples::run(&ctx),
-            Check::Docs {
-                full,
-                package,
-                private,
-                list,
-                export_html,
-                jobs,
-            } => {
-                let scope = if full {
-                    checks::docs::Scope::Full
-                } else if package.is_empty() {
-                    checks::docs::Scope::Static
-                } else {
-                    checks::docs::Scope::Packages {
-                        names: package,
-                        private,
-                    }
-                };
-                checks::docs::run_selected(&ctx, scope, list, export_html, usize::from(jobs))
-            }
+            Check::Docs => checks::docs::run(&ctx),
             Check::SourceOnly { lane: None } => checks::source_only::run(&ctx),
             Check::SourceOnly { lane: Some(lane) } => {
                 checks::source_only::run_lane(&ctx, checks::source_only::Lane::parse(&lane)?)
@@ -218,34 +180,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn documentation_scopes_are_explicit_and_conflicting_inputs_are_rejected() {
-        let default = Cli::try_parse_from(["xtask", "check", "docs"]).unwrap();
-        assert!(matches!(default.command, Task::Check {
-            check: Check::Docs { full: false, package, private: false, .. }
-        } if package.is_empty()));
-        assert!(Cli::try_parse_from(["xtask", "check", "docs", "--full", "--list"]).is_ok());
-        assert!(
-            Cli::try_parse_from([
-                "xtask",
-                "check",
-                "docs",
-                "--package",
-                "oer-memory",
-                "--private"
-            ])
-            .is_ok()
-        );
-        assert!(
-            Cli::try_parse_from([
-                "xtask",
-                "check",
-                "docs",
-                "--full",
-                "--package",
-                "oer-memory"
-            ])
-            .is_err()
-        );
-        assert!(Cli::try_parse_from(["xtask", "check", "docs", "--private"]).is_err());
+    fn documentation_check_has_no_api_matrix_modes() {
+        assert!(matches!(
+            Cli::try_parse_from(["xtask", "check", "docs"])
+                .unwrap()
+                .command,
+            Task::Check { check: Check::Docs }
+        ));
+        assert!(Cli::try_parse_from(["xtask", "check", "docs", "--full"]).is_err());
     }
 }

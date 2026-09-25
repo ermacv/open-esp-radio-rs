@@ -14,11 +14,10 @@ details live beside their owner; this directory contains shared contracts.
 
 These routes assume Rust and embedded basics. The host route needs no board or
 private binary; the hardware route names additional prerequisites at each step.
-The [portal build](../tools/docs/README.md) adds searchable guides,
-public/private API snapshots labeled by target/features, and generated static
-capability views. The [Pages address](https://ermacv.github.io/open-esp-radio-rs/)
-serves the site after a successful manual publication; ordinary push/PR checks
-build previews. Use the local preview when a published site is unavailable.
+This directory is also an [mdBook](../tools/docs/README.md) book: the
+[Pages address](https://ermacv.github.io/open-esp-radio-rs/) serves it with
+searchable navigation and the API documentation after a manual publication, and
+`mdbook serve docs` previews it locally.
 
 For learning, start with the explanation and the host exercise. For a concrete
 job, choose the hardware or contribution route. Component references define
@@ -62,17 +61,13 @@ shared lifecycle, PHY, coexistence and the Wi-Fi, Bluetooth and IEEE 802.15.4
 inventories. These source references do not replace machine qualification or
 hardware evidence.
 
-For API semantics, consult module/item rustdoc. From the repository root:
-
-```console
-cargo doc --workspace --lib --no-deps --locked --offline
-cargo test --workspace --doc --locked --offline
-```
-
-These commands cover the root workspace libraries in their default feature
-configuration. Independent integration workspaces and target-only APIs require
-their own manifest, target and supported feature profile. CLI references use
-each binary's `--help`; they are separate from library rustdoc.
+For API semantics, consult module/item rustdoc: the published
+[host](https://ermacv.github.io/open-esp-radio-rs/api/host/oer/index.html),
+[ESP32-S31](https://ermacv.github.io/open-esp-radio-rs/api/esp32s31/oer_esp32s31_phy/index.html)
+and [ESP32-S31 Wi-Fi composition](https://ermacv.github.io/open-esp-radio-rs/api/esp32s31-wifi/oer_esp32s31_embassy_wifi/index.html)
+documentation, or `cargo xtask doc` from the repository root. Each package is
+documented once, for the target and features in its `[package.metadata.docs.rs]`.
+CLI references use each binary's `--help`; they are separate from library rustdoc.
 
 Follow the [documentation policy](documentation.md) when adding or changing a
 document.

@@ -40,7 +40,7 @@ Run commands from the repository root unless the component guide says otherwise.
 
 | Change | Checks |
 | --- | --- |
-| Markdown or catalog | `cargo xtask check docs`; for portal behavior also follow [portal checks](tools/docs/README.md) |
+| Markdown or catalog | `cargo xtask check docs`; for the guides in `docs/` also `mdbook build docs` (see [documentation build](tools/docs/README.md)) |
 | Rust behavior | `cargo test -p PACKAGE FILTER --locked --offline`, confirming the selector executes tests; `cargo fmt --all -- --check` |
 | Public API | `cargo xtask doc` plus focused behavior/compile tests; chip crates document their target through `[package.metadata.docs.rs]` |
 | Hardware, ownership or dependency boundary | Relevant target, architecture, safety and artifact checks from [repository tooling](tools/repo/README.md) |

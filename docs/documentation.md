@@ -18,18 +18,18 @@ changes.
 | `qualification/catalog/` and source declarations | Canonical capability identities, dependencies and source facts |
 | `qualification/targets/` | Programs that select required capabilities and evidence policy for an evaluation target |
 | Owner-specific ignored output directories | Generated API docs, run reports, measurements and verification output |
-| `tools/docs/` and `book.toml` | Portal navigation, assembly and publication; original documents remain with their owners |
+| `docs/book.toml`, `docs/SUMMARY.md` and `tools/docs/` | mdBook configuration, guide order and the out-of-book link preprocessor; documents elsewhere remain with their owners |
 
 The documentation tree follows code ownership. A subsystem's detailed contract
 has one canonical location; other documents link to it. Root navigation does
 not repeat a complete crate inventory or a second capability matrix.
 
-The [documentation portal](../tools/docs/README.md) assembles Markdown, isolated
-public/private rustdoc and static qualification views. Its generated sources and
-HTML stay below `target/docs/portal/`. Source/code links retain the build commit;
-edit links lead to the original owner document. Static status means
-`not-evaluated`, not a hardware readiness verdict. Guide previews explicitly omit
-API exports; publication requires the complete successful matrix for one commit.
+The guides in `docs/` render as an mdBook book (see the
+[documentation build](../tools/docs/README.md)); add a new guide to
+`docs/SUMMARY.md`. Links from a guide to documents or code outside `docs/`
+stay relative in the source and point to the same commit on GitHub in the
+rendered book. The published site adds `cargo doc` API documentation under
+`api/`. Component documents are read on GitHub beside their owners.
 
 ## Write for a specific task
 
@@ -114,23 +114,17 @@ only there. `cargo xtask doc` runs one `cargo doc --no-deps` per documentation
 target with `RUSTDOCFLAGS=-D warnings`, so broken intra-doc links fail, and
 `cargo test --doc --workspace` for all host doctests. Private items are
 documented locally with `cargo doc --document-private-items`.
-`cargo xtask check source-only` includes only static documentation checks. Add `--list` to any scope to inspect its plan
-without executing checks. `--export-html` exports isolated rustdoc snapshots for
-package/full scopes.
+`cargo xtask check source-only` includes only static documentation checks.
 
-All modes use locked, offline Cargo operations. Their ignored reports live below
-`target/docs/static/`, `target/docs/packages/` and `target/docs/gate/`, respectively,
-and name their coverage explicitly. A partial run never updates the full report.
-These commands do not query external links, load runtime evidence, evaluate
-readiness, flash a device or install fixtures. Documentation checks establish
-consistency within their stated scope, not radio behavior or qualification.
+These commands use locked, offline Cargo operations. Rendered catalog views live
+below `target/docs/catalogs/`. The commands do not query external links, load
+runtime evidence, evaluate readiness, flash a device or install fixtures.
+Documentation checks establish consistency within their stated scope, not radio
+behavior or qualification.
 
-For portal changes, also run its HTML link/resource checks and browser checks.
-Mermaid must render successfully; Markdown link validation alone does not check
-diagram syntax. Full HTML exports isolate the selected crate/configuration from
-other cached rustdoc output and preserve search and dynamic implementation data.
-Private HTML exports include hidden items so the portal can link to their full
-contracts without changing the public view.
+For guide changes, also run `mdbook build docs` and `mdbook test docs`. Markdown
+link validation does not check Mermaid syntax; view changed diagrams in the
+rendered book (`mdbook serve docs`) or on GitHub.
 
 The checked Markdown surface consists of tracked documents plus the root
 `CONTRIBUTING.md`, owner documents under `docs/`, package `README.md` files and Cargo `readme` targets,

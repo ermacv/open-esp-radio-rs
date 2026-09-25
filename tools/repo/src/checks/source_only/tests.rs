@@ -40,11 +40,6 @@ fn missing_or_ambiguous_library_output_fails() {
     assert!(phy_artifact(messages.as_bytes()).is_err());
 }
 
-#[test]
-fn checkpoint_never_selects_public_or_private_api_documentation() {
-    assert!(matches!(checkpoint_docs_scope(), docs::Scope::Static));
-}
-
 fn fixture_report(root: &Path, class: FinalImageClass, start: &Path) -> serde_json::Value {
     fs::write(start, b"start").unwrap();
     let base = root.join("target/hil/esp32s31").join(format!(

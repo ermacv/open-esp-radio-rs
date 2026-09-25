@@ -254,8 +254,7 @@ to check deterministic presentation. It uses `catalog check --catalog`,
 `catalog check --manifest`, and `catalog render --catalog`; it does not use
 manifest rendering, `validate`, `evaluate`, or `gate`, and it does not read
 vendor evidence or HIL runs. Its ignored static views live below
-`target/docs/static/catalogs/` for the ordinary command (`target/docs/gate/catalogs/`
-for `--full`) and carry no readiness verdict.
+`target/docs/catalogs/` and carry no readiness verdict.
 
 The Bluetooth LE program includes legacy and extended roles, connected PHY and
 control procedures, security/privacy, periodic advertising and PAwR, Direction

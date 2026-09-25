@@ -1,0 +1,39 @@
+# Guides in this directory, rendered with `mdbook build docs`. Documents
+# elsewhere in the repository stay with their owners; links to them are
+# rewritten to the same commit on GitHub by `tools/docs/repo_links.py`.
+[book]
+title = "Open ESP Radio"
+description = "From binary evidence to an open radio implementation"
+language = "en"
+src = "."
+
+[build]
+build-dir = "../target/book"
+create-missing = false
+
+[rust]
+edition = "2024"
+
+[preprocessor.repo-links]
+command = "python3 ../tools/docs/repo_links.py"
+before = ["links"]
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output.html]
+site-url = "/open-esp-radio-rs/"
+git-repository-url = "https://github.com/ermacv/open-esp-radio-rs"
+edit-url-template = "https://github.com/ermacv/open-esp-radio-rs/edit/main/docs/{path}"
+no-section-label = true
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.playground]
+runnable = false
+
+[output.html.print]
+enable = false

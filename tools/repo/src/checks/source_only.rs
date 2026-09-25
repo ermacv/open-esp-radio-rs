@@ -259,7 +259,7 @@ fn execute_stage(ctx: &Context, stage: Stage) -> Result<()> {
         ])),
         Stage::Metadata => metadata::run(ctx).map(|_| ()),
         Stage::NetworkDependencies => network::run(ctx, true),
-        Stage::Docs => docs::run_selected(ctx, checkpoint_docs_scope(), false, false, 1),
+        Stage::Docs => docs::run(ctx),
         Stage::WorkspaceClippy => process::run(ctx.cargo().args([
             "clippy",
             "--locked",
@@ -312,10 +312,6 @@ fn execute_stage(ctx: &Context, stage: Stage) -> Result<()> {
         ])),
         Stage::Examples => examples::run(ctx),
     }
-}
-
-fn checkpoint_docs_scope() -> docs::Scope {
-    docs::Scope::Static
 }
 
 /// Run one lane in this process; `run` executes each lane as a child.

@@ -77,8 +77,8 @@ their applicability to the selected Wi-Fi STA program. The
 [qualification commands](../qualification/README.md) read existing evidence;
 they do not run missing experiments.
 
-The portal's generated status pages are declarations-only and explicitly
-`not-evaluated`. For a real readiness decision, use the evaluator with your
+Static catalog views rendered by `cargo xtask check docs` are declarations-only
+and explicitly `not-evaluated`. For a real readiness decision, use the evaluator with your
 applicable evidence and retain its full provenance in ignored output storage.
 
 Next: use [CONTRIBUTING](../CONTRIBUTING.md) to select checks for the owner you

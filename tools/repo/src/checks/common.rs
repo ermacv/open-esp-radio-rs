@@ -41,8 +41,6 @@ impl CargoBuildProfile {
 pub enum CargoTargetSelection {
     DefaultTargets,
     Lib(String),
-    ProcMacro(String),
-    Bin(String),
 }
 
 impl CargoTargetSelection {
@@ -50,8 +48,6 @@ impl CargoTargetSelection {
         match self {
             Self::DefaultTargets => "default-targets".into(),
             Self::Lib(name) => format!("lib:{name}"),
-            Self::ProcMacro(name) => format!("proc-macro:{name}"),
-            Self::Bin(name) => format!("bin:{name}"),
         }
     }
 }
@@ -80,11 +76,8 @@ impl CargoConfiguration {
         }
         match &self.cargo_target {
             CargoTargetSelection::DefaultTargets => {}
-            CargoTargetSelection::Lib(_) | CargoTargetSelection::ProcMacro(_) => {
+            CargoTargetSelection::Lib(_) => {
                 command.arg("--lib");
-            }
-            CargoTargetSelection::Bin(name) => {
-                command.args(["--bin", name]);
             }
         }
         command.args(&self.features);
@@ -516,43 +509,6 @@ fn application_profiles(package: &Package) -> Result<Vec<Vec<String>>> {
         .into());
     }
     Ok(profiles)
-}
-
-pub fn documentation_profiles(package: &Package) -> Result<Vec<Vec<String>>> {
-    let class = classification(package)?;
-    match (class.scope, class.layer) {
-        ("production", _) => compilation_profiles(package),
-        (_, "application") => application_profiles(package),
-        (_, "experiment") => {
-            let mut profiles = if uses_default_configuration(package)? {
-                vec![Vec::new()]
-            } else {
-                Vec::new()
-            };
-            profiles.extend(maximal_profiles(package)?);
-            Ok(profiles)
-        }
-        _ => {
-            let mut profiles = if uses_default_configuration(package)? {
-                vec![Vec::new()]
-            } else {
-                Vec::new()
-            };
-            profiles.extend(
-                declared_profiles(package)?.into_iter().map(|profile| {
-                    vec!["--no-default-features".into(), "--features".into(), profile]
-                }),
-            );
-            if profiles.is_empty() {
-                return Err(format!(
-                    "package {} disables its default configuration without a supported feature profile",
-                    package.name
-                )
-                .into());
-            }
-            Ok(profiles)
-        }
-    }
 }
 
 pub fn uses_default_configuration(package: &Package) -> Result<bool> {

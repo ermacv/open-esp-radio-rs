@@ -15,5 +15,3 @@ crates/composition/**/Cargo.lock
 # Current source-owned projects live under verification/vendor/projects.
 /verification/vendor/targets/
 
-# Documentation portal dependencies; generated pages stay under target/docs/.
-/tools/docs/node_modules/

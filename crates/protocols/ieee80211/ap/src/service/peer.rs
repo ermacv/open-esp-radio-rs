@@ -100,9 +100,9 @@ impl<'peers> AccessPointService<'peers> {
         } else {
             Self::validated_wpa2_association_security_ies(security)
         };
-        let security_matches = association_security_ies.is_some();
+        let akm = association_security_ies.as_ref().map(|(akm, _)| *akm);
         let association_security_binding = match association_security_ies.as_ref() {
-            Some(ies) => Some(
+            Some((_, ies)) => Some(
                 self.wpa2_material()?
                     .0
                     .bind_association_security_ies(ies.as_bytes()),
@@ -115,13 +115,13 @@ impl<'peers> AccessPointService<'peers> {
         if existing.phase != ApPeerPhase::Authenticated {
             return Err(ApServiceError::WrongPeerPhase);
         }
-        if !security_matches {
+        let Some(akm) = akm else {
             return Ok(ApMlmeAction::AssociationResponse {
                 peer,
                 status: AP_STATUS_INVALID_RSN,
                 association_id: None,
             });
-        }
+        };
         if capabilities.maximum_legacy_rate_500kbps == 0 {
             return Ok(ApMlmeAction::AssociationResponse {
                 peer,
@@ -129,7 +129,8 @@ impl<'peers> AccessPointService<'peers> {
                 association_id: None,
             });
         }
-        let wpa2 = Wpa2ApState::new(
+        let wpa2 = RsnApState::new(
+            akm,
             access_point,
             peer,
             authenticator_nonce,

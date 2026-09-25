@@ -11,13 +11,13 @@ pub use config::{
     WifiMonitorConfig, WifiPlan, WifiStandaloneEspNowPlan, WifiStandaloneMonitorPlan,
     WifiStationConfig,
 };
+pub use oer_wifi_rsn::Pmk;
 pub use oer_wifi_softmac::{
     MONITOR_CHANNEL_SEQUENCE_CAPACITY, MacRxEvidence, MonitorChannelPolicy, MonitorChannelSequence,
     MonitorChannelSequenceError, MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType,
     MonitorFrameTypeMask, MonitorPublishOutcome, MonitorSink,
 };
 pub use oer_wifi_sta::station::{StaLifecycleStage, StaReconnectPolicy};
-pub use oer_wpa2::Pmk;
 pub use requests::{
     AccessPointBeaconInterval, AccessPointBeaconIntervalError, AccessPointClientLimit,
     AccessPointClientLimitError, AccessPointDtimPeriod, AccessPointDtimPeriodError,

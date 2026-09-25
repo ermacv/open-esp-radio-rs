@@ -379,7 +379,7 @@ impl ProductionWifiEpochRunner {
                 for word in gtk_key.chunks_exact_mut(4) {
                     word.copy_from_slice(&self.trng.random().to_le_bytes());
                 }
-                let gtk = Wpa2Gtk::new(1, true, gtk_key)
+                let gtk = RsnGtk::new(1, true, gtk_key)
                     .unwrap_or_else(|_| unreachable!("production GTK key id is valid"));
                 AccessPointService::new(
                     address,

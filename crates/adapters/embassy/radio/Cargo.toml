@@ -18,7 +18,7 @@ oer-wifi-embassy = { path = "../ieee80211" }
 oer-ieee80211 = { path = "../../../protocols/ieee80211/mac" }
 oer-radio = { path = "../../../radio", default-features = false, features = ["wifi", "test-support"] }
 oer-wifi-sta = { path = "../../../protocols/ieee80211/sta" }
-oer-wpa2 = { path = "../../../protocols/ieee80211/security/wpa2" }
+oer-wifi-rsn = { path = "../../../protocols/ieee80211/security/rsn" }
 
 [lints]
 workspace = true

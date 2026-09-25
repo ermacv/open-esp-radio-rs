@@ -11,9 +11,9 @@ pub enum StaAttemptTargetError<J, W> {
     Peer(StaPeerPortError),
     Security(StaSecurityError),
     Wpa2Handshake(
-        Wpa2HandshakeError<Wpa2HandshakePortError<RxFrontierError, W>, SoftwareAesKeyUnwrapError>,
+        RsnHandshakeError<Wpa2HandshakePortError<RxFrontierError, W>, SoftwareAesKeyUnwrapError>,
     ),
-    Wpa2KeyInstall(Wpa2KeyInstallError<Wpa2KeyPortError<W>>),
+    RsnKeyInstall(RsnKeyInstallError<Wpa2KeyPortError<W>>),
 }
 
 /// Coherent owner consumed by
@@ -45,7 +45,7 @@ pub struct StaAttemptTargetOwner<
     pub(super) prepared_peer: Option<PreparedStaPeer>,
     pub(super) association: Option<AssociationResponse>,
     pub(super) connected_peer: Option<ConnectedStaPeer>,
-    pub(super) pending_keys: Option<Wpa2PendingKeyInstall>,
+    pub(super) pending_keys: Option<RsnPendingKeyInstall>,
     pub(super) installed_security: Option<StaInstalledSecurity>,
     pub(super) report: StaAttemptReport,
     pub(super) _join_observer: PhantomData<fn() -> J>,

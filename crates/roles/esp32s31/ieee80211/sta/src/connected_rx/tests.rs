@@ -1447,9 +1447,15 @@ fn dispatches_protected_ethernet_and_owns_duplicate_history() {
 #[test]
 fn wpa2_admits_only_plaintext_eapol_from_the_exact_associated_link() {
     const HEADER: usize = 24;
-    let message3 =
-        oer_wpa2::frames::Wpa2TxFrame::<512>::message3(STATION, 2, [4; 32], [0; 8], &[0x55; 8])
-            .unwrap();
+    let message3 = oer_wifi_rsn::frames::RsnTxFrame::<512>::message3(
+        oer_wifi_rsn::Akm::Psk,
+        STATION,
+        2,
+        [4; 32],
+        [0; 8],
+        &[0x55; 8],
+    )
+    .unwrap();
     let mpdu_length = HEADER + 8 + message3.as_bytes().len();
     let signal_length = mpdu_length + 4;
     let mut storage = [0_u8; 256];

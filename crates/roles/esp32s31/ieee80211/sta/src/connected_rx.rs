@@ -39,6 +39,7 @@ use oer_ieee80211::{
         parse_individual_twt_action,
     },
 };
+use oer_wifi_rsn::{EapolKeyFrame, EapolParseError};
 use oer_wifi_softmac::{
     EspNowPeerId, EspNowReceiveError, EspNowReceivedV1, EspNowReceivedV2, EspNowRxEpoch,
     EspNowRxOutcome, EspNowV2ReceiveError, EspNowV2RxOutcome, MacRxMetadata,
@@ -46,7 +47,6 @@ use oer_wifi_softmac::{
 #[cfg(test)]
 use oer_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence};
 use oer_wifi_sta::power_save::StaPsPollDelivery;
-use oer_wpa2::{EapolKeyFrame, EapolParseError};
 use static_cell::StaticCell;
 
 use oer_esp32s31_wifi_mac::{

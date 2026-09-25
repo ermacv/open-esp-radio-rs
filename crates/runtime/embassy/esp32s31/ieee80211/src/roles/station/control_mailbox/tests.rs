@@ -132,7 +132,8 @@ fn connected_eapol_uses_the_security_lane_and_never_the_control_fifo() {
     let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
     let (mut publisher, receiver) = resources.split();
     let ap = [2, 0, 0, 0, 0, 2];
-    let packet = oer_wpa2::frames::Wpa2TxFrame::<512>::group_message1(
+    let packet = oer_wifi_rsn::frames::RsnTxFrame::<512>::group_message1(
+        oer_wifi_rsn::Akm::Psk,
         [2, 0, 0, 0, 0, 1],
         3,
         [0; 8],
@@ -169,7 +170,8 @@ fn protected_eapol_overflow_remains_fail_closed() {
     let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
     let (mut publisher, receiver) = resources.split();
     let ap = [2, 0, 0, 0, 0, 2];
-    let packet = oer_wpa2::frames::Wpa2TxFrame::<512>::group_message1(
+    let packet = oer_wifi_rsn::frames::RsnTxFrame::<512>::group_message1(
+        oer_wifi_rsn::Akm::Psk,
         [2, 0, 0, 0, 0, 1],
         3,
         [0; 8],
@@ -206,7 +208,8 @@ fn plaintext_eapol_full_and_copy_rejection_are_peer_local_drops() {
     let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
     let (mut publisher, receiver) = resources.split();
     let ap = [2, 0, 0, 0, 0, 2];
-    let first = oer_wpa2::frames::Wpa2TxFrame::<512>::message3(
+    let first = oer_wifi_rsn::frames::RsnTxFrame::<512>::message3(
+        oer_wifi_rsn::Akm::Psk,
         [2, 0, 0, 0, 0, 1],
         3,
         [4; 32],
@@ -214,7 +217,8 @@ fn plaintext_eapol_full_and_copy_rejection_are_peer_local_drops() {
         &[0x55; 8],
     )
     .unwrap();
-    let second = oer_wpa2::frames::Wpa2TxFrame::<512>::message3(
+    let second = oer_wifi_rsn::frames::RsnTxFrame::<512>::message3(
+        oer_wifi_rsn::Akm::Psk,
         [2, 0, 0, 0, 0, 1],
         4,
         [5; 32],
@@ -257,12 +261,23 @@ fn protected_security_precedes_an_earlier_plaintext_candidate() {
     let (mut publisher, receiver) = resources.split();
     let station = [2, 0, 0, 0, 0, 1];
     let ap = [2, 0, 0, 0, 0, 2];
-    let message3 =
-        oer_wpa2::frames::Wpa2TxFrame::<512>::message3(station, 3, [4; 32], [0; 8], &[0x55; 8])
-            .unwrap();
-    let group_message1 =
-        oer_wpa2::frames::Wpa2TxFrame::<512>::group_message1(station, 4, [0; 8], &[0x66; 24])
-            .unwrap();
+    let message3 = oer_wifi_rsn::frames::RsnTxFrame::<512>::message3(
+        oer_wifi_rsn::Akm::Psk,
+        station,
+        3,
+        [4; 32],
+        [0; 8],
+        &[0x55; 8],
+    )
+    .unwrap();
+    let group_message1 = oer_wifi_rsn::frames::RsnTxFrame::<512>::group_message1(
+        oer_wifi_rsn::Akm::Psk,
+        station,
+        4,
+        [0; 8],
+        &[0x66; 24],
+    )
+    .unwrap();
 
     publisher.publish(ConnectedRxEvent::UnprotectedEapol {
         source: ap,

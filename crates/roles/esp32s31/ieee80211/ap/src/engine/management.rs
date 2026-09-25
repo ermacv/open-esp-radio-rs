@@ -9,7 +9,7 @@ impl<'storage> ApEngine<'storage> {
     pub fn begin_wpa2<const N: usize>(
         &self,
         peer: [u8; 6],
-    ) -> Result<Wpa2TxFrame<N>, ApEngineError> {
+    ) -> Result<RsnTxFrame<N>, ApEngineError> {
         Ok(self.service.begin_wpa2_frame(peer)?)
     }
 

@@ -61,7 +61,7 @@ oer-network = { path = "../../../../network/interface" }
 oer-wifi-ap = { path = "../../../../protocols/ieee80211/ap" }
 oer-wifi-softmac = { path = "../../../../protocols/ieee80211/softmac" }
 oer-wifi-sta = { path = "../../../../protocols/ieee80211/sta" }
-oer-wpa2 = { path = "../../../../protocols/ieee80211/security/wpa2" }
+oer-wifi-rsn = { path = "../../../../protocols/ieee80211/security/rsn" }
 static_cell = "2.1.1"
 
 # Hardware composition is target-only; the product resource profile and its

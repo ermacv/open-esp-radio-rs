@@ -15,6 +15,7 @@ pub use oer_wifi_ap::{
     AccessPointClientLimit, AccessPointClientLimitError, AccessPointInactiveTimeout,
     AccessPointInactiveTimeoutError,
 };
+use oer_wifi_rsn::Pmk;
 use oer_wifi_softmac::{
     ESP_NOW_DEFAULT_PEER_CAPACITY, EspNowConfig, EspNowConfigError, EspNowPeerConfig, EspNowPeerId,
     EspNowPeerTableError, EspNowPhyMode, EspNowProtocol, MacServiceCapabilities,
@@ -27,7 +28,6 @@ pub use oer_wifi_sta::request::{
     StationScanChannelsError, StationScanPolicy,
 };
 use oer_wifi_sta::station::StaReconnectPolicy;
-use oer_wpa2::Pmk;
 
 use crate::wifi::{WifiMonitorConfig, WifiPlan};
 

@@ -9,7 +9,7 @@ use oer_ieee80211::ccmp::{
     CcmpPacketNumber, CcmpReplayError, CcmpReplayLane, CcmpRxReplayCandidate, CcmpRxReplayState,
 };
 
-use oer_wpa2::{Ptk, frames::Wpa2Gtk};
+use oer_wifi_rsn::{Ptk, frames::RsnGtk};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApSecurityError {
@@ -131,7 +131,7 @@ pub enum ApSecurity<'storage> {
 impl<'storage> ApSecurity<'storage> {
     pub fn install_group<H>(
         hardware: &mut H,
-        gtk: &Wpa2Gtk,
+        gtk: &RsnGtk,
         storage: &'storage mut ApPairwiseKeyStorage,
     ) -> Result<Self, ApSecurityStartFailure<'storage>>
     where

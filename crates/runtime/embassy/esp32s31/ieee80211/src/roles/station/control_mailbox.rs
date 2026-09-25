@@ -13,7 +13,7 @@ use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
 use oer_esp32s31_wifi_sta::connected_rx::{
     ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink,
 };
-use oer_wpa2::{OwnedEapolFrame, Wpa2Interface};
+use oer_wifi_rsn::{OwnedEapolFrame, RsnInterface};
 
 const EAPOL_ETHERTYPE: u16 = 0x888e;
 
@@ -264,7 +264,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
 
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
         if let ConnectedRxEvent::UnprotectedEapol { source, payload } = event {
-            if let Ok(frame) = OwnedEapolFrame::try_copy(Wpa2Interface::Station, source, payload) {
+            if let Ok(frame) = OwnedEapolFrame::try_copy(RsnInterface::Station, source, payload) {
                 // This is unauthenticated peer input until connected WPA2
                 // verifies its MIC and exact completed-M3 commitment. Full is
                 // therefore a peer-local coalescing drop, never authority to
@@ -279,7 +279,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
             && frame.ether_type == EAPOL_ETHERTYPE
         {
             let result =
-                OwnedEapolFrame::try_copy(Wpa2Interface::Station, frame.source, frame.payload)
+                OwnedEapolFrame::try_copy(RsnInterface::Station, frame.source, frame.payload)
                     .ok()
                     .map(|frame| {
                         self.security

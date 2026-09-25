@@ -23,17 +23,17 @@ use oer_ieee80211::block_ack::{
 };
 use oer_ieee80211::ht::HtPeerCapabilities;
 use oer_ieee80211::security::WifiSecurityMode;
-use oer_wpa2::{
-    AssociationSecurityBinding, OwnedEapolFrame, Pmk, Ptk, PtkContext,
+use oer_wifi_rsn::{
+    Akm, AssociationSecurityBinding, OwnedEapolFrame, Pmk, Ptk, PtkContext,
     aes::{SoftwareAesKeyWrapError, software_aes128_key_wrap},
-    ap::validate_wpa2_ap_rsn,
+    element::validate_rsn_element,
     frames::{
-        OwnedAssociationSecurityIes, OwnedRsnIe, WPA2_PLAIN_KEY_DATA_CAPACITY, Wpa2FrameError,
-        Wpa2Gtk, Wpa2PlainKeyData, Wpa2TxFrame, build_ap_action_frame,
+        OwnedAssociationSecurityIes, OwnedRsnIe, RSN_PLAIN_KEY_DATA_CAPACITY, RsnFrameError,
+        RsnGtk, RsnPlainKeyData, RsnTxFrame, build_ap_action_frame,
     },
-    retry::{Wpa2Retry, Wpa2RetryAction, Wpa2RetryAlarm, Wpa2RetryConfig, Wpa2RetryError},
+    retry::{RsnRetry, RsnRetryAction, RsnRetryAlarm, RsnRetryConfig, RsnRetryError},
     state::{
-        PtkContext as Wpa2StatePtkContext, Wpa2ApAction, Wpa2ApPhase, Wpa2ApState, Wpa2StateError,
+        PtkContext as Wpa2StatePtkContext, RsnApAction, RsnApPhase, RsnApState, RsnStateError,
     },
 };
 
@@ -325,7 +325,7 @@ pub enum ApServiceError {
     NoBufferedTraffic,
     BufferedReleaseInFlight,
     StaleBufferedRelease,
-    Wpa2(Wpa2StateError),
+    Wpa2(RsnStateError),
     BlockAck(TxBlockAckError),
 }
 
@@ -338,15 +338,15 @@ impl From<TxBlockAckError> for ApServiceError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApWpa2Error {
     Service(ApServiceError),
-    Frame(Wpa2FrameError),
+    Frame(RsnFrameError),
     KeyWrap(SoftwareAesKeyWrapError),
     MissingPairwiseKey,
     UnexpectedAction,
-    Retry(Wpa2RetryError),
+    Retry(RsnRetryError),
 }
 
-impl From<Wpa2RetryError> for ApWpa2Error {
-    fn from(error: Wpa2RetryError) -> Self {
+impl From<RsnRetryError> for ApWpa2Error {
+    fn from(error: RsnRetryError) -> Self {
         Self::Retry(error)
     }
 }
@@ -357,14 +357,14 @@ impl From<ApServiceError> for ApWpa2Error {
     }
 }
 
-impl From<Wpa2StateError> for ApWpa2Error {
-    fn from(error: Wpa2StateError) -> Self {
+impl From<RsnStateError> for ApWpa2Error {
+    fn from(error: RsnStateError) -> Self {
         Self::Service(ApServiceError::Wpa2(error))
     }
 }
 
-impl From<Wpa2FrameError> for ApWpa2Error {
-    fn from(error: Wpa2FrameError) -> Self {
+impl From<RsnFrameError> for ApWpa2Error {
+    fn from(error: RsnFrameError) -> Self {
         Self::Frame(error)
     }
 }
@@ -377,22 +377,19 @@ impl From<SoftwareAesKeyWrapError> for ApWpa2Error {
 
 pub enum ApWpa2Progress<const N: usize> {
     None,
-    Transmit(Wpa2TxFrame<N>),
+    Transmit(RsnTxFrame<N>),
     AuthorizePeer,
     DeauthenticatePeer,
 }
 
 pub enum ApWpa2RetryProgress<const N: usize> {
     None,
-    Transmit {
-        peer: [u8; 6],
-        frame: Wpa2TxFrame<N>,
-    },
+    Transmit { peer: [u8; 6], frame: RsnTxFrame<N> },
     Close(ApPeerClose),
 }
 
-impl From<Wpa2StateError> for ApServiceError {
-    fn from(error: Wpa2StateError) -> Self {
+impl From<RsnStateError> for ApServiceError {
+    fn from(error: RsnStateError) -> Self {
         Self::Wpa2(error)
     }
 }
@@ -402,11 +399,11 @@ struct ApPeer {
     association_id: u16,
     association_epoch: u32,
     phase: ApPeerPhase,
-    wpa2: Option<Wpa2ApState>,
+    wpa2: Option<RsnApState>,
     association_security_binding: Option<AssociationSecurityBinding>,
     pending_ptk: Option<Ptk>,
-    wpa2_retry: Wpa2Retry,
-    wpa2_retry_alarm: Option<Wpa2RetryAlarm>,
+    wpa2_retry: RsnRetry,
+    wpa2_retry_alarm: Option<RsnRetryAlarm>,
     maximum_legacy_rate_500kbps: u8,
     ht: Option<HtPeerCapabilities>,
     qos_supported: bool,
@@ -524,8 +521,8 @@ const fn new_ap_tx_block_ack() -> TxBlockAckSession {
     }
 }
 
-const fn new_ap_wpa2_retry() -> Wpa2Retry {
-    match Wpa2Retry::new(Wpa2RetryConfig {
+const fn new_ap_wpa2_retry() -> RsnRetry {
+    match RsnRetry::new(RsnRetryConfig {
         first_interval_us: AP_WPA2_FIRST_RETRY_INTERVAL_MICROS,
         subsequent_interval_us: AP_WPA2_SUBSEQUENT_RETRY_INTERVAL_MICROS,
         attempts: AP_WPA2_RETRY_ATTEMPTS,
@@ -601,14 +598,14 @@ pub struct AccessPointService<'peers> {
 /// or placeholder key bytes that could be installed by a later generic path.
 pub enum AccessPointSecurityMaterial {
     Open,
-    Wpa2Personal { pmk: Pmk, gtk: Wpa2Gtk },
+    Wpa2Personal { pmk: Pmk, gtk: RsnGtk },
 }
 
 impl<'peers> AccessPointService<'peers> {
     pub fn new(
         address: [u8; 6],
         pmk: Pmk,
-        gtk: Wpa2Gtk,
+        gtk: RsnGtk,
         client_limit: AccessPointClientLimit,
         inactive_timeout: AccessPointInactiveTimeout,
         peer_storage: &'peers mut AccessPointPeerStorage,

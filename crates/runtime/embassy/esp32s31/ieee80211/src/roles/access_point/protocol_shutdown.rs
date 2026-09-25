@@ -80,7 +80,7 @@ where
         }
         let payload = &mpdu[plan.payload_offset..plan.payload_offset + plan.payload_length];
         let Ok(frame) = OwnedEapolFrame::<EAPOL_CAPACITY>::try_copy(
-            Wpa2Interface::AccessPoint,
+            RsnInterface::AccessPoint,
             plan.source,
             payload,
         ) else {

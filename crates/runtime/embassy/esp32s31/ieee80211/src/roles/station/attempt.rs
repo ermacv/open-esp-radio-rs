@@ -64,11 +64,11 @@ use oer_wifi_sta::{
     station::StaFailureDisposition,
 };
 
-use oer_wpa2::{
-    aes::{SoftwareAesKeyUnwrapError, Wpa2SoftwareAes},
+use oer_wifi_rsn::{
+    aes::{RsnSoftwareAes, SoftwareAesKeyUnwrapError},
     runner::{
-        Wpa2Established, Wpa2HandshakeConfig, Wpa2HandshakeError, Wpa2HandshakeRunner,
-        Wpa2KeyInstallError, Wpa2KeyInstallRunner, Wpa2PendingKeyInstall,
+        RsnEstablished, RsnHandshakeConfig, RsnHandshakeError, RsnHandshakeRunner,
+        RsnKeyInstallError, RsnKeyInstallRunner, RsnPendingKeyInstall,
     },
 };
 

@@ -27,9 +27,11 @@ impl<'peers> AccessPointService<'peers> {
         }
     }
 
+    /// The station's validated Association security elements and the suite
+    /// its RSN element selects.
     pub(super) fn validated_wpa2_association_security_ies(
         security: ApAssociationSecurityObservation<'_>,
-    ) -> Option<OwnedAssociationSecurityIes> {
+    ) -> Option<(Akm, OwnedAssociationSecurityIes)> {
         if !security.privacy
             || security.rsn_ie_count != 1
             || security.rsnxe_count > 1
@@ -38,8 +40,10 @@ impl<'peers> AccessPointService<'peers> {
         {
             return None;
         }
-        let rsn = validate_wpa2_ap_rsn(security.rsn_ie?).ok()?;
-        OwnedAssociationSecurityIes::try_copy(rsn.owned(), security.rsnxe.unwrap_or(&[])).ok()
+        let rsn = validate_rsn_element(security.rsn_ie?).ok()?;
+        let ies = OwnedAssociationSecurityIes::try_copy(rsn.owned(), security.rsnxe.unwrap_or(&[]))
+            .ok()?;
+        Some((rsn.akm(), ies))
     }
 
     /// Signal that the successful Association Response reached TX complete.
@@ -54,7 +58,7 @@ impl<'peers> AccessPointService<'peers> {
         Ok(ApMlmeAction::BeginWpa2 { peer })
     }
 
-    pub fn wpa2_mut(&mut self, peer: [u8; 6]) -> Result<&mut Wpa2ApState, ApServiceError> {
+    pub fn wpa2_mut(&mut self, peer: [u8; 6]) -> Result<&mut RsnApState, ApServiceError> {
         if self.security_mode() != WifiSecurityMode::Wpa2Personal {
             return Err(ApServiceError::SecurityModeMismatch);
         }
@@ -64,12 +68,19 @@ impl<'peers> AccessPointService<'peers> {
 
     pub fn wpa2_authorized(&self, peer: [u8; 6]) -> Result<bool, ApServiceError> {
         let existing = self.checked_peer(peer)?;
-        Ok(existing.wpa2.as_ref().map(Wpa2ApState::phase) == Some(Wpa2ApPhase::Authorized))
+        Ok(existing.wpa2.as_ref().map(RsnApState::phase) == Some(RsnApPhase::Authorized))
     }
 
-    pub fn derive_ptk(&self, context: PtkContext) -> Result<Ptk, ApServiceError> {
+    /// Derive a peer's PTK with the suite its Association selected.
+    pub fn derive_ptk(&self, peer: [u8; 6], context: PtkContext) -> Result<Ptk, ApServiceError> {
+        let akm = self
+            .checked_peer(peer)?
+            .wpa2
+            .as_ref()
+            .ok_or(ApServiceError::WrongPeerPhase)?
+            .akm();
         let (pmk, _) = self.wpa2_material()?;
-        Ok(pmk.derive_ptk(context))
+        Ok(pmk.derive_ptk(akm, context))
     }
 
     /// Build Message 1 only after the successful Association Response reached
@@ -77,7 +88,7 @@ impl<'peers> AccessPointService<'peers> {
     pub fn begin_wpa2_frame<const N: usize>(
         &self,
         peer: [u8; 6],
-    ) -> Result<Wpa2TxFrame<N>, ApWpa2Error> {
+    ) -> Result<RsnTxFrame<N>, ApWpa2Error> {
         if self.security_mode() != WifiSecurityMode::Wpa2Personal {
             return Err(ApServiceError::SecurityModeMismatch.into());
         }
@@ -86,7 +97,7 @@ impl<'peers> AccessPointService<'peers> {
             .wpa2
             .as_ref()
             .ok_or(ApServiceError::WrongPeerPhase)?;
-        let Wpa2ApAction::Transmit(transmit) = state.message1(false)? else {
+        let RsnApAction::Transmit(transmit) = state.message1(false)? else {
             return Err(ApWpa2Error::UnexpectedAction);
         };
         Ok(build_ap_action_frame(state, transmit, [0; 8], &[])?)
@@ -118,7 +129,8 @@ impl<'peers> AccessPointService<'peers> {
             let mut alarm = existing.wpa2_retry.arm(transmit, now_micros)?;
             // hostapd extends only the acknowledged initial M1 window. M3
             // retains the short first timeout, then uses the subsequent one.
-            if acknowledged && transmit.message == oer_wpa2::state::Wpa2TxMessage::PairwiseMessage1
+            if acknowledged
+                && transmit.message == oer_wifi_rsn::state::RsnTxMessage::PairwiseMessage1
             {
                 alarm = existing
                     .wpa2_retry
@@ -165,11 +177,11 @@ impl<'peers> AccessPointService<'peers> {
             (peer.address, action)
         };
         match action {
-            Wpa2RetryAction::Stale => Ok(ApWpa2RetryProgress::None),
-            Wpa2RetryAction::Transmit { frame, next_alarm } => {
+            RsnRetryAction::Stale => Ok(ApWpa2RetryProgress::None),
+            RsnRetryAction::Transmit { frame, next_alarm } => {
                 self.checked_peer_mut(peer_address)?.wpa2_retry_alarm = Some(next_alarm);
                 let frame = match frame.message {
-                    oer_wpa2::state::Wpa2TxMessage::PairwiseMessage1 => {
+                    oer_wifi_rsn::state::RsnTxMessage::PairwiseMessage1 => {
                         let state = self
                             .checked_peer(peer_address)?
                             .wpa2
@@ -177,7 +189,7 @@ impl<'peers> AccessPointService<'peers> {
                             .ok_or(ApServiceError::WrongPeerPhase)?;
                         build_ap_action_frame(state, frame, [0; 8], &[])?
                     }
-                    oer_wpa2::state::Wpa2TxMessage::PairwiseMessage3 => {
+                    oer_wifi_rsn::state::RsnTxMessage::PairwiseMessage3 => {
                         let ApWpa2Progress::Transmit(frame) =
                             self.build_pending_transmit(peer_address, frame)?
                         else {
@@ -192,7 +204,7 @@ impl<'peers> AccessPointService<'peers> {
                     frame,
                 })
             }
-            Wpa2RetryAction::Exhausted => {
+            RsnRetryAction::Exhausted => {
                 let peer = self.checked_peer_mut(peer_address)?;
                 let close = ApPeerClose {
                     peer: peer.address,
@@ -236,13 +248,13 @@ impl<'peers> AccessPointService<'peers> {
             Err(error) => return Err(error.into()),
         };
         match action {
-            Wpa2ApAction::None => Ok(ApWpa2Progress::None),
-            Wpa2ApAction::DerivePtk {
+            RsnApAction::None => Ok(ApWpa2Progress::None),
+            RsnApAction::DerivePtk {
                 ticket,
                 context,
                 message2,
             } => self.complete_message2(peer, ticket, context, message2),
-            Wpa2ApAction::VerifyMessage4Mic { ticket, message4 } => {
+            RsnApAction::VerifyMessage4Mic { ticket, message4 } => {
                 let valid = {
                     let ptk = self
                         .checked_peer(peer)?
@@ -258,19 +270,19 @@ impl<'peers> AccessPointService<'peers> {
                     .ok_or(ApServiceError::WrongPeerPhase)?
                     .complete_message4_mic(ticket, message4, valid)?;
                 match action {
-                    Wpa2ApAction::AuthorizePeer => {
+                    RsnApAction::AuthorizePeer => {
                         let existing = self.checked_peer_mut(peer)?;
                         existing.wpa2_retry.cancel();
                         existing.wpa2_retry_alarm = None;
                         Ok(ApWpa2Progress::AuthorizePeer)
                     }
-                    Wpa2ApAction::None => Ok(ApWpa2Progress::None),
-                    Wpa2ApAction::DeauthenticatePeer => Ok(ApWpa2Progress::DeauthenticatePeer),
+                    RsnApAction::None => Ok(ApWpa2Progress::None),
+                    RsnApAction::DeauthenticatePeer => Ok(ApWpa2Progress::DeauthenticatePeer),
                     _ => Err(ApWpa2Error::UnexpectedAction),
                 }
             }
-            Wpa2ApAction::Transmit(transmit) => self.build_pending_transmit(peer, transmit),
-            Wpa2ApAction::DeauthenticatePeer => Ok(ApWpa2Progress::DeauthenticatePeer),
+            RsnApAction::Transmit(transmit) => self.build_pending_transmit(peer, transmit),
+            RsnApAction::DeauthenticatePeer => Ok(ApWpa2Progress::DeauthenticatePeer),
             _ => Err(ApWpa2Error::UnexpectedAction),
         }
     }
@@ -278,23 +290,26 @@ impl<'peers> AccessPointService<'peers> {
     fn complete_message2<const N: usize>(
         &mut self,
         peer: [u8; 6],
-        ticket: oer_wpa2::state::Wpa2Ticket,
+        ticket: oer_wifi_rsn::state::RsnTicket,
         context: Wpa2StatePtkContext,
         message2: OwnedEapolFrame<N>,
     ) -> Result<ApWpa2Progress<N>, ApWpa2Error> {
-        let ptk = self.derive_ptk(PtkContext {
-            authenticator_address: context.authenticator_address,
-            supplicant_address: context.supplicant_address,
-            authenticator_nonce: context.authenticator_nonce,
-            supplicant_nonce: context.supplicant_nonce,
-        })?;
+        let ptk = self.derive_ptk(
+            peer,
+            PtkContext {
+                authenticator_address: context.authenticator_address,
+                supplicant_address: context.supplicant_address,
+                authenticator_nonce: context.authenticator_nonce,
+                supplicant_nonce: context.supplicant_nonce,
+            },
+        )?;
         let action = self
             .checked_peer_mut(peer)?
             .wpa2
             .as_mut()
             .ok_or(ApServiceError::WrongPeerPhase)?
             .complete_ptk(ticket, message2, true)?;
-        let Wpa2ApAction::VerifyMessage2Mic { ticket, message2 } = action else {
+        let RsnApAction::VerifyMessage2Mic { ticket, message2 } = action else {
             return Err(ApWpa2Error::UnexpectedAction);
         };
         let valid = message2.key_frame().verify_mic(&ptk);
@@ -317,9 +332,9 @@ impl<'peers> AccessPointService<'peers> {
             .ok_or(ApServiceError::WrongPeerPhase)?
             .complete_message2_mic(ticket, message2, valid)?;
         let ticket = match action {
-            Wpa2ApAction::PrepareMessage3 { ticket } => ticket,
-            Wpa2ApAction::None => return Ok(ApWpa2Progress::None),
-            Wpa2ApAction::DeauthenticatePeer => {
+            RsnApAction::PrepareMessage3 { ticket } => ticket,
+            RsnApAction::None => return Ok(ApWpa2Progress::None),
+            RsnApAction::DeauthenticatePeer => {
                 return Ok(ApWpa2Progress::DeauthenticatePeer);
             }
             _ => return Err(ApWpa2Error::UnexpectedAction),
@@ -333,15 +348,14 @@ impl<'peers> AccessPointService<'peers> {
                 .ok_or(ApServiceError::WrongPeerPhase)?
                 .complete_message3_preparation::<N>(ticket, false)?;
             return match action {
-                Wpa2ApAction::DeauthenticatePeer => Ok(ApWpa2Progress::DeauthenticatePeer),
+                RsnApAction::DeauthenticatePeer => Ok(ApWpa2Progress::DeauthenticatePeer),
                 _ => Err(ApWpa2Error::UnexpectedAction),
             };
         }
 
         let (_, gtk) = self.wpa2_material()?;
         let authenticator_rsn = OwnedRsnIe::<64>::try_copy(&WPA2_PERSONAL_CCMP_PSK_RSN_IE)?;
-        let plain =
-            Wpa2PlainKeyData::<WPA2_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, gtk)?;
+        let plain = RsnPlainKeyData::<RSN_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, gtk)?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let action = self
             .checked_peer_mut(peer)?
@@ -349,7 +363,7 @@ impl<'peers> AccessPointService<'peers> {
             .as_mut()
             .ok_or(ApServiceError::WrongPeerPhase)?
             .complete_message3_preparation::<N>(ticket, true)?;
-        let Wpa2ApAction::Transmit(transmit) = action else {
+        let RsnApAction::Transmit(transmit) = action else {
             return Err(ApWpa2Error::UnexpectedAction);
         };
         let state = self
@@ -371,7 +385,7 @@ impl<'peers> AccessPointService<'peers> {
     fn build_pending_transmit<const N: usize>(
         &self,
         peer: [u8; 6],
-        transmit: oer_wpa2::state::Wpa2Transmit,
+        transmit: oer_wifi_rsn::state::RsnTransmit,
     ) -> Result<ApWpa2Progress<N>, ApWpa2Error> {
         let existing = self.checked_peer(peer)?;
         let state = existing
@@ -384,8 +398,7 @@ impl<'peers> AccessPointService<'peers> {
             .ok_or(ApWpa2Error::MissingPairwiseKey)?;
         let (_, gtk) = self.wpa2_material()?;
         let authenticator_rsn = OwnedRsnIe::<64>::try_copy(&WPA2_PERSONAL_CCMP_PSK_RSN_IE)?;
-        let plain =
-            Wpa2PlainKeyData::<WPA2_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, gtk)?;
+        let plain = RsnPlainKeyData::<RSN_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, gtk)?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let response =
             build_ap_action_frame(state, transmit, [0; 8], wrapped.as_bytes())?.authenticate(ptk);
@@ -399,7 +412,7 @@ impl<'peers> AccessPointService<'peers> {
             .ok_or(ApServiceError::WrongPeerPhase)
     }
 
-    pub fn gtk(&self) -> Result<&Wpa2Gtk, ApServiceError> {
+    pub fn gtk(&self) -> Result<&RsnGtk, ApServiceError> {
         self.wpa2_material().map(|(_, gtk)| gtk)
     }
 
@@ -409,7 +422,7 @@ impl<'peers> AccessPointService<'peers> {
         }
         let inactive_timeout_micros = self.inactive_timeout.micros();
         let existing = self.checked_peer_mut(peer)?;
-        if existing.wpa2.as_ref().map(Wpa2ApState::phase) != Some(Wpa2ApPhase::Authorized) {
+        if existing.wpa2.as_ref().map(RsnApState::phase) != Some(RsnApPhase::Authorized) {
             return Err(ApServiceError::WrongPeerPhase);
         }
         existing.phase = ApPeerPhase::Authorized;
@@ -423,7 +436,7 @@ impl<'peers> AccessPointService<'peers> {
         Ok(())
     }
 
-    pub(super) fn wpa2_material(&self) -> Result<(&Pmk, &Wpa2Gtk), ApServiceError> {
+    pub(super) fn wpa2_material(&self) -> Result<(&Pmk, &RsnGtk), ApServiceError> {
         match &self.security {
             AccessPointSecurityMaterial::Open => Err(ApServiceError::SecurityModeMismatch),
             AccessPointSecurityMaterial::Wpa2Personal { pmk, gtk } => Ok((pmk, gtk)),

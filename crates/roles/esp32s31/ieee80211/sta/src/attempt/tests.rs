@@ -97,7 +97,7 @@ impl StaAttemptPort for MockPort {
         &'a mut self,
         owner: &'a mut Self::Owner,
     ) -> impl Future<Output = Result<(), StaAttemptStepError<Self::Error>>> + 'a {
-        ready(self.step(owner, StaAttemptStage::Wpa2KeyInstall))
+        ready(self.step(owner, StaAttemptStage::RsnKeyInstall))
     }
 
     fn enter_connected(
@@ -155,7 +155,7 @@ const STAGES: [StaAttemptStage; StaAttemptStage::COUNT as usize] = [
     StaAttemptStage::Association,
     StaAttemptStage::PeerProgramming,
     StaAttemptStage::Wpa2Handshake,
-    StaAttemptStage::Wpa2KeyInstall,
+    StaAttemptStage::RsnKeyInstall,
     StaAttemptStage::ConnectedEntry,
 ];
 

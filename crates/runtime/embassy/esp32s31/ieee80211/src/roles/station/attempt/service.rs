@@ -279,7 +279,7 @@ where
             station,
         );
         let mut runner =
-            Wpa2HandshakeRunner::new(port, EmbassyWpa2HandshakeTimer, Wpa2SoftwareAes::new());
+            RsnHandshakeRunner::new(port, EmbassyWpa2HandshakeTimer, RsnSoftwareAes::new());
         let (pmk, supplicant_nonce, sequences) =
             owner.security.wpa2_handshake_parts().ok_or_else(|| {
                 StaAttemptStepError::terminal(StaAttemptTargetError::State(
@@ -289,7 +289,7 @@ where
         let mut next_sequence = || sequences.take_non_qos();
         let result = runner
             .run(
-                Wpa2HandshakeConfig {
+                RsnHandshakeConfig {
                     local: owner.station.station_address,
                     authenticator: owner.station.access_point.bssid,
                     supplicant_nonce,
@@ -351,8 +351,8 @@ where
                 message4_protection,
             ),
         );
-        let mut runner = Wpa2KeyInstallRunner::new(port);
-        let result: Result<Wpa2Established<InstalledWpa2Keys>, _> = runner.run(pending).await;
+        let mut runner = RsnKeyInstallRunner::new(port);
+        let result: Result<RsnEstablished<InstalledWpa2Keys>, _> = runner.run(pending).await;
         let port = runner.into_backend();
         let completion = port.completion();
         let _parts = port.into_parts();
@@ -376,7 +376,7 @@ where
                 Ok(())
             }
             Err(error) => Err(StaAttemptStepError::retry_current(
-                StaAttemptTargetError::Wpa2KeyInstall(error),
+                StaAttemptTargetError::RsnKeyInstall(error),
             )),
         }
     }

@@ -24,7 +24,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `memory/` | Audited stable-memory proofs and affine buffer/queue handoff |
 | `network/dependencies/` | Reviewed Cargo source selection for network stacks; no adapter code |
 | `network/interface/` | Stack-neutral interface, link and error values |
-| `protocols/ieee80211/{mac,softmac,sta,ap,security/wpa2}/` | Frame/protocol code, MAC contracts, role policy and security |
+| `protocols/ieee80211/{mac,softmac,sta,ap,security/rsn}/` | Frame/protocol code, MAC contracts, role policy and security |
 | `protocols/ieee80211/datapath/` | Software egress ownership, flow demand and physical materialization contracts |
 | `protocols/bluetooth/le/ll/` | Portable LE PDU codecs and protocol-role state |
 | `protocols/bluetooth/hci/` | `wire` holds packet views; `transport/in_process` holds queues; `controller` retains bootstrap, command/response authority and `le` policies |

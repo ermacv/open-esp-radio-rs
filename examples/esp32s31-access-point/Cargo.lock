@@ -1362,9 +1362,9 @@ dependencies = [
  "oer-radio-embassy",
  "oer-wifi-ap",
  "oer-wifi-embassy",
+ "oer-wifi-rsn",
  "oer-wifi-softmac",
  "oer-wifi-sta",
- "oer-wpa2",
  "oer-xarxa-upstream",
  "static_cell",
 ]
@@ -1448,8 +1448,8 @@ dependencies = [
  "oer-ieee80211",
  "oer-memory",
  "oer-wifi-ap",
+ "oer-wifi-rsn",
  "oer-wifi-softmac",
- "oer-wpa2",
 ]
 
 [[package]]
@@ -1482,9 +1482,9 @@ dependencies = [
  "oer-network",
  "oer-wifi-datapath",
  "oer-wifi-embassy",
+ "oer-wifi-rsn",
  "oer-wifi-softmac",
  "oer-wifi-sta",
- "oer-wpa2",
  "static_cell",
 ]
 
@@ -1538,9 +1538,9 @@ dependencies = [
  "oer-esp32s31-wifi-dma",
  "oer-esp32s31-wifi-mac",
  "oer-ieee80211",
+ "oer-wifi-rsn",
  "oer-wifi-softmac",
  "oer-wifi-sta",
- "oer-wpa2",
  "static_cell",
 ]
 
@@ -1578,9 +1578,9 @@ version = "0.1.0"
 dependencies = [
  "oer-ieee80211",
  "oer-wifi-ap",
+ "oer-wifi-rsn",
  "oer-wifi-softmac",
  "oer-wifi-sta",
- "oer-wpa2",
 ]
 
 [[package]]
@@ -1598,7 +1598,7 @@ name = "oer-wifi-ap"
 version = "0.1.0"
 dependencies = [
  "oer-ieee80211",
- "oer-wpa2",
+ "oer-wifi-rsn",
 ]
 
 [[package]]
@@ -1620,6 +1620,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-wifi-rsn"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "hmac",
+ "pbkdf2",
+ "sha1",
+ "zeroize",
+]
+
+[[package]]
 name = "oer-wifi-softmac"
 version = "0.1.0"
 dependencies = [
@@ -1632,17 +1643,6 @@ name = "oer-wifi-sta"
 version = "0.1.0"
 dependencies = [
  "oer-ieee80211",
-]
-
-[[package]]
-name = "oer-wpa2"
-version = "0.1.0"
-dependencies = [
- "aes",
- "hmac",
- "pbkdf2",
- "sha1",
- "zeroize",
 ]
 
 [[package]]
@@ -1677,9 +1677,9 @@ dependencies = [
  "oer-radio-embassy",
  "oer-wifi-ap",
  "oer-wifi-datapath",
+ "oer-wifi-rsn",
  "oer-wifi-softmac",
  "oer-wifi-sta",
- "oer-wpa2",
 ]
 
 [[package]]

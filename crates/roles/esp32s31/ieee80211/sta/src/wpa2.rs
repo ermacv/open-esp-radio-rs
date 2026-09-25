@@ -19,12 +19,12 @@ use oer_esp32s31_wifi_mac::{
 
 use oer_ieee80211::station::{StaDataFrame, StaProtectedDataFrame, StaTxSequenceCounters};
 
-use oer_wpa2::{
-    DEFAULT_EAPOL_FRAME_CAPACITY, OwnedEapolFrame, Wpa2Interface,
-    frames::Wpa2TxFrame,
-    keys::Wpa2KeyKind,
-    runner::{Wpa2HandshakeBackend, Wpa2KeyInstallBackend, Wpa2RxProgress},
-    supplicant::Wpa2StaKeyInstallRequest,
+use oer_wifi_rsn::{
+    DEFAULT_EAPOL_FRAME_CAPACITY, OwnedEapolFrame, RsnInterface,
+    frames::RsnTxFrame,
+    keys::RsnKeyKind,
+    runner::{RsnHandshakeBackend, RsnKeyInstallBackend, RsnRxProgress},
+    supplicant::RsnStaKeyInstallRequest,
 };
 
 const LLC_SNAP_EAPOL: [u8; 8] = [0xaa, 0xaa, 0x03, 0, 0, 0, 0x88, 0x8e];
@@ -33,11 +33,8 @@ const LLC_SNAP_EAPOL: [u8; 8] = [0xaa, 0xaa, 0x03, 0, 0, 0, 0x88, 0x8e];
 pub trait Wpa2Receive<H> {
     type Error;
 
-    fn service(
-        &mut self,
-        hardware: &mut H,
-        frame: &mut [u8],
-    ) -> Result<Wpa2RxProgress, Self::Error>;
+    fn service(&mut self, hardware: &mut H, frame: &mut [u8])
+    -> Result<RsnRxProgress, Self::Error>;
 
     fn restart<'a>(
         &'a mut self,
@@ -101,7 +98,7 @@ pub fn copy_station_eapol(
         return None;
     }
     OwnedEapolFrame::try_copy(
-        Wpa2Interface::Station,
+        RsnInterface::Station,
         station.bssid,
         frame.get(eapol_offset..mpdu_length)?,
     )
@@ -180,14 +177,14 @@ impl<'hardware, 'transmit, 'scratch, H, R, T>
     }
 }
 
-impl<H, R, T> Wpa2HandshakeBackend for Wpa2HandshakePort<'_, '_, '_, H, R, T>
+impl<H, R, T> RsnHandshakeBackend for Wpa2HandshakePort<'_, '_, '_, H, R, T>
 where
     R: Wpa2Receive<H>,
     T: HandshakeTransmit<H>,
 {
     type Error = Wpa2HandshakePortError<R::Error, T::Error>;
 
-    async fn service_receive(&mut self) -> Result<Wpa2RxProgress, Self::Error> {
+    async fn service_receive(&mut self) -> Result<RsnRxProgress, Self::Error> {
         self.radio
             .receive
             .service(self.radio.hardware, self.storage.frame)
@@ -211,7 +208,7 @@ where
 
     async fn transmit_message2<'a>(
         &'a mut self,
-        frame: &'a Wpa2TxFrame<DEFAULT_EAPOL_FRAME_CAPACITY>,
+        frame: &'a RsnTxFrame<DEFAULT_EAPOL_FRAME_CAPACITY>,
         sequence_number: u16,
     ) -> Result<(), Self::Error> {
         self.radio
@@ -350,7 +347,7 @@ impl<'hardware, 'transmit, 'sequence, H, T> Wpa2KeyPort<'hardware, 'transmit, 's
     }
 }
 
-impl<H, T> Wpa2KeyInstallBackend for Wpa2KeyPort<'_, '_, '_, H, T>
+impl<H, T> RsnKeyInstallBackend for Wpa2KeyPort<'_, '_, '_, H, T>
 where
     H: CcmpKeyHardware,
     T: HandshakeTransmit<H>,
@@ -360,11 +357,11 @@ where
 
     fn install_keys(
         &mut self,
-        request: &Wpa2StaKeyInstallRequest,
+        request: &RsnStaKeyInstallRequest,
     ) -> Result<Self::InstalledKeys, Self::Error> {
         let pairwise = request.pairwise();
         let group = request.group();
-        let Wpa2KeyKind::Group { key_id, .. } = group.kind() else {
+        let RsnKeyKind::Group { key_id, .. } = group.kind() else {
             return Err(Wpa2KeyPortError::InvalidGroupKind);
         };
         let replay = StaCcmpRxReplayEpoch::new(
@@ -405,7 +402,7 @@ where
 
     async fn transmit_message4<'a>(
         &'a mut self,
-        frame: &'a Wpa2TxFrame<DEFAULT_EAPOL_FRAME_CAPACITY>,
+        frame: &'a RsnTxFrame<DEFAULT_EAPOL_FRAME_CAPACITY>,
         keys: &'a mut Self::InstalledKeys,
     ) -> Result<(), Self::Error> {
         let completion = match self.session.message4_protection {

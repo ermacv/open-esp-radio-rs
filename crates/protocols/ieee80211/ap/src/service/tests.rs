@@ -7,11 +7,11 @@ use oer_ieee80211::{
     channel::WifiChannel,
     ht::{ht_capability_ie, ht_peer_capabilities},
 };
-use oer_wpa2::{
-    EapolKeyMessage, OwnedEapolFrame, PtkContext, Wpa2Interface,
+use oer_wifi_rsn::{
+    EapolKeyMessage, OwnedEapolFrame, PtkContext, RsnInterface,
     aes::software_aes128_key_unwrap,
-    frames::{OwnedAssociationSecurityIes, OwnedRsnIe, Wpa2Gtk, Wpa2TxFrame, parse_gtk_key_data},
-    state::{Wpa2ApAction, Wpa2Ticket},
+    frames::{OwnedAssociationSecurityIes, OwnedRsnIe, RsnGtk, RsnTxFrame, parse_gtk_key_data},
+    state::{RsnApAction, RsnTicket},
 };
 
 const AP: [u8; 6] = [0x02, 0, 0, 0, 0, 1];
@@ -49,21 +49,27 @@ fn signed_message2(
     authenticator_nonce: [u8; 32],
     supplicant_nonce: [u8; 32],
 ) -> OwnedEapolFrame<512> {
-    let ptk = Pmk::derive(b"password", b"test-ap")
-        .unwrap()
-        .derive_ptk(PtkContext {
+    let ptk = Pmk::derive(b"password", b"test-ap").unwrap().derive_ptk(
+        oer_wifi_rsn::Akm::Psk,
+        PtkContext {
             authenticator_address: AP,
             supplicant_address: PEER,
             authenticator_nonce,
             supplicant_nonce,
-        });
+        },
+    );
     let rsn_ie = OwnedRsnIe::<64>::try_copy(rsn_ie).unwrap();
     let security_ies = OwnedAssociationSecurityIes::<128>::try_copy(&rsn_ie, rsnxe).unwrap();
-    let message2 =
-        Wpa2TxFrame::<512>::message2_with_security_ies(AP, 9, supplicant_nonce, &security_ies)
-            .unwrap()
-            .authenticate(&ptk);
-    OwnedEapolFrame::try_copy(Wpa2Interface::AccessPoint, PEER, message2.as_bytes()).unwrap()
+    let message2 = RsnTxFrame::<512>::message2_with_security_ies(
+        oer_wifi_rsn::Akm::Psk,
+        AP,
+        9,
+        supplicant_nonce,
+        &security_ies,
+    )
+    .unwrap()
+    .authenticate(&ptk);
+    OwnedEapolFrame::try_copy(RsnInterface::AccessPoint, PEER, message2.as_bytes()).unwrap()
 }
 
 fn corrupt_mic(frame: OwnedEapolFrame<512>) -> OwnedEapolFrame<512> {
@@ -71,7 +77,7 @@ fn corrupt_mic(frame: OwnedEapolFrame<512>) -> OwnedEapolFrame<512> {
     let length = frame.as_bytes().len();
     bytes[..length].copy_from_slice(frame.as_bytes());
     bytes[81] ^= 1;
-    OwnedEapolFrame::try_copy(Wpa2Interface::AccessPoint, PEER, &bytes[..length]).unwrap()
+    OwnedEapolFrame::try_copy(RsnInterface::AccessPoint, PEER, &bytes[..length]).unwrap()
 }
 
 fn ht_capabilities() -> ApAssociationCapabilities {
@@ -95,7 +101,7 @@ fn service(storage: &mut AccessPointPeerStorage) -> AccessPointService<'_> {
     AccessPointService::new(
         AP,
         Pmk::derive(b"password", b"test-ap").unwrap(),
-        Wpa2Gtk::new(1, true, [0x55; 16]).unwrap(),
+        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::default(),
         storage,
@@ -419,7 +425,7 @@ fn associated_activity_refreshes_the_configured_inactivity_frontier() {
     let mut service = AccessPointService::new(
         AP,
         Pmk::derive(b"password", b"test-ap").unwrap(),
-        Wpa2Gtk::new(1, true, [0x55; 16]).unwrap(),
+        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
         AccessPointClientLimit::new(2).unwrap(),
         AccessPointInactiveTimeout::new(10).unwrap(),
         &mut storage,
@@ -492,9 +498,9 @@ fn association_owns_a_bounded_wpa2_state() {
     );
     assert!(matches!(
         service.wpa2_mut(PEER).unwrap().message1(false).unwrap(),
-        Wpa2ApAction::Transmit(_)
+        RsnApAction::Transmit(_)
     ));
-    let _ticket_type_is_owned: Option<Wpa2Ticket> = None;
+    let _ticket_type_is_owned: Option<RsnTicket> = None;
 }
 
 #[test]
@@ -570,20 +576,21 @@ fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
     assert!(retried_message1.retransmission());
     assert_eq!(retried_message1.as_bytes(), message1.as_bytes());
 
-    let ptk = Pmk::derive(b"password", b"test-ap")
-        .unwrap()
-        .derive_ptk(PtkContext {
+    let ptk = Pmk::derive(b"password", b"test-ap").unwrap().derive_ptk(
+        oer_wifi_rsn::Akm::Psk,
+        PtkContext {
             authenticator_address: AP,
             supplicant_address: PEER,
             authenticator_nonce: ANONCE,
             supplicant_nonce: SNONCE,
-        });
+        },
+    );
     let rsn = OwnedRsnIe::<64>::try_copy(&SUPPLICANT_RSN).unwrap();
-    let message2 = Wpa2TxFrame::<512>::message2(AP, 9, SNONCE, &rsn)
+    let message2 = RsnTxFrame::<512>::message2(oer_wifi_rsn::Akm::Psk, AP, 9, SNONCE, &rsn)
         .unwrap()
         .authenticate(&ptk);
     let message2 =
-        OwnedEapolFrame::<512>::try_copy(Wpa2Interface::AccessPoint, PEER, message2.as_bytes())
+        OwnedEapolFrame::<512>::try_copy(RsnInterface::AccessPoint, PEER, message2.as_bytes())
             .unwrap();
     let ApWpa2Progress::Transmit(message3) = service.on_eapol(PEER, message2).unwrap() else {
         panic!("message 2 must produce message 3");
@@ -613,14 +620,14 @@ fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
     assert_eq!(retried_message3.as_bytes(), message3.as_bytes());
     assert!(matches!(
         parse_gtk_key_data(plaintext.as_bytes(), &SUPPLICANT_RSN, &[]),
-        Err(Wpa2FrameError::RsnIeMismatch)
+        Err(RsnFrameError::RsnIeMismatch)
     ));
 
-    let message4 = Wpa2TxFrame::<512>::message4(AP, 10)
+    let message4 = RsnTxFrame::<512>::message4(oer_wifi_rsn::Akm::Psk, AP, 10)
         .unwrap()
         .authenticate(&ptk);
     let message4 =
-        OwnedEapolFrame::<512>::try_copy(Wpa2Interface::AccessPoint, PEER, message4.as_bytes())
+        OwnedEapolFrame::<512>::try_copy(RsnInterface::AccessPoint, PEER, message4.as_bytes())
             .unwrap();
     assert!(matches!(
         service.on_eapol(PEER, message4).unwrap(),
@@ -664,7 +671,7 @@ fn message2_must_echo_the_exact_association_rsn() {
             .unwrap(),
         ApWpa2Progress::DeauthenticatePeer
     ));
-    assert_eq!(service.wpa2_mut(PEER).unwrap().phase(), Wpa2ApPhase::Failed);
+    assert_eq!(service.wpa2_mut(PEER).unwrap().phase(), RsnApPhase::Failed);
     assert!(service.pending_ptk(PEER).is_err());
 }
 
@@ -688,9 +695,9 @@ fn unauthenticated_eapol_cannot_poison_or_refresh_a_securing_peer() {
         .unwrap();
     let original_deadline = service.peer_status(PEER).unwrap().deadline_micros;
 
-    let replay_mismatch = Wpa2TxFrame::<512>::message4(AP, 77).unwrap();
+    let replay_mismatch = RsnTxFrame::<512>::message4(oer_wifi_rsn::Akm::Psk, AP, 77).unwrap();
     let replay_mismatch = OwnedEapolFrame::<512>::try_copy(
-        Wpa2Interface::AccessPoint,
+        RsnInterface::AccessPoint,
         PEER,
         replay_mismatch.as_bytes(),
     )
@@ -700,9 +707,9 @@ fn unauthenticated_eapol_cannot_poison_or_refresh_a_securing_peer() {
         ApWpa2Progress::None
     ));
 
-    let unsupported = Wpa2TxFrame::<512>::message1(AP, 9, ANONCE).unwrap();
+    let unsupported = RsnTxFrame::<512>::message1(oer_wifi_rsn::Akm::Psk, AP, 9, ANONCE).unwrap();
     let unsupported =
-        OwnedEapolFrame::<512>::try_copy(Wpa2Interface::AccessPoint, PEER, unsupported.as_bytes())
+        OwnedEapolFrame::<512>::try_copy(RsnInterface::AccessPoint, PEER, unsupported.as_bytes())
             .unwrap();
     assert!(matches!(
         service.on_eapol(PEER, unsupported).unwrap(),
@@ -718,7 +725,7 @@ fn unauthenticated_eapol_cannot_poison_or_refresh_a_securing_peer() {
     ));
     assert_eq!(
         service.wpa2_mut(PEER).unwrap().phase(),
-        Wpa2ApPhase::AwaitingMessage2
+        RsnApPhase::AwaitingMessage2
     );
     assert!(service.pending_ptk(PEER).is_err());
     assert_eq!(
@@ -734,7 +741,7 @@ fn unauthenticated_eapol_cannot_poison_or_refresh_a_securing_peer() {
     ));
     assert_eq!(
         service.wpa2_mut(PEER).unwrap().phase(),
-        Wpa2ApPhase::AwaitingMessage4
+        RsnApPhase::AwaitingMessage4
     );
 
     // Neither forged nor even MIC-valid duplicate M2 directly elicits a
@@ -745,19 +752,20 @@ fn unauthenticated_eapol_cannot_poison_or_refresh_a_securing_peer() {
         ApWpa2Progress::None
     ));
 
-    let ptk = Pmk::derive(b"password", b"test-ap")
-        .unwrap()
-        .derive_ptk(PtkContext {
+    let ptk = Pmk::derive(b"password", b"test-ap").unwrap().derive_ptk(
+        oer_wifi_rsn::Akm::Psk,
+        PtkContext {
             authenticator_address: AP,
             supplicant_address: PEER,
             authenticator_nonce: ANONCE,
             supplicant_nonce: SNONCE,
-        });
-    let valid_m4 = Wpa2TxFrame::<512>::message4(AP, 10)
+        },
+    );
+    let valid_m4 = RsnTxFrame::<512>::message4(oer_wifi_rsn::Akm::Psk, AP, 10)
         .unwrap()
         .authenticate(&ptk);
     let valid_m4 =
-        OwnedEapolFrame::try_copy(Wpa2Interface::AccessPoint, PEER, valid_m4.as_bytes()).unwrap();
+        OwnedEapolFrame::try_copy(RsnInterface::AccessPoint, PEER, valid_m4.as_bytes()).unwrap();
     let forged_m4 = corrupt_mic(valid_m4.clone());
     assert!(matches!(
         service.on_eapol(PEER, forged_m4).unwrap(),
@@ -765,7 +773,7 @@ fn unauthenticated_eapol_cannot_poison_or_refresh_a_securing_peer() {
     ));
     assert_eq!(
         service.wpa2_mut(PEER).unwrap().phase(),
-        Wpa2ApPhase::AwaitingMessage4
+        RsnApPhase::AwaitingMessage4
     );
     assert!(matches!(
         service.on_eapol(PEER, valid_m4).unwrap(),
@@ -904,7 +912,7 @@ fn all_fifteen_aids_are_stable_and_reused_after_removal() {
     let mut service = AccessPointService::new(
         AP,
         Pmk::derive(b"password", b"test-ap").unwrap(),
-        Wpa2Gtk::new(1, true, [0x55; 16]).unwrap(),
+        RsnGtk::new(1, true, [0x55; 16]).unwrap(),
         AccessPointClientLimit::new(15).unwrap(),
         AccessPointInactiveTimeout::default(),
         &mut storage,

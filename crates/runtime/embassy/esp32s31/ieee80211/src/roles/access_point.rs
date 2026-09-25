@@ -87,7 +87,7 @@ use oer_wifi_embassy::await_stack_boundary;
 
 use oer_wifi_softmac::MacRxEvidence;
 
-use oer_wpa2::{OwnedEapolFrame, Wpa2Interface};
+use oer_wifi_rsn::{OwnedEapolFrame, RsnInterface};
 
 #[cfg(feature = "tx-phase-telemetry")]
 use crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE;

@@ -26,7 +26,7 @@ fn exercise_probe_completion(status: u8) {
         AccessPointService::new(
             ap,
             Pmk::derive(b"password", b"ap").unwrap(),
-            Wpa2Gtk::new(1, true, [7; 16]).unwrap(),
+            RsnGtk::new(1, true, [7; 16]).unwrap(),
             oer_wifi_ap::AccessPointClientLimit::new(2).unwrap(),
             oer_wifi_ap::AccessPointInactiveTimeout::default(),
             &mut peers,

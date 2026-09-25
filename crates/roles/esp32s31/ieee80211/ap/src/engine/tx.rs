@@ -80,7 +80,7 @@ impl<'storage> ApEngine<'storage> {
     pub fn encode_eapol<const N: usize>(
         &mut self,
         peer: [u8; 6],
-        frame: &Wpa2TxFrame<N>,
+        frame: &RsnTxFrame<N>,
         output: &mut [u8],
     ) -> Result<usize, ApEngineError> {
         let sequence_number = self.service.current_data_sequence();

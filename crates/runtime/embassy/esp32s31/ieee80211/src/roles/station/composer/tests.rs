@@ -13,7 +13,7 @@ use {
 
 use oer_wifi_sta::request::{StationScanChannels, StationScanPolicy, WifiSsid};
 
-use oer_wpa2::Pmk;
+use oer_wifi_rsn::Pmk;
 
 use super::*;
 

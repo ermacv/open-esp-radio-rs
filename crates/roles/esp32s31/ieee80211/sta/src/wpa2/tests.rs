@@ -1,4 +1,4 @@
-use oer_wpa2::{
+use oer_wifi_rsn::{
     EAPOL_KEY_FIXED_LEN, EAPOL_KEY_PACKET_LEN, EAPOL_PACKET_TYPE_KEY, RSN_KEY_DESCRIPTOR_TYPE,
 };
 
@@ -23,7 +23,7 @@ fn eapol_copy_accepts_only_the_selected_station_link() {
 
     let mpdu_length = 32 + EAPOL_KEY_PACKET_LEN;
     let copied = copy_station_eapol(&frame, mpdu_length, 24, station).unwrap();
-    assert_eq!(copied.interface(), Wpa2Interface::Station);
+    assert_eq!(copied.interface(), RsnInterface::Station);
     assert_eq!(copied.peer(), &BSSID);
     assert_eq!(copied.as_bytes(), &frame[32..mpdu_length]);
 

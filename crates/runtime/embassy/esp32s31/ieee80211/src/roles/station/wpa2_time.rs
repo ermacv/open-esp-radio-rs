@@ -1,19 +1,19 @@
 //! Embassy time binding for the portable WPA2 station transaction runner.
 //!
 //! Protocol state, deadlines and rollback ordering live in
-//! `oer-wpa2`. This adapter contributes only the Embassy monotonic
+//! `oer-wifi-rsn`. This adapter contributes only the Embassy monotonic
 //! clock used by ESP32-S31 firmware.
 
 use core::future::Future;
 
 use embassy_time::{Instant, Timer};
 
-use oer_wpa2::runner::Wpa2HandshakeTimer;
+use oer_wifi_rsn::runner::RsnHandshakeTimer;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EmbassyWpa2HandshakeTimer;
 
-impl Wpa2HandshakeTimer for EmbassyWpa2HandshakeTimer {
+impl RsnHandshakeTimer for EmbassyWpa2HandshakeTimer {
     fn now_micros(&self) -> u64 {
         Instant::now().as_micros()
     }

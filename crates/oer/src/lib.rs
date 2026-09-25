@@ -16,7 +16,7 @@ pub mod ieee80211 {
     pub use {ap, datapath, mac, softmac, sta};
 
     pub mod security {
-        pub use wpa2;
+        pub use rsn;
     }
 }
 

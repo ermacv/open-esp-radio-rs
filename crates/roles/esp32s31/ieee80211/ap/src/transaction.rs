@@ -32,7 +32,7 @@ use oer_ieee80211::{
 
 use oer_wifi_ap::{ApPeerClose, ApPeerPowerState, ApServiceError};
 
-use oer_wpa2::frames::Wpa2TxFrame;
+use oer_wifi_rsn::frames::RsnTxFrame;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingPublication {
@@ -506,7 +506,7 @@ where
         &mut self,
         hardware: &mut H,
         peer: [u8; 6],
-        frame: &Wpa2TxFrame<N>,
+        frame: &RsnTxFrame<N>,
         scratch: &mut [u8],
     ) -> Result<(), ApMacError>
     where

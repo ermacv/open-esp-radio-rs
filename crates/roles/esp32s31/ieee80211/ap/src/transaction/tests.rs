@@ -30,7 +30,7 @@ use oer_ieee80211::{
 
 use oer_wifi_ap::{AccessPointService, ApAssociationCapabilities};
 
-use oer_wpa2::{Pmk, frames::Wpa2Gtk};
+use oer_wifi_rsn::{Pmk, frames::RsnGtk};
 
 use super::*;
 
@@ -143,7 +143,7 @@ fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
         AccessPointService::new(
             ap,
             Pmk::derive(b"password", b"ap").unwrap(),
-            Wpa2Gtk::new(1, true, [7; 16]).unwrap(),
+            RsnGtk::new(1, true, [7; 16]).unwrap(),
             oer_wifi_ap::AccessPointClientLimit::new(2).unwrap(),
             oer_wifi_ap::AccessPointInactiveTimeout::default(),
             &mut peers,

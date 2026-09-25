@@ -9,7 +9,7 @@ description = "Executor- and chip-independent single-peer Wi-Fi access-point MLM
 
 [dependencies]
 oer-ieee80211 = { path = "../mac" }
-oer-wpa2 = { path = "../security/wpa2" }
+oer-wifi-rsn = { path = "../security/rsn" }
 
 [lints]
 workspace = true

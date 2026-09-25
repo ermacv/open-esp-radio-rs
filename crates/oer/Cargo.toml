@@ -13,7 +13,7 @@ name = "oer"
 
 [features]
 default = ["wifi"]
-wifi = ["radio/wifi", "dep:mac", "dep:softmac", "dep:datapath", "dep:sta", "dep:ap", "dep:wpa2"]
+wifi = ["radio/wifi", "dep:mac", "dep:softmac", "dep:datapath", "dep:sta", "dep:ap", "dep:rsn"]
 bluetooth = ["dep:hci", "dep:le-ll"]
 ieee802154 = ["dep:ieee802154"]
 esp32s31 = ["dep:chip-hal"]
@@ -55,7 +55,7 @@ softmac = { package = "oer-wifi-softmac", path = "../protocols/ieee80211/softmac
 datapath = { package = "oer-wifi-datapath", path = "../protocols/ieee80211/datapath", optional = true }
 sta = { package = "oer-wifi-sta", path = "../protocols/ieee80211/sta", optional = true }
 ap = { package = "oer-wifi-ap", path = "../protocols/ieee80211/ap", optional = true }
-wpa2 = { package = "oer-wpa2", path = "../protocols/ieee80211/security/wpa2", optional = true }
+rsn = { package = "oer-wifi-rsn", path = "../protocols/ieee80211/security/rsn", optional = true }
 hci = { package = "oer-bluetooth-hci", path = "../protocols/bluetooth/hci", optional = true }
 le-ll = { package = "oer-bluetooth-ll", path = "../protocols/bluetooth/le/ll", optional = true }
 ieee802154 = { package = "oer-ieee802154", path = "../protocols/ieee802154", optional = true }

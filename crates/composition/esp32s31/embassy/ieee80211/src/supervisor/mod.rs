@@ -164,7 +164,7 @@ use oer_wifi_sta::station::{
     StaNextCandidate,
 };
 
-use oer_wpa2::frames::Wpa2Gtk;
+use oer_wifi_rsn::frames::RsnGtk;
 
 use static_cell::{ConstStaticCell, StaticCell};
 

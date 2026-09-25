@@ -16,13 +16,13 @@ use oer_esp32s31_wifi_mac::crypto::{
     CryptoKeyError, StaGroupCcmpKeyMaterial, StaGroupCcmpReplaceError, StaGroupCcmpSlot,
 };
 
-use oer_wpa2::{
+use oer_wifi_rsn::{
     OwnedEapolFrame,
-    aes::{SoftwareAesKeyUnwrapError, Wpa2SoftwareAes},
-    keys::Wpa2KeyKind,
+    aes::{RsnSoftwareAes, SoftwareAesKeyUnwrapError},
+    keys::RsnKeyKind,
     supplicant::{
-        Wpa2ConnectedAction, Wpa2ConnectedProcessError, Wpa2ConnectedSupplicant,
-        Wpa2ConnectedSupplicantError,
+        RsnConnectedAction, RsnConnectedProcessError, RsnConnectedSupplicant,
+        RsnConnectedSupplicantError,
     },
 };
 
@@ -39,7 +39,7 @@ pub enum ConnectedSecurityFrame {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedWpa2SecurityFailure {
-    Protocol(Wpa2ConnectedSupplicantError),
+    Protocol(RsnConnectedSupplicantError),
     KeyUnwrap(SoftwareAesKeyUnwrapError),
     InvalidGroupKeyKind,
     InvalidGroupKeyMaterial(CryptoKeyError),
@@ -59,7 +59,7 @@ pub struct ConnectedWpa2SecurityEvidence {
     pub group_message1: u32,
     pub duplicate_message3: u32,
     pub ignored_duplicate_message3: u32,
-    pub last_ignored_duplicate_message3: Option<Wpa2ConnectedSupplicantError>,
+    pub last_ignored_duplicate_message3: Option<RsnConnectedSupplicantError>,
     pub installed: u32,
     pub retransmitted: u32,
     pub tx_in_flight: bool,
@@ -72,17 +72,17 @@ pub struct ConnectedWpa2SecurityEvidence {
 /// Message 1. It is explicitly recovered after IRQ/task quiescence, before
 /// the ordinary station teardown clears the hardware key.
 pub struct ConnectedWpa2Security {
-    supplicant: Wpa2ConnectedSupplicant,
+    supplicant: RsnConnectedSupplicant,
     group: StaGroupCcmpSlot,
     group_material: StaGroupCcmpKeyMaterial,
     used_group_key_ids: u8,
     replay: StaCcmpRxReplayControlEndpoint,
-    unwrap: Wpa2SoftwareAes,
+    unwrap: RsnSoftwareAes,
     tx_in_flight: bool,
     group_message1: u32,
     duplicate_message3: u32,
     ignored_duplicate_message3: u32,
-    last_ignored_duplicate_message3: Option<Wpa2ConnectedSupplicantError>,
+    last_ignored_duplicate_message3: Option<RsnConnectedSupplicantError>,
     installed: u32,
     retransmitted: u32,
     last_failure: Option<ConnectedWpa2SecurityFailure>,
@@ -90,7 +90,7 @@ pub struct ConnectedWpa2Security {
 
 impl ConnectedWpa2Security {
     pub const fn new(
-        supplicant: Wpa2ConnectedSupplicant,
+        supplicant: RsnConnectedSupplicant,
         group: StaGroupCcmpSlot,
         group_material: StaGroupCcmpKeyMaterial,
         replay: StaCcmpRxReplayControlEndpoint,
@@ -102,7 +102,7 @@ impl ConnectedWpa2Security {
             group_material,
             used_group_key_ids,
             replay,
-            unwrap: Wpa2SoftwareAes::new(),
+            unwrap: RsnSoftwareAes::new(),
             tx_in_flight: false,
             group_message1: 0,
             duplicate_message3: 0,
@@ -133,7 +133,7 @@ impl ConnectedWpa2Security {
         }
     }
 
-    pub fn into_parts(mut self) -> (Wpa2ConnectedSupplicant, StaGroupCcmpSlot) {
+    pub fn into_parts(mut self) -> (RsnConnectedSupplicant, StaGroupCcmpSlot) {
         // Connected lifecycle calls this only after the RX task has returned.
         // A stale stop still leaves the resource quarantined by its endpoint
         // Drop implementation and cannot reopen group publication.
@@ -189,7 +189,7 @@ impl ConnectedWpa2Security {
         &mut self,
         hardware: &mut H,
         tx: &mut X,
-        frame: oer_wpa2::OwnedEapolFrame,
+        frame: oer_wifi_rsn::OwnedEapolFrame,
     ) -> DatapathControlProgress<ConnectedDisconnectReason> {
         self.duplicate_message3 = self.duplicate_message3.saturating_add(1);
         let response = match self.supplicant.on_duplicate_message3(frame) {
@@ -218,7 +218,7 @@ impl ConnectedWpa2Security {
         &mut self,
         hardware: &mut H,
         tx: &mut X,
-        frame: oer_wpa2::OwnedEapolFrame,
+        frame: oer_wifi_rsn::OwnedEapolFrame,
     ) -> DatapathControlProgress<ConnectedDisconnectReason> {
         self.group_message1 = self.group_message1.saturating_add(1);
         let action = match self
@@ -227,20 +227,20 @@ impl ConnectedWpa2Security {
             .await
         {
             Ok(action) => action,
-            Err(Wpa2ConnectedProcessError::Supplicant(error)) => {
+            Err(RsnConnectedProcessError::Supplicant(error)) => {
                 return self.fail(ConnectedWpa2SecurityFailure::Protocol(error));
             }
-            Err(Wpa2ConnectedProcessError::KeyUnwrap(error)) => {
+            Err(RsnConnectedProcessError::KeyUnwrap(error)) => {
                 return self.fail(ConnectedWpa2SecurityFailure::KeyUnwrap(error));
             }
         };
         let response = match action {
-            Wpa2ConnectedAction::Retransmit(response) => {
+            RsnConnectedAction::Retransmit(response) => {
                 self.retransmitted = self.retransmitted.saturating_add(1);
                 response
             }
-            Wpa2ConnectedAction::InstallGroupKey(request) => {
-                let Wpa2KeyKind::Group { key_id, .. } = request.group().kind() else {
+            RsnConnectedAction::InstallGroupKey(request) => {
+                let RsnKeyKind::Group { key_id, .. } = request.group().kind() else {
                     let _ = self.supplicant.complete_group_key_install(request, false);
                     return self.fail(ConnectedWpa2SecurityFailure::InvalidGroupKeyKind);
                 };

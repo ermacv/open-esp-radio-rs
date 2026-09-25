@@ -2,7 +2,7 @@ use oer_esp32s31_hal::types::MacKeyInstallOutcome;
 
 use oer_esp32s31_wifi_mac::crypto::CcmpKeyHardware;
 
-use oer_wpa2::{Pmk, PtkContext};
+use oer_wifi_rsn::{Pmk, PtkContext};
 
 use super::*;
 
@@ -31,17 +31,18 @@ impl CcmpKeyHardware for Hardware {
 #[test]
 fn teardown_clears_pairwise_before_group_and_cannot_alias_a_second_peer() {
     let mut hardware = Hardware::default();
-    let gtk = Wpa2Gtk::new(1, true, [0x55; 16]).unwrap();
+    let gtk = RsnGtk::new(1, true, [0x55; 16]).unwrap();
     let mut pairwise = ApPairwiseKeyStorage::new();
     let mut security = ApSecurity::install_group(&mut hardware, &gtk, &mut pairwise).unwrap();
-    let ptk = Pmk::derive(b"password", b"ssid")
-        .unwrap()
-        .derive_ptk(PtkContext {
+    let ptk = Pmk::derive(b"password", b"ssid").unwrap().derive_ptk(
+        oer_wifi_rsn::Akm::Psk,
+        PtkContext {
             authenticator_address: [2; 6],
             supplicant_address: [3; 6],
             authenticator_nonce: [4; 32],
             supplicant_nonce: [5; 32],
-        });
+        },
+    );
     security
         .install_pairwise(&mut hardware, [3; 6], 1, &ptk)
         .unwrap();
@@ -80,17 +81,18 @@ fn teardown_clears_pairwise_before_group_and_cannot_alias_a_second_peer() {
 #[test]
 fn all_public_aids_own_disjoint_pairwise_slots() {
     let mut hardware = Hardware::default();
-    let gtk = Wpa2Gtk::new(1, true, [0x55; 16]).unwrap();
+    let gtk = RsnGtk::new(1, true, [0x55; 16]).unwrap();
     let mut pairwise = ApPairwiseKeyStorage::new();
     let mut security = ApSecurity::install_group(&mut hardware, &gtk, &mut pairwise).unwrap();
-    let ptk = Pmk::derive(b"password", b"ssid")
-        .unwrap()
-        .derive_ptk(PtkContext {
+    let ptk = Pmk::derive(b"password", b"ssid").unwrap().derive_ptk(
+        oer_wifi_rsn::Akm::Psk,
+        PtkContext {
             authenticator_address: [2; 6],
             supplicant_address: [3; 6],
             authenticator_nonce: [4; 32],
             supplicant_nonce: [5; 32],
-        });
+        },
+    );
 
     for association_id in 1..=15_u16 {
         let peer = [2, 0, 0, 0, 1, association_id as u8];
@@ -136,17 +138,18 @@ fn all_public_aids_own_disjoint_pairwise_slots() {
 fn rx_replay_is_per_tid_and_fenced_across_pairwise_key_reinstall() {
     let peer = [3; 6];
     let mut hardware = Hardware::default();
-    let gtk = Wpa2Gtk::new(1, true, [0x55; 16]).unwrap();
+    let gtk = RsnGtk::new(1, true, [0x55; 16]).unwrap();
     let mut pairwise = ApPairwiseKeyStorage::new();
     let mut security = ApSecurity::install_group(&mut hardware, &gtk, &mut pairwise).unwrap();
-    let ptk = Pmk::derive(b"password", b"ssid")
-        .unwrap()
-        .derive_ptk(PtkContext {
+    let ptk = Pmk::derive(b"password", b"ssid").unwrap().derive_ptk(
+        oer_wifi_rsn::Akm::Psk,
+        PtkContext {
             authenticator_address: [2; 6],
             supplicant_address: peer,
             authenticator_nonce: [4; 32],
             supplicant_nonce: [5; 32],
-        });
+        },
+    );
     security
         .install_pairwise(&mut hardware, peer, 1, &ptk)
         .unwrap();

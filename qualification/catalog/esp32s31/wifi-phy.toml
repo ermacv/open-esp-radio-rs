@@ -498,13 +498,13 @@ id = "station-wpa2-protocol-policy"
 composition = "production"
 scope = "Four-way handshake, replay admission, key-installation protocol transitions and response deadlines"
 limits = "Protocol correctness uses host tests and protected-traffic HIL; physical key publication and retirement remain required through station-hardware-crypto"
-source-paths = ["crates/protocols/ieee80211/security/wpa2/src/supplicant.rs", "crates/protocols/ieee80211/security/wpa2/src/runner.rs"]
+source-paths = ["crates/protocols/ieee80211/security/rsn/src/supplicant.rs", "crates/protocols/ieee80211/security/rsn/src/runner.rs"]
 
 [capabilities.development]
-knowledge = ["crates/protocols/ieee80211/security/wpa2/src/supplicant.rs"]
+knowledge = ["crates/protocols/ieee80211/security/rsn/src/supplicant.rs"]
 host-tests = [
-  { manifest = "crates/protocols/ieee80211/security/wpa2/Cargo.toml", filter = "supplicant::tests", source = "crates/protocols/ieee80211/security/wpa2/src/supplicant/tests.rs" },
-  { manifest = "crates/protocols/ieee80211/security/wpa2/Cargo.toml", filter = "runner::tests", source = "crates/protocols/ieee80211/security/wpa2/src/runner/tests.rs" },
+  { manifest = "crates/protocols/ieee80211/security/rsn/Cargo.toml", filter = "supplicant::tests", source = "crates/protocols/ieee80211/security/rsn/src/supplicant/tests.rs" },
+  { manifest = "crates/protocols/ieee80211/security/rsn/Cargo.toml", filter = "runner::tests", source = "crates/protocols/ieee80211/security/rsn/src/runner/tests.rs" },
 ]
 [capabilities.catalog-scope]
 chip = "esp32s31"

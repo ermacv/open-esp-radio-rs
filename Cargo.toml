@@ -36,7 +36,7 @@ members = [
     "crates/protocols/ieee80211/mac",
     "crates/protocols/ieee80211/softmac",
     "crates/protocols/ieee80211/datapath",
-    "crates/protocols/ieee80211/security/wpa2",
+    "crates/protocols/ieee80211/security/rsn",
     "crates/hardware/esp32s31/hal",
     "crates/hardware/esp32s31/driver/bluetooth",
     "crates/hardware/esp32s31/driver/bluetooth/memory",

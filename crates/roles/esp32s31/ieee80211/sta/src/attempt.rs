@@ -32,7 +32,7 @@ use oer_wifi_sta::{
     station::{StaFailureDisposition, StaLifecycleStage},
 };
 
-use oer_wpa2::{Pmk, runner::Wpa2KeyInstallMetadata, supplicant::Wpa2ConnectedSupplicant};
+use oer_wifi_rsn::{Pmk, runner::RsnKeyInstallMetadata, supplicant::RsnConnectedSupplicant};
 
 /// Immutable local/candidate policy for one attempt.
 #[derive(Clone, Copy)]
@@ -95,7 +95,7 @@ pub enum StaAttemptSecurityMaterial {
         pmk: Pmk,
         supplicant_nonce: [u8; 32],
         message4_protection: Wpa2Message4Protection,
-        connected: Option<Wpa2ConnectedSupplicant>,
+        connected: Option<RsnConnectedSupplicant>,
     },
 }
 
@@ -162,7 +162,7 @@ impl StaAttemptSecurity<'_> {
         }
     }
 
-    pub fn set_connected(&mut self, value: Wpa2ConnectedSupplicant) -> bool {
+    pub fn set_connected(&mut self, value: RsnConnectedSupplicant) -> bool {
         match &mut self.material {
             StaAttemptSecurityMaterial::Open => false,
             StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } => {
@@ -248,7 +248,7 @@ pub struct StaAttemptReport {
     pub peer: Option<StaPeerProgrammingReport>,
     /// Message-2 progress is retained even when the handshake later fails.
     pub wpa2_handshake: Option<Wpa2HandshakeTelemetry>,
-    pub wpa2: Option<Wpa2KeyInstallMetadata>,
+    pub wpa2: Option<RsnKeyInstallMetadata>,
     /// A failed Message 4 status is still useful attempt evidence.
     pub message4: Option<TxCompletion>,
 }
@@ -284,7 +284,7 @@ pub enum StaAttemptStage {
     Association = 3,
     PeerProgramming = 4,
     Wpa2Handshake = 5,
-    Wpa2KeyInstall = 6,
+    RsnKeyInstall = 6,
     ConnectedEntry = 7,
 }
 
@@ -298,7 +298,7 @@ impl StaAttemptStage {
             Self::Channel | Self::PeerProgramming => StaLifecycleStage::Hardware,
             Self::Authentication => StaLifecycleStage::Authentication,
             Self::Association => StaLifecycleStage::Association,
-            Self::Wpa2Handshake | Self::Wpa2KeyInstall => StaLifecycleStage::Security,
+            Self::Wpa2Handshake | Self::RsnKeyInstall => StaLifecycleStage::Security,
             Self::ConnectedEntry => StaLifecycleStage::Connected,
         }
     }
@@ -561,11 +561,11 @@ where
         }
         self.completed(StaAttemptStage::Wpa2Handshake, &mut progress);
 
-        self.observer.stage_started(StaAttemptStage::Wpa2KeyInstall);
+        self.observer.stage_started(StaAttemptStage::RsnKeyInstall);
         if let Err(failure) = self.port.install_wpa2_keys(&mut owner).await {
-            return self.failed(owner, StaAttemptStage::Wpa2KeyInstall, failure, progress);
+            return self.failed(owner, StaAttemptStage::RsnKeyInstall, failure, progress);
         }
-        self.completed(StaAttemptStage::Wpa2KeyInstall, &mut progress);
+        self.completed(StaAttemptStage::RsnKeyInstall, &mut progress);
 
         self.observer.stage_started(StaAttemptStage::ConnectedEntry);
         match self.port.enter_connected(owner).await {

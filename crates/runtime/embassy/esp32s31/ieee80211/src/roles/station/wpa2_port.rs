@@ -13,7 +13,7 @@ use oer_esp32s31_wifi_mac::rx::{RxDma, RxIngressConfig, extract_data};
 
 use oer_esp32s31_wifi_sta::wpa2::{Wpa2Receive, Wpa2Station, copy_station_eapol};
 
-use oer_wpa2::runner::Wpa2RxProgress;
+use oer_wifi_rsn::runner::RsnRxProgress;
 
 /// Retained RX owner bound to its stable DMA allocation for WPA2.
 pub struct Wpa2Rx<
@@ -66,7 +66,7 @@ where
         &mut self,
         hardware: &mut H,
         frame: &mut [u8],
-    ) -> Result<Wpa2RxProgress, Self::Error> {
+    ) -> Result<RsnRxProgress, Self::Error> {
         let mut eapol = None;
         let progress = self
             .owner
@@ -92,8 +92,8 @@ where
                 }
             })?;
         Ok(match eapol {
-            Some(eapol) => Wpa2RxProgress::eapol(progress.completed, eapol),
-            None => Wpa2RxProgress::drained(progress.completed),
+            Some(eapol) => RsnRxProgress::eapol(progress.completed, eapol),
+            None => RsnRxProgress::drained(progress.completed),
         })
     }
 

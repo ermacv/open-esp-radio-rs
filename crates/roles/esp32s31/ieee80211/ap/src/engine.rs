@@ -48,7 +48,7 @@ use oer_wifi_ap::{
     ApPowerSaveAction, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
 };
 
-use oer_wpa2::{OwnedEapolFrame, frames::Wpa2TxFrame};
+use oer_wifi_rsn::{OwnedEapolFrame, frames::RsnTxFrame};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApEngineError {
@@ -134,7 +134,7 @@ pub enum ApManagementOutcome {
 
 pub enum ApWpa2Outcome<const N: usize> {
     None,
-    Transmit(Wpa2TxFrame<N>),
+    Transmit(RsnTxFrame<N>),
     PeerAuthorized { peer: [u8; 6] },
     DeauthenticatePeer { peer: [u8; 6] },
 }

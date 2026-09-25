@@ -85,6 +85,8 @@ pub struct Session {
     /// reviewed through git and identified by content.
     effects: Vec<EffectContract>,
     projections: Vec<LayoutProjection>,
+    /// Guest instructions executed in process, and the time spent executing.
+    pub executed: std::cell::Cell<(u64, f64)>,
 }
 
 /// A prepared image and its resolved roots, including the entry.
@@ -200,6 +202,7 @@ impl Session {
             images: Default::default(),
             effects: vec![],
             projections: vec![],
+            executed: Default::default(),
         })
     }
 
@@ -533,7 +536,18 @@ impl Session {
         let result = self
             .verify(request)
             .map_err(|e| invalid(format!("{label}: {e:?}")))?;
-        println!("{label} 0 {:.2}", started.elapsed().as_secs_f64());
+        let seconds = started.elapsed().as_secs_f64();
+        println!("{label} 0 {seconds:.2}");
+        let steps: u64 = result
+            .records
+            .iter()
+            .map(|r| match r {
+                ExecutionEvidence::Outcome { steps, .. } => *steps,
+                _ => 0,
+            })
+            .sum();
+        let (total, time) = self.executed.get();
+        self.executed.set((total + steps, time + seconds));
         assert_eq!(result.verdict, verdict, "{label}");
         let identity = ArtifactId::of_bytes(&serde_json::to_vec(request)?);
         let records: Vec<ExecutionEvidence> = if events {
@@ -623,9 +637,9 @@ impl Session {
             .iter()
             .filter(|a| executions.contains(&a.identity.as_str().to_owned()))
             .collect();
-        let pairs: Vec<(&ExecutionRequest, &[ExecutionEvidence])> = selected
+        let pairs: Vec<(ArtifactId, &ExecutionRequest, &[ExecutionEvidence])> = selected
             .iter()
-            .map(|a| (&a.request, a.records.as_slice()))
+            .map(|a| (a.identity.clone(), &a.request, a.records.as_slice()))
             .collect();
         let executables = self.executables(&selected[0].request.vendor)?;
         let executables: Vec<&[u8]> = executables.iter().map(Vec::as_slice).collect();
@@ -741,6 +755,11 @@ impl Session {
             })
             .collect::<Result<Vec<_>>>()?;
         observed.check(suite, decisions)?;
+        let (steps, seconds) = self.executed.get();
+        println!(
+            "{suite} interpreter {steps} guest instructions in {seconds:.2} s ({:.1} M/s)",
+            steps as f64 / seconds.max(f64::EPSILON) / 1e6
+        );
         let (_, untriaged) = crate::coverage::Observed::classify(decisions, &observed.uncovered);
         let reach = self
             .artifacts

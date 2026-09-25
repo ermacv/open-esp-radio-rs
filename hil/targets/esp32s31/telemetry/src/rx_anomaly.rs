@@ -7,7 +7,8 @@ pub struct Sample {
     pub phase: u32,
     pub udp_sequence: Option<i32>,
     pub ip_bytes: usize,
-    pub qos: Option<(u8, u16)>,
+    /// QoS TID and MAC sequence number of the frame, when present.
+    pub qos: Option<(u8, oer_ieee80211_mac::sequence::SequenceNumber)>,
     pub format: u8,
     pub rate: u8,
     pub signal_words: [u32; 2],

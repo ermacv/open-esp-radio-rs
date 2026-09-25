@@ -219,7 +219,8 @@ pub fn phy_effects(observed: &[ExecutionEvent]) -> Vec<PhyEffect> {
 }
 
 /// Records of consecutive case ranges of one request, each renumbered from
-/// zero: the first `counts[0]` cases form part 0, and so on. Checks written
+/// zero: the first `counts[0]` cases form part 0, and so on. Coverage records
+/// span the whole request and are omitted. Checks written
 /// for one profile's request then apply unchanged to a merged request.
 pub fn split_cases(records: &[ExecutionEvidence], counts: &[u32]) -> Vec<Vec<ExecutionEvidence>> {
     let mut starts = vec![0u32];
@@ -238,6 +239,8 @@ pub fn split_cases(records: &[ExecutionEvidence], counts: &[u32]) -> Vec<Vec<Exe
             | ExecutionEvidence::Event { case, .. }
             | ExecutionEvidence::Outcome { case, .. }
             | ExecutionEvidence::Comparison { case, .. } => case,
+            // Whole-execution coverage belongs to no single part.
+            ExecutionEvidence::Coverage { .. } => continue,
         };
         let part = starts
             .windows(2)

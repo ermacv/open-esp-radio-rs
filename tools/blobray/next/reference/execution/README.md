@@ -543,12 +543,22 @@ resource failure with no publication; events are never silently truncated.
 `max_events` is a bound, not a reservation: each session admits event capacity
 into working memory as events occur, doubling up to that bound, and keeps it for
 later phases.
-Traces stream as bounded JSONL events/final-memory/device-models/call-models/runtime-tables/fifo-services/outcomes/comparisons into quota-owned
+Traces stream as bounded JSONL events/final-memory/device-models/call-models/runtime-tables/fifo-services/outcomes/comparisons/coverage into quota-owned
 staging. The retained record payload is that JSONL stream as one raw deflate
-stream (execution schema 20): guest events repeat heavily, so large evidence
+stream (execution schema 21): guest events repeat heavily, so large evidence
 sets retain a small fraction of their logical size. Readers decode it under the
 same per-record bound and work budget and see exactly the logical records;
 a truncated, trailing or non-deflate payload is an integrity failure.
+
+After the last case, one `coverage` record per side lists the code that side
+reached over the whole execution: strictly ascending executed instruction
+addresses and, for each conditional branch that executed, whether it was taken
+and whether it fell through. Only executable captured segments count; code run
+from caller RAM does not. Coverage accumulates across cold resets and does not
+depend on the selected timeline. Each side keeps one mark byte per halfword of
+its executable segments in working memory. The validator requires both records
+in vendor-then-replacement order and rejects unordered addresses, a branch with
+no direction or a branch direction of an instruction that never executed.
 The coordinator checks the admitted recipe and stream structure before
 atomically committing the result reference and completed run. Cancellation,
 limits or corruption cannot publish partial evidence. Process-level OOM and

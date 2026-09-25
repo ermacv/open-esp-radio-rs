@@ -593,6 +593,7 @@ fn selected_companion_code_and_elf_zero_fill_obey_session_ownership() {
             .as_array()
             .unwrap()
             .iter()
+            .filter(|r| r["value"]["kind"] == "outcome")
             .map(|r| r["value"]["stop"]["low"].as_u64().unwrap())
             .collect();
         assert_eq!(values, expected);
@@ -662,6 +663,8 @@ mod capture;
 #[path = "execution/call_pairs.rs"]
 mod call_pairs;
 
+#[path = "execution/coverage.rs"]
+mod coverage;
 #[path = "execution/timeline.rs"]
 mod timeline;
 

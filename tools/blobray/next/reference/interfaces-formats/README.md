@@ -144,7 +144,7 @@ schema. The ESP32-S31 vendor scenarios are such a client.
 
 Run records use journal schema 38 for every durable and read operation. Storage metadata
 uses schema 39; revision manifests use schema 1 and execution manifests use schema
-20. These are independent formats. Storage indexes run state, the execution
+21. These are independent formats. Storage indexes run state, the execution
 published by each run, and each revision input's captured payload, so reads and
 executions never scan the journal or walk the inventory to find them. Import
 also records, from one full validated walk, each revision's header, input

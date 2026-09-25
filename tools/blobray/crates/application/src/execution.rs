@@ -120,9 +120,10 @@ fn session<'a>(
     sources: &Sources<'_>,
     max_events: u32,
     memory: &'a WorkingMemory,
+    coverage: crate::execution_coverage::CodeCoverage<'a>,
     c: &mut dyn RunControl,
 ) -> Result<Session<'a>> {
-    let mut session = Session::new(memory, max_events, c)?;
+    let mut session = Session::new(memory, max_events, coverage, c)?;
     for key in source_keys(target) {
         for segment in sources
             .loaded
@@ -279,8 +280,7 @@ pub(crate) fn prepare_execution_worker_in(
         let projections = project.execution_projections(request, memory, &mut control)?;
         let effects = project.execution_effects(request, memory, &mut control)?;
         let sources = Sources::load(&project, request, memory, &mut control)?;
-        let mut vendor = None;
-        let mut replacement = None;
+        let mut sides: [Side<'_>; 2] = Default::default();
         let mut blocked = false;
         let mut complete = true;
         let mut verdict = request
@@ -296,8 +296,9 @@ pub(crate) fn prepare_execution_worker_in(
             if case.reset == SessionReset::Cold {
                 blocked = false;
                 // Release both previous address spaces before acquiring either new one.
-                vendor = None;
-                replacement = None;
+                for side in &mut sides {
+                    side.release();
+                }
             }
             let mut position = control.position();
             position.table = Some(index as u64);
@@ -319,7 +320,7 @@ pub(crate) fn prepare_execution_worker_in(
                 &request.vendor,
                 &case.vendor,
                 invocation_preparation(&tables, index, 0, goals[index][0], &mut control)?,
-                &mut vendor,
+                &mut sides[0],
                 blocked,
                 &mut control,
             )?;
@@ -328,7 +329,7 @@ pub(crate) fn prepare_execution_worker_in(
                     t,
                     i,
                     invocation_preparation(&tables, index, 1, goals[index][1], &mut control)?,
-                    &mut replacement,
+                    &mut sides[1],
                     blocked,
                     &mut control,
                 )?),
@@ -379,15 +380,29 @@ pub(crate) fn prepare_execution_worker_in(
             if !phase_complete {
                 blocked = true;
             }
-            if let Some(session) = &mut vendor {
+            if let Some(session) = &mut sides[0].session {
                 session.recycle(left);
             }
-            if let (Some(session), Some(right)) = (&mut replacement, right) {
+            if let (Some(session), Some(right)) = (&mut sides[1].session, right) {
                 session.recycle(right);
             }
         }
-        drop(vendor);
-        drop(replacement);
+        for (index, side) in sides.iter_mut().enumerate() {
+            side.release();
+            if index == 1 && request.replacement.is_none() {
+                break;
+            }
+            let (reached, _capacity) = side.coverage.finish(memory, &mut control)?;
+            write_control_message(
+                &mut file,
+                &ExecutionEvidence::Coverage {
+                    replacement: index == 1,
+                    coverage: reached,
+                },
+            )?;
+            file.write_all(b"\n").map_err(storage_io)?;
+        }
+        drop(sides);
         let staging = Staging::with_temporary_budget(stage, disk.clone())?;
         let file = file
             .into_inner()
@@ -416,6 +431,21 @@ pub(crate) fn prepare_execution_worker_in(
     result
 }
 
+/// One side's live session and the coverage that outlives its sessions.
+#[derive(Default)]
+struct Side<'a> {
+    session: Option<Session<'a>>,
+    coverage: crate::execution_coverage::CodeCoverage<'a>,
+}
+impl Side<'_> {
+    /// Drop the session, keeping what it reached.
+    fn release(&mut self) {
+        if let Some(session) = self.session.take() {
+            self.coverage = session.into_coverage();
+        }
+    }
+}
+
 struct Engine<'a> {
     sources: &'a Sources<'a>,
     request: &'a ExecutionRequest,
@@ -431,33 +461,34 @@ impl<'a> Engine<'a> {
         target: &ExecutionTarget,
         invocation: &Invocation,
         ready: InvocationPreparation<'_, '_>,
-        slot: &mut Option<Session<'a>>,
+        side: &mut Side<'a>,
         blocked: bool,
         c: &mut dyn RunControl,
     ) -> Result<ExecutionObservation> {
         let case = c.position().table;
         if blocked {
-            let machine = slot.as_mut().ok_or_else(|| {
+            let machine = side.session.as_mut().ok_or_else(|| {
                 Error::new(ErrorCode::Integrity, "blocked phase has no prior session")
             })?;
             return machine.observation(ExecutionStop::BlockedByPriorPhase, 0, self.close_chain, c);
         }
-        if slot.is_none() {
+        if side.session.is_none() {
             if self.reset == SessionReset::Warm {
                 return Err(Error::new(
                     ErrorCode::Integrity,
                     "warm phase has no prior session",
                 ));
             }
-            *slot = Some(session(
+            side.session = Some(session(
                 target,
                 self.sources,
                 self.request.max_events,
                 self.memory,
+                std::mem::take(&mut side.coverage),
                 c,
             )?);
         }
-        let machine = slot.as_mut().unwrap();
+        let machine = side.session.as_mut().unwrap();
         let (stack, issue) = machine.phase(target, self.stack_fill, invocation, ready.tables, c)?;
         if let Some((instance, issue)) = issue {
             machine.capture_final_memory(invocation, c)?;

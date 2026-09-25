@@ -45,7 +45,7 @@ mod tests {
     fn trace_admission_precedes_atomic_callback_and_unreadable_memory_stays_explicit() {
         let memory = WorkingMemory::new(8 * 1024 * 1024).unwrap();
         let mut c = || Ok(());
-        let mut s = Session::new(&memory, 1, &mut c).unwrap();
+        let mut s = Session::new(&memory, 1, Default::default(), &mut c).unwrap();
         s.region(
             Mapping {
                 address: 0x3000,

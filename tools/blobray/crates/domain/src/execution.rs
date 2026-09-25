@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 20;
+pub const EXECUTION_SCHEMA: u32 = 21;
 /// Upper bound of one canonical execution request payload. Requests are retained
 /// by identity; control messages, journal rows and manifests carry only the hash.
 pub const MAX_EXECUTION_REQUEST_BYTES: usize = 16 * 1024 * 1024;
@@ -706,4 +706,45 @@ pub enum ExecutionEvidence {
         case: u32,
         result: CaseComparison,
     },
+    /// One per side after the last case: code that side reached over the
+    /// whole execution.
+    Coverage {
+        replacement: bool,
+        coverage: ExecutionCoverage,
+    },
+}
+/// Code one side reached in its executable captured segments over every phase
+/// of an execution. Execution from writable RAM is not captured code.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionCoverage {
+    /// Addresses of executed instructions, strictly ascending.
+    pub instructions: Vec<u32>,
+    /// Conditional branches with the directions they took, ascending by site.
+    pub branches: Vec<BranchCoverage>,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCoverage {
+    pub site: u32,
+    pub taken: bool,
+    pub fallthrough: bool,
+}
+impl ExecutionCoverage {
+    /// Ordered, unique and self-consistent: every observed branch direction
+    /// belongs to an executed instruction.
+    pub fn validate(&self, c: &mut dyn RunControl) -> Result<()> {
+        let invalid = || Error::new(ErrorCode::Integrity, "invalid execution coverage");
+        c.checkpoint((self.instructions.len() + self.branches.len()) as u64 / 1024 + 1)?;
+        if self.instructions.iter().any(|pc| pc & 1 != 0)
+            || self.instructions.windows(2).any(|w| w[0] >= w[1])
+            || self.branches.windows(2).any(|w| w[0].site >= w[1].site)
+            || self.branches.iter().any(|b| {
+                !(b.taken || b.fallthrough) || self.instructions.binary_search(&b.site).is_err()
+            })
+        {
+            return Err(invalid());
+        }
+        Ok(())
+    }
 }

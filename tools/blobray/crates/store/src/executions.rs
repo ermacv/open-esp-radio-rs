@@ -357,8 +357,25 @@ pub fn validate_execution_records_with(
     let mut relation_complete = true;
     let mut environment_complete = true;
     let mut verdict = manifest.verdict.map(|_| ComparisonVerdict::Match);
+    // Vendor coverage, then replacement coverage, after the last case.
+    let mut coverage = [false, request.replacement.is_none()];
     crate::execution_records::visit_execution_records(source, c, |record, c| {
         visit(&record, c)?;
+        if let ExecutionEvidence::Coverage {
+            replacement,
+            coverage: reached,
+        } = &record
+        {
+            if case as usize != request.cases.len()
+                || coverage[usize::from(*replacement)]
+                || (*replacement && !coverage[0])
+            {
+                return Err(integrity("execution coverage order differs"));
+            }
+            reached.validate(c)?;
+            coverage[usize::from(*replacement)] = true;
+            return Ok(());
+        }
         if case as usize >= request.cases.len() {
             return Err(integrity("extra execution case"));
         }
@@ -691,6 +708,7 @@ pub fn validate_execution_records_with(
                     outcome = true;
                 }
             }
+            ExecutionEvidence::Coverage { .. } => unreachable!("coverage is validated above"),
             ExecutionEvidence::Comparison { case: i, result } => {
                 if i != case || !outcome || verdict.is_none() {
                     return Err(integrity("comparison order differs"));
@@ -722,6 +740,7 @@ pub fn validate_execution_records_with(
         Ok(())
     })?;
     if case as usize != request.cases.len()
+        || coverage != [true, true]
         || side
         || outcome
         || events != 0
@@ -737,6 +756,18 @@ pub fn validate_execution_records_with(
         return Err(integrity("execution evidence summary differs"));
     }
     Ok(())
+}
+
+/// Empty coverage records a valid record stream of `request` ends with.
+#[cfg(test)]
+pub(crate) fn coverage_rows(request: &ExecutionRequest) -> Vec<ExecutionEvidence> {
+    std::iter::once(false)
+        .chain(request.replacement.as_ref().map(|_| true))
+        .map(|replacement| ExecutionEvidence::Coverage {
+            replacement,
+            coverage: ExecutionCoverage::default(),
+        })
+        .collect()
 }
 
 /// Test view of a manifest together with the request its identity names.

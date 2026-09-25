@@ -412,7 +412,10 @@ mod tests {
         };
         let check = |manifest: &TestExecution, rows: &[ExecutionEvidence]| {
             let mut bytes = Vec::new();
-            for row in rows {
+            for row in rows
+                .iter()
+                .chain(&crate::executions::coverage_rows(&manifest.request))
+            {
                 serde_json::to_writer(&mut bytes, row).unwrap();
                 bytes.push(b'\n');
             }

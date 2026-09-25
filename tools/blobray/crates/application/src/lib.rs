@@ -26,6 +26,7 @@ pub use semantic_ir::{IrWork, prepare_ir_worker};
 mod command_bank;
 mod companions;
 mod execution;
+mod execution_coverage;
 mod execution_goals;
 mod execution_memory;
 pub use execution::{EXECUTION_ENVIRONMENT, ExecutionWork, prepare_execution_worker};

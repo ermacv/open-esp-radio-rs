@@ -94,7 +94,7 @@ mod tests {
     fn capture_refuses_partial_capacity_releases_owner_and_retains_unknown_stack() {
         let memory = WorkingMemory::new(8 * 1024 * 1024).unwrap();
         let mut c = || Ok(());
-        let mut s = Session::new(&memory, 10, &mut c).unwrap();
+        let mut s = Session::new(&memory, 10, Default::default(), &mut c).unwrap();
         let baseline = memory.used();
         let input = CallInput {
             site: 0x1000,

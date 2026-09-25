@@ -48,11 +48,18 @@ pub(super) struct Session<'a> {
     max_events: usize,
     /// Exact four-byte reservation; never shared between implementations/phases.
     reservation: Option<u32>,
+    /// Code reached by this side, carried from session to session.
+    coverage: crate::execution_coverage::CodeCoverage<'a>,
 }
 /// Events admitted by the first growth of a session's event buffer.
 const INITIAL_EVENT_CAPACITY: usize = 1024;
 impl<'a> Session<'a> {
-    pub fn new(memory: &'a WorkingMemory, max_events: u32, c: &mut dyn RunControl) -> Result<Self> {
+    pub fn new(
+        memory: &'a WorkingMemory,
+        max_events: u32,
+        coverage: crate::execution_coverage::CodeCoverage<'a>,
+        c: &mut dyn RunControl,
+    ) -> Result<Self> {
         let metadata = memory.reserve(
             1024 * 1024
                 + (MAX_DEVICE_MODELS + MAX_CALL_MODELS) as u64 * 512
@@ -122,6 +129,7 @@ impl<'a> Session<'a> {
             event_capacity: None,
             max_events: max_events as usize,
             reservation: None,
+            coverage,
         })
     }
     /// Double the event capacity, bounded by `max_events`. The new capacity is
@@ -242,7 +250,15 @@ impl<'a> Session<'a> {
             Some(0),
             bytes,
             c,
-        )
+        )?;
+        if flags & 1 != 0 {
+            self.coverage.map(address, memory_size, self.memory, c)?;
+        }
+        Ok(())
+    }
+    /// The side's accumulated coverage, for the next session of that side.
+    pub fn into_coverage(self) -> crate::execution_coverage::CodeCoverage<'a> {
+        self.coverage
     }
     pub fn phase(
         &mut self,
@@ -505,6 +521,7 @@ impl<'a> Session<'a> {
 impl ExecutionMemory for Session<'_> {
     fn instruction(&mut self, pc: u32) {
         self.pc = Some(pc);
+        self.coverage.instruction(pc);
     }
     fn observe_call(&mut self, input: &CallInput, c: &mut dyn RunControl) -> Result<()> {
         self.capture_call(input, c)
@@ -745,8 +762,11 @@ impl ExecutionMemory for Session<'_> {
         Ok(Some(old))
     }
     fn event(&mut self, event: ExecutionEvent, c: &mut dyn RunControl) -> Result<()> {
-        if matches!(event, ExecutionEvent::Branch { .. }) && !self.timeline.branches {
-            return Ok(());
+        if let ExecutionEvent::Branch { site, taken, .. } = event {
+            self.coverage.branch(site, taken);
+            if !self.timeline.branches {
+                return Ok(());
+            }
         }
         c.checkpoint(1)?;
         if self.events.len() == self.max_events {

@@ -46,9 +46,10 @@ fn every_word_amo_and_ordering_returns_old_value_and_updates_memory() {
             assert_eq!(result["summary"]["manifest"]["verdict"], "MATCH");
             assert_eq!(result["records"][0]["value"]["stop"]["low"], old);
             assert_eq!(result["records"][0]["value"]["stop"]["high"], expected);
+            // Outcome, outcome and comparison, then one coverage record per side.
             assert_eq!(
                 result["records"].as_array().unwrap().len(),
-                3,
+                5,
                 "RAM atomics must not emit MMIO events"
             );
         }

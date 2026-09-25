@@ -123,7 +123,8 @@ fn multi_entry_setup_warm_cold_and_blocking_have_one_replayable_publication() {
             .as_str()
     );
     let records = result["records"].as_array().unwrap();
-    assert_eq!(records.len(), 18);
+    // Six phases of outcome/outcome/comparison, then one coverage record per side.
+    assert_eq!(records.len(), 20);
     assert_eq!(records[3]["value"]["stop"]["low"], 41);
     assert_eq!(records[6]["value"]["stop"]["reason"]["address"], 0x3000);
     assert_eq!(

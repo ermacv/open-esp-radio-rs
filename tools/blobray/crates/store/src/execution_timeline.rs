@@ -133,8 +133,9 @@ mod tests {
             .is_err()
         );
     }
-    #[test]
-    fn completed_code_cannot_forge_match_for_unknown_selected_memory_reads() {
+    /// One compared phase whose selected read is unknown, with its rows but
+    /// without the trailing coverage records.
+    fn unknown_read() -> (TestExecution, Vec<ExecutionEvidence>) {
         let id = ArtifactId::of_bytes(b"fixture");
         let target = ExecutionTarget {
             revision: id.as_str().parse().unwrap(),
@@ -199,7 +200,7 @@ mod tests {
             verdict: Some(ComparisonVerdict::Incomplete),
             request: ArtifactId::of_bytes(b"request"),
         };
-        let mut manifest = TestExecution::new(manifest, request);
+        let manifest = TestExecution::new(manifest, request);
         let mut rows = Vec::new();
         for replacement in [false, true] {
             rows.push(ExecutionEvidence::Event {
@@ -233,18 +234,28 @@ mod tests {
                 difference: None,
             },
         });
-        let check = |manifest: &TestExecution, rows: &[ExecutionEvidence]| {
-            let mut bytes = Vec::new();
-            for r in rows {
-                serde_json::to_writer(&mut bytes, r).unwrap();
-                bytes.push(b'\n');
-            }
-            manifest.validate_records(
-                &bytes.as_slice(),
-                &WorkingMemory::new(1024 * 1024).unwrap(),
-                &mut || Ok(()),
-            )
-        };
+        (manifest, rows)
+    }
+    fn validate_rows(manifest: &TestExecution, rows: &[ExecutionEvidence]) -> Result<()> {
+        let mut bytes = Vec::new();
+        for row in rows {
+            serde_json::to_writer(&mut bytes, row).unwrap();
+            bytes.push(b'\n');
+        }
+        manifest.validate_records(
+            &bytes.as_slice(),
+            &WorkingMemory::new(1024 * 1024).unwrap(),
+            &mut || Ok(()),
+        )
+    }
+    fn check(manifest: &TestExecution, rows: &[ExecutionEvidence]) -> Result<()> {
+        let mut rows = rows.to_vec();
+        rows.extend(crate::executions::coverage_rows(&manifest.request));
+        validate_rows(manifest, &rows)
+    }
+    #[test]
+    fn completed_code_cannot_forge_match_for_unknown_selected_memory_reads() {
+        let (mut manifest, mut rows) = unknown_read();
         check(&manifest, &rows).unwrap();
         manifest.verdict = Some(ComparisonVerdict::Match);
         if let ExecutionEvidence::Comparison { result, .. } = rows.last_mut().unwrap() {
@@ -258,5 +269,75 @@ mod tests {
         relation.events.timeline.reads = false;
         relation.returns.low = true;
         check(&manifest, &rows).unwrap(); // explicit exclusion preserves unknown raw evidence
+    }
+    #[test]
+    fn coverage_is_required_once_per_side_after_the_last_case_and_consistent() {
+        let (manifest, rows) = unknown_read();
+        let reached = |instructions: Vec<u32>, branches: Vec<BranchCoverage>| ExecutionCoverage {
+            instructions,
+            branches,
+        };
+        let row = |replacement, coverage| ExecutionEvidence::Coverage {
+            replacement,
+            coverage,
+        };
+        let valid = reached(
+            vec![0x1000, 0x1004],
+            vec![BranchCoverage {
+                site: 0x1000,
+                taken: true,
+                fallthrough: false,
+            }],
+        );
+        let with = |tail: Vec<ExecutionEvidence>| {
+            let mut all = rows.clone();
+            all.extend(tail);
+            validate_rows(&manifest, &all)
+        };
+        with(vec![row(false, valid.clone()), row(true, valid.clone())]).unwrap();
+        for tail in [
+            vec![],
+            vec![row(false, valid.clone())],
+            vec![row(true, valid.clone()), row(false, valid.clone())],
+            vec![
+                row(false, valid.clone()),
+                row(false, valid.clone()),
+                row(true, valid.clone()),
+            ],
+            // A branch direction of an instruction that never executed.
+            vec![
+                row(false, reached(vec![0x1004], valid.branches.clone())),
+                row(true, valid.clone()),
+            ],
+            // Unordered instructions and a branch with no direction.
+            vec![
+                row(false, reached(vec![0x1004, 0x1000], vec![])),
+                row(true, valid.clone()),
+            ],
+            vec![
+                row(
+                    false,
+                    reached(
+                        vec![0x1000],
+                        vec![BranchCoverage {
+                            site: 0x1000,
+                            taken: false,
+                            fallthrough: false,
+                        }],
+                    ),
+                ),
+                row(true, valid.clone()),
+            ],
+        ] {
+            assert_eq!(with(tail).unwrap_err().code, ErrorCode::Integrity);
+        }
+        // Coverage cannot precede the last case's records.
+        let mut early = vec![row(false, valid.clone())];
+        early.extend(rows.clone());
+        early.push(row(true, valid));
+        assert_eq!(
+            validate_rows(&manifest, &early).unwrap_err().code,
+            ErrorCode::Integrity
+        );
     }
 }

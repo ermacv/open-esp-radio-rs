@@ -4,7 +4,7 @@ const ORDER: ExecutionOrdering = ExecutionOrdering {
     release: true,
 };
 fn session(memory: &WorkingMemory, fill: Option<u8>) -> Session<'_> {
-    let mut s = Session::new(memory, 4, &mut || Ok(())).unwrap();
+    let mut s = Session::new(memory, 4, Default::default(), &mut || Ok(())).unwrap();
     s.region(
         Mapping {
             address: 0x1000,
@@ -332,7 +332,7 @@ fn event_capacity_is_admitted_as_events_occur() {
     let memory = WorkingMemory::new(4 * 1024 * 1024).unwrap();
     let mut c = || Ok(());
     // A large declared capacity costs nothing until events are recorded.
-    let mut s = Session::new(&memory, 1 << 20, &mut c).unwrap();
+    let mut s = Session::new(&memory, 1 << 20, Default::default(), &mut c).unwrap();
     let baseline = memory.used();
     s.event(event(), &mut c).unwrap();
     assert_eq!(

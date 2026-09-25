@@ -76,7 +76,7 @@ mod tests {
     fn snapshot_capacity_is_admitted_before_allocation_and_released_after_recycle() {
         let memory = WorkingMemory::new(8 * 1024 * 1024).unwrap();
         let c = &mut || Ok(());
-        let mut s = Session::new(&memory, 1, c).unwrap();
+        let mut s = Session::new(&memory, 1, Default::default(), c).unwrap();
         let input = Invocation {
             observe_calls: None,
             observe_timeline: TimelineCapture::default(),

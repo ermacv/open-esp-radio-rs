@@ -1396,6 +1396,10 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
     )
     .unwrap();
     file.write_all(b"\n").unwrap();
+    for row in crate::executions::coverage_rows(&request) {
+        serde_json::to_writer(&mut file, &row).unwrap();
+        file.write_all(b"\n").unwrap();
+    }
     let records = stage
         .retain_temporary(file.finish().unwrap(), &mut || Ok(()))
         .unwrap();
@@ -1461,7 +1465,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
             "{error:?}"
         );
     }
-    let bytes = serde_json::to_vec(&ExecutionEvidence::Outcome {
+    let mut bytes = serde_json::to_vec(&ExecutionEvidence::Outcome {
         case: 0,
         replacement: false,
         stop: ExecutionStop::GoalNotReached {
@@ -1471,6 +1475,10 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
         steps: 1,
     })
     .unwrap();
+    for row in crate::executions::coverage_rows(&goal_manifest.request) {
+        bytes.push(b'\n');
+        serde_json::to_writer(&mut bytes, &row).unwrap();
+    }
     goal_manifest
         .validate_records(
             &bytes.as_slice(),
@@ -2031,7 +2039,10 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
     let manifest = TestExecution::new(manifest, request);
     let validate = |m: &TestExecution, rows: &[ExecutionEvidence]| {
         let mut bytes = Vec::new();
-        for row in rows {
+        for row in rows
+            .iter()
+            .chain(&crate::executions::coverage_rows(&m.request))
+        {
             serde_json::to_writer(&mut bytes, row).unwrap();
             bytes.push(b'\n');
         }

@@ -156,6 +156,7 @@ pub fn phy_contract(
 }
 
 /// One committed `phy_param` field and its production output location.
+#[derive(Clone, Copy, Debug)]
 pub struct OutputField {
     pub name: &'static str,
     /// Byte offset in `phy_param`.

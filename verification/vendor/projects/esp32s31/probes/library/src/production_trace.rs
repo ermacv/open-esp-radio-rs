@@ -8,7 +8,10 @@ use core::future::{Future, ready};
 struct ProductionTraceDelay;
 
 impl oer_esp32s31_phy::target_executor::PhyAsyncDelay for ProductionTraceDelay {
-    type ShortDelay = oer_esp32s31_phy::RomShortDelay;
+    /// Register-preserving requested-time delivery, as for RFPLL: the ROM
+    /// short delay relies on the ROM routine's actual register usage, which
+    /// an ordinary call boundary does not preserve.
+    type ShortDelay = RfpllTraceDelay;
 
     fn after_micros(
         _kind: oer_esp32s31_phy::executor::wait::Kind,

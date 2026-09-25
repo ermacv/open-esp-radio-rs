@@ -7,7 +7,7 @@ use oer_esp32s31_vendor_scenarios::{
     harness::{Budget, Result},
     harness_edges, i2c, i2c_transport,
     phy::PhyOptions,
-    research, rfpll, rx_gain, tx_dc,
+    research, rfpll, rx_gain, tracking, tx_dc,
 };
 use std::{path::PathBuf, process::ExitCode};
 
@@ -47,6 +47,15 @@ enum Scenario {
     /// Complete TX-DC/PWDET root: Wi-Fi/BT DC rows over constant and
     /// alternating SAR samples, and PBus/SAR fault containment.
     TxDc {
+        #[command(flatten)]
+        common: Common,
+        /// Authenticated SDK firmware supplying the never-executed diagnostics symbol.
+        #[arg(long)]
+        phy_sdk: PathBuf,
+    },
+    /// Combined calibration and parameter tracking parents with their real
+    /// children, RFPLL corrections and failed-TX containment.
+    Tracking {
         #[command(flatten)]
         common: Common,
         /// Authenticated SDK firmware supplying the never-executed diagnostics symbol.
@@ -242,12 +251,24 @@ fn tx_dc(common: Common, phy_sdk: PathBuf) -> Result<ExitCode> {
     ))
 }
 
+fn tracking(common: Common, phy_sdk: PathBuf) -> Result<ExitCode> {
+    let mut ctx = tracking::Tracking::new(&common.phy(), &phy_sdk)?;
+    tracking::exercise(&mut ctx)?;
+    ctx.preserve(0)?;
+    Ok(finish(
+        &[],
+        "authenticated tracking parents, failed-TX containment and source-free replay passed",
+        &ctx.run,
+    ))
+}
+
 fn main() -> ExitCode {
     let result = match Cli::parse().scenario {
         Scenario::Gain { common, rftest } => gain(common, rftest),
         Scenario::Channel { common } => channel(common),
         Scenario::RxGain { common, phy_sdk } => rx_gain(common, phy_sdk),
         Scenario::TxDc { common, phy_sdk } => tx_dc(common, phy_sdk),
+        Scenario::Tracking { common, phy_sdk } => tracking(common, phy_sdk),
         Scenario::Research {
             binary,
             library,

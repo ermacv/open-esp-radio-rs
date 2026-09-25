@@ -389,8 +389,20 @@ impl PhyImage {
         &mut self,
         label: &str,
         parts: Vec<(u8, Vec<ExecutionCase>, T)>,
+        maximum: u32,
     ) -> Result<FillResults<T>> {
-        self.execute_fills(label, parts, Right::Production)
+        self.execute_fills(label, parts, Right::Production, maximum, true)
+    }
+
+    /// `compare_fills` for checks that need no guest events: Blobray still
+    /// validates every record, but events are not read back.
+    pub fn compare_fills_without_events<T>(
+        &mut self,
+        label: &str,
+        parts: Vec<(u8, Vec<ExecutionCase>, T)>,
+        maximum: u32,
+    ) -> Result<FillResults<T>> {
+        self.execute_fills(label, parts, Right::Production, maximum, false)
     }
 
     /// `compare_fills` for a vendor-only characterization that must complete.
@@ -399,7 +411,7 @@ impl PhyImage {
         label: &str,
         parts: Vec<(u8, Vec<ExecutionCase>, T)>,
     ) -> Result<FillResults<T>> {
-        self.execute_fills(label, parts, Right::None)
+        self.execute_fills(label, parts, Right::None, MAX_EVENTS, true)
     }
 
     fn execute_fills<T>(
@@ -407,6 +419,8 @@ impl PhyImage {
         label: &str,
         parts: Vec<(u8, Vec<ExecutionCase>, T)>,
         right: Right,
+        maximum: u32,
+        events: bool,
     ) -> Result<FillResults<T>> {
         let (mut rows, mut counts, mut tags) = (vec![], vec![], vec![]);
         for (fill, part, tag) in parts {
@@ -414,13 +428,14 @@ impl PhyImage {
             rows.extend(with_stack_fill(part, fill));
             tags.push(tag);
         }
-        let executed = self.execute(
+        let executed = self.run(
             label,
             rows,
             FILLS[0],
             right,
             ComparisonVerdict::Match,
-            MAX_EVENTS,
+            maximum,
+            events,
         )?;
         Ok(FillResults {
             parts: tags

@@ -455,7 +455,7 @@ impl Gain {
                 }
             }
             let label = format!("coefficient-boundary-{}", python_bool(bluetooth));
-            for (expected, records) in self.compare_fills(&label, parts)?.parts {
+            for (expected, records) in self.compare_fills(&label, parts, MAX_EVENTS)?.parts {
                 assert!(!has_events(&records));
                 for (i, value) in expected.iter().enumerate() {
                     let case = 2 * i as u32 + 1;
@@ -662,7 +662,7 @@ impl Gain {
                 parts.push((fill, rows, fill));
             }
         }
-        let executed = self.compare_fills("wifi", parts)?;
+        let executed = self.compare_fills("wifi", parts, MAX_EVENTS)?;
         self.wifi_request = Some(executed.request);
         for (fill, records) in executed.parts {
             {
@@ -742,7 +742,7 @@ impl Gain {
             }
             parts.push((fill, rows, expectations));
         }
-        let executed = self.compare_fills("publish-wifi", parts)?;
+        let executed = self.compare_fills("publish-wifi", parts, MAX_EVENTS)?;
         self.publication_request = Some(executed.request);
         for (expectations, records) in executed.parts {
             for (i, expected) in expectations.iter().enumerate() {
@@ -887,7 +887,7 @@ impl Gain {
                 parts.push((fill, rows, expected));
             }
         }
-        let executed = self.compare_fills("bluetooth", parts)?;
+        let executed = self.compare_fills("bluetooth", parts, MAX_EVENTS)?;
         self.bluetooth_request = Some(executed.request);
         for (expected, records) in executed.parts {
             let records = &records;

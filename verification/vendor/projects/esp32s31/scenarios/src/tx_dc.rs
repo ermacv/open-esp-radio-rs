@@ -26,14 +26,14 @@ use std::path::Path;
 pub type Options = PhyOptions;
 
 /// Power-detector readiness word; bits 16:14 report a ready detector.
-const DETECTOR_STATUS: u32 = 0x2010_080c;
-const DETECTOR_READY: u32 = 7 << 14;
+pub(crate) const DETECTOR_STATUS: u32 = 0x2010_080c;
+pub(crate) const DETECTOR_READY: u32 = 7 << 14;
 /// SAR result word; the tone average consumes its upper sample (bits 29:17).
 const SAR_RESULT: u32 = 0x2010_081c;
 const SAR_SAMPLE_SHIFT: u32 = 17;
 /// Result words the ROM `phy_read_sar_dout` snapshots but its tone-average
 /// caller never consumes; production does not read them.
-const SAR_UNUSED: [u32; 3] = [0x2010_0820, 0x2010_0824, 0x2010_0828];
+pub(crate) const SAR_UNUSED: [u32; 3] = [0x2010_0820, 0x2010_0824, 0x2010_0828];
 /// Production TX-DC entry compared with `phy_txdc_cal_pwdet_init`.
 const PRODUCTION_ENTRY: &str = "open_phy_calibration_trace_tx_dc_pwdet";
 /// Bluetooth PBus path word.
@@ -41,7 +41,7 @@ const BLUETOOTH_PBUS_PATH: u32 = 0x2010_0894;
 /// Low-power SAR control word outside the radio block.
 const LP_SAR_CONTROL: u32 = 0x2070_1068;
 /// Idle PBus status with writable retained clock bits.
-const PBUS_IDLE: u32 = 0x1234;
+pub(crate) const PBUS_IDLE: u32 = 0x1234;
 const WORK_MODE_SETTLE: u32 = 2;
 /// Stuck PBus status and stuck detector readiness of the fault cases.
 const PBUS_STUCK: u32 = 0x8000_0000;

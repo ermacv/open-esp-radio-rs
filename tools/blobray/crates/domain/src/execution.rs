@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 21;
+pub const EXECUTION_SCHEMA: u32 = 22;
 /// Upper bound of one canonical execution request payload. Requests are retained
 /// by identity; control messages, journal rows and manifests carry only the hash.
 pub const MAX_EXECUTION_REQUEST_BYTES: usize = 16 * 1024 * 1024;

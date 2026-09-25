@@ -97,6 +97,32 @@ impl<'a> Sources<'a> {
         }
         Ok(Self { loaded })
     }
+    /// Segments of explicit executables: `executables[i]` holds the ELF bytes
+    /// of each target's sources in `source_keys` order (its source, then its
+    /// companions). No project participates.
+    pub(crate) fn from_executables(
+        targets: &[(&ExecutionTarget, &[&[u8]])],
+        memory: &'a WorkingMemory,
+        c: &mut dyn RunControl,
+    ) -> Result<Self> {
+        let mut loaded = BTreeMap::new();
+        for (target, executables) in targets {
+            let keys = source_keys(target);
+            if keys.len() != executables.len() {
+                return Err(Error::new(
+                    ErrorCode::InvalidRequest,
+                    "one executable is required per target source",
+                ));
+            }
+            for (key, bytes) in keys.into_iter().zip(executables.iter()) {
+                if loaded.contains_key(&key) {
+                    continue;
+                }
+                loaded.insert(key, segments(bytes, memory, c)?);
+            }
+        }
+        Ok(Self { loaded })
+    }
     /// Every loaded segment of `target`'s sources.
     pub(crate) fn target_segments(
         &self,
@@ -179,8 +205,11 @@ fn session<'a>(
     }
     Ok(session)
 }
+/// Receives each evidence record in stream order.
+pub(crate) type Emit<'e> = dyn FnMut(ExecutionEvidence, &mut dyn RunControl) -> Result<()> + 'e;
+
 fn evidence(
-    file: &mut impl Write,
+    emit: &mut Emit<'_>,
     case: u32,
     replacement: bool,
     observation: &ExecutionObservation,
@@ -188,86 +217,79 @@ fn evidence(
 ) -> Result<()> {
     for event in &observation.events {
         c.checkpoint(1)?;
-        write_control_message(
-            &mut *file,
-            &ExecutionEvidence::Event {
+        emit(
+            ExecutionEvidence::Event {
                 case,
                 replacement,
                 event: event.clone(),
             },
+            c,
         )?;
-        file.write_all(b"\n").map_err(storage_io)?;
     }
     for chunk in &observation.final_memory {
         c.checkpoint(1)?;
-        write_control_message(
-            &mut *file,
-            &ExecutionEvidence::FinalMemory {
+        emit(
+            ExecutionEvidence::FinalMemory {
                 case,
                 replacement,
                 chunk: *chunk,
             },
+            c,
         )?;
-        file.write_all(b"\n").map_err(storage_io)?;
     }
     for model in &observation.models {
         c.checkpoint(1)?;
-        write_control_message(
-            &mut *file,
-            &ExecutionEvidence::Model {
+        emit(
+            ExecutionEvidence::Model {
                 case,
                 replacement,
                 observation: model.clone(),
             },
+            c,
         )?;
-        file.write_all(b"\n").map_err(storage_io)?;
     }
     for call in &observation.calls {
         c.checkpoint(1)?;
-        write_control_message(
-            &mut *file,
-            &ExecutionEvidence::CallModel {
+        emit(
+            ExecutionEvidence::CallModel {
                 case,
                 replacement,
                 observation: call.clone(),
             },
+            c,
         )?;
-        file.write_all(b"\n").map_err(storage_io)?;
     }
     for table in &observation.tables {
         c.checkpoint(1)?;
-        write_control_message(
-            &mut *file,
-            &ExecutionEvidence::RuntimeTable {
+        emit(
+            ExecutionEvidence::RuntimeTable {
                 case,
                 replacement,
                 observation: table.clone(),
             },
+            c,
         )?;
-        file.write_all(b"\n").map_err(storage_io)?;
     }
     for service in &observation.services {
         c.checkpoint(1)?;
-        write_control_message(
-            &mut *file,
-            &ExecutionEvidence::FifoService {
+        emit(
+            ExecutionEvidence::FifoService {
                 case,
                 replacement,
                 observation: service.clone(),
             },
+            c,
         )?;
-        file.write_all(b"\n").map_err(storage_io)?;
     }
-    write_control_message(
-        &mut *file,
-        &ExecutionEvidence::Outcome {
+    emit(
+        ExecutionEvidence::Outcome {
             case,
             replacement,
             stop: observation.stop.clone(),
             steps: observation.steps,
         },
-    )?;
-    file.write_all(b"\n").map_err(storage_io)
+        c,
+    )
 }
 pub fn prepare_execution_worker(
     stage: &Path,
@@ -318,132 +340,29 @@ pub(crate) fn prepare_execution_worker_in(
         let projections = project.execution_projections(request, memory, &mut control)?;
         let effects = project.execution_effects(request, memory, &mut control)?;
         let sources = Sources::load(&project, request, memory, &mut control)?;
-        let mut sides: [Side<'_>; 2] = Default::default();
-        let mut blocked = false;
-        let mut complete = true;
-        let mut verdict = request
-            .replacement
-            .as_ref()
-            .map(|_| ComparisonVerdict::Match);
         // Records are small; buffer them so each is not its own metered write.
         let mut file = std::io::BufWriter::with_capacity(
             STREAM_BLOCK,
             blobray_store::ExecutionRecordWriter::new(disk.temporary(&stage.join("staging"))?),
         );
-        for (index, case) in request.cases.iter().enumerate() {
-            if case.reset == SessionReset::Cold {
-                blocked = false;
-                // Release both previous address spaces before acquiring either new one.
-                for side in &mut sides {
-                    side.release();
-                }
-            }
-            let mut position = control.position();
-            position.table = Some(index as u64);
-            control.set_position(position);
-            control.checkpoint(1)?;
-            let engine = Engine {
-                sources: &sources,
+        let (verdict, complete) = run_resolved(
+            &Resolved {
                 request,
-                memory,
-                executor,
-                reset: case.reset,
-                stack_fill: case.stack_fill,
-                close_chain: request
-                    .cases
-                    .get(index + 1)
-                    .is_none_or(|next| next.reset == SessionReset::Cold),
-            };
-            let left = engine.invoke(
-                &request.vendor,
-                &case.vendor,
-                invocation_preparation(&tables, index, 0, goals[index][0], &mut control)?,
-                &mut sides[0],
-                blocked,
-                &mut control,
-            )?;
-            let right = match (&request.replacement, &case.replacement) {
-                (Some(t), Some(i)) => Some(engine.invoke(
-                    t,
-                    i,
-                    invocation_preparation(&tables, index, 1, goals[index][1], &mut control)?,
-                    &mut sides[1],
-                    blocked,
-                    &mut control,
-                )?),
-                _ => None,
-            };
-            evidence(&mut file, index as u32, false, &left, &mut control)?;
-            if let Some(right) = &right {
-                evidence(&mut file, index as u32, true, right, &mut control)?;
-                control.phase(RunPhase::Compare)?;
-                let comparison = blobray_verification::compare(
-                    &left,
-                    right,
-                    case.relation.as_ref().ok_or_else(|| {
-                        Error::new(ErrorCode::Integrity, "comparison relation missing")
-                    })?,
-                    &pairs.pairs,
-                    selected_projection(case.relation.as_ref(), &projections.projections)?.map(
-                        |resolved| blobray_verification::ProjectionComparison {
-                            resolved,
-                            vendor: &case.vendor,
-                            replacement: case.replacement.as_ref().unwrap(),
-                        },
-                    ),
-                    selected_effect_contract(case.relation.as_ref(), &effects.contracts)?,
-                    &mut control,
-                )?;
-                verdict = Some(match (verdict.unwrap(), comparison.verdict) {
-                    (ComparisonVerdict::Diff, _) | (_, ComparisonVerdict::Diff) => {
-                        ComparisonVerdict::Diff
-                    }
-                    (ComparisonVerdict::Incomplete, _) | (_, ComparisonVerdict::Incomplete) => {
-                        ComparisonVerdict::Incomplete
-                    }
-                    _ => ComparisonVerdict::Match,
-                });
-                write_control_message(
-                    &mut file,
-                    &ExecutionEvidence::Comparison {
-                        case: index as u32,
-                        result: comparison,
-                    },
-                )?;
-                file.write_all(b"\n").map_err(storage_io)?;
-            }
-            let phase_complete =
-                left.completed() && right.as_ref().is_none_or(ExecutionObservation::completed);
-            complete &= phase_complete;
-            if !phase_complete {
-                blocked = true;
-            }
-            if let Some(session) = &mut sides[0].session {
-                session.recycle(left);
-            }
-            if let (Some(session), Some(right)) = (&mut sides[1].session, right) {
-                session.recycle(right);
-            }
-        }
-        for (index, side) in sides.iter_mut().enumerate() {
-            side.release();
-            if index == 1 && request.replacement.is_none() {
-                break;
-            }
-            let (reached, _capacity) = side.coverage.finish(memory, &mut control)?;
-            for part in reached.split() {
-                control.checkpoint(1)?;
-                write_control_message(
-                    &mut file,
-                    &ExecutionEvidence::Coverage {
-                        replacement: index == 1,
-                        coverage: part,
-                    },
-                )?;
-                file.write_all(b"\n").map_err(storage_io)?;
-            }
-        }
-        drop(sides);
+                goals: &goals,
+                tables: &tables,
+                pairs: &pairs.pairs,
+                projections: &projections.projections,
+                effects: &effects.contracts,
+                sources: &sources,
+            },
+            executor,
+            memory,
+            &mut |record, _| {
+                write_control_message(&mut file, &record)?;
+                file.write_all(b"\n").map_err(storage_io)
+            },
+            &mut control,
+        )?;
         let staging = Staging::with_temporary_budget(stage, disk.clone())?;
         let file = file
             .into_inner()
@@ -470,6 +389,154 @@ pub(crate) fn prepare_execution_worker_in(
     control.memory_phases(&memory.phase_observations());
     control.working_memory(memory.observation());
     result
+}
+
+/// Resolved inputs of one execution request.
+pub(crate) struct Resolved<'r, 'm> {
+    pub request: &'r ExecutionRequest,
+    pub goals: &'r [[Option<ResolvedExecutionGoal>; 2]],
+    pub tables: &'r [crate::execution_interfaces::PreparedTable<'m>],
+    pub pairs: &'r [ResolvedCallPair],
+    pub projections: &'r [ResolvedProjection],
+    pub effects: &'r [ResolvedEffectContract],
+    pub sources: &'r Sources<'m>,
+}
+
+/// Execute every case of a resolved request, handing each evidence record to
+/// `emit` in stream order. Returns the aggregate verdict and completeness.
+pub(crate) fn run_resolved<'m>(
+    resolved: &Resolved<'_, 'm>,
+    executor: &dyn Executor,
+    memory: &'m WorkingMemory,
+    emit: &mut Emit<'_>,
+    control: &mut dyn RunControl,
+) -> Result<(Option<ComparisonVerdict>, bool)> {
+    let request = resolved.request;
+    let mut sides: [Side<'_>; 2] = Default::default();
+    let mut blocked = false;
+    let mut complete = true;
+    let mut verdict = request
+        .replacement
+        .as_ref()
+        .map(|_| ComparisonVerdict::Match);
+    for (index, case) in request.cases.iter().enumerate() {
+        if case.reset == SessionReset::Cold {
+            blocked = false;
+            // Release both previous address spaces before acquiring either new one.
+            for side in &mut sides {
+                side.release();
+            }
+        }
+        let mut position = control.position();
+        position.table = Some(index as u64);
+        control.set_position(position);
+        control.checkpoint(1)?;
+        let engine = Engine {
+            sources: resolved.sources,
+            request,
+            memory,
+            executor,
+            reset: case.reset,
+            stack_fill: case.stack_fill,
+            close_chain: request
+                .cases
+                .get(index + 1)
+                .is_none_or(|next| next.reset == SessionReset::Cold),
+        };
+        let left = engine.invoke(
+            &request.vendor,
+            &case.vendor,
+            invocation_preparation(resolved.tables, index, 0, resolved.goals[index][0], control)?,
+            &mut sides[0],
+            blocked,
+            control,
+        )?;
+        let right = match (&request.replacement, &case.replacement) {
+            (Some(t), Some(i)) => Some(engine.invoke(
+                t,
+                i,
+                invocation_preparation(
+                    resolved.tables,
+                    index,
+                    1,
+                    resolved.goals[index][1],
+                    control,
+                )?,
+                &mut sides[1],
+                blocked,
+                control,
+            )?),
+            _ => None,
+        };
+        evidence(emit, index as u32, false, &left, control)?;
+        if let Some(right) = &right {
+            evidence(emit, index as u32, true, right, control)?;
+            control.phase(RunPhase::Compare)?;
+            let comparison = blobray_verification::compare(
+                &left,
+                right,
+                case.relation.as_ref().ok_or_else(|| {
+                    Error::new(ErrorCode::Integrity, "comparison relation missing")
+                })?,
+                resolved.pairs,
+                selected_projection(case.relation.as_ref(), resolved.projections)?.map(
+                    |resolved| blobray_verification::ProjectionComparison {
+                        resolved,
+                        vendor: &case.vendor,
+                        replacement: case.replacement.as_ref().unwrap(),
+                    },
+                ),
+                selected_effect_contract(case.relation.as_ref(), resolved.effects)?,
+                control,
+            )?;
+            verdict = Some(match (verdict.unwrap(), comparison.verdict) {
+                (ComparisonVerdict::Diff, _) | (_, ComparisonVerdict::Diff) => {
+                    ComparisonVerdict::Diff
+                }
+                (ComparisonVerdict::Incomplete, _) | (_, ComparisonVerdict::Incomplete) => {
+                    ComparisonVerdict::Incomplete
+                }
+                _ => ComparisonVerdict::Match,
+            });
+            emit(
+                ExecutionEvidence::Comparison {
+                    case: index as u32,
+                    result: comparison,
+                },
+                control,
+            )?;
+        }
+        let phase_complete =
+            left.completed() && right.as_ref().is_none_or(ExecutionObservation::completed);
+        complete &= phase_complete;
+        if !phase_complete {
+            blocked = true;
+        }
+        if let Some(session) = &mut sides[0].session {
+            session.recycle(left);
+        }
+        if let (Some(session), Some(right)) = (&mut sides[1].session, right) {
+            session.recycle(right);
+        }
+    }
+    for (index, side) in sides.iter_mut().enumerate() {
+        side.release();
+        if index == 1 && request.replacement.is_none() {
+            break;
+        }
+        let (reached, _capacity) = side.coverage.finish(memory, control)?;
+        for part in reached.split() {
+            control.checkpoint(1)?;
+            emit(
+                ExecutionEvidence::Coverage {
+                    replacement: index == 1,
+                    coverage: part,
+                },
+                control,
+            )?;
+        }
+    }
+    Ok((verdict, complete))
 }
 
 /// One side's live session and the coverage that outlives its sessions.

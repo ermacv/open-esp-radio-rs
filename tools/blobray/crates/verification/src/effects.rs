@@ -118,9 +118,8 @@ mod tests {
     fn policy(rules: Vec<EffectRule>) -> ResolvedEffectContract {
         let id = ArtifactId::of_bytes(b"effect fixture");
         ResolvedEffectContract {
-            review: EffectReview {
-                knowledge: id.as_str().parse().unwrap(),
-                assertion: id.as_str().parse().unwrap(),
+            review: EffectContractRef::Content {
+                contract: id.clone(),
             },
             contract: EffectContract {
                 unclassified: UnclassifiedEffects::Incomplete,

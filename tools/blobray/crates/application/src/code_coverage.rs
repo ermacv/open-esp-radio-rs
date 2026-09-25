@@ -40,6 +40,98 @@ struct Reached {
     boundaries: BTreeSet<u32>,
 }
 
+impl Reached {
+    /// Add the vendor coverage of one execution of `request` and its closure
+    /// roots and boundaries; `goals` are the request's resolved goals.
+    fn add(
+        &mut self,
+        request: &ExecutionRequest,
+        coverage: ExecutionCoverage,
+        goals: &[[Option<ResolvedExecutionGoal>; 2]],
+        c: &mut dyn RunControl,
+    ) -> Result<()> {
+        for pc in coverage.instructions {
+            c.checkpoint(1)?;
+            self.instructions.insert(pc);
+        }
+        for transfer in coverage.transfers {
+            c.checkpoint(1)?;
+            self.transfers
+                .entry(transfer.site)
+                .or_default()
+                .insert(transfer.target);
+        }
+        for branch in coverage.branches {
+            c.checkpoint(1)?;
+            let seen = self.branches.entry(branch.site).or_default();
+            seen.0 |= branch.taken;
+            seen.1 |= branch.fallthrough;
+        }
+        for (case, goal) in request.cases.iter().zip(goals.iter()) {
+            c.checkpoint(1)?;
+            let vendor = &case.vendor;
+            self.roots.insert(vendor.entry);
+            self.boundaries
+                .extend(vendor.calls.iter().map(|call| call.binding.address));
+            self.boundaries.extend(
+                vendor
+                    .services
+                    .iter()
+                    .flat_map(|service| service.bindings.iter().map(|b| b.call.address)),
+            );
+            match goal[0] {
+                Some(ResolvedExecutionGoal::ReachSymbol { address })
+                | Some(ResolvedExecutionGoal::ObserveCall { address, .. }) => {
+                    self.boundaries.insert(address);
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The merged vendor coverage of one execution's records.
+fn vendor_coverage<'r>(
+    records: impl IntoIterator<Item = &'r ExecutionEvidence>,
+) -> Result<ExecutionCoverage> {
+    let mut coverage = ExecutionCoverage::default();
+    let mut found = false;
+    for record in records {
+        if let ExecutionEvidence::Coverage {
+            replacement: false,
+            coverage: vendor,
+        } = record
+        {
+            found = true;
+            coverage
+                .instructions
+                .extend_from_slice(&vendor.instructions);
+            coverage.branches.extend_from_slice(&vendor.branches);
+            coverage.transfers.extend_from_slice(&vendor.transfers);
+        }
+    }
+    if !found {
+        return Err(Error::new(ErrorCode::Integrity, "vendor coverage missing"));
+    }
+    Ok(coverage)
+}
+
+/// One vendor target shared by every selected execution.
+fn same_target(target: &mut Option<ExecutionTarget>, request: &ExecutionRequest) -> Result<()> {
+    match target {
+        None => *target = Some(request.vendor.clone()),
+        Some(first) if *first == request.vendor => {}
+        Some(_) => {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "code coverage executions differ in their vendor target",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn collect(
     project: &Project,
     ids: &[ArtifactId],
@@ -51,18 +143,8 @@ fn collect(
     for id in ids {
         let execution = project.execution(id, memory, c)?;
         let request = &execution.request;
-        match &target {
-            None => target = Some(request.vendor.clone()),
-            Some(first) if *first == request.vendor => {}
-            Some(_) => {
-                return Err(Error::new(
-                    ErrorCode::InvalidRequest,
-                    "code coverage executions differ in their vendor target",
-                ));
-            }
-        }
-        let mut coverage = ExecutionCoverage::default();
-        let mut vendor_records = 0u64;
+        same_target(&mut target, request)?;
+        let mut records = Vec::new();
         blobray_store::validate_execution_records_with(
             &execution.manifest,
             request,
@@ -70,64 +152,14 @@ fn collect(
             memory,
             c,
             &mut |record, _| {
-                if let ExecutionEvidence::Coverage {
-                    replacement: false,
-                    coverage: vendor,
-                } = record
-                {
-                    vendor_records += 1;
-                    coverage
-                        .instructions
-                        .extend_from_slice(&vendor.instructions);
-                    coverage.branches.extend_from_slice(&vendor.branches);
-                    coverage.transfers.extend_from_slice(&vendor.transfers);
+                if matches!(record, ExecutionEvidence::Coverage { .. }) {
+                    records.push(record.clone());
                 }
                 Ok(())
             },
         )?;
-        if vendor_records == 0 {
-            return Err(Error::new(ErrorCode::Integrity, "vendor coverage missing"));
-        }
-        for pc in coverage.instructions {
-            c.checkpoint(1)?;
-            reached.instructions.insert(pc);
-        }
-        for transfer in coverage.transfers {
-            c.checkpoint(1)?;
-            reached
-                .transfers
-                .entry(transfer.site)
-                .or_default()
-                .insert(transfer.target);
-        }
-        for branch in coverage.branches {
-            c.checkpoint(1)?;
-            let seen = reached.branches.entry(branch.site).or_default();
-            seen.0 |= branch.taken;
-            seen.1 |= branch.fallthrough;
-        }
         let goals = crate::execution_goals::prepare(project, request, memory, c)?;
-        for (case, goal) in request.cases.iter().zip(goals.iter()) {
-            c.checkpoint(1)?;
-            let vendor = &case.vendor;
-            reached.roots.insert(vendor.entry);
-            reached
-                .boundaries
-                .extend(vendor.calls.iter().map(|call| call.binding.address));
-            reached.boundaries.extend(
-                vendor
-                    .services
-                    .iter()
-                    .flat_map(|service| service.bindings.iter().map(|b| b.call.address)),
-            );
-            match goal[0] {
-                Some(ResolvedExecutionGoal::ReachSymbol { address })
-                | Some(ResolvedExecutionGoal::ObserveCall { address, .. }) => {
-                    reached.boundaries.insert(address);
-                }
-                _ => {}
-            }
-        }
+        reached.add(request, vendor_coverage(&records)?, &goals, c)?;
     }
     let target =
         target.ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "no executions selected"))?;
@@ -193,11 +225,6 @@ pub(crate) fn report(
     }
     let (target, reached) = collect(project, ids, memory, c)?;
     let sources = Sources::load_targets(project, &[&target], memory, c)?;
-    let mut segments: Vec<_> = sources
-        .target_segments(&target)
-        .filter(|s| s.flags & 1 != 0)
-        .collect();
-    segments.sort_by_key(|s| s.address);
     let mut names: BTreeMap<u32, String> = BTreeMap::new();
     target_executables(project, &target, c, &mut |source, c| {
         for (address, name) in blobray_artifacts::code_symbols(source, memory, c)? {
@@ -206,6 +233,84 @@ pub(crate) fn report(
         }
         Ok(())
     })?;
+    build(
+        ids.to_vec(),
+        &target,
+        reached,
+        &sources,
+        names,
+        semantics,
+        memory,
+        c,
+    )
+}
+
+/// The vendor coverage of one execution in memory per `executions` entry
+/// (request and records), which share one vendor target whose sources are
+/// `vendor` (ELF bytes in source order). Executions are identified by the
+/// digest of their canonical request. Goals must not need symbol resolution.
+pub fn report_in_process(
+    executions: &[(&ExecutionRequest, &[ExecutionEvidence])],
+    vendor: &[&[u8]],
+    semantics: &dyn FunctionSemantics,
+    memory: &WorkingMemory,
+    c: &mut dyn RunControl,
+) -> Result<CodeCoverageReport> {
+    let mut target = None;
+    let mut reached = Reached::default();
+    let mut ids = Vec::new();
+    for (request, records) in executions {
+        same_target(&mut target, request)?;
+        let goals: Vec<[Option<ResolvedExecutionGoal>; 2]> = request
+            .cases
+            .iter()
+            .map(|case| {
+                let resolve = |i: &Invocation| match i.goal {
+                    ExecutionGoal::Return => Ok(ResolvedExecutionGoal::Return),
+                    ExecutionGoal::ObserveDequeue { .. } => {
+                        Ok(ResolvedExecutionGoal::ObserveDequeue)
+                    }
+                    _ => Err(Error::new(
+                        ErrorCode::InvalidRequest,
+                        "in-process coverage does not support symbol goals",
+                    )),
+                };
+                Ok([Some(resolve(&case.vendor)?), None])
+            })
+            .collect::<Result<_>>()?;
+        reached.add(request, vendor_coverage(records.iter())?, &goals, c)?;
+        let bytes = serde_json::to_vec(request)
+            .map_err(|e| Error::new(ErrorCode::InvalidRequest, e.to_string()))?;
+        ids.push(ArtifactId::of_bytes(&bytes));
+    }
+    let target =
+        target.ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "no executions selected"))?;
+    let sources = Sources::from_executables(&[(&target, vendor)], memory, c)?;
+    let mut names: BTreeMap<u32, String> = BTreeMap::new();
+    for executable in vendor {
+        for (address, name) in blobray_artifacts::code_symbols(executable, memory, c)? {
+            names.entry(address).or_insert(name);
+        }
+    }
+    build(ids, &target, reached, &sources, names, semantics, memory, c)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build(
+    ids: Vec<ArtifactId>,
+    target: &ExecutionTarget,
+    reached: Reached,
+    sources: &Sources<'_>,
+    names: BTreeMap<u32, String>,
+    semantics: &dyn FunctionSemantics,
+    memory: &WorkingMemory,
+    c: &mut dyn RunControl,
+) -> Result<CodeCoverageReport> {
+    let mut segments: Vec<_> = sources
+        .target_segments(target)
+        .filter(|s| s.flags & 1 != 0)
+        .collect();
+    segments.sort_by_key(|s| s.address);
     let starts: BTreeSet<u32> = names.keys().copied().collect();
     let roots: Vec<u32> = reached.roots.iter().copied().collect();
     let closure = code_closure(
@@ -294,7 +399,7 @@ pub(crate) fn report(
         })
         .count() as u64;
     Ok(CodeCoverageReport {
-        executions: ids.to_vec(),
+        executions: ids,
         roots: root_reports,
         functions,
         outside,

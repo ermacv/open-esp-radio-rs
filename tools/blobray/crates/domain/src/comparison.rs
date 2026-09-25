@@ -52,8 +52,8 @@ pub struct MemoryPair {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ComparisonRelation {
-    pub effects: Option<EffectReview>,
-    pub projection: Option<ProjectionReview>,
+    pub effects: Option<EffectContractRef>,
+    pub projection: Option<ProjectionRef>,
     pub returns: ReturnWords,
     pub events: EventChannels,
     pub memory: Vec<MemoryPair>,

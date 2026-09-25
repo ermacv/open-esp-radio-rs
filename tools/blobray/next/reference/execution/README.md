@@ -545,7 +545,7 @@ into working memory as events occur, doubling up to that bound, and keeps it for
 later phases.
 Traces stream as bounded JSONL events/final-memory/device-models/call-models/runtime-tables/fifo-services/outcomes/comparisons/coverage into quota-owned
 staging. The retained record payload is that JSONL stream as one raw deflate
-stream (execution schema 21): guest events repeat heavily, so large evidence
+stream (execution schema 22): guest events repeat heavily, so large evidence
 sets retain a small fraction of their logical size. Readers decode it under the
 same per-record bound and work budget and see exactly the logical records;
 a truncated, trailing or non-deflate payload is an integrity failure.
@@ -568,6 +568,22 @@ The coordinator checks the admitted recipe and stream structure before
 atomically committing the result reference and completed run. Cancellation,
 limits or corruption cannot publish partial evidence. Process-level OOM and
 opaque dependency containment retain the existing host guarantees.
+
+### In-process verification
+
+`blobray_application::in_process::verify` executes and compares one request
+inside the calling process. The caller supplies the ELF bytes of every target
+source in source order (the source, then its companions) and the effect
+contracts and layout projections its relations select. Those are reviewed
+outside Blobray: `effect_contract_ref` and `projection_ref` select them by the
+SHA-256 of their canonical JSON encoding, and `verify` rejects a selection whose
+content it was not given. Records, the aggregate verdict and completeness are
+returned in memory: no project, content store, journal, run record or knowledge
+review participates, and nothing is retained. Symbol goals, runtime tables and
+reviewed call pairs need a project and are rejected. The records equal those a
+project execution of the same request retains. `in_process::coverage` reports the
+vendor coverage of such results, as `code-coverage` does for retained executions,
+identifying each execution by the digest of its canonical request.
 
 ### Code coverage of root closures
 

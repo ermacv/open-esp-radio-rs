@@ -181,7 +181,7 @@ fn review(f: &Fixture, p: ProjectionReview, decision: ReviewDecision) -> Project
     }
 }
 fn select(r: &mut ExecutionRequest, p: ProjectionReview) {
-    r.cases[0].relation.as_mut().unwrap().projection = Some(p);
+    r.cases[0].relation.as_mut().unwrap().projection = Some(ProjectionRef::Reviewed(p));
 }
 #[test]
 fn reviewed_layout_rebases_fields_and_branches_without_comparing_unknown_padding() {
@@ -200,7 +200,7 @@ fn reviewed_layout_rebases_fields_and_branches_without_comparing_unknown_padding
         assert_eq!(
             m.projections,
             vec![ResolvedProjection {
-                review: accepted,
+                review: ProjectionRef::Reviewed(accepted),
                 projection: p
             }]
         );
@@ -382,6 +382,7 @@ fn projection_cli_review_freezes_applicability_and_conflicts_without_changing_ol
                     .unwrap()
                     .projection
                     .as_mut()
+                    .and_then(ProjectionRef::review_mut)
                     .unwrap()
                     .assertion = ArtifactId::of_bytes(b"missing assertion")
                     .as_str()
@@ -395,6 +396,7 @@ fn projection_cli_review_freezes_applicability_and_conflicts_without_changing_ol
                     .unwrap()
                     .projection
                     .as_mut()
+                    .and_then(ProjectionRef::review_mut)
                     .unwrap()
                     .knowledge = ArtifactId::of_bytes(b"missing review")
                     .as_str()
@@ -459,6 +461,7 @@ fn projection_cli_review_freezes_applicability_and_conflicts_without_changing_ol
         .unwrap()
         .projection
         .as_mut()
+        .and_then(ProjectionRef::review_mut)
         .unwrap()
         .knowledge = newer.knowledge.unwrap();
     let failed = f.run(r, budget());

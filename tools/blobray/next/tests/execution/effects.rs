@@ -144,7 +144,7 @@ fn review(f: &Fixture, p: EffectReview, decision: ReviewDecision) -> EffectRevie
     }
 }
 fn select(r: &mut ExecutionRequest, p: EffectReview) {
-    r.cases[0].relation.as_mut().unwrap().effects = Some(p);
+    r.cases[0].relation.as_mut().unwrap().effects = Some(EffectContractRef::Reviewed(p));
 }
 #[test]
 fn effect_review_api_preserves_raw_omissions_and_source_free_replay() {
@@ -163,7 +163,7 @@ fn effect_review_api_preserves_raw_omissions_and_source_free_replay() {
         assert_eq!(
             manifest.effect_contracts,
             vec![ResolvedEffectContract {
-                review: accepted,
+                review: EffectContractRef::Reviewed(accepted),
                 contract: p
             }]
         );
@@ -281,6 +281,7 @@ fn reviewed_effect_replacement_requires_exact_values_and_case_applicability() {
                     .unwrap()
                     .effects
                     .as_mut()
+                    .and_then(EffectContractRef::review_mut)
                     .unwrap()
                     .assertion = ArtifactId::of_bytes(b"missing").as_str().parse().unwrap()
             }
@@ -623,10 +624,10 @@ fn effect_policy_composes_with_reviewed_abi_layout_timeline_returns_and_final_ra
         replacement: 1,
     }];
     relation.events.timeline = capture;
-    relation.projection = Some(ProjectionReview {
+    relation.projection = Some(ProjectionRef::Reviewed(ProjectionReview {
         knowledge: projection.knowledge,
         assertion: projection.assertion,
-    });
+    }));
     relation.reviewed_calls = Some(ReviewedCalls {
         pairs: vec![CallPairReview {
             knowledge: calls.knowledge,
@@ -634,7 +635,7 @@ fn effect_policy_composes_with_reviewed_abi_layout_timeline_returns_and_final_ra
         }],
         unlisted: UnlistedCalls::Exact,
     });
-    relation.effects = Some(effects);
+    relation.effects = Some(EffectContractRef::Reviewed(effects));
     let (m, rows) = run(&f, r.clone());
     assert_eq!(m.verdict, Some(ComparisonVerdict::Match));
     assert_eq!(

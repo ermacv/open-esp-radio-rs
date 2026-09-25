@@ -131,9 +131,8 @@ mod tests {
             boundary: ReviewedCallBoundary::Code { address: 0x1000 },
         };
         let p = ResolvedProjection {
-            review: ProjectionReview {
-                knowledge: id.as_str().parse().unwrap(),
-                assertion: id.as_str().parse().unwrap(),
+            review: ProjectionRef::Content {
+                projection: id.clone(),
             },
             projection: LayoutProjection {
                 vendor: LayoutEndpoint {

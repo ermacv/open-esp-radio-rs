@@ -30,6 +30,7 @@ mod execution;
 mod execution_coverage;
 mod execution_goals;
 mod execution_memory;
+pub mod in_process;
 pub use execution::{EXECUTION_ENVIRONMENT, ExecutionWork, prepare_execution_worker};
 mod functions;
 mod link_selection;

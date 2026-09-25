@@ -95,10 +95,29 @@ pub struct EffectReview {
     pub knowledge: KnowledgeRevisionId,
     pub assertion: AssertionId,
 }
+/// How a comparison selects its effect contract.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum EffectContractRef {
+    /// An accepted knowledge assertion of the project.
+    Reviewed(EffectReview),
+    /// A contract reviewed outside Blobray and supplied with the comparison,
+    /// identified by the digest of its canonical encoding.
+    Content { contract: ArtifactId },
+}
+impl EffectContractRef {
+    /// The knowledge review, when the contract is selected through one.
+    pub fn review_mut(&mut self) -> Option<&mut EffectReview> {
+        match self {
+            Self::Reviewed(review) => Some(review),
+            Self::Content { .. } => None,
+        }
+    }
+}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResolvedEffectContract {
-    pub review: EffectReview,
+    pub review: EffectContractRef,
     pub contract: EffectContract,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

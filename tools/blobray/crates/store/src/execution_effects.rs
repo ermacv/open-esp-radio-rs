@@ -14,7 +14,13 @@ impl Project {
     ) -> Result<ExecutionEffects<'m>> {
         let mut reviews = AdmittedVec::new(memory);
         for case in &request.cases {
-            if let Some(review) = case.relation.as_ref().and_then(|r| r.effects.as_ref()) {
+            if let Some(selection) = case.relation.as_ref().and_then(|r| r.effects.as_ref()) {
+                let EffectContractRef::Reviewed(review) = selection else {
+                    return Err(Error::new(
+                        ErrorCode::InvalidRequest,
+                        "a content-identified effect contract is supplied with an in-process comparison",
+                    ));
+                };
                 c.checkpoint(reviews.len() as u64 + 1)?;
                 if !reviews.contains(&review) {
                     if reviews.len() == MAX_EFFECT_RULES {
@@ -76,7 +82,7 @@ impl Project {
                     c.position(),
                 )?;
                 contracts.push(ResolvedEffectContract {
-                    review: (*selected).clone(),
+                    review: EffectContractRef::Reviewed((*selected).clone()),
                     contract: (**contract).clone(),
                 });
             }
@@ -299,7 +305,7 @@ mod tests {
                 vendor: input,
                 replacement: Some(right),
                 relation: Some(ComparisonRelation {
-                    effects: Some(selected.clone()),
+                    effects: Some(EffectContractRef::Reviewed(selected.clone())),
                     projection: None,
                     calls: false,
                     reviewed_calls: None,
@@ -326,7 +332,7 @@ mod tests {
             assert_eq!(
                 value.contracts,
                 vec![ResolvedEffectContract {
-                    review: selected.clone(),
+                    review: EffectContractRef::Reviewed(selected.clone()),
                     contract: contract.clone()
                 }]
             );
@@ -350,7 +356,7 @@ mod tests {
             request: ArtifactId::of_bytes(b"request"),
             call_pairs: vec![],
             effect_contracts: vec![ResolvedEffectContract {
-                review: selected,
+                review: EffectContractRef::Reviewed(selected),
                 contract,
             }],
             records: id,

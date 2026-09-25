@@ -115,7 +115,10 @@ observations remain available after source removal and project restore. See
 `knowledge propose-projection --request projection.json` creates a proposal with
 `subject`, `projection`, `expected_base`, `actor` and `reason`. Use normal knowledge
 review to accept it, then set the execution case's `relation.projection` to
-`{"knowledge":"<accepted-snapshot>","assertion":"<assertion>"}`. The manifest retains
+`{"kind":"reviewed","knowledge":"<accepted-snapshot>","assertion":"<assertion>"}`.
+An [in-process comparison](../execution/README.md#in-process-verification) instead
+selects `{"kind":"content","projection":"<digest>"}` for a projection it supplies;
+a project execution rejects content selections. The manifest retains
 that exact resolved policy; updating knowledge does not update old comparisons.
 
 A projection specifies `vendor` and `replacement` endpoints, `fields`, `branches`,
@@ -157,7 +160,9 @@ it does not establish general equivalence. See [projection contracts](../../../d
 `knowledge propose-effect-contract --request effects.json` submits
 `{subject, contract, expected_base, actor, reason}` through the shared application
 scenario. Normal knowledge review accepts or rejects it. Set a comparison case's
-`relation.effects` to `{knowledge, assertion}` for the exact accepted review;
+`relation.effects` to `{kind: "reviewed", knowledge, assertion}` for the exact
+accepted review; an in-process comparison selects `{kind: "content", contract}`
+for a contract it supplies, and a project execution rejects that selection;
 all four MMIO read/write, fence and delay event channels must be enabled.
 
 A contract contains exact `vendor`/`replacement` code endpoints (the same

@@ -14,7 +14,13 @@ impl Project {
     ) -> Result<ExecutionProjections<'m>> {
         let mut reviews = AdmittedVec::new(memory);
         for case in &request.cases {
-            if let Some(review) = case.relation.as_ref().and_then(|r| r.projection.as_ref()) {
+            if let Some(selection) = case.relation.as_ref().and_then(|r| r.projection.as_ref()) {
+                let ProjectionRef::Reviewed(review) = selection else {
+                    return Err(Error::new(
+                        ErrorCode::InvalidRequest,
+                        "a content-identified projection is supplied with an in-process comparison",
+                    ));
+                };
                 c.checkpoint(reviews.len() as u64 + 1)?;
                 if !reviews.contains(&review) {
                     if reviews.len() == MAX_LAYOUT_FIELDS {
@@ -78,7 +84,7 @@ impl Project {
                     c.position(),
                 )?;
                 projections.push(ResolvedProjection {
-                    review: (*selected).clone(),
+                    review: ProjectionRef::Reviewed((*selected).clone()),
                     projection: (**projection).clone(),
                 });
             }
@@ -326,7 +332,7 @@ mod tests {
                 replacement: Some(right),
                 relation: Some(ComparisonRelation {
                     effects: None,
-                    projection: Some(selected.clone()),
+                    projection: Some(ProjectionRef::Reviewed(selected.clone())),
                     calls: false,
                     reviewed_calls: None,
                     returns: ReturnWords {
@@ -352,7 +358,7 @@ mod tests {
             assert_eq!(
                 value.projections,
                 vec![ResolvedProjection {
-                    review: selected.clone(),
+                    review: ProjectionRef::Reviewed(selected.clone()),
                     projection: projection.clone()
                 }]
             );
@@ -376,7 +382,7 @@ mod tests {
             request: encode_execution_request(&request).unwrap().0,
             call_pairs: vec![],
             projections: vec![ResolvedProjection {
-                review: selected,
+                review: ProjectionRef::Reviewed(selected),
                 projection,
             }],
             records: id,

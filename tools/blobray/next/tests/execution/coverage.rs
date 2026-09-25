@@ -350,3 +350,125 @@ fn a_jump_to_a_defined_function_start_is_a_named_tail_call() {
         }
     );
 }
+
+#[test]
+fn in_process_verification_emits_the_records_of_a_project_execution() {
+    let f = Fixture::new(&CLOSURE);
+    let mut request = closure_request(&f, 5, 0);
+    // Compare the program with itself.
+    request.replacement = Some(request.vendor.clone());
+    request.binding = Some(CompiledBinding::SharedCore);
+    request.cases[0].replacement = Some(request.cases[0].vendor.clone());
+    request.cases[0].relation = Some(fixture_relation(true));
+    let (manifest, rows) = run(&f, request.clone());
+    let executable = elf(&CLOSURE);
+    let sources: &[&[u8]] = &[&executable];
+    let memory = WorkingMemory::new(32 * 1024 * 1024).unwrap();
+    let result = app::in_process::verify(
+        &app::in_process::InProcessComparison {
+            request: &request,
+            vendor: sources,
+            replacement: Some(sources),
+            effects: &[],
+            projections: &[],
+        },
+        &blobray_backend_riscv::RiscvExecutor,
+        &memory,
+        &mut || Ok(()),
+    )
+    .unwrap();
+    assert_eq!(result.records, rows);
+    assert_eq!(result.verdict, manifest.verdict);
+    assert_eq!(result.complete, manifest.complete);
+    // Symbol goals need a project; one executable per target source is required.
+    let mut symbolic = request.clone();
+    symbolic.cases[0].vendor.goal = ExecutionGoal::ReachSymbol {
+        target: ExecutionSymbol {
+            source: FunctionSource::Input { input: 0 },
+            symbol: SymbolId {
+                object: ObjectId {
+                    artifact: ArtifactId::of_bytes(b"object"),
+                    location: ObjectLocation::Standalone,
+                },
+                table: SymbolTableKind::Static,
+                table_section: 1,
+                index: 1,
+            },
+        },
+    };
+    symbolic.cases[0].replacement = Some(symbolic.cases[0].vendor.clone());
+    for (request, vendor, reason) in [
+        (&symbolic, sources, "symbol goals"),
+        (
+            &request,
+            &[][..],
+            "one executable is required per target source",
+        ),
+    ] {
+        let error = app::in_process::verify(
+            &app::in_process::InProcessComparison {
+                request,
+                vendor,
+                replacement: Some(sources),
+                effects: &[],
+                projections: &[],
+            },
+            &blobray_backend_riscv::RiscvExecutor,
+            &memory,
+            &mut || Ok(()),
+        )
+        .err()
+        .unwrap();
+        assert_eq!(error.code, ErrorCode::InvalidRequest);
+        assert!(error.message.contains(reason), "{error:?}");
+    }
+}
+
+#[test]
+fn in_process_coverage_matches_the_project_report() {
+    let f = Fixture::new(&CLOSURE);
+    let requests = [closure_request(&f, 5, 0), closure_request(&f, 0, 0x1028)];
+    let ids: Vec<_> = requests
+        .iter()
+        .map(|r| f.run(r.clone(), budget()).execution.unwrap())
+        .collect();
+    let project = report(&f, &ids.iter().collect::<Vec<_>>());
+    let executable = elf(&CLOSURE);
+    let sources: &[&[u8]] = &[&executable];
+    let memory = WorkingMemory::new(32 * 1024 * 1024).unwrap();
+    let executions: Vec<_> = requests
+        .iter()
+        .map(|request| {
+            let result = app::in_process::verify(
+                &app::in_process::InProcessComparison {
+                    request,
+                    vendor: sources,
+                    replacement: None,
+                    effects: &[],
+                    projections: &[],
+                },
+                &blobray_backend_riscv::RiscvExecutor,
+                &memory,
+                &mut || Ok(()),
+            )
+            .unwrap();
+            (request, result.records)
+        })
+        .collect();
+    let borrowed: Vec<_> = executions
+        .iter()
+        .map(|(request, records)| (*request, records.as_slice()))
+        .collect();
+    let in_process = app::in_process::coverage(
+        &borrowed,
+        sources,
+        &blobray_backend_riscv::RiscvDecoder,
+        &memory,
+        &mut || Ok(()),
+    )
+    .unwrap();
+    assert_eq!(in_process.roots, project.roots);
+    assert_eq!(in_process.functions, project.functions);
+    assert_eq!(in_process.outside, project.outside);
+    assert_eq!(in_process.executions.len(), 2);
+}

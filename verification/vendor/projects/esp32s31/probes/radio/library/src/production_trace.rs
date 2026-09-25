@@ -522,7 +522,7 @@ oer_probe_macros::probe! {
         input: &[u16; 8],
         wifi: bool,
         bluetooth: bool,
-        output: &mut [u16; 87],
+        output: &mut [u16; 88],
     ) -> u32 {
         use oer_esp32s31_phy::{
             tracking::{calibration::*, parameters::*},
@@ -549,6 +549,7 @@ oer_probe_macros::probe! {
             ProductionTraceDelay,
             _,
         >::new(&mut platform, radio.phy_hal_mut(), &mut observer);
+        let mut progress = 0;
         let status = {
             let mut child = validation::calibration_tracking(
                 &mut state,
@@ -560,24 +561,45 @@ oer_probe_macros::probe! {
             .is_err()
             {
                 1
-            } else if child.commit().is_err() {
-                2
             } else {
-                0
+                match child.commit() {
+                    Ok(PhyParamTrackingCompletion::CalibrationTracked(completion)) => {
+                        progress = calibration_progress(
+                            completion.common_updated(),
+                            completion.transmit_updated(),
+                        );
+                        0
+                    }
+                    _ => 2,
+                }
             }
         };
         snapshot_calibration(&state, (&mut output[..81]).try_into().unwrap());
-        snapshot_committed(&state, (&mut output[81..]).try_into().unwrap());
+        snapshot_committed(&state, progress, (&mut output[81..]).try_into().unwrap());
 
         status
     }
 }
 
+/// Bits of the vendor tracking progress word at `phy_param[0x1fe]`: the RFPLL
+/// capacitance correction, the Wi-Fi and Bluetooth/802.15.4 TX-power gain
+/// updates, and the common and transmit calibrations.
+const RFPLL_PROGRESS: u16 = 0x1;
+const WIFI_POWER_PROGRESS: u16 = 0x2;
+const BLUETOOTH_POWER_PROGRESS: u16 = 0x4;
+const COMMON_CALIBRATION_PROGRESS: u16 = 0x8;
+const TRANSMIT_CALIBRATION_PROGRESS: u16 = 0x10;
+
+const fn calibration_progress(common: bool, transmit: bool) -> u16 {
+    (common as u16) * COMMON_CALIBRATION_PROGRESS
+        | (transmit as u16) * TRANSMIT_CALIBRATION_PROGRESS
+}
+
 /// Committed calibration state in the vendor `phy_param` byte order: the eight
 /// DCODE codes, the two status bytes holding the RX-gain DC (0x80 of the
-/// first) and RX-gain table (0x02 of the second) completion flags, then the
-/// shared and Wi-Fi RX-gain table last indices.
-fn snapshot_committed(state: &oer_esp32s31_phy::PhyState, output: &mut [u16; 6]) {
+/// first) and RX-gain table (0x02 of the second) completion flags, the
+/// shared and Wi-Fi RX-gain table last indices, then the tracking progress.
+fn snapshot_committed(state: &oer_esp32s31_phy::PhyState, progress: u16, output: &mut [u16; 7]) {
     let snapshot = oer_esp32s31_phy::validation::calibration_snapshot(state);
     let dcode = snapshot.common.dcode;
     for (destination, pair) in output[..4].iter_mut().zip(dcode.chunks_exact(2)) {
@@ -591,6 +613,7 @@ fn snapshot_committed(state: &oer_esp32s31_phy::PhyState, output: &mut [u16; 6])
         snapshot.wifi.shared_rx_table_last_index,
         snapshot.wifi.wifi_rx_table_last_index,
     ]);
+    output[6] = progress;
 }
 
 fn snapshot_calibration(state: &oer_esp32s31_phy::PhyState, output: &mut [u16; 81]) {
@@ -637,7 +660,7 @@ oer_probe_macros::probe! {
         input: &[u16; 11],
         wifi: bool,
         bluetooth: bool,
-        output: &mut [u16; 94],
+        output: &mut [u16; 95],
     ) -> u32 {
         use oer_esp32s31_phy::{
             tracking::{calibration::*, parameters::*},
@@ -673,13 +696,22 @@ oer_probe_macros::probe! {
                 radio.phy_hal_mut(),
                 oer_esp32s31_phy::NoopPhyTargetObserver,
             );
-        let status = if embassy_futures::block_on(oer_esp32s31_phy::executor::run_phy_param_tracking(
+        let run = embassy_futures::block_on(oer_esp32s31_phy::executor::run_phy_param_tracking(
             &mut pending,
             &mut state,
             &mut port,
-        ))
-        .is_err()
-        {
+        ));
+        // The vendor progress word `phy_param_track_tot` returns.
+        let progress = run.as_ref().map_or(0, |outcome| {
+            u16::from(outcome.rfpll_corrected) * RFPLL_PROGRESS
+                | u16::from(outcome.tx_power.wifi) * WIFI_POWER_PROGRESS
+                | u16::from(outcome.tx_power.bluetooth_ieee802154) * BLUETOOTH_POWER_PROGRESS
+                | calibration_progress(
+                    outcome.calibration.common,
+                    outcome.calibration.transmit,
+                )
+        });
+        let status = if run.is_err() {
             match pending.into_owner() {
                 Ok(_) => 3, // A failed parent must never release an ordinary owner.
                 Err(pending) => {
@@ -713,7 +745,7 @@ oer_probe_macros::probe! {
             PhyWifiI2cTrackingBand::Hot => 3,
         };
         output[87] = validation::rfpll_reference_temperature(&state) as u16;
-        snapshot_committed(&state, (&mut output[88..]).try_into().unwrap());
+        snapshot_committed(&state, progress, (&mut output[88..]).try_into().unwrap());
         status
     }
 }

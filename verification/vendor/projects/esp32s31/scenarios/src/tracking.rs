@@ -31,13 +31,13 @@ const TRACKING_EVENTS: u32 = 1 << 20;
 /// Production probe input and output words of the combined root and parent.
 const COMBINED_INPUT_WORDS: usize = 8;
 const PARENT_INPUT_WORDS: usize = 11;
-const COMBINED_OUTPUT_BYTES: u32 = 174;
-const PARENT_OUTPUT_BYTES: u32 = 188;
+const COMBINED_OUTPUT_BYTES: u32 = 176;
+const PARENT_OUTPUT_BYTES: u32 = 190;
 /// Calibration snapshot bytes both roots start with.
 const SNAPSHOT_BYTES: usize = 162;
-/// Committed-state bytes every root ends with: DCODE codes, status bytes and
-/// the shared and Wi-Fi RX-gain table last indices.
-const COMMITTED_BYTES: u32 = 12;
+/// Committed-state bytes every root ends with: DCODE codes, status bytes, the
+/// shared and Wi-Fi RX-gain table last indices and the tracking progress word.
+const COMMITTED_BYTES: u32 = 14;
 /// Untouched production output bytes.
 const OUTPUT_FILL: u8 = 0xa5;
 /// Channel, bandwidth and crystal selector of every case.
@@ -67,6 +67,9 @@ const GAIN_ADJUSTMENT: usize = 434;
 /// table completion.
 const DCODE: usize = 0x1a1;
 const CALIBRATION_STATUS: usize = 0xa4;
+/// `phy_param` offset of the tracking progress word the tracking children
+/// set and `phy_param_track_tot` clears and returns.
+const TRACKING_PROGRESS: usize = 0x1fe;
 /// Initial retained values the children consume.
 const RX_PATH: u8 = 0xbf;
 const TX_PATH: u8 = 1;
@@ -186,6 +189,7 @@ impl Root {
                 1,
                 2,
             ),
+            field("tracking-progress", TRACKING_PROGRESS, committed + 12, 2, 1),
         ]);
         fields
     }
@@ -776,8 +780,8 @@ fn failed_tx(ctx: &mut Tracking) -> Result<()> {
                 ]);
                 expected.extend(words.iter().flat_map(|w| w.to_le_bytes()));
             }
-            expected.extend([0; COMMITTED_BYTES as usize - 2]);
-            expected.extend([INITIAL_SHARED_LAST, INITIAL_WIFI_LAST]);
+            expected.extend([0; COMMITTED_BYTES as usize - 4]);
+            expected.extend([INITIAL_SHARED_LAST, INITIAL_WIFI_LAST, 0, 0]);
             expectations.push((profile.label(root), expected));
         }
     }

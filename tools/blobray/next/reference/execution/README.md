@@ -585,6 +585,27 @@ project execution of the same request retains. `in_process::coverage` reports th
 vendor coverage of such results, as `code-coverage` does for retained executions,
 under identities the caller assigns.
 
+### ISA conformance
+
+```console
+BLOBRAY_RISCV_ARCH_TEST=SUITE BLOBRAY_RISCV_CC=CLANG \
+  cargo test -p blobray-next --test riscv_conformance -- --ignored
+```
+
+The ignored `riscv_conformance` test checks the RISC-V executor against the
+official architectural tests. `SUITE` is a checkout of riscv-arch-test 2.7.4,
+the last release that ships reference signatures from the Sail model; `CLANG`
+is a clang with the riscv32 target and lld. Each RV32 I, M, C and Zifencei test
+is assembled into a temporary directory against the target model in
+`next/tests/riscv_conformance/`, with the instruction set its references were
+produced for, then run through in-process verification until it returns to the
+executor's sentinel. Its signature must equal the reference.
+
+Two tests are excluded with their reason and must keep failing:
+`cebreak-01` needs a machine-mode breakpoint trap, and `Fencei` stores into its
+own code, which image loading rejects. No release with reference signatures
+contains the A suite, so atomic instructions are not covered here.
+
 ### Code coverage of root closures
 
 ```console

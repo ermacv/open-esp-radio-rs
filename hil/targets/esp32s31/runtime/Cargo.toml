@@ -190,7 +190,7 @@ static_cell.workspace = true
 unexpected_cfgs = "allow"
 
 [build-dependencies]
-oer-firmware = { path = "../../../../tools/firmware", default-features = false }
+oer-esp32s31-platform-layout = { path = "../../../../platform/esp32s31/layout", features = ["build"] }
 
 [package.metadata.open-radio]
 scope = "development"

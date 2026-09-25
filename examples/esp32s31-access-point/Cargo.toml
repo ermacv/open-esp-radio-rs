@@ -51,7 +51,7 @@ embassy-time = { version = "0.5.1", registry = "crates-io" }
 resolver = "3"
 
 [build-dependencies]
-oer-firmware = { path = "../../tools/firmware", default-features = false }
+oer-esp32s31-platform-layout = { path = "../../platform/esp32s31/layout", features = ["build"] }
 
 [dev-dependencies]
 embassy-time = { version = "0.5.1", features = ["std"] }

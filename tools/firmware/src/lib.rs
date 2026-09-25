@@ -5,7 +5,6 @@ pub mod device;
 pub mod flash;
 #[cfg(feature = "image")]
 mod image;
-pub mod linker;
 #[cfg(feature = "image")]
 pub mod network;
 #[cfg(feature = "image")]
@@ -18,5 +17,5 @@ pub use image::{
     save_image_command, save_rom_image_command,
 };
 #[cfg(feature = "image")]
-pub use payload::{RUNTIME_CRC_OFFSET, crc32, pack_runtime};
+pub use payload::pack_runtime;
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

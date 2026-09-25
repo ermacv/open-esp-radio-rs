@@ -16,32 +16,16 @@ esp_bootloader_esp_idf::esp_app_desc!(
 use core::{arch::asm, ffi::CStr, mem::size_of, ptr};
 
 use oer_esp32s31_platform_board as board;
+use oer_esp32s31_platform_layout::{
+    self as layout,
+    stage_two::{Header as RuntimeHeader, PayloadCrc},
+};
 use oer_esp32s31_soc_esp_hal::{FLASH_XIP_END, FLASH_XIP_START, FlashMmu};
 use static_cell::ConstStaticCell;
 
-const RUNTIME_MAGIC: u32 = 0x3247_5453;
-const RUNTIME_ABI_VERSION: u32 = 1;
-const RUNTIME_PSRAM_ADDRESS: usize = 0x5001_0000;
-const RUNTIME_FLASH_ADDRESS: usize = 0x4000_0140;
+const RUNTIME_PSRAM_ADDRESS: usize = layout::memory::RUNTIME_PSRAM.origin as usize;
+const RUNTIME_FLASH_ADDRESS: usize = layout::memory::RUNTIME_FLASH_CODE.origin as usize;
 const FLASH_TUNING_REFERENCE_WORDS: usize = 64 * 1024 / size_of::<u32>();
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct RuntimeHeader {
-    magic: u32,
-    abi_version: u32,
-    load_address: u32,
-    entry: u32,
-    payload_end: u32,
-    bss_start: u32,
-    bss_end: u32,
-    header_size: u32,
-    text_start: u32,
-    text_end: u32,
-    payload_crc32: u32,
-}
-
-const RUNTIME_CRC_OFFSET: usize = core::mem::offset_of!(RuntimeHeader, payload_crc32);
 
 // This is the load image, not its runtime placement. The bootstrap copies and
 // verifies it at the bootloader's qualified 80 MHz setting before changing
@@ -95,7 +79,9 @@ fn main() -> ! {
 
     let psram = board::initialize_psram(peripherals.PSRAM);
     let (psram_base, psram_size) = psram.raw_parts();
-    if psram_base as usize != 0x5000_0000 || !board::has_expected_psram_capacity(&psram) {
+    if psram_base as usize != board::PSRAM_BASE_ADDRESS
+        || !board::has_expected_psram_capacity(&psram)
+    {
         fail(c"OER_BOOT bootstrap=FAIL reason=psram-init\r\n");
     }
     verify_psram_probe(psram_base);
@@ -232,9 +218,7 @@ fn validate_header(
         code_in_flash && payload_end <= FLASH_XIP_END
     };
 
-    if header.magic != RUNTIME_MAGIC
-        || header.abi_version != RUNTIME_ABI_VERSION
-        || header.header_size as usize != size_of::<RuntimeHeader>()
+    if !header.is_compatible()
         || (!code_in_psram && !code_in_flash)
         || payload_end <= load_address
         || text_start < load_address + size_of::<RuntimeHeader>()
@@ -273,19 +257,11 @@ fn verify_psram_probe(base: *mut u8) {
 }
 
 fn payload_crc32(address: *const u8, len: usize) -> u32 {
-    let mut crc = 0xffff_ffffu32;
+    let mut crc = PayloadCrc::new();
     for index in 0..len {
-        let byte = if (RUNTIME_CRC_OFFSET..RUNTIME_CRC_OFFSET + size_of::<u32>()).contains(&index) {
-            0
-        } else {
-            unsafe { address.add(index).read_volatile() }
-        };
-        crc ^= byte as u32;
-        for _ in 0..8 {
-            crc = (crc >> 1) ^ (0xedb8_8320 & 0u32.wrapping_sub(crc & 1));
-        }
+        crc.push(unsafe { address.add(index).read_volatile() });
     }
-    !crc
+    crc.finish()
 }
 
 const fn flash_tuning_reference() -> [u32; FLASH_TUNING_REFERENCE_WORDS] {

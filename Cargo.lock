@@ -2601,6 +2601,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-platform-layout"
+version = "0.1.0"
+
+[[package]]
 name = "oer-esp32s31-radio-esp-hal"
 version = "0.1.0"
 dependencies = [
@@ -2643,6 +2647,7 @@ name = "oer-firmware"
 version = "0.1.0"
 dependencies = [
  "fs2",
+ "oer-esp32s31-platform-layout",
  "oer-memory-report",
  "oer-process",
  "serialport",

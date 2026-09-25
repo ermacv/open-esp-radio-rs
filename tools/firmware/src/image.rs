@@ -1,4 +1,5 @@
 use crate::Result;
+use oer_esp32s31_platform_layout::memory as layout;
 use oer_process::CommandExt;
 use std::{collections::BTreeMap, env, ffi::OsString, fs, path::Path, process::Command};
 pub const TARGET: &str = "riscv32imafc-unknown-none-elf";
@@ -50,7 +51,10 @@ pub fn audit_runtime(elf: &Path, binary: &Path, psram_task_stack: bool) -> Resul
     let stack_bottom = symbol("_stack_end")?;
     let stack_top = symbol("_stack_start")?;
     let binary_bytes = fs::metadata(binary)?.len();
-    let in_sram = |start: u64, end: u64| start >= 0x2f00_0000 && end >= start && end <= 0x2f07_afc0;
+    let in_sram = |start: u64, end: u64| layout::SRAM.contains_range(start, end);
+    let psram_start = u64::from(layout::PSRAM.origin);
+    let psram_end = u64::from(layout::PSRAM.end());
+    let irq_stack_bytes = u64::from(layout::IRQ_STACK_BYTES);
     let stack_placement_valid = if psram_task_stack {
         let cpu0_irq_bottom = symbol("__runtime_cpu0_irq_stack_bottom")?;
         let cpu0_irq_top = symbol("__runtime_cpu0_irq_stack_top")?;
@@ -67,13 +71,14 @@ pub fn audit_runtime(elf: &Path, binary: &Path, psram_task_stack: bool) -> Resul
                 .get(&format!("_runtime_psram_irq_entry_{number}"))
                 .is_some_and(|entry| in_sram(*entry, *entry + 4))
         });
-        stack_bottom >= 0x5000_0000
-            && stack_top <= 0x5100_0000
-            && stack_top.saturating_sub(stack_bottom) == 0x3_0000
+        stack_bottom >= psram_start
+            && stack_top <= psram_end
+            && stack_top.saturating_sub(stack_bottom)
+                == u64::from(layout::CPU0_PSRAM_TASK_STACK_BYTES)
             && in_sram(cpu0_irq_bottom, cpu0_irq_top)
             && in_sram(cpu1_irq_bottom, cpu1_irq_top)
-            && cpu0_irq_top.saturating_sub(cpu0_irq_bottom) == 0x8000
-            && cpu1_irq_top.saturating_sub(cpu1_irq_bottom) == 0x8000
+            && cpu0_irq_top.saturating_sub(cpu0_irq_bottom) == irq_stack_bytes
+            && cpu1_irq_top.saturating_sub(cpu1_irq_bottom) == irq_stack_bytes
             && in_sram(trap_entry, trap_entry + 4)
             && in_sram(irq_entry_first, irq_entry_first + 4)
             && in_sram(irq_entry_last, irq_entry_last + 4)
@@ -82,15 +87,17 @@ pub fn audit_runtime(elf: &Path, binary: &Path, psram_task_stack: bool) -> Resul
             && in_sram(cpu1_mtvt, cpu1_mtvt + 48 * 4)
             && all_irq_entries_in_sram
     } else {
-        stack_top == 0x2f07_afc0 && stack_top.saturating_sub(stack_bottom) >= 0x1_0000
+        stack_top == u64::from(layout::SRAM.end())
+            && stack_top.saturating_sub(stack_bottom)
+                >= u64::from(layout::MIN_SRAM_THREAD_STACK_BYTES)
     };
-    if image_start != 0x5001_0000
+    if image_start != u64::from(layout::RUNTIME_PSRAM.origin)
         || payload_end <= image_start
         || payload_end - image_start != binary_bytes
         || entry < text_start
         || entry >= text_end
-        || data_start < 0x5000_0000
-        || bss_end > 0x5100_0000
+        || data_start < psram_start
+        || bss_end > psram_end
         || !in_sram(isr_start, isr_end)
         || !in_sram(critical_start, critical_bss_end)
         || !in_sram(dma_start, dma_end)

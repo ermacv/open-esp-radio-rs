@@ -1,41 +1,59 @@
-use oer_firmware::{RUNTIME_CRC_OFFSET, crc32, pack_runtime};
+use oer_esp32s31_platform_layout::stage_two::{self, HEADER_BYTES, Header};
+use oer_firmware::pack_runtime;
+
+fn image() -> Vec<u8> {
+    let header = Header {
+        magic: stage_two::MAGIC,
+        abi_version: stage_two::ABI_VERSION,
+        load_address: 0x1000,
+        entry: 0x1040,
+        payload_end: 0x1080,
+        bss_start: 0x1080,
+        bss_end: 0x1080,
+        header_size: HEADER_BYTES as u32,
+        text_start: 0x1030,
+        text_end: 0x1080,
+        payload_crc32: 0,
+    };
+    let mut image = vec![0x5a; 128];
+    image[..HEADER_BYTES].copy_from_slice(&header.to_le_bytes());
+    image
+}
 
 #[test]
-fn packing_preserves_payload_and_is_repeatable() {
+fn packing_stores_the_payload_crc_and_is_repeatable() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("runtime.bin");
-    let mut image = vec![0x5a; 128];
-    image[..4].copy_from_slice(&0x3247_5453_u32.to_le_bytes());
-    image[28..32].copy_from_slice(&44_u32.to_le_bytes());
+    let image = image();
     std::fs::write(&path, &image).unwrap();
     let checksum = pack_runtime(&path).unwrap();
     let packed = std::fs::read(&path).unwrap();
     assert_eq!(checksum, pack_runtime(&path).unwrap());
     assert_eq!(std::fs::read(&path).unwrap(), packed);
-    assert_eq!(&packed[..RUNTIME_CRC_OFFSET], &image[..RUNTIME_CRC_OFFSET]);
+    let stored = Header::from_le_bytes(&packed).unwrap();
+    assert_eq!(stored.payload_crc32, checksum);
     assert_eq!(
-        &packed[RUNTIME_CRC_OFFSET + 4..],
-        &image[RUNTIME_CRC_OFFSET + 4..]
+        Header {
+            payload_crc32: 0,
+            ..stored
+        },
+        Header::from_le_bytes(&image).unwrap()
     );
-    let mut checked = packed;
-    checked[RUNTIME_CRC_OFFSET..RUNTIME_CRC_OFFSET + 4].fill(0);
-    assert_eq!(crc32(&checked), checksum);
-    checked[100] ^= 1;
-    assert_ne!(crc32(&checked), checksum);
+    assert_eq!(packed[HEADER_BYTES..], image[HEADER_BYTES..]);
+    assert_eq!(stage_two::payload_crc32(&packed), checksum);
 }
 
 #[test]
 fn malformed_payload_is_rejected_without_rewriting_it() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("runtime.bin");
-    for image in [vec![], vec![0x5a; 128]] {
+    let mut incompatible = image();
+    let mut header = Header::from_le_bytes(&incompatible).unwrap();
+    header.abi_version += 1;
+    incompatible[..HEADER_BYTES].copy_from_slice(&header.to_le_bytes());
+    for image in [vec![], vec![0x5a; 128], incompatible] {
         std::fs::write(&path, &image).unwrap();
         assert!(pack_runtime(&path).is_err());
         assert_eq!(std::fs::read(&path).unwrap(), image);
     }
-}
-
-#[test]
-fn crc_matches_the_standard_check_vector() {
-    assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
 }

@@ -28,3 +28,6 @@ SECTIONS
   } > PSRAM
   __psram_reserved_end = ALIGN(0x10000);
 }
+
+ASSERT(__psram_reserved_end <= RUNTIME_PSRAM_ORIGIN,
+       "bootstrap PSRAM sections overlap the stage-two runtime");

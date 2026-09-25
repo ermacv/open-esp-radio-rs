@@ -75,7 +75,7 @@ SECTIONS {
 /* The Flash-code runtime is linked to execute directly from its bytes inside
    the bootstrap image. Keep this address stable whenever a payload exists. */
 ASSERT((__psram_runtime_payload_flash_end == __psram_runtime_payload_flash_start) ||
-       (__psram_runtime_payload_flash_start == 0x40000140),
+       (__psram_runtime_payload_flash_start == RUNTIME_FLASH_CODE_ORIGIN),
        "embedded runtime payload moved from its fixed Flash XIP address");
 ASSERT((__flash_tuning_reference_start & 0xfff) == 0 &&
        (__flash_tuning_reference_end - __flash_tuning_reference_start) >= 0x10000,

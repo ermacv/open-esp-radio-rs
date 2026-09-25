@@ -6,6 +6,7 @@ members = [
     "verification/vendor/harness/macros",
     "tools/process",
     "tools/firmware",
+    "platform/esp32s31/layout",
     "hil/protocol",
     "hil/schema",
     "hil/target-core",

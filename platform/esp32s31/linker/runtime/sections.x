@@ -32,8 +32,8 @@ SECTIONS
   .runtime.header ORIGIN(RUNTIME_CODE) : ALIGN(4)
   {
     __runtime_image_start = ABSOLUTE(.);
-    LONG(0x32475453);              /* "STG2" little-endian marker */
-    LONG(1);                       /* bootstrap/runtime ABI version */
+    LONG(STAGE_TWO_MAGIC);         /* "STG2" little-endian marker */
+    LONG(STAGE_TWO_ABI_VERSION);   /* bootstrap/runtime ABI version */
     LONG(__runtime_image_start);    /* required PSRAM load address */
     LONG(_runtime_start);           /* inherited-stack entry point */
     LONG(__runtime_payload_end);    /* initialized payload end VMA */
@@ -41,7 +41,7 @@ SECTIONS
        overlap the still-running bootstrap.  Runtime clears the real range. */
     LONG(RUNTIME_DATA_IN_PSRAM ? __runtime_data_bss_start : __runtime_payload_end);
     LONG(RUNTIME_DATA_IN_PSRAM ? __runtime_data_bss_end : __runtime_payload_end);
-    LONG(44);                      /* header size in bytes */
+    LONG(STAGE_TWO_HEADER_BYTES);  /* header size in bytes */
     LONG(__runtime_text_start);     /* executable range start */
     LONG(__runtime_text_end);       /* executable range end */
     LONG(0);                       /* host packer writes payload CRC-32 */
@@ -244,14 +244,14 @@ SECTIONS
   /* The control profile retains the inherited SRAM stack. The experimental
      profile publishes the CPU0 PSRAM stack as the ordinary stack range; CLIC
      and exception entries use separate per-hart SRAM stacks. */
-  _dram_data_start = 0x2f000000;
+  _dram_data_start = SRAM_ORIGIN;
   _stack_end = PSRAM_TASK_STACKS ?
                __runtime_cpu0_task_stack_bottom :
                ALIGN(RUNTIME_DATA_IN_PSRAM ?
                      __runtime_dma_bss_end : __runtime_data_bss_end, 64);
   _stack_end_cpu0 = _stack_end;
   _stack_start = PSRAM_TASK_STACKS ?
-                 __runtime_cpu0_task_stack_top : 0x2f07afc0;
+                 __runtime_cpu0_task_stack_top : SRAM_ORIGIN + SRAM_LENGTH;
   _stack_start_cpu0 = _stack_start;
 
   /DISCARD/ :
@@ -317,14 +317,16 @@ ASSERT((__runtime_critical_data_load_start & 3) == 0 &&
 ASSERT((__runtime_dma_data_load_start & 3) == 0 &&
        ((__runtime_dma_data_end - __runtime_dma_data_start) & 3) == 0,
        "runtime initialized DMA state copy must be word aligned");
-ASSERT(_stack_start - _stack_end >= 0x10000,
+ASSERT(_stack_start - _stack_end >= MIN_SRAM_THREAD_STACK_BYTES,
        "runtime leaves less than 64 KiB for the CPU0 task stack");
 ASSERT(!PSRAM_TASK_STACKS ||
-       (__runtime_cpu0_irq_stack_top - __runtime_cpu0_irq_stack_bottom == 0x8000 &&
-        __runtime_cpu1_irq_stack_top - __runtime_cpu1_irq_stack_bottom == 0x8000),
+       (__runtime_cpu0_irq_stack_top - __runtime_cpu0_irq_stack_bottom == IRQ_STACK_BYTES &&
+        __runtime_cpu1_irq_stack_top - __runtime_cpu1_irq_stack_bottom == IRQ_STACK_BYTES),
        "PSRAM task-stack profile requires two exact 32-KiB SRAM IRQ stacks");
 ASSERT(!PSRAM_TASK_STACKS ||
-       (__runtime_cpu0_task_stack_top - __runtime_cpu0_task_stack_bottom == 0x30000),
+       (__runtime_cpu0_task_stack_top - __runtime_cpu0_task_stack_bottom == CPU0_PSRAM_TASK_STACK_BYTES),
        "PSRAM task-stack profile requires one exact 192-KiB CPU0 stack");
+ASSERT(SIZEOF(.runtime.header) == STAGE_TWO_HEADER_BYTES,
+       "stage-two header does not match the platform layout");
 ASSERT(_runtime_start >= __runtime_text_start && _runtime_start < __runtime_text_end,
        "runtime entry point is outside executable text");

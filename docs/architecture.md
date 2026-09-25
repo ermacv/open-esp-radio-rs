@@ -222,8 +222,8 @@ ambiguous entries. Firmware and host share a typed wire contract and must be
 updated together when that contract changes.
 
 The [ESP32-S31 platform](../platform/esp32s31/README.md) owns the board profile,
-Flash bootstrap, stage-two relocation, linker scripts and per-core SRAM IRQ
-stacks. HIL and standalone examples use that same boot contract. The host
+Flash bootstrap, stage-two relocation, the staged-boot address map and image
+header, linker scripts and per-core SRAM IRQ stacks. HIL and standalone examples use that same boot contract. The host
 `oer-firmware` library owns payload packing and structural image audits;
 `cargo xtask` builds applications and HIL adds its image classes, observers
 and evidence. Neither the platform nor standalone examples depend on HIL.

@@ -5,14 +5,16 @@
 //! This board profile is shared by application and HIL boot compositions;
 //! it does not describe every ESP32-S31 board.
 
+use oer_esp32s31_platform_layout::memory as layout;
+
 use esp_hal::{
     peripherals::PSRAM,
     psram::{Psram, PsramConfig, PsramSize, PsramTimingParams},
 };
 
 pub const BOARD_NAME: &str = "ESP32-S31-Function-CoreBoard-1";
-pub const PSRAM_BASE_ADDRESS: usize = 0x5000_0000;
-pub const PSRAM_SIZE_BYTES: usize = 16 * 1024 * 1024;
+pub const PSRAM_BASE_ADDRESS: usize = layout::PSRAM.origin as usize;
+pub const PSRAM_SIZE_BYTES: usize = layout::PSRAM.length as usize;
 pub const PSRAM_CLOCK_MHZ: u32 = 250;
 pub const PSRAM_DATA_LINES: u8 = 8;
 pub const FLASH_CLOCK_MHZ: u32 = 120;

@@ -21,11 +21,12 @@ mod watermark;
 static IRQ_PAINTED: [AtomicBool; 2] = [const { AtomicBool::new(false) }; 2];
 
 use esp_hal::system::Stack;
+use oer_esp32s31_platform_layout::memory as layout;
 
 // Board application stack capacities. IRQ stacks remain in internal SRAM.
 pub const CPU1_TASK_STACK_BYTES: usize = 16 * 1024;
-pub const CPU0_TASK_STACK_BYTES: usize = 192 * 1024;
-pub const IRQ_STACK_BYTES: usize = 32 * 1024;
+pub const CPU0_TASK_STACK_BYTES: usize = layout::CPU0_PSRAM_TASK_STACK_BYTES as usize;
+pub const IRQ_STACK_BYTES: usize = layout::IRQ_STACK_BYTES as usize;
 
 #[repr(C, align(16))]
 struct AlignedStack<const BYTES: usize>(MaybeUninit<[u8; BYTES]>);

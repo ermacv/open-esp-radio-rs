@@ -1445,7 +1445,12 @@ name = "oer-esp32s31-platform-board"
 version = "0.1.0"
 dependencies = [
  "esp-hal",
+ "oer-esp32s31-platform-layout",
 ]
+
+[[package]]
+name = "oer-esp32s31-platform-layout"
+version = "0.1.0"
 
 [[package]]
 name = "oer-esp32s31-platform-runtime"
@@ -1453,6 +1458,7 @@ version = "0.1.0"
 dependencies = [
  "esp-hal",
  "oer-esp32s31-platform-board",
+ "oer-esp32s31-platform-layout",
 ]
 
 [[package]]
@@ -1504,17 +1510,13 @@ dependencies = [
  "esp-println",
  "oer-bluetooth-hci",
  "oer-esp32s31-executor-embassy",
+ "oer-esp32s31-platform-layout",
  "oer-esp32s31-platform-runtime",
  "oer-example-bluetooth-gatt",
- "oer-firmware",
  "open-esp-radio",
  "static_cell",
  "trouble-host",
 ]
-
-[[package]]
-name = "oer-firmware"
-version = "0.1.0"
 
 [[package]]
 name = "oer-memory"

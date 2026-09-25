@@ -8,11 +8,15 @@ publish.workspace = true
 build = "build.rs"
 
 [dependencies]
+oer-esp32s31-platform-layout.workspace = true
 esp-bootloader-esp-idf = { workspace = true, features = ["embedded-storage", "esp32s31"] }
 esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
 oer-esp32s31-platform-board = { path = "../board" }
 oer-esp32s31-soc-esp-hal.workspace = true
 static_cell.workspace = true
+
+[build-dependencies]
+oer-esp32s31-platform-layout = { workspace = true, features = ["build"] }
 
 [lints.rust]
 unexpected_cfgs = "allow"

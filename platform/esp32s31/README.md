@@ -9,7 +9,8 @@ radio role, executor or network-stack dependency.
 | `board` | Board-specific 16-MiB PSRAM at 250 MHz and 16-MiB Flash configuration; adoption of the live mapping |
 | `bootstrap` | Flash entry, PSRAM initialization, image validation/CRC, relocation, Flash tuning and non-returning handoff |
 | `runtime` | Stage-two entry, SRAM section initialization, mapping adoption, vector handoff and per-core interrupt stacks |
-| `linker` | Shared load/run addresses and semantic code, data, DMA and stack sections |
+| `layout` | Address map, runtime placement profiles and the stage-two header/checksum shared with the host packer and auditor |
+| `linker` | Semantic code, data, DMA and stack sections over the `layout` symbols |
 | `partitions` | Application partition layout |
 | `stack.toml` | Frame budgets for standalone application composition |
 

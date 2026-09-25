@@ -7,6 +7,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+oer-esp32s31-platform-layout.workspace = true
 esp-hal = { workspace = true, features = ["esp32s31", "unstable"] }
 
 [lints.rust]

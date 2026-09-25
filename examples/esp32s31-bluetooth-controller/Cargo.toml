@@ -11,7 +11,7 @@ default = ["firmware"]
 firmware = [
     "dep:oer-esp32s31-platform-runtime", "dep:embassy-time", "dep:static_cell",
     "dep:embassy-executor", "dep:embassy-futures", "dep:esp-backtrace", "dep:esp-hal",
-    "dep:esp-println", "dep:oer", "dep:oer-esp32s31-executor-embassy", "dep:oer-firmware",
+    "dep:esp-println", "dep:oer", "dep:oer-esp32s31-executor-embassy", "dep:oer-esp32s31-platform-layout",
 ]
 advertising-smoke = ["firmware"]
 trouble-gatt = ["gatt-application", "firmware"]
@@ -70,7 +70,7 @@ embassy-time = { version = "0.5.1", registry = "crates-io" }
 resolver = "3"
 
 [build-dependencies]
-oer-firmware = { path = "../../tools/firmware", default-features = false, optional = true }
+oer-esp32s31-platform-layout = { path = "../../platform/esp32s31/layout", features = ["build"], optional = true }
 
 [package.metadata.open-radio]
 scope = "development"

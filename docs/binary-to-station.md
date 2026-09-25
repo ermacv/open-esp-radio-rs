@@ -163,7 +163,7 @@ flowchart TD
 This is a call/authority view of one operation. The portable
 [`scan` policy](../crates/protocols/ieee80211/sta/src/scan.rs) traverses the
 caller-selected channel plan through a backend port. It does not tune a radio.
-The [runtime binding](../crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/target.rs)
+The [runtime binding](../crates/runtime/esp32s31/ieee80211/src/roles/scan/target.rs)
 connects `ScanPhyPort` to the chip's
 [`ScanPhy`](../crates/roles/esp32s31/ieee80211/sta/src/hardware/channel.rs).
 

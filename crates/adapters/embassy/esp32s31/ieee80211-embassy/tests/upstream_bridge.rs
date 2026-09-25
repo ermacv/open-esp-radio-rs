@@ -4,11 +4,11 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use oer_embassy_net_upstream::{
     Driver as _, ETHERNET_HEADER_LEN, FrameStorage, Resources, RxToken as _, TxToken as _,
 };
-use oer_esp32s31_wifi_embassy::datapath::{
+use oer_esp32s31_wifi_embassy_upstream::{DualEmbassyDatapathNetwork, EmbassyDatapathNetwork};
+use oer_esp32s31_wifi_runtime::datapath::{
     PinnedTxPool, PinnedTxResources, SelectedBurstMaterializer,
     network::{DatapathNetwork, DatapathNetworkRx},
 };
-use oer_esp32s31_wifi_embassy_upstream::{DualEmbassyDatapathNetwork, EmbassyDatapathNetwork};
 use oer_network::{LinkState, NetworkInterfaceId};
 
 const FRAME_CAPACITY: usize = 64;
@@ -39,7 +39,7 @@ fn endpoint() -> (
     )
 }
 
-fn physical() -> oer_esp32s31_wifi_embassy::datapath::PinnedTxConsumer<
+fn physical() -> oer_esp32s31_wifi_runtime::datapath::PinnedTxConsumer<
     'static,
     NoopRawMutex,
     FRAME_CAPACITY,
@@ -96,7 +96,7 @@ fn upstream_rx_parts_use_the_same_radio_publication_contract() {
     network
         .rx_publisher(interface)
         .try_send_parts(
-            oer_esp32s31_wifi_embassy::datapath::network::EthernetFrameParts {
+            oer_esp32s31_wifi_runtime::datapath::network::EthernetFrameParts {
                 destination: [0x11; 6],
                 source: [0x22; 6],
                 ether_type: 0x0800,

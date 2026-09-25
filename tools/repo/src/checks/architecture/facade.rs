@@ -12,7 +12,7 @@ const WIFI: &[&str] = &[
     "oer-esp32s31-wifi-mac",
     "oer-esp32s31-wifi-sta",
     "oer-esp32s31-wifi-ap",
-    "oer-esp32s31-wifi-embassy",
+    "oer-esp32s31-wifi-runtime",
     "oer-esp32s31-embassy-wifi",
     "embassy-net",
     "xarxa",
@@ -29,7 +29,7 @@ const BLUETOOTH: &[&str] = &[
     "oer-bluetooth-ll",
     "oer-esp32s31-bluetooth",
     "oer-esp32s31-bluetooth-integration",
-    "oer-esp32s31-bluetooth-embassy",
+    "oer-esp32s31-bluetooth-runtime",
 ];
 const IEEE802154: &[&str] = &["oer-ieee802154"];
 
@@ -96,7 +96,7 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             features: Some("embassy-esp32s31-bluetooth"),
             required: &[
                 "oer-esp32s31-bluetooth-integration",
-                "oer-esp32s31-bluetooth-embassy",
+                "oer-esp32s31-bluetooth-runtime",
             ],
             forbidden: &[WIFI],
         },

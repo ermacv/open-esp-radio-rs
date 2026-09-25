@@ -11,14 +11,14 @@ description = "Original Xarxa packet owners composed with the shared ESP32-S31 r
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 oer-xarxa-upstream = { path = "../../../xarxa/upstream" }
-oer-esp32s31-wifi-embassy = { path = "../../../../runtime/embassy/esp32s31/ieee80211", default-features = false }
+oer-esp32s31-wifi-runtime = { path = "../../../../runtime/esp32s31/ieee80211", default-features = false }
 oer-network = { path = "../../../../network/interface" }
 oer-wifi-embassy = { path = "../../ieee80211" }
 
 [features]
 default = []
-diagnostics = ["oer-esp32s31-wifi-embassy/diagnostics"]
-tx-phase-telemetry = ["oer-esp32s31-wifi-embassy/tx-phase-telemetry"]
+diagnostics = ["oer-esp32s31-wifi-runtime/diagnostics"]
+tx-phase-telemetry = ["oer-esp32s31-wifi-runtime/tx-phase-telemetry"]
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }

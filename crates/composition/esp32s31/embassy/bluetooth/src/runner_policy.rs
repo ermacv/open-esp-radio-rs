@@ -2,7 +2,7 @@
 
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_bluetooth::le::peripheral::PeripheralConnectionActiveFaultCause;
-use oer_esp32s31_bluetooth_embassy::controller::maintenance::PhyMaintenanceError;
+use oer_esp32s31_bluetooth_runtime::controller::maintenance::PhyMaintenanceError;
 use oer_esp32s31_phy::tracking::fail_stop::SharedPhyFailStop;
 
 /// Semantic class of one complete command-actor boundary.

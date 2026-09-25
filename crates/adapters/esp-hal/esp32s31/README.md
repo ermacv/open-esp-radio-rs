@@ -17,7 +17,7 @@ publisher belongs to host tooling. The `soc` adapter is the handwritten
 `oer-esp32s31-soc` package.
 
 Executor/time ABI bindings live under `adapters/embassy`; complete radio tasks
-live under `runtime/embassy`; final static resources and board composition
+live under `runtime`; final static resources and board composition
 belong to `composition`. A platform adapter does not become a second radio
 owner when another protocol uses the shared hardware.
 

@@ -2,8 +2,8 @@
 //! Retry causes count re-publications, not the final failure or hardware retries.
 
 use core::sync::atomic::{AtomicU32, Ordering};
-use oer_esp32s31_wifi_embassy::diagnostics::aggregate_tx::OrdinaryTxOutcome;
 use oer_esp32s31_wifi_mac::tx::TxCompletionDisposition;
+use oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::OrdinaryTxOutcome;
 
 pub(super) struct Counters {
     reported: AtomicU32,
@@ -114,10 +114,10 @@ impl StationOrdinarySnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oer_esp32s31_wifi_embassy::diagnostics::aggregate_tx::{
+    use oer_esp32s31_wifi_mac::tx::{LegacyRate, TxPhyRate};
+    use oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::{
         OrdinaryTxReport, OrdinaryTxRetryReport,
     };
-    use oer_esp32s31_wifi_mac::tx::{LegacyRate, TxPhyRate};
     use oer_wifi_softmac::{MacTxResult, MacTxStatus};
 
     #[test]

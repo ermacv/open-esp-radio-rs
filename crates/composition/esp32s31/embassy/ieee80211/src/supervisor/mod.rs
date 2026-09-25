@@ -48,7 +48,7 @@ pub(super) use crate::resources::profile::{
 };
 
 #[cfg(feature = "diagnostics")]
-use oer_esp32s31_wifi_embassy::roles::station::StationEngineObserver;
+use oer_esp32s31_wifi_runtime::roles::station::StationEngineObserver;
 
 use embassy_executor::Spawner;
 
@@ -82,7 +82,7 @@ use oer_esp32s31_wifi::{
     tx::ControlTxConfig,
 };
 
-use oer_esp32s31_wifi_embassy::roles::monitor::{
+use oer_esp32s31_wifi_runtime::roles::monitor::{
     MonitorChannelSwitchError, MonitorRadio, MonitorTaskExit, prepare_esp32s31_monitor_task,
 };
 
@@ -93,7 +93,7 @@ use oer_esp32s31_hal::owner::{Radio, RadioRuntimeOwner};
 
 use oer_esp32s31_wifi_ap::{engine::ApEngine, transaction::ApMac, tx::ApTxConfig};
 
-use oer_esp32s31_wifi_embassy::{
+use oer_esp32s31_wifi_runtime::{
     datapath::rx::{
         dma::ReceiveDmaStorage,
         frontier::{EmbassyRxFrontierDelay, ReceiveFrontier},
@@ -226,7 +226,7 @@ pub(super) type ControlTx = ControlTransmitter<
     'static,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_esp32s31_wifi_embassy::datapath::tx::time::EmbassyWifiTxTimer,
+    oer_esp32s31_wifi_runtime::datapath::tx::time::EmbassyWifiTxTimer,
     TX_BUFFER_SIZE,
 >;
 pub(super) type TxStorage = StaTxEpoch<ControlTx>;
@@ -276,8 +276,8 @@ static AP_PEER_STORAGE: ConstStaticCell<oer_wifi_ap::AccessPointPeerStorage> =
 // stay stable while RX processing awaits IRQ and network work.
 static AP_RX_DISPATCHER: StaticCell<oer_esp32s31_wifi_ap::rx::ApRxDispatcher> = StaticCell::new();
 pub(super) static PRODUCTION_RX_BLOCK_ACK:
-    oer_esp32s31_wifi_embassy::roles::concurrent::StaApRxBlockAck =
-    match oer_esp32s31_wifi_embassy::roles::concurrent::StaApRxBlockAck::with_maximum_window(
+    oer_esp32s31_wifi_runtime::roles::concurrent::StaApRxBlockAck =
+    match oer_esp32s31_wifi_runtime::roles::concurrent::StaApRxBlockAck::with_maximum_window(
         crate::resources::profile::ESP32S31_DEFAULT_RX_REORDER_WINDOW as u16,
     ) {
         Ok(sessions) => sessions,
@@ -285,7 +285,7 @@ pub(super) static PRODUCTION_RX_BLOCK_ACK:
     };
 // Software packet owners are retained across async polls, but never DMA-addressed.
 static AP_TX_STORAGE: StaticCell<
-    oer_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointTxStorage<
+    oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AccessPointTxStorage<
         RadioNetworkTxBacking,
     >,
 > = StaticCell::new();
@@ -293,7 +293,7 @@ static AP_AIRTIME_RESOURCES: StaticCell<AccessPointAirtimeResources> = StaticCel
 static AP_RX_REORDER: StaticCell<AccessPointRxReorder<'static, RX_BUFFER_SIZE>> = StaticCell::new();
 #[cfg(feature = "diagnostics")]
 static AP_OBSERVATION_STORAGE: StaticCell<
-    oer_esp32s31_wifi_embassy::diagnostics::access_point::AccessPointObservationStorage,
+    oer_esp32s31_wifi_runtime::diagnostics::access_point::AccessPointObservationStorage,
 > = StaticCell::new();
 // Simultaneous STA+AP cannot borrow the station scan and Ethernet scratch.
 // These are role-local CPU buffers; DMA never addresses them directly.
@@ -821,8 +821,8 @@ fn try_reclaim_production_station<'security>(
 // model callbacks or ledger. Both stay together in stable CPU storage.
 pub(super) struct AccessPointAirtimeResources {
     configuration:
-        oer_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointAirtimeConfiguration,
-    storage: oer_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointAirtimeStorage,
+        oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AccessPointAirtimeConfiguration,
+    storage: oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AccessPointAirtimeStorage,
 }
 
 pub(super) struct ProductionStationBoardResources {
@@ -994,7 +994,7 @@ pub async fn new(
         network: station_network,
         board: ProductionStationBoardResources {
             access_point_airtime: access_point_airtime.map(|configuration| AP_AIRTIME_RESOURCES.init_with(|| AccessPointAirtimeResources {
-                storage: oer_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointAirtimeStorage::new(configuration.quantum_micros).with_observer(configuration.observer),
+                storage: oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AccessPointAirtimeStorage::new(configuration.quantum_micros).with_observer(configuration.observer),
                 configuration,
             })),
             interface: station_interface,
@@ -1017,7 +1017,7 @@ pub async fn new(
         physical,
         station,
         ProductionAccessPointResources {
-            tx_storage: AP_TX_STORAGE.init_with(oer_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointTxStorage::new),
+            tx_storage: AP_TX_STORAGE.init_with(oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AccessPointTxStorage::new),
             address: access_point_mac.bytes(),
             beacon: memory.ap_beacon,
             rx_frame: AP_RX_FRAME.take().as_mut_slice(),

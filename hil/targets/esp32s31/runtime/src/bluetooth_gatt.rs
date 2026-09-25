@@ -15,7 +15,6 @@ use oer_esp32s31_bluetooth::{
     },
     resources::BluetoothRadioHardware,
 };
-use oer_esp32s31_bluetooth_embassy::controller::DtmRecheckPeriod;
 use oer_esp32s31_bluetooth_integration::entropy::BluetoothEntropy;
 use oer_esp32s31_bluetooth_integration::{
     BluetoothColdStartConfig, BluetoothSystemStorage, start_esp32s31_bluetooth,
@@ -28,6 +27,7 @@ use oer_esp32s31_bluetooth_memory::{
     DtmSchedulerAllocationConfig, PassiveScanDefaultTxPowerDbm,
     PassiveScanSchedulerAllocationConfig, PeripheralConnectionDefaultTxPowerDbm,
 };
+use oer_esp32s31_bluetooth_runtime::controller::DtmRecheckPeriod;
 use oer_esp32s31_radio_platform_esp_hal::{EspHalBluetoothPlatform, EspHalRadioPlatform};
 use oer_esp32s31_soc::watchdog::DeadlineWatchdog;
 use static_cell::StaticCell;

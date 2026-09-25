@@ -20,7 +20,7 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 use exchange::Exchange;
 
-use oer_esp32s31_wifi_embassy::{
+use oer_esp32s31_wifi_runtime::{
     datapath::execution::{Control, Exit},
     roles::station::connected::{StationCommand, StationCommandReceiver},
 };
@@ -257,7 +257,7 @@ pub(super) async fn run(
     (
         crate::interrupts::MacInterruptEpoch,
         Result<
-            oer_esp32s31_wifi_embassy::datapath::DatapathRunnerExit<ConnectedDisconnectReason>,
+            oer_esp32s31_wifi_runtime::datapath::DatapathRunnerExit<ConnectedDisconnectReason>,
             ConnectedDatapathError,
         >,
         Option<StationCommand>,
@@ -265,7 +265,7 @@ pub(super) async fn run(
     &'static super::pause::Failure,
 > {
     use super::{PauseError, pause, pause_request};
-    use oer_esp32s31_wifi_embassy::datapath::DatapathRunnerExit;
+    use oer_esp32s31_wifi_runtime::datapath::DatapathRunnerExit;
     use oer_wifi_embassy::await_stack_boundary;
     let _pause_availability = pause_request::REQUESTS.open(tracking);
     let mut requested_command = None;

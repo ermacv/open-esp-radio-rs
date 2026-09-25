@@ -18,7 +18,7 @@ availability, see [Network implementation choices](network-implementations.md).
 | `crates/adapters/embassy-net/owned` | Owned `PacketBuf` handoff and stack wake registration | Radio scheduling or DMA descriptors |
 | `crates/adapters/xarxa/upstream` | Original Xarxa driver API, bounded packet-owner queues and link epochs | Packet-pool implementation, IP policy or physical radio state |
 | `crates/protocols/ieee80211/datapath` | Software/physical ownership traits and selected-burst contracts | Concrete allocator, stack or executor |
-| `crates/runtime/embassy/esp32s31/ieee80211` | Physical radio runner, SRAM promotion, completion and executor waits | Application sockets or a second network stack |
+| `crates/runtime/esp32s31/ieee80211` | Physical radio runner, SRAM promotion, completion and executor waits | Application sockets or a second network stack |
 | `experiments/network-engine` | Synchronous bounded protocol engine and selected-work construction | Production network integration or hardware qualification |
 
 The ESP32-S31 product selects exactly one of `upstream-network`, `owned-network`

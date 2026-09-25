@@ -124,7 +124,7 @@ borrows persistent `RegisteredWifiPhy` state. Initial selection requires a cold,
 stopped MAC. A later switch performs stop, retune and restore. The cooperative
 path obtains serialized channel-only authority through `RadioAccess`.
 
-The [runtime target binding](../crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/target.rs)
+The [runtime target binding](../crates/runtime/esp32s31/ieee80211/src/roles/scan/target.rs)
 implements `ScanPhyPort` for this chip owner. Runtime scan services combine
 channel switching with RX/TX and dwell timing. Above them, the
 [portable scan service](../crates/protocols/ieee80211/sta/src/scan.rs) uses

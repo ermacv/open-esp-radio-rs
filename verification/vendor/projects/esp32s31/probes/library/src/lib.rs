@@ -982,7 +982,7 @@ fn ordinary_tx_ack_timeout_state(output_address: u32) -> u32 {
     // Route the hardware completion through the exact production Embassy
     // interrupt handoff. This keeps the compiled comparison from bypassing
     // the adapter boundary by constructing `WifiTxWake` directly.
-    let irq = oer_esp32s31_wifi_embassy::datapath::irq::EmbassyMacIrqRuntime::<
+    let irq = oer_esp32s31_wifi_runtime::datapath::irq::EmbassyMacIrqRuntime::<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
     >::new();
     irq.publish(oer_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE);

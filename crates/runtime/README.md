@@ -1,7 +1,22 @@
 # Radio execution
 
-`embassy/esp32s31/{ieee80211,bluetooth}` contains concrete radio execution under
-Embassy. Directory boundaries describe the execution responsibility of each package.
+`esp32s31/{ieee80211,bluetooth}` (`oer-esp32s31-wifi-runtime`,
+`oer-esp32s31-bluetooth-runtime`) contains concrete radio execution as
+executor-independent `async` code. Directory boundaries describe the execution
+responsibility of each package.
+
+## Execution and time contract
+
+A runtime exposes futures and never spawns, names or requires an executor; any
+executor that polls them is valid, and the architecture check rejects executor
+dependencies below adapters and compositions. The portable primitives are
+`embassy-sync` (bounded mailboxes and signals over a caller-chosen raw mutex)
+and `embassy-futures` (select/join). Time is the `embassy-time` interface:
+`Instant` and `Timer` read and wait on one global monotonic timebase supplied
+through `embassy-time-driver`. The final image links exactly one driver — the
+ESP32-S31 [platform timer queue](../adapters/embassy/esp32s31/runtime/) on the
+chip, the `std` driver in host tests. A runtime never installs a driver and does
+not assume which executor wakes its timers.
 
 | Module | Responsibility |
 | --- | --- |
@@ -12,7 +27,7 @@ Embassy. Directory boundaries describe the execution responsibility of each pack
 | `ieee80211/src/diagnostics/` | Optional execution observation |
 | `bluetooth/src/controller/` | One controller epoch, command/response boundaries and timer progress |
 | `bluetooth/src/session/` | Finite DTM, advertising, scanning and peripheral sessions |
-| Both `src/time/phy.rs` | Embedded Embassy implementations of shared PHY time contracts |
+| Both `src/time/phy.rs` | `embassy-time` implementations of shared PHY time contracts |
 
 Hardware transactions and finite chip state remain below these packages. A
 runtime retains their affine owners across borrowed waits, returns the same
@@ -20,7 +35,7 @@ resources on rejection and preserves terminal owners when quiescence is not
 proven. A composed owner alone does not establish hardware qualification.
 
 The PHY time leaves are adapters inside the execution packages. The Wi-Fi
-binding supplies a direct Embassy delay; Bluetooth also validates the timebase
+binding supplies a direct `embassy-time` delay; Bluetooth also validates the timebase
 and handles overflow. The two bindings have distinct time contracts. The platform
 executor/time ABI remains in [adapters](../adapters/embassy/README.md).
 
@@ -34,5 +49,5 @@ runtime owner hidden in a task or network handle.
 
 Portable protocol policy cannot depend on this execution domain. The
 architecture audit follows transitive normal/build dependencies to enforce
-that boundary; the generic radio facade may use generic Embassy contracts but
-cannot depend on these concrete ESP32-S31 runtimes.
+that boundary; the generic radio service and its Embassy adapter cannot depend
+on these concrete ESP32-S31 runtimes.

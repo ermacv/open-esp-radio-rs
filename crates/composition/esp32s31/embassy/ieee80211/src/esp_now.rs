@@ -8,7 +8,7 @@
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 #[cfg(target_arch = "riscv32")]
-pub use oer_esp32s31_wifi_embassy::roles::esp_now::StandaloneEspNowPhyChannelControl;
+pub use oer_esp32s31_wifi_runtime::roles::esp_now::StandaloneEspNowPhyChannelControl;
 
 pub use oer_radio::wifi::{
     StandaloneEspNowPeerError, StandaloneEspNowRequest, WifiStandaloneEspNowPlan,
@@ -21,7 +21,7 @@ pub use oer_esp32s31_wifi::esp_now::{
     EspNowTxError, esp32s31_esp_now_phy_support, normalize_esp_now_rx_metadata,
 };
 
-pub use oer_esp32s31_wifi_embassy::roles::{
+pub use oer_esp32s31_wifi_runtime::roles::{
     esp_now::{
         EspNowRxMailboxEpochError, EspNowRxMailboxResources, EspNowRxMailboxShutdown,
         EspNowRxPublishOutcome, EspNowRxPublisher, EspNowRxReceiver, EspNowV2RxEvent,
@@ -109,7 +109,7 @@ pub const ESP32S31_DEFAULT_ESP_NOW_RX_QUEUE_DEPTH: usize = 4;
 pub type EspNowTransmitHandle<
     'resources,
     const CAPACITY: usize = ESP32S31_DEFAULT_ESP_NOW_TX_QUEUE_DEPTH,
-> = oer_esp32s31_wifi_embassy::roles::station::connected::EspNowTxHandle<
+> = oer_esp32s31_wifi_runtime::roles::station::connected::EspNowTxHandle<
     'resources,
     CriticalSectionRawMutex,
     CAPACITY,
@@ -118,7 +118,7 @@ pub type EspNowTransmitHandle<
 pub type EspNowTransmitMailboxOwner<
     'resources,
     const CAPACITY: usize = ESP32S31_DEFAULT_ESP_NOW_TX_QUEUE_DEPTH,
-> = oer_esp32s31_wifi_embassy::roles::station::connected::EspNowTxMailboxOwner<
+> = oer_esp32s31_wifi_runtime::roles::station::connected::EspNowTxMailboxOwner<
     'resources,
     CriticalSectionRawMutex,
     CAPACITY,
@@ -126,7 +126,7 @@ pub type EspNowTransmitMailboxOwner<
 
 /// Statically locatable, allocation-free TX request/completion storage.
 pub struct EspNowTxResources<const CAPACITY: usize = ESP32S31_DEFAULT_ESP_NOW_TX_QUEUE_DEPTH> {
-    inner: oer_esp32s31_wifi_embassy::roles::station::connected::EspNowTxMailboxResources<
+    inner: oer_esp32s31_wifi_runtime::roles::station::connected::EspNowTxMailboxResources<
         CriticalSectionRawMutex,
         CAPACITY,
     >,
@@ -136,7 +136,7 @@ impl<const CAPACITY: usize> EspNowTxResources<CAPACITY> {
     pub const fn new() -> Self {
         Self {
             inner:
-                oer_esp32s31_wifi_embassy::roles::station::connected::EspNowTxMailboxResources::new(
+                oer_esp32s31_wifi_runtime::roles::station::connected::EspNowTxMailboxResources::new(
                 ),
         }
     }
@@ -165,7 +165,7 @@ impl<const CAPACITY: usize> Default for EspNowTxResources<CAPACITY> {
 pub type EspNowReceivePublisher<
     'resources,
     const CAPACITY: usize = ESP32S31_DEFAULT_ESP_NOW_RX_QUEUE_DEPTH,
-> = oer_esp32s31_wifi_embassy::roles::station::connected::EspNowRxPublisher<
+> = oer_esp32s31_wifi_runtime::roles::station::connected::EspNowRxPublisher<
     'resources,
     CriticalSectionRawMutex,
     CAPACITY,
@@ -174,7 +174,7 @@ pub type EspNowReceivePublisher<
 pub type EspNowReceiveReceiver<
     'resources,
     const CAPACITY: usize = ESP32S31_DEFAULT_ESP_NOW_RX_QUEUE_DEPTH,
-> = oer_esp32s31_wifi_embassy::roles::station::connected::EspNowRxReceiver<
+> = oer_esp32s31_wifi_runtime::roles::station::connected::EspNowRxReceiver<
     'resources,
     CriticalSectionRawMutex,
     CAPACITY,

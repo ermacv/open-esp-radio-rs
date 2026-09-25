@@ -5,7 +5,7 @@ use crate::{
     BluetoothInterruptRuntime,
 };
 
-use oer_esp32s31_bluetooth_embassy::controller::ControllerCommandTask;
+use oer_esp32s31_bluetooth_runtime::controller::ControllerCommandTask;
 
 use super::{CommandBoundary, ModemDriveStep, PublishedStorage};
 

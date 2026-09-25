@@ -11,7 +11,7 @@ use embassy_futures::block_on;
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-use oer_esp32s31_wifi_embassy::roles::station::{
+use oer_esp32s31_wifi_runtime::roles::station::{
     StationAttemptRunner, StationCommandReceiver, StationConfiguration, StationControlResources,
     StationExit, StationStartResources, StationStopReason, prepare_esp32s31_station_task,
 };

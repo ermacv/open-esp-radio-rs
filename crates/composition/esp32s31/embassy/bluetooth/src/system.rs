@@ -31,7 +31,7 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use oer_bluetooth_hci::InProcessHciHostTransport;
 use oer_bluetooth_hci::LeHostAclCreditSender;
 
-use oer_esp32s31_bluetooth_embassy::{
+use oer_esp32s31_bluetooth_runtime::{
     controller::{ControllerCommandBoundary, ModemTimerDriveStep},
     notification::RuntimeNotifications,
 };

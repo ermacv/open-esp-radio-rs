@@ -119,7 +119,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         )
         .await;
         let decision = scan.decision;
-        let oer_esp32s31_wifi_embassy::roles::station::StationScanReturned {
+        let oer_esp32s31_wifi_runtime::roles::station::StationScanReturned {
             hardware,
             receive,
             control,
@@ -325,7 +325,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 error: StaAttemptStage::Candidate,
             },
         };
-        let oer_esp32s31_wifi_embassy::roles::station::StationScanReturned {
+        let oer_esp32s31_wifi_runtime::roles::station::StationScanReturned {
             hardware,
             receive,
             control,
@@ -833,7 +833,7 @@ pub(super) type ProductionStationExit = StationExit<
 >;
 
 pub(super) fn restore_production_station_frontier(
-    resources: oer_esp32s31_wifi_embassy::roles::station::StationReturnedResources<
+    resources: oer_esp32s31_wifi_runtime::roles::station::StationReturnedResources<
         ProductionStationOwner<'static, 'static>,
         ProductionStationRunner<'static, 'static>,
     >,
@@ -878,7 +878,7 @@ impl ProductionWifiEpochRunner {
                     tx_slot,
                     power,
                     tx_entropy as fn() -> u32,
-                    oer_esp32s31_wifi_embassy::datapath::tx::time::EmbassyWifiTxTimer,
+                    oer_esp32s31_wifi_runtime::datapath::tx::time::EmbassyWifiTxTimer,
                     ControlTxConfig {
                         unicast_attempt_limit: 4,
                         completion_timeout_us: TX_COMPLETION_TIMEOUT_US,

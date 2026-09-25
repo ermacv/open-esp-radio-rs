@@ -12,7 +12,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use oer_esp32s31_wifi_dma::tx_storage::TxDmaStorage;
 
-use oer_esp32s31_wifi_embassy::{
+use oer_esp32s31_wifi_runtime::{
     datapath::rx::dma::ReceiveDmaStorage, roles::station::StationControlResources,
 };
 
@@ -78,7 +78,7 @@ pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 64;
 // 67-slot DMA execution pool and does not reserve capacity per AP peer.
 // Changing it must never resize the physical SRAM pool.
 pub const ESP32S31_DEFAULT_NETWORK_OWNER_TX_QUEUE_DEPTH: usize =
-    oer_esp32s31_wifi_embassy::roles::access_point::network_tx::AP_SOFTWARE_TX_CAPACITY;
+    oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AP_SOFTWARE_TX_CAPACITY;
 // One independently polled Xarxa instance owns one general pool and one
 // driver-RX pool. The general pool covers the software TX horizon plus
 // neighbor/control transients. The RX pool covers the driver queue plus

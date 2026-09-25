@@ -20,7 +20,7 @@ oer-esp32s31-phy = { workspace = true, features = ["validation-probes"] }
 oer-esp32s31-wifi-mac.workspace = true
 oer-esp32s31-wifi.workspace = true
 oer-esp32s31-wifi-dma.workspace = true
-oer-esp32s31-wifi-embassy.workspace = true
+oer-esp32s31-wifi-runtime.workspace = true
 oer-wifi-softmac.workspace = true
 oer-esp32s31-wifi-esp-hal = { path = "../../../../../../crates/adapters/esp-hal/esp32s31/ieee80211", features = ["esp32s31"] }
 

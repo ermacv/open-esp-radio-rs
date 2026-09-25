@@ -15,7 +15,7 @@ pub use oer_radio::wifi::{
     MonitorChannelSequence, MonitorChannelSequenceError, MonitorRequest,
 };
 
-use oer_esp32s31_wifi_embassy::roles::monitor::{
+use oer_esp32s31_wifi_runtime::roles::monitor::{
     MonitorControlResources, MonitorExecutionResources, MonitorRxRing,
     MonitorStoppedExecutionResources, MonitorStorage, MonitorTask, MonitorTaskBuildFailure,
 };

@@ -30,7 +30,7 @@ rechecks progress independently of pending HCI response capacity, with radio
 readiness winning a tie. Every await borrows the session retained in the actor.
 A progress boundary represents a newly published RUN; a radio failure retains
 all owners in a terminal boundary. See the driver's
-[peripheral timing limits](../../../../hardware/esp32s31/driver/bluetooth/FEATURES.md#peripheral-timing-limits)
+[peripheral timing limits](../../../hardware/esp32s31/driver/bluetooth/FEATURES.md#peripheral-timing-limits)
 for the required clock bound and unsupported link behavior.
 
 Peer termination, six events without establishment (`0x3e`), or established
@@ -131,4 +131,4 @@ wake, preventing autonomous RF from outliving that deadline.
 Budgets need measured platform bounds; this API supplies no qualified thermal
 or blocking-poll defaults. Physical admission, shutdown and restart remain
 outside the command state machine; see the
-[Controller lifecycle](../../../../hardware/esp32s31/driver/bluetooth/README.md#quiescent-phy-maintenance).
+[Controller lifecycle](../../../hardware/esp32s31/driver/bluetooth/README.md#quiescent-phy-maintenance).

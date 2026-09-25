@@ -12,8 +12,8 @@ use oer_esp32s31_hal::{
     },
     owner::{MacInterruptCheckpoint, maintenance},
 };
-use oer_esp32s31_wifi_embassy::datapath::services::SingleRoleServices;
-use oer_esp32s31_wifi_embassy::time::phy::EmbassyPhyDelay;
+use oer_esp32s31_wifi_runtime::datapath::services::SingleRoleServices;
+use oer_esp32s31_wifi_runtime::time::phy::EmbassyPhyDelay;
 
 type ParkedRunner = ConnectedDatapathRunner<ConnectedDriverServices<PausedRx, ()>>;
 /// Cold datapath state never participates in the nested PHY future. On failure

@@ -65,7 +65,7 @@ pub fn run(ctx: &Context) -> Result<()> {
         "--locked",
         "--offline",
         "--package",
-        "oer-esp32s31-wifi-embassy",
+        "oer-esp32s31-wifi-runtime",
     ]))?;
     process::run(
         ctx.cargo()

@@ -16,7 +16,7 @@ use oer_esp32s31_bluetooth::controller::{
     ControllerPublishedRuntimeSplitFailure, hci::ControllerHciBound,
 };
 
-use oer_esp32s31_bluetooth_embassy::controller::DtmAbsoluteRecheck;
+use oer_esp32s31_bluetooth_runtime::controller::DtmAbsoluteRecheck;
 
 use super::{
     BluetoothHardwareRunner, BluetoothRunners, BluetoothSystem, PublishedStorage, RuntimeWakers,

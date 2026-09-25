@@ -15,7 +15,7 @@ oer-esp32s31-wifi-dma = { path = "../../../../crates/hardware/esp32s31/driver/ie
 oer-wifi-softmac = { path = "../../../../crates/protocols/ieee80211/softmac" }
 oer-ieee80211 = { path = "../../../../crates/protocols/ieee80211/mac" }
 oer-esp32s31-wifi-mac = { path = "../../../../crates/hardware/esp32s31/driver/ieee80211/mac" }
-oer-esp32s31-wifi-embassy = { path = "../../../../crates/runtime/embassy/esp32s31/ieee80211", default-features = false }
+oer-esp32s31-wifi-runtime = { path = "../../../../crates/runtime/esp32s31/ieee80211", default-features = false }
 open-esp-radio-hil-protocol = { path = "../../../protocol" }
 
 [package.metadata.open-radio]

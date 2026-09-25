@@ -8,7 +8,7 @@ use crate::{
 use oer_esp32s31_bluetooth::controller::{
     ControllerRestartError, ControllerRestartFailure, ControllerRestarted,
 };
-use oer_esp32s31_bluetooth_embassy::controller::DtmRecheckStartError;
+use oer_esp32s31_bluetooth_runtime::controller::DtmRecheckStartError;
 use oer_esp32s31_radio_platform_esp_hal::EspHalBluetoothInterruptStorageError;
 
 type Restarted<

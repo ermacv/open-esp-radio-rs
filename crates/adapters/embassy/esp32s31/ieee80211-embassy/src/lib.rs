@@ -21,8 +21,8 @@ use oer_embassy_net_upstream::{
     RadioLinkController, RadioRunner, RadioRxPublisher, RadioTxConsumer, RadioTxFrame,
 };
 #[cfg(feature = "tx-phase-telemetry")]
-use oer_esp32s31_wifi_embassy::datapath::MaterializationOwnershipSnapshot;
-use oer_esp32s31_wifi_embassy::datapath::{
+use oer_esp32s31_wifi_runtime::datapath::MaterializationOwnershipSnapshot;
+use oer_esp32s31_wifi_runtime::datapath::{
     PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, SelectedBurstMaterializer,
     SoftwareTxFrame,
     network::{
@@ -110,7 +110,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Datapat
 
     fn try_send_parts(
         &mut self,
-        frame: oer_esp32s31_wifi_embassy::datapath::network::EthernetFrameParts<'_>,
+        frame: oer_esp32s31_wifi_runtime::datapath::network::EthernetFrameParts<'_>,
     ) -> Result<(), RxEnqueueError> {
         self.inner.try_send_parts(
             frame.destination,
@@ -137,7 +137,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Datapat
     #[cfg(feature = "diagnostics")]
     fn try_send_parts_observed(
         &mut self,
-        frame: oer_esp32s31_wifi_embassy::datapath::network::EthernetFrameParts<'_>,
+        frame: oer_esp32s31_wifi_runtime::datapath::network::EthernetFrameParts<'_>,
         before_publish: &mut dyn FnMut(),
     ) -> Result<(), RxEnqueueError> {
         before_publish();

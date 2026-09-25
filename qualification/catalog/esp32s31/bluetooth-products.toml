@@ -59,11 +59,11 @@ composition = "production"
 scope = "The Controller owner slot, legacy connectable role, recurring peripheral session and HCI endpoints retain one physical owner while handling connection commands and packet progress"
 limits = "The product also requires bounded ISR and timer work, exclusive packet-list publication, rejection of a second connection or exhausted queue before mutation, retention of cancelled-command obligations, and complete fault/stop cleanup. Logical Disconnect or HCI Reset is not powered release. The active Host-to-Controller ACL owner retains one packet while further advertised credits remain backed by the HCI queue; capacity-aware intake and readiness preserve queued data and allow commands to bypass it. The dedicated ACL calibration workload checks all four credits, exact sequenced notifications and repeated common RX/Bluetooth TX maintenance at 7.5 ms, then restores its diagnostic thresholds and retires the cold owner. Encrypted traffic belongs to the separate peripheral-link-security scenario"
 source-paths = [
-  "crates/runtime/embassy/esp32s31/bluetooth/src/controller/owner.rs",
-  "crates/runtime/embassy/esp32s31/bluetooth/src/controller/dispatch.rs",
-  "crates/runtime/embassy/esp32s31/bluetooth/src/controller/dispatch/connectable.rs",
-  "crates/runtime/embassy/esp32s31/bluetooth/src/controller/dispatch/peripheral.rs",
-  "crates/runtime/embassy/esp32s31/bluetooth/src/session/peripheral/active.rs",
+  "crates/runtime/esp32s31/bluetooth/src/controller/owner.rs",
+  "crates/runtime/esp32s31/bluetooth/src/controller/dispatch.rs",
+  "crates/runtime/esp32s31/bluetooth/src/controller/dispatch/connectable.rs",
+  "crates/runtime/esp32s31/bluetooth/src/controller/dispatch/peripheral.rs",
+  "crates/runtime/esp32s31/bluetooth/src/session/peripheral/active.rs",
   "crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/connection.rs",
   "crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/deadlines.rs",
   "crates/composition/esp32s31/embassy/bluetooth/src/system/runner.rs",
@@ -123,7 +123,7 @@ limits = "The fixed-key encrypted ACL scenario exercises the composed peripheral
 source-paths = [
   "crates/protocols/bluetooth/le/ll/src/security.rs",
   "crates/protocols/bluetooth/hci/src/lib.rs",
-  "crates/runtime/embassy/esp32s31/bluetooth/src/session/peripheral/active.rs",
+  "crates/runtime/esp32s31/bluetooth/src/session/peripheral/active.rs",
 ]
 
 [capabilities.development]

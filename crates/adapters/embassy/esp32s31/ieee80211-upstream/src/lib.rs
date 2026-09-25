@@ -9,7 +9,7 @@
 use core::task::{Context, Poll};
 use embassy_futures::select::select;
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use oer_esp32s31_wifi_embassy::datapath::{
+use oer_esp32s31_wifi_runtime::datapath::{
     PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, SelectedBurstMaterializer,
     network::{
         DatapathNetwork, DatapathNetworkLink, DatapathNetworkRx, DatapathNetworkRxSet,
@@ -22,8 +22,8 @@ use oer_xarxa_upstream::{Endpoint, LinkController, RxPublisher, TxFrame};
 pub struct Rx<'a, M: RawMutex, const RX: usize, const TX: usize>(RxPublisher<'a, M, RX, TX>);
 
 impl<M: RawMutex, const RX: usize, const TX: usize> DatapathNetworkRx for Rx<'_, M, RX, TX> {
-    fn pool_exhaustion(&self) -> oer_esp32s31_wifi_embassy::datapath::network::RxPoolExhaustion {
-        oer_esp32s31_wifi_embassy::datapath::network::RxPoolExhaustion::DropFrame
+    fn pool_exhaustion(&self) -> oer_esp32s31_wifi_runtime::datapath::network::RxPoolExhaustion {
+        oer_esp32s31_wifi_runtime::datapath::network::RxPoolExhaustion::DropFrame
     }
     fn queue_len(&self) -> usize {
         self.0.queue_len()
@@ -158,7 +158,7 @@ impl<
     #[cfg(feature = "tx-phase-telemetry")]
     fn ownership_snapshot(
         &self,
-    ) -> oer_esp32s31_wifi_embassy::datapath::MaterializationOwnershipSnapshot {
+    ) -> oer_esp32s31_wifi_runtime::datapath::MaterializationOwnershipSnapshot {
         self.physical.ownership_snapshot()
     }
 }

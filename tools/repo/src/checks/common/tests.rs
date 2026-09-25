@@ -165,6 +165,43 @@ fn edge_result(repository: &Path) -> Result<()> {
 }
 
 #[test]
+fn only_adapters_and_compositions_may_depend_on_an_executor() {
+    for (layer, allowed) in [
+        ("runtime", false),
+        ("role", false),
+        ("hardware", false),
+        ("service", false),
+        ("protocol", false),
+        ("adapter", true),
+        ("composition", true),
+    ] {
+        let repository = architecture_repository("dev-dependencies", "contract");
+        set_classification(
+            repository.path(),
+            "libraries/policy",
+            layer,
+            "portable",
+            None,
+        );
+        let manifest = repository.path().join("libraries/policy/Cargo.toml");
+        let mut doc: toml::Value = toml::from_str(&fs::read_to_string(&manifest).unwrap()).unwrap();
+        doc.as_table_mut()
+            .unwrap()
+            .entry("dependencies")
+            .or_insert_with(|| toml::Value::Table(Default::default()))
+            .as_table_mut()
+            .unwrap()
+            .insert("embassy-executor".into(), "0.9".into());
+        fs::write(manifest, toml::to_string(&doc).unwrap()).unwrap();
+        let result = edge_result(repository.path());
+        assert_eq!(result.is_ok(), allowed, "{layer}: {result:?}");
+        if let Err(error) = result {
+            assert!(error.to_string().contains("depends on executor"), "{error}");
+        }
+    }
+}
+
+#[test]
 fn portable_to_chip_rejection_does_not_depend_on_the_chip_name() {
     for chip in ["esp32s31", "esp32c5"] {
         let repository = architecture_repository("dependencies", "hardware");

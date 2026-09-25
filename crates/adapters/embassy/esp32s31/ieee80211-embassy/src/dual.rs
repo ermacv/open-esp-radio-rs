@@ -3,7 +3,7 @@ use core::future::Future;
 use embassy_futures::select::select;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_embassy_net_upstream::RadioRunner;
-use oer_esp32s31_wifi_embassy::datapath::{
+use oer_esp32s31_wifi_runtime::datapath::{
     PinnedTxConsumer, PinnedTxFrame,
     network::{DatapathNetwork, DatapathNetworkLink},
 };
@@ -249,7 +249,7 @@ impl<
 {
     fn publish_link_up(&self) {
         self.set_link_state(
-            oer_esp32s31_wifi_embassy::roles::concurrent::STA_NETWORK_INTERFACE_ID,
+            oer_esp32s31_wifi_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID,
             LinkState::Up,
         );
     }

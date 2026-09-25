@@ -38,14 +38,14 @@ use oer_embassy_net_upstream::{
 
 use oer_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorage;
 #[cfg(feature = "owned-network")]
-use oer_esp32s31_wifi_embassy::datapath::network::DualOwnedDatapathNetwork;
+use oer_esp32s31_wifi_runtime::datapath::network::DualOwnedDatapathNetwork;
 
-use oer_esp32s31_wifi_embassy::datapath::{
+#[cfg(feature = "embassy-network")]
+use oer_esp32s31_wifi_embassy_upstream::{DualEmbassyDatapathNetwork, EmbassyTxFrame};
+use oer_esp32s31_wifi_runtime::datapath::{
     PinnedTxConsumer, PinnedTxFrame, PinnedTxPool, PinnedTxResources,
     tx::resources::AggregateTxResources,
 };
-#[cfg(feature = "embassy-network")]
-use oer_esp32s31_wifi_embassy_upstream::{DualEmbassyDatapathNetwork, EmbassyTxFrame};
 
 use oer_esp32s31_wifi_mac::tx::ampdu::{
     HtAmpduTxError, HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage,
@@ -508,9 +508,9 @@ pub(crate) fn initialize_network(
         .init(PacketPool::new(ACCESS_POINT_RX_PACKET_STORAGE.take()))
         .allocator();
     let tx_consumer = initialize_physical_tx();
-    let station_interface = oer_esp32s31_wifi_embassy::roles::concurrent::STA_NETWORK_INTERFACE_ID;
+    let station_interface = oer_esp32s31_wifi_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID;
     let access_point_interface =
-        oer_esp32s31_wifi_embassy::roles::concurrent::AP_NETWORK_INTERFACE_ID;
+        oer_esp32s31_wifi_runtime::roles::concurrent::AP_NETWORK_INTERFACE_ID;
     let (station_device, station_runner) =
         station_resources.split(station_interface, station_address, station_rx_allocator);
     let (access_point_device, access_point_runner) = access_point_resources.split(
@@ -542,9 +542,9 @@ pub(crate) fn initialize_network(
 ) -> (WifiDevices, WifiNetworkResources) {
     let station_resources = NETWORK_RESOURCES.take();
     let access_point_resources = ACCESS_POINT_NETWORK_RESOURCES.take();
-    let station_interface = oer_esp32s31_wifi_embassy::roles::concurrent::STA_NETWORK_INTERFACE_ID;
+    let station_interface = oer_esp32s31_wifi_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID;
     let access_point_interface =
-        oer_esp32s31_wifi_embassy::roles::concurrent::AP_NETWORK_INTERFACE_ID;
+        oer_esp32s31_wifi_runtime::roles::concurrent::AP_NETWORK_INTERFACE_ID;
     let (station_device, station_runner) = station_resources.split(
         station_address,
         STATION_EMBASSY_RX_STORAGE.take(),

@@ -20,7 +20,7 @@ type ProductionAccessPointControl = AccessPointControl<
     ProductionAccessPointRxConsumer,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_esp32s31_wifi_embassy::datapath::tx::time::EmbassyWifiTxTimer,
+    oer_esp32s31_wifi_runtime::datapath::tx::time::EmbassyWifiTxTimer,
     RX_DESCRIPTOR_COUNT,
     RX_BUFFER_SIZE,
     RX_BUFFER_STORAGE_SIZE,
@@ -30,7 +30,7 @@ type ProductionWifiTxResources = WifiTxResources<
     'static,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_esp32s31_wifi_embassy::datapath::tx::time::EmbassyWifiTxTimer,
+    oer_esp32s31_wifi_runtime::datapath::tx::time::EmbassyWifiTxTimer,
     TX_BUFFER_SIZE,
 >;
 type ProductionAccessPointStopped = EmbassyAccessPointStopped<
@@ -39,7 +39,7 @@ type ProductionAccessPointStopped = EmbassyAccessPointStopped<
     'static,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    oer_esp32s31_wifi_embassy::datapath::tx::time::EmbassyWifiTxTimer,
+    oer_esp32s31_wifi_runtime::datapath::tx::time::EmbassyWifiTxTimer,
     ProductionAccessPointRxProducer,
     ProductionAccessPointRxConsumer,
     RX_DESCRIPTOR_COUNT,
@@ -47,23 +47,23 @@ type ProductionAccessPointStopped = EmbassyAccessPointStopped<
     RX_BUFFER_STORAGE_SIZE,
     TX_BUFFER_SIZE,
 >;
-type ProductionAccessPointAmpdu = oer_esp32s31_wifi_embassy::roles::access_point::AccessPointAmpdu<
+type ProductionAccessPointAmpdu = oer_esp32s31_wifi_runtime::roles::access_point::AccessPointAmpdu<
     'static,
     RadioTxBacking,
     { crate::resources::profile::ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT },
     0,
 >;
 type ProductionAccessPointRxBlockAck =
-    oer_esp32s31_wifi_embassy::roles::concurrent::StaApRxBlockAck;
+    oer_esp32s31_wifi_runtime::roles::concurrent::StaApRxBlockAck;
 type ProductionAccessPointRxReorder = AccessPointRxReorder<'static, RX_BUFFER_SIZE>;
 type ProductionAccessPointRxReorderStorage =
-    oer_esp32s31_wifi_embassy::datapath::rx::reorder::RxReorderFrameStorage<
+    oer_esp32s31_wifi_runtime::datapath::rx::reorder::RxReorderFrameStorage<
         RX_BUFFER_SIZE,
-        { oer_esp32s31_wifi_embassy::datapath::rx::reorder::RX_REORDER_BACKING_SLOT_COUNT },
+        { oer_esp32s31_wifi_runtime::datapath::rx::reorder::RX_REORDER_BACKING_SLOT_COUNT },
     >;
 
 type ProductionAccessPointTxStorage =
-    oer_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointTxStorage<
+    oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AccessPointTxStorage<
         RadioNetworkTxBacking,
     >;
 
@@ -111,7 +111,7 @@ pub(super) struct ProductionAccessPointEngineFault {
     _rx_reorder: &'static mut ProductionAccessPointRxReorder,
     _rx_reorder_storage: &'static ProductionAccessPointRxReorderStorage,
     #[cfg(feature = "diagnostics")]
-    _observation_storage: &'static mut oer_esp32s31_wifi_embassy::diagnostics::access_point::AccessPointObservationStorage,
+    _observation_storage: &'static mut oer_esp32s31_wifi_runtime::diagnostics::access_point::AccessPointObservationStorage,
     _rx_frame: &'static mut [u8],
     _tx_frame: &'static mut [u8],
 }
@@ -147,7 +147,7 @@ pub(super) enum ProductionAccessPointTeardownFault {
         _rx_reorder: &'static mut ProductionAccessPointRxReorder,
         _rx_reorder_storage: &'static ProductionAccessPointRxReorderStorage,
         #[cfg(feature = "diagnostics")]
-        _observation_storage: &'static mut oer_esp32s31_wifi_embassy::diagnostics::access_point::AccessPointObservationStorage,
+        _observation_storage: &'static mut oer_esp32s31_wifi_runtime::diagnostics::access_point::AccessPointObservationStorage,
         _engine: oer_esp32s31_wifi_ap::engine::ApEngineStop<'static>,
         _parked: ProductionAccessPointParked,
         _returned_control: ControlTx,
@@ -169,14 +169,14 @@ pub(super) struct ProductionAccessPointResources {
     pub(super) rx_block_ack: &'static ProductionAccessPointRxBlockAck,
     pub(super) rx_reorder: &'static mut AccessPointRxReorder<'static, RX_BUFFER_SIZE>,
     pub(super) rx_reorder_storage:
-        &'static oer_esp32s31_wifi_embassy::datapath::rx::reorder::RxReorderFrameStorage<
+        &'static oer_esp32s31_wifi_runtime::datapath::rx::reorder::RxReorderFrameStorage<
             RX_BUFFER_SIZE,
             {
-                oer_esp32s31_wifi_embassy::datapath::rx::reorder::RX_REORDER_BACKING_SLOT_COUNT
+                oer_esp32s31_wifi_runtime::datapath::rx::reorder::RX_REORDER_BACKING_SLOT_COUNT
             },
         >,
     #[cfg(feature = "diagnostics")]
-    pub(super) observation_storage: &'static mut oer_esp32s31_wifi_embassy::diagnostics::access_point::AccessPointObservationStorage,
+    pub(super) observation_storage: &'static mut oer_esp32s31_wifi_runtime::diagnostics::access_point::AccessPointObservationStorage,
 }
 
 impl ProductionWifiEpochRunner {
@@ -749,7 +749,7 @@ impl ProductionWifiEpochRunner {
         // Only a successfully prepared fresh role reaches this edge. A failed
         // detach quarantines its board resources and cannot reset this ledger.
         if let Some(airtime) = task.parked.station.board.access_point_airtime.as_mut() {
-            airtime.storage = oer_esp32s31_wifi_embassy::roles::access_point::network_tx::AccessPointAirtimeStorage::new(airtime.configuration.quantum_micros).with_observer(airtime.configuration.observer);
+            airtime.storage = oer_esp32s31_wifi_runtime::roles::access_point::network_tx::AccessPointAirtimeStorage::new(airtime.configuration.quantum_micros).with_observer(airtime.configuration.observer);
         }
         let mut started = false;
         #[cfg(feature = "diagnostics")]

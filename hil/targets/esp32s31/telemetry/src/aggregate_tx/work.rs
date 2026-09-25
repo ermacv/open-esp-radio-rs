@@ -1,7 +1,7 @@
 //! Separate ordinary and aggregate work at terminal edges.
 
 use core::sync::atomic::{AtomicU32, Ordering};
-use oer_esp32s31_wifi_embassy::diagnostics::aggregate_tx::MacTxWork;
+use oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::MacTxWork;
 
 pub(super) struct WorkCounters {
     exchanges: AtomicU32,

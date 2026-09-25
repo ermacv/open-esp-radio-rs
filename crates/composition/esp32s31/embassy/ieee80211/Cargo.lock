@@ -1208,10 +1208,10 @@ dependencies = [
  "oer-esp32s31-wifi",
  "oer-esp32s31-wifi-ap",
  "oer-esp32s31-wifi-dma",
- "oer-esp32s31-wifi-embassy",
  "oer-esp32s31-wifi-embassy-upstream",
  "oer-esp32s31-wifi-esp-hal",
  "oer-esp32s31-wifi-mac",
+ "oer-esp32s31-wifi-runtime",
  "oer-esp32s31-wifi-sta",
  "oer-esp32s31-wifi-xarxa-upstream",
  "oer-ieee80211",
@@ -1316,41 +1316,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-wifi-embassy"
-version = "0.1.0"
-dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embassy-time",
- "log",
- "oer-embassy-net",
- "oer-esp32s31-hal",
- "oer-esp32s31-phy",
- "oer-esp32s31-wifi",
- "oer-esp32s31-wifi-ap",
- "oer-esp32s31-wifi-dma",
- "oer-esp32s31-wifi-mac",
- "oer-esp32s31-wifi-sta",
- "oer-ieee80211",
- "oer-memory",
- "oer-network",
- "oer-wifi-datapath",
- "oer-wifi-embassy",
- "oer-wifi-rsn",
- "oer-wifi-softmac",
- "oer-wifi-sta",
- "riscv",
- "static_cell",
-]
-
-[[package]]
 name = "oer-esp32s31-wifi-embassy-upstream"
 version = "0.1.0"
 dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
  "oer-embassy-net-upstream",
- "oer-esp32s31-wifi-embassy",
+ "oer-esp32s31-wifi-runtime",
  "oer-network",
  "oer-wifi-embassy",
 ]
@@ -1384,6 +1356,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-wifi-runtime"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "log",
+ "oer-embassy-net",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-wifi",
+ "oer-esp32s31-wifi-ap",
+ "oer-esp32s31-wifi-dma",
+ "oer-esp32s31-wifi-mac",
+ "oer-esp32s31-wifi-sta",
+ "oer-ieee80211",
+ "oer-memory",
+ "oer-network",
+ "oer-wifi-datapath",
+ "oer-wifi-embassy",
+ "oer-wifi-rsn",
+ "oer-wifi-softmac",
+ "oer-wifi-sta",
+ "riscv",
+ "static_cell",
+]
+
+[[package]]
 name = "oer-esp32s31-wifi-sta"
 version = "0.1.0"
 dependencies = [
@@ -1407,7 +1407,7 @@ version = "0.1.0"
 dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
- "oer-esp32s31-wifi-embassy",
+ "oer-esp32s31-wifi-runtime",
  "oer-network",
  "oer-wifi-embassy",
  "oer-xarxa-upstream",

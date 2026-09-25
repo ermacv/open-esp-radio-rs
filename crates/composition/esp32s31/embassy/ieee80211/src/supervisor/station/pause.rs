@@ -1,7 +1,10 @@
 //! Physical round trip after the worker has drained active TX.
 use super::*;
 use oer_esp32s31_wifi_dma::rx_ring::{RxRingPaused, RxRingResumeFailure};
-use oer_esp32s31_wifi_embassy::{
+use oer_esp32s31_wifi_esp_hal::mac_interrupt_epoch::{
+    EspHalMacInterruptRoute, EspHalMacInterruptRouteError,
+};
+use oer_esp32s31_wifi_runtime::{
     datapath::{
         irq::{
             MacInterruptEpochActivateError, MacInterruptEpochQuiesceError, PausedInterruptEpoch,
@@ -9,9 +12,6 @@ use oer_esp32s31_wifi_embassy::{
         maintenance::{StopError, stop_mac},
     },
     time::phy::EmbassyPhyClock,
-};
-use oer_esp32s31_wifi_esp_hal::mac_interrupt_epoch::{
-    EspHalMacInterruptRoute, EspHalMacInterruptRouteError,
 };
 
 mod access;
@@ -94,7 +94,7 @@ pub(crate) enum Failure {
         _error: MacInterruptEpochActivateError<EspHalMacInterruptRouteError>,
     },
     Access {
-        _failure: oer_esp32s31_wifi_embassy::datapath::irq::PausedInterruptOperationFailure<
+        _failure: oer_esp32s31_wifi_runtime::datapath::irq::PausedInterruptOperationFailure<
             'static,
             EspHalMacInterruptRoute,
             CriticalSectionRawMutex,
@@ -231,7 +231,7 @@ async fn exchange(
     irq: MacInterruptEpoch,
     runner: &mut Option<ConnectedDatapathRunner>,
 ) -> Result<MacInterruptEpoch, &'static Failure> {
-    use oer_esp32s31_wifi_embassy::datapath::services::DatapathServiceError;
+    use oer_esp32s31_wifi_runtime::datapath::services::DatapathServiceError;
     let result = oer_wifi_embassy::await_stack_boundary!(
         runner
             .as_mut()
@@ -330,7 +330,7 @@ async fn physical_round_trip(
 
 #[inline(never)]
 fn retain_access(
-    failure: oer_esp32s31_wifi_embassy::datapath::irq::PausedInterruptOperationFailure<
+    failure: oer_esp32s31_wifi_runtime::datapath::irq::PausedInterruptOperationFailure<
         'static,
         EspHalMacInterruptRoute,
         CriticalSectionRawMutex,

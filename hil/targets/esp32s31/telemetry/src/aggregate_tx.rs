@@ -13,7 +13,7 @@ use work::WorkCounters;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use oer_esp32s31_wifi_embassy::diagnostics::aggregate_tx::{
+use oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::{
     AggregateBuildStop, AggregateTxObservation, AggregateTxObserver, NetworkSingleMpduReason,
     PreparedTxSchedulerPhase,
 };
@@ -986,7 +986,7 @@ impl AggregateTxCounters {
 impl AggregateTxObserver for AggregateTxCounters {
     fn observe_station_ordinary(
         &self,
-        outcome: Option<oer_esp32s31_wifi_embassy::diagnostics::aggregate_tx::OrdinaryTxOutcome>,
+        outcome: Option<oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::OrdinaryTxOutcome>,
     ) {
         self.station_ordinary.record(outcome);
     }
@@ -1001,7 +1001,7 @@ impl AggregateTxObserver for AggregateTxCounters {
     #[cfg(feature = "tx-wait-probe")]
     fn observe_wait_probe(
         &self,
-        sample: oer_esp32s31_wifi_embassy::diagnostics::aggregate_tx::TxWaitSample,
+        sample: oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::TxWaitSample,
     ) {
         self.wait_trace.record(sample);
     }
@@ -1139,7 +1139,7 @@ impl AggregateTxObserver for AggregateTxCounters {
 
     fn observe_access_point_retention_drop(
         &self,
-        reason: oer_esp32s31_wifi_embassy::diagnostics::aggregate_tx::NetworkTxRetentionDropReason,
+        reason: oer_esp32s31_wifi_runtime::diagnostics::aggregate_tx::NetworkTxRetentionDropReason,
     ) {
         self.tx_retention.observe(reason);
     }

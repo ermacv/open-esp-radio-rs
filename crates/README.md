@@ -37,7 +37,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `adapters/embassy/ieee80211/` | Generic Embassy Wi-Fi service contracts |
 | `adapters/embassy/radio/` | Embassy mailbox and role-epoch actor binding the `radio` service port |
 | `adapters/embassy/esp32s31/` | Executor/time platform ABI, coexistence mailbox, acknowledged IEEE 802.15.4 IRQ handoff and network stack bindings |
-| `runtime/embassy/esp32s31/{ieee80211,bluetooth}/` | Concrete radio execution; Wi-Fi role/datapath owners and Bluetooth controller/session owners, with their embedded time bindings |
+| `runtime/esp32s31/{ieee80211,bluetooth}/` | Executor-independent radio execution over `embassy-time`; Wi-Fi role/datapath owners and Bluetooth controller/session owners |
 | `adapters/embassy-net/{owned,upstream}/` | Owned-packet and released-interface network adapters |
 | `adapters/xarxa/upstream/` | Original Xarxa driver, packet-owner queues and explicit pool-allocation failure |
 | `../experiments/network-engine/` | Experimental synchronous network engine; currently consumed only by a driver test |
@@ -118,7 +118,7 @@ retains queue endpoints, VIF routing, clocks, observation bindings and the
 stopped/prepared/live composition owners. No chip dependency points back to an
 adapter. Integration `interrupts` owns the ISR bindings and routes both
 handlers and role epochs through the same static interrupt resources. See the
-[RX ownership contract](runtime/embassy/esp32s31/ieee80211/src/datapath/rx/README.md).
+[RX ownership contract](runtime/esp32s31/ieee80211/src/datapath/rx/README.md).
 
 ## Register and execution boundaries
 

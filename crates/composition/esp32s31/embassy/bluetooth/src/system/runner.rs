@@ -50,7 +50,7 @@ use oer_esp32s31_bluetooth::controller::{
     ControllerModemTimerTask,
 };
 
-use oer_esp32s31_bluetooth_embassy::{
+use oer_esp32s31_bluetooth_runtime::{
     controller::{
         ControllerCommandBoundary, ControllerCommandTask, DtmAbsoluteRecheck, ModemTimerDriveStep,
         ModemTimerDriver,
@@ -166,7 +166,7 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
     use crate::diagnostics::{BluetoothExecutionEvent as Observed, record};
     match boundary {
         ControllerCommandBoundary::IdleRestored(
-            oer_esp32s31_bluetooth_embassy::controller::ControllerIdleCompletion::LegacyConnectableAdvertisingStartRejected { cause },
+            oer_esp32s31_bluetooth_runtime::controller::ControllerIdleCompletion::LegacyConnectableAdvertisingStartRejected { cause },
         ) => {
             use oer_esp32s31_bluetooth::le::advertising::LegacyConnectableAdvertisingFirstRunnerRecoveredError as E;
             use crate::diagnostics::BluetoothAdvertisingStartRejection as R;
@@ -186,7 +186,7 @@ fn classify_command<const SCHEDULER_CAPACITY: usize>(
             record(Observed::AdvertisingStartRejected(reason), format_args!("advertising rejected: {cause:?}"));
         }
         ControllerCommandBoundary::IdleRestored(
-            oer_esp32s31_bluetooth_embassy::controller::ControllerIdleCompletion::PeripheralDisconnected { reason },
+            oer_esp32s31_bluetooth_runtime::controller::ControllerIdleCompletion::PeripheralDisconnected { reason },
         ) => record(
             Observed::PeripheralDisconnected { reason: *reason },
             format_args!("peripheral disconnected: {reason}"),
@@ -424,10 +424,10 @@ impl<
         debug: oer_esp32s31_phy::state::PhyTemperatureTrackingDebug,
     ) -> Result<
         oer_esp32s31_phy::state::PhyTemperatureTrackingDebug,
-        oer_esp32s31_bluetooth_embassy::controller::ControllerCommandRetirementError,
+        oer_esp32s31_bluetooth_runtime::controller::ControllerCommandRetirementError,
     > {
         self.command.as_mut().ok_or(
-            oer_esp32s31_bluetooth_embassy::controller::ControllerCommandRetirementError::OwnerUnavailable
+            oer_esp32s31_bluetooth_runtime::controller::ControllerCommandRetirementError::OwnerUnavailable
         )?.set_idle_phy_tracking_debug(debug)
     }
 
@@ -556,7 +556,7 @@ impl<
     fn software_idle(&self) -> bool {
         !self.schedule.retry_gate()
             && self.command.as_ref().expect("live actor").phase()
-                == oer_esp32s31_bluetooth_embassy::controller::ControllerCommandPhase::Idle
+                == oer_esp32s31_bluetooth_runtime::controller::ControllerCommandPhase::Idle
             && self
                 .modem_timer
                 .as_ref()

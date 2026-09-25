@@ -61,6 +61,10 @@ Hardware owns chip resources and the wire codecs its registers carry. A role
 composes portable role protocols (station, access point, security) with that
 hardware, without an executor. A service declares executor-free ports; an
 adapter binds them to an executor, so a service never depends on an adapter.
+Only adapters, compositions and the facade may depend on an executor crate
+(`embassy-executor`); every lower layer exposes futures that any executor can
+poll. Runtimes read and wait on time through the `embassy-time` interface,
+whose single driver the final image links.
 An adapter can implement a runtime interface, while a runtime can consume
 an adapter's executor-neutral contract. Cargo still rejects actual dependency
 cycles. Neither layer can depend on the final composition.

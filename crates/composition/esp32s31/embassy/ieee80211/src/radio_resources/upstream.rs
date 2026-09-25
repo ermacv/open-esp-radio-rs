@@ -41,7 +41,7 @@ pub(crate) fn initialize_network(
     station_address: [u8; 6],
     access_point_address: [u8; 6],
 ) -> (WifiDevices, WifiNetworkResources) {
-    use oer_esp32s31_wifi_embassy::roles::concurrent::{
+    use oer_esp32s31_wifi_runtime::roles::concurrent::{
         AP_NETWORK_INTERFACE_ID, STA_NETWORK_INTERFACE_ID,
     };
     let (station, station_endpoint) = STATION

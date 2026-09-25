@@ -25,8 +25,9 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
   `experiments/network-engine/` owns the experimental network engine and may
   be used by production tests, never by production dependencies.
   Concrete Wi-Fi and Bluetooth
-  radio execution lives in `crates/runtime/embassy/esp32s31/`; the Embassy
-  executor/time platform backend remains in `crates/adapters/`.
+  radio execution lives in `crates/runtime/esp32s31/` as executor-independent
+  async code over `embassy-time`; the Embassy executor/time platform backend
+  remains in `crates/adapters/`.
   Every package declares `package.metadata.open-radio` scope, layer and
   platform (`portable`, `host` or `chip`), with a separate `chip` identifier
   when platform is `chip`. Architecture checks enforce the dependency graph

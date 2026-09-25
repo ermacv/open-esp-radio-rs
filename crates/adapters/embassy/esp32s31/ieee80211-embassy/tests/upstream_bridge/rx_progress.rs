@@ -1,5 +1,5 @@
 use core::future::Future;
-use oer_esp32s31_wifi_embassy::roles::station::{
+use oer_esp32s31_wifi_runtime::roles::station::{
     network::EmbassyNetConnectedRxSink, rx_protocol::ConnectedRxProtocolSink,
 };
 use oer_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
@@ -62,7 +62,7 @@ fn full_rx_and_tx_return_radio_control_and_recover_without_losing_queued_frames(
             );
         }
         sink.publish(ConnectedRxEvent::Ethernet {
-            frame: oer_esp32s31_wifi_embassy::datapath::network::EthernetFrameParts {
+            frame: oer_esp32s31_wifi_runtime::datapath::network::EthernetFrameParts {
                 destination: [2; 6],
                 source: [4; 6],
                 ether_type: 0x0800,

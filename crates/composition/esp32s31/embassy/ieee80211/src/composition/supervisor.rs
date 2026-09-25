@@ -24,7 +24,7 @@ use oer_esp32s31_hal::owner::MacInterruptSetup;
 
 use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver};
 
-use oer_esp32s31_wifi_embassy::roles::{
+use oer_esp32s31_wifi_runtime::roles::{
     monitor::{MonitorController, MonitorStopped, MonitorTask, MonitorTaskExit},
     station::{StationAttemptRunner, StationController, StationExit, StationTask},
 };

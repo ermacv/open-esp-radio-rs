@@ -9,7 +9,7 @@ use oer_esp32s31_bluetooth::{
     le::peripheral::PeripheralPhyMaintenanceReady,
     resources::platform_retirement::ControllerRuntimePlatform,
 };
-use oer_esp32s31_bluetooth_embassy::controller::maintenance::PhyMaintenancePolicy;
+use oer_esp32s31_bluetooth_runtime::controller::maintenance::PhyMaintenancePolicy;
 use oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome;
 
 #[allow(

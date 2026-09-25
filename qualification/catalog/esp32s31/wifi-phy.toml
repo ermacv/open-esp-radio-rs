@@ -19,7 +19,7 @@ source-paths = [
   "crates/protocols/ieee80211/sta/src/station.rs",
   "crates/protocols/ieee80211/sta/src/link_monitor.rs",
   "crates/roles/esp32s31/ieee80211/sta/src/attempt.rs",
-  "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/lifecycle.rs",
+  "crates/runtime/esp32s31/ieee80211/src/roles/station/lifecycle.rs",
   "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/role_dispatch.rs",
   "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station_epoch.rs",
   "crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs",
@@ -74,9 +74,9 @@ source-paths = [
   "crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/active/maintenance.rs",
   "crates/hardware/esp32s31/driver/bluetooth/src/le/peripheral/maintenance.rs",
   "crates/hardware/esp32s31/driver/bluetooth/src/controller/boot/peripheral_connection.rs",
-  "crates/runtime/embassy/esp32s31/bluetooth/src/controller/retirement.rs",
-  "crates/runtime/embassy/esp32s31/bluetooth/src/controller/maintenance.rs",
-  "crates/runtime/embassy/esp32s31/bluetooth/src/controller/maintenance/actor.rs",
+  "crates/runtime/esp32s31/bluetooth/src/controller/retirement.rs",
+  "crates/runtime/esp32s31/bluetooth/src/controller/maintenance.rs",
+  "crates/runtime/esp32s31/bluetooth/src/controller/maintenance/actor.rs",
   "crates/composition/esp32s31/embassy/bluetooth/src/system/runner/maintenance.rs",
   "crates/hardware/esp32s31/phy/src/tracking/fail_stop.rs",
   "crates/adapters/esp-hal/esp32s31/soc/src/reset.rs",
@@ -127,10 +127,10 @@ source-paths = [
   "crates/hardware/esp32s31/driver/ieee80211/mac/src/irq.rs",
   "crates/adapters/esp-hal/esp32s31/ieee80211/src/mac_interrupt_epoch.rs",
   "crates/adapters/esp-hal/esp32s31/ieee80211/src/mac_interrupt_epoch/storage.rs",
-  "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/epoch.rs",
-  "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/mac_runtime.rs",
-  "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/power_runtime.rs",
-  "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/pause.rs",
+  "crates/runtime/esp32s31/ieee80211/src/datapath/irq/epoch.rs",
+  "crates/runtime/esp32s31/ieee80211/src/datapath/irq/mac_runtime.rs",
+  "crates/runtime/esp32s31/ieee80211/src/datapath/irq/power_runtime.rs",
+  "crates/runtime/esp32s31/ieee80211/src/datapath/irq/pause.rs",
 ]
 
 [[source-facts]]
@@ -144,9 +144,9 @@ scope = "Finite station scheduling and link deadlines, timer-driven MAC stop, an
 limits = "Cancellation retains the borrowed owner and does not prove physical completion; engineering deadlines do not establish worst-case RF execution or restoration timing"
 source-paths = [
   "crates/protocols/ieee80211/sta/src/link_monitor.rs",
-  "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/control.rs",
-  "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/scheduler.rs",
-  "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/maintenance.rs",
+  "crates/runtime/esp32s31/ieee80211/src/roles/station/control.rs",
+  "crates/runtime/esp32s31/ieee80211/src/datapath/scheduler.rs",
+  "crates/runtime/esp32s31/ieee80211/src/datapath/maintenance.rs",
   "crates/hardware/esp32s31/phy/src/executor.rs",
   "crates/hardware/esp32s31/phy/src/executor/wait/poll.rs",
   "crates/hardware/esp32s31/phy/src/executor/wait/tx.rs",
@@ -393,7 +393,7 @@ source-paths = [
 
 
 [capabilities.development]
-knowledge = ["crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/README.md", "crates/hardware/esp32s31/driver/ieee80211/dma/README.md"]
+knowledge = ["crates/runtime/esp32s31/ieee80211/src/datapath/rx/README.md", "crates/hardware/esp32s31/driver/ieee80211/dma/README.md"]
 host-tests = [
   { manifest = "crates/hardware/esp32s31/driver/ieee80211/dma/Cargo.toml", filter = "rx_storage::tests", source = "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage/tests.rs" },
   { manifest = "crates/hardware/esp32s31/driver/ieee80211/dma/Cargo.toml", filter = "tx_storage::tests", source = "crates/hardware/esp32s31/driver/ieee80211/dma/src/tx_storage/tests.rs" },
@@ -434,8 +434,8 @@ gaps = [
 
 
 [capabilities.development]
-knowledge = ["crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq.rs"]
-host-tests = [{ manifest = "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml", filter = "datapath::irq::tests", source = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/tests.rs" }]
+knowledge = ["crates/runtime/esp32s31/ieee80211/src/datapath/irq.rs"]
+host-tests = [{ manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", filter = "datapath::irq::tests", source = "crates/runtime/esp32s31/ieee80211/src/datapath/irq/tests.rs" }]
 
 [capabilities.catalog-scope]
 chip = "esp32s31"
@@ -576,7 +576,7 @@ gaps = [
 
 [capabilities.development]
 knowledge = ["crates/hardware/esp32s31/phy/src/tracking/README.md"]
-host-tests = [{ manifest = "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml", filter = "datapath::maintenance::tests", source = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/maintenance/tests.rs" }]
+host-tests = [{ manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", filter = "datapath::maintenance::tests", source = "crates/runtime/esp32s31/ieee80211/src/datapath/maintenance/tests.rs" }]
 
 [capabilities.catalog-scope]
 chip = "esp32s31"
@@ -654,17 +654,17 @@ composition = "production"
 scope = "Retain the connected station, RX DMA walker and packet publication owners around admitted maintenance"
 limits = "The claim is a composed functional exchange through the existing production owners; it does not qualify every DMA storage mode, AP-loss recovery, all wait paths or the wider runtime-phy-calibration scope"
 source-paths = [
-  "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/rx/dma/pause.rs",
+  "crates/runtime/esp32s31/ieee80211/src/datapath/rx/dma/pause.rs",
   "crates/hardware/esp32s31/driver/ieee80211/dma/src/rx_storage.rs",
   "crates/roles/esp32s31/ieee80211/sta/src/connected_control.rs",
-  "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/connected/rx_service.rs",
+  "crates/runtime/esp32s31/ieee80211/src/roles/station/connected/rx_service.rs",
 ]
 
 [capabilities.development]
-knowledge = ["crates/hardware/esp32s31/phy/src/tracking/README.md", "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq.rs"]
+knowledge = ["crates/hardware/esp32s31/phy/src/tracking/README.md", "crates/runtime/esp32s31/ieee80211/src/datapath/irq.rs"]
 host-tests = [
-  { manifest = "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml", filter = "datapath::irq::tests::pause", source = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/irq/tests/pause/operation.rs" },
-  { manifest = "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml", filter = "datapath::maintenance::tests", source = "crates/runtime/embassy/esp32s31/ieee80211/src/datapath/maintenance/tests.rs" },
+  { manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", filter = "datapath::irq::tests::pause", source = "crates/runtime/esp32s31/ieee80211/src/datapath/irq/tests/pause/operation.rs" },
+  { manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", filter = "datapath::maintenance::tests", source = "crates/runtime/esp32s31/ieee80211/src/datapath/maintenance/tests.rs" },
 ]
 
 [capabilities.catalog-scope]
@@ -695,14 +695,14 @@ gaps = [
 ]
 
 [capabilities.development]
-knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs", "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/protection.rs", "registers/esp32s31/model/peripherals/wifi-mac-tx-queue-control.toml", "verification/vendor/projects/esp32s31/profiles/tx-protection-control.toml"]
+knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs", "crates/runtime/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/protection.rs", "registers/esp32s31/model/peripherals/wifi-mac-tx-queue-control.toml", "verification/vendor/projects/esp32s31/profiles/tx-protection-control.toml"]
 gap-work = [
   { gap = "ordinary-tx-protection-required-unimplemented", kind = "research", reason = "HT Nonmember protection can require CTS-to-Self during AP-loss recovery. The ordinary TX owner rejects this unimplemented physical publication before DMA and the connected runner ends with HardwareFailure. The reviewed SW_RTS clear and cold-init SW_CTS reset are distinct operations; neither establishes CTS-to-Self transmission. Recover or experimentally establish the generated CTS frame, receiver address, NAV duration, protected-MPDU sequencing and completion ownership; the unchanged reconnect/ICMP/control obligation remains unsatisfied." },
 ]
 host-tests = [
   { manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml", filter = "late_epoch_wakes_cannot_prevent_restarting_the_permanent_worker", source = "crates/composition/esp32s31/embassy/ieee80211/tests/connected_worker.rs" },
   { manifest = "crates/protocols/ieee80211/sta/Cargo.toml", filter = "station::tests", source = "crates/protocols/ieee80211/sta/src/station/tests.rs" },
-  { manifest = "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml", filter = "roles::station::tests", source = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tests.rs" },
+  { manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", filter = "roles::station::tests", source = "crates/runtime/esp32s31/ieee80211/src/roles/station/tests.rs" },
 ]
 
 [capabilities.catalog-scope]
@@ -730,11 +730,11 @@ hil-requirements = [
 ]
 
 [capabilities.development]
-knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs", "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/lifecycle.rs"]
+knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs", "crates/runtime/esp32s31/ieee80211/src/roles/station/lifecycle.rs"]
 host-tests = [
   { manifest = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml", filter = "late_epoch_wakes_cannot_prevent_restarting_the_permanent_worker", source = "crates/composition/esp32s31/embassy/ieee80211/tests/connected_worker.rs" },
   { manifest = "crates/protocols/ieee80211/sta/Cargo.toml", filter = "station::tests", source = "crates/protocols/ieee80211/sta/src/station/tests.rs" },
-  { manifest = "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml", filter = "roles::station::tests", source = "crates/runtime/embassy/esp32s31/ieee80211/src/roles/station/tests.rs" },
+  { manifest = "crates/runtime/esp32s31/ieee80211/Cargo.toml", filter = "roles::station::tests", source = "crates/runtime/esp32s31/ieee80211/src/roles/station/tests.rs" },
 ]
 
 [capabilities.catalog-scope]

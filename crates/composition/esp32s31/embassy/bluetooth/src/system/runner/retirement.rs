@@ -5,7 +5,7 @@ use crate::{BluetoothInterruptBindError, BluetoothInterruptDisabled};
 use oer_esp32s31_bluetooth::controller::{
     ControllerModemTimerRetired, ControllerModemTimerRetirementError, ControllerTaskHciRetired,
 };
-use oer_esp32s31_bluetooth_embassy::controller::{
+use oer_esp32s31_bluetooth_runtime::controller::{
     ControllerCommandPhase, ControllerCommandRetirementError,
 };
 use oer_esp32s31_radio_platform_esp_hal::{

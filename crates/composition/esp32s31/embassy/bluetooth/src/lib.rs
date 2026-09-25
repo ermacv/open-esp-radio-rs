@@ -139,7 +139,7 @@ pub use interrupt_runtime::{
     bind_production_bluetooth_interrupt_runtime,
 };
 #[cfg(target_arch = "riscv32")]
-pub use oer_esp32s31_bluetooth_embassy::time::phy::{EmbassyPhyTime, EmbassyPhyTimeError};
+pub use oer_esp32s31_bluetooth_runtime::time::phy::{EmbassyPhyTime, EmbassyPhyTimeError};
 #[cfg(target_arch = "riscv32")]
 pub use system::{
     BluetoothHardwareColdReleased, BluetoothHardwareInterruptsRetired,
@@ -162,12 +162,12 @@ pub use trouble::BluetoothTroubleSystem;
 
 // Cold-start inputs outside the driver's facade path, so an application can
 // start the Controller through this crate (or the `oer` facade) alone.
-#[cfg(target_arch = "riscv32")]
-pub use oer_esp32s31_bluetooth_embassy::controller::DtmRecheckPeriod;
 pub use oer_esp32s31_bluetooth_memory::{
     DtmSchedulerAllocationConfig, PassiveScanDefaultTxPowerDbm,
     PassiveScanSchedulerAllocationConfig, PeripheralConnectionDefaultTxPowerDbm,
 };
+#[cfg(target_arch = "riscv32")]
+pub use oer_esp32s31_bluetooth_runtime::controller::DtmRecheckPeriod;
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_radio_platform_esp_hal::{EspHalBluetoothPlatform, EspHalRadioPlatform};
 #[cfg(target_arch = "riscv32")]

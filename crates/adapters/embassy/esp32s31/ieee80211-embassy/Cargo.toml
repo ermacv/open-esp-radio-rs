@@ -11,14 +11,14 @@ description = "Upstream-compatible Embassy network bridge for the ESP32-S31 Wi-F
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 oer-embassy-net-upstream = { path = "../../../embassy-net/upstream" }
-oer-esp32s31-wifi-embassy = { path = "../../../../runtime/embassy/esp32s31/ieee80211", default-features = false }
+oer-esp32s31-wifi-runtime = { path = "../../../../runtime/esp32s31/ieee80211", default-features = false }
 oer-network = { path = "../../../../network/interface" }
 oer-wifi-embassy = { path = "../../ieee80211" }
 
 [features]
 default = []
-diagnostics = ["oer-esp32s31-wifi-embassy/diagnostics"]
-tx-phase-telemetry = ["oer-esp32s31-wifi-embassy/tx-phase-telemetry"]
+diagnostics = ["oer-esp32s31-wifi-runtime/diagnostics"]
+tx-phase-telemetry = ["oer-esp32s31-wifi-runtime/tx-phase-telemetry"]
 
 [dev-dependencies]
 oer-esp32s31-wifi-sta = { path = "../../../../roles/esp32s31/ieee80211/sta" }

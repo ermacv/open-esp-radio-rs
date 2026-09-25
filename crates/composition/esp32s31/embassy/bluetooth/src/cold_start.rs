@@ -53,7 +53,7 @@ use oer_esp32s31_bluetooth::{
     runtime_resources::ControllerRuntimeResources,
 };
 
-use oer_esp32s31_bluetooth_embassy::controller::{
+use oer_esp32s31_bluetooth_runtime::controller::{
     DtmAbsoluteRecheck, DtmRecheckPeriod, DtmRecheckStartError,
 };
 

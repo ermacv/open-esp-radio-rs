@@ -1,5 +1,5 @@
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use oer_esp32s31_wifi_embassy::datapath::{
+use oer_esp32s31_wifi_runtime::datapath::{
     PinnedTxPool, PinnedTxResources, SelectedBurstMaterializer,
     network::{DatapathNetwork, DatapathNetworkRx},
 };

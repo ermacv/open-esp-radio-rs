@@ -55,7 +55,7 @@ The product crate
 selects adapters and static resources. Its chip-specific bridges are
 `oer-esp32s31-wifi-xarxa-upstream` and
 `oer-esp32s31-wifi-embassy-upstream`; the shared radio runner is
-`oer-esp32s31-wifi-embassy`. The [network source map](../crates/network/README.md)
+`oer-esp32s31-wifi-runtime`. The [network source map](../crates/network/README.md)
 and [driver map](../crates/README.md) locate these packages. Applications own
 sockets and IP policy; adapter crates do not acquire independent PHY/DMA owners.
 

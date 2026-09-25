@@ -3,14 +3,14 @@
 This crate owns chip hardware sequencing and affine radio publication states.
 Portable HCI policy and LE Link Layer codecs live in
 [`crates/protocols/bluetooth`](../../../../protocols/bluetooth/). Concrete Embassy waiting and session
-execution live in the [runtime](../../../../runtime/embassy/esp32s31/bluetooth/),
+execution live in the [runtime](../../../../runtime/esp32s31/bluetooth/),
 and final storage and hardware composition live in
 [integration](../../../../composition/esp32s31/embassy/bluetooth/).
 
 ## Choose a reading path
 
 - Application integration starts at the composition's `BluetoothSystem` and
-  `BluetoothRunners`; the [Embassy runtime](../../../../runtime/embassy/esp32s31/bluetooth/)
+  `BluetoothRunners`; the [Embassy runtime](../../../../runtime/esp32s31/bluetooth/)
   explains how those finite owners are polled.
 - Host command classification, response order, event masks and ACL credits are
   portable contracts in
@@ -437,7 +437,7 @@ to full SoC reset without emulating Host Test End or waiting for the Host.
 A future proven local shutdown may preserve non-RF work without changing this
 shared-RF policy. Ordinary recovery cannot revive the failed epoch.
 
-The [runtime maintenance contract](../../../../runtime/embassy/esp32s31/bluetooth/README.md)
+The [runtime maintenance contract](../../../../runtime/esp32s31/bluetooth/README.md)
 and canonical [periodic-maintenance source fact](../../../../../qualification/catalog/esp32s31/wifi-phy.toml)
 describe the configured composition and remaining evidence limits. Active ACL
 HIL exercises due physical transactions and connection continuity; it does not

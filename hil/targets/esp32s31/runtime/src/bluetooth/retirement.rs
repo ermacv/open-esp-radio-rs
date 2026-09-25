@@ -191,7 +191,7 @@ fn retire_hci<
         Err((error, _owner)) => {
             use oer_esp32s31_bluetooth::controller::ControllerTaskRetirementError as Error;
             use oer_esp32s31_bluetooth::runtime_resources::ControllerRuntimeRetirementError as Runtime;
-            let oer_esp32s31_bluetooth_embassy::controller::ControllerCommandRetirementError::Task(
+            let oer_esp32s31_bluetooth_runtime::controller::ControllerCommandRetirementError::Task(
                 error,
             ) = error
             else {
@@ -410,10 +410,10 @@ pub(super) async fn maintain(
 /// The production actor owns all scheduling, LL decisions and RF transitions.
 #[cfg(feature = "bluetooth-phy-maintenance")]
 fn diagnostic_maintenance_policy()
--> oer_esp32s31_bluetooth_embassy::controller::maintenance::PhyMaintenancePolicy {
+-> oer_esp32s31_bluetooth_runtime::controller::maintenance::PhyMaintenancePolicy {
     use core::num::NonZeroU32;
     use oer_esp32s31_bluetooth::le::peripheral::maintenance::PeripheralMaintenanceBudget;
-    use oer_esp32s31_bluetooth_embassy::controller::maintenance::PhyMaintenancePolicy;
+    use oer_esp32s31_bluetooth_runtime::controller::maintenance::PhyMaintenancePolicy;
     let n = |value| NonZeroU32::new(value).unwrap();
     let budget = PeripheralMaintenanceBudget::new(n(20_000), n(5_000), n(2_000)).unwrap();
     PhyMaintenancePolicy::new(budget, 200_000, 10_000_000).unwrap()

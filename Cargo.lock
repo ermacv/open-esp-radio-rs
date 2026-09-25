@@ -2246,20 +2246,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-bluetooth-embassy"
-version = "0.1.0"
-dependencies = [
- "bt-hci",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "oer-bluetooth-hci",
- "oer-bluetooth-ll",
- "oer-esp32s31-bluetooth",
- "oer-esp32s31-phy",
-]
-
-[[package]]
 name = "oer-esp32s31-bluetooth-integration"
 version = "0.1.0"
 dependencies = [
@@ -2272,8 +2258,8 @@ dependencies = [
  "oer-bluetooth-hci",
  "oer-bluetooth-ll",
  "oer-esp32s31-bluetooth",
- "oer-esp32s31-bluetooth-embassy",
  "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-bluetooth-runtime",
  "oer-esp32s31-phy",
  "oer-esp32s31-radio-platform-esp-hal",
  "oer-esp32s31-soc",
@@ -2288,6 +2274,20 @@ dependencies = [
  "oer-esp32s31-hal",
  "pin-project",
  "vcell",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-runtime"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-phy",
 ]
 
 [[package]]
@@ -2335,10 +2335,10 @@ dependencies = [
  "oer-esp32s31-wifi",
  "oer-esp32s31-wifi-ap",
  "oer-esp32s31-wifi-dma",
- "oer-esp32s31-wifi-embassy",
  "oer-esp32s31-wifi-embassy-upstream",
  "oer-esp32s31-wifi-esp-hal",
  "oer-esp32s31-wifi-mac",
+ "oer-esp32s31-wifi-runtime",
  "oer-esp32s31-wifi-sta",
  "oer-esp32s31-wifi-xarxa-upstream",
  "oer-ieee80211",
@@ -2502,37 +2502,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-wifi-embassy"
-version = "0.1.0"
-dependencies = [
- "critical-section",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "log",
- "oer-embassy-net",
- "oer-esp32s31-hal",
- "oer-esp32s31-phy",
- "oer-esp32s31-wifi",
- "oer-esp32s31-wifi-ap",
- "oer-esp32s31-wifi-dma",
- "oer-esp32s31-wifi-mac",
- "oer-esp32s31-wifi-sta",
- "oer-ieee80211",
- "oer-memory",
- "oer-network",
- "oer-network-engine",
- "oer-wifi-datapath",
- "oer-wifi-embassy",
- "oer-wifi-rsn",
- "oer-wifi-softmac",
- "oer-wifi-sta",
- "riscv",
- "static_cell",
- "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
-]
-
-[[package]]
 name = "oer-esp32s31-wifi-embassy-upstream"
 version = "0.1.0"
 dependencies = [
@@ -2540,7 +2509,7 @@ dependencies = [
  "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "oer-embassy-net-upstream",
- "oer-esp32s31-wifi-embassy",
+ "oer-esp32s31-wifi-runtime",
  "oer-esp32s31-wifi-sta",
  "oer-network",
  "oer-wifi-embassy",
@@ -2576,6 +2545,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-wifi-runtime"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log",
+ "oer-embassy-net",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-wifi",
+ "oer-esp32s31-wifi-ap",
+ "oer-esp32s31-wifi-dma",
+ "oer-esp32s31-wifi-mac",
+ "oer-esp32s31-wifi-sta",
+ "oer-ieee80211",
+ "oer-memory",
+ "oer-network",
+ "oer-network-engine",
+ "oer-wifi-datapath",
+ "oer-wifi-embassy",
+ "oer-wifi-rsn",
+ "oer-wifi-softmac",
+ "oer-wifi-sta",
+ "riscv",
+ "static_cell",
+ "xarxa-driver 0.1.0 (git+https://github.com/ermacv/xarxa.git?rev=122e97146fc0a174ef3310f4526defc37663bed4)",
+]
+
+[[package]]
 name = "oer-esp32s31-wifi-sta"
 version = "0.1.0"
 dependencies = [
@@ -2600,7 +2600,7 @@ dependencies = [
  "critical-section",
  "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "oer-esp32s31-wifi-embassy",
+ "oer-esp32s31-wifi-runtime",
  "oer-network",
  "oer-wifi-embassy",
  "oer-xarxa-upstream",

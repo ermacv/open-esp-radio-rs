@@ -16,7 +16,7 @@ use oer_esp32s31_wifi_mac::irq::{
 
 use oer_esp32s31_hal::owner::MacInterruptSetup;
 
-use oer_esp32s31_wifi_embassy::datapath::irq::{
+use oer_esp32s31_wifi_runtime::datapath::irq::{
     EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, InterruptEpoch,
 };
 
@@ -106,7 +106,7 @@ impl IrqSink for DiagnosticMacIrqSink {
 fn mac_interrupt() {
     #[cfg(feature = "task-poll-telemetry")]
     let core0_cycle_started =
-        oer_esp32s31_wifi_embassy::diagnostics::core0_rx_cycles::cycle_count();
+        oer_esp32s31_wifi_runtime::diagnostics::core0_rx_cycles::cycle_count();
     #[cfg(feature = "mac-irq-diagnostics")]
     let report = service_mac_interrupt(&DiagnosticMacIrqSink);
     #[cfg(not(feature = "mac-irq-diagnostics"))]
@@ -120,7 +120,7 @@ fn mac_interrupt() {
     });
     #[cfg(feature = "task-poll-telemetry")]
     {
-        use oer_esp32s31_wifi_embassy::diagnostics::core0_rx_cycles::{
+        use oer_esp32s31_wifi_runtime::diagnostics::core0_rx_cycles::{
             CORE0_RX_CYCLES, cycle_count,
         };
 

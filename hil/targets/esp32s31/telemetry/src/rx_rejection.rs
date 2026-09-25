@@ -1,5 +1,5 @@
 //! Translate driver-owned failures to the target-neutral HIL wire contract.
-use oer_esp32s31_wifi_embassy::roles::access_point::{
+use oer_esp32s31_wifi_runtime::roles::access_point::{
     AccessPointRxRejection, AccessPointRxRejectionReason as DriverReason,
 };
 use oer_ieee80211::{

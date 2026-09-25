@@ -28,7 +28,7 @@ phy-fault-injection = [
     "oer-esp32s31-bluetooth-integration?/lifecycle-fault-injection",
     "oer-esp32s31-embassy-wifi?/lifecycle-fault-injection",
 ]
-bluetooth-radio = ["dep:oer-esp32s31-phy", "dep:heapless", "dep:bt-hci", "dep:oer-bluetooth-ll", "dep:oer-esp32s31-bluetooth", "dep:oer-esp32s31-bluetooth-embassy", "dep:oer-esp32s31-bluetooth-integration", "dep:oer-esp32s31-bluetooth-memory", "dep:oer-esp32s31-radio-platform-esp-hal", "dep:embassy-futures", "dep:embedded-io-async", "dep:open-esp-radio-hil-protocol", "open-esp-radio-hil-target-core/bluetooth"]
+bluetooth-radio = ["dep:oer-esp32s31-phy", "dep:heapless", "dep:bt-hci", "dep:oer-bluetooth-ll", "dep:oer-esp32s31-bluetooth", "dep:oer-esp32s31-bluetooth-runtime", "dep:oer-esp32s31-bluetooth-integration", "dep:oer-esp32s31-bluetooth-memory", "dep:oer-esp32s31-radio-platform-esp-hal", "dep:embassy-futures", "dep:embedded-io-async", "dep:open-esp-radio-hil-protocol", "open-esp-radio-hil-target-core/bluetooth"]
 bluetooth-hil = ["bluetooth-radio", "oer-esp32s31-bluetooth/dtm-diagnostics", "oer-esp32s31-bluetooth/rx-fault-injection"]
 bluetooth-gatt = ["bluetooth-radio", "dep:bluetooth-example", "dep:trouble-host"]
 bluetooth-secure-gatt = ["bluetooth-gatt", "bluetooth-example/secure-gatt-application", "dep:embassy-sync", "open-esp-radio-hil-target-core/secure-gatt"]
@@ -38,7 +38,7 @@ owned-network = ["dep:embassy-net-owned", "dep:xarxa-owned", "oer-esp32s31-embas
 open-radio-hil = [
     "dep:oer-wifi-softmac",
     "dep:oer-esp32s31-wifi-mac",
-    "dep:oer-esp32s31-wifi-embassy",
+    "dep:oer-esp32s31-wifi-runtime",
     "oer-esp32s31-runtime/multicore",
     "dep:embassy-futures",
     "dep:embassy-sync",
@@ -147,13 +147,13 @@ trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", 
 bt-hci = { version = "=0.10.1", optional = true }
 oer-bluetooth-ll = { path = "../../../../crates/protocols/bluetooth/le/ll", optional = true }
 oer-esp32s31-bluetooth = { path = "../../../../crates/hardware/esp32s31/driver/bluetooth", optional = true }
-oer-esp32s31-bluetooth-embassy = { path = "../../../../crates/runtime/embassy/esp32s31/bluetooth", optional = true }
+oer-esp32s31-bluetooth-runtime = { path = "../../../../crates/runtime/esp32s31/bluetooth", optional = true }
 oer-esp32s31-bluetooth-integration = { path = "../../../../crates/composition/esp32s31/embassy/bluetooth", optional = true }
 oer-esp32s31-bluetooth-memory = { path = "../../../../crates/hardware/esp32s31/driver/bluetooth/memory", optional = true }
 oer-esp32s31-radio-platform-esp-hal = { path = "../../../../crates/adapters/esp-hal/esp32s31/radio", optional = true, features = ["esp32s31"] }
 oer-wifi-softmac = { workspace = true, optional = true }
 oer-esp32s31-wifi-mac = { workspace = true, optional = true }
-oer-esp32s31-wifi-embassy = { workspace = true, optional = true }
+oer-esp32s31-wifi-runtime = { workspace = true, optional = true }
 xarxa-owned = { workspace = true, optional = true }
 xarxa = { workspace = true, optional = true }
 embassy-executor.workspace = true

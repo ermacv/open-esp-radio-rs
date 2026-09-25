@@ -11,7 +11,7 @@ Follow [the worked channel change](channel-walkthrough.md) for the concrete
 frequency-ready field, review, PAC operation, timeout and scan caller. Use the
 following shorter map when returning to the code:
 
-1. [Runtime target binding](../crates/runtime/embassy/esp32s31/ieee80211/src/roles/scan/target.rs)
+1. [Runtime target binding](../crates/runtime/esp32s31/ieee80211/src/roles/scan/target.rs)
    implements the scan port and retains the caller's hardware owner.
 2. [Chip `ScanPhy`](../crates/roles/esp32s31/ieee80211/sta/src/hardware/channel.rs)
    distinguishes initial channel selection from stop/retune/restore.

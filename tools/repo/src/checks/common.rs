@@ -242,12 +242,27 @@ pub fn classification(package: &Package) -> Result<Classification<'_>> {
     Ok(class)
 }
 
+/// Executor crates. Lower layers expose futures that any executor may poll.
+const EXECUTORS: &[&str] = &["embassy-executor"];
+
+fn binds_executor(layer: &str) -> bool {
+    matches!(layer, "adapter" | "composition" | "facade")
+}
+
 /// Apply declared production edges, including optional and build dependencies.
 /// Dev dependencies may compose experiments with the real production owners.
 pub fn validate_production_edges(packages: &[ProductionPackage]) -> Result<()> {
     for source in packages {
         let source_class = classification(&source.package)?;
         for dependency in production_dependencies(&source.package) {
+            if EXECUTORS.contains(&dependency.name.as_str()) && !binds_executor(source_class.layer)
+            {
+                return Err(format!(
+                    "{} package {} depends on executor {}; only adapters and compositions bind an executor",
+                    source_class.layer, source.package.name, dependency.name
+                )
+                .into());
+            }
             let Some(path) = &dependency.path else {
                 continue;
             };

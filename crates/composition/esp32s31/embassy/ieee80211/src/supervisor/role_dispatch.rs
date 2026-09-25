@@ -122,7 +122,7 @@ impl ProductionWifiEpochRunner {
         )
         .await;
         let completed = matches!(scan.decision, StationScanDecision::NoCandidate { .. });
-        let oer_esp32s31_wifi_embassy::roles::station::StationScanReturned {
+        let oer_esp32s31_wifi_runtime::roles::station::StationScanReturned {
             hardware: registers,
             receive,
             control,

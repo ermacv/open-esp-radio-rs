@@ -199,7 +199,7 @@ pub(super) fn try_split_wifi_stopped_resources(
                 identity,
             } => {
                 let ring = match receive.phase() {
-                    oer_esp32s31_wifi_embassy::datapath::rx::frontier::RxFrontierPhase::Live => {
+                    oer_esp32s31_wifi_runtime::datapath::rx::frontier::RxFrontierPhase::Live => {
                         ProductionRxRing::Live(
                             receive.into_live().unwrap_or_else(|_| {
                                 unreachable!("live scan phase owns a live ring")
@@ -227,7 +227,7 @@ pub(super) fn try_split_wifi_stopped_resources(
                 station,
             } => {
                 let ring = match receive.phase() {
-                    oer_esp32s31_wifi_embassy::datapath::rx::frontier::RxFrontierPhase::Live => {
+                    oer_esp32s31_wifi_runtime::datapath::rx::frontier::RxFrontierPhase::Live => {
                         ProductionRxRing::Live(
                             receive.try_into_live().unwrap_or_else(|_| {
                                 unreachable!("live join phase owns a live ring")
@@ -280,7 +280,7 @@ pub(super) fn try_split_wifi_stopped_resources(
                 registers,
             } => {
                 let ring = match receive.phase() {
-                    oer_esp32s31_wifi_embassy::datapath::rx::frontier::RxFrontierPhase::Live => {
+                    oer_esp32s31_wifi_runtime::datapath::rx::frontier::RxFrontierPhase::Live => {
                         ProductionRxRing::Live(receive.try_into_live().unwrap_or_else(|_| {
                             unreachable!("live reconnect phase owns a live ring")
                         }))

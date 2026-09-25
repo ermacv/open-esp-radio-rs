@@ -3,7 +3,7 @@ use super::*;
 use oer_esp32s31_phy::state::client::{PhyPllTrackClock, PhyTrackTimeError};
 use oer_esp32s31_phy::tracking::schedule::Schedule;
 use oer_esp32s31_wifi::runtime::{WifiMaintenanceError, WifiMaintenanceFailure};
-use oer_esp32s31_wifi_embassy::datapath::maintenance::{StopError, stop_mac};
+use oer_esp32s31_wifi_runtime::datapath::maintenance::{StopError, stop_mac};
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Reason {

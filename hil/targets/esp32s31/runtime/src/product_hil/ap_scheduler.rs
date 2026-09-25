@@ -2,11 +2,11 @@
 use core::cell::RefCell;
 use core::num::NonZeroU32;
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
-use oer_esp32s31_wifi_embassy::roles::access_point::network_tx::{
+use oer_esp32s31_wifi_mac::tx::{LegacyRate, TxPhyRate};
+use oer_esp32s31_wifi_runtime::roles::access_point::network_tx::{
     AccessPointAirtimeConfiguration, AccessPointAirtimePeer, AccessPointAirtimeSelection,
     AirtimeObservation,
 };
-use oer_esp32s31_wifi_mac::tx::{LegacyRate, TxPhyRate};
 use oer_wifi_softmac::{MacTxWork, tx_cost::PpduTiming};
 use open_esp_radio_hil_esp32s31_telemetry::airtime::AirtimeHistory;
 use open_esp_radio_hil_protocol::WifiApScheduler;

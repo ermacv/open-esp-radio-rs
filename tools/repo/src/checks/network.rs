@@ -485,7 +485,7 @@ pub fn profiles() -> [Profile; 22] {
         },
         Profile {
             boundary: RadioCore,
-            manifest: "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml",
+            manifest: "crates/runtime/esp32s31/ieee80211/Cargo.toml",
             features: &["--no-default-features"],
         },
         Profile {

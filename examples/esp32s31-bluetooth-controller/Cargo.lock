@@ -1326,19 +1326,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-bluetooth-embassy"
-version = "0.1.0"
-dependencies = [
- "embassy-futures",
- "embassy-sync 0.8.0",
- "embassy-time",
- "oer-bluetooth-hci",
- "oer-bluetooth-ll",
- "oer-esp32s31-bluetooth",
- "oer-esp32s31-phy",
-]
-
-[[package]]
 name = "oer-esp32s31-bluetooth-integration"
 version = "0.1.0"
 dependencies = [
@@ -1350,8 +1337,8 @@ dependencies = [
  "oer-bluetooth-hci",
  "oer-bluetooth-ll",
  "oer-esp32s31-bluetooth",
- "oer-esp32s31-bluetooth-embassy",
  "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-bluetooth-runtime",
  "oer-esp32s31-phy",
  "oer-esp32s31-radio-platform-esp-hal",
  "oer-esp32s31-soc",
@@ -1366,6 +1353,19 @@ dependencies = [
  "oer-esp32s31-hal",
  "pin-project",
  "vcell",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-runtime"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "oer-bluetooth-hci",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-phy",
 ]
 
 [[package]]

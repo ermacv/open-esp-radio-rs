@@ -40,7 +40,7 @@ use oer_esp32s31_wifi::datapath::lifecycle::{
 
 use oer_esp32s31_wifi_ap::protocol::AccessPointServiceStatus;
 
-use oer_esp32s31_wifi_embassy::{
+use oer_esp32s31_wifi_runtime::{
     datapath::{
         DatapathRunnerExit,
         network::{DatapathNetwork, DatapathNetworkLink},
@@ -138,7 +138,7 @@ impl ProductionWifiEpochRunner {
         let resources = match exit {
             StationExit::Stopped {
                 resources,
-                reason: oer_esp32s31_wifi_embassy::roles::station::StationStopReason::Backend,
+                reason: oer_esp32s31_wifi_runtime::roles::station::StationStopReason::Backend,
                 ..
             } => resources,
             StationExit::Stopped { resources, .. }
@@ -246,7 +246,7 @@ impl ProductionWifiEpochRunner {
             _,
             _,
         >(
-            oer_esp32s31_wifi_embassy::roles::station::connected::ConnectedServiceResources::new(
+            oer_esp32s31_wifi_runtime::roles::station::connected::ConnectedServiceResources::new(
                 parts.runtime,
                 parts.epoch,
                 parts.network,
@@ -865,13 +865,13 @@ impl ProductionWifiEpochRunner {
                 let link_state = access_point_network_link_state(status.authorized);
                 if matches!(link_state, oer_network::LinkState::Down) {
                     access_point_network_link.set_link_state(
-                        oer_esp32s31_wifi_embassy::roles::concurrent::AP_NETWORK_INTERFACE_ID,
+                        oer_esp32s31_wifi_runtime::roles::concurrent::AP_NETWORK_INTERFACE_ID,
                         link_state,
                     );
                 }
                 if matches!(link_state, oer_network::LinkState::Up) {
                     access_point_network_link.set_link_state(
-                        oer_esp32s31_wifi_embassy::roles::concurrent::AP_NETWORK_INTERFACE_ID,
+                        oer_esp32s31_wifi_runtime::roles::concurrent::AP_NETWORK_INTERFACE_ID,
                         link_state,
                     );
                 }
@@ -957,10 +957,10 @@ impl ProductionWifiEpochRunner {
         loop {
             match interrupt_epoch.park() {
                 Ok(_) => break,
-                Err(oer_esp32s31_wifi_embassy::datapath::irq::MacInterruptEpochQuiesceError::AlreadyQuiesced) => {
+                Err(oer_esp32s31_wifi_runtime::datapath::irq::MacInterruptEpochQuiesceError::AlreadyQuiesced) => {
                     break;
                 }
-                Err(oer_esp32s31_wifi_embassy::datapath::irq::MacInterruptEpochQuiesceError::Route(error)) => {
+                Err(oer_esp32s31_wifi_runtime::datapath::irq::MacInterruptEpochQuiesceError::Route(error)) => {
                     diagnostics_event!(
                         "open-radio: paired MAC interrupt park unexpectedly failed: {error:?}"
                     );
@@ -1032,7 +1032,7 @@ impl ProductionWifiEpochRunner {
         lifecycle
             .stop_station()
             .unwrap_or_else(|_| unreachable!("paired teardown retains its final station role"));
-        let oer_esp32s31_wifi_embassy::roles::access_point::StaApAccessPointFinished {
+        let oer_esp32s31_wifi_runtime::roles::access_point::StaApAccessPointFinished {
             stopped: access_point_stopped,
             network_tx: _access_point_network_tx,
             security_material: _access_point_security_material,
@@ -1059,7 +1059,7 @@ impl ProductionWifiEpochRunner {
         let station_drivers = finish_sta_ap_station(prepared_station)
             .unwrap_or_else(|_| unreachable!("paired DATAPATH stop parks every station TX owner"));
 
-        let oer_esp32s31_wifi_embassy::roles::station::connected::ConnectedStaDrivers {
+        let oer_esp32s31_wifi_runtime::roles::station::connected::ConnectedStaDrivers {
             services: station_services,
             report: _,
         } = station_drivers;

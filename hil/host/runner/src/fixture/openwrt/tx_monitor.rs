@@ -1,6 +1,6 @@
 //! Opt-in packet evidence from the OpenWrt AP's own TX monitor tap.
 
-use super::openwrt_capture::{RemoteCapture, ssh};
+use crate::fixture::openwrt::capture::{RemoteCapture, ssh};
 use oer_process::CommandExt as _;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{Result, fixture::openwrt_fixture::resolve_station_mac, lab::config::OpenWrtConfig};
+use crate::{Result, fixture::openwrt::evidence::resolve_station_mac, lab::config::OpenWrtConfig};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct MacFrameKey {

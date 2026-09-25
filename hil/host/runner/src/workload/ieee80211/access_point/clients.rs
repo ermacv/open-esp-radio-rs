@@ -9,8 +9,8 @@ use crate::workload::ieee80211::access_point::with_cleanup_errors;
 use crate::{
     Result,
     fixture::{
-        controlled_client::ControlledClient,
-        controlled_openwrt_client::{ControlledOpenWrtClient, OpenWrtClientLinkObservation},
+        local::client::ControlledClient,
+        openwrt::client::{ControlledOpenWrtClient, OpenWrtClientLinkObservation},
     },
     lab::config::StationFixtureConfig,
     scenario::AccessPointClient,
@@ -21,7 +21,7 @@ pub(super) enum ConnectedClients {
         primary: ControlledClient,
         secondary: Option<ControlledOpenWrtClient>,
         management_capture:
-            Option<Box<crate::fixture::openwrt_tx_monitor::OpenWrtManagementCapture>>,
+            Option<Box<crate::fixture::openwrt::tx_monitor::OpenWrtManagementCapture>>,
     },
     OpenWrt {
         primary: ControlledOpenWrtClient,
@@ -118,7 +118,7 @@ pub(super) fn connect_clients(
                 let capture = match &context.lab.station_fixture {
                     StationFixtureConfig::OpenWrt(config) if config.monitor_interface.is_some() => {
                         Some(Box::new(
-                            crate::fixture::openwrt_tx_monitor::OpenWrtManagementCapture::start(
+                            crate::fixture::openwrt::tx_monitor::OpenWrtManagementCapture::start(
                                 config, output, timeout,
                             )?,
                         ))

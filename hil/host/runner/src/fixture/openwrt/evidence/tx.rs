@@ -4,7 +4,7 @@
 //! an error; matching counts alone do not establish matching packet identities.
 
 use super::{OpenWrtConfig, Result};
-use crate::fixture::openwrt_capture::RemoteCapture;
+use crate::fixture::openwrt::capture::RemoteCapture;
 use oer_process::CommandExt as _;
 use std::{fs, net::Ipv4Addr, path::Path, process::Command, time::Duration};
 

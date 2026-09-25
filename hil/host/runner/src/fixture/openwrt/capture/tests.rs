@@ -79,7 +79,7 @@ esac
         let script = remote
             .independent_script(
                 &config,
-                super::super::channel::Geometry {
+                crate::fixture::channel::Geometry {
                     frequency: 2472,
                     width: 40,
                     center: 2462,

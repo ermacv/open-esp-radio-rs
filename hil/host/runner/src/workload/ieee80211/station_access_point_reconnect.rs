@@ -10,7 +10,7 @@ use open_esp_radio_hil_protocol::{
 
 use crate::{
     Result,
-    fixture::{controlled_ap::ControlledAp, controlled_client::ControlledClient},
+    fixture::{controlled_ap::ControlledAp, local::client::ControlledClient},
     scenario::PhyExpectation,
     session::{SerialCapture, probe_udp_rx_ready_via},
     workload::ieee80211::{

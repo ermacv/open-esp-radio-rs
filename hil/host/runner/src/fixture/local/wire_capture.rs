@@ -1,7 +1,7 @@
 //! Host Ethernet boundary paired with independent radio evidence.
 //! Includes ARP so socket acceptance cannot be mistaken for wire transmission.
-use super::capture_process;
 use crate::Result;
+use crate::fixture::capture_process;
 use std::{
     fs,
     net::Ipv4Addr,
@@ -35,8 +35,8 @@ impl Capture {
         if !result.status.success() {
             return Err("host Ethernet capture failed".into());
         }
-        let frames = super::local_air_monitor::dumpcap_captured(&summary)?;
-        let drops = super::local_air_monitor::dumpcap_dropped(&summary)?;
+        let frames = crate::fixture::local::air_monitor::dumpcap_captured(&summary)?;
+        let drops = crate::fixture::local::air_monitor::dumpcap_dropped(&summary)?;
         fs::write(
             self.output.with_extension("json"),
             serde_json::to_vec_pretty(&serde_json::json!({

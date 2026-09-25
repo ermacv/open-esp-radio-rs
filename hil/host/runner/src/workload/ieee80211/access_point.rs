@@ -10,8 +10,8 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result,
     fixture::{
-        controlled_openwrt_client::{ControlledOpenWrtClient, OpenWrtClientLinkObservation},
-        local_air_monitor::LocalAirMonitorCapture,
+        local::air_monitor::LocalAirMonitorCapture,
+        openwrt::client::{ControlledOpenWrtClient, OpenWrtClientLinkObservation},
     },
     lab::config::StationFixtureConfig,
     scenario::{

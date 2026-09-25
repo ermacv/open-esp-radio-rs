@@ -486,7 +486,10 @@ all radio, lifecycle and traffic evidence uses the typed HIL protocol.
   analyzer remains `tools/memory-report`.
 - `lab` owns local configuration, topology/provenance, the exclusive fixture
   guard and the laboratory error type; `fixture` implements controlled host and
-  peer capabilities, including the scenario fixture preconditions.
+  peer capabilities, including the scenario fixture preconditions. Its
+  `local` (laptop radio and helper) and `openwrt` (SSH-managed router)
+  providers each own their AP, client, monitors and session evidence;
+  `controlled_ap` selects between them.
 - `session` owns one UART capture and its protocol/readiness/validation state;
   it needs only the laboratory and the scenario's target settings.
 - `context` gives one workload repetition its laboratory, target settings,

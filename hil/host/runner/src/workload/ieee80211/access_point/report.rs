@@ -6,11 +6,11 @@ use open_esp_radio_hil_protocol::{Ipv4Endpoint, SESSION_FLOW_CAPACITY};
 
 use crate::{
     fixture::{
-        controlled_openwrt_client::{
+        local::air_monitor::LocalAirMonitorEvidence,
+        openwrt::client::{
             OpenWrtClientFixturePreparation, OpenWrtClientLinkEvidence,
             SecondaryClientProbeEvidence,
         },
-        local_air_monitor::LocalAirMonitorEvidence,
     },
     scenario::Direction,
 };

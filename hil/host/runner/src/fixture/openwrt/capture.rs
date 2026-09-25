@@ -1,6 +1,6 @@
 //! Scoped OpenWrt packet capture on an owned monitor or an existing interface.
 //! Readiness and stop use process events; only created interfaces are removed.
-use super::capture_process;
+use crate::fixture::capture_process;
 use crate::{Result, lab::config::OpenWrtConfig};
 use oer_process::CommandExt as _;
 use std::{
@@ -118,7 +118,7 @@ impl RemoteInterface {
     }
 }
 
-pub(super) struct RemoteCapture {
+pub(in crate::fixture) struct RemoteCapture {
     ssh_target: String,
     remote: RemoteInterface,
     output: PathBuf,
@@ -126,11 +126,11 @@ pub(super) struct RemoteCapture {
 }
 
 impl RemoteCapture {
-    pub(super) fn output_path(&self) -> &Path {
+    pub(in crate::fixture) fn output_path(&self) -> &Path {
         &self.output
     }
 
-    pub(super) fn start_monitor(
+    pub(in crate::fixture) fn start_monitor(
         config: &OpenWrtConfig,
         output: PathBuf,
         filter: &str,
@@ -163,9 +163,9 @@ impl RemoteCapture {
     }
 
     /// A dedicated idle PHY; never borrows or retunes another interface.
-    pub(super) fn start_independent(
+    pub(in crate::fixture) fn start_independent(
         config: &crate::lab::config::AirObserverConfig,
-        geometry: super::channel::Geometry,
+        geometry: crate::fixture::channel::Geometry,
         filter: &str,
         output: PathBuf,
         duration: Duration,
@@ -189,14 +189,15 @@ impl RemoteCapture {
         )
         .supervised_output()?;
         if !observed.status.success()
-            || super::channel::Geometry::parse(std::str::from_utf8(&observed.stdout)?)? != geometry
+            || crate::fixture::channel::Geometry::parse(std::str::from_utf8(&observed.stdout)?)?
+                != geometry
         {
             return Err("independent monitor actual channel differs from the AP".into());
         }
         Ok(owner)
     }
 
-    pub(super) fn start_managed(
+    pub(in crate::fixture) fn start_managed(
         config: &OpenWrtConfig,
         interface: &str,
         output: PathBuf,
@@ -220,7 +221,7 @@ impl RemoteCapture {
         Ok(owner)
     }
 
-    pub(super) fn finish_capture(&mut self) -> Result<(u64, u64)> {
+    pub(in crate::fixture) fn finish_capture(&mut self) -> Result<(u64, u64)> {
         let child = self.child.take().expect("packet capture owns its child");
         let output = child.finish()?;
         if !output.status.success() {
@@ -281,11 +282,11 @@ fn copy_remote(target: &str, remote: &str, local: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn ssh(config: &OpenWrtConfig, script: &str) -> Command {
+pub(in crate::fixture) fn ssh(config: &OpenWrtConfig, script: &str) -> Command {
     ssh_target(&config.ssh_target, script)
 }
 
-pub(super) fn ssh_target(target: &str, script: &str) -> Command {
+pub(in crate::fixture) fn ssh_target(target: &str, script: &str) -> Command {
     let mut command = Command::new("ssh");
     command
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
@@ -307,7 +308,7 @@ impl RemoteInterface {
     fn independent_script(
         &self,
         config: &crate::lab::config::AirObserverConfig,
-        geometry: super::channel::Geometry,
+        geometry: crate::fixture::channel::Geometry,
         filter: &str,
         duration: Duration,
     ) -> Result<String> {

@@ -81,8 +81,13 @@ impl BenchmarkIpv4Route {
         target: Ipv4Addr,
         output: &Path,
         duration: std::time::Duration,
-    ) -> Result<crate::fixture::host_wire_capture::Capture> {
-        crate::fixture::host_wire_capture::Capture::start(&self.interface, target, output, duration)
+    ) -> Result<crate::fixture::local::wire_capture::Capture> {
+        crate::fixture::local::wire_capture::Capture::start(
+            &self.interface,
+            target,
+            output,
+            duration,
+        )
     }
 
     pub(crate) fn verify_socket_source(&self, actual: Ipv4Addr) -> Result<()> {

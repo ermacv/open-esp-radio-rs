@@ -264,7 +264,7 @@ impl<B: Backend> AccessPoint<B> {
 impl<B: Backend> Drop for AccessPoint<B> {
     fn drop(&mut self) {
         if !self.restored {
-            super::cleanup::record("restore OpenWrt scenario profile", || self.restore());
+            crate::fixture::cleanup::record("restore OpenWrt scenario profile", || self.restore());
         }
     }
 }
@@ -284,7 +284,7 @@ pub(crate) fn probe(config: &OpenWrtConfig, profile: Profile) -> Result<()> {
     );
     let output = ssh(config, &script)
         .supervised_output()
-        .and_then(super::Error::ssh_output)?;
+        .and_then(crate::fixture::Error::ssh_output)?;
     if !output.status.success() {
         return Err("cannot discover OpenWrt radio capabilities (ucode, iw, iwinfo and jsonfilter required)".into());
     }
@@ -292,7 +292,7 @@ pub(crate) fn probe(config: &OpenWrtConfig, profile: Profile) -> Result<()> {
 }
 
 fn verify_capabilities(profile: Profile, info: &str) -> Result<()> {
-    super::channel::verify_ap_capabilities(
+    crate::fixture::channel::verify_ap_capabilities(
         profile.channel,
         (profile.phy == PhyExpectation::Ht40).then_some(profile.ht40_above),
         profile.phy == PhyExpectation::He20,
@@ -323,7 +323,7 @@ fn invoke(
     let program = Zeroizing::new(format!(
         "let request = {};\n{}",
         request,
-        include_str!("openwrt_ap/remote.uc")
+        include_str!("ap/remote.uc")
     ));
     let mut command = ssh(config, "ucode -");
     command
@@ -336,13 +336,14 @@ fn invoke(
         .take()
         .ok_or("SSH stdin unavailable")?
         .write_all(program.as_bytes())?;
-    let mut output =
-        super::Error::ssh_output(child.wait_with_output_timeout(Some(Duration::from_secs(30)))?)?;
+    let mut output = crate::fixture::Error::ssh_output(
+        child.wait_with_output_timeout(Some(Duration::from_secs(30)))?,
+    )?;
     if !output.status.success() {
         // Never include a ucode source excerpt containing the credential-bearing request.
         let error = String::from_utf8_lossy(&output.stderr);
         let message = error.lines().next().unwrap_or("remote operation failed");
-        return Err(super::Error::new(format!("OpenWrt {operation}: {message}")).into());
+        return Err(crate::fixture::Error::new(format!("OpenWrt {operation}: {message}")).into());
     }
     Ok(Zeroizing::new(String::from_utf8(std::mem::take(
         &mut output.stdout,

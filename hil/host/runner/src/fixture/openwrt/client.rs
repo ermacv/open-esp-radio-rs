@@ -130,7 +130,7 @@ impl ControlledOpenWrtClient {
     ) -> Result<OpenWrtClientFixturePreparation> {
         let started = Instant::now();
         restore(fixture)?;
-        let observed = super::openwrt_ap::observe(fixture)?;
+        let observed = crate::fixture::openwrt::ap::observe(fixture)?;
         let width = access_point.bandwidth_mhz();
         if !observed.enabled
             || observed.channel != access_point.channel()
@@ -595,7 +595,7 @@ fn derive_psk(ssid: &str, passphrase: &str) -> Result<Zeroizing<String>> {
     Ok(Zeroizing::new(psk.to_owned()))
 }
 
-pub(super) fn restore(fixture: &OpenWrtConfig) -> Result<()> {
+pub(in crate::fixture) fn restore(fixture: &OpenWrtConfig) -> Result<()> {
     let cleanup = cleanup_forwarding_script();
     let script = format!(
         r#"set -u

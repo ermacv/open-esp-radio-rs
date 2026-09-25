@@ -1,6 +1,6 @@
 //! Session-bounded evidence from the laptop-owned nl80211 AP.
 
-use super::capture_process::{self, Capture};
+use crate::fixture::capture_process::{self, Capture};
 use oer_process::CommandExt as _;
 use std::{net::Ipv4Addr, process::Command, time::Duration};
 

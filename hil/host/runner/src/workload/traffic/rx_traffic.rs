@@ -11,8 +11,8 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result, evidence,
     fixture::{
-        local_air_monitor::{LocalAirMonitorCapture, LocalAirMonitorEvidence},
-        openwrt_tx_monitor::{OpenWrtTxMonitorCapture, OpenWrtTxMonitorEvidence},
+        local::air_monitor::{LocalAirMonitorCapture, LocalAirMonitorEvidence},
+        openwrt::tx_monitor::{OpenWrtTxMonitorCapture, OpenWrtTxMonitorEvidence},
         station_fixture::RxCapture,
     },
     lab::config::StationFixtureConfig,
@@ -180,7 +180,7 @@ pub(crate) fn run(
     } else {
         None
     };
-    let remote_air_capture = crate::fixture::openwrt_air_monitor::Capture::start(
+    let remote_air_capture = crate::fixture::openwrt::air_monitor::Capture::start(
         context.lab,
         Some(options.address),
         options.duration,

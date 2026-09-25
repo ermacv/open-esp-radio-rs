@@ -1,8 +1,8 @@
 //! Scenario-owned Linux AP configuration. Secrets travel only on helper stdin.
 
-use super::{
+use crate::fixture::{
     channel::Geometry,
-    wpa_control::{Control, field},
+    local::wpa_control::{Control, field},
 };
 use crate::{
     Result,
@@ -142,7 +142,7 @@ fn verify_geometry(expected: Geometry, observed: Geometry) -> Result<()> {
 
 impl Drop for AccessPoint {
     fn drop(&mut self) {
-        super::cleanup::record("restore managed Wi-Fi", || {
+        crate::fixture::cleanup::record("restore managed Wi-Fi", || {
             helper("managed", None).map(drop)
         });
     }
@@ -158,9 +158,13 @@ pub(crate) fn check(
 }
 
 fn probe(config: &LocalLinuxConfig, phy: PhyExpectation) -> Result<()> {
-    super::network_helper::doctor()?;
+    crate::fixture::local::network_helper::doctor()?;
     let identity = Command::new("sudo")
-        .args(["-n", super::network_helper::PATH, "identity"])
+        .args([
+            "-n",
+            crate::fixture::local::network_helper::PATH,
+            "identity",
+        ])
         .supervised_output()?;
     if !identity.status.success() {
         return Err("cannot discover local AP radio".into());
@@ -172,7 +176,7 @@ fn probe(config: &LocalLinuxConfig, phy: PhyExpectation) -> Result<()> {
     if !info.status.success() {
         return Err("cannot discover local AP capabilities".into());
     }
-    super::channel::verify_ap_capabilities(
+    crate::fixture::channel::verify_ap_capabilities(
         config.channel,
         (phy == PhyExpectation::Ht40).then_some(config.ht40_above),
         phy == PhyExpectation::He20,
@@ -271,7 +275,7 @@ fn dhcp_range(address: Ipv4Addr, prefix: u8) -> Result<(Ipv4Addr, Ipv4Addr, Ipv4
 fn helper(action: &str, input: Option<&str>) -> Result<Zeroizing<String>> {
     let mut command = Command::new("sudo");
     command
-        .args(["-n", super::network_helper::PATH, action])
+        .args(["-n", crate::fixture::local::network_helper::PATH, action])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -286,7 +290,7 @@ fn helper(action: &str, input: Option<&str>) -> Result<Zeroizing<String>> {
     let output = child.wait_with_output_timeout(Some(Duration::from_secs(30)))?;
     if !output.status.success() {
         let diagnostic = diagnostic(&output, input);
-        return Err(super::Error::new(format!(
+        return Err(crate::fixture::Error::new(format!(
             "Linux AP helper {action} failed with {}: {}",
             output.status,
             diagnostic.trim()

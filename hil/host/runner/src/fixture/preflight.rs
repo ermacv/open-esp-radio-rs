@@ -38,16 +38,16 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
     if required.station_network {
         super::cleanup::require_healthy()?;
     }
-    super::network_helper::require_for(lab, required)?;
+    super::local::network_helper::require_for(lab, required)?;
     if required.station_network {
         match &lab.station_fixture {
             StationFixtureConfig::OpenWrt(config) => {
                 let phy = lab.fixture_phy(scenario);
-                super::openwrt_ap::probe(config, super::openwrt_ap::Profile::new(config, phy))
+                super::openwrt::ap::probe(config, super::openwrt::ap::Profile::new(config, phy))
                     .map_err(super::Error::context)?;
                 // Both directions consume remote counters and command-line capture tools.
                 if required.station_udp_rx_capture || required.station_udp_tx_capture {
-                    super::openwrt_fixture::doctor_tools(config)?;
+                    super::openwrt::evidence::doctor_tools(config)?;
                 }
                 if matches!(
                     scenario.workload,
@@ -60,7 +60,7 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
                 }
             }
             StationFixtureConfig::LocalLinux(config) => {
-                super::local_ap::check(config, &lab.station, lab.fixture_phy(scenario))
+                super::local::ap::check(config, &lab.station, lab.fixture_phy(scenario))
                     .map_err(super::Error::context)?;
                 if required.station_udp_rx_capture || required.station_udp_tx_capture {
                     crate::image::require_program(std::ffi::OsStr::new("dumpcap"))?;
@@ -75,22 +75,22 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
         }
     }
     if required.laptop_client {
-        super::controlled_client::doctor()?;
+        super::local::client::doctor()?;
     }
     if required.openwrt_client {
         let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
             return Err(super::Error::new("scenario requires an OpenWrt client").into());
         };
-        super::controlled_openwrt_client::doctor(&lab.access_point, config)?;
+        super::openwrt::client::doctor(&lab.access_point, config)?;
     }
     if required.openwrt_tx_monitor {
         let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
             return Err(super::Error::new("scenario requires an OpenWrt monitor").into());
         };
-        super::openwrt_tx_monitor::doctor(config)?;
+        super::openwrt::tx_monitor::doctor(config)?;
     }
     if required.laptop_air_monitor {
-        super::local_air_monitor::doctor()?;
+        super::local::air_monitor::doctor()?;
     }
     Ok(())
 }

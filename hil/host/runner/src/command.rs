@@ -132,7 +132,7 @@ pub(crate) fn run() -> Result<()> {
             let lab = lab::config::LabConfig::load(&lab_path)?;
             let required = lab::requirements::Requirements::union(&selected);
             let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
-            fixture::network_helper::require_for(&lab, required)?;
+            fixture::local::network_helper::require_for(&lab, required)?;
             let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
             orchestration::run_all(
                 &root,
@@ -277,7 +277,7 @@ pub(crate) fn run() -> Result<()> {
             let lab = lab::config::LabConfig::load(&lab_path)?;
             let required = lab::requirements::Requirements::for_scenario(&selected);
             let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
-            fixture::network_helper::require_for(&lab, required)?;
+            fixture::local::network_helper::require_for(&lab, required)?;
             let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
             orchestration::run_one(
                 &root,
@@ -306,7 +306,7 @@ pub(crate) fn run() -> Result<()> {
             let snapshot = image::snapshot::capture(&root, &source_include)?;
             let required = lab::requirements::Requirements::union(&selected);
             let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
-            fixture::network_helper::require_for(&lab, required)?;
+            fixture::local::network_helper::require_for(&lab, required)?;
             let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
             orchestration::run_all(
                 &root,

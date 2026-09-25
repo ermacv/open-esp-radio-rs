@@ -8,8 +8,8 @@ use crate::{
 
 /// Restores the selected AP frontier on every normal or error return.
 pub(crate) enum ControlledAp {
-    Local(super::local_ap::AccessPoint),
-    OpenWrt(Box<super::openwrt_ap::AccessPoint>),
+    Local(super::local::ap::AccessPoint),
+    OpenWrt(Box<super::openwrt::ap::AccessPoint>),
     External,
 }
 
@@ -21,11 +21,11 @@ impl ControlledAp {
     ) -> Result<Self> {
         match fixture {
             StationFixtureConfig::LocalLinux(config) => Ok(Self::Local(
-                super::local_ap::AccessPoint::start(config, station, phy)
+                super::local::ap::AccessPoint::start(config, station, phy)
                     .map_err(super::Error::context)?,
             )),
             StationFixtureConfig::OpenWrt(openwrt) => Ok(Self::OpenWrt(Box::new(
-                super::openwrt_ap::AccessPoint::start(openwrt, station, phy)
+                super::openwrt::ap::AccessPoint::start(openwrt, station, phy)
                     .map_err(super::Error::context)?,
             ))),
             StationFixtureConfig::External(_) => {

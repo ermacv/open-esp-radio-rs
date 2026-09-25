@@ -1,8 +1,8 @@
 //! Independent passive capture on a dedicated, initially idle OpenWrt PHY.
 //! Uses the same event-driven capture owner and air decoder as other fixtures.
-use super::{
-    local_air_monitor,
-    openwrt_capture::{RemoteCapture, ssh_target},
+use crate::fixture::{
+    local,
+    openwrt::capture::{RemoteCapture, ssh_target},
 };
 use crate::{
     Result,
@@ -49,9 +49,9 @@ impl Capture {
                 "independent observer must be a different host from the transmitting AP".into(),
             );
         }
-        let geometry = local_air_monitor::resolve_observer_action(ap)?;
+        let geometry = local::air_monitor::resolve_observer_action(ap)?;
         let target_mac = target
-            .map(|address| super::openwrt_fixture::resolve_station_mac(ap, address))
+            .map(|address| crate::fixture::openwrt::evidence::resolve_station_mac(ap, address))
             .transpose()?
             .unwrap_or_else(|| "02:00:00:00:00:01".into());
         let filter = if target.is_some() {
@@ -88,7 +88,7 @@ impl Capture {
         match result {
             Ok((captured, dropped)) => {
                 let mut evidence =
-                    local_air_monitor::parse_capture(self.remote.output_path(), &self.target_mac)?;
+                    local::air_monitor::parse_capture(self.remote.output_path(), &self.target_mac)?;
                 evidence.captured_frames = captured;
                 evidence.kernel_dropped = dropped;
                 fs::write(path, serde_json::to_vec_pretty(&evidence)?)?;

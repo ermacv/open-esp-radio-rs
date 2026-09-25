@@ -12,7 +12,7 @@ use zeroize::Zeroizing;
 use crate::{Result, lab::config::AccessPointConfig};
 
 pub(crate) fn doctor() -> Result<()> {
-    crate::fixture::network_helper::doctor()
+    crate::fixture::local::network_helper::doctor()
 }
 
 pub(crate) struct ControlledClient {
@@ -39,7 +39,7 @@ impl ControlledClient {
 
         let owner = Self { restored: false };
         let mut child = Command::new("sudo")
-            .args(["-n", crate::fixture::network_helper::PATH, "client"])
+            .args(["-n", crate::fixture::local::network_helper::PATH, "client"])
             .stdout(Stdio::from(log.try_clone()?))
             .stderr(Stdio::from(log))
             .stdin(Stdio::piped())
@@ -56,11 +56,12 @@ impl ControlledClient {
             ))
             .into());
         }
-        let mut control =
-            super::wpa_control::Control::connect(Path::new("/run/open-radio-wpa-control/wlan0"))?;
+        let mut control = crate::fixture::local::wpa_control::Control::connect(Path::new(
+            "/run/open-radio-wpa-control/wlan0",
+        ))?;
         control.record_to(std::fs::File::create(output.join("control.jsonl"))?);
         let result = control.wait_connected();
-        let state = super::wpa_control::field(&control.last_status, "wpa_state");
+        let state = crate::fixture::local::wpa_control::field(&control.last_status, "wpa_state");
         let stage = connection_stage(state);
         std::fs::write(
             output.join("connection.json"),
@@ -134,7 +135,7 @@ impl Drop for ControlledClient {
 
 fn restore_managed() -> Result<()> {
     let status = Command::new("sudo")
-        .args(["-n", crate::fixture::network_helper::PATH, "managed"])
+        .args(["-n", crate::fixture::local::network_helper::PATH, "managed"])
         .supervised_status()?;
     if !status.success() {
         return Err(crate::fixture::Error::new(format!(

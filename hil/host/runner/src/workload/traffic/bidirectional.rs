@@ -25,9 +25,9 @@ use crate::scenario::HtGuardIntervalExpectation;
 use crate::{
     Result, evidence,
     fixture::{
-        local_air_monitor::{LocalAirMonitorCapture, LocalAirMonitorEvidence},
-        local_linux_fixture::{LocalLinuxTxCapture, LocalLinuxTxEvidence},
-        openwrt_tx_monitor::{MacFrameKey, OpenWrtTxMonitorCapture, OpenWrtTxMonitorEvidence},
+        local::air_monitor::{LocalAirMonitorCapture, LocalAirMonitorEvidence},
+        local::evidence::{LocalLinuxTxCapture, LocalLinuxTxEvidence},
+        openwrt::tx_monitor::{MacFrameKey, OpenWrtTxMonitorCapture, OpenWrtTxMonitorEvidence},
         station_fixture::{RxCapture, RxEvidence},
     },
     lab::config::StationFixtureConfig,
@@ -231,7 +231,7 @@ pub(crate) fn run(
     } else {
         None
     };
-    let remote_air_capture = crate::fixture::openwrt_air_monitor::Capture::start(
+    let remote_air_capture = crate::fixture::openwrt::air_monitor::Capture::start(
         context.lab,
         Some(options.address),
         options.duration,

@@ -1,7 +1,7 @@
 //! Independent passive 802.11 evidence from the laptop radio.
 
-use super::capture_process::{self, Capture};
-use super::channel::Geometry;
+use crate::fixture::capture_process::{self, Capture};
+use crate::fixture::channel::Geometry;
 use oer_process::CommandExt as _;
 use std::io::Write as _;
 use std::{
@@ -15,7 +15,7 @@ use std::{
 
 use crate::{
     Result,
-    fixture::{openwrt_fixture::resolve_station_mac, openwrt_tx_monitor::MacFrameKey},
+    fixture::{openwrt::evidence::resolve_station_mac, openwrt::tx_monitor::MacFrameKey},
     lab::config::OpenWrtConfig,
 };
 
@@ -141,7 +141,11 @@ impl LocalAirMonitorCapture {
         if let Some(geometry) = geometry {
             let mut command = Command::new("sudo");
             command
-                .args(["-n", crate::fixture::network_helper::PATH, "observer"])
+                .args([
+                    "-n",
+                    crate::fixture::local::network_helper::PATH,
+                    "observer",
+                ])
                 .stdin(Stdio::piped())
                 .stdout(Stdio::null())
                 .stderr(Stdio::piped());
@@ -233,7 +237,7 @@ impl LocalAirMonitorCapture {
     }
 }
 
-pub(super) fn resolve_observer_action(config: &OpenWrtConfig) -> Result<Geometry> {
+pub(in crate::fixture) fn resolve_observer_action(config: &OpenWrtConfig) -> Result<Geometry> {
     let output = Command::new("ssh")
         .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
         .arg(&config.ssh_target)
@@ -263,7 +267,7 @@ impl Drop for LocalAirMonitorCapture {
 }
 
 pub(crate) fn doctor() -> Result<()> {
-    crate::fixture::network_helper::doctor()?;
+    crate::fixture::local::network_helper::doctor()?;
     for tool in ["dumpcap", "tshark"] {
         let status = Command::new(tool)
             .arg("--version")
@@ -280,7 +284,10 @@ pub(crate) fn doctor() -> Result<()> {
     Ok(())
 }
 
-pub(super) fn parse_capture(path: &Path, target_mac: &str) -> Result<LocalAirMonitorEvidence> {
+pub(in crate::fixture) fn parse_capture(
+    path: &Path,
+    target_mac: &str,
+) -> Result<LocalAirMonitorEvidence> {
     let output = Command::new("tshark")
         .args(["-r"])
         .arg(path)
@@ -640,7 +647,7 @@ fn parse_retry_flag(value: &str) -> bool {
 
 fn helper_action(action: &str) -> Result<()> {
     let status = Command::new("sudo")
-        .args(["-n", crate::fixture::network_helper::PATH, action])
+        .args(["-n", crate::fixture::local::network_helper::PATH, action])
         .supervised_status()?;
     if !status.success() {
         return Err(crate::fixture::Error::new(format!(
@@ -651,7 +658,7 @@ fn helper_action(action: &str) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn dumpcap_captured(summary: &str) -> Result<u64> {
+pub(in crate::fixture) fn dumpcap_captured(summary: &str) -> Result<u64> {
     summary
         .lines()
         .find_map(|line| line.trim().strip_prefix("Packets captured:"))
@@ -661,7 +668,7 @@ pub(super) fn dumpcap_captured(summary: &str) -> Result<u64> {
         .map_err(|error| format!("invalid independent captured packet count: {error}").into())
 }
 
-pub(super) fn dumpcap_dropped(summary: &str) -> Result<u64> {
+pub(in crate::fixture) fn dumpcap_dropped(summary: &str) -> Result<u64> {
     let counts = summary
         .lines()
         .find_map(|line| {

@@ -101,7 +101,7 @@ fn fixture_lifecycle_harness() {
             fs::write(root.join("process"), "running").unwrap();
         }
         super::cleanup::record("restore OpenWrt client", || {
-            super::controlled_openwrt_client::restore(config)
+            super::openwrt::client::restore(config)
         });
         let records = scope.finish().unwrap();
         let success = matches!(
@@ -115,9 +115,9 @@ fn fixture_lifecycle_harness() {
                 assert!(!root.join(resource).exists(), "owned {resource} leaked");
             }
             // Recovery is idempotent after successful deletion.
-            super::controlled_openwrt_client::restore(config).unwrap();
+            super::openwrt::client::restore(config).unwrap();
         } else {
-            assert!(super::controlled_openwrt_client::restore(config).is_err());
+            assert!(super::openwrt::client::restore(config).is_err());
         }
         if case == "cleanup-process-mismatch" {
             assert!(root.join("process").exists());
@@ -153,14 +153,14 @@ fn fixture_lifecycle_harness() {
             fs::write(root.join("monitor"), "external").unwrap();
         }
         let result: crate::Result<Box<dyn std::any::Any>> = if case == "monitor-discovery-drop" {
-            super::openwrt_tx_monitor::OpenWrtManagementCapture::start(
+            super::openwrt::tx_monitor::OpenWrtManagementCapture::start(
                 config,
                 &root,
                 Duration::from_secs(3),
             )
             .map(|owner| Box::new(owner) as Box<dyn std::any::Any>)
         } else {
-            super::openwrt_tx_monitor::OpenWrtTxMonitorCapture::start(
+            super::openwrt::tx_monitor::OpenWrtTxMonitorCapture::start(
                 config,
                 "192.0.2.2".parse().unwrap(),
                 4323,

@@ -20,8 +20,8 @@ use serde::Serialize;
 use crate::{
     Result,
     fixture::{
-        controlled_client::ControlledClient,
-        local_air_monitor::{LocalAirMonitorCapture, LocalAirMonitorEvidence},
+        local::air_monitor::{LocalAirMonitorCapture, LocalAirMonitorEvidence},
+        local::client::ControlledClient,
     },
     session::{SerialCapture, SessionEvidence, probe_udp_rx_ready_via},
     transport::udp::configure_qualification_receive_buffer,

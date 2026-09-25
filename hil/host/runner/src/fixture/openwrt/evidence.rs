@@ -1,6 +1,6 @@
 //! Session-bounded, read-only evidence from the laboratory OpenWrt AP.
 
-use super::capture_process;
+use crate::fixture::capture_process;
 use oer_process::CommandExt as _;
 use std::{
     net::{Ipv4Addr, SocketAddrV4},
@@ -148,7 +148,7 @@ pub(crate) struct OpenWrtRxCapture {
     before: Snapshot,
     pre_workload_channel_utilization: Option<ChannelUtilization>,
     ingress: Option<Capture>,
-    wireless: Option<super::openwrt_capture::RemoteCapture>,
+    wireless: Option<crate::fixture::openwrt::capture::RemoteCapture>,
     rate_mask: Option<OpenWrtRateMask>,
 }
 
@@ -192,7 +192,7 @@ impl OpenWrtRxCapture {
             port,
             timeout,
         )?;
-        let wireless = super::openwrt_capture::RemoteCapture::start_managed(
+        let wireless = crate::fixture::openwrt::capture::RemoteCapture::start_managed(
             config,
             &config.wireless_interface,
             output.join("openwrt-wifi-egress.pcap"),

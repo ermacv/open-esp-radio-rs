@@ -22,8 +22,8 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result,
     fixture::{
-        local_linux_fixture::{LocalLinuxTxCapture, LocalLinuxTxEvidence},
-        openwrt_fixture::{
+        local::evidence::{LocalLinuxTxCapture, LocalLinuxTxEvidence},
+        openwrt::evidence::{
             ChannelUtilization, OpenWrtStationLinkEvidence, OpenWrtTxCapture,
             require_idle_channel_utilization, station_link,
         },

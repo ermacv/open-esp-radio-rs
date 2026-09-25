@@ -5,8 +5,8 @@ use std::{net::SocketAddrV4, path::Path, time::Duration};
 use crate::{
     Result,
     fixture::{
-        local_linux_fixture::{LocalLinuxRxCapture, LocalLinuxRxEvidence},
-        openwrt_fixture::{OpenWrtRxCapture, OpenWrtRxEvidence},
+        local::evidence::{LocalLinuxRxCapture, LocalLinuxRxEvidence},
+        openwrt::evidence::{OpenWrtRxCapture, OpenWrtRxEvidence},
     },
     lab::config::StationFixtureConfig,
     scenario::{HtGuardIntervalExpectation, PhyExpectation},

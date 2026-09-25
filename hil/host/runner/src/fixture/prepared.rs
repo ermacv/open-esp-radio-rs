@@ -39,14 +39,14 @@ pub(crate) fn check_without_device(
         }
         if let crate::lab::config::StationFixtureConfig::OpenWrt(config) = &lab.station_fixture {
             if required.station_udp_rx_capture || required.station_udp_tx_capture {
-                super::openwrt_fixture::check_capture(config)?;
+                super::openwrt::evidence::check_capture(config)?;
             }
             if required.laptop_air_monitor {
-                super::local_air_monitor::check_without_device(config, &output)?;
+                super::local::air_monitor::check_without_device(config, &output)?;
             }
         }
         if required.station_udp_rx_capture
-            && let Some(observer) = super::openwrt_air_monitor::Capture::start(
+            && let Some(observer) = super::openwrt::air_monitor::Capture::start(
                 lab,
                 None,
                 std::time::Duration::from_secs(1),

@@ -7,7 +7,6 @@ mod application;
 mod application;
 mod console;
 use embassy_time::Duration;
-use {oer_esp32s31_bluetooth_controller::le::{dtm::{DtmDefaultTxPowerDbm, DtmRuntimeConfig}, peripheral::PeripheralConnectionRuntimeConfig, scanning::PassiveScanRuntimeConfig}, oer_esp32s31_bluetooth::resources::BluetoothRadioHardware};
 use oer_esp32s31_bluetooth_memory::{
     DtmSchedulerAllocationConfig, PassiveScanDefaultTxPowerDbm,
     PassiveScanSchedulerAllocationConfig, PeripheralConnectionDefaultTxPowerDbm,
@@ -25,6 +24,14 @@ use oer_esp32s31_radio_esp_hal::{EspHalBluetoothPlatform, EspHalRadioPlatform};
 use oer_esp32s31_soc_esp_hal::watchdog::DeadlineWatchdog;
 use static_cell::StaticCell;
 use trouble_host::prelude::*;
+use {
+    oer_esp32s31_bluetooth::resources::BluetoothRadioHardware,
+    oer_esp32s31_bluetooth_controller::le::{
+        dtm::{DtmDefaultTxPowerDbm, DtmRuntimeConfig},
+        peripheral::PeripheralConnectionRuntimeConfig,
+        scanning::PassiveScanRuntimeConfig,
+    },
+};
 
 static PLATFORM: StaticCell<EspHalRadioPlatform> = StaticCell::new();
 static STORAGE: BluetoothSystemStorage<EspHalBluetoothPlatform<'static>, 4, 1, 4, 4, 258> =

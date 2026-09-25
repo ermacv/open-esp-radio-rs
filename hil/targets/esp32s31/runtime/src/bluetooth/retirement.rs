@@ -183,8 +183,8 @@ fn retire_hci<
     match retired.try_retire_hci() {
         Ok(owner) => owner,
         Err((error, _owner)) => {
-            use oer_esp32s31_bluetooth_controller::controller::ControllerTaskRetirementError as Error;
             use oer_esp32s31_bluetooth::runtime_resources::ControllerRuntimeRetirementError as Runtime;
+            use oer_esp32s31_bluetooth_controller::controller::ControllerTaskRetirementError as Error;
             let oer_esp32s31_bluetooth_runtime::controller::ControllerCommandRetirementError::Task(
                 error,
             ) = error

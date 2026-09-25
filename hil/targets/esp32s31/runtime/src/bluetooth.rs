@@ -34,7 +34,6 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 use embedded_io_async::Read as _;
 use esp_hal::{Async, usb::usb_serial_jtag::UsbSerialJtag};
-use {oer_esp32s31_bluetooth_controller::le::{dtm::{DtmDefaultTxPowerDbm, DtmRuntimeConfig}, peripheral::PeripheralConnectionRuntimeConfig, scanning::PassiveScanRuntimeConfig}, oer_esp32s31_bluetooth::resources::BluetoothRadioHardware};
 use oer_esp32s31_bluetooth_memory::{
     DtmSchedulerAllocationConfig, PassiveScanDefaultTxPowerDbm,
     PassiveScanSchedulerAllocationConfig, PeripheralConnectionDefaultTxPowerDbm,
@@ -55,6 +54,14 @@ use oer_hil_protocol::{
     bluetooth_peripheral_acl_payload, bluetooth_peripheral_acl_payload_for_sequence,
 };
 use static_cell::StaticCell;
+use {
+    oer_esp32s31_bluetooth::resources::BluetoothRadioHardware,
+    oer_esp32s31_bluetooth_controller::le::{
+        dtm::{DtmDefaultTxPowerDbm, DtmRuntimeConfig},
+        peripheral::PeripheralConnectionRuntimeConfig,
+        scanning::PassiveScanRuntimeConfig,
+    },
+};
 
 type Host = BluetoothHostController<4, 4, 258>;
 type HostAclCredits = BluetoothHostAclCredits<4, 258>;
@@ -1394,8 +1401,9 @@ fn peripheral_evidence(operation: PeripheralOperation, result: PeripheralResult)
         connection_complete_events: host_events.connections,
         disconnection_complete_events: host_events.disconnections,
         connection_update_complete_events: host_events.connection_updates,
-        channel_map_update_events: oer_esp32s31_bluetooth_controller::le::peripheral::diagnostics::snapshot()
-            .channel_map_updates,
+        channel_map_update_events:
+            oer_esp32s31_bluetooth_controller::le::peripheral::diagnostics::snapshot()
+                .channel_map_updates,
         target_disconnect_commands: host_events.target_disconnect_commands,
         target_reset_commands: host_events.target_reset_commands,
         host_event_faults: host_events.faults,

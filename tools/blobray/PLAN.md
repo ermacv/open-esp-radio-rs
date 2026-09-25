@@ -59,14 +59,15 @@ moved to a named owner. `target` never closes a capability. No silent exclusions
 | 10.L linker capabilities | done | After completed 10.4, deliver ElfAnalysisLinkV1 through LLD and GNU ld adapters: capability probes, semantic requests, normalized placement/extraction/exit evidence with raw provenance, exact root validation, quota-admitted seekable GNU output, retained closure/query/export/restore, and distinct tool identities/archive semantics. Both real RV32 toolchains, parser/application/resource regressions, affected suites, strict Clippy, formatting, public/private docs, standalone and source-only checks are mandatory. Commit only after full acceptance; this checkpoint does not include stage 11. |
 | 11 | done | Real PHY I2C workflow from authenticated capture and tables through linked execution/models and compiled-production comparison. Independent expectations, model boundaries, source removal and backup/restore are required; no model hides absent production/vendor code or grants hardware qualification. |
 | 12 | active | Real PHY calibration/RF workflow, required intrinsics and reviewed summaries. Each declared calibration case has explicit conditions and expected outcome; coefficients/models/production changes alter dependency identity; reconstruction never impersonates captured execution. |
-| 13 | pending | Project verification: native roles/scopes/models/suites/policies, profile domains/coverage, production bindings/dispositions/audit, baselines/status/check/files/doctor and ranked next actions. One application lifecycle executes suites; auxiliary inputs do not inflate coverage; stale/unreviewed evidence cannot satisfy gates; no CLI-only orchestration. |
-| 14 | pending | Remaining declared Wi-Fi/Bluetooth/coexistence/radio-leaf suites. Every original suite has a native scenario and checked expected MATCH/DIFF/INCOMPLETE; preserve exclusions/claim strength; compiled production paths are required. Split independent large groups into separately accepted sub-stages before activation, without dropping suite obligations. |
-| 15 | pending | Vendor revision snapshots/prepare-update/diff, symbol correspondence/lineage and reviewed rebase of assertions/boundaries. Rename is evidence, not acceptance; changed bodies/layouts/applicability invalidate dependencies; ambiguous mappings require decisions; A→B→reviewed rebase retains A. |
-| 16 | pending | Incremental reuse and bounded parallelism with complete dependency identities. Identical work reuses results; independent edits invalidate only dependents; missing-dependency regressions, serial/parallel equivalence, cancellation/capacity atomicity and measured work reuse are required. |
-| 17 | pending | Permanent storage: transitive retention roots/pins, reachability/reclaimable report, GC preview/apply and compaction. Review evidence/active readers survive; roots are revalidated at apply; interruption preserves committed projects; reclaimed bytes are verified separately from temporary quotas. |
-| 18 | pending | Pseudo-Rust and separate executable-reference consumer, single/batch generated/blocked manifest with provenance. Pseudocode is not executable evidence; generated supported code compiles and is tested; unsupported semantics block generation; no production substitution/qualification. |
-| 19 | pending | TUI over shared application/read APIs; completions/manpage and consistent diagnostics/progress/details. No frontend analysis/workflow duplication; partial/stale/conflicted states, empty/large streams, cancellation and errors are tested; help/examples/generated docs agree. |
-| 20 | pending | Full replacement and stable persistence: all assignments closed, no legacy runtime calls, old engine/launcher/dependencies removed after checking consumers, reviewed machine inputs preserved. Generic standalone/register publication and real workflows/recovery pass. Freeze a research fixture corpus and transitive persistence contract that subsequent versions must read without conversion. |
+| 13 | pending | Project verification over typed Rust scenario suites. Suites are Rust packages on Blobray types (as in stage 12); no new declarative suite format. Blobray composes their native executions and reviewed claims into the evidence index that qualification consumes, with roles/scopes, production bindings/dispositions, baselines/status/check/doctor and ranked next actions. Qualification (`qualification/evaluator`, targets/catalogs), `hil` runner tests and `tools/repo` vendor checks move from `vendor-project.toml`, `verification-addon.toml` and the legacy `project verify` index to it. One application lifecycle executes suites; auxiliary inputs do not inflate coverage; stale/unreviewed evidence cannot satisfy gates. |
+| 14 | pending | Remaining declared Wi-Fi/Bluetooth/coexistence/radio-leaf suites as typed scenarios on the stage-12 mechanisms. Every original TOML profile/disposition/baseline suite has a native scenario and checked expected MATCH/DIFF/INCOMPLETE; preserve exclusions/claim strength; compiled production paths are required. The `verification/vendor/*/blobray-provider` crates, their legacy tests and the TOML profiles/dispositions/baselines are removed once replaced. Split independent large groups into separately accepted sub-stages before activation, without dropping suite obligations. |
+| 15 | pending | After stage 20. Vendor revision snapshots/prepare-update/diff, symbol correspondence/lineage and reviewed rebase of assertions/boundaries. Rename is evidence, not acceptance; changed bodies/layouts/applicability invalidate dependencies; ambiguous mappings require decisions; A→B→reviewed rebase retains A. |
+| 16 | pending | After stage 20. Incremental reuse and bounded parallelism with complete dependency identities. Identical work reuses results; independent edits invalidate only dependents; missing-dependency regressions, serial/parallel equivalence, cancellation/capacity atomicity and measured work reuse are required. |
+| 17 | pending | After stage 20. Permanent storage: transitive retention roots/pins, reachability/reclaimable report, GC preview/apply and compaction. Review evidence/active readers survive; roots are revalidated at apply; interruption preserves committed projects; reclaimed bytes are verified separately from temporary quotas. |
+| 18 | pending | After stage 20. Pseudo-Rust and separate executable-reference consumer, single/batch generated/blocked manifest with provenance. Pseudocode is not executable evidence; generated supported code compiles and is tested; unsupported semantics block generation; no production substitution/qualification. |
+| 19 | pending | After stage 20. TUI over shared application/read APIs; completions/manpage and consistent diagnostics/progress/details. No frontend analysis/workflow duplication; partial/stale/conflicted states, empty/large streams, cancellation and errors are tested; help/examples/generated docs agree. |
+| 20 | pending | Legacy removal, executed right after stage 14 and before stages 15–19. Every consumer is migrated (stages 12–14), no legacy runtime call remains, and the old engine, launcher, `src/`, legacy crates (`contracts`, `analysis-model`, `semantics`, `execution-model`, `backend-riscv`) and their dependencies are removed; reviewed machine inputs are preserved. Legacy capabilities owned by stages 15–19 are removed without porting; those stages add them later as Next features. Generic standalone/register publication and real workflows/recovery pass. |
+| 21 | pending | Stable persistence after stages 15–19: freeze a research fixture corpus and transitive persistence contract that subsequent versions must read without conversion. |
 
 ### Stage 01: existing checkpoint
 
@@ -197,8 +198,9 @@ Checkpoint 12.R, including checkpoint 12.P (execution performance), is
 complete; no Python scenario code remains. Unit 12.6 is complete: channel
 restoration, all temperature-prefix sensor windows and stuck readiness.
 Checkpoint 12.M (mechanisms instead of handwritten knowledge) is complete.
-Units 12.7 (RX gain/calibration) and 12.8 (TX-DC/PWDET) are complete. Unit
-12.9 is active.
+Units 12.7 (RX gain/calibration) and 12.8 (TX-DC/PWDET) are complete.
+Checkpoint 12.N (native claims) is active; unit 12.9 follows it. Stages then
+run in the order 13, 14, 20 (legacy removal), 15–19, 21.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -828,7 +830,8 @@ current owner docs and the ordinary stage gates. No partial unit is completion.
 | 12.M | done | Mechanisms instead of handwritten knowledge, detailed below. Stage 12.7–12.10 obligations are unchanged. |
 | 12.7 | done | RX gain/calibration: `phy_rfpll/rx_gain.rs`. Both complete roots, DC/table guards, signed estimators, delayed I2C/settle, projected coefficients and bank limits; failed channel, minimum search and shared budget preserve prior coefficients. Readiness observations and genuine output publication remain visible. |
 | 12.8 | done | TX-DC/PWDET: `phy_rfpll/tx_dc_pwdet.rs`. Actual search/PBus/SAR children, Wi-Fi/BT selection, DC rows, constant/alternating samples and tone/settle paths. Independent PBus/SAR faults cannot publish calibration; observation capacity differs from time/work limits. Preserve seeded gain adjustment and explicit unused-read exclusions. |
-| 12.9 | active | Combined calibration and tracking parents: `phy_rfpll/combined.rs`, `phy_rfpll/parent.rs`, `phy_rfpll/graph.rs`. Execute real children, guards/grant order, channel 13/HT40, client/thermal domains, RFPLL disabled/enabled and signed corrections. Failed TX preserves pre-calibration state and earlier completed power/RFPLL state. Modeled child completions cannot satisfy complete-parent acceptance. |
+| 12.N | active | Native claims, detailed below. Stage 12.9–12.10 obligations are unchanged. |
+| 12.9 | pending | Combined calibration and tracking parents: `phy_rfpll/combined.rs`, `phy_rfpll/parent.rs`, `phy_rfpll/graph.rs`. Execute real children, guards/grant order, channel 13/HT40, client/thermal domains, RFPLL disabled/enabled and signed corrections. Failed TX preserves pre-calibration state and earlier completed power/RFPLL state. Modeled child completions cannot satisfy complete-parent acceptance. |
 | 12.10 | pending | Combined practical-PHY checkpoint: all units and stage-11 scenarios work together under native identities, shared budgets and preservation. Complete required intrinsic/reviewed-summary coverage with direct semantic/unknown/resource tests and explicit applicability; changing model, summary or production invalidates identity. No summary impersonates executed capture. All relevant integration suites, standalone, formatting, strict Clippy, owned public/private docs and the repository CI checks pass before closing stage 12. |
 
 Required engine/intrinsic or peripheral mechanisms belong to the first unit that
@@ -1297,3 +1300,27 @@ unchanged:
 
 All 2055 Blobray tests, formatting, strict Clippy, docs and the standalone
 check pass. This is TX calibration software state, not RF accuracy.
+
+
+### Checkpoint 12.N: native claims
+
+User-authorized insertion after 12.8 and before 12.9, following a review of
+Next and of the verification scenarios. Blobray natively supports reviewed
+effect contracts and layout projections. The scenarios bypass them:
+
+- Blobray compares only MMIO writes;
+- the actual claims live in scenario Rust code: filtered reads and delays,
+  unused-read exclusions, `phy_param` ↔ production-output mappings and
+  environment-supplied registers.
+
+Retained verdicts are therefore weaker than the scenarios' claims, replay
+re-checks only the weak part, and none of the stage-12 results reach
+qualification. Stage 13 composes the evidence index from native claims, so
+they must exist first.
+
+| Unit | Status | Acceptance |
+| --- | --- | --- |
+| 12.N.1 | pending | Runner-side effect filters become reviewed effect contracts evaluated by Blobray. This covers transport plumbing, the single-microsecond delay before a transport or PBus status read, the vendor's unused SAR and skipped-DC snapshots, and readiness-wait visibility. Contract rules may select an effect by its immediate successor where a plumbing delay is defined that way. Each contract is reviewed through knowledge assertions and bound by identity; verdicts carry the claim. |
+| 12.N.2 | pending | Semantic output mappings (`phy_param` fields ↔ production output) become reviewed layout projections with final-state comparison. The aperture reports the never-written registers each side read as evidence, and a relation can require them equal. |
+| 12.N.3 | pending | Execution capacity and cost: stack fill per case (no per-fill request split), lazy event-capacity admission, and a compact retained event encoding with an unchanged logical evidence contract. The largest current request (TX-DC) needs neither per-fill splitting nor hundreds of megabytes of evidence. |
+| 12.N.4 | pending | Every existing scenario (gain, i2c, channel, rx-gain, tx-dc) moves to native claims. Scenario code keeps peripheral inputs, matrices and independent oracles; runner-side comparison code is removed. Cases, verdicts, negatives and preservation are unchanged; each scenario's retained verdict alone establishes its claim. |

@@ -142,6 +142,71 @@ struct Common {
     output: PathBuf,
     #[command(flatten)]
     budget: Budget,
+    /// Point mutant of the loaded production probe image in every comparison,
+    /// `ADDRESS:ORIGINAL:REPLACEMENT` in hexadecimal bytes; repeat for several.
+    /// The probe is not rebuilt; a failing scenario kills the mutant.
+    #[arg(long = "patch", value_parser = parse_patch)]
+    patches: Vec<blobray_application::in_process::ImagePatch>,
+}
+
+/// `ADDRESS:ORIGINAL:REPLACEMENT`, the bytes as hexadecimal strings.
+fn parse_patch(
+    text: &str,
+) -> std::result::Result<blobray_application::in_process::ImagePatch, String> {
+    let bytes = |hex: &str| -> std::result::Result<Vec<u8>, String> {
+        if hex.is_empty() || !hex.len().is_multiple_of(2) {
+            return Err(format!(
+                "`{hex}` is not a whole number of hexadecimal bytes"
+            ));
+        }
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| e.to_string()))
+            .collect()
+    };
+    let parts: Vec<&str> = text.split(':').collect();
+    let [address, original, replacement] = parts[..] else {
+        return Err("expected ADDRESS:ORIGINAL:REPLACEMENT".into());
+    };
+    Ok(blobray_application::in_process::ImagePatch {
+        address: u32::from_str_radix(address.trim_start_matches("0x"), 16)
+            .map_err(|e| e.to_string())?,
+        original: bytes(original)?,
+        replacement: bytes(replacement)?,
+    })
+}
+
+/// Every patch replaces bytes it names correctly in an executable segment of
+/// the production ELF, so a failing run means a killed mutant, not a bad patch.
+fn check_patches(
+    production: &Path,
+    patches: &[blobray_application::in_process::ImagePatch],
+) -> Result<()> {
+    use object::{Object, ObjectSegment, SegmentFlags};
+    /// ELF program header flag of an executable segment.
+    const PF_X: u32 = 1;
+    let bytes = std::fs::read(production)?;
+    let file = object::File::parse(&*bytes)?;
+    for patch in patches {
+        let start = u64::from(patch.address);
+        let end = start + patch.original.len() as u64;
+        let found = file.segments().find(|segment| {
+            matches!(segment.flags(), SegmentFlags::Elf { p_flags } if p_flags & PF_X != 0)
+                && segment.address() <= start
+                && end <= segment.address() + segment.size()
+        });
+        let data = found
+            .ok_or_else(|| format!("patch at {:#x} is outside executable code", patch.address))?
+            .data_range(start, patch.original.len() as u64)?;
+        if data != Some(&patch.original[..]) {
+            return Err(format!(
+                "patch at {:#x} does not match the probe bytes",
+                patch.address
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 /// Exit code of one scenario.
@@ -289,6 +354,7 @@ fn gain(common: Common, rftest: Option<PathBuf>) -> Result<Outcome> {
         output: common.output,
         budget: common.budget,
         rftest,
+        patches: common.patches,
     };
     let mut g = Gain::new(&options)?;
     let unmet = gain_state::exercise(&mut g, options.rftest.is_some())?;
@@ -324,6 +390,7 @@ fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result
         budget: common.budget,
         sdk,
         phy_sdk,
+        patches: common.patches,
     };
     let mut ctx = i2c::I2c::new(&options)?;
     let unmet = i2c::unmet(options.sdk.is_some(), options.phy_sdk.is_some());
@@ -368,6 +435,7 @@ impl Common {
             linker: self.linker,
             output: self.output,
             budget: self.budget,
+            patches: self.patches,
         }
     }
 }
@@ -575,6 +643,16 @@ fn all(
     rftest: PathBuf,
     index: Option<PathBuf>,
 ) -> Result<ExitCode> {
+    if !common.patches.is_empty() {
+        if index.is_some() {
+            return Err("a point-mutant run writes no evidence index".into());
+        }
+        check_patches(&common.production, &common.patches)?;
+        println!(
+            "{} point-mutant patches applied to every production comparison",
+            common.patches.len()
+        );
+    }
     let within = |name: &str| Common {
         output: common.output.join(name),
         ..common.clone()

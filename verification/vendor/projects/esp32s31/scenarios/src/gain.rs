@@ -197,6 +197,8 @@ pub struct Options {
     pub output: PathBuf,
     pub budget: Budget,
     pub rftest: Option<PathBuf>,
+    /// Point mutants applied to the loaded production image of every comparison.
+    pub patches: Vec<blobray_application::in_process::ImagePatch>,
 }
 
 /// Linked captured gain image, compiled production and retained evidence.
@@ -253,6 +255,7 @@ impl Gain {
             options.budget,
             &inputs,
             "captured Wi-Fi/BT gain, calibration storage and RF-test policy; no RF qualification",
+            &options.patches,
         )?;
         let (run, revision, inventory) = (&session.run, &session.revision, &session.inventory);
         let object = named_object(inventory, 0, "phy_tx_gain.o")?;

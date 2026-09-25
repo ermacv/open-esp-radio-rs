@@ -74,6 +74,8 @@ pub struct PhyOptions {
     pub linker: PathBuf,
     pub output: PathBuf,
     pub budget: Budget,
+    /// Point mutants applied to the loaded production image of every comparison.
+    pub patches: Vec<blobray_application::in_process::ImagePatch>,
 }
 
 /// Start a session over the authenticated archive (input 0), ROM (input 1),
@@ -103,6 +105,7 @@ pub fn start_session(options: &PhyOptions, extra: &[Input<'_>], purpose: &str) -
         options.budget,
         &inputs,
         purpose,
+        &options.patches,
     )
 }
 

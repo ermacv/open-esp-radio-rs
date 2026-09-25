@@ -67,6 +67,15 @@ fn vendor_key(input: &InProcessComparison<'_>, executor: &dyn Executor) -> Resul
     }))
 }
 
+/// Bytes of the loaded replacement image at `address` replaced in every
+/// replacement session, such as a single-point mutant of compiled code.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImagePatch {
+    pub address: u32,
+    pub original: Vec<u8>,
+    pub replacement: Vec<u8>,
+}
+
 pub struct InProcessComparison<'a> {
     pub request: &'a ExecutionRequest,
     /// ELF bytes of the vendor target's source, then of its companions.
@@ -80,6 +89,8 @@ pub struct InProcessComparison<'a> {
     /// Semantics of the replacement ISA, to report which executed replacement
     /// instructions the compared observations depend on.
     pub dependence: Option<&'a dyn FunctionSemantics>,
+    /// Patches of the loaded replacement image; no binary is rebuilt.
+    pub patches: &'a [ImagePatch],
 }
 
 pub struct InProcessResult {
@@ -234,6 +245,7 @@ fn run(
             projections: &projections,
             effects: &effects,
             sources: &sources,
+            patches: input.patches,
         },
         vendor,
         record_steps.then_some(&mut sink as &mut crate::execution::StepSink<'_, '_>),

@@ -55,6 +55,8 @@ pub(super) struct Session<'a> {
     /// Step log for observation dependence, when requested.
     steps: Option<crate::execution_steps::StepLog<'a>>,
 }
+/// Bytes one image patch may replace: a few instructions.
+const MAX_IMAGE_PATCH_BYTES: usize = 64;
 /// Events admitted by the first growth of a session's event buffer.
 const INITIAL_EVENT_CAPACITY: usize = 1024;
 impl<'a> Session<'a> {
@@ -137,6 +139,38 @@ impl<'a> Session<'a> {
             last_region: std::cell::Cell::new(0),
             steps: None,
         })
+    }
+    /// Replace `patch.original` with `patch.replacement` in executable image
+    /// code. A patch outside one executable image region, or whose original
+    /// bytes differ from the loaded ones, is invalid.
+    pub fn patch(
+        &mut self,
+        patch: &crate::in_process::ImagePatch,
+        c: &mut dyn RunControl,
+    ) -> Result<()> {
+        c.checkpoint(self.regions.len() as u64 + 1)?;
+        let invalid = |message: &str| Error::new(ErrorCode::InvalidRequest, message);
+        let length = patch.original.len();
+        if length == 0 || length != patch.replacement.len() || length > MAX_IMAGE_PATCH_BYTES {
+            return Err(invalid("image patch lengths are invalid"));
+        }
+        let Some((i, offset)) = u8::try_from(length)
+            .ok()
+            .and_then(|width| self.region_index(patch.address, width))
+        else {
+            return Err(invalid("image patch is outside the loaded image"));
+        };
+        let r = &mut self.regions[i];
+        if r.kind != RegionKind::Image || r.flags & 1 == 0 {
+            return Err(invalid("image patch is outside executable image code"));
+        }
+        if r.known[offset..offset + length].contains(&0)
+            || r.bytes[offset..offset + length] != patch.original[..]
+        {
+            return Err(invalid("image patch original bytes differ from the image"));
+        }
+        r.bytes[offset..offset + length].copy_from_slice(&patch.replacement);
+        Ok(())
     }
     /// Record this session's steps from now on.
     pub fn record_steps(&mut self) {

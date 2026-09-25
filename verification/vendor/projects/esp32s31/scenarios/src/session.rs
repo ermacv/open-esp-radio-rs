@@ -99,6 +99,8 @@ pub struct Session {
     projections: Vec<LayoutProjection>,
     /// Guest instructions executed in process, and the time spent executing.
     pub executed: std::cell::Cell<(u64, f64)>,
+    /// Point mutants of the loaded production image.
+    patches: Vec<blobray_application::in_process::ImagePatch>,
 }
 
 /// A prepared image and its resolved roots, including the entry.
@@ -174,6 +176,7 @@ impl Session {
         budget: Budget,
         inputs: &[Input<'_>],
         scope: &str,
+        patches: &[blobray_application::in_process::ImagePatch],
     ) -> Result<Self> {
         let run = start_run(output)?;
         let runner = Runner::new(binary, &run, run.join("project"), budget)?;
@@ -215,6 +218,7 @@ impl Session {
             effects: vec![],
             projections: vec![],
             executed: Default::default(),
+            patches: patches.to_vec(),
         })
     }
 
@@ -348,6 +352,7 @@ impl Session {
                 projections: &self.projections,
                 vendor_results: None,
                 dependence: Some(&blobray_backend_riscv::RiscvDecoder),
+                patches: &self.patches,
             },
             &blobray_backend_riscv::RiscvExecutor,
             &memory,

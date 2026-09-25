@@ -108,6 +108,8 @@ pub struct Options {
     pub sdk: Option<PathBuf>,
     /// SDK firmware with the RFPLL diagnostics symbol; enables RFPLL (12.3).
     pub phy_sdk: Option<PathBuf>,
+    /// Point mutants applied to the loaded production image of every comparison.
+    pub patches: Vec<blobray_application::in_process::ImagePatch>,
 }
 
 pub const LEAVES_OBLIGATION: Unmet = Unmet {
@@ -213,6 +215,7 @@ impl I2c {
             options.budget,
             &inputs,
             "I2C software comparison",
+            &options.patches,
         )?;
         let (run, revision, inventory) = (&session.run, &session.revision, &session.inventory);
         let object = named_object(inventory, 0, "phy_i2c.o")?;

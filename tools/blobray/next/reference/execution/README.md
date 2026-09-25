@@ -627,6 +627,16 @@ observation of these cases would change if its result changed. Dependence is a
 necessary condition for a comparison to notice a defect, not a sufficient one;
 the pointer arguments that locate a call model's outputs are not followed.
 
+### Image patches
+
+`patches` of an `InProcessComparison` replace bytes of the loaded replacement
+image in every replacement session: `(address, original bytes, replacement
+bytes)`, at most 64 bytes each, within executable image code. A patch whose
+original bytes differ from the loaded ones, or that leaves executable image
+code, is invalid. No binary is rebuilt, so a patched instruction is a point
+mutant: a comparison whose verdict changes kills it. The vendor side and its
+reuse key are unaffected.
+
 ### ISA conformance
 
 ```console

@@ -91,12 +91,13 @@ fn relation() -> ComparisonRelation {
     }
 }
 
-/// Executed and observed replacement instructions of one self-comparison.
-fn dependence(
+/// One self-comparison of `code`, with `patches` applied to the replacement.
+fn compare(
     code: &[u32],
     invocation: Invocation,
     relation: ComparisonRelation,
-) -> (BTreeSet<u32>, BTreeSet<u32>) {
+    patches: &[app::in_process::ImagePatch],
+) -> Result<app::in_process::InProcessResult> {
     let executable = elf(code);
     let sources: &[&[u8]] = &[&executable];
     let request = ExecutionRequest {
@@ -115,7 +116,7 @@ fn dependence(
         max_events: 64,
     };
     let memory = WorkingMemory::new(32 * 1024 * 1024).unwrap();
-    let result = app::in_process::verify(
+    app::in_process::verify(
         &app::in_process::InProcessComparison {
             request: &request,
             vendor: sources,
@@ -124,12 +125,21 @@ fn dependence(
             projections: &[],
             vendor_results: None,
             dependence: Some(&blobray_backend_riscv::RiscvDecoder),
+            patches,
         },
         &blobray_backend_riscv::RiscvExecutor,
         &memory,
         &mut || Ok(()),
     )
-    .unwrap();
+}
+
+/// Executed and observed replacement instructions of one self-comparison.
+fn dependence(
+    code: &[u32],
+    invocation: Invocation,
+    relation: ComparisonRelation,
+) -> (BTreeSet<u32>, BTreeSet<u32>) {
+    let result = compare(code, invocation, relation, &[]).unwrap();
     assert_eq!(result.verdict, Some(ComparisonVerdict::Match));
     let observed = result.observed.unwrap();
     (observed.executed, observed.observed)
@@ -285,4 +295,37 @@ fn branches_control_their_region_including_calls() {
             0x1000, 0x100c, 0x1010, 0x1014, 0x1018, 0x101c, 0x1024, 0x1028
         ])
     );
+}
+
+fn patch(address: u32, original: u32, replacement: u32) -> app::in_process::ImagePatch {
+    app::in_process::ImagePatch {
+        address,
+        original: original.to_le_bytes().to_vec(),
+        replacement: replacement.to_le_bytes().to_vec(),
+    }
+}
+
+#[test]
+fn point_mutants_patch_the_loaded_replacement_image() {
+    let mut returns = relation();
+    returns.returns.low = true;
+    let verdict = |patches: &[app::in_process::ImagePatch]| {
+        compare(&FLOW, flow_invocation(), returns.clone(), patches).map(|r| r.verdict)
+    };
+    // `li a2, 2` becomes `li a2, 3`: the observed line's mutant is killed.
+    assert_eq!(
+        verdict(&[patch(0x1010, 0x00200613, 0x00300613)]).unwrap(),
+        Some(ComparisonVerdict::Diff)
+    );
+    // `li t1, 7` becomes `li t1, 8`: the unobserved line's mutant survives.
+    assert_eq!(
+        verdict(&[patch(0x1000, 0x00700313, 0x00800313)]).unwrap(),
+        Some(ComparisonVerdict::Match)
+    );
+    // Original bytes that differ from the image, and addresses outside its
+    // code, are invalid.
+    for invalid in [patch(0x1000, 0x00200613, 0x00300613), patch(0x2000, 0, 1)] {
+        let error = verdict(&[invalid]).err().unwrap();
+        assert_eq!(error.code, ErrorCode::InvalidRequest, "{error:?}");
+    }
 }

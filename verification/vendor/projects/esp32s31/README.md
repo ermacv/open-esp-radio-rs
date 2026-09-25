@@ -438,6 +438,23 @@ becomes a follow-up case, a relation that compares its effect, or a reviewed
 decision. Dependence is a necessary condition for a comparison to notice a
 defect on a line, not a sufficient one.
 
+## Point mutants
+
+A point mutant confirms one finding without rebuilding the probe: each
+`--patch ADDRESS:ORIGINAL:REPLACEMENT` (hexadecimal address and bytes in
+memory order) replaces bytes of the loaded production image in every
+comparison of the run. `all` first checks every patch against an executable
+segment of the probe ELF, so a failing run means a killed mutant, not a bad
+patch; a mutant run writes no evidence index.
+
+```console
+cargo xtask vendor-scenario all ... --patch 1001c6bc:a30aed00:13000000
+```
+
+A mutant of an unobserved line that survives confirms the finding; one that a
+scenario kills shows the dependence is real but indirect. Patches are for
+named addresses, not a campaign.
+
 ## Contract ownership
 
 | Input | Responsibility |

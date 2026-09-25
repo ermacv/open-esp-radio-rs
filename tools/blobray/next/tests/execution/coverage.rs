@@ -373,6 +373,7 @@ fn in_process_verification_emits_the_records_of_a_project_execution() {
             projections: &[],
             vendor_results: None,
             dependence: None,
+            patches: &[],
         },
         &blobray_backend_riscv::RiscvExecutor,
         &memory,
@@ -416,6 +417,7 @@ fn in_process_verification_emits_the_records_of_a_project_execution() {
                 projections: &[],
                 vendor_results: None,
                 dependence: None,
+                patches: &[],
             },
             &blobray_backend_riscv::RiscvExecutor,
             &memory,
@@ -445,6 +447,7 @@ fn reused_vendor_results_yield_the_records_of_a_full_execution() {
             projections: &[],
             vendor_results: None,
             dependence: None,
+            patches: &[],
         }
     }
     let executor = &blobray_backend_riscv::RiscvExecutor;
@@ -541,6 +544,7 @@ fn in_process_coverage_matches_the_project_report() {
                     projections: &[],
                     vendor_results: None,
                     dependence: None,
+                    patches: &[],
                 },
                 &blobray_backend_riscv::RiscvExecutor,
                 &memory,

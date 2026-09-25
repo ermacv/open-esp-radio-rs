@@ -356,6 +356,7 @@ pub(crate) fn prepare_execution_worker_in(
                 projections: &projections.projections,
                 effects: &effects.contracts,
                 sources: &sources,
+                patches: &[],
             },
             &mut VendorSide::Execute(None),
             None,
@@ -404,6 +405,8 @@ pub(crate) struct Resolved<'r, 'm> {
     pub projections: &'r [ResolvedProjection],
     pub effects: &'r [ResolvedEffectContract],
     pub sources: &'r Sources<'m>,
+    /// Byte patches applied to every replacement session's loaded image.
+    pub patches: &'r [crate::in_process::ImagePatch],
 }
 
 /// Receives the step log of each finished replacement session.
@@ -446,6 +449,7 @@ pub(crate) fn run_resolved<'m>(
     let request = resolved.request;
     let mut sides: [Side<'m>; 2] = Default::default();
     sides[1].record = steps.is_some();
+    sides[1].patched = true;
     let mut blocked = false;
     // Whether `blocked` holds only because the replacement did not complete.
     let mut blocked_by_replacement = false;
@@ -480,6 +484,7 @@ pub(crate) fn run_resolved<'m>(
             executor,
             reset: case.reset,
             stack_fill: case.stack_fill,
+            patches: resolved.patches,
             close_chain: request
                 .cases
                 .get(index + 1)
@@ -652,6 +657,8 @@ struct Side<'a> {
     steps: Vec<crate::execution_steps::StepLog<'a>>,
     /// Whether this side's sessions record step logs.
     record: bool,
+    /// Whether this side's sessions apply the request's image patches.
+    patched: bool,
 }
 impl Side<'_> {
     /// Drop the session, keeping what it reached and recorded.
@@ -670,6 +677,7 @@ struct Engine<'a, 'm> {
     executor: &'a dyn Executor,
     reset: SessionReset,
     stack_fill: Option<u8>,
+    patches: &'a [crate::in_process::ImagePatch],
     close_chain: bool,
 }
 impl<'m> Engine<'_, 'm> {
@@ -704,8 +712,14 @@ impl<'m> Engine<'_, 'm> {
                 std::mem::take(&mut side.coverage),
                 c,
             )?);
+            let created = side.session.as_mut().unwrap();
+            if side.patched {
+                for patch in self.patches {
+                    created.patch(patch, c)?;
+                }
+            }
             if side.record {
-                side.session.as_mut().unwrap().record_steps();
+                created.record_steps();
             }
         }
         let machine = side.session.as_mut().unwrap();

@@ -10,16 +10,16 @@
 //! measurements establish software effects, not RF accuracy.
 use crate::contracts::{OutputField, omitted_read, output_projection, phy_contract, plumbing};
 use crate::evidence::{events, output, stop};
-use crate::harness::{Buffer, Result, case, evidence, known, selection, with_stack_fill};
+use crate::harness::{Buffer, Result, case, known, selection, with_stack_fill};
 use crate::i2c::{all_complete, returned_low};
 use crate::layout::*;
 use crate::phy::delay_calls;
 use crate::phy::{PhyImage, PhyOptions, Right, image_layout, phy_sdk_input, select, start_session};
 use crate::session::request;
 use blobray_domain::{
-    ComparisonVerdict, DeviceBehavior, DeviceDeclaration, EffectReview, EffectRule, ExecutionCase,
-    ExecutionEvent, ExecutionEvidence, ExecutionStop, Invocation, LinkRequest, ProjectionReview,
-    RegionLifetime, SessionReset,
+    ComparisonVerdict, DeviceBehavior, DeviceDeclaration, EffectContractRef, EffectRule,
+    ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionStop, Invocation, LinkRequest,
+    ProjectionRef, RegionLifetime, SessionReset,
 };
 use std::path::Path;
 
@@ -259,8 +259,8 @@ pub struct TxDc {
     pub image: PhyImage,
     rom_delay: u32,
     production_delay: u32,
-    effects: EffectReview,
-    committed: ProjectionReview,
+    effects: EffectContractRef,
+    committed: ProjectionRef,
 }
 
 impl std::ops::Deref for TxDc {
@@ -484,7 +484,7 @@ fn faults(ctx: &mut TxDc) -> Result<()> {
     }
     let production = ctx.production.clone();
     let request = request(&production, None, Some(profile.fill), rows, TXDC_EVENTS);
-    let records = evidence(&ctx.submit("txdc-faults", &request, None)?.document);
+    let records = ctx.submit("txdc-faults", &request, None)?.records.clone();
     for (case, (name, _, _, outcome)) in faults.iter().enumerate() {
         let case = case as u32;
         assert_eq!(

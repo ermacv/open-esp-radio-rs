@@ -11,9 +11,8 @@ use crate::harness::{Result, case, filled, known, region, selection, words};
 use crate::layout::*;
 use crate::phy::Right;
 use blobray_domain::{
-    ArtifactId, CallCapture, CallWordCount, ComparisonVerdict, DeviceBehavior, DeviceDeclaration,
-    ExecutionGap, ExecutionRequest, ExecutionStop, MemoryAccess, RegionLifetime, RegisterCell,
-    SessionReset,
+    CallCapture, CallWordCount, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, ExecutionGap,
+    ExecutionRequest, ExecutionStop, MemoryAccess, RegionLifetime, RegisterCell, SessionReset,
 };
 use serde::Serialize;
 
@@ -70,7 +69,6 @@ pub fn mac_power(index: i32, initial: u32) -> Vec<Effect> {
 
 struct Baseline {
     request: ExecutionRequest,
-    identity: ArtifactId,
 }
 
 fn state_selection(g: &Gain) -> Vec<blobray_domain::MemorySelection> {
@@ -222,7 +220,6 @@ fn storage(g: &mut Gain) -> Result<Baseline> {
     assert_eq!(FILLS[0], 0x5a);
     Ok(Baseline {
         request: executed.request,
-        identity: executed.identity,
     })
 }
 
@@ -333,9 +330,6 @@ fn storage_negative(g: &mut Gain, baseline: &Baseline) -> Result<()> {
 }
 
 fn capacity(g: &mut Gain, baseline: &Baseline) -> Result<()> {
-    let before = g
-        .runner
-        .execution("storage-before-failure", &baseline.identity)?;
     let mut limited = baseline.request.clone();
     limited.cases.truncate(2);
     limited.cases[1].vendor.observe_calls = Some(CallCapture {
@@ -344,8 +338,7 @@ fn capacity(g: &mut Gain, baseline: &Baseline) -> Result<()> {
         overrides: vec![],
     });
     limited.max_events = 1;
-    g.capacity_failure("storage-capacity", &limited)?;
-    g.assert_retained("storage-after-failure", &baseline.identity, &before)
+    g.capacity_failure("storage-capacity", &limited)
 }
 
 fn producer(g: &mut Gain) -> Result<ExecutionRequest> {

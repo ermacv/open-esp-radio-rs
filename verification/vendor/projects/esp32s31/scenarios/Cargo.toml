@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 blobray-application = { path = "../../../../../tools/blobray/crates/application" }
+blobray-backend-riscv = { path = "../../../../../tools/blobray/crates/riscv" }
 blobray-domain = { path = "../../../../../tools/blobray/crates/domain" }
 blobray-next = { path = "../../../../../tools/blobray/next" }
 oer-probe-codegen = { path = "../../../harness/codegen" }

@@ -486,7 +486,5 @@ fn graph_request(
 ) -> Result<Vec<ExecutionEvidence>> {
     let vendor = ctx.vendor.clone();
     let request = crate::session::request(&vendor, None, None, rows, MAX_EVENTS);
-    Ok(crate::harness::evidence(
-        &ctx.submit(label, &request, None)?.document,
-    ))
+    Ok(ctx.submit(label, &request, None)?.records.clone())
 }

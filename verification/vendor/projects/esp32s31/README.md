@@ -78,8 +78,8 @@ call-boundary scenarios still run. Each missing obligation is recorded in
 `unmet-obligations.request.json`, and the scenario exits with status 2.
 
 The scenario owns construction and independent expected-value assertions;
-ordinary Next application operations own capture, linking, execution, comparison
-and persistence. The scenario
+Blobray operations own capture and linking, and Blobray's in-process
+verification owns execution and comparison. The scenario
 reads `phy_param` directly from the exported linked ELF's symbol table;
 inexact source mappings are not used to infer that address. All inputs are captured before local source copies
 are removed. The pinned archive/object/table/ROM hashes authenticate vendor inputs;
@@ -98,11 +98,8 @@ bytes. Void returns, setup addresses, internal branches and stack transactions a
 excluded explicitly. MATCH establishes only this software relation under these
 inputs. Changed replacement input must produce DIFF; an unknown argument must
 produce INCOMPLETE; a missing ROM companion must stop at its unmapped fetch;
-exhausted event capacity must publish no execution. The runner
-also checks moved and restored projects and exact replay of positive and negative
-evidence. Whole-project backup preserves the full closure; the exported table alone
-does not. Operation JSON records carry phase/resource diagnostics. There is no
-hardware or kernel-enforcement claim from a watchdog run.
+exhausted event capacity must fail with a resource limit. There is no hardware
+claim.
 
 ### Captured I2C transport
 
@@ -137,8 +134,7 @@ fallback. An out-of-field write must produce DIFF: captured code spills the
 value into an adjacent bit while the typed production path clips it. Limited
 completion edges and the shipping reset polling bound must leave pending-model
 INCOMPLETE on timeout; they cannot become MATCH merely because a CPU returned.
-All positive and negative artifacts are checked after source removal and
-backup/restore, including exact replay. This establishes the selected software
+This establishes the selected software
 relation under declared peripheral responses, not analog-bus or RF qualification.
 
 ### Current calibration leaves
@@ -167,9 +163,8 @@ uses the current archive policy: positive Wi-Fi delta divides by eight, negative
 by three; Bluetooth uses five/four. Selecting a similar ROM function would change
 that policy. Void returns are excluded, while temperature returns are compared.
 Changed temperature must produce DIFF, an unknown argument buffer or absent
-register input must produce INCOMPLETE, and exhausted event capacity must publish
-no result. The combined run retains these cases with the I2C evidence and checks
-their exact replay after source removal and backup/restore. These leaves do not
+register input must produce INCOMPLETE, and exhausted event capacity must fail
+with a resource limit. These leaves do not
 establish a complete calibration or physical timing claim.
 
 ### PBus and DCODE prefix
@@ -204,9 +199,8 @@ Stuck channel readiness, stuck I2C and a read/modify/write whose halves individu
 fit but jointly exhaust the production budget must return their specific failure,
 leave all eight initialized output bytes unchanged and stop issuing commands at
 the failed boundary. Changed samples produce DIFF, an unknown parameter pointer
-produces INCOMPLETE, and insufficient event capacity publishes no execution.
-The combined runner retains all these results for source-free move,
-backup/restore and exact replay. This is a software prefix comparison under the
+produces INCOMPLETE, and insufficient event capacity fails with a resource
+limit. This is a software prefix comparison under the
 declared environment, not complete RX calibration or hardware qualification.
 
 ### RFPLL search and frequency maintenance
@@ -257,9 +251,8 @@ count and exact value the runner checks. The maintenance contract lets
 production omit that one read; production owns that fixed layout. Search and
 maintenance are one request each, with a stack fill per case. A comparison
 without the contract retains the polling DIFF. Changed capacitor input, unknown callback pointer, unmapped diagnostics and
-event exhaustion have explicit DIFF/INCOMPLETE/no-publication checks. The combined
-runner retains the entire matrix for source-free backup, move, restore and exact
-replay. Software observations do not establish hardware/RF or grant qualification.
+event exhaustion have explicit DIFF/INCOMPLETE/resource-limit checks. Software
+observations do not establish hardware/RF or grant qualification.
 
 ### Wi-Fi and Bluetooth gain arithmetic/publication
 
@@ -308,9 +301,10 @@ expectations; Blobray mechanisms supply the rest:
   final vendor bytes with its production output location, and output padding
   is not claimed.
 - The channel, RX-gain and TX-DC roots compare their effects under a reviewed
-  effect contract ([`contracts.rs`](scenarios/src/contracts.rs)). The scenario
-  proposes it through `knowledge propose-effect-contract`, accepts exactly that
-  proposal and selects the accepted review in each root's relation. Blobray
+  effect contract ([`contracts.rs`](scenarios/src/contracts.rs)). The contract
+  is a typed value reviewed through git; each root's relation selects it by the
+  digest of its canonical encoding, and the scenario supplies it with the
+  in-process comparison. Blobray
   evaluates it with `unclassified: required`: analog I2C transport reads,
   read-mask and host-map writes, and the single-microsecond wait before a
   transport or declared status read are ignored plumbing; every other MMIO,
@@ -357,9 +351,7 @@ Selected RAM and every MMIO/fence/delay event form the native comparison relatio
 Unknown curve data and missing callback installation must be INCOMPLETE. A changed
 caller-supplied coefficient at the direct ROM boundary must produce DIFF and a new
 execution identity; this is a vendor-boundary characterization. Event exhaustion
-must publish no execution. Input copies are removed before linking; all retained
-positive and negative runs reopen after move/backup/restore and replay with exactly
-their original identities. These are software gain-child comparisons, not RF,
+must fail with a resource limit. These are software gain-child comparisons, not RF,
 whole-TXCAL, Wi-Fi or BT/154 protocol qualification.
 
 ### Gain state and RF-test power producer
@@ -395,9 +387,7 @@ Negative cases are:
   nor MAC state;
 - an unknown policy input, which stops at the exact byte read and blocks later
   phases;
-- event exhaustion, which publishes no execution.
-
-All retained runs join the source-free move/backup/restore/replay set.
+- event exhaustion, which fails with a resource limit.
 
 ## Inputs and probes
 
@@ -523,7 +513,7 @@ No callback model, resolved callee or hardware assertion follows from this revie
 ## Shared Next scenario preparation
 
 [`harness.rs`](scenarios/src/harness.rs) and [`session.rs`](scenarios/src/session.rs)
-own supervised invocation, authenticated input capture, request diagnostics,
+own supervised setup operations, authenticated input capture, in-process comparison,
 exact symbol selection and the shared memory/phase/comparison builders. The I2C, transport and calibration scenarios keep their independent
 expected values and explicit peripheral assumptions. The research scenario uses
 the same runner and capture operations.
@@ -539,11 +529,13 @@ Addresses, byte seeds, lifetime, reset, models and observation relations remain
 scenario choices. Opaque owner/layout types require explicit adapters. Word padding requires
 both an explicit count and fill value; unknown memory stays unknown.
 
-The generated requests use the existing Next execution format. Replay reads the
-retained request and captured bytes, including the catalog; it does not regenerate
-requests from scenario code. The combined I2C route also checks
-[compiled call boundaries](scenarios/src/harness_edges.rs), then restores and replays their
-evidence alongside positive and negative PHY comparisons.
+The generated requests use the Next execution format and run through Blobray's
+in-process verification over the authenticated input bytes and the exported
+linked image: no project, content store or journal participates, and records stay
+in memory. A run keeps only its results: claim verdicts, case counts, coverage
+and input/source digests. The combined I2C route also checks
+[compiled call boundaries](scenarios/src/harness_edges.rs) alongside positive and
+negative PHY comparisons.
 
 Run preparation-only regressions without private inputs:
 

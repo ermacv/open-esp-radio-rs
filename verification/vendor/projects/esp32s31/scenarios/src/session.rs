@@ -1,17 +1,14 @@
 //! Shared scenario lifecycle: run directory, linked image, execution
 //! submission, failure without publication and source-free preservation.
-use crate::harness::{
-    Budget, ExecutionDocument, Input, ProbeCatalog, Result, Runner, args, invalid, manifest, seed,
-};
+use crate::harness::{Budget, Input, ProbeCatalog, Result, Runner, args, invalid, seed};
 use crate::layout::*;
 use blobray_application::QuerySummary;
 use blobray_domain::{
-    ArtifactId, AssertionId, CallAbi, CallEndpoint, CompanionProposal, EffectContract,
-    EffectProposalRequest, EffectReview, EntrySelection, ErrorCode, ExecutionRequest,
-    ExecutionTarget, FunctionSource, ImageManifest, ImageMapping, KnowledgeOccurrence,
-    KnowledgeRevisionId, LayoutProjection, LinkRequest, ObjectId, PreparedImageId,
-    ProjectionProposalRequest, ProjectionReview, ReviewedCallBoundary, Revision, RevisionId,
-    SymbolId, SymbolTableKind,
+    ArtifactId, CallAbi, CallEndpoint, CompanionProposal, EffectContract, EffectContractRef,
+    EntrySelection, ErrorCode, ExecutionEvidence, ExecutionRequest, ExecutionTarget,
+    FunctionSource, ImageManifest, ImageMapping, KnowledgeOccurrence, LayoutProjection,
+    LinkRequest, ObjectId, PreparedImageId, ProjectionRef, ReviewedCallBoundary, Revision,
+    RevisionId, SymbolId, SymbolTableKind,
 };
 use blobray_next_host::wire::RecordDocument;
 use evidence_index::LocationKind;
@@ -23,14 +20,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Actor recorded on the knowledge reviews this package submits.
-const REVIEW_ACTOR: &str = "oer-esp32s31-vendor-scenarios";
-
-/// One retained execution and the evidence read immediately after it.
+/// One compared request and its in-memory result.
 pub struct Artifact {
     pub label: String,
+    /// Digest of the canonical request.
     pub identity: ArtifactId,
-    pub document: ExecutionDocument,
+    pub request: ExecutionRequest,
+    pub records: Vec<ExecutionEvidence>,
+    pub verdict: Option<blobray_domain::ComparisonVerdict>,
+    pub complete: bool,
     /// Vendor and production entries and the verdict of every compared case.
     pub compared: Vec<ComparedCase>,
 }
@@ -73,8 +71,14 @@ pub struct Session {
     pub inventory: Revision,
     pub probes: ProbeCatalog,
     pub artifacts: Vec<Artifact>,
-    /// Head of the project's knowledge after this session's reviews.
-    pub knowledge: Option<KnowledgeRevisionId>,
+    /// Authenticated bytes of each captured input, by input index.
+    inputs: Vec<Vec<u8>>,
+    /// Exported ELF bytes of each prepared image.
+    images: std::cell::RefCell<BTreeMap<PreparedImageId, Vec<u8>>>,
+    /// Effect contracts and projections the scenario's relations select,
+    /// reviewed through git and identified by content.
+    effects: Vec<EffectContract>,
+    projections: Vec<LayoutProjection>,
 }
 
 /// A prepared image and its resolved roots, including the entry.
@@ -101,7 +105,7 @@ impl Session {
     ) -> Result<Self> {
         let run = start_run(output)?;
         let runner = Runner::new(binary, &run, run.join("project"), budget)?;
-        let (revision, identities) = runner.capture(inputs)?;
+        let (revision, identities, contents) = runner.capture(inputs)?;
         let roles: Vec<_> = inputs.iter().map(|i| i.role).collect();
         runner.doc(
             "identities",
@@ -119,7 +123,10 @@ impl Session {
             inventory,
             probes,
             artifacts: vec![],
-            knowledge: None,
+            inputs: contents,
+            images: Default::default(),
+            effects: vec![],
+            projections: vec![],
         })
     }
 
@@ -160,105 +167,102 @@ impl Session {
         })
     }
 
-    /// Propose `contract` as `subject`, then accept exactly that proposal as
-    /// the scenario's review. Returns the accepted review a relation selects.
+    /// Select `contract` by content for this scenario's relations. The
+    /// contract is a typed value reviewed through git; `name`, `subject` and
+    /// `reason` document it and are retained with the run.
     pub fn review_effects(
         &mut self,
         name: &str,
         subject: &str,
         contract: EffectContract,
         reason: &str,
-    ) -> Result<EffectReview> {
-        let request = EffectProposalRequest {
-            subject: subject.to_owned().try_into()?,
-            contract,
-            expected_base: self.knowledge.clone(),
-            actor: REVIEW_ACTOR.into(),
-            reason: reason.into(),
-        };
-        let (knowledge, assertion) =
-            self.review(name, "propose-effect-contract", &request, reason)?;
-        Ok(EffectReview {
-            knowledge,
-            assertion,
-        })
+    ) -> Result<EffectContractRef> {
+        self.runner.doc(
+            name,
+            &serde_json::json!({"subject": subject, "reason": reason, "contract": &contract}),
+        )?;
+        let selection = blobray_application::in_process::effect_contract_ref(&contract)?;
+        if !self.effects.contains(&contract) {
+            self.effects.push(contract);
+        }
+        Ok(selection)
     }
 
-    /// Propose `projection` as `subject` and accept exactly that proposal.
+    /// Select `projection` by content, as `review_effects` does for contracts.
     pub fn review_projection(
         &mut self,
         name: &str,
         subject: &str,
         projection: LayoutProjection,
         reason: &str,
-    ) -> Result<ProjectionReview> {
-        let request = ProjectionProposalRequest {
-            subject: subject.to_owned().try_into()?,
-            projection,
-            expected_base: self.knowledge.clone(),
-            actor: REVIEW_ACTOR.into(),
-            reason: reason.into(),
-        };
-        let (knowledge, assertion) = self.review(name, "propose-projection", &request, reason)?;
-        Ok(ProjectionReview {
-            knowledge,
-            assertion,
-        })
+    ) -> Result<ProjectionRef> {
+        self.runner.doc(
+            name,
+            &serde_json::json!({"subject": subject, "reason": reason, "projection": &projection}),
+        )?;
+        let selection = blobray_application::in_process::projection_ref(&projection)?;
+        if !self.projections.contains(&projection) {
+            self.projections.push(projection);
+        }
+        Ok(selection)
     }
 
-    /// Submit `request` through the knowledge `propose` command, then accept
-    /// the one assertion that proposal published. Returns the accepted
-    /// knowledge revision and the assertion.
-    fn review<T: serde::Serialize>(
-        &mut self,
-        name: &str,
-        propose: &str,
-        request: &T,
-        reason: &str,
-    ) -> Result<(KnowledgeRevisionId, AssertionId)> {
-        let mut command = args(["knowledge", propose, "--request"]);
-        command.push(path_arg(
-            &self.runner.doc(&format!("{name}-proposal"), request)?,
-        ));
-        let proposed = self
-            .runner
-            .run_record(&format!("{name}-proposal"), &command, 0)?
-            .knowledge
-            .ok_or_else(|| invalid("proposal published no knowledge"))?;
-        let shown: serde_json::Value = self.runner.json(
-            &format!("{name}-proposed"),
-            &args(["knowledge", "show", "--revision", proposed.as_str()]),
-        )?;
-        let assertion: AssertionId = shown["records"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .find(|r| r["value"]["proposed_in"].as_str() == Some(proposed.as_str()))
-            .and_then(|r| r["value"]["id"].as_str())
-            .ok_or_else(|| invalid("proposed assertion missing"))?
-            .parse()?;
-        let accepted = self
-            .runner
-            .run_record(
-                &format!("{name}-review"),
-                &args([
-                    "knowledge",
-                    "accept",
-                    "--assertion",
-                    assertion.as_str(),
-                    "--base",
-                    proposed.as_str(),
-                    "--actor",
-                    REVIEW_ACTOR,
-                    "--reason",
-                    reason,
-                ]),
-                0,
-            )?
-            .knowledge
-            .ok_or_else(|| invalid("review published no knowledge"))?;
-        self.knowledge = Some(accepted.clone());
-        Ok((accepted, assertion))
+    /// ELF bytes of every source of `target`, in source order.
+    fn executables(&self, target: &ExecutionTarget) -> Result<Vec<Vec<u8>>> {
+        let input = |index: u64| {
+            self.inputs
+                .get(index as usize)
+                .cloned()
+                .ok_or_else(|| invalid(format!("input {index} is not captured")))
+        };
+        let mut executables = vec![match &target.source {
+            FunctionSource::Input { input: index } => input(*index)?,
+            FunctionSource::Image { image } => self
+                .images
+                .borrow()
+                .get(image)
+                .cloned()
+                .ok_or_else(|| invalid("image is not exported"))?,
+        }];
+        for companion in &target.companions {
+            executables.push(input(*companion)?);
+        }
+        Ok(executables)
+    }
+
+    /// Execute and compare `request` in this process.
+    fn verify(
+        &self,
+        request: &ExecutionRequest,
+    ) -> blobray_domain::Result<blobray_application::in_process::InProcessResult> {
+        let failed = |e: crate::harness::Error| {
+            blobray_domain::Error::new(ErrorCode::InvalidRequest, e.to_string())
+        };
+        let vendor = self.executables(&request.vendor).map_err(failed)?;
+        let replacement = request
+            .replacement
+            .as_ref()
+            .map(|t| self.executables(t))
+            .transpose()
+            .map_err(failed)?;
+        let vendor: Vec<&[u8]> = vendor.iter().map(Vec::as_slice).collect();
+        let replacement: Option<Vec<&[u8]>> = replacement
+            .as_ref()
+            .map(|r| r.iter().map(Vec::as_slice).collect());
+        let budget = self.runner.budget;
+        let memory = blobray_domain::WorkingMemory::new(budget.working_memory_mib << 20)?;
+        blobray_application::in_process::verify(
+            &blobray_application::in_process::InProcessComparison {
+                request,
+                vendor: &vendor,
+                replacement: replacement.as_deref(),
+                effects: &self.effects,
+                projections: &self.projections,
+            },
+            &blobray_backend_riscv::RiscvExecutor,
+            &memory,
+            &mut crate::harness::InProcessControl::new(&budget),
+        )
     }
 
     /// Every companion the request's closure needs, proposed by a trial link
@@ -367,6 +371,9 @@ impl Session {
         let mut command = args(["export-image", "--id", image.as_str(), "--output"]);
         command.push(path_arg(&self.run.join("image")));
         runner.call("export-image", &command, 0)?;
+        self.images
+            .borrow_mut()
+            .insert(image.clone(), fs::read(self.run.join("image/image.elf"))?);
         Ok(LinkedImage {
             image,
             manifest: *manifest,
@@ -418,25 +425,22 @@ impl Session {
         verdict: Option<blobray_domain::ComparisonVerdict>,
         events: bool,
     ) -> Result<&Artifact> {
-        let command = if request.replacement.is_some() {
-            "compare"
+        let started = std::time::Instant::now();
+        let result = self
+            .verify(request)
+            .map_err(|e| invalid(format!("{label}: {e:?}")))?;
+        println!("{label} 0 {:.2}", started.elapsed().as_secs_f64());
+        assert_eq!(result.verdict, verdict, "{label}");
+        let identity = ArtifactId::of_bytes(&serde_json::to_vec(request)?);
+        let records: Vec<ExecutionEvidence> = if events {
+            result.records
         } else {
-            "execute"
+            result
+                .records
+                .into_iter()
+                .filter(|r| !matches!(r, ExecutionEvidence::Event { .. }))
+                .collect()
         };
-        let mut invocation = args([command, "--request"]);
-        invocation.push(path_arg(&self.runner.doc(label, request)?));
-        let identity = self
-            .runner
-            .run_record(label, &invocation, 0)?
-            .execution
-            .ok_or_else(|| invalid(format!("{label}: no execution published")))?;
-        let name = format!("{label}-evidence");
-        let document = if events {
-            self.runner.execution(&name, &identity)?
-        } else {
-            self.runner.execution_without_events(&name, &identity)?
-        };
-        assert_eq!(manifest(&document).verdict, verdict, "{label}");
         let compared = request
             .cases
             .iter()
@@ -444,10 +448,8 @@ impl Session {
             .filter(|(_, c)| c.relation.is_some())
             .filter_map(|(index, c)| {
                 let production = c.replacement.as_ref()?.entry;
-                let verdict = document.records.iter().find_map(|r| match &r.value {
-                    blobray_domain::ExecutionEvidence::Comparison { case, result }
-                        if *case == index as u32 =>
-                    {
+                let verdict = records.iter().find_map(|r| match r {
+                    ExecutionEvidence::Comparison { case, result } if *case == index as u32 => {
                         Some(result.verdict)
                     }
                     _ => None,
@@ -462,7 +464,10 @@ impl Session {
         self.artifacts.push(Artifact {
             label: label.into(),
             identity,
-            document,
+            request: request.clone(),
+            records,
+            verdict: result.verdict,
+            complete: result.complete,
             compared,
         });
         Ok(self.artifacts.last().unwrap())
@@ -509,14 +514,27 @@ impl Session {
                 "{suite}: no MATCH execution compares {symbol} with {entry}"
             )));
         }
-        let ids: Vec<ArtifactId> = executions
+        let selected: Vec<&Artifact> = self
+            .artifacts
             .iter()
-            .map(|id| id.parse())
-            .collect::<std::result::Result<_, _>>()?;
-        let report = self.runner.code_coverage(
-            &format!("coverage-{suite}-{symbol}"),
-            &ids.iter().collect::<Vec<_>>(),
-        )?;
+            .filter(|a| executions.contains(&a.identity.as_str().to_owned()))
+            .collect();
+        let pairs: Vec<(&ExecutionRequest, &[ExecutionEvidence])> = selected
+            .iter()
+            .map(|a| (&a.request, a.records.as_slice()))
+            .collect();
+        let executables = self.executables(&selected[0].request.vendor)?;
+        let executables: Vec<&[u8]> = executables.iter().map(Vec::as_slice).collect();
+        let memory =
+            blobray_domain::WorkingMemory::new(self.runner.budget.working_memory_mib << 20)?;
+        let report = blobray_application::in_process::coverage(
+            &pairs,
+            &executables,
+            &blobray_backend_riscv::RiscvDecoder,
+            &memory,
+            &mut crate::harness::InProcessControl::new(&self.runner.budget),
+        )
+        .map_err(|e| invalid(format!("{suite} {symbol} coverage: {e:?}")))?;
         let root = report
             .roots
             .iter()
@@ -623,8 +641,8 @@ impl Session {
         let reach = self
             .artifacts
             .iter()
-            .flat_map(|artifact| &artifact.document.records)
-            .filter_map(|record| match &record.value {
+            .flat_map(|artifact| &artifact.records)
+            .filter_map(|record| match record {
                 blobray_domain::ExecutionEvidence::Coverage {
                     replacement: true,
                     coverage,
@@ -640,84 +658,17 @@ impl Session {
         })
     }
 
-    /// Run a request that must fail for capacity and publish nothing.
+    /// Run a request that must fail for capacity.
     pub fn capacity_failure(&self, label: &str, request: &ExecutionRequest) -> Result<()> {
-        let command = if request.replacement.is_some() {
-            "compare"
-        } else {
-            "execute"
-        };
-        let mut invocation = args([command, "--request"]);
-        invocation.push(path_arg(&self.runner.doc(label, request)?));
-        let failed = self.runner.run_record(label, &invocation, 1)?;
-        assert!(
-            failed.execution.is_none()
-                && failed.publication.is_none()
-                && failed.resolved_operation.is_none()
-        );
+        let failed = self
+            .verify(request)
+            .err()
+            .ok_or_else(|| invalid(format!("{label}: capacity was not exhausted")))?;
         assert_eq!(
-            failed.error.map(|e| e.code),
-            Some(ErrorCode::ResourceLimited)
+            failed.code,
+            ErrorCode::ResourceLimited,
+            "{label}: {failed:?}"
         );
-        Ok(())
-    }
-
-    /// A retained execution is unchanged after a later failure.
-    pub fn assert_retained(
-        &self,
-        label: &str,
-        identity: &ArtifactId,
-        before: &ExecutionDocument,
-    ) -> Result<()> {
-        let after = self.runner.execution(label, identity)?;
-        assert_eq!(after.records, before.records);
-        assert_eq!(manifest(&after), manifest(before));
-        Ok(())
-    }
-
-    /// Source-free preservation. After backup the project moves; the selected
-    /// execution reopens and replays there. Every retained execution then
-    /// reopens and replays exactly from a restored backup. Reopening compares
-    /// manifests, whose record digest Blobray verifies against the payload.
-    pub fn preserve(&mut self, moved_check: usize) -> Result<()> {
-        let backup = self.run.join("backup.blobray");
-        let mut command = args(["backup", "--output"]);
-        command.push(path_arg(&backup));
-        self.runner.call("backup", &command, 0)?;
-        let moved = self.run.join("moved");
-        fs::rename(&self.runner.project, &moved)?;
-        self.runner.project = moved;
-        let check = self
-            .artifacts
-            .get(moved_check)
-            .ok_or_else(|| invalid("no retained executions"))?;
-        // Manifests carry the record payload digest, which reopening verifies.
-        let reopened = self
-            .runner
-            .execution_summary("moved-evidence", &check.identity)?;
-        assert_eq!(manifest(&reopened), manifest(&check.document));
-        let replay = self.runner.run_record(
-            "moved-replay",
-            &args(["replay", "--id", check.identity.as_str()]),
-            0,
-        )?;
-        assert_eq!(replay.execution.as_ref(), Some(&check.identity));
-        self.runner.project = self.run.join("restored");
-        let mut command = args(["restore", "--backup"]);
-        command.push(path_arg(&backup));
-        self.runner.call("restore", &command, 0)?;
-        for artifact in &self.artifacts {
-            let restored = self
-                .runner
-                .execution_summary(&format!("restored-{}", artifact.label), &artifact.identity)?;
-            assert_eq!(manifest(&restored), manifest(&artifact.document));
-            let replay = self.runner.run_record(
-                &format!("replay-{}", artifact.label),
-                &args(["replay", "--id", artifact.identity.as_str()]),
-                0,
-            )?;
-            assert_eq!(replay.execution.as_ref(), Some(&artifact.identity));
-        }
         Ok(())
     }
 }

@@ -371,14 +371,13 @@ fn gain(common: Common, rftest: Option<PathBuf>) -> Result<Outcome> {
     g.bluetooth()?;
     g.additive()?;
     g.negative()?;
-    g.preserve(0)?;
     let claims = g
         .session
         .claims("gain", &g.roots, &GAIN_CLAIMS, coverage::RUNTIME)?;
     Ok((
         finish(
             &unmet,
-            "authenticated gain arithmetic/publication, gain state and source-free replay passed",
+            "authenticated gain arithmetic/publication, gain state passed",
             &g.run,
         ),
         claims,
@@ -406,7 +405,7 @@ fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result
     if options.sdk.is_some() {
         calibration_prefix::exercise(&mut ctx)?;
     }
-    let positive = ctx.command_memory()?;
+    ctx.command_memory()?;
     i2c_transport::exercise(&mut ctx)?;
     if options.sdk.is_some() {
         calibration_leaves::exercise(&mut ctx)?;
@@ -414,7 +413,6 @@ fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result
     harness_edges::exercise(&mut ctx)?;
     // All original source copies were deleted before linking/execution. Preserve
     // the full project closure, including probe/ROM bytes and negative evidence.
-    ctx.preserve(positive)?;
     let mut list = I2C_CLAIMS.to_vec();
     if options.sdk.is_some() {
         list.extend(I2C_SDK_CLAIMS);
@@ -426,11 +424,7 @@ fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result
         .session
         .claims("i2c", &ctx.roots, &list, coverage::RUNTIME)?;
     Ok((
-        finish(
-            &unmet,
-            "authenticated PHY comparisons and source-free replay passed",
-            &ctx.run,
-        ),
+        finish(&unmet, "authenticated PHY comparisons passed", &ctx.run),
         claims,
     ))
 }
@@ -453,14 +447,13 @@ fn channel(common: Common) -> Result<Outcome> {
     let options = common.phy();
     let mut ctx = channel::Channel::new(&options)?;
     channel::exercise(&mut ctx)?;
-    ctx.preserve(0)?;
     let claims = ctx
         .session
         .claims("channel", &ctx.roots, &CHANNEL_CLAIMS, coverage::RUNTIME)?;
     Ok((
         finish(
             &[],
-            "authenticated channel restoration, temperature prefix, containment and source-free replay passed",
+            "authenticated channel restoration, temperature prefix, containment passed",
             &ctx.run,
         ),
         claims,
@@ -470,14 +463,13 @@ fn channel(common: Common) -> Result<Outcome> {
 fn rx_gain(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     let mut ctx = rx_gain::RxGain::new(&common.phy(), &phy_sdk)?;
     rx_gain::exercise(&mut ctx)?;
-    ctx.preserve(0)?;
     let claims = ctx
         .session
         .claims("rx-gain", &ctx.roots, &RX_GAIN_CLAIMS, coverage::RUNTIME)?;
     Ok((
         finish(
             &[],
-            "authenticated RX gain publication, calibration, containment and source-free replay passed",
+            "authenticated RX gain publication, calibration, containment passed",
             &ctx.run,
         ),
         claims,
@@ -487,14 +479,13 @@ fn rx_gain(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
 fn tx_dc(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     let mut ctx = tx_dc::TxDc::new(&common.phy(), &phy_sdk)?;
     tx_dc::exercise(&mut ctx)?;
-    ctx.preserve(0)?;
     let claims = ctx
         .session
         .claims("tx-dc", &ctx.roots, &TX_DC_CLAIMS, coverage::RUNTIME)?;
     Ok((
         finish(
             &[],
-            "authenticated TX-DC/PWDET calibration, fault containment and source-free replay passed",
+            "authenticated TX-DC/PWDET calibration, fault containment passed",
             &ctx.run,
         ),
         claims,
@@ -504,14 +495,13 @@ fn tx_dc(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
 fn tracking(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     let mut ctx = tracking::Tracking::new(&common.phy(), &phy_sdk)?;
     tracking::exercise(&mut ctx)?;
-    ctx.preserve(0)?;
     let claims = ctx
         .session
         .claims("tracking", &ctx.roots, &TRACKING_CLAIMS, coverage::RUNTIME)?;
     Ok((
         finish(
             &[],
-            "authenticated tracking parents, failed-TX containment and source-free replay passed",
+            "authenticated tracking parents, failed-TX containment passed",
             &ctx.run,
         ),
         claims,

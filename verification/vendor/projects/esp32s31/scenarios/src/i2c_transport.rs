@@ -10,9 +10,9 @@ use crate::harness::{Result, case, known, words};
 use crate::i2c::{I2c, models, returned_low, word_writes};
 use crate::layout::*;
 use blobray_domain::{
-    CommandCell, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, DeviceIssue, EffectReview,
-    ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionRegion, ExecutionStop, Invocation,
-    ModelStatus, RegionLifetime, RegisterCell, SessionReset,
+    CommandCell, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, DeviceIssue,
+    EffectContractRef, ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionRegion,
+    ExecutionStop, Invocation, ModelStatus, RegionLifetime, RegisterCell, SessionReset,
 };
 
 /// Independent `.iram1` +0x44..+0x60 instruction reading.
@@ -93,7 +93,7 @@ impl Transport {
     #[allow(clippy::too_many_arguments)]
     fn paired(
         &self,
-        effects: &EffectReview,
+        effects: &EffectContractRef,
         name: &str,
         left: u32,
         left_words: &[u32],

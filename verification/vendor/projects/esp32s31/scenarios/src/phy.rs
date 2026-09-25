@@ -3,9 +3,7 @@
 use crate::evidence::{outcomes, split_cases};
 use crate::harness::direct;
 use crate::harness::{Budget, Input, with_stack_fill};
-use crate::harness::{
-    Result, evidence, invalid, known, manifest, region, selection, symbol, words,
-};
+use crate::harness::{Result, invalid, known, region, selection, symbol, words};
 use crate::layout::*;
 use crate::session::{Session, image_symbol, request};
 use crate::{I2C_LIBRARY_SHA, ROM_SHA};
@@ -349,12 +347,12 @@ impl PhyImage {
         let artifact = self
             .session
             .submit_records(label, &request, expected, events)?;
-        let summary = manifest(&artifact.document);
-        let records = evidence(&artifact.document);
+        let complete = artifact.complete;
+        let records = artifact.records.clone();
         let stops = outcomes(&records);
         assert_eq!(stops.len(), count, "{label}");
         if matches!(verdict, ComparisonVerdict::Match | ComparisonVerdict::Diff) {
-            assert!(summary.complete, "{label}");
+            assert!(complete, "{label}");
             assert!(
                 stops
                     .iter()
@@ -465,7 +463,7 @@ impl PhyImage {
     }
 
     pub fn last_manifest_complete(&self) -> bool {
-        manifest(&self.artifacts.last().expect("retained execution").document).complete
+        self.artifacts.last().expect("retained execution").complete
     }
 
     /// Exact image bytes at a linked address, checked against the source identity.

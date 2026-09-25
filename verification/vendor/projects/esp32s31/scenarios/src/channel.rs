@@ -10,15 +10,16 @@
 //! hardware qualification.
 use crate::contracts::{OutputField, output_projection, phy_contract, plumbing};
 use crate::evidence::{PhyEffect, events, output, phy_effects, stop};
-use crate::harness::{Buffer, Result, case, evidence, selection, with_stack_fill};
+use crate::harness::{Buffer, Result, case, selection, with_stack_fill};
 use crate::i2c::{all_complete, returned_low};
 use crate::layout::*;
 use crate::phy::delay_calls;
 use crate::phy::{PhyImage, PhyOptions, Right, image_layout, select, start_session};
 use crate::session::request;
 use blobray_domain::{
-    CommandCell, ComparisonVerdict, DeviceDeclaration, EffectReview, ExecutionCase, ExecutionEvent,
-    ExecutionEvidence, ExecutionStop, Invocation, LinkRequest, ProjectionReview, SessionReset,
+    CommandCell, ComparisonVerdict, DeviceDeclaration, EffectContractRef, ExecutionCase,
+    ExecutionEvent, ExecutionEvidence, ExecutionStop, Invocation, LinkRequest, ProjectionRef,
+    SessionReset,
 };
 
 /// Offsets of the committed channel, temperature and bandwidth in `phy_param`.
@@ -187,9 +188,9 @@ pub struct Channel {
     pub image: PhyImage,
     rom_delay: u32,
     production_delay: u32,
-    effects: EffectReview,
-    committed: ProjectionReview,
-    sensor_effects: EffectReview,
+    effects: EffectContractRef,
+    committed: ProjectionRef,
+    sensor_effects: EffectContractRef,
 }
 
 impl std::ops::Deref for Channel {
@@ -538,7 +539,10 @@ fn stuck_readiness(ctx: &mut Channel) -> Result<()> {
     }
     let production = ctx.production.clone();
     let request = request(&production, None, None, rows, MAX_EVENTS);
-    let records = evidence(&ctx.submit("stuck-readiness", &request, None)?.document);
+    let records = ctx
+        .submit("stuck-readiness", &request, None)?
+        .records
+        .clone();
     for (case, fill) in FILLS.iter().enumerate() {
         let (case, label) = (case as u32, format!("stuck-readiness-fill{fill:x}"));
         assert_eq!(returned_low(&records, case, false), Some(1), "{label}");

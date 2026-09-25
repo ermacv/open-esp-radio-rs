@@ -3,15 +3,14 @@
 //! This module supplies no hardware model or expected result. Callers select every
 //! input, peripheral assumption, reset and observation relation. Replay consumes
 //! Blobray's retained request and never invokes these builders again.
-use blobray_application::{QuerySummary, RunRecord};
+use blobray_application::RunRecord;
 use blobray_domain::{
-    ArtifactId, CallAbi, ComparisonRelation, DataRequest, DataSelector, DeviceDeclaration,
-    EventChannels, ExecutionCase, ExecutionEvidence, ExecutionGoal, ExecutionManifest,
-    ExecutionRegion, FunctionSource, Invocation, KnowledgeOccurrence, MemoryPair, MemorySeed,
-    MemorySelection, ObjectInventory, RegionLifetime, ReturnWords, Revision, RevisionId,
-    SectionRecord, SessionReset, SymbolRecord, TimelineCapture,
+    CallAbi, ComparisonRelation, DataRequest, DataSelector, DeviceDeclaration, EventChannels,
+    ExecutionCase, ExecutionGoal, ExecutionRegion, FunctionSource, Invocation, KnowledgeOccurrence,
+    MemoryPair, MemorySeed, MemorySelection, ObjectInventory, RegionLifetime, ReturnWords,
+    Revision, RevisionId, SectionRecord, SessionReset, SymbolRecord, TimelineCapture,
 };
-use blobray_next_host::wire::{InventoryDocument, RecordDocument, RunDocument};
+use blobray_next_host::wire::{InventoryDocument, RunDocument};
 use oer_probe_codegen::Catalog;
 use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
@@ -69,6 +68,52 @@ impl Budget {
     }
 }
 
+/// Checkpoints between wall-clock deadline checks of an in-process operation.
+const DEADLINE_INTERVAL: u32 = 4096;
+
+/// Work and wall-clock limits of one in-process operation under a budget.
+pub struct InProcessControl {
+    units: u64,
+    limit: u64,
+    deadline: std::time::Instant,
+    checks: u32,
+}
+
+impl InProcessControl {
+    pub fn new(budget: &Budget) -> Self {
+        Self {
+            units: 0,
+            limit: budget.max_work_units,
+            deadline: std::time::Instant::now()
+                + std::time::Duration::from_secs(budget.timeout_secs),
+            checks: 0,
+        }
+    }
+}
+
+impl blobray_domain::RunControl for InProcessControl {
+    fn checkpoint(&mut self, units: u64) -> blobray_domain::Result<()> {
+        self.units = self.units.saturating_add(units);
+        if self.units > self.limit {
+            return Err(blobray_domain::Error::new(
+                blobray_domain::ErrorCode::ResourceLimited,
+                "work budget exhausted",
+            ));
+        }
+        self.checks += 1;
+        if self.checks == DEADLINE_INTERVAL {
+            self.checks = 0;
+            if std::time::Instant::now() > self.deadline {
+                return Err(blobray_domain::Error::new(
+                    blobray_domain::ErrorCode::ResourceLimited,
+                    "deadline exceeded",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// One captured input and its independently pinned identity, if any.
 #[derive(Clone, Copy)]
 pub struct Input<'a> {
@@ -100,7 +145,7 @@ pub struct Runner {
     binary: PathBuf,
     run: PathBuf,
     pub project: PathBuf,
-    budget: Budget,
+    pub budget: Budget,
 }
 
 impl Runner {
@@ -173,53 +218,14 @@ impl Runner {
         Ok(document.run)
     }
 
-    pub fn execution(&self, name: &str, id: &ArtifactId) -> Result<ExecutionDocument> {
-        self.json(name, &args(["execution", "--id", id.as_str()]))
-    }
-
-    /// Vendor coverage of the root closures of `executions`, which share one
-    /// vendor target.
-    pub fn code_coverage(
-        &self,
-        name: &str,
-        executions: &[&ArtifactId],
-    ) -> Result<blobray_domain::CodeCoverageReport> {
-        let mut arguments = args(["code-coverage"]);
-        for id in executions {
-            arguments.extend(args(["--execution", id.as_str()]));
-        }
-        let document: RecordDocument<serde_json::Value> = self.json(name, &arguments)?;
-        match document.summary {
-            QuerySummary::CodeCoverage { report, .. } => Ok(*report),
-            other => Err(invalid(format!(
-                "unexpected code coverage summary {other:?}"
-            ))),
-        }
-    }
-
-    /// Every record except guest events, after Blobray validates all records.
-    pub fn execution_without_events(
-        &self,
-        name: &str,
-        id: &ArtifactId,
-    ) -> Result<ExecutionDocument> {
-        self.json(
-            name,
-            &args(["execution", "--no-events", "--id", id.as_str()]),
-        )
-    }
-
-    /// The retained manifest after Blobray verifies the request and record
-    /// payload digests; records are not decoded or returned.
-    pub fn execution_summary(&self, name: &str, id: &ArtifactId) -> Result<ExecutionDocument> {
-        self.json(name, &args(["execution", "--summary", "--id", id.as_str()]))
-    }
-
     /// Authenticate selected inputs, import copies, then remove those copies.
-    pub fn capture(&self, inputs: &[Input<'_>]) -> Result<(RevisionId, Vec<String>)> {
+    /// Returns the revision, each input's digest and its authenticated bytes.
+    pub fn capture(&self, inputs: &[Input<'_>]) -> Result<(RevisionId, Vec<String>, Vec<Vec<u8>>)> {
         let mut identities = Vec::with_capacity(inputs.len());
+        let mut contents = Vec::with_capacity(inputs.len());
         for input in inputs {
-            let actual = sha256(&fs::read(input.path)?);
+            let bytes = fs::read(input.path)?;
+            let actual = sha256(&bytes);
             if let Some(expected) = input.sha256
                 && actual != expected
             {
@@ -229,12 +235,14 @@ impl Runner {
                 )));
             }
             identities.push(actual);
+            contents.push(bytes);
         }
         let local: Vec<PathBuf> = (0..inputs.len())
             .map(|i| self.run.join(format!("input-{i}")))
             .collect();
-        for (input, destination) in inputs.iter().zip(&local) {
-            fs::copy(input.path, destination)?;
+        // Import the authenticated bytes, not a later state of the source path.
+        for (bytes, destination) in contents.iter().zip(&local) {
+            fs::write(destination, bytes)?;
         }
         self.call("init", &args(["init"]), 0)?;
         let mut import = args(["import"]);
@@ -251,7 +259,7 @@ impl Runner {
         for path in local {
             fs::remove_file(path)?;
         }
-        Ok((revision, identities))
+        Ok((revision, identities, contents))
     }
 
     pub fn inventory(&self) -> Result<Revision> {
@@ -269,19 +277,6 @@ impl Runner {
         self.call(name, &command, 0)?;
         Ok(fs::read(output.join("data.bin"))?)
     }
-}
-
-pub type ExecutionDocument = RecordDocument<ExecutionEvidence>;
-
-pub fn manifest(document: &ExecutionDocument) -> &ExecutionManifest {
-    match &document.summary {
-        QuerySummary::Execution { manifest, .. } => manifest,
-        _ => panic!("execution query returned another summary"),
-    }
-}
-
-pub fn evidence(document: &ExecutionDocument) -> Vec<ExecutionEvidence> {
-    document.records.iter().map(|r| r.value.clone()).collect()
 }
 
 pub fn args<const N: usize>(values: [&str; N]) -> Vec<OsString> {

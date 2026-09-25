@@ -240,7 +240,7 @@ pub fn exercise(options: &Options) -> Result<PathBuf> {
     let runner = Runner::new(&options.binary, &run, run.join("project"), options.budget)?;
     let library = std::path::absolute(&options.library)?;
     let rom = std::path::absolute(&options.rom)?;
-    let (revision, _) = runner.capture(&[
+    let (revision, _, _) = runner.capture(&[
         Input {
             role: "phy",
             path: &library,

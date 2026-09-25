@@ -7,18 +7,19 @@
 use crate::evidence::{events, output, stop};
 use crate::gain_state::Unmet;
 use crate::harness::{
-    Budget, Buffer, Input, Result, case, data_request, direct, evidence, filled, invalid,
-    invocation, manifest, named_object, named_section, selection, sha256, symbol,
+    Budget, Buffer, Input, Result, case, data_request, direct, filled, invalid, invocation,
+    named_object, named_section, selection, sha256, symbol,
 };
 use crate::layout::*;
 use crate::phy::image_layout;
 use crate::session::{Artifact, Session, image_symbol, request};
 use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_domain::{
-    CallEndpoint, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration, EffectReview,
-    EffectRule, EntrySelection, ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionGap,
-    ExecutionStop, ExecutionTarget, FunctionSource, LinkRequest, MemoryAccess, ModelStatus,
-    ObjectId, ObjectLocation, RegionLifetime, RegisterCell, SessionReset,
+    CallEndpoint, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration,
+    EffectContractRef, EffectRule, EntrySelection, ExecutionCase, ExecutionEvent,
+    ExecutionEvidence, ExecutionGap, ExecutionStop, ExecutionTarget, FunctionSource, LinkRequest,
+    MemoryAccess, ModelStatus, ObjectId, ObjectLocation, RegionLifetime, RegisterCell,
+    SessionReset,
 };
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
@@ -331,7 +332,7 @@ impl I2c {
         replacement: CallEndpoint,
         rules: Vec<EffectRule>,
         applicability: &str,
-    ) -> Result<EffectReview> {
+    ) -> Result<EffectContractRef> {
         let contract = crate::contracts::phy_contract(vendor, replacement, rules, applicability);
         self.session.review_effects(
             name,
@@ -367,9 +368,11 @@ impl I2c {
         verdict: Option<ComparisonVerdict>,
     ) -> Result<Vec<ExecutionEvidence>> {
         let request = request(vendor, replacement, fill, cases, max_events);
-        Ok(evidence(
-            &self.session.submit(label, &request, verdict)?.document,
-        ))
+        Ok(self
+            .session
+            .submit(label, &request, verdict)?
+            .records
+            .clone())
     }
 
     /// Captured vendor image against compiled production, stacks unknown.
@@ -687,7 +690,7 @@ pub fn all_complete(records: &[ExecutionEvidence], case: u32, side: bool) -> boo
 }
 
 pub fn manifest_complete(artifact: &Artifact) -> bool {
-    manifest(&artifact.document).complete
+    artifact.complete
 }
 
 #[cfg(test)]

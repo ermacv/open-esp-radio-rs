@@ -18,8 +18,9 @@ use crate::phy::{
 };
 use crate::tx_dc::{self, DETECTOR_READY, PBUS_IDLE, SAR_UNUSED, Samples};
 use blobray_domain::{
-    CommandCell, ComparisonVerdict, DeviceDeclaration, EffectReview, EffectRule, ExecutionCase,
-    ExecutionEvidence, Invocation, LinkRequest, ProjectionReview, ReadRun, SessionReset,
+    CommandCell, ComparisonVerdict, DeviceDeclaration, EffectContractRef, EffectRule,
+    ExecutionCase, ExecutionEvidence, Invocation, LinkRequest, ProjectionRef, ReadRun,
+    SessionReset,
 };
 use std::path::Path;
 
@@ -375,7 +376,7 @@ pub struct Tracking {
     production_delay: u32,
     /// Register-preserving short-delay event of the production probes.
     short_delay: u32,
-    reviews: Vec<(Root, EffectReview, ProjectionReview)>,
+    reviews: Vec<(Root, EffectContractRef, ProjectionRef)>,
 }
 
 impl std::ops::Deref for Tracking {
@@ -749,8 +750,10 @@ fn failed_tx(ctx: &mut Tracking) -> Result<()> {
     }
     let production = ctx.production.clone();
     let request = crate::session::request(&production, None, None, rows, TRACKING_EVENTS);
-    let records =
-        crate::harness::evidence(&ctx.submit("tracking-failed-tx", &request, None)?.document);
+    let records = ctx
+        .submit("tracking-failed-tx", &request, None)?
+        .records
+        .clone();
     for (case, (label, expected)) in expectations.iter().enumerate() {
         let case = case as u32;
         assert_eq!(

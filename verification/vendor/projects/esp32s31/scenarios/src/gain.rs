@@ -1054,13 +1054,10 @@ impl Gain {
             e,
             ExecutionEvent::Read { .. } | ExecutionEvent::Write { .. }
         )));
-        let previous = self.artifacts.last().expect("retained execution");
-        let (identity, document) = (previous.identity.clone(), previous.document.clone());
         let mut limited = self.publication_request.clone().expect("publication ran");
         limited.cases.truncate(1);
         limited.max_events = 1;
         self.capacity_failure("gain-capacity", &limited)?;
-        self.assert_retained("retained-after-failure", &identity, &document)?;
         // The same ROM kernel receives caller-owned coefficient bytes. This is
         // explicitly a vendor-boundary characterization, not a production match.
         let data = vec![0u8; PHY_PARAM_BYTES as usize];

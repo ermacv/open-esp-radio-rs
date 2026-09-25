@@ -12,15 +12,16 @@ use crate::contracts::{
     OutputField, omitted_read_before, output_projection, phy_contract, plumbing,
 };
 use crate::evidence::{PhyEffect, events, output, phy_effects, steps};
-use crate::harness::{Buffer, Result, case, evidence, selection, with_stack_fill};
+use crate::harness::{Buffer, Result, case, selection, with_stack_fill};
 use crate::i2c::{all_complete, returned_low};
 use crate::layout::*;
 use crate::phy::delay_calls;
 use crate::phy::{PhyImage, PhyOptions, Right, image_layout, phy_sdk_input, select, start_session};
 use crate::session::request;
 use blobray_domain::{
-    CommandCell, ComparisonVerdict, DeviceDeclaration, EffectReview, EffectRule, ExecutionCase,
-    ExecutionEvidence, Invocation, LinkRequest, ProjectionReview, ReadRun, SessionReset,
+    CommandCell, ComparisonVerdict, DeviceDeclaration, EffectContractRef, EffectRule,
+    ExecutionCase, ExecutionEvidence, Invocation, LinkRequest, ProjectionRef, ReadRun,
+    SessionReset,
 };
 use std::path::Path;
 
@@ -335,8 +336,8 @@ pub struct RxGain {
     pub image: PhyImage,
     rom_delay: u32,
     production_delay: u32,
-    effects: EffectReview,
-    committed: ProjectionReview,
+    effects: EffectContractRef,
+    committed: ProjectionRef,
 }
 
 impl std::ops::Deref for RxGain {
@@ -628,7 +629,10 @@ fn containment(ctx: &mut RxGain) -> Result<()> {
     }
     let production = ctx.production.clone();
     let request = request(&production, None, None, rows, BUDGET_EVENTS);
-    let records = evidence(&ctx.submit("rx-containment", &request, None)?.document);
+    let records = ctx
+        .submit("rx-containment", &request, None)?
+        .records
+        .clone();
     let mut case = 0u32;
     for (profile, failures) in &parts {
         for failure in failures {

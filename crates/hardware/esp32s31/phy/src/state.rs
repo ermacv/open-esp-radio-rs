@@ -578,6 +578,12 @@ impl PhyState {
         state
     }
 
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn seed_rx_table_last_indices(&mut self, shared: u8, wifi: u8) {
+        self.wifi.shared_rx_table_last_index = shared;
+        self.wifi.wifi_rx_table_last_index = wifi;
+    }
+
     pub fn set_tx_power_tracking_slow(&mut self, value: u8) {
         self.wifi.tx_power_tracking_slow = value;
     }

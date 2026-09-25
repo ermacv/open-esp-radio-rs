@@ -116,6 +116,12 @@ pub fn parameter_tracking_state(
     crate::PhyState::parameter_tracking_fixture(parameters, gain_adjustment, relaxed_threshold)
 }
 
+/// Seed the retained shared and Wi-Fi RX-gain table last indices that the
+/// tracking children consume, as the vendor comparison seeds its own state.
+pub fn seed_rx_table_last_indices(state: &mut crate::PhyState, shared: u8, wifi: u8) {
+    state.seed_rx_table_last_indices(shared, wifi);
+}
+
 /// Read the semantic RFPLL reference without exposing a mutable ABI image.
 pub fn rfpll_reference_temperature(state: &crate::PhyState) -> i16 {
     state.rfpll_tracking_request(None).reference_temperature
@@ -139,5 +145,19 @@ mod tests {
         let codes = [1, 2, 3, 4, 5, 6, 7, 8];
         state.apply_dcode_outcome(crate::analog::dcode::PhyDcodeOutcome { codes });
         assert_eq!(super::calibration_snapshot(&state).common.dcode, codes);
+    }
+
+    #[test]
+    fn seeded_rx_table_last_indices_are_retained() {
+        let mut state = crate::PhyState::default();
+        super::seed_rx_table_last_indices(&mut state, 75, 71);
+        let wifi = super::calibration_snapshot(&state).wifi;
+        assert_eq!(
+            (
+                wifi.shared_rx_table_last_index,
+                wifi.wifi_rx_table_last_index
+            ),
+            (75, 71)
+        );
     }
 }

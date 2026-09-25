@@ -114,59 +114,6 @@ pub struct StaModemWakeConfig {
     pub tbtt_auto_period: Option<StaTbttAutoPeriod>,
 }
 
-/// A second modem-wakeup transaction cannot overlap the first one.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StaModemWakePrepareError {
-    AlreadyConfigured,
-}
-
-/// Failure to consume one modem-wakeup rollback obligation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StaModemWakeRestoreError {
-    NotConfigured,
-}
-
-/// Pure ownership state kept beside the unique PAC owner.
-///
-/// Forgetting a restore token intentionally leaves this state configured: no
-/// `Drop` implementation may touch MMIO through a lost borrow. The radio owner
-/// is then fail-closed (`AlreadyConfigured`) until an explicit restore or the
-/// enclosing hardware-reset lifecycle replaces it.
-pub(crate) struct StaModemWakeOwnership {
-    configured: bool,
-}
-
-impl StaModemWakeOwnership {
-    pub(crate) const fn new() -> Self {
-        Self { configured: false }
-    }
-
-    fn acquire(&mut self) -> Result<(), StaModemWakePrepareError> {
-        if self.configured {
-            return Err(StaModemWakePrepareError::AlreadyConfigured);
-        }
-        self.configured = true;
-        Ok(())
-    }
-
-    fn require_configured(&self) -> Result<(), StaModemWakeRestoreError> {
-        if self.configured {
-            Ok(())
-        } else {
-            Err(StaModemWakeRestoreError::NotConfigured)
-        }
-    }
-
-    fn complete_restore(&mut self) {
-        debug_assert!(self.configured);
-        self.configured = false;
-    }
-
-    const fn configured(&self) -> bool {
-        self.configured
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct StaModemWakeSnapshot {
     beacon_miss_timeout: u16,
@@ -190,12 +137,6 @@ struct StaModemWakeSnapshot {
 #[must_use = "a configured station modem-wakeup transaction must be restored"]
 pub struct StaModemWakeRestore {
     previous: StaModemWakeSnapshot,
-}
-
-/// Failed rollback retaining the unique obligation token.
-pub struct StaModemWakeRestoreFailure {
-    pub error: StaModemWakeRestoreError,
-    pub restore: StaModemWakeRestore,
 }
 
 pub(crate) fn set_beacon_miss_timeout(registers: &svd::WifiMacRtcTimerUpdate, value: u16) {
@@ -437,8 +378,7 @@ impl WifiRadioRegisters {
     pub fn configure_station_modem_wakeup(
         &mut self,
         config: StaModemWakeConfig,
-    ) -> Result<StaModemWakeRestore, StaModemWakePrepareError> {
-        self.station_modem_wakeup.acquire()?;
+    ) -> StaModemWakeRestore {
         let rtc = &self.peripherals.wifi_mac.wifi_mac_rtc_timer_update;
         let limits = rtc.modem_sleep_limit_control().read();
         let previous = StaModemWakeSnapshot {
@@ -483,7 +423,7 @@ impl WifiRadioRegisters {
         let regdma = &self.peripherals.wifi_mac.wifi_mac_regdma_control;
         apply_station_modem_wakeup_config(&mut StaModemWakeMmio { rtc, regdma }, config);
         device_fence();
-        Ok(StaModemWakeRestore { previous })
+        StaModemWakeRestore { previous }
     }
 
     /// Restore exactly the fields captured by
@@ -493,29 +433,12 @@ impl WifiRadioRegisters {
     /// the captured booleans. This is a source-composed rollback while the
     /// radio is awake; it does not claim a qualified live-sleep reconfigure
     /// edge or infer any counter unit.
-    pub fn restore_station_modem_wakeup(
-        &mut self,
-        restore: StaModemWakeRestore,
-    ) -> Result<(), StaModemWakeRestoreFailure> {
-        if let Err(error) = self.station_modem_wakeup.require_configured() {
-            return Err(StaModemWakeRestoreFailure { error, restore });
-        }
-
+    pub fn restore_station_modem_wakeup(&mut self, restore: StaModemWakeRestore) {
         let previous = restore.previous;
         let rtc = &self.peripherals.wifi_mac.wifi_mac_rtc_timer_update;
         let regdma = &self.peripherals.wifi_mac.wifi_mac_regdma_control;
         apply_station_modem_wakeup_restore(&mut StaModemWakeMmio { rtc, regdma }, previous);
-        self.station_modem_wakeup.complete_restore();
         device_fence();
-        Ok(())
-    }
-
-    /// Whether an affine modem-wakeup rollback is still outstanding.
-    ///
-    /// This value-only diagnostic grants no recovery authority. `true` after
-    /// a forgotten token means the PAC owner is intentionally quarantined.
-    pub const fn station_modem_wakeup_restore_pending(&self) -> bool {
-        self.station_modem_wakeup.configured()
     }
 }
 

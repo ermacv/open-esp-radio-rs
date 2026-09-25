@@ -510,7 +510,9 @@ impl CooperativeRadioHardware<'_> {
         &mut self,
         wake_tsf: u64,
     ) -> Result<u32, oer_esp32s31_hal::types::StaTbttWakePrepareError> {
-        let mut hal = self.wifi_mac_hal();
+        let mut hal = self.registers.access().try_station_wake_hal().expect(
+            "a synchronous station wake transaction must not overlap another MMIO transaction",
+        );
         let restore = hal.prepare_station_tbtt_wake(wake_tsf)?;
         let programmed_target = restore.programmed_target_bits_35_10();
         if hal.restore_station_tbtt_wake(restore).is_err() {

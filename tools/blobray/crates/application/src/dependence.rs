@@ -56,6 +56,10 @@ const ENTRY_COST: u64 = 48;
 pub struct ObservedInstructions {
     pub executed: BTreeSet<u32>,
     pub observed: BTreeSet<u32>,
+    /// Instructions any emitted event depends on, compared or not.
+    pub effect: BTreeSet<u32>,
+    /// Instructions the memory state at a case end depends on.
+    pub state: BTreeSet<u32>,
 }
 
 use blobray_analysis::closure::CodeMemory as Code;
@@ -338,6 +342,10 @@ struct Graph {
     offsets: Vec<u32>,
     deps: Vec<u32>,
     seeds: Vec<u32>,
+    /// Every emitted event and call argument, compared or not.
+    effect_seeds: Vec<u32>,
+    /// Producers of the memory at every case end.
+    state_seeds: Vec<u32>,
 }
 
 struct Forward<'x> {
@@ -363,6 +371,8 @@ struct Forward<'x> {
     arguments: Vec<[u32; REGISTER_ARGUMENTS]>,
     /// The last step of the current phase.
     phase_last: Option<u32>,
+    /// `[address, length]` of memory that ends with the phase.
+    transient: Vec<[u32; 2]>,
     graph: Graph,
 }
 
@@ -531,6 +541,27 @@ impl Forward<'_> {
             );
         }
         seeds.retain(|s| *s != INPUT);
+        for &(e, register) in &sinks.arguments {
+            let word = usize::from(register - FIRST_ARGUMENT);
+            if let Some(words) = self.arguments.get(e as usize)
+                && word < REGISTER_ARGUMENTS
+                && words[word] != INPUT
+            {
+                self.graph.effect_seeds.push(words[word]);
+            }
+        }
+        let transient = &self.transient;
+        self.graph.state_seeds.extend(
+            self.memory
+                .iter()
+                .filter(|(b, s)| {
+                    **s != INPUT
+                        && !transient.iter().any(|[a, l]| {
+                            **b >= *a && u64::from(**b) < u64::from(*a) + u64::from(*l)
+                        })
+                })
+                .map(|(_, s)| *s),
+        );
     }
 }
 
@@ -589,11 +620,14 @@ impl<'x> Analyzer<'x> {
             events: vec![],
             arguments: vec![],
             phase_last: None,
+            transient: vec![],
             graph: Graph {
                 pcs: vec![],
                 offsets: vec![0],
                 deps: vec![],
                 seeds: vec![],
+                effect_seeds: vec![],
+                state_seeds: vec![],
             },
         };
         let mut cases = log.sinks.iter();
@@ -611,8 +645,16 @@ impl<'x> Analyzer<'x> {
                     forward.events.clear();
                     forward.arguments.clear();
                     forward.phase_last = None;
+                    forward.transient.clear();
                 }
-                StepEntry::Input { address, length } => {
+                StepEntry::Input {
+                    address,
+                    length,
+                    transient,
+                } => {
+                    if transient {
+                        forward.transient.push([address, length]);
+                    }
                     // Whichever is smaller: the range or the defined bytes.
                     if length as usize > forward.memory.len() {
                         let end = u64::from(address) + u64::from(length);
@@ -649,6 +691,9 @@ impl<'x> Analyzer<'x> {
                     let index = index as usize;
                     forward.events.resize(index + 1, INPUT);
                     forward.events[index] = step;
+                    if step != INPUT {
+                        forward.graph.effect_seeds.push(step);
+                    }
                     let mut words = [INPUT; REGISTER_ARGUMENTS];
                     for (w, word) in words.iter_mut().enumerate() {
                         *word = forward.registers[usize::from(FIRST_ARGUMENT) + w];
@@ -678,36 +723,44 @@ impl<'x> Analyzer<'x> {
             }
         }
         forward.finish();
-        let graph = forward.graph;
-        let mut marked = vec![false; graph.pcs.len()];
-        let mut pending = graph.seeds;
-        while let Some(step) = pending.pop() {
-            let s = step as usize;
-            if std::mem::replace(&mut marked[s], true) {
-                continue;
+        let mut graph = forward.graph;
+        let walk = |seeds: Vec<u32>| {
+            let mut marked = vec![false; graph.pcs.len()];
+            let mut pending = seeds;
+            while let Some(step) = pending.pop() {
+                let s = step as usize;
+                if std::mem::replace(&mut marked[s], true) {
+                    continue;
+                }
+                let (from, to) = (graph.offsets[s] as usize, graph.offsets[s + 1] as usize);
+                pending.extend(
+                    graph.deps[from..to]
+                        .iter()
+                        .copied()
+                        .filter(|d| !marked[*d as usize]),
+                );
             }
-            let (from, to) = (graph.offsets[s] as usize, graph.offsets[s + 1] as usize);
-            pending.extend(
-                graph.deps[from..to]
-                    .iter()
-                    .copied()
-                    .filter(|d| !marked[*d as usize]),
-            );
-        }
-        c.checkpoint(graph.pcs.len() as u64)?;
-        let mut observed: Vec<u32> = graph
-            .pcs
-            .iter()
-            .zip(&marked)
-            .filter_map(|(pc, marked)| marked.then_some(*pc))
-            .collect();
+            let mut pcs: Vec<u32> = graph
+                .pcs
+                .iter()
+                .zip(&marked)
+                .filter_map(|(pc, marked)| marked.then_some(*pc))
+                .collect();
+            pcs.sort_unstable();
+            pcs.dedup();
+            pcs
+        };
+        let observed = walk(std::mem::take(&mut graph.seeds));
+        let effect = walk(std::mem::take(&mut graph.effect_seeds));
+        let state = walk(std::mem::take(&mut graph.state_seeds));
+        c.checkpoint(3 * graph.pcs.len() as u64)?;
         let mut executed = graph.pcs;
-        for addresses in [&mut executed, &mut observed] {
-            addresses.sort_unstable();
-            addresses.dedup();
-        }
+        executed.sort_unstable();
+        executed.dedup();
         result.executed.extend(executed);
         result.observed.extend(observed);
+        result.effect.extend(effect);
+        result.state.extend(state);
         Ok(())
     }
 }

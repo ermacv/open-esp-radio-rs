@@ -742,13 +742,15 @@ impl Session {
             untriaged: untriaged.len() as u64,
         };
         observed.uncovered.extend(locations);
-        let mut executed = std::collections::BTreeSet::new();
-        let mut depended = std::collections::BTreeSet::new();
+        let mut instructions = blobray_application::in_process::ObservedInstructions::default();
         for artifact in &selected {
-            executed.extend(&artifact.observed.executed);
-            depended.extend(&artifact.observed.observed);
+            let o = &artifact.observed;
+            instructions.executed.extend(&o.executed);
+            instructions.observed.extend(&o.observed);
+            instructions.effect.extend(&o.effect);
+            instructions.state.extend(&o.state);
         }
-        let claim_lines = lines.map.lines(&executed, &depended);
+        let claim_lines = lines.map.lines(&instructions);
         let (reviewed, untriaged) = lines.sources.classify(
             &lines.root,
             crate::observation::DECISIONS,

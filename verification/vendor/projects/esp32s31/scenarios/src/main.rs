@@ -741,12 +741,22 @@ fn all(
     sources.check(&root, observation::DECISIONS, &unobserved_lines)?;
     let (reviewed, unobserved) =
         sources.classify(&root, observation::DECISIONS, &unobserved_lines)?;
+    let effect = unobserved
+        .iter()
+        .filter(|l| lines.effect.contains(*l))
+        .count();
+    let state = unobserved
+        .iter()
+        .filter(|l| !lines.effect.contains(*l) && lines.state.contains(*l))
+        .count();
     println!(
-        "{} of {} executed production PHY lines observed; {} unobserved reviewed, {} untriaged",
+        "{} of {} executed production PHY lines observed; {} unobserved reviewed, {} untriaged \
+         ({effect} reach uncompared effects, {state} only final state, {} nothing)",
         lines.observed.len(),
         lines.executed.len(),
         reviewed.len(),
-        unobserved.len()
+        unobserved.len(),
+        unobserved.len() - effect - state,
     );
     for (name, seconds) in &elapsed {
         println!("{name} {seconds:.1}s");

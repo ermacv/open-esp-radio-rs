@@ -11,6 +11,21 @@ enum RegionKind {
         requested: u32,
     },
 }
+impl RegionKind {
+    /// Memory that `finish_phase` releases.
+    fn is_transient(self) -> bool {
+        matches!(
+            self,
+            RegionKind::Stack
+                | RegionKind::Ram(RegionLifetime::Phase)
+                | RegionKind::Table(RegionLifetime::Phase)
+                | RegionKind::Allocation {
+                    lifetime: RegionLifetime::Phase,
+                    ..
+                }
+        )
+    }
+}
 struct Mapping {
     address: u32,
     length: usize,
@@ -295,6 +310,7 @@ impl<'a> Session<'a> {
             crate::execution_steps::StepEntry::Input {
                 address,
                 length: length as u32,
+                transient: kind.is_transient(),
             },
             c,
         )
@@ -401,6 +417,7 @@ impl<'a> Session<'a> {
                         crate::execution_steps::StepEntry::Input {
                             address: r.address,
                             length: r.bytes.len() as u32,
+                            transient: r.kind.is_transient(),
                         },
                         c,
                     )?;
@@ -543,18 +560,7 @@ impl<'a> Session<'a> {
         self.timeline = TimelineCapture::default();
         self.pc = None;
         self.reservation = None;
-        self.regions.retain(|r| {
-            !matches!(
-                r.kind,
-                RegionKind::Stack
-                    | RegionKind::Ram(RegionLifetime::Phase)
-                    | RegionKind::Table(RegionLifetime::Phase)
-                    | RegionKind::Allocation {
-                        lifetime: RegionLifetime::Phase,
-                        ..
-                    }
-            )
-        });
+        self.regions.retain(|r| !r.kind.is_transient());
     }
     fn region_index(&self, address: u32, width: u8) -> Option<(usize, usize)> {
         let contains = |r: &Region<'_>| {

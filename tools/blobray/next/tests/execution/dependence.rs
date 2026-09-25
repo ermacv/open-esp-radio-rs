@@ -329,3 +329,37 @@ fn point_mutants_patch_the_loaded_replacement_image() {
         assert_eq!(error.code, ErrorCode::InvalidRequest, "{error:?}");
     }
 }
+
+#[test]
+fn unobserved_instructions_are_classified_by_what_depends_on_them() {
+    let mut returns = relation();
+    returns.returns.low = true;
+    let classify = |lifetime| {
+        let mut input = flow_invocation();
+        input.memory[0].lifetime = lifetime;
+        compare(&FLOW, input, returns.clone(), &[])
+            .unwrap()
+            .observed
+            .unwrap()
+    };
+    // The dead `t1` and its store reach session memory that outlives the
+    // phase: the session's state. Phase memory ends with the phase, so the
+    // same store then reaches nothing.
+    let session = classify(RegionLifetime::Session);
+    assert!(session.state.contains(&0x1000) && session.state.contains(&0x1018));
+    assert!(!session.effect.contains(&0x1018));
+    let phase = classify(RegionLifetime::Phase);
+    assert!(!phase.state.contains(&0x1000) && !phase.state.contains(&0x1018));
+    let mut calls = relation();
+    calls.calls = true;
+    let observed = compare(&DEVICE, device_invocation(1), calls, &[])
+        .unwrap()
+        .observed
+        .unwrap();
+    // The MMIO write is an effect the relation does not compare; the unused
+    // `t2` reaches nothing.
+    for pc in [0x1004, 0x1008, 0x100c] {
+        assert!(!observed.observed.contains(&pc) && observed.effect.contains(&pc));
+    }
+    assert!(!observed.effect.contains(&0x1014) && !observed.state.contains(&0x1014));
+}

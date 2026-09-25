@@ -43,12 +43,18 @@ pub const DECISIONS: &[Decision] = &[];
 pub struct Lines {
     pub executed: BTreeSet<SourceLine>,
     pub observed: BTreeSet<SourceLine>,
+    /// Lines an emitted event depends on, compared or not.
+    pub effect: BTreeSet<SourceLine>,
+    /// Lines the memory state at a case end depends on.
+    pub state: BTreeSet<SourceLine>,
 }
 
 impl Lines {
     pub fn extend(&mut self, other: &Lines) {
         self.executed.extend(other.executed.iter().cloned());
         self.observed.extend(other.observed.iter().cloned());
+        self.effect.extend(other.effect.iter().cloned());
+        self.state.extend(other.state.iter().cloned());
     }
 
     pub fn unobserved(&self) -> BTreeSet<SourceLine> {
@@ -104,13 +110,22 @@ impl LineMap {
     }
 
     /// Lines of `executed` instructions, observed when any of `observed` is.
-    pub fn lines(&self, executed: &BTreeSet<u32>, observed: &BTreeSet<u32>) -> Lines {
+    pub fn lines(
+        &self,
+        instructions: &blobray_application::in_process::ObservedInstructions,
+    ) -> Lines {
         let mut result = Lines::default();
-        for pc in executed {
+        for pc in &instructions.executed {
             for line in self.lines.get(pc).into_iter().flatten() {
                 result.executed.insert(line.clone());
-                if observed.contains(pc) {
-                    result.observed.insert(line.clone());
+                for (set, lines) in [
+                    (&instructions.observed, &mut result.observed),
+                    (&instructions.effect, &mut result.effect),
+                    (&instructions.state, &mut result.state),
+                ] {
+                    if set.contains(pc) {
+                        lines.insert(line.clone());
+                    }
                 }
             }
         }
@@ -252,7 +267,11 @@ mod tests {
         let map = LineMap {
             lines: BTreeMap::from([(0x10, vec![line(2)]), (0x14, vec![line(2), line(3)])]),
         };
-        let lines = map.lines(&BTreeSet::from([0x10, 0x14]), &BTreeSet::from([0x10]));
+        let lines = map.lines(&blobray_application::in_process::ObservedInstructions {
+            executed: BTreeSet::from([0x10, 0x14]),
+            observed: BTreeSet::from([0x10]),
+            ..Default::default()
+        });
         assert_eq!(lines.executed, BTreeSet::from([line(2), line(3)]));
         assert_eq!(lines.observed, BTreeSet::from([line(2)]));
         assert_eq!(lines.unobserved(), BTreeSet::from([line(3)]));

@@ -627,6 +627,12 @@ observation of these cases would change if its result changed. Dependence is a
 necessary condition for a comparison to notice a defect, not a sufficient one;
 the pointer arguments that locate a call model's outputs are not followed.
 
+`observed` also classifies what the other executed instructions reach:
+`effect` lists those any emitted event or call argument depends on, compared
+or not, and `state` those the memory at a case end depends on, excluding stack
+and phase-lifetime memory that ends with the phase. An unobserved instruction
+in neither set changes nothing that outlives its phase.
+
 ### Image patches
 
 `patches` of an `InProcessComparison` replace bytes of the loaded replacement

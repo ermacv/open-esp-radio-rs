@@ -13,8 +13,13 @@ pub(crate) enum StepEntry {
     /// A phase starts: every register holds an input.
     Phase,
     /// The environment defined `length` bytes at `address` from inputs:
-    /// stack, seeded or allocated memory.
-    Input { address: u32, length: u32 },
+    /// stack, seeded or allocated memory. `transient` memory ends with the
+    /// phase and is no state of the session.
+    Input {
+        address: u32,
+        length: u32,
+        transient: bool,
+    },
     /// A step starts by fetching the instruction at `pc`.
     Instruction { pc: u32 },
     /// The step read guest memory. Device reads return model values.
@@ -54,6 +59,8 @@ pub(crate) struct CaseSinks {
     /// Whether the case returned: reaching the goal is compared, so the
     /// phase's last step is observed.
     pub goal: bool,
+    /// Every call argument event with its register, compared or not.
+    pub arguments: Vec<(u32, u8)>,
 }
 
 impl CaseSinks {
@@ -66,6 +73,14 @@ impl CaseSinks {
         invocation: &Invocation,
     ) -> Self {
         let mut sinks = Self::default();
+        for (index, event) in right.events.iter().enumerate() {
+            if let ExecutionEvent::TransferArgument { word, .. } = event
+                && let Ok(word) = u8::try_from(*word)
+                && word < 8
+            {
+                sinks.arguments.push((index as u32, 10 + word));
+            }
+        }
         for &index in &compared.events {
             match right.events.get(index as usize) {
                 Some(ExecutionEvent::TransferArgument { word, .. }) => {

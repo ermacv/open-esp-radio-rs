@@ -1,8 +1,7 @@
 //! The executed host observer has its own build subject, separate from firmware.
 use super::*;
+pub(super) use open_esp_radio_hil_schema::observer as build_inputs;
 use serde_json::{Value, json};
-#[path = "../../../../hil/schema/observer-build.rs"]
-pub(super) mod build_inputs;
 
 /// One prepared configuration shared by archive loading and reviews. Loading it
 /// only reads files; producer preparation is an explicit xtask operation.
@@ -141,10 +140,12 @@ fn lock_dependencies(resolved: &Value) -> Result<Value> {
                 .values()
                 .find(|m| m["package"]["name"] == package["name"])
                 .ok_or("local dependency manifest missing")?;
-            Some(build_inputs::cargo_inputs::dependency_names_in(
-                manifest,
-                &resolved["manifests"]["Cargo.toml"],
-            )?)
+            Some(
+                open_esp_radio_hil_schema::cargo_inputs::dependency_names_in(
+                    manifest,
+                    &resolved["manifests"]["Cargo.toml"],
+                )?,
+            )
         } else {
             None
         };

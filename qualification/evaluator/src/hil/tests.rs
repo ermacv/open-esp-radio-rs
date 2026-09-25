@@ -497,8 +497,7 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
 pub(super) fn prepare_observer(root: &Path) -> serde_json::Value {
     let registry = read_json(&root.join("hil/schema/observer-inputs.json")).unwrap();
     let configuration = observer::required_configuration(root, &registry).unwrap();
-    #[path = "../../../../hil/schema/observer-resolve.rs"]
-    mod resolve;
+    use open_esp_radio_hil_schema::resolve;
     let mut resolved = resolve::resolve(
         root,
         configuration["environment"]["TARGET"].as_str().unwrap(),

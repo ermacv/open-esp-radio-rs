@@ -2,41 +2,7 @@
 //! parsing, validation and evidence decisions remain with their respective owner.
 use serde_json::Value;
 
-pub(crate) fn normalize(document: &Value) -> Value {
-    let defaults: Value = serde_json::from_str(include_str!(
-        "../../../../hil/schema/scenario-v4-defaults.json"
-    ))
-    .expect("compiled scenario defaults must be valid JSON");
-    let mut value = document.clone();
-    fill(&mut value, &defaults["root"]);
-    fill(&mut value["link"], &defaults["link"]);
-    if let Some(kind) = value["workload"]["kind"].as_str().map(str::to_owned) {
-        fill(&mut value["workload"], &defaults["workloads"][kind]);
-    }
-    if let Some(kind) = value["workload"]["traffic"]["kind"]
-        .as_str()
-        .map(str::to_owned)
-    {
-        fill(
-            &mut value["workload"]["traffic"],
-            &defaults["ap_traffic"][kind],
-        );
-    }
-    if let Some(object) = value.as_object_mut() {
-        object.remove("description");
-        object.remove("tags");
-        object.remove("transfer");
-    }
-    value
-}
-fn fill(value: &mut Value, defaults: &Value) {
-    if let (Some(object), Some(defaults)) = (value.as_object_mut(), defaults.as_object()) {
-        for (key, default) in defaults {
-            let current = object.entry(key.clone()).or_insert_with(|| default.clone());
-            fill(current, default);
-        }
-    }
-}
+pub(crate) use open_esp_radio_hil_schema::scenario::normalize;
 
 /// Compare the executed experiment independently of firmware/source identity.
 /// Only named numeric criteria independently evaluated by the consumer may vary.

@@ -1,12 +1,11 @@
 //! Build and launch the HIL observer with a receipt from Cargo's actual artifacts.
 use crate::{Context, Result};
+use open_esp_radio_hil_schema::{artifacts, compile::compile};
 use sha2::{Digest, Sha256};
 use std::{ffi::OsString, fs, process::Command};
-#[path = "../../../hil/schema/observer-artifacts.rs"]
-mod artifacts;
 
 pub fn prepare(ctx: &Context) -> Result<(std::path::PathBuf, std::path::PathBuf)> {
-    let compilation = artifacts::compile(&ctx.root)?;
+    let compilation = compile(&ctx.root)?;
     let executable = &compilation.executable;
     let artifacts = &compilation.artifacts;
     let bytes = fs::read(executable)?;

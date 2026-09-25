@@ -73,10 +73,7 @@ fn package(
         }
     }
 }
-#[path = "../../schema/observer-build.rs"]
-mod observer_build;
-#[path = "../../schema/observer-resolve.rs"]
-mod observer_resolve;
+use open_esp_radio_hil_schema::{observer as observer_build, resolve as observer_resolve};
 
 fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());

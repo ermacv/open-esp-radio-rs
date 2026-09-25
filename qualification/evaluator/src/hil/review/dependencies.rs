@@ -107,7 +107,7 @@ pub(super) fn current(
     )? == *expected)
 }
 
-use crate::hil::observer::build_inputs::cargo_inputs::projection;
+use open_esp_radio_hil_schema::cargo_inputs::projection;
 
 #[cfg(test)]
 mod tests {

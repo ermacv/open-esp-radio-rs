@@ -340,9 +340,7 @@ fn create_unique_directory(parent: &Path, base: &str) -> Result<PathBuf> {
     Err("cannot allocate a unique HIL run directory".into())
 }
 
-#[path = "../../../../schema/observer-artifacts.rs"]
-#[allow(dead_code)]
-mod observer_artifacts;
+use open_esp_radio_hil_schema::artifacts as observer_artifacts;
 
 fn runner_provenance() -> Result<RunnerProvenance> {
     // On Linux this reads the actual running inode even after a rebuild replaces

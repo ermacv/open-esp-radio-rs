@@ -249,7 +249,7 @@ source-paths = ["phy.rs"]
         })
         .collect::<std::collections::BTreeMap<_, _>>();
     observer["build"]["resolved"] = json!({"nodes":[{"depth":0,"package":{"name":"open-esp-radio-hil-runner","version":"0.1.0"},"features":[]}],"manifests":manifests,"cargo_config":{}});
-    let compilation = super::super::observer_artifacts::compile(root).unwrap();
+    let compilation = open_esp_radio_hil_schema::compile::compile(root).unwrap();
     super::super::observer_artifacts::apply(
         &mut observer["build"]["resolved"],
         &compilation.artifacts,

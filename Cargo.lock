@@ -2793,6 +2793,7 @@ dependencies = [
  "oer-firmware",
  "oer-probe-codegen",
  "oer-process",
+ "open-esp-radio-hil-schema",
  "open-esp-radio-memory-report",
  "pulldown-cmark",
  "rustc-demangle",
@@ -2920,6 +2921,7 @@ dependencies = [
  "open-esp-radio-hil-fixture",
  "open-esp-radio-hil-fixture-install",
  "open-esp-radio-hil-protocol",
+ "open-esp-radio-hil-schema",
  "open-esp-radio-memory-report",
  "roxmltree",
  "rustix",
@@ -2933,6 +2935,15 @@ dependencies = [
  "toml_edit",
  "zbus",
  "zeroize",
+]
+
+[[package]]
+name = "open-esp-radio-hil-schema"
+version = "0.1.0"
+dependencies = [
+ "oer-process",
+ "serde_json",
+ "toml_edit",
 ]
 
 [[package]]
@@ -2977,6 +2988,7 @@ dependencies = [
 name = "open-esp-radio-qualification-check"
 version = "0.1.0"
 dependencies = [
+ "open-esp-radio-hil-schema",
  "serde",
  "serde_json",
  "sha2",

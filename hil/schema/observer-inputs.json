@@ -26,8 +26,7 @@
     "hil/host/runner/src/workload/mod.rs",
     "hil/host/runner/src/image/",
     "tools/memory-report/",
-    "hil/schema/observer-build.rs",
-    "hil/schema/cargo-inputs.rs",
+    "hil/schema/src/",
     "hil/host/runner/src/fixture/mod.rs",
     "hil/host/runner/src/fixture/cleanup.rs",
     "hil/host/runner/src/fixture/preflight.rs",
@@ -35,7 +34,6 @@
     "hil/host/runner/src/fixture/software.rs",
     "hil/host/runner/src/fixture/local/network_helper.rs",
     "hil/host/runner/src/fixture/install.rs",
-    "hil/schema/observer-artifacts.rs",
     "hil/host/runner/src/context.rs",
     "hil/host/runner/src/durable.rs",
     "hil/host/runner/src/failure.rs",
@@ -238,7 +236,8 @@
       "zeroize",
       "open-esp-radio-hil-fixture-install",
       "rustix",
-      "open-esp-radio-hil-fixture"
+      "open-esp-radio-hil-fixture",
+      "open-esp-radio-hil-schema"
     ],
     "bluetooth": [
       "zbus",

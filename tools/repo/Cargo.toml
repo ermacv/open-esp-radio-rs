@@ -8,6 +8,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+open-esp-radio-hil-schema = { path = "../../hil/schema", features = ["producer"] }
 oer-probe-codegen = { path = "../../verification/vendor/harness/codegen" }
 oer-process = { path = "../process" }
 fs2 = "0.4"

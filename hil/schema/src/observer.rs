@@ -1,11 +1,10 @@
 //! Host build inputs shared by the runner producer and independent evaluator.
+use crate::cargo_inputs;
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
-#[path = "cargo-inputs.rs"]
-pub mod cargo_inputs;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const RUNNER: &str = "open-esp-radio-hil-runner";
 
@@ -154,7 +153,6 @@ pub fn validate_registry(resolved: &Value, registry: &Value) -> Result<()> {
 }
 
 /// Profile differences are reviewed separately from dependency/feature differences.
-#[allow(dead_code)]
 pub fn take_unit_profiles(projection: &mut Value) -> Value {
     let mut profiles = BTreeMap::new();
     if let Some(packages) = projection["packages"].as_object_mut() {

@@ -90,6 +90,12 @@ cargo fmt --all -- --check
 cargo xtask check docs
 ```
 
+The [CI workflow](.github/workflows/ci.yml) runs `cargo fmt --check` for every
+workspace and `cargo clippy --workspace --all-targets -- -D warnings` and
+`cargo test --workspace` for the root workspace on every push to `main` and
+pull request; the [Documentation workflow](.github/workflows/docs.yml) checks
+the guides and API documentation.
+
 For API changes, run `cargo xtask doc`: one `cargo doc --no-deps` per
 documentation target with `RUSTDOCFLAGS=-D warnings`, as each package's
 `[package.metadata.docs.rs]` selects, and `cargo test --doc --workspace`. Run

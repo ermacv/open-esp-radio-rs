@@ -23,10 +23,10 @@ use core::num::NonZeroU16;
 
 use embassy_executor::Spawner;
 
-#[cfg(feature = "embassy-network")]
-use embassy_net_released as embassy_net;
 #[cfg(feature = "owned-network")]
 use embassy_net_owned as embassy_net;
+#[cfg(feature = "embassy-network")]
+use embassy_net_released as embassy_net;
 #[cfg(feature = "upstream-network")]
 use embassy_net_upstream as embassy_net;
 

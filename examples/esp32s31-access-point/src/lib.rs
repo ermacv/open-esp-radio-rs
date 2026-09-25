@@ -16,10 +16,10 @@ compile_error!("select exactly one network integration");
     feature = "embassy-network"
 )))]
 compile_error!("select exactly one network integration");
-#[cfg(feature = "embassy-network")]
-extern crate embassy_net_released as embassy_net;
 #[cfg(feature = "owned-network")]
 extern crate embassy_net_owned as embassy_net;
+#[cfg(feature = "embassy-network")]
+extern crate embassy_net_released as embassy_net;
 #[cfg(feature = "upstream-network")]
 extern crate embassy_net_upstream as embassy_net;
 pub mod network;

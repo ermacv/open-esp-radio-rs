@@ -19,9 +19,9 @@ The reviewed queue control has separate software RTS and CTS requests. Ordinary
 descriptor-bound preparation replaces both requests with the PPDU's explicit
 mode while the queue is idle. The RTS helper preserves CTS and spacing; cold HE
 initialization clears CTS and retains RTS and spacing. The RTS request, optional
-HE byte-threshold publication, threshold disable and cold-init reset are compared
-with vendor code in the [protection investigation](../../../../../../verification/vendor/projects/esp32s31/README.md#tx-protection-control).
-These register comparisons do not establish a CTS frame, its NAV duration, its relation to the protected
+HE byte-threshold publication, threshold disable and cold-init reset follow the
+reviewed [queue argument provenance](../../../../../../registers/esp32s31/evidence/vendor-libpp.toml);
+they have no native compiled vendor comparison. The register transactions do not establish a CTS frame, its NAV duration, its relation to the protected
 MPDU, or completion ownership. The ordinary API therefore still rejects a
 protection-required exchange before DMA publication.
 
@@ -62,28 +62,24 @@ is not proof that all radio DMA has stopped during global teardown.
 ## Vendor basis and executable boundary
 
 The reviewed [ordinary queue provenance](../../../../../../registers/esp32s31/evidence/vendor-libpp.toml)
-names the authenticated archive and complete function bodies. The
-[`ordinary-tx-ownership` suite](../../../../../../verification/vendor/projects/esp32s31/profiles/ordinary-tx-ownership.toml)
-executes compiled production entries with the following finite scope:
+names the authenticated archive and complete function bodies. The production
+operations mirror three finite vendor queue operations:
 
-- `hal_mac_txq_enable`: the publication prefix through the call to `GetAccess`.
-  The rest of the vendor access/HE bookkeeping and statistics is outside this
-  claim. Production device fences remain explicit additions in the
-  [effect contract](../../../../../../verification/vendor/projects/esp32s31/dispositions/ordinary-tx-ownership.toml).
+- `hal_mac_txq_enable`: the publication prefix through the call to `GetAccess`,
+  with explicit production device fences. The rest of the vendor access/HE
+  bookkeeping and statistics is outside this boundary.
 - `hal_mac_clr_txq_state`: completion selector two, queues zero through three,
   preserving the existing clear-register image.
 - `hal_mac_txq_disable`: the complete leaf clearing ENABLE and VALID while
   retaining the descriptor and other control fields.
 
-Each operation covers four queues with clear, retained and all-set initial
-register images. Other queue-address rules are conditional on observation;
-every observed read and write remains ordered and compared. These cases do not
+These operations have no native compiled vendor comparison. They do not
 establish physical DMA quiescence or memory-ordering sufficiency on silicon.
 
 The inspected `lmacProcessTxComplete` body reads the completion result and
 trigger-flow state before calling the completion acknowledgement. Full result
-decoding, descriptor preparation and the enclosing release/abort root do not
-yet have a complete compiled vendor comparison. Their absence remains visible
+decoding, descriptor preparation and the enclosing release/abort root have no
+compiled vendor comparison either. Their absence remains visible
 in the [RX/TX capability](../../../../../../qualification/catalog/esp32s31/wifi-phy.toml).
 
 The [storage tests](src/tx_storage/tests.rs) exercise publication authority and

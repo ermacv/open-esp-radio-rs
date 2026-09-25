@@ -126,7 +126,7 @@ Host tests cover bounded search termination, direction changes, arithmetic
 boundaries, completion ordering and channel restoration after memory updates.
 The compiled probes `open_phy_rfpll_trace_search` and
 `open_phy_rfpll_trace_maintain` invoke production target entries, including I2C
-and delay operations. Private-input executable tests compare the search's I2C
+and delay operations. Typed vendor scenarios compare the search's I2C
 commands and requested settling delays, and the frequency-control envelope
 against the admitted vendor child with zero and nonzero corrections. Every
 memory transaction and the final channel restoration are compared for the
@@ -135,7 +135,7 @@ debug override, skipped/executed outcomes and the resulting reference against
 the admitted vendor child. Vendor-only cases retain the busy/result-flag
 characterization. Tests also
 check that a bounded I2C timeout returns without restoring hardware control.
-See the [comparison contract](../../../../../../../verification/vendor/projects/esp32s31/blobray-provider/models/README.md).
+See the [RFPLL comparison scenarios](../../../../../../../verification/vendor/projects/esp32s31/README.md#rfpll-search-and-frequency-maintenance).
 
 The comparison preserves every requested delay, including any unexpected
 executor-added one-microsecond wait. It does not assert equal execution time or raw polling

@@ -301,8 +301,6 @@ depends-on = ["interrupt-recovery"]
 vendor-anchors = [
   "registers/esp32s31/evidence/vendor-rom.toml",
   "registers/esp32s31/evidence/vendor-libpp.toml",
-  "verification/vendor/projects/esp32s31/profiles/ordinary-tx-ownership.toml",
-  "verification/vendor/projects/esp32s31/dispositions/ordinary-tx-ownership.toml",
 ]
 hil-requirements = [
   { scenario = "udp-bidirectional-ht40-rx-delivery-split", minimum-repetitions = 1 },
@@ -697,7 +695,7 @@ gaps = [
 ]
 
 [capabilities.development]
-knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs", "crates/runtime/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/protection.rs", "registers/esp32s31/model/peripherals/wifi-mac-tx-queue-control.toml", "verification/vendor/projects/esp32s31/profiles/tx-protection-control.toml"]
+knowledge = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/station/execution.rs", "crates/runtime/esp32s31/ieee80211/src/roles/station/lifecycle.rs", "crates/hardware/esp32s31/driver/ieee80211/mac/src/tx/protection.rs", "registers/esp32s31/model/peripherals/wifi-mac-tx-queue-control.toml"]
 gap-work = [
   { gap = "ordinary-tx-protection-required-unimplemented", kind = "research", reason = "HT Nonmember protection can require CTS-to-Self during AP-loss recovery. The ordinary TX owner rejects this unimplemented physical publication before DMA and the connected runner ends with HardwareFailure. The reviewed SW_RTS clear and cold-init SW_CTS reset are distinct operations; neither establishes CTS-to-Self transmission. Recover or experimentally establish the generated CTS frame, receiver address, NAV duration, protected-MPDU sequencing and completion ownership; the unchanged reconnect/ICMP/control obligation remains unsatisfied." },
 ]

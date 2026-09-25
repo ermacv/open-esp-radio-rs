@@ -187,9 +187,6 @@ scope = "Complete reviewed BLE PHY register transaction with affine static envir
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/verification-policy.toml",
-]
 depends-on = [
   "common-phy-baseband",
 ]
@@ -220,7 +217,6 @@ host = "covered"
 async = "incomplete"
 vendor-anchors = [
   "verification/vendor/projects/esp32s31/README.md",
-  "verification/vendor/projects/esp32s31/functions/reviewed.toml",
   "registers/esp32s31/evidence/vendor-radio-libraries.toml",
 ]
 depends-on = [
@@ -586,7 +582,6 @@ host = "covered"
 async = "incomplete"
 vendor-anchors = [
   "verification/vendor/projects/esp32s31/reference/bluetooth-interrupt-runtime.md",
-  "verification/vendor/projects/esp32s31/functions/reviewed.toml",
 ]
 depends-on = [
   "interrupt-runtime",
@@ -741,9 +736,6 @@ scope = "Restricted LE 1M passive scanner using a public own address and the unf
 implementation = "incomplete"
 host = "covered"
 async = "bounded"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "controller-timebase",
   "scheduler-finished-list-drain",
@@ -776,7 +768,6 @@ implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
 vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
   "verification/vendor/projects/esp32s31/reference/bluetooth-legacy-advertising.md",
   "verification/vendor/projects/esp32s31/reference/bluetooth-peripheral-connection.md",
 ]
@@ -814,9 +805,6 @@ scope = "HCI command event ACL credit and error semantics plus full endpoint-bou
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "hci-handoff-storage",
   "hci-bootstrap",
@@ -995,9 +983,6 @@ scope = "Bounded supported connections advertising sets periodic syncs PAwR resp
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "async-controller-runtime",
 ]
@@ -1028,9 +1013,6 @@ scope = "Production nonconnectable scannable connectable and low-duty or high-du
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "le-link-layer",
   "typed-hci-controller",
@@ -1062,9 +1044,6 @@ scope = "SCAN_REQ transmission SCAN_RSP matching duplicate filtering scan-window
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "legacy-passive-scanning",
   "typed-hci-controller",
@@ -1096,9 +1075,6 @@ scope = "Legacy initiating Create Connection cancellation connection establishme
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "active-scanning",
   "le-link-layer",
@@ -1131,9 +1107,6 @@ scope = "Bounded multi-handle scheduling and packet ownership for simultaneous B
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "central-initiator",
   "legacy-advertising-roles",
@@ -1166,9 +1139,6 @@ scope = "Negotiated LE 1M 2M and Coded S2 or S8 operation PHY Update Data Length
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "central-initiator",
   "le-link-layer",
@@ -1200,9 +1170,6 @@ scope = "Procedure serialization collision handling response timeouts and instan
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "le-link-layer",
   "typed-hci-controller",
@@ -1234,9 +1201,6 @@ scope = "Typed key installation encryption start pause and restart packet counte
 implementation = "complete"
 host = "incomplete"
 async = "bounded"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "ll-control-procedures",
   "connected-phy-and-data-length",
@@ -1266,9 +1230,6 @@ scope = "Operational Filter Accept List and Resolving List HCI commands IRK inst
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "central-initiator",
   "legacy-advertising-roles",
@@ -1332,9 +1293,6 @@ scope = "ADV_EXT_IND AUX_ADV_IND AUX_CHAIN_IND AUX_SCAN_RSP and AUX_CONNECT_RSP 
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "legacy-advertising-roles",
   "controller-capacity-limits",
@@ -1367,9 +1325,6 @@ scope = "Primary-to-AUX reception chaining extended reports response matching an
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "extended-advertising",
   "active-scanning",
@@ -1403,9 +1358,6 @@ scope = "Periodic advertising-set lifecycle SyncInfo publication AUX_SYNC_IND an
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "extended-advertising",
 ]
@@ -1436,9 +1388,6 @@ scope = "Create Sync cancellation multiple sync owners receive scheduling clock 
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "extended-scanning-initiating",
   "controller-capacity-limits",
@@ -1470,9 +1419,6 @@ scope = "PAST sender and recipient ACL procedures synchronization transfer appli
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "periodic-advertising",
   "periodic-synchronization",
@@ -1505,9 +1451,6 @@ scope = "Periodic Advertising with Responses subevent data publication response-
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "periodic-advertising",
   "controller-capacity-limits",
@@ -1539,9 +1482,6 @@ scope = "Synchronized PAwR subevent selection response data admission precisely 
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "periodic-synchronization",
   "controller-capacity-limits",
@@ -1605,9 +1545,6 @@ scope = "Connected CTE request and response procedures antenna switching AoA or 
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "ll-control-procedures",
   "ble-phy-engine",
@@ -1639,9 +1576,6 @@ scope = "Periodic advertising CTE TX and synchronized CTE RX antenna patterns IQ
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "periodic-advertising",
   "periodic-synchronization",
@@ -1674,9 +1608,6 @@ scope = "Live static transmit-power selection calibrated TX and RX for every LE 
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "common-phy-baseband",
   "packet-dataplane",
@@ -1708,9 +1639,6 @@ scope = "Live channel assessment classification reporting Host channel-map polic
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "ll-control-procedures",
   "central-initiator",
@@ -1742,9 +1670,6 @@ scope = "Connected power-change procedures path-loss measurement thresholds hyst
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "ll-control-procedures",
   "rf-power-and-lbt",
@@ -1777,9 +1702,6 @@ scope = "Subrate negotiation anchor selection continuation events peripheral lat
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "ll-control-procedures",
   "central-initiator",
@@ -1811,9 +1733,6 @@ scope = "RF PHY baseband and clock retention stop and wake using supported low-f
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "controller-timebase",
   "common-phy-baseband",
@@ -1846,9 +1765,6 @@ scope = "Board-owned external request grant priority and status pins with PTI po
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "coexistence",
 ]
@@ -1879,9 +1795,6 @@ scope = "Shared platform ownership and request grant release arbitration for Blu
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "coexistence",
   "controller-capacity-limits",
@@ -1913,9 +1826,6 @@ scope = "Framed and unframed ISOAL SDU segmentation and reassembly ISO packet ro
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "typed-hci-controller",
   "controller-capacity-limits",
@@ -1947,9 +1857,6 @@ scope = "Connected Isochronous Group and Stream creation negotiation event and s
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "iso-dataplane",
   "central-initiator",
@@ -1983,9 +1890,6 @@ scope = "CIS request acceptance rejection stream establishment synchronized even
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "iso-dataplane",
   "le-link-layer",
@@ -2019,9 +1923,6 @@ scope = "Broadcast Isochronous Group creation BIGInfo periodic publication BIS e
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "iso-dataplane",
   "periodic-advertising",
@@ -2053,9 +1954,6 @@ scope = "BIG synchronization BIS selection reception clock recovery encrypted st
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-vendor-anchors = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
 depends-on = [
   "iso-dataplane",
   "periodic-synchronization",

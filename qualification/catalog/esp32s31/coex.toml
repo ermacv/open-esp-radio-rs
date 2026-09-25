@@ -34,19 +34,14 @@ id = "coex-internal-arbitration-hardware-and-models"
 domain = "coexistence"
 title = "Internal arbitration hardware and models"
 source-document = "crates/hardware/esp32s31/driver/coex/FEATURES.md"
-overview = "The [PTI comparison profile](../../../../../verification/vendor/projects/esp32s31/profiles/coex-core.toml)\nand [timer-map profile](../../../../../verification/vendor/projects/esp32s31/profiles/coex-core-timer.toml)\nexercise compiled source mappings against reviewed vendor inputs. Their scope\nis the named leaves, not the scheme scheduler or end-to-end coexistence."
-documents = [
-    "verification/vendor/projects/esp32s31/profiles/coex-core.toml",
-    "verification/vendor/projects/esp32s31/profiles/coex-core-timer.toml",
-]
+overview = "Compiled PTI and timer-map source mappings cover only their named leaves,\nnot the scheme scheduler or end-to-end coexistence. They have no native\nvendor comparison."
 
 [[sections]]
 id = "coex-coexistence-policy-and-scheduler"
 domain = "coexistence"
 title = "Coexistence policy and scheduler"
 source-document = "crates/hardware/esp32s31/driver/coex/FEATURES.md"
-overview = "`CoexClient` represents the reviewed Bluetooth/Wi-Fi request domain only.\nIEEE 802.15.4 must not be added as an inferred third numeric client. The\n[vendor investigation scope](../../../../../verification/vendor/projects/esp32s31/vendor-project.toml)\nseparately names `esp_coex_ieee802154_*` operations; MAC TX/RX/ACK PTI controls\nalso have their own ownership boundary. Neither surface is a fourth time slice."
-documents = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
+overview = "`CoexClient` represents the reviewed Bluetooth/Wi-Fi request domain only.\nIEEE 802.15.4 must not be added as an inferred third numeric client. The vendor\n`esp_coex_ieee802154_*` operations are a separate surface; MAC TX/RX/ACK PTI controls\nalso have their own ownership boundary. Neither surface is a fourth time slice."
 
 [[sections]]
 id = "coex-protocol-integration-and-lifetime"

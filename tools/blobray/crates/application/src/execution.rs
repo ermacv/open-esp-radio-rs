@@ -568,6 +568,7 @@ pub(crate) fn run_resolved<'m>(
                 let relation = case.relation.as_ref().unwrap();
                 let compared = blobray_verification::compared_observations(
                     right,
+                    case.replacement.as_ref().unwrap(),
                     relation,
                     resolved.pairs,
                     selected_projection(Some(relation), resolved.projections)?
@@ -576,11 +577,7 @@ pub(crate) fn run_resolved<'m>(
                     control,
                 )?;
                 steps.end_case(
-                    crate::execution_steps::CaseSinks::of(
-                        &compared,
-                        right,
-                        case.replacement.as_ref().unwrap(),
-                    ),
+                    crate::execution_steps::CaseSinks::of(&compared, right),
                     control,
                 )?;
             }

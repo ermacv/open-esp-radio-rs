@@ -64,13 +64,11 @@ pub(crate) struct CaseSinks {
 }
 
 impl CaseSinks {
-    /// Sinks of the observations of `right` that `compared` lists; `invocation`
-    /// is the replacement invocation whose final memory selections they name.
-    /// Call argument words beyond the registers are not followed.
+    /// Sinks of the observations of `right` that `compared` lists. Call
+    /// argument words beyond the registers are not followed.
     pub fn of(
         compared: &blobray_verification::ComparedObservations,
         right: &ExecutionObservation,
-        invocation: &Invocation,
     ) -> Self {
         let mut sinks = Self::default();
         for (index, event) in right.events.iter().enumerate() {
@@ -98,12 +96,7 @@ impl CaseSinks {
             sinks.returns = compared.returns;
             sinks.goal = true;
         }
-        sinks.memory = compared
-            .memory
-            .iter()
-            .filter_map(|&selection| invocation.observe_memory.get(usize::from(selection)))
-            .map(|s| [s.address, s.length])
-            .collect();
+        sinks.memory = compared.memory.clone();
         sinks
     }
 }

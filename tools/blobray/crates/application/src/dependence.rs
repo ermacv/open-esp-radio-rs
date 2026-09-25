@@ -324,9 +324,6 @@ struct Current {
     pc: u32,
     shape: Shape,
     control: u32,
-    /// The unconditional transfer that led to this step: what runs after a
-    /// call, jump or return depends on it.
-    flow: u32,
     call_returned: bool,
 }
 
@@ -346,6 +343,57 @@ struct Graph {
     effect_seeds: Vec<u32>,
     /// Producers of the memory at every case end.
     state_seeds: Vec<u32>,
+    /// Unconditional transfers (calls, jumps and returns), ascending.
+    transfers: Vec<u32>,
+    /// First step of every phase, ascending.
+    phases: Vec<u32>,
+}
+
+impl Graph {
+    /// Steps `seeds` depend on. An unconditional transfer offers no
+    /// alternative path: every later step of its phase runs only through it,
+    /// so it is marked when any later step of its phase is.
+    fn walk(&self, seeds: Vec<u32>) -> Vec<bool> {
+        let mut marked = vec![false; self.pcs.len()];
+        let mut pending = seeds;
+        loop {
+            while let Some(step) = pending.pop() {
+                let s = step as usize;
+                if std::mem::replace(&mut marked[s], true) {
+                    continue;
+                }
+                let (from, to) = (self.offsets[s] as usize, self.offsets[s + 1] as usize);
+                pending.extend(
+                    self.deps[from..to]
+                        .iter()
+                        .copied()
+                        .filter(|d| !marked[*d as usize]),
+                );
+            }
+            // The last marked step of each phase.
+            let mut last = vec![None; self.phases.len()];
+            for (phase, window) in last.iter_mut().enumerate() {
+                let start = self.phases[phase] as usize;
+                let end = self
+                    .phases
+                    .get(phase + 1)
+                    .map_or(self.pcs.len(), |s| *s as usize);
+                *window = (start..end).rev().find(|s| marked[*s]);
+            }
+            pending.extend(self.transfers.iter().copied().filter(|t| {
+                let phase = self.phases.partition_point(|s| s <= t).saturating_sub(1);
+                !marked[*t as usize]
+                    && last
+                        .get(phase)
+                        .copied()
+                        .flatten()
+                        .is_some_and(|l| l > *t as usize)
+            }));
+            if pending.is_empty() {
+                return marked;
+            }
+        }
+    }
 }
 
 struct Forward<'x> {
@@ -383,10 +431,8 @@ impl Forward<'_> {
         };
         let mut deps = std::mem::take(&mut self.scratch);
         deps.clear();
-        for dep in [step.control, step.flow] {
-            if dep != INPUT {
-                deps.push(dep);
-            }
+        if step.control != INPUT {
+            deps.push(step.control);
         }
         for r in step.shape.uses {
             if r != 0 && self.registers[r as usize] != INPUT {
@@ -490,22 +536,15 @@ impl Forward<'_> {
         }
         let step = self.graph.pcs.len() as u32;
         self.phase_last = Some(step);
-        let flow = match self.last {
-            Some((_, previous, _))
-                if step > 0
-                    && matches!(previous.kind, Kind::Call | Kind::Return | Kind::Jump { .. }) =>
-            {
-                step - 1
-            }
-            _ => INPUT,
-        };
+        if matches!(shape.kind, Kind::Call | Kind::Return | Kind::Jump { .. }) {
+            self.graph.transfers.push(step);
+        }
         self.graph.pcs.push(pc);
         self.current = Some(Current {
             step,
             pc,
             shape,
             control: self.control.last().map_or(INPUT, |c| c.step),
-            flow,
             call_returned: false,
         });
     }
@@ -628,6 +667,8 @@ impl<'x> Analyzer<'x> {
                 seeds: vec![],
                 effect_seeds: vec![],
                 state_seeds: vec![],
+                transfers: vec![],
+                phases: vec![],
             },
         };
         let mut cases = log.sinks.iter();
@@ -638,6 +679,7 @@ impl<'x> Analyzer<'x> {
             match *entry {
                 StepEntry::Phase => {
                     forward.finish();
+                    forward.graph.phases.push(forward.graph.pcs.len() as u32);
                     forward.registers = [INPUT; 32];
                     forward.frames.clear();
                     forward.control.clear();
@@ -724,22 +766,14 @@ impl<'x> Analyzer<'x> {
         }
         forward.finish();
         let mut graph = forward.graph;
+        if graph.phases.first() != Some(&0) {
+            graph.phases.insert(0, 0);
+        }
+        let seeds = std::mem::take(&mut graph.seeds);
+        let effect_seeds = std::mem::take(&mut graph.effect_seeds);
+        let state_seeds = std::mem::take(&mut graph.state_seeds);
         let walk = |seeds: Vec<u32>| {
-            let mut marked = vec![false; graph.pcs.len()];
-            let mut pending = seeds;
-            while let Some(step) = pending.pop() {
-                let s = step as usize;
-                if std::mem::replace(&mut marked[s], true) {
-                    continue;
-                }
-                let (from, to) = (graph.offsets[s] as usize, graph.offsets[s + 1] as usize);
-                pending.extend(
-                    graph.deps[from..to]
-                        .iter()
-                        .copied()
-                        .filter(|d| !marked[*d as usize]),
-                );
-            }
+            let marked = graph.walk(seeds);
             let mut pcs: Vec<u32> = graph
                 .pcs
                 .iter()
@@ -750,9 +784,9 @@ impl<'x> Analyzer<'x> {
             pcs.dedup();
             pcs
         };
-        let observed = walk(std::mem::take(&mut graph.seeds));
-        let effect = walk(std::mem::take(&mut graph.effect_seeds));
-        let state = walk(std::mem::take(&mut graph.state_seeds));
+        let observed = walk(seeds);
+        let effect = walk(effect_seeds);
+        let state = walk(state_seeds);
         c.checkpoint(3 * graph.pcs.len() as u64)?;
         let mut executed = graph.pcs;
         executed.sort_unstable();

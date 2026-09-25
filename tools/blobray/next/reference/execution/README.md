@@ -614,14 +614,16 @@ After each session, a forward pass gives every step its dependencies:
   post-dominator in the CFG recovered from the frame's function entry. A
   function over 65,536 instructions, or a branch without a path to the
   function exit, controls the rest of the frame;
-- the unconditional transfer (call, jump or return) that led to it.
 
 Sinks are the replacement observations `blobray_verification::compared_observations`
 lists for each case's relation, at event granularity: the step that emitted a
 compared event, the argument registers of a compared call (words beyond the
 eight argument registers are not followed), the selected return words, the
 last writers of compared final-memory selections, and the returning step when
-the case returned. A backward walk from the sinks marks observed steps. An
+the case returned. A backward walk from the sinks marks observed steps. An unconditional transfer
+(call, jump or return) offers no alternative path: every later step of its
+phase runs only through it, so it is marked when any later step of its phase
+is, and the walk continues from it. An
 executed instruction that no sink reaches is unobserved: no compared
 observation of these cases would change if its result changed. Dependence is a
 necessary condition for a comparison to notice a defect, not a sufficient one;

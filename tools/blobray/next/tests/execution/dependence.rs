@@ -363,3 +363,111 @@ fn unobserved_instructions_are_classified_by_what_depends_on_them() {
     }
     assert!(!observed.effect.contains(&0x1014) && !observed.state.contains(&0x1014));
 }
+
+/// A jump whose target is a dead instruction, followed by the returned value.
+const JUMP: [u32; 5] = [
+    0x0080006f, // 0x1000 j 0x1008
+    0x00000013, // 0x1004 nop
+    0x00300293, // 0x1008 li t0, 3
+    0x00500513, // 0x100c li a0, 5
+    0x00008067, // 0x1010 ret
+];
+
+#[test]
+fn an_unconditional_transfer_is_observed_when_any_later_step_is() {
+    let mut returns = relation();
+    returns.returns.low = true;
+    let (executed, observed) = dependence(&JUMP, invocation([0; 8]), returns);
+    assert_eq!(executed, set(&[0x1000, 0x1008, 0x100c, 0x1010]));
+    // Everything after the jump runs only through it, although the step it
+    // leads to directly is dead.
+    assert_eq!(observed, set(&[0x1000, 0x100c, 0x1010]));
+}
+
+#[test]
+fn projected_final_state_depends_on_its_last_writers() {
+    let (executable, entry) = super::goals::symbol_elf(&FLOW, 0x1000, 0x1000);
+    let endpoint = LayoutEndpoint {
+        entry: CallEndpoint {
+            occurrence: KnowledgeOccurrence {
+                revision: target(&executable).revision,
+                source: FunctionSource::Input { input: 0 },
+                object: entry.symbol.object.clone(),
+                symbol: Some(entry.symbol),
+            },
+            boundary: ReviewedCallBoundary::Code { address: 0x1000 },
+        },
+        domains: vec![LayoutDomain {
+            address: RAM,
+            length: 32,
+        }],
+    };
+    // Only the first word, which the branch-selected `a2` fills, is projected.
+    let projection = LayoutProjection {
+        vendor: endpoint.clone(),
+        replacement: endpoint,
+        fields: vec![LayoutField {
+            name: "selected".into(),
+            vendor: FieldLocation {
+                domain: 0,
+                offset: 0,
+            },
+            replacement: FieldLocation {
+                domain: 0,
+                offset: 0,
+            },
+            width: 4,
+            count: 1,
+            final_state: true,
+            timeline: false,
+        }],
+        branches: vec![],
+        applicability: "synthetic RAM word".into(),
+        reason: "the same word on both sides".into(),
+    };
+    let mut input = flow_invocation();
+    input.observe_memory[0].address = RAM;
+    input.observe_memory[0].length = 8;
+    let mut projected = relation();
+    projected.projection = Some(app::in_process::projection_ref(&projection).unwrap());
+    let sources: &[&[u8]] = &[&executable];
+    let request = ExecutionRequest {
+        schema: EXECUTION_SCHEMA,
+        vendor: target(&executable),
+        replacement: Some(target(&executable)),
+        binding: Some(CompiledBinding::SharedCore),
+        cases: vec![ExecutionCase {
+            name: "case".into(),
+            reset: SessionReset::Cold,
+            stack_fill: None,
+            relation: Some(projected),
+            vendor: input.clone(),
+            replacement: Some(input),
+        }],
+        max_events: 64,
+    };
+    let memory = WorkingMemory::new(32 * 1024 * 1024).unwrap();
+    let result = app::in_process::verify(
+        &app::in_process::InProcessComparison {
+            request: &request,
+            vendor: sources,
+            replacement: Some(sources),
+            effects: &[],
+            projections: std::slice::from_ref(&projection),
+            vendor_results: None,
+            dependence: Some(&blobray_backend_riscv::RiscvDecoder),
+            patches: &[],
+        },
+        &blobray_backend_riscv::RiscvExecutor,
+        &memory,
+        &mut || Ok(()),
+    )
+    .unwrap();
+    assert_eq!(result.verdict, Some(ComparisonVerdict::Match));
+    // The store of `a2`, its branch-selected value and the branch; the second
+    // word's `t1` store is outside the projection.
+    assert_eq!(
+        result.observed.unwrap().observed,
+        set(&[0x1004, 0x1010, 0x1014, 0x1020])
+    );
+}

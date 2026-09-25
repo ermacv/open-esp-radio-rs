@@ -310,8 +310,9 @@ pub struct ComparedObservations {
     pub events: Vec<u32>,
     /// Compared return words, low then high.
     pub returns: [bool; 2],
-    /// Compared replacement final-memory selections.
-    pub memory: Vec<u16>,
+    /// Compared replacement final memory as `[address, length]`: selected
+    /// memory pairs and projected final-state fields.
+    pub memory: Vec<[u32; 2]>,
 }
 
 /// The replacement observations of `right` that `compare` examines under
@@ -319,6 +320,7 @@ pub struct ComparedObservations {
 /// through the projection are not compared.
 pub fn compared_observations(
     right: &ExecutionObservation,
+    replacement: &Invocation,
     relation: &ComparisonRelation,
     pairs: &[ResolvedCallPair],
     projection: Option<&LayoutProjection>,
@@ -345,14 +347,25 @@ pub fn compared_observations(
             _ => events.push(after - 1),
         }
     }
+    let mut memory: Vec<[u32; 2]> = relation
+        .memory
+        .iter()
+        .filter_map(|pair| {
+            replacement
+                .observe_memory
+                .get(usize::from(pair.replacement))
+        })
+        .map(|s| [s.address, s.length])
+        .collect();
+    if let Some(projection) = projection {
+        for field in projection.fields.iter().filter(|f| f.final_state) {
+            memory.push([projection.field_address(field, true)?, field.byte_length()?]);
+        }
+    }
     Ok(ComparedObservations {
         events,
         returns: [relation.returns.low, relation.returns.high],
-        memory: relation
-            .memory
-            .iter()
-            .map(|pair| pair.replacement)
-            .collect(),
+        memory,
     })
 }
 

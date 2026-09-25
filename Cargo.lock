@@ -2907,12 +2907,51 @@ dependencies = [
 name = "open-esp-radio-hil-runner"
 version = "0.1.0"
 dependencies = [
+ "clap",
+ "libc",
+ "oer-process",
+ "open-esp-radio-hil-fixture-install",
+ "open-esp-radio-hil-protocol",
+ "open-esp-radio-hil-runner-bluetooth",
+ "open-esp-radio-hil-runner-core",
+ "open-esp-radio-hil-runner-ieee802154",
+ "open-esp-radio-hil-runner-system",
+ "open-esp-radio-hil-runner-wifi",
+ "open-esp-radio-hil-schema",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "toml",
+ "toml_edit",
+]
+
+[[package]]
+name = "open-esp-radio-hil-runner-bluetooth"
+version = "0.1.0"
+dependencies = [
  "async-channel",
  "async-io",
+ "futures-lite",
+ "oer-process",
+ "open-esp-radio-hil-fixture",
+ "open-esp-radio-hil-protocol",
+ "open-esp-radio-hil-runner-core",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "zbus",
+]
+
+[[package]]
+name = "open-esp-radio-hil-runner-core"
+version = "0.1.0"
+dependencies = [
  "clap",
  "flate2",
  "fs2",
- "futures-lite",
  "libc",
  "mio",
  "object 0.39.1",
@@ -2932,8 +2971,43 @@ dependencies = [
  "tar",
  "tempfile",
  "toml",
- "toml_edit",
- "zbus",
+ "zeroize",
+]
+
+[[package]]
+name = "open-esp-radio-hil-runner-ieee802154"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-hil-protocol",
+ "open-esp-radio-hil-runner-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "open-esp-radio-hil-runner-system"
+version = "0.1.0"
+dependencies = [
+ "oer-process",
+ "open-esp-radio-hil-protocol",
+ "open-esp-radio-hil-runner-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "open-esp-radio-hil-runner-wifi"
+version = "0.1.0"
+dependencies = [
+ "mio",
+ "oer-process",
+ "open-esp-radio-hil-fixture",
+ "open-esp-radio-hil-protocol",
+ "open-esp-radio-hil-runner-core",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
  "zeroize",
 ]
 

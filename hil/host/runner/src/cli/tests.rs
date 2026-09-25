@@ -69,7 +69,7 @@ fn ap_scheduler_is_a_runtime_choice_and_can_reuse_the_same_firmware() {
 
 #[test]
 fn network_defaults_and_aliases_match_across_firmware_commands() {
-    use crate::image::Integration;
+    use hil_core::image::Integration;
 
     for command in [
         vec!["cargo-hil", "run", "station-udp-tx-ceiling"],
@@ -182,7 +182,7 @@ fn reproducible_rebuild_is_an_explicit_image_operation() {
         CliCommand::Image {
             command: ImageCommand::VerifyRebuild { class, trim_paths },
         } => {
-            assert_eq!(class, crate::image::ImageClass::Performance);
+            assert_eq!(class, hil_core::image::ImageClass::Performance);
             assert!(!trim_paths);
         }
         _ => panic!("parsed the wrong HIL command"),
@@ -268,8 +268,8 @@ fn bluetooth_and_wifi_fixture_commands_share_one_namespace() {
         cli.command,
         CliCommand::Fixture {
             command: FixtureCommand::BluetoothCheck {
-                adapter: crate::fixture::bluetooth::model::Adapter(2),
-                dtm_version: crate::fixture::bluetooth::model::DtmVersion::V2,
+                adapter: hil_bluetooth::fixture::bluetooth::model::Adapter(2),
+                dtm_version: hil_bluetooth::fixture::bluetooth::model::DtmVersion::V2,
             }
         }
     ));
@@ -290,7 +290,7 @@ fn bluetooth_dtm_v1_requires_explicit_selection() {
         Cli::try_parse_from(args).unwrap().command,
         CliCommand::Fixture {
             command: FixtureCommand::BluetoothCheck {
-                dtm_version: crate::fixture::bluetooth::model::DtmVersion::V2,
+                dtm_version: hil_bluetooth::fixture::bluetooth::model::DtmVersion::V2,
                 ..
             }
         }
@@ -301,7 +301,7 @@ fn bluetooth_dtm_v1_requires_explicit_selection() {
             .command,
         CliCommand::Fixture {
             command: FixtureCommand::BluetoothCheck {
-                dtm_version: crate::fixture::bluetooth::model::DtmVersion::V1,
+                dtm_version: hil_bluetooth::fixture::bluetooth::model::DtmVersion::V1,
                 ..
             }
         }
@@ -410,4 +410,32 @@ fn qualification_planning_has_an_explicit_scope_and_excludes_manual_selectors() 
         );
     }
     assert!(Cli::try_parse_from(["cargo-hil", "plan", "--capability", "wifi"]).is_err());
+}
+
+#[test]
+fn archive_cli_does_not_require_lab_or_network_for_offline_commands() {
+    for args in [
+        vec![
+            "hil",
+            "archive",
+            "export",
+            "comparison",
+            "--run",
+            "run-1",
+            "--run",
+            "run-2",
+        ],
+        vec!["hil", "archive", "verify", "comparison.tar.gz"],
+        vec!["hil", "archive", "import", "comparison.tar.gz"],
+        vec![
+            "hil",
+            "archive",
+            "fetch",
+            "comparison",
+            "--repo",
+            "ermacv/evidence",
+        ],
+    ] {
+        Cli::try_parse_from(args).unwrap();
+    }
 }

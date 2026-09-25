@@ -48,7 +48,7 @@ fn session(root: &Path) -> RunSession {
         vec![OsString::from("test")],
     )
     .unwrap();
-    let (_snapshot_root, snapshot) = crate::image::snapshot::test_snapshot(root);
+    let (_snapshot_root, snapshot) = hil_core::image::snapshot::test_snapshot(root);
     session.bind_source_snapshot(snapshot.directory()).unwrap();
     session
 }
@@ -130,7 +130,7 @@ fn replay_import_is_archived_before_flashing_the_new_run_local_path() {
     archive_and_flash_built(ImageClass::Correctness, artifacts, &mut source, |_| Ok(())).unwrap();
     source.finish(Vec::new()).unwrap();
 
-    let archived = crate::evidence::verify::archived_firmware(
+    let archived = hil_core::evidence::verify::archived_firmware(
         root.path(),
         "esp32s31",
         &source_id,
@@ -163,7 +163,7 @@ fn corrupt_replay_is_rejected_before_flash_without_a_build_fallback() {
     archive_and_flash_built(ImageClass::Correctness, artifacts, &mut source, |_| Ok(())).unwrap();
     source.finish(Vec::new()).unwrap();
 
-    let archived = crate::evidence::verify::archived_firmware(
+    let archived = hil_core::evidence::verify::archived_firmware(
         root.path(),
         "esp32s31",
         &source_id,

@@ -2,14 +2,11 @@
 
 use std::path::Path;
 
-use crate::{
-    Result, device,
-    evidence::{
-        run::{Failure, FailureKind, Outcome, PlannedFirmware, RunSession},
-        verify::ArchivedFirmware,
-    },
-    image::{Artifacts, ImageClass, Integration},
-    lab::config::LabConfig,
+use crate::Result;
+use hil_core::{
+    device, evidence::run::Failure, evidence::run::FailureKind, evidence::run::Outcome,
+    evidence::run::PlannedFirmware, evidence::run::RunSession, evidence::verify::ArchivedFirmware,
+    image::Artifacts, image::ImageClass, image::Integration, lab::config::LabConfig,
 };
 
 pub(crate) enum RunFirmware {

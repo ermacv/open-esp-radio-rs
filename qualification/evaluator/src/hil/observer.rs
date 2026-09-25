@@ -472,36 +472,7 @@ pub(super) fn reviewed(
 }
 
 #[cfg(test)]
-pub(super) fn required_configuration(root: &Path, registry: &Value) -> Result<Value> {
-    let output = std::process::Command::new("rustc")
-        .current_dir(root)
-        .arg("-vV")
-        .output()?;
-    if !output.status.success() {
-        return Err("cannot identify required observer compiler".into());
-    }
-    let compiler = String::from_utf8(output.stdout)?;
-    let target = compiler
-        .lines()
-        .find_map(|line| line.strip_prefix("host: "))
-        .ok_or("compiler host missing")?;
-    let flags = std::env::var("CARGO_ENCODED_RUSTFLAGS").unwrap_or_else(|_| {
-        std::env::var("RUSTFLAGS")
-            .map(|flags| flags.split_whitespace().collect::<Vec<_>>().join("\u{1f}"))
-            .unwrap_or_else(|_| {
-                registry["build"]["rustflags"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                    .collect::<Vec<_>>()
-                    .join("\u{1f}")
-            })
-    });
-    Ok(json!({"compiler":compiler,"environment":{
-        "TARGET":target,"PROFILE":registry["build"]["profile"],"OPT_LEVEL":registry["build"]["opt_level"],"DEBUG":registry["build"]["debug"],"CARGO_ENCODED_RUSTFLAGS":flags
-    }}))
-}
+pub(super) use open_esp_radio_hil_schema::observer::required_configuration;
 
 fn profile_configuration(resolved: &Value) -> Value {
     let Some(mut name) = resolved["selected_profile"].as_str() else {
@@ -589,20 +560,20 @@ mod tests {
                 let prefixes = prefixes(&root, Some(document)).unwrap();
                 assert!(!inputs(&root, &prefixes).unwrap().is_empty());
                 assert!(!selected(
-                    Path::new("hil/host/runner/src/reporting/history.rs"),
+                    Path::new("hil/host/runner-core/src/evidence/reporting/history.rs"),
                     &prefixes
                 ));
                 if kind == "udp" {
                     assert!(selected(
-                        Path::new("hil/host/runner/src/workload/traffic/rx_traffic.rs"),
+                        Path::new("hil/host/runner-wifi/src/workload/traffic/rx_traffic.rs"),
                         &prefixes
                     ));
                     assert!(!selected(
-                        Path::new("hil/host/runner/src/workload/bluetooth/deadline.rs"),
+                        Path::new("hil/host/runner-bluetooth/src/workload/bluetooth/deadline.rs"),
                         &prefixes
                     ));
                     assert!(!selected(
-                        Path::new("hil/host/runner/src/fixture/bluetooth/att.rs"),
+                        Path::new("hil/host/runner-bluetooth/src/fixture/bluetooth/att.rs"),
                         &prefixes
                     ));
                     assert!(!selected(Path::new("Cargo.lock"), &prefixes));

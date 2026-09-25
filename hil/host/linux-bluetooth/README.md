@@ -277,7 +277,7 @@ require their own evidence.
 
 The `bluetooth-peripheral-acl-calibration` workload uses a fixed ATT socket
 through the Linux kernel and BlueZ, implemented in
-[`fixture/bluetooth/att.rs`](../runner/src/fixture/bluetooth/att.rs). It uses the
+[`fixture/bluetooth/att.rs`](../runner-bluetooth/src/fixture/bluetooth/att.rs). It uses the
 same runner adapter lease but does not enter the helper's exclusive HCI channel.
 The configured adapter must initially be powered off. BlueZ, `busctl` and user
 access to `/dev/rfkill` are required; the socket binds the selected adapter's

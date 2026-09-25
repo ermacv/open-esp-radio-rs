@@ -6,16 +6,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{
-    Result, emit_json,
-    evidence::run::{
-        Failure, FailureKind, Outcome, PlanDisposition, PlanEntry, PlannedFirmware, RUN_SCHEMA,
-        RepetitionResult, RunPlan, RunSession, ScenarioResult,
-    },
-    fixture,
-    image::{ImageClass, Integration},
-    lab::{config::LabConfig, requirements::Requirements},
-    scenario::{Catalog, Scenario},
+use crate::{Result, emit_json, fixture};
+use hil_core::{
+    evidence::run::Failure, evidence::run::FailureKind, evidence::run::Outcome,
+    evidence::run::PlanDisposition, evidence::run::PlanEntry, evidence::run::PlannedFirmware,
+    evidence::run::RUN_SCHEMA, evidence::run::RepetitionResult, evidence::run::RunPlan,
+    evidence::run::RunSession, evidence::run::ScenarioResult, image::ImageClass,
+    image::Integration, lab::config::LabConfig, lab::requirements::Requirements, scenario::Catalog,
+    scenario::Scenario,
 };
 
 use super::{
@@ -33,12 +31,12 @@ pub(crate) fn selection_description(tags: &[String]) -> String {
 
 pub(crate) enum SuiteSelection<'a> {
     Catalog(String),
-    Campaign(&'a crate::campaign::Plan),
+    Campaign(&'a hil_core::campaign::Plan),
 }
 
 pub(crate) struct Invocation {
     pub(crate) arguments: Vec<OsString>,
-    pub(crate) snapshot: Option<crate::image::snapshot::Snapshot>,
+    pub(crate) snapshot: Option<hil_core::image::snapshot::Snapshot>,
 }
 
 pub(crate) fn run_all(
@@ -324,10 +322,10 @@ fn start_run(
     for scenario in selected {
         let directory = session.scenario_directory(&scenario.id);
         fs::create_dir_all(&directory)?;
-        crate::durable::atomic_json(&directory.join("scenario.json"), scenario)?;
+        hil_core::durable::atomic_json(&directory.join("scenario.json"), scenario)?;
     }
     let required = Requirements::union(selected);
-    let lab_provenance = crate::lab::provenance::LabProvenance::capture(lab, required)?;
+    let lab_provenance = hil_core::lab::provenance::LabProvenance::capture(lab, required)?;
     session.record_lab_provenance(&lab_provenance)?;
     session.record_event("lab-provenance-captured", None, None, None)?;
     Ok(session)
@@ -339,7 +337,7 @@ fn finish_run(
     selected: &[&Scenario],
 ) -> Result<()> {
     oer_process::check_cancelled()?;
-    if let Some(comparisons) = crate::evidence::comparison::collect(selected, &results) {
+    if let Some(comparisons) = hil_core::evidence::comparison::collect(selected, &results) {
         session.write_comparisons(&comparisons)?;
     }
     let (suite, completion) = session.finish(results)?;
@@ -369,7 +367,7 @@ fn run_scenario(
 ) -> Result<ScenarioResult> {
     let scenario_output = session.scenario_directory(&selected.id);
     fs::create_dir_all(&scenario_output)?;
-    crate::durable::atomic_json(&scenario_output.join("scenario.json"), selected)?;
+    hil_core::durable::atomic_json(&scenario_output.join("scenario.json"), selected)?;
     let mut repetitions = Vec::with_capacity(usize::from(selected.repetitions));
     for number in 1..=selected.repetitions {
         oer_process::check_cancelled()?;
@@ -390,7 +388,7 @@ fn run_scenario(
         selected.repetitions,
         repetitions,
     );
-    crate::durable::atomic_json(&scenario_output.join("result.json"), &result)?;
+    hil_core::durable::atomic_json(&scenario_output.join("result.json"), &result)?;
     Ok(result)
 }
 
@@ -403,11 +401,11 @@ fn run_scenario_repetition(
 ) -> Result<RepetitionResult> {
     let resolved = lab.resolve_scenario(selected);
     let lab = &resolved;
-    let started_unix_millis = crate::durable::unix_millis()?;
+    let started_unix_millis = hil_core::durable::unix_millis()?;
     let started = std::time::Instant::now();
-    let cleanup = fixture::cleanup::Scope::new(output);
+    let cleanup = hil_core::fixture::cleanup::Scope::new(output);
     let (outcome, failure, measurements) = match fixture::preflight::check(lab, selected)
-        .and_then(|()| fixture::prepared::Prepared::start(lab, selected, output))
+        .and_then(|()| hil_wifi::fixture::prepared::Prepared::start(lab, selected, output))
         .and_then(|fixture| {
             preflight::validate_flashed_image(lab, selected.image, output)?;
             Ok(fixture)
@@ -450,10 +448,10 @@ fn finalize_repetition(
     output: &Path,
     started_unix_millis: u64,
     started: std::time::Instant,
-    cleanup: fixture::cleanup::Scope,
+    cleanup: hil_core::fixture::cleanup::Scope,
     mut outcome: Outcome,
     mut failure: Option<Failure>,
-    measurements: Vec<crate::evidence::run::Measurement>,
+    measurements: Vec<hil_core::evidence::run::Measurement>,
 ) -> Result<RepetitionResult> {
     let cleanup = cleanup.finish()?;
     let cleanup_failures = cleanup
@@ -461,19 +459,19 @@ fn finalize_repetition(
         .filter_map(|record| record.failure.as_deref())
         .collect::<Vec<_>>();
     apply_cleanup_failures(&mut outcome, &mut failure, &cleanup_failures);
-    let attachments = crate::evidence::run::collect_attachments(output, artifacts)?;
+    let attachments = hil_core::evidence::run::collect_attachments(output, artifacts)?;
     let result = RepetitionResult {
         schema: RUN_SCHEMA,
         repetition,
         outcome,
         started_unix_millis,
-        duration_millis: crate::evidence::run::duration_millis(started.elapsed()),
+        duration_millis: hil_core::evidence::run::duration_millis(started.elapsed()),
         artifact_directory: artifacts.to_owned(),
         attachments,
         measurements,
         failure,
     };
-    crate::durable::atomic_json(&output.join("result.json"), &result)?;
+    hil_core::durable::atomic_json(&output.join("result.json"), &result)?;
     Ok(result)
 }
 
@@ -501,7 +499,7 @@ fn write_blocked_scenario(
 ) -> Result<ScenarioResult> {
     let output = session.scenario_directory(&selected.id);
     fs::create_dir_all(&output)?;
-    crate::durable::atomic_json(&output.join("scenario.json"), selected)?;
+    hil_core::durable::atomic_json(&output.join("scenario.json"), selected)?;
     let result = ScenarioResult::blocked(
         selected.id.clone(),
         selected.image,

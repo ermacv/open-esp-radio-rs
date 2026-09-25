@@ -21,7 +21,7 @@ pub(crate) enum CliCommand {
     /// Preserve and retrieve verified HIL evidence without accessing hardware.
     Archive {
         #[command(subcommand)]
-        command: crate::archive::Command,
+        command: hil_core::archive::Command,
     },
     /// Check the selected scenarios' tools and fixture, without resetting hardware.
     Doctor(Selection),
@@ -38,7 +38,7 @@ pub(crate) enum CliCommand {
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long, default_value = "upstream-xarxa")]
-        network: crate::image::Integration,
+        network: hil_core::image::Integration,
         /// Require every named check; controls are added only after this filter.
         #[arg(long = "proof")]
         proofs: Vec<String>,
@@ -100,7 +100,7 @@ pub(crate) enum CliCommand {
             default_value = "upstream-xarxa",
             conflicts_with = "firmware_from"
         )]
-        network: crate::image::Integration,
+        network: hil_core::image::Integration,
     },
     /// Execute catalog scenarios, flashing once per selected image class.
     RunAll {
@@ -109,7 +109,7 @@ pub(crate) enum CliCommand {
         source_include: Vec<String>,
         /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.
         #[arg(long, default_value = "upstream-xarxa")]
-        network: crate::image::Integration,
+        network: hil_core::image::Integration,
         /// Select only scenarios carrying this tag. May be repeated.
         #[arg(long)]
         tag: Vec<String>,
@@ -144,8 +144,8 @@ pub(crate) struct Selection {
 impl Selection {
     pub(crate) fn resolve<'a>(
         &self,
-        catalog: &'a crate::scenario::Catalog,
-    ) -> crate::Result<Vec<&'a crate::scenario::Scenario>> {
+        catalog: &'a hil_core::scenario::Catalog,
+    ) -> crate::Result<Vec<&'a hil_core::scenario::Scenario>> {
         if let Some(id) = &self.scenario {
             return Ok(vec![catalog.get(id)?]);
         }
@@ -176,33 +176,33 @@ pub(crate) enum ImageCommand {
         source_include: Vec<String>,
     },
     /// Capture rustc mono estimates and the exact diagnostic ELF; never flash.
-    Mono { class: crate::image::ImageClass },
+    Mono { class: hil_core::image::ImageClass },
     Build {
-        class: crate::image::ImageClass,
+        class: hil_core::image::ImageClass,
         /// Build only from a verified source snapshot directory, not the live checkout.
         #[arg(long)]
         source_snapshot: Option<PathBuf>,
         /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.
         #[arg(long, default_value = "upstream-xarxa")]
-        network: crate::image::Integration,
+        network: hil_core::image::Integration,
     },
     /// Build one clean commit in two different checkout roots and compare every firmware subject.
     VerifyRebuild {
-        class: crate::image::ImageClass,
+        class: hil_core::image::ImageClass,
         /// Diagnose Cargo's experimental object-path sanitization without changing normal builds.
         #[arg(long)]
         trim_paths: bool,
     },
     Flash {
-        class: crate::image::ImageClass,
+        class: hil_core::image::ImageClass,
         /// Network implementation: upstream-xarxa, patched-xarxa, upstream-smoltcp or owned-xarxa.
         #[arg(long, default_value = "upstream-xarxa")]
-        network: crate::image::Integration,
+        network: hil_core::image::Integration,
     },
     /// Verify and flash an exact application archived by an earlier HIL run.
     Replay {
         run_id: String,
-        class: crate::image::ImageClass,
+        class: hil_core::image::ImageClass,
     },
 }
 
@@ -229,17 +229,17 @@ pub(crate) enum FixtureCommand {
     /// Execute a bounded DTM command check and restore the Linux adapter.
     BluetoothCheck {
         #[arg(long, default_value = "hci0")]
-        adapter: crate::fixture::bluetooth::model::Adapter,
+        adapter: hil_bluetooth::fixture::bluetooth::model::Adapter,
         /// v1 is an explicit diagnostic; production RF scenarios always use v2.
         #[arg(long, value_enum, default_value = "v2")]
-        dtm_version: crate::fixture::bluetooth::model::DtmVersion,
+        dtm_version: hil_bluetooth::fixture::bluetooth::model::DtmVersion,
     },
     /// Connect to a public LE peer, reset the adapter and archive restoration evidence.
     BluetoothConnectReset {
         #[arg(long, default_value = "hci0")]
-        adapter: crate::fixture::bluetooth::model::Adapter,
+        adapter: hil_bluetooth::fixture::bluetooth::model::Adapter,
         #[arg(long)]
-        peer: crate::fixture::bluetooth::model::PeerAddress,
+        peer: hil_bluetooth::fixture::bluetooth::model::PeerAddress,
         #[arg(long, default_value = "0", value_parser = clap::value_parser!(u16).range(0..=5000))]
         hold_ms: u16,
     },

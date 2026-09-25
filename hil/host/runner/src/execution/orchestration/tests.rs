@@ -141,7 +141,8 @@ fn campaign_executes_only_the_control_and_experiment_with_one_preparation() {
         .get("diagnostic-station-phy-combined-high-load-delivery-rx")
         .unwrap();
     let plan =
-        crate::campaign::Plan::create(&catalog, &[experiment], Integration::UpstreamXarxa).unwrap();
+        hil_core::campaign::Plan::create(&catalog, &[experiment], Integration::UpstreamXarxa)
+            .unwrap();
     let (selected, _) = plan.resolve(&catalog).unwrap();
     let root = tempfile::tempdir().unwrap();
     let mut session = session(root.path());
@@ -292,11 +293,11 @@ fn single_scenario_preserves_its_original_preflight_prepare_event_order() {
 
 #[test]
 fn cleanup_is_written_before_attachment_indexing_and_preserves_partial_output() {
-    crate::fixture::cleanup::reset_for_test();
+    hil_core::fixture::cleanup::reset_for_test();
     let output = tempfile::tempdir().unwrap();
     fs::write(output.path().join("partial.json"), b"{\"seen\":true}\n").unwrap();
-    let cleanup = fixture::cleanup::Scope::new(output.path());
-    fixture::cleanup::record("restore fixture", || Err("injected cleanup error".into()));
+    let cleanup = hil_core::fixture::cleanup::Scope::new(output.path());
+    hil_core::fixture::cleanup::record("restore fixture", || Err("injected cleanup error".into()));
     let started = std::time::Instant::now();
     let result = finalize_repetition(
         1,
@@ -323,8 +324,8 @@ fn cleanup_is_written_before_attachment_indexing_and_preserves_partial_output() 
         .collect::<BTreeSet<_>>();
     assert!(names.contains("cleanup.json"));
     assert!(names.contains("partial.json"));
-    assert!(fixture::cleanup::require_healthy().is_err());
-    fixture::cleanup::reset_for_test();
+    assert!(hil_core::fixture::cleanup::require_healthy().is_err());
+    hil_core::fixture::cleanup::reset_for_test();
 }
 
 #[test]

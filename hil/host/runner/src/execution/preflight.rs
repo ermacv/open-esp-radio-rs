@@ -4,14 +4,10 @@ use std::{path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::WifiApScheduler;
 
-use crate::{
-    Result,
-    evidence::run::Failure,
-    fixture,
-    image::{self, ImageClass, Integration},
-    lab::config::LabConfig,
-    scenario::{Scenario, Workload},
-    session::SerialCapture,
+use crate::{Result, fixture};
+use hil_core::{
+    evidence::run::Failure, image, image::ImageClass, image::Integration, lab::config::LabConfig,
+    scenario::Scenario, scenario::Workload, session::SerialCapture,
 };
 
 pub(crate) fn configure_run_selection(

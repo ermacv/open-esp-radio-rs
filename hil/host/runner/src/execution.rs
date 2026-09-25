@@ -2,10 +2,8 @@
 
 use std::path::Path;
 
-use crate::{
-    Result,
-    evidence::run::{Failure, FailureKind, Outcome},
-};
+use crate::Result;
+use hil_core::{evidence::run::Failure, evidence::run::FailureKind, evidence::run::Outcome};
 
 pub(crate) mod doctor;
 pub(crate) mod firmware;
@@ -14,11 +12,11 @@ pub(crate) mod orchestration;
 pub(crate) mod preflight;
 #[cfg(test)]
 mod tests;
-pub(crate) use crate::failure::classify;
+pub(crate) use hil_core::failure::classify;
 
 #[derive(Default)]
 pub(crate) struct ExecutionEvidence {
-    pub(crate) measurements: Vec<crate::evidence::run::Measurement>,
+    pub(crate) measurements: Vec<hil_core::evidence::run::Measurement>,
     pub(crate) failure: Option<Failure>,
     pub(crate) interrupted: bool,
 }
@@ -37,13 +35,13 @@ impl ExecutionEvidence {
 }
 
 pub(crate) fn execute_workload(
-    lab: &crate::lab::config::LabConfig,
-    selected: &crate::scenario::Scenario,
+    lab: &hil_core::lab::config::LabConfig,
+    selected: &hil_core::scenario::Scenario,
     output: &Path,
-    fixture: &crate::fixture::prepared::Prepared,
+    fixture: &hil_wifi::fixture::prepared::Prepared,
 ) -> ExecutionEvidence {
     let context =
-        crate::context::Context::new(lab, crate::session::Settings::from(selected), output);
+        hil_core::context::Context::new(lab, hil_core::session::Settings::from(selected), output);
     let result = execute_workload_inner(&context, fixture, selected, output);
     let mut evidence = ExecutionEvidence {
         measurements: context.measurements.snapshot(),
@@ -63,42 +61,44 @@ pub(crate) fn execute_workload(
 }
 
 fn execute_workload_inner(
-    context: &crate::context::Context<'_>,
-    fixture: &crate::fixture::prepared::Prepared,
-    selected: &crate::scenario::Scenario,
+    context: &hil_core::context::Context<'_>,
+    fixture: &hil_wifi::fixture::prepared::Prepared,
+    selected: &hil_core::scenario::Scenario,
     output: &Path,
 ) -> Result<()> {
-    use crate::scenario::{Direction, Workload};
-    use crate::workload::{ieee80211, traffic};
+    use hil_core::scenario::{Direction, Workload};
+    use hil_wifi::workload::{ieee80211, traffic};
     use std::time::Duration;
 
     match &selected.workload {
-        Workload::BluetoothGatt => crate::workload::bluetooth::gatt::run(output, context),
-        Workload::BluetoothSecureGatt => crate::workload::bluetooth::secure_gatt::run(
+        Workload::BluetoothGatt => hil_bluetooth::workload::bluetooth::gatt::run(output, context),
+        Workload::BluetoothSecureGatt => hil_bluetooth::workload::bluetooth::secure_gatt::run(
             output,
             context,
-            crate::scenario::SecureGattShutdown::BondLoadFailure,
-            crate::workload::bluetooth::secure_gatt::IrqSampling::EverySnapshot,
+            hil_core::scenario::SecureGattShutdown::BondLoadFailure,
+            hil_bluetooth::workload::bluetooth::secure_gatt::IrqSampling::EverySnapshot,
         ),
-        Workload::BluetoothSecureGattTiming => crate::workload::bluetooth::secure_gatt::run(
-            output,
-            context,
-            crate::scenario::SecureGattShutdown::BondLoadFailure,
-            crate::workload::bluetooth::secure_gatt::IrqSampling::BoundaryOnly,
-        ),
-        Workload::BluetoothSecureGattHciReadFailure => {
-            crate::workload::bluetooth::secure_gatt::run(
+        Workload::BluetoothSecureGattTiming => {
+            hil_bluetooth::workload::bluetooth::secure_gatt::run(
                 output,
                 context,
-                crate::scenario::SecureGattShutdown::HciReadFailure,
-                crate::workload::bluetooth::secure_gatt::IrqSampling::EverySnapshot,
+                hil_core::scenario::SecureGattShutdown::BondLoadFailure,
+                hil_bluetooth::workload::bluetooth::secure_gatt::IrqSampling::BoundaryOnly,
+            )
+        }
+        Workload::BluetoothSecureGattHciReadFailure => {
+            hil_bluetooth::workload::bluetooth::secure_gatt::run(
+                output,
+                context,
+                hil_core::scenario::SecureGattShutdown::HciReadFailure,
+                hil_bluetooth::workload::bluetooth::secure_gatt::IrqSampling::EverySnapshot,
             )
         }
         Workload::BluetoothDtm {
             boots,
             minimum_packets,
             quiet_cycles,
-        } => crate::workload::bluetooth::run(
+        } => hil_bluetooth::workload::bluetooth::run(
             *boots,
             *minimum_packets,
             *quiet_cycles,
@@ -108,7 +108,7 @@ fn execute_workload_inner(
         Workload::BluetoothSecurityFailure {
             failure,
             read_version_before_disconnect,
-        } => crate::workload::bluetooth::security_failure::run(
+        } => hil_bluetooth::workload::bluetooth::security_failure::run(
             *failure,
             *read_version_before_disconnect,
             output,
@@ -117,8 +117,8 @@ fn execute_workload_inner(
         Workload::BluetoothEncryptedAcl {
             key_refresh,
             active_maintenance,
-        } => crate::workload::bluetooth::run_peripheral(
-            crate::workload::bluetooth::PeripheralConfig {
+        } => hil_bluetooth::workload::bluetooth::run_peripheral(
+            hil_bluetooth::workload::bluetooth::PeripheralConfig {
                 boots: 1,
                 connections: 2,
                 hold_millis: if *active_maintenance { 1000 } else { 0 },
@@ -135,23 +135,29 @@ fn execute_workload_inner(
             context,
         ),
         Workload::BluetoothAclBackpressure { active_maintenance } => {
-            crate::workload::bluetooth::backpressure::run(output, context, *active_maintenance)
+            hil_bluetooth::workload::bluetooth::backpressure::run(
+                output,
+                context,
+                *active_maintenance,
+            )
         }
-        Workload::BluetoothMaintenanceDeadline => crate::workload::bluetooth::deadline::run(
-            output,
-            context,
-            open_esp_radio_hil_protocol::ResetReason::Software,
-        ),
-        Workload::BluetoothWatchdogReset => crate::workload::bluetooth::deadline::run(
+        Workload::BluetoothMaintenanceDeadline => {
+            hil_bluetooth::workload::bluetooth::deadline::run(
+                output,
+                context,
+                open_esp_radio_hil_protocol::ResetReason::Software,
+            )
+        }
+        Workload::BluetoothWatchdogReset => hil_bluetooth::workload::bluetooth::deadline::run(
             output,
             context,
             open_esp_radio_hil_protocol::ResetReason::MainWatchdog1,
         ),
-        Workload::SystemWatchdog => crate::workload::system::watchdog::run(output, context),
+        Workload::SystemWatchdog => hil_system::workload::system::watchdog::run(output, context),
         Workload::BluetoothPhyWatchdog => {
-            crate::workload::bluetooth::phy_watchdog::run(output, context)
+            hil_bluetooth::workload::bluetooth::phy_watchdog::run(output, context)
         }
-        Workload::WifiPhyWatchdog => crate::workload::ieee80211::phy_watchdog::run(
+        Workload::WifiPhyWatchdog => hil_wifi::workload::ieee80211::phy_watchdog::run(
             output,
             context,
             selected
@@ -162,7 +168,7 @@ fn execute_workload_inner(
         Workload::BluetoothAclCalibration {
             duration_millis,
             minimum_calibrations,
-        } => crate::workload::bluetooth::calibration::run(
+        } => hil_bluetooth::workload::bluetooth::calibration::run(
             *duration_millis,
             *minimum_calibrations,
             output,
@@ -177,8 +183,8 @@ fn execute_workload_inner(
             restart_between_connections,
             maintain_between_connections,
             calibration_threshold,
-        } => crate::workload::bluetooth::run_peripheral(
-            crate::workload::bluetooth::PeripheralConfig {
+        } => hil_bluetooth::workload::bluetooth::run_peripheral(
+            hil_bluetooth::workload::bluetooth::PeripheralConfig {
                 encrypted: false,
                 key_refresh: false,
                 encrypted_maintenance: false,
@@ -200,8 +206,8 @@ fn execute_workload_inner(
             iterations,
             sizes,
             batch_sizes,
-        } => crate::workload::system::memory_benchmark::run(
-            crate::workload::system::memory_benchmark::Config {
+        } => hil_system::workload::system::memory_benchmark::run(
+            hil_system::workload::system::memory_benchmark::Config {
                 boots: *boots,
                 iterations: *iterations,
                 sizes,
@@ -214,8 +220,8 @@ fn execute_workload_inner(
             boots,
             intervals,
             period_millis,
-        } => crate::workload::system::timebase::run(
-            crate::workload::system::timebase::Config {
+        } => hil_system::workload::system::timebase::run(
+            hil_system::workload::system::timebase::Config {
                 boots: *boots,
                 intervals: *intervals,
                 period_millis: *period_millis,
@@ -227,8 +233,8 @@ fn execute_workload_inner(
             boots,
             poll_limit,
             timer_threshold,
-        } => crate::workload::ieee802154::event_status::run(
-            crate::workload::ieee802154::event_status::Config {
+        } => hil_ieee802154::workload::ieee802154::event_status::run(
+            hil_ieee802154::workload::ieee802154::event_status::Config {
                 boots: *boots,
                 poll_limit: *poll_limit,
                 timer_threshold: *timer_threshold,
@@ -240,8 +246,8 @@ fn execute_workload_inner(
             boots,
             poll_limit,
             timer_threshold,
-        } => crate::workload::ieee802154::ed_event::run(
-            crate::workload::ieee802154::ed_event::Config {
+        } => hil_ieee802154::workload::ieee802154::ed_event::run(
+            hil_ieee802154::workload::ieee802154::ed_event::Config {
                 boots: *boots,
                 poll_limit: *poll_limit,
                 timer_threshold: *timer_threshold,
@@ -288,9 +294,9 @@ fn execute_workload_inner(
                         payload,
                         phy,
                         expected_rx_format: match phy {
-                            crate::scenario::PhyExpectation::He20 => 4,
-                            crate::scenario::PhyExpectation::Ht20
-                            | crate::scenario::PhyExpectation::Ht40 => 2,
+                            hil_core::scenario::PhyExpectation::He20 => 4,
+                            hil_core::scenario::PhyExpectation::Ht20
+                            | hil_core::scenario::PhyExpectation::Ht40 => 2,
                         },
                         rate_bps: rx_rate_bps.expect("validated RX rate"),
                         minimum_rate_bps: selected.criteria.minimum_rx_bps,
@@ -299,11 +305,11 @@ fn execute_workload_inner(
                             .maximum_idle_channel_utilization_255,
                         ..Default::default()
                     };
-                    crate::workload::traffic::rx_traffic::run(
+                    hil_wifi::workload::traffic::rx_traffic::run(
                         config,
                         output,
                         context,
-                        crate::workload::traffic::rx_traffic::EvidencePolicy {
+                        hil_wifi::workload::traffic::rx_traffic::EvidencePolicy {
                             require_exact_delivery: selected.criteria.exact_delivery,
                             require_no_beacon_loss: selected.criteria.require_no_beacon_loss,
                             require_driver_observation: selected
@@ -323,9 +329,9 @@ fn execute_workload_inner(
                 }
                 Direction::Tx => {
                     let (bandwidth_mhz, minimum_rate_kbps) = match phy {
-                        crate::scenario::PhyExpectation::He20 => (20, 114_700),
-                        crate::scenario::PhyExpectation::Ht40 => (40, 135_000),
-                        crate::scenario::PhyExpectation::Ht20 => {
+                        hil_core::scenario::PhyExpectation::He20 => (20, 114_700),
+                        hil_core::scenario::PhyExpectation::Ht40 => (40, 135_000),
+                        hil_core::scenario::PhyExpectation::Ht20 => {
                             return Err("UDP TX requires HE20 or HT40".into());
                         }
                     };
@@ -352,7 +358,7 @@ fn execute_workload_inner(
                             .maximum_idle_channel_utilization_255,
                         ..Default::default()
                     };
-                    crate::workload::traffic::tx_traffic::run(
+                    hil_wifi::workload::traffic::tx_traffic::run(
                         config,
                         output,
                         context,
@@ -366,9 +372,13 @@ fn execute_workload_inner(
                         .link
                         .expect("validated station workload has a link expectation");
                     let phy = match phy {
-                        crate::scenario::PhyExpectation::He20 => traffic::bidirectional::Phy::He20,
-                        crate::scenario::PhyExpectation::Ht40 => traffic::bidirectional::Phy::Ht40,
-                        crate::scenario::PhyExpectation::Ht20 => {
+                        hil_core::scenario::PhyExpectation::He20 => {
+                            traffic::bidirectional::Phy::He20
+                        }
+                        hil_core::scenario::PhyExpectation::Ht40 => {
+                            traffic::bidirectional::Phy::Ht40
+                        }
+                        hil_core::scenario::PhyExpectation::Ht20 => {
                             return Err("bidirectional UDP requires HE20 or HT40".into());
                         }
                     };
@@ -395,11 +405,11 @@ fn execute_workload_inner(
                         combined_floor_bps: selected.criteria.minimum_combined_bps,
                         ..Default::default()
                     };
-                    crate::workload::traffic::bidirectional::run(
+                    hil_wifi::workload::traffic::bidirectional::run(
                         config,
                         output,
                         context,
-                        crate::workload::traffic::bidirectional::RunPolicy {
+                        hil_wifi::workload::traffic::bidirectional::RunPolicy {
                             require_exact_delivery: selected.criteria.exact_delivery,
                             require_no_beacon_loss: selected.criteria.require_no_beacon_loss,
                             capture_openwrt_tx_monitor_rx: selected.evidence.openwrt_tx_monitor_rx,
@@ -484,7 +494,7 @@ fn execute_workload_inner(
                 timeout: Duration::from_secs(u64::from(*timeout_seconds)),
                 ..Default::default()
             };
-            crate::workload::ieee80211::station_lifecycle::run(
+            hil_wifi::workload::ieee80211::station_lifecycle::run(
                 config,
                 output,
                 context,
@@ -499,7 +509,7 @@ fn execute_workload_inner(
                 require_recovery_echo: *require_recovery_echo,
                 timeout: Duration::from_secs(u64::from(*timeout_seconds)),
             };
-            crate::workload::ieee80211::station_ap_loss::run(
+            hil_wifi::workload::ieee80211::station_ap_loss::run(
                 config,
                 output,
                 context,
@@ -518,7 +528,7 @@ fn execute_workload_inner(
                 initially_absent: *initially_absent,
                 timeout: Duration::from_secs(u64::from(*timeout_seconds)),
             };
-            crate::workload::ieee80211::station_ap_absence::run(
+            hil_wifi::workload::ieee80211::station_ap_absence::run(
                 config,
                 output,
                 context,
@@ -544,7 +554,7 @@ fn execute_workload_inner(
                 monitor_duration: Duration::from_secs(u64::from(dwell_seconds.unwrap_or(3))),
                 snapshot_length: snapshot_length.unwrap_or(256),
             };
-            crate::workload::ieee80211::control::run(
+            hil_wifi::workload::ieee80211::control::run(
                 *operation,
                 config,
                 output,
@@ -568,7 +578,7 @@ fn execute_workload_inner(
                 channel: *channel,
                 snapshot_length: *snapshot_length,
             };
-            crate::workload::ieee80211::capture::run(
+            hil_wifi::workload::ieee80211::capture::run(
                 config,
                 output,
                 context,
@@ -586,8 +596,8 @@ fn execute_workload_inner(
             client,
             security,
             traffic,
-        } => crate::workload::ieee80211::access_point::run(
-            crate::workload::ieee80211::access_point::Config {
+        } => hil_wifi::workload::ieee80211::access_point::run(
+            hil_wifi::workload::ieee80211::access_point::Config {
                 probe_load: *probe_load,
                 cycles: *cycles,
                 boots: *boots,
@@ -600,8 +610,8 @@ fn execute_workload_inner(
                 require_driver_observation: selected.image.requires_driver_observation(),
                 require_rx_delivery_evidence: matches!(
                     selected.image,
-                    crate::image::ImageClass::DiagnosticRxDelivery
-                        | crate::image::ImageClass::DiagnosticRxDeliveryPhyHotSram
+                    hil_core::image::ImageClass::DiagnosticRxDelivery
+                        | hil_core::image::ImageClass::DiagnosticRxDeliveryPhyHotSram
                 ),
                 capture_independent_laptop_air_monitor: selected
                     .evidence
@@ -622,8 +632,8 @@ fn execute_workload_inner(
             minimum_bps_per_flow,
             maximum_fairness_skew_percent,
             payload_bytes,
-        } => crate::workload::ieee80211::station_access_point::run(
-            crate::workload::ieee80211::station_access_point::Config {
+        } => hil_wifi::workload::ieee80211::station_access_point::run(
+            hil_wifi::workload::ieee80211::station_access_point::Config {
                 timeout: std::time::Duration::from_secs(u64::from(*timeout_seconds)),
                 duration: std::time::Duration::from_secs(u64::from(*duration_seconds)),
                 direction: *direction,
@@ -640,7 +650,7 @@ fn execute_workload_inner(
             context,
         ),
         Workload::StationAccessPointReconnect { timeout_seconds } => {
-            crate::workload::ieee80211::station_access_point_reconnect::run(
+            hil_wifi::workload::ieee80211::station_access_point_reconnect::run(
                 std::time::Duration::from_secs(u64::from(*timeout_seconds)),
                 output,
                 context,
@@ -654,7 +664,7 @@ fn execute_workload_inner(
     }
 }
 
-fn boot_smoke(output: &Path, context: &crate::context::Context<'_>) -> Result<()> {
+fn boot_smoke(output: &Path, context: &hil_core::context::Context<'_>) -> Result<()> {
     context.with_capture(output, |capture| {
         capture.wait_for_boot_smoke(std::time::Duration::from_secs(10))
     })

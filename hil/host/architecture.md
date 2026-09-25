@@ -4,16 +4,18 @@ This document defines the host runner's ownership and evidence bundle
 contract. Operational setup and commands are in the
 [HIL host guide](README.md).
 
-`runner/` owns the typed CLI, scenario catalog, build/flash orchestration and
-UART evidence. `linux-net/` contains only privileged fixture operations.
+The `runner*` packages own the typed CLI, scenario catalog, build/flash
+orchestration and UART evidence. `linux-net/` contains only privileged fixture operations.
 [Linux Bluetooth setup](linux-bluetooth/README.md) installs the privileged helper
 for finite DTM adapter checks and peripheral ACL/recovery workloads.
 
-Three Cargo packages separate the privilege boundaries:
+Separate Cargo packages bound the privilege and radio-family scopes:
 
 | Package | Binaries | Role |
 | --- | --- | --- |
-| `runner/` (`open-esp-radio-hil-runner`) | `open-esp-radio-hil-runner` | Unprivileged CLI, orchestration and evidence |
+| `runner/` (`open-esp-radio-hil-runner`) | `open-esp-radio-hil-runner` | Unprivileged CLI, run orchestration, workload dispatch and the cross-family fixture preflight |
+| `runner-core/` (`open-esp-radio-hil-runner-core`) | none | Scenarios, laboratory, UART session, workload context, images and sealed run evidence |
+| `runner-wifi/`, `runner-bluetooth/`, `runner-system/`, `runner-ieee802154/` | none | One radio family's workloads and fixtures; each depends on `runner-core`, never on another family |
 | `fixture/` (`open-esp-radio-hil-fixture`) | `open-radio-bluetooth`, `open-radio-probe` | Finite Linux helpers; the library is their versioned request/report contract with the runner |
 | `fixture-install/` (`open-esp-radio-hil-fixture-install`) | `open-radio-fixture-install` and the three fixed launchers | Root-executed installation and admission; the runner uses the same library to plan and prepare |
 
@@ -45,8 +47,9 @@ launchers perform this admission and bind a concrete generation before direct
 network, probe or Bluetooth helper execution; they neither recover nor install.
 These locks never acquire a device or replace the physical fixture leases below.
 
-The runner entry point in `runner/src/main.rs` only wires modules and maps the
-top-level result to the process exit status. `runner/src/command.rs` owns CLI
+The runner entry point in `runner/src/main.rs` registers the executable's build
+identity with `runner-core`, then maps the top-level result to the process exit
+status. `runner/src/command.rs` owns CLI
 startup and command-specific dispatch. Run selection and the suite/scenario/
 repetition lifecycle are in `runner/src/execution/orchestration.rs`, while
 `runner/src/execution/firmware.rs` coordinates run-local build or replay
@@ -55,7 +58,7 @@ publication before calling the existing image and device owners.
 hardware-facing scenario/image checks, and `execution/doctor.rs` the
 selection-scoped environment report; declarative resource discovery remains
 under `lab::requirements`. Machine JSON retains its dedicated descriptor in
-`runner/src/output.rs`. Workload dispatch and typed execution evidence remain
+`runner-core/src/output.rs`. Workload dispatch and typed execution evidence remain
 in `runner/src/execution.rs`; `evidence::run::RunSession` is still the sole run
 writer and sealing owner.
 
@@ -478,33 +481,39 @@ all radio, lifecycle and traffic evidence uses the typed HIL protocol.
 
 ## Source ownership
 
-`runner/src` follows execution and evidence boundaries:
+`runner-core` and the family packages follow execution and evidence
+boundaries:
 
 - `scenario` owns catalog values, discovery and semantic acceptance rules;
   `image/class` owns image identities and feature recipes.
 - `image` owns build/rebuild and placement/stack auditing; the reusable ELF
   analyzer remains `tools/memory-report`.
 - `lab` owns local configuration, topology/provenance, the exclusive fixture
-  guard and the laboratory error type; `fixture` implements controlled host and
-  peer capabilities, including the scenario fixture preconditions. Its
-  `local` (laptop radio and helper) and `openwrt` (SSH-managed router)
-  providers each own their AP, client, monitors and session evidence;
-  `controlled_ap` selects between them.
+  guard and the laboratory error type. Each family package's `fixture`
+  implements its controlled host and peer capabilities: the Wi-Fi `local`
+  (laptop radio and helper) and `openwrt` (SSH-managed router) providers each
+  own their AP, client, monitors and session evidence, `controlled_ap` selects
+  between them and `prepared` owns a scenario's AP lifetime. The runner binary
+  runs every family's fixture preconditions before a scenario.
 - `session` owns one UART capture and its protocol/readiness/validation state;
   it needs only the laboratory and the scenario's target settings.
 - `context` gives one workload repetition its laboratory, target settings,
-  capture lifecycle, measurements and prepared fixture.
-- `workload` groups system, IEEE 802.15.4, IEEE 802.11 role and network traffic
-  operations. They report scenario outcomes, not product readiness.
+  capture lifecycle and measurements; workloads that control the AP receive
+  the prepared fixture explicitly.
+- Each family's `workload` module owns its operations: system, IEEE 802.15.4,
+  IEEE 802.11 role and network traffic, and Bluetooth LE. They report scenario
+  outcomes, not product readiness.
 - `evidence` owns sealed run models, archive/integrity/verification and build
   provenance; `evidence::reporting` renders the bundle's HTML/JUnit and the
   rebuildable history views. `failure` classifies errors as scenario or
   infrastructure failures, and `durable` provides atomic files, digests and
   timestamps to every producer.
 
-Module dependencies form a directed acyclic graph: execution depends on
-workloads, workloads on the context, and the context on session, fixture and
-laboratory owners, never the reverse.
+Dependencies form a directed acyclic graph that Cargo enforces: the binary
+depends on the family packages, and each family on `runner-core`, never the
+reverse. Inside `runner-core`, the context depends on session and laboratory
+owners, never the reverse. `runner-core`'s `test-support` feature exposes its
+session and evidence test doubles to the other packages' tests.
 
 The recursive [catalog contract](../scenarios/README.md) is checked independently
 by the runner and qualification evaluator. Shared synthetic input documents

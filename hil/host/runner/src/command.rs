@@ -1,16 +1,15 @@
 //! CLI command dispatch with command-specific ordering and side-effect boundaries.
 
-use std::{env, path::PathBuf};
+use std::env;
 
 use clap::Parser as _;
 
 use crate::{
-    Result,
-    cli::{Cli, CliCommand, DeviceCommand, ImageCommand, ReportCommand, ScenarioCommand},
-    device, emit_json,
-    execution::{firmware::RunFirmware, orchestration, preflight},
-    fixture, image, lab, output, scenario,
+    Result, cli::Cli, cli::CliCommand, cli::DeviceCommand, cli::ImageCommand, cli::ReportCommand,
+    cli::ScenarioCommand, emit_json, execution::firmware::RunFirmware, execution::orchestration,
+    execution::preflight, fixture, repository_root,
 };
+use hil_core::{device, image, lab, output, scenario};
 
 pub(crate) fn run() -> Result<()> {
     let root = repository_root()?;
@@ -41,8 +40,8 @@ pub(crate) fn run() -> Result<()> {
         CliCommand::Fixture {
             command: crate::cli::FixtureCommand::ProbePlan,
         } => {
-            let plan: Vec<_> = (0..fixture::probe_load::model::REQUESTS)
-                .filter_map(fixture::probe_load::model::request)
+            let plan: Vec<_> = (0..hil_wifi::fixture::probe_load::model::REQUESTS)
+                .filter_map(hil_wifi::fixture::probe_load::model::request)
                 .collect();
             emit_json(&plan, true)
         }
@@ -53,10 +52,10 @@ pub(crate) fn run() -> Result<()> {
                     dtm_version,
                 },
         } => {
-            let _software = fixture::software::SoftwareLease::acquire_one(
+            let _software = hil_core::fixture::software::SoftwareLease::acquire_one(
                 open_esp_radio_hil_fixture_install::Provider::LinuxBluetooth,
             )?;
-            fixture::bluetooth::check(&root, adapter, dtm_version)
+            hil_bluetooth::fixture::bluetooth::check(&root, adapter, dtm_version)
         }
         CliCommand::Fixture {
             command:
@@ -66,12 +65,12 @@ pub(crate) fn run() -> Result<()> {
                     hold_ms,
                 },
         } => {
-            let _software = fixture::software::SoftwareLease::acquire_one(
+            let _software = hil_core::fixture::software::SoftwareLease::acquire_one(
                 open_esp_radio_hil_fixture_install::Provider::LinuxBluetooth,
             )?;
-            fixture::bluetooth::connect_reset(&root, adapter, peer, hold_ms)
+            hil_bluetooth::fixture::bluetooth::connect_reset(&root, adapter, peer, hold_ms)
         }
-        CliCommand::Archive { command } => crate::archive::run(&root, command),
+        CliCommand::Archive { command } => hil_core::archive::run(&root, command),
         CliCommand::Fixture {
             command: crate::cli::FixtureCommand::Check { scenario: id },
         } => {
@@ -79,7 +78,8 @@ pub(crate) fn run() -> Result<()> {
             let selected = catalog.get(&id)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;
             let required = lab::requirements::Requirements::for_scenario(selected);
-            let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
+            let _software =
+                hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             crate::execution::fixture_check::check_without_device(&root, &lab, selected)
         }
         CliCommand::Doctor(selection) => {
@@ -87,7 +87,8 @@ pub(crate) fn run() -> Result<()> {
             let selected = selection.resolve(&catalog)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;
             let required = lab::requirements::Requirements::union(&selected);
-            let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
+            let _software =
+                hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
             crate::execution::doctor::run(&root, &lab, &selected)
         }
         CliCommand::Plan {
@@ -100,12 +101,12 @@ pub(crate) fn run() -> Result<()> {
         } => {
             let catalog = scenario::Catalog::load(&catalog_path)?;
             let plan = if let Some(manifest) = qualification {
-                crate::campaign::Plan::from_qualification(
+                hil_core::campaign::Plan::from_qualification(
                     &root, &catalog, manifest, capability, network,
                 )?
             } else {
                 let selected = selection.resolve(&catalog)?;
-                crate::campaign::Plan::create_for_checks(&catalog, &selected, network, &proofs)?
+                hil_core::campaign::Plan::create_for_checks(&catalog, &selected, network, &proofs)?
             };
             if let Some(path) = out {
                 let mut file = std::fs::OpenOptions::new()
@@ -122,7 +123,7 @@ pub(crate) fn run() -> Result<()> {
             source_include,
         } => {
             let catalog = scenario::Catalog::load(&catalog_path)?;
-            let plan: crate::campaign::Plan = serde_json::from_slice(&std::fs::read(plan)?)?;
+            let plan: hil_core::campaign::Plan = serde_json::from_slice(&std::fs::read(plan)?)?;
             let plan = plan.refresh(&root, &catalog)?;
             let (selected, network) = plan.resolve(&catalog)?;
             if check || selected.is_empty() {
@@ -131,8 +132,9 @@ pub(crate) fn run() -> Result<()> {
             let snapshot = image::snapshot::capture(&root, &source_include)?;
             let lab = lab::config::LabConfig::load(&lab_path)?;
             let required = lab::requirements::Requirements::union(&selected);
-            let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
-            fixture::local::network_helper::require_for(&lab, required)?;
+            let _software =
+                hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
+            hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
             let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
             orchestration::run_all(
                 &root,
@@ -186,7 +188,7 @@ pub(crate) fn run() -> Result<()> {
                 let artifacts = match source_snapshot {
                     Some(snapshot) => {
                         let artifacts = image::snapshot::build(&root, &snapshot, class, network)?;
-                        let record = crate::evidence::build_record::publish(
+                        let record = hil_core::evidence::build_record::publish(
                             &root, &snapshot, class, &artifacts,
                         )?;
                         eprintln!("build_record={}", record.display());
@@ -207,14 +209,15 @@ pub(crate) fn run() -> Result<()> {
                 image::print_artifacts(class, &artifacts, true)
             }
             ImageCommand::Replay { run_id, class } => {
-                let firmware =
-                    crate::evidence::verify::archived_firmware(&root, "esp32s31", &run_id, class)?;
+                let firmware = hil_core::evidence::verify::archived_firmware(
+                    &root, "esp32s31", &run_id, class,
+                )?;
                 let lab = lab::config::LabConfig::load(&lab_path)?;
                 let _fixture = lab::lock::FixtureLock::acquire(&lab)?;
                 device::flash_archived(&root, &firmware, &lab.device.serial)?;
                 emit_json(
                     &serde_json::json!({
-                        "schema": crate::evidence::run::RUN_SCHEMA,
+                        "schema": hil_core::evidence::run::RUN_SCHEMA,
                         "run_id": firmware.run_id,
                         "image_class": firmware.image,
                         "application_image": firmware.application_path,
@@ -234,12 +237,13 @@ pub(crate) fn run() -> Result<()> {
         }
         CliCommand::Report { command } => match command {
             ReportCommand::Rebuild => {
-                let completion = crate::evidence::reporting::history::rebuild(&root, "esp32s31")?;
+                let completion =
+                    hil_core::evidence::reporting::history::rebuild(&root, "esp32s31")?;
                 emit_json(&completion, false)
             }
             ReportCommand::Verify { run_id } => {
                 let completion =
-                    crate::evidence::verify::verify(&root, "esp32s31", run_id.as_deref())?;
+                    hil_core::evidence::verify::verify(&root, "esp32s31", run_id.as_deref())?;
                 emit_json(&completion, false)
             }
         },
@@ -265,7 +269,7 @@ pub(crate) fn run() -> Result<()> {
             };
             let firmware = match firmware_from {
                 Some(run_id) => {
-                    RunFirmware::Replay(Box::new(crate::evidence::verify::archived_firmware(
+                    RunFirmware::Replay(Box::new(hil_core::evidence::verify::archived_firmware(
                         &root,
                         "esp32s31",
                         &run_id,
@@ -276,8 +280,9 @@ pub(crate) fn run() -> Result<()> {
             };
             let lab = lab::config::LabConfig::load(&lab_path)?;
             let required = lab::requirements::Requirements::for_scenario(&selected);
-            let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
-            fixture::local::network_helper::require_for(&lab, required)?;
+            let _software =
+                hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
+            hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
             let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
             orchestration::run_one(
                 &root,
@@ -305,8 +310,9 @@ pub(crate) fn run() -> Result<()> {
             .resolve(&catalog)?;
             let snapshot = image::snapshot::capture(&root, &source_include)?;
             let required = lab::requirements::Requirements::union(&selected);
-            let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
-            fixture::local::network_helper::require_for(&lab, required)?;
+            let _software =
+                hil_core::fixture::software::SoftwareLease::acquire_for(&lab, required)?;
+            hil_wifi::fixture::local::network_helper::require_for(&lab, required)?;
             let _fixture = lab::lock::FixtureLock::acquire_for(&lab, required)?;
             orchestration::run_all(
                 &root,
@@ -322,13 +328,4 @@ pub(crate) fn run() -> Result<()> {
             )
         }
     }
-}
-
-pub(crate) fn repository_root() -> Result<PathBuf> {
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .ancestors()
-        .find(|path| path.join(".git").exists() && path.join("Cargo.toml").is_file())
-        .map(PathBuf::from)
-        .ok_or_else(|| "HIL runner must live inside the repository".into())
 }

@@ -152,6 +152,40 @@ pub fn validate_registry(resolved: &Value, registry: &Value) -> Result<()> {
     Ok(())
 }
 
+/// The observer build configuration an evaluator requires on this host: the
+/// current compiler and the registry's build profile and flags. A producer's
+/// embedded configuration must equal it for its evidence to be current.
+pub fn required_configuration(root: &Path, registry: &Value) -> Result<Value> {
+    let output = std::process::Command::new("rustc")
+        .current_dir(root)
+        .arg("-vV")
+        .output()?;
+    if !output.status.success() {
+        return Err("cannot identify required observer compiler".into());
+    }
+    let compiler = String::from_utf8(output.stdout)?;
+    let target = compiler
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))
+        .ok_or("compiler host missing")?;
+    let flags = std::env::var("CARGO_ENCODED_RUSTFLAGS").unwrap_or_else(|_| {
+        std::env::var("RUSTFLAGS")
+            .map(|flags| flags.split_whitespace().collect::<Vec<_>>().join("\u{1f}"))
+            .unwrap_or_else(|_| {
+                registry["build"]["rustflags"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join("\u{1f}")
+            })
+    });
+    Ok(json!({"compiler":compiler,"environment":{
+        "TARGET":target,"PROFILE":registry["build"]["profile"],"OPT_LEVEL":registry["build"]["opt_level"],"DEBUG":registry["build"]["debug"],"CARGO_ENCODED_RUSTFLAGS":flags
+    }}))
+}
+
 /// Profile differences are reviewed separately from dependency/feature differences.
 pub fn take_unit_profiles(projection: &mut Value) -> Value {
     let mut profiles = BTreeMap::new();

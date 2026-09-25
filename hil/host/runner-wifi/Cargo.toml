@@ -1,0 +1,32 @@
+[package]
+name = "open-esp-radio-hil-runner-wifi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Wi-Fi HIL workloads and laptop and OpenWrt fixtures"
+
+[dependencies]
+hil-core = { package = "open-esp-radio-hil-runner-core", path = "../runner-core" }
+rustix = { version = "1.1.4", features = ["event", "fs", "net", "process", "stdio"] }
+mio = { version = "=1.2.2", features = ["os-poll", "os-ext"] }
+oer-process = { path = "../../../tools/process" }
+open-esp-radio-hil-fixture = { path = "../fixture" }
+tempfile = "3"
+open-esp-radio-hil-protocol = { path = "../../protocol" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+zeroize = "1.8.1"
+
+[dev-dependencies]
+hil-core = { package = "open-esp-radio-hil-runner-core", path = "../runner-core", features = ["test-support"] }
+
+[lints]
+workspace = true
+
+[package.metadata.open-radio]
+scope = "development"
+layer = "hil"
+platform = "host"

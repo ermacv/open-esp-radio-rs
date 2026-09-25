@@ -4,8 +4,9 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::lab::{config::LabConfig, requirements::Requirements};
-use crate::{Result, fixture, image, scenario::Scenario};
+use crate::{Result, fixture};
+use hil_core::lab::{config::LabConfig, requirements::Requirements};
+use hil_core::{image, scenario::Scenario};
 
 #[derive(Default, Serialize)]
 struct Checks {
@@ -72,7 +73,7 @@ pub(crate) fn run(root: &Path, lab: &LabConfig, scenarios: &[&Scenario]) -> Resu
         })?;
     }
     checks.run("resource-ownership", || {
-        crate::lab::lock::FixtureLock::acquire_for(lab, required).map(|_| ())
+        hil_core::lab::lock::FixtureLock::acquire_for(lab, required).map(|_| ())
     })?;
     crate::emit_json(
         &serde_json::json!({

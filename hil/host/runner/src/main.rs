@@ -1,44 +1,33 @@
 //! HIL host process entry point.
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
-use std::error::Error;
-
-mod archive;
-mod campaign;
 mod cli;
 mod command;
-mod context;
-mod device;
-mod durable;
-mod error;
-mod evidence;
 mod execution;
-mod failure;
 mod fixture;
-mod image;
-mod lab;
-mod output;
-mod scenario;
-mod session;
-mod transport;
-mod workload;
+#[cfg(test)]
+mod tests;
 
-pub(crate) type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
-pub(crate) use command::repository_root;
-pub(crate) use output::emit_json;
+pub(crate) use hil_core::{Result, emit_json, repository_root};
+
+/// This executable's host build record, embedded by its build script.
+const RUNNER_BUILD: &str = include_str!(concat!(env!("OUT_DIR"), "/runner-build.json"));
 
 fn main() {
     if std::env::args_os()
         .nth(1)
         .is_some_and(|a| a == "--observer-build")
     {
-        println!(
-            "{}",
-            include_str!(concat!(env!("OUT_DIR"), "/runner-build.json"))
-        );
+        println!("{RUNNER_BUILD}");
         return;
     }
-    if let Err(error) = command::run() {
+    let registered =
+        hil_core::evidence::run::register_runner(hil_core::evidence::run::RunnerBuild {
+            record: RUNNER_BUILD,
+            package: env!("CARGO_PKG_NAME"),
+            version: env!("CARGO_PKG_VERSION"),
+        });
+    if let Err(error) = registered.and_then(|()| command::run()) {
         eprintln!("error: {error}");
         std::process::exit(if oer_process::is_cancelled(&*error) {
             130

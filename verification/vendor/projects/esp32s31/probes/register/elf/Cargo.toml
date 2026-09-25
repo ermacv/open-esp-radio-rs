@@ -11,8 +11,8 @@ description = "Linked ESP32-S31 PAC/HAL register probe image"
 [dependencies]
 oer-esp32s31-probe-register = { path = "../library" }
 
-[lints.rust]
-unexpected_cfgs = "allow"
+[lints]
+workspace = true
 
 [package.metadata.open-radio]
 scope = "development"

@@ -14,8 +14,8 @@ oer-esp32s31-hal = { workspace = true, features = ["validation-probes"] }
 [lib]
 crate-type = ["rlib", "staticlib"]
 
-[lints.rust]
-unexpected_cfgs = "allow"
+[lints]
+workspace = true
 
 [package.metadata.open-radio]
 scope = "development"

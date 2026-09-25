@@ -11,8 +11,8 @@ description = "Linked ESP32-S31 Rust probe image for compiled vendor verificatio
 [dependencies]
 oer-esp32s31-probe-radio = { path = "../library" }
 
-[lints.rust]
-unexpected_cfgs = "allow"
+[lints]
+workspace = true
 
 [package.metadata.open-radio]
 scope = "development"

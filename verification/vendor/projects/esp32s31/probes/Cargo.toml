@@ -16,6 +16,15 @@ rust-version = "1.97.1"
 license = "MIT OR Apache-2.0"
 publish = false
 
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+# A mutable call inside `debug_assert!` disappears from optimized firmware.
+debug_assert_with_mut_call = "deny"
+# The repository `clippy.toml` lists methods radio code must not call.
+disallowed_methods = "deny"
+
 [workspace.dependencies]
 embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"

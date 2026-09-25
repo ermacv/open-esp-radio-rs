@@ -18,8 +18,8 @@ static_cell.workspace = true
 [build-dependencies]
 oer-esp32s31-platform-layout = { workspace = true, features = ["build"] }
 
-[lints.rust]
-unexpected_cfgs = "allow"
+[lints]
+workspace = true
 
 [package.metadata.open-radio]
 scope = "development"

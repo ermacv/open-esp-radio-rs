@@ -12,8 +12,8 @@ description = "Linked ESP32-S31 Bluetooth production comparison probe image"
 critical-section = "1.2.0"
 oer-esp32s31-probe-bluetooth = { path = "../library" }
 
-[lints.rust]
-unexpected_cfgs = "allow"
+[lints]
+workspace = true
 
 [package.metadata.open-radio]
 scope = "development"

@@ -20,3 +20,6 @@ scope = "development"
 layer = "platform"
 platform = "chip"
 chip = "esp32s31"
+
+[lints]
+workspace = true

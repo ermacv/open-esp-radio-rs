@@ -411,6 +411,23 @@ pub struct ExecutionProducer {
 pub trait ExecutionMemory {
     /// Identify the current instruction independently of progress/reporting state.
     fn instruction(&mut self, pc: u32);
+    /// Identify `pc` as the current instruction, then return the halfword at
+    /// `pc` and, when fetchable, the next one: exactly the results of
+    /// `instruction(pc)` and two halfword `Fetch` reads. Implementations may
+    /// answer both halfwords with one lookup.
+    fn fetch(
+        &mut self,
+        pc: u32,
+        control: &mut dyn RunControl,
+    ) -> Result<(Option<u32>, Option<u32>)> {
+        self.instruction(pc);
+        let low = self.read(pc, 2, MemoryAccess::Fetch, control)?;
+        let high = match (low, pc.checked_add(2)) {
+            (Some(_), Some(next)) => self.read(next, 2, MemoryAccess::Fetch, control)?,
+            _ => None,
+        };
+        Ok((low, high))
+    }
     /// Observe an eligible transfer before goal completion or dispatch; never execute a model.
     fn observe_call(&mut self, input: &CallInput, control: &mut dyn RunControl) -> Result<()>;
     fn call(&mut self, input: &CallInput, control: &mut dyn RunControl) -> Result<CallDispatch>;

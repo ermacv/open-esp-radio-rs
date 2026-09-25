@@ -50,6 +50,8 @@ pub(super) struct Session<'a> {
     reservation: Option<u32>,
     /// Code reached by this side, carried from session to session.
     coverage: crate::execution_coverage::CodeCoverage<'a>,
+    /// Region of the most recent lookup; nearby accesses usually repeat it.
+    last_region: std::cell::Cell<usize>,
 }
 /// Events admitted by the first growth of a session's event buffer.
 const INITIAL_EVENT_CAPACITY: usize = 1024;
@@ -130,6 +132,7 @@ impl<'a> Session<'a> {
             max_events: max_events as usize,
             reservation: None,
             coverage,
+            last_region: std::cell::Cell::new(0),
         })
     }
     /// Double the event capacity, bounded by `max_events`. The new capacity is
@@ -479,15 +482,28 @@ impl<'a> Session<'a> {
         });
     }
     fn region_index(&self, address: u32, width: u8) -> Option<(usize, usize)> {
-        self.regions.iter().enumerate().find_map(|(i, r)| {
+        let contains = |r: &Region<'_>| {
             let offset = u64::from(address).checked_sub(u64::from(r.address))?;
             (offset + u64::from(width)
                 <= match r.kind {
                     RegionKind::Allocation { requested, .. } => u64::from(requested),
                     _ => r.bytes.len() as u64,
                 })
-            .then_some((i, offset as usize))
-        })
+            .then_some(offset as usize)
+        };
+        // Regions never overlap, so the last hit is the only candidate when
+        // it contains the access.
+        let last = self.last_region.get();
+        if let Some(offset) = self.regions.get(last).and_then(contains) {
+            return Some((last, offset));
+        }
+        let (i, offset) = self
+            .regions
+            .iter()
+            .enumerate()
+            .find_map(|(i, r)| Some((i, contains(r)?)))?;
+        self.last_region.set(i);
+        Some((i, offset))
     }
     fn invalidate_reservation(&mut self, address: u32, width: u8) {
         if self.reservation.is_some_and(|reserved| {
@@ -522,6 +538,28 @@ impl ExecutionMemory for Session<'_> {
     fn instruction(&mut self, pc: u32) {
         self.pc = Some(pc);
         self.coverage.instruction(pc);
+    }
+    fn fetch(&mut self, pc: u32, c: &mut dyn RunControl) -> Result<(Option<u32>, Option<u32>)> {
+        self.instruction(pc);
+        // Both halfwords known in one executable region: one lookup. Anything
+        // else takes the two ordinary fetch reads.
+        if pc.is_multiple_of(2)
+            && let Some((i, offset)) = self.region_index(pc, 4)
+        {
+            let r = &self.regions[i];
+            if r.flags & 1 != 0 && !r.known[offset..offset + 4].contains(&0) {
+                c.checkpoint(1)?;
+                let word =
+                    |at: usize| u32::from(u16::from_le_bytes([r.bytes[at], r.bytes[at + 1]]));
+                return Ok((Some(word(offset)), Some(word(offset + 2))));
+            }
+        }
+        let low = self.read(pc, 2, MemoryAccess::Fetch, c)?;
+        let high = match (low, pc.checked_add(2)) {
+            (Some(_), Some(next)) => self.read(next, 2, MemoryAccess::Fetch, c)?,
+            _ => None,
+        };
+        Ok((low, high))
     }
     fn observe_call(&mut self, input: &CallInput, c: &mut dyn RunControl) -> Result<()> {
         self.capture_call(input, c)

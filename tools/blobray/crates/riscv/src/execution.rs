@@ -1,6 +1,57 @@
 //! Concrete RV32IMAC execution. Instruction fetch, data, and events use explicit ports.
 use super::*;
 pub struct RiscvExecutor;
+
+/// Slots of one execution's direct-mapped decode cache. Decoding depends only
+/// on the instruction bytes, so a slot is valid for any address and for code
+/// that later changes: changed bytes are another key.
+const DECODE_CACHE_BITS: u32 = 14;
+/// Instructions charged to the run control, and recorded as its position, at
+/// once. Work beyond the last full interval of one execution is not charged.
+const ACCOUNTING_INTERVAL: u64 = 256;
+
+/// Direct-mapped cache of decoded instruction words.
+struct DecodeCache {
+    slots: Vec<Option<(u64, Decoded)>>,
+}
+impl DecodeCache {
+    fn new() -> Self {
+        Self {
+            slots: vec![None; 1 << DECODE_CACHE_BITS],
+        }
+    }
+    fn slot(key: u64) -> usize {
+        (key.wrapping_mul(0x9e37_79b9_7f4a_7c15) >> (64 - DECODE_CACHE_BITS)) as usize
+    }
+    fn get(&mut self, key: u64, bytes: &[u8]) -> Option<Decoded> {
+        let slot = &mut self.slots[Self::slot(key)];
+        match slot {
+            Some((k, decoded)) if *k == key => Some(*decoded),
+            _ => {
+                let decoded = decode(bytes)?;
+                *slot = Some((key, decoded));
+                Some(decoded)
+            }
+        }
+    }
+}
+
+/// One decoded instruction word with its lifted semantics.
+#[derive(Clone, Copy)]
+struct Decoded {
+    inst: Inst,
+    lifted: SemanticOp,
+    branch: Option<(BranchTest, Operand, Operand)>,
+}
+
+fn decode(bytes: &[u8]) -> Option<Decoded> {
+    let (inst, _) = decode_instruction(bytes)?;
+    Some(Decoded {
+        inst,
+        lifted: RiscvDecoder.lift(bytes),
+        branch: RiscvDecoder.branch(bytes),
+    })
+}
 impl Executor for RiscvExecutor {
     fn identity(&self) -> &'static str {
         "rv32imac/execution-11/rv-asm-0.2.1"
@@ -30,6 +81,8 @@ impl Executor for RiscvExecutor {
         }
         let mut pc = entry;
         let mut steps = 0;
+        let mut cache = DecodeCache::new();
+        let mut pending = 0u64;
         macro_rules! stop {
             ($reason:expr) => {
                 return Ok((
@@ -50,12 +103,16 @@ impl Executor for RiscvExecutor {
             };
         }
         loop {
-            memory.instruction(pc);
-            let mut position = control.position();
-            position.entry = Some(u64::from(pc));
-            control.set_position(position);
-            control.checkpoint(1)?;
+            pending += 1;
+            if pending == ACCOUNTING_INTERVAL {
+                let mut position = control.position();
+                position.entry = Some(u64::from(pc));
+                control.set_position(position);
+                control.checkpoint(pending)?;
+                pending = 0;
+            }
             if pc == u32::MAX - 1 {
+                memory.instruction(pc);
                 return Ok((
                     if goal == ResolvedExecutionGoal::Return {
                         ExecutionStop::Returned {
@@ -72,12 +129,14 @@ impl Executor for RiscvExecutor {
                 ));
             }
             if pc & 1 != 0 {
+                memory.instruction(pc);
                 stop!(ExecutionGap::Memory {
                     address: pc,
                     access: MemoryAccess::Fetch
                 });
             }
-            let Some(lo) = memory.read(pc, 2, MemoryAccess::Fetch, control)? else {
+            let (lo, high) = memory.fetch(pc, control)?;
+            let Some(lo) = lo else {
                 stop!(ExecutionGap::Memory {
                     address: pc,
                     access: MemoryAccess::Fetch
@@ -89,12 +148,7 @@ impl Executor for RiscvExecutor {
             let mut bytes = [0; 4];
             bytes[..2].copy_from_slice(&(lo as u16).to_le_bytes());
             let width = if lo & 3 == 3 {
-                let Some(hi) = pc
-                    .checked_add(2)
-                    .map(|p| memory.read(p, 2, MemoryAccess::Fetch, control))
-                    .transpose()?
-                    .flatten()
-                else {
+                let Some(hi) = high else {
                     stop!(ExecutionGap::Memory {
                         address: pc,
                         access: MemoryAccess::Fetch
@@ -105,9 +159,11 @@ impl Executor for RiscvExecutor {
             } else {
                 2
             };
-            let Some((inst, _)) = decode_instruction(&bytes[..width]) else {
+            let key = u64::from(u32::from_le_bytes(bytes)) | ((width as u64) << 32);
+            let Some(decoded) = cache.get(key, &bytes[..width]) else {
                 stop!(ExecutionGap::UnsupportedInstruction);
             };
+            let inst = decoded.inst;
             steps += 1;
             let mut next = pc.wrapping_add(width as u32);
             let mut transfer = None;
@@ -184,8 +240,7 @@ impl Executor for RiscvExecutor {
                 | Inst::Bge { offset, .. }
                 | Inst::Bltu { offset, .. }
                 | Inst::Bgeu { offset, .. } => {
-                    let Some((test, Operand::Register(a), Operand::Register(b))) =
-                        RiscvDecoder.branch(&bytes[..width])
+                    let Some((test, Operand::Register(a), Operand::Register(b))) = decoded.branch
                     else {
                         stop!(ExecutionGap::UnsupportedInstruction);
                     };
@@ -230,7 +285,7 @@ impl Executor for RiscvExecutor {
                         control,
                     )?;
                 }
-                _ => match RiscvDecoder.lift(&bytes[..width]) {
+                _ => match decoded.lifted {
                     SemanticOp::Integer {
                         op,
                         dest,

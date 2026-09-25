@@ -583,7 +583,7 @@ review participates, and nothing is retained. Symbol goals, runtime tables and
 reviewed call pairs need a project and are rejected. The records equal those a
 project execution of the same request retains. `in_process::coverage` reports the
 vendor coverage of such results, as `code-coverage` does for retained executions,
-identifying each execution by the digest of its canonical request.
+under identities the caller assigns.
 
 ### Code coverage of root closures
 

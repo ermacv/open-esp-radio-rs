@@ -245,12 +245,11 @@ pub(crate) fn report(
     )
 }
 
-/// The vendor coverage of one execution in memory per `executions` entry
-/// (request and records), which share one vendor target whose sources are
-/// `vendor` (ELF bytes in source order). Executions are identified by the
-/// digest of their canonical request. Goals must not need symbol resolution.
+/// The vendor coverage of in-memory executions (caller identity, request and
+/// records), which share one vendor target whose sources are `vendor` (ELF
+/// bytes in source order). Goals must not need symbol resolution.
 pub fn report_in_process(
-    executions: &[(&ExecutionRequest, &[ExecutionEvidence])],
+    executions: &[(ArtifactId, &ExecutionRequest, &[ExecutionEvidence])],
     vendor: &[&[u8]],
     semantics: &dyn FunctionSemantics,
     memory: &WorkingMemory,
@@ -259,7 +258,7 @@ pub fn report_in_process(
     let mut target = None;
     let mut reached = Reached::default();
     let mut ids = Vec::new();
-    for (request, records) in executions {
+    for (identity, request, records) in executions {
         same_target(&mut target, request)?;
         let goals: Vec<[Option<ResolvedExecutionGoal>; 2]> = request
             .cases
@@ -279,9 +278,7 @@ pub fn report_in_process(
             })
             .collect::<Result<_>>()?;
         reached.add(request, vendor_coverage(records.iter())?, &goals, c)?;
-        let bytes = serde_json::to_vec(request)
-            .map_err(|e| Error::new(ErrorCode::InvalidRequest, e.to_string()))?;
-        ids.push(ArtifactId::of_bytes(&bytes));
+        ids.push(identity.clone());
     }
     let target =
         target.ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "no executions selected"))?;

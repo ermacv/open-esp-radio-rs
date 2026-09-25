@@ -457,7 +457,8 @@ fn in_process_coverage_matches_the_project_report() {
         .collect();
     let borrowed: Vec<_> = executions
         .iter()
-        .map(|(request, records)| (*request, records.as_slice()))
+        .zip(&ids)
+        .map(|((request, records), id)| (id.clone(), *request, records.as_slice()))
         .collect();
     let in_process = app::in_process::coverage(
         &borrowed,

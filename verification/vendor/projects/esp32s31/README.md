@@ -767,18 +767,56 @@ calibration inputs, independent Wi-Fi fields and bank-index wrap. This is a
 shared PHY child comparison, not qualification of a Bluetooth/154 protocol
 runtime or the enclosing TXCAL transaction.
 
-TX-DC/PWDET comparison executes `phy_txdc_cal_pwdet_init` and its actual search,
-PBus and SAR children against the production executor used by runtime tracking.
-Cases vary Wi-Fi/BT selection, initial DC rows, constant and alternating SAR
-streams, tone clearing and work-mode settling. They compare DC outputs and
-ordered hardware control effects, retaining all writes and readiness reads.
-Only production PBus readiness-wait delays and three unused read-only SAR
-result words from the general ROM reader are excluded. Independent fault
-cases require typed PBus/SAR failure without coefficient publication; the SAR
-observation limit is distinct from a timer deadline or global execution budget.
-The actual TX-DC root preserves the independently seeded Wi-Fi gain adjustment;
-its producer elsewhere in calibration/configuration is not established by this
-comparison.
+The `tx-dc` scenario of the [typed scenario package](scenarios/src/tx_dc.rs)
+executes `phy_txdc_cal_pwdet_init` with its actual search, PBus and SAR children
+after the real callback installer. It compares them with the production
+executor used by runtime tracking (`open_phy_calibration_trace_tx_dc_pwdet`).
+Like `rx-gain`, it requires `--phy-sdk` for the never-executed `phy_printf`.
+Its ROM table slots that the installer does not override (for example the tone
+SAR reader) come from the ROM's boot-initialized data.
+
+**Matrix.** 64 profiles in one request per fill:
+
+- Wi-Fi and Bluetooth selection;
+- constant SAR samples 0, 123 and 8191, and an alternating stream (a cyclic
+  read);
+- both tone-clear paths;
+- both work-mode settle branches.
+
+The models declare these inputs:
+
+- detector readiness;
+- idle PBus;
+- the settle branch;
+- the Bluetooth PBus path;
+- the low-power SAR control word;
+- the three SAR result words that the ROM reader snapshots but never consumes.
+
+Every other radio register is the retained aperture.
+
+**Checks for every profile:**
+
+- the DC rows equal the vendor's committed rows;
+- ordered effects match, retaining every write and readiness read;
+- both sides read the same never-written registers;
+- the vendor keeps the independently seeded Wi-Fi gain adjustment.
+
+The only exclusions are PBus readiness-wait delays and the three unused SAR
+words.
+
+**Production-only faults.** A stuck PBus transaction (typed failure 4) and a
+detector that never becomes ready (the SAR observation limit, failure 5) publish
+no DC rows and never read the SAR result. The observation limit is distinct from
+the timeout (2) and the RF operation limit (6).
+
+**Negative cases:**
+
+- a changed production tone-clear path is a DIFF;
+- omitted callback installation is INCOMPLETE;
+- an undersized event capacity publishes nothing.
+
+The producer of the Wi-Fi gain adjustment elsewhere in calibration is not
+established here.
 
 The combined `phy_cal_param_track` comparison uses the actual current archive
 and ROM, including callback installation, DCODE, RX calibration, channel and

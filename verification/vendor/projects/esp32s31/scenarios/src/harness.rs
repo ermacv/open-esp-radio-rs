@@ -162,6 +162,12 @@ impl Runner {
         self.json(name, &args(["execution", "--id", id.as_str()]))
     }
 
+    /// The retained manifest after Blobray verifies the request and record
+    /// payload digests; records are not decoded or returned.
+    pub fn execution_summary(&self, name: &str, id: &ArtifactId) -> Result<ExecutionDocument> {
+        self.json(name, &args(["execution", "--summary", "--id", id.as_str()]))
+    }
+
     /// Authenticate selected inputs, import copies, then remove those copies.
     pub fn capture(&self, inputs: &[Input<'_>]) -> Result<(RevisionId, Vec<String>)> {
         let mut identities = Vec::with_capacity(inputs.len());

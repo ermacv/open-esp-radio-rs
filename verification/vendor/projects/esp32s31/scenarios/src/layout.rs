@@ -10,6 +10,8 @@ use blobray_domain::{
 
 /// Input index of the authenticated ROM ELF in every PHY session.
 pub const ROM_INPUT: u64 = 1;
+/// Input index of the PHY SDK firmware after archive, ROM and production.
+pub const PHY_SDK_INPUT: u64 = 3;
 
 /// Caller-owned scratch RAM for probe inputs and copied parameter images.
 pub const INPUT: u32 = 0x3fff_0000;

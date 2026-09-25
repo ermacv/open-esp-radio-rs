@@ -288,7 +288,8 @@ impl Session {
 
     /// Source-free preservation. After backup the project moves; the selected
     /// execution reopens and replays there. Every retained execution then
-    /// reopens and replays exactly from a restored backup.
+    /// reopens and replays exactly from a restored backup. Reopening compares
+    /// manifests, whose record digest Blobray verifies against the payload.
     pub fn preserve(&mut self, moved_check: usize) -> Result<()> {
         let backup = self.run.join("backup.blobray");
         let mut command = args(["backup", "--output"]);
@@ -301,8 +302,11 @@ impl Session {
             .artifacts
             .get(moved_check)
             .ok_or_else(|| invalid("no retained executions"))?;
-        let reopened = self.runner.execution("moved-evidence", &check.identity)?;
-        assert_eq!(reopened.records, check.document.records);
+        // Manifests carry the record payload digest, which reopening verifies.
+        let reopened = self
+            .runner
+            .execution_summary("moved-evidence", &check.identity)?;
+        assert_eq!(manifest(&reopened), manifest(&check.document));
         let replay = self.runner.run_record(
             "moved-replay",
             &args(["replay", "--id", check.identity.as_str()]),
@@ -316,8 +320,7 @@ impl Session {
         for artifact in &self.artifacts {
             let restored = self
                 .runner
-                .execution(&format!("restored-{}", artifact.label), &artifact.identity)?;
-            assert_eq!(restored.records, artifact.document.records);
+                .execution_summary(&format!("restored-{}", artifact.label), &artifact.identity)?;
             assert_eq!(manifest(&restored), manifest(&artifact.document));
             let replay = self.runner.run_record(
                 &format!("replay-{}", artifact.label),

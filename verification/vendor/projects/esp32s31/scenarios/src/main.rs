@@ -7,7 +7,7 @@ use oer_esp32s31_vendor_scenarios::{
     harness::{Budget, Result},
     harness_edges, i2c, i2c_transport,
     phy::PhyOptions,
-    research, rfpll, rx_gain,
+    research, rfpll, rx_gain, tx_dc,
 };
 use std::{path::PathBuf, process::ExitCode};
 
@@ -38,6 +38,15 @@ enum Scenario {
     /// Complete RX-gain root: publication guards, DC calibration and
     /// failed-channel, minimum-search and shared-budget containment.
     RxGain {
+        #[command(flatten)]
+        common: Common,
+        /// Authenticated SDK firmware supplying the never-executed diagnostics symbol.
+        #[arg(long)]
+        phy_sdk: PathBuf,
+    },
+    /// Complete TX-DC/PWDET root: Wi-Fi/BT DC rows over constant and
+    /// alternating SAR samples, and PBus/SAR fault containment.
+    TxDc {
         #[command(flatten)]
         common: Common,
         /// Authenticated SDK firmware supplying the never-executed diagnostics symbol.
@@ -222,11 +231,23 @@ fn rx_gain(common: Common, phy_sdk: PathBuf) -> Result<ExitCode> {
     ))
 }
 
+fn tx_dc(common: Common, phy_sdk: PathBuf) -> Result<ExitCode> {
+    let mut ctx = tx_dc::TxDc::new(&common.phy(), &phy_sdk)?;
+    tx_dc::exercise(&mut ctx)?;
+    ctx.preserve(0)?;
+    Ok(finish(
+        &[],
+        "authenticated TX-DC/PWDET calibration, fault containment and source-free replay passed",
+        &ctx.run,
+    ))
+}
+
 fn main() -> ExitCode {
     let result = match Cli::parse().scenario {
         Scenario::Gain { common, rftest } => gain(common, rftest),
         Scenario::Channel { common } => channel(common),
         Scenario::RxGain { common, phy_sdk } => rx_gain(common, phy_sdk),
+        Scenario::TxDc { common, phy_sdk } => tx_dc(common, phy_sdk),
         Scenario::Research {
             binary,
             library,

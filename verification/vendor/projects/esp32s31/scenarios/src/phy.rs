@@ -127,6 +127,16 @@ pub fn delay_calls(id: &str, address: u32) -> Vec<blobray_domain::CallDeclaratio
     }]
 }
 
+/// Authenticated PHY SDK firmware: supplies the never-executed diagnostics
+/// symbols (`phy_printf`) that co-located archive sections reference.
+pub fn phy_sdk_input(path: &Path) -> Input<'_> {
+    Input {
+        role: "phy-sdk",
+        path,
+        sha256: Some(crate::i2c::PHY_SDK_SHA),
+    }
+}
+
 /// Code and data placement of linked PHY images.
 pub fn image_layout() -> ImageLayout {
     ImageLayout {

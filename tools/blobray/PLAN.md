@@ -197,7 +197,8 @@ Checkpoint 12.R, including checkpoint 12.P (execution performance), is
 complete; no Python scenario code remains. Unit 12.6 is complete: channel
 restoration, all temperature-prefix sensor windows and stuck readiness.
 Checkpoint 12.M (mechanisms instead of handwritten knowledge) is complete.
-Unit 12.7 (RX gain/calibration) is complete. Unit 12.8 is active.
+Units 12.7 (RX gain/calibration) and 12.8 (TX-DC/PWDET) are complete. Unit
+12.9 is active.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -826,8 +827,8 @@ current owner docs and the ordinary stage gates. No partial unit is completion.
 | 12.6 | done | Channel restoration: `phy_rfpll/channel.rs`. Actual callback installation, all temperature-prefix sensor ranges, full-root gain publication and committed channel/bandwidth/temperature; stuck readiness cannot publish gain or semantic output. Prefix and full-root evidence remain distinct. |
 | 12.M | done | Mechanisms instead of handwritten knowledge, detailed below. Stage 12.7–12.10 obligations are unchanged. |
 | 12.7 | done | RX gain/calibration: `phy_rfpll/rx_gain.rs`. Both complete roots, DC/table guards, signed estimators, delayed I2C/settle, projected coefficients and bank limits; failed channel, minimum search and shared budget preserve prior coefficients. Readiness observations and genuine output publication remain visible. |
-| 12.8 | active | TX-DC/PWDET: `phy_rfpll/tx_dc_pwdet.rs`. Actual search/PBus/SAR children, Wi-Fi/BT selection, DC rows, constant/alternating samples and tone/settle paths. Independent PBus/SAR faults cannot publish calibration; observation capacity differs from time/work limits. Preserve seeded gain adjustment and explicit unused-read exclusions. |
-| 12.9 | pending | Combined calibration and tracking parents: `phy_rfpll/combined.rs`, `phy_rfpll/parent.rs`, `phy_rfpll/graph.rs`. Execute real children, guards/grant order, channel 13/HT40, client/thermal domains, RFPLL disabled/enabled and signed corrections. Failed TX preserves pre-calibration state and earlier completed power/RFPLL state. Modeled child completions cannot satisfy complete-parent acceptance. |
+| 12.8 | done | TX-DC/PWDET: `phy_rfpll/tx_dc_pwdet.rs`. Actual search/PBus/SAR children, Wi-Fi/BT selection, DC rows, constant/alternating samples and tone/settle paths. Independent PBus/SAR faults cannot publish calibration; observation capacity differs from time/work limits. Preserve seeded gain adjustment and explicit unused-read exclusions. |
+| 12.9 | active | Combined calibration and tracking parents: `phy_rfpll/combined.rs`, `phy_rfpll/parent.rs`, `phy_rfpll/graph.rs`. Execute real children, guards/grant order, channel 13/HT40, client/thermal domains, RFPLL disabled/enabled and signed corrections. Failed TX preserves pre-calibration state and earlier completed power/RFPLL state. Modeled child completions cannot satisfy complete-parent acceptance. |
 | 12.10 | pending | Combined practical-PHY checkpoint: all units and stage-11 scenarios work together under native identities, shared budgets and preservation. Complete required intrinsic/reviewed-summary coverage with direct semantic/unknown/resource tests and explicit applicability; changing model, summary or production invalidates identity. No summary impersonates executed capture. All relevant integration suites, standalone, formatting, strict Clippy, owned public/private docs and the repository CI checks pass before closing stage 12. |
 
 Required engine/intrinsic or peripheral mechanisms belong to the first unit that
@@ -1248,3 +1249,51 @@ scenario runs:
 
 All 2049 Blobray tests, formatting, strict Clippy, docs and the standalone
 check pass. This is RX calibration state, not RF qualification.
+
+12.8 acceptance: the typed `tx-dc` scenario links `phy_txdc_cal_pwdet_init`
+with the real callback installer and proposed companions (`phy_printf` from
+`--phy-sdk`). It compares the root with `open_phy_calibration_trace_tx_dc_pwdet`
+over the radio aperture.
+
+- **Profiles.** 64 profiles cover Wi-Fi/BT selection, constant and
+  alternating SAR samples, both tone-clear paths, both fills and both settle
+  branches.
+- **Checks.** Every profile matches on DC rows, ordered effects and
+  environment-supplied registers, and the vendor keeps the seeded Wi-Fi gain
+  adjustment. The only exclusions are PBus readiness waits and the three unused
+  SAR result words, which remain explicit inputs.
+- **Faults.** A stuck PBus (4) and a detector that never becomes ready (5, the
+  SAR observation limit, distinct from timeout 2 and operation limit 6) publish
+  no DC rows and never read the SAR result.
+- **Negatives.** A changed tone-clear path is DIFF, omitted installation is
+  INCOMPLETE, and event exhaustion publishes nothing. All 5 retained
+  executions replay after move and backup/restore.
+
+Unit 12.8 needed Blobray changes:
+
+- **Boot-initialized data.** A writable `PROGBITS` section whose bytes the ELF
+  carries inside a zero-filled load now starts with those bytes, as after ROM
+  start-up. Before this, such data read as silent zeros; for example, the
+  ROM's `g_phyFuns_instance` slot for the tone SAR reader was zero, and the
+  vendor jumped to address 0.
+- **Cyclic reads.** A `cyclic-read` device models periodic measurement streams
+  without a declared read count.
+- **Environment identity** is `boot-data-1`/`devices-4`/`external-calls-2`.
+- **Faster reads.** Execution reads validate and emit records in one pass. A
+  new `execution --summary` verifies payload digests without decoding
+  records, and preservation now compares manifests with it.
+
+TX-DC evidence is about 282 MB per matrix request; the scenario runs in about
+45 s of operations. On the new environment every earlier scenario passes
+unchanged:
+
+| Scenario | Time |
+| --- | --- |
+| gain | 12 s |
+| i2c | 30 s |
+| channel | 19 s |
+| rx-gain | 19 s |
+| research | 83 s |
+
+All 2055 Blobray tests, formatting, strict Clippy, docs and the standalone
+check pass. This is TX calibration software state, not RF accuracy.

@@ -9,12 +9,11 @@
 //! shared budget to leave coefficients and gain memory unpublished. Software
 //! comparison under explicit peripheral inputs, never hardware qualification.
 use crate::evidence::{PhyEffect, environment_reads, events, output, phy_effects, steps};
-use crate::harness::{Buffer, Input, Result, case, evidence, selection};
-use crate::i2c::PHY_SDK_SHA;
+use crate::harness::{Buffer, Result, case, evidence, selection};
 use crate::i2c::{all_complete, returned_low};
 use crate::layout::*;
 use crate::phy::delay_calls;
-use crate::phy::{PhyImage, PhyOptions, Right, image_layout, select, start_session};
+use crate::phy::{PhyImage, PhyOptions, Right, image_layout, phy_sdk_input, select, start_session};
 use crate::session::request;
 use blobray_domain::{
     CommandCell, ComparisonVerdict, DeviceDeclaration, ExecutionCase, ExecutionEvidence,
@@ -86,8 +85,6 @@ const SLOW_MINIMUM_POLLS: u32 = 9_000;
 const BUDGET_EVENTS: u32 = SLOW_MINIMA * (SLOW_MINIMUM_POLLS + 1) + MAX_EVENTS;
 /// Cases of one profile: parameter setup, callback installation and the root.
 const PROFILE_CASES: u32 = 3;
-/// Input index of the PHY SDK firmware after archive, ROM and production.
-const PHY_SDK_INPUT: u64 = 3;
 /// Case index of the root within its profile.
 const ROOT: u32 = 2;
 
@@ -315,11 +312,7 @@ impl RxGain {
     pub fn new(options: &Options, phy_sdk: &Path) -> Result<Self> {
         let session = start_session(
             options,
-            &[Input {
-                role: "phy-sdk",
-                path: phy_sdk,
-                sha256: Some(PHY_SDK_SHA),
-            }],
+            &[phy_sdk_input(phy_sdk)],
             "captured RX gain publication and DC calibration; no RF qualification",
         )?;
         let link = LinkRequest {

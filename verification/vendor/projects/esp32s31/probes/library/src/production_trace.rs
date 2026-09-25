@@ -91,7 +91,7 @@ oer_probe_macros::probe! {
             current_channel,
         };
         embassy_futures::block_on(oer_esp32s31_phy::target_port::rfpll::track::<
-            ProductionTraceDelay,
+            RfpllTraceDelay,
         >(registers, request))
         .map_or(i32::MIN, |outcome| {
             i32::from(outcome.reference_temperature as u16)

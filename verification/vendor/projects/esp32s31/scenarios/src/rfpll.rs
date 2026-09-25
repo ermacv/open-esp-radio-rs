@@ -3,14 +3,15 @@ use crate::calibration_prefix::delays_of;
 use crate::contracts::{omitted_read_before, port_polling};
 use crate::evidence::{events, stop};
 use crate::harness::direct;
-use crate::harness::{Result, case, known, region, with_stack_fill, words};
+use crate::harness::{Result, case, known, region, selection, with_stack_fill, words};
 use crate::i2c::{I2c, all_complete, models, returned_low};
 use crate::layout::*;
 use crate::phy::delay_calls;
 use blobray_domain::{
     CommandCell, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, EffectRule, ExecutionCase,
-    ExecutionEvent, ExecutionGap, ExecutionRegion, ExecutionStop, Invocation, MemoryAccess,
-    ModelStatus, ReadRun, RegionLifetime, RegisterCell, SessionReset,
+    ExecutionEvent, ExecutionEvidence, ExecutionGap, ExecutionRegion, ExecutionStop, Invocation,
+    MemoryAccess, MemoryTransaction, ModelStatus, ReadRun, RegionLifetime, RegisterCell,
+    SessionReset,
 };
 
 /// Independently read candidate domains and signed outputs of the pinned archive.
@@ -348,12 +349,17 @@ impl Rfpll {
     fn setup(&self, side: bool) -> Result<Invocation> {
         let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
         data[..2].copy_from_slice(&[100, 0]);
+        self.setup_data(side, &data)
+    }
+
+    /// Copy `data` into the vendor `phy_param` or a production buffer.
+    fn setup_data(&self, side: bool, data: &[u8]) -> Result<Invocation> {
         let target = if side {
             PARAMETER_DESTINATION
         } else {
             self.parameter
         };
-        let mut memory = vec![known(PARAMETER_SOURCE, PHY_PARAM_BYTES, &data)?];
+        let mut memory = vec![known(PARAMETER_SOURCE, PHY_PARAM_BYTES, data)?];
         if side {
             memory.push(region(
                 target,
@@ -826,7 +832,296 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
     // exhaustion under test precedes any effect comparison.
     original[0].relation.as_mut().unwrap().effects = None;
     let limited = crate::session::request(&vendor, Some(&replacement), Some(0x5a), original, 1);
-    ctx.capacity_failure("rfpll-capacity", &limited)
+    ctx.capacity_failure("rfpll-capacity", &limited)?;
+    thermal(ctx, &rfpll)
+}
+
+/// `phy_param` offsets of the thermal child: current temperature, the RFPLL
+/// enable byte, reference temperature, busy flag, override flags and
+/// threshold, and the tracking result flags.
+const CURRENT_TEMPERATURE: usize = 0;
+const RFPLL_ENABLED: usize = 9;
+const REFERENCE_TEMPERATURE: u32 = 304;
+const TRACKING_BUSY: u32 = 404;
+const OVERRIDE: usize = 432;
+const TRACKING_FLAGS: u32 = 510;
+/// Result flags before tracking and after an executed correction.
+const FLAGS_IDLE: u16 = 0xa004;
+const FLAGS_PERFORMED: u16 = 0xa005;
+/// Stack and retained-register fill of the thermal cases.
+const THERMAL_FILL: u8 = FILLS[1];
+/// Lock statuses of an executed thermal correction.
+const THERMAL_STATUSES: [u32; 20] = [3; 20];
+/// Channel the production child receives; the vendor reads no channel table
+/// without frequency-memory contents.
+const THERMAL_CHANNEL: u32 = 13;
+
+/// One thermal child case: current and reference temperature, override flags
+/// and threshold, busy flag, and whether the hardware correction executes.
+/// Expected outcomes are explicit cases, not a shadow threshold policy.
+struct Thermal {
+    name: &'static str,
+    current: i16,
+    reference: i16,
+    flags: u8,
+    threshold: u8,
+    busy: u8,
+    executes: bool,
+}
+
+const fn thermal_case(
+    name: &'static str,
+    current: i16,
+    reference: i16,
+    flags: u8,
+    threshold: u8,
+    busy: u8,
+    executes: bool,
+) -> Thermal {
+    Thermal {
+        name,
+        current,
+        reference,
+        flags,
+        threshold,
+        busy,
+        executes,
+    }
+}
+
+const THERMAL: [Thermal; 12] = [
+    thermal_case("below-default", 114, 100, 0, 0, 0, false),
+    thermal_case("exact-default", 115, 100, 0, 0, 0, true),
+    thermal_case("cooling-below", 86, 100, 0, 0, 0, false),
+    thermal_case("cooling-exact", 85, 100, 0, 0, 0, true),
+    thermal_case("busy", 200, 100, 0, 0, 1, false),
+    thermal_case("override-below", 119, 100, 1, 20, 0, false),
+    thermal_case("override-exact", 120, 100, 1, 20, 0, true),
+    thermal_case("calibration-flag-only", 115, 100, 2, 255, 0, true),
+    thermal_case("zero-override", 100, 100, 1, 0, 0, true),
+    thermal_case("zero-override-busy", 100, 100, 1, 0, 1, false),
+    thermal_case("negative-temperatures", -85, -100, 0, 0, 0, true),
+    thermal_case("full-signed-span", i16::MAX, i16::MIN, 0, 0, 0, true),
+];
+
+impl Thermal {
+    fn parameters(&self) -> Vec<u8> {
+        let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
+        data[CURRENT_TEMPERATURE..][..2].copy_from_slice(&self.current.to_le_bytes());
+        data[RFPLL_ENABLED] = 0;
+        data[REFERENCE_TEMPERATURE as usize..][..2].copy_from_slice(&self.reference.to_le_bytes());
+        data[TRACKING_BUSY as usize] = self.busy;
+        data[OVERRIDE..][..2].copy_from_slice(&[self.flags, self.threshold]);
+        data[TRACKING_FLAGS as usize..][..2].copy_from_slice(&FLAGS_IDLE.to_le_bytes());
+        data
+    }
+    fn models(&self) -> Vec<DeviceDeclaration> {
+        if self.executes {
+            let mut models = maintenance_models(&THERMAL_STATUSES, 0x2582_4e58, None, 0);
+            // Every other radio register is retained storage starting with the fill.
+            models.push(radio_aperture(THERMAL_FILL));
+            models
+        } else {
+            vec![]
+        }
+    }
+    /// Committed reference temperature: the current one after a correction.
+    fn reference_after(&self) -> i16 {
+        if self.executes {
+            self.current
+        } else {
+            self.reference
+        }
+    }
+}
+
+/// The vendor thermal child with its guards against the compiled production
+/// child, which runs only after its own physical admission: busy cases are
+/// vendor characterization. Each side's commit is checked against the
+/// explicit case; effects compare under the reviewed maintenance contract.
+fn thermal(ctx: &mut I2c, rfpll: &Rfpll) -> Result<()> {
+    let effects = ctx.review_pair(
+        "rfpll-thermal",
+        ctx.root_endpoint("phy_rfpll_cap_track_new")?,
+        ctx.input_endpoint(2, "open_phy_rfpll_trace_track")?,
+        maintain_rules(),
+        "RFPLL thermal tracking under explicit temperatures, overrides and lock statuses",
+    )?;
+    let track = ctx.probe("open_phy_rfpll_trace_track");
+    let table = |memory: &mut Vec<ExecutionRegion>| -> Result<()> {
+        let mut table = vec![0u8; 284];
+        table.extend((THERMAL_CHANNEL as u16).to_le_bytes());
+        memory.push(known(ROM_PARAMETER_POINTER, 4, &words(&[0x3fff_0000]))?);
+        memory.push(known(0x3fff_0000, 286, &table)?);
+        Ok(())
+    };
+    let vendor_phase = |case: &Thermal| -> Result<Invocation> {
+        let mut memory = vec![];
+        table(&mut memory)?;
+        let mut phase = rfpll.enter(rfpll.rom_track, &[0], case.models(), memory)?;
+        phase.observe_memory = vec![selection(rfpll.parameter, PHY_PARAM_BYTES)];
+        phase.observe_timeline.writes = true;
+        phase.calls = delay_calls("requested-delay", rfpll.delay(false));
+        Ok(phase)
+    };
+    let (mut compared, mut characterized) = (vec![], vec![]);
+    let (mut compared_cases, mut characterized_cases) = (vec![], vec![]);
+    for case in &THERMAL {
+        let setup = rfpll.setup_data(false, &case.parameters())?;
+        if case.busy == 0 {
+            let override_word = if case.flags & 1 != 0 {
+                u32::from(case.threshold)
+            } else {
+                u32::MAX
+            };
+            let mut production = direct(
+                track,
+                &[
+                    0,
+                    case.current as i32 as u32,
+                    case.reference as i32 as u32,
+                    override_word,
+                    THERMAL_CHANNEL,
+                ],
+                vec![],
+                case.models(),
+                vec![],
+            );
+            production.calls = delay_calls("requested-delay", rfpll.delay(true));
+            let mut row = case_row(case.name, vendor_phase(case)?, Some(production));
+            row.relation.as_mut().unwrap().effects = Some(effects.clone());
+            compared.extend([
+                crate::harness::case(
+                    "initialize-parameters",
+                    setup,
+                    Some(rfpll.setup_data(true, &case.parameters())?),
+                    SessionReset::Cold,
+                    false,
+                ),
+                row,
+            ]);
+            compared_cases.push(case);
+        } else {
+            characterized.extend([
+                crate::harness::case(
+                    "initialize-parameters",
+                    setup,
+                    None,
+                    SessionReset::Cold,
+                    false,
+                ),
+                case_row(case.name, vendor_phase(case)?, None),
+            ]);
+            characterized_cases.push(case);
+        }
+    }
+    let (vendor, replacement) = (ctx.vendor.clone(), ctx.replacement.clone());
+    let records = ctx.submit_with(
+        "rfpll-thermal",
+        &vendor,
+        Some(&replacement),
+        Some(THERMAL_FILL),
+        compared,
+        MAX_EVENTS,
+        Some(ComparisonVerdict::Match),
+    )?;
+    for (i, case) in compared_cases.iter().enumerate() {
+        let child = 2 * i as u32 + 1;
+        check_thermal_vendor(case, rfpll.parameter, &records, child);
+        assert!(all_complete(&records, child, true), "{}", case.name);
+        assert_eq!(
+            returned_low(&records, child, true),
+            Some(u32::from(case.reference_after() as u16) | (u32::from(case.executes) << 16)),
+            "{}: production outcome",
+            case.name
+        );
+    }
+    let mut rows = characterized;
+    for row in &mut rows {
+        row.relation = None;
+    }
+    let records = ctx.submit_with(
+        "rfpll-thermal-busy",
+        &vendor,
+        None,
+        Some(THERMAL_FILL),
+        rows,
+        MAX_EVENTS,
+        None,
+    )?;
+    for (i, case) in characterized_cases.iter().enumerate() {
+        check_thermal_vendor(case, rfpll.parameter, &records, 2 * i as u32 + 1);
+    }
+    Ok(())
+}
+
+fn case_row(name: &str, vendor: Invocation, production: Option<Invocation>) -> ExecutionCase {
+    crate::harness::case(name, vendor, production, SessionReset::Warm, false)
+}
+
+/// The vendor's guard decision, commit and ordering: reference, then result
+/// flags, then hardware frequency-control restoration, then busy release.
+fn check_thermal_vendor(case: &Thermal, parameter: u32, records: &[ExecutionEvidence], child: u32) {
+    let name = case.name;
+    assert!(all_complete(records, child, false), "{name}");
+    let observed = events(records, child, false);
+    let mmio = observed.iter().any(|e| {
+        matches!(
+            e,
+            ExecutionEvent::Read { .. } | ExecutionEvent::Write { .. }
+        )
+    });
+    assert_eq!(mmio, case.executes, "{name}: hardware admission");
+    let state = crate::evidence::output(records, child, false);
+    let word =
+        |offset: u32| u16::from_le_bytes([state[offset as usize], state[offset as usize + 1]]);
+    assert_eq!(
+        word(REFERENCE_TEMPERATURE) as i16,
+        case.reference_after(),
+        "{name}: reference"
+    );
+    assert_eq!(
+        word(TRACKING_FLAGS),
+        if case.executes {
+            FLAGS_PERFORMED
+        } else {
+            FLAGS_IDLE
+        },
+        "{name}: flags"
+    );
+    assert_eq!(
+        state[TRACKING_BUSY as usize], case.busy,
+        "{name}: busy state"
+    );
+    if !case.executes {
+        return;
+    }
+    let ram_write = |offset: u32, value: Option<u32>| {
+        observed.iter().position(|e| {
+            matches!(e, ExecutionEvent::Memory {
+                transaction: MemoryTransaction::Write { address, value: v, .. }, ..
+            } if *address == parameter + offset && value.is_none_or(|value| value == *v))
+        })
+    };
+    let reference = ram_write(REFERENCE_TEMPERATURE, None).expect("reference publication");
+    let flags = ram_write(TRACKING_FLAGS, None).expect("result publication");
+    let restore = observed
+        .iter()
+        .rposition(|e| {
+            matches!(
+                e,
+                ExecutionEvent::Write {
+                    address: STATUS,
+                    ..
+                }
+            )
+        })
+        .expect("hardware control restoration");
+    let release = ram_write(TRACKING_BUSY, Some(0)).expect("busy release");
+    assert!(
+        reference < flags && flags < restore && restore < release,
+        "{name}: vendor publication and restoration order"
+    );
 }
 
 #[cfg(test)]

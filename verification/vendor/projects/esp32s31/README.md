@@ -875,6 +875,45 @@ also checks retention of an earlier completed RFPLL reference. Registered
 production RFPLL uses the recovered thermal predicate. External COEX grant
 hooks, elapsed timing and RF performance remain separate gates.
 
+The native `tracking` scenario ([`tracking.rs`](scenarios/src/tracking.rs))
+replaces these combined, parent, failed-TX and graph profiles:
+
+```console
+cargo xtask vendor-scenario tracking --library /private/libphy.a \
+  --rom /private/esp32s31_rev0_rom.elf \
+  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
+  --phy-sdk /private/phy_tracking_reference.elf \
+  --linker /usr/bin/ld.lld --output target/blobray-research/tracking --limit-mode watchdog
+```
+
+- **Roots.** `phy_cal_param_track` against `open_phy_calibration_trace_combined`
+  and `phy_param_track_tot` against `open_phy_tracking_trace_parent`, with
+  their real RX, channel, TX-DC, gain, power and RFPLL children.
+- **Matrix.** Every client set, ten calibration cases, twelve parent thermal
+  bands and RFPLL corrections 0 and ±5, both stack fills; each family is one
+  request.
+- **Claims.** Every root compares under a reviewed effect contract (transport
+  plumbing, the PBus polling interval, unused SAR snapshots and the vendor's
+  channel-status resample) and a reviewed output projection of the committed
+  references, DC rows and gain state. The runner also checks the parent's
+  retained gain adjustment and signed-word encoding.
+- **Failed TX.** A detector that never becomes ready fails production without
+  committing, after RX channel restoration ran; the output keeps the
+  pre-calibration coefficients and the parent keeps completed power and RFPLL
+  state.
+- **Graphs.** Vendor characterizations with explicit modeled children check the
+  parent's direct call order, ABI words and guards, and the calibration's RX
+  and TX brackets with separate grants, the restore callback and its reference
+  and flag commits. Modeled child completions are not a complete-parent claim.
+- **Negatives.** Production calibrating only the Wi-Fi client is a DIFF,
+  omitted callback installation is INCOMPLETE and an undersized event capacity
+  publishes nothing.
+
+The RFPLL thermal child runs in the `i2c` scenario with the other RFPLL cases:
+its guards, reference commit and ordering, with busy cases as vendor
+characterization. Production probes deliver short delays through the
+register-preserving trace delay, whose event every production phase models.
+
 The optional RF-test power producer is characterized by `phy_rfpll/gain_producer.rs`.
 It authenticates `OER_PHY_RFTEST` (`librftest.a`, SHA-256
 `547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e`, same

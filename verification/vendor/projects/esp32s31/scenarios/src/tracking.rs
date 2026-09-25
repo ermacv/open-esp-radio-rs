@@ -10,16 +10,16 @@
 use crate::contracts::{
     OutputField, omitted_read, omitted_read_before, output_projection, phy_contract, plumbing,
 };
-use crate::harness::{Buffer, Result, case, selection};
+use crate::harness::{Buffer, Result, case, selection, with_stack_fill};
 use crate::i2c::returned_low;
 use crate::layout::*;
 use crate::phy::{
-    PhyImage, PhyOptions, delay_calls, image_layout, phy_sdk_input, select, start_session,
+    PhyImage, PhyOptions, Right, delay_calls, image_layout, phy_sdk_input, select, start_session,
 };
 use crate::tx_dc::{self, DETECTOR_READY, PBUS_IDLE, SAR_UNUSED, Samples};
 use blobray_domain::{
-    CommandCell, DeviceDeclaration, EffectReview, EffectRule, ExecutionCase, ExecutionEvidence,
-    Invocation, LinkRequest, ProjectionReview, ReadRun, SessionReset,
+    CommandCell, ComparisonVerdict, DeviceDeclaration, EffectReview, EffectRule, ExecutionCase,
+    ExecutionEvidence, Invocation, LinkRequest, ProjectionReview, ReadRun, SessionReset,
 };
 use std::path::Path;
 
@@ -626,7 +626,51 @@ pub fn exercise(ctx: &mut Tracking) -> Result<()> {
             check(root, &case, &records);
         }
     }
-    failed_tx(ctx)
+    failed_tx(ctx)?;
+    crate::tracking_graph::exercise(ctx)?;
+    negative(ctx)
+}
+
+/// Production calibrating only the Wi-Fi client is a DIFF, omitted callback
+/// installation leaves the vendor INCOMPLETE, and an undersized event
+/// capacity publishes nothing.
+fn negative(ctx: &mut Tracking) -> Result<()> {
+    let base = cases(Root::Combined, None)
+        .into_iter()
+        .find(|c| c.name == "rx-and-tx" && c.clients == (true, true))
+        .expect("combined rx-and-tx case");
+    let mut changed = with_stack_fill(ctx.rows(Root::Combined, &base)?, base.fill);
+    let other = Case {
+        clients: (true, false),
+        ..base
+    };
+    changed[2].replacement = Some(ctx.production_phase(Root::Combined, &other, false)?);
+    ctx.image.execute(
+        "tracking-negative-changed-clients",
+        changed,
+        base.fill,
+        Right::Production,
+        ComparisonVerdict::Diff,
+        TRACKING_EVENTS,
+    )?;
+    let mut uninstalled = with_stack_fill(ctx.rows(Root::Combined, &base)?, base.fill);
+    uninstalled[1].vendor = ctx.noop();
+    ctx.image.execute(
+        "tracking-negative-uninstalled-callbacks",
+        uninstalled,
+        base.fill,
+        Right::Production,
+        ComparisonVerdict::Incomplete,
+        TRACKING_EVENTS,
+    )?;
+    // The contract's occurrence bounds exceed a one-event capacity; the
+    // exhaustion under test precedes any effect comparison.
+    let mut rows = with_stack_fill(ctx.rows(Root::Combined, &base)?, base.fill);
+    let relation = rows[2].relation.as_mut().unwrap();
+    relation.effects = None;
+    relation.projection = None;
+    let limited = crate::session::request(&ctx.vendor, Some(&ctx.production), None, rows, 1);
+    ctx.capacity_failure("tracking-negative-capacity", &limited)
 }
 
 /// Detector state that never reports readiness.

@@ -146,10 +146,23 @@ struct Prefix {
     memcpy: u32,
     rom_delay: u32,
     production_delay: u32,
+    /// Register-preserving short-delay event of the production probes.
+    short_delay: u32,
     callbacks: Vec<u32>,
 }
 
 impl Prefix {
+    /// Requested-delay models of one side: the ROM delay, and on production
+    /// also the register-preserving short-delay event.
+    fn delays(&self, id: &str, side: bool) -> Vec<blobray_domain::CallDeclaration> {
+        if !side {
+            return delay_calls(id, self.rom_delay);
+        }
+        let mut calls = delay_calls(id, self.production_delay);
+        calls.extend(delay_calls(&format!("{id}-short"), self.short_delay));
+        calls
+    }
+
     fn invoke(
         &self,
         target: u32,
@@ -159,14 +172,7 @@ impl Prefix {
     ) -> Result<Invocation> {
         let mut result = direct(target, &[], vec![], models, vec![]);
         if settle {
-            result.calls = delay_calls(
-                "settle-delay",
-                if side {
-                    self.production_delay
-                } else {
-                    self.rom_delay
-                },
-            );
+            result.calls = self.delays("settle-delay", side);
         }
         Ok(result)
     }
@@ -318,14 +324,7 @@ impl Prefix {
             self.dcode_models(fill, busy),
             vec![selection(output, 8)],
         )?;
-        result.calls = delay_calls(
-            "frequency-delay",
-            if side {
-                self.production_delay
-            } else {
-                self.rom_delay
-            },
-        );
+        result.calls = self.delays("frequency-delay", side);
         Ok(result)
     }
 }
@@ -337,6 +336,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         rom_delay: ctx.captured(1, "ets_delay_us"),
         // The ROM delay boundary is a captured symbol, not a declared probe.
         production_delay: ctx.captured(2, "ets_delay_us"),
+        short_delay: ctx.probe("open_phy_trace_delay_event"),
         callbacks: [
             "phy_i2c_enter_critical",
             "phy_i2c_exit_critical",

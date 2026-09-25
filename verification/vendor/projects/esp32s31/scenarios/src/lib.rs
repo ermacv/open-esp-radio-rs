@@ -22,6 +22,7 @@ pub mod rfpll;
 pub mod rx_gain;
 pub mod session;
 pub mod tracking;
+pub mod tracking_graph;
 pub mod tx_dc;
 
 /// Pinned `libphy.a` archive (ESP-IDF PHY source revision `b88e4b76`).

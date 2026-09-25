@@ -2333,6 +2333,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-firmware"
+version = "0.1.0"
+dependencies = [
+ "fs2",
+ "oer-esp32s31-platform-layout",
+ "oer-memory-report",
+ "oer-process",
+ "serialport",
+ "sha2",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "oer-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
@@ -2643,20 +2657,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-firmware"
-version = "0.1.0"
-dependencies = [
- "fs2",
- "oer-esp32s31-platform-layout",
- "oer-memory-report",
- "oer-process",
- "serialport",
- "sha2",
- "tempfile",
- "toml",
-]
-
-[[package]]
 name = "oer-hil-fixture"
 version = "0.1.0"
 dependencies = [
@@ -2758,7 +2758,7 @@ dependencies = [
  "libc",
  "mio",
  "object 0.39.1",
- "oer-firmware",
+ "oer-esp32s31-firmware",
  "oer-hil-fixture",
  "oer-hil-fixture-install",
  "oer-hil-protocol",
@@ -3082,7 +3082,7 @@ dependencies = [
  "fs2",
  "libc",
  "object 0.39.1",
- "oer-firmware",
+ "oer-esp32s31-firmware",
  "oer-hil-schema",
  "oer-memory-report",
  "oer-probe-codegen",

@@ -41,7 +41,7 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
 - `qualification/` owns capability programs and their independent evaluator.
   `registers/` owns reviewed hardware models, publication policy and generated
   SVD/bindings. `tools/` contains Blobray, memory analysis and repository checks
-  under `tools/repo/`. Vendor investigation compositions live under
+  under `tools/xtask/`. Vendor investigation compositions live under
   `verification/vendor/projects/`.
 
 Keep tests beside their Rust modules (`#[cfg(test)]`) or in a crate's `tests/`
@@ -62,7 +62,7 @@ for API changes: it runs `cargo doc --no-deps` with `RUSTDOCFLAGS=-D warnings`
 for every package's `[package.metadata.docs.rs]` target and features, plus
 `cargo test --doc --workspace`. The CI jobs in `.github/workflows/ci.yml` are
 the full source checkpoint, not the default after an individual edit; each job
-is one command listed in `tools/repo/README.md`. Run the relevant target, architecture, safety and artifact
+is one command listed in `tools/xtask/README.md`. Run the relevant target, architecture, safety and artifact
 checks when changing their ownership boundaries; a partial check is not full
 repository coverage.
 

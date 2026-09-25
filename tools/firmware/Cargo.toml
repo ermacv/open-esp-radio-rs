@@ -1,5 +1,5 @@
 [package]
-name = "oer-firmware"
+name = "oer-esp32s31-firmware"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -79,7 +79,7 @@ enum Build {
         no_default_features: bool,
         /// Network implementation: upstream-xarxa (default), patched-xarxa, upstream-smoltcp or owned-xarxa.
         #[arg(long)]
-        network: Option<oer_firmware::network::Integration>,
+        network: Option<oer_esp32s31_firmware::network::Integration>,
     },
     VendorProbes {
         #[arg(long, default_value = "esp32s31")]

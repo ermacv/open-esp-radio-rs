@@ -54,7 +54,7 @@ You do not need to read every component reference to make a first change.
 - [Register publication](../registers/esp32s31/publication/README.md).
 - [Vendor verification](../verification/README.md).
 - [Blobray](../tools/blobray/README.md), [memory analysis](../tools/memory-report/README.md)
-  and [repository commands](../tools/repo/README.md).
+  and [repository commands](../tools/xtask/README.md).
 
 The [ESP32-S31 radio capability map](../crates/hardware/esp32s31/driver/FEATURES.md) indexes
 shared lifecycle, PHY, coexistence and the Wi-Fi, Bluetooth and IEEE 802.15.4

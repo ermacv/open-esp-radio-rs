@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "crates/oer",
-    "tools/repo",
+    "tools/xtask",
     "verification/vendor/harness/codegen",
     "verification/vendor/harness/macros",
     "tools/process",

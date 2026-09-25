@@ -14,7 +14,7 @@ oer-process = { path = "../process" }
 fs2 = "0.4"
 sha2 = "0.10"
 serialport = { version = "4.8.1", default-features = false }
-oer-firmware = { path = "../firmware" }
+oer-esp32s31-firmware = { path = "../firmware" }
 oer-memory-report = { path = "../memory-report" }
 cargo_metadata = "=0.23.1"
 clap = { version = "=4.5.48", features = ["derive"] }

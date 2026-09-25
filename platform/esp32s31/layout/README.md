@@ -4,7 +4,7 @@
 address map and image contract for ESP32-S31-Function-CoreBoard-1. It is a
 `no_std` library without hardware access, shared by the Flash bootstrap, the
 stage-two runtime, the board profile, application and HIL build scripts, and
-the host packer and image auditor in [`oer-firmware`](../../../tools/firmware/README.md).
+the host packer and image auditor in [`oer-esp32s31-firmware`](../../../tools/firmware/README.md).
 
 | Module | Owns |
 | --- | --- |

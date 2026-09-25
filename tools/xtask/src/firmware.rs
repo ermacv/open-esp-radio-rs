@@ -5,7 +5,7 @@ mod workspace;
 pub use workspace::FirmwareBuild;
 
 use crate::{Context, Result, process};
-use oer_firmware::{BOOTSTRAP_BIN, TARGET};
+use oer_esp32s31_firmware::{BOOTSTRAP_BIN, TARGET};
 use std::{env, fs, path::Path};
 
 pub fn build(
@@ -13,9 +13,9 @@ pub fn build(
     example: &str,
     features: &[String],
     no_default_features: bool,
-    network: Option<oer_firmware::network::Integration>,
+    network: Option<oer_esp32s31_firmware::network::Integration>,
 ) -> Result<FirmwareBuild> {
-    use oer_firmware::network::Integration;
+    use oer_esp32s31_firmware::network::Integration;
     let network = if matches!(example, "station" | "access-point") {
         Some(Integration::for_example(network, features)?)
     } else {
@@ -44,8 +44,10 @@ pub fn build(
         oer_memory_report::StackBudget::load(&ctx.root.join("platform/esp32s31/stack.toml"))?;
     let runtime_target = workspace.cache().join("runtime");
     // A patched network resolves into this private copy, never the example's catalog.
-    let runtime_lock =
-        oer_firmware::network::BuildLock::prepare(&directory, &workspace.cache().join("lock"))?;
+    let runtime_lock = oer_esp32s31_firmware::network::BuildLock::prepare(
+        &directory,
+        &workspace.cache().join("lock"),
+    )?;
     let mut command = ctx.cargo();
     command
         .args(["build", "--release", "--target", TARGET, "--manifest-path"])
@@ -53,7 +55,7 @@ pub fn build(
         .args(["--bin", binary])
         .env("CARGO_TARGET_DIR", &runtime_target)
         .env("CARGO_INCREMENTAL", "0");
-    if network != Some(oer_firmware::network::Integration::PatchedXarxa) {
+    if network != Some(oer_esp32s31_firmware::network::Integration::PatchedXarxa) {
         command.arg("--locked");
     }
     runtime_lock.configure(&mut command);
@@ -67,7 +69,7 @@ pub fn build(
     if !features.is_empty() {
         command.arg("--features").arg(features.join(","));
     }
-    oer_firmware::stack::enable_stack_checks(&mut command, &budget);
+    oer_esp32s31_firmware::stack::enable_stack_checks(&mut command, &budget);
     process::run(&mut command)?;
     runtime_lock.validate(&ctx.root, network.unwrap_or_default())?;
     let runtime = workspace.snapshot(
@@ -82,16 +84,16 @@ pub fn build(
             .arg(&runtime)
             .arg(&packed),
     )?;
-    oer_firmware::pack_runtime(&packed)?;
+    oer_esp32s31_firmware::pack_runtime(&packed)?;
     fs::write(
         output.join("placement.txt"),
-        oer_firmware::audit_runtime(&runtime, &packed, true)?,
+        oer_esp32s31_firmware::audit_runtime(&runtime, &packed, true)?,
     )?;
     let bootstrap_target = workspace.cache().join("bootstrap");
     let mut command = ctx.cargo();
-    oer_firmware::bootstrap_command(&mut command, &ctx.root, &packed, &bootstrap_target);
+    oer_esp32s31_firmware::bootstrap_command(&mut command, &ctx.root, &packed, &bootstrap_target);
     command.arg("--locked");
-    oer_firmware::stack::enable_stack_checks(&mut command, &budget);
+    oer_esp32s31_firmware::stack::enable_stack_checks(&mut command, &budget);
     process::run(&mut command)?;
     let bootstrap = workspace.snapshot(
         &bootstrap_target
@@ -103,17 +105,22 @@ pub fn build(
     audit_stack(&bootstrap, &output.join("bootstrap-stack.txt"), &budget)?;
     let image = output.join("application.bin");
     let mut command = ctx.command(env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into()));
-    oer_firmware::save_image_command(&mut command, &ctx.root, &bootstrap, &image);
+    oer_esp32s31_firmware::save_image_command(&mut command, &ctx.root, &bootstrap, &image);
     process::run(&mut command)?;
-    oer_firmware::audit_application_image(&image)?;
+    oer_esp32s31_firmware::audit_application_image(&image)?;
     let rom_container = output.join("rom-container.bin");
     let mut command = ctx.command(env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into()));
-    oer_firmware::save_rom_image_command(&mut command, &ctx.root, &bootstrap, &rom_container);
+    oer_esp32s31_firmware::save_rom_image_command(
+        &mut command,
+        &ctx.root,
+        &bootstrap,
+        &rom_container,
+    );
     process::run(&mut command)?;
     let container = fs::read(&rom_container)?;
     fs::write(
         output.join("bootloader.bin"),
-        oer_firmware::flash::rom_bootloader(&container)?,
+        oer_esp32s31_firmware::flash::rom_bootloader(&container)?,
     )?;
     fs::remove_file(rom_container)?;
     let mut command = ctx.command(env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into()));
@@ -127,7 +134,7 @@ pub fn build(
     process::run(&mut command)?;
     fs::write(
         output.join("otadata.bin"),
-        oer_firmware::flash::ota0_selector_image(),
+        oer_esp32s31_firmware::flash::ota0_selector_image(),
     )?;
     fs::copy(runtime_lock.path(), output.join("runtime-Cargo.lock"))?;
     fs::copy(
@@ -144,7 +151,7 @@ pub fn build(
 }
 
 fn audit_stack(elf: &Path, output: &Path, budget: &oer_memory_report::StackBudget) -> Result<()> {
-    let report = oer_firmware::stack::analyze_elf_stack(elf, budget)?;
+    let report = oer_esp32s31_firmware::stack::analyze_elf_stack(elf, budget)?;
     fs::write(output, oer_memory_report::render_stack_report(&report))?;
     oer_memory_report::audit_stack(&report)?;
     Ok(())
@@ -157,11 +164,11 @@ pub fn flash(
     port: Option<&Path>,
     monitor: bool,
 ) -> Result<()> {
-    use oer_firmware::flash::{
+    use oer_esp32s31_firmware::flash::{
         BOOTLOADER_OFFSET, OTA_0_OFFSET, OTA_SELECTOR_OFFSET, PARTITION_TABLE_OFFSET,
     };
     let output = build.directory();
-    let lease = oer_firmware::device::DeviceLease::select(port)?;
+    let lease = oer_esp32s31_firmware::device::DeviceLease::select(port)?;
     let port = Some(lease.port());
     for (address, filename, reset) in [
         (BOOTLOADER_OFFSET, "bootloader.bin", "no-reset"),
@@ -170,7 +177,7 @@ pub fn flash(
         (OTA_SELECTOR_OFFSET, "otadata.bin", "hard-reset"),
     ] {
         let mut command = ctx.command(env::var_os("ESPFLASH").unwrap_or_else(|| "espflash".into()));
-        oer_firmware::flash::write_bin_command(
+        oer_esp32s31_firmware::flash::write_bin_command(
             &mut command,
             port,
             address,
@@ -187,7 +194,7 @@ pub fn flash(
 
 /// Exercise the same blocked-send workload with an explicit quiescence requirement.
 pub fn check_network_backpressure(ctx: &Context) -> Result<()> {
-    use oer_firmware::network::{BuildLock, Integration};
+    use oer_esp32s31_firmware::network::{BuildLock, Integration};
     let network = Integration::PatchedXarxa;
     let output = ctx.root.join("target/network-backpressure");
     // The patched resolution stays in this copy; the root catalog is untouched.

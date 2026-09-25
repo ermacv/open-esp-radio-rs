@@ -15,7 +15,7 @@ use crate::Result;
 /// Holds exclusive fixture ownership until the hardware command returns.
 pub struct FixtureLock {
     _cell: ResourceLease,
-    _device: Option<oer_firmware::device::DeviceLease>,
+    _device: Option<oer_esp32s31_firmware::device::DeviceLease>,
     _resources: Vec<ResourceLease>,
 }
 
@@ -28,7 +28,7 @@ impl FixtureLock {
         lab: &super::config::LabConfig,
         required: super::requirements::Requirements,
     ) -> Result<Self> {
-        let device = oer_firmware::device::DeviceLease::acquire(&lab.device.serial)?;
+        let device = oer_esp32s31_firmware::device::DeviceLease::acquire(&lab.device.serial)?;
         let mut owner = Self::acquire_without_device(lab, required)?;
         owner._device = Some(device);
         Ok(owner)
@@ -39,12 +39,12 @@ impl FixtureLock {
         required: super::requirements::Requirements,
     ) -> Result<Self> {
         use sha2::{Digest, Sha256};
-        let directory = oer_firmware::device::lease_directory()?.join(format!(
+        let directory = oer_esp32s31_firmware::device::lease_directory()?.join(format!(
             "cell-{:x}",
             Sha256::digest(lab.cell_id().as_bytes())
         ));
         let cell = ResourceLease::acquire_directory(&directory)?;
-        let root = oer_firmware::device::lease_directory()?;
+        let root = oer_esp32s31_firmware::device::lease_directory()?;
         let resources = Self::acquire_resources(&root, resource_keys(lab, required)?)?;
         Ok(Self {
             _cell: cell,
@@ -248,8 +248,10 @@ pub fn acquire_bluetooth(
     adapter: oer_hil_fixture::bluetooth::model::Adapter,
 ) -> Result<ResourceLease> {
     use sha2::{Digest, Sha256};
-    ResourceLease::acquire_directory(&oer_firmware::device::lease_directory()?.join(format!(
-        "resource-{:x}",
-        Sha256::digest(bluetooth_key(adapter)?.as_bytes())
-    )))
+    ResourceLease::acquire_directory(&oer_esp32s31_firmware::device::lease_directory()?.join(
+        format!(
+            "resource-{:x}",
+            Sha256::digest(bluetooth_key(adapter)?.as_bytes())
+        ),
+    ))
 }

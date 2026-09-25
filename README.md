@@ -50,7 +50,7 @@ The workspace is licensed under [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACH
 | Understand component boundaries | [Repository architecture](docs/architecture.md) |
 | See implementation, knowledge, observations and next work | [Project capability map](qualification/README.md#everyday-status-and-next-work) |
 | Assess a selected STA or BLE scope | [Qualification programs](qualification/README.md) |
-| Check source and dependency policy | [Repository tooling](tools/repo/README.md) |
+| Check source and dependency policy | [Repository tooling](tools/xtask/README.md) |
 | Build or execute hardware scenarios | [ESP32-S31 HIL](hil/targets/esp32s31/README.md) |
 | Compare vendor and compiled Rust behavior | [Verification](verification/README.md) |
 | Review register/PAC publication | [Registers](registers/README.md) |

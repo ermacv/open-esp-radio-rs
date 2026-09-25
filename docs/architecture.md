@@ -16,7 +16,7 @@ reading route through these boundaries.
 | [Registers](../registers/README.md) | Reviewed hardware model, API/ownership policy, provenance and publication inputs | Defines what may enter the production PAC |
 | [Blobray](../tools/blobray/README.md) | Binary analysis, reviewed research and bounded comparisons | Generic engine; target facts are selected through providers and projects |
 | [Memory tools](../tools/memory-report/README.md) | ELF memory and stack analysis | The consumer chooses the image budget and acceptance policy |
-| [Repository tooling](../tools/repo/README.md) | Cargo graphs, source checks and build orchestration | Calls domain tools; does not duplicate their validators |
+| [Repository tooling](../tools/xtask/README.md) | Cargo graphs, source checks and build orchestration | Calls domain tools; does not duplicate their validators |
 | [Verification](../verification/README.md) | Reusable chip knowledge and concrete vendor comparison projects | Private artifacts are caller inputs, never production dependencies |
 | [HIL](../hil/README.md) | Typed protocol, lab fixtures, scenarios, target images and sealed observations | Produces hardware evidence; does not decide product readiness |
 | [Qualification](../qualification/README.md) | Engineering map, capability declarations and independent assessment of a selected scope | Consumes evidence; does not run the hardware or vendor implementation |
@@ -222,7 +222,7 @@ updated together when that contract changes.
 The [ESP32-S31 platform](../platform/esp32s31/README.md) owns the board profile,
 Flash bootstrap, stage-two relocation, the staged-boot address map and image
 header, linker scripts and per-core SRAM IRQ stacks. HIL and standalone examples use that same boot contract. The host
-`oer-firmware` library owns payload packing and structural image audits;
+`oer-esp32s31-firmware` library owns payload packing and structural image audits;
 `cargo xtask` builds applications and HIL adds its image classes, observers
 and evidence. Neither the platform nor standalone examples depend on HIL.
 

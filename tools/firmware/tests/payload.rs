@@ -1,5 +1,5 @@
+use oer_esp32s31_firmware::pack_runtime;
 use oer_esp32s31_platform_layout::stage_two::{self, HEADER_BYTES, Header};
-use oer_firmware::pack_runtime;
 
 fn image() -> Vec<u8> {
     let header = Header {

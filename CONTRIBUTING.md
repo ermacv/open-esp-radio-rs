@@ -43,7 +43,7 @@ Run commands from the repository root unless the component guide says otherwise.
 | Markdown or catalog | `cargo xtask check docs`; for the guides in `docs/` also `mdbook build docs` (see [building the guides](docs/documentation.md#build-the-guides-and-api-documentation)) |
 | Rust behavior | `cargo test -p PACKAGE FILTER --locked --offline`, confirming the selector executes tests; `cargo fmt --all -- --check` |
 | Public API | `cargo xtask doc` plus focused behavior/compile tests; chip crates document their target through `[package.metadata.docs.rs]` |
-| Hardware, ownership or dependency boundary | Relevant target, architecture, safety and artifact checks from [repository tooling](tools/repo/README.md) |
+| Hardware, ownership or dependency boundary | Relevant target, architecture, safety and artifact checks from [repository tooling](tools/xtask/README.md) |
 | Register publication | `cargo registers generate --manifest registers/esp32s31/publication/registers.toml --check` |
 | Hardware readiness claim | Applicable dated [HIL](hil/README.md) evidence and independent [qualification](qualification/README.md) |
 

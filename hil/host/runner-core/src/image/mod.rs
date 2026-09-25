@@ -15,7 +15,7 @@ use oer_process::CommandExt as _;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-pub use oer_firmware::network::Integration;
+pub use oer_esp32s31_firmware::network::Integration;
 
 mod class;
 pub mod mono;
@@ -28,7 +28,7 @@ pub use reproducibility::verify_rebuild;
 
 pub const TARGET: &str = "riscv32imafc-unknown-none-elf";
 const RUNTIME_BIN: &str = "oer-hil-esp32s31-runtime";
-use oer_firmware::{BOOTSTRAP_BIN, audit_application_image, pack_runtime};
+use oer_esp32s31_firmware::{BOOTSTRAP_BIN, audit_application_image, pack_runtime};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ImageCapabilitySignature {
@@ -472,11 +472,11 @@ fn build_resolved(
     fs::write(output.join("image-class.txt"), format!("{}\n", class.id()))?;
     // Private copies of both committed catalogs: patched networks and local
     // overrides resolve into them, never into the source tree.
-    let runtime_lock = oer_firmware::network::BuildLock::prepare(
+    let runtime_lock = oer_esp32s31_firmware::network::BuildLock::prepare(
         &root.join("hil/targets/esp32s31"),
         &output.join("locks/runtime"),
     )?;
-    let bootstrap_lock = oer_firmware::network::BuildLock::prepare(
+    let bootstrap_lock = oer_esp32s31_firmware::network::BuildLock::prepare(
         &root.join("platform/esp32s31"),
         &output.join("locks/bootstrap"),
     )?;
@@ -551,7 +551,7 @@ fn build_resolved(
 
     let mut bootstrap = cargo_command();
     bootstrap.current_dir(root);
-    oer_firmware::bootstrap_command(
+    oer_esp32s31_firmware::bootstrap_command(
         &mut bootstrap,
         root,
         &absolute(&runtime_bin)?,
@@ -582,7 +582,12 @@ fn build_resolved(
     oer_memory_report::audit_stack(&bootstrap_stack_report)?;
 
     let mut save_image = Command::new(program_from_env("ESPFLASH", "espflash"));
-    oer_firmware::save_image_command(&mut save_image, root, &bootstrap_elf, &application_image);
+    oer_esp32s31_firmware::save_image_command(
+        &mut save_image,
+        root,
+        &bootstrap_elf,
+        &application_image,
+    );
     run_command(&mut save_image, "encode ESP application image")?;
     audit_application_image(&application_image)
         .map_err(|error| -> Box<dyn Error + Send + Sync> { error })?;
@@ -820,7 +825,7 @@ pub fn ensure_vendor_dependencies_absent(root: &Path) -> Result<()> {
 }
 
 fn audit_runtime(elf: &Path, binary: &Path, class: crate::image::ImageClass) -> Result<String> {
-    let report = oer_firmware::audit_runtime(elf, binary, class.uses_psram_task_stack())
+    let report = oer_esp32s31_firmware::audit_runtime(elf, binary, class.uses_psram_task_stack())
         .map_err(|error| -> Box<dyn Error + Send + Sync> { error })?;
     use object::{Object, ObjectSection, ObjectSymbol};
     let bytes = fs::read(elf)?;

@@ -7,7 +7,7 @@ use crate::{
     image::{Artifacts, program_from_env, run_command},
 };
 
-use oer_firmware::flash::{
+use oer_esp32s31_firmware::flash::{
     OTA_0_OFFSET, OTA_SELECTOR_OFFSET, PARTITION_TABLE_OFFSET, ota0_selector_image,
 };
 
@@ -129,6 +129,12 @@ fn write_flash_binary(
     description: &str,
 ) -> Result<()> {
     let mut command = Command::new(program_from_env("ESPFLASH", "espflash"));
-    oer_firmware::flash::write_bin_command(&mut command, Some(port), address, image, after);
+    oer_esp32s31_firmware::flash::write_bin_command(
+        &mut command,
+        Some(port),
+        address,
+        image,
+        after,
+    );
     run_command(&mut command, description)
 }

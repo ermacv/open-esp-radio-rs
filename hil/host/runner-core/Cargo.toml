@@ -20,7 +20,7 @@ oer-process = { path = "../../../tools/process" }
 oer-hil-fixture = { path = "../fixture" }
 oer-hil-fixture-install = { path = "../fixture-install" }
 object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }
-oer-firmware = { path = "../../../tools/firmware" }
+oer-esp32s31-firmware = { path = "../../../tools/firmware" }
 clap = { version = "4.5", features = ["derive"] }
 fs2 = "0.4"
 flate2 = "1.1"

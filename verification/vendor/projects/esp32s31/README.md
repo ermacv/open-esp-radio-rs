@@ -2,7 +2,7 @@
 
 ## Captured PHY research with Next
 
-[phy_research.py](phy_research.py) exercises the current Next application using
+The `research` scenario ([`research.rs`](scenarios/src/research.rs)) exercises the current Next application using
 explicit private inputs and its built-in resource supervisor. It authenticates
 the PHY and ROM artifacts, imports PHY/ROM, deletes the source copies, analyzes functions,
 links the I2C command initializer with exact ROM companions, verifies composed
@@ -17,15 +17,13 @@ callback has no reviewed binding; its unknown target cannot acquire callee effec
 Outputs must stay in ignored storage.
 
 ```console
-cargo build --manifest-path tools/blobray/Cargo.toml --profile blobray -p blobray-next --bin blobray
-python3 verification/vendor/projects/esp32s31/phy_research.py \
-  --binary tools/blobray/target/blobray/blobray --library /private/libphy.a \
+cargo xtask vendor-scenario research --library /private/libphy.a \
   --rom /private/esp32s31_rev0_rom.elf --linker /usr/bin/ld.lld --limit-mode watchdog \
   --output target/blobray-phy-research
 ```
 
-The script uses 256 MiB working capacity, a 600-second deadline and a shared work
-budget per operation. Select kernel mode only in an environment with delegated
+Each operation's working capacity, deadline and work budget are the scenario's
+`--working-memory-mib`, `--timeout-secs` and `--max-work-units` arguments. Select kernel mode only in an environment with delegated
 cgroup memory control; watchdog is an explicit sampled-RSS policy. Run JSON files
 are the measurement authority, not this documentation.
 
@@ -772,9 +770,9 @@ No callback model, resolved callee or hardware assertion follows from this revie
 
 ## Shared Next scenario preparation
 
-[harness.py](harness.py) owns supervised invocation, authenticated input capture,
-request diagnostics, exact symbol selection and the shared memory/phase/comparison
-builders. The I2C, transport and calibration scenarios keep their independent
+[`harness.rs`](scenarios/src/harness.rs) and [`session.rs`](scenarios/src/session.rs)
+own supervised invocation, authenticated input capture, request diagnostics,
+exact symbol selection and the shared memory/phase/comparison builders. The I2C, transport and calibration scenarios keep their independent
 expected values and explicit peripheral assumptions. The research scenario uses
 the same runner and capture operations.
 
@@ -793,12 +791,10 @@ The generated requests use the existing Next execution format. Replay reads the
 retained request and captured bytes, including the catalog; it does not regenerate
 requests from scenario code. The combined I2C route also checks
 [compiled call boundaries](scenarios/src/harness_edges.rs), then restores and replays their
-evidence alongside positive and negative PHY comparisons. The typed scenarios in
-[`scenarios`](scenarios/src/harness.rs) share the same preparation rules. Their
-host regressions run with `cargo test --manifest-path tools/blobray/Cargo.toml -p oer-esp32s31-vendor-scenarios`.
+evidence alongside positive and negative PHY comparisons.
 
 Run preparation-only regressions without private inputs:
 
 ```console
-python3 -m unittest discover -s verification/vendor/projects/esp32s31 -p test_harness.py
+cargo test --manifest-path tools/blobray/Cargo.toml -p oer-esp32s31-vendor-scenarios
 ```

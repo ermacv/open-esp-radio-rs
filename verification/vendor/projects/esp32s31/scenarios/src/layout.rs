@@ -44,6 +44,9 @@ pub const COMMAND_READ: u32 = 0x0400_0000;
 pub const COMMAND_WRITE: u32 = 0x0500_0000;
 pub const COMMAND_BUSY: u32 = 0x0200_0000;
 
+/// Analog I2C command RAM: 45 aligned command words written by the PHY.
+pub const COMMAND_RAM: u32 = 0x2010_fc00;
+
 /// Execution stack of both implementations.
 pub const STACK_ADDRESS: u32 = 0x3ffe_0000;
 pub const STACK_BYTES: u32 = 0x8000;

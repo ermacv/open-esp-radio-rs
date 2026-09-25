@@ -193,8 +193,8 @@ search, maintenance, frequency memory and restored replay. Stage 12.4 is complet
 gain arithmetic, coefficient boundaries and full Wi-Fi/BT publication. Stage 12.5
 is complete: gain state and the RF-test producer. Checkpoint 12.R is active:
 typed Rust verification scenarios replace the Python runners before 12.6.
-Its units 12.R.1 and 12.R.2 and checkpoint 12.P (execution performance) are
-complete; 12.R.3 is active.
+Checkpoint 12.R, including checkpoint 12.P (execution performance), is
+complete; no Python scenario code remains. Unit 12.6 is active.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -819,8 +819,8 @@ current owner docs and the ordinary stage gates. No partial unit is completion.
 | 12.3 | done | RFPLL search, maintenance and frequency memory: all cases in `phy_rfpll.rs` and `phy_rfpll/memory.rs`. Zero/nonzero signed corrections, search commands, requested settles, retained memory/control transactions and timeout without restored hardware control. Preserve the installed-layout query exclusion explicitly and retain raw observations. |
 | 12.4 | done | Gain arithmetic and publication: `phy_rfpll/gain_calculation.rs`, `phy_rfpll/tx_gain.rs`, `phy_rfpll/bluetooth_gain.rs`. Actual current coefficient selection and ROM kernel inputs, signed narrowing, additive current versus subtractive ROM behavior, boundary curves, complete Wi-Fi/BT publishers and bank wrap. Independently authenticate coefficients; changing coefficients changes dependency identity. |
 | 12.5 | done | Gain state and RF-test producer: `phy_rfpll/gain_state.rs`, `phy_rfpll/gain_producer.rs`. Execute real backup/destruction/recovery/init/consumption and the separately authenticated RF-test power producer, including rounding/saturation and gain/MAC publication. Preserve their characterization scope; vendor storage support is not inferred for production. Missing RF-test input remains an unmet obligation, never an omitted case. |
-| 12.R | active | Typed Rust verification scenarios, detailed below. Every current Python scenario, oracle and host test moves to a Rust owner package with unchanged cases, verdicts, negatives and preservation; Python is removed. Stage 12.6–12.10 obligations are unchanged. |
-| 12.6 | pending | Channel restoration: `phy_rfpll/channel.rs`. Actual callback installation, all temperature-prefix sensor ranges, full-root gain publication and committed channel/bandwidth/temperature; stuck readiness cannot publish gain or semantic output. Prefix and full-root evidence remain distinct. |
+| 12.R | done | Typed Rust verification scenarios, detailed below. Every current Python scenario, oracle and host test moves to a Rust owner package with unchanged cases, verdicts, negatives and preservation; Python is removed. Stage 12.6–12.10 obligations are unchanged. |
+| 12.6 | active | Channel restoration: `phy_rfpll/channel.rs`. Actual callback installation, all temperature-prefix sensor ranges, full-root gain publication and committed channel/bandwidth/temperature; stuck readiness cannot publish gain or semantic output. Prefix and full-root evidence remain distinct. |
 | 12.7 | pending | RX gain/calibration: `phy_rfpll/rx_gain.rs`. Both complete roots, DC/table guards, signed estimators, delayed I2C/settle, projected coefficients and bank limits; failed channel, minimum search and shared budget preserve prior coefficients. Readiness observations and genuine output publication remain visible. |
 | 12.8 | pending | TX-DC/PWDET: `phy_rfpll/tx_dc_pwdet.rs`. Actual search/PBus/SAR children, Wi-Fi/BT selection, DC rows, constant/alternating samples and tone/settle paths. Independent PBus/SAR faults cannot publish calibration; observation capacity differs from time/work limits. Preserve seeded gain adjustment and explicit unused-read exclusions. |
 | 12.9 | pending | Combined calibration and tracking parents: `phy_rfpll/combined.rs`, `phy_rfpll/parent.rs`, `phy_rfpll/graph.rs`. Execute real children, guards/grant order, channel 13/HT40, client/thermal domains, RFPLL disabled/enabled and signed corrections. Failed TX preserves pre-calibration state and earlier completed power/RFPLL state. Modeled child completions cannot satisfy complete-parent acceptance. |
@@ -1020,7 +1020,7 @@ has three acceptance units, all required:
 | --- | --- | --- |
 | 12.R.1 | done | Host-owned wire types for record, run and inventory documents, used by the renderer and checked against CLI output. Scenario package, process runner, capture/import, probe catalog through `oer-probe-codegen` types, ABI lowering and request builders over domain types; `cargo test` covers the harness and gain oracles. `xtask` command. Gain arithmetic/publication and gain state/RF-test run in Rust with the Python case counts, verdicts, negatives, unmet-obligation exit and preservation; `phy_gain*.py` and their tests are removed. |
 | 12.R.2 | done | I2C command memory and transport, harness call edges, calibration leaves/prefix and RFPLL runners in Rust with unchanged cases and outcomes; the corresponding Python is removed. |
-| 12.R.3 | active | PHY research scenario (analysis, interfaces, IR/trace, navigation, flow, registers, memory slices, data/knowledge review and preservation) in Rust; `harness.py` and every remaining Python file are removed; owner docs, Blobray references and full checks close 12.R. |
+| 12.R.3 | done | PHY research scenario (analysis, interfaces, IR/trace, navigation, flow, registers, memory slices, data/knowledge review and preservation) in Rust; `harness.py` and every remaining Python file are removed; owner docs, Blobray references and full checks close 12.R. |
 
 12.R.1 acceptance: `blobray_next_host::wire` owns the record, run and
 inventory documents. The renderer emits them, and execution/import CLI tests
@@ -1091,3 +1091,26 @@ changes are:
 
 The I2C scenario with both SDK inputs passes in about 100 seconds. All 552 Next
 and scenario tests, formatting and strict Clippy pass.
+
+12.R.3 acceptance: the `research` scenario runs the authenticated PHY research
+route in Rust. It covers:
+
+- finite ROM address alternatives, the unresolved callback and its interface
+  discovery;
+- extent coverage, the linked command-memory image, and IR build with exact,
+  DIFF and INCOMPLETE static traces;
+- three repeated linked researches with phase measurements;
+- navigation, flow targets and effects, the register catalogue, memory slices
+  and storage usage;
+- table, constant, pointer and callback review;
+- manifest and span verification, doctor, move, backup/restore, and restored
+  byte-identical exports and query documents.
+
+All records decode into Blobray domain types. File exports use distinct
+labels, so no retained stdout can overwrite an export. It passes on the
+authenticated inputs under watchdog limits in 86 seconds; the Python runner
+took 104 seconds. `harness.py`, `test_harness.py` and `phy_research.py` are
+removed, and no Python scenario code remains. Owner documentation and the
+design contract point to the Rust scenarios. The scenario package tests,
+formatting, strict Clippy, the docs, architecture and standalone checks, and
+the full source-only checkpoint pass.

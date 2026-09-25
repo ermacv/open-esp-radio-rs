@@ -1030,7 +1030,7 @@ keys, malformed DAGs and resource failure; Next
 `saved_callback_discovery_review_states_guards_and_export_share_one_query_contract`
 and `captured_symbol_less_pointer_slots_match_only_selected_structural_declarations`
 cover shared API/CLI, review states, conditional matches and source removal. The real
-`phy_research.py` checks the independently read ROM global/slot path, explicit unknown
+ESP32-S31 `research` scenario checks the independently read ROM global/slot path, explicit unknown
 signature, acceptance and byte-identical query export after backup/restore.
 
 

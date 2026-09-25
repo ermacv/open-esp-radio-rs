@@ -2853,7 +2853,11 @@ fn export_data_query(
     match format {
         Format::Json => println!(
             "{}",
-            serde_json::json!({"schema":1,"summary":result.summary(),"output":output})
+            serde_json::json!(blobray_next_host::wire::ExportDocument {
+                schema: 1,
+                summary: result.summary(),
+                output: &output,
+            })
         ),
         Format::Human => println!("Data exported to {}", output.display()),
     }

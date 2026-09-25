@@ -435,7 +435,7 @@ impl I2c {
             behavior: DeviceBehavior::RegisterBank {
                 cells: (0..45)
                     .map(|i| RegisterCell {
-                        address: 0x2010_fc00 + i * 4,
+                        address: COMMAND_RAM + i * 4,
                         width: 4,
                         value: 0,
                     })
@@ -596,7 +596,7 @@ impl I2c {
                     .iter()
                     .enumerate()
                     .map(|(i, w)| ExecutionEvent::Write {
-                        address: 0x2010_fc00 + 4 * i as u32,
+                        address: COMMAND_RAM + 4 * i as u32,
                         width: 4,
                         value: *w,
                     })

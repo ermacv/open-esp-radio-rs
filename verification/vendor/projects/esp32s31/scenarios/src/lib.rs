@@ -14,6 +14,7 @@ pub mod harness_edges;
 pub mod i2c;
 pub mod i2c_transport;
 pub mod layout;
+pub mod research;
 pub mod rfpll;
 pub mod session;
 

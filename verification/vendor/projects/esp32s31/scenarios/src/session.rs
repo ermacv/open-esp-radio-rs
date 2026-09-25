@@ -57,12 +57,7 @@ impl Session {
         inputs: &[Input<'_>],
         scope: &str,
     ) -> Result<Self> {
-        fs::create_dir_all(output)?;
-        let run = tempfile::Builder::new()
-            .prefix("run-")
-            .tempdir_in(std::path::absolute(output)?)?
-            .keep();
-        fs::write(output.join("latest"), run.as_os_str().as_encoded_bytes())?;
+        let run = start_run(output)?;
         let runner = Runner::new(binary, &run, run.join("project"), budget)?;
         let (revision, identities) = runner.capture(inputs)?;
         let roles: Vec<_> = inputs.iter().map(|i| i.role).collect();
@@ -266,6 +261,17 @@ impl Session {
         }
         Ok(())
     }
+}
+
+/// Create a fresh `run-*` directory below `output` and record it as `latest`.
+pub fn start_run(output: &Path) -> Result<PathBuf> {
+    fs::create_dir_all(output)?;
+    let run = tempfile::Builder::new()
+        .prefix("run-")
+        .tempdir_in(std::path::absolute(output)?)?
+        .keep();
+    fs::write(output.join("latest"), run.as_os_str().as_encoded_bytes())?;
+    Ok(run)
 }
 
 /// Resolve one uniquely named defined symbol in an exported image and retain

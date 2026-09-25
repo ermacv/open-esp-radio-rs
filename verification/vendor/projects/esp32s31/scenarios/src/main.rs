@@ -5,7 +5,7 @@ use oer_esp32s31_vendor_scenarios::{
     gain::{Gain, Options},
     gain_state::{self, Unmet},
     harness::{Budget, Result},
-    harness_edges, i2c, i2c_transport, rfpll,
+    harness_edges, i2c, i2c_transport, research, rfpll,
 };
 use std::{path::PathBuf, process::ExitCode};
 
@@ -26,6 +26,27 @@ enum Scenario {
         /// Authenticated `librftest.a`; without it the producer obligation stays unmet.
         #[arg(long)]
         rftest: Option<PathBuf>,
+    },
+    /// Captured PHY research, navigation, register/data review and
+    /// source-free preservation of every retained result.
+    Research {
+        /// `blobray` executable.
+        #[arg(long)]
+        binary: PathBuf,
+        /// Pinned `libphy.a`.
+        #[arg(long)]
+        library: PathBuf,
+        /// Pinned ROM ELF.
+        #[arg(long)]
+        rom: PathBuf,
+        /// External linker selected for image preparation.
+        #[arg(long)]
+        linker: PathBuf,
+        /// Ignored output root; each run creates a new `run-*` directory.
+        #[arg(long)]
+        output: PathBuf,
+        #[command(flatten)]
+        budget: Budget,
     },
     /// PHY I2C command memory and transport, harness call edges, calibration
     /// leaves and PBus/DCODE prefix (`--sdk`) and RFPLL (`--phy-sdk`). Each
@@ -150,6 +171,28 @@ fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result
 fn main() -> ExitCode {
     let result = match Cli::parse().scenario {
         Scenario::Gain { common, rftest } => gain(common, rftest),
+        Scenario::Research {
+            binary,
+            library,
+            rom,
+            linker,
+            output,
+            budget,
+        } => research::exercise(&research::Options {
+            binary,
+            library,
+            rom,
+            linker,
+            output,
+            budget,
+        })
+        .map(|run| {
+            println!(
+                "authenticated PHY research, review and source-free preservation passed {}",
+                run.display()
+            );
+            ExitCode::SUCCESS
+        }),
         Scenario::I2c {
             common,
             sdk,

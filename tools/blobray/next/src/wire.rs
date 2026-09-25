@@ -40,6 +40,15 @@ pub struct RunDocument<R = RunRecord> {
     pub run: R,
 }
 
+/// Summary of a query whose records were exported to files in `output`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExportDocument<S = QuerySummary, P = std::path::PathBuf> {
+    pub schema: u32,
+    pub summary: S,
+    pub output: P,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InventorySnapshot {

@@ -15,6 +15,11 @@ macro_rules! rx_request {
     };
 }
 
+/// Integration limits strictly below the hardware window of the active
+/// build profile; the reduced-memory profile uses an eight-entry window.
+const QUARTER_WINDOW: u16 = RX_BLOCK_ACK_MAX_WINDOW / 4;
+const HALF_WINDOW: u16 = RX_BLOCK_ACK_MAX_WINDOW / 2;
+
 fn frame(sequence: u16, slot: u8) -> RxAmpduMpdu {
     RxAmpduMpdu {
         sequence: SequenceNumber::new(sequence).unwrap(),
@@ -58,7 +63,7 @@ fn station_and_access_point_share_one_public_reorder_classifier() {
 #[test]
 fn reset_clears_sessions_without_widening_the_integration_limit() {
     let peer = [2, 0, 0, 0, 0, 1];
-    let mut sessions = RxBlockAckSessions::<1>::with_maximum_window(16).unwrap();
+    let mut sessions = RxBlockAckSessions::<1>::with_maximum_window(QUARTER_WINDOW).unwrap();
     sessions
         .offer(rx_request!(
             MacInterface::AccessPoint,
@@ -77,7 +82,7 @@ fn reset_clears_sessions_without_widening_the_integration_limit() {
 
     sessions.reset_after_hardware_reset();
 
-    assert_eq!(sessions.maximum_window(), 16);
+    assert_eq!(sessions.maximum_window(), QUARTER_WINDOW);
     assert!(sessions.snapshots().iter().all(Option::is_none));
     sessions
         .offer(rx_request!(
@@ -92,7 +97,7 @@ fn reset_clears_sessions_without_widening_the_integration_limit() {
         ))
         .unwrap();
     let activation = sessions.begin_pending().unwrap().unwrap();
-    assert_eq!(activation.negotiated().window, 16);
+    assert_eq!(activation.negotiated().window, QUARTER_WINDOW);
     assert_eq!(activation.hardware().window, RX_BLOCK_ACK_MAX_WINDOW);
 }
 
@@ -113,7 +118,8 @@ fn in_order_frames_are_released_immediately() {
 #[test]
 fn immediate_ingest_avoids_a_release_list_only_without_a_buffered_successor() {
     let mut reorder =
-        RxBlockAckReorderState::<65>::new(SequenceNumber::new(100).unwrap(), 16).unwrap();
+        RxBlockAckReorderState::<65>::new(SequenceNumber::new(100).unwrap(), QUARTER_WINDOW)
+            .unwrap();
     assert_eq!(
         reorder.try_ingest_immediate(frame(100, 64)),
         Ok(Some(frame(100, 64)))
@@ -415,8 +421,8 @@ fn station_rx_sessions_bind_protocol_window_hardware_bank_and_response() {
 #[test]
 fn integration_can_narrow_the_negotiated_rx_window_without_changing_hardware_geometry() {
     let peer = [0x30, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
-    let mut sessions = RxBlockAckSessions::<1>::with_maximum_window(32).unwrap();
-    assert_eq!(sessions.maximum_window(), 32);
+    let mut sessions = RxBlockAckSessions::<1>::with_maximum_window(HALF_WINDOW).unwrap();
+    assert_eq!(sessions.maximum_window(), HALF_WINDOW);
     sessions
         .offer(rx_request!(
             MacInterface::Station,
@@ -431,7 +437,7 @@ fn integration_can_narrow_the_negotiated_rx_window_without_changing_hardware_geo
         .unwrap();
 
     let activation = sessions.begin_pending().unwrap().unwrap();
-    assert_eq!(activation.negotiated().window, 32);
+    assert_eq!(activation.negotiated().window, HALF_WINDOW);
     assert_eq!(activation.hardware().window, RX_BLOCK_ACK_MAX_WINDOW);
     assert_eq!(
         crate::tx::ampdu::parse_block_ack_action(activation.response_body()),
@@ -441,7 +447,7 @@ fn integration_can_narrow_the_negotiated_rx_window_without_changing_hardware_geo
             tid: 0,
             immediate: true,
             amsdu: false,
-            window: 32,
+            window: HALF_WINDOW,
             timeout_tu: 0,
         })
     );

@@ -120,3 +120,24 @@ pub fn parameter_tracking_state(
 pub fn rfpll_reference_temperature(state: &crate::PhyState) -> i16 {
     state.rfpll_tracking_request(None).reference_temperature
 }
+
+/// The calibration state `state` retains, as persistence would capture it,
+/// under an all-zero identity, so a comparison can read committed fields.
+pub fn calibration_snapshot(state: &crate::PhyState) -> crate::state::PhyCalibrationSnapshot {
+    state.calibration_snapshot(crate::calibration::registration::PhyCalibrationIdentity {
+        rf_cal_version: 0,
+        base_mac_address: [0; 6],
+        mac_extension: 0,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn calibration_snapshot_reads_committed_state() {
+        let mut state = crate::PhyState::default();
+        let codes = [1, 2, 3, 4, 5, 6, 7, 8];
+        state.apply_dcode_outcome(crate::analog::dcode::PhyDcodeOutcome { codes });
+        assert_eq!(super::calibration_snapshot(&state).common.dcode, codes);
+    }
+}

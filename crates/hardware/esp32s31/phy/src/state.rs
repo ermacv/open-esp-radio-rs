@@ -1495,7 +1495,7 @@ impl PhyState {
         Ok(())
     }
 
-    const fn calibration_snapshot(
+    pub(crate) const fn calibration_snapshot(
         &self,
         identity: crate::calibration::registration::PhyCalibrationIdentity,
     ) -> PhyCalibrationSnapshot {

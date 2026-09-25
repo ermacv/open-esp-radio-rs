@@ -48,7 +48,7 @@ pub(super) fn configure(command: &mut Command, output: &Path) -> Result<()> {
     let flags = format!("{flags} -Zdump-mono-stats={path} -Zdump-mono-stats-format=json");
     fs::create_dir(&stats)?;
     command.env("RUSTFLAGS", &flags);
-    crate::evidence::run::atomic_json(
+    crate::durable::atomic_json(
         &output.join("mono-command.json"),
         &serde_json::json!({
             "program": command.get_program(),
@@ -93,7 +93,7 @@ pub(crate) fn capture(root: &Path, class: ImageClass) -> Result<()> {
         .keep();
     let rustc = output(root, "rustc", &["-vV"])?;
     let cargo = output(root, "cargo", &["-V"])?;
-    crate::evidence::run::atomic_json(
+    crate::durable::atomic_json(
         &directory.join("capture.json"),
         &serde_json::json!({
             "schema":1,"status":"building","commit":commit,"class":class.id(),"rustc":rustc,"cargo":cargo,
@@ -136,7 +136,7 @@ pub(crate) fn capture(root: &Path, class: ImageClass) -> Result<()> {
         return Err("compiler produced no definition estimates; capture is incomplete".into());
     }
     let linked = open_esp_radio_memory_report::analyze_code(&artifacts.runtime_elf)?;
-    crate::evidence::run::atomic_json(&directory.join("linked-code.json"), &linked)?;
+    crate::durable::atomic_json(&directory.join("linked-code.json"), &linked)?;
     let report = serde_json::json!({"schema":1,"status":"complete","commit":commit,"class":class.id(),
         "target":TARGET,"rustc":rustc,"cargo":cargo,
         "scope":"runtime compiler estimates; no linked-byte attribution or HIL qualification",
@@ -146,7 +146,7 @@ pub(crate) fn capture(root: &Path, class: ImageClass) -> Result<()> {
         "bootstrap_lock":identity(&artifacts.effective_bootstrap_lock)?,
         "linked_code":identity(&directory.join("linked-code.json"))?,
     });
-    crate::evidence::run::atomic_json(&directory.join("capture.json"), &report)?;
+    crate::durable::atomic_json(&directory.join("capture.json"), &report)?;
     crate::emit_json(
         &serde_json::json!({"capture":directory.join("capture.json"),"compiler_files":files.len()}),
         false,

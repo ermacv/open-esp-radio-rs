@@ -1,7 +1,7 @@
 //! Independent Linux ATT peer for the shared plaintext Trouble application.
 use crate::{
     Result,
-    execution::context::Context,
+    context::Context,
     fixture::bluetooth::{att, model::PeerAddress},
     session::SerialCapture,
 };
@@ -33,7 +33,7 @@ pub(crate) fn run(output: &Path, context: &Context<'_>) -> Result<()> {
             wait(capture, &mut samples, |e| !e.connected)?;
             Ok(())
         });
-        crate::evidence::run::atomic_json(&output.join("trouble-gatt.json"), &serde_json::json!({
+        crate::durable::atomic_json(&output.join("trouble-gatt.json"), &serde_json::json!({
             "schema": 1, "security": "plaintext", "connections": 3,
             "samples": samples, "exchanges": exchanges,
             "passed": probe.is_ok() && cleanup.is_ok(),

@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use super::{config::LabConfig, requirements::Requirements};
+use crate::lab::{config::LabConfig, requirements::Requirements};
 use crate::{Result, fixture, image, scenario::Scenario};
 
 #[derive(Default, Serialize)]
@@ -72,7 +72,7 @@ pub(crate) fn run(root: &Path, lab: &LabConfig, scenarios: &[&Scenario]) -> Resu
         })?;
     }
     checks.run("resource-ownership", || {
-        super::lock::FixtureLock::acquire_for(lab, required).map(|_| ())
+        crate::lab::lock::FixtureLock::acquire_for(lab, required).map(|_| ())
     })?;
     crate::emit_json(
         &serde_json::json!({

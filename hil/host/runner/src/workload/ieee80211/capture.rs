@@ -1,6 +1,6 @@
 //! Finite normalized 802.11 capture exported through the typed HIL protocol.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 mod assembly;
 mod pcapng;
 
@@ -84,7 +84,7 @@ fn qualify(
     context: &Context<'_>,
     options: &Config,
 ) -> Result<CaptureResult> {
-    let capabilities = serial.prepare_station(context, options.timeout)?;
+    let capabilities = serial.prepare_station(context.target(), options.timeout)?;
     if !capabilities.features.wifi_monitor_capture {
         return Err("firmware does not advertise typed monitor capture".into());
     }

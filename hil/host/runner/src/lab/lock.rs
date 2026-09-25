@@ -175,7 +175,7 @@ fn resource_keys(
 fn local_radio_key(interface: &Path) -> Result<String> {
     if interface == Path::new("/sys/class/net/wlan0") && !interface.exists() {
         let output = Command::new("sudo")
-            .args(["-n", crate::fixture::network_helper::PATH, "identity"])
+            .args(["-n", super::NETWORK_HELPER, "identity"])
             .supervised_output()?;
         if !output.status.success() {
             return Err("cannot resolve saved HIL radio identity".into());
@@ -234,7 +234,7 @@ fn command_line() -> String {
 #[cfg(test)]
 mod tests;
 
-fn bluetooth_key(adapter: crate::fixture::bluetooth::model::Adapter) -> Result<String> {
+fn bluetooth_key(adapter: open_esp_radio_hil_fixture::bluetooth::model::Adapter) -> Result<String> {
     Ok(format!(
         "bluetooth:{}",
         Path::new("/sys/class/bluetooth")
@@ -245,7 +245,7 @@ fn bluetooth_key(adapter: crate::fixture::bluetooth::model::Adapter) -> Result<S
 }
 
 pub(crate) fn acquire_bluetooth(
-    adapter: crate::fixture::bluetooth::model::Adapter,
+    adapter: open_esp_radio_hil_fixture::bluetooth::model::Adapter,
 ) -> Result<ResourceLease> {
     use sha2::{Digest, Sha256};
     ResourceLease::acquire_directory(&oer_firmware::device::lease_directory()?.join(format!(

@@ -1,6 +1,6 @@
 //! Typed TCP RX, TX and full-duplex qualification over one runtime image.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::{fs, net::Ipv4Addr, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
@@ -57,7 +57,7 @@ pub(crate) fn run(
     let capture = context.capture(output)?;
     let ready = match await_tcp_ready(
         &capture,
-        context,
+        context.target(),
         options.device,
         options.port,
         direction,

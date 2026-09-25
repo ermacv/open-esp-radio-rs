@@ -1,5 +1,5 @@
 //! SoC reset evidence without a radio peer; distinct from DTM RF evidence.
-use crate::{Result, execution::context::Context};
+use crate::{Result, context::Context};
 use open_esp_radio_hil_protocol::{ResetReason, WatchdogTestMode as Mode};
 use std::{path::Path, time::Duration};
 
@@ -35,7 +35,7 @@ pub(crate) fn run(output: &Path, context: &Context<'_>) -> Result<()> {
             if reboot.is_some() && fresh.reset_reason != ResetReason::MainWatchdog1 {
                 return Err("expected autonomous MWDT1 reset, not software reset".into());
             }
-            crate::evidence::run::atomic_json(
+            crate::durable::atomic_json(
                 &directory.join("watchdog.json"),
                 &serde_json::json!({
                     "schema": 2, "mode": mode, "budget_micros": 1_000_000,

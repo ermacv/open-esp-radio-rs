@@ -1,7 +1,6 @@
 mod pause;
 
 use super::*;
-use crate::execution::context::Context;
 
 #[derive(serde::Serialize)]
 pub(crate) struct Observation {
@@ -77,10 +76,10 @@ impl SerialCapture {
     /// appended to the UART capture.
     fn prepare_protocol(
         &self,
-        context: &Context<'_>,
+        target: Target<'_>,
     ) -> Result<(Capabilities, Option<StartupArtifactStatus>)> {
         let capabilities = self.request_capabilities(PROTOCOL_READY_TIMEOUT)?;
-        let artifact_path = context.lab.device.startup_artifact.as_deref();
+        let artifact_path = target.lab.device.startup_artifact.as_deref();
         if artifact_path.is_some() && !capabilities.features.startup_artifact {
             return Err("firmware does not support a host-owned startup artifact".into());
         }
@@ -95,7 +94,7 @@ impl SerialCapture {
             self.upload_startup_artifact(&bytes, PROTOCOL_READY_TIMEOUT)?;
         }
         if capabilities.features.runtime_initialization {
-            self.initialize(context, PROTOCOL_READY_TIMEOUT)?;
+            self.initialize(target, PROTOCOL_READY_TIMEOUT)?;
         }
         let startup_artifact_status = if capabilities.features.startup_artifact
             && let Some(path) = artifact_path
@@ -192,19 +191,19 @@ impl SerialCapture {
             }))
     }
 
-    fn initialize(&self, context: &Context<'_>, timeout: Duration) -> Result<()> {
+    fn initialize(&self, target: Target<'_>, timeout: Duration) -> Result<()> {
         let first_event = self.protocol_event_count();
         let response = self.send_command(
             0,
             Command::Initialize(open_esp_radio_hil_protocol::InitializationConfiguration {
-                ap_scheduler: context.settings.ap_scheduler,
-                ipv4: context.lab.station.ipv4(),
-                data_plane: context.settings.data_plane,
-                rx_checksum: context.settings.rx_checksum,
-                tx_udp_checksum: context.settings.tx_udp_checksum,
-                tx_buffer: context.settings.tx_buffer,
-                rx_continuation: context.settings.rx_continuation,
-                l1_cache_counters: context.settings.l1_cache_counters,
+                ap_scheduler: target.settings.ap_scheduler,
+                ipv4: target.lab.station.ipv4(),
+                data_plane: target.settings.data_plane,
+                rx_checksum: target.settings.rx_checksum,
+                tx_udp_checksum: target.settings.tx_udp_checksum,
+                tx_buffer: target.settings.tx_buffer,
+                rx_continuation: target.settings.rx_continuation,
+                l1_cache_counters: target.settings.l1_cache_counters,
             }),
             timeout,
         )?;
@@ -232,30 +231,30 @@ impl SerialCapture {
     /// exists. The caller must observe its lifecycle and terminal outcome.
     pub(crate) fn begin_station_attempt(
         &self,
-        context: &Context<'_>,
+        target: Target<'_>,
     ) -> Result<(Capabilities, WifiCommandHandle)> {
-        let (capabilities, _) = self.prepare_protocol(context)?;
-        let handle = self.request_station_start(context)?;
+        let (capabilities, _) = self.prepare_protocol(target)?;
+        let handle = self.request_station_start(target)?;
         Ok((capabilities, handle))
     }
 
     pub(crate) fn prepare_station(
         &self,
-        context: &Context<'_>,
+        target: Target<'_>,
         timeout: Duration,
     ) -> Result<Capabilities> {
-        self.prepare_station_with_startup_artifact_status(context, timeout)
+        self.prepare_station_with_startup_artifact_status(target, timeout)
             .map(|(capabilities, _)| capabilities)
     }
 
     pub(crate) fn prepare_station_with_startup_artifact_status(
         &self,
-        context: &Context<'_>,
+        target: Target<'_>,
         timeout: Duration,
     ) -> Result<(Capabilities, Option<StartupArtifactStatus>)> {
-        let (capabilities, startup_artifact_status) = self.prepare_protocol(context)?;
+        let (capabilities, startup_artifact_status) = self.prepare_protocol(target)?;
         let lifecycle_cursor = self.station_lifecycle_cursor();
-        let handle = self.request_station_start(context)?;
+        let handle = self.request_station_start(target)?;
         self.wait_wifi_role_transition(handle, timeout)?;
         self.wait_for_connected_station_after(lifecycle_cursor, timeout)?;
         Ok((capabilities, startup_artifact_status))
@@ -1219,9 +1218,9 @@ impl SerialCapture {
         }
     }
 
-    pub(crate) fn request_station_start(&self, context: &Context<'_>) -> Result<WifiCommandHandle> {
+    pub(crate) fn request_station_start(&self, target: Target<'_>) -> Result<WifiCommandHandle> {
         self.request_wifi_command(
-            Command::StartStation(context.lab.station.protocol_credentials()?),
+            Command::StartStation(target.lab.station.protocol_credentials()?),
             "station start",
         )
     }

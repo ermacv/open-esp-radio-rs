@@ -1,6 +1,6 @@
 //! ICMP latency and loss qualification for an already connected target.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::{
     fs, io,
     net::Ipv4Addr,
@@ -61,7 +61,7 @@ pub(crate) fn run(
 ) -> Result<()> {
     let mut options = options.validate()?;
     let capture = context.capture(output)?;
-    options.device = match await_network_ready(&capture, context, NETWORK_READY_TIMEOUT) {
+    options.device = match await_network_ready(&capture, context.target(), NETWORK_READY_TIMEOUT) {
         Ok(address) => address,
         Err(error) => {
             return capture.finish_with(Err(error));

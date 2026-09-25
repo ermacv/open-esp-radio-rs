@@ -4,7 +4,7 @@
 //! must be named explicitly before any content is archived. This is a source
 //! snapshot, not a hermetic build or a qualification decision.
 
-use crate::{Result, evidence::run::atomic_json};
+use crate::{Result, durable::atomic_json};
 use oer_process::CommandExt as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -93,7 +93,7 @@ impl FrozenSources {
                 let metadata = fs::symlink_metadata(&path)?;
                 if !metadata.is_file()
                     || metadata.len() != file.size_bytes
-                    || crate::evidence::run::sha256_file(&path)? != file.sha256
+                    || crate::durable::sha256_file(&path)? != file.sha256
                 {
                     return Err(format!(
                         "frozen build input changed: {}:{}",
@@ -290,7 +290,7 @@ fn capture_roots(
     }
     let manifest = Manifest { schema: 1, sources };
     let snapshot_id = digest(&serde_json::to_vec(&manifest)?);
-    let archive_sha256 = crate::evidence::run::sha256_file(&archive_path)?;
+    let archive_sha256 = crate::durable::sha256_file(&archive_path)?;
     atomic_json(&staging.path().join("manifest.json"), &manifest)?;
     let snapshot = Snapshot {
         schema: 1,
@@ -305,7 +305,7 @@ fn capture_roots(
             != fs::read(staging.path().join("manifest.json"))?
             || fs::read(snapshot.directory.join("snapshot.json"))?
                 != fs::read(staging.path().join("snapshot.json"))?
-            || crate::evidence::run::sha256_file(&snapshot.directory.join("sources.tar"))?
+            || crate::durable::sha256_file(&snapshot.directory.join("sources.tar"))?
                 != snapshot.archive_sha256
         {
             return Err("existing source snapshot has conflicting or corrupted content".into());

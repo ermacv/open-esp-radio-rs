@@ -1,6 +1,6 @@
 //! Controlled upstream loss and explicit same-channel STA+AP restart.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
@@ -46,7 +46,7 @@ fn qualify(
     output: &Path,
 ) -> Result<()> {
     let mut lifecycle_cursor = capture.station_lifecycle_cursor();
-    let capabilities = capture.prepare_station(context, timeout)?;
+    let capabilities = capture.prepare_station(context.target(), timeout)?;
     if !capabilities.features.simultaneous_station_access_point
         || !capabilities.features.station_lifecycle_events
     {

@@ -5,7 +5,7 @@ use std::process::Command;
 
 use crate::Result;
 
-pub(crate) const PATH: &str = "/usr/local/sbin/open-radio-net";
+pub(crate) use crate::lab::NETWORK_HELPER as PATH;
 const REQUIRED_CAPABILITIES: &str =
     "schema=12 station_ap=ht20,ht40,he20 client=1 observer=20,40 managed=1 rfkill=restore";
 

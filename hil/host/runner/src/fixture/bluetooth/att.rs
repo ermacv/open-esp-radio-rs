@@ -102,7 +102,7 @@ impl Owner {
             restored: false,
             parameters: None,
         };
-        crate::evidence::run::atomic_json(
+        crate::durable::atomic_json(
             &output.join("adapter-before.json"),
             &serde_json::json!({"adapter": adapter.to_string(), "address": address.to_string(), "powered": false, "soft_blocked": owner.blocked}),
         )?;

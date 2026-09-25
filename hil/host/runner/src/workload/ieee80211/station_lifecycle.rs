@@ -1,6 +1,6 @@
 //! Host control for bounded connected-STA lifecycle qualification.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::{
     fs,
     path::Path,
@@ -89,7 +89,7 @@ fn qualify(
     // waits forever for a second one.
     let mut lifecycle_cursor = capture.station_lifecycle_cursor();
     let (capabilities, startup_artifact_status) =
-        capture.prepare_station_with_startup_artifact_status(context, timeout)?;
+        capture.prepare_station_with_startup_artifact_status(context.target(), timeout)?;
     validate_startup_artifact_replay(boot, startup_artifact_status)?;
     if !capabilities.features.station_epoch_control {
         return Err("firmware does not advertise station epoch control".into());

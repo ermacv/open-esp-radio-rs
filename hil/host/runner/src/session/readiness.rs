@@ -1,5 +1,5 @@
+use super::Target;
 use super::*;
-use crate::execution::context::Context;
 
 pub(super) fn session_ready_covers(
     configured: Direction,
@@ -69,13 +69,13 @@ pub(crate) fn prepare_udp_reverse_flow(
 /// measured host connection is the sole stream owned by that session.
 pub(crate) fn await_tcp_ready(
     capture: &SerialCapture,
-    context: &Context<'_>,
+    target: Target<'_>,
     address_hint: Ipv4Addr,
     port: u16,
     direction: Direction,
     timeout: Duration,
 ) -> Result<TcpReady> {
-    let capabilities = capture.prepare_station(context, timeout)?;
+    let capabilities = capture.prepare_station(target, timeout)?;
     let direction_supported = match direction {
         Direction::Rx => capabilities.features.rx,
         Direction::Tx => capabilities.features.tx,
@@ -102,10 +102,10 @@ pub(crate) fn await_tcp_ready(
 /// Provisions the station and returns only the typed `NetworkReady` address.
 pub(crate) fn await_network_ready(
     capture: &SerialCapture,
-    context: &Context<'_>,
+    target: Target<'_>,
     timeout: Duration,
 ) -> Result<Ipv4Addr> {
-    capture.prepare_station(context, timeout)?;
+    capture.prepare_station(target, timeout)?;
     wait_for_services(capture, WifiNetworkInterface::Station, &[], timeout)
 }
 /// Wait until the target owns its IPv4 address and UDP RX service.
@@ -115,12 +115,12 @@ pub(crate) fn await_network_ready(
 /// provide measured synchronization.
 pub(crate) fn await_udp_rx_ready(
     capture: &SerialCapture,
-    context: &Context<'_>,
+    target: Target<'_>,
     address_hint: Ipv4Addr,
     port: u16,
     timeout: Duration,
 ) -> Result<UdpRxReady> {
-    let capabilities = capture.prepare_station(context, timeout)?;
+    let capabilities = capture.prepare_station(target, timeout)?;
     if !capabilities.features.udp || !capabilities.features.rx {
         return Err("firmware does not advertise UDP RX capability".into());
     }
@@ -242,11 +242,11 @@ pub(crate) fn probe_udp_rx_ready_via(
 
 pub(crate) fn await_udp_tx_ready(
     capture: &SerialCapture,
-    context: &Context<'_>,
+    target: Target<'_>,
     address_hint: Ipv4Addr,
     timeout: Duration,
 ) -> Result<UdpTxReady> {
-    let capabilities = capture.prepare_station(context, timeout)?;
+    let capabilities = capture.prepare_station(target, timeout)?;
     if !capabilities.features.udp || !capabilities.features.tx {
         return Err("firmware does not advertise UDP TX capability".into());
     }

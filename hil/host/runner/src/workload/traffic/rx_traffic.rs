@@ -1,6 +1,6 @@
 //! Host sender and report writer for production RX-only qualification.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::{env, fs, net::Ipv4Addr, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
@@ -78,7 +78,7 @@ pub(crate) fn run(
     let capture = context.capture(output)?;
     let discovered_address = match await_udp_rx_ready(
         &capture,
-        context,
+        context.target(),
         options.address,
         options.port,
         DEVICE_READY_TIMEOUT,

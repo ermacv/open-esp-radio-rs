@@ -1,5 +1,6 @@
 //! Rebuildable history and stability views derived from immutable run bundles.
 
+use crate::durable::{atomic_json, atomic_write};
 use std::{
     collections::BTreeMap,
     fmt::Write as _,
@@ -12,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::Result;
 use crate::evidence::run::{
     Measurement, MeasurementUnit, MeasurementVerdict, Outcome, RUN_SCHEMA, RunManifest, RunState,
-    SuiteCounts, SuiteResult, Threshold, atomic_json, atomic_write,
+    SuiteCounts, SuiteResult, Threshold,
 };
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

@@ -1,5 +1,5 @@
 //! Real PHY owner checkpoints, independently terminated by the SoC service.
-use crate::{Result, execution::context::Context, session::SerialCapture};
+use crate::{Result, context::Context, session::SerialCapture};
 use open_esp_radio_hil_protocol::{
     PhyFaultCommand as Control, PhyFaultMode as Mode, PhyFaultPhase as Phase, ResetReason,
 };
@@ -77,7 +77,7 @@ pub(in crate::workload) fn run<S: Scenario>(
             })();
             evidence["passed"] = serde_json::json!(result.is_ok());
             evidence["error"] = serde_json::json!(result.as_ref().err().map(ToString::to_string));
-            crate::evidence::run::atomic_json(&directory.join("phy-watchdog.json"), &evidence)?;
+            crate::durable::atomic_json(&directory.join("phy-watchdog.json"), &evidence)?;
             result
         })?;
     }

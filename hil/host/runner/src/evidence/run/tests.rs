@@ -1,4 +1,5 @@
 use super::*;
+use crate::durable::UNIQUE_FILE_COUNTER;
 use crate::evidence::build::{SourceLimitation, SourceRebuildStatus, capture_source_material};
 
 fn temporary_directory(label: &str) -> PathBuf {
@@ -618,7 +619,7 @@ fn finish_writes_all_views_and_completes_manifest() {
     assert!(completion.history_report.as_ref().unwrap().is_file());
     assert!(completion.history_html.as_ref().unwrap().is_file());
     assert!(completion.history_failure.is_none());
-    let history: crate::reporting::history::HistoryReport =
+    let history: crate::evidence::reporting::history::HistoryReport =
         serde_json::from_slice(&fs::read(completion.history_report.as_ref().unwrap()).unwrap())
             .unwrap();
     assert_eq!(history.counts.runs, 1);
@@ -746,7 +747,7 @@ fn unrelated_history_failure_cannot_revoke_a_sealed_run() {
         assert_eq!(manifest.state, RunState::Completed);
         let sealed = fs::read(&completion.integrity_report).unwrap();
         fs::remove_dir(unrelated).unwrap();
-        crate::reporting::history::rebuild_at(&root, "esp32s31").unwrap();
+        crate::evidence::reporting::history::rebuild_at(&root, "esp32s31").unwrap();
         assert_eq!(fs::read(completion.integrity_report).unwrap(), sealed);
         fs::remove_dir_all(root).unwrap();
     }
@@ -833,8 +834,8 @@ fn history_counts_sealed_attempt_once_before_and_after_campaign_completion() {
     );
     session.seal_scenario(&scenario, &result).unwrap();
     let read = || {
-        crate::reporting::history::rebuild_at(&root, "esp32s31").unwrap();
-        serde_json::from_slice::<crate::reporting::history::HistoryReport>(
+        crate::evidence::reporting::history::rebuild_at(&root, "esp32s31").unwrap();
+        serde_json::from_slice::<crate::evidence::reporting::history::HistoryReport>(
             &fs::read(root.join("history.json")).unwrap(),
         )
         .unwrap()
@@ -857,7 +858,7 @@ fn history_counts_sealed_attempt_once_before_and_after_campaign_completion() {
     assert_eq!(history.scenarios[0].observations, 1);
     assert_eq!(history.measurements[0].observations, 1);
     fs::write(run.join("scenarios/boot-smoke/result.json"), b"{}").unwrap();
-    assert!(crate::reporting::history::rebuild_at(&root, "esp32s31").is_err());
+    assert!(crate::evidence::reporting::history::rebuild_at(&root, "esp32s31").is_err());
     fs::remove_dir_all(root).unwrap();
 }
 

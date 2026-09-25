@@ -1,5 +1,6 @@
 //! Secret-free, pre-run observations of the physical HIL cell.
 
+use crate::durable::unix_millis;
 use oer_process::CommandExt as _;
 use std::{collections::BTreeMap, fs, net::Ipv4Addr, path::Path, process::Command};
 
@@ -8,7 +9,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Result,
-    evidence::run::unix_millis,
     lab::config::{LabConfig, OpenWrtConfig, StationFixtureConfig},
     scenario::PhyExpectation,
 };
@@ -478,7 +478,7 @@ fn capture_openwrt_before(config: &OpenWrtConfig) -> Result<FixtureObservation> 
             interface = config.wireless_interface
         ))
         .supervised_output()
-        .and_then(crate::fixture::Error::ssh_output)?;
+        .and_then(super::Error::ssh_output)?;
     if openwrt_has_active_channel(output.status.code(), std::str::from_utf8(&output.stdout)?)? {
         Ok(FixtureObservation::OpenWrt(Box::new(capture_openwrt(
             config,

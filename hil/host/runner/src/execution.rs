@@ -7,14 +7,13 @@ use crate::{
     evidence::run::{Failure, FailureKind, Outcome},
 };
 
-pub(crate) mod context;
-mod failure;
+pub(crate) mod doctor;
 pub(crate) mod firmware;
 pub(crate) mod orchestration;
 pub(crate) mod preflight;
 #[cfg(test)]
 mod tests;
-pub(crate) use failure::classify;
+pub(crate) use crate::failure::classify;
 
 #[derive(Default)]
 pub(crate) struct ExecutionEvidence {
@@ -43,7 +42,8 @@ pub(crate) fn execute_workload(
     fixture: &crate::fixture::prepared::Prepared,
 ) -> ExecutionEvidence {
     let context =
-        context::Context::new(lab, context::Settings::from(selected), output).with_fixture(fixture);
+        crate::context::Context::new(lab, crate::session::Settings::from(selected), output)
+            .with_fixture(fixture);
     let result = execute_workload_inner(&context, selected, output);
     let mut evidence = ExecutionEvidence {
         measurements: context.measurements.snapshot(),
@@ -63,7 +63,7 @@ pub(crate) fn execute_workload(
 }
 
 fn execute_workload_inner(
-    context: &context::Context<'_>,
+    context: &crate::context::Context<'_>,
     selected: &crate::scenario::Scenario,
     output: &Path,
 ) -> Result<()> {
@@ -650,7 +650,7 @@ fn execute_workload_inner(
     }
 }
 
-fn boot_smoke(output: &Path, context: &context::Context<'_>) -> Result<()> {
+fn boot_smoke(output: &Path, context: &crate::context::Context<'_>) -> Result<()> {
     context.with_capture(output, |capture| {
         capture.wait_for_boot_smoke(std::time::Duration::from_secs(10))
     })

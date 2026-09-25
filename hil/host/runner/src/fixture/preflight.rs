@@ -2,17 +2,18 @@
 
 use crate::{
     Result,
+    evidence::run::{Failure, FailureKind},
     lab::{
         config::{LabConfig, StationFixtureConfig},
         requirements::Requirements,
     },
-    scenario::Scenario,
+    scenario::{Scenario, Workload},
 };
 
 pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
     let resolved = lab.resolve_scenario(scenario);
     let lab = &resolved;
-    if let Some(failure) = crate::execution::preflight::scenario_precondition(lab, scenario) {
+    if let Some(failure) = scenario_precondition(lab, scenario) {
         return Err(super::Error::new(failure.message).into());
     }
     let required = Requirements::for_scenario(scenario);
@@ -92,4 +93,46 @@ pub(crate) fn check(lab: &LabConfig, scenario: &Scenario) -> Result<()> {
         super::local_air_monitor::doctor()?;
     }
     Ok(())
+}
+
+/// Scenario-specific Bluetooth adapter checks and the station fixture PHY.
+pub(crate) fn scenario_precondition(lab: &LabConfig, selected: &Scenario) -> Option<Failure> {
+    let bluetooth_preflight: Option<fn(super::bluetooth::model::Adapter) -> Result<()>> =
+        match selected.workload {
+            Workload::BluetoothSecureGatt
+            | Workload::BluetoothSecureGattTiming
+            | Workload::BluetoothSecureGattHciReadFailure => Some(super::bluetooth::att::preflight),
+            Workload::BluetoothAclCalibration { .. } => {
+                Some(super::bluetooth::att_parameters::preflight)
+            }
+            Workload::BluetoothGatt | Workload::BluetoothAclBackpressure { .. } => {
+                Some(super::bluetooth::att::preflight)
+            }
+            Workload::BluetoothDtm { .. }
+            | Workload::BluetoothWatchdogReset
+            | Workload::BluetoothMaintenanceDeadline => Some(super::bluetooth::preflight),
+            Workload::BluetoothPeripheral { .. }
+            | Workload::BluetoothEncryptedAcl { .. }
+            | Workload::BluetoothPhyWatchdog => Some(super::bluetooth::preflight_connect_reset),
+            Workload::BluetoothSecurityFailure { .. } => {
+                Some(super::bluetooth::preflight_security_failure)
+            }
+            _ => None,
+        };
+    if let Some(preflight) = bluetooth_preflight {
+        let result = lab
+            .bluetooth_adapter
+            .ok_or_else(|| "missing [bluetooth] adapter in lab config".into())
+            .and_then(preflight);
+        if let Err(error) = result {
+            return Some(Failure::new(FailureKind::Precondition, error.to_string()));
+        }
+    }
+    if !Requirements::for_scenario(selected).station_network {
+        return None;
+    }
+    lab.station_fixture
+        .require_phy(lab.fixture_phy(selected))
+        .err()
+        .map(|error| Failure::new(FailureKind::Precondition, error.to_string()))
 }

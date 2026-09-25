@@ -103,7 +103,7 @@ impl BenchmarkIpv4Route {
         socket_source: Ipv4Addr,
     ) -> Result<()> {
         self.verify_socket_source(socket_source)?;
-        crate::evidence::run::atomic_json(
+        crate::durable::atomic_json(
             &output.join("host-route.json"),
             &HostRouteEvidence {
                 schema: 1,

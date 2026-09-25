@@ -9,8 +9,7 @@ pub(super) fn materialize(directory: &Path, destination: &Path) -> Result<(Snaps
     if snapshot.schema != 1
         || manifest.schema != 1
         || digest(&serde_json::to_vec(&manifest)?) != snapshot.snapshot_id
-        || crate::evidence::run::sha256_file(&directory.join("sources.tar"))?
-            != snapshot.archive_sha256
+        || crate::durable::sha256_file(&directory.join("sources.tar"))? != snapshot.archive_sha256
     {
         return Err("source snapshot identity or archive integrity mismatch".into());
     }
@@ -60,7 +59,7 @@ pub(super) fn materialize(directory: &Path, destination: &Path) -> Result<(Snaps
             .open(&output)?;
         std::io::copy(&mut entry, &mut target)?;
         target.sync_all()?;
-        if crate::evidence::run::sha256_file(&output)? != file.sha256 {
+        if crate::durable::sha256_file(&output)? != file.sha256 {
             return Err("source archive content digest mismatch".into());
         }
         #[cfg(unix)]

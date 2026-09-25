@@ -1,5 +1,5 @@
 //! Real DTM sessions end through the selected autonomous platform reset.
-use crate::{Result, execution::context::Context, fixture::bluetooth};
+use crate::{Result, context::Context, fixture::bluetooth};
 use open_esp_radio_hil_protocol::{BluetoothDtmOperation as Op, ResetReason as Reset};
 use std::{path::Path, time::Duration};
 
@@ -78,7 +78,7 @@ pub(crate) fn run(output: &Path, context: &Context<'_>, expected_reset: Reset) -
                 before.as_ref().ok(),
                 after.as_ref().ok(),
             );
-            crate::evidence::run::atomic_json(
+            crate::durable::atomic_json(
                 &directory.join("deadline.json"),
                 &serde_json::json!({
                     "schema": 3, "expected_reset": expected_reset, "operation": operation, "started": started,

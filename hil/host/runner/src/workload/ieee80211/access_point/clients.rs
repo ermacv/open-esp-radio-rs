@@ -1,6 +1,6 @@
 //! Scoped ownership of AP client fixtures.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::net::Ipv4Addr;
 
 use open_esp_radio_hil_protocol::WifiAccessPointSecurity;

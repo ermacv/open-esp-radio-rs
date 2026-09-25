@@ -84,7 +84,7 @@ fn fixture_lifecycle_harness() {
         .err()
         .expect("injected fixture failure");
         assert_eq!(
-            crate::execution::classify(&*error).kind,
+            crate::failure::classify(&*error).kind,
             crate::evidence::run::FailureKind::Infrastructure
         );
         scope.finish().unwrap();
@@ -186,7 +186,7 @@ fn fixture_lifecycle_harness() {
         }
         if case == "monitor-error" || case == "monitor-existing" {
             assert_eq!(
-                crate::execution::classify(&**result.as_ref().err().unwrap()).kind,
+                crate::failure::classify(&**result.as_ref().err().unwrap()).kind,
                 crate::evidence::run::FailureKind::Infrastructure
             );
         }

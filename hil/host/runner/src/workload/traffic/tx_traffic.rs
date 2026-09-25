@@ -5,7 +5,7 @@ mod receiver;
 mod terminal;
 pub(crate) use receiver::Receiver;
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::{
     collections::HashSet,
     fs,
@@ -209,13 +209,17 @@ pub(crate) fn run(
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.port))?;
     let host_receive_buffer_bytes = configure_qualification_receive_buffer(&socket)?;
     let capture = context.capture(output)?;
-    let discovered_address =
-        match await_udp_tx_ready(&capture, context, options.device, DEVICE_READY_TIMEOUT) {
-            Ok(address) => address,
-            Err(error) => {
-                return capture.finish_with(Err(error));
-            }
-        };
+    let discovered_address = match await_udp_tx_ready(
+        &capture,
+        context.target(),
+        options.device,
+        DEVICE_READY_TIMEOUT,
+    ) {
+        Ok(address) => address,
+        Err(error) => {
+            return capture.finish_with(Err(error));
+        }
+    };
     if options.station_pause.is_some()
         && !capture
             .request_capabilities(DEVICE_READY_TIMEOUT)?

@@ -6,12 +6,8 @@ mod shutdown;
 use crate::scenario::SecureGattShutdown;
 use crate::{
     Result,
-    execution::context::Context,
-    fixture::bluetooth::{
-        att,
-        model::{Adapter, PeerAddress},
-        secure_gatt::Owner,
-    },
+    context::Context,
+    fixture::bluetooth::{att, model::PeerAddress, secure_gatt::Owner},
     session::SerialCapture,
 };
 use open_esp_radio_hil_protocol::BluetoothSecureGattEvidence as Evidence;
@@ -50,9 +46,6 @@ impl Observation<'_> {
     }
 }
 
-pub(crate) fn preflight(adapter: Adapter) -> Result<()> {
-    att::preflight(adapter)
-}
 fn join(a: Result<()>, b: Result<()>) -> Result<()> {
     match (a, b) {
         (Ok(()), Ok(())) => Ok(()),
@@ -107,7 +100,7 @@ pub(crate) fn run(
         .lab
         .bluetooth_adapter
         .ok_or("Bluetooth adapter required")?;
-    preflight(adapter)?;
+    att::preflight(adapter)?;
     let mut radio = att::Owner::acquire(adapter, output)?;
     let result = context.with_capture(output, |capture| {
         let observation = Observation { capture, irq: irq_sampling };
@@ -176,7 +169,7 @@ pub(crate) fn run(
             let power = radio.restore();
             join(bond,power)
         });
-        crate::evidence::run::atomic_json(&output.join("trouble-secure-gatt.json"), &serde_json::json!({
+        crate::durable::atomic_json(&output.join("trouble-secure-gatt.json"), &serde_json::json!({
             "schema":6, "pairing":"numeric-comparison-only", "dut_store":"ram", "linux_bond":"temporary", "shutdown":shutdown,
             "irq_sampling":irq_sampling,
             "confirmation":"automated-hil-number-comparison", "human_presence_verified":false,

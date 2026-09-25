@@ -32,6 +32,8 @@ use zeroize::Zeroizing;
 
 use crate::Result;
 mod airtime;
+mod target;
+pub(crate) use target::{Settings, Target};
 mod reboot;
 use reboot::{ExpectedReboot, RebootObservation};
 

@@ -1,6 +1,6 @@
 //! Pre-initialization copy diagnostics with preserved partial observations.
 
-use crate::{Result, execution::context::Context};
+use crate::{Result, context::Context};
 use open_esp_radio_hil_protocol::{
     MemoryBenchmarkEvidence, MemoryBenchmarkMode, MemoryBenchmarkRequest, MemoryBenchmarkSource,
     MemoryBenchmarkStop,

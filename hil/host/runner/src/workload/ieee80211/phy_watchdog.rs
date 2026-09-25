@@ -1,7 +1,7 @@
 //! Connected station obligations for PHY fault tests.
 use crate::{
     Result,
-    execution::context::Context,
+    context::Context,
     scenario::PhyExpectation,
     session::SerialCapture,
     workload::phy::fault_lifecycle::{self, Scenario},
@@ -27,7 +27,7 @@ impl Scenario for Station {
         let phy = self.phy;
         context.lab.station_fixture.require_phy(phy)?;
         let timeout = Duration::from_secs(60);
-        capture.prepare_station(context, timeout)?;
+        capture.prepare_station(context.target(), timeout)?;
         let connected = capture.wait_for_connected_station_link_after(0, timeout)?;
         crate::workload::ieee80211::control::require_station_link(connected, phy)?;
         crate::workload::ieee80211::control::data_path::prove_station_data_path(

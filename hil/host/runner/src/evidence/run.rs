@@ -7,8 +7,7 @@ use std::{
     io::Write as _,
     path::{Path, PathBuf},
     process::Command,
-    sync::atomic::AtomicU64,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 #[cfg(test)]
@@ -26,11 +25,11 @@ mod snapshot;
 pub(crate) use lock::IndexGuard;
 mod model;
 pub(crate) mod validation;
-use crate::reporting::render;
+use crate::evidence::reporting::render;
 
-pub(crate) use integrity::atomic_write;
-pub(crate) use integrity::sha256_file;
-pub(crate) use integrity::{atomic_json, collect_attachments};
+pub(crate) use integrity::collect_attachments;
+// Evidence submodules share the durable-file helpers through this owner.
+pub(super) use crate::durable::{atomic_json, atomic_write, sha256_file, unix_millis};
 pub(super) use integrity::{collect_integrity_files, write_integrity_index};
 pub(crate) use model::RunManifest;
 pub(crate) use model::{
@@ -43,8 +42,6 @@ pub(super) use model::{
     RepositoryProvenance, aggregate_outcome,
 };
 use model::{EventRecord, RunnerProvenance, ToolVersion};
-
-static UNIQUE_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) struct RunSession {
     repository_root: PathBuf,
@@ -260,8 +257,10 @@ impl RunSession {
         self.finished = true;
         // The sealed run is authoritative. A derived view of other bundles
         // cannot revoke its completion or suppress its machine-readable result.
-        let history =
-            crate::reporting::history::rebuild_at(&self.target_directory, &self.manifest.target);
+        let history = crate::evidence::reporting::history::rebuild_at(
+            &self.target_directory,
+            &self.manifest.target,
+        );
         let (history_report, history_html, history_failure) = match history {
             Ok(history) => (
                 Some(history.history_report),
@@ -314,11 +313,6 @@ impl Drop for RunSession {
             Err(error) => eprintln!("cannot seal interrupted HIL run: {error}"),
         }
     }
-}
-
-pub(crate) fn unix_millis() -> Result<u64> {
-    let millis = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
-    u64::try_from(millis).map_err(|_| "host timestamp exceeds the HIL report range".into())
 }
 
 pub(crate) fn duration_millis(duration: Duration) -> u64 {

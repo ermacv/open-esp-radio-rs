@@ -13,7 +13,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::evidence::run::{atomic_write, sha256_file};
+use crate::durable::{atomic_write, sha256_file};
 use crate::{Result, image::ImageClass};
 
 pub(super) const BUILD_PROVENANCE_SCHEMA: u16 = 1;

@@ -19,7 +19,7 @@ pub(crate) struct LabConfig {
     path: PathBuf,
     cell_id: String,
     pub(crate) device: DeviceConfig,
-    pub(crate) bluetooth_adapter: Option<crate::fixture::bluetooth::model::Adapter>,
+    pub(crate) bluetooth_adapter: Option<open_esp_radio_hil_fixture::bluetooth::model::Adapter>,
     pub(crate) station: StationConfig,
     pub(crate) access_point: AccessPointConfig,
     pub(crate) station_fixture: StationFixtureConfig,

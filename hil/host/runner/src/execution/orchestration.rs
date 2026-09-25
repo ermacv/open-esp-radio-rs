@@ -324,7 +324,7 @@ fn start_run(
     for scenario in selected {
         let directory = session.scenario_directory(&scenario.id);
         fs::create_dir_all(&directory)?;
-        crate::evidence::run::atomic_json(&directory.join("scenario.json"), scenario)?;
+        crate::durable::atomic_json(&directory.join("scenario.json"), scenario)?;
     }
     let required = Requirements::union(selected);
     let lab_provenance = crate::lab::provenance::LabProvenance::capture(lab, required)?;
@@ -369,7 +369,7 @@ fn run_scenario(
 ) -> Result<ScenarioResult> {
     let scenario_output = session.scenario_directory(&selected.id);
     fs::create_dir_all(&scenario_output)?;
-    crate::evidence::run::atomic_json(&scenario_output.join("scenario.json"), selected)?;
+    crate::durable::atomic_json(&scenario_output.join("scenario.json"), selected)?;
     let mut repetitions = Vec::with_capacity(usize::from(selected.repetitions));
     for number in 1..=selected.repetitions {
         oer_process::check_cancelled()?;
@@ -390,7 +390,7 @@ fn run_scenario(
         selected.repetitions,
         repetitions,
     );
-    crate::evidence::run::atomic_json(&scenario_output.join("result.json"), &result)?;
+    crate::durable::atomic_json(&scenario_output.join("result.json"), &result)?;
     Ok(result)
 }
 
@@ -403,7 +403,7 @@ fn run_scenario_repetition(
 ) -> Result<RepetitionResult> {
     let resolved = lab.resolve_scenario(selected);
     let lab = &resolved;
-    let started_unix_millis = crate::evidence::run::unix_millis()?;
+    let started_unix_millis = crate::durable::unix_millis()?;
     let started = std::time::Instant::now();
     let cleanup = fixture::cleanup::Scope::new(output);
     let (outcome, failure, measurements) =
@@ -473,7 +473,7 @@ fn finalize_repetition(
         measurements,
         failure,
     };
-    crate::evidence::run::atomic_json(&output.join("result.json"), &result)?;
+    crate::durable::atomic_json(&output.join("result.json"), &result)?;
     Ok(result)
 }
 
@@ -501,7 +501,7 @@ fn write_blocked_scenario(
 ) -> Result<ScenarioResult> {
     let output = session.scenario_directory(&selected.id);
     fs::create_dir_all(&output)?;
-    crate::evidence::run::atomic_json(&output.join("scenario.json"), selected)?;
+    crate::durable::atomic_json(&output.join("scenario.json"), selected)?;
     let result = ScenarioResult::blocked(
         selected.id.clone(),
         selected.image,

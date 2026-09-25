@@ -251,8 +251,8 @@ impl SerialCapture {
             .map(|recorder| recorder.record(&state.messages, bytes.len() as u64));
         // Rewrite from memory as well: a failed raw-file write still gets a
         // final attempt to preserve every byte accepted by the serial reader.
-        crate::evidence::run::atomic_write(&self.output.join("uart.bin"), &bytes)?;
-        crate::evidence::run::atomic_write(&self.output.join("uart.log"), uart.as_bytes())?;
+        crate::durable::atomic_write(&self.output.join("uart.bin"), &bytes)?;
+        crate::durable::atomic_write(&self.output.join("uart.log"), uart.as_bytes())?;
         let mut log = Vec::new();
         for message in &state.messages {
             serde_json::to_writer(
@@ -270,9 +270,9 @@ impl SerialCapture {
             serde_json::to_writer(&mut log, &record)?;
             log.push(b'\n');
         }
-        crate::evidence::run::atomic_write(&self.output.join("protocol.jsonl"), &log)?;
+        crate::durable::atomic_write(&self.output.join("protocol.jsonl"), &log)?;
         if let Some(observations) = observations {
-            crate::evidence::run::atomic_json(
+            crate::durable::atomic_json(
                 &self.output.join("measurements.json"),
                 &serde_json::json!({
                     "schema": 1, "finalized": finalized, "failure": state.failure,

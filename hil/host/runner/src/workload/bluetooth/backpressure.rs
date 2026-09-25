@@ -1,7 +1,7 @@
 //! Exhaust one Host RX credit, observe supervision, drain, and reuse the handle.
 use crate::{
     Result,
-    execution::context::Context,
+    context::Context,
     fixture::bluetooth::{att, model::PeerAddress},
     session::SerialCapture,
 };
@@ -45,7 +45,7 @@ pub(crate) fn run(output: &Path, context: &Context<'_>, active_maintenance: bool
             samples.push(retired);
             Ok(())
         });
-        crate::evidence::run::atomic_json(
+        crate::durable::atomic_json(
             &output.join("acl-backpressure.json"),
             &serde_json::json!({
                 "schema":1, "samples":samples, "active_maintenance":active_maintenance,

@@ -35,7 +35,7 @@ pub(crate) fn check_without_device(config: &OpenWrtConfig, output: &Path) -> Res
         true,
     )?;
     let evidence = capture.finish()?;
-    crate::evidence::run::atomic_json(&output.join("fixture-monitor.json"), &evidence)
+    crate::durable::atomic_json(&output.join("fixture-monitor.json"), &evidence)
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize)]

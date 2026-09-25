@@ -1,6 +1,6 @@
 //! Initial-key failure or missing refresh key, then encrypted recovery in the same HCI epoch.
 use super::{PeripheralConfig, configure_encryption, probe_peripheral};
-use crate::{Result, execution::context::Context, fixture::bluetooth, session::SerialCapture};
+use crate::{Result, context::Context, fixture::bluetooth, session::SerialCapture};
 use open_esp_radio_hil_protocol::{
     BluetoothPeripheralEvidence as Evidence, BluetoothPeripheralOperation as Op,
     BluetoothPeripheralTermination as Termination, BluetoothSecurityFailure as Failure,
@@ -66,7 +66,7 @@ pub(crate) fn run(
             retirement = Some(capture.bluetooth_peripheral(Op::Retire)?);
             Ok(())
         })();
-        crate::evidence::run::atomic_json(
+        crate::durable::atomic_json(
             &output.join("bluetooth-security-failure.json"),
             &serde_json::json!({"schema":1, "failure":failure, "read_version_before_disconnect":read_version_before_disconnect, "peer":peer, "samples":samples,
                 "recovery":recovery, "retirement":retirement, "passed":result.is_ok(),

@@ -1,6 +1,6 @@
 //! Controlled real-AP disappearance and station recovery qualification.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::{
     fs,
     path::Path,
@@ -77,7 +77,7 @@ fn qualify(
     ap: &mut ControlledAp,
     timeout: Duration,
 ) -> Result<()> {
-    let capabilities = capture.prepare_station(context, timeout)?;
+    let capabilities = capture.prepare_station(context.target(), timeout)?;
     if !capabilities.features.station_lifecycle_events {
         return Err("firmware does not advertise reliable station lifecycle events".into());
     }

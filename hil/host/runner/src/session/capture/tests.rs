@@ -234,7 +234,7 @@ fn signal_cancellation_harness() {
     assert!(records[0].failure.is_none());
     assert!(oer_process::check_cancelled().is_err());
     let lab = crate::lab::config::LabConfig::for_test();
-    let context = crate::execution::context::Context::new(&lab, Default::default(), &output.0);
+    let context = crate::context::Context::new(&lab, Default::default(), &output.0);
     let next = output.0.join("must-not-reset");
     let error = context
         .capture(&next)

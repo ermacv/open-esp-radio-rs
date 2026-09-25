@@ -311,6 +311,9 @@ fn classify_image_signature(
     }
 }
 
+/// Version of the `image build`/`image flash` artifact report on stdout.
+const ARTIFACT_REPORT_SCHEMA: u16 = 2;
+
 #[derive(Serialize)]
 struct ArtifactReport<'a> {
     schema: u16,
@@ -342,7 +345,7 @@ pub(crate) fn print_artifacts(
     flashed: bool,
 ) -> Result<()> {
     let report = ArtifactReport {
-        schema: crate::evidence::run::RUN_SCHEMA,
+        schema: ARTIFACT_REPORT_SCHEMA,
         image_class: class.id(),
         target: TARGET,
         network: artifacts.network.id(),

@@ -9,7 +9,7 @@ pub(crate) mod phy_watchdog;
 pub(crate) mod secure_gatt;
 pub(crate) mod security_failure;
 
-use crate::{Result, execution::context::Context, fixture::bluetooth, session::SerialCapture};
+use crate::{Result, context::Context, fixture::bluetooth, session::SerialCapture};
 use open_esp_radio_hil_protocol::{
     BLUETOOTH_PERIPHERAL_ACL_LL_FRAGMENTS, BluetoothDtmOperation as Operation, BluetoothDtmResult,
     BluetoothPeripheralEvidence, BluetoothPeripheralOperation, BluetoothPeripheralTermination,
@@ -47,7 +47,7 @@ pub(crate) fn run(
             let result = probe(capture, adapter, &directory, &mut counts, quiet_cycles)
                 .and_then(|()| validate(&counts, minimum_packets, quiet_cycles));
             let cleanup = oer_process::cleanup(|| capture.bluetooth_dtm(Operation::Reset));
-            crate::evidence::run::atomic_json(&directory.join("bluetooth-dtm.json"), &serde_json::json!({
+            crate::durable::atomic_json(&directory.join("bluetooth-dtm.json"), &serde_json::json!({
                 "schema": 2, "quiet_cycles": quiet_cycles, "adapter": adapter.to_string(), "phy": "LE-1M", "channel": 0,
                 "payload": "PRBS9", "payload_bytes": 37, "minimum_packets": minimum_packets,
                 "counts": counts, "passed": result.is_ok() && cleanup.is_ok(),
@@ -281,7 +281,7 @@ pub(crate) fn run_peripheral(
                     }
                     Ok(())
                 });
-            crate::evidence::run::atomic_json(
+            crate::durable::atomic_json(
                 &directory.join("bluetooth-peripheral.json"),
                 &serde_json::json!({
                     "schema": 1,

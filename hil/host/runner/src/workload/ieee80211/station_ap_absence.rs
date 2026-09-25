@@ -1,6 +1,6 @@
 //! Controlled prolonged AP absence and bounded retry-exhaustion qualification.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::{
     fs,
     path::Path,
@@ -63,14 +63,14 @@ fn qualify(
     let absence_started = Instant::now();
     let generation = if initially_absent {
         ap.stop()?;
-        let (capabilities, handle) = capture.begin_station_attempt(context)?;
+        let (capabilities, handle) = capture.begin_station_attempt(context.target())?;
         validate_service_admission(capture.wait_wifi_role_transition(handle, timeout)?)?;
         if !capabilities.features.station_lifecycle_events {
             return Err("firmware does not advertise reliable station lifecycle events".into());
         }
         0
     } else {
-        let capabilities = capture.prepare_station(context, timeout)?;
+        let capabilities = capture.prepare_station(context.target(), timeout)?;
         if !capabilities.features.station_lifecycle_events {
             return Err("firmware does not advertise reliable station lifecycle events".into());
         }

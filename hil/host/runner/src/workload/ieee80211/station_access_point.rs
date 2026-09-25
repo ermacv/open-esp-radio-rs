@@ -1,6 +1,6 @@
 //! Simultaneous same-channel STA+AP data-plane and beacon qualification.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::{
     fs,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
@@ -124,7 +124,7 @@ fn qualify(
     context: &Context<'_>,
     output: &Path,
 ) -> Result<QualificationOutcome> {
-    let capabilities = capture.prepare_station(context, config.timeout)?;
+    let capabilities = capture.prepare_station(context.target(), config.timeout)?;
     if !capabilities.features.simultaneous_station_access_point {
         return Err("firmware does not advertise simultaneous STA+AP".into());
     }

@@ -18,7 +18,7 @@ fn association_timeout_is_distinct_from_remote_setup_failure() {
             stderr: b"injected failure".to_vec(),
         })
         .unwrap_err();
-        assert_eq!(crate::execution::classify(&*error).kind, kind);
+        assert_eq!(crate::failure::classify(&*error).kind, kind);
     }
 }
 

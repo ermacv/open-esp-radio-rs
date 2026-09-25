@@ -9,7 +9,7 @@ use crate::{
     cli::{Cli, CliCommand, DeviceCommand, ImageCommand, ReportCommand, ScenarioCommand},
     device, emit_json,
     execution::{firmware::RunFirmware, orchestration, preflight},
-    fixture, image, lab, output, reporting, scenario,
+    fixture, image, lab, output, scenario,
 };
 
 pub(crate) fn run() -> Result<()> {
@@ -88,7 +88,7 @@ pub(crate) fn run() -> Result<()> {
             let lab = lab::config::LabConfig::load(&lab_path)?;
             let required = lab::requirements::Requirements::union(&selected);
             let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
-            lab::doctor::run(&root, &lab, &selected)
+            crate::execution::doctor::run(&root, &lab, &selected)
         }
         CliCommand::Plan {
             selection,
@@ -234,7 +234,7 @@ pub(crate) fn run() -> Result<()> {
         }
         CliCommand::Report { command } => match command {
             ReportCommand::Rebuild => {
-                let completion = reporting::history::rebuild(&root, "esp32s31")?;
+                let completion = crate::evidence::reporting::history::rebuild(&root, "esp32s31")?;
                 emit_json(&completion, false)
             }
             ReportCommand::Verify { run_id } => {

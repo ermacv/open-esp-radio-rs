@@ -5,7 +5,7 @@
 //! based on device-side RX, TX-vector, placement and DMA-health evidence; a
 //! successful host `send` alone is not evidence that the radio received it.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::{
     collections::BTreeMap,
     fmt::Write as _,
@@ -171,7 +171,7 @@ pub(crate) fn run(
     let capture = context.capture(output)?;
     let discovered_address = match await_udp_rx_ready(
         &capture,
-        context,
+        context.target(),
         options.address,
         options.port,
         DEVICE_READY_TIMEOUT,

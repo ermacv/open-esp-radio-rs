@@ -1,6 +1,6 @@
 //! Host qualification for explicit Wi-Fi role ownership transitions.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
@@ -54,7 +54,7 @@ fn qualify(
     phy: PhyExpectation,
     output: &Path,
 ) -> Result<()> {
-    let capabilities = capture.prepare_station(context, options.timeout)?;
+    let capabilities = capture.prepare_station(context.target(), options.timeout)?;
     if !capabilities.features.wifi_role_control {
         return Err("firmware does not advertise explicit Wi-Fi role control".into());
     }
@@ -490,8 +490,8 @@ fn start_station_evidence(
     context: &Context<'_>,
     timeout: Duration,
 ) -> Result<WifiRoleTransitionEvidence> {
-    let evidence =
-        capture.wait_wifi_role_transition(capture.request_station_start(context)?, timeout)?;
+    let evidence = capture
+        .wait_wifi_role_transition(capture.request_station_start(context.target())?, timeout)?;
     require_transition(evidence, WifiRole::Idle, WifiRole::Station)?;
     Ok(evidence)
 }

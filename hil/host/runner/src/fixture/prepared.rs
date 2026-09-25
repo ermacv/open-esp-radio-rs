@@ -26,7 +26,7 @@ pub(crate) fn check_without_device(
     let _lease = crate::lab::lock::FixtureLock::acquire_without_device(lab, required)?;
     let output = root.join("target/hil/fixture-checks").join(format!(
         "{}-{}",
-        crate::evidence::run::unix_millis()?,
+        crate::durable::unix_millis()?,
         scenario.id
     ));
     std::fs::create_dir_all(&output)?;
@@ -62,7 +62,7 @@ pub(crate) fn check_without_device(
     let report = serde_json::json!({"schema": 1, "scenario": scenario.id, "device_accessed": false,
         "prepared": result.is_ok(), "restored": restored,
         "failure": result.as_ref().err().map(|error| error.to_string()), "cleanup": records});
-    crate::evidence::run::atomic_json(&output.join("result.json"), &report)?;
+    crate::durable::atomic_json(&output.join("result.json"), &report)?;
     crate::emit_json(
         &serde_json::json!({"report": report, "artifacts": output}),
         true,
@@ -89,16 +89,13 @@ impl Prepared {
                 ap.restart()?;
             }
             if let ControlledAp::OpenWrt(owner) = &ap {
-                crate::evidence::run::atomic_json(
+                crate::durable::atomic_json(
                     &output.join("fixture-applied.json"),
                     &owner.report()?,
                 )?;
             }
             if let ControlledAp::Local(owner) = &ap {
-                crate::evidence::run::atomic_json(
-                    &output.join("fixture-applied.json"),
-                    &owner.report(),
-                )?;
+                crate::durable::atomic_json(&output.join("fixture-applied.json"), &owner.report())?;
             }
             Some(RefCell::new(ap))
         } else {

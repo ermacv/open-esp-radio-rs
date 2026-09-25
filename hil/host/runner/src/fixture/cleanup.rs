@@ -45,7 +45,7 @@ impl Scope {
     pub(crate) fn finish(mut self) -> Result<Vec<Record>> {
         let records = RECORDS.replace(self.previous.take()).unwrap_or_default();
         self.finished = true;
-        crate::evidence::run::atomic_json(&self.output, &records)?;
+        crate::durable::atomic_json(&self.output, &records)?;
         Ok(records)
     }
 }
@@ -53,7 +53,7 @@ impl Drop for Scope {
     fn drop(&mut self) {
         if !self.finished {
             let records = RECORDS.replace(self.previous.take()).unwrap_or_default();
-            if let Err(error) = crate::evidence::run::atomic_json(&self.output, &records) {
+            if let Err(error) = crate::durable::atomic_json(&self.output, &records) {
                 eprintln!("cannot preserve fixture cleanup evidence: {error}");
             }
         }

@@ -30,13 +30,15 @@
     "hil/schema/cargo-inputs.rs",
     "hil/host/runner/src/fixture/mod.rs",
     "hil/host/runner/src/fixture/cleanup.rs",
-    "hil/host/runner/src/fixture/error.rs",
     "hil/host/runner/src/fixture/preflight.rs",
     "hil/host/runner/src/fixture/prepared.rs",
     "hil/host/runner/src/fixture/software.rs",
     "hil/host/runner/src/fixture/network_helper.rs",
     "hil/host/runner/src/fixture/install.rs",
-    "hil/schema/observer-artifacts.rs"
+    "hil/schema/observer-artifacts.rs",
+    "hil/host/runner/src/context.rs",
+    "hil/host/runner/src/durable.rs",
+    "hil/host/runner/src/failure.rs"
   ],
   "workloads": {
     "access-point": [

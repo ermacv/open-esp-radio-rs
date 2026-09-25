@@ -4,7 +4,7 @@
 //! reset-isolated, route-detached transaction. It does not classify the full
 //! `EVENT_STATUS` register or claim operational PHY/RF/BTBB readiness.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{

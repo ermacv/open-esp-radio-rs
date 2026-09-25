@@ -1,8 +1,9 @@
 use super::*;
+use crate::durable::atomic_json;
 use crate::{
     evidence::run::{
         Attachment, Measurement, MeasurementUnit, Outcome, RepetitionResult, ScenarioResult,
-        SuiteCounts, atomic_json, write_integrity_index,
+        SuiteCounts, write_integrity_index,
     },
     image::ImageClass,
     lab::provenance::{

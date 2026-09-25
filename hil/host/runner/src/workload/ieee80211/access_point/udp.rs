@@ -48,7 +48,7 @@ pub(super) fn qualify_udp(
     output: &std::path::Path,
     capture: &SerialCapture,
     config: &Config,
-    context: &crate::execution::context::Context<'_>,
+    context: &crate::context::Context<'_>,
     clients: &ConnectedClients,
     workload: UdpWorkload,
 ) -> Result<TrafficReport> {

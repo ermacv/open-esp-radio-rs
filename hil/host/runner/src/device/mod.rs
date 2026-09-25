@@ -16,7 +16,7 @@ pub(crate) fn status(root: &Path, lab: &crate::lab::config::LabConfig) -> Result
     fs::create_dir_all(&parent)?;
     let output = parent.join(format!(
         "{}-{:08x}",
-        crate::evidence::run::unix_millis()?,
+        crate::durable::unix_millis()?,
         std::process::id()
     ));
     fs::create_dir(&output)?;
@@ -36,7 +36,7 @@ fn device_status_at(output: &Path, lab: &crate::lab::config::LabConfig) -> Resul
     })();
     match capture.finish_observation_with(result) {
         Ok(report) => {
-            crate::evidence::run::atomic_json(&output.join("status.json"), &report)?;
+            crate::durable::atomic_json(&output.join("status.json"), &report)?;
             crate::emit_json(&report, true)
         }
         Err(error) => {
@@ -45,7 +45,7 @@ fn device_status_at(output: &Path, lab: &crate::lab::config::LabConfig) -> Resul
                 "uart_log": output.join("uart.log"),
                 "protocol_log": output.join("protocol.jsonl"),
             });
-            crate::evidence::run::atomic_json(&output.join("status.json"), &report)?;
+            crate::durable::atomic_json(&output.join("status.json"), &report)?;
             crate::emit_json(&report, true)?;
             Err(error)
         }

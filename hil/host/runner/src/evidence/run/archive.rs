@@ -1,9 +1,10 @@
 //! Firmware and replay-material archival for a run session.
 
+use crate::durable::atomic_json;
 use std::path::{Path, PathBuf};
 
 use crate::evidence::build;
-use crate::evidence::run::{FirmwareReplayOrigin, RunSession, atomic_json};
+use crate::evidence::run::{FirmwareReplayOrigin, RunSession};
 use crate::{Result, image::ImageClass};
 
 impl RunSession {

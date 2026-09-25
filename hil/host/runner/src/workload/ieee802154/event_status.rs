@@ -6,7 +6,7 @@
 //! prove full W1C semantics, concurrent arrival of the same bit, or active
 //! level-triggered interrupt-route behavior.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{

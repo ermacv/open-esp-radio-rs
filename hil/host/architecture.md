@@ -44,7 +44,8 @@ repetition lifecycle are in `runner/src/execution/orchestration.rs`, while
 `runner/src/execution/firmware.rs` coordinates run-local build or replay
 publication before calling the existing image and device owners.
 `runner/src/execution/preflight.rs` owns run selection compatibility and
-hardware-facing scenario/image checks; declarative resource discovery remains
+hardware-facing scenario/image checks, and `execution/doctor.rs` the
+selection-scoped environment report; declarative resource discovery remains
 under `lab::requirements`. Machine JSON retains its dedicated descriptor in
 `runner/src/output.rs`. Workload dispatch and typed execution evidence remain
 in `runner/src/execution.rs`; `evidence::run::RunSession` is still the sole run
@@ -475,13 +476,24 @@ all radio, lifecycle and traffic evidence uses the typed HIL protocol.
   `image/class` owns image identities and feature recipes.
 - `image` owns build/rebuild and placement/stack auditing; the reusable ELF
   analyzer remains `tools/memory-report`.
-- `lab` owns local configuration, topology/provenance and the exclusive fixture
-  guard; `fixture` implements controlled host and peer capabilities.
-- `session` owns one UART capture and its protocol/readiness/validation state.
+- `lab` owns local configuration, topology/provenance, the exclusive fixture
+  guard and the laboratory error type; `fixture` implements controlled host and
+  peer capabilities, including the scenario fixture preconditions.
+- `session` owns one UART capture and its protocol/readiness/validation state;
+  it needs only the laboratory and the scenario's target settings.
+- `context` gives one workload repetition its laboratory, target settings,
+  capture lifecycle, measurements and prepared fixture.
 - `workload` groups system, IEEE 802.15.4, IEEE 802.11 role and network traffic
   operations. They report scenario outcomes, not product readiness.
 - `evidence` owns sealed run models, archive/integrity/verification and build
-  provenance. `reporting` renders HTML/JUnit and rebuildable history views.
+  provenance; `evidence::reporting` renders the bundle's HTML/JUnit and the
+  rebuildable history views. `failure` classifies errors as scenario or
+  infrastructure failures, and `durable` provides atomic files, digests and
+  timestamps to every producer.
+
+Module dependencies form a directed acyclic graph: execution depends on
+workloads, workloads on the context, and the context on session, fixture and
+laboratory owners, never the reverse.
 
 The recursive [catalog contract](../scenarios/README.md) is checked independently
 by the runner and qualification evaluator. Shared synthetic input documents

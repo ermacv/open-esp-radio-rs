@@ -1,6 +1,6 @@
 //! WPA2 AP lifecycle, exact data-plane and concurrent-client qualification.
 
-use crate::execution::context::Context;
+use crate::context::Context;
 use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
@@ -158,7 +158,7 @@ fn qualify(
     output: &Path,
     cycles: &mut Vec<CycleReport>,
 ) -> Result<()> {
-    let capabilities = capture.prepare_station(context, config.timeout)?;
+    let capabilities = capture.prepare_station(context.target(), config.timeout)?;
     if !capabilities.features.wifi_role_control || !capabilities.features.wifi_access_point {
         return Err("firmware does not advertise AP role control".into());
     }

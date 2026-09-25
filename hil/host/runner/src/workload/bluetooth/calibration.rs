@@ -1,7 +1,7 @@
 //! Four Host credits during repeated full calibration on a 7.5-ms plaintext ACL.
 use crate::{
     Result,
-    execution::context::Context,
+    context::Context,
     fixture::bluetooth::{att, model::PeerAddress},
     session::SerialCapture,
 };
@@ -47,7 +47,7 @@ pub(crate) fn run(duration: u16, minimum: u16, output: &Path, context: &Context<
             samples.push(retired);
             Ok(())
         });
-        crate::evidence::run::atomic_json(&output.join("calibration-traffic.json"), &serde_json::json!({
+        crate::durable::atomic_json(&output.join("calibration-traffic.json"), &serde_json::json!({
             "schema":1,"duration_millis":duration,"minimum_calibrations":minimum,
             "samples":samples,"passed":probe.is_ok() && cleanup.is_ok(),
             "error":probe.as_ref().err().map(ToString::to_string),

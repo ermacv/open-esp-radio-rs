@@ -14,7 +14,7 @@ fn failed_or_malformed_capture_is_infrastructure() {
             .finish()
             .unwrap_err();
         assert_eq!(
-            crate::execution::classify(&*error).kind,
+            crate::failure::classify(&*error).kind,
             crate::evidence::run::FailureKind::Infrastructure
         );
     }

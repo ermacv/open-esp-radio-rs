@@ -9,7 +9,8 @@ Run from the repository root:
 
 ```console
 cargo xtask check docs
-cargo xtask ```
+cargo xtask doc
+```
 
 The PHY archive contains LLVM bitcode. Install `rustup component add
 llvm-tools-preview` for the selected toolchain; the audit uses its bundled
@@ -17,7 +18,7 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 
 | Command | Contract |
 | --- | --- |
-| `cargo xtask check metadata` | Locked metadata for every actual Cargo workspace island, including unstaged source moves |
+| `cargo xtask check metadata` | Locked metadata for every actual Cargo workspace island, including unstaged source moves; every island applies the root `[patch]` replacements and resolves each Git package to one commit |
 | `cargo xtask check architecture` | Run Clippy on minimum/default and supported feature profiles, applying each crate's lint policy; reject Wi-Fi packages in Bluetooth facade profiles; check layer/chip boundaries, isolated facade consumers, public type identities and composition contracts; crate-root unsafe attributes match the reviewed audited list and direct PAC dependencies the reviewed consumer list |
 | `cargo xtask check network` | Resolve isolated network consumers and audit their dependency boundaries; CI compiles the profiles |
 | `cargo xtask check network-backpressure` | Resolve the pinned minimal Xarxa patch and test UDP device-capacity quiescence/recovery with the production adapter |

@@ -1,5 +1,7 @@
 use crate::{Context, Result, cargo, paths};
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, fs};
+
+mod pins;
 
 pub fn run(context: &Context) -> Result<usize> {
     let manifests = paths::source_manifests(context)?;
@@ -28,6 +30,21 @@ pub fn run(context: &Context) -> Result<usize> {
     println!(
         "locked Cargo metadata passed for {} workspace(s)",
         workspaces.len()
+    );
+    let mut locks = Vec::with_capacity(workspaces.len());
+    for manifest in &workspaces {
+        let lock = manifest.with_file_name("Cargo.lock");
+        let contents =
+            fs::read_to_string(&lock).map_err(|error| format!("{}: {error}", lock.display()))?;
+        locks.push((lock.strip_prefix(&context.root)?.to_path_buf(), contents));
+    }
+    pins::check(
+        &fs::read_to_string(context.root.join("Cargo.toml"))?,
+        &locks,
+    )?;
+    println!(
+        "Git pins and root patches agree across {} lock catalog(s)",
+        locks.len()
     );
     Ok(workspaces.len())
 }

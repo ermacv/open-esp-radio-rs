@@ -75,8 +75,10 @@ members = [
 exclude = [
     "platform/esp32s31",
     "crates/composition/esp32s31/embassy/ieee80211",
-    "examples/esp32s31-station",
+    "examples/esp32s31-access-point",
     "examples/esp32s31-bluetooth-controller",
+    "examples/esp32s31-monitor",
+    "examples/esp32s31-station",
     "hil/targets/esp32s31",
     "verification/vendor/projects/esp32s31/probes",
 ]

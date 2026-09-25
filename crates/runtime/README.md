@@ -56,3 +56,26 @@ Portable protocol policy cannot depend on this execution domain. The
 architecture audit follows transitive normal/build dependencies to enforce
 that boundary; the generic radio service and its Embassy adapter cannot depend
 on these concrete ESP32-S31 runtimes.
+
+## Telemetry features
+
+Core0 profiling (`tx-phase-telemetry`, `core0-rx-coarse-telemetry`,
+`task-poll-telemetry`) stays out of production code without changing it. The
+profiling modules under `esp32s31/ieee80211/src/diagnostics/` and
+`datapath/tx_performance.rs` are always compiled: without their feature, a
+sample reads no CSR and is zero-sized, recorders return immediately, and
+owner fields that exist only for telemetry use zero-sized holders
+(`Core0PreparedTxMark`, `Core0Tally`, `Core0PathCount`). `diagnostics::profile`
+selects the RX runner and DMA profiles. Each task-poll module has a zero-sized
+stand-in under `diagnostics/disabled/` that exposes only the API the datapath
+calls. Telemetry whose arguments need computation is guarded by a constant
+such as `TX_PHASE_TELEMETRY` rather than `cfg`.
+
+A call-site `cfg` remains where removing it would change the production
+machine code: samples that cross an `.await`, `&mut` profile parameters and
+the hottest scheduler and RX dispatch loops. Diagnostic behavior switches,
+such as the recycled-RX probe delay, and the `diagnostics` observation API
+stay feature-gated by design. A change to this code keeps the release images'
+`.text`, `.hot.text` and `.isr.text` byte-identical when built from the same
+checkout path.
+

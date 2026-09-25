@@ -114,7 +114,6 @@ where
             let Ok(frame) = self.frames.try_receive() else {
                 break;
             };
-            #[cfg(feature = "task-poll-telemetry")]
             crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
                 .record_protocol_frame_dequeued(crate::diagnostics::core0_rx_cycles::cycle_count());
             actions = actions.saturating_add(1);

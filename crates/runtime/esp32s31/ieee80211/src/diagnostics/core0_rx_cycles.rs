@@ -926,21 +926,6 @@ impl Default for Core0RxCycleCounters {
     }
 }
 
-pub static CORE0_RX_CYCLES: Core0RxCycleCounters = Core0RxCycleCounters::new();
-
-#[derive(Clone, Copy)]
-pub(crate) enum Core0RxCyclePhase {
-    Setup,
-    Frontier,
-    Admission,
-    StageTake,
-    StagePool,
-    Recycle,
-    Reload,
-    Publish,
-    Tail,
-}
-
 #[derive(Clone, Copy)]
 pub(crate) enum Core0ControlOutcome {
     Idle,
@@ -960,6 +945,21 @@ pub(crate) enum Core0RxSchedulerPath {
 pub(crate) enum Core0ProtocolPath {
     Ordinary,
     Scratch,
+}
+
+pub static CORE0_RX_CYCLES: Core0RxCycleCounters = Core0RxCycleCounters::new();
+
+#[derive(Clone, Copy)]
+pub(crate) enum Core0RxCyclePhase {
+    Setup,
+    Frontier,
+    Admission,
+    StageTake,
+    StagePool,
+    Recycle,
+    Reload,
+    Publish,
+    Tail,
 }
 
 pub(crate) struct Core0ProtocolCycleProfile {

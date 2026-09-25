@@ -285,7 +285,6 @@ where
             self.apply_protocol_actions(hardware)?;
         }
         if self.rx_batch_pending() {
-            #[cfg(feature = "task-poll-telemetry")]
             crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
                 serviced_frames,
                 crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::InitialBatch,
@@ -293,7 +292,6 @@ where
             return Ok(DatapathRxProgress::NetworkBackpressured);
         }
         if self.service_rx_reorder_expiry(now_micros)? {
-            #[cfg(feature = "task-poll-telemetry")]
             crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
                 serviced_frames,
                 crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::InitialReorder,
@@ -309,7 +307,6 @@ where
             // until one complete frame's worst-case action set fits; consuming
             // it first would turn bounded backpressure into a role fault.
             if !tx_domain.protocol_mailbox_ready(self.protocol_actions.remaining_capacity()) {
-                #[cfg(feature = "task-poll-telemetry")]
                 crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
                     serviced_frames,
                     crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::MailboxBlocked,
@@ -328,14 +325,12 @@ where
                 // which cannot borrow the ordinary-TX capability until the
                 // live aggregate completes.
                 if tx_domain.is_externally_owned() && self.protocol_rx.queued_frames() != 0 {
-                    #[cfg(feature = "task-poll-telemetry")]
                     crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
                         serviced_frames,
                         crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::TxBlocked,
                     );
                     return Ok(DatapathRxProgress::ProtocolBlockedByTx);
                 }
-                #[cfg(feature = "task-poll-telemetry")]
                 crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
                     serviced_frames,
                     crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::Drained,
@@ -375,7 +370,6 @@ where
             );
 
             if self.rx_batch_pending() {
-                #[cfg(feature = "task-poll-telemetry")]
                 crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
                     serviced_frames,
                     crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::BatchPending,
@@ -383,7 +377,6 @@ where
                 return Ok(DatapathRxProgress::ProbePending);
             }
             if self.mac.tx_pending() {
-                #[cfg(feature = "task-poll-telemetry")]
                 crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
                     serviced_frames,
                     crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::TxBlocked,
@@ -392,7 +385,6 @@ where
             }
             now_micros = Instant::now().as_micros();
             if self.service_rx_reorder_expiry(now_micros)? {
-                #[cfg(feature = "task-poll-telemetry")]
                 crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
                     serviced_frames,
                     crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::ReorderPending,
@@ -401,7 +393,6 @@ where
             }
         }
 
-        #[cfg(feature = "task-poll-telemetry")]
         crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
             serviced_frames,
             crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::BudgetExhausted,

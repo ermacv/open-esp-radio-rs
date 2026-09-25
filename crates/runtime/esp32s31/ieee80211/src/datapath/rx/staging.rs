@@ -51,13 +51,11 @@ impl<'queue, 'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, cons
         &self,
         frame: StagedRxFrame<'pool, CAPACITY, SLOTS>,
     ) -> Result<(), StagedRxTrySendError<StagedRxFrame<'pool, CAPACITY, SLOTS>>> {
-        #[cfg(feature = "task-poll-telemetry")]
         let started = crate::diagnostics::core0_rx_cycles::cycle_count();
         let result = self
             .inner
             .try_send(frame)
             .map_err(|AffineSpscTrySendError(frame)| StagedRxTrySendError(frame));
-        #[cfg(feature = "task-poll-telemetry")]
         crate::diagnostics::core0_rx_service_histogram::CORE0_RX_SERVICE_HISTOGRAM
             .record_spsc_push(
                 crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(started),
@@ -108,13 +106,11 @@ impl<'queue, 'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, cons
     StagedRxReceiver<'queue, 'pool, M, DEPTH, CAPACITY, SLOTS>
 {
     pub fn try_receive(&self) -> Result<StagedRxFrame<'pool, CAPACITY, SLOTS>, TryReceiveError> {
-        #[cfg(feature = "task-poll-telemetry")]
         let started = crate::diagnostics::core0_rx_cycles::cycle_count();
         let result = self
             .inner
             .try_receive()
             .map_err(|AffineSpscTryReceiveError::Empty| TryReceiveError::Empty);
-        #[cfg(feature = "task-poll-telemetry")]
         crate::diagnostics::core0_rx_service_histogram::CORE0_RX_SERVICE_HISTOGRAM.record_spsc_pop(
             crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(started),
             result.is_err(),

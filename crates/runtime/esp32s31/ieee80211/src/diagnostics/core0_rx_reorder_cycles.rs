@@ -4,6 +4,8 @@
 //! previously opaque dequeue-to-dispatch interval without attributing all of
 //! that time to either the scheduler or BlockAck logic by assumption.
 
+pub(crate) use super::core0_paths::{Core0DirectPath, Core0ReorderPath};
+
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use super::core0_rx_cycles::cycle_count;
@@ -433,24 +435,6 @@ impl Core0DirectCycleProfile {
         self.path = path;
         CORE0_REORDER_CYCLES.record_direct(self, ended);
     }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum Core0DirectPath {
-    Accepted,
-    PreflightRejected,
-    KeyRejected,
-    BankRejected,
-    ReorderRejected,
-    DuplicateOrIgnored,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum Core0ReorderPath {
-    NoKey,
-    Inactive,
-    Immediate,
-    Slow,
 }
 
 #[cfg(test)]

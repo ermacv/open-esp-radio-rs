@@ -228,7 +228,6 @@ where
         let before_dma = if self.protocol.has_ready_work() {
             let protocol_started =
                 crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
-            #[cfg(feature = "task-poll-telemetry")]
             crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
                 .begin_protocol_poll(protocol_started.cycles());
             crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
@@ -244,7 +243,6 @@ where
             {
                 let protocol_ended =
                     crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
-                #[cfg(feature = "task-poll-telemetry")]
                 crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
                     .end_protocol_poll(protocol_ended.cycles());
                 crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
@@ -272,7 +270,6 @@ where
         } else {
             let protocol_started =
                 crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
-            #[cfg(feature = "task-poll-telemetry")]
             crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
                 .begin_protocol_poll(protocol_started.cycles());
             crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
@@ -285,7 +282,6 @@ where
             {
                 let protocol_ended =
                     crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
-                #[cfg(feature = "task-poll-telemetry")]
                 crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
                     .end_protocol_poll(protocol_ended.cycles());
                 crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE

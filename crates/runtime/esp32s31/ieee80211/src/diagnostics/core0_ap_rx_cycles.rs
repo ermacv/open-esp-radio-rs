@@ -1,5 +1,7 @@
 //! Low-overhead phase timing for successful AP protected-data ingress.
 
+pub(crate) use super::core0_paths::Core0ApRxTurnExit;
+
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use super::core0_rx_cycles::cycle_count;
@@ -89,18 +91,6 @@ impl Core0ApRxCycleSnapshot {
                 .wrapping_sub(earlier.turn_budget_exhausted),
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Core0ApRxTurnExit {
-    InitialBatch,
-    InitialReorder,
-    MailboxBlocked,
-    TxBlocked,
-    BatchPending,
-    ReorderPending,
-    Drained,
-    BudgetExhausted,
 }
 
 pub struct Core0ApRxCycleCounters {

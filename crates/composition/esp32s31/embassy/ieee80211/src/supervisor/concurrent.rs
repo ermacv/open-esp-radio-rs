@@ -58,8 +58,8 @@ use oer_esp32s31_ieee80211_runtime::{
             network_tx::AccessPointNetworkTx, park_sta_ap_access_point_role,
         },
         concurrent::{
-            StaApControlExit, StaApRxService, StaApStationRxSink, compose_sta_ap_datapath_runner,
-            compose_sta_ap_datapath_services,
+            StaApControlExit, StaApRxConsumer, StaApRxService, StaApStationRxSink,
+            compose_sta_ap_datapath_runner, compose_sta_ap_datapath_services,
         },
         station::{
             connected::{
@@ -617,7 +617,8 @@ impl ProductionWifiEpochRunner {
             _ => unreachable!("paired security modes were validated before owner split"),
         };
         drop(standalone_receiver);
-        let (paired_sender, paired_consumer) = STA_AP_STAGED_RX_QUEUE.split();
+        let (paired_sender, paired_receiver) = STA_AP_STAGED_RX_QUEUE.split();
+        let paired_consumer = StaApRxConsumer::new(paired_receiver);
         let receive_identities = StaApReceiveIdentities {
             station_address: plan.link().station_address,
             station_bssid: plan.link().bssid,
@@ -865,13 +866,13 @@ impl ProductionWifiEpochRunner {
                 let link_state = access_point_network_link_state(status.authorized);
                 if matches!(link_state, oer_network_interface::LinkState::Down) {
                     access_point_network_link.set_link_state(
-                        oer_esp32s31_ieee80211_runtime::roles::concurrent::AP_NETWORK_INTERFACE_ID,
+                        oer_esp32s31_ieee80211_runtime::datapath::network::AP_NETWORK_INTERFACE_ID,
                         link_state,
                     );
                 }
                 if matches!(link_state, oer_network_interface::LinkState::Up) {
                     access_point_network_link.set_link_state(
-                        oer_esp32s31_ieee80211_runtime::roles::concurrent::AP_NETWORK_INTERFACE_ID,
+                        oer_esp32s31_ieee80211_runtime::datapath::network::AP_NETWORK_INTERFACE_ID,
                         link_state,
                     );
                 }

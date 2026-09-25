@@ -20,17 +20,15 @@ use crate::{
                 RxBlockAckSnapshot, RxReorderCommand, RxReorderCommandResources,
                 try_send_rx_reorder_command,
             },
+            routed::StaApStagedRxQueue,
             staging::{StagedRxFrame, StagedRxQueue},
         },
     },
-    roles::{
-        concurrent::StaApStagedRxQueue,
-        station::{
-            connected::ConnectedStaRxService,
-            rx_protocol::{
-                AlwaysReadyConnectedRxSink, ConnectedReceiveProtocol, ConnectedReceiveStorage,
-                ConnectedRxProcessor,
-            },
+    roles::station::{
+        connected::ConnectedStaRxService,
+        rx_protocol::{
+            AlwaysReadyConnectedRxSink, ConnectedReceiveProtocol, ConnectedReceiveStorage,
+            ConnectedRxProcessor,
         },
     },
 };
@@ -126,7 +124,8 @@ fn one_physical_producer_routes_one_ordered_lease_into_station_processor() {
 
     let pool = RxStagePool::<2, ESP32S31_RX_BUFFER_SIZE>::new();
     let queue = StaApStagedRxQueue::<NoopRawMutex, 2, ESP32S31_RX_BUFFER_SIZE, 2>::new();
-    let (sender, mut receiver) = queue.split();
+    let (sender, receiver) = queue.split();
+    let mut receiver = crate::roles::concurrent::StaApRxConsumer::new(receiver);
     let mut service = StagedRxProducer::new_sta_ap(
         ring,
         storage,
@@ -451,7 +450,8 @@ fn paired_datapath_rx_uses_one_dma_epoch_and_two_narrow_role_capabilities() {
     .into_halted();
     let pool = RxStagePool::<2, ESP32S31_RX_BUFFER_SIZE>::new();
     let queue = StaApStagedRxQueue::<NoopRawMutex, 2, ESP32S31_RX_BUFFER_SIZE, 2>::new();
-    let (sender, consumer) = queue.split();
+    let (sender, receiver) = queue.split();
+    let consumer = crate::roles::concurrent::StaApRxConsumer::new(receiver);
     let epoch = StagedRxEpoch::from_halted_sta_ap(
         halted,
         storage,

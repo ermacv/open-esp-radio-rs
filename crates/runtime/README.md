@@ -25,7 +25,8 @@ not assume which executor wakes its timers.
 | `esp32s31/ieee80211/src/roles/` | Role execution and retained TX/RX owners |
 | `esp32s31/ieee80211/src/roles/access_point/network_tx.rs` | One AP TX owner, publication and cancellation |
 | `esp32s31/ieee80211/src/roles/access_point/network_tx/{queue,power_save,aggregate,completion}.rs` | Lease queues, TIM/DTIM release, standby aggregation and completion on that same owner |
-| `esp32s31/ieee80211/src/datapath/` | Packet handoff and async composition around chip transactions |
+| `esp32s31/ieee80211/src/roles/esp_now/mailbox/` | Bounded ESP-NOW application RX/TX mailboxes shared by the connected station and the standalone role |
+| `esp32s31/ieee80211/src/datapath/` | Packet handoff and async composition around chip transactions; depends on no role module, and `datapath/network` owns the STA/AP network interface identities |
 | `esp32s31/ieee80211/src/diagnostics/` | Optional execution observation |
 | `esp32s31/bluetooth/src/controller/` | One controller epoch, command/response boundaries and timer progress |
 | `esp32s31/bluetooth/src/session/` | Finite DTM, advertising, scanning and peripheral sessions |

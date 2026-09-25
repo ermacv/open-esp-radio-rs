@@ -579,13 +579,13 @@ pub(super) static STAGED_RX_QUEUE: StagedRxQueue<
     RX_STAGE_SLOT_COUNT,
 > = StagedRxQueue::new();
 pub(super) static STA_AP_STAGED_RX_QUEUE:
-    oer_esp32s31_ieee80211_runtime::roles::concurrent::StaApStagedRxQueue<
+    oer_esp32s31_ieee80211_runtime::datapath::rx::routed::StaApStagedRxQueue<
         'static,
         CriticalSectionRawMutex,
         RX_STAGE_SLOT_COUNT,
         RX_STAGE_CAPACITY,
         RX_STAGE_SLOT_COUNT,
-    > = oer_esp32s31_ieee80211_runtime::roles::concurrent::StaApStagedRxQueue::new();
+    > = oer_esp32s31_ieee80211_runtime::datapath::rx::routed::StaApStagedRxQueue::new();
 pub(super) static RX_REORDER_COMMANDS: RxReorderCommandResources<CriticalSectionRawMutex> =
     RxReorderCommandResources::new();
 pub(super) static RX_REORDER_STORAGE: RxReorderFrameStorage<
@@ -1682,7 +1682,7 @@ pub(crate) async fn run_connected<'state, 'security>(
     };
 
     let network_rx = network_runner
-        .rx_publisher(oer_esp32s31_ieee80211_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID);
+        .rx_publisher(oer_esp32s31_ieee80211_runtime::datapath::network::STA_NETWORK_INTERFACE_ID);
     let (control_publisher, control_receiver) = control_resources.split();
     let rx_sink = EmbassyNetConnectedRxSink::new(network_rx, control_publisher);
     #[cfg(feature = "diagnostics")]
@@ -1773,7 +1773,7 @@ pub(crate) async fn run_connected<'state, 'security>(
     let mut radio_runner = DatapathRunner::new(
         &IRQ_RUNTIME,
         network_runner,
-        oer_esp32s31_ieee80211_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID,
+        oer_esp32s31_ieee80211_runtime::datapath::network::STA_NETWORK_INTERFACE_ID,
         drivers.services,
     );
     if let StaAttemptSecurityMaterial::Wpa2Personal { connected, .. } = &mut material {

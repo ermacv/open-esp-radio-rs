@@ -5,5 +5,6 @@ pub(crate) mod ethernet;
 pub mod frontier;
 pub mod hardware;
 pub mod reorder;
+pub mod routed;
 pub mod staging;
 pub(crate) mod turn;

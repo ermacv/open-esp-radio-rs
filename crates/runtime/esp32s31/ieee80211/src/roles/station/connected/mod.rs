@@ -62,19 +62,11 @@ pub use super::{
     control::{ConnectedControlShutdown, ConnectedWpa2Security},
     control_mailbox::{ConnectedControlPublisher, ConnectedControlResources},
     epoch::{DisconnectedStaEpoch, ReconnectedStaEpoch},
-    esp_now_mailbox::{
-        EspNowMailboxConnectedRxSink, EspNowOwnedRxEvent, EspNowRxMailboxEpochError,
-        EspNowRxMailboxResources, EspNowRxMailboxShutdown, EspNowRxPublishOutcome,
-        EspNowRxPublisher, EspNowRxReceiver, EspNowV2RxEvent, EspNowV2RxMailboxError,
-    },
+    esp_now_mailbox::EspNowMailboxConnectedRxSink,
     esp_now_tx::{
         EspNowConnectedControl, EspNowConnectedControlConfigError, EspNowConnectedControlError,
         EspNowConnectedControlShutdown, EspNowConnectedControlStartFailure, EspNowConnectedTx,
-        EspNowOffChannelFailureStage, EspNowOwnedV1Tx, EspNowTxBackpressure, EspNowTxBinding,
-        EspNowTxCancelReason, EspNowTxCompletion, EspNowTxHandle, EspNowTxMailboxEpochError,
-        EspNowTxMailboxInvariantError, EspNowTxMailboxOwner, EspNowTxMailboxResources,
-        EspNowTxMailboxShutdown, EspNowTxRuntimeFailure, EspNowTxTerminal, EspNowTxTicket,
-        EspNowTxTrySendError, EspNowV2TxRequest, EspNowV2TxTrySendError, attach_esp_now_tx,
+        EspNowTxBinding, attach_esp_now_tx,
     },
     network::EmbassyNetConnectedRxSink,
     rx_protocol::{

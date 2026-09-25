@@ -135,7 +135,7 @@ where
     {
         let network_link = network.link_controller();
         network_link.set_link_state(
-            crate::roles::concurrent::AP_NETWORK_INTERFACE_ID,
+            crate::datapath::network::AP_NETWORK_INTERFACE_ID,
             LinkState::Down,
         );
         self.start(hardware)
@@ -212,7 +212,7 @@ where
             security_material,
             set_link_state: |state| {
                 network_link
-                    .set_link_state(crate::roles::concurrent::AP_NETWORK_INTERFACE_ID, state)
+                    .set_link_state(crate::datapath::network::AP_NETWORK_INTERFACE_ID, state)
             },
             #[cfg(any(feature = "diagnostics", test))]
             aggregate_tx_observer,
@@ -233,7 +233,7 @@ where
         let mut runner = DatapathRunner::new(
             interrupts.mac_runtime(),
             network,
-            crate::roles::concurrent::AP_NETWORK_INTERFACE_ID,
+            crate::datapath::network::AP_NETWORK_INTERFACE_ID,
             services,
         );
         let exit = await_stack_boundary!(runner.run_until(control())).map_err(|error| match error {

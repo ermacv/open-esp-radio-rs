@@ -4,13 +4,19 @@
 //! logical interfaces consume them. Role-local protocol state must not create
 //! another physical owner.
 
-use core::{cell::RefCell, future::Future, marker::PhantomData};
+use core::{cell::RefCell, future::Future};
 
 use crate::datapath::{
     DatapathInterfaceScope, DatapathRunner, DatapathServices,
     irq::EmbassyMacIrqRuntime,
-    network::{DatapathNetwork, DatapathNetworkRxEndpoints},
-    rx::staging::StagedRxFrame,
+    network::{
+        AP_NETWORK_INTERFACE_ID, DatapathNetwork, DatapathNetworkRxEndpoints,
+        STA_NETWORK_INTERFACE_ID,
+    },
+    rx::{
+        routed::{StaApStagedRxFrame, StaApStagedRxReceiver},
+        staging::StagedRxFrame,
+    },
 };
 
 use embassy_sync::blocking_mutex::{
@@ -18,25 +24,21 @@ use embassy_sync::blocking_mutex::{
     raw::{CriticalSectionRawMutex, RawMutex},
 };
 
-use oer_memory::{
-    AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, AffineSpscTryReceiveError,
-    AffineSpscTrySendError, TaggedStableDmaBacking,
-};
+use oer_memory::TaggedStableDmaBacking;
 
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     rx::{
-        RxError, RxIngressConfig, RxSegment,
+        RxError,
         ampdu::{
             RX_BLOCK_ACK_BANK_COUNT, RxBlockAckActivation, RxBlockAckRequest, RxBlockAckSessions,
             RxBlockAckSessionsError, RxBlockAckSnapshot,
         },
         pool::{VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT},
-        view_normalized_rx_frame,
     },
 };
 
-use oer_ieee80211_mac::vif::{StaApRxAddresses, StaApRxRoute, StaApVif, classify_sta_ap_rx};
+use oer_ieee80211_mac::vif::{StaApRxRoute, StaApVif};
 
 use oer_network_interface::NetworkInterfaceId;
 
@@ -54,9 +56,6 @@ pub use rx_service::{
 };
 
 pub use station_rx_role::{StaApStationRxError, StaApStationRxSink};
-
-pub const STA_NETWORK_INTERFACE_ID: NetworkInterfaceId = NetworkInterfaceId::new(0);
-pub const AP_NETWORK_INTERFACE_ID: NetworkInterfaceId = NetworkInterfaceId::new(1);
 
 /// The one ordinary/A-MPDU hardware owner shared by both logical roles.
 /// Role-local state may hold these resources only while this owner records
@@ -312,133 +311,6 @@ pub fn dispatch_sta_ap_tx<B>(
     }
 }
 
-/// Normalize one hardware-completed S31 receive unit and route only its
-/// public IEEE 802.11 header fields to a logical interface.
-///
-/// Hardware status validation remains in the MAC RX backend. Association,
-/// authorization, key and BlockAck policy remain in the selected role
-/// consumer; this boundary cannot turn a header match into protocol trust.
-pub fn classify_sta_ap_segment(
-    segment: &RxSegment<'_>,
-    ingress: RxIngressConfig,
-    addresses: StaApRxAddresses,
-) -> Result<StaApRxRoute, RxError> {
-    let normalized = view_normalized_rx_frame(segment, ingress)?;
-    Ok(classify_sta_ap_rx(normalized.mpdu, addresses))
-}
-
-/// One ordered staged owner together with the fact-only VIF classification
-/// made at the common physical RX boundary.
-///
-/// Every outcome retains the unique staging lease. In particular, malformed,
-/// foreign, ambiguous and invalid units cannot disappear merely because no
-/// role consumer accepted them. The common protocol dispatcher must consume
-/// the result and account for its final disposition.
-pub struct StaApStagedRxFrame<
-    'pool,
-    const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
-    const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
-> {
-    route: Result<StaApRxRoute, RxError>,
-    frame: StagedRxFrame<'pool, CAPACITY, SLOTS>,
-}
-
-impl<'pool, const CAPACITY: usize, const SLOTS: usize> StaApStagedRxFrame<'pool, CAPACITY, SLOTS> {
-    pub fn classify(
-        frame: StagedRxFrame<'pool, CAPACITY, SLOTS>,
-        ingress: RxIngressConfig,
-        addresses: StaApRxAddresses,
-    ) -> Self {
-        let route = classify_sta_ap_segment(&frame.segment(), ingress, addresses);
-        Self { route, frame }
-    }
-
-    pub const fn route(&self) -> Result<StaApRxRoute, RxError> {
-        self.route
-    }
-
-    pub const fn frame(&self) -> &StagedRxFrame<'pool, CAPACITY, SLOTS> {
-        &self.frame
-    }
-
-    pub fn into_parts(
-        self,
-    ) -> (
-        Result<StaApRxRoute, RxError>,
-        StagedRxFrame<'pool, CAPACITY, SLOTS>,
-    ) {
-        (self.route, self.frame)
-    }
-
-    pub fn into_frame(self) -> StagedRxFrame<'pool, CAPACITY, SLOTS> {
-        self.frame
-    }
-}
-
-/// Single ordered handoff from the physical RX producer to the STA+AP
-/// protocol dispatcher.
-///
-/// This is deliberately not split into one queue per VIF: doing that in the
-/// DMA producer would make inter-interface ordering and ownership loss
-/// dependent on queue capacity. One consumer owns the ordered stream and
-/// delegates each retained lease to the selected role protocol.
-pub struct StaApStagedRxQueue<
-    'pool,
-    M: RawMutex,
-    const DEPTH: usize,
-    const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
-    const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
-> {
-    frames: AffineSpscQueue<StaApStagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
-    mutex: PhantomData<M>,
-}
-
-/// Sole physical-DMA producer for one ordered paired RX epoch.
-pub struct StaApStagedRxSender<
-    'pool,
-    'queue,
-    M: RawMutex,
-    const DEPTH: usize,
-    const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
-    const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
-> {
-    frames: AffineSpscSender<'queue, StaApStagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
-    mutex: PhantomData<M>,
-}
-
-impl<'pool, 'queue, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize>
-    StaApStagedRxSender<'pool, 'queue, M, DEPTH, CAPACITY, SLOTS>
-{
-    #[inline]
-    pub fn try_send(
-        &self,
-        frame: StaApStagedRxFrame<'pool, CAPACITY, SLOTS>,
-    ) -> Result<(), AffineSpscTrySendError<StaApStagedRxFrame<'pool, CAPACITY, SLOTS>>> {
-        #[cfg(feature = "task-poll-telemetry")]
-        let started = crate::diagnostics::core0_rx_cycles::cycle_count();
-        let result = self.frames.try_send(frame);
-        #[cfg(feature = "task-poll-telemetry")]
-        crate::diagnostics::core0_rx_service_histogram::CORE0_RX_SERVICE_HISTOGRAM
-            .record_spsc_push(
-                crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(started),
-                result.is_err(),
-            );
-        result
-    }
-
-    pub fn len(&self) -> usize {
-        self.frames.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.frames.is_empty()
-    }
-
-    pub fn free_capacity(&self) -> usize {
-        self.frames.free_capacity()
-    }
-}
-
 /// Protocol-side ownership result from the common ordered RX stream.
 pub enum StaApRxDispatch<
     'pool,
@@ -506,30 +378,28 @@ pub struct StaApRxConsumer<
     const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
     const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
 > {
-    frames: AffineSpscReceiver<'queue, StaApStagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
-    mutex: PhantomData<M>,
+    frames: StaApStagedRxReceiver<'pool, 'queue, M, DEPTH, CAPACITY, SLOTS>,
     deferred: Option<StaApRxDispatch<'pool, CAPACITY, SLOTS>>,
 }
 
 impl<'pool, 'queue, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize>
     StaApRxConsumer<'pool, 'queue, M, DEPTH, CAPACITY, SLOTS>
 {
+    /// Take sole protocol ownership of the receiving end of one paired epoch.
+    pub const fn new(
+        frames: StaApStagedRxReceiver<'pool, 'queue, M, DEPTH, CAPACITY, SLOTS>,
+    ) -> Self {
+        Self {
+            frames,
+            deferred: None,
+        }
+    }
+
     pub fn try_receive(&mut self) -> Option<StaApRxDispatch<'pool, CAPACITY, SLOTS>> {
         if let Some(frame) = self.deferred.take() {
             return Some(frame);
         }
-        #[cfg(feature = "task-poll-telemetry")]
-        let started = crate::diagnostics::core0_rx_cycles::cycle_count();
-        let received = self.frames.try_receive();
-        #[cfg(feature = "task-poll-telemetry")]
-        crate::diagnostics::core0_rx_service_histogram::CORE0_RX_SERVICE_HISTOGRAM.record_spsc_pop(
-            crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(started),
-            received.is_err(),
-        );
-        match received {
-            Ok(frame) => Some(StaApRxDispatch::from_staged(frame)),
-            Err(AffineSpscTryReceiveError::Empty) => None,
-        }
+        self.frames.try_receive().map(StaApRxDispatch::from_staged)
     }
 
     /// Restore a frame that the selected role could not process without
@@ -554,7 +424,7 @@ impl<'pool, 'queue, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, cons
 
     pub fn discard_queued(&mut self) -> usize {
         let mut discarded = usize::from(self.deferred.take().is_some());
-        while let Ok(frame) = self.frames.try_receive() {
+        while let Some(frame) = self.frames.try_receive() {
             drop(frame);
             discarded = discarded.saturating_add(1);
         }
@@ -607,50 +477,6 @@ impl<'pool, 'queue, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, cons
                 Ok(StaApRxTurn::Rejected(classification))
             }
         }
-    }
-}
-
-impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize>
-    StaApStagedRxQueue<'pool, M, DEPTH, CAPACITY, SLOTS>
-{
-    pub const fn new() -> Self {
-        assert!(DEPTH != 0, "STA+AP staged RX queue must not be empty");
-        assert!(
-            DEPTH <= SLOTS,
-            "STA+AP staged RX queue cannot outgrow its ownership pool"
-        );
-        Self {
-            frames: AffineSpscQueue::new(),
-            mutex: PhantomData,
-        }
-    }
-
-    pub fn split(
-        &self,
-    ) -> (
-        StaApStagedRxSender<'pool, '_, M, DEPTH, CAPACITY, SLOTS>,
-        StaApRxConsumer<'pool, '_, M, DEPTH, CAPACITY, SLOTS>,
-    ) {
-        let (sender, receiver) = self.frames.split();
-        (
-            StaApStagedRxSender {
-                frames: sender,
-                mutex: PhantomData,
-            },
-            StaApRxConsumer {
-                frames: receiver,
-                mutex: PhantomData,
-                deferred: None,
-            },
-        )
-    }
-}
-
-impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize> Default
-    for StaApStagedRxQueue<'pool, M, DEPTH, CAPACITY, SLOTS>
-{
-    fn default() -> Self {
-        Self::new()
     }
 }
 

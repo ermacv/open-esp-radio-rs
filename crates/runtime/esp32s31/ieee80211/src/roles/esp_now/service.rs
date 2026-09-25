@@ -19,14 +19,14 @@ use crate::{
         rx::frontier::RxFrontierPhase,
     },
     roles::{
-        esp_now::{
-            channel::StandaloneEspNowChannelControl,
-            rx::{StandaloneEspNowReceive, StandaloneEspNowRxProgress},
-        },
-        station::esp_now_tx::{
+        esp_now::mailbox::tx::{
             EspNowOffChannelFailureStage, EspNowQueuedRequest, EspNowQueuedTx,
             EspNowTxCancelReason, EspNowTxMailboxInvariantError, EspNowTxMailboxOwner,
             EspNowTxMailboxShutdown, EspNowTxRuntimeFailure, EspNowTxTerminal,
+        },
+        esp_now::{
+            channel::StandaloneEspNowChannelControl,
+            rx::{StandaloneEspNowReceive, StandaloneEspNowRxProgress},
         },
     },
 };

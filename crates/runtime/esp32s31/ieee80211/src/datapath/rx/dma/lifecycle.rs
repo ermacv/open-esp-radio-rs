@@ -220,7 +220,7 @@ impl<
     pub fn new_sta_ap(
         storage: &'static ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
-        frames: crate::roles::concurrent::StaApStagedRxSender<
+        frames: crate::datapath::rx::routed::StaApStagedRxSender<
             'pool,
             'queue,
             M,
@@ -501,7 +501,7 @@ impl<
         storage: &'static ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
         delay: D,
-        frames: crate::roles::concurrent::StaApStagedRxSender<
+        frames: crate::datapath::rx::routed::StaApStagedRxSender<
             'pool,
             'queue,
             M,

@@ -229,7 +229,7 @@ where
         ring: RxRingHalted<'storage, COUNT>,
         storage: &'static ReceiveDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
-        frames: crate::roles::concurrent::StaApStagedRxSender<
+        frames: crate::datapath::rx::routed::StaApStagedRxSender<
             'pool,
             'queue,
             M,
@@ -268,7 +268,7 @@ where
             DMA_BUFFER_SIZE,
             DMA_STORAGE_SIZE,
         >,
-        frames: crate::roles::concurrent::StaApStagedRxSender<
+        frames: crate::datapath::rx::routed::StaApStagedRxSender<
             'pool,
             'queue,
             M,
@@ -333,7 +333,7 @@ where
             DMA_STORAGE_SIZE,
             P,
         >,
-        frames: crate::roles::concurrent::StaApStagedRxSender<
+        frames: crate::datapath::rx::routed::StaApStagedRxSender<
             'pool,
             'queue,
             M,

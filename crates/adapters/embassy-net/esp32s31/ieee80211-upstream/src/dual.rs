@@ -249,7 +249,7 @@ impl<
 {
     fn publish_link_up(&self) {
         self.set_link_state(
-            oer_esp32s31_ieee80211_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID,
+            oer_esp32s31_ieee80211_runtime::datapath::network::STA_NETWORK_INTERFACE_ID,
             LinkState::Up,
         );
     }

@@ -509,9 +509,9 @@ pub(crate) fn initialize_network(
         .allocator();
     let tx_consumer = initialize_physical_tx();
     let station_interface =
-        oer_esp32s31_ieee80211_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID;
+        oer_esp32s31_ieee80211_runtime::datapath::network::STA_NETWORK_INTERFACE_ID;
     let access_point_interface =
-        oer_esp32s31_ieee80211_runtime::roles::concurrent::AP_NETWORK_INTERFACE_ID;
+        oer_esp32s31_ieee80211_runtime::datapath::network::AP_NETWORK_INTERFACE_ID;
     let (station_device, station_runner) =
         station_resources.split(station_interface, station_address, station_rx_allocator);
     let (access_point_device, access_point_runner) = access_point_resources.split(
@@ -544,9 +544,9 @@ pub(crate) fn initialize_network(
     let station_resources = NETWORK_RESOURCES.take();
     let access_point_resources = ACCESS_POINT_NETWORK_RESOURCES.take();
     let station_interface =
-        oer_esp32s31_ieee80211_runtime::roles::concurrent::STA_NETWORK_INTERFACE_ID;
+        oer_esp32s31_ieee80211_runtime::datapath::network::STA_NETWORK_INTERFACE_ID;
     let access_point_interface =
-        oer_esp32s31_ieee80211_runtime::roles::concurrent::AP_NETWORK_INTERFACE_ID;
+        oer_esp32s31_ieee80211_runtime::datapath::network::AP_NETWORK_INTERFACE_ID;
     let (station_device, station_runner) = station_resources.split(
         station_address,
         STATION_EMBASSY_RX_STORAGE.take(),

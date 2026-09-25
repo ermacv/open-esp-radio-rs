@@ -22,6 +22,12 @@ pub use oer_esp32s31_ieee80211::esp_now::{
 };
 
 pub use oer_esp32s31_ieee80211_runtime::roles::{
+    esp_now::mailbox::{
+        EspNowOffChannelFailureStage, EspNowOwnedV1Tx, EspNowTxBackpressure, EspNowTxCancelReason,
+        EspNowTxCompletion, EspNowTxMailboxEpochError, EspNowTxMailboxInvariantError,
+        EspNowTxMailboxShutdown, EspNowTxRuntimeFailure, EspNowTxTerminal, EspNowTxTicket,
+        EspNowTxTrySendError, EspNowV2TxTrySendError,
+    },
     esp_now::{
         EspNowRxMailboxEpochError, EspNowRxMailboxResources, EspNowRxMailboxShutdown,
         EspNowRxPublishOutcome, EspNowRxPublisher, EspNowRxReceiver, EspNowV2RxEvent,
@@ -34,11 +40,7 @@ pub use oer_esp32s31_ieee80211_runtime::roles::{
     },
     station::connected::{
         EspNowConnectedControl, EspNowConnectedControlConfigError, EspNowConnectedControlError,
-        EspNowConnectedControlShutdown, EspNowOffChannelFailureStage, EspNowOwnedV1Tx,
-        EspNowTxBackpressure, EspNowTxBinding, EspNowTxCancelReason, EspNowTxCompletion,
-        EspNowTxMailboxEpochError, EspNowTxMailboxInvariantError, EspNowTxMailboxShutdown,
-        EspNowTxRuntimeFailure, EspNowTxTerminal, EspNowTxTicket, EspNowTxTrySendError,
-        EspNowV2TxTrySendError, attach_esp_now_tx,
+        EspNowConnectedControlShutdown, EspNowTxBinding, attach_esp_now_tx,
     },
 };
 
@@ -109,7 +111,7 @@ pub const ESP32S31_DEFAULT_ESP_NOW_RX_QUEUE_DEPTH: usize = 4;
 pub type EspNowTransmitHandle<
     'resources,
     const CAPACITY: usize = ESP32S31_DEFAULT_ESP_NOW_TX_QUEUE_DEPTH,
-> = oer_esp32s31_ieee80211_runtime::roles::station::connected::EspNowTxHandle<
+> = oer_esp32s31_ieee80211_runtime::roles::esp_now::EspNowTxHandle<
     'resources,
     CriticalSectionRawMutex,
     CAPACITY,
@@ -118,7 +120,7 @@ pub type EspNowTransmitHandle<
 pub type EspNowTransmitMailboxOwner<
     'resources,
     const CAPACITY: usize = ESP32S31_DEFAULT_ESP_NOW_TX_QUEUE_DEPTH,
-> = oer_esp32s31_ieee80211_runtime::roles::station::connected::EspNowTxMailboxOwner<
+> = oer_esp32s31_ieee80211_runtime::roles::esp_now::EspNowTxMailboxOwner<
     'resources,
     CriticalSectionRawMutex,
     CAPACITY,
@@ -126,7 +128,7 @@ pub type EspNowTransmitMailboxOwner<
 
 /// Statically locatable, allocation-free TX request/completion storage.
 pub struct EspNowTxResources<const CAPACITY: usize = ESP32S31_DEFAULT_ESP_NOW_TX_QUEUE_DEPTH> {
-    inner: oer_esp32s31_ieee80211_runtime::roles::station::connected::EspNowTxMailboxResources<
+    inner: oer_esp32s31_ieee80211_runtime::roles::esp_now::EspNowTxMailboxResources<
         CriticalSectionRawMutex,
         CAPACITY,
     >,
@@ -135,9 +137,7 @@ pub struct EspNowTxResources<const CAPACITY: usize = ESP32S31_DEFAULT_ESP_NOW_TX
 impl<const CAPACITY: usize> EspNowTxResources<CAPACITY> {
     pub const fn new() -> Self {
         Self {
-            inner:
-                oer_esp32s31_ieee80211_runtime::roles::station::connected::EspNowTxMailboxResources::new(
-                ),
+            inner: oer_esp32s31_ieee80211_runtime::roles::esp_now::EspNowTxMailboxResources::new(),
         }
     }
 
@@ -165,7 +165,7 @@ impl<const CAPACITY: usize> Default for EspNowTxResources<CAPACITY> {
 pub type EspNowReceivePublisher<
     'resources,
     const CAPACITY: usize = ESP32S31_DEFAULT_ESP_NOW_RX_QUEUE_DEPTH,
-> = oer_esp32s31_ieee80211_runtime::roles::station::connected::EspNowRxPublisher<
+> = oer_esp32s31_ieee80211_runtime::roles::esp_now::EspNowRxPublisher<
     'resources,
     CriticalSectionRawMutex,
     CAPACITY,
@@ -174,7 +174,7 @@ pub type EspNowReceivePublisher<
 pub type EspNowReceiveReceiver<
     'resources,
     const CAPACITY: usize = ESP32S31_DEFAULT_ESP_NOW_RX_QUEUE_DEPTH,
-> = oer_esp32s31_ieee80211_runtime::roles::station::connected::EspNowRxReceiver<
+> = oer_esp32s31_ieee80211_runtime::roles::esp_now::EspNowRxReceiver<
     'resources,
     CriticalSectionRawMutex,
     CAPACITY,

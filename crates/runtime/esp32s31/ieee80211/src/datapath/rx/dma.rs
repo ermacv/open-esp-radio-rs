@@ -40,16 +40,14 @@ use crate::diagnostics::rx_pipeline::RxPipelineObserver;
 #[cfg(test)]
 use crate::diagnostics::rx_pipeline::{RxPipelineObservation, RxStageDiscard};
 
-use crate::{
-    datapath::{
-        DatapathRxProgress, DatapathRxWorkCounters,
-        rx::{
-            hardware::RxDmaObservationDelay,
-            staging::{StagedRxFrame, StagedRxReceiver, StagedRxSender, StagedRxTrySendError},
-        },
-        services::DatapathRxService,
+use crate::datapath::{
+    DatapathRxProgress, DatapathRxWorkCounters,
+    rx::{
+        hardware::RxDmaObservationDelay,
+        routed::{StaApStagedRxFrame, StaApStagedRxSender},
+        staging::{StagedRxFrame, StagedRxReceiver, StagedRxSender, StagedRxTrySendError},
     },
-    roles::concurrent::{StaApStagedRxFrame, StaApStagedRxSender},
+    services::DatapathRxService,
 };
 
 #[cfg(feature = "core0-rx-coarse-telemetry")]

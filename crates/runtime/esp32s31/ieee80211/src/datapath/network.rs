@@ -17,6 +17,11 @@ use oer_network_interface::{LinkState, NetworkInterfaceId, RxEnqueueError};
 use super::{DatapathTxConsumer, PinnedTxConsumer, PinnedTxFrame};
 use super::{SelectedBurstMaterializer, SoftwareTxFrame};
 
+/// Network interface that carries station traffic, alone or beside a SoftAP.
+pub const STA_NETWORK_INTERFACE_ID: NetworkInterfaceId = NetworkInterfaceId::new(0);
+/// Network interface that carries SoftAP traffic, alone or beside a station.
+pub const AP_NETWORK_INTERFACE_ID: NetworkInterfaceId = NetworkInterfaceId::new(1);
+
 /// RX-only network publication capability exposed to one finite DATAPATH service.
 /// It cannot observe or claim network-owned TX slots.
 pub trait DatapathNetworkRx {
@@ -665,10 +670,7 @@ impl<
     >
 {
     fn publish_link_up(&self) {
-        self.set_link_state(
-            crate::roles::concurrent::STA_NETWORK_INTERFACE_ID,
-            LinkState::Up,
-        );
+        self.set_link_state(STA_NETWORK_INTERFACE_ID, LinkState::Up);
     }
 }
 

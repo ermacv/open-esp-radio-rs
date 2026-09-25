@@ -237,7 +237,7 @@ where
         runner: DatapathRunner::new(
             irq,
             network,
-            crate::roles::concurrent::STA_NETWORK_INTERFACE_ID,
+            crate::datapath::network::STA_NETWORK_INTERFACE_ID,
             services,
         ),
         report: drivers.report,

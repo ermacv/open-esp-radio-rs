@@ -13,6 +13,7 @@ cursor proofs, buffer leases and sticky arena poisoning.
 | `StagedRxProducer` | Live ring, static DMA storage, staging pool, ordered publisher, delay, admission policy and observation |
 | `StoppedReceive`, `PreparedRx`, `RxEpochResources` | Retain and return the same queue sender, pool and observation capability across role epochs |
 | `StagedRxPublisher` | Standalone or paired STA/AP publication; paired routing uses the retained VIF addresses |
+| `routed` | Paired STA/AP transport: the VIF-classified staged frame and its single ordered queue; `roles::concurrent::StaApRxConsumer` owns role dispatch |
 | `DatapathRxService::service` | Synchronously calls chip `rx::transaction::service` and wraps the result in `ready`; physical work finishes before its returned future is polled |
 | `dma/service/observation.rs` | Statically dispatched clocks, logging and telemetry hooks |
 

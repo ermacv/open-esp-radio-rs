@@ -179,7 +179,7 @@ impl QueryOutput {
             (ReadQuery::InvestigationStatus, QuerySummary::InvestigationStatus { .. }) => None,
             (ReadQuery::Analyses, QuerySummary::Analyses { .. }) => None,
             (
-                ReadQuery::Execution { id } | ReadQuery::ExecutionSummary { id },
+                ReadQuery::Execution { id, .. } | ReadQuery::ExecutionSummary { id },
                 QuerySummary::Execution { id: actual, .. },
             ) if id == actual => None,
             (ReadQuery::Analysis { id, .. }, QuerySummary::Analysis { id: actual, .. })

@@ -43,15 +43,18 @@ pub(super) struct Session<'a> {
     call_observations: Vec<CallObservation>,
     model_observations: Vec<ModelObservation>,
     events: Vec<ExecutionEvent>,
+    /// Admitted capacity of `events`, grown on demand up to `max_events`.
+    event_capacity: Option<MemoryReservation<'a>>,
     max_events: usize,
     /// Exact four-byte reservation; never shared between implementations/phases.
     reservation: Option<u32>,
 }
+/// Events admitted by the first growth of a session's event buffer.
+const INITIAL_EVENT_CAPACITY: usize = 1024;
 impl<'a> Session<'a> {
     pub fn new(memory: &'a WorkingMemory, max_events: u32, c: &mut dyn RunControl) -> Result<Self> {
         let metadata = memory.reserve(
             1024 * 1024
-                + u64::from(max_events) * 128
                 + (MAX_DEVICE_MODELS + MAX_CALL_MODELS) as u64 * 512
                 + MAX_RUNTIME_TABLES as u64 * 1024
                 + MAX_FIFO_SERVICES as u64 * 512,
@@ -97,10 +100,6 @@ impl<'a> Session<'a> {
                     "FIFO observation allocation refused",
                 )
             })?;
-        let mut events = Vec::new();
-        events
-            .try_reserve_exact(max_events as usize)
-            .map_err(|_| Error::new(ErrorCode::ResourceLimited, "event allocation refused"))?;
         Ok(Self {
             regions,
             memory,
@@ -119,10 +118,27 @@ impl<'a> Session<'a> {
             final_memory_capacity: None,
             call_observations,
             model_observations,
-            events,
+            events: Vec::new(),
+            event_capacity: None,
             max_events: max_events as usize,
             reservation: None,
         })
+    }
+    /// Double the event capacity, bounded by `max_events`. The new capacity is
+    /// admitted before allocation and while the old buffer is still held.
+    fn grow_events(&mut self, c: &mut dyn RunControl) -> Result<()> {
+        let count = (self.events.capacity() * 2)
+            .max(INITIAL_EVENT_CAPACITY)
+            .min(self.max_events);
+        let reservation = self.memory.reserve(
+            (count * std::mem::size_of::<ExecutionEvent>()) as u64,
+            c.position(),
+        )?;
+        self.events
+            .try_reserve_exact(count - self.events.len())
+            .map_err(|_| Error::new(ErrorCode::ResourceLimited, "event allocation refused"))?;
+        self.event_capacity = Some(reservation);
+        Ok(())
     }
     fn region(
         &mut self,
@@ -231,6 +247,7 @@ impl<'a> Session<'a> {
     pub fn phase(
         &mut self,
         target: &ExecutionTarget,
+        stack_fill: Option<u8>,
         input: &Invocation,
         tables: &[crate::execution_interfaces::PreparedTable<'_>],
         c: &mut dyn RunControl,
@@ -271,7 +288,7 @@ impl<'a> Session<'a> {
                 flags: 6,
                 kind: RegionKind::Stack,
             },
-            target.stack.fill,
+            stack_fill.or(target.stack.fill),
             &target.stack.bytes,
             c,
         )?;
@@ -737,6 +754,9 @@ impl ExecutionMemory for Session<'_> {
                 ErrorCode::ResourceLimited,
                 "execution event capacity exhausted",
             ));
+        }
+        if self.events.len() == self.events.capacity() {
+            self.grow_events(c)?;
         }
         self.events.push(event);
         Ok(())

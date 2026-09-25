@@ -2,7 +2,7 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 19;
+pub const EXECUTION_SCHEMA: u32 = 20;
 /// Upper bound of one canonical execution request payload. Requests are retained
 /// by identity; control messages, journal rows and manifests carry only the hash.
 pub const MAX_EXECUTION_REQUEST_BYTES: usize = 16 * 1024 * 1024;
@@ -66,6 +66,11 @@ pub struct Invocation {
 pub struct ExecutionCase {
     pub name: String,
     pub reset: SessionReset,
+    /// Fill byte of both sides' stack bytes the target's stack seed leaves
+    /// unwritten in this case's phases, instead of the targets' own fill.
+    /// Explicit seed bytes and argument words still take precedence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stack_fill: Option<u8>,
     pub relation: Option<ComparisonRelation>,
     pub vendor: Invocation,
     pub replacement: Option<Invocation>,

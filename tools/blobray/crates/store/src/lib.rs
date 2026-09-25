@@ -11,6 +11,8 @@ mod investigations;
 pub use investigations::*;
 mod executions;
 pub use executions::*;
+mod execution_records;
+pub use execution_records::ExecutionRecordWriter;
 mod execution_requests;
 pub use execution_requests::{decode_execution_request, encode_execution_request};
 mod semantic_ir;

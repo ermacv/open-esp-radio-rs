@@ -304,6 +304,7 @@ name = "blobray-store"
 version = "0.1.0"
 dependencies = [
  "blobray-domain",
+ "flate2",
  "rusqlite",
  "serde",
  "serde_json",

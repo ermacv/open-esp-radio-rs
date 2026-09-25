@@ -420,7 +420,10 @@ Registers, stack and LR reservations reset each phase; models follow their decla
 stack buffers are released after observation serialization/comparison, before the
 next phase. Omitted phase RAM is inaccessible on the next warm phase; redeclaring
 it initializes a fresh region from its seed. Session RAM survives until a cold
-reset or the end of the operation. An incomplete phase blocks subsequent warm
+reset or the end of the operation. An optional case `stack_fill` byte replaces
+both targets' stack `fill` for that case's phases, so one request can cover
+several stack fills; the targets' explicit stack `bytes` and argument words
+still take precedence. An incomplete phase blocks subsequent warm
 phases on both sides, with zero steps and explicit `blocked-by-prior-phase` evidence.
 A later cold phase starts an independent chain and executes normally. Earlier
 incompleteness remains in the aggregate result; a completed difference does not
@@ -537,15 +540,25 @@ Each distinct image or captured input is validated and loaded once per request,
 and every fresh session copies its segments, so cold phases do not reread
 retained sources. `max_events` exhaustion is a
 resource failure with no publication; events are never silently truncated.
+`max_events` is a bound, not a reservation: each session admits event capacity
+into working memory as events occur, doubling up to that bound, and keeps it for
+later phases.
 Traces stream as bounded JSONL events/final-memory/device-models/call-models/runtime-tables/fifo-services/outcomes/comparisons into quota-owned
-staging. The coordinator checks the admitted recipe and stream structure before
+staging. The retained record payload is that JSONL stream as one raw deflate
+stream (execution schema 20): guest events repeat heavily, so large evidence
+sets retain a small fraction of their logical size. Readers decode it under the
+same per-record bound and work budget and see exactly the logical records;
+a truncated, trailing or non-deflate payload is an integrity failure.
+The coordinator checks the admitted recipe and stream structure before
 atomically committing the result reference and completed run. Cancellation,
 limits or corruption cannot publish partial evidence. Process-level OOM and
 opaque dependency containment retain the existing host guarantees.
 
 `execution` only reads retained evidence. `execution --summary` returns only
 the manifest after verifying the request and record payload digests; it neither
-decodes nor returns records, so reopening a large evidence set costs one hash. `replay` checks the executor,
+decodes nor returns records, so reopening a large evidence set costs one hash. `execution --no-events`
+validates every record like `execution` but returns no guest event records, for
+readers that need only outcomes, final memory, models and comparisons. `replay` checks the executor,
 environment and verifier identities, reuses the exact request, and charges
 selection and execution against one application run, original deadline and work budget. Missing implementations
 are reported, never replaced. Doctor validates execution references, record order

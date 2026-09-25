@@ -325,3 +325,41 @@ fn modeled_allocation_capacity_is_owned_but_only_requested_bytes_are_accessible(
         assert_eq!(memory.observation().reserved_bytes, 0);
     }
 }
+#[test]
+fn event_capacity_is_admitted_as_events_occur() {
+    let event = || ExecutionEvent::DelayMicros { value: 1 };
+    let size = std::mem::size_of::<ExecutionEvent>() as u64;
+    let memory = WorkingMemory::new(4 * 1024 * 1024).unwrap();
+    let mut c = || Ok(());
+    // A large declared capacity costs nothing until events are recorded.
+    let mut s = Session::new(&memory, 1 << 20, &mut c).unwrap();
+    let baseline = memory.used();
+    s.event(event(), &mut c).unwrap();
+    assert_eq!(
+        memory.used(),
+        baseline + INITIAL_EVENT_CAPACITY as u64 * size
+    );
+    for _ in 1..=INITIAL_EVENT_CAPACITY {
+        s.event(event(), &mut c).unwrap();
+    }
+    assert_eq!(
+        memory.used(),
+        baseline + 2 * INITIAL_EVENT_CAPACITY as u64 * size
+    );
+    // Growth beyond the working limit fails without losing recorded events.
+    let recorded = s.events.len();
+    while s.events.len() < s.events.capacity() {
+        s.event(event(), &mut c).unwrap();
+    }
+    let full = s.events.len();
+    let error = loop {
+        match s.event(event(), &mut c) {
+            Ok(()) => continue,
+            Err(error) => break error,
+        }
+    };
+    assert_eq!(error.code, ErrorCode::ResourceLimited);
+    assert!(s.events.len() >= full && full > recorded);
+    drop(s);
+    assert_eq!(memory.used(), 0);
+}

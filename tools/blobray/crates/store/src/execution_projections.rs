@@ -321,6 +321,7 @@ mod tests {
             cases: vec![ExecutionCase {
                 name: "case".into(),
                 reset: SessionReset::Cold,
+                stack_fill: None,
                 vendor: input,
                 replacement: Some(right),
                 relation: Some(ComparisonRelation {

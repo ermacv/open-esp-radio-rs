@@ -290,7 +290,7 @@ pub(crate) fn prepare_execution_worker_in(
         // Records are small; buffer them so each is not its own metered write.
         let mut file = std::io::BufWriter::with_capacity(
             STREAM_BLOCK,
-            disk.temporary(&stage.join("staging"))?,
+            blobray_store::ExecutionRecordWriter::new(disk.temporary(&stage.join("staging"))?),
         );
         for (index, case) in request.cases.iter().enumerate() {
             if case.reset == SessionReset::Cold {
@@ -309,6 +309,7 @@ pub(crate) fn prepare_execution_worker_in(
                 memory,
                 executor,
                 reset: case.reset,
+                stack_fill: case.stack_fill,
                 close_chain: request
                     .cases
                     .get(index + 1)
@@ -390,7 +391,9 @@ pub(crate) fn prepare_execution_worker_in(
         let staging = Staging::with_temporary_budget(stage, disk.clone())?;
         let file = file
             .into_inner()
-            .map_err(|error| storage_io(error.into_error()))?;
+            .map_err(|error| storage_io(error.into_error()))?
+            .finish()
+            .map_err(storage_io)?;
         let records = staging.retain_temporary(file, &mut control)?;
         staging.execution_receipt(
             &ExecutionManifest {
@@ -419,6 +422,7 @@ struct Engine<'a> {
     memory: &'a WorkingMemory,
     executor: &'a dyn Executor,
     reset: SessionReset,
+    stack_fill: Option<u8>,
     close_chain: bool,
 }
 impl<'a> Engine<'a> {
@@ -454,7 +458,7 @@ impl<'a> Engine<'a> {
             )?);
         }
         let machine = slot.as_mut().unwrap();
-        let (stack, issue) = machine.phase(target, invocation, ready.tables, c)?;
+        let (stack, issue) = machine.phase(target, self.stack_fill, invocation, ready.tables, c)?;
         if let Some((instance, issue)) = issue {
             machine.capture_final_memory(invocation, c)?;
             return machine.observation(

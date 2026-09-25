@@ -131,6 +131,7 @@ impl Fixture {
             cases: vec![ExecutionCase {
                 relation: Some(fixture_relation(true)),
                 reset: SessionReset::Cold,
+                stack_fill: None,
                 name: "case".into(),
                 vendor: invocation.clone(),
                 replacement: Some(invocation),
@@ -193,6 +194,52 @@ fn execution_summary_verifies_payloads_without_returning_records() {
     fs::set_permissions(&path, permissions).unwrap();
     fs::write(&path, bytes).unwrap();
     assert!(!summary(&id).status.success());
+}
+#[test]
+fn execution_without_events_returns_every_other_record() {
+    let f = Fixture::new(&[0x00b52023, 0x00000513, 0x00008067]); // sw a1,0(a0)
+    let mut request = f.request();
+    let v = &mut request.cases[0].vendor;
+    v.arguments = vec![Some(0x3000), Some(7)];
+    v.models = vec![register_bank(vec![RegisterCell {
+        address: 0x3000,
+        width: 4,
+        value: 0,
+    }])];
+    request.cases[0].replacement = Some(request.cases[0].vendor.clone());
+    let id = f.run(request, budget()).execution.unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args(["--format", "json", "execution", "--no-events", "--project"])
+        .arg(&f.project)
+        .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let brief: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let full = f.read(&id);
+    assert_eq!(brief["summary"], full["summary"]);
+    let is_event = |r: &&serde_json::Value| r["value"]["kind"] == "event";
+    let without: Vec<_> = full["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| !is_event(r))
+        .collect();
+    assert!(
+        full["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| is_event(&r))
+    );
+    assert_eq!(
+        brief["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .collect::<Vec<_>>(),
+        without
+    );
 }
 #[test]
 fn comparison_replay_and_preservation_use_captured_bytes() {

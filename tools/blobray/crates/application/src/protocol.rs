@@ -134,6 +134,9 @@ pub enum ReadQuery {
     },
     Execution {
         id: ArtifactId,
+        /// Validate every record but return no guest event records.
+        #[serde(default)]
+        omit_events: bool,
     },
     /// The retained manifest after verifying the request and record payload
     /// digests; records are neither decoded nor returned.

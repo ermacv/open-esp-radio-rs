@@ -203,3 +203,38 @@ fn compressed_andi_matches_independent_signed_masks_in_concrete_execution() {
         }
     }
 }
+
+#[test]
+fn case_stack_fill_replaces_the_target_fill_for_both_sides() {
+    let f = Fixture::new(&[0xffc12503, 0x00008067]); // lw a0,-4(sp); ret
+    let mut request = f.request();
+    request.vendor.stack.fill = None;
+    request.vendor.stack.bytes.clear();
+    request.replacement = Some(request.vendor.clone());
+    request.cases[0].vendor.arguments.clear();
+    request.cases[0].replacement = Some(request.cases[0].vendor.clone());
+    let unfilled = request.cases[0].clone();
+    request.cases = [0x5a, 0xa5]
+        .map(|fill| ExecutionCase {
+            stack_fill: Some(fill),
+            ..unfilled.clone()
+        })
+        .to_vec();
+    request.cases.push(unfilled);
+    let run = f.run(request, budget());
+    let result = f.read(&run.execution.unwrap());
+    let returned: Vec<_> = result["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["value"]["kind"] == "outcome")
+        .map(|r| (r["value"]["case"].clone(), r["value"]["stop"].clone()))
+        .collect();
+    for side in 0..2 {
+        assert_eq!(returned[side].1["low"], 0x5a5a_5a5a_u32);
+        assert_eq!(returned[2 + side].1["low"], 0xa5a5_a5a5_u32);
+        // Without a case fill, the target's unknown stack stays unknown.
+        assert_eq!(returned[4 + side].1["kind"], "incomplete");
+    }
+    assert_eq!(result["summary"]["manifest"]["verdict"], "INCOMPLETE");
+}

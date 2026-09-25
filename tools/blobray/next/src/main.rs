@@ -312,6 +312,9 @@ enum Command {
         /// digests, without decoding or returning records.
         #[arg(long)]
         summary: bool,
+        /// Validate every record but return no guest event records.
+        #[arg(long, conflicts_with = "summary")]
+        no_events: bool,
         #[command(flatten)]
         limits: ResourceOptions,
     },
@@ -1645,12 +1648,16 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             project,
             id,
             summary,
+            no_events,
             limits,
         } => {
             let query = if summary {
                 ReadQuery::ExecutionSummary { id }
             } else {
-                ReadQuery::Execution { id }
+                ReadQuery::Execution {
+                    id,
+                    omit_events: no_events,
+                }
             };
             return read_query(project, query, limits, format);
         }

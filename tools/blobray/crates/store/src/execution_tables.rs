@@ -563,6 +563,7 @@ mod tests {
             cases: (0..count)
                 .map(|n| ExecutionCase {
                     relation: None,
+                    stack_fill: None,
                     reset: if n == 0 {
                         SessionReset::Cold
                     } else {

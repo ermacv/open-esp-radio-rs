@@ -1320,6 +1320,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
         cases: vec![ExecutionCase {
             relation: None,
             reset: SessionReset::Cold,
+            stack_fill: None,
             name: "one".into(),
             vendor: Invocation {
                 observe_calls: None,
@@ -1363,7 +1364,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
             Ok(())
         })
         .unwrap();
-    let mut file = stage.disk.temporary(&path.join("staging")).unwrap();
+    let mut file = ExecutionRecordWriter::new(stage.disk.temporary(&path.join("staging")).unwrap());
     serde_json::to_writer(
         &mut file,
         &ExecutionEvidence::Outcome {
@@ -1378,7 +1379,9 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
     )
     .unwrap();
     file.write_all(b"\n").unwrap();
-    let records = stage.retain_temporary(file, &mut || Ok(())).unwrap();
+    let records = stage
+        .retain_temporary(file.finish().unwrap(), &mut || Ok(()))
+        .unwrap();
     let mut manifest = ExecutionManifest {
         effect_contracts: vec![],
         projections: vec![],
@@ -1986,6 +1989,7 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
             }),
             name: "one".into(),
             reset: SessionReset::Cold,
+            stack_fill: None,
             vendor: input.clone(),
             replacement: Some(input),
         }],
@@ -2273,6 +2277,7 @@ fn retained_call_pairs_require_exact_review_content_and_release_admitted_owners(
         cases: vec![ExecutionCase {
             name: "fixture".into(),
             reset: SessionReset::Cold,
+            stack_fill: None,
             vendor: input.clone(),
             replacement: Some(input),
             relation: Some(ComparisonRelation {

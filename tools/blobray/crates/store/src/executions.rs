@@ -357,7 +357,7 @@ pub fn validate_execution_records_with(
     let mut relation_complete = true;
     let mut environment_complete = true;
     let mut verdict = manifest.verdict.map(|_| ComparisonVerdict::Match);
-    visit_jsonl::<ExecutionEvidence>(source, c, |record, c| {
+    crate::execution_records::visit_execution_records(source, c, |record, c| {
         visit(&record, c)?;
         if case as usize >= request.cases.len() {
             return Err(integrity("extra execution case"));
@@ -761,7 +761,17 @@ impl TestExecution {
         memory: &WorkingMemory,
         c: &mut dyn RunControl,
     ) -> Result<()> {
-        validate_execution_records(&self.manifest, &self.request, source, memory, c)
+        // Tests forge the logical JSONL stream; retain it as execution does.
+        let mut jsonl = vec![0; source.len() as usize];
+        source.read_at(0, &mut jsonl, c)?;
+        let encoded = crate::execution_records::encode_records(&jsonl);
+        validate_execution_records(
+            &self.manifest,
+            &self.request,
+            &encoded.as_slice(),
+            memory,
+            c,
+        )
     }
 }
 #[cfg(test)]

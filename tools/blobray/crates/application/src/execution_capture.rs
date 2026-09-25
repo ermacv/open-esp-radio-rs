@@ -133,7 +133,9 @@ mod tests {
             assert_eq!(s.events.len(), 10);
             s.events.clear();
             s.finish_phase();
-            assert_eq!(memory.used(), baseline);
+            // The session keeps its admitted event buffer for later phases.
+            let retained = 10 * std::mem::size_of::<ExecutionEvent>() as u64;
+            assert_eq!(memory.used(), baseline + retained);
         }
         drop(s);
         assert_eq!(memory.used(), 0);

@@ -957,7 +957,10 @@ fn shared_snapshot_preparation_scales_and_restores_phase_order() {
             .app
             .query(
                 &f.project,
-                app::ReadQuery::Execution { id: id.clone() },
+                app::ReadQuery::Execution {
+                    id: id.clone(),
+                    omit_events: false,
+                },
                 budget(),
             )
             .unwrap();

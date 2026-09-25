@@ -1015,7 +1015,7 @@ pub fn prepare_query_with_tools(
                     manifest: Box::new(result.manifest),
                 }
             }
-            ReadQuery::Execution { id } => {
+            ReadQuery::Execution { id, omit_events } => {
                 let _fixed = memory.reserve(2 * 1024 * 1024, control.position())?;
                 let result =
                     Project::open(&work.project.to_path()?)?.execution(id, &memory, control)?;
@@ -1025,7 +1025,12 @@ pub fn prepare_query_with_tools(
                     &result.records,
                     &memory,
                     control,
-                    &mut |r, c| spool.push(RecordRef::Execution(r), c),
+                    &mut |r, c| {
+                        if *omit_events && matches!(r, ExecutionEvidence::Event { .. }) {
+                            return Ok(());
+                        }
+                        spool.push(RecordRef::Execution(r), c)
+                    },
                 )?;
                 QuerySummary::Execution {
                     id: id.clone(),

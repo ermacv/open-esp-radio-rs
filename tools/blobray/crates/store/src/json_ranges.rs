@@ -123,6 +123,14 @@ impl<'a> Json<'a> {
         }
         Ok(Node { start, end, kind })
     }
+    /// The value that starts at `start`, which must end exactly at `end`.
+    pub fn node_at(&mut self, start: u64, end: u64, control: &mut dyn RunControl) -> Result<Node> {
+        let node = self.node(start, control)?;
+        if node.start != start || node.end != end {
+            return Err(integrity("indexed JSON span is not one value"));
+        }
+        Ok(node)
+    }
     pub fn root(&mut self, control: &mut dyn RunControl) -> Result<Node> {
         let root = self.node(0, control)?;
         if self.whitespace(root.end, control)? != self.source.len() {

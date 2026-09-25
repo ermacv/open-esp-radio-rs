@@ -15,6 +15,8 @@ pub struct RetainedImport {
     prepared: PreparedImport,
     /// Captured payload of each input, read once from the verified manifest.
     inputs: Vec<Option<ArtifactId>>,
+    /// Record spans for scoped reads, from one full validated walk.
+    index: RevisionIndex,
 }
 
 /// Index each input's captured payload so executions need not walk the inventory.
@@ -30,6 +32,38 @@ pub(crate) fn insert_revision_inputs(
                 revision.as_str(),
                 index as i64,
                 payload.as_ref().map(ArtifactId::as_str)
+            ],
+        )
+        .map_err(db)?;
+    }
+    Ok(())
+}
+
+/// Index each object's manifest span so scoped reads decode one object.
+pub(crate) fn insert_revision_index(
+    tx: &rusqlite::Connection,
+    revision: &RevisionId,
+    index: &RevisionIndex,
+) -> Result<()> {
+    tx.execute(
+        "INSERT INTO revision_scopes(revision,scope) VALUES(?1,?2)",
+        params![
+            revision.as_str(),
+            serde_json::to_string(index).map_err(json)?
+        ],
+    )
+    .map_err(db)?;
+    for span in &index.objects {
+        tx.execute(
+            "INSERT INTO revision_objects(revision,input,ordinal,start,end,external_start,external_end) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            params![
+                revision.as_str(),
+                span.input as i64,
+                span.ordinal as i64,
+                span.object.0 as i64,
+                span.object.1 as i64,
+                span.external.map(|e| e.0 as i64),
+                span.external.map(|e| e.1 as i64),
             ],
         )
         .map_err(db)?;
@@ -474,6 +508,7 @@ impl Writer {
         &mut self,
         run: &RunRecord,
         prepared: &PreparedImport,
+        memory: &WorkingMemory,
         checkpoint: &mut dyn RunControl,
     ) -> Result<RetainedImport> {
         if run.operation != RunOperation::Import
@@ -565,7 +600,25 @@ impl Writer {
         }
         sync_dir(&self.project.root.join("objects"))?;
         checkpoint.checkpoint(0)?;
+        // One full validated walk records the spans scoped reads decode later.
+        let mut index = RevisionIndex::default();
+        let lease = self.project.open_payload(&manifest, checkpoint)?;
+        let _fixed = memory.reserve(32768, checkpoint.position())?;
+        let complete = walk_manifest(
+            &self.project.id,
+            &lease,
+            memory,
+            checkpoint,
+            &mut (),
+            &mut |_, _| Ok(()),
+            Some(&mut index),
+            RunPhase::Retain,
+        )?;
+        if complete != prepared.complete {
+            return Err(integrity("receipt and manifest completeness disagree"));
+        }
         Ok(RetainedImport {
+            index,
             run: run.id.clone(),
             prepared: prepared.clone(),
             inputs: header
@@ -631,6 +684,7 @@ impl Writer {
         )
         .map_err(db)?;
         insert_revision_inputs(&tx, &prepared.revision, &retained.inputs)?;
+        insert_revision_index(&tx, &prepared.revision, &retained.index)?;
         tx.execute(
             "UPDATE project SET current_revision=?1 WHERE singleton=1",
             [prepared.revision.as_str()],

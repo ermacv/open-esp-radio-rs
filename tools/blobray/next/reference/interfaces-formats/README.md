@@ -143,10 +143,16 @@ schema. The ESP32-S31 vendor scenarios are such a client.
 ### Current formats
 
 Run records use journal schema 38 for every durable and read operation. Storage metadata
-uses schema 37; revision manifests use schema 1 and execution manifests use schema
-18. These are independent formats. Storage indexes run state, the execution
+uses schema 38; revision manifests use schema 1 and execution manifests use schema
+20. These are independent formats. Storage indexes run state, the execution
 published by each run, and each revision input's captured payload, so reads and
-executions never scan the journal or walk the inventory to find them. Earlier journals are rejected by single-run,
+executions never scan the journal or walk the inventory to find them. Import
+also records, from one full validated walk, each revision's header, input
+records and the manifest span of every object. A read scoped to one input or
+object, such as validating a knowledge occurrence, decodes only those spans and
+verifies the selected capture; every decoded object must carry the requested
+identity, so a damaged span fails as an integrity error. A revision without that
+index is read by the full walk. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has
@@ -165,7 +171,7 @@ inventory and doctor output use schema 2 and include `assessment`; inventory
 also retains `complete` within its inventory-specific contract and `snapshot`.
 Record streams use schema 2 with `records`, `summary` and `assessment`.
 Command run envelopes (import 3, function/research 4, investigation 5, knowledge 6,
-execution 7) wrap the same schema-37 run; an envelope version is not a journal
+execution 7) wrap the same schema-38 run; an envelope version is not a journal
 version. Partial research and valid comparison verdicts exit 0. Failed or
 inconclusive policy checks, including doctor/link-plan blockers, exit nonzero.
 Request/admission errors use `{schema:1,error:{code,message}}` on stderr; worker

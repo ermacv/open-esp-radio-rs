@@ -199,7 +199,8 @@ complete; no Python scenario code remains. Unit 12.6 is complete: channel
 restoration, all temperature-prefix sensor windows and stuck readiness.
 Checkpoint 12.M (mechanisms instead of handwritten knowledge) is complete.
 Units 12.7 (RX gain/calibration) and 12.8 (TX-DC/PWDET) are complete.
-Checkpoint 12.N (native claims) is complete; unit 12.9 is next. Stages then
+Checkpoints 12.N (native claims) and 12.S (revision lookup index) are complete;
+unit 12.9 is next. Stages then
 run in the order 13, 14, 20 (legacy removal), 15–19, 21.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
@@ -1301,6 +1302,29 @@ unchanged:
 All 2055 Blobray tests, formatting, strict Clippy, docs and the standalone
 check pass. This is TX calibration software state, not RF accuracy.
 
+
+### Checkpoint 12.S: revision lookup index
+
+User-authorized insertion after 12.N and before 12.9. A lookup scoped to one
+input, object or symbol walks and validates the whole revision manifest (17 MB
+for the PHY scenarios, about 0.45 s), and proposing or accepting a reviewed
+contract performs two or three such walks.
+
+| Unit | Status | Acceptance |
+| --- | --- | --- |
+| 12.S.1 | done | Scoped revision reads use a per-revision object index: each object's record span in the authenticated manifest. A scoped read decodes the header, the selected input and the selected object only, verifies the selected capture, and presents the same records to the sink as the full walk. The index is derived, never trusted: every decoded span must carry the requested identity or the read fails as an integrity error, and a missing or unusable index is rebuilt from a full validated walk. Occurrence validation, scoped inspection and knowledge proposal/review use it; full-revision queries keep the full walk. Tests cover equality with the filtered full walk, forged spans, rebuild and budget accounting. A reviewed-contract proposal on captured input symbols costs a small fraction of a full walk, and the I2C scenario returns to its pre-12.N.4 duration or better. |
+
+Unit 12.S.1 acceptance: import records each revision's header, input records,
+container framing, diagnostics span and every object's manifest span (storage
+schema 38) from one full validated walk in the retention phase. `read_scoped`
+decodes only the selected input and object, verifies the selected capture and
+presents the same records as the filtered full walk; knowledge occurrence
+validation uses it. A damaged or swapped span fails as an integrity error and a
+revision without the index falls back to the full walk. Tests cover equality
+with the filtered walk, forged spans, fallback and a scoped work budget below a
+quarter of the full walk. A contract proposal on captured input symbols fell
+from 1.45 s to 0.39 s, and the I2C scenario from 43–48 s to 33 s (31 s before
+12.N.4).
 
 ### Checkpoint 12.N: native claims
 

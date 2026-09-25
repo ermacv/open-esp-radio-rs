@@ -1523,7 +1523,12 @@ fn supervise(
                     )?))
                 }
                 (DurableWork::Import(_), PreparedReceipt::Import(prepared)) => {
-                    Retained::Import(writer.retain_candidate(&record, &prepared, &mut context)?)
+                    Retained::Import(writer.retain_candidate(
+                        &record,
+                        &prepared,
+                        &publication_memory,
+                        &mut context,
+                    )?)
                 }
                 (DurableWork::Function(_), PreparedReceipt::Function(prepared)) => {
                     Retained::Function(writer.retain_function(&record, &prepared, &mut context)?)

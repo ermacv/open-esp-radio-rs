@@ -39,7 +39,10 @@ pub use jobs::read_progress;
 mod json_ranges;
 mod metered;
 mod query;
-pub use query::{DoctorSink, DoctorSummary, ManifestLease, SnapshotView};
+pub(crate) use query::walk_manifest;
+pub use query::{
+    DoctorSink, DoctorSummary, InputScope, ManifestLease, ObjectSpan, RevisionIndex, SnapshotView,
+};
 mod stream;
 pub use stream::{InputStream, ObjectHeader, ObjectStream, RevisionStream};
 mod source;
@@ -57,7 +60,7 @@ use std::{
 };
 
 const STATE: &str = ".blobray-next";
-const SCHEMA: i64 = 37;
+const SCHEMA: i64 = 38;
 /// Run record format shared by every durable and read operation.
 pub const JOURNAL_SCHEMA: u32 = 38;
 
@@ -157,6 +160,8 @@ impl Project {
             CREATE TABLE project (singleton INTEGER PRIMARY KEY CHECK(singleton=1), id TEXT NOT NULL, current_revision TEXT);
             CREATE TABLE revisions (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE);
             CREATE TABLE revision_inputs (revision TEXT NOT NULL, input INTEGER NOT NULL, payload TEXT, PRIMARY KEY(revision, input)) WITHOUT ROWID;
+            CREATE TABLE revision_scopes (revision TEXT PRIMARY KEY, scope TEXT NOT NULL) WITHOUT ROWID;
+            CREATE TABLE revision_objects (revision TEXT NOT NULL, input INTEGER NOT NULL, ordinal INTEGER NOT NULL, start INTEGER NOT NULL, end INTEGER NOT NULL, external_start INTEGER, external_end INTEGER, PRIMARY KEY(revision, input, ordinal)) WITHOUT ROWID;
             INSERT INTO project VALUES (1, lower(hex(randomblob(32))), NULL);
             COMMIT;").map_err(db)?;
         connection

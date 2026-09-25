@@ -207,7 +207,12 @@ fn run_success_and_revision_publication_are_one_transaction() {
         .prepare(revision(&project))
         .unwrap();
     let retained = writer
-        .retain_candidate(&run, &prepared, &mut || Ok(()))
+        .retain_candidate(
+            &run,
+            &prepared,
+            &WorkingMemory::new(64 * 1024 * 1024).unwrap(),
+            &mut || Ok(()),
+        )
         .unwrap();
     let connection = open_connection(&project.root, true).unwrap();
     connection.execute_batch("CREATE TRIGGER fail_run BEFORE UPDATE ON runs BEGIN SELECT RAISE(ABORT,'injected run write failure'); END;").unwrap();
@@ -217,7 +222,12 @@ fn run_success_and_revision_publication_are_one_transaction() {
     assert_eq!(project.runs().unwrap()[0].state, RunState::Registered);
     connection.execute_batch("DROP TRIGGER fail_run").unwrap();
     let retained = writer
-        .retain_candidate(&run, &prepared, &mut || Ok(()))
+        .retain_candidate(
+            &run,
+            &prepared,
+            &WorkingMemory::new(64 * 1024 * 1024).unwrap(),
+            &mut || Ok(()),
+        )
         .unwrap();
     writer.publish_run(&mut run, retained).unwrap();
     drop(writer); // Simulate lost delivery after a successful commit.
@@ -237,10 +247,12 @@ fn cancellation_during_retention_and_corrupt_candidate_never_publish() {
         .prepare(revision(&project))
         .unwrap();
     assert!(matches!(
-        writer.retain_candidate(&run, &prepared, &mut || Err(Error::new(
-            ErrorCode::Cancelled,
-            "cancel retention"
-        ))),
+        writer.retain_candidate(
+            &run,
+            &prepared,
+            &WorkingMemory::new(64 * 1024 * 1024).unwrap(),
+            &mut || Err(Error::new(ErrorCode::Cancelled, "cancel retention"))
+        ),
         Err(Error {
             code: ErrorCode::Cancelled,
             ..
@@ -252,7 +264,12 @@ fn cancellation_during_retention_and_corrupt_candidate_never_publish() {
     )
     .unwrap();
     assert!(matches!(
-        writer.retain_candidate(&run, &prepared, &mut || Ok(())),
+        writer.retain_candidate(
+            &run,
+            &prepared,
+            &WorkingMemory::new(64 * 1024 * 1024).unwrap(),
+            &mut || Ok(())
+        ),
         Err(Error {
             code: ErrorCode::Integrity,
             ..

@@ -312,7 +312,7 @@ pub(crate) fn prepare_legacy(
         )?;
         run.state = RunState::Validating;
         writer.update_run(&run)?;
-        let retained = writer.retain_candidate(&run, &receipt, control)?;
+        let retained = writer.retain_candidate(&run, &receipt, memory, control)?;
         writer.publish_run(&mut run, retained)?;
         writer.cleanup_stage(&run.id)?;
     }

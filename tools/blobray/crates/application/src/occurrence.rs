@@ -50,7 +50,19 @@ pub(crate) fn with_source<T>(
                 }
             };
             let mut probe = crate::selection::Probe::new(&scope);
-            project.read_inventory(Some(&occurrence.revision), memory, c, &mut probe)?;
+            // The revision's object index decodes only the selected object.
+            let object = occurrence
+                .symbol
+                .as_ref()
+                .map_or(&occurrence.object, |symbol| &symbol.object);
+            project.read_scoped(
+                &occurrence.revision,
+                *input,
+                Some(object),
+                memory,
+                c,
+                &mut probe,
+            )?;
             if !probe.found {
                 return Err(Error::new(
                     ErrorCode::NotFound,

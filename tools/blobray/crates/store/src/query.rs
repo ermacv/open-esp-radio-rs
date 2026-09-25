@@ -1,6 +1,7 @@
 //! Read-only validation and record delivery with no materialized revision graph.
 use super::json_ranges::{Json, Node};
 use super::*;
+use serde::{Deserialize, Serialize};
 
 pub struct SnapshotView {
     pub revision_id: RevisionId,
@@ -99,6 +100,128 @@ impl Project {
             manifest,
         })
     }
+    /// Records of one input of a revision, and of only `object` when given,
+    /// with the revision's completeness. Uses the revision's object index to
+    /// decode just those records, verifying the selected capture; without an
+    /// index it walks the whole revision. The sink sees the same records the
+    /// full walk presents for that input and object.
+    pub fn read_scoped(
+        &self,
+        revision: &RevisionId,
+        input: u64,
+        object: Option<&ObjectId>,
+        memory: &WorkingMemory,
+        control: &mut dyn RunControl,
+        sink: &mut dyn InventorySink,
+    ) -> Result<bool> {
+        use rusqlite::OptionalExtension;
+        let connection = open_connection(&self.root, false)?;
+        let scope: Option<String> = connection
+            .query_row(
+                "SELECT scope FROM revision_scopes WHERE revision=?1",
+                [revision.as_str()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(db)?;
+        let Some(scope) = scope else {
+            return Ok(self
+                .read_inventory(Some(revision), memory, control, sink)?
+                .complete);
+        };
+        let _scope = memory.reserve(
+            (scope.len() as u64).saturating_mul(DECODE_EXPANSION),
+            control.position(),
+        )?;
+        let index: RevisionIndex = serde_json::from_str(&scope).map_err(jobs::json)?;
+        let manifest = self.open_payload(&revision.as_str().parse()?, control)?;
+        let _fixed = memory.reserve(32768, control.position())?;
+        control.phase(RunPhase::ValidateRevision)?;
+        let header = index
+            .header
+            .as_ref()
+            .ok_or_else(|| integrity("revision index lacks its header"))?;
+        if header.project != self.id {
+            return Err(integrity("revision index belongs to another project"));
+        }
+        sink.revision(header, control)?;
+        let Some(scope) = index.inputs.get(input as usize) else {
+            return Ok(index.complete);
+        };
+        control.set_position(RunPosition {
+            phase: RunPhase::ValidateRevision,
+            input: Some(input),
+            ..Default::default()
+        });
+        self.verify_capture(&scope.record.capture, control)?;
+        sink.input(input, &scope.record, control)?;
+        let Some(artifact) = scope.record.capture.artifact() else {
+            return Ok(index.complete);
+        };
+        let (kind, members_complete) = scope
+            .container
+            .ok_or_else(|| integrity("revision index lacks container framing"))?;
+        sink.container(kind, members_complete, control)?;
+        let mut json = Json::new(&manifest);
+        let (start, end) = scope
+            .diagnostics
+            .ok_or_else(|| integrity("revision index lacks input diagnostics"))?;
+        let diagnostics = json.node_at(start, end, control)?;
+        diagnostics_empty(&mut json, diagnostics, memory, control, sink)?;
+        let ordinal = match object {
+            Some(object) if object.artifact != *artifact => return Ok(index.complete),
+            Some(ObjectId {
+                location: ObjectLocation::ArchiveMember { ordinal },
+                ..
+            }) => Some(*ordinal),
+            Some(_) => Some(0),
+            None => None,
+        };
+        let mut statement = connection
+            .prepare(
+                "SELECT ordinal,start,end,external_start,external_end FROM revision_objects \
+                 WHERE revision=?1 AND input=?2 AND (?3 IS NULL OR ordinal=?3) ORDER BY ordinal",
+            )
+            .map_err(db)?;
+        let rows = statement
+            .query_map(
+                params![revision.as_str(), input as i64, ordinal.map(|o| o as i64)],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
+                    ))
+                },
+            )
+            .map_err(db)?;
+        for row in rows {
+            let (ordinal, start, end, external_start, external_end) = row.map_err(db)?;
+            let node = json.node_at(start as u64, end as u64, control)?;
+            let external = match (external_start, external_end) {
+                (Some(start), Some(end)) => {
+                    Some(json.node_at(start as u64, end as u64, control)?)
+                }
+                (None, None) => None,
+                _ => return Err(integrity("revision index has a partial thin binding")),
+            };
+            walk_object(
+                &mut json,
+                node,
+                kind,
+                artifact,
+                ordinal as u64,
+                external,
+                memory,
+                control,
+                sink,
+                &mut |capture, control| self.verify_capture(capture, control),
+            )?;
+        }
+        Ok(index.complete)
+    }
     fn verify_capture(&self, capture: &Capture, control: &mut dyn RunControl) -> Result<()> {
         if let Capture::Captured { artifact, length } = capture {
             let lease = self.open_payload(artifact, control)?;
@@ -122,6 +245,8 @@ impl Project {
             control,
             sink,
             &mut |capture, control| self.verify_capture(capture, control),
+            None,
+            RunPhase::ValidateRevision,
         )
     }
 }
@@ -157,21 +282,53 @@ impl ManifestLease {
             control,
             sink,
             &mut |_, _| Ok(()),
+            None,
+            RunPhase::ValidateRevision,
         )
     }
     pub fn manifest(&self) -> &dyn ByteSource {
         &self.manifest
     }
 }
-fn walk_manifest(
+/// Record spans of one validated revision manifest, so a scoped read decodes
+/// only the selected input and object. Built by a full validated walk and kept
+/// with the revision; every span is checked again when it is decoded.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct RevisionIndex {
+    pub header: Option<RevisionHeader>,
+    pub complete: bool,
+    pub inputs: Vec<InputScope>,
+    #[serde(skip)]
+    pub objects: Vec<ObjectSpan>,
+}
+/// One input's decoded record, container framing and diagnostics span.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct InputScope {
+    pub record: InputRecord,
+    pub container: Option<(ContainerKind, bool)>,
+    pub diagnostics: Option<(u64, u64)>,
+}
+/// Byte span of one object record and of its thin-archive binding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ObjectSpan {
+    pub input: u64,
+    pub ordinal: u64,
+    pub object: (u64, u64),
+    pub external: Option<(u64, u64)>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn walk_manifest(
     project_id: &ProjectId,
     manifest: &dyn ByteSource,
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
     sink: &mut dyn InventorySink,
     verify_capture: &mut dyn FnMut(&Capture, &mut dyn RunControl) -> Result<()>,
+    mut index: Option<&mut RevisionIndex>,
+    phase: RunPhase,
 ) -> Result<bool> {
-    control.phase(RunPhase::ValidateRevision)?;
+    control.phase(phase)?;
     let mut json = Json::new(manifest);
     let root = json.root(control)?;
     let [schema, project, parent, target, producer, inputs] = json.fields(
@@ -201,21 +358,22 @@ fn walk_manifest(
     if producer.is_empty() {
         return Err(integrity("inventory producer missing"));
     }
-    sink.revision(
-        &RevisionHeader {
-            project: project_id.clone(),
-            parent: parent.clone(),
-            target: *target,
-            inventory_producer: producer.clone(),
-        },
-        control,
-    )?;
+    let header = RevisionHeader {
+        project: project_id.clone(),
+        parent: parent.clone(),
+        target: *target,
+        inventory_producer: producer.clone(),
+    };
+    sink.revision(&header, control)?;
+    if let Some(index) = index.as_deref_mut() {
+        index.header = Some(header);
+    }
     let mut inputs = json.array(inputs)?;
     let mut count = 0;
     let mut complete = true;
     while let Some(input) = json.next(&mut inputs, control)? {
         control.set_position(RunPosition {
-            phase: RunPhase::ValidateRevision,
+            phase,
             input: Some(count),
             ..Default::default()
         });
@@ -244,18 +402,22 @@ fn walk_manifest(
             return Err(integrity("input digest differs from expectation"));
         }
         verify_capture(&capture, control)?;
-        sink.input(
-            count,
-            &InputRecord {
-                role: role.clone(),
-                origin: origin.clone(),
-                expected: expected.clone(),
-                capture: capture.clone(),
-                external_members: Vec::new(),
-                inventory: None,
-            },
-            control,
-        )?;
+        let record = InputRecord {
+            role: role.clone(),
+            origin: origin.clone(),
+            expected: expected.clone(),
+            capture: capture.clone(),
+            external_members: Vec::new(),
+            inventory: None,
+        };
+        sink.input(count, &record, control)?;
+        if let Some(index) = index.as_deref_mut() {
+            index.inputs.push(InputScope {
+                record,
+                container: None,
+                diagnostics: None,
+            });
+        }
         let mut external = json.array(external)?;
         if capture.artifact().is_none() {
             json.decode::<()>(inventory, memory, control)?;
@@ -277,141 +439,41 @@ fn walk_manifest(
         complete &= members_complete;
         sink.container(kind, members_complete, control)?;
         complete &= diagnostics_empty(&mut json, diagnostics, memory, control, sink)?;
+        if let Some(scope) = index.as_deref_mut().and_then(|i| i.inputs.last_mut()) {
+            scope.container = Some((kind, members_complete));
+            scope.diagnostics = Some((diagnostics.start, diagnostics.end));
+        }
         let mut objects = json.array(objects)?;
         let mut ordinal = 0;
         while let Some(object) = json.next(&mut objects, control)? {
-            let mut position = control.position();
-            position.member = Some(ordinal);
-            position.artifact(artifact);
-            control.set_position(position);
-            let [id, name, content, elf, diagnostics] = json.fields(
-                object,
-                ["id", "name", "content", "elf", "diagnostics"],
-                control,
-            )?;
-            let id = json.decode::<ObjectId>(id, memory, control)?;
-            let name = json.decode::<Option<Vec<u8>>>(name, memory, control)?;
-            let content = json.decode::<Option<ArtifactId>>(content, memory, control)?;
-            let location = match kind {
-                ContainerKind::Archive | ContainerKind::ThinArchive => {
-                    ObjectLocation::ArchiveMember { ordinal }
-                }
-                _ => ObjectLocation::Standalone,
-            };
-            if id.artifact != *artifact || id.location != location {
-                return Err(integrity("object identity outside its ordered input"));
-            }
-            if location == ObjectLocation::Standalone && content.as_ref() != Some(artifact) {
-                return Err(integrity("standalone content identity mismatch"));
-            }
-            if kind == ContainerKind::ThinArchive {
-                let member = json
-                    .next(&mut external, control)?
-                    .ok_or_else(|| integrity("missing thin binding"))?;
-                let member = json.decode::<ExternalMember>(member, memory, control)?;
-                if member.ordinal != ordinal
-                    || name.as_ref() != Some(&member.name)
-                    || member.capture.artifact() != content.as_ref()
-                {
-                    return Err(integrity("thin binding and object disagree"));
-                }
-                verify_capture(&member.capture, control)?;
-                sink.external(&member, control)?;
-            }
-            let mut outcome = ObjectInventory {
-                id: id.clone(),
-                name: name.clone(),
-                content: content.clone(),
-                elf: None,
-                diagnostics: Vec::new(),
-            };
-            if elf.kind == b'n' {
-                json.decode::<()>(elf, memory, control)?;
-                complete = false;
-                sink.object(&outcome, control)?;
+            let member = if kind == ContainerKind::ThinArchive {
+                Some(
+                    json.next(&mut external, control)?
+                        .ok_or_else(|| integrity("missing thin binding"))?,
+                )
             } else {
-                if content.is_none() {
-                    return Err(integrity("ELF inventory without captured content"));
-                }
-                let [
-                    bits,
-                    little,
-                    machine,
-                    kind,
-                    entry,
-                    sections,
-                    symbols,
-                    relocations,
-                ] = json.fields(
-                    elf,
-                    [
-                        "bits",
-                        "little_endian",
-                        "machine",
-                        "object_type",
-                        "entry",
-                        "sections",
-                        "symbols",
-                        "relocations",
-                    ],
-                    control,
-                )?;
-                outcome.elf = Some(ElfInventory {
-                    bits: *json.decode(bits, memory, control)?,
-                    little_endian: *json.decode(little, memory, control)?,
-                    machine: *json.decode(machine, memory, control)?,
-                    object_type: *json.decode(kind, memory, control)?,
-                    entry: *json.decode(entry, memory, control)?,
-                    sections: Vec::new(),
-                    symbols: Vec::new(),
-                    relocations: Vec::new(),
+                None
+            };
+            complete &= walk_object(
+                &mut json,
+                object,
+                kind,
+                artifact,
+                ordinal,
+                member,
+                memory,
+                control,
+                sink,
+                verify_capture,
+            )?;
+            if let Some(index) = index.as_deref_mut() {
+                index.objects.push(ObjectSpan {
+                    input: count,
+                    ordinal,
+                    object: (object.start, object.end),
+                    external: member.map(|m| (m.start, m.end)),
                 });
-                sink.object(&outcome, control)?;
-                let mut sections = json.array(sections)?;
-                while let Some(record) = json.next(&mut sections, control)? {
-                    let record = json.decode::<SectionRecord>(record, memory, control)?;
-                    sink.section(&record, control)?;
-                }
-                let beginning = json.array(symbols)?;
-                let mut symbols = beginning;
-                let mut seen = 0u64;
-                let mut maximum = None;
-                while let Some(record) = json.next(&mut symbols, control)? {
-                    let record = json.decode::<SymbolRecord>(record, memory, control)?;
-                    let key = (record.id.table_section, record.id.index);
-                    let mut position = control.position();
-                    position.table = Some(key.0 as u64);
-                    position.entry = Some(key.1);
-                    control.set_position(position);
-                    if record.id.object != *id {
-                        return Err(integrity("symbol belongs to another object"));
-                    }
-                    // Normal producer order is linear. Older valid unordered
-                    // manifests remain accepted, with budgeted lookback on disk.
-                    if maximum.is_some_and(|maximum| key <= maximum) {
-                        let mut previous = beginning;
-                        for _ in 0..seen {
-                            let previous = json
-                                .next(&mut previous, control)?
-                                .ok_or_else(|| integrity("symbol table changed"))?;
-                            let previous =
-                                json.decode::<SymbolRecord>(previous, memory, control)?;
-                            if (previous.id.table_section, previous.id.index) == key {
-                                return Err(integrity("duplicate symbol identity"));
-                            }
-                        }
-                    }
-                    maximum = Some(maximum.map_or(key, |old| old.max(key)));
-                    seen += 1;
-                    sink.symbol(&record, control)?;
-                }
-                let mut relocations = json.array(relocations)?;
-                while let Some(record) = json.next(&mut relocations, control)? {
-                    let record = json.decode::<RelocationRecord>(record, memory, control)?;
-                    sink.relocation(&record, control)?;
-                }
             }
-            complete &= diagnostics_empty(&mut json, diagnostics, memory, control, sink)?;
             ordinal += 1;
         }
         if json.next(&mut external, control)?.is_some() {
@@ -425,6 +487,157 @@ fn walk_manifest(
     if count == 0 {
         return Err(integrity("revision requires inputs"));
     }
+    if let Some(index) = index {
+        index.complete = complete;
+    }
+    Ok(complete)
+}
+
+/// One object record of one input: identity, thin binding, ELF records and
+/// diagnostics. Returns whether the object is completely inventoried.
+#[allow(clippy::too_many_arguments)]
+fn walk_object(
+    json: &mut Json<'_>,
+    object: Node,
+    kind: ContainerKind,
+    artifact: &ArtifactId,
+    ordinal: u64,
+    external: Option<Node>,
+    memory: &WorkingMemory,
+    control: &mut dyn RunControl,
+    sink: &mut dyn InventorySink,
+    verify_capture: &mut dyn FnMut(&Capture, &mut dyn RunControl) -> Result<()>,
+) -> Result<bool> {
+    let mut complete = true;
+    let mut position = control.position();
+    position.member = Some(ordinal);
+    position.artifact(artifact);
+    control.set_position(position);
+    let [id, name, content, elf, diagnostics] = json.fields(
+        object,
+        ["id", "name", "content", "elf", "diagnostics"],
+        control,
+    )?;
+    let id = json.decode::<ObjectId>(id, memory, control)?;
+    let name = json.decode::<Option<Vec<u8>>>(name, memory, control)?;
+    let content = json.decode::<Option<ArtifactId>>(content, memory, control)?;
+    let location = match kind {
+        ContainerKind::Archive | ContainerKind::ThinArchive => {
+            ObjectLocation::ArchiveMember { ordinal }
+        }
+        _ => ObjectLocation::Standalone,
+    };
+    if id.artifact != *artifact || id.location != location {
+        return Err(integrity("object identity outside its ordered input"));
+    }
+    if location == ObjectLocation::Standalone && content.as_ref() != Some(artifact) {
+        return Err(integrity("standalone content identity mismatch"));
+    }
+    if kind == ContainerKind::ThinArchive {
+        let member = external.ok_or_else(|| integrity("missing thin binding"))?;
+        let member = json.decode::<ExternalMember>(member, memory, control)?;
+        if member.ordinal != ordinal
+            || name.as_ref() != Some(&member.name)
+            || member.capture.artifact() != content.as_ref()
+        {
+            return Err(integrity("thin binding and object disagree"));
+        }
+        verify_capture(&member.capture, control)?;
+        sink.external(&member, control)?;
+    }
+    let mut outcome = ObjectInventory {
+        id: id.clone(),
+        name: name.clone(),
+        content: content.clone(),
+        elf: None,
+        diagnostics: Vec::new(),
+    };
+    if elf.kind == b'n' {
+        json.decode::<()>(elf, memory, control)?;
+        complete = false;
+        sink.object(&outcome, control)?;
+    } else {
+        if content.is_none() {
+            return Err(integrity("ELF inventory without captured content"));
+        }
+        let [
+            bits,
+            little,
+            machine,
+            kind,
+            entry,
+            sections,
+            symbols,
+            relocations,
+        ] = json.fields(
+            elf,
+            [
+                "bits",
+                "little_endian",
+                "machine",
+                "object_type",
+                "entry",
+                "sections",
+                "symbols",
+                "relocations",
+            ],
+            control,
+        )?;
+        outcome.elf = Some(ElfInventory {
+            bits: *json.decode(bits, memory, control)?,
+            little_endian: *json.decode(little, memory, control)?,
+            machine: *json.decode(machine, memory, control)?,
+            object_type: *json.decode(kind, memory, control)?,
+            entry: *json.decode(entry, memory, control)?,
+            sections: Vec::new(),
+            symbols: Vec::new(),
+            relocations: Vec::new(),
+        });
+        sink.object(&outcome, control)?;
+        let mut sections = json.array(sections)?;
+        while let Some(record) = json.next(&mut sections, control)? {
+            let record = json.decode::<SectionRecord>(record, memory, control)?;
+            sink.section(&record, control)?;
+        }
+        let beginning = json.array(symbols)?;
+        let mut symbols = beginning;
+        let mut seen = 0u64;
+        let mut maximum = None;
+        while let Some(record) = json.next(&mut symbols, control)? {
+            let record = json.decode::<SymbolRecord>(record, memory, control)?;
+            let key = (record.id.table_section, record.id.index);
+            let mut position = control.position();
+            position.table = Some(key.0 as u64);
+            position.entry = Some(key.1);
+            control.set_position(position);
+            if record.id.object != *id {
+                return Err(integrity("symbol belongs to another object"));
+            }
+            // Normal producer order is linear. Older valid unordered
+            // manifests remain accepted, with budgeted lookback on disk.
+            if maximum.is_some_and(|maximum| key <= maximum) {
+                let mut previous = beginning;
+                for _ in 0..seen {
+                    let previous = json
+                        .next(&mut previous, control)?
+                        .ok_or_else(|| integrity("symbol table changed"))?;
+                    let previous = json.decode::<SymbolRecord>(previous, memory, control)?;
+                    if (previous.id.table_section, previous.id.index) == key {
+                        return Err(integrity("duplicate symbol identity"));
+                    }
+                }
+            }
+            maximum = Some(maximum.map_or(key, |old| old.max(key)));
+            seen += 1;
+            sink.symbol(&record, control)?;
+        }
+        let mut relocations = json.array(relocations)?;
+        while let Some(record) = json.next(&mut relocations, control)? {
+            let record = json.decode::<RelocationRecord>(record, memory, control)?;
+            sink.relocation(&record, control)?;
+        }
+    }
+    complete &= diagnostics_empty(json, diagnostics, memory, control, sink)?;
     Ok(complete)
 }
 
@@ -738,3 +951,7 @@ impl Project {
         Ok(report)
     }
 }
+
+#[cfg(test)]
+#[path = "revision_index_tests.rs"]
+mod revision_index_tests;

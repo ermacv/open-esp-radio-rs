@@ -33,6 +33,13 @@ are the measurement authority, not this documentation.
 `rx-gain`, `tx-dc`, `tracking`) in sequence under one budget, each in its own
 directory below `--output`. It requires every optional input, so no obligation
 is left unmet, stops at the first failure and prints each scenario's duration.
+With `--index <path>` it then writes the native evidence index qualification
+reads: every claimed vendor root with its production entry, compared cases and
+retained executions, the input identities and the digests of the sources the
+verdicts depend on. Regenerate
+`evidence/scenario-evidence.json` after any production, probe, scenario or
+Blobray change; until then qualification treats the index as stale. See
+[vendor verification](../../../../docs/verification-and-qualification.md#vendor-verification-path).
 
 ```console
 cargo xtask vendor-scenario all --library /private/libphy.a \
@@ -40,7 +47,8 @@ cargo xtask vendor-scenario all --library /private/libphy.a \
   --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
   --sdk /private/bootloader.elf --phy-sdk /private/phy_tracking_reference.elf \
   --rftest /private/librftest.a \
-  --linker /usr/bin/ld.lld --output target/blobray-research/all --limit-mode watchdog
+  --linker /usr/bin/ld.lld --output target/blobray-research/all --limit-mode watchdog \
+  --index verification/vendor/projects/esp32s31/evidence/scenario-evidence.json
 ```
 
 ## Captured I2C command-memory comparison

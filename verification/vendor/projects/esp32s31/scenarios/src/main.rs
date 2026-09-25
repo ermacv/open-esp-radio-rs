@@ -1,5 +1,6 @@
 //! Run one authenticated ESP32-S31 vendor-comparison scenario.
 use clap::{Parser, Subcommand};
+use oer_esp32s31_vendor_scenarios::session::evidence_index::{self, Entry, Index};
 use oer_esp32s31_vendor_scenarios::{
     calibration_leaves, calibration_prefix, channel,
     gain::{Gain, Options},
@@ -9,7 +10,10 @@ use oer_esp32s31_vendor_scenarios::{
     phy::PhyOptions,
     research, rfpll, rx_gain, tracking, tx_dc,
 };
-use std::{path::PathBuf, process::ExitCode};
+use std::{
+    path::{Path, PathBuf},
+    process::ExitCode,
+};
 
 #[derive(Parser)]
 #[command(about = "Typed ESP32-S31 vendor-comparison scenarios over the Blobray CLI")]
@@ -67,6 +71,9 @@ enum Scenario {
         /// Authenticated `librftest.a` (RF-test power producer).
         #[arg(long)]
         rftest: PathBuf,
+        /// Write the native evidence index qualification reads.
+        #[arg(long)]
+        index: Option<PathBuf>,
     },
     /// Combined calibration and parameter tracking parents with their real
     /// children, RFPLL corrections and failed-TX containment.
@@ -137,6 +144,117 @@ struct Common {
     budget: Budget,
 }
 
+/// Evidence entries of one scenario, alongside its exit code.
+type Outcome = (ExitCode, Vec<Entry>);
+
+/// Vendor roots each scenario claims against its compiled production entry.
+const GAIN_CLAIMS: [(&str, &str, &str); 4] = [
+    (
+        "archive",
+        "phy_wifi_get_tx_tab_new",
+        "open_phy_channel_trace_calculate_tx_gain",
+    ),
+    (
+        "archive",
+        "phy_set_tx_gain_mem_new",
+        "open_phy_channel_trace_publish_tx_gain",
+    ),
+    (
+        "archive",
+        "phy_bt_get_tx_tab_new",
+        "open_phy_bluetooth_trace_calculate_gain",
+    ),
+    (
+        "archive",
+        "phy_bt_set_tx_gain_new",
+        "open_phy_bluetooth_trace_tx_gain",
+    ),
+];
+const I2C_CLAIMS: [(&str, &str, &str); 7] = [
+    (
+        "archive",
+        "phy_i2c_master_cmd_mem_init",
+        "open_phy_trace_command_memory",
+    ),
+    (
+        "archive",
+        "phy_get_i2c_hostid_new",
+        "open_phy_trace_i2c_host",
+    ),
+    ("rom", "phy_i2c_readReg", "open_phy_trace_i2c_transfer"),
+    ("rom", "phy_i2c_writeReg", "open_phy_trace_i2c_transfer"),
+    ("rom", "phy_i2c_readReg_Mask", "open_phy_trace_i2c_transfer"),
+    (
+        "rom",
+        "phy_i2c_writeReg_Mask",
+        "open_phy_trace_i2c_transfer",
+    ),
+    ("rom", "phy_i2c_master_reset", "open_phy_trace_i2c_reset"),
+];
+const I2C_SDK_CLAIMS: [(&str, &str, &str); 5] = [
+    (
+        "rom",
+        "phy_pbus_clear_reg",
+        "open_phy_calibration_trace_pbus_clear",
+    ),
+    (
+        "archive",
+        "phy_txgain_comp_pacfg_new",
+        "open_phy_calibration_leaf",
+    ),
+    ("archive", "phy_force_dig_gain", "open_phy_calibration_leaf"),
+    (
+        "archive",
+        "phy_temp_to_power_new",
+        "open_phy_calibration_leaf",
+    ),
+    ("archive", "phy_reg_update_new", "open_phy_calibration_leaf"),
+];
+const I2C_RFPLL_CLAIMS: [(&str, &str, &str); 3] = [
+    (
+        "archive",
+        "phy_rfpll_cap_init_cal_new",
+        "open_phy_rfpll_trace_search",
+    ),
+    (
+        "archive",
+        "phy_rfpll_cap_track_new",
+        "open_phy_rfpll_trace_maintain",
+    ),
+    (
+        "archive",
+        "phy_rfpll_cap_track_new",
+        "open_phy_rfpll_trace_track",
+    ),
+];
+const CHANNEL_CLAIMS: [(&str, &str, &str); 1] = [(
+    "archive",
+    "phy_chip_set_chan",
+    "open_phy_channel_trace_state",
+)];
+const RX_GAIN_CLAIMS: [(&str, &str, &str); 1] = [(
+    "archive",
+    "phy_set_rx_gain_table",
+    "open_phy_calibration_trace_rx_gain",
+)];
+const TX_DC_CLAIMS: [(&str, &str, &str); 1] = [(
+    "archive",
+    "phy_txdc_cal_pwdet_init",
+    "open_phy_calibration_trace_tx_dc_pwdet",
+)];
+const TRACKING_CLAIMS: [(&str, &str, &str); 2] = [
+    (
+        "archive",
+        "phy_cal_param_track",
+        "open_phy_calibration_trace_combined",
+    ),
+    (
+        "archive",
+        "phy_param_track_tot",
+        "open_phy_tracking_trace_parent",
+    ),
+];
+
 fn finish(unmet: &[Unmet], message: &str, run: &std::path::Path) -> ExitCode {
     if unmet.is_empty() {
         println!("{message} {}", run.display());
@@ -152,7 +270,7 @@ fn finish(unmet: &[Unmet], message: &str, run: &std::path::Path) -> ExitCode {
     }
 }
 
-fn gain(common: Common, rftest: Option<PathBuf>) -> Result<ExitCode> {
+fn gain(common: Common, rftest: Option<PathBuf>) -> Result<Outcome> {
     let options = Options {
         binary: common.binary,
         library: common.library,
@@ -174,14 +292,18 @@ fn gain(common: Common, rftest: Option<PathBuf>) -> Result<ExitCode> {
     g.additive()?;
     g.negative()?;
     g.preserve(0)?;
-    Ok(finish(
-        &unmet,
-        "authenticated gain arithmetic/publication, gain state and source-free replay passed",
-        &g.run,
+    let claims = g.session.claims("gain", &g.roots, &GAIN_CLAIMS)?;
+    Ok((
+        finish(
+            &unmet,
+            "authenticated gain arithmetic/publication, gain state and source-free replay passed",
+            &g.run,
+        ),
+        claims,
     ))
 }
 
-fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result<ExitCode> {
+fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result<Outcome> {
     let options = i2c::Options {
         binary: common.binary,
         library: common.library,
@@ -211,10 +333,20 @@ fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result
     // All original source copies were deleted before linking/execution. Preserve
     // the full project closure, including probe/ROM bytes and negative evidence.
     ctx.preserve(positive)?;
-    Ok(finish(
-        &unmet,
-        "authenticated PHY comparisons and source-free replay passed",
-        &ctx.run,
+    let mut claims = ctx.session.claims("i2c", &ctx.roots, &I2C_CLAIMS)?;
+    if options.sdk.is_some() {
+        claims.extend(ctx.session.claims("i2c", &ctx.roots, &I2C_SDK_CLAIMS)?);
+    }
+    if options.phy_sdk.is_some() {
+        claims.extend(ctx.session.claims("i2c", &ctx.roots, &I2C_RFPLL_CLAIMS)?);
+    }
+    Ok((
+        finish(
+            &unmet,
+            "authenticated PHY comparisons and source-free replay passed",
+            &ctx.run,
+        ),
+        claims,
     ))
 }
 
@@ -232,58 +364,214 @@ impl Common {
     }
 }
 
-fn channel(common: Common) -> Result<ExitCode> {
+fn channel(common: Common) -> Result<Outcome> {
     let options = common.phy();
     let mut ctx = channel::Channel::new(&options)?;
     channel::exercise(&mut ctx)?;
     ctx.preserve(0)?;
-    Ok(finish(
-        &[],
-        "authenticated channel restoration, temperature prefix, containment and source-free replay passed",
-        &ctx.run,
+    let claims = ctx.session.claims("channel", &ctx.roots, &CHANNEL_CLAIMS)?;
+    Ok((
+        finish(
+            &[],
+            "authenticated channel restoration, temperature prefix, containment and source-free replay passed",
+            &ctx.run,
+        ),
+        claims,
     ))
 }
 
-fn rx_gain(common: Common, phy_sdk: PathBuf) -> Result<ExitCode> {
+fn rx_gain(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     let mut ctx = rx_gain::RxGain::new(&common.phy(), &phy_sdk)?;
     rx_gain::exercise(&mut ctx)?;
     ctx.preserve(0)?;
-    Ok(finish(
-        &[],
-        "authenticated RX gain publication, calibration, containment and source-free replay passed",
-        &ctx.run,
+    let claims = ctx.session.claims("rx-gain", &ctx.roots, &RX_GAIN_CLAIMS)?;
+    Ok((
+        finish(
+            &[],
+            "authenticated RX gain publication, calibration, containment and source-free replay passed",
+            &ctx.run,
+        ),
+        claims,
     ))
 }
 
-fn tx_dc(common: Common, phy_sdk: PathBuf) -> Result<ExitCode> {
+fn tx_dc(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     let mut ctx = tx_dc::TxDc::new(&common.phy(), &phy_sdk)?;
     tx_dc::exercise(&mut ctx)?;
     ctx.preserve(0)?;
-    Ok(finish(
-        &[],
-        "authenticated TX-DC/PWDET calibration, fault containment and source-free replay passed",
-        &ctx.run,
+    let claims = ctx.session.claims("tx-dc", &ctx.roots, &TX_DC_CLAIMS)?;
+    Ok((
+        finish(
+            &[],
+            "authenticated TX-DC/PWDET calibration, fault containment and source-free replay passed",
+            &ctx.run,
+        ),
+        claims,
     ))
 }
 
-fn tracking(common: Common, phy_sdk: PathBuf) -> Result<ExitCode> {
+fn tracking(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     let mut ctx = tracking::Tracking::new(&common.phy(), &phy_sdk)?;
     tracking::exercise(&mut ctx)?;
     ctx.preserve(0)?;
-    Ok(finish(
-        &[],
-        "authenticated tracking parents, failed-TX containment and source-free replay passed",
-        &ctx.run,
+    let claims = ctx
+        .session
+        .claims("tracking", &ctx.roots, &TRACKING_CLAIMS)?;
+    Ok((
+        finish(
+            &[],
+            "authenticated tracking parents, failed-TX containment and source-free replay passed",
+            &ctx.run,
+        ),
+        claims,
     ))
 }
 
+/// Evidence index builders over the repository sources the verdicts depend on.
+mod evidence {
+    use super::*;
+
+    /// Qualification target of this scenario package.
+    const TARGET: &str = "esp32s31";
+    /// Probe workspace and the probe ELF package whose path dependencies are
+    /// the compiled production sources.
+    const PROBES_MANIFEST: &str = "verification/vendor/projects/esp32s31/probes/Cargo.toml";
+    const PROBES_PACKAGE: &str = "open-esp-radio-verification-esp32s31-probes-elf";
+    const PROBES_TARGET: &str = "riscv32imafc-unknown-none-elf";
+    /// Scenario code and the Blobray engine that establish every verdict.
+    const TOOL_SOURCES: [&str; 11] = [
+        "verification/vendor/projects/esp32s31/scenarios",
+        "verification/vendor/schema",
+        "tools/blobray/crates/domain",
+        "tools/blobray/crates/store",
+        "tools/blobray/crates/application",
+        "tools/blobray/crates/verification",
+        "tools/blobray/crates/knowledge",
+        "tools/blobray/crates/artifacts",
+        "tools/blobray/crates/backend-riscv",
+        "tools/blobray/crates/riscv",
+        "tools/blobray/next",
+    ];
+
+    /// Repository root: this package lives five directories below it.
+    pub fn root() -> Result<PathBuf> {
+        Ok(Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../../..")
+            .canonicalize()?)
+    }
+
+    fn sha256(path: &Path) -> Result<String> {
+        use sha2::{Digest, Sha256};
+        Ok(format!("{:x}", Sha256::digest(std::fs::read(path)?)))
+    }
+
+    /// Path packages of the probe ELF's resolved dependency closure.
+    fn production_sources(root: &Path) -> Result<Vec<PathBuf>> {
+        let output = std::process::Command::new("cargo")
+            .current_dir(root)
+            .args(["metadata", "--format-version", "1", "--offline", "--locked"])
+            .args([
+                "--filter-platform",
+                PROBES_TARGET,
+                "--manifest-path",
+                PROBES_MANIFEST,
+            ])
+            .output()?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).into_owned().into());
+        }
+        let metadata: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+        let packages = metadata["packages"]
+            .as_array()
+            .ok_or("cargo metadata packages")?;
+        let id_of = |name: &str| {
+            packages
+                .iter()
+                .find(|p| p["name"] == name)
+                .and_then(|p| p["id"].as_str())
+                .map(str::to_owned)
+        };
+        let nodes = metadata["resolve"]["nodes"]
+            .as_array()
+            .ok_or("cargo metadata resolve")?;
+        let mut pending = vec![id_of(PROBES_PACKAGE).ok_or("probe package missing")?];
+        let mut seen = std::collections::BTreeSet::new();
+        while let Some(id) = pending.pop() {
+            if !seen.insert(id.clone()) {
+                continue;
+            }
+            let node = nodes
+                .iter()
+                .find(|n| n["id"] == id.as_str())
+                .ok_or("unresolved package")?;
+            for dependency in node["dependencies"].as_array().into_iter().flatten() {
+                pending.push(dependency.as_str().ok_or("dependency id")?.to_owned());
+            }
+        }
+        let mut directories = std::collections::BTreeSet::new();
+        for package in packages {
+            let local = package["source"].is_null();
+            if local && seen.contains(package["id"].as_str().unwrap_or_default()) {
+                let manifest = Path::new(package["manifest_path"].as_str().ok_or("manifest path")?);
+                let directory = manifest.parent().ok_or("manifest directory")?;
+                directories.insert(directory.canonicalize()?.strip_prefix(root)?.to_path_buf());
+            }
+        }
+        Ok(directories.into_iter().collect())
+    }
+
+    pub fn index(common: &Common, optional: &[&PathBuf; 3], entries: Vec<Entry>) -> Result<Index> {
+        let root = root()?;
+        let mut inputs = std::collections::BTreeMap::new();
+        for (role, path) in [
+            ("archive", &common.library),
+            ("rom", &common.rom),
+            ("production", &common.production),
+            ("sdk", optional[0]),
+            ("phy-sdk", optional[1]),
+            ("rftest", optional[2]),
+        ] {
+            inputs.insert(role.to_owned(), sha256(path)?);
+        }
+        let mut directories = production_sources(&root)?;
+        directories.extend(TOOL_SOURCES.iter().map(PathBuf::from));
+        directories.sort();
+        directories.dedup();
+        let sources = directories
+            .into_iter()
+            .map(|path| {
+                Ok(evidence_index::SourceDigest {
+                    sha256: evidence_index::digest_directory(&root, &path)?,
+                    path,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let index = Index {
+            schema: evidence_index::SCHEMA,
+            command: evidence_index::COMMAND.into(),
+            target: TARGET.into(),
+            inputs,
+            sources,
+            entries,
+        };
+        index.validate(TARGET)?;
+        Ok(index)
+    }
+}
+
 /// Run every PHY comparison scenario; each must pass with no unmet obligation.
-fn all(common: Common, sdk: PathBuf, phy_sdk: PathBuf, rftest: PathBuf) -> Result<ExitCode> {
+fn all(
+    common: Common,
+    sdk: PathBuf,
+    phy_sdk: PathBuf,
+    rftest: PathBuf,
+    index: Option<PathBuf>,
+) -> Result<ExitCode> {
     let within = |name: &str| Common {
         output: common.output.join(name),
         ..common.clone()
     };
-    type Run<'a> = Box<dyn FnOnce() -> Result<ExitCode> + 'a>;
+    type Run<'a> = Box<dyn FnOnce() -> Result<Outcome> + 'a>;
     let scenarios: Vec<(&str, Run<'_>)> = vec![
         (
             "gain",
@@ -308,9 +596,11 @@ fn all(common: Common, sdk: PathBuf, phy_sdk: PathBuf, rftest: PathBuf) -> Resul
         ),
     ];
     let mut elapsed = vec![];
+    let mut entries = vec![];
     for (name, run) in scenarios {
         let start = std::time::Instant::now();
-        let code = run()?;
+        let (code, claims) = run()?;
+        entries.extend(claims);
         elapsed.push((name, start.elapsed().as_secs_f64()));
         if code != ExitCode::SUCCESS {
             println!("scenario {name} did not pass");
@@ -320,23 +610,31 @@ fn all(common: Common, sdk: PathBuf, phy_sdk: PathBuf, rftest: PathBuf) -> Resul
     for (name, seconds) in &elapsed {
         println!("{name} {seconds:.1}s");
     }
+    if let Some(path) = index {
+        let index = evidence::index(&common, &[&sdk, &phy_sdk, &rftest], entries)?;
+        let mut bytes = serde_json::to_vec_pretty(&index)?;
+        bytes.push(b'\n');
+        std::fs::write(&path, bytes)?;
+        println!("evidence index {}", path.display());
+    }
     println!("all PHY comparison scenarios passed");
     Ok(ExitCode::SUCCESS)
 }
 
 fn main() -> ExitCode {
     let result = match Cli::parse().scenario {
-        Scenario::Gain { common, rftest } => gain(common, rftest),
-        Scenario::Channel { common } => channel(common),
-        Scenario::RxGain { common, phy_sdk } => rx_gain(common, phy_sdk),
-        Scenario::TxDc { common, phy_sdk } => tx_dc(common, phy_sdk),
-        Scenario::Tracking { common, phy_sdk } => tracking(common, phy_sdk),
+        Scenario::Gain { common, rftest } => gain(common, rftest).map(|o| o.0),
+        Scenario::Channel { common } => channel(common).map(|o| o.0),
+        Scenario::RxGain { common, phy_sdk } => rx_gain(common, phy_sdk).map(|o| o.0),
+        Scenario::TxDc { common, phy_sdk } => tx_dc(common, phy_sdk).map(|o| o.0),
+        Scenario::Tracking { common, phy_sdk } => tracking(common, phy_sdk).map(|o| o.0),
         Scenario::All {
             common,
             sdk,
             phy_sdk,
             rftest,
-        } => all(common, sdk, phy_sdk, rftest),
+            index,
+        } => all(common, sdk, phy_sdk, rftest, index),
         Scenario::Research {
             binary,
             library,
@@ -363,7 +661,7 @@ fn main() -> ExitCode {
             common,
             sdk,
             phy_sdk,
-        } => i2c(common, sdk, phy_sdk),
+        } => i2c(common, sdk, phy_sdk).map(|o| o.0),
     };
     result.unwrap_or_else(|error| {
         eprintln!("error: {error}");

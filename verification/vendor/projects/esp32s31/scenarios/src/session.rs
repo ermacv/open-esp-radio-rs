@@ -30,7 +30,20 @@ pub struct Artifact {
     pub label: String,
     pub identity: ArtifactId,
     pub document: ExecutionDocument,
+    /// Vendor and production entries and the verdict of every compared case.
+    pub compared: Vec<ComparedCase>,
 }
+
+/// One compared case of a retained execution.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ComparedCase {
+    pub vendor: u32,
+    pub production: u32,
+    pub verdict: Option<blobray_domain::ComparisonVerdict>,
+}
+
+#[path = "../../../../schema/scenario-evidence.rs"]
+pub mod evidence_index;
 
 /// Authenticated inputs, their captured revision and the probe catalog.
 pub struct Session {
@@ -404,12 +417,107 @@ impl Session {
             self.runner.execution_without_events(&name, &identity)?
         };
         assert_eq!(manifest(&document).verdict, verdict, "{label}");
+        let compared = request
+            .cases
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.relation.is_some())
+            .filter_map(|(index, c)| {
+                let production = c.replacement.as_ref()?.entry;
+                let verdict = document.records.iter().find_map(|r| match &r.value {
+                    blobray_domain::ExecutionEvidence::Comparison { case, result }
+                        if *case == index as u32 =>
+                    {
+                        Some(result.verdict)
+                    }
+                    _ => None,
+                });
+                Some(ComparedCase {
+                    vendor: c.vendor.entry,
+                    production,
+                    verdict,
+                })
+            })
+            .collect();
         self.artifacts.push(Artifact {
             label: label.into(),
             identity,
             document,
+            compared,
         });
         Ok(self.artifacts.last().unwrap())
+    }
+
+    /// The evidence entry of one claim: `symbol` of vendor `source` at
+    /// `vendor` compared with production `entry` at `production`. Only
+    /// executions whose every case of that pair is MATCH count; a claim
+    /// without one such execution fails.
+    pub fn claim(
+        &self,
+        suite: &str,
+        source: &str,
+        symbol: &str,
+        vendor: u32,
+        entry: &str,
+        production: u32,
+    ) -> Result<evidence_index::Entry> {
+        let mut cases = 0;
+        let mut executions = vec![];
+        for artifact in &self.artifacts {
+            let selected: Vec<_> = artifact
+                .compared
+                .iter()
+                .filter(|c| c.vendor == vendor && c.production == production)
+                .collect();
+            if selected.is_empty()
+                || selected
+                    .iter()
+                    .any(|c| c.verdict != Some(blobray_domain::ComparisonVerdict::Match))
+            {
+                continue;
+            }
+            cases += selected.len() as u64;
+            executions.push(artifact.identity.as_str().to_owned());
+        }
+        if executions.is_empty() {
+            return Err(invalid(format!(
+                "{suite}: no MATCH execution compares {symbol} with {entry}"
+            )));
+        }
+        Ok(evidence_index::Entry {
+            suite: suite.into(),
+            source: source.into(),
+            symbol: symbol.into(),
+            production: entry.into(),
+            verdict: evidence_index::MATCH.into(),
+            cases,
+            executions,
+        })
+    }
+
+    /// Evidence entries of `list` (vendor source, root symbol, production
+    /// probe): archive roots resolve in `roots`, ROM roots in the ROM input.
+    pub fn claims(
+        &self,
+        suite: &str,
+        roots: &BTreeMap<String, u32>,
+        list: &[(&str, &str, &str)],
+    ) -> Result<Vec<evidence_index::Entry>> {
+        list.iter()
+            .map(|(source, symbol, production)| {
+                let vendor = match *source {
+                    "archive" => *roots
+                        .get(*symbol)
+                        .ok_or_else(|| invalid(format!("{symbol} is not a linked root")))?,
+                    "rom" => u32::try_from(
+                        crate::harness::symbol(&self.inventory, ROM_INPUT as usize, symbol)?.value,
+                    )?,
+                    other => return Err(invalid(format!("unknown vendor source {other}"))),
+                };
+                let entry = self.probes.entry(production)?;
+                self.claim(suite, source, symbol, vendor, production, entry)
+            })
+            .collect()
     }
 
     /// Run a request that must fail for capacity and publish nothing.

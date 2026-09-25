@@ -1,0 +1,441 @@
+{
+  "schema": 1,
+  "command": "vendor-scenario all",
+  "target": "esp32s31",
+  "inputs": {
+    "archive": "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580",
+    "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
+    "production": "b2d22575bc052ac30bbe8e3e928fb061d613426d44e6fc60699fade8e8c11b42",
+    "rftest": "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e",
+    "rom": "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542",
+    "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
+  },
+  "sources": [
+    {
+      "path": "crates/adapters/embassy/ieee80211",
+      "sha256": "fe44aab8bf6fa3bad9ef4752ed77896f124ee21d1dc6c4709716c420a16fbcbf"
+    },
+    {
+      "path": "crates/adapters/embassy-net/owned",
+      "sha256": "241a6f2da36902171392f4f5622d97136232b36738debd097997340d4f02b38c"
+    },
+    {
+      "path": "crates/adapters/esp-hal/esp32s31/ieee80211",
+      "sha256": "41ca5c82ed87c26ec091d996c3f300c3a919676417089bc57f60a6df69475c96"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/coex",
+      "sha256": "4912178384945638eb25b0b090195546d07e72996939a7acfe48718f34aa47c0"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211",
+      "sha256": "5bc6d0ed95c79ee279b5307680d8aa5074ac0e36eab0d30bdab82bd569612fbe"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/dma",
+      "sha256": "fccc36b365e28c70d40e08fd422742e172cf5caef3410268fc963c3364e71976"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee80211/mac",
+      "sha256": "fbccae139e518cd6dfd82fe5400264d9601ef56597c103e35ae83bdbef8139d9"
+    },
+    {
+      "path": "crates/hardware/esp32s31/driver/ieee802154/irq",
+      "sha256": "e0a80ca05bbec3d4094893b6cad0d7a2fd112dbd7df6cea49f345c321b913d41"
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal",
+      "sha256": "7e8236a4e0fad76d786bde3a686ec7a79077ae44404904bfd7486ee7d9257010"
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac",
+      "sha256": "5b7dc520140e3fb27a75ed20dded4cfd396c42fae2de85ef6ff22a829499892f"
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/raw",
+      "sha256": "9e0b80c24a20ea470f23c0539752f212a64dbdfde2c01f031ba04fe45079cdfa"
+    },
+    {
+      "path": "crates/hardware/esp32s31/phy",
+      "sha256": "abea47edf86683621fa8e8ba52950ccf79508add6ebea04ea324f403c0eef4e2"
+    },
+    {
+      "path": "crates/memory",
+      "sha256": "7a365308d70124337653db5cf1d44cd33af8e46524fac4ce72facbf58c0ba2ce"
+    },
+    {
+      "path": "crates/network/interface",
+      "sha256": "f035493d1e25995f1fe8da3163d8a849606a50eeb001e0d8c5e427ef12e1f1a1"
+    },
+    {
+      "path": "crates/protocols/ieee80211/ap",
+      "sha256": "191c9ec80ba08f772b18ed4ff105551c5c4285b8413c6154946666420219473c"
+    },
+    {
+      "path": "crates/protocols/ieee80211/datapath",
+      "sha256": "4b9306b27379c1f4b2621db552ee8bf8802d43b3df8b71113fa89fdf86ba69ec"
+    },
+    {
+      "path": "crates/protocols/ieee80211/mac",
+      "sha256": "187454dfa6bcbf04903e00ee7c8091264cb77c2cbc41542655a2fc5d188a09e2"
+    },
+    {
+      "path": "crates/protocols/ieee80211/security/rsn",
+      "sha256": "61679816a4771d3bb04ad4907b147977cc50d4c4fc47d78a47c0ea49ab2db021"
+    },
+    {
+      "path": "crates/protocols/ieee80211/softmac",
+      "sha256": "5688901e82a5014a3b6beac575f84a2ca6990bd0657e3b34ceeb1e8be0da1ddb"
+    },
+    {
+      "path": "crates/protocols/ieee80211/sta",
+      "sha256": "ac5b753c0ca15009b7fc5f4cd6d2a71851ee57d07b9bd3735d8480582e5653eb"
+    },
+    {
+      "path": "crates/roles/esp32s31/ieee80211/ap",
+      "sha256": "0fe02e6a1b76a41c2cdbdbac8cab72ab2431818f89d0ebe5c02cee9bdf0a3bc5"
+    },
+    {
+      "path": "crates/roles/esp32s31/ieee80211/sta",
+      "sha256": "21e7e70ec6d37b2a24dec3a7f437e3284e10eb04f5a6eb1a8b634e6032a05ba2"
+    },
+    {
+      "path": "crates/runtime/esp32s31/ieee80211",
+      "sha256": "0456d70893e1dd9e3eff7d6602f569f84b2017f0776aca17f2e275a736359cee"
+    },
+    {
+      "path": "tools/blobray/crates/application",
+      "sha256": "42f7738272136689b1585f465ebc39427f216f004f0944418be5298d978ba37e"
+    },
+    {
+      "path": "tools/blobray/crates/artifacts",
+      "sha256": "5c840dcd8c199adb6a714998c8f0e1bc10845fbf1e66e28832d8be4dbd4e2b22"
+    },
+    {
+      "path": "tools/blobray/crates/backend-riscv",
+      "sha256": "a9f9c33f07df3761eb02e75e97a45ee27f1042789cd5d4ccd39fed0844f22c5e"
+    },
+    {
+      "path": "tools/blobray/crates/domain",
+      "sha256": "0bc729a6e3bcbadad33f6d9bc5a2732d1e861a8cd3de2fa6f9b6e3df19642ce7"
+    },
+    {
+      "path": "tools/blobray/crates/knowledge",
+      "sha256": "0822bb8a6898310084cb94523ebabe4edf1e887a78b3c11a31460cbbdd873161"
+    },
+    {
+      "path": "tools/blobray/crates/riscv",
+      "sha256": "610b6b31da9a846192e05178fdd42f252107923566a7f9e4dd635b021dc1d5c4"
+    },
+    {
+      "path": "tools/blobray/crates/store",
+      "sha256": "1e91e61c464ab281afd95f2b2509ad6f8f313876f36354e54dc94f165768c80a"
+    },
+    {
+      "path": "tools/blobray/crates/verification",
+      "sha256": "6704498af9241c956069904e63ce4bf3bf4df63ecf47e90ab5ef9a2e30b0270a"
+    },
+    {
+      "path": "tools/blobray/next",
+      "sha256": "3db880947051cd600e6089f13f344fcb78247aa148aee0aeabde817f8894404f"
+    },
+    {
+      "path": "verification/vendor/harness/codegen",
+      "sha256": "1f5ee164b11326afcca03ed4e7c4482f72923bf79838eb8fed61b5afaa52ae80"
+    },
+    {
+      "path": "verification/vendor/harness/macros",
+      "sha256": "783ed7cbd4f2c0ec72a4604426a45f8009bc71859b8f6ac5c96c449f6abe18a1"
+    },
+    {
+      "path": "verification/vendor/projects/esp32s31/probes/elf",
+      "sha256": "afe6eb62b4e5e9cd7d4bffb4cb831513484d38c9927a78a76333772d7582783f"
+    },
+    {
+      "path": "verification/vendor/projects/esp32s31/probes/library",
+      "sha256": "9236e843f2b9826621dcb963656cdc751d929ee1b33d9d829b2c60d91ad2a384"
+    },
+    {
+      "path": "verification/vendor/projects/esp32s31/scenarios",
+      "sha256": "20c01786814d2e6740d9baf46687a25489c48b05da7f3b3c426bafdb21929d22"
+    },
+    {
+      "path": "verification/vendor/schema",
+      "sha256": "b9f4a9f885d07aee8aec4afd74e13c6aed8c64cbc3c3694828e3ac514c80ad9e"
+    }
+  ],
+  "entries": [
+    {
+      "suite": "gain",
+      "source": "archive",
+      "symbol": "phy_wifi_get_tx_tab_new",
+      "production": "open_phy_channel_trace_calculate_tx_gain",
+      "verdict": "match",
+      "cases": 396,
+      "executions": [
+        "381e6953f7d1e416e186a9af4e5ff5b1eeb82992a51bc65bcd9fc76469f28f86",
+        "e4d74dd0a3ba48607b8f8232bc051f05db64a8422eaaba7c9b8c33a0091db93f"
+      ]
+    },
+    {
+      "suite": "gain",
+      "source": "archive",
+      "symbol": "phy_set_tx_gain_mem_new",
+      "production": "open_phy_channel_trace_publish_tx_gain",
+      "verdict": "match",
+      "cases": 24,
+      "executions": [
+        "e23fad99fee578b262893c9230607d44a91ebb34fe2c674e9d9d4291ad4ef111"
+      ]
+    },
+    {
+      "suite": "gain",
+      "source": "archive",
+      "symbol": "phy_bt_get_tx_tab_new",
+      "production": "open_phy_bluetooth_trace_calculate_gain",
+      "verdict": "match",
+      "cases": 157,
+      "executions": [
+        "deaf06883149b81e0e00b0b89895a7b6214d13293b2c7e1a13625e303651d9b2",
+        "3748ccc162d90d4cd45695f1ef60471847eee911d5beb9656f690ba95003247f",
+        "2d6cd7517846764bd67d5f02a7715899b1eb63c6586ac60365c2c686fc1d37f2"
+      ]
+    },
+    {
+      "suite": "gain",
+      "source": "archive",
+      "symbol": "phy_bt_set_tx_gain_new",
+      "production": "open_phy_bluetooth_trace_tx_gain",
+      "verdict": "match",
+      "cases": 120,
+      "executions": [
+        "3748ccc162d90d4cd45695f1ef60471847eee911d5beb9656f690ba95003247f"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "archive",
+      "symbol": "phy_i2c_master_cmd_mem_init",
+      "production": "open_phy_trace_command_memory",
+      "verdict": "match",
+      "cases": 4,
+      "executions": [
+        "0c1dd8c07ba3a326445215f2e8569a3e29d95604e5be5bfcb626ebf08225df7c"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "archive",
+      "symbol": "phy_get_i2c_hostid_new",
+      "production": "open_phy_trace_i2c_host",
+      "verdict": "match",
+      "cases": 13,
+      "executions": [
+        "dfbd24372c86b11890a4fd57fce7c7512d72c392075f0e11939a113e59b7b2c7"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "rom",
+      "symbol": "phy_i2c_readReg",
+      "production": "open_phy_trace_i2c_transfer",
+      "verdict": "match",
+      "cases": 4,
+      "executions": [
+        "dfbd24372c86b11890a4fd57fce7c7512d72c392075f0e11939a113e59b7b2c7"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "rom",
+      "symbol": "phy_i2c_writeReg",
+      "production": "open_phy_trace_i2c_transfer",
+      "verdict": "match",
+      "cases": 8,
+      "executions": [
+        "dfbd24372c86b11890a4fd57fce7c7512d72c392075f0e11939a113e59b7b2c7"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "rom",
+      "symbol": "phy_i2c_readReg_Mask",
+      "production": "open_phy_trace_i2c_transfer",
+      "verdict": "match",
+      "cases": 4,
+      "executions": [
+        "dfbd24372c86b11890a4fd57fce7c7512d72c392075f0e11939a113e59b7b2c7"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "rom",
+      "symbol": "phy_i2c_writeReg_Mask",
+      "production": "open_phy_trace_i2c_transfer",
+      "verdict": "match",
+      "cases": 8,
+      "executions": [
+        "dfbd24372c86b11890a4fd57fce7c7512d72c392075f0e11939a113e59b7b2c7"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "rom",
+      "symbol": "phy_i2c_master_reset",
+      "production": "open_phy_trace_i2c_reset",
+      "verdict": "match",
+      "cases": 3,
+      "executions": [
+        "dfbd24372c86b11890a4fd57fce7c7512d72c392075f0e11939a113e59b7b2c7"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "rom",
+      "symbol": "phy_pbus_clear_reg",
+      "production": "open_phy_calibration_trace_pbus_clear",
+      "verdict": "match",
+      "cases": 24,
+      "executions": [
+        "214aa3431b4529da3f24e35bbddb219d89a7fc406df8079c61c25b900f650f97"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "archive",
+      "symbol": "phy_txgain_comp_pacfg_new",
+      "production": "open_phy_calibration_leaf",
+      "verdict": "match",
+      "cases": 2,
+      "executions": [
+        "8975b6bd5890d49133947039282b4f6da3b8568f1cf79d08da925839f23a5507"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "archive",
+      "symbol": "phy_force_dig_gain",
+      "production": "open_phy_calibration_leaf",
+      "verdict": "match",
+      "cases": 3,
+      "executions": [
+        "8975b6bd5890d49133947039282b4f6da3b8568f1cf79d08da925839f23a5507"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "archive",
+      "symbol": "phy_temp_to_power_new",
+      "production": "open_phy_calibration_leaf",
+      "verdict": "match",
+      "cases": 4,
+      "executions": [
+        "8975b6bd5890d49133947039282b4f6da3b8568f1cf79d08da925839f23a5507"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "archive",
+      "symbol": "phy_reg_update_new",
+      "production": "open_phy_calibration_leaf",
+      "verdict": "match",
+      "cases": 2,
+      "executions": [
+        "8975b6bd5890d49133947039282b4f6da3b8568f1cf79d08da925839f23a5507"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "archive",
+      "symbol": "phy_rfpll_cap_init_cal_new",
+      "production": "open_phy_rfpll_trace_search",
+      "verdict": "match",
+      "cases": 36,
+      "executions": [
+        "e6d12e9180f7d2ce190bb3d66c25ec538484b8e6318c0e23384f46f0fd2b5336"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "archive",
+      "symbol": "phy_rfpll_cap_track_new",
+      "production": "open_phy_rfpll_trace_maintain",
+      "verdict": "match",
+      "cases": 48,
+      "executions": [
+        "8c8022c2ea09e5c08ef0acbc15021d13331f10409ca4715e26f368655233760e"
+      ]
+    },
+    {
+      "suite": "i2c",
+      "source": "archive",
+      "symbol": "phy_rfpll_cap_track_new",
+      "production": "open_phy_rfpll_trace_track",
+      "verdict": "match",
+      "cases": 10,
+      "executions": [
+        "e08388ef4710aa062cf3cad1d7d6cf95d34df79a538e34d52ee838e8005ffca2"
+      ]
+    },
+    {
+      "suite": "channel",
+      "source": "archive",
+      "symbol": "phy_chip_set_chan",
+      "production": "open_phy_channel_trace_state",
+      "verdict": "match",
+      "cases": 56,
+      "executions": [
+        "6cadd0a884b114ad129ef167617fffcac7ae68567950b533ccb6b4d6800c01f4",
+        "64622278079eeb97b75a5505c8f0b7c4b8b0240e9a77179be91c691bd08bdd25"
+      ]
+    },
+    {
+      "suite": "rx-gain",
+      "source": "archive",
+      "symbol": "phy_set_rx_gain_table",
+      "production": "open_phy_calibration_trace_rx_gain",
+      "verdict": "match",
+      "cases": 56,
+      "executions": [
+        "69ce70a8c91aa0a835e7f7bb1dfa1bd60a7e0cb226333d680b257fd458a4b333",
+        "f0e19e1050d02464b56482ab562a6f1eeff848bc764263651f7734f424e3e5b2"
+      ]
+    },
+    {
+      "suite": "tx-dc",
+      "source": "archive",
+      "symbol": "phy_txdc_cal_pwdet_init",
+      "production": "open_phy_calibration_trace_tx_dc_pwdet",
+      "verdict": "match",
+      "cases": 64,
+      "executions": [
+        "31ed5a35a998869f0a410a7871b5f788fc5ef588fbb736ab84e2201fb2e5ea64"
+      ]
+    },
+    {
+      "suite": "tracking",
+      "source": "archive",
+      "symbol": "phy_cal_param_track",
+      "production": "open_phy_calibration_trace_combined",
+      "verdict": "match",
+      "cases": 80,
+      "executions": [
+        "07944441e1213a7cf65cae4354535358f5686841deb4d1769f5d60116649b3d9"
+      ]
+    },
+    {
+      "suite": "tracking",
+      "source": "archive",
+      "symbol": "phy_param_track_tot",
+      "production": "open_phy_tracking_trace_parent",
+      "verdict": "match",
+      "cases": 320,
+      "executions": [
+        "c5031a7c07feae1eaee28773a2e9c9938ceb3e29d6001ed526afa1e40473e5c2",
+        "30e2e1bb20b1cb0315ff3a72194bebd17c10d2926d1ca330e3252e5f6a14bd8b",
+        "02ed3612d01dc1a2fcb0cee4f29288f029ba00626df0e2347603458ccb4719b2",
+        "b9cd5b68ba7b86c9e698678288517ca337833e056d1941f0dbb9ddd55c9f6704"
+      ]
+    }
+  ]
+}

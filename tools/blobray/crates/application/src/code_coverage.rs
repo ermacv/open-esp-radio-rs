@@ -5,8 +5,9 @@ use blobray_analysis::closure::{ClosureInput, CodeMemory, code_closure};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Executable segments of one vendor target, ascending by address.
-struct Code<'s, 'a> {
-    segments: Vec<&'s LoadedSegment<'a>>,
+/// Executable segments of one target, ascending by address.
+pub(crate) struct Code<'s, 'a> {
+    pub segments: Vec<&'s LoadedSegment<'a>>,
 }
 impl CodeMemory for Code<'_, '_> {
     fn code(&self, address: u32, bytes: &mut [u8; 4]) -> Option<usize> {

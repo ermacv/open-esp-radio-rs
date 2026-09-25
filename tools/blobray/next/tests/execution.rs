@@ -665,6 +665,8 @@ mod call_pairs;
 
 #[path = "execution/coverage.rs"]
 mod coverage;
+#[path = "execution/dependence.rs"]
+mod dependence;
 #[path = "execution/timeline.rs"]
 mod timeline;
 

@@ -52,6 +52,8 @@ pub(super) struct Session<'a> {
     coverage: crate::execution_coverage::CodeCoverage<'a>,
     /// Region of the most recent lookup; nearby accesses usually repeat it.
     last_region: std::cell::Cell<usize>,
+    /// Step log for observation dependence, when requested.
+    steps: Option<crate::execution_steps::StepLog<'a>>,
 }
 /// Events admitted by the first growth of a session's event buffer.
 const INITIAL_EVENT_CAPACITY: usize = 1024;
@@ -133,7 +135,30 @@ impl<'a> Session<'a> {
             reservation: None,
             coverage,
             last_region: std::cell::Cell::new(0),
+            steps: None,
         })
+    }
+    /// Record this session's steps from now on.
+    pub fn record_steps(&mut self) {
+        self.steps = Some(crate::execution_steps::StepLog::new(self.memory));
+    }
+    /// The step log, when recording.
+    pub fn steps(&mut self) -> Option<&mut crate::execution_steps::StepLog<'a>> {
+        self.steps.as_mut()
+    }
+    /// Stop recording and return the step log.
+    pub fn take_steps(&mut self) -> Option<crate::execution_steps::StepLog<'a>> {
+        self.steps.take()
+    }
+    pub(super) fn log(
+        &mut self,
+        entry: crate::execution_steps::StepEntry,
+        c: &mut dyn RunControl,
+    ) -> Result<()> {
+        match &mut self.steps {
+            Some(steps) => steps.push(entry, c),
+            None => Ok(()),
+        }
     }
     /// Double the event capacity, bounded by `max_events`. The new capacity is
     /// admitted before allocation and while the old buffer is still held.
@@ -232,7 +257,13 @@ impl<'a> Session<'a> {
             flags,
             kind,
         });
-        Ok(())
+        self.log(
+            crate::execution_steps::StepEntry::Input {
+                address,
+                length: length as u32,
+            },
+            c,
+        )
     }
     /// Map one executable ELF segment: file bytes, then zeroed memory tail.
     pub fn segment(
@@ -274,6 +305,7 @@ impl<'a> Session<'a> {
         let stack = input.entry_stack(&target.stack)?;
         self.reservation = None;
         self.finish_phase();
+        self.log(crate::execution_steps::StepEntry::Phase, c)?;
         self.events.clear();
         self.timeline = input.observe_timeline;
         if let Some(profile) = &input.observe_calls {
@@ -330,6 +362,15 @@ impl<'a> Session<'a> {
                     && r.kind == RegionKind::Ram(declared.lifetime)
                     && r.bytes.len() == seed.length as usize
             }) {
+                if let Some(steps) = &mut self.steps {
+                    steps.push(
+                        crate::execution_steps::StepEntry::Input {
+                            address: r.address,
+                            length: r.bytes.len() as u32,
+                        },
+                        c,
+                    )?;
+                }
                 for offset in (0..r.bytes.len()).step_by(WORK_BLOCK) {
                     c.checkpoint(1)?;
                     let end = (offset + WORK_BLOCK).min(r.bytes.len());
@@ -541,6 +582,7 @@ impl ExecutionMemory for Session<'_> {
     }
     fn fetch(&mut self, pc: u32, c: &mut dyn RunControl) -> Result<(Option<u32>, Option<u32>)> {
         self.instruction(pc);
+        self.log(crate::execution_steps::StepEntry::Instruction { pc }, c)?;
         // Both halfwords known in one executable region: one lookup. Anything
         // else takes the two ordinary fetch reads.
         if pc.is_multiple_of(2)
@@ -577,7 +619,11 @@ impl ExecutionMemory for Session<'_> {
         if let Some(result) = self.service_call(input, c)? {
             return Ok(result);
         }
-        self.external_call(input, c)
+        let dispatch = self.external_call(input, c)?;
+        if matches!(dispatch, CallDispatch::Returned { .. }) {
+            self.log(crate::execution_steps::StepEntry::CallReturn, c)?;
+        }
+        Ok(dispatch)
     }
     fn read(
         &mut self,
@@ -606,6 +652,14 @@ impl ExecutionMemory for Session<'_> {
             let Some(value) = value else {
                 return Ok(None);
             };
+            self.log(
+                crate::execution_steps::StepEntry::Read {
+                    address,
+                    width,
+                    device: true,
+                },
+                c,
+            )?;
             self.event(
                 ExecutionEvent::Read {
                     address,
@@ -633,6 +687,14 @@ impl ExecutionMemory for Session<'_> {
             }
         };
         if access == MemoryAccess::Read {
+            self.log(
+                crate::execution_steps::StepEntry::Read {
+                    address,
+                    width,
+                    device: false,
+                },
+                c,
+            )?;
             self.trace_memory(
                 MemoryTransaction::Read {
                     address,
@@ -673,6 +735,14 @@ impl ExecutionMemory for Session<'_> {
             if !written {
                 return Ok(false);
             }
+            self.log(
+                crate::execution_steps::StepEntry::Write {
+                    address,
+                    width,
+                    device: true,
+                },
+                c,
+            )?;
             self.event(
                 ExecutionEvent::Write {
                     address,
@@ -695,6 +765,14 @@ impl ExecutionMemory for Session<'_> {
         r.bytes[offset..offset + width as usize]
             .copy_from_slice(&value.to_le_bytes()[..width as usize]);
         r.known[offset..offset + width as usize].fill(1);
+        self.log(
+            crate::execution_steps::StepEntry::Write {
+                address,
+                width,
+                device: false,
+            },
+            c,
+        )?;
         self.table_write(address, width, value, self.pc, c)?;
         self.trace_memory(
             MemoryTransaction::Write {
@@ -723,6 +801,14 @@ impl ExecutionMemory for Session<'_> {
         );
         self.admit_memory_event(self.timeline.atomics, c)?;
         self.reservation = Some(address);
+        self.log(
+            crate::execution_steps::StepEntry::Read {
+                address,
+                width: 4,
+                device: false,
+            },
+            c,
+        )?;
         self.trace_memory(
             MemoryTransaction::LoadReserved {
                 address,
@@ -760,6 +846,14 @@ impl ExecutionMemory for Session<'_> {
         let r = &mut self.regions[i];
         r.bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
         r.known[offset..offset + 4].fill(1);
+        self.log(
+            crate::execution_steps::StepEntry::Write {
+                address,
+                width: 4,
+                device: false,
+            },
+            c,
+        )?;
         self.table_write(address, 4, value, self.pc, c)?;
         self.trace_memory(
             MemoryTransaction::StoreConditional {
@@ -791,6 +885,20 @@ impl ExecutionMemory for Session<'_> {
         let value = update(old);
         self.invalidate_reservation(address, 4);
         self.regions[i].bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+        for entry in [
+            crate::execution_steps::StepEntry::Read {
+                address,
+                width: 4,
+                device: false,
+            },
+            crate::execution_steps::StepEntry::Write {
+                address,
+                width: 4,
+                device: false,
+            },
+        ] {
+            self.log(entry, c)?;
+        }
         self.table_write(address, 4, value, self.pc, c)?;
         self.trace_memory(
             MemoryTransaction::ReadModifyWrite {
@@ -821,7 +929,12 @@ impl ExecutionMemory for Session<'_> {
             self.grow_events(c)?;
         }
         self.events.push(event);
-        Ok(())
+        self.log(
+            crate::execution_steps::StepEntry::Event {
+                index: self.events.len() as u32 - 1,
+            },
+            c,
+        )
     }
 }
 

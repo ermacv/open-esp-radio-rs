@@ -12,7 +12,8 @@
 //! patched production images; only the replacement then executes. Reuse
 //! yields the records of a full execution.
 pub use crate::code_coverage::report_in_process as coverage;
-use crate::execution::{Resolved, RunOutcome, Sources, VendorSide, run_resolved};
+pub use crate::dependence::ObservedInstructions;
+use crate::execution::{Resolved, Sources, VendorSide, run_resolved};
 use crate::*;
 
 fn digest(value: &impl serde::Serialize) -> Result<ArtifactId> {
@@ -76,6 +77,9 @@ pub struct InProcessComparison<'a> {
     pub projections: &'a [LayoutProjection],
     /// Vendor results of this request's vendor side, from `vendor`.
     pub vendor_results: Option<&'a VendorResults>,
+    /// Semantics of the replacement ISA, to report which executed replacement
+    /// instructions the compared observations depend on.
+    pub dependence: Option<&'a dyn FunctionSemantics>,
 }
 
 pub struct InProcessResult {
@@ -84,6 +88,17 @@ pub struct InProcessResult {
     pub complete: bool,
     /// Whether the given vendor results replaced executing the vendor side.
     pub vendor_reused: bool,
+    /// Executed and observed replacement instructions, when requested.
+    pub observed: Option<ObservedInstructions>,
+}
+
+/// One run of a request.
+struct Run {
+    records: Vec<ExecutionEvidence>,
+    verdict: Option<ComparisonVerdict>,
+    complete: bool,
+    vendor_independent: bool,
+    observed: Option<ObservedInstructions>,
 }
 
 fn unsupported(what: &str) -> Error {
@@ -100,7 +115,7 @@ fn run(
     executor: &dyn Executor,
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
-) -> Result<(Vec<ExecutionEvidence>, RunOutcome)> {
+) -> Result<Run> {
     let request = input.request;
     // Capabilities this path does not have fail before anything else.
     for case in &request.cases {
@@ -183,6 +198,32 @@ fn run(
         targets.push((target, executables));
     }
     let sources = Sources::from_executables(&targets, memory, control)?;
+    // Dependence needs the replacement's executable segments and function starts.
+    let replacement = match (input.dependence, &request.replacement, input.replacement) {
+        (Some(semantics), Some(target), Some(executables)) => {
+            let mut segments: Vec<_> = sources
+                .target_segments(target)
+                .filter(|s| s.flags & 1 != 0)
+                .collect();
+            segments.sort_by_key(|s| s.address);
+            let mut starts = std::collections::BTreeSet::new();
+            for executable in executables {
+                for (address, _) in blobray_artifacts::code_symbols(executable, memory, control)? {
+                    starts.insert(address);
+                }
+            }
+            Some((crate::code_coverage::Code { segments }, starts, semantics))
+        }
+        _ => None,
+    };
+    let mut analyzer = replacement.as_ref().map(|(code, starts, semantics)| {
+        crate::dependence::Analyzer::new(code, starts, *semantics)
+    });
+    let record_steps = analyzer.is_some();
+    let mut sink = |log, c: &mut dyn RunControl| match &mut analyzer {
+        Some(analyzer) => analyzer.session(log, memory, c),
+        None => Ok(()),
+    };
     let mut records = Vec::new();
     let outcome = run_resolved(
         &Resolved {
@@ -195,6 +236,7 @@ fn run(
             sources: &sources,
         },
         vendor,
+        record_steps.then_some(&mut sink as &mut crate::execution::StepSink<'_, '_>),
         executor,
         memory,
         &mut |record, _| {
@@ -203,7 +245,14 @@ fn run(
         },
         control,
     )?;
-    Ok((records, outcome))
+    let observed = analyzer.map(|a| a.result);
+    Ok(Run {
+        records,
+        verdict: outcome.verdict,
+        complete: outcome.complete,
+        vendor_independent: outcome.vendor_independent,
+        observed,
+    })
 }
 
 /// Execute the vendor side of every case of `input.request` once, for reuse
@@ -222,18 +271,20 @@ pub fn vendor(
         case.relation = None;
     }
     let mut cases = Vec::new();
-    let (records, _) = run(
+    let records = run(
         &InProcessComparison {
             request: &request,
             replacement: None,
             vendor_results: None,
+            dependence: None,
             ..*input
         },
         &mut VendorSide::Execute(Some(&mut cases)),
         executor,
         memory,
         control,
-    )?;
+    )?
+    .records;
     Ok(VendorResults {
         key: vendor_key(input, executor)?,
         cases,
@@ -267,7 +318,7 @@ pub fn verify(
                 "vendor results belong to another vendor side",
             ));
         }
-        let (records, outcome) = run(
+        let run = run(
             input,
             &mut VendorSide::Reuse {
                 cases: &reused.cases,
@@ -279,16 +330,17 @@ pub fn verify(
         )?;
         // A replacement case that blocked the vendor side makes the vendor
         // observations depend on it; such a request executes fully.
-        if outcome.vendor_independent {
+        if run.vendor_independent {
             return Ok(InProcessResult {
-                records,
-                verdict: outcome.verdict,
-                complete: outcome.complete,
+                records: run.records,
+                verdict: run.verdict,
+                complete: run.complete,
                 vendor_reused: true,
+                observed: run.observed,
             });
         }
     }
-    let (records, outcome) = run(
+    let run = run(
         input,
         &mut VendorSide::Execute(None),
         executor,
@@ -296,9 +348,10 @@ pub fn verify(
         control,
     )?;
     Ok(InProcessResult {
-        records,
-        verdict: outcome.verdict,
-        complete: outcome.complete,
+        records: run.records,
+        verdict: run.verdict,
+        complete: run.complete,
         vendor_reused: false,
+        observed: run.observed,
     })
 }

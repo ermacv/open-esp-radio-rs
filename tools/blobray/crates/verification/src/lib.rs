@@ -302,6 +302,60 @@ pub fn compare(
         difference: None,
     })
 }
+/// Replacement observations a comparison under `relation` examines.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ComparedObservations {
+    /// Indices of compared replacement events, ascending. A compared call
+    /// includes its transfer and argument events.
+    pub events: Vec<u32>,
+    /// Compared return words, low then high.
+    pub returns: [bool; 2],
+    /// Compared replacement final-memory selections.
+    pub memory: Vec<u16>,
+}
+
+/// The replacement observations of `right` that `compare` examines under
+/// `relation`, with the same event selection. Events that cannot be mapped
+/// through the projection are not compared.
+pub fn compared_observations(
+    right: &ExecutionObservation,
+    relation: &ComparisonRelation,
+    pairs: &[ResolvedCallPair],
+    projection: Option<&LayoutProjection>,
+    effects: Option<&ResolvedEffectContract>,
+    control: &mut dyn RunControl,
+) -> Result<ComparedObservations> {
+    let mut selected = Selected::new(
+        &right.events,
+        relation,
+        pairs,
+        projection,
+        effects,
+        true,
+        control,
+    )?;
+    let mut events = Vec::new();
+    while let Some(observation) = selected.next(control)? {
+        let after = (selected.total - selected.remaining.len()) as u32;
+        match observation {
+            Observation::Unmapped => {}
+            Observation::Call { arguments, .. } => {
+                events.extend(after - 1 - arguments.len() as u32..after);
+            }
+            _ => events.push(after - 1),
+        }
+    }
+    Ok(ComparedObservations {
+        events,
+        returns: [relation.returns.low, relation.returns.high],
+        memory: relation
+            .memory
+            .iter()
+            .map(|pair| pair.replacement)
+            .collect(),
+    })
+}
+
 #[derive(Clone, Copy)]
 enum Observation<'a> {
     Effect(&'a ExecutionEvent, EffectSelection),

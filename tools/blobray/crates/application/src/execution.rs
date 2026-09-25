@@ -358,6 +358,7 @@ pub(crate) fn prepare_execution_worker_in(
                 sources: &sources,
             },
             &mut VendorSide::Execute(None),
+            None,
             executor,
             memory,
             &mut |record, _| {
@@ -405,6 +406,10 @@ pub(crate) struct Resolved<'r, 'm> {
     pub sources: &'r Sources<'m>,
 }
 
+/// Receives the step log of each finished replacement session.
+pub(crate) type StepSink<'s, 'm> =
+    dyn FnMut(crate::execution_steps::StepLog<'m>, &mut dyn RunControl) -> Result<()> + 's;
+
 /// How the vendor side of a resolved request is obtained.
 pub(crate) enum VendorSide<'v> {
     /// Execute it; with a sink, keep each case's observation.
@@ -432,13 +437,15 @@ pub(crate) struct RunOutcome {
 pub(crate) fn run_resolved<'m>(
     resolved: &Resolved<'_, 'm>,
     vendor: &mut VendorSide<'_>,
+    mut steps: Option<&mut StepSink<'_, 'm>>,
     executor: &dyn Executor,
     memory: &'m WorkingMemory,
     emit: &mut Emit<'_>,
     control: &mut dyn RunControl,
 ) -> Result<RunOutcome> {
     let request = resolved.request;
-    let mut sides: [Side<'_>; 2] = Default::default();
+    let mut sides: [Side<'m>; 2] = Default::default();
+    sides[1].record = steps.is_some();
     let mut blocked = false;
     // Whether `blocked` holds only because the replacement did not complete.
     let mut blocked_by_replacement = false;
@@ -455,6 +462,11 @@ pub(crate) fn run_resolved<'m>(
             // Release both previous address spaces before acquiring either new one.
             for side in &mut sides {
                 side.release();
+            }
+            if let Some(sink) = steps.as_mut() {
+                for log in sides[1].steps.drain(..) {
+                    sink(log, control)?;
+                }
             }
         }
         let mut position = control.position();
@@ -547,6 +559,26 @@ pub(crate) fn run_resolved<'m>(
                 }
                 _ => ComparisonVerdict::Match,
             });
+            if let Some(steps) = sides[1].session.as_mut().and_then(|s| s.steps()) {
+                let relation = case.relation.as_ref().unwrap();
+                let compared = blobray_verification::compared_observations(
+                    right,
+                    relation,
+                    resolved.pairs,
+                    selected_projection(Some(relation), resolved.projections)?
+                        .map(|p| &p.projection),
+                    selected_effect_contract(Some(relation), resolved.effects)?,
+                    control,
+                )?;
+                steps.end_case(
+                    crate::execution_steps::CaseSinks::of(
+                        &compared,
+                        right,
+                        case.replacement.as_ref().unwrap(),
+                    ),
+                    control,
+                )?;
+            }
             emit(
                 ExecutionEvidence::Comparison {
                     case: index as u32,
@@ -599,6 +631,11 @@ pub(crate) fn run_resolved<'m>(
             )?;
         }
     }
+    if let Some(sink) = steps.as_mut() {
+        for log in sides[1].steps.drain(..) {
+            sink(log, control)?;
+        }
+    }
     Ok(RunOutcome {
         verdict,
         complete,
@@ -606,37 +643,42 @@ pub(crate) fn run_resolved<'m>(
     })
 }
 
-/// One side's live session and the coverage that outlives its sessions.
+/// One side's live session and the coverage and step logs that outlive its
+/// sessions.
 #[derive(Default)]
 struct Side<'a> {
     session: Option<Session<'a>>,
     coverage: crate::execution_coverage::CodeCoverage<'a>,
+    steps: Vec<crate::execution_steps::StepLog<'a>>,
+    /// Whether this side's sessions record step logs.
+    record: bool,
 }
 impl Side<'_> {
-    /// Drop the session, keeping what it reached.
+    /// Drop the session, keeping what it reached and recorded.
     fn release(&mut self) {
-        if let Some(session) = self.session.take() {
+        if let Some(mut session) = self.session.take() {
+            self.steps.extend(session.take_steps());
             self.coverage = session.into_coverage();
         }
     }
 }
 
-struct Engine<'a> {
-    sources: &'a Sources<'a>,
+struct Engine<'a, 'm> {
+    sources: &'a Sources<'m>,
     request: &'a ExecutionRequest,
-    memory: &'a WorkingMemory,
+    memory: &'m WorkingMemory,
     executor: &'a dyn Executor,
     reset: SessionReset,
     stack_fill: Option<u8>,
     close_chain: bool,
 }
-impl<'a> Engine<'a> {
+impl<'m> Engine<'_, 'm> {
     fn invoke(
         &self,
         target: &ExecutionTarget,
         invocation: &Invocation,
         ready: InvocationPreparation<'_, '_>,
-        side: &mut Side<'a>,
+        side: &mut Side<'m>,
         blocked: bool,
         c: &mut dyn RunControl,
     ) -> Result<ExecutionObservation> {
@@ -662,6 +704,9 @@ impl<'a> Engine<'a> {
                 std::mem::take(&mut side.coverage),
                 c,
             )?);
+            if side.record {
+                side.session.as_mut().unwrap().record_steps();
+            }
         }
         let machine = side.session.as_mut().unwrap();
         let (stack, issue) = machine.phase(target, self.stack_fill, invocation, ready.tables, c)?;

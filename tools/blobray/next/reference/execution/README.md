@@ -596,6 +596,37 @@ of the next warm case, the vendor observations depend on the replacement, and
 `verify` executes the request fully; `vendor_reused` reports which happened.
 The results live in memory only, for repeated comparisons within one process.
 
+### Observation dependence
+
+With `dependence` set to the replacement ISA's semantics, `in_process::verify`
+also returns `observed`: the executed replacement instructions and those that
+a compared observation depends on. Replacement sessions then record a step
+log (each fetched instruction, its memory accesses and events, call-model
+results, and memory the environment defined); the executor is unchanged.
+After each session, a forward pass gives every step its dependencies:
+
+- the producers of the registers it reads, and for loads and atomics of the
+  memory bytes it reads; device reads and environment-defined memory are
+  inputs, and a call model's result registers and output bytes come from the
+  calling step;
+- the conditional branch it is control dependent on: a branch controls the
+  steps of its frame, including the calls they make, until its immediate
+  post-dominator in the CFG recovered from the frame's function entry. A
+  function over 65,536 instructions, or a branch without a path to the
+  function exit, controls the rest of the frame;
+- the unconditional transfer (call, jump or return) that led to it.
+
+Sinks are the replacement observations `blobray_verification::compared_observations`
+lists for each case's relation, at event granularity: the step that emitted a
+compared event, the argument registers of a compared call (words beyond the
+eight argument registers are not followed), the selected return words, the
+last writers of compared final-memory selections, and the returning step when
+the case returned. A backward walk from the sinks marks observed steps. An
+executed instruction that no sink reaches is unobserved: no compared
+observation of these cases would change if its result changed. Dependence is a
+necessary condition for a comparison to notice a defect, not a sufficient one;
+the pointer arguments that locate a call model's outputs are not followed.
+
 ### ISA conformance
 
 ```console

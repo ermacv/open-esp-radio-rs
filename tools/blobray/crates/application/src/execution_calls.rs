@@ -221,6 +221,13 @@ impl Session<'_> {
             let width = usize::from(output.width);
             r.bytes[o..o + width].copy_from_slice(&output.value.to_le_bytes()[..width]);
             r.known[o..o + width].fill(1);
+            self.log(
+                crate::execution_steps::StepEntry::Output {
+                    address,
+                    width: output.width,
+                },
+                c,
+            )?;
             self.invalidate_reservation(address, output.width);
             self.table_write(address, output.width, output.value, Some(input.site), c)?;
             self.event(

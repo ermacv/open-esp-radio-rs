@@ -335,6 +335,7 @@ impl Session {
                 effects: &self.effects,
                 projections: &self.projections,
                 vendor_results: None,
+                dependence: None,
             },
             &blobray_backend_riscv::RiscvExecutor,
             &memory,

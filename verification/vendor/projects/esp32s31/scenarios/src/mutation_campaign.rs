@@ -267,12 +267,38 @@ impl Campaign {
         }
         let total = queue.len();
         eprintln!("{} executed lines, {total} mutants", lines.len());
+        // Results of an interrupted run of the same commit are kept, one JSON
+        // line per mutant, and those mutants do not run again.
+        let journal_path = self.output.join(format!("journal-{commit}.jsonl"));
+        let key = |m: &Mutant| (m.file.clone(), m.start, m.end, m.replacement.clone());
+        let mut done = BTreeMap::new();
+        if let Ok(journal) = std::fs::read_to_string(&journal_path) {
+            for line in journal.lines() {
+                let result: MutantResult = serde_json::from_str(line)?;
+                done.insert(key(&result.mutant), result);
+            }
+        }
+        let mut previous = vec![];
+        queue.retain(|(mutant, _)| match done.remove(&key(mutant)) {
+            Some(result) => {
+                previous.push(result);
+                false
+            }
+            None => true,
+        });
+        eprintln!("{} mutants already in the journal", previous.len());
+        let journal = Mutex::new(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&journal_path)?,
+        );
         let queue = Mutex::new(queue);
-        let results = Mutex::new(Vec::new());
+        let results = Mutex::new(previous);
         std::thread::scope(|scope| {
             for (index, worker) in workers.iter().enumerate() {
-                let (queue, results, baseline_code, logs) =
-                    (&queue, &results, &baseline_code, &logs);
+                let (queue, results, baseline_code, logs, journal) =
+                    (&queue, &results, &baseline_code, &logs, &journal);
                 scope.spawn(move || -> Result<()> {
                     for attempt in 0.. {
                         let Some((mutant, suites)) = queue.lock().unwrap().pop_front() else {
@@ -310,13 +336,17 @@ impl Campaign {
                             mutant.id(),
                             outcome
                         );
-                        results.push(MutantResult {
+                        let result = MutantResult {
                             id: mutant.id(),
                             mutant,
                             scenarios: suites.into_iter().collect(),
                             outcome,
                             seconds: start.elapsed().as_secs_f64(),
-                        });
+                        };
+                        let mut line = serde_json::to_vec(&result)?;
+                        line.push(b'\n');
+                        std::io::Write::write_all(&mut *journal.lock().unwrap(), &line)?;
+                        results.push(result);
                     }
                     Ok(())
                 });

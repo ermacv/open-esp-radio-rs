@@ -56,6 +56,36 @@ pub enum PhyRegisterAction {
     },
 }
 
+/// Top-level registration stage of one external action.
+///
+/// Run errors report this compact identity instead of the complete nested
+/// action, which stays internal to the registration graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyRegisterStage {
+    Mmio,
+    Delay,
+    I2cMasterResetSample,
+    Rf,
+    Baseband,
+    Temperature,
+    FinalI2cRead,
+}
+
+impl PhyRegisterAction {
+    /// The registration stage this action belongs to.
+    pub(crate) const fn stage(&self) -> PhyRegisterStage {
+        match self {
+            Self::Mmio(_) => PhyRegisterStage::Mmio,
+            Self::DelayMicros { .. } => PhyRegisterStage::Delay,
+            Self::SampleI2cMasterReset { .. } => PhyRegisterStage::I2cMasterResetSample,
+            Self::Rf(_) => PhyRegisterStage::Rf,
+            Self::Baseband(_) => PhyRegisterStage::Baseband,
+            Self::Temperature(_) => PhyRegisterStage::Temperature,
+            Self::ReadFinalI2c { .. } => PhyRegisterStage::FinalI2cRead,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRegisterCompletion {
     Mmio(PhyRegisterMmioCompletion),

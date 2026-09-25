@@ -95,10 +95,12 @@ pub struct PhyPbusMemoryEntry {
 }
 
 impl PhyPbusMemoryEntry {
+    #[cfg(test)]
     pub const fn group(self) -> u8 {
         self.group
     }
 
+    #[cfg(test)]
     pub const fn index(self) -> u8 {
         self.index
     }

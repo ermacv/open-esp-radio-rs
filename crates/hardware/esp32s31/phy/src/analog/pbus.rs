@@ -83,8 +83,14 @@ pub enum PhyPbusClearAction {
 pub enum PhyPbusClearCompletion {
     DebugModeConfigured,
     ForceTestCompleted(PhyPbusForceTest),
+    #[cfg_attr(
+        not(any(test, feature = "validation-probes")),
+        allow(dead_code, reason = "only validation bindings construct this variant")
+    )]
     ForceTestTimedOut(PhyPbusForceTest),
-    WorkModeConfigured { settle_required: bool },
+    WorkModeConfigured {
+        settle_required: bool,
+    },
     DelayElapsed,
     WorkModePulseConfigured,
     WorkModePulseCleared,
@@ -213,6 +219,7 @@ impl Default for PhyPbusClearTransition {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(any(test, feature = "validation-probes"))]
 pub enum PhyPbusHardwareAction {
     Start(PhyPbusForceTest),
     AwaitCompletionEdge(PhyPbusForceTest),
@@ -259,6 +266,7 @@ impl PhyPbusHardwareBinding {
         }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> PhyPbusHardwareAction {
         match self.phase {
             PhyPbusHardwarePhase::Start => PhyPbusHardwareAction::Start(self.transaction),
@@ -499,6 +507,7 @@ impl PhyForceTxRxMmioBinding {
         }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> PhyForceTxRxAction {
         PhyForceTxRxAction::Configure {
             enabled: self.enabled,
@@ -543,6 +552,7 @@ impl PhyForceTxRxTimerBinding {
         }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> PhyForceTxRxAction {
         PhyForceTxRxAction::DelayMicros {
             enabled: self.enabled,

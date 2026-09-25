@@ -434,6 +434,10 @@ pub enum PhyToneSarCompletion {
         sample: u8,
         ready: bool,
     },
+    #[cfg_attr(
+        not(any(test, feature = "validation-probes")),
+        allow(dead_code, reason = "only validation bindings construct this variant")
+    )]
     ReadyDeadlineElapsed {
         measurement: u8,
         sample: u8,

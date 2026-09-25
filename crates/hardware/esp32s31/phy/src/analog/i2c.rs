@@ -538,14 +538,17 @@ impl MaskedI2cWriteBinding {
         self.transaction.action()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn read_started(&mut self) -> Result<(), crate::calibration::cold::PhyColdI2cError> {
         self.transaction.read_started()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn write_started(&mut self) -> Result<(), crate::calibration::cold::PhyColdI2cError> {
         self.transaction.write_started()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_read_result(
         &mut self,
         result: Result<u8, PhyI2cError>,
@@ -556,6 +559,7 @@ impl MaskedI2cWriteBinding {
         self.transaction.observe_read_result(result)
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_write_result(
         &mut self,
         result: Result<(), PhyI2cError>,

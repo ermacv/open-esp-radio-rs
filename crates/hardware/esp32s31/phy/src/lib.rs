@@ -109,8 +109,8 @@ pub use analog::rfpll::phy_get_rf_cal_version;
 #[cfg(feature = "registration-diagnostics")]
 pub use calibration::registration::RfCalibrationDiagnostics;
 pub use calibration::registration::{
-    PhyCalibrationIdentity, PhyCalibrationPath, PhyRegisterFailure, PhyRegisterOutcome,
-    RegisteredPhyState,
+    PhyCalibrationIdentity, PhyCalibrationPath, PhyRegisterBindingError, PhyRegisterFailure,
+    PhyRegisterOutcome, PhyRegisterStage, RegisteredPhyState,
 };
 #[cfg(feature = "validation-probes")]
 pub use calibration::registration::{

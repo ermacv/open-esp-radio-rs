@@ -153,14 +153,6 @@ fn finite_baseband_mmio_binding_preserves_dynamic_identity() {
             phase: PhyRfRxSaturationPhase::Finalize,
         },
         PhyBbMmioAction::ConfigureI2cTxRate,
-        PhyBbMmioAction::ProgramGainMemory(PhyGainMemoryEntry::receive_table(4, 0)),
-        PhyBbMmioAction::EnableIqCorrection,
-        PhyBbMmioAction::SetWifiAgcSaturationGain { value: 0x0008_1825 },
-        PhyBbMmioAction::ConfigureBasebandWatchdog,
-        PhyBbMmioAction::EnableMacBaseband,
-        PhyBbMmioAction::ConfigureNoiseFloorAuto,
-        PhyBbMmioAction::ConfigureAntenna,
-        PhyBbMmioAction::ConfigureBtFilter,
         PhyBbMmioAction::ConfigurePhyRegisters {
             parameters: PhyRegisterInitParameters {
                 parameter_121: 0x4f,

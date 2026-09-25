@@ -485,16 +485,6 @@ pub enum PhyBbMmioAction {
         phase: PhyRfRxSaturationPhase,
     },
     ConfigureI2cTxRate,
-    ProgramGainMemory(PhyGainMemoryEntry),
-    EnableIqCorrection,
-    SetWifiAgcSaturationGain {
-        value: u32,
-    },
-    ConfigureBasebandWatchdog,
-    EnableMacBaseband,
-    ConfigureNoiseFloorAuto,
-    ConfigureAntenna,
-    ConfigureBtFilter,
     ConfigurePhyRegisters {
         parameters: PhyRegisterInitParameters,
     },
@@ -562,30 +552,6 @@ impl PhyBbMmioBinding {
             }
             PhyBbMmioAction::ConfigureI2cTxRate => {
                 oer_esp32s31_hal::phy::baseband::configure_i2c_tx_rate(registers)
-            }
-            PhyBbMmioAction::ProgramGainMemory(entry) => {
-                oer_esp32s31_hal::phy::memory::program_gain_memory_entry(registers, entry)
-            }
-            PhyBbMmioAction::EnableIqCorrection => {
-                oer_esp32s31_hal::phy::baseband::enable_iq_correction(registers)
-            }
-            PhyBbMmioAction::SetWifiAgcSaturationGain { value } => {
-                oer_esp32s31_hal::phy::agc::set_saturation_gain(registers, value)
-            }
-            PhyBbMmioAction::ConfigureBasebandWatchdog => {
-                oer_esp32s31_hal::phy::baseband::configure_watchdog(registers)
-            }
-            PhyBbMmioAction::EnableMacBaseband => {
-                oer_esp32s31_hal::phy::frequency::enable_mac_baseband(registers)
-            }
-            PhyBbMmioAction::ConfigureNoiseFloorAuto => {
-                oer_esp32s31_hal::phy::baseband::configure_noise_floor_auto(registers)
-            }
-            PhyBbMmioAction::ConfigureAntenna => {
-                oer_esp32s31_hal::phy::agc::configure_antenna(registers)
-            }
-            PhyBbMmioAction::ConfigureBtFilter => {
-                oer_esp32s31_hal::phy::frequency::configure_bt_filter(registers)
             }
             PhyBbMmioAction::ConfigurePhyRegisters { parameters } => {
                 crate::hardware::configure_phy_registers(registers, parameters)

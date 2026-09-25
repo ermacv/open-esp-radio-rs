@@ -1408,14 +1408,17 @@ impl PhyTxDcPwdetSearchPbusBinding {
         })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> crate::analog::pbus::PhyPbusHardwareAction {
         self.hardware.action()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn started(&mut self) -> Result<(), crate::analog::pbus::PhyPbusHardwareBindingError> {
         self.hardware.started()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_completed(
         &mut self,
         completed: bool,
@@ -1546,14 +1549,17 @@ impl PhyTxDcPwdetPbusBinding {
         })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> crate::analog::pbus::PhyPbusHardwareAction {
         self.hardware.action()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn started(&mut self) -> Result<(), crate::analog::pbus::PhyPbusHardwareBindingError> {
         self.hardware.started()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_completed(
         &mut self,
         completed: bool,

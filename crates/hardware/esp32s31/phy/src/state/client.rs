@@ -686,7 +686,7 @@ impl PhyPendingTracking {
         self.transition.action()
     }
 
-    pub fn advance(
+    pub(crate) fn advance(
         &mut self,
         completion: PhyParamTrackingCompletion,
     ) -> Result<(), PhyParamTrackingTransitionError> {
@@ -698,7 +698,7 @@ impl PhyPendingTracking {
     }
 
     /// Lower the current RFPLL-cap action into its complete typed child.
-    pub fn begin_rfpll_cap_tracking<'state>(
+    pub(crate) fn begin_rfpll_cap_tracking<'state>(
         &self,
         state: &'state mut crate::state::PhyState,
     ) -> Result<PhyParamTrackingRfpllTransition<'state>, PhyParamTrackingChildError> {
@@ -707,7 +707,7 @@ impl PhyPendingTracking {
 
     /// Lower the current calibration action while retaining all three live
     /// semantic temperature references until terminal commit.
-    pub fn begin_calibration_tracking<'state>(
+    pub(crate) fn begin_calibration_tracking<'state>(
         &self,
         state: &'state mut crate::state::PhyState,
     ) -> Result<PhyParamTrackingCalibrationTransition<'state>, PhyParamTrackingChildError> {
@@ -716,7 +716,7 @@ impl PhyPendingTracking {
 
     /// Lower the current outer TX-power action into its complete typed child.
     /// Every other outer action fails closed instead of becoming a no-op.
-    pub fn begin_tx_power_tracking<'state>(
+    pub(crate) fn begin_tx_power_tracking<'state>(
         &self,
         state: &'state mut crate::state::PhyState,
     ) -> Result<PhyParamTrackingTxPowerTransition<'state>, PhyParamTrackingChildError> {
@@ -724,7 +724,7 @@ impl PhyPendingTracking {
     }
 
     /// Lower the current Wi-Fi PHY-I2C action into its complete typed child.
-    pub fn begin_wifi_i2c_tracking<'state>(
+    pub(crate) fn begin_wifi_i2c_tracking<'state>(
         &self,
         state: &'state mut crate::state::PhyState,
     ) -> Result<PhyParamTrackingWifiI2cTransition<'state>, PhyParamTrackingChildError> {
@@ -732,7 +732,7 @@ impl PhyPendingTracking {
     }
 
     /// Lower the current final sensor action into its complete typed child.
-    pub fn begin_temperature_read<'state>(
+    pub(crate) fn begin_temperature_read<'state>(
         &self,
         state: &'state mut crate::state::PhyState,
     ) -> Result<PhyParamTrackingTemperatureTransition<'state>, PhyParamTrackingChildError> {

@@ -34,6 +34,7 @@ fn passed(scenario: &Scenario) -> ScenarioResult {
 }
 
 fn session(root: &Path) -> RunSession {
+    crate::tests::register();
     RunSession::create(
         root,
         "esp32s31",

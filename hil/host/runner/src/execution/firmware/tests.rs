@@ -39,6 +39,7 @@ fn build_inputs(root: &Path) -> Artifacts {
 }
 
 fn session(root: &Path) -> RunSession {
+    crate::tests::register();
     let mut session = RunSession::create(
         root,
         "esp32s31",

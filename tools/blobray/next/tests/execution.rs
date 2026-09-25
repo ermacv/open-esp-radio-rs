@@ -161,6 +161,40 @@ impl Fixture {
     }
 }
 #[test]
+fn execution_summary_verifies_payloads_without_returning_records() {
+    let f = Fixture::new(&[0x00012503, 0x00150513, 0x00008067]);
+    let mut request = f.request();
+    request.cases[0].vendor.arguments.push(Some(7));
+    request.cases[0].replacement = Some(request.cases[0].vendor.clone());
+    let id = f.run(request, budget()).execution.unwrap();
+    let summary = |id: &ArtifactId| {
+        Command::new(env!("CARGO_BIN_EXE_blobray"))
+            .args(["--format", "json", "execution", "--summary", "--project"])
+            .arg(&f.project)
+            .args(["--id", id.as_str(), "--limit-mode", "watchdog"])
+            .output()
+            .unwrap()
+    };
+    let output = summary(&id);
+    assert!(output.status.success());
+    let brief: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let full = f.read(&id);
+    assert_eq!(brief["summary"], full["summary"]);
+    assert!(brief["records"].as_array().unwrap().is_empty());
+    assert!(!full["records"].as_array().unwrap().is_empty());
+    // A changed record payload fails its digest on reopening.
+    let records = full["summary"]["manifest"]["records"].as_str().unwrap();
+    let path = f.project.join(".blobray-next/objects").join(records);
+    let mut bytes = fs::read(&path).unwrap();
+    bytes[0] ^= 1;
+    let mut permissions = fs::metadata(&path).unwrap().permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    permissions.set_readonly(false);
+    fs::set_permissions(&path, permissions).unwrap();
+    fs::write(&path, bytes).unwrap();
+    assert!(!summary(&id).status.success());
+}
+#[test]
 fn comparison_replay_and_preservation_use_captured_bytes() {
     let f = Fixture::new(&[0x00012503, 0x00150513, 0x00008067]);
     let mut request = f.request();

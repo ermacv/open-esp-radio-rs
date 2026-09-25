@@ -308,6 +308,10 @@ enum Command {
         project: PathBuf,
         #[arg(long)]
         id: ArtifactId,
+        /// Return only the manifest after verifying the retained payload
+        /// digests, without decoding or returning records.
+        #[arg(long)]
+        summary: bool,
         #[command(flatten)]
         limits: ResourceOptions,
     },
@@ -1640,8 +1644,16 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
         Command::Execution {
             project,
             id,
+            summary,
             limits,
-        } => return read_query(project, ReadQuery::Execution { id }, limits, format),
+        } => {
+            let query = if summary {
+                ReadQuery::ExecutionSummary { id }
+            } else {
+                ReadQuery::Execution { id }
+            };
+            return read_query(project, query, limits, format);
+        }
         Command::Replay {
             project,
             id,

@@ -151,7 +151,8 @@ impl<'m> Devices<'m> {
                 | DeviceBehavior::W1c { address, width, .. }
                 | DeviceBehavior::ReadClear { address, width, .. }
                 | DeviceBehavior::SelfClearing { address, width, .. }
-                | DeviceBehavior::Fifo { address, width, .. } => push(*address, *width, 0)?,
+                | DeviceBehavior::Fifo { address, width, .. }
+                | DeviceBehavior::CyclicRead { address, width, .. } => push(*address, *width, 0)?,
                 DeviceBehavior::RetainedAperture { start, length, .. } => {
                     c.checkpoint(1)?;
                     self.apertures.push(
@@ -367,6 +368,11 @@ impl<'m> Instance<'m> {
                 Ok(old)
             }
             DeviceBehavior::SelfClearing { .. } => Ok(self.value),
+            DeviceBehavior::CyclicRead { values, .. } => {
+                let value = values[self.read_cursor];
+                self.read_cursor = (self.read_cursor + 1) % values.len();
+                Ok(value)
+            }
             DeviceBehavior::RetainedAperture { .. } => {
                 unreachable!("apertures dispatch by address")
             }
@@ -407,6 +413,7 @@ impl<'m> Instance<'m> {
             }
             DeviceBehavior::ConstantRead { .. }
             | DeviceBehavior::SequenceRead { .. }
+            | DeviceBehavior::CyclicRead { .. }
             | DeviceBehavior::ReadClear { .. } => Err(DeviceIssue::ReadOnly),
             DeviceBehavior::W1c { clear_mask, .. } => {
                 self.value &= !(value & clear_mask);
@@ -548,6 +555,7 @@ impl<'m> Instance<'m> {
             remaining_reads: match &self.declaration.behavior {
                 DeviceBehavior::SequenceRead { .. } => self.sequence_remaining,
                 DeviceBehavior::CommandBank(_) => self.commands.as_ref().unwrap().remaining(),
+                DeviceBehavior::CyclicRead { .. } => 0,
                 _ => (reads - self.read_cursor) as u32,
             },
             remaining_writes: (writes - self.write_cursor) as u32,

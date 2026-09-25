@@ -118,8 +118,12 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 selected final-RAM and normal-memory timeline relations can observe their updates.
 
-The `static-elf/byte-addressed-memory-1/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-3/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1` environment maps validated ELF
-segments with their permissions and ELF-defined zero-fill. Scenario memory is
+The `static-elf/boot-data-1/byte-addressed-memory-1/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-4/external-calls-2/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1` environment maps validated ELF
+segments with their permissions and ELF-defined zero-fill. Boot-initialized data
+is part of the image: a writable `PROGBITS` section whose bytes the file carries
+but whose address lies in a segment's zero-filled part (a ROM copies such data
+at start-up) starts with those bytes. Overlapping or out-of-file boot data is
+rejected. Scenario memory is
 writable non-executable RAM. Each `memory` element has `lifetime` (`phase` or
 `session`) and a `seed` containing `address`, `length`, optional `fill` and a byte
 prefix. For example `{"lifetime":"session","seed":{"address":12288,"length":8,"fill":null,"bytes":[1,0,0,0]}}`.
@@ -535,7 +539,9 @@ atomically committing the result reference and completed run. Cancellation,
 limits or corruption cannot publish partial evidence. Process-level OOM and
 opaque dependency containment retain the existing host guarantees.
 
-`execution` only reads retained evidence. `replay` checks the executor,
+`execution` only reads retained evidence. `execution --summary` returns only
+the manifest after verifying the request and record payload digests; it neither
+decodes nor returns records, so reopening a large evidence set costs one hash. `replay` checks the executor,
 environment and verifier identities, reuses the exact request, and charges
 selection and execution against one application run, original deadline and work budget. Missing implementations
 are reported, never replaced. Doctor validates execution references, record order

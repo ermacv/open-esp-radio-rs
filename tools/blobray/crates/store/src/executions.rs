@@ -301,6 +301,20 @@ pub fn validate_execution_records(
     memory: &WorkingMemory,
     c: &mut dyn RunControl,
 ) -> Result<()> {
+    validate_execution_records_with(manifest, request, source, memory, c, &mut |_, _| Ok(()))
+}
+
+/// Validate every record and hand each one to `visit` in the same pass, so a
+/// reader decodes a large evidence set once. A later validation failure fails
+/// the whole read; records already visited must not be published.
+pub fn validate_execution_records_with(
+    manifest: &ExecutionManifest,
+    request: &ExecutionRequest,
+    source: &dyn ByteSource,
+    memory: &WorkingMemory,
+    c: &mut dyn RunControl,
+    visit: &mut dyn FnMut(&ExecutionEvidence, &mut dyn RunControl) -> Result<()>,
+) -> Result<()> {
     request.validate()?;
     let mut case = 0u32;
     let mut side = false;
@@ -341,6 +355,7 @@ pub fn validate_execution_records(
     let mut environment_complete = true;
     let mut verdict = manifest.verdict.map(|_| ComparisonVerdict::Match);
     visit_jsonl::<ExecutionEvidence>(source, c, |record, c| {
+        visit(&record, c)?;
         if case as usize >= request.cases.len() {
             return Err(integrity("extra execution case"));
         }

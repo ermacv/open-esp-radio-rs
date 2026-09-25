@@ -135,6 +135,11 @@ pub enum ReadQuery {
     Execution {
         id: ArtifactId,
     },
+    /// The retained manifest after verifying the request and record payload
+    /// digests; records are neither decoded nor returned.
+    ExecutionSummary {
+        id: ArtifactId,
+    },
     ValidateKnowledge {
         change: KnowledgeChange,
     },

@@ -263,18 +263,89 @@ pub fn execution_segments(
         return Err(invalid("execution requires static little-endian RV32 ELF"));
     }
     let view = ProgramView::new(&bytes, &file, memory, control)?;
+    let boot = boot_data(&file, &bytes, control)?;
     for segment in &view.segments {
         control.checkpoint(1)?;
-        if segment.memory_size != 0 {
-            consume(
-                segment,
-                &bytes[segment.file_offset as usize
-                    ..(segment.file_offset + segment.file_size) as usize],
-                control,
-            )?;
+        if segment.memory_size == 0 {
+            continue;
         }
+        let file_bytes = &bytes
+            [segment.file_offset as usize..(segment.file_offset + segment.file_size) as usize];
+        let zero_start = segment.address + segment.file_size;
+        let zero_end = segment.address + segment.memory_size;
+        let contained: Vec<_> = boot
+            .iter()
+            .filter(|&&(address, data)| {
+                address >= zero_start && address + data.len() as u64 <= zero_end
+            })
+            .collect();
+        if contained.is_empty() {
+            consume(segment, file_bytes, control)?;
+            continue;
+        }
+        // The initialized prefix ends at the last boot-data section.
+        let end = contained
+            .iter()
+            .map(|&&(address, data)| address + data.len() as u64 - segment.address)
+            .max()
+            .unwrap() as usize;
+        let mut image = memory.bytes(end, control.position())?;
+        image[..file_bytes.len()].copy_from_slice(file_bytes);
+        for &&(address, data) in &contained {
+            control.checkpoint(1)?;
+            let offset = (address - segment.address) as usize;
+            image[offset..offset + data.len()].copy_from_slice(data);
+        }
+        consume(segment, &image, control)?;
     }
     Ok(())
+}
+
+/// Boot-initialized data: writable `PROGBITS` sections whose bytes the file
+/// carries although their load segment is zero-filled at that address. A ROM
+/// copies them there at start-up; execution begins from that state. Sections
+/// that overlap with content, or exceed the file, are rejected.
+fn boot_data<'b>(
+    file: &object::File<'b>,
+    bytes: &'b [u8],
+    control: &mut dyn RunControl,
+) -> Result<Vec<(u64, &'b [u8])>> {
+    use object::read::elf::SectionHeader;
+    let object::File::Elf32(elf) = file else {
+        return Ok(Vec::new());
+    };
+    let endian = elf.endian();
+    let mut result: Vec<(u64, &'b [u8])> = Vec::new();
+    for header in elf.elf_section_table().iter() {
+        control.checkpoint(1)?;
+        let flags = header.sh_flags(endian);
+        let size = u64::from(header.sh_size(endian));
+        if header.sh_type(endian) != object::elf::SHT_PROGBITS
+            || flags & object::elf::SHF_WRITE == 0
+            || flags & (object::elf::SHF_EXECINSTR | object::elf::SHF_TLS) != 0
+            || size == 0
+        {
+            continue;
+        }
+        let offset = u64::from(header.sh_offset(endian));
+        let address = u64::from(header.sh_addr(endian));
+        let data = offset
+            .checked_add(size)
+            .filter(|end| *end <= bytes.len() as u64)
+            .and_then(|end| bytes.get(offset as usize..end as usize))
+            .ok_or_else(|| invalid("boot data exceeds the file"))?;
+        if address.checked_add(size).is_none_or(|end| end > 1u64 << 32) {
+            return Err(invalid("boot data exceeds RV32"));
+        }
+        if result
+            .iter()
+            .any(|&(start, other)| start < address + size && address < start + other.len() as u64)
+        {
+            return Err(invalid("boot data sections overlap"));
+        }
+        result.push((address, data));
+    }
+    Ok(result)
 }
 
 /// Visit every executable section, including code without function symbols.
@@ -334,4 +405,81 @@ pub fn executable_sections(
         return Err(invalid("no executable sections: target audit unavailable"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    struct Source(Vec<u8>);
+    impl ByteSource for Source {
+        fn len(&self) -> u64 {
+            self.0.len() as u64
+        }
+        fn read_at(&self, offset: u64, bytes: &mut [u8], c: &mut dyn RunControl) -> Result<()> {
+            c.bytes(bytes.len())?;
+            bytes.copy_from_slice(&self.0[offset as usize..offset as usize + bytes.len()]);
+            Ok(())
+        }
+    }
+    fn put16(b: &mut Vec<u8>, v: u16) {
+        b.extend_from_slice(&v.to_le_bytes());
+    }
+    fn put32(b: &mut Vec<u8>, v: u32) {
+        b.extend_from_slice(&v.to_le_bytes());
+    }
+    /// ELF32 RV32 executable: one RW load at 0x2000 with 16 zero-filled bytes
+    /// and a writable PROGBITS section at `section_address` whose four bytes
+    /// the file carries at offset 84.
+    fn elf(section_address: u32) -> Vec<u8> {
+        let mut b = vec![0x7f, b'E', b'L', b'F', 1, 1, 1, 0];
+        b.resize(16, 0);
+        put16(&mut b, 2); // ET_EXEC
+        put16(&mut b, 243); // EM_RISCV
+        put32(&mut b, 1);
+        put32(&mut b, 0x2000); // entry
+        put32(&mut b, 52); // phoff
+        put32(&mut b, 100); // shoff
+        put32(&mut b, 0); // flags: soft-float RV32
+        put16(&mut b, 52);
+        put16(&mut b, 32);
+        put16(&mut b, 1);
+        put16(&mut b, 40);
+        put16(&mut b, 3);
+        put16(&mut b, 2);
+        // PT_LOAD RW, no file bytes, 16 bytes of memory.
+        for v in [1, 84, 0x2000, 0x2000, 0, 16, 6, 4] {
+            put32(&mut b, v);
+        }
+        b.extend_from_slice(&[0x11, 0x22, 0x33, 0x44]); // offset 84
+        b.extend_from_slice(b"\0.dat\0.shs\0\0"); // offset 88, 12 bytes
+        b.resize(100, 0);
+        b.extend_from_slice(&[0; 40]);
+        // .dat: PROGBITS, SHF_WRITE | SHF_ALLOC.
+        for v in [1, 1, 3, section_address, 84, 4, 0, 0, 4, 0] {
+            put32(&mut b, v);
+        }
+        // .shs: STRTAB.
+        for v in [6, 3, 0, 0, 88, 12, 0, 0, 1, 0] {
+            put32(&mut b, v);
+        }
+        b
+    }
+    fn load(bytes: Vec<u8>) -> Result<Vec<(u64, Vec<u8>)>> {
+        let memory = WorkingMemory::new(1 << 20).unwrap();
+        let mut result = Vec::new();
+        execution_segments(&Source(bytes), &memory, &mut || Ok(()), &mut |s, b, _| {
+            result.push((s.address, b.to_vec()));
+            Ok(())
+        })?;
+        Ok(result)
+    }
+    #[test]
+    fn boot_data_initializes_its_zero_filled_load_address() {
+        assert_eq!(
+            load(elf(0x2008)).unwrap(),
+            [(0x2000, vec![0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x22, 0x33, 0x44])]
+        );
+        // Outside every zero-filled range, boot data is not mapped at all.
+        assert_eq!(load(elf(0x3000)).unwrap(), [(0x2000, vec![])]);
+    }
 }

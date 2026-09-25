@@ -193,6 +193,45 @@ fn all_standard_devices_have_independent_values_and_complete_participation() {
     }
 }
 #[test]
+fn cyclic_read_repeats_its_values_without_a_read_obligation() {
+    // lw t0,0(a0); lw t1,0(a0); lw t2,0(a0); add a0,t0,t2; add a0,a0,t1; ret
+    let f = Fixture::new(&[
+        0x00052283, 0x00052303, 0x00052383, 0x00728533, 0x00650533, 0x00008067,
+    ]);
+    let (manifest, rows) = run(
+        &f,
+        request(
+            &f,
+            DeviceBehavior::CyclicRead {
+                address: 0x3000,
+                width: 4,
+                values: vec![7, 100],
+            },
+        ),
+    );
+    assert!(manifest.complete);
+    // Reads 7, 100, 7.
+    assert!(matches!(
+        stop(&rows, 0),
+        ExecutionStop::Returned { low: Some(114), .. }
+    ));
+    let observed = model(&rows, 0);
+    assert_eq!((observed.reads, observed.remaining_reads), (3, 0));
+    assert_eq!(observed.status, ModelStatus::Complete);
+    assert!(
+        declaration(
+            DeviceBehavior::CyclicRead {
+                address: 0x3000,
+                width: 4,
+                values: vec![],
+            },
+            RegionLifetime::Phase
+        )
+        .validate()
+        .is_err()
+    );
+}
+#[test]
 fn retained_aperture_merges_subword_writes_and_yields_to_exact_ports() {
     // sb a1,1(a0); lw t0,0(a0); lw t1,8(a0); add a0,t0,t1; ret
     let f = Fixture::new(&[0x00b500a3, 0x00052283, 0x00852303, 0x00628533, 0x00008067]);

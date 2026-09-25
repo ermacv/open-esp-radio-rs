@@ -1005,20 +1005,28 @@ pub fn prepare_query_with_tools(
                 })?;
                 QuerySummary::Analyses { count }
             }
+            ReadQuery::ExecutionSummary { id } => {
+                let _fixed = memory.reserve(2 * 1024 * 1024, control.position())?;
+                // Opening the execution verifies every retained payload digest.
+                let result =
+                    Project::open(&work.project.to_path()?)?.execution(id, &memory, control)?;
+                QuerySummary::Execution {
+                    id: id.clone(),
+                    manifest: Box::new(result.manifest),
+                }
+            }
             ReadQuery::Execution { id } => {
                 let _fixed = memory.reserve(2 * 1024 * 1024, control.position())?;
                 let result =
                     Project::open(&work.project.to_path()?)?.execution(id, &memory, control)?;
-                blobray_store::validate_execution_records(
+                blobray_store::validate_execution_records_with(
                     &result.manifest,
                     &result.request,
                     &result.records,
                     &memory,
                     control,
+                    &mut |r, c| spool.push(RecordRef::Execution(r), c),
                 )?;
-                blobray_store::visit_jsonl(&result.records, control, |r: ExecutionEvidence, c| {
-                    spool.push(RecordRef::Execution(&r), c)
-                })?;
                 QuerySummary::Execution {
                     id: id.clone(),
                     manifest: Box::new(result.manifest),

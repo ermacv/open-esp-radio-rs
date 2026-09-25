@@ -102,9 +102,9 @@ impl<'a> Models<'a> {
                 (Some(ReadRun::total(runs)? as usize), Some(0))
             }
             DeviceBehavior::Fifo { reads, writes, .. } => (Some(reads.len()), Some(writes.len())),
-            DeviceBehavior::ConstantRead { .. } | DeviceBehavior::ReadClear { .. } => {
-                (None, Some(0))
-            }
+            DeviceBehavior::ConstantRead { .. }
+            | DeviceBehavior::CyclicRead { .. }
+            | DeviceBehavior::ReadClear { .. } => (None, Some(0)),
             _ => (None, None),
         };
         match (

@@ -68,6 +68,14 @@ pub enum DeviceBehavior {
         index: Option<u32>,
         values: Vec<u32>,
     },
+    /// Read-only port whose reads cycle through `values` indefinitely: a
+    /// periodic measurement stream. No read count is declared or owed; every
+    /// read remains an MMIO event.
+    CyclicRead {
+        address: u32,
+        width: u8,
+        values: Vec<u32>,
+    },
     /// Word-aligned MMIO range in which every naturally aligned 1-, 2- or
     /// 4-byte access not claimed by an exact port of another model is retained
     /// storage: a word reads `initial` until written, then its last value.
@@ -247,6 +255,16 @@ impl DeviceDeclaration {
                 scalar(*address, *width, reads)?;
                 scalar(*address, *width, writes)?;
             }
+            DeviceBehavior::CyclicRead {
+                address,
+                width,
+                values,
+            } => {
+                if values.is_empty() || values.len() > MAX_DEVICE_VALUES {
+                    return Err(bad());
+                }
+                scalar(*address, *width, values)?;
+            }
             DeviceBehavior::RetainedAperture { start, length, .. } => {
                 if !start.is_multiple_of(4)
                     || !length.is_multiple_of(4)
@@ -290,7 +308,8 @@ impl DeviceDeclaration {
             DeviceBehavior::SequenceRead { runs, .. } => {
                 runs.len() * std::mem::size_of::<ReadRun>()
             }
-            DeviceBehavior::IndexedBank { values, .. } => values.len() * 4,
+            DeviceBehavior::IndexedBank { values, .. }
+            | DeviceBehavior::CyclicRead { values, .. } => values.len() * 4,
             DeviceBehavior::Fifo { reads, writes, .. } => (reads.len() + writes.len()) * 4,
             _ => 0,
         };
@@ -431,6 +450,18 @@ impl DeviceDeclaration {
                     index.unwrap_or(0),
                     values.len() as u32,
                 ] {
+                    put(n)?;
+                }
+                for n in values {
+                    put(*n)?;
+                }
+            }
+            DeviceBehavior::CyclicRead {
+                address,
+                width,
+                values,
+            } => {
+                for n in [10, *address, u32::from(*width), values.len() as u32] {
                     put(n)?;
                 }
                 for n in values {

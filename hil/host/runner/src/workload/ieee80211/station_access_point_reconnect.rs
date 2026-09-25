@@ -1,6 +1,6 @@
 //! Controlled upstream loss and explicit same-channel STA+AP restart.
 
-use crate::context::Context;
+use crate::{context::Context, fixture::prepared::Prepared};
 use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
@@ -26,10 +26,11 @@ pub(crate) fn run(
     timeout: Duration,
     output: &Path,
     context: &Context<'_>,
+    fixture: &Prepared,
     _phy: PhyExpectation,
 ) -> Result<()> {
     fs::create_dir_all(output)?;
-    let mut upstream = context.ap()?;
+    let mut upstream = fixture.ap()?;
     context.with_capture(output, |capture| {
         qualify(capture, timeout, context, &mut upstream, output)
     })?;

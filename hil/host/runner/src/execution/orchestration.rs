@@ -406,16 +406,16 @@ fn run_scenario_repetition(
     let started_unix_millis = crate::durable::unix_millis()?;
     let started = std::time::Instant::now();
     let cleanup = fixture::cleanup::Scope::new(output);
-    let (outcome, failure, measurements) =
-        match fixture::prepared::Prepared::start(lab, selected, output).and_then(|fixture| {
+    let (outcome, failure, measurements) = match fixture::preflight::check(lab, selected)
+        .and_then(|()| fixture::prepared::Prepared::start(lab, selected, output))
+        .and_then(|fixture| {
             preflight::validate_flashed_image(lab, selected.image, output)?;
             Ok(fixture)
         }) {
-            Err(error) => {
-                let mut failure = super::classify(&*error);
-                let outcome = if oer_process::is_cancelled(&*error)
-                    || oer_process::cancellation_requested()
-                {
+        Err(error) => {
+            let mut failure = super::classify(&*error);
+            let outcome =
+                if oer_process::is_cancelled(&*error) || oer_process::cancellation_requested() {
                     Outcome::Interrupted
                 } else if failure.kind == FailureKind::Infrastructure {
                     Outcome::Broken
@@ -423,13 +423,13 @@ fn run_scenario_repetition(
                     failure.kind = FailureKind::Precondition;
                     Outcome::Blocked
                 };
-                (outcome, Some(failure), Vec::new())
-            }
-            Ok(fixture) => {
-                let evidence = super::execute_workload(lab, selected, output, &fixture);
-                (evidence.outcome(), evidence.failure, evidence.measurements)
-            }
-        };
+            (outcome, Some(failure), Vec::new())
+        }
+        Ok(fixture) => {
+            let evidence = super::execute_workload(lab, selected, output, &fixture);
+            (evidence.outcome(), evidence.failure, evidence.measurements)
+        }
+    };
     finalize_repetition(
         repetition,
         artifacts,

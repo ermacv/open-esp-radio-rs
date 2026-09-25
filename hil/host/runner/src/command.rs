@@ -80,7 +80,7 @@ pub(crate) fn run() -> Result<()> {
             let lab = lab::config::LabConfig::load(&lab_path)?;
             let required = lab::requirements::Requirements::for_scenario(selected);
             let _software = fixture::software::SoftwareLease::acquire_for(&lab, required)?;
-            fixture::prepared::check_without_device(&root, &lab, selected)
+            crate::execution::fixture_check::check_without_device(&root, &lab, selected)
         }
         CliCommand::Doctor(selection) => {
             let catalog = scenario::Catalog::load(&catalog_path)?;

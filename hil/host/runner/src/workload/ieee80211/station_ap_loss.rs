@@ -1,6 +1,6 @@
 //! Controlled real-AP disappearance and station recovery qualification.
 
-use crate::context::Context;
+use crate::{context::Context, fixture::prepared::Prepared};
 use std::{
     fs,
     path::Path,
@@ -24,12 +24,13 @@ pub(crate) fn run(
     options: Config,
     output: &Path,
     context: &Context<'_>,
+    fixture: &Prepared,
     _phy: PhyExpectation,
 ) -> Result<()> {
     let options = options.validate()?;
     fs::create_dir_all(output)?;
 
-    let mut ap = context.ap()?;
+    let mut ap = fixture.ap()?;
     let result = context.with_capture(output, |capture| {
         let mut cursor = capture.station_lifecycle_cursor();
         qualify(capture, context, &mut cursor, &mut ap, options.timeout)?;

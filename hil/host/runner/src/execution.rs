@@ -9,6 +9,7 @@ use crate::{
 
 pub(crate) mod doctor;
 pub(crate) mod firmware;
+pub(crate) mod fixture_check;
 pub(crate) mod orchestration;
 pub(crate) mod preflight;
 #[cfg(test)]
@@ -42,9 +43,8 @@ pub(crate) fn execute_workload(
     fixture: &crate::fixture::prepared::Prepared,
 ) -> ExecutionEvidence {
     let context =
-        crate::context::Context::new(lab, crate::session::Settings::from(selected), output)
-            .with_fixture(fixture);
-    let result = execute_workload_inner(&context, selected, output);
+        crate::context::Context::new(lab, crate::session::Settings::from(selected), output);
+    let result = execute_workload_inner(&context, fixture, selected, output);
     let mut evidence = ExecutionEvidence {
         measurements: context.measurements.snapshot(),
         interrupted: result
@@ -64,6 +64,7 @@ pub(crate) fn execute_workload(
 
 fn execute_workload_inner(
     context: &crate::context::Context<'_>,
+    fixture: &crate::fixture::prepared::Prepared,
     selected: &crate::scenario::Scenario,
     output: &Path,
 ) -> Result<()> {
@@ -502,6 +503,7 @@ fn execute_workload_inner(
                 config,
                 output,
                 context,
+                fixture,
                 selected
                     .link
                     .expect("validated AP-loss workload has a link expectation")
@@ -520,6 +522,7 @@ fn execute_workload_inner(
                 config,
                 output,
                 context,
+                fixture,
                 selected
                     .link
                     .expect("validated AP-absence workload has a link expectation")
@@ -641,6 +644,7 @@ fn execute_workload_inner(
                 std::time::Duration::from_secs(u64::from(*timeout_seconds)),
                 output,
                 context,
+                fixture,
                 selected
                     .link
                     .expect("validated paired reconnect has a link expectation")

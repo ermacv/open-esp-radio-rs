@@ -13,7 +13,6 @@ pub(crate) struct Context<'a> {
     pub(crate) settings: Settings,
     pub(crate) measurements: Recorder,
     output: &'a Path,
-    fixture: Option<&'a crate::fixture::prepared::Prepared>,
 }
 
 impl<'a> Context<'a> {
@@ -22,7 +21,6 @@ impl<'a> Context<'a> {
             lab,
             settings,
             output,
-            fixture: None,
             measurements: Recorder::default(),
         }
     }
@@ -33,17 +31,6 @@ impl<'a> Context<'a> {
             lab: self.lab,
             settings: self.settings,
         }
-    }
-
-    pub(crate) fn with_fixture(mut self, fixture: &'a crate::fixture::prepared::Prepared) -> Self {
-        self.fixture = Some(fixture);
-        self
-    }
-
-    pub(crate) fn ap(
-        &self,
-    ) -> Result<std::cell::RefMut<'_, crate::fixture::controlled_ap::ControlledAp>> {
-        self.fixture.ok_or("workload has no prepared fixture")?.ap()
     }
 
     /// Every workload family uses the same reset/capture/measurement lifetime.

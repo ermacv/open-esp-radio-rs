@@ -44,7 +44,7 @@ Blobray change; until then qualification treats the index as stale. See
 ```console
 cargo xtask vendor-scenario all --library /private/libphy.a \
   --rom /private/esp32s31_rev0_rom.elf \
-  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
+  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/oer-verification-esp32s31-probes-elf \
   --sdk /private/bootloader.elf --phy-sdk /private/phy_tracking_reference.elf \
   --rftest /private/librftest.a \
   --linker /usr/bin/ld.lld --output target/blobray-research/all --limit-mode watchdog \

@@ -110,7 +110,13 @@ native evidence index
   compared cases and the retained Blobray executions that hold them. A claim
   exists only when every retained case comparing that exact root/entry pair is
   MATCH under its reviewed effect contract and output projection; an
-  unsupported claim fails the run instead of being written;
+  unsupported claim fails the run instead of being written. Each entry also
+  carries the vendor coverage of the root's closure over those executions
+  (Blobray `code-coverage`): basic blocks and branch directions reached out of
+  all, and how many uncovered ones a reviewed decision excludes or remain
+  untriaged;
+- every untriaged uncovered location of the claimed closures, by vendor
+  function, offset and kind (block, taken or fallthrough direction);
 - SHA-256 identities of the authenticated private inputs and the production
   probe ELF;
 - directory digests of every source the verdicts depend on: the probe ELF's
@@ -121,7 +127,10 @@ The index carries identities and verdicts only, never vendor bytes.
 Qualification reads the index named by the program's `[verification]
 evidence-index` (catalogs name it in `[validation] evidence-index`), checks
 schema, producer command and chip target, requires every entry to be a MATCH
-claim with executions, and recomputes every recorded directory digest. Any
+claim with executions whose coverage accounts for every uncovered location,
+and recomputes every recorded directory digest. Coverage is reported, not a
+readiness gate: it shows which vendor behavior the comparisons never
+exercised. Any
 change to those sources makes the whole index stale: stale evidence supports
 no claim until the scenarios run again. An absent index means no vendor
 evidence is available: affected capabilities remain unqualified while status

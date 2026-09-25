@@ -2,13 +2,13 @@
 use clap::{Parser, Subcommand};
 use oer_esp32s31_vendor_scenarios::session::evidence_index::{self, Entry, Index};
 use oer_esp32s31_vendor_scenarios::{
-    calibration_leaves, calibration_prefix, channel,
+    calibration_leaves, calibration_prefix, channel, coverage,
     gain::{Gain, Options},
     gain_state::{self, Unmet},
     harness::{Budget, Result},
     harness_edges, i2c, i2c_transport,
     phy::PhyOptions,
-    research, rfpll, rx_gain, tracking, tx_dc,
+    research, rfpll, rx_gain, session, tracking, tx_dc,
 };
 use std::{
     path::{Path, PathBuf},
@@ -144,8 +144,9 @@ struct Common {
     budget: Budget,
 }
 
-/// Evidence entries of one scenario, alongside its exit code.
-type Outcome = (ExitCode, Vec<Entry>);
+/// Evidence entries and untriaged coverage of one scenario, alongside its
+/// exit code.
+type Outcome = (ExitCode, session::Claims);
 
 /// Vendor roots each scenario claims against its compiled production entry.
 const GAIN_CLAIMS: [(&str, &str, &str); 4] = [
@@ -292,7 +293,9 @@ fn gain(common: Common, rftest: Option<PathBuf>) -> Result<Outcome> {
     g.additive()?;
     g.negative()?;
     g.preserve(0)?;
-    let claims = g.session.claims("gain", &g.roots, &GAIN_CLAIMS)?;
+    let claims = g
+        .session
+        .claims("gain", &g.roots, &GAIN_CLAIMS, coverage::RUNTIME)?;
     Ok((
         finish(
             &unmet,
@@ -333,13 +336,16 @@ fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result
     // All original source copies were deleted before linking/execution. Preserve
     // the full project closure, including probe/ROM bytes and negative evidence.
     ctx.preserve(positive)?;
-    let mut claims = ctx.session.claims("i2c", &ctx.roots, &I2C_CLAIMS)?;
+    let mut list = I2C_CLAIMS.to_vec();
     if options.sdk.is_some() {
-        claims.extend(ctx.session.claims("i2c", &ctx.roots, &I2C_SDK_CLAIMS)?);
+        list.extend(I2C_SDK_CLAIMS);
     }
     if options.phy_sdk.is_some() {
-        claims.extend(ctx.session.claims("i2c", &ctx.roots, &I2C_RFPLL_CLAIMS)?);
+        list.extend(I2C_RFPLL_CLAIMS);
     }
+    let claims = ctx
+        .session
+        .claims("i2c", &ctx.roots, &list, coverage::RUNTIME)?;
     Ok((
         finish(
             &unmet,
@@ -369,7 +375,9 @@ fn channel(common: Common) -> Result<Outcome> {
     let mut ctx = channel::Channel::new(&options)?;
     channel::exercise(&mut ctx)?;
     ctx.preserve(0)?;
-    let claims = ctx.session.claims("channel", &ctx.roots, &CHANNEL_CLAIMS)?;
+    let claims = ctx
+        .session
+        .claims("channel", &ctx.roots, &CHANNEL_CLAIMS, coverage::RUNTIME)?;
     Ok((
         finish(
             &[],
@@ -384,7 +392,9 @@ fn rx_gain(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     let mut ctx = rx_gain::RxGain::new(&common.phy(), &phy_sdk)?;
     rx_gain::exercise(&mut ctx)?;
     ctx.preserve(0)?;
-    let claims = ctx.session.claims("rx-gain", &ctx.roots, &RX_GAIN_CLAIMS)?;
+    let claims = ctx
+        .session
+        .claims("rx-gain", &ctx.roots, &RX_GAIN_CLAIMS, coverage::RUNTIME)?;
     Ok((
         finish(
             &[],
@@ -399,7 +409,9 @@ fn tx_dc(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     let mut ctx = tx_dc::TxDc::new(&common.phy(), &phy_sdk)?;
     tx_dc::exercise(&mut ctx)?;
     ctx.preserve(0)?;
-    let claims = ctx.session.claims("tx-dc", &ctx.roots, &TX_DC_CLAIMS)?;
+    let claims = ctx
+        .session
+        .claims("tx-dc", &ctx.roots, &TX_DC_CLAIMS, coverage::RUNTIME)?;
     Ok((
         finish(
             &[],
@@ -416,7 +428,7 @@ fn tracking(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     ctx.preserve(0)?;
     let claims = ctx
         .session
-        .claims("tracking", &ctx.roots, &TRACKING_CLAIMS)?;
+        .claims("tracking", &ctx.roots, &TRACKING_CLAIMS, coverage::RUNTIME)?;
     Ok((
         finish(
             &[],
@@ -516,7 +528,12 @@ mod evidence {
         Ok(directories.into_iter().collect())
     }
 
-    pub fn index(common: &Common, optional: &[&PathBuf; 3], entries: Vec<Entry>) -> Result<Index> {
+    pub fn index(
+        common: &Common,
+        optional: &[&PathBuf; 3],
+        entries: Vec<Entry>,
+        untriaged: Vec<evidence_index::Location>,
+    ) -> Result<Index> {
         let root = root()?;
         let mut inputs = std::collections::BTreeMap::new();
         for (role, path) in [
@@ -551,6 +568,7 @@ mod evidence {
             inputs,
             sources,
             entries,
+            untriaged,
         };
         index.validate(TARGET)?;
         Ok(index)
@@ -595,10 +613,12 @@ fn all(
     ];
     let mut elapsed = vec![];
     let mut entries = vec![];
+    let mut untriaged = std::collections::BTreeSet::new();
     for (name, run) in scenarios {
         let start = std::time::Instant::now();
         let (code, claims) = run()?;
-        entries.extend(claims);
+        entries.extend(claims.entries);
+        untriaged.extend(claims.untriaged);
         elapsed.push((name, start.elapsed().as_secs_f64()));
         if code != ExitCode::SUCCESS {
             println!("scenario {name} did not pass");
@@ -609,7 +629,12 @@ fn all(
         println!("{name} {seconds:.1}s");
     }
     if let Some(path) = index {
-        let index = evidence::index(&common, &[&sdk, &phy_sdk, &rftest], entries)?;
+        let index = evidence::index(
+            &common,
+            &[&sdk, &phy_sdk, &rftest],
+            entries,
+            untriaged.into_iter().collect(),
+        )?;
         let mut bytes = serde_json::to_vec_pretty(&index)?;
         bytes.push(b'\n');
         std::fs::write(&path, bytes)?;

@@ -228,8 +228,21 @@ pub(crate) fn native_evidence(root: &Path, roots: &[(&str, &str, &str)]) -> Nati
                 verdict: scenario_evidence::MATCH.into(),
                 cases: 1,
                 executions: vec!["ab".repeat(32)],
+                coverage: scenario_evidence::Coverage {
+                    blocks: scenario_evidence::Count {
+                        reached: 1,
+                        total: 1,
+                    },
+                    directions: scenario_evidence::Count {
+                        reached: 0,
+                        total: 0,
+                    },
+                    excluded: 0,
+                    untriaged: 0,
+                },
             })
             .collect(),
+        untriaged: vec![],
     };
     index.validate("test-radio").unwrap();
     let current = index.is_current(root);
@@ -334,6 +347,7 @@ pub(crate) fn assert_reviewed_hil(
             inputs: BTreeMap::new(),
             sources: vec![],
             entries: vec![],
+            untriaged: vec![],
         },
         current: false,
     };
@@ -354,4 +368,37 @@ pub(crate) fn assert_reviewed_hil(
             .iter()
             .any(|r| r.starts_with("hil:old/exchange"))
     );
+}
+
+#[test]
+fn native_index_coverage_must_account_for_every_uncovered_location() {
+    let fixture = fixture_root("coverage");
+    let evidence = native_evidence(&fixture.0, &[("radio", "archive", "set_channel")]);
+    let rejected = |mutate: &dyn Fn(&mut scenario_evidence::Index)| {
+        let mut index = evidence.index.clone();
+        mutate(&mut index);
+        index.validate("test-radio").is_err()
+    };
+    // More reached than exist.
+    assert!(rejected(&|i| i.entries[0].coverage.blocks.reached = 2));
+    // An uncovered block neither excluded nor untriaged.
+    assert!(rejected(&|i| i.entries[0].coverage.blocks.total = 2));
+    // Untriaged locations the index does not list.
+    assert!(rejected(&|i| {
+        i.entries[0].coverage.blocks.total = 2;
+        i.entries[0].coverage.untriaged = 1;
+    }));
+    let location = |offset| scenario_evidence::Location {
+        function: "set_channel".into(),
+        offset,
+        kind: scenario_evidence::LocationKind::Block,
+    };
+    let mut listed = evidence.index.clone();
+    listed.entries[0].coverage.blocks.total = 2;
+    listed.entries[0].coverage.untriaged = 1;
+    listed.untriaged = vec![location(4)];
+    listed.validate("test-radio").unwrap();
+    // Listed locations are ascending and unique.
+    listed.untriaged = vec![location(4), location(4)];
+    assert!(listed.validate("test-radio").is_err());
 }

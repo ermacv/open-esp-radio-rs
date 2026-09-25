@@ -162,6 +162,26 @@ impl Runner {
         self.json(name, &args(["execution", "--id", id.as_str()]))
     }
 
+    /// Vendor coverage of the root closures of `executions`, which share one
+    /// vendor target.
+    pub fn code_coverage(
+        &self,
+        name: &str,
+        executions: &[&ArtifactId],
+    ) -> Result<blobray_domain::CodeCoverageReport> {
+        let mut arguments = args(["code-coverage"]);
+        for id in executions {
+            arguments.extend(args(["--execution", id.as_str()]));
+        }
+        let document: RecordDocument<serde_json::Value> = self.json(name, &arguments)?;
+        match document.summary {
+            QuerySummary::CodeCoverage { report, .. } => Ok(*report),
+            other => Err(invalid(format!(
+                "unexpected code coverage summary {other:?}"
+            ))),
+        }
+    }
+
     /// Every record except guest events, after Blobray validates all records.
     pub fn execution_without_events(
         &self,

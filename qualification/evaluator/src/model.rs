@@ -1155,6 +1155,7 @@ impl NativeEvidence {
                         inputs: BTreeMap::new(),
                         sources: vec![],
                         entries: vec![],
+                        untriaged: vec![],
                     },
                     current: false,
                 });

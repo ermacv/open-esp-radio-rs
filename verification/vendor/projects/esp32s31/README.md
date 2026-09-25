@@ -417,6 +417,19 @@ The open ESP-IDF IEEE 802.15.4 controller is ported from source and requires no
 controller archive or ELF. Its closed baseband and coexistence functions have no
 native vendor comparison.
 
+## Coverage decisions
+
+Every claimed vendor root reports the coverage of its closure: the code
+statically reachable from the root through direct transfers and the observed
+targets of executed indirect ones, excluding call models. Each uncovered block
+or branch direction is either excluded by a reviewed decision in
+[`coverage.rs`](scenarios/src/coverage.rs), with its reason, or listed as
+untriaged in the evidence index. Decisions currently exclude vendor runtime
+helpers (diagnostic formatting, compiler arithmetic and copy helpers, prologue
+millicode) as whole functions. A decision on a closure function that is fully
+covered fails its scenario. Untriaged locations are pending work: each becomes a
+follow-up case or a reviewed decision.
+
 ## Contract ownership
 
 | Input | Responsibility |

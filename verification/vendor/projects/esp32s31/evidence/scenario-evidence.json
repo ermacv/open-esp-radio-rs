@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "command": "vendor-scenario all",
   "target": "esp32s31",
   "inputs": {
@@ -105,19 +105,19 @@
     },
     {
       "path": "tools/blobray/crates/analysis",
-      "sha256": "6e093484335ce16fcfcd054d06d7b374d3100fabffdb7dbe2a717ef46dde55d6"
+      "sha256": "2384581c1cc2116b86b80d5f8c90575b5fea6a661ea2b8830c6825b2913ce0c6"
     },
     {
       "path": "tools/blobray/crates/application",
-      "sha256": "2a58ef7cf15b66c98372dba1d46bffbc9b784a73e73aeb94771942748cac8edd"
+      "sha256": "33c9194eda2ca1ba3c7adc561ed398c638a51f5eaa9cb540a8678a3143a964b8"
     },
     {
       "path": "tools/blobray/crates/artifacts",
-      "sha256": "5c840dcd8c199adb6a714998c8f0e1bc10845fbf1e66e28832d8be4dbd4e2b22"
+      "sha256": "e020e76d07884f9c853601229a4386dffe56e4ff62b9c6f050c7cebe16951f14"
     },
     {
       "path": "tools/blobray/crates/domain",
-      "sha256": "61f4d600471a489eedd6171d04f6ebaa6a9ac4fb49cdae206af309212b7114a0"
+      "sha256": "43da789f187d003b1ca28b777a7a5caded5791a8825ae51833c569f780e4a594"
     },
     {
       "path": "tools/blobray/crates/knowledge",
@@ -129,7 +129,7 @@
     },
     {
       "path": "tools/blobray/crates/store",
-      "sha256": "4c0886cbaf6d474ca8ae16c88ad938e58a8bac4dff43d1498830558d7c3fe2d1"
+      "sha256": "935a8ae2d7d36179af95f08d4c8be1097b8d746967b885ac561afcf95cb4b1a3"
     },
     {
       "path": "tools/blobray/crates/verification",
@@ -137,7 +137,7 @@
     },
     {
       "path": "tools/blobray/next",
-      "sha256": "489a56d5874b4719e0ec018fa7d9ecb8fa529f2479ea28732174a841cd4a374d"
+      "sha256": "5e833b1a2278de807e383405958a7ae7a73084effa074e63499bbee7d4d09dd0"
     },
     {
       "path": "verification/vendor/harness/codegen",
@@ -157,11 +157,11 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "4b0f53bb5db4507319d3810b27d36838d4d023caff0f001062117c187d917fdb"
+      "sha256": "c201db7092a7a941a823482aff357e74e175d0075102609a0b89b38f102eeddf"
     },
     {
       "path": "verification/vendor/schema",
-      "sha256": "57af52d013f34ac473d046aeb07ce3f9fb775156c483a125a8248908edd049b9"
+      "sha256": "f7d867bb99e6fe2e23ba9b848963473006d766bdb66c898ff3fe213303f61eae"
     }
   ],
   "entries": [
@@ -173,9 +173,21 @@
       "verdict": "match",
       "cases": 396,
       "executions": [
-        "f0b1881d93b2ab1062b05ff47c6953af9565391e609597398bccd046fb18bfaa",
-        "d98412dc8e485ac22ea8fcd6d1f2bd4f62ea66a745e97bf9abc5052ea7c7c522"
-      ]
+        "74618b7b7d3016137abbd67ad6eb071bbf62baec891bdd33fc05910683d02e0d",
+        "a44a5d5c220d61f05c743a0ff760bfe6872f8c2a2f714e5b197956ae6a38f986"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 34,
+          "total": 362
+        },
+        "directions": {
+          "reached": 26,
+          "total": 402
+        },
+        "excluded": 699,
+        "untriaged": 5
+      }
     },
     {
       "suite": "gain",
@@ -185,8 +197,20 @@
       "verdict": "match",
       "cases": 24,
       "executions": [
-        "28e485461f5a50c2e2b5f8f872bb7d99485437ea07be4157cbdda2aaa950c2e4"
-      ]
+        "0257c2a7cb3ce7cfae4073391069e713c7fa8b3d388d241a6edee0eb74f67032"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 16,
+          "total": 16
+        },
+        "directions": {
+          "reached": 11,
+          "total": 12
+        },
+        "excluded": 0,
+        "untriaged": 1
+      }
     },
     {
       "suite": "gain",
@@ -196,10 +220,22 @@
       "verdict": "match",
       "cases": 157,
       "executions": [
-        "99ed48952b80f7cc7a1ae724de55719b086fed5f83d8d39614cc5e1859165b85",
-        "0ce0259ddc0914c7d3b8fd8f4158dfb21e4a24f10a61a21af8eef041fdd58ddf",
-        "850b802f5760b63bf6a0a796817aff6c6bfc4b77a242d84de5aca5229ef6b637"
-      ]
+        "acb3c7e10aca714082f0cb7b183cde187358089348d06efc5877efec1ab96d41",
+        "8a0dbe54eec1a9aefb32a72aaa09eb278c178c7095a9d4f11084d39df759ebbc",
+        "853fe993762837b828cfcd2ab6ad7fc570a1a5d38cb1d1ff90a88b765f10be80"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 37,
+          "total": 364
+        },
+        "directions": {
+          "reached": 31,
+          "total": 406
+        },
+        "excluded": 699,
+        "untriaged": 3
+      }
     },
     {
       "suite": "gain",
@@ -209,8 +245,20 @@
       "verdict": "match",
       "cases": 120,
       "executions": [
-        "0ce0259ddc0914c7d3b8fd8f4158dfb21e4a24f10a61a21af8eef041fdd58ddf"
-      ]
+        "8a0dbe54eec1a9aefb32a72aaa09eb278c178c7095a9d4f11084d39df759ebbc"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 54,
+          "total": 381
+        },
+        "directions": {
+          "reached": 42,
+          "total": 418
+        },
+        "excluded": 699,
+        "untriaged": 4
+      }
     },
     {
       "suite": "i2c",
@@ -220,8 +268,20 @@
       "verdict": "match",
       "cases": 4,
       "executions": [
-        "02c5c87de08106c5364fc3b065f77d70fd138735e56b04403e3b97d85931a68e"
-      ]
+        "397ea3f105f8da6d878b08d3374624ba2a3b0f485e763fdebe94516f5061b535"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 7,
+          "total": 7
+        },
+        "directions": {
+          "reached": 4,
+          "total": 4
+        },
+        "excluded": 0,
+        "untriaged": 0
+      }
     },
     {
       "suite": "i2c",
@@ -231,8 +291,20 @@
       "verdict": "match",
       "cases": 13,
       "executions": [
-        "7ab57971e700a7d7fab857261ed08f7681c47948825233d77b28ef488f1cc942"
-      ]
+        "de756c2497642bb7122d21766c6cc3f23d2e83f5827ebbad6ecb64bd315b9284"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 5,
+          "total": 5
+        },
+        "directions": {
+          "reached": 2,
+          "total": 2
+        },
+        "excluded": 0,
+        "untriaged": 0
+      }
     },
     {
       "suite": "i2c",
@@ -242,8 +314,20 @@
       "verdict": "match",
       "cases": 4,
       "executions": [
-        "7ab57971e700a7d7fab857261ed08f7681c47948825233d77b28ef488f1cc942"
-      ]
+        "de756c2497642bb7122d21766c6cc3f23d2e83f5827ebbad6ecb64bd315b9284"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 14,
+          "total": 15
+        },
+        "directions": {
+          "reached": 5,
+          "total": 6
+        },
+        "excluded": 0,
+        "untriaged": 2
+      }
     },
     {
       "suite": "i2c",
@@ -253,8 +337,20 @@
       "verdict": "match",
       "cases": 8,
       "executions": [
-        "7ab57971e700a7d7fab857261ed08f7681c47948825233d77b28ef488f1cc942"
-      ]
+        "de756c2497642bb7122d21766c6cc3f23d2e83f5827ebbad6ecb64bd315b9284"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 13,
+          "total": 13
+        },
+        "directions": {
+          "reached": 5,
+          "total": 6
+        },
+        "excluded": 0,
+        "untriaged": 1
+      }
     },
     {
       "suite": "i2c",
@@ -264,8 +360,20 @@
       "verdict": "match",
       "cases": 4,
       "executions": [
-        "7ab57971e700a7d7fab857261ed08f7681c47948825233d77b28ef488f1cc942"
-      ]
+        "de756c2497642bb7122d21766c6cc3f23d2e83f5827ebbad6ecb64bd315b9284"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 14,
+          "total": 15
+        },
+        "directions": {
+          "reached": 5,
+          "total": 6
+        },
+        "excluded": 0,
+        "untriaged": 2
+      }
     },
     {
       "suite": "i2c",
@@ -275,8 +383,20 @@
       "verdict": "match",
       "cases": 8,
       "executions": [
-        "7ab57971e700a7d7fab857261ed08f7681c47948825233d77b28ef488f1cc942"
-      ]
+        "de756c2497642bb7122d21766c6cc3f23d2e83f5827ebbad6ecb64bd315b9284"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 19,
+          "total": 20
+        },
+        "directions": {
+          "reached": 8,
+          "total": 10
+        },
+        "excluded": 0,
+        "untriaged": 3
+      }
     },
     {
       "suite": "i2c",
@@ -286,8 +406,20 @@
       "verdict": "match",
       "cases": 3,
       "executions": [
-        "7ab57971e700a7d7fab857261ed08f7681c47948825233d77b28ef488f1cc942"
-      ]
+        "de756c2497642bb7122d21766c6cc3f23d2e83f5827ebbad6ecb64bd315b9284"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 10,
+          "total": 10
+        },
+        "directions": {
+          "reached": 8,
+          "total": 8
+        },
+        "excluded": 0,
+        "untriaged": 0
+      }
     },
     {
       "suite": "i2c",
@@ -297,8 +429,20 @@
       "verdict": "match",
       "cases": 24,
       "executions": [
-        "b9454db95217a3c3cff4789547d6aaa4c5910f3448dcb734c3a09f120f51a7d6"
-      ]
+        "62975a184504b6a154fdcb92ed64c7f5314904b1b7263b73db0ff0b8056de403"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 11,
+          "total": 11
+        },
+        "directions": {
+          "reached": 6,
+          "total": 6
+        },
+        "excluded": 0,
+        "untriaged": 0
+      }
     },
     {
       "suite": "i2c",
@@ -308,8 +452,20 @@
       "verdict": "match",
       "cases": 2,
       "executions": [
-        "b1a86b680b36c30c6314195958914ea785aeeb0035482560f1261f1c600cd688"
-      ]
+        "cf11dda3f95786ffa6c19e9700287baf43e946d076b08a0a326f0073b44e90d0"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 2,
+          "total": 3
+        },
+        "directions": {
+          "reached": 1,
+          "total": 2
+        },
+        "excluded": 0,
+        "untriaged": 2
+      }
     },
     {
       "suite": "i2c",
@@ -319,8 +475,20 @@
       "verdict": "match",
       "cases": 3,
       "executions": [
-        "b1a86b680b36c30c6314195958914ea785aeeb0035482560f1261f1c600cd688"
-      ]
+        "cf11dda3f95786ffa6c19e9700287baf43e946d076b08a0a326f0073b44e90d0"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 1,
+          "total": 1
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      }
     },
     {
       "suite": "i2c",
@@ -330,8 +498,20 @@
       "verdict": "match",
       "cases": 4,
       "executions": [
-        "b1a86b680b36c30c6314195958914ea785aeeb0035482560f1261f1c600cd688"
-      ]
+        "cf11dda3f95786ffa6c19e9700287baf43e946d076b08a0a326f0073b44e90d0"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 8,
+          "total": 8
+        },
+        "directions": {
+          "reached": 6,
+          "total": 6
+        },
+        "excluded": 0,
+        "untriaged": 0
+      }
     },
     {
       "suite": "i2c",
@@ -341,8 +521,20 @@
       "verdict": "match",
       "cases": 2,
       "executions": [
-        "b1a86b680b36c30c6314195958914ea785aeeb0035482560f1261f1c600cd688"
-      ]
+        "cf11dda3f95786ffa6c19e9700287baf43e946d076b08a0a326f0073b44e90d0"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 2,
+          "total": 2
+        },
+        "directions": {
+          "reached": 0,
+          "total": 0
+        },
+        "excluded": 0,
+        "untriaged": 0
+      }
     },
     {
       "suite": "i2c",
@@ -352,8 +544,20 @@
       "verdict": "match",
       "cases": 36,
       "executions": [
-        "71f8b0f89526d251d879304f4af826aea0fa1735ff7346a101677290ff84832f"
-      ]
+        "53af6c8dfb8322f6c4ad78914e49269bd2419329ac579811fa537c1913ecc6db"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 44,
+          "total": 46
+        },
+        "directions": {
+          "reached": 29,
+          "total": 32
+        },
+        "excluded": 0,
+        "untriaged": 5
+      }
     },
     {
       "suite": "i2c",
@@ -363,8 +567,20 @@
       "verdict": "match",
       "cases": 48,
       "executions": [
-        "69d0654efe5ef4644eaec1cd4d3ee81f209c3fa9589ea86e4e140edeb21ca102"
-      ]
+        "5d7286755cca427107c5e44215a427254c4af3367220628602cf9754347c32e4"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 72,
+          "total": 81
+        },
+        "directions": {
+          "reached": 39,
+          "total": 54
+        },
+        "excluded": 0,
+        "untriaged": 24
+      }
     },
     {
       "suite": "i2c",
@@ -374,8 +590,20 @@
       "verdict": "match",
       "cases": 10,
       "executions": [
-        "3c71965d7e2a63759141966ee931a1cf39be9153bef5ab3ace15a5619e70a9e1"
-      ]
+        "4b0cc51f1ccfc47e98e303eea9a1be0be77c791910f25d8a472efba3fe7655e8"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 52,
+          "total": 81
+        },
+        "directions": {
+          "reached": 24,
+          "total": 54
+        },
+        "excluded": 0,
+        "untriaged": 59
+      }
     },
     {
       "suite": "channel",
@@ -385,9 +613,21 @@
       "verdict": "match",
       "cases": 56,
       "executions": [
-        "e1e67c73cd84ab6ade3adb7095ac0d3f3a119e7568597d1900fdcf4c56556d4d",
-        "1d74508b83966b0af638eda08c3aa8965e92492352ddcd0ecbdb0f8a0995ebd9"
-      ]
+        "8fb5ab0986f43f078eb244a1d03d9923f5eb0d375461ce3a7962dcc0a65abe9c",
+        "a71de98eaacefcd8ab622f58dda7c355f43f4bb13e43e5da532d66918a1fc7e4"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 146,
+          "total": 609
+        },
+        "directions": {
+          "reached": 86,
+          "total": 606
+        },
+        "excluded": 862,
+        "untriaged": 121
+      }
     },
     {
       "suite": "rx-gain",
@@ -397,9 +637,21 @@
       "verdict": "match",
       "cases": 56,
       "executions": [
-        "abb24b2f3709d4d9d4965f18c6992fa85aed6c643f3127bd783cde2c9f57be71",
-        "df2c4ff419d688fc1034daeb15bedd10238298fe8ae9d23ffbd1fea95f12db21"
-      ]
+        "3343b9ff7a02fc4df1250717566349b880413c918e91568f8ffb8abd14a11e58",
+        "f06a52d8d51022e803b54d9ab85e2e95dca96a2290035aec08fdc5d4127ef5c8"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 241,
+          "total": 703
+        },
+        "directions": {
+          "reached": 170,
+          "total": 702
+        },
+        "excluded": 857,
+        "untriaged": 137
+      }
     },
     {
       "suite": "tx-dc",
@@ -409,8 +661,20 @@
       "verdict": "match",
       "cases": 64,
       "executions": [
-        "a12af98c37bb51391d929034129a986aa84e9823a6e293654d9447cdf445d789"
-      ]
+        "bfccbcc3a3d5862f4f50e2314946583e76e76f24aece5db50790b9df3a57fcb4"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 111,
+          "total": 119
+        },
+        "directions": {
+          "reached": 76,
+          "total": 88
+        },
+        "excluded": 0,
+        "untriaged": 20
+      }
     },
     {
       "suite": "tracking",
@@ -420,8 +684,20 @@
       "verdict": "match",
       "cases": 80,
       "executions": [
-        "236f5177d278c0f651b646d130d8651f15da221020b273966b6638a2e9b60614"
-      ]
+        "6942ee343d840ad14b8935d7fdb96d3856b8f7cc9a95cd83d01f580fceddda2a"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 438,
+          "total": 960
+        },
+        "directions": {
+          "reached": 277,
+          "total": 894
+        },
+        "excluded": 860,
+        "untriaged": 279
+      }
     },
     {
       "suite": "tracking",
@@ -431,11 +707,1795 @@
       "verdict": "match",
       "cases": 320,
       "executions": [
-        "1866ecc5765767ad6194ea47551f1e1e3611615428fd06ce7ef02a460118f41c",
-        "dd88756fa22a48da3fa4ee56f3b08bd36bf5cc36a81ab3de9c41ad5f4dabbb84",
-        "b8c98c5cb0d33aa70342e220dbaeb9490c02d095ee409be3150ceb8ae862426d",
-        "3431e0d53d851cda3142072a79b6e0d52670a876afcbc663ef83764bbc9b5871"
-      ]
+        "4ea33ec311ffd7723ef4bb50d49cd1f57c54dba682036877402596bfe1fecd8c",
+        "7820a8df485db34ef0293eb3ebe86f6220055ae43506a64f9735931eb35143d5",
+        "bd578a2714fd5e128f2864e962ec7317ddc79fb29558104c94d360799889cba6",
+        "d716b54e42bbdb10692ea24b8f85653b41e1c29e022de0c81f3837d197d31c3e"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 534,
+          "total": 1059
+        },
+        "directions": {
+          "reached": 351,
+          "total": 982
+        },
+        "excluded": 860,
+        "untriaged": 296
+      }
+    }
+  ],
+  "untriaged": [
+    {
+      "function": "phy_11p_set",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_bb_bss_cbw40",
+      "offset": 16,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_bb_bss_cbw40",
+      "offset": 18,
+      "kind": "block"
+    },
+    {
+      "function": "phy_bb_cbw_chan_cfg",
+      "offset": 8,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_bb_cbw_chan_cfg",
+      "offset": 14,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_bb_cbw_chan_cfg",
+      "offset": 104,
+      "kind": "block"
+    },
+    {
+      "function": "phy_bt_get_tx_gain",
+      "offset": 232,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_bt_get_tx_gain",
+      "offset": 236,
+      "kind": "block"
+    },
+    {
+      "function": "phy_bt_get_tx_gain",
+      "offset": 254,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_bt_get_tx_gain",
+      "offset": 256,
+      "kind": "block"
+    },
+    {
+      "function": "phy_bt_rx_mx_dgain",
+      "offset": 22,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_bt_rx_mx_dgain",
+      "offset": 38,
+      "kind": "block"
+    },
+    {
+      "function": "phy_cal_param_track",
+      "offset": 98,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_cal_param_track",
+      "offset": 102,
+      "kind": "block"
+    },
+    {
+      "function": "phy_cal_param_track",
+      "offset": 340,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_cal_param_track",
+      "offset": 344,
+      "kind": "block"
+    },
+    {
+      "function": "phy_chan14_mic_cfg_new",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_chan14_mic_cfg_new",
+      "offset": 10,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_chan14_mic_cfg_new",
+      "offset": 10,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_chan14_mic_cfg_new",
+      "offset": 14,
+      "kind": "block"
+    },
+    {
+      "function": "phy_chan14_mic_cfg_new",
+      "offset": 40,
+      "kind": "block"
+    },
+    {
+      "function": "phy_chan14_mic_cfg_new",
+      "offset": 48,
+      "kind": "block"
+    },
+    {
+      "function": "phy_chan_to_freq",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_chan_to_freq",
+      "offset": 2,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_chan_to_freq",
+      "offset": 2,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_chan_to_freq",
+      "offset": 6,
+      "kind": "block"
+    },
+    {
+      "function": "phy_chan_to_freq",
+      "offset": 6,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_chan_to_freq",
+      "offset": 6,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_chan_to_freq",
+      "offset": 10,
+      "kind": "block"
+    },
+    {
+      "function": "phy_chan_to_freq",
+      "offset": 30,
+      "kind": "block"
+    },
+    {
+      "function": "phy_chan_to_freq",
+      "offset": 36,
+      "kind": "block"
+    },
+    {
+      "function": "phy_chip_i2c_readReg_org",
+      "offset": 42,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_chip_i2c_writeReg",
+      "offset": 58,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_chip_i2c_writeReg",
+      "offset": 84,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_chip_set_chan",
+      "offset": 60,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_chip_set_chan",
+      "offset": 64,
+      "kind": "block"
+    },
+    {
+      "function": "phy_chip_set_chan",
+      "offset": 172,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_chip_set_chan",
+      "offset": 174,
+      "kind": "block"
+    },
+    {
+      "function": "phy_chip_set_chan",
+      "offset": 178,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_chip_set_chan",
+      "offset": 178,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_chip_set_chan",
+      "offset": 182,
+      "kind": "block"
+    },
+    {
+      "function": "phy_chip_set_chan",
+      "offset": 184,
+      "kind": "block"
+    },
+    {
+      "function": "phy_chip_set_chan",
+      "offset": 196,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_chip_set_chan",
+      "offset": 198,
+      "kind": "block"
+    },
+    {
+      "function": "phy_code_to_temp",
+      "offset": 26,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_code_to_temp",
+      "offset": 54,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_code_to_temp",
+      "offset": 58,
+      "kind": "block"
+    },
+    {
+      "function": "phy_code_to_temp",
+      "offset": 68,
+      "kind": "block"
+    },
+    {
+      "function": "phy_dc_iq_est",
+      "offset": 16,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_dc_iq_est",
+      "offset": 18,
+      "kind": "block"
+    },
+    {
+      "function": "phy_dc_iq_est",
+      "offset": 92,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_dc_iq_est",
+      "offset": 94,
+      "kind": "block"
+    },
+    {
+      "function": "phy_dc_iq_est",
+      "offset": 100,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_dc_iq_est",
+      "offset": 104,
+      "kind": "block"
+    },
+    {
+      "function": "phy_freq_i2c_mem_write",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_gen_rx_gain_table",
+      "offset": 114,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_gen_rx_gain_table",
+      "offset": 134,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_gen_rx_gain_table",
+      "offset": 196,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_gen_rx_gain_table",
+      "offset": 200,
+      "kind": "block"
+    },
+    {
+      "function": "phy_gen_rx_gain_table",
+      "offset": 244,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_gen_rx_gain_table",
+      "offset": 248,
+      "kind": "block"
+    },
+    {
+      "function": "phy_gen_rx_gain_table",
+      "offset": 302,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_gen_rx_gain_table",
+      "offset": 306,
+      "kind": "block"
+    },
+    {
+      "function": "phy_get_freq_mem_param",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_get_freq_mem_param",
+      "offset": 4,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_get_freq_mem_param",
+      "offset": 4,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_get_freq_mem_param",
+      "offset": 6,
+      "kind": "block"
+    },
+    {
+      "function": "phy_get_freq_mem_param",
+      "offset": 8,
+      "kind": "block"
+    },
+    {
+      "function": "phy_get_freq_mem_param",
+      "offset": 12,
+      "kind": "block"
+    },
+    {
+      "function": "phy_get_freq_mem_param",
+      "offset": 22,
+      "kind": "block"
+    },
+    {
+      "function": "phy_get_freq_mem_param",
+      "offset": 26,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_get_freq_mem_param",
+      "offset": 26,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_get_freq_mem_param",
+      "offset": 30,
+      "kind": "block"
+    },
+    {
+      "function": "phy_get_freq_mem_param",
+      "offset": 38,
+      "kind": "block"
+    },
+    {
+      "function": "phy_get_i2c_hostid_new",
+      "offset": 10,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_get_i2c_hostid_new",
+      "offset": 30,
+      "kind": "block"
+    },
+    {
+      "function": "phy_get_i2c_read_mask_new",
+      "offset": 10,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_get_i2c_read_mask_new",
+      "offset": 32,
+      "kind": "block"
+    },
+    {
+      "function": "phy_get_rxbb_dc_new",
+      "offset": 6,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_get_rxbb_dc_new",
+      "offset": 10,
+      "kind": "block"
+    },
+    {
+      "function": "phy_get_tx_gain_value",
+      "offset": 16,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_get_tx_gain_value",
+      "offset": 34,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_get_tx_gain_value",
+      "offset": 38,
+      "kind": "block"
+    },
+    {
+      "function": "phy_get_tx_gain_value",
+      "offset": 52,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_i2c_readReg",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_i2c_readReg_Mask",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_i2c_writeReg",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_index_to_txbbgain",
+      "offset": 2,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_index_to_txbbgain",
+      "offset": 26,
+      "kind": "block"
+    },
+    {
+      "function": "phy_iq_est_enable",
+      "offset": 144,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_iq_est_enable",
+      "offset": 158,
+      "kind": "block"
+    },
+    {
+      "function": "phy_iq_est_enable",
+      "offset": 166,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_iq_est_enable",
+      "offset": 166,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_iq_est_enable",
+      "offset": 168,
+      "kind": "block"
+    },
+    {
+      "function": "phy_linear_to_db",
+      "offset": 30,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_linear_to_db",
+      "offset": 60,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_linear_to_db",
+      "offset": 104,
+      "kind": "block"
+    },
+    {
+      "function": "phy_linear_to_db",
+      "offset": 112,
+      "kind": "block"
+    },
+    {
+      "function": "phy_mac_tx_chan_offset",
+      "offset": 2,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_mac_tx_chan_offset",
+      "offset": 6,
+      "kind": "block"
+    },
+    {
+      "function": "phy_mac_tx_chan_offset",
+      "offset": 32,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_mac_tx_chan_offset",
+      "offset": 36,
+      "kind": "block"
+    },
+    {
+      "function": "phy_mhz2ieee",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_mhz2ieee",
+      "offset": 6,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_mhz2ieee",
+      "offset": 6,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_mhz2ieee",
+      "offset": 10,
+      "kind": "block"
+    },
+    {
+      "function": "phy_mhz2ieee",
+      "offset": 14,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_mhz2ieee",
+      "offset": 14,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_mhz2ieee",
+      "offset": 18,
+      "kind": "block"
+    },
+    {
+      "function": "phy_mhz2ieee",
+      "offset": 32,
+      "kind": "block"
+    },
+    {
+      "function": "phy_mhz2ieee",
+      "offset": 38,
+      "kind": "block"
+    },
+    {
+      "function": "phy_mhz2ieee",
+      "offset": 56,
+      "kind": "block"
+    },
+    {
+      "function": "phy_param_track_tot",
+      "offset": 50,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_param_track_tot",
+      "offset": 120,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_force_test",
+      "offset": 50,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rd_addr",
+      "offset": 2,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rd_addr",
+      "offset": 64,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rd_addr",
+      "offset": 70,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rd_shift",
+      "offset": 2,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rd_shift",
+      "offset": 38,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rd_shift",
+      "offset": 54,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 282,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 282,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 286,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 308,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 312,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 332,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 336,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 346,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 346,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 362,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 370,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 386,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 402,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 410,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 434,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 450,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 518,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 520,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 692,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 706,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 714,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 776,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 778,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 778,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 778,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 782,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 886,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 886,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 890,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1014,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1018,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1028,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1036,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1044,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1054,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1054,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1058,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1072,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1082,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1082,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1086,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1096,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1152,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1152,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1156,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1158,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pbus_rx_dco_cal_1step_new",
+      "offset": 1178,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pll_cap_mem_update",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pll_cap_mem_update",
+      "offset": 46,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pll_cap_mem_update",
+      "offset": 116,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pll_cap_mem_update",
+      "offset": 116,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_pll_cap_mem_update",
+      "offset": 120,
+      "kind": "block"
+    },
+    {
+      "function": "phy_pwdet_tone_start",
+      "offset": 74,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_pwdet_tone_start",
+      "offset": 90,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_pwdet_tone_start",
+      "offset": 92,
+      "kind": "block"
+    },
+    {
+      "function": "phy_read_pll_cap",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_read_rf_freq_mem",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_restart_cal",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_correct_new",
+      "offset": 20,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_correct_new",
+      "offset": 22,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_correct_new",
+      "offset": 30,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_correct_new",
+      "offset": 32,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 56,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 58,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 62,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 62,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 66,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 70,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 106,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 106,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 108,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 122,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 124,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 124,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 128,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 130,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 130,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 130,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 132,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 132,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 132,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 136,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 140,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 142,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 142,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 144,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal",
+      "offset": 148,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 132,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 134,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 162,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 166,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 166,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 166,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 168,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 170,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 170,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 174,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 180,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 184,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 236,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 240,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 240,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 240,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_init_cal_new",
+      "offset": 244,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_track_new",
+      "offset": 34,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_track_new",
+      "offset": 36,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_track_new",
+      "offset": 58,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rfpll_cap_track_new",
+      "offset": 66,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rfpll_cap_track_new",
+      "offset": 104,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_cap_track_new",
+      "offset": 108,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_cap_track_new",
+      "offset": 184,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_set_freq",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_set_freq",
+      "offset": 40,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rfpll_set_freq",
+      "offset": 40,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_set_freq",
+      "offset": 44,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_set_freq",
+      "offset": 58,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_set_freq",
+      "offset": 64,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rfpll_set_freq",
+      "offset": 64,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rfpll_set_freq",
+      "offset": 68,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_set_freq",
+      "offset": 80,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfpll_set_freq",
+      "offset": 148,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rfrx_gain_index_new",
+      "offset": 100,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rxdc_est_min",
+      "offset": 62,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rxdc_est_min",
+      "offset": 74,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rxdc_est_min",
+      "offset": 76,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rxdc_est_min",
+      "offset": 82,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rxdc_est_min",
+      "offset": 82,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rxdc_est_min",
+      "offset": 98,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rxdc_est_min",
+      "offset": 104,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rxdc_est_min",
+      "offset": 108,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rxdc_est_min",
+      "offset": 112,
+      "kind": "block"
+    },
+    {
+      "function": "phy_rxdc_est_min",
+      "offset": 118,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_rxdc_est_min",
+      "offset": 118,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_rxdc_est_min",
+      "offset": 122,
+      "kind": "block"
+    },
+    {
+      "function": "phy_set_chan_cal_interp",
+      "offset": 8,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_set_chan_cal_interp",
+      "offset": 12,
+      "kind": "block"
+    },
+    {
+      "function": "phy_set_chan_cal_interp",
+      "offset": 44,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_set_chan_cal_interp",
+      "offset": 48,
+      "kind": "block"
+    },
+    {
+      "function": "phy_set_chan_freq_sw_start",
+      "offset": 24,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_set_chan_reg",
+      "offset": 38,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_set_channel_rfpll_freq",
+      "offset": 36,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_set_channel_rfpll_freq",
+      "offset": 40,
+      "kind": "block"
+    },
+    {
+      "function": "phy_set_most_tpw",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_set_rf_freq_offset",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_set_rfpll_freq",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_set_rx_gain_table",
+      "offset": 238,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_set_rx_gain_table",
+      "offset": 262,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_set_rx_gain_table",
+      "offset": 388,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_set_rx_gain_table",
+      "offset": 452,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_set_rx_gain_table",
+      "offset": 554,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_set_rx_gain_table",
+      "offset": 558,
+      "kind": "block"
+    },
+    {
+      "function": "phy_set_rx_gain_table",
+      "offset": 638,
+      "kind": "block"
+    },
+    {
+      "function": "phy_set_rx_gain_table",
+      "offset": 644,
+      "kind": "block"
+    },
+    {
+      "function": "phy_set_txcap_reg",
+      "offset": 30,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 26,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 34,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 52,
+      "kind": "block"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 58,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 58,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 62,
+      "kind": "block"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 68,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 68,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 72,
+      "kind": "block"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 76,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 76,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 80,
+      "kind": "block"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 84,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 84,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 88,
+      "kind": "block"
+    },
+    {
+      "function": "phy_tsens_dac_cal",
+      "offset": 90,
+      "kind": "block"
+    },
+    {
+      "function": "phy_tsens_dac_to_index",
+      "offset": 2,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_tsens_dac_to_index",
+      "offset": 6,
+      "kind": "block"
+    },
+    {
+      "function": "phy_tsens_dac_to_index",
+      "offset": 10,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_tsens_dac_to_index",
+      "offset": 10,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_tsens_dac_to_index",
+      "offset": 14,
+      "kind": "block"
+    },
+    {
+      "function": "phy_tsens_dac_to_index",
+      "offset": 18,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_tsens_dac_to_index",
+      "offset": 18,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_tsens_dac_to_index",
+      "offset": 22,
+      "kind": "block"
+    },
+    {
+      "function": "phy_tsens_dac_to_index",
+      "offset": 26,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_tsens_dac_to_index",
+      "offset": 26,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_tsens_dac_to_index",
+      "offset": 30,
+      "kind": "block"
+    },
+    {
+      "function": "phy_tsens_dac_to_index",
+      "offset": 34,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_tsens_dac_to_index",
+      "offset": 34,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_tsens_dac_to_index",
+      "offset": 38,
+      "kind": "block"
+    },
+    {
+      "function": "phy_tx_i2c_track",
+      "offset": 34,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_tx_i2c_track",
+      "offset": 116,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_tx_i2c_track",
+      "offset": 190,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_tx_i2c_track",
+      "offset": 268,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_tx_i2c_track",
+      "offset": 270,
+      "kind": "block"
+    },
+    {
+      "function": "phy_txbbgain_to_index",
+      "offset": 34,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_txdc_cal_pwdet_init",
+      "offset": 358,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_txdc_cal_pwdet_new",
+      "offset": 230,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_txdc_cal_pwdet_new",
+      "offset": 234,
+      "kind": "block"
+    },
+    {
+      "function": "phy_txdc_cal_pwdet_new",
+      "offset": 240,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_txdc_cal_pwdet_new",
+      "offset": 372,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_txdc_cal_pwdet_new",
+      "offset": 376,
+      "kind": "block"
+    },
+    {
+      "function": "phy_txdc_cal_pwdet_new",
+      "offset": 442,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_txdc_cal_pwdet_new",
+      "offset": 520,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_txdc_cal_pwdet_new",
+      "offset": 524,
+      "kind": "block"
+    },
+    {
+      "function": "phy_txdc_cal_pwdet_new",
+      "offset": 532,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_txdc_cal_pwdet_new",
+      "offset": 600,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_txdc_cal_pwdet_new",
+      "offset": 604,
+      "kind": "block"
+    },
+    {
+      "function": "phy_txdc_cal_pwdet_new",
+      "offset": 784,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_txdc_cal_pwdet_new",
+      "offset": 788,
+      "kind": "block"
+    },
+    {
+      "function": "phy_txgain_comp_pacfg_new",
+      "offset": 4,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_txgain_comp_pacfg_new",
+      "offset": 82,
+      "kind": "block"
+    },
+    {
+      "function": "phy_txpwr_cal_track_new",
+      "offset": 148,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_txpwr_cal_track_new",
+      "offset": 216,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_txpwr_cal_track_new",
+      "offset": 220,
+      "kind": "block"
+    },
+    {
+      "function": "phy_wait_rfpll_cal_end",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_wait_rfpll_cal_end",
+      "offset": 26,
+      "kind": "block"
+    },
+    {
+      "function": "phy_wait_rfpll_cal_end",
+      "offset": 48,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_wait_rfpll_cal_end",
+      "offset": 48,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_wait_rfpll_cal_end",
+      "offset": 50,
+      "kind": "block"
+    },
+    {
+      "function": "phy_wait_rfpll_cal_end",
+      "offset": 50,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_wait_rfpll_cal_end",
+      "offset": 50,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_wait_rfpll_cal_end",
+      "offset": 54,
+      "kind": "block"
+    },
+    {
+      "function": "phy_wait_rfpll_cal_end",
+      "offset": 62,
+      "kind": "block"
+    },
+    {
+      "function": "phy_wait_rfpll_cal_end",
+      "offset": 68,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_wait_rfpll_cal_end",
+      "offset": 68,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_wait_rfpll_cal_end",
+      "offset": 72,
+      "kind": "block"
+    },
+    {
+      "function": "phy_wifi_fbw_sel",
+      "offset": 34,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_wifi_fbw_sel",
+      "offset": 70,
+      "kind": "block"
+    },
+    {
+      "function": "phy_wifi_get_tx_gain",
+      "offset": 178,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_wifi_get_tx_gain",
+      "offset": 182,
+      "kind": "block"
+    },
+    {
+      "function": "phy_wifi_set_tx_gain_new",
+      "offset": 74,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_write_pll_cap",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "phy_write_pll_cap",
+      "offset": 8,
+      "kind": "taken"
+    },
+    {
+      "function": "phy_write_pll_cap",
+      "offset": 8,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "phy_write_pll_cap",
+      "offset": 12,
+      "kind": "block"
+    },
+    {
+      "function": "phy_write_pll_cap",
+      "offset": 14,
+      "kind": "block"
+    },
+    {
+      "function": "phy_write_rfpll_sdm",
+      "offset": 0,
+      "kind": "block"
     }
   ]
 }

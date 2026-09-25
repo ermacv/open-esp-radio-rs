@@ -8,6 +8,7 @@ pub mod calibration_leaves;
 pub mod calibration_prefix;
 pub mod channel;
 pub mod contracts;
+pub mod coverage;
 pub mod evidence;
 pub mod gain;
 pub mod gain_state;

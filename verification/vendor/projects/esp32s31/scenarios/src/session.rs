@@ -14,6 +14,7 @@ use blobray_domain::{
     SymbolId, SymbolTableKind,
 };
 use blobray_next_host::wire::RecordDocument;
+use evidence_index::LocationKind;
 use object::{Object, ObjectSection, ObjectSymbol};
 use std::{
     collections::BTreeMap,
@@ -32,6 +33,23 @@ pub struct Artifact {
     pub document: ExecutionDocument,
     /// Vendor and production entries and the verdict of every compared case.
     pub compared: Vec<ComparedCase>,
+}
+
+/// One claimed pair: `symbol` of vendor `source` at `vendor`, compared with
+/// the production probe `entry` at `production`.
+struct Claimed<'a> {
+    source: &'a str,
+    symbol: &'a str,
+    vendor: u32,
+    entry: &'a str,
+    production: u32,
+}
+
+/// Evidence entries of one scenario and its untriaged uncovered locations.
+#[derive(Default)]
+pub struct Claims {
+    pub entries: Vec<evidence_index::Entry>,
+    pub untriaged: std::collections::BTreeSet<evidence_index::Location>,
 }
 
 /// One compared case of a retained execution.
@@ -452,15 +470,20 @@ impl Session {
     /// `vendor` compared with production `entry` at `production`. Only
     /// executions whose every case of that pair is MATCH count; a claim
     /// without one such execution fails.
-    pub fn claim(
+    fn claim(
         &self,
         suite: &str,
-        source: &str,
-        symbol: &str,
-        vendor: u32,
-        entry: &str,
-        production: u32,
+        claimed: Claimed<'_>,
+        decisions: &[crate::coverage::Decision],
+        observed: &mut crate::coverage::Observed,
     ) -> Result<evidence_index::Entry> {
+        let Claimed {
+            source,
+            symbol,
+            vendor,
+            entry,
+            production,
+        } = claimed;
         let mut cases = 0;
         let mut executions = vec![];
         for artifact in &self.artifacts {
@@ -484,6 +507,64 @@ impl Session {
                 "{suite}: no MATCH execution compares {symbol} with {entry}"
             )));
         }
+        let ids: Vec<ArtifactId> = executions
+            .iter()
+            .map(|id| id.parse())
+            .collect::<std::result::Result<_, _>>()?;
+        let report = self.runner.code_coverage(
+            &format!("coverage-{suite}-{symbol}"),
+            &ids.iter().collect::<Vec<_>>(),
+        )?;
+        let root = report
+            .roots
+            .iter()
+            .find(|r| r.entry == vendor)
+            .ok_or_else(|| invalid(format!("{suite}: {symbol} is not a coverage root")))?;
+        // Uncovered locations by absolute address and kind: a block shared by
+        // several closure functions is named once, by the lowest entry.
+        let mut located = BTreeMap::new();
+        for function in report
+            .functions
+            .iter()
+            .filter(|f| root.functions.contains(&f.entry))
+        {
+            let name = function
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("{:#x}", function.entry));
+            observed.functions.insert(name.clone());
+            let mut add = |address: u32, kind: LocationKind| {
+                located.entry((address, kind)).or_insert_with(|| {
+                    crate::coverage::location(&name, function.entry, address, kind)
+                });
+            };
+            for block in &function.uncovered_blocks {
+                add(*block, LocationKind::Block);
+            }
+            for direction in &function.uncovered_directions {
+                add(
+                    direction.site,
+                    if direction.taken {
+                        LocationKind::Taken
+                    } else {
+                        LocationKind::Fallthrough
+                    },
+                );
+            }
+        }
+        let locations: std::collections::BTreeSet<_> = located.into_values().collect();
+        let (excluded, untriaged) = crate::coverage::Observed::classify(decisions, &locations);
+        let count = |c: &blobray_domain::CoverageCount| evidence_index::Count {
+            reached: c.reached,
+            total: c.total,
+        };
+        let coverage = evidence_index::Coverage {
+            blocks: count(&root.blocks),
+            directions: count(&root.directions),
+            excluded: excluded.len() as u64,
+            untriaged: untriaged.len() as u64,
+        };
+        observed.uncovered.extend(locations);
         Ok(evidence_index::Entry {
             suite: suite.into(),
             source: source.into(),
@@ -492,18 +573,24 @@ impl Session {
             verdict: evidence_index::MATCH.into(),
             cases,
             executions,
+            coverage,
         })
     }
 
     /// Evidence entries of `list` (vendor source, root symbol, production
     /// probe): archive roots resolve in `roots`, ROM roots in the ROM input.
+    /// Coverage of every claimed root closure is classified under
+    /// `decisions`, each of which must still exclude something.
     pub fn claims(
         &self,
         suite: &str,
         roots: &BTreeMap<String, u32>,
         list: &[(&str, &str, &str)],
-    ) -> Result<Vec<evidence_index::Entry>> {
-        list.iter()
+        decisions: &[crate::coverage::Decision],
+    ) -> Result<Claims> {
+        let mut observed = crate::coverage::Observed::default();
+        let entries = list
+            .iter()
             .map(|(source, symbol, production)| {
                 let vendor = match *source {
                     "archive" => *roots
@@ -514,10 +601,24 @@ impl Session {
                     )?,
                     other => return Err(invalid(format!("unknown vendor source {other}"))),
                 };
-                let entry = self.probes.entry(production)?;
-                self.claim(suite, source, symbol, vendor, production, entry)
+                let address = self.probes.entry(production)?;
+                self.claim(
+                    suite,
+                    Claimed {
+                        source,
+                        symbol,
+                        vendor,
+                        entry: production,
+                        production: address,
+                    },
+                    decisions,
+                    &mut observed,
+                )
             })
-            .collect()
+            .collect::<Result<Vec<_>>>()?;
+        observed.check(suite, decisions)?;
+        let (_, untriaged) = crate::coverage::Observed::classify(decisions, &observed.uncovered);
+        Ok(Claims { entries, untriaged })
     }
 
     /// Run a request that must fail for capacity and publish nothing.

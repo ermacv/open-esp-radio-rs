@@ -13,7 +13,7 @@ use std::{
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Index format.
-pub const SCHEMA: u32 = 1;
+pub const SCHEMA: u32 = 2;
 /// Producer command recorded in every index.
 pub const COMMAND: &str = "vendor-scenario all";
 /// The only verdict an entry carries: a claim exists only when its root
@@ -32,6 +32,47 @@ pub struct Index {
     /// scenario code and the Blobray engine.
     pub sources: Vec<SourceDigest>,
     pub entries: Vec<Entry>,
+    /// Uncovered vendor locations of claimed root closures that no reviewed
+    /// decision excludes yet, ascending and unique.
+    pub untriaged: Vec<Location>,
+}
+
+/// Reached and total basic blocks or branch directions.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Count {
+    pub reached: u64,
+    pub total: u64,
+}
+
+/// Vendor coverage of one claimed root's closure over its executions.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Coverage {
+    pub blocks: Count,
+    /// Both directions of every conditional branch.
+    pub directions: Count,
+    /// Uncovered blocks and directions a reviewed decision excludes.
+    pub excluded: u64,
+    /// Uncovered blocks and directions without a decision.
+    pub untriaged: u64,
+}
+
+/// One vendor block or branch direction, by function symbol and offset.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Location {
+    pub function: String,
+    pub offset: u32,
+    pub kind: LocationKind,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "kebab-case")]
+pub enum LocationKind {
+    Block,
+    Taken,
+    Fallthrough,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -56,6 +97,7 @@ pub struct Entry {
     /// Compared cases and the retained executions that hold them.
     pub cases: u64,
     pub executions: Vec<String>,
+    pub coverage: Coverage,
 }
 
 /// SHA-256 over every file below `relative`, excluding `target` and hidden
@@ -130,6 +172,20 @@ impl Index {
                 )
                 .into());
             }
+            let c = &entry.coverage;
+            if c.blocks.reached > c.blocks.total
+                || c.directions.reached > c.directions.total
+                || c.excluded + c.untriaged
+                    != (c.blocks.total - c.blocks.reached)
+                        + (c.directions.total - c.directions.reached)
+                || (c.untriaged != 0 && self.untriaged.is_empty())
+            {
+                return Err(format!(
+                    "entry {} {} has inconsistent coverage",
+                    entry.source, entry.symbol
+                )
+                .into());
+            }
             if !seen.insert((
                 &entry.suite,
                 &entry.source,
@@ -138,6 +194,9 @@ impl Index {
             )) {
                 return Err(format!("entry {} {} repeats", entry.source, entry.symbol).into());
             }
+        }
+        if self.untriaged.windows(2).any(|w| w[0] >= w[1]) {
+            return Err("untriaged locations are not ascending and unique".into());
         }
         Ok(())
     }

@@ -1,0 +1,284 @@
+//! Vendor coverage of the root closures that retained executions exercise.
+use crate::execution::{LoadedSegment, Sources, target_executables};
+use crate::*;
+use blobray_analysis::closure::{ClosureInput, CodeMemory, code_closure};
+use std::collections::{BTreeMap, BTreeSet};
+
+/// Executable segments of one vendor target, ascending by address.
+struct Code<'s, 'a> {
+    segments: Vec<&'s LoadedSegment<'a>>,
+}
+impl CodeMemory for Code<'_, '_> {
+    fn code(&self, address: u32, bytes: &mut [u8; 4]) -> Option<usize> {
+        let index = self
+            .segments
+            .partition_point(|s| s.address <= address)
+            .checked_sub(1)?;
+        let segment = self.segments[index];
+        let offset = (address - segment.address) as usize;
+        if offset >= segment.memory_size {
+            return None;
+        }
+        // The zero-filled tail beyond the file bytes is executable zero bytes.
+        let available = (segment.memory_size - offset).min(4);
+        for (i, byte) in bytes.iter_mut().take(available).enumerate() {
+            *byte = segment.bytes.get(offset + i).copied().unwrap_or(0);
+        }
+        Some(available)
+    }
+}
+
+/// The vendor code executions reached, their roots and closure boundaries.
+#[derive(Default)]
+struct Reached {
+    instructions: BTreeSet<u32>,
+    /// Observed (taken, fallthrough) per branch site.
+    branches: BTreeMap<u32, (bool, bool)>,
+    roots: BTreeSet<u32>,
+    boundaries: BTreeSet<u32>,
+}
+
+fn collect(
+    project: &Project,
+    ids: &[ArtifactId],
+    memory: &WorkingMemory,
+    c: &mut dyn RunControl,
+) -> Result<(ExecutionTarget, Reached)> {
+    let mut target: Option<ExecutionTarget> = None;
+    let mut reached = Reached::default();
+    for id in ids {
+        let execution = project.execution(id, memory, c)?;
+        let request = &execution.request;
+        match &target {
+            None => target = Some(request.vendor.clone()),
+            Some(first) if *first == request.vendor => {}
+            Some(_) => {
+                return Err(Error::new(
+                    ErrorCode::InvalidRequest,
+                    "code coverage executions differ in their vendor target",
+                ));
+            }
+        }
+        let mut coverage = None;
+        blobray_store::validate_execution_records_with(
+            &execution.manifest,
+            request,
+            &execution.records,
+            memory,
+            c,
+            &mut |record, _| {
+                if let ExecutionEvidence::Coverage {
+                    replacement: false,
+                    coverage: vendor,
+                } = record
+                {
+                    coverage = Some(vendor.clone());
+                }
+                Ok(())
+            },
+        )?;
+        let coverage =
+            coverage.ok_or_else(|| Error::new(ErrorCode::Integrity, "vendor coverage missing"))?;
+        for pc in coverage.instructions {
+            c.checkpoint(1)?;
+            reached.instructions.insert(pc);
+        }
+        for branch in coverage.branches {
+            c.checkpoint(1)?;
+            let seen = reached.branches.entry(branch.site).or_default();
+            seen.0 |= branch.taken;
+            seen.1 |= branch.fallthrough;
+        }
+        let goals = crate::execution_goals::prepare(project, request, memory, c)?;
+        for (case, goal) in request.cases.iter().zip(goals.iter()) {
+            c.checkpoint(1)?;
+            let vendor = &case.vendor;
+            reached.roots.insert(vendor.entry);
+            reached
+                .boundaries
+                .extend(vendor.calls.iter().map(|call| call.binding.address));
+            reached.boundaries.extend(
+                vendor
+                    .services
+                    .iter()
+                    .flat_map(|service| service.bindings.iter().map(|b| b.call.address)),
+            );
+            match goal[0] {
+                Some(ResolvedExecutionGoal::ReachSymbol { address })
+                | Some(ResolvedExecutionGoal::ObserveCall { address, .. }) => {
+                    reached.boundaries.insert(address);
+                }
+                _ => {}
+            }
+        }
+    }
+    let target =
+        target.ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "no executions selected"))?;
+    Ok((target, reached))
+}
+
+fn function_coverage(
+    function: &ClosureFunction,
+    name: Option<String>,
+    reached: &Reached,
+    c: &mut dyn RunControl,
+) -> Result<FunctionCodeCoverage> {
+    c.checkpoint((function.blocks.len() + function.branches.len()) as u64 + 1)?;
+    let uncovered_blocks: Vec<u32> = function
+        .blocks
+        .iter()
+        .copied()
+        .filter(|block| !reached.instructions.contains(block))
+        .collect();
+    let mut uncovered_directions = Vec::new();
+    for site in &function.branches {
+        let (taken, fallthrough) = reached.branches.get(site).copied().unwrap_or_default();
+        for (seen, direction) in [(taken, true), (fallthrough, false)] {
+            if !seen {
+                uncovered_directions.push(BranchDirection {
+                    site: *site,
+                    taken: direction,
+                });
+            }
+        }
+    }
+    let total = |n: usize, uncovered: usize| CoverageCount {
+        reached: (n - uncovered) as u64,
+        total: n as u64,
+    };
+    Ok(FunctionCodeCoverage {
+        entry: function.entry,
+        name,
+        blocks: total(function.blocks.len(), uncovered_blocks.len()),
+        directions: total(2 * function.branches.len(), uncovered_directions.len()),
+        uncovered_blocks,
+        uncovered_directions,
+        modeled: function.modeled.clone(),
+        unresolved: function.unresolved.clone(),
+        gaps: function.gaps.clone(),
+    })
+}
+
+/// Report the vendor coverage of every root closure of `ids`, which must share
+/// one vendor target.
+pub(crate) fn report(
+    project: &Project,
+    ids: &[ArtifactId],
+    semantics: &dyn FunctionSemantics,
+    memory: &WorkingMemory,
+    c: &mut dyn RunControl,
+) -> Result<CodeCoverageReport> {
+    if ids.is_empty() || ids.iter().collect::<BTreeSet<_>>().len() != ids.len() {
+        return Err(Error::new(
+            ErrorCode::InvalidRequest,
+            "code coverage needs distinct executions",
+        ));
+    }
+    let (target, reached) = collect(project, ids, memory, c)?;
+    let sources = Sources::load_targets(project, &[&target], memory, c)?;
+    let mut segments: Vec<_> = sources
+        .target_segments(&target)
+        .filter(|s| s.flags & 1 != 0)
+        .collect();
+    segments.sort_by_key(|s| s.address);
+    let mut names: BTreeMap<u32, String> = BTreeMap::new();
+    target_executables(project, &target, c, &mut |source, c| {
+        for (address, name) in blobray_artifacts::code_symbols(source, memory, c)? {
+            // The first name in order identifies a start with several names.
+            names.entry(address).or_insert(name);
+        }
+        Ok(())
+    })?;
+    let starts: BTreeSet<u32> = names.keys().copied().collect();
+    let roots: Vec<u32> = reached.roots.iter().copied().collect();
+    let closure = code_closure(
+        &ClosureInput {
+            roots: &roots,
+            boundaries: &reached.boundaries,
+            function_starts: &starts,
+            code: &Code { segments },
+            semantics,
+        },
+        memory,
+        c,
+    )?;
+    let by_entry: BTreeMap<u32, &ClosureFunction> = closure.iter().map(|f| (f.entry, f)).collect();
+    let mut functions = Vec::new();
+    for function in &closure {
+        functions.push(function_coverage(
+            function,
+            names.get(&function.entry).cloned(),
+            &reached,
+            c,
+        )?);
+    }
+    let mut root_reports = Vec::new();
+    for root in &roots {
+        let mut members = BTreeSet::new();
+        let mut pending = vec![*root];
+        while let Some(entry) = pending.pop() {
+            c.checkpoint(1)?;
+            if members.insert(entry) {
+                pending.extend(by_entry[&entry].callees.iter().copied());
+            }
+        }
+        let blocks: BTreeSet<u32> = members
+            .iter()
+            .flat_map(|e| by_entry[e].blocks.iter().copied())
+            .collect();
+        let sites: BTreeSet<u32> = members
+            .iter()
+            .flat_map(|e| by_entry[e].branches.iter().copied())
+            .collect();
+        let directions = sites
+            .iter()
+            .map(|site| {
+                let (taken, fallthrough) = reached.branches.get(site).copied().unwrap_or_default();
+                u64::from(taken) + u64::from(fallthrough)
+            })
+            .sum();
+        root_reports.push(RootCoverage {
+            entry: *root,
+            name: names.get(root).cloned(),
+            functions: members.into_iter().collect(),
+            blocks: CoverageCount {
+                reached: blocks
+                    .iter()
+                    .filter(|b| reached.instructions.contains(b))
+                    .count() as u64,
+                total: blocks.len() as u64,
+            },
+            directions: CoverageCount {
+                reached: directions,
+                total: 2 * sites.len() as u64,
+            },
+        });
+    }
+    // Disjoint union of every function's decoded code.
+    let mut ranges: Vec<[u32; 2]> = closure
+        .iter()
+        .flat_map(|f| f.code.iter().copied())
+        .collect();
+    ranges.sort_unstable();
+    let mut code: Vec<[u32; 2]> = Vec::new();
+    for range in ranges {
+        match code.last_mut() {
+            Some(last) if last[1] >= range[0] => last[1] = last[1].max(range[1]),
+            _ => code.push(range),
+        }
+    }
+    let outside = reached
+        .instructions
+        .iter()
+        .filter(|pc| {
+            let index = code.partition_point(|range| range[0] <= **pc);
+            index == 0 || **pc >= code[index - 1][1]
+        })
+        .count() as u64;
+    Ok(CodeCoverageReport {
+        executions: ids.to_vec(),
+        roots: root_reports,
+        functions,
+        outside,
+    })
+}

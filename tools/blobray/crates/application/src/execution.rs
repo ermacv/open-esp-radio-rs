@@ -37,15 +37,15 @@ fn source_keys(target: &ExecutionTarget) -> Vec<SourceKey> {
         )
         .collect()
 }
-struct LoadedSegment<'a> {
-    address: u32,
-    memory_size: usize,
-    flags: u32,
-    bytes: ScratchBytes<'a>,
+pub(crate) struct LoadedSegment<'a> {
+    pub address: u32,
+    pub memory_size: usize,
+    pub flags: u32,
+    pub bytes: ScratchBytes<'a>,
 }
 /// Executable segments of every source of a request, validated and loaded once.
 /// Each fresh session copies them, so cold resets never reread retained sources.
-struct Sources<'a> {
+pub(crate) struct Sources<'a> {
     loaded: BTreeMap<SourceKey, Vec<LoadedSegment<'a>>>,
 }
 impl<'a> Sources<'a> {
@@ -58,8 +58,16 @@ impl<'a> Sources<'a> {
         let targets: Vec<&ExecutionTarget> = std::iter::once(&request.vendor)
             .chain(&request.replacement)
             .collect();
+        Self::load_targets(project, &targets, memory, c)
+    }
+    pub(crate) fn load_targets(
+        project: &Project,
+        targets: &[&ExecutionTarget],
+        memory: &'a WorkingMemory,
+        c: &mut dyn RunControl,
+    ) -> Result<Self> {
         let mut loaded = BTreeMap::new();
-        for target in &targets {
+        for target in targets {
             if let FunctionSource::Image { image } = &target.source
                 && project.image_manifest(image, c)?.0.plan.recipe.revision != target.revision
             {
@@ -89,6 +97,36 @@ impl<'a> Sources<'a> {
         }
         Ok(Self { loaded })
     }
+    /// Every loaded segment of `target`'s sources.
+    pub(crate) fn target_segments(
+        &self,
+        target: &ExecutionTarget,
+    ) -> impl Iterator<Item = &LoadedSegment<'a>> {
+        source_keys(target)
+            .into_iter()
+            .filter_map(|key| self.loaded.get(&key))
+            .flatten()
+    }
+}
+/// The retained executable of one source of `target`, in `source_keys` order.
+pub(crate) fn target_executables(
+    project: &Project,
+    target: &ExecutionTarget,
+    c: &mut dyn RunControl,
+    visit: &mut dyn FnMut(&dyn ByteSource, &mut dyn RunControl) -> Result<()>,
+) -> Result<()> {
+    for key in source_keys(target) {
+        match &key {
+            SourceKey::Image(image) => visit(&project.image_executable(image, c)?.1, c)?,
+            SourceKey::Input(revision, index) => {
+                let payload = project.revision_input(revision, *index)?.ok_or_else(|| {
+                    Error::new(ErrorCode::NotFound, "execution input is not captured")
+                })?;
+                visit(&project.open_payload(&payload, c)?, c)?;
+            }
+        }
+    }
+    Ok(())
 }
 fn segments<'a>(
     source: &dyn ByteSource,

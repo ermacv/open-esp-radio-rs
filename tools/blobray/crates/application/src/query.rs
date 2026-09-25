@@ -178,6 +178,11 @@ impl QueryOutput {
                 ReadQuery::Execution { id, .. } | ReadQuery::ExecutionSummary { id },
                 QuerySummary::Execution { id: actual, .. },
             ) if id == actual => None,
+            (ReadQuery::CodeCoverage { executions }, QuerySummary::CodeCoverage { report, .. })
+                if executions == &report.executions =>
+            {
+                None
+            }
             (ReadQuery::Analysis { id, .. }, QuerySummary::Analysis { id: actual, .. })
                 if id == actual =>
             {

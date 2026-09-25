@@ -1,5 +1,6 @@
 //! Bounded local control-flow exploration. No filesystem, project or ISA implementation.
 use blobray_domain::*;
+pub mod closure;
 pub mod interfaces;
 pub mod navigation;
 pub mod paths;

@@ -303,6 +303,16 @@ enum Command {
         limits: ResourceOptions,
     },
     /// Read retained concrete observations without executing.
+    /// Report the vendor coverage of the root closures of retained executions
+    /// that share one vendor target.
+    CodeCoverage {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long = "execution", required = true)]
+        executions: Vec<ArtifactId>,
+        #[command(flatten)]
+        limits: ResourceOptions,
+    },
     Execution {
         #[arg(long)]
         project: PathBuf,
@@ -1597,6 +1607,18 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 return Err(invalid("compare requires a replacement and binding"));
             }
             return execute_request(&project, request, &limits, format);
+        }
+        Command::CodeCoverage {
+            project,
+            executions,
+            limits,
+        } => {
+            return read_query(
+                project,
+                ReadQuery::CodeCoverage { executions },
+                limits,
+                format,
+            );
         }
         Command::Execution {
             project,

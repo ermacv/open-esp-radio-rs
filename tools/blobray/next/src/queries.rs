@@ -97,6 +97,7 @@ fn render_unbuffered(
             | app::QuerySummary::StorageUsage { .. }
             | app::QuerySummary::Data { .. }
             | app::QuerySummary::TargetAudit { .. }
+            | app::QuerySummary::CodeCoverage { .. }
             | app::QuerySummary::KnowledgeValidation { .. }
             | app::QuerySummary::RetainedPayload { .. }
             | app::QuerySummary::Preservation { .. }

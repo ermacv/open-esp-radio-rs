@@ -143,6 +143,11 @@ pub enum ReadQuery {
     ExecutionSummary {
         id: ArtifactId,
     },
+    /// Vendor coverage of the root closures of executions that share one
+    /// vendor target.
+    CodeCoverage {
+        executions: Vec<ArtifactId>,
+    },
     ValidateKnowledge {
         change: KnowledgeChange,
     },

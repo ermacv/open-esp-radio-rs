@@ -564,6 +564,35 @@ atomically committing the result reference and completed run. Cancellation,
 limits or corruption cannot publish partial evidence. Process-level OOM and
 opaque dependency containment retain the existing host guarantees.
 
+### Code coverage of root closures
+
+```console
+blobray code-coverage --project PROJECT --execution EXECUTION_SHA [--execution EXECUTION_SHA ...] --limit-mode watchdog
+```
+
+`code-coverage` reports the vendor coverage of executions that share one vendor
+target; executions of different targets, or a repeated execution, are rejected.
+Every distinct vendor invocation entry is a root. From each root the closure
+explores executable captured code by recursive descent: conditional branches,
+direct jumps and calls, and `auipc`/`lui` + `jalr` pairs whose target the
+immediately preceding upper immediate defines. A plain jump to another defined
+code symbol's start is a tail call. The closure does not enter call-model and
+FIFO-service binding addresses or goal symbols; those transfer sites are
+`modeled`. Other indirect transfers, and direct transfers leaving executable
+captured code, are `unresolved`; a `jalr x0, 0(ra)` return is neither.
+Undecodable instructions are `gaps`.
+
+The summary names the decoder and semantic identities and carries the report.
+Each closure function lists its basic blocks reached out of all, both
+directions of each conditional branch, its uncovered block leaders and branch
+directions, and its modeled, unresolved and gap sites; a defined code symbol at
+its entry names it. Each root lists its closure functions and the distinct
+blocks and directions over them. `outside` counts executed vendor instructions
+that no closure decoded, such as code reached through an unresolved transfer.
+A block counts as reached when its leader executed. The closure is bounded by
+4,096 functions and 1,048,576 decoded instructions; exceeding either is a
+resource failure.
+
 `execution` only reads retained evidence. `execution --summary` returns only
 the manifest after verifying the request and record payload digests; it neither
 decodes nor returns records, so reopening a large evidence set costs one hash. `execution --no-events`

@@ -56,6 +56,11 @@ pub enum QuerySummary {
         id: ArtifactId,
         manifest: Box<ExecutionManifest>,
     },
+    CodeCoverage {
+        decoder: String,
+        semantics: String,
+        report: Box<CodeCoverageReport>,
+    },
     KnowledgeValidation {
         expected_base: Option<KnowledgeRevisionId>,
     },
@@ -755,6 +760,24 @@ pub fn prepare_query_with_tools(
                     semantics: decoder.semantic_identity().into(),
                     ranges: ranges.clone(),
                     summary,
+                }
+            }
+            ReadQuery::CodeCoverage { executions } => {
+                let decoder = decoder.ok_or_else(|| {
+                    Error::new(ErrorCode::Incompatible, "code coverage decoder unavailable")
+                })?;
+                let _fixed = memory.reserve(2 * 1024 * 1024, control.position())?;
+                let report = crate::code_coverage::report(
+                    &Project::open(&work.project.to_path()?)?,
+                    executions,
+                    decoder,
+                    &memory,
+                    control,
+                )?;
+                QuerySummary::CodeCoverage {
+                    decoder: decoder.identity().into(),
+                    semantics: decoder.semantic_identity().into(),
+                    report: Box::new(report),
                 }
             }
             ReadQuery::ValidateKnowledge { change } => {

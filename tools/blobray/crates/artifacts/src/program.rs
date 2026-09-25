@@ -301,6 +301,47 @@ pub fn execution_segments(
     Ok(())
 }
 
+/// Defined, named code symbols of a static RV32 executable as (address, name),
+/// ascending by address and then name. Section and mapping symbols are omitted.
+pub fn code_symbols(
+    source: &dyn ByteSource,
+    memory: &WorkingMemory,
+    control: &mut dyn RunControl,
+) -> Result<Vec<(u32, String)>> {
+    use object::{Object, ObjectSymbol, SymbolKind};
+    let mut bytes = memory.bytes(
+        usize::try_from(source.len()).map_err(|_| invalid("ELF size overflow"))?,
+        control.position(),
+    )?;
+    source.read_at(0, &mut bytes, control)?;
+    let file = object::File::parse(&*bytes).map_err(|_| invalid("invalid executable ELF"))?;
+    if file.kind() != object::ObjectKind::Executable
+        || file.architecture() != object::Architecture::Riscv32
+    {
+        return Err(invalid("code symbols require a static RV32 executable"));
+    }
+    let mut symbols = Vec::new();
+    for symbol in file.symbols() {
+        control.checkpoint(1)?;
+        if symbol.is_undefined() || symbol.kind() != SymbolKind::Text {
+            continue;
+        }
+        let Ok(name) = symbol.name() else { continue };
+        if name.is_empty() || name.starts_with('$') {
+            continue;
+        }
+        let address =
+            u32::try_from(symbol.address()).map_err(|_| invalid("symbol address exceeds RV32"))?;
+        symbols
+            .try_reserve(1)
+            .map_err(|_| Error::new(ErrorCode::ResourceLimited, "symbol allocation refused"))?;
+        symbols.push((address, name.to_owned()));
+    }
+    symbols.sort_unstable();
+    symbols.dedup();
+    Ok(symbols)
+}
+
 /// Boot-initialized data: writable `PROGBITS` sections whose bytes the file
 /// carries although their load segment is zero-filled at that address. A ROM
 /// copies them there at start-up; execution begins from that state. Sections

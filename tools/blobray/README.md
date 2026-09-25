@@ -28,7 +28,7 @@ reference for required selectors, request files and supported subcommands.
 | Investigate registers and data | `registers`, `data`, `export-data`, `knowledge` | [Register research](next/reference/registers-data/README.md#saved-register-research), [tables and coefficients](next/reference/registers-data/README.md#captured-data-tables-and-coefficients) |
 | Prepare a linked image | `link-plan`, `prepare-image`, `images` | [Prepared images](next/reference/capture-images/README.md#synthetic-prepared-images) |
 | Inspect static representations | `ir`, `trace` | [Semantic IR](next/reference/ir-traces/README.md#saved-semantic-ir-profiles), [static traces](next/reference/ir-traces/README.md#static-observable-traces) |
-| Execute and compare | `execute`, `compare`, `replay` | [Execution and comparison](next/reference/execution/README.md#concrete-execution-and-comparison), [effect contracts](next/reference/comparison/README.md#reviewed-effect-comparison) |
+| Execute and compare | `execute`, `compare`, `replay`, `code-coverage` | [Execution and comparison](next/reference/execution/README.md#concrete-execution-and-comparison), [effect contracts](next/reference/comparison/README.md#reviewed-effect-comparison) |
 | Preserve research | `backup`, `restore`, explicit export commands | [Knowledge and preservation](next/reference/knowledge-review/README.md#knowledge-and-preservation) |
 
 ### Choose a research method

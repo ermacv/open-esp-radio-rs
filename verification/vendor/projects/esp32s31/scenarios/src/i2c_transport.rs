@@ -6,10 +6,11 @@
 use crate::evidence::stop;
 use crate::harness::{Result, case, invocation, known, words, words_padded};
 use crate::i2c::{I2c, models, returned_low, word_writes};
+use crate::layout::*;
 use blobray_domain::{
-    CommandBank, CommandCell, CommandPort, ComparisonVerdict, DeviceBehavior, DeviceDeclaration,
-    DeviceIssue, ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionRegion, ExecutionStop,
-    Invocation, ModelStatus, RegionLifetime, RegisterCell, SessionReset,
+    CommandCell, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, DeviceIssue, ExecutionCase,
+    ExecutionEvent, ExecutionEvidence, ExecutionRegion, ExecutionStop, Invocation, ModelStatus,
+    RegionLifetime, RegisterCell, SessionReset,
 };
 
 /// Independent `.iram1` +0x44..+0x60 instruction reading.
@@ -23,12 +24,12 @@ pub fn controls() -> DeviceDeclaration {
         behavior: DeviceBehavior::RegisterBank {
             cells: vec![
                 RegisterCell {
-                    address: 0x2010_f81c,
+                    address: I2C_READ_MASK,
                     width: 4,
                     value: 0,
                 },
                 RegisterCell {
-                    address: 0x2010_f820,
+                    address: I2C_HOST_MAP,
                     width: 4,
                     value: 0x1234_5678,
                 },
@@ -45,35 +46,20 @@ pub fn bank(
     busy: u32,
     initial: [u32; 2],
 ) -> DeviceDeclaration {
-    DeviceDeclaration {
-        id: "analog".into(),
-        applicability: "shared analog bytes; samples at issue, writes at ready observation".into(),
-        lifetime: RegionLifetime::Phase,
-        behavior: DeviceBehavior::CommandBank(CommandBank {
-            selector_mask: 0xffff,
-            data_mask: 0x00ff_0000,
-            read_command: 0x0400_0000,
-            write_command: 0x0500_0000,
-            busy_mask: 0x0200_0000,
-            reset_command: Some(0x0400_0000),
-            ports: (0..2)
-                .map(|i| CommandPort {
-                    address: 0x2010_f800 + 4 * i,
-                    initial: 0,
-                    initial_busy_reads: initial[i as usize],
-                    busy_reads: busy,
-                })
-                .collect(),
-            cells: [0x026b, 0x0466]
-                .into_iter()
-                .map(|s| CommandCell {
-                    selector: s,
-                    initial: if Some(s) == selector { sample } else { 0 },
-                    reads: (scripted && Some(s) == selector).then(|| vec![sample]),
-                })
-                .collect(),
-        }),
-    }
+    analog_bank(
+        "analog",
+        "shared analog bytes; samples at issue, writes at ready observation",
+        busy,
+        initial,
+        [0x026b, 0x0466]
+            .into_iter()
+            .map(|s| CommandCell {
+                selector: s,
+                initial: if Some(s) == selector { sample } else { 0 },
+                reads: (scripted && Some(s) == selector).then(|| vec![sample]),
+            })
+            .collect(),
+    )
 }
 
 struct Transport {
@@ -86,9 +72,9 @@ impl Transport {
     /// value selects captured code, not callback response models.
     fn memory(&self, arguments: &[u32]) -> Result<Vec<ExecutionRegion>> {
         Ok(vec![
-            known(0x2f07_fc3c, 4, &words(&[0x3fff_3000]))?,
-            known(0x3fff_3000, 16, &words(&self.callbacks))?,
-            known(0x3fff_4000, 32, &words_padded(arguments, 8, 0)?)?,
+            known(ROM_INTERFACE_POINTER, 4, &words(&[CALLBACK_TABLE]))?,
+            known(CALLBACK_TABLE, 16, &words(&self.callbacks))?,
+            known(ABI_WORDS, 32, &words_padded(arguments, 8, 0)?)?,
         ])
     }
 
@@ -100,7 +86,7 @@ impl Transport {
     ) -> Result<Invocation> {
         Ok(invocation(
             self.entry,
-            vec![Some(target), Some(0x3fff_4000)],
+            vec![Some(target), Some(ABI_WORDS)],
             self.memory(arguments)?,
             models,
             vec![],
@@ -162,7 +148,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
             vec![controls()],
             true,
         )?);
-        expected.push((vec![(0x2010_f820, CONFIGURATION)], Some(host), 0));
+        expected.push((vec![(I2C_HOST_MAP, CONFIGURATION)], Some(host), 0));
     }
     let names = [
         "phy_i2c_readReg",
@@ -210,13 +196,13 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                     models,
                     matches!(mode, 0 | 2),
                 )?);
-                let mut writes = vec![(0x2010_f820, CONFIGURATION)];
-                let port = 0x2010_f800 + 4 * host;
+                let mut writes = vec![(I2C_HOST_MAP, CONFIGURATION)];
+                let port = I2C_PORT_0 + 4 * host;
                 if mode != 1 {
-                    writes.extend([(0x2010_f81c, mask), (port, 0x0400_0000 | selector)]);
+                    writes.extend([(I2C_READ_MASK, mask), (port, COMMAND_READ | selector)]);
                 }
                 if mode == 3 {
-                    writes.push((0x2010_f820, CONFIGURATION));
+                    writes.push((I2C_HOST_MAP, CONFIGURATION));
                 }
                 if matches!(mode, 1 | 3) {
                     let data = if mode == 1 {
@@ -226,7 +212,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                     } else {
                         set_value
                     };
-                    writes.push((port, 0x0500_0000 | data << 16 | selector));
+                    writes.push((port, COMMAND_WRITE | data << 16 | selector));
                 }
                 let returned = match mode {
                     0 => Some(sample),
@@ -251,7 +237,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         )?);
         let writes = (0..2)
             .filter(|i| initial[*i as usize] != 0)
-            .map(|i| (0x2010_f800 + 4 * i, 0x0400_0000))
+            .map(|i| (I2C_PORT_0 + 4 * i, COMMAND_READ))
             .collect();
         expected.push((
             writes,
@@ -259,14 +245,18 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
             initial.iter().filter(|v| **v != 0).count() as u64,
         ));
     }
-    // Independent cold cases are batched below the native 64-KiB request bound;
-    // every declared case and expectation is still executed and retained.
-    for (batch, (rows, expectations)) in cases.chunks(10).zip(expected.chunks(10)).enumerate() {
+    // Every independent cold case is one request: requests are retained by
+    // identity, so the control-message bound does not split the matrix.
+    for (batch, (rows, expectations)) in cases
+        .chunks(cases.len())
+        .zip(expected.chunks(expected.len()))
+        .enumerate()
+    {
         let records = ctx.compare(
             &format!("transport-{batch}"),
             rows.to_vec(),
             ComparisonVerdict::Match,
-            32768,
+            MAX_EVENTS,
         )?;
         for (i, (writes, returned, commands)) in expectations.iter().enumerate() {
             let i = i as u32;
@@ -313,7 +303,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         "transport-exhausted",
         vec![exhausted],
         ComparisonVerdict::Incomplete,
-        32768,
+        MAX_EVENTS,
     )?;
     assert!(records.iter().all(|r| match r {
         ExecutionEvidence::Model { observation, .. } if observation.id == "analog" => {
@@ -336,7 +326,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         "transport-field-domain",
         vec![wide],
         ComparisonVerdict::Diff,
-        32768,
+        MAX_EVENTS,
     )?;
     let port: Vec<u32> = records
         .iter()
@@ -344,7 +334,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
             ExecutionEvidence::Event {
                 event:
                     ExecutionEvent::Write {
-                        address: 0x2010_f800,
+                        address: I2C_PORT_0,
                         value,
                         ..
                     },
@@ -368,7 +358,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         "transport-edge-timeout",
         vec![timeout],
         ComparisonVerdict::Incomplete,
-        32768,
+        MAX_EVENTS,
     )?;
     assert!(matches!(
         stop(&records, 0, true),
@@ -392,7 +382,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         "transport-reset-timeout",
         vec![timeout],
         ComparisonVerdict::Incomplete,
-        32768,
+        MAX_EVENTS,
     )?;
     assert!(matches!(
         stop(&records, 0, true),

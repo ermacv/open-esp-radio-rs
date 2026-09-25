@@ -1,9 +1,9 @@
 //! Shared scenario lifecycle: run directory, linked image, execution
 //! submission, failure without publication and source-free preservation.
 use crate::harness::{
-    ExecutionDocument, Input, LimitMode, ProbeCatalog, Result, Runner, args, invalid, manifest,
-    seed,
+    Budget, ExecutionDocument, Input, ProbeCatalog, Result, Runner, args, invalid, manifest, seed,
 };
+use crate::layout::*;
 use blobray_application::QuerySummary;
 use blobray_domain::{
     ArtifactId, CallAbi, ErrorCode, ExecutionRequest, ExecutionTarget, FunctionSource,
@@ -53,7 +53,7 @@ impl Session {
     pub fn start(
         binary: &Path,
         output: &Path,
-        limit_mode: LimitMode,
+        budget: Budget,
         inputs: &[Input<'_>],
         scope: &str,
     ) -> Result<Self> {
@@ -63,7 +63,7 @@ impl Session {
             .tempdir_in(std::path::absolute(output)?)?
             .keep();
         fs::write(output.join("latest"), run.as_os_str().as_encoded_bytes())?;
-        let runner = Runner::new(binary, &run, run.join("project"), limit_mode)?;
+        let runner = Runner::new(binary, &run, run.join("project"), budget)?;
         let (revision, identities) = runner.capture(inputs)?;
         let roles: Vec<_> = inputs.iter().map(|i| i.role).collect();
         runner.doc(
@@ -137,7 +137,7 @@ impl Session {
     /// compiled production input with the ROM companion. Stack bytes stay
     /// unknown until a request selects a fill.
     pub fn targets(&self, image: &PreparedImageId) -> Result<(ExecutionTarget, ExecutionTarget)> {
-        let stack = seed(0x3ffe_0000, 0x8000, &[], None)?;
+        let stack = seed(STACK_ADDRESS, STACK_BYTES, &[], None)?;
         Ok((
             ExecutionTarget {
                 revision: self.revision.clone(),

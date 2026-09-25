@@ -160,6 +160,7 @@ fn resolve(
             }
             RunOperation::Execute {
                 request: previous.manifest.request.clone(),
+                compare: previous.request.replacement.is_some(),
                 producer: producer.clone(),
             }
         }
@@ -293,7 +294,9 @@ pub fn prepare_scenario_worker(
                     stage, &request, decoder, &memory, &disk, c,
                 )?)
             }
-            RunOperation::Execute { request, producer } => {
+            RunOperation::Execute {
+                request, producer, ..
+            } => {
                 let request = ExecutionWork {
                     schema: 1,
                     run: work.run.clone(),

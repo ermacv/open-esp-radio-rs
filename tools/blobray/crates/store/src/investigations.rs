@@ -51,7 +51,7 @@ fn hash_json(hash: &mut Sha256, value: &impl serde::Serialize, limit: usize) -> 
 }
 fn plan_id(recipe: &InvestigationRecipe) -> Result<InvestigationPlanId> {
     let mut hash = Sha256::new();
-    hash_json(&mut hash, recipe, 65536)?;
+    hash_json(&mut hash, recipe, CONTROL_MESSAGE_BYTES)?;
     format!("{:x}", hash.finalize()).parse()
 }
 pub fn investigation_plan(recipe: InvestigationRecipe) -> Result<InvestigationPlan> {
@@ -121,7 +121,7 @@ pub struct JsonlCursor<'a> {
 impl<'a> JsonlCursor<'a> {
     pub fn new(source: &'a dyn ByteSource) -> Result<Self> {
         let mut line = Vec::new();
-        line.try_reserve_exact(65536).map_err(|_| {
+        line.try_reserve_exact(CONTROL_MESSAGE_BYTES).map_err(|_| {
             Error::new(ErrorCode::ResourceLimited, "JSONL buffer allocation failed")
         })?;
         Ok(Self {
@@ -175,7 +175,7 @@ pub(crate) fn decode(
     source: &dyn ByteSource,
     control: &mut dyn RunControl,
 ) -> Result<InvestigationManifest> {
-    if source.len() > 65536 {
+    if source.len() > CONTROL_MESSAGE_BYTES as u64 {
         return Err(integrity("investigation manifest exceeds 64 KiB"));
     }
     let mut bytes = vec![0; source.len() as usize];
@@ -287,7 +287,7 @@ impl Staging {
     ) -> Result<PreparedInvestigationReceipt> {
         validate_investigation_plan(&manifest.plan)?;
         let bytes = serde_json::to_vec(manifest).map_err(jobs::json)?;
-        if bytes.len() > 65536 {
+        if bytes.len() > CONTROL_MESSAGE_BYTES {
             return Err(integrity("publication manifest exceeds 64 KiB"));
         }
         let mut file = self.disk.temporary(&self.root.join("staging"))?;

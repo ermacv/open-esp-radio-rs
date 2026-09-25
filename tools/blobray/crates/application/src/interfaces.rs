@@ -163,7 +163,7 @@ pub(crate) fn discover(
     c: &mut dyn RunControl,
     emit: &mut dyn FnMut(&InterfaceObservation, &mut dyn RunControl) -> Result<()>,
 ) -> Result<InterfaceSummary> {
-    let _construction = memory.reserve(65536, c.position())?;
+    let _construction = memory.reserve(CONTROL_MESSAGE_BYTES as u64, c.position())?;
     let snapshot = project.knowledge_snapshot(request.knowledge.as_ref(), memory, c)?;
     match &request.input {
         InterfaceInput::Analysis { analysis, abi } => {

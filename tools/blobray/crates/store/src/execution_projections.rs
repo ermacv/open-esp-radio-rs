@@ -101,10 +101,11 @@ impl Project {
     pub(super) fn validate_execution_projections(
         &self,
         manifest: &ExecutionManifest,
+        request: &ExecutionRequest,
         memory: &WorkingMemory,
         c: &mut dyn RunControl,
     ) -> Result<()> {
-        let selected = self.execution_projections(&manifest.request, memory, c)?;
+        let selected = self.execution_projections(request, memory, c)?;
         if selected.projections != manifest.projections {
             return Err(integrity(
                 "retained projections differ from selected accepted reviews",
@@ -371,7 +372,7 @@ mod tests {
             effect_contracts: vec![],
             schema: EXECUTION_SCHEMA,
             project: project.id().clone(),
-            request,
+            request: encode_execution_request(&request).unwrap().0,
             call_pairs: vec![],
             projections: vec![ResolvedProjection {
                 review: selected,
@@ -387,12 +388,12 @@ mod tests {
             },
         };
         project
-            .validate_execution_projections(&manifest, &memory, &mut || Ok(()))
+            .validate_execution_projections(&manifest, &request, &memory, &mut || Ok(()))
             .unwrap();
         manifest.projections[0].projection.fields[0].width = 2;
         assert_eq!(
             project
-                .validate_execution_projections(&manifest, &memory, &mut || Ok(()))
+                .validate_execution_projections(&manifest, &request, &memory, &mut || Ok(()))
                 .unwrap_err()
                 .code,
             ErrorCode::Integrity
@@ -400,7 +401,7 @@ mod tests {
         manifest.projections.clear();
         assert_eq!(
             project
-                .validate_execution_projections(&manifest, &memory, &mut || Ok(()))
+                .validate_execution_projections(&manifest, &request, &memory, &mut || Ok(()))
                 .unwrap_err()
                 .code,
             ErrorCode::Integrity

@@ -17,7 +17,7 @@ pub(crate) fn decode(
     source: &dyn ByteSource,
     control: &mut dyn RunControl,
 ) -> Result<FunctionManifest> {
-    if source.len() > 65536 {
+    if source.len() > CONTROL_MESSAGE_BYTES as u64 {
         return Err(integrity("function manifest exceeds 64 KiB"));
     }
     let mut bytes = vec![0; source.len() as usize];
@@ -185,7 +185,7 @@ impl Staging {
         control: &mut dyn RunControl,
     ) -> Result<PreparedFunctionReceipt> {
         let encoded = serde_json::to_vec(manifest).map_err(jobs::json)?;
-        if encoded.len() > 65536 {
+        if encoded.len() > CONTROL_MESSAGE_BYTES {
             return Err(integrity("function manifest exceeds 64 KiB"));
         }
         let mut file = self.disk.temporary(&self.root.join("staging"))?;

@@ -217,6 +217,12 @@ impl OperationWorker for Session {
         }
         Ok(Some(report))
     }
+    fn wait(&mut self, timeout_ms: u64) -> Result<()> {
+        if !self.done {
+            procfs::wait_exit(self.child.id(), timeout_ms);
+        }
+        Ok(())
+    }
     fn cancel(&mut self) -> Result<()> {
         if let Some(input) = &mut self.input {
             match input.write_all(b"c") {
@@ -245,10 +251,10 @@ fn read_control(path: &Path) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     File::open(path)
         .map_err(io)?
-        .take(65537)
+        .take(CONTROL_MESSAGE_BYTES as u64 + 1)
         .read_to_end(&mut bytes)
         .map_err(io)?;
-    if bytes.len() > 65536 {
+    if bytes.len() > CONTROL_MESSAGE_BYTES {
         return Err(Error::new(
             ErrorCode::Integrity,
             "worker control message exceeds 64 KiB",

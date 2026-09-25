@@ -78,8 +78,11 @@ impl PlanDescription {
     }
     pub fn read(reader: impl Read) -> Result<Self> {
         let mut bytes = Vec::new();
-        reader.take(65537).read_to_end(&mut bytes).map_err(io)?;
-        if bytes.len() > 65536 {
+        reader
+            .take(CONTROL_MESSAGE_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(io)?;
+        if bytes.len() > CONTROL_MESSAGE_BYTES {
             return Err(Error::new(ErrorCode::InvalidRequest, "plan exceeds 64 KiB"));
         }
         let description: Self = serde_json::from_slice(&bytes)

@@ -11,6 +11,8 @@ mod investigations;
 pub use investigations::*;
 mod executions;
 pub use executions::*;
+mod execution_requests;
+pub use execution_requests::{decode_execution_request, encode_execution_request};
 mod semantic_ir;
 pub use semantic_ir::*;
 mod functions;
@@ -53,7 +55,9 @@ use std::{
 };
 
 const STATE: &str = ".blobray-next";
-const SCHEMA: i64 = 36;
+const SCHEMA: i64 = 37;
+/// Run record format shared by every durable and read operation.
+pub const JOURNAL_SCHEMA: u32 = 38;
 
 /// A project handle owns no source-file handles or mutable inventory cache.
 #[derive(Clone)]
@@ -142,10 +146,15 @@ impl Project {
             CREATE TABLE current_publication (singleton INTEGER PRIMARY KEY CHECK(singleton=1), id TEXT NOT NULL);
             CREATE TABLE analyses (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, revision TEXT NOT NULL);
             CREATE TABLE images (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, revision TEXT NOT NULL, plan TEXT NOT NULL);
-            CREATE TABLE runs (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, record TEXT NOT NULL);
+            CREATE TABLE runs (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, record TEXT NOT NULL, state TEXT, execution TEXT);
+            CREATE INDEX runs_execution ON runs(execution) WHERE execution IS NOT NULL;
+            CREATE TRIGGER runs_state_insert AFTER INSERT ON runs BEGIN UPDATE runs SET state=CASE WHEN json_valid(NEW.record) THEN json_extract(NEW.record,'$.state') END, execution=CASE WHEN json_valid(NEW.record) THEN json_extract(NEW.record,'$.execution') END WHERE sequence=NEW.sequence; END;
+            CREATE TRIGGER runs_state_update AFTER UPDATE OF record ON runs BEGIN UPDATE runs SET state=CASE WHEN json_valid(NEW.record) THEN json_extract(NEW.record,'$.state') END, execution=CASE WHEN json_valid(NEW.record) THEN json_extract(NEW.record,'$.execution') END WHERE sequence=NEW.sequence; END;
+            CREATE INDEX runs_unfinished ON runs(state) WHERE state IN ('registered','running','validating');
             CREATE TABLE semantic_ir (id TEXT PRIMARY KEY, run TEXT NOT NULL);
             CREATE TABLE project (singleton INTEGER PRIMARY KEY CHECK(singleton=1), id TEXT NOT NULL, current_revision TEXT);
             CREATE TABLE revisions (sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE);
+            CREATE TABLE revision_inputs (revision TEXT NOT NULL, input INTEGER NOT NULL, payload TEXT, PRIMARY KEY(revision, input)) WITHOUT ROWID;
             INSERT INTO project VALUES (1, lower(hex(randomblob(32))), NULL);
             COMMIT;").map_err(db)?;
         connection
@@ -242,7 +251,7 @@ impl Project {
         let view = self.read_inventory(requested, &memory, &mut control, &mut ())?;
         let size = view.manifest().len();
         let _decoded = memory.reserve(
-            size.checked_mul(64)
+            size.checked_mul(DECODE_EXPANSION)
                 .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "snapshot size overflow"))?,
             control.position(),
         )?;
@@ -333,6 +342,12 @@ impl Writer {
         transaction
             .execute("INSERT INTO revisions(id) VALUES (?1)", [id.as_str()])
             .map_err(db)?;
+        let inputs: Vec<_> = revision
+            .inputs
+            .iter()
+            .map(|i| i.capture.artifact().cloned())
+            .collect();
+        jobs::insert_revision_inputs(&transaction, &id, &inputs)?;
         transaction
             .execute(
                 "UPDATE project SET current_revision=?1 WHERE singleton=1 AND id=?2",

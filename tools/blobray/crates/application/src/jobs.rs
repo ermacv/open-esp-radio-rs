@@ -83,6 +83,17 @@ impl RunHandle {
             .cloned()
             .collect()
     }
+    /// Wait at most `timeout` for cleanup to finish; true once the run is done.
+    /// Wakes as soon as the owner publishes completion.
+    pub fn wait_timeout(&self, timeout: Duration) -> bool {
+        let state = self.shared.state.lock().unwrap();
+        let (state, _) = self
+            .shared
+            .changed
+            .wait_timeout_while(state, timeout, |state| !state.done)
+            .unwrap();
+        state.done
+    }
     pub fn wait(&self) -> RunRecord {
         let mut state = self.shared.state.lock().unwrap();
         while !state.done {
@@ -495,8 +506,11 @@ impl Application {
         self.temporary.root(&*self.host)?;
         let mut reservation = self.temporary.reserve()?;
         let mut writer = Writer::open(&project)?;
-        request.validate()?;
-        write_control_message(&mut std::io::sink(), &request)?;
+        // The canonical request is retained by identity; only the identity
+        // travels in the journal, worker message and manifest.
+        let (request_id, request_bytes) = blobray_store::encode_execution_request(&request)?;
+        let compare = request.replacement.is_some();
+        drop(request);
         let producer = ExecutionProducer {
             executor: executor.identity().into(),
             environment: EXECUTION_ENVIRONMENT.into(),
@@ -507,7 +521,7 @@ impl Application {
             schema: 1,
             run: ArtifactId::of_bytes(b"admission").as_str().parse()?,
             project: OriginPath::from_path(&project),
-            request: request.clone(),
+            request: request_id.clone(),
             budget: budget.clone(),
             started_ms,
             deadline_ms,
@@ -516,9 +530,28 @@ impl Application {
         let (record, stage) = writer.register_operation(
             budget,
             self.host.owner()?,
-            RunOperation::Execute { request, producer },
+            RunOperation::Execute {
+                request: request_id.clone(),
+                compare,
+                producer,
+            },
             |stage| reservation.attach(stage),
         )?;
+        let staged = Staging::open(&stage)
+            .and_then(|staging| staging.retain_bytes(&request_bytes, &mut || Ok(())))
+            .and_then(|actual| {
+                (actual == request_id).then_some(()).ok_or_else(|| {
+                    Error::new(ErrorCode::Integrity, "staged request identity differs")
+                })
+            });
+        if let Err(error) = staged {
+            let mut failed = record;
+            failed.state = RunState::Failed;
+            failed.error = Some(error.clone());
+            writer.update_run(&failed)?;
+            writer.cleanup_stage(&failed.id)?;
+            return Err(error);
+        }
         work.run = record.id.clone();
         self.launch_durable(
             &mut jobs,
@@ -1047,7 +1080,7 @@ impl Application {
             &work,
         )?;
         let record = RunRecord {
-            schema: 37,
+            schema: blobray_store::JOURNAL_SCHEMA,
             operation: blobray_store::RunOperation::Query,
             resolved_operation: None,
             image: None,
@@ -1393,10 +1426,10 @@ fn supervise(
                 let mut bytes = Vec::new();
                 std::fs::File::open(stage.join("resolved.json"))
                     .map_err(storage_io)?
-                    .take(65537)
+                    .take(CONTROL_MESSAGE_BYTES as u64 + 1)
                     .read_to_end(&mut bytes)
                     .map_err(storage_io)?;
-                if bytes.len() > 65536 {
+                if bytes.len() > CONTROL_MESSAGE_BYTES {
                     return Err(Error::new(
                         ErrorCode::WorkerProtocol,
                         "scenario resolution exceeds bound",
@@ -1660,7 +1693,7 @@ fn execute_worker(
         if let Some(report) = worker.poll()? {
             break report;
         }
-        thread::sleep(Duration::from_millis(record.budget.poll_ms));
+        worker.wait(record.budget.poll_ms)?;
     };
     drop(worker); // Containment and reaping must finish before publication/cleanup.
     if report.schema != 6 {

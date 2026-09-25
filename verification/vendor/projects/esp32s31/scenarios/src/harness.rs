@@ -63,21 +63,37 @@ pub struct Input<'a> {
     pub sha256: Option<&'a str>,
 }
 
+/// Per-operation Blobray budget selected by the scenario operator.
+#[derive(Clone, Copy, Debug, clap::Args)]
+pub struct Budget {
+    #[arg(long, value_enum)]
+    pub limit_mode: LimitMode,
+    /// Wall-clock deadline of each Blobray operation.
+    #[arg(long, default_value_t = 600)]
+    pub timeout_secs: u64,
+    /// Algorithm working memory of each operation.
+    #[arg(long, default_value_t = 256)]
+    pub working_memory_mib: u64,
+    /// Work-unit budget of each operation.
+    #[arg(long, default_value_t = 2_000_000_000)]
+    pub max_work_units: u64,
+}
+
 /// Run supervised Blobray operations and retain their requests and diagnostics.
 pub struct Runner {
     binary: PathBuf,
     run: PathBuf,
     pub project: PathBuf,
-    limit_mode: LimitMode,
+    budget: Budget,
 }
 
 impl Runner {
-    pub fn new(binary: &Path, run: &Path, project: PathBuf, limit_mode: LimitMode) -> Result<Self> {
+    pub fn new(binary: &Path, run: &Path, project: PathBuf, budget: Budget) -> Result<Self> {
         Ok(Self {
             binary: std::path::absolute(binary)?,
             run: run.to_path_buf(),
             project,
-            limit_mode,
+            budget,
         })
     }
 
@@ -104,16 +120,15 @@ impl Runner {
             .arg("--project")
             .arg(&self.project);
         if command != "init" {
-            process.args([
-                "--limit-mode",
-                self.limit_mode.argument(),
-                "--timeout-secs",
-                "600",
-                "--working-memory-mib",
-                "256",
-                "--max-work-units",
-                "2000000000",
-            ]);
+            let budget = self.budget;
+            process
+                .args(["--limit-mode", budget.limit_mode.argument()])
+                .arg("--timeout-secs")
+                .arg(budget.timeout_secs.to_string())
+                .arg("--working-memory-mib")
+                .arg(budget.working_memory_mib.to_string())
+                .arg("--max-work-units")
+                .arg(budget.max_work_units.to_string());
         }
         process.args(rest);
         let start = Instant::now();

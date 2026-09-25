@@ -197,10 +197,10 @@ impl LinkPlan {
 pub fn read_link_plan(reader: impl Read) -> Result<LinkPlanDescription> {
     let mut bytes = Vec::new();
     reader
-        .take(65537)
+        .take(CONTROL_MESSAGE_BYTES as u64 + 1)
         .read_to_end(&mut bytes)
         .map_err(storage_io)?;
-    if bytes.len() > 65536 {
+    if bytes.len() > CONTROL_MESSAGE_BYTES {
         return Err(invalid("link plan exceeds 64 KiB"));
     }
     let plan = serde_json::from_slice(&bytes).map_err(|e| invalid(e.to_string()))?;

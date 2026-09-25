@@ -4,6 +4,14 @@ use crate::*;
 pub const WORK_POLICY: u32 = 1;
 pub const DEFAULT_WORK_UNITS: u64 = 1_000_000_000;
 pub const WORK_BLOCK: usize = 4096;
+/// Positional I/O and output buffering block; accounting stays per call.
+pub const STREAM_BLOCK: usize = 16 * WORK_BLOCK;
+/// Upper bound of one encoded control record: worker messages, journal rows,
+/// manifests, plans and requests other than execution requests. Bulk data is
+/// retained separately by content identity.
+pub const CONTROL_MESSAGE_BYTES: usize = 64 * 1024;
+/// Working memory admitted per encoded byte while decoding one control record.
+pub const DECODE_EXPANSION: u64 = 64;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

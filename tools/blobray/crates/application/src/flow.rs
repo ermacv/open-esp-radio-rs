@@ -26,7 +26,10 @@ pub(crate) fn query(
     c: &mut dyn RunControl,
     emit: &mut dyn FnMut(&FlowRecord, &mut dyn RunControl) -> Result<()>,
 ) -> Result<FlowSummary> {
-    let _construction = memory.reserve(65536 + 2 * request.allocated_bytes(), c.position())?;
+    let _construction = memory.reserve(
+        CONTROL_MESSAGE_BYTES as u64 + 2 * request.allocated_bytes(),
+        c.position(),
+    )?;
     if request.max_depth > 4096 {
         return Err(invalid("flow depth exceeds 4096"));
     }

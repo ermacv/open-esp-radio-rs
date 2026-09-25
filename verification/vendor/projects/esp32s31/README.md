@@ -261,6 +261,15 @@ through `blobray_next_host::wire`. `cargo test --manifest-path tools/blobray/Car
 checks the harness, the evidence interpretation and the oracles. Those tests
 need no private inputs.
 
+Each scenario passes its Blobray budget explicitly. `--limit-mode` is required;
+`--timeout-secs` (600), `--working-memory-mib` (256) and `--max-work-units`
+(2,000,000,000) set each operation's deadline and capacities. Every finite matrix
+is one execution request, because Blobray retains requests by identity rather
+than inside 64 KiB control records. Shared guest addresses and analog command
+encodings are named in [`layout.rs`](scenarios/src/layout.rs). The full gain
+scenario with `--rftest` completes in about half a minute on an otherwise idle
+host.
+
 Archive and ROM identities are the same pinned inputs as the I2C runner; no SDK
 companion is needed. The gain object and its complete 216-byte coefficient
 section must match independently extracted SHA-256 identities before comparison.

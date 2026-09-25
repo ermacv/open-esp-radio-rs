@@ -193,6 +193,8 @@ search, maintenance, frequency memory and restored replay. Stage 12.4 is complet
 gain arithmetic, coefficient boundaries and full Wi-Fi/BT publication. Stage 12.5
 is complete: gain state and the RF-test producer. Checkpoint 12.R is active:
 typed Rust verification scenarios replace the Python runners before 12.6.
+Its units 12.R.1 and 12.R.2 and checkpoint 12.P (execution performance) are
+complete; 12.R.3 is active.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -1047,3 +1049,45 @@ and negative case again. At commit time its restore/replay phase was still runni
 with 119 replays passed and none failed. The six migrated
 Python files are removed. Host oracle tests, formatting, strict Clippy, docs and
 architecture checks pass.
+
+
+### Checkpoint 12.P: execution performance
+
+User-authorized insertion before 12.R.3. A full authenticated gain run took about
+33 minutes over 883 CLI operations. Profiling shows that process startup is about
+5 % of that time. The dominant cost is per-case work inside Blobray. Each case and
+side recreates a session, walks the complete 12 MB revision inventory to find one
+input payload, and re-hashes that payload. The JSON scanner reads one byte per
+dynamic call. The watchdog repeatedly reads `/proc`, and replay repeats the same
+work. Emulation itself is negligible.
+
+| Unit | Status | Acceptance |
+| --- | --- | --- |
+| 12.P | done | Resolve execution inputs and prepared images once per request and reuse them across cases, sides and phases. Find an input payload without walking the whole inventory. Remove redundant fixed costs of CLI operations: evidence returned by execute/compare/replay where a scenario would read it back, request size that forces tiny batches, and supervisor sampling overhead. Retained evidence, identities, verdicts and every negative/resource/cancellation contract stay unchanged or change only through a new rejected-without-conversion format. The authenticated gain scenario with `--rftest` completes in at most 30 seconds with the same cases, verdicts, negatives and per-execution restore/replay. Regressions show that inputs are prepared once per request; the I2C scenario and all Next suites pass. |
+
+12.P acceptance: the authenticated gain scenario with `--rftest` took about
+33 minutes over 884 operations before this checkpoint. It now completes in 27
+seconds on an idle host (31–35 seconds while another build shares the CPU). It
+keeps the same cases, verdicts, negatives, unmet-obligation behavior and
+per-execution move/backup/restore/replay; each matrix is now one request. The
+changes are:
+
+- Execution resolves each image or captured input once per request and copies
+  segments into fresh sessions.
+- Storage indexes input payloads, run state and published executions, so no
+  operation walks the inventory or scans the journal.
+- Image and execution reads open only the payloads they use.
+- Supervisors wait on process exit through pidfd; descendants come from
+  per-task `children`.
+- Reads are positional and 64 KiB-buffered, and run records decode without an
+  intermediate `serde_json::Value`.
+- Execution requests are canonical payloads retained by identity (execution
+  schema 18, journal 38, storage 37) with named bounds `MAX_EXECUTION_REQUEST_BYTES`,
+  `MAX_EXECUTION_CASES` and `MAX_EXECUTION_EVENTS`.
+- Repeated literals became named domain constants: `CONTROL_MESSAGE_BYTES`,
+  `DECODE_EXPANSION`, `STREAM_BLOCK` and the `DEFAULT_*` budget defaults.
+- The CLI adds `--poll-ms` and `--grace-ms`. The scenario budget is a set of
+  arguments, and shared scenario addresses live in `layout.rs`.
+
+The I2C scenario with both SDK inputs passes in about 100 seconds. All 552 Next
+and scenario tests, formatting and strict Clippy pass.

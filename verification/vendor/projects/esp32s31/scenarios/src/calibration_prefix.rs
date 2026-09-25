@@ -4,16 +4,17 @@ use crate::harness::{
     Result, case, filled, invocation, known, region, selection, words, words_padded,
 };
 use crate::i2c::{I2c, all_complete, models, returned_low};
+use crate::layout::*;
 use blobray_domain::{
-    CallBinding, CallBoundary, CallDeclaration, CallResponse, CallValue, CommandBank, CommandCell,
-    CommandObservation, CommandPort, ComparisonDifference, ComparisonVerdict, DeviceBehavior,
-    DeviceDeclaration, ExecutionEvent, ExecutionEvidence, ExecutionGap, ExecutionRegion,
-    ExecutionStop, Invocation, MemoryAccess, MemorySelection, ModelStatus, ReadRun, RegionLifetime,
-    RegisterCell, SessionReset,
+    CallBinding, CallBoundary, CallDeclaration, CallResponse, CallValue, CommandCell,
+    CommandObservation, ComparisonDifference, ComparisonVerdict, DeviceBehavior, DeviceDeclaration,
+    ExecutionEvent, ExecutionEvidence, ExecutionGap, ExecutionRegion, ExecutionStop, Invocation,
+    MemoryAccess, MemorySelection, ModelStatus, ReadRun, RegionLifetime, RegisterCell,
+    SessionReset,
 };
 
 const STATUS: u32 = 0x2010_0890;
-const DESTINATION: u32 = 0x3fff_6000;
+const DESTINATION: u32 = PARAMETER_DESTINATION;
 
 pub fn delay_calls(id: &str, address: u32, count: usize) -> Vec<CallDeclaration> {
     vec![CallDeclaration {
@@ -110,7 +111,7 @@ pub fn expected_writes(initial: u32, settle: bool) -> Vec<(u32, u32)> {
     }
     writes.extend([
         (0x2010_0884, first & 0xffff_fffe),
-        (0x2010_088c, second | 0x0400_0000),
+        (0x2010_088c, second | COMMAND_READ),
     ]);
     if settle {
         let pulse = (initial & 0x00ff_ffff) | 0x3200_0000;
@@ -154,8 +155,8 @@ pub fn dcode_commands(fill: u8) -> Vec<u32> {
             let cell = retained.iter_mut().find(|(r, _)| *r == register).unwrap();
             cell.1 = (cell.1 & !mask) | value;
             commands.extend([
-                0x0400_0000 | selector,
-                0x0500_0000 | cell.1 << 16 | selector,
+                COMMAND_READ | selector,
+                COMMAND_WRITE | cell.1 << 16 | selector,
             ]);
         }
         commands.extend([0x0400_1162, 0x0400_1262]);
@@ -182,8 +183,8 @@ impl Prefix {
     ) -> Result<Invocation> {
         let mut result = invocation(
             self.shim,
-            vec![Some(target), Some(0x3fff_4000)],
-            vec![filled(0x3fff_4000, 32, 0)?],
+            vec![Some(target), Some(ABI_WORDS)],
+            vec![filled(ABI_WORDS, 32, 0)?],
             models,
             vec![],
         );
@@ -209,11 +210,11 @@ impl Prefix {
         models: Vec<DeviceDeclaration>,
         observe: Vec<MemorySelection>,
     ) -> Result<Invocation> {
-        let mut regions = vec![known(0x3fff_4000, 32, &words_padded(arguments, 8, 0)?)?];
+        let mut regions = vec![known(ABI_WORDS, 32, &words_padded(arguments, 8, 0)?)?];
         regions.extend(memory);
         Ok(invocation(
             self.shim,
-            vec![Some(target), Some(0x3fff_4000)],
+            vec![Some(target), Some(ABI_WORDS)],
             regions,
             models,
             observe,
@@ -223,14 +224,14 @@ impl Prefix {
     /// Setup executes the captured ROM memcpy; image bytes are not overwritten
     /// by a side channel. Warm phases retain that initialized parameter buffer.
     fn setup(&self, crystal: u8, side: bool) -> Result<Invocation> {
-        let mut data = vec![0u8; 516];
+        let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
         data[79] = crystal;
         data[417..425].fill(0xa5);
-        let mut memory = vec![known(0x3fff_5000, 516, &data)?];
+        let mut memory = vec![known(PARAMETER_SOURCE, PHY_PARAM_BYTES, &data)?];
         if side {
             memory.push(region(
                 DESTINATION,
-                516,
+                PHY_PARAM_BYTES,
                 &[],
                 None,
                 RegionLifetime::Session,
@@ -240,8 +241,8 @@ impl Prefix {
             self.memcpy,
             &[
                 if side { DESTINATION } else { self.parameter },
-                0x3fff_5000,
-                516,
+                PARAMETER_SOURCE,
+                PHY_PARAM_BYTES,
             ],
             memory,
             vec![],
@@ -259,8 +260,8 @@ impl Prefix {
                 cells: [
                     (0x2010_001c, 0x4128_0055),
                     (0x2010_7848, 0x1655_a55a),
-                    (0x2010_f81c, 0),
-                    (0x2010_f820, 0),
+                    (I2C_READ_MASK, 0),
+                    (I2C_HOST_MAP, 0),
                 ]
                 .map(|(address, value)| RegisterCell {
                     address,
@@ -309,29 +310,13 @@ impl Prefix {
             initial: 0,
             reads: Some(vec![0xff, 0xe0, 0xdf, 0xc0]),
         });
-        cells.sort_by_key(|c| c.selector);
-        result.push(DeviceDeclaration {
-            id: "ckgen".into(),
-            applicability: "shared retained CKGEN bytes and eight declared six-bit samples".into(),
-            lifetime: RegionLifetime::Phase,
-            behavior: DeviceBehavior::CommandBank(CommandBank {
-                selector_mask: 0xffff,
-                data_mask: 0x00ff_0000,
-                read_command: 0x0400_0000,
-                write_command: 0x0500_0000,
-                busy_mask: 0x0200_0000,
-                reset_command: Some(0x0400_0000),
-                ports: (0..2)
-                    .map(|i| CommandPort {
-                        address: 0x2010_f800 + 4 * i,
-                        initial: 0,
-                        initial_busy_reads: 0,
-                        busy_reads: busy,
-                    })
-                    .collect(),
-                cells,
-            }),
-        });
+        result.push(analog_bank(
+            "ckgen",
+            "shared retained CKGEN bytes and eight declared six-bit samples",
+            busy,
+            [0, 0],
+            cells,
+        ));
         result
     }
 
@@ -344,11 +329,11 @@ impl Prefix {
         side: bool,
     ) -> Result<Invocation> {
         let mut memory = vec![
-            known(0x2f07_fc3c, 4, &words(&[0x3fff_3000]))?,
-            known(0x3fff_3000, 16, &words(&self.callbacks))?,
+            known(ROM_INTERFACE_POINTER, 4, &words(&[CALLBACK_TABLE]))?,
+            known(CALLBACK_TABLE, 16, &words(&self.callbacks))?,
         ];
         if !side {
-            memory.push(known(0x2f07_fc40, 4, &words(&[self.parameter]))?);
+            memory.push(known(ROM_PARAMETER_POINTER, 4, &words(&[self.parameter]))?);
         }
         let output = if side { DESTINATION } else { self.parameter } + 417;
         let (target, arguments) = if side {
@@ -425,14 +410,18 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                 }
             }
         }
-        for (batch, (rows, expectations)) in cases.chunks(4).zip(expected.chunks(4)).enumerate() {
+        for (batch, (rows, expectations)) in cases
+            .chunks(cases.len())
+            .zip(expected.chunks(expected.len()))
+            .enumerate()
+        {
             let records = ctx.submit_with(
                 &format!("pbus-{fill}-{batch}"),
                 &vendor,
                 Some(&replacement),
                 Some(fill),
                 rows.to_vec(),
-                32768,
+                MAX_EVENTS,
                 Some(ComparisonVerdict::Match),
             )?;
             for (i, (writes, settle, busy)) in expectations.iter().enumerate() {
@@ -487,7 +476,15 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         let label = format!("pbus-timeout-{completed}");
         let mut row = case(label.clone(), phase, None, SessionReset::Cold, false);
         row.relation = None;
-        let records = ctx.submit_with(&label, &replacement, None, None, vec![row], 32768, None)?;
+        let records = ctx.submit_with(
+            &label,
+            &replacement,
+            None,
+            None,
+            vec![row],
+            MAX_EVENTS,
+            None,
+        )?;
         assert_eq!(returned_low(&records, 0, false), Some(2));
         let observed = events(&records, 0, false);
         let stuck = observed
@@ -563,7 +560,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                         Some(&replacement),
                         Some(fill),
                         rows.clone(),
-                        32768,
+                        MAX_EVENTS,
                         Some(ComparisonVerdict::Diff),
                     )?;
                 }
@@ -574,7 +571,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                     Some(&replacement),
                     Some(fill),
                     rows,
-                    32768,
+                    MAX_EVENTS,
                     Some(ComparisonVerdict::Match),
                 )?;
                 for side in [false, true] {
@@ -602,14 +599,14 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                     assert_eq!(at(0x2010_7848), nrx_writes, "{label}");
                     let ports: Vec<_> = writes
                         .iter()
-                        .filter(|(a, _)| matches!(*a, 0x2010_f800 | 0x2010_f804))
+                        .filter(|(a, _)| matches!(*a, I2C_PORT_0 | I2C_PORT_1))
                         .copied()
                         .collect();
                     assert_eq!(
                         ports,
                         dcode_commands(fill)
                             .into_iter()
-                            .map(|v| (0x2010_f804, v))
+                            .map(|v| (I2C_PORT_1, v))
                             .collect::<Vec<_>>(),
                         "{label}"
                     );
@@ -680,7 +677,15 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         for row in &mut rows {
             row.relation = None;
         }
-        let records = ctx.submit_with(&label, &replacement, None, Some(0xa5), rows, 32768, None)?;
+        let records = ctx.submit_with(
+            &label,
+            &replacement,
+            None,
+            Some(0xa5),
+            rows,
+            MAX_EVENTS,
+            None,
+        )?;
         assert_eq!(
             returned_low(&records, 1, false),
             Some(if ready { 5 } else { 7 }),
@@ -694,7 +699,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                 matches!(
                     e,
                     ExecutionEvent::Write {
-                        address: 0x2010_f800 | 0x2010_f804,
+                        address: I2C_PORT_0 | I2C_PORT_1,
                         ..
                     }
                 )
@@ -756,7 +761,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         Some(&replacement),
         Some(0x5a),
         changed,
-        32768,
+        MAX_EVENTS,
         Some(ComparisonVerdict::Diff),
     )?;
     assert!(records.iter().any(|r| matches!(r,
@@ -776,14 +781,14 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         Some(&replacement),
         Some(0x5a),
         unknown,
-        32768,
+        MAX_EVENTS,
         Some(ComparisonVerdict::Incomplete),
     )?;
     assert!(matches!(
         stop(&records, 1, false),
         ExecutionStop::Incomplete {
             reason: ExecutionGap::Memory {
-                address: 0x2f07_fc40,
+                address: ROM_PARAMETER_POINTER,
                 access: MemoryAccess::Read
             },
             ..
@@ -818,7 +823,7 @@ fn required_events(records: &[ExecutionEvidence], side: bool) -> Vec<ExecutionEv
     events(records, 1, side)
         .into_iter()
         .filter(|e| match e {
-            ExecutionEvent::Read { address, .. } => !matches!(*address, 0x2010_f800 | 0x2010_f804),
+            ExecutionEvent::Read { address, .. } => !matches!(*address, I2C_PORT_0 | I2C_PORT_1),
             ExecutionEvent::Write { .. }
             | ExecutionEvent::Fence { .. }
             | ExecutionEvent::DelayMicros { .. } => true,

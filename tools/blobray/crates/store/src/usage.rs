@@ -60,7 +60,7 @@ impl Project {
         memory: &WorkingMemory,
         c: &mut dyn RunControl,
     ) -> Result<StorageUsage> {
-        let _workspace = memory.reserve(65536, c.position())?;
+        let _workspace = memory.reserve(CONTROL_MESSAGE_BYTES as u64, c.position())?;
         let mut usage = StorageUsage::default();
         let connection = open_connection(&self.root, false)?;
         connection.execute_batch("BEGIN").map_err(db)?;

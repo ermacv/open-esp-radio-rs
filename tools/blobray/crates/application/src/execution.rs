@@ -1,7 +1,7 @@
 //! Concrete execution orchestration through the ordinary durable operation lifecycle.
 use crate::execution_memory::Session;
 use crate::*;
-use std::io::Write;
+use std::{collections::BTreeMap, io::Write};
 pub const EXECUTION_ENVIRONMENT: &str = "static-elf/byte-addressed-memory-1/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-3/external-calls-1/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1";
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -9,82 +9,134 @@ pub struct ExecutionWork {
     pub schema: u32,
     pub run: RunId,
     pub project: OriginPath,
-    pub request: ExecutionRequest,
+    /// Identity of the canonical request staged at admission (or, for a replay,
+    /// retained by the project). Control messages never carry the request itself.
+    pub request: ArtifactId,
     pub producer: ExecutionProducer,
     pub budget: ResourceBudget,
     pub started_ms: u64,
     pub deadline_ms: u64,
 }
-struct Input {
-    selected: u64,
-    payload: Option<ArtifactId>,
+/// One mapped executable source of an execution target.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum SourceKey {
+    Image(PreparedImageId),
+    Input(RevisionId, u64),
 }
-impl InventorySink for Input {
-    fn input(&mut self, index: u64, input: &InputRecord, _: &mut dyn RunControl) -> Result<()> {
-        if index == self.selected {
-            self.payload = input.capture.artifact().cloned();
-        }
-        Ok(())
-    }
-}
-impl ElfSink for Input {
-    fn section(&mut self, _: &SectionRecord, _: &mut dyn RunControl) -> Result<()> {
-        Ok(())
-    }
-    fn symbol(&mut self, _: &SymbolRecord, _: &mut dyn RunControl) -> Result<()> {
-        Ok(())
-    }
-    fn relocation(&mut self, _: &RelocationRecord, _: &mut dyn RunControl) -> Result<()> {
-        Ok(())
-    }
-    fn diagnostic(&mut self, _: &Diagnostic, _: &mut dyn RunControl) -> Result<()> {
-        Ok(())
-    }
-}
-fn input(
-    project: &Project,
-    revision: &RevisionId,
-    index: u64,
-    memory: &WorkingMemory,
-    c: &mut dyn RunControl,
-) -> Result<blobray_store::FileLease> {
-    let mut sink = Input {
-        selected: index,
-        payload: None,
+fn source_keys(target: &ExecutionTarget) -> Vec<SourceKey> {
+    let source = match &target.source {
+        FunctionSource::Image { image } => SourceKey::Image(image.clone()),
+        FunctionSource::Input { input } => SourceKey::Input(target.revision.clone(), *input),
     };
-    project.read_inventory(Some(revision), memory, c, &mut sink)?;
-    project.open_payload(
-        &sink
-            .payload
-            .ok_or_else(|| Error::new(ErrorCode::NotFound, "execution input is not captured"))?,
-        c,
-    )
+    std::iter::once(source)
+        .chain(
+            target
+                .companions
+                .iter()
+                .map(|index| SourceKey::Input(target.revision.clone(), *index)),
+        )
+        .collect()
 }
-fn session<'a>(
-    project: &Project,
-    target: &ExecutionTarget,
-    max_events: u32,
-    memory: &'a WorkingMemory,
-    c: &mut dyn RunControl,
-) -> Result<Session<'a>> {
-    let mut session = Session::new(memory, max_events, c)?;
-    match &target.source {
-        FunctionSource::Image { image } => {
-            let image = project.image(image, c)?;
-            if image.manifest.plan.recipe.revision != target.revision {
+struct LoadedSegment<'a> {
+    address: u32,
+    memory_size: usize,
+    flags: u32,
+    bytes: ScratchBytes<'a>,
+}
+/// Executable segments of every source of a request, validated and loaded once.
+/// Each fresh session copies them, so cold resets never reread retained sources.
+struct Sources<'a> {
+    loaded: BTreeMap<SourceKey, Vec<LoadedSegment<'a>>>,
+}
+impl<'a> Sources<'a> {
+    fn load(
+        project: &Project,
+        request: &ExecutionRequest,
+        memory: &'a WorkingMemory,
+        c: &mut dyn RunControl,
+    ) -> Result<Self> {
+        let targets: Vec<&ExecutionTarget> = std::iter::once(&request.vendor)
+            .chain(&request.replacement)
+            .collect();
+        let mut loaded = BTreeMap::new();
+        for target in &targets {
+            if let FunctionSource::Image { image } = &target.source
+                && project.image_manifest(image, c)?.0.plan.recipe.revision != target.revision
+            {
                 return Err(Error::new(
                     ErrorCode::InvalidRequest,
                     "execution image revision differs",
                 ));
             }
-            session.image(&image.elf, c)?;
+            for key in source_keys(target) {
+                if loaded.contains_key(&key) {
+                    continue;
+                }
+                let segments = match &key {
+                    SourceKey::Image(image) => {
+                        segments(&project.image_executable(image, c)?.1, memory, c)?
+                    }
+                    SourceKey::Input(revision, index) => {
+                        let payload =
+                            project.revision_input(revision, *index)?.ok_or_else(|| {
+                                Error::new(ErrorCode::NotFound, "execution input is not captured")
+                            })?;
+                        segments(&project.open_payload(&payload, c)?, memory, c)?
+                    }
+                };
+                loaded.insert(key, segments);
+            }
         }
-        FunctionSource::Input { input: index } => {
-            session.image(&input(project, &target.revision, *index, memory, c)?, c)?
-        }
+        Ok(Self { loaded })
     }
-    for index in &target.companions {
-        session.image(&input(project, &target.revision, *index, memory, c)?, c)?;
+}
+fn segments<'a>(
+    source: &dyn ByteSource,
+    memory: &'a WorkingMemory,
+    c: &mut dyn RunControl,
+) -> Result<Vec<LoadedSegment<'a>>> {
+    let mut result = Vec::new();
+    blobray_artifacts::execution_segments(source, memory, c, &mut |segment, bytes, c| {
+        let mut copy = memory.bytes(bytes.len(), c.position())?;
+        for (chunk, source) in copy.chunks_mut(WORK_BLOCK).zip(bytes.chunks(WORK_BLOCK)) {
+            c.checkpoint(1)?;
+            chunk.copy_from_slice(source);
+        }
+        result
+            .try_reserve(1)
+            .map_err(|_| Error::new(ErrorCode::ResourceLimited, "segment allocation refused"))?;
+        result.push(LoadedSegment {
+            address: segment.address as u32,
+            memory_size: segment.memory_size as usize,
+            flags: segment.flags,
+            bytes: copy,
+        });
+        Ok(())
+    })?;
+    Ok(result)
+}
+fn session<'a>(
+    target: &ExecutionTarget,
+    sources: &Sources<'_>,
+    max_events: u32,
+    memory: &'a WorkingMemory,
+    c: &mut dyn RunControl,
+) -> Result<Session<'a>> {
+    let mut session = Session::new(memory, max_events, c)?;
+    for key in source_keys(target) {
+        for segment in sources
+            .loaded
+            .get(&key)
+            .ok_or_else(|| Error::new(ErrorCode::Integrity, "execution source was not prepared"))?
+        {
+            session.segment(
+                segment.address,
+                segment.memory_size,
+                segment.flags,
+                &segment.bytes,
+                c,
+            )?;
+        }
     }
     Ok(session)
 }
@@ -210,7 +262,6 @@ pub(crate) fn prepare_execution_worker_in(
             "execution implementation differs from recipe",
         ));
     }
-    work.request.validate()?;
     let mut control = blobray_store::TemporaryControl {
         control: c,
         budget: disk,
@@ -218,12 +269,19 @@ pub(crate) fn prepare_execution_worker_in(
     let result = (|| {
         let _control = memory.reserve(2 * 1024 * 1024, control.position())?;
         let project = Project::open(&work.project.to_path()?)?;
-        let request = &work.request;
+        let request = Staging::with_temporary_budget(stage, disk.clone())?.execution_request(
+            &project,
+            &work.request,
+            memory,
+            &mut control,
+        )?;
+        let request = &request;
         let goals = crate::execution_goals::prepare(&project, request, memory, &mut control)?;
         let tables = crate::execution_interfaces::prepare(&project, request, memory, &mut control)?;
         let pairs = project.execution_call_pairs(request, memory, &mut control)?;
         let projections = project.execution_projections(request, memory, &mut control)?;
         let effects = project.execution_effects(request, memory, &mut control)?;
+        let sources = Sources::load(&project, request, memory, &mut control)?;
         let mut vendor = None;
         let mut replacement = None;
         let mut blocked = false;
@@ -245,7 +303,7 @@ pub(crate) fn prepare_execution_worker_in(
             control.set_position(position);
             control.checkpoint(1)?;
             let engine = Engine {
-                project: &project,
+                sources: &sources,
                 request,
                 memory,
                 executor,
@@ -337,7 +395,7 @@ pub(crate) fn prepare_execution_worker_in(
                 call_pairs: pairs.pairs,
                 schema: EXECUTION_SCHEMA,
                 project: project.id().clone(),
-                request: request.clone(),
+                request: work.request.clone(),
                 producer: work.producer.clone(),
                 records,
                 verdict,
@@ -352,7 +410,7 @@ pub(crate) fn prepare_execution_worker_in(
 }
 
 struct Engine<'a> {
-    project: &'a Project,
+    sources: &'a Sources<'a>,
     request: &'a ExecutionRequest,
     memory: &'a WorkingMemory,
     executor: &'a dyn Executor,
@@ -384,8 +442,8 @@ impl<'a> Engine<'a> {
                 ));
             }
             *slot = Some(session(
-                self.project,
                 target,
+                self.sources,
                 self.request.max_events,
                 self.memory,
                 c,

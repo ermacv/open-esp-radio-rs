@@ -13,6 +13,7 @@ pub mod harness;
 pub mod harness_edges;
 pub mod i2c;
 pub mod i2c_transport;
+pub mod layout;
 pub mod rfpll;
 pub mod session;
 

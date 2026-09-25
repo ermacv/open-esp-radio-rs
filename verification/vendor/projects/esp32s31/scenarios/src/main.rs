@@ -4,7 +4,7 @@ use oer_esp32s31_vendor_scenarios::{
     calibration_leaves, calibration_prefix,
     gain::{Gain, Options},
     gain_state::{self, Unmet},
-    harness::{LimitMode, Result},
+    harness::{Budget, Result},
     harness_edges, i2c, i2c_transport, rfpll,
 };
 use std::{path::PathBuf, process::ExitCode};
@@ -62,8 +62,8 @@ struct Common {
     /// Ignored output root; each run creates a new `run-*` directory.
     #[arg(long)]
     output: PathBuf,
-    #[arg(long, value_enum)]
-    limit_mode: LimitMode,
+    #[command(flatten)]
+    budget: Budget,
 }
 
 fn finish(unmet: &[Unmet], message: &str, run: &std::path::Path) -> ExitCode {
@@ -89,7 +89,7 @@ fn gain(common: Common, rftest: Option<PathBuf>) -> Result<ExitCode> {
         production: common.production,
         linker: common.linker,
         output: common.output,
-        limit_mode: common.limit_mode,
+        budget: common.budget,
         rftest,
     };
     let mut g = Gain::new(&options)?;
@@ -118,7 +118,7 @@ fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result
         production: common.production,
         linker: common.linker,
         output: common.output,
-        limit_mode: common.limit_mode,
+        budget: common.budget,
         sdk,
         phy_sdk,
     };

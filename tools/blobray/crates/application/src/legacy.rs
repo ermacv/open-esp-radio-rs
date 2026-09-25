@@ -103,7 +103,7 @@ fn document<'a>(
     let reservation = memory.reserve(
         length
             .checked_mul(32)
-            .and_then(|n| n.checked_add(65536))
+            .and_then(|n| n.checked_add(CONTROL_MESSAGE_BYTES as u64))
             .ok_or_else(|| {
                 Error::new(ErrorCode::ResourceLimited, "legacy document size overflow")
             })?,

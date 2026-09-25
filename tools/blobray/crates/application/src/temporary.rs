@@ -328,10 +328,10 @@ fn reclaim(path: &Path, host: &dyn OperationHost) -> Result<()> {
     let mut bytes = Vec::new();
     File::open(path.join("owner.json"))
         .map_err(storage_io)?
-        .take(65537)
+        .take(CONTROL_MESSAGE_BYTES as u64 + 1)
         .read_to_end(&mut bytes)
         .map_err(storage_io)?;
-    if bytes.len() > 65536 {
+    if bytes.len() > CONTROL_MESSAGE_BYTES {
         return Err(Error::new(
             ErrorCode::Integrity,
             "runtime owner record exceeds limit",

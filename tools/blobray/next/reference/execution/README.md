@@ -506,11 +506,18 @@ closure releases them before the next phase. A sorted bounded exact-port index s
 accesses; capacity retained for index reuse is distinct from live model state.
 No host call-stack recursion follows the analyzed program.
 
-Requests remain capped at 64 KiB, with 1–128 cases, at most 64 companions per
+An execution request is retained once as a canonical content-addressed
+payload of at most 16 MiB (`MAX_EXECUTION_REQUEST_BYTES`). The run record,
+the worker message and the execution manifest carry only its identity, so the
+64 KiB control-record bound does not split a finite matrix; replay reopens the
+same payload. Requests have 1–4096 cases (`MAX_EXECUTION_CASES`), at most 64 companions per
 target, 128 RAM seeds, 128 device and 128 call declarations per invocation,
 128 live models of each category, 4096 responses per call model, 256 outputs per response,
 4096 exact live ports, 4096 encoded values/runs per model list, 2048 regions per session,
-and 1–65536 events per implementation per case. `max_events` exhaustion is a
+and 1–65536 events per implementation per case (`MAX_EXECUTION_EVENTS`).
+Each distinct image or captured input is validated and loaded once per request,
+and every fresh session copies its segments, so cold phases do not reread
+retained sources. `max_events` exhaustion is a
 resource failure with no publication; events are never silently truncated.
 Traces stream as bounded JSONL events/final-memory/device-models/call-models/runtime-tables/fifo-services/outcomes/comparisons into quota-owned
 staging. The coordinator checks the admitted recipe and stream structure before

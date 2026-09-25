@@ -148,7 +148,41 @@ mod tests {
                 bytes: vec![],
             },
         };
-        let mut manifest = ExecutionManifest {
+        let request = ExecutionRequest {
+            schema: EXECUTION_SCHEMA,
+            vendor: target.clone(),
+            replacement: Some(target),
+            binding: Some(CompiledBinding::SharedCore),
+            max_events: 4,
+            cases: vec![ExecutionCase {
+                name: "case".into(),
+                reset: SessionReset::Cold,
+                vendor: input(),
+                replacement: Some(input()),
+                relation: Some(ComparisonRelation {
+                    effects: None,
+                    projection: None,
+                    returns: ReturnWords {
+                        low: false,
+                        high: false,
+                    },
+                    events: EventChannels {
+                        mmio_read: false,
+                        mmio_write: false,
+                        fence: false,
+                        delay: false,
+                        timeline: TimelineCapture {
+                            reads: true,
+                            ..Default::default()
+                        },
+                    },
+                    memory: vec![],
+                    calls: false,
+                    reviewed_calls: None,
+                }),
+            }],
+        };
+        let manifest = ExecutionManifest {
             effect_contracts: vec![],
             projections: vec![],
             schema: EXECUTION_SCHEMA,
@@ -162,41 +196,9 @@ mod tests {
             },
             complete: true,
             verdict: Some(ComparisonVerdict::Incomplete),
-            request: ExecutionRequest {
-                schema: EXECUTION_SCHEMA,
-                vendor: target.clone(),
-                replacement: Some(target),
-                binding: Some(CompiledBinding::SharedCore),
-                max_events: 4,
-                cases: vec![ExecutionCase {
-                    name: "case".into(),
-                    reset: SessionReset::Cold,
-                    vendor: input(),
-                    replacement: Some(input()),
-                    relation: Some(ComparisonRelation {
-                        effects: None,
-                        projection: None,
-                        returns: ReturnWords {
-                            low: false,
-                            high: false,
-                        },
-                        events: EventChannels {
-                            mmio_read: false,
-                            mmio_write: false,
-                            fence: false,
-                            delay: false,
-                            timeline: TimelineCapture {
-                                reads: true,
-                                ..Default::default()
-                            },
-                        },
-                        memory: vec![],
-                        calls: false,
-                        reviewed_calls: None,
-                    }),
-                }],
-            },
+            request: ArtifactId::of_bytes(b"request"),
         };
+        let mut manifest = TestExecution::new(manifest, request);
         let mut rows = Vec::new();
         for replacement in [false, true] {
             rows.push(ExecutionEvidence::Event {
@@ -230,14 +232,13 @@ mod tests {
                 difference: None,
             },
         });
-        let check = |manifest: &ExecutionManifest, rows: &[ExecutionEvidence]| {
+        let check = |manifest: &TestExecution, rows: &[ExecutionEvidence]| {
             let mut bytes = Vec::new();
             for r in rows {
                 serde_json::to_writer(&mut bytes, r).unwrap();
                 bytes.push(b'\n');
             }
-            validate_execution_records(
-                manifest,
+            manifest.validate_records(
                 &bytes.as_slice(),
                 &WorkingMemory::new(1024 * 1024).unwrap(),
                 &mut || Ok(()),

@@ -14,6 +14,55 @@ impl SnapshotView {
     }
 }
 impl Project {
+    /// A published revision whose manifest is retained. Content is verified by
+    /// readers of the manifest, not by callers that only require its presence.
+    pub fn require_revision(&self, revision: &RevisionId) -> Result<()> {
+        let connection = open_connection(&self.root, false)?;
+        let exists: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM revisions WHERE id=?1)",
+                [revision.as_str()],
+                |row| row.get(0),
+            )
+            .map_err(db)?;
+        if !exists {
+            return Err(Error::new(
+                ErrorCode::NotFound,
+                "revision does not belong to this project",
+            ));
+        }
+        let path = self.object_path(&revision.as_str().parse()?);
+        if !fs::symlink_metadata(&path).is_ok_and(|m| m.is_file()) {
+            return Err(integrity(format!(
+                "retained revision {revision} is missing"
+            )));
+        }
+        Ok(())
+    }
+    /// Captured payload of one input of a revision in this project, from the
+    /// index written at publication. `None` means the input was not captured.
+    pub fn revision_input(&self, revision: &RevisionId, input: u64) -> Result<Option<ArtifactId>> {
+        let connection = open_connection(&self.root, false)?;
+        let payload: Option<Option<String>> = connection
+            .query_row(
+                "SELECT payload FROM revision_inputs WHERE revision=?1 AND input=?2",
+                rusqlite::params![revision.as_str(), input as i64],
+                |row| row.get(0),
+            )
+            .map(Some)
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                e => Err(e),
+            })
+            .map_err(db)?;
+        match payload {
+            None => Err(Error::new(
+                ErrorCode::NotFound,
+                "revision input does not belong to this project",
+            )),
+            Some(payload) => payload.map(|p| p.parse()).transpose(),
+        }
+    }
     pub fn read_inventory(
         &self,
         requested: Option<&RevisionId>,
@@ -611,7 +660,7 @@ impl Project {
                 let length = blob.len();
                 let _record = memory.reserve(
                     (length as u64)
-                        .checked_mul(64)
+                        .checked_mul(DECODE_EXPANSION)
                         .and_then(|n| n.checked_add(4096))
                         .ok_or_else(|| integrity("run record size overflow"))?,
                     control.position(),
@@ -638,7 +687,13 @@ impl Project {
                 if run.execution.is_some() {
                     let result = (|| {
                         let lease = self.execution_from_run(&run, memory, control)?;
-                        validate_execution_records(&lease.manifest, &lease.records, memory, control)
+                        validate_execution_records(
+                            &lease.manifest,
+                            &lease.request,
+                            &lease.records,
+                            memory,
+                            control,
+                        )
                     })();
                     if let Err(error) = result {
                         if matches!(

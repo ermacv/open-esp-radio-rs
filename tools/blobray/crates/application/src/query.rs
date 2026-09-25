@@ -43,10 +43,10 @@ impl QueryOutput {
         let mut bytes = Vec::new();
         File::open(stage.join("query-summary.json"))
             .map_err(io)?
-            .take(65537)
+            .take(CONTROL_MESSAGE_BYTES as u64 + 1)
             .read_to_end(&mut bytes)
             .map_err(io)?;
-        if bytes.len() > 65536 {
+        if bytes.len() > CONTROL_MESSAGE_BYTES {
             return Err(Error::new(
                 ErrorCode::WorkerProtocol,
                 "query summary exceeds limit",
@@ -597,7 +597,7 @@ impl QueryOutput {
         )?;
         let memory = WorkingMemory::new(self.budget.working_memory_bytes.unwrap())?;
         let result = (|| {
-            let _fixed = memory.reserve(65536, control.position())?;
+            let _fixed = memory.reserve(CONTROL_MESSAGE_BYTES as u64, control.position())?;
             control.phase(RunPhase::Serialize)?;
             f(self, &memory, &mut control)
         })();

@@ -5,6 +5,7 @@
 use crate::evidence::stop;
 use crate::harness::{Result, case, invocation, known, words_padded};
 use crate::i2c::{I2c, all_complete, returned_low, word_writes};
+use crate::layout::*;
 use crate::session::request;
 use blobray_domain::{
     ComparisonVerdict, DeviceBehavior, DeviceDeclaration, ExecutionCase, ExecutionEvidence,
@@ -40,8 +41,8 @@ fn invoke(
     };
     Ok(invocation(
         shim,
-        vec![Some(target), Some(0x3fff_4000)],
-        vec![known(0x3fff_4000, 32, &words_padded(arguments, 8, 0)?)?],
+        vec![Some(target), Some(ABI_WORDS)],
+        vec![known(ABI_WORDS, 32, &words_padded(arguments, 8, 0)?)?],
         models,
         vec![],
     ))
@@ -168,7 +169,11 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         ];
         add(name, "phy_reg_update_new", 3, &[], &cells, writes, None)?;
     }
-    for (batch, (rows, expectations)) in cases.chunks(8).zip(expected.chunks(8)).enumerate() {
+    for (batch, (rows, expectations)) in cases
+        .chunks(cases.len())
+        .zip(expected.chunks(expected.len()))
+        .enumerate()
+    {
         let records = ctx.compare(
             &format!("calibration-leaves-{batch}"),
             rows.to_vec(),

@@ -5,6 +5,8 @@ use std::io::Write;
 pub struct ExecutionLease<'a> {
     _capacity: MemoryReservation<'a>,
     pub manifest: ExecutionManifest,
+    /// Decoded retained request identified by `manifest.request`.
+    pub request: ExecutionRequest,
     pub records: FileLease,
 }
 pub struct RetainedExecution {
@@ -14,7 +16,7 @@ pub struct RetainedExecution {
     verdict: Option<ComparisonVerdict>,
 }
 fn decode(source: &dyn ByteSource, c: &mut dyn RunControl) -> Result<ExecutionManifest> {
-    if source.len() > 65536 {
+    if source.len() > CONTROL_MESSAGE_BYTES as u64 {
         return Err(integrity("execution manifest exceeds 64 KiB"));
     }
     let mut bytes = vec![0; source.len() as usize];
@@ -26,15 +28,20 @@ fn decode(source: &dyn ByteSource, c: &mut dyn RunControl) -> Result<ExecutionMa
             "unsupported execution manifest",
         ));
     }
-    manifest.request.validate()?;
     if manifest.producer.executor.is_empty()
         || manifest.producer.environment.is_empty()
         || manifest.producer.verifier.is_empty()
-        || manifest.request.replacement.is_some() != manifest.verdict.is_some()
     {
-        return Err(integrity("invalid execution identities or verdict"));
+        return Err(integrity("invalid execution identities"));
     }
     Ok(manifest)
+}
+/// A comparison request yields a verdict; a single implementation does not.
+fn check_verdict(manifest: &ExecutionManifest, request: &ExecutionRequest) -> Result<()> {
+    if request.replacement.is_some() != manifest.verdict.is_some() {
+        return Err(integrity("execution verdict differs from its request"));
+    }
+    Ok(())
 }
 impl Project {
     pub fn execution<'a>(
@@ -44,10 +51,12 @@ impl Project {
         c: &mut dyn RunControl,
     ) -> Result<ExecutionLease<'a>> {
         let connection = open_connection(&self.root, false)?;
+        // The indexed column only selects the candidate row; its decoded record
+        // and identity below remain the authority.
         let mut query = connection
-            .prepare("SELECT sequence FROM runs ORDER BY sequence")
+            .prepare("SELECT sequence FROM runs WHERE execution=?1 ORDER BY sequence")
             .map_err(db)?;
-        let mut rows = query.query([]).map_err(db)?;
+        let mut rows = query.query([id.as_str()]).map_err(db)?;
         while let Some(row) = rows.next().map_err(db)? {
             c.checkpoint(1)?;
             let sequence: i64 = row.get(0).map_err(db)?;
@@ -57,7 +66,7 @@ impl Project {
             let length = blob.len();
             let _capacity = memory.reserve(
                 (length as u64)
-                    .checked_mul(64)
+                    .checked_mul(DECODE_EXPANSION)
                     .and_then(|n| n.checked_add(4096))
                     .ok_or_else(|| integrity("run capacity overflow"))?,
                 c.position(),
@@ -105,18 +114,26 @@ impl Project {
         let capacity = memory.reserve(
             source
                 .len()
-                .checked_mul(64)
+                .checked_mul(DECODE_EXPANSION)
                 .and_then(|n| n.checked_add(4096))
                 .ok_or_else(|| integrity("execution capacity overflow"))?,
             c.position(),
         )?;
         let manifest = decode(&source, c)?;
-        let RunOperation::Execute { request, producer } = record.effective_operation() else {
+        let RunOperation::Execute {
+            request: request_id,
+            compare,
+            producer,
+        } = record.effective_operation()
+        else {
             return Err(integrity("execution row has another operation"));
         };
+        let request = self.execution_request(request_id, memory, c)?;
+        check_verdict(&manifest, &request)?;
         if record.state != RunState::Completed
             || manifest.project != self.id
-            || request != &manifest.request
+            || request_id != &manifest.request
+            || *compare != request.replacement.is_some()
             || producer.executor != manifest.producer.executor
             || producer.environment != manifest.producer.environment
             || producer.verifier != manifest.producer.verifier
@@ -130,22 +147,23 @@ impl Project {
             return Err(integrity("execution manifest and admitted run differ"));
         }
         for target in std::iter::once(&request.vendor).chain(&request.replacement) {
-            self.open_payload(&target.revision.as_str().parse()?, c)?;
+            self.require_revision(&target.revision)?;
             if let FunctionSource::Image { image } = &target.source {
-                let image = self.image(image, c)?;
-                if image.manifest.plan.recipe.revision != target.revision {
+                let (manifest, _) = self.image_manifest(image, c)?;
+                if manifest.plan.recipe.revision != target.revision {
                     return Err(integrity("execution image belongs to another revision"));
                 }
             }
         }
-        self.validate_execution_interfaces(request, memory, c)?;
-        self.validate_execution_call_pairs(&manifest, memory, c)?;
-        self.validate_execution_projections(&manifest, memory, c)?;
-        self.validate_execution_effects(&manifest, memory, c)?;
+        self.validate_execution_interfaces(&request, memory, c)?;
+        self.validate_execution_call_pairs(&manifest, &request, memory, c)?;
+        self.validate_execution_projections(&manifest, &request, memory, c)?;
+        self.validate_execution_effects(&manifest, &request, memory, c)?;
         Ok(ExecutionLease {
             _capacity: capacity,
             records: self.open_payload(&manifest.records, c)?,
             manifest,
+            request,
         })
     }
 }
@@ -156,7 +174,7 @@ impl Staging {
         c: &mut dyn RunControl,
     ) -> Result<PreparedExecutionReceipt> {
         let bytes = serde_json::to_vec(manifest).map_err(jobs::json)?;
-        if bytes.len() > 65536 {
+        if bytes.len() > CONTROL_MESSAGE_BYTES {
             return Err(integrity("execution manifest exceeds 64 KiB"));
         }
         let mut file = self.disk.temporary(&self.root.join("staging"))?;
@@ -176,7 +194,12 @@ impl Writer {
         memory: &WorkingMemory,
         c: &mut dyn RunControl,
     ) -> Result<RetainedExecution> {
-        let RunOperation::Execute { request, producer } = run.effective_operation() else {
+        let RunOperation::Execute {
+            request: request_id,
+            compare,
+            producer,
+        } = run.effective_operation()
+        else {
             return Err(integrity("execution receipt belongs to another operation"));
         };
         let stage = Staging::open(&self.stage_path(&run.id))?;
@@ -184,7 +207,7 @@ impl Writer {
         let _capacity = memory.reserve(
             source
                 .len()
-                .checked_mul(64)
+                .checked_mul(DECODE_EXPANSION)
                 .and_then(|n| n.checked_add(4096))
                 .ok_or_else(|| integrity("execution capacity overflow"))?,
             c.position(),
@@ -193,27 +216,37 @@ impl Writer {
         if receipt.schema != 1
             || receipt.project != self.project.id
             || manifest.project != self.project.id
-            || &manifest.request != request
+            || &manifest.request != request_id
             || manifest.producer.executor != producer.executor
             || manifest.producer.environment != producer.environment
             || manifest.producer.verifier != producer.verifier
         {
             return Err(integrity("execution receipt differs from admission"));
         }
+        let request = stage.execution_request(&self.project, request_id, memory, c)?;
+        check_verdict(&manifest, &request)?;
+        if *compare != request.replacement.is_some() {
+            return Err(integrity("execution receipt differs from admission"));
+        }
         self.project
-            .validate_execution_interfaces(request, memory, c)?;
+            .validate_execution_interfaces(&request, memory, c)?;
         self.project
-            .validate_execution_call_pairs(&manifest, memory, c)?;
+            .validate_execution_call_pairs(&manifest, &request, memory, c)?;
         self.project
-            .validate_execution_projections(&manifest, memory, c)?;
+            .validate_execution_projections(&manifest, &request, memory, c)?;
         self.project
-            .validate_execution_effects(&manifest, memory, c)?;
+            .validate_execution_effects(&manifest, &request, memory, c)?;
         validate_execution_records(
             &manifest,
+            &request,
             &stage.open_payload(&manifest.records, c)?,
             memory,
             c,
         )?;
+        // A replay's request is already retained by the project.
+        if stage.has_payload(request_id) {
+            self.promote(&stage, request_id, None, c)?;
+        }
         for id in [&manifest.records, &receipt.execution] {
             self.promote(&stage, id, None, c)?;
         }
@@ -263,11 +296,12 @@ impl Writer {
 /// Structural evidence validation, independent of execution/comparison algorithms.
 pub fn validate_execution_records(
     manifest: &ExecutionManifest,
+    request: &ExecutionRequest,
     source: &dyn ByteSource,
     memory: &WorkingMemory,
     c: &mut dyn RunControl,
 ) -> Result<()> {
-    manifest.request.validate()?;
+    request.validate()?;
     let mut case = 0u32;
     let mut side = false;
     let mut events = 0u32;
@@ -307,16 +341,15 @@ pub fn validate_execution_records(
     let mut environment_complete = true;
     let mut verdict = manifest.verdict.map(|_| ComparisonVerdict::Match);
     visit_jsonl::<ExecutionEvidence>(source, c, |record, c| {
-        if case as usize >= manifest.request.cases.len() {
+        if case as usize >= request.cases.len() {
             return Err(integrity("extra execution case"));
         }
-        let phase = &manifest.request.cases[case as usize];
+        let phase = &request.cases[case as usize];
         c.checkpoint(manifest.projections.len() as u64 + 1)?;
         let projection = selected_projection(phase.relation.as_ref(), &manifest.projections)?
             .map(|p| &p.projection);
         let must_block = phase.reset == SessionReset::Warm && blocked;
-        let close_chain = manifest
-            .request
+        let close_chain = request
             .cases
             .get(case as usize + 1)
             .is_none_or(|next| next.reset == SessionReset::Cold);
@@ -329,9 +362,7 @@ pub fn validate_execution_records(
             )? {
                 Some(selected) => {
                     c.checkpoint((selected.contract.rules.len() as u64 + 1).saturating_pow(2))?;
-                    selected
-                        .contract
-                        .validate_use(&manifest.request, case as usize)?;
+                    selected.contract.validate_use(request, case as usize)?;
                     [
                         Some(EffectTracker::new(&selected.contract, false, c)?),
                         Some(EffectTracker::new(&selected.contract, true, c)?),
@@ -351,7 +382,7 @@ pub fn validate_execution_records(
             memory_state[1].begin(phase.relation.as_ref(), true);
             if let Some(p) = projection {
                 c.checkpoint((p.fields.len() + p.branches.len() + 1).pow(2) as u64)?;
-                p.validate_use(&manifest.request, case as usize)?;
+                p.validate_use(request, case as usize)?;
                 memory_state[0].begin_projection(p, &phase.vendor, false, c)?;
                 memory_state[1].begin_projection(
                     p,
@@ -362,7 +393,7 @@ pub fn validate_execution_records(
             }
             services[0].begin(
                 &phase.vendor,
-                &manifest.request.vendor.stack,
+                &request.vendor.stack,
                 phase.reset,
                 must_block,
                 c,
@@ -376,7 +407,7 @@ pub fn validate_execution_records(
             if let Some(replacement) = &phase.replacement {
                 services[1].begin(
                     replacement,
-                    &manifest.request.replacement.as_ref().unwrap().stack,
+                    &request.replacement.as_ref().unwrap().stack,
                     phase.reset,
                     must_block,
                     c,
@@ -536,7 +567,7 @@ pub fn validate_execution_records(
                     tracker.observe(&event, events, c)?;
                 }
                 events += 1;
-                if events > manifest.request.max_events {
+                if events > request.max_events {
                     return Err(integrity("event capacity exceeded"));
                 }
             }
@@ -549,7 +580,7 @@ pub fn validate_execution_records(
                 if i != case || replacement != side || outcome {
                     return Err(integrity("execution outcome order differs"));
                 }
-                let phase = &manifest.request.cases[case as usize];
+                let phase = &request.cases[case as usize];
                 let input = if side {
                     phase
                         .replacement
@@ -622,7 +653,7 @@ pub fn validate_execution_records(
                 phase_complete &= stop.completed() && environment_complete;
                 part = EvidencePart::Events;
                 environment_complete = true;
-                if manifest.request.replacement.is_none() {
+                if request.replacement.is_none() {
                     blocked = !phase_complete;
                     phase_complete = true;
                     case += 1;
@@ -639,7 +670,7 @@ pub fn validate_execution_records(
                     return Err(integrity("comparison order differs"));
                 }
                 crate::execution_effects::validate_result(&result, &effects)?;
-                if !difference_valid(&result, phase, manifest.request.max_events, projection)
+                if !difference_valid(&result, phase, request.max_events, projection)
                     || (result.verdict == ComparisonVerdict::Match
                         && (!phase_complete || !relation_complete))
                 {
@@ -664,7 +695,7 @@ pub fn validate_execution_records(
         }
         Ok(())
     })?;
-    if case as usize != manifest.request.cases.len()
+    if case as usize != request.cases.len()
         || side
         || outcome
         || events != 0
@@ -680,4 +711,43 @@ pub fn validate_execution_records(
         return Err(integrity("execution evidence summary differs"));
     }
     Ok(())
+}
+
+/// Test view of a manifest together with the request its identity names.
+/// Its own `request` field shadows the manifest's identity field.
+#[cfg(test)]
+#[derive(Clone)]
+pub(crate) struct TestExecution {
+    pub manifest: ExecutionManifest,
+    pub request: ExecutionRequest,
+}
+#[cfg(test)]
+impl TestExecution {
+    pub fn new(mut manifest: ExecutionManifest, request: ExecutionRequest) -> Self {
+        manifest.request = encode_execution_request(&request)
+            .map(|(id, _)| id)
+            .unwrap_or_else(|_| ArtifactId::of_bytes(b"invalid test request"));
+        Self { manifest, request }
+    }
+    pub fn validate_records(
+        &self,
+        source: &dyn ByteSource,
+        memory: &WorkingMemory,
+        c: &mut dyn RunControl,
+    ) -> Result<()> {
+        validate_execution_records(&self.manifest, &self.request, source, memory, c)
+    }
+}
+#[cfg(test)]
+impl std::ops::Deref for TestExecution {
+    type Target = ExecutionManifest;
+    fn deref(&self) -> &ExecutionManifest {
+        &self.manifest
+    }
+}
+#[cfg(test)]
+impl std::ops::DerefMut for TestExecution {
+    fn deref_mut(&mut self) -> &mut ExecutionManifest {
+        &mut self.manifest
+    }
 }

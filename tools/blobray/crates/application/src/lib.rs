@@ -49,6 +49,7 @@ pub use blobray_store::{
     PreparedImageReceipt, PreparedImport, PreparedInvestigationReceipt, PreparedIrReceipt,
     PreparedKnowledgeReceipt, RunOperation, RunRecord, TemporaryFile,
 };
+pub use blobray_store::{JOURNAL_SCHEMA, encode_execution_request};
 pub use protocol::*;
 mod jobs;
 mod query;

@@ -1350,13 +1350,19 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
             ResourceBudget::default(),
             owner(),
             RunOperation::Execute {
-                request: request.clone(),
+                request: encode_execution_request(&request).unwrap().0,
+                compare: false,
                 producer: producer.clone(),
             },
             |_| {},
         )
         .unwrap();
     let stage = Staging::open(&path).unwrap();
+    stage
+        .retain_bytes(&encode_execution_request(&request).unwrap().1, &mut || {
+            Ok(())
+        })
+        .unwrap();
     let mut file = stage.disk.temporary(&path.join("staging")).unwrap();
     serde_json::to_writer(
         &mut file,
@@ -1379,7 +1385,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
         call_pairs: vec![],
         schema: EXECUTION_SCHEMA,
         project: project.id().clone(),
-        request,
+        request: encode_execution_request(&request).unwrap().0,
         producer,
         records,
         verdict: None,
@@ -1387,7 +1393,7 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
     };
     // Receipt validation must not confuse reaching a boundary with returning,
     // or accept a blocked outcome without a failed warm predecessor.
-    let mut goal_manifest = manifest.clone();
+    let mut goal_manifest = TestExecution::new(manifest.clone(), request.clone());
     goal_manifest.complete = false;
     goal_manifest.request.cases[0].vendor.goal = ExecutionGoal::ReachSymbol {
         target: ExecutionSymbol {
@@ -1422,13 +1428,13 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
             steps: 1,
         })
         .unwrap();
-        let error = validate_execution_records(
-            &goal_manifest,
-            &bytes.as_slice(),
-            &WorkingMemory::new(1024 * 1024).unwrap(),
-            &mut || Ok(()),
-        )
-        .unwrap_err();
+        let error = goal_manifest
+            .validate_records(
+                &bytes.as_slice(),
+                &WorkingMemory::new(1024 * 1024).unwrap(),
+                &mut || Ok(()),
+            )
+            .unwrap_err();
         assert_eq!(error.code, ErrorCode::Integrity);
         assert!(
             error.message.contains("goal") || error.message.contains("blocking"),
@@ -1445,13 +1451,13 @@ fn execution_commit_failure_and_corruption_cannot_expose_valid_evidence() {
         steps: 1,
     })
     .unwrap();
-    validate_execution_records(
-        &goal_manifest,
-        &bytes.as_slice(),
-        &WorkingMemory::new(1024 * 1024).unwrap(),
-        &mut || Ok(()),
-    )
-    .unwrap();
+    goal_manifest
+        .validate_records(
+            &bytes.as_slice(),
+            &WorkingMemory::new(1024 * 1024).unwrap(),
+            &mut || Ok(()),
+        )
+        .unwrap();
     manifest.complete = false;
     let invalid = stage.execution_receipt(&manifest, &mut || Ok(())).unwrap();
     assert!(
@@ -1954,43 +1960,44 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
             difference: None,
         },
     });
+    let request = ExecutionRequest {
+        schema: EXECUTION_SCHEMA,
+        vendor: target.clone(),
+        replacement: Some(target),
+        binding: Some(CompiledBinding::ProductionEntry),
+        cases: vec![ExecutionCase {
+            relation: Some(ComparisonRelation {
+                effects: None,
+                projection: None,
+                calls: false,
+                reviewed_calls: None,
+                returns: ReturnWords {
+                    low: true,
+                    high: false,
+                },
+                events: EventChannels {
+                    timeline: TimelineCapture::default(),
+                    mmio_read: true,
+                    mmio_write: true,
+                    fence: true,
+                    delay: true,
+                },
+                memory: vec![],
+            }),
+            name: "one".into(),
+            reset: SessionReset::Cold,
+            vendor: input.clone(),
+            replacement: Some(input),
+        }],
+        max_events: 4,
+    };
     let manifest = ExecutionManifest {
         effect_contracts: vec![],
         projections: vec![],
         call_pairs: vec![],
         schema: EXECUTION_SCHEMA,
         project: project.id().clone(),
-        request: ExecutionRequest {
-            schema: EXECUTION_SCHEMA,
-            vendor: target.clone(),
-            replacement: Some(target),
-            binding: Some(CompiledBinding::ProductionEntry),
-            cases: vec![ExecutionCase {
-                relation: Some(ComparisonRelation {
-                    effects: None,
-                    projection: None,
-                    calls: false,
-                    reviewed_calls: None,
-                    returns: ReturnWords {
-                        low: true,
-                        high: false,
-                    },
-                    events: EventChannels {
-                        timeline: TimelineCapture::default(),
-                        mmio_read: true,
-                        mmio_write: true,
-                        fence: true,
-                        delay: true,
-                    },
-                    memory: vec![],
-                }),
-                name: "one".into(),
-                reset: SessionReset::Cold,
-                vendor: input.clone(),
-                replacement: Some(input),
-            }],
-            max_events: 4,
-        },
+        request: ArtifactId::of_bytes(b"request"),
         producer: ExecutionProducer {
             executor: "test/1".into(),
             environment: "test/1".into(),
@@ -2000,14 +2007,14 @@ fn retained_models_reject_missing_forged_identity_closure_and_match() {
         verdict: Some(ComparisonVerdict::Incomplete),
         complete: false,
     };
-    let validate = |m: &ExecutionManifest, rows: &[ExecutionEvidence]| {
+    let manifest = TestExecution::new(manifest, request);
+    let validate = |m: &TestExecution, rows: &[ExecutionEvidence]| {
         let mut bytes = Vec::new();
         for row in rows {
             serde_json::to_writer(&mut bytes, row).unwrap();
             bytes.push(b'\n');
         }
-        validate_execution_records(
-            m,
+        m.validate_records(
             &bytes.as_slice(),
             &WorkingMemory::new(1024 * 1024).unwrap(),
             &mut || Ok(()),
@@ -2321,7 +2328,7 @@ fn retained_call_pairs_require_exact_review_content_and_release_admitted_owners(
         projections: vec![],
         schema: EXECUTION_SCHEMA,
         project: project.id().clone(),
-        request,
+        request: encode_execution_request(&request).unwrap().0,
         producer: ExecutionProducer {
             executor: "test".into(),
             environment: "test".into(),
@@ -2336,12 +2343,12 @@ fn retained_call_pairs_require_exact_review_content_and_release_admitted_owners(
         }],
     };
     project
-        .validate_execution_call_pairs(&manifest, &memory, &mut || Ok(()))
+        .validate_execution_call_pairs(&manifest, &request, &memory, &mut || Ok(()))
         .unwrap();
     manifest.call_pairs[0].correspondence.arguments = CallArguments::Ignore;
     assert_eq!(
         project
-            .validate_execution_call_pairs(&manifest, &memory, &mut || Ok(()))
+            .validate_execution_call_pairs(&manifest, &request, &memory, &mut || Ok(()))
             .unwrap_err()
             .code,
         ErrorCode::Integrity
@@ -2349,7 +2356,7 @@ fn retained_call_pairs_require_exact_review_content_and_release_admitted_owners(
     manifest.call_pairs.clear();
     assert_eq!(
         project
-            .validate_execution_call_pairs(&manifest, &memory, &mut || Ok(()))
+            .validate_execution_call_pairs(&manifest, &request, &memory, &mut || Ok(()))
             .unwrap_err()
             .code,
         ErrorCode::Integrity

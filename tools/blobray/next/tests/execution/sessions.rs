@@ -100,7 +100,14 @@ fn multi_entry_setup_warm_cold_and_blocking_have_one_replayable_publication() {
     let manifest = &result["summary"]["manifest"];
     assert_eq!(manifest["complete"], false);
     assert_eq!(manifest["verdict"], "INCOMPLETE");
-    assert_eq!(manifest["request"], serde_json::to_value(&request).unwrap());
+    // The manifest names the retained canonical request by identity.
+    assert_eq!(
+        manifest["request"],
+        blobray_application::encode_execution_request(&request)
+            .unwrap()
+            .0
+            .as_str()
+    );
     let records = result["records"].as_array().unwrap();
     assert_eq!(records.len(), 18);
     assert_eq!(records[3]["value"]["stop"]["low"], 41);

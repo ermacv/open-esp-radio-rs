@@ -13,6 +13,28 @@ pub struct Staging {
 pub struct RetainedImport {
     run: RunId,
     prepared: PreparedImport,
+    /// Captured payload of each input, read once from the verified manifest.
+    inputs: Vec<Option<ArtifactId>>,
+}
+
+/// Index each input's captured payload so executions need not walk the inventory.
+pub(crate) fn insert_revision_inputs(
+    tx: &rusqlite::Connection,
+    revision: &RevisionId,
+    inputs: &[Option<ArtifactId>],
+) -> Result<()> {
+    for (index, payload) in inputs.iter().enumerate() {
+        tx.execute(
+            "INSERT INTO revision_inputs(revision,input,payload) VALUES(?1,?2,?3)",
+            params![
+                revision.as_str(),
+                index as i64,
+                payload.as_ref().map(ArtifactId::as_str)
+            ],
+        )
+        .map_err(db)?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Serialize)]
@@ -300,7 +322,7 @@ impl Writer {
         }
         let connection = open_connection(&self.project.root, true)?;
         let unfinished: bool = connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM runs WHERE json_extract(record,'$.state') IN ('registered','running','validating'))", [], |row| row.get(0)).map_err(db)?;
+            "SELECT EXISTS(SELECT 1 FROM runs WHERE state IN ('registered','running','validating'))", [], |row| row.get(0)).map_err(db)?;
         if unfinished {
             return Err(Error::new(
                 ErrorCode::RecoveryRequired,
@@ -312,7 +334,7 @@ impl Writer {
             .map_err(db)?;
         budget.validate()?;
         let record = RunRecord {
-            schema: 37,
+            schema: JOURNAL_SCHEMA,
             operation,
             resolved_operation: None,
             image: None,
@@ -489,7 +511,7 @@ impl Writer {
                     .position(|b| *b == b'\n')
                     .map_or(available.len(), |i| i + 1)
                     .min(WORK_BLOCK);
-                if line.len() + take > 65536 {
+                if line.len() + take > CONTROL_MESSAGE_BYTES {
                     return Err(integrity("closure record exceeds 64 KiB"));
                 }
                 let done = available[take - 1] == b'\n';
@@ -512,10 +534,15 @@ impl Writer {
         self.promote(&stage, &manifest, None, checkpoint)?;
         // Check the small manifest header without allocating its inventory.
         #[derive(Deserialize)]
+        struct InputHeader {
+            capture: Capture,
+        }
+        #[derive(Deserialize)]
         struct Header {
             schema: u32,
             project: ProjectId,
             parent: Option<RevisionId>,
+            inputs: Vec<InputHeader>,
         }
         let file = File::open(stage.object_path(&manifest)).map_err(io)?;
         let remaining = file.metadata().map_err(io)?.len();
@@ -541,6 +568,11 @@ impl Writer {
         Ok(RetainedImport {
             run: run.id.clone(),
             prepared: prepared.clone(),
+            inputs: header
+                .inputs
+                .into_iter()
+                .map(|i| i.capture.artifact().cloned())
+                .collect(),
         })
     }
     pub(crate) fn promote(
@@ -598,6 +630,7 @@ impl Writer {
             [prepared.revision.as_str()],
         )
         .map_err(db)?;
+        insert_revision_inputs(&tx, &prepared.revision, &retained.inputs)?;
         tx.execute(
             "UPDATE project SET current_revision=?1 WHERE singleton=1",
             [prepared.revision.as_str()],
@@ -714,15 +747,27 @@ fn verify_file(
 /// Shared current-format decoder for single-run, listing and recovery paths.
 /// Other journal versions are rejected without conversion.
 pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
-    let value: serde_json::Value = serde_json::from_str(raw).map_err(json)?;
-    let schema = value.get("schema").and_then(serde_json::Value::as_u64);
-    if schema != Some(37) {
-        return Err(Error::new(
-            ErrorCode::Incompatible,
-            "unsupported run record schema",
-        ));
+    #[derive(Deserialize)]
+    struct Version {
+        schema: Option<u64>,
     }
-    let record: RunRecord = serde_json::from_value(value).map_err(json)?;
+    let incompatible = || Error::new(ErrorCode::Incompatible, "unsupported run record schema");
+    // Decode the current format directly; only a failed decode needs the version
+    // to distinguish an older journal from a malformed current record.
+    let record: RunRecord = match serde_json::from_str(raw) {
+        Ok(record) => record,
+        Err(error) => {
+            let version: Version = serde_json::from_str(raw).map_err(json)?;
+            return Err(if version.schema == Some(u64::from(JOURNAL_SCHEMA)) {
+                json(error)
+            } else {
+                incompatible()
+            });
+        }
+    };
+    if record.schema != JOURNAL_SCHEMA {
+        return Err(incompatible());
+    }
     record.budget.validate()?;
     if record.diagnostics.is_none()
         || (record.state == RunState::Completed) != record.assessment.is_some()
@@ -871,8 +916,9 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
                 return Err(integrity("invalid semantic IR outcome"));
             }
         }
-        RunOperation::Execute { request, producer } => {
-            request.validate()?;
+        RunOperation::Execute {
+            compare, producer, ..
+        } => {
             if producer.executor.is_empty()
                 || producer.environment.is_empty()
                 || producer.verifier.is_empty()
@@ -882,7 +928,7 @@ pub(crate) fn decode_run(raw: &str) -> Result<RunRecord> {
                 || record.publication.is_some()
                 || record.knowledge.is_some()
                 || (record.state == RunState::Completed) != record.execution.is_some()
-                || (record.state == RunState::Completed && request.replacement.is_some())
+                || (record.state == RunState::Completed && *compare)
                     != record
                         .assessment
                         .as_ref()
@@ -940,8 +986,10 @@ pub fn read_progress(stage: &Path, run: &RunId) -> Result<Option<RunProgress>> {
         Err(error) => return Err(io(error)),
     };
     let mut bytes = Vec::new();
-    file.take(65537).read_to_end(&mut bytes).map_err(io)?;
-    if bytes.len() > 65536 {
+    file.take(CONTROL_MESSAGE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(io)?;
+    if bytes.len() > CONTROL_MESSAGE_BYTES {
         return Err(integrity("progress exceeds 64 KiB"));
     }
     let record: ProgressRecord = serde_json::from_slice(&bytes).map_err(json)?;

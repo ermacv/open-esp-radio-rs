@@ -17,7 +17,7 @@ pub struct RetainedImage {
     receipt: PreparedImageReceipt,
 }
 fn manifest(source: &dyn ByteSource, control: &mut dyn RunControl) -> Result<ImageManifest> {
-    if source.len() > 65536 {
+    if source.len() > CONTROL_MESSAGE_BYTES as u64 {
         return Err(integrity("image manifest exceeds 64 KiB"));
     }
     let mut bytes = vec![0; source.len() as usize];
@@ -89,7 +89,13 @@ impl Project {
         }
         Ok(())
     }
-    pub fn image(&self, id: &PreparedImageId, control: &mut dyn RunControl) -> Result<ImageLease> {
+    /// Verified image manifest whose publication and revision are retained.
+    /// Opens no image artifact; readers verify each artifact they actually read.
+    pub fn image_manifest(
+        &self,
+        id: &PreparedImageId,
+        control: &mut dyn RunControl,
+    ) -> Result<(ImageManifest, FileLease)> {
         let connection = open_connection(&self.root, false)?;
         let schema: u32 = connection
             .pragma_query_value(None, "user_version", |r| r.get(0))
@@ -119,7 +125,21 @@ impl Project {
         {
             return Err(integrity("image publication and manifest disagree"));
         }
-        self.open_payload(&revision.parse()?, control)?;
+        self.require_revision(&revision.parse()?)?;
+        Ok((manifest, manifest_bytes))
+    }
+    /// Verified manifest and executable ELF only, for execution.
+    pub fn image_executable(
+        &self,
+        id: &PreparedImageId,
+        control: &mut dyn RunControl,
+    ) -> Result<(ImageManifest, FileLease)> {
+        let (manifest, _) = self.image_manifest(id, control)?;
+        let elf = self.open_payload(&manifest.elf, control)?;
+        Ok((manifest, elf))
+    }
+    pub fn image(&self, id: &PreparedImageId, control: &mut dyn RunControl) -> Result<ImageLease> {
+        let (manifest, manifest_bytes) = self.image_manifest(id, control)?;
         Ok(ImageLease {
             id: id.clone(),
             elf: self.open_payload(&manifest.elf, control)?,

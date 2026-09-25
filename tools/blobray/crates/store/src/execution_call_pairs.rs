@@ -122,10 +122,11 @@ impl Project {
     pub(super) fn validate_execution_call_pairs(
         &self,
         manifest: &ExecutionManifest,
+        request: &ExecutionRequest,
         memory: &WorkingMemory,
         c: &mut dyn RunControl,
     ) -> Result<()> {
-        let selected = self.execution_call_pairs(&manifest.request, memory, c)?;
+        let selected = self.execution_call_pairs(request, memory, c)?;
         if selected.pairs != manifest.call_pairs {
             return Err(integrity(
                 "retained call relations differ from selected accepted reviews",

@@ -698,6 +698,10 @@ enum SelectKind {
     Symbol,
 }
 
+const MIB: u64 = 1024 * 1024;
+/// How often a waiting CLI forwards a pending signal as cancellation.
+const CANCEL_POLL: std::time::Duration = std::time::Duration::from_millis(20);
+
 #[derive(clap::Args)]
 struct ResourceOptions {
     /// Private runtime directory; defaults to a host-selected per-user directory.
@@ -711,14 +715,20 @@ struct ResourceOptions {
     temporary_total_mib: u64,
     #[arg(long, value_parser = ["kernel", "watchdog"], default_value = "kernel")]
     limit_mode: String,
-    #[arg(long, default_value_t = 4096)]
+    #[arg(long, default_value_t = blobray_domain::DEFAULT_MEMORY_BYTES / MIB)]
     memory_mib: u64,
-    #[arg(long, default_value_t = DEFAULT_WORKING_BYTES / (1024 * 1024))]
+    #[arg(long, default_value_t = DEFAULT_WORKING_BYTES / MIB)]
     working_memory_mib: u64,
-    #[arg(long, default_value_t = 900)]
+    #[arg(long, default_value_t = blobray_domain::DEFAULT_TIMEOUT_MS / 1000)]
     timeout_secs: u64,
     #[arg(long, default_value_t = blobray_domain::DEFAULT_WORK_UNITS)]
     max_work_units: u64,
+    /// Resource sampling period; process exit is observed immediately.
+    #[arg(long, default_value_t = blobray_domain::DEFAULT_POLL_MS)]
+    poll_ms: u64,
+    /// Time between cooperative cancellation and forced termination.
+    #[arg(long, default_value_t = blobray_domain::DEFAULT_GRACE_MS)]
+    grace_ms: u64,
     /// Delegated cgroup v2 parent; defaults to the current cgroup.
     #[arg(long)]
     cgroup_root: Option<PathBuf>,
@@ -733,11 +743,11 @@ impl ResourceOptions {
                 root: self.temporary_root.clone(),
                 operation_bytes: self
                     .temporary_mib
-                    .checked_mul(1024 * 1024)
+                    .checked_mul(MIB)
                     .ok_or_else(|| invalid("temporary limit overflow"))?,
                 total_bytes: self
                     .temporary_total_mib
-                    .checked_mul(1024 * 1024)
+                    .checked_mul(MIB)
                     .ok_or_else(|| invalid("temporary total limit overflow"))?,
             },
         )
@@ -751,18 +761,20 @@ impl ResourceOptions {
             },
             working_memory_bytes: Some(
                 self.working_memory_mib
-                    .checked_mul(1024 * 1024)
+                    .checked_mul(MIB)
                     .ok_or_else(|| invalid("working memory limit overflow"))?,
             ),
             memory_bytes: self
                 .memory_mib
-                .checked_mul(1024 * 1024)
+                .checked_mul(MIB)
                 .ok_or_else(|| invalid("memory limit overflow"))?,
             timeout_ms: self
                 .timeout_secs
                 .checked_mul(1000)
                 .ok_or_else(|| invalid("timeout overflow"))?,
             max_work_units: Some(self.max_work_units),
+            poll_ms: self.poll_ms,
+            grace_ms: self.grace_ms,
             ..Default::default()
         })
     }
@@ -1401,11 +1413,10 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 }
             };
             let handle = application.start_analyze_project(&project, input, limits.budget()?)?;
-            while !handle.status().state.terminal() {
+            while !handle.wait_timeout(CANCEL_POLL) {
                 if signals.cancelled() {
                     handle.cancel();
                 }
-                std::thread::sleep(std::time::Duration::from_millis(20));
             }
             let record = handle.wait();
             let success = record.state == RunState::Completed;
@@ -1592,7 +1603,7 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             request,
             limits,
         } => {
-            let request: blobray_domain::ExecutionRequest = read_json_file(&request)?;
+            let request = read_execution_request(&request)?;
             if request.replacement.is_some() {
                 return Err(invalid("execute accepts one implementation; use compare"));
             }
@@ -1603,7 +1614,7 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             request,
             limits,
         } => {
-            let request: blobray_domain::ExecutionRequest = read_json_file(&request)?;
+            let request = read_execution_request(&request)?;
             if request.replacement.is_none() {
                 return Err(invalid("compare requires a replacement and binding"));
             }
@@ -1640,11 +1651,10 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             let _diagnostics = TemporaryDiagnostics(&application, format);
             let signals = Signals::new()?;
             let handle = application.start_analyze_function(&project, request, limits.budget()?)?;
-            while !handle.status().state.terminal() {
+            while !handle.wait_timeout(CANCEL_POLL) {
                 if signals.cancelled() {
                     handle.cancel();
                 }
-                std::thread::sleep(std::time::Duration::from_millis(20));
             }
             let record = handle.wait();
             let success = record.state == RunState::Completed;
@@ -1836,11 +1846,10 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
                 &linker,
                 limits.budget()?,
             )?;
-            while !handle.status().state.terminal() {
+            while !handle.wait_timeout(CANCEL_POLL) {
                 if signals.cancelled() {
                     handle.cancel();
                 }
-                std::thread::sleep(std::time::Duration::from_millis(20));
             }
             let record = handle.wait();
             let success = record.state == RunState::Completed;
@@ -2050,11 +2059,10 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             let signals = Signals::new()?;
             let handle =
                 application.start_import(&project, inputs, Target::Riscv32Ilp32, budget)?;
-            while !handle.status().state.terminal() {
+            while !handle.wait_timeout(CANCEL_POLL) {
                 if signals.cancelled() {
                     handle.cancel();
                 }
-                std::thread::sleep(std::time::Duration::from_millis(50));
             }
             let record = handle.wait();
             let success = record.state == RunState::Completed;
@@ -2194,15 +2202,35 @@ fn finish_execution(handle: &app::RunHandle, signals: &Signals, format: Format) 
     }
 }
 fn read_json_file<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Result<T> {
+    read_bounded_json(
+        path,
+        blobray_domain::CONTROL_MESSAGE_BYTES,
+        "request exceeds 64 KiB",
+    )
+}
+/// Execution requests are retained by identity, so their bound is independent
+/// of the 64 KiB control-message limit.
+fn read_execution_request(path: &std::path::Path) -> Result<blobray_domain::ExecutionRequest> {
+    read_bounded_json(
+        path,
+        blobray_domain::MAX_EXECUTION_REQUEST_BYTES,
+        "execution request exceeds its size bound",
+    )
+}
+fn read_bounded_json<T: serde::de::DeserializeOwned>(
+    path: &std::path::Path,
+    limit: usize,
+    message: &str,
+) -> Result<T> {
     use std::io::Read;
     let mut bytes = Vec::new();
     std::fs::File::open(path)
         .map_err(io_error)?
-        .take(65537)
+        .take(limit as u64 + 1)
         .read_to_end(&mut bytes)
         .map_err(io_error)?;
-    if bytes.len() > 65536 {
-        return Err(invalid("request exceeds 64 KiB"));
+    if bytes.len() > limit {
+        return Err(invalid(message));
     }
     serde_json::from_slice(&bytes).map_err(|e| invalid(&e.to_string()))
 }
@@ -2237,14 +2265,10 @@ fn temporary_warnings(application: &app::Application, format: Format) {
     }
 }
 fn wait_handle(handle: &app::RunHandle, signals: &Signals, format: Format) -> bool {
-    loop {
+    while !handle.wait_timeout(CANCEL_POLL) {
         if signals.cancelled() {
             handle.cancel();
         }
-        if handle.status().state.terminal() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
     }
     let record = handle.wait();
     if record.state == RunState::Completed {
@@ -2561,10 +2585,10 @@ fn internal(args: &[OsString]) -> Result<()> {
         let mut bytes = Vec::new();
         std::fs::File::open(path)
             .map_err(blobray_domain::storage_io)?
-            .take(65537)
+            .take(blobray_domain::CONTROL_MESSAGE_BYTES as u64 + 1)
             .read_to_end(&mut bytes)
             .map_err(blobray_domain::storage_io)?;
-        if bytes.len() > 65536 {
+        if bytes.len() > blobray_domain::CONTROL_MESSAGE_BYTES {
             return Err(invalid("worker request exceeds 64 KiB"));
         }
         serde_json::from_slice(&bytes).map_err(|e| invalid(&e.to_string()))

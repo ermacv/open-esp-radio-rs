@@ -2,7 +2,14 @@
 use crate::*;
 
 /// Native concrete request and manifest format.
-pub const EXECUTION_SCHEMA: u32 = 17;
+pub const EXECUTION_SCHEMA: u32 = 18;
+/// Upper bound of one canonical execution request payload. Requests are retained
+/// by identity; control messages, journal rows and manifests carry only the hash.
+pub const MAX_EXECUTION_REQUEST_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum phases in one request; a whole finite matrix fits in one request.
+pub const MAX_EXECUTION_CASES: usize = 4096;
+/// Maximum recorded events of one execution phase.
+pub const MAX_EXECUTION_EVENTS: u32 = 65536;
 /// Maximum explicitly supplied RV32 ABI words per invocation.
 pub const MAX_EXECUTION_ARGUMENT_WORDS: usize = 256;
 
@@ -377,7 +384,8 @@ pub struct ExecutionManifest {
     pub call_pairs: Vec<ResolvedCallPair>,
     pub schema: u32,
     pub project: ProjectId,
-    pub request: ExecutionRequest,
+    /// Identity of the retained canonical request payload.
+    pub request: ArtifactId,
     pub producer: ExecutionProducer,
     pub records: ArtifactId,
     pub verdict: Option<ComparisonVerdict>,
@@ -476,9 +484,9 @@ impl ExecutionRequest {
                 .cases
                 .first()
                 .is_some_and(|case| case.reset != SessionReset::Cold)
-            || self.cases.len() > 128
+            || self.cases.len() > MAX_EXECUTION_CASES
             || self.max_events == 0
-            || self.max_events > 65536
+            || self.max_events > MAX_EXECUTION_EVENTS
             || self.replacement.is_some() != self.binding.is_some()
         {
             return Err(bad());

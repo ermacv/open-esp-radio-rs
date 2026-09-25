@@ -140,7 +140,7 @@ impl<'a> Json<'a> {
         // includes serde's temporary string capacity, Vec growth and typed values.
         let size = node.end - node.start;
         let reservation = memory.reserve(
-            size.checked_mul(64)
+            size.checked_mul(DECODE_EXPANSION)
                 .and_then(|n| n.checked_add(4096))
                 .ok_or_else(|| {
                     Error::new(ErrorCode::ResourceLimited, "JSON record admission overflow")

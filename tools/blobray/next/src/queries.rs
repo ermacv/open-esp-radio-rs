@@ -72,6 +72,17 @@ pub(super) fn render(
     writer: &mut dyn Write,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<()> {
+    // Records and separators are small; coalesce them into large writes.
+    let mut buffered = BufWriter::with_capacity(STREAM_BLOCK, writer);
+    render_unbuffered(result, format, &mut buffered, cancelled)?;
+    buffered.flush().map_err(io)
+}
+fn render_unbuffered(
+    result: &mut app::QueryOutput,
+    format: super::Format,
+    writer: &mut dyn Write,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<()> {
     if matches!(
         result.summary(),
         app::QuerySummary::Trace { .. }

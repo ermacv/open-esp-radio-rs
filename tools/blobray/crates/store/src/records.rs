@@ -28,7 +28,10 @@ pub enum RunOperation {
         change: KnowledgeChange,
     },
     Execute {
-        request: ExecutionRequest,
+        /// Identity of the retained canonical request payload.
+        request: ArtifactId,
+        /// The request selects a replacement and yields a verdict.
+        compare: bool,
         producer: ExecutionProducer,
     },
     Query,

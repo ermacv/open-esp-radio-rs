@@ -194,7 +194,12 @@ fn authentication_precedes_capture() {
         &root.join("absent-binary"),
         root,
         root.join("project"),
-        LimitMode::Watchdog,
+        Budget {
+            limit_mode: LimitMode::Watchdog,
+            timeout_secs: 1,
+            working_memory_mib: 1,
+            max_work_units: 1,
+        },
     )
     .unwrap();
     let inputs = [Input {

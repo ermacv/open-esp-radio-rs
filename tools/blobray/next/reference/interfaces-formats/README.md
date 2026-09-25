@@ -142,9 +142,11 @@ schema. The ESP32-S31 vendor scenarios are such a client.
 
 ### Current formats
 
-Run records use journal schema 37 for every durable and read operation. Storage metadata
-uses schema 36; revision manifests use schema 1 and execution manifests use schema
-17. These are independent formats. Earlier journals are rejected by single-run,
+Run records use journal schema 38 for every durable and read operation. Storage metadata
+uses schema 37; revision manifests use schema 1 and execution manifests use schema
+18. These are independent formats. Storage indexes run state, the execution
+published by each run, and each revision input's captured payload, so reads and
+executions never scan the journal or walk the inventory to find them. Earlier journals are rejected by single-run,
 list, recovery and restore readers. `assessment` replaces generic run-level
 `complete`/`verdict`; its scoped coverage, optional policy check and optional
 comparison are independent of `state`. Empty assessment means the operation has

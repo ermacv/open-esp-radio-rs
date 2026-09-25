@@ -20,7 +20,7 @@ pub fn now_ms() -> u64 {
 
 pub(super) fn save(stage: &Path, record: &ProgressRecord) -> Result<()> {
     let bytes = serde_json::to_vec(record).map_err(|e| unavailable(e.to_string()))?;
-    if bytes.len() > 65536 {
+    if bytes.len() > CONTROL_MESSAGE_BYTES {
         return Err(unavailable("progress exceeds 64 KiB"));
     }
     let temporary = stage.join("progress.tmp");

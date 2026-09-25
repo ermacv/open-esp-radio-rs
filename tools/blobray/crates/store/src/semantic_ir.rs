@@ -12,7 +12,7 @@ pub struct RetainedIr {
     id: ArtifactId,
 }
 fn decode(source: &dyn ByteSource, c: &mut dyn RunControl) -> Result<SemanticIrManifest> {
-    if source.len() > 65536 {
+    if source.len() > CONTROL_MESSAGE_BYTES as u64 {
         return Err(integrity("semantic IR manifest exceeds 64 KiB"));
     }
     let mut bytes = vec![0; source.len() as usize];
@@ -67,7 +67,7 @@ impl Project {
             .map_err(db)?;
         let _run_capacity = memory.reserve(
             (blob.len() as u64)
-                .checked_mul(64)
+                .checked_mul(DECODE_EXPANSION)
                 .and_then(|n| n.checked_add(4096))
                 .ok_or_else(|| integrity("IR run capacity overflow"))?,
             c.position(),
@@ -99,7 +99,10 @@ impl Project {
             return Err(integrity("IR index identifies another operation"));
         };
         let source = self.open_payload(id, c)?;
-        let capacity = memory.reserve(8 * source.len().min(65536) + 65536, c.position())?;
+        let capacity = memory.reserve(
+            8 * source.len().min(CONTROL_MESSAGE_BYTES as u64) + CONTROL_MESSAGE_BYTES as u64,
+            c.position(),
+        )?;
         let manifest = decode(&source, c)?;
         if &manifest.request != request {
             return Err(integrity("IR manifest differs from admitted request"));
@@ -123,7 +126,7 @@ impl Staging {
         c: &mut dyn RunControl,
     ) -> Result<PreparedIrReceipt> {
         let bytes = serde_json::to_vec(manifest).map_err(jobs::json)?;
-        if bytes.len() > 65536 {
+        if bytes.len() > CONTROL_MESSAGE_BYTES {
             return Err(integrity("semantic IR manifest exceeds 64 KiB"));
         }
         let mut output = self.disk.temporary(&self.root.join("staging"))?;
@@ -150,7 +153,10 @@ impl Writer {
         };
         let stage = Staging::open(&self.stage_path(&run.id))?;
         let source = stage.open_payload(&receipt.semantic_ir, c)?;
-        let _capacity = memory.reserve(8 * source.len().min(65536) + 65536, c.position())?;
+        let _capacity = memory.reserve(
+            8 * source.len().min(CONTROL_MESSAGE_BYTES as u64) + CONTROL_MESSAGE_BYTES as u64,
+            c.position(),
+        )?;
         let manifest = decode(&source, c)?;
         if receipt.schema != 1
             || receipt.project != self.project.id

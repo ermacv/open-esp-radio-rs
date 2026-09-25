@@ -64,6 +64,9 @@ pub(super) fn run_session(
     Ok(result)
 }
 
+/// Poll period while only exiting descendants remain after the worker.
+const REAP_POLL: Duration = Duration::from_millis(1);
+
 fn cancelled() -> Result<bool> {
     let mut byte = [0u8; 1];
     match std::io::stdin().read(&mut byte) {
@@ -234,8 +237,12 @@ pub(super) fn execute(
             if processes.is_empty() {
                 break;
             }
+            // Only descendants remain: reap them promptly instead of a full period.
+            thread::sleep(REAP_POLL);
+        } else {
+            // Sample at the budget period, but wake as soon as the worker exits.
+            procfs::wait_exit(child.id(), config.budget.poll_ms);
         }
-        thread::sleep(Duration::from_millis(config.budget.poll_ms));
     }
     let _ = stderr.drain().map_err(|error| {
         stop.get_or_insert_with(|| failure(error.code, error.message));

@@ -1,10 +1,11 @@
 //! Verified file handles with bounded positional reads; no materialized payload.
 use super::*;
 use sha2::{Digest, Sha256};
-use std::{
-    cell::RefCell,
-    io::{Read, Seek, SeekFrom},
-};
+use std::{cell::RefCell, os::unix::fs::FileExt};
+
+/// Positional read size. Accounting stays per chunk; larger chunks only reduce
+/// system calls for verification and sequential scans.
+const READ_CHUNK: usize = STREAM_BLOCK;
 
 fn retained_io(error: std::io::Error) -> Error {
     if matches!(
@@ -37,10 +38,10 @@ impl FileLease {
             length,
         };
         let mut digest = Sha256::new();
-        let mut buffer = [0; WORK_BLOCK];
+        let mut buffer = vec![0; READ_CHUNK];
         let mut offset = 0;
         while offset < length {
-            let count = (length - offset).min(WORK_BLOCK as u64) as usize;
+            let count = (length - offset).min(READ_CHUNK as u64) as usize;
             lease.read_at(offset, &mut buffer[..count], control)?;
             control.bytes(count)?;
             digest.update(&buffer[..count]);
@@ -66,11 +67,12 @@ impl ByteSource for FileLease {
         {
             return Err(integrity("captured byte range out of bounds"));
         }
-        let mut file = self.file.borrow_mut();
-        file.seek(SeekFrom::Start(offset)).map_err(io)?;
-        for chunk in bytes.chunks_mut(WORK_BLOCK) {
+        let file = self.file.borrow();
+        let mut position = offset;
+        for chunk in bytes.chunks_mut(READ_CHUNK) {
             control.bytes(chunk.len())?;
-            file.read_exact(chunk).map_err(retained_io)?;
+            file.read_exact_at(chunk, position).map_err(retained_io)?;
+            position += chunk.len() as u64;
         }
         Ok(())
     }

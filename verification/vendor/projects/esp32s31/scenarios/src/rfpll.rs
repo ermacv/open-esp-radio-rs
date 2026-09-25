@@ -3,10 +3,11 @@ use crate::calibration_prefix::{delay_calls, delays_of};
 use crate::evidence::{events, stop};
 use crate::harness::{Result, case, invocation, known, region, words, words_padded};
 use crate::i2c::{I2c, all_complete, models, returned_low};
+use crate::layout::*;
 use blobray_domain::{
-    CommandBank, CommandCell, CommandPort, ComparisonVerdict, DeviceBehavior, DeviceDeclaration,
-    ExecutionCase, ExecutionEvent, ExecutionGap, ExecutionRegion, ExecutionStop, Invocation,
-    MemoryAccess, ModelStatus, ReadRun, RegionLifetime, RegisterCell, SessionReset,
+    CommandCell, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, ExecutionCase,
+    ExecutionEvent, ExecutionGap, ExecutionRegion, ExecutionStop, Invocation, MemoryAccess,
+    ModelStatus, ReadRun, RegionLifetime, RegisterCell, SessionReset,
 };
 
 /// Independently read candidate domains and signed outputs of the pinned archive.
@@ -81,7 +82,7 @@ pub fn expected_commands(candidates: &[i32], selected: i32) -> Vec<(u32, u32)> {
             result.push(0x0400_0c62);
         }
     }
-    result.into_iter().map(|v| (0x2010_f804, v)).collect()
+    result.into_iter().map(|v| (I2C_PORT_1, v)).collect()
 }
 
 /// Retained frequency-control words and the ordered transactions over them.
@@ -143,11 +144,7 @@ pub fn frequency_expectation(
             f.update(0x20, |v| v & !0x10000);
             f.result.push((false, 0x2010_0040, *word));
             let corrected = (((word & 255) | ((word >> 6) & 0x100)) as i32 + delta) & 0xffff;
-            let signed = if corrected < 32768 {
-                corrected
-            } else {
-                corrected - 65536
-            };
+            let signed = i32::from(corrected as u16 as i16);
             let encoded = (corrected as u32 & 255)
                 | (word & 0xbf00)
                 | (((signed >> 8) as u32) << 14)
@@ -212,30 +209,13 @@ fn bank(cap: i32, statuses: &[u32], busy: u32) -> Vec<DeviceDeclaration> {
         reads: Some(statuses.iter().map(|s| 0xa3 | (s << 2)).collect()),
     });
     vec![
-        DeviceDeclaration {
-            id: "rfpll".into(),
-            applicability:
-                "explicit capacitor bytes and finite lock-status samples; no search algorithm"
-                    .into(),
-            lifetime: RegionLifetime::Phase,
-            behavior: DeviceBehavior::CommandBank(CommandBank {
-                selector_mask: 0xffff,
-                data_mask: 0x00ff_0000,
-                read_command: 0x0400_0000,
-                write_command: 0x0500_0000,
-                busy_mask: 0x0200_0000,
-                reset_command: Some(0x0400_0000),
-                ports: (0..2)
-                    .map(|i| CommandPort {
-                        address: 0x2010_f800 + 4 * i,
-                        initial: 0,
-                        initial_busy_reads: 0,
-                        busy_reads: busy,
-                    })
-                    .collect(),
-                cells,
-            }),
-        },
+        analog_bank(
+            "rfpll",
+            "explicit capacitor bytes and finite lock-status samples; no search algorithm",
+            busy,
+            [0, 0],
+            cells,
+        ),
         DeviceDeclaration {
             id: "transport-controls".into(),
             applicability: "explicit retained host-map/read-mask controls".into(),
@@ -243,12 +223,12 @@ fn bank(cap: i32, statuses: &[u32], busy: u32) -> Vec<DeviceDeclaration> {
             behavior: DeviceBehavior::RegisterBank {
                 cells: vec![
                     RegisterCell {
-                        address: 0x2010_f81c,
+                        address: I2C_READ_MASK,
                         width: 4,
                         value: 0,
                     },
                     RegisterCell {
-                        address: 0x2010_f820,
+                        address: I2C_HOST_MAP,
                         width: 4,
                         value: 0,
                     },
@@ -319,14 +299,14 @@ impl Rfpll {
         memory: Vec<ExecutionRegion>,
     ) -> Result<Invocation> {
         let mut regions = vec![
-            known(0x3fff_4000, 32, &words_padded(arguments, 8, 0)?)?,
-            known(0x2f07_fc3c, 4, &words(&[0x3fff_3000]))?,
-            known(0x3fff_3000, 16, &words(&self.callbacks))?,
+            known(ABI_WORDS, 32, &words_padded(arguments, 8, 0)?)?,
+            known(ROM_INTERFACE_POINTER, 4, &words(&[CALLBACK_TABLE]))?,
+            known(CALLBACK_TABLE, 16, &words(&self.callbacks))?,
         ];
         regions.extend(memory);
         Ok(invocation(
             self.shim,
-            vec![Some(target), Some(0x3fff_4000)],
+            vec![Some(target), Some(ABI_WORDS)],
             regions,
             models,
             vec![],
@@ -357,14 +337,29 @@ impl Rfpll {
     }
 
     fn setup(&self, side: bool) -> Result<Invocation> {
-        let mut data = vec![0u8; 516];
+        let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
         data[..2].copy_from_slice(&[100, 0]);
-        let target = if side { 0x3fff_6000 } else { self.parameter };
-        let mut memory = vec![known(0x3fff_5000, 516, &data)?];
+        let target = if side {
+            PARAMETER_DESTINATION
+        } else {
+            self.parameter
+        };
+        let mut memory = vec![known(PARAMETER_SOURCE, PHY_PARAM_BYTES, &data)?];
         if side {
-            memory.push(region(target, 516, &[], None, RegionLifetime::Session)?);
+            memory.push(region(
+                target,
+                PHY_PARAM_BYTES,
+                &[],
+                None,
+                RegionLifetime::Session,
+            )?);
         }
-        self.enter(self.memcpy, &[target, 0x3fff_5000, 516], vec![], memory)
+        self.enter(
+            self.memcpy,
+            &[target, PARAMETER_SOURCE, PHY_PARAM_BYTES],
+            vec![],
+            memory,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -381,7 +376,7 @@ impl Rfpll {
         let mut table = vec![0u8; 284];
         table.extend((channel as u16).to_le_bytes());
         let memory = vec![
-            known(0x2f07_fc40, 4, &words(&[0x3fff_0000]))?,
+            known(ROM_PARAMETER_POINTER, 4, &words(&[0x3fff_0000]))?,
             known(0x3fff_0000, 286, &table)?,
         ];
         let (target, arguments) = if side {
@@ -406,8 +401,10 @@ fn envelope(events: &[ExecutionEvent]) -> Vec<ExecutionEvent> {
     events
         .iter()
         .filter(|e| match e {
-            ExecutionEvent::Read { address, .. } => !(0x2010_f800..0x2010_f824).contains(address),
-            ExecutionEvent::Write { address, .. } => !matches!(*address, 0x2010_f81c | 0x2010_f820),
+            ExecutionEvent::Read { address, .. } => !(I2C_PORT_0..0x2010_f824).contains(address),
+            ExecutionEvent::Write { address, .. } => {
+                !matches!(*address, I2C_READ_MASK | I2C_HOST_MAP)
+            }
             ExecutionEvent::Fence { .. } | ExecutionEvent::DelayMicros { .. } => true,
             _ => false,
         })
@@ -461,7 +458,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                     Some(&replacement),
                     Some(fill),
                     vec![row],
-                    32768,
+                    MAX_EVENTS,
                     Some(ComparisonVerdict::Match),
                 )?;
                 for side in [false, true] {
@@ -472,7 +469,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                         .iter()
                         .filter_map(|e| match e {
                             ExecutionEvent::Write {
-                                address: address @ (0x2010_f800 | 0x2010_f804),
+                                address: address @ (I2C_PORT_0 | I2C_PORT_1),
                                 value,
                                 ..
                             } => Some((*address, *value)),
@@ -582,7 +579,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                 Some(&replacement),
                 Some(fill),
                 rows,
-                32768,
+                MAX_EVENTS,
                 Some(ComparisonVerdict::Match),
             )?;
             let mut projected_sides = vec![];
@@ -668,7 +665,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         None,
         Some(0x5a),
         vec![row],
-        32768,
+        MAX_EVENTS,
         None,
     )?;
     assert_eq!(returned_low(&records, 0, false), Some(0x8000_0000));
@@ -721,7 +718,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         Some(&replacement),
         Some(0x5a),
         changed,
-        32768,
+        MAX_EVENTS,
         Some(ComparisonVerdict::Diff),
     )?;
     let mut unknown = original.clone();
@@ -732,14 +729,14 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         Some(&replacement),
         Some(0x5a),
         unknown,
-        32768,
+        MAX_EVENTS,
         Some(ComparisonVerdict::Incomplete),
     )?;
     assert!(matches!(
         stop(&records, 0, false),
         ExecutionStop::Incomplete {
             reason: ExecutionGap::Memory {
-                address: 0x2f07_fc3c,
+                address: ROM_INTERFACE_POINTER,
                 access: MemoryAccess::Read
             },
             ..
@@ -768,7 +765,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         Some(&replacement),
         Some(0x5a),
         diagnostics,
-        32768,
+        MAX_EVENTS,
         Some(ComparisonVerdict::Incomplete),
     )?;
     let printf = ctx.captured(4, "phy_printf");
@@ -784,7 +781,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         Some(&replacement),
         Some(0x5a),
         raw,
-        32768,
+        MAX_EVENTS,
         Some(ComparisonVerdict::Diff),
     )?;
     let limited = crate::session::request(&vendor, Some(&replacement), Some(0x5a), original, 1);
@@ -800,9 +797,9 @@ mod tests {
         let commands = expected_commands(&[100, 99], 99);
         // Four setup commands, then three per candidate plus a status read, then the selection.
         assert_eq!(commands.len(), 4 + 2 * 4 + 3);
-        assert_eq!(commands[4], (0x2010_f804, 0x0500_0162 | (100 << 16)));
+        assert_eq!(commands[4], (I2C_PORT_1, 0x0500_0162 | (100 << 16)));
         // Negative candidates program zero.
-        assert_eq!(expected_commands(&[-2], 0)[4], (0x2010_f804, 0x0500_0162));
+        assert_eq!(expected_commands(&[-2], 0)[4], (I2C_PORT_1, 0x0500_0162));
         let cases = search_cases();
         assert_eq!(cases.len(), 9);
         assert_eq!(

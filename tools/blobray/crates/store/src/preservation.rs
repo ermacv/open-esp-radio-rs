@@ -78,7 +78,7 @@ impl Project {
             .map_err(db)?;
         let capacity = u64::from(pages)
             .checked_mul(u64::from(page_size))
-            .and_then(|n| n.checked_add(65536))
+            .and_then(|n| n.checked_add(CONTROL_MESSAGE_BYTES as u64))
             .ok_or_else(|| integrity("snapshot size overflow"))?;
         disk.reserve(capacity)?;
         let snapshot = stage.join("snapshot.sqlite3");
@@ -223,7 +223,11 @@ pub fn restore_backup(
         )?;
         let mut connection = Connection::open(root.join("project.sqlite3")).map_err(db)?;
         let tx = connection.transaction().map_err(db)?;
-        let mut query=tx.prepare("SELECT id,record FROM runs WHERE json_extract(record,'$.state') IN ('registered','running','validating')").map_err(db)?;
+        let mut query = tx
+            .prepare(
+                "SELECT id,record FROM runs WHERE state IN ('registered','running','validating')",
+            )
+            .map_err(db)?;
         let mut rows = query.query([]).map_err(db)?;
         // Preserve the entire original database as a digest-qualified retained payload.
         let mut saved: Option<ArtifactId> = None;
@@ -246,7 +250,7 @@ pub fn restore_backup(
                 saved = Some(id);
             }
             let raw: String = row.get(1).map_err(db)?;
-            if raw.len() > 65536 {
+            if raw.len() > CONTROL_MESSAGE_BYTES {
                 return Err(integrity("restored run exceeds control limit"));
             }
             let mut run = jobs::decode_run(&raw)?;
@@ -297,7 +301,7 @@ impl Project {
             .map_err(db)?;
         let Some(raw) = raw else { return Ok(None) };
         let lease = self.open_payload(&raw.parse()?, control)?;
-        if lease.len() > 65536 {
+        if lease.len() > CONTROL_MESSAGE_BYTES as u64 {
             return Err(integrity("legacy manifest exceeds limit"));
         }
         let mut bytes = vec![0; lease.len() as usize];

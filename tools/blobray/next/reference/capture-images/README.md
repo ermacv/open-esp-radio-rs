@@ -39,8 +39,10 @@ cleanup and use the same application cancellation/publication contract.
 Defaults are a 4096 MiB process limit, 256 MiB working capacity, 900 seconds,
 1,000,000,000 work units, a 100 ms sampling interval and a 10 second termination
 grace. Operation commands accept `--memory-mib`, `--working-memory-mib`,
-`--timeout-secs` and `--max-work-units` (positive).
-`ResourceBudget` also exposes sampling and grace intervals to API clients.
+`--timeout-secs`, `--max-work-units`, `--poll-ms` and `--grace-ms` (positive).
+The defaults are the `DEFAULT_*` constants of `blobray-domain`. The sampling
+interval bounds only resource observation: supervisors wait for process exit
+directly, so a finished operation is not delayed by a sampling period.
 Ctrl+C or SIGTERM requests cancellation. SIGKILL cannot produce a normal terminal
 response; the guard detects the closed coordinator pipe and stops its worker tree.
 

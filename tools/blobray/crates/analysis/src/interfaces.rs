@@ -49,7 +49,7 @@ pub fn discover(
     emit: &mut dyn FnMut(InterfaceObservation, &mut dyn RunControl) -> Result<()>,
 ) -> Result<()> {
     c.phase(RunPhase::IndexResearch)?;
-    let _construction = memory.reserve(65536, c.position())?;
+    let _construction = memory.reserve(CONTROL_MESSAGE_BYTES as u64, c.position())?;
     let mut expressions = AdmittedVec::new(memory);
     let mut instructions = AdmittedVec::new(memory);
     let mut inputs = AdmittedVec::new(memory);

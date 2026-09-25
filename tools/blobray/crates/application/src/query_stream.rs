@@ -559,7 +559,7 @@ pub fn prepare_query_with_tools(
     };
     let control: &mut dyn RunControl = &mut metered;
     let result = (|| {
-        let _fixed = memory.reserve(65536, control.position())?;
+        let _fixed = memory.reserve(CONTROL_MESSAGE_BYTES as u64, control.position())?;
 
         let mut spool = Spool {
             file: disk.create(&stage.join("query-records"))?,
@@ -983,6 +983,7 @@ pub fn prepare_query_with_tools(
                     Project::open(&work.project.to_path()?)?.execution(id, &memory, control)?;
                 blobray_store::validate_execution_records(
                     &result.manifest,
+                    &result.request,
                     &result.records,
                     &memory,
                     control,
@@ -1291,7 +1292,7 @@ pub(crate) fn visit(
             ));
         }
         let charge = size
-            .checked_mul(64)
+            .checked_mul(DECODE_EXPANSION)
             .and_then(|n| n.checked_add(4096))
             .ok_or_else(|| Error::new(ErrorCode::ResourceLimited, "record capacity overflow"))?;
         let _decoded = memory.reserve(charge, control.position())?;

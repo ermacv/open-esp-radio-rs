@@ -25,15 +25,23 @@ pub struct ResourceBudget {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_policy: Option<u32>,
 }
+/// Host process memory limit of one operation.
+pub const DEFAULT_MEMORY_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+/// Wall-clock deadline of one operation.
+pub const DEFAULT_TIMEOUT_MS: u64 = 900_000;
+/// Time between cooperative cancellation and forced termination.
+pub const DEFAULT_GRACE_MS: u64 = 10_000;
+/// Resource sampling period; process exit is observed without waiting for it.
+pub const DEFAULT_POLL_MS: u64 = 100;
 impl Default for ResourceBudget {
     fn default() -> Self {
         Self {
             mode: LimitMode::Kernel,
-            memory_bytes: 4 * 1024 * 1024 * 1024,
+            memory_bytes: DEFAULT_MEMORY_BYTES,
             working_memory_bytes: Some(DEFAULT_WORKING_BYTES),
-            timeout_ms: 900_000,
-            grace_ms: 10_000,
-            poll_ms: 100,
+            timeout_ms: DEFAULT_TIMEOUT_MS,
+            grace_ms: DEFAULT_GRACE_MS,
+            poll_ms: DEFAULT_POLL_MS,
             max_work_units: Some(DEFAULT_WORK_UNITS),
             work_policy: Some(WORK_POLICY),
         }

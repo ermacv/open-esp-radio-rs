@@ -6,8 +6,9 @@
 //! authenticated RF-test archive the producer is reported as an unmet
 //! obligation, never omitted.
 use crate::evidence::{Access, Effect, calls, effects, events, has_events, output, stop};
-use crate::gain::{Gain, INPUT, Right, arithmetic, gain_models, publication, signed8};
+use crate::gain::{Gain, Right, arithmetic, gain_models, publication, signed8};
 use crate::harness::{Result, case, filled, known, region, selection, words};
+use crate::layout::*;
 use blobray_domain::{
     ArtifactId, CallCapture, CallWordCount, ComparisonVerdict, DeviceBehavior, DeviceDeclaration,
     ExecutionGap, ExecutionRequest, ExecutionStop, MemoryAccess, RegionLifetime, RegisterCell,
@@ -72,7 +73,7 @@ struct Baseline {
 }
 
 fn state_selection(g: &Gain) -> Vec<blobray_domain::MemorySelection> {
-    vec![selection(g.parameter, 516)]
+    vec![selection(g.parameter, PHY_PARAM_BYTES)]
 }
 
 fn storage(g: &mut Gain) -> Result<Baseline> {
@@ -83,10 +84,10 @@ fn storage(g: &mut Gain) -> Result<Baseline> {
     let mut baseline = None;
     for fill in [0x5a, 0xa5] {
         let adjustments = [0u8, 1, 31, 127, 128, 255];
-        for batch in (0..6).step_by(2) {
+        for batch in (0..6).step_by(6) {
             let (mut rows, mut states) = (vec![], vec![]);
-            for &adjustment in &adjustments[batch..batch + 2] {
-                let mut state: Vec<u8> = (0..516u32)
+            for &adjustment in &adjustments[batch..] {
+                let mut state: Vec<u8> = (0..PHY_PARAM_BYTES)
                     .map(|i| (i * 37 + u32::from(fill)) as u8)
                     .collect();
                 state[434] = adjustment;
@@ -268,7 +269,7 @@ fn storage_negative(g: &mut Gain, baseline: &Baseline) -> Result<()> {
             0x5a,
             Right::Vendor,
             ComparisonVerdict::Diff,
-            32768,
+            MAX_EVENTS,
         )?
         .records;
     assert_eq!(output(&records, 2, false), [1]);
@@ -296,7 +297,7 @@ fn storage_negative(g: &mut Gain, baseline: &Baseline) -> Result<()> {
     let rows = vec![
         case(
             "seed-live-state",
-            g.setup(&[0; 516], false),
+            g.setup(&[0; PHY_PARAM_BYTES as usize], false),
             None,
             SessionReset::Cold,
             false,
@@ -310,7 +311,7 @@ fn storage_negative(g: &mut Gain, baseline: &Baseline) -> Result<()> {
             0x5a,
             Right::None,
             ComparisonVerdict::Incomplete,
-            32768,
+            MAX_EVENTS,
         )?
         .records;
     assert!(!g.last_manifest_complete());
@@ -347,10 +348,10 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
     let mac = g.root("mac_power_set");
     let mut publishing = None;
     for fill in [0x5a, 0xa5] {
-        for batch in (0..POWER.len()).step_by(3) {
+        for batch in (0..POWER.len()).step_by(POWER.len()) {
             let mut rows = vec![];
-            for &(target, attenuation, _, _, _) in &POWER[batch..batch + 3] {
-                let mut data = vec![0u8; 516];
+            for &(target, attenuation, _, _, _) in &POWER[batch..] {
+                let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
                 data[80..98].fill((target & 255) as u8);
                 data[6] = 84;
                 data[8] = (attenuation & 255) as u8;
@@ -368,13 +369,13 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
                     &[],
                     vec![
                         region(
-                            0x2f07_fc3c,
+                            ROM_INTERFACE_POINTER,
                             4,
-                            &words(&[0x2f07_f944]),
+                            &words(&[ROM_CALLBACK_TABLE]),
                             None,
                             RegionLifetime::Session,
                         )?,
-                        region(0x2f07_fc40, 4, &[], None, RegionLifetime::Session)?,
+                        region(ROM_PARAMETER_POINTER, 4, &[], None, RegionLifetime::Session)?,
                     ],
                     vec![selection(0x2f07_f968, 4)],
                     vec![],
@@ -435,7 +436,7 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
             let executed = g.characterize_vendor(&format!("power-{fill}-{batch}"), rows, fill)?;
             let records = &executed.records;
             for (i, &(target, attenuation, adjustment, index, publish)) in
-                POWER[batch..batch + 3].iter().enumerate()
+                POWER[batch..].iter().enumerate()
             {
                 let i = i as u32;
                 assert_eq!(output(records, 3 * i + 1, false), tab.to_le_bytes());
@@ -467,7 +468,7 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
                     "{target} {attenuation} {fill}"
                 );
             }
-            if batch == 9 && fill == 0x5a {
+            if fill == 0x5a {
                 publishing = Some(executed.request);
             }
         }
@@ -475,15 +476,18 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
     Ok(publishing.expect("publishing batch"))
 }
 
+/// Rows of the first publishing policy case (`POWER[9]`, 80/-5) in the 0x5a request.
+const PUBLISHING: usize = 3 * 9;
+
 fn power_negative(g: &mut Gain, request: &ExecutionRequest) -> Result<()> {
     let set_gain = g.root("phy_wifi_set_tx_gain_new");
     let mac = g.root("mac_power_set");
-    let mut rows = request.cases[..3].to_vec();
+    let mut rows = request.cases[PUBLISHING..PUBLISHING + 3].to_vec();
     rows.remove(1);
     // Supply only the parameter pointer. The absent callback installation must
     // stop gain regeneration even though the parent already wrote adjustment.
     rows[1].vendor.memory.push(region(
-        0x2f07_fc40,
+        ROM_PARAMETER_POINTER,
         4,
         &words(&[g.parameter]),
         None,
@@ -496,7 +500,7 @@ fn power_negative(g: &mut Gain, request: &ExecutionRequest) -> Result<()> {
             0x5a,
             Right::None,
             ComparisonVerdict::Incomplete,
-            32768,
+            MAX_EVENTS,
         )?
         .records;
     assert!(!g.last_manifest_complete());
@@ -513,7 +517,7 @@ fn power_negative(g: &mut Gain, request: &ExecutionRequest) -> Result<()> {
     // Leave the attenuation byte and later policy inputs unknown. Loading an
     // unknown byte stops the seed phase, so the policy phase cannot select a
     // gain or MAC index from partially known parameters.
-    let mut rows = request.cases[..3].to_vec();
+    let mut rows = request.cases[PUBLISHING..PUBLISHING + 3].to_vec();
     let source = rows[0]
         .vendor
         .memory
@@ -529,7 +533,7 @@ fn power_negative(g: &mut Gain, request: &ExecutionRequest) -> Result<()> {
             0x5a,
             Right::None,
             ComparisonVerdict::Incomplete,
-            32768,
+            MAX_EVENTS,
         )?
         .records;
     assert!(!g.last_manifest_complete());

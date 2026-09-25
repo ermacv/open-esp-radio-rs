@@ -60,6 +60,12 @@ pub trait OperationWorker: Send {
     fn progress(&self) -> Result<Option<RunProgress>> {
         Ok(None)
     }
+    /// Block for at most `timeout_ms`, returning early once the session exits.
+    /// The default sleeps; hosts with an exit notification should use it.
+    fn wait(&mut self, timeout_ms: u64) -> Result<()> {
+        std::thread::sleep(std::time::Duration::from_millis(timeout_ms));
+        Ok(())
+    }
 }
 
 /// Injected platform capability. Libraries do not install signal handlers.
@@ -207,7 +213,7 @@ pub struct QueryWork {
 }
 
 pub(crate) use write_control_message as write_request;
-pub(crate) const MESSAGE_BYTES: usize = 65536;
+pub(crate) const MESSAGE_BYTES: usize = CONTROL_MESSAGE_BYTES;
 /// Write one host control message, capped at 64 KiB before any excess write.
 /// The fixed temporary control reserve covers at most sixteen such files.
 pub fn write_control_message(writer: impl std::io::Write, value: &impl Serialize) -> Result<()> {

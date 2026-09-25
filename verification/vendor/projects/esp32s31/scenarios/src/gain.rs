@@ -5,10 +5,11 @@
 //! selected ignored output.
 use crate::evidence::{Access, Effect, calls, effects, events, has_events, outcomes, output, stop};
 use crate::harness::{
-    Buffer, Input, LimitMode, Result, case, data_request, evidence, filled, invalid, invocation,
+    Budget, Buffer, Input, Result, case, data_request, evidence, filled, invalid, invocation,
     known, manifest, named_object, named_section, region, selection, sha256, symbol, words,
     words_padded,
 };
+use crate::layout::*;
 use crate::session::{Session, image_symbol, request};
 use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_domain::{
@@ -27,16 +28,12 @@ pub const OBJECT_SHA: &str = "88ee26018604100c9ba7839214024d54b48adf982c482dfb1e
 /// the native export must match before these data may support a comparison.
 pub const COEFFICIENT_SHA: &str =
     "748936005c8ba31c1b826d0d0d2bb56f8982548c7d9826fed90930100d79f7a1";
-pub const INPUT: u32 = 0x3fff_0000;
-pub const OUTPUT: u32 = 0x3fff_1000;
-pub const ABI: u32 = 0x3fff_4000;
 pub const CURVES: [[u8; 6]; 4] = [
     [0; 6],
     [0, 5, 10, 15, 20, 25],
     [127, 128, 255, 1, 2, 3],
     [255, 0, 127, 128, 7, 9],
 ];
-const PARAMETER_BYTES: u32 = 516;
 
 pub fn signed8(value: i32) -> i32 {
     (value & 127) - (value & 128)
@@ -216,7 +213,7 @@ pub struct Options {
     pub production: PathBuf,
     pub linker: PathBuf,
     pub output: PathBuf,
-    pub limit_mode: LimitMode,
+    pub budget: Budget,
     pub rftest: Option<PathBuf>,
 }
 
@@ -276,7 +273,7 @@ impl Gain {
         let session = Session::start(
             &options.binary,
             &options.output,
-            options.limit_mode,
+            options.budget,
             &inputs,
             "captured Wi-Fi/BT gain, calibration storage and RF-test policy; no RF qualification",
         )?;
@@ -385,7 +382,7 @@ impl Gain {
             &run.join("image-symbols.txt"),
             "phy_param",
         )?;
-        if parameter.1 != u64::from(PARAMETER_BYTES) {
+        if parameter.1 != u64::from(PHY_PARAM_BYTES) {
             return Err(invalid(
                 "phy_param does not have the expected 516-byte extent",
             ));
@@ -438,7 +435,7 @@ impl Gain {
             .expect("stack entry probe");
         let mut regions = vec![
             known(
-                ABI,
+                ABI_WORDS,
                 64,
                 &words_padded(arguments, 16, 0).expect("sixteen words"),
             )
@@ -447,7 +444,7 @@ impl Gain {
         regions.extend(memory);
         invocation(
             entry,
-            vec![Some(target), Some(ABI)],
+            vec![Some(target), Some(ABI_WORDS)],
             regions,
             models,
             observe,
@@ -476,12 +473,12 @@ impl Gain {
         if production {
             self.enter(
                 memcpy,
-                &[INPUT + 0x800, INPUT, PARAMETER_BYTES],
+                &[INPUT + 0x800, INPUT, PHY_PARAM_BYTES],
                 vec![
-                    known(INPUT, PARAMETER_BYTES, data).unwrap(),
+                    known(INPUT, PHY_PARAM_BYTES, data).unwrap(),
                     region(
                         INPUT + 0x800,
-                        PARAMETER_BYTES,
+                        PHY_PARAM_BYTES,
                         &[],
                         None,
                         RegionLifetime::Session,
@@ -494,8 +491,8 @@ impl Gain {
         } else {
             self.enter(
                 memcpy,
-                &[self.parameter, INPUT, PARAMETER_BYTES],
-                vec![known(INPUT, PARAMETER_BYTES, data).unwrap()],
+                &[self.parameter, INPUT, PHY_PARAM_BYTES],
+                vec![known(INPUT, PHY_PARAM_BYTES, data).unwrap()],
                 vec![],
                 vec![],
             )
@@ -587,7 +584,7 @@ impl Gain {
             fill,
             Right::Production,
             ComparisonVerdict::Match,
-            32768,
+            MAX_EVENTS,
         )
     }
 
@@ -604,7 +601,7 @@ impl Gain {
             fill,
             Right::None,
             ComparisonVerdict::Match,
-            32768,
+            MAX_EVENTS,
         )
     }
 
@@ -647,10 +644,11 @@ impl Gain {
                 .collect();
             let length = if bluetooth { 80 } else { 160 };
             for fill in [0x5a, 0xa5] {
-                for batch in (0..18).step_by(6) {
+                // Every threshold of one profile and fill is one request.
+                for batch in (0..18).step_by(18) {
                     let (mut rows, mut expected) = (vec![], vec![]);
-                    for (index, threshold) in high.iter().enumerate().skip(batch).take(6) {
-                        let mut data = vec![0u8; 516];
+                    for (index, threshold) in high.iter().enumerate().skip(batch).take(18) {
+                        let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
                         let (left, right, correction);
                         if bluetooth {
                             let base = 64;
@@ -761,11 +759,11 @@ impl Gain {
                     }
                 }
             }
-            for batch in (0..specs.len()).step_by(4) {
-                let selected = &specs[batch..(batch + 4).min(specs.len())];
+            for batch in (0..specs.len()).step_by(specs.len()) {
+                let selected = &specs[batch..];
                 let data_for =
                     |(curve, _, base, adjustment, correction): &([u8; 6], u32, i32, i32, i32)| {
-                        let mut data = vec![0u8; 516];
+                        let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
                         data[241..247].copy_from_slice(curve);
                         data[247] = (correction & 255) as u8;
                         data[291] = *base as u8;
@@ -903,10 +901,10 @@ impl Gain {
                     }
                 }
             }
-            for batch in (0..specs.len()).step_by(6) {
+            for batch in (0..specs.len()).step_by(specs.len()) {
                 let mut rows = vec![];
-                for &(curve, channel, base, correction) in &specs[batch..batch + 6] {
-                    let mut data = vec![0u8; 516];
+                for &(curve, channel, base, correction) in &specs[batch..] {
+                    let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
                     data[241..247].copy_from_slice(&curve);
                     data[247] = (correction & 255) as u8;
                     data[291] = (base & 255) as u8;
@@ -943,9 +941,7 @@ impl Gain {
                     self.wifi_request = Some(executed.request);
                 }
                 assert!(!has_events(&executed.records));
-                for (i, &(curve, channel, base, correction)) in
-                    specs[batch..batch + 6].iter().enumerate()
-                {
+                for (i, &(curve, channel, base, correction)) in specs[batch..].iter().enumerate() {
                     let expected = arithmetic(
                         &self.coefficients[108..],
                         &curve,
@@ -1047,13 +1043,13 @@ impl Gain {
             &[],
             vec![
                 region(
-                    0x2f07_fc3c,
+                    ROM_INTERFACE_POINTER,
                     4,
-                    &words(&[0x2f07_f944]),
+                    &words(&[ROM_CALLBACK_TABLE]),
                     None,
                     RegionLifetime::Session,
                 )?,
-                region(0x2f07_fc40, 4, &[], None, RegionLifetime::Session)?,
+                region(ROM_PARAMETER_POINTER, 4, &[], None, RegionLifetime::Session)?,
             ],
             vec![selection(observed_slot, 4)],
             vec![],
@@ -1077,9 +1073,9 @@ impl Gain {
                     }
                 }
             }
-            for batch in (0..specs.len()).step_by(3) {
+            for batch in (0..specs.len()).step_by(specs.len()) {
                 let (mut rows, mut expected) = (vec![], vec![]);
-                for &(curve, base, attenuation, correction, bank) in &specs[batch..batch + 3] {
+                for &(curve, base, attenuation, correction, bank) in &specs[batch..] {
                     let f = u32::from(fill);
                     let mut packed: Vec<u32> = (0..6)
                         .map(|i| (f * 0x0101_0101).wrapping_add(i * 0x0102_0305))
@@ -1091,7 +1087,7 @@ impl Gain {
                         u32::from_le_bytes(curve_word.try_into().unwrap()),
                         base as u32 | ((attenuation as u32) << 8),
                     ]);
-                    let mut data = vec![0u8; 516];
+                    let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
                     data[260..284].copy_from_slice(&words(&packed[..6]));
                     data[208..210].copy_from_slice(&packed[6].to_le_bytes()[..2]);
                     data[251..255].copy_from_slice(&words(&[packed[7]]));
@@ -1221,7 +1217,7 @@ impl Gain {
             profiles.push((base.wrapping_add(adjustment), 0, 0));
         }
         let data_for = |base: u8, attenuation: u8, adjustment: u8| {
-            let mut data = vec![0u8; 516];
+            let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
             data[291] = base;
             data[8] = attenuation;
             data[434] = adjustment;
@@ -1311,7 +1307,7 @@ impl Gain {
                 0x5a,
                 Right::Production,
                 ComparisonVerdict::Incomplete,
-                32768,
+                MAX_EVENTS,
             )?
             .records;
         assert!(matches!(
@@ -1338,7 +1334,7 @@ impl Gain {
                 0x5a,
                 Right::Production,
                 ComparisonVerdict::Incomplete,
-                32768,
+                MAX_EVENTS,
             )?
             .records;
         assert!(matches!(
@@ -1358,7 +1354,7 @@ impl Gain {
         self.assert_retained("retained-after-failure", &identity, &document)?;
         // The same ROM kernel receives caller-owned coefficient bytes. This is
         // explicitly a vendor-boundary characterization, not a production match.
-        let data = vec![0u8; 516];
+        let data = vec![0u8; PHY_PARAM_BYTES as usize];
         let direct = self.enter(
             self.sym(1, "phy_wifi_get_tx_gain"),
             &[
@@ -1404,7 +1400,7 @@ impl Gain {
                 0x5a,
                 Right::Vendor,
                 ComparisonVerdict::Match,
-                32768,
+                MAX_EVENTS,
             )?
             .identity;
         let mut changed = rows;
@@ -1417,7 +1413,7 @@ impl Gain {
             0x5a,
             Right::Vendor,
             ComparisonVerdict::Diff,
-            32768,
+            MAX_EVENTS,
         )?;
         assert_ne!(different.identity, original);
         assert_ne!(

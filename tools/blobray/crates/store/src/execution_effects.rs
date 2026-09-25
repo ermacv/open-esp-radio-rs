@@ -97,10 +97,11 @@ impl Project {
     pub(super) fn validate_execution_effects(
         &self,
         manifest: &ExecutionManifest,
+        request: &ExecutionRequest,
         memory: &WorkingMemory,
         c: &mut dyn RunControl,
     ) -> Result<()> {
-        let selected = self.execution_effects(&manifest.request, memory, c)?;
+        let selected = self.execution_effects(request, memory, c)?;
         if selected.contracts != manifest.effect_contracts {
             return Err(integrity(
                 "retained effect contracts differ from selected accepted reviews",
@@ -339,11 +340,11 @@ mod tests {
             })
         ));
         assert_eq!(small.used(), 0);
-        let mut manifest = ExecutionManifest {
+        let manifest = ExecutionManifest {
             projections: vec![],
             schema: EXECUTION_SCHEMA,
             project: project.id().clone(),
-            request,
+            request: ArtifactId::of_bytes(b"request"),
             call_pairs: vec![],
             effect_contracts: vec![ResolvedEffectContract {
                 review: selected,
@@ -358,15 +359,16 @@ mod tests {
                 verifier: "test".into(),
             },
         };
+        let mut manifest = TestExecution::new(manifest, request);
         project
-            .validate_execution_effects(&manifest, &memory, &mut || Ok(()))
+            .validate_execution_effects(&manifest, &manifest.request, &memory, &mut || Ok(()))
             .unwrap();
         check_accounting(&manifest);
 
         manifest.effect_contracts[0].contract.rules[0].max_occurrences = 2;
         assert_eq!(
             project
-                .validate_execution_effects(&manifest, &memory, &mut || Ok(()))
+                .validate_execution_effects(&manifest, &manifest.request, &memory, &mut || Ok(()))
                 .unwrap_err()
                 .code,
             ErrorCode::Integrity
@@ -374,14 +376,14 @@ mod tests {
         manifest.effect_contracts.clear();
         assert_eq!(
             project
-                .validate_execution_effects(&manifest, &memory, &mut || Ok(()))
+                .validate_execution_effects(&manifest, &manifest.request, &memory, &mut || Ok(()))
                 .unwrap_err()
                 .code,
             ErrorCode::Integrity
         );
         assert_eq!(memory.used(), 0);
     }
-    fn check_accounting(manifest: &ExecutionManifest) {
+    fn check_accounting(manifest: &TestExecution) {
         let make = |events: Vec<ExecutionEvent>, result: CaseComparison| {
             let mut rows = Vec::new();
             for replacement in [false, true] {
@@ -405,14 +407,13 @@ mod tests {
             rows.push(ExecutionEvidence::Comparison { case: 0, result });
             rows
         };
-        let check = |manifest: &ExecutionManifest, rows: &[ExecutionEvidence]| {
+        let check = |manifest: &TestExecution, rows: &[ExecutionEvidence]| {
             let mut bytes = Vec::new();
             for row in rows {
                 serde_json::to_writer(&mut bytes, row).unwrap();
                 bytes.push(b'\n');
             }
-            validate_execution_records(
-                manifest,
+            manifest.validate_records(
                 &bytes.as_slice(),
                 &WorkingMemory::new(1024 * 1024).unwrap(),
                 &mut || Ok(()),

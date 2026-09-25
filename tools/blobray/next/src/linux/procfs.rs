@@ -51,7 +51,46 @@ pub(super) fn alive(owner: &OwnerIdentity) -> Result<bool> {
         Err(error) => Err(error),
     }
 }
+/// Live descendants of `root`. Follows the kernel's per-task `children` lists,
+/// which reach every reparented orphan because the guard is a subreaper; this
+/// reads a few files instead of every process in the system. Without
+/// `CONFIG_PROC_CHILDREN` it falls back to a complete `/proc` scan.
 pub(super) fn descendants(root: u32) -> Result<Vec<Process>> {
+    if !Path::new(&format!("/proc/{root}/task/{root}/children")).exists() {
+        return scan_descendants(root);
+    }
+    let mut result = Vec::new();
+    let mut pending = vec![root];
+    while let Some(parent) = pending.pop() {
+        let Ok(tasks) = fs::read_dir(format!("/proc/{parent}/task")) else {
+            if parent == root {
+                return Err(unavailable("cannot list guard tasks"));
+            }
+            continue; // The descendant exited after it was listed.
+        };
+        for task in tasks {
+            let task = task.map_err(io)?;
+            let Ok(children) = fs::read_to_string(task.path().join("children")) else {
+                continue; // The task exited after it was listed.
+            };
+            for child in children.split_ascii_whitespace() {
+                let pid = child
+                    .parse::<u32>()
+                    .map_err(|_| unavailable("malformed proc children"))?;
+                match read(pid) {
+                    Ok(process) => {
+                        result.push(process);
+                        pending.push(pid);
+                    }
+                    Err(_) if !Path::new(&format!("/proc/{pid}")).exists() => (),
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+    }
+    Ok(result)
+}
+fn scan_descendants(root: u32) -> Result<Vec<Process>> {
     let mut processes = Vec::new();
     for entry in fs::read_dir("/proc").map_err(io)? {
         let entry = entry.map_err(io)?;
@@ -100,4 +139,28 @@ pub(super) fn current_cgroup() -> Result<PathBuf> {
         .find_map(|line| line.strip_prefix("0::"))
         .ok_or_else(|| unavailable("cgroup v2 membership unavailable"))?;
     Ok(Path::new("/sys/fs/cgroup").join(path.trim_start_matches('/')))
+}
+
+/// Block until child `pid` exits or `timeout_ms` elapses, whichever is first.
+/// Exit wakes the caller immediately; without pidfd support this sleeps.
+pub(super) fn wait_exit(pid: u32, timeout_ms: u64) {
+    let timeout = i32::try_from(timeout_ms).unwrap_or(i32::MAX);
+    // SAFETY: pidfd_open takes a pid and zero flags and returns a new owned file
+    // descriptor or -1; it does not access caller memory.
+    let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid as libc::pid_t, 0) } as i32;
+    if fd < 0 {
+        std::thread::sleep(std::time::Duration::from_millis(timeout_ms));
+        return;
+    }
+    let mut descriptor = libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: `descriptor` is a valid, exclusively borrowed pollfd array of length
+    // one for the duration of the call, and `fd` is owned and closed only here.
+    unsafe {
+        libc::poll(&mut descriptor, 1, timeout);
+        libc::close(fd);
+    }
 }

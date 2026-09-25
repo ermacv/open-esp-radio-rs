@@ -7,9 +7,10 @@
 use crate::evidence::{events, output, stop};
 use crate::gain_state::Unmet;
 use crate::harness::{
-    Buffer, Input, LimitMode, Result, case, data_request, evidence, filled, invalid, invocation,
+    Budget, Buffer, Input, Result, case, data_request, evidence, filled, invalid, invocation,
     manifest, named_object, named_section, selection, sha256, single_argument_entry, symbol,
 };
+use crate::layout::*;
 use crate::session::{Artifact, Session, image_symbol, request};
 use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_domain::{
@@ -19,6 +20,13 @@ use blobray_domain::{
     RegionLifetime, RegisterCell, SessionReset,
 };
 use std::{collections::BTreeMap, fs, path::PathBuf};
+
+/// Production destination of the initialized 400-byte parameter prefix.
+const SETUP_DESTINATION: u32 = 0x3fff_2000;
+/// Six caller-owned command-memory parameters of the production probe.
+const COMMAND_PARAMETERS: u32 = 0x3fff_1000;
+/// Event capacity of one command-memory phase (45 writes per side).
+const COMMAND_EVENTS: u32 = 512;
 
 pub const OBJECT_SHA: &str = "7e6ebb1353d1bd2c53b4b5b1176bbf795c57d899c3f07a26ce56e74b5803e9d9";
 pub const TABLE_SHA: &str = "927b3305a35468bb52f3de4e3305f4b4d0674831014376a094ceb00022bab183";
@@ -93,7 +101,7 @@ pub struct Options {
     pub production: PathBuf,
     pub linker: PathBuf,
     pub output: PathBuf,
-    pub limit_mode: LimitMode,
+    pub budget: Budget,
     /// Linked SDK firmware; enables calibration leaves (12.1) and the PBus/DCODE prefix (12.2).
     pub sdk: Option<PathBuf>,
     /// SDK firmware with the RFPLL diagnostics symbol; enables RFPLL (12.3).
@@ -198,7 +206,7 @@ impl I2c {
         let session = Session::start(
             &options.binary,
             &options.output,
-            options.limit_mode,
+            options.budget,
             &inputs,
             "I2C software comparison",
         )?;
@@ -337,12 +345,12 @@ impl I2c {
             &run.join("image-symbols.txt"),
             "phy_param",
         )?;
-        assert_eq!(size, 516);
+        assert_eq!(size, u64::from(PHY_PARAM_BYTES));
         assert!(
             linked
                 .mappings
                 .iter()
-                .any(|m| m.address == u64::from(parameter) && m.size == 516)
+                .any(|m| m.address == u64::from(parameter) && m.size == u64::from(PHY_PARAM_BYTES))
         );
         let (vendor, replacement) = session.targets(&linked.image)?;
         Ok(Self {
@@ -441,7 +449,7 @@ impl I2c {
             for (offset, value) in PARAMETER_OFFSETS.iter().zip(parameters) {
                 full[*offset] = *value;
             }
-            let source = || Buffer::new(0x3fff_0000, full.clone()).session();
+            let source = || Buffer::new(INPUT, full.clone()).session();
             let left = self.probes.invoke(
                 "open_phy_trace_initialize_parameters",
                 vec![
@@ -454,11 +462,14 @@ impl I2c {
             let right = self.probes.invoke(
                 "open_phy_trace_initialize_parameters",
                 vec![
-                    ("destination", Buffer::new(0x3fff_2000, []).session().into()),
+                    (
+                        "destination",
+                        Buffer::new(SETUP_DESTINATION, []).session().into(),
+                    ),
                     ("source", source().into()),
                 ],
                 vec![],
-                vec![selection(0x3fff_2000, 400)],
+                vec![selection(SETUP_DESTINATION, 400)],
             )?;
             cases.push(case(
                 format!("{name}-setup"),
@@ -476,7 +487,10 @@ impl I2c {
             );
             let probe = self.probes.invoke(
                 "open_phy_trace_command_memory",
-                vec![("parameters", Buffer::new(0x3fff_1000, *parameters).into())],
+                vec![(
+                    "parameters",
+                    Buffer::new(COMMAND_PARAMETERS, *parameters).into(),
+                )],
                 vec![bank.clone()],
                 vec![],
             )?;
@@ -490,9 +504,9 @@ impl I2c {
             (LEAVES[1], 12, vec![0, 0, 0, 1, 1, 1, 44, 1, 2, 0, 0, 0]),
         ] {
             for fill in [0u8, 255] {
-                let arguments = vec![Some(0x3fff_0000), Some(0x3fff_0008)];
-                let memory = vec![filled(0x3fff_0000, length, fill)?];
-                let observe = vec![selection(0x3fff_0000, length)];
+                let arguments = vec![Some(INPUT), Some(INPUT + 8)];
+                let memory = vec![filled(INPUT, length, fill)?];
+                let observe = vec![selection(INPUT, length)];
                 descriptors.push((cases.len() as u32, expected.clone()));
                 cases.push(case(
                     format!("{name}{fill}"),
@@ -531,7 +545,12 @@ impl I2c {
             ));
         }
         let positive = self.artifacts.len();
-        let records = self.compare("compare", cases.clone(), ComparisonVerdict::Match, 512)?;
+        let records = self.compare(
+            "compare",
+            cases.clone(),
+            ComparisonVerdict::Match,
+            COMMAND_EVENTS,
+        )?;
         let outcomes: Vec<_> = records
             .iter()
             .filter(|r| matches!(r, ExecutionEvidence::Outcome { .. }))
@@ -595,11 +614,21 @@ impl I2c {
         different[1].replacement.as_mut().unwrap().memory[0]
             .seed
             .bytes[1] = 1;
-        self.compare("different", different, ComparisonVerdict::Diff, 512)?;
+        self.compare(
+            "different",
+            different,
+            ComparisonVerdict::Diff,
+            COMMAND_EVENTS,
+        )?;
         let mut unknown = cases[1].clone();
         unknown.reset = SessionReset::Cold;
         unknown.replacement.as_mut().unwrap().arguments[1] = None;
-        self.compare("unknown", vec![unknown], ComparisonVerdict::Incomplete, 512)?;
+        self.compare(
+            "unknown",
+            vec![unknown],
+            ComparisonVerdict::Incomplete,
+            COMMAND_EVENTS,
+        )?;
         let mut missing = cases[1].clone();
         missing.reset = SessionReset::Cold;
         let mut vendor = self.vendor.clone();
@@ -611,7 +640,7 @@ impl I2c {
             Some(&replacement),
             None,
             vec![missing],
-            512,
+            COMMAND_EVENTS,
             Some(ComparisonVerdict::Incomplete),
         )?;
         let encode = self.captured(1, "phy_encode_i2c_master");

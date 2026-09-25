@@ -207,20 +207,26 @@ impl<'a> Session<'a> {
         });
         Ok(())
     }
-    pub fn image(&mut self, source: &dyn ByteSource, c: &mut dyn RunControl) -> Result<()> {
-        blobray_artifacts::execution_segments(source, self.memory, c, &mut |segment, bytes, c| {
-            self.region(
-                Mapping {
-                    address: segment.address as u32,
-                    length: segment.memory_size as usize,
-                    flags: segment.flags,
-                    kind: RegionKind::Image,
-                },
-                Some(0),
-                bytes,
-                c,
-            )
-        })
+    /// Map one executable ELF segment: file bytes, then zeroed memory tail.
+    pub fn segment(
+        &mut self,
+        address: u32,
+        memory_size: usize,
+        flags: u32,
+        bytes: &[u8],
+        c: &mut dyn RunControl,
+    ) -> Result<()> {
+        self.region(
+            Mapping {
+                address,
+                length: memory_size,
+                flags,
+                kind: RegionKind::Image,
+            },
+            Some(0),
+            bytes,
+            c,
+        )
     }
     pub fn phase(
         &mut self,

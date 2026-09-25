@@ -29,6 +29,7 @@ use crate::ieee802154::validation::{
 };
 
 use crate::{
+    clock::SharedClockLeases,
     ieee802154::{
         backend::Ieee802154PacHal,
         lifecycle::{
@@ -61,6 +62,7 @@ struct OwnedIeee802154Backend<P> {
     task: Ieee802154TaskRegisters,
     interrupts: Ieee802154InterruptSetup,
     retained: RetainedIeee802154,
+    clocks: SharedClockLeases,
 }
 
 /// Failed cold-route release retaining the complete IEEE 802.15.4 owner.
@@ -141,7 +143,7 @@ impl<P> Ieee802154LifecycleBackend for OwnedIeee802154Backend<P> {
         }
     }
     fn enable_coexistence_clock(&mut self) {
-        self.task.retain_coexistence_clock();
+        self.clocks.retain_coexistence(self.task.radio_phy_mut());
     }
 
     fn ieee802154_clock_readback(&self) -> Ieee802154ClockReadback {
@@ -246,6 +248,7 @@ impl<P> Ieee802154Owned<P> {
                 task,
                 interrupts,
                 retained,
+                clocks: SharedClockLeases::default(),
             },
         }
     }
@@ -269,10 +272,12 @@ impl<P> Ieee802154Owned<P> {
         }
         let OwnedIeee802154Backend {
             platform,
-            task,
+            mut task,
             interrupts,
             retained,
+            mut clocks,
         } = self.backend;
+        clocks.release_all(task.radio_phy_mut());
         Ok((
             platform,
             RadioHardware::from_ieee802154(Ieee802154Route {
@@ -649,7 +654,10 @@ impl<P> Ieee802154Owned<P> {
 fn enter_ieee802154_powered<P>(
     mut backend: OwnedIeee802154Backend<P>,
 ) -> Result<Ieee802154Powered<P>, Ieee802154PowerTransitionFailure<P>> {
-    if let Err(error) = power::execute_owned(&mut backend.task) {
+    if let Err(error) = power::execute_owned(&mut power::RoutePower {
+        phy: backend.task.radio_phy_mut(),
+        leases: &mut backend.clocks,
+    }) {
         return Err(Ieee802154PowerTransitionFailure { backend, error });
     }
     Ok(Ieee802154Powered { backend })

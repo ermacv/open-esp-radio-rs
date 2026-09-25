@@ -23,7 +23,10 @@ use oer_esp32s31_pac::{
     ModemSysconBluetoothObservation, PlatformClockPowerObservation, SharedModemClockObservation,
 };
 
-use crate::root::{BluetoothRoute, RadioHardware, RadioPhyReleaseError, RetainedWifi};
+use crate::{
+    clock::BluetoothClocks,
+    root::{BluetoothRoute, RadioHardware, RadioPhyReleaseError, RetainedWifi},
+};
 
 mod shutdown;
 
@@ -70,6 +73,7 @@ pub struct ColdOwner {
     task: PacBluetoothTaskRegisters,
     interrupts: PacBluetoothInterruptSetup,
     retained: RetainedWifi,
+    clocks: BluetoothClocks,
 }
 
 /// Failed cold Bluetooth release retaining the complete HAL owner.
@@ -102,7 +106,7 @@ impl ColdOwner {
     /// Capture the shared power baseline before Bluetooth retains any clocks.
     #[doc(hidden)]
     pub fn prepare_shared_power_epoch(&mut self) {
-        self.task.radio_phy_mut().prepare_wifi_power_epoch();
+        self.clocks.prepare_power_epoch(self.task.radio_phy());
     }
 
     /// Enter the exclusive Bluetooth route without touching hardware.
@@ -116,6 +120,7 @@ impl ColdOwner {
             task,
             interrupts,
             retained,
+            clocks: BluetoothClocks::default(),
         }
     }
 
@@ -134,8 +139,9 @@ impl ColdOwner {
         if let Err(error) = crate::root::check_phy_restore_complete(self.task.radio_phy()) {
             return Err(ColdOwnerReleaseFailure { owner: self, error });
         }
-        self.task.release_retained_clocks();
-        if let Err(checkpoint) = self.task.radio_phy_mut().restore_wifi_power_epoch() {
+        let phy = self.task.radio_phy_mut();
+        self.clocks.release_all(phy);
+        if let Err(checkpoint) = self.clocks.restore_power_epoch(phy) {
             return Err(ColdOwnerReleaseFailure {
                 owner: self,
                 error: RadioPhyReleaseError::WifiPowerRestore(checkpoint),
@@ -155,22 +161,24 @@ impl ColdOwner {
 
     #[doc(hidden)]
     pub fn retain_coexistence_clock(&mut self) {
-        self.task.retain_coexistence_clock();
+        self.clocks.retain_coexistence(self.task.radio_phy_mut());
     }
 
     #[doc(hidden)]
     pub fn release_coexistence_clock(&mut self) {
-        self.task.release_coexistence_clock();
+        self.clocks.release_coexistence(self.task.radio_phy_mut());
     }
 
     #[doc(hidden)]
     pub fn retain_main_xtal_bluetooth_low_power_clock(&mut self) {
-        self.task.retain_main_xtal_bluetooth_low_power_clock();
+        self.clocks
+            .retain_main_xtal_low_power_timer(self.task.radio_phy_mut());
     }
 
     #[doc(hidden)]
     pub fn release_bluetooth_low_power_timer(&mut self) {
-        self.task.release_bluetooth_low_power_timer();
+        self.clocks
+            .release_low_power_timer(self.task.radio_phy_mut());
     }
 
     #[doc(hidden)]
@@ -185,12 +193,14 @@ impl ColdOwner {
 
     #[doc(hidden)]
     pub fn retain_platform_pll_source(&mut self) {
-        self.task.retain_platform_pll_source();
+        self.clocks
+            .retain_platform_pll_source(self.task.radio_phy_mut());
     }
 
     #[doc(hidden)]
     pub fn release_platform_pll_source(&mut self) {
-        self.task.release_platform_pll_source();
+        self.clocks
+            .release_platform_pll_source(self.task.radio_phy_mut());
     }
 
     #[doc(hidden)]
@@ -217,22 +227,26 @@ impl ColdOwner {
 
     #[doc(hidden)]
     pub fn retain_modem_syscon_controller_clocks(&mut self) {
-        self.task.retain_modem_syscon_bluetooth_controller_clocks();
+        self.clocks
+            .retain_syscon_controller_clocks(self.task.radio_phy_mut());
     }
 
     #[doc(hidden)]
     pub fn retain_modem_syscon_apb_clocks(&mut self) {
-        self.task.retain_modem_syscon_bluetooth_apb_clocks();
+        self.clocks
+            .retain_syscon_apb_clocks(self.task.radio_phy_mut());
     }
 
     #[doc(hidden)]
     pub fn release_modem_syscon_apb_clocks(&mut self) {
-        self.task.release_modem_syscon_bluetooth_apb_clocks();
+        self.clocks
+            .release_syscon_apb_clocks(self.task.radio_phy_mut());
     }
 
     #[doc(hidden)]
     pub fn release_modem_syscon_controller_clocks(&mut self) {
-        self.task.release_modem_syscon_bluetooth_controller_clocks();
+        self.clocks
+            .release_syscon_controller_clocks(self.task.radio_phy_mut());
     }
 
     /// Split ordinary task ownership from the inactive controller IRQ bank.
@@ -244,6 +258,7 @@ impl ColdOwner {
             TaskOwner {
                 registers: self.task,
                 retained: self.retained,
+                clocks: self.clocks,
                 reunitable: true,
             },
             InterruptSetupOwner {
@@ -259,6 +274,7 @@ impl ColdOwner {
 pub struct TaskOwner {
     registers: PacBluetoothTaskRegisters,
     retained: RetainedWifi,
+    clocks: BluetoothClocks,
     reunitable: bool,
 }
 
@@ -276,6 +292,7 @@ impl TaskOwner {
         shutdown::release_after_phy_close(
             self.registers,
             self.retained,
+            self.clocks,
             output.registers,
             timer.registers,
         )
@@ -288,7 +305,13 @@ impl TaskOwner {
     /// lease and revoke cold reunion until physical teardown is implemented.
     #[doc(hidden)]
     pub fn prepare_common_phy_power(&mut self) -> Result<(), crate::power::PowerError> {
-        crate::power::execute_bluetooth_owned(&mut self.reunitable, &mut self.registers)
+        crate::power::execute_bluetooth_owned(
+            &mut self.reunitable,
+            &mut crate::power::RoutePower {
+                phy: self.registers.radio_phy_mut(),
+                leases: self.clocks.shared_mut(),
+            },
+        )
     }
 
     /// Reunite a quiescent task with the exact inactive interrupt partition.
@@ -331,6 +354,7 @@ impl TaskOwner {
             task: self.registers,
             interrupts: interrupts.registers,
             retained: self.retained,
+            clocks: self.clocks,
         })
     }
 

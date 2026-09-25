@@ -143,7 +143,7 @@ impl<'registers> WifiMacColdHal<'registers> {
     }
 
     pub fn retain_coexistence_clock(&mut self) {
-        self.registers.radio_mut().retain_coexistence_clock();
+        self.registers.retain_coexistence_clock();
     }
 
     pub fn configure_modem_source_clocks(&mut self) {

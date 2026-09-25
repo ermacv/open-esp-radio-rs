@@ -8,65 +8,12 @@
 
 use crate::{RadioPhyRegisters, generated::ModemLowPowerClockDivider};
 
-const REQUIREMENT_COUNT: usize = 3;
-
+/// One MODEM_LPCON shared clock gate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum SharedModemClock {
+pub enum SharedModemClockGate {
     Coexistence,
     PhyI2cMaster,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Requirement {
-    Coexistence = 0,
-    PhyI2cMaster = 1,
-    LowPowerTimer = 2,
-}
-
-impl Requirement {
-    const fn index(self) -> usize {
-        self as usize
-    }
-}
-
-impl From<SharedModemClock> for Requirement {
-    fn from(value: SharedModemClock) -> Self {
-        match value {
-            SharedModemClock::Coexistence => Self::Coexistence,
-            SharedModemClock::PhyI2cMaster => Self::PhyI2cMaster,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct RequirementBaselines {
-    enabled: u8,
-}
-
-impl RequirementBaselines {
-    const fn bit(requirement: Requirement) -> u8 {
-        match requirement {
-            Requirement::Coexistence => 1,
-            Requirement::PhyI2cMaster => 2,
-            Requirement::LowPowerTimer => 4,
-        }
-    }
-
-    fn set(&mut self, requirement: Requirement, enabled: bool) {
-        let bit = Self::bit(requirement);
-        if enabled {
-            self.enabled |= bit;
-        } else {
-            self.enabled &= !bit;
-        }
-    }
-
-    fn take(&mut self, requirement: Requirement) -> bool {
-        let bit = Self::bit(requirement);
-        let enabled = self.enabled & bit != 0;
-        self.enabled &= !bit;
-        enabled
-    }
+    LowPowerTimer,
 }
 
 /// Reviewed Bluetooth low-power timer sources.
@@ -78,74 +25,18 @@ pub enum ModemLowPowerClockSource {
     Crystal32Khz,
 }
 
+/// Complete Bluetooth low-power timer source and divider configuration.
+///
+/// The value is an opaque readback used to restore the exact configuration
+/// captured before a route changed it.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct BluetoothLowPowerTimerConfiguration {
+pub struct BluetoothLowPowerTimerConfiguration {
     slow_oscillator_selected: bool,
     fast_oscillator_selected: bool,
     crystal_selected: bool,
     crystal_32khz_selected: bool,
     divider_minus_one: u16,
 }
-
-pub(crate) struct SharedModemClockState {
-    counts: [u8; REQUIREMENT_COUNT],
-    baselines: RequirementBaselines,
-    low_power_timer_baseline: BluetoothLowPowerTimerConfiguration,
-}
-
-impl SharedModemClockState {
-    pub(crate) const fn new() -> Self {
-        Self {
-            counts: [0; REQUIREMENT_COUNT],
-            baselines: RequirementBaselines { enabled: 0 },
-            low_power_timer_baseline: BluetoothLowPowerTimerConfiguration {
-                slow_oscillator_selected: false,
-                fast_oscillator_selected: false,
-                crystal_selected: false,
-                crystal_32khz_selected: false,
-                divider_minus_one: 0,
-            },
-        }
-    }
-
-    fn count(&self, requirement: Requirement) -> u8 {
-        self.counts[requirement.index()]
-    }
-
-    fn retain(&mut self, requirement: Requirement, observed: bool) -> bool {
-        let index = requirement.index();
-        let first = self.counts[index] == 0;
-        if first {
-            self.baselines.set(requirement, observed);
-        }
-        self.counts[index] = self.counts[index]
-            .checked_add(1)
-            .expect("route-owned MODEM_LPCON reference count cannot overflow");
-        first && !observed
-    }
-
-    fn release(&mut self, requirement: Requirement) -> Option<bool> {
-        let index = requirement.index();
-        assert!(
-            self.counts[index] != 0,
-            "unbalanced MODEM_LPCON clock release"
-        );
-        self.counts[index] -= 1;
-        if self.counts[index] == 0 {
-            Some(self.baselines.take(requirement))
-        } else {
-            None
-        }
-    }
-}
-
-#[must_use = "the route owner must retain and release this internal clock token"]
-pub(crate) struct SharedModemClockLease {
-    requirement: Requirement,
-}
-
-#[must_use = "the Bluetooth route must restore the low-power timer configuration"]
-pub(crate) struct BluetoothLowPowerTimerLease(SharedModemClockLease);
 
 /// Semantic route-owned observation used by protocol clock checkpoints.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -181,7 +72,8 @@ pub struct BluetoothLowPowerClockObservation {
 }
 
 impl RadioPhyRegisters {
-    pub(crate) fn prepare_shared_modem_clock_map(&mut self) {
+    #[doc(hidden)]
+    pub fn prepare_shared_modem_clock_map(&mut self) {
         // This is the vendor's monotonic global ICG-map initialization, not
         // lease-owned state. It preserves the existing image and is therefore
         // intentionally not rolled back when an individual route is released.
@@ -190,7 +82,8 @@ impl RadioPhyRegisters {
         );
     }
 
-    pub(crate) fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
+    #[doc(hidden)]
+    pub fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
         let registers = &self.peripherals.modem_lpcon_shared_clock;
         let (
             coexistence_clock_enabled,
@@ -222,7 +115,8 @@ impl RadioPhyRegisters {
         }
     }
 
-    pub(crate) fn sample_coexistence_low_power_clock(
+    #[doc(hidden)]
+    pub fn sample_coexistence_low_power_clock(
         &self,
     ) -> Option<CoexistenceLowPowerClockObservation> {
         let registers = &self.peripherals.modem_lpcon_shared_clock;
@@ -244,38 +138,49 @@ impl RadioPhyRegisters {
         })
     }
 
-    pub(crate) fn retain_shared_modem_clock(
-        &mut self,
-        clock: SharedModemClock,
-    ) -> SharedModemClockLease {
-        let requirement = Requirement::from(clock);
-        let observed = self.gate_enabled(requirement);
-        if self.shared_clock.retain(requirement, observed) {
-            self.set_requirement_gate(requirement, true);
-        }
-        SharedModemClockLease { requirement }
-    }
-
-    pub(crate) fn release_shared_modem_clock(&mut self, lease: SharedModemClockLease) {
-        if let Some(baseline) = self.shared_clock.release(lease.requirement)
-            && self.gate_enabled(lease.requirement) != baseline
-        {
-            self.set_requirement_gate(lease.requirement, baseline);
+    /// Read whether one shared clock gate is enabled.
+    #[doc(hidden)]
+    pub fn shared_modem_clock_gate_enabled(&self, gate: SharedModemClockGate) -> bool {
+        let (coexistence, phy_i2c_master, low_power_timer) =
+            crate::svd::field_snapshot_read::observe_shared_modem_clock_gates(
+                &self.peripherals.modem_lpcon_shared_clock,
+            );
+        match gate {
+            SharedModemClockGate::Coexistence => coexistence,
+            SharedModemClockGate::PhyI2cMaster => phy_i2c_master,
+            SharedModemClockGate::LowPowerTimer => low_power_timer,
         }
     }
 
-    pub(crate) fn retain_bluetooth_low_power_timer(
-        &mut self,
-        source: ModemLowPowerClockSource,
-        divider: ModemLowPowerClockDivider,
-    ) -> BluetoothLowPowerTimerLease {
-        let requirement = Requirement::LowPowerTimer;
-        assert!(
-            self.shared_clock.count(requirement) == 0,
-            "Bluetooth low-power timer already retained by this route"
-        );
-
+    /// Enable or disable one shared clock gate.
+    #[doc(hidden)]
+    pub fn set_shared_modem_clock_gate(&mut self, gate: SharedModemClockGate, enabled: bool) {
         let registers = &self.peripherals.modem_lpcon_shared_clock;
+        match (gate, enabled) {
+            (SharedModemClockGate::Coexistence, true) => {
+                crate::generated::enable_shared_modem_coexistence_clock(registers);
+            }
+            (SharedModemClockGate::Coexistence, false) => {
+                crate::generated::disable_shared_modem_coexistence_clock(registers);
+            }
+            (SharedModemClockGate::PhyI2cMaster, true) => {
+                crate::generated::enable_shared_modem_phy_i2c_master_clock(registers);
+            }
+            (SharedModemClockGate::PhyI2cMaster, false) => {
+                crate::generated::disable_shared_modem_phy_i2c_master_clock(registers);
+            }
+            (SharedModemClockGate::LowPowerTimer, true) => {
+                crate::generated::enable_shared_modem_low_power_timer_clock(registers);
+            }
+            (SharedModemClockGate::LowPowerTimer, false) => {
+                crate::generated::disable_shared_modem_low_power_timer_clock(registers);
+            }
+        }
+    }
+
+    /// Read the complete Bluetooth low-power timer configuration.
+    #[doc(hidden)]
+    pub fn bluetooth_low_power_timer_configuration(&self) -> BluetoothLowPowerTimerConfiguration {
         let (
             slow_oscillator_selected,
             fast_oscillator_selected,
@@ -283,46 +188,55 @@ impl RadioPhyRegisters {
             crystal_32khz_selected,
             divider_minus_one,
         ) = crate::svd::field_snapshot_read::observe_bluetooth_low_power_timer_configuration(
-            registers,
+            &self.peripherals.modem_lpcon_shared_clock,
         );
-        self.shared_clock.low_power_timer_baseline = BluetoothLowPowerTimerConfiguration {
+        BluetoothLowPowerTimerConfiguration {
             slow_oscillator_selected,
             fast_oscillator_selected,
             crystal_selected,
             crystal_32khz_selected,
             divider_minus_one,
-        };
+        }
+    }
+
+    /// Select one Bluetooth low-power timer source and divider.
+    #[doc(hidden)]
+    pub fn configure_bluetooth_low_power_timer(
+        &mut self,
+        source: ModemLowPowerClockSource,
+        divider: ModemLowPowerClockDivider,
+    ) {
         crate::generated::configure_shared_modem_low_power_timer(
-            registers,
+            &self.peripherals.modem_lpcon_shared_clock,
             source == ModemLowPowerClockSource::SlowOscillator,
             source == ModemLowPowerClockSource::FastOscillator,
             source == ModemLowPowerClockSource::Crystal,
             source == ModemLowPowerClockSource::Crystal32Khz,
             divider,
         );
-
-        BluetoothLowPowerTimerLease(self.retain_requirement(requirement))
     }
 
-    pub(crate) fn release_bluetooth_low_power_timer(&mut self, lease: BluetoothLowPowerTimerLease) {
-        let BluetoothLowPowerTimerLease(lease) = lease;
-        let baseline = core::mem::take(&mut self.shared_clock.low_power_timer_baseline);
-        let divider = ModemLowPowerClockDivider::new(u32::from(baseline.divider_minus_one))
+    /// Restore one configuration captured by
+    /// [`Self::bluetooth_low_power_timer_configuration`].
+    #[doc(hidden)]
+    pub fn restore_bluetooth_low_power_timer_configuration(
+        &mut self,
+        configuration: BluetoothLowPowerTimerConfiguration,
+    ) {
+        let divider = ModemLowPowerClockDivider::new(u32::from(configuration.divider_minus_one))
             .expect("generated twelve-bit LP timer readback must fit its write domain");
         crate::generated::configure_shared_modem_low_power_timer(
             &self.peripherals.modem_lpcon_shared_clock,
-            baseline.slow_oscillator_selected,
-            baseline.fast_oscillator_selected,
-            baseline.crystal_selected,
-            baseline.crystal_32khz_selected,
+            configuration.slow_oscillator_selected,
+            configuration.fast_oscillator_selected,
+            configuration.crystal_selected,
+            configuration.crystal_32khz_selected,
             divider,
         );
-        self.release_shared_modem_clock(lease);
     }
 
-    pub(crate) fn bluetooth_low_power_clock_observation(
-        &self,
-    ) -> BluetoothLowPowerClockObservation {
+    #[doc(hidden)]
+    pub fn bluetooth_low_power_clock_observation(&self) -> BluetoothLowPowerClockObservation {
         let registers = &self.peripherals.modem_lpcon_shared_clock;
         let (
             slow_oscillator_selected,
@@ -340,54 +254,8 @@ impl RadioPhyRegisters {
                 && !crystal_32khz_selected,
             bluetooth_divider_configured: u32::from(divider_minus_one)
                 == crate::BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER.get(),
-            timer_enabled: self.gate_enabled(Requirement::LowPowerTimer),
-        }
-    }
-
-    fn retain_requirement(&mut self, requirement: Requirement) -> SharedModemClockLease {
-        let observed = self.gate_enabled(requirement);
-        if self.shared_clock.retain(requirement, observed) {
-            self.set_requirement_gate(requirement, true);
-        }
-        SharedModemClockLease { requirement }
-    }
-
-    fn gate_enabled(&self, requirement: Requirement) -> bool {
-        let (coexistence, phy_i2c_master, low_power_timer) =
-            crate::svd::field_snapshot_read::observe_shared_modem_clock_gates(
-                &self.peripherals.modem_lpcon_shared_clock,
-            );
-        match requirement {
-            Requirement::Coexistence => coexistence,
-            Requirement::PhyI2cMaster => phy_i2c_master,
-            Requirement::LowPowerTimer => low_power_timer,
-        }
-    }
-
-    fn set_requirement_gate(&mut self, requirement: Requirement, enabled: bool) {
-        let registers = &self.peripherals.modem_lpcon_shared_clock;
-        match (requirement, enabled) {
-            (Requirement::Coexistence, true) => {
-                crate::generated::enable_shared_modem_coexistence_clock(registers);
-            }
-            (Requirement::Coexistence, false) => {
-                crate::generated::disable_shared_modem_coexistence_clock(registers);
-            }
-            (Requirement::PhyI2cMaster, true) => {
-                crate::generated::enable_shared_modem_phy_i2c_master_clock(registers);
-            }
-            (Requirement::PhyI2cMaster, false) => {
-                crate::generated::disable_shared_modem_phy_i2c_master_clock(registers);
-            }
-            (Requirement::LowPowerTimer, true) => {
-                crate::generated::enable_shared_modem_low_power_timer_clock(registers);
-            }
-            (Requirement::LowPowerTimer, false) => {
-                crate::generated::disable_shared_modem_low_power_timer_clock(registers);
-            }
+            timer_enabled: self
+                .shared_modem_clock_gate_enabled(SharedModemClockGate::LowPowerTimer),
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -27,6 +27,8 @@ use root::{RadioHardware, RadioPhyReleaseError};
 
 pub mod bluetooth;
 
+mod clock;
+
 pub mod coex;
 
 pub mod power;

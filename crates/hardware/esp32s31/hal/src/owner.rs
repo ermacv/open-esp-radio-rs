@@ -17,7 +17,7 @@ pub mod maintenance;
 mod wifi_cold;
 
 pub use interrupt_checkpoint::MacInterruptCheckpoint;
-pub(crate) use wifi_cold::WifiColdRegisters;
+pub(crate) use wifi_cold::{WifiColdRegisters, WifiRouteState};
 
 /// Powered-lifecycle PHY capability.
 ///
@@ -429,7 +429,7 @@ impl<P> core::fmt::Debug for RadioReleaseFailure<P> {
 /// capabilities.
 pub struct RadioRuntimeOwner {
     pub(crate) registers: WifiRadioRegisters,
-    retained: crate::root::RetainedBluetooth,
+    route: WifiRouteState,
 }
 
 impl RadioRuntimeOwner {
@@ -438,9 +438,9 @@ impl RadioRuntimeOwner {
     #[cfg(any(test, feature = "validation-probes"))]
     #[doc(hidden)]
     pub fn claim_for_validation() -> Self {
-        let (registers, _interrupts, retained) =
+        let (registers, _interrupts, route) =
             WifiColdRegisters::from_hardware(RadioHardware::for_validation()).into_running();
-        Self::from_pac(registers, retained)
+        Self::from_pac(registers, route)
     }
 
     pub fn wifi_mac_hal(&mut self) -> wifi_mac::WifiMacHal<'_> {
@@ -522,14 +522,8 @@ impl RadioRuntimeOwner {
         self.registers.he_trigger_receive_diagnostics()
     }
 
-    pub(crate) fn from_pac(
-        registers: WifiRadioRegisters,
-        retained: crate::root::RetainedBluetooth,
-    ) -> Self {
-        Self {
-            registers,
-            retained,
-        }
+    pub(crate) fn from_pac(registers: WifiRadioRegisters, route: WifiRouteState) -> Self {
+        Self { registers, route }
     }
 
     pub(crate) fn pac(&self) -> &WifiRadioRegisters {
@@ -724,7 +718,7 @@ pub enum ColdReunionError {
     TxIqToneControlRestorePending,
     RxDcoControlRestorePending,
     BluetoothTxPowerControlRestorePending,
-    WifiPowerRestore(oer_esp32s31_pac::WifiPowerRestoreCheckpoint),
+    WifiPowerRestore(crate::root::WifiPowerRestoreCheckpoint),
 }
 
 impl From<RadioPhyReleaseError> for ColdReunionError {
@@ -862,7 +856,7 @@ impl<P> Radio<P, state::Owned> {
     /// is the only safe path into `Radio<P, Powered>`.
     pub fn power_up(mut self) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
         self.state.registers.prepare_wifi_power_epoch();
-        if let Err(error) = power::execute_owned(&mut self.state.registers) {
+        if let Err(error) = power::execute_owned(&mut self.state.registers.power_route()) {
             return Err(PowerUpFailure { radio: self, error });
         }
         Ok(Radio {
@@ -966,11 +960,11 @@ impl<P> Radio<P, state::Powered> {
 impl<P> Radio<P, state::Powered> {
     /// Complete the one-way ownership transition after cold MAC setup.
     pub fn into_running(self) -> Radio<P, state::Running> {
-        let (registers, interrupts, retained) = self.state.registers.registers.into_running();
+        let (registers, interrupts, route) = self.state.registers.registers.into_running();
         Radio {
             peripheral: self.peripheral,
             state: state::Running {
-                registers: RadioRuntimeOwner::from_pac(registers, retained),
+                registers: RadioRuntimeOwner::from_pac(registers, route),
                 interrupts: MacInterruptSetup { inner: interrupts },
             },
         }
@@ -1019,12 +1013,9 @@ impl<P> Radio<P, state::Running> {
     /// value. RF and shared clocks stay physically powered.
     #[doc(hidden)]
     pub fn reunite_powered(self) -> Radio<P, state::Powered> {
-        let RadioRuntimeOwner {
-            registers,
-            retained,
-        } = self.state.registers;
+        let RadioRuntimeOwner { registers, route } = self.state.registers;
         let registers =
-            WifiColdRegisters::from_running(registers, self.state.interrupts.inner, retained);
+            WifiColdRegisters::from_running(registers, self.state.interrupts.inner, route);
         Radio {
             peripheral: self.peripheral,
             state: state::Powered {

@@ -158,21 +158,22 @@ pub use ieee802154::{
 };
 
 pub use modem::{
-    platform::{PlatformClockPowerObservation, WifiPowerRestoreCheckpoint},
+    platform::{
+        PlatformClockPowerObservation, PlatformPllSourceBaseline, WifiPowerBaseline,
+        WifiPowerRestoreReadback,
+    },
     shared_clock::{
-        BluetoothLowPowerClockObservation, CoexistenceLowPowerClockObservation,
-        CoexistenceLowPowerClockSource, ModemLowPowerClockSource, SharedModemClockObservation,
+        BluetoothLowPowerClockObservation, BluetoothLowPowerTimerConfiguration,
+        CoexistenceLowPowerClockObservation, CoexistenceLowPowerClockSource,
+        ModemLowPowerClockSource, SharedModemClockGate, SharedModemClockObservation,
     },
 };
 
-use modem::{
-    shared_clock::{BluetoothLowPowerTimerLease, SharedModemClock, SharedModemClockLease},
-    syscon::BluetoothModemSysconClockState,
-};
-
 pub use modem::syscon::{
-    ModemSysconBluetoothObservation, ModemSysconIeee802154ClockObservation,
-    ModemSysconIeee802154ResetObservation, ModemSysconPowerObservation, WifiBasebandAgcUpdate,
+    BLUETOOTH_APB_CLOCKS, BLUETOOTH_CLOCK_COUNT, BLUETOOTH_CONTROLLER_CLOCKS,
+    BluetoothClockBaseline, ModemSysconBluetoothClock, ModemSysconBluetoothObservation,
+    ModemSysconIeee802154ClockObservation, ModemSysconIeee802154ResetObservation,
+    ModemSysconPowerObservation, WifiBasebandAgcUpdate,
 };
 
 use oer_esp32s31_pac_raw as svd;
@@ -259,7 +260,7 @@ pub use wifi::mac::{
 };
 pub mod ownership;
 
-pub(crate) use ownership::BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER;
+pub use ownership::BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER;
 
 pub use ownership::{
     BluetoothControllerPartition, BluetoothInterruptRegisters, BluetoothInterruptSetup,

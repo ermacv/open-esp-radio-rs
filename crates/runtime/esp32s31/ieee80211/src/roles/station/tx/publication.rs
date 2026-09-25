@@ -1,7 +1,6 @@
 use super::*;
 use oer_ieee80211_mac::sequence::SequenceNumber;
 
-#[cfg(feature = "tx-phase-telemetry")]
 use crate::diagnostics::core0_rx_performance::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0TxPhase,
 };
@@ -836,7 +835,6 @@ where
         if self.ampdu.active().held_backing_count() >= SLOTS {
             return Err(HtAmpduTxError::AggregateFull.into());
         }
-        #[cfg(feature = "tx-phase-telemetry")]
         let encode_started = Core0PerformanceSample::read();
         let metadata = self
             .ordinary
@@ -853,7 +851,6 @@ where
                 second.ethernet(),
             )
             .map_err(AggregateTxError::Encode)?;
-        #[cfg(feature = "tx-phase-telemetry")]
         CORE0_PERFORMANCE.record_tx_phase(
             Core0TxPhase::Encode,
             encode_started,
@@ -876,7 +873,6 @@ where
             encoded_offset: encoded.offset,
             metadata_size,
         })?;
-        #[cfg(feature = "tx-phase-telemetry")]
         let commit_started = Core0PerformanceSample::read();
         match self.config.rate {
             TxPhyRate::Ht(rate) => self.ampdu.active_mut().commit_ht(
@@ -898,7 +894,6 @@ where
             )?,
             TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),
         }
-        #[cfg(feature = "tx-phase-telemetry")]
         CORE0_PERFORMANCE.record_tx_phase(
             Core0TxPhase::Commit,
             commit_started,
@@ -920,7 +915,6 @@ where
         {
             return Err(HtAmpduTxError::AggregateFull.into());
         }
-        #[cfg(feature = "tx-phase-telemetry")]
         let encode_started = Core0PerformanceSample::read();
         let metadata = self
             .ordinary
@@ -937,7 +931,6 @@ where
                 DataHeControl::Disabled,
             )
             .map_err(AggregateTxError::Encode)?;
-        #[cfg(feature = "tx-phase-telemetry")]
         CORE0_PERFORMANCE.record_tx_phase(
             Core0TxPhase::Encode,
             encode_started,
@@ -959,7 +952,6 @@ where
                 metadata_size,
             },
         )?;
-        #[cfg(feature = "tx-phase-telemetry")]
         let commit_started = Core0PerformanceSample::read();
         match self.config.rate {
             TxPhyRate::Ht(rate) => self.ampdu.active_mut().commit_ht(
@@ -981,7 +973,6 @@ where
             )?,
             TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),
         }
-        #[cfg(feature = "tx-phase-telemetry")]
         CORE0_PERFORMANCE.record_tx_phase(
             Core0TxPhase::Commit,
             commit_started,

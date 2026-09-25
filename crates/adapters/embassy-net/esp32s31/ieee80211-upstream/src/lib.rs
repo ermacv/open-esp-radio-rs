@@ -20,7 +20,6 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_embassy_net_upstream::{
     RadioLinkController, RadioRunner, RadioRxPublisher, RadioTxConsumer, RadioTxFrame,
 };
-#[cfg(feature = "tx-phase-telemetry")]
 use oer_esp32s31_ieee80211_runtime::datapath::MaterializationOwnershipSnapshot;
 use oer_esp32s31_ieee80211_runtime::datapath::{
     PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, SelectedBurstMaterializer,
@@ -307,7 +306,6 @@ impl<
         self.physical.promotion_capacity()
     }
 
-    #[cfg(feature = "tx-phase-telemetry")]
     fn ownership_snapshot(&self) -> MaterializationOwnershipSnapshot {
         self.physical.ownership_snapshot()
     }

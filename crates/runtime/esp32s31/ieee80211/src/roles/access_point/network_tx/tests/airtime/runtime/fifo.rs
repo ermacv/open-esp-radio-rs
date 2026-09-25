@@ -41,7 +41,6 @@ impl<S: SelectedBurstMaterializer, const EMPTY_SNAPSHOT: bool> SelectedBurstMate
         self.0.materialization_capacity()
     }
 
-    #[cfg(feature = "tx-phase-telemetry")]
     fn ownership_snapshot(&self) -> oer_ieee80211_datapath::MaterializationOwnershipSnapshot {
         self.0.ownership_snapshot()
     }

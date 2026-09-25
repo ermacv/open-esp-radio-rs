@@ -1,3 +1,7 @@
+// The recorded subset and its readers depend on the selected telemetry
+// features; production builds read none of it.
+#![cfg_attr(not(feature = "tx-phase-telemetry"), allow(dead_code))]
+
 //! Paired Core0 cycle and retired-instruction accounting.
 //!
 //! `mcycle` alone measures executor residence, including cache and memory
@@ -5,34 +9,161 @@
 //! exposes whether a busy Core0 is executing instructions or waiting. The
 //! reads deliberately stay coarse: per-frame CSR sampling would perturb the
 //! datapath which this diagnostic image is intended to measure.
+//!
+//! The module is always compiled. Each recording method returns immediately
+//! unless its telemetry feature is enabled, and samples read zero without a
+//! telemetry feature, so production builds perform no CSR reads and retain
+//! no counters.
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
+/// Whether TX-phase samples are recorded.
+const TX_PHASES: bool = cfg!(feature = "tx-phase-telemetry");
+/// Call sites whose telemetry arguments require computation guard them with
+/// this constant; production builds compile the branch out.
+pub(crate) const TX_PHASE_TELEMETRY: bool = TX_PHASES;
+
+/// The completion edge of a network transaction that already had a prepared
+/// successor. Zero-sized without TX-phase telemetry.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Core0PreparedTxMark {
+    #[cfg(feature = "tx-phase-telemetry")]
+    completed: Option<Core0PerformanceSample>,
+}
+
+impl Core0PreparedTxMark {
+    pub(crate) const fn new() -> Self {
+        Self {
+            #[cfg(feature = "tx-phase-telemetry")]
+            completed: None,
+        }
+    }
+
+    /// Mark a completion now, only when a successor was already prepared.
+    #[inline(always)]
+    pub(crate) fn mark(&mut self, prepared: bool) {
+        #[cfg(feature = "tx-phase-telemetry")]
+        {
+            self.completed = prepared.then(Core0PerformanceSample::read);
+        }
+        #[cfg(not(feature = "tx-phase-telemetry"))]
+        let _ = prepared;
+    }
+
+    /// Record the gap from the marked completion to the next publication.
+    #[inline(always)]
+    pub(crate) fn record_gap(&mut self) {
+        #[cfg(feature = "tx-phase-telemetry")]
+        if let Some(completed) = self.completed.take() {
+            CORE0_PERFORMANCE.record_tx_prepared_gap(completed, Core0PerformanceSample::read());
+        }
+    }
+}
+
+/// A saturating diagnostic count held by a datapath owner. Zero-sized and
+/// always zero without TX-phase telemetry.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct Core0Tally {
+    #[cfg(feature = "tx-phase-telemetry")]
+    value: usize,
+}
+
+impl Core0Tally {
+    pub(crate) const fn new() -> Self {
+        Self {
+            #[cfg(feature = "tx-phase-telemetry")]
+            value: 0,
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn increment(&mut self) {
+        #[cfg(feature = "tx-phase-telemetry")]
+        {
+            self.value = self.value.saturating_add(1);
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) const fn value(self) -> usize {
+        #[cfg(feature = "tx-phase-telemetry")]
+        {
+            self.value
+        }
+        #[cfg(not(feature = "tx-phase-telemetry"))]
+        {
+            0
+        }
+    }
+}
+
+/// One paired `mcycle`/`minstret` reading. Zero-sized without a sampling
+/// telemetry feature, so samples held across an await cost no future state.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Core0PerformanceSample {
-    pub cycles: u32,
-    pub instructions: u32,
+    #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
+    cycles: u32,
+    #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
+    instructions: u32,
 }
 
 impl Core0PerformanceSample {
     #[inline(always)]
     pub fn read() -> Self {
-        Self {
-            cycles: cycle_count(),
-            instructions: instruction_count(),
+        Self::from_parts(cycle_count(), instruction_count())
+    }
+
+    #[inline(always)]
+    const fn from_parts(cycles: u32, instructions: u32) -> Self {
+        #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
+        {
+            Self {
+                cycles,
+                instructions,
+            }
+        }
+        #[cfg(not(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry")))]
+        {
+            let _ = (cycles, instructions);
+            Self {}
+        }
+    }
+
+    /// Retired cycles; zero without a sampling telemetry feature.
+    #[inline(always)]
+    pub const fn cycles(self) -> u32 {
+        #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
+        {
+            self.cycles
+        }
+        #[cfg(not(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry")))]
+        {
+            0
+        }
+    }
+
+    /// Retired instructions; zero without a sampling telemetry feature.
+    #[inline(always)]
+    pub const fn instructions(self) -> u32 {
+        #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
+        {
+            self.instructions
+        }
+        #[cfg(not(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry")))]
+        {
+            0
         }
     }
 
     #[inline(always)]
     fn wrapping_delta_since(self, earlier: Self) -> Self {
-        Self {
-            cycles: self.cycles.wrapping_sub(earlier.cycles),
-            instructions: self.instructions.wrapping_sub(earlier.instructions),
-        }
+        Self::from_parts(
+            self.cycles().wrapping_sub(earlier.cycles()),
+            self.instructions().wrapping_sub(earlier.instructions()),
+        )
     }
 }
 
-#[cfg(feature = "tx-phase-telemetry")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Core0TxPhase {
     Start,
@@ -706,9 +837,9 @@ impl Core0PerformanceCounters {
     #[inline(always)]
     pub fn begin_radio_poll(&self, started: Core0PerformanceSample) {
         self.active_radio_cycles
-            .store(started.cycles, Ordering::Relaxed);
+            .store(started.cycles(), Ordering::Relaxed);
         self.active_radio_instructions
-            .store(started.instructions, Ordering::Relaxed);
+            .store(started.instructions(), Ordering::Relaxed);
         self.active_radio_saw_runner.store(0, Ordering::Relaxed);
     }
 
@@ -720,19 +851,20 @@ impl Core0PerformanceCounters {
     ) {
         let delta = ended.wrapping_delta_since(started);
         self.radio_polls.fetch_add(1, Ordering::Relaxed);
-        self.radio_cycles.fetch_add(delta.cycles, Ordering::Relaxed);
+        self.radio_cycles
+            .fetch_add(delta.cycles(), Ordering::Relaxed);
         self.radio_instructions
-            .fetch_add(delta.instructions, Ordering::Relaxed);
+            .fetch_add(delta.instructions(), Ordering::Relaxed);
         if self.active_radio_saw_runner.load(Ordering::Relaxed) != 0 {
             self.runner_to_poll_exit_cycles.fetch_add(
                 ended
-                    .cycles
+                    .cycles()
                     .wrapping_sub(self.active_runner_end_cycles.load(Ordering::Relaxed)),
                 Ordering::Relaxed,
             );
             self.runner_to_poll_exit_instructions.fetch_add(
                 ended
-                    .instructions
+                    .instructions()
                     .wrapping_sub(self.active_runner_end_instructions.load(Ordering::Relaxed)),
                 Ordering::Relaxed,
             );
@@ -748,48 +880,48 @@ impl Core0PerformanceCounters {
         let delta = ended.wrapping_delta_since(started);
         self.runner_calls.fetch_add(1, Ordering::Relaxed);
         self.runner_cycles
-            .fetch_add(delta.cycles, Ordering::Relaxed);
+            .fetch_add(delta.cycles(), Ordering::Relaxed);
         self.runner_instructions
-            .fetch_add(delta.instructions, Ordering::Relaxed);
+            .fetch_add(delta.instructions(), Ordering::Relaxed);
         self.poll_to_runner_cycles.fetch_add(
             started
-                .cycles
+                .cycles()
                 .wrapping_sub(self.active_radio_cycles.load(Ordering::Relaxed)),
             Ordering::Relaxed,
         );
         self.poll_to_runner_instructions.fetch_add(
             started
-                .instructions
+                .instructions()
                 .wrapping_sub(self.active_radio_instructions.load(Ordering::Relaxed)),
             Ordering::Relaxed,
         );
         self.active_runner_end_instructions
-            .store(ended.instructions, Ordering::Relaxed);
+            .store(ended.instructions(), Ordering::Relaxed);
         self.active_runner_end_cycles
-            .store(ended.cycles, Ordering::Relaxed);
+            .store(ended.cycles(), Ordering::Relaxed);
         self.active_radio_saw_runner.store(1, Ordering::Relaxed);
     }
 
     #[inline(always)]
     pub(crate) fn begin_protocol_poll(&self, started: Core0PerformanceSample) {
         self.active_protocol_cycles
-            .store(started.cycles, Ordering::Relaxed);
+            .store(started.cycles(), Ordering::Relaxed);
         self.active_protocol_instructions
-            .store(started.instructions, Ordering::Relaxed);
+            .store(started.instructions(), Ordering::Relaxed);
     }
 
     #[inline(always)]
     pub(crate) fn end_protocol_poll(&self, ended: Core0PerformanceSample) {
-        let started = Core0PerformanceSample {
-            cycles: self.active_protocol_cycles.load(Ordering::Relaxed),
-            instructions: self.active_protocol_instructions.load(Ordering::Relaxed),
-        };
+        let started = Core0PerformanceSample::from_parts(
+            self.active_protocol_cycles.load(Ordering::Relaxed),
+            self.active_protocol_instructions.load(Ordering::Relaxed),
+        );
         let delta = ended.wrapping_delta_since(started);
         self.protocol_polls.fetch_add(1, Ordering::Relaxed);
         self.protocol_cycles
-            .fetch_add(delta.cycles, Ordering::Relaxed);
+            .fetch_add(delta.cycles(), Ordering::Relaxed);
         self.protocol_instructions
-            .fetch_add(delta.instructions, Ordering::Relaxed);
+            .fetch_add(delta.instructions(), Ordering::Relaxed);
     }
 
     #[inline(always)]
@@ -827,9 +959,9 @@ impl Core0PerformanceCounters {
         }
         self.dma_units
             .fetch_add(u32::try_from(units).unwrap_or(u32::MAX), Ordering::Relaxed);
-        self.dma_cycles.fetch_add(delta.cycles, Ordering::Relaxed);
+        self.dma_cycles.fetch_add(delta.cycles(), Ordering::Relaxed);
         self.dma_instructions
-            .fetch_add(delta.instructions, Ordering::Relaxed);
+            .fetch_add(delta.instructions(), Ordering::Relaxed);
     }
 
     #[inline(always)]
@@ -955,19 +1087,21 @@ impl Core0PerformanceCounters {
         let delta = ended.wrapping_delta_since(started);
         self.protocol_frames.fetch_add(1, Ordering::Relaxed);
         self.protocol_frame_cycles
-            .fetch_add(delta.cycles, Ordering::Relaxed);
+            .fetch_add(delta.cycles(), Ordering::Relaxed);
         self.protocol_frame_instructions
-            .fetch_add(delta.instructions, Ordering::Relaxed);
+            .fetch_add(delta.instructions(), Ordering::Relaxed);
     }
 
     #[inline(always)]
-    #[cfg(feature = "tx-phase-telemetry")]
     pub(crate) fn record_tx_phase(
         &self,
         phase: Core0TxPhase,
         started: Core0PerformanceSample,
         ended: Core0PerformanceSample,
     ) {
+        if !TX_PHASES {
+            return;
+        }
         let delta = ended.wrapping_delta_since(started);
         let (calls, cycles, instructions) = match phase {
             Core0TxPhase::Start => (
@@ -1002,8 +1136,8 @@ impl Core0PerformanceCounters {
             ),
         };
         calls.fetch_add(1, Ordering::Relaxed);
-        cycles.fetch_add(delta.cycles, Ordering::Relaxed);
-        instructions.fetch_add(delta.instructions, Ordering::Relaxed);
+        cycles.fetch_add(delta.cycles(), Ordering::Relaxed);
+        instructions.fetch_add(delta.instructions(), Ordering::Relaxed);
     }
 
     /// Record only a saturated, already-prepared successor edge.
@@ -1013,19 +1147,21 @@ impl Core0PerformanceCounters {
     /// a workload, so time between HIL sessions cannot contaminate the air-gap
     /// measurement.
     #[inline(always)]
-    #[cfg(feature = "tx-phase-telemetry")]
     pub(crate) fn record_tx_prepared_gap(
         &self,
         completed: Core0PerformanceSample,
         next_publication_entry: Core0PerformanceSample,
     ) {
+        if !TX_PHASES {
+            return;
+        }
         let delta = next_publication_entry.wrapping_delta_since(completed);
         self.tx_prepared_gap_samples.fetch_add(1, Ordering::Relaxed);
         self.tx_prepared_gap_cycles
-            .fetch_add(delta.cycles, Ordering::Relaxed);
+            .fetch_add(delta.cycles(), Ordering::Relaxed);
         self.tx_prepared_gap_instructions
-            .fetch_add(delta.instructions, Ordering::Relaxed);
-        let bucket = match delta.cycles {
+            .fetch_add(delta.instructions(), Ordering::Relaxed);
+        let bucket = match delta.cycles() {
             0..=20_480 => &self.tx_prepared_gap_le_64us,
             20_481..=81_920 => &self.tx_prepared_gap_le_256us,
             81_921..=163_840 => &self.tx_prepared_gap_le_512us,
@@ -1039,13 +1175,15 @@ impl Core0PerformanceCounters {
     /// the current one completes. The three outcome counters are mutually
     /// exclusive and therefore sum to `tx_network_completions`.
     #[inline(always)]
-    #[cfg(feature = "tx-phase-telemetry")]
     pub(crate) fn record_tx_network_completion(
         &self,
         prepared_frames: usize,
         preferred_frames: usize,
         queued: bool,
     ) {
+        if !TX_PHASES {
+            return;
+        }
         self.tx_network_completions.fetch_add(1, Ordering::Relaxed);
         let prepared = prepared_frames != 0;
         let outcome = if prepared {
@@ -1073,8 +1211,10 @@ impl Core0PerformanceCounters {
     /// new scheduler burst. A fresh role epoch can otherwise enter a stable
     /// phase offset without leaving any evidence in successor-only counters.
     #[inline(always)]
-    #[cfg(feature = "tx-phase-telemetry")]
     pub(crate) fn record_tx_initial_network_frames(&self, frames: usize) {
+        if !TX_PHASES {
+            return;
+        }
         self.tx_initial_network_frames
             .fetch_add(u32::try_from(frames).unwrap_or(u32::MAX), Ordering::Relaxed);
     }
@@ -1084,7 +1224,6 @@ impl Core0PerformanceCounters {
     /// lease. These counters diagnose queue geometry; they never participate
     /// in admission or wake decisions.
     #[inline(always)]
-    #[cfg(feature = "tx-phase-telemetry")]
     pub(crate) fn record_ap_partial_frontier(
         &self,
         matching_retained: usize,
@@ -1092,6 +1231,9 @@ impl Core0PerformanceCounters {
         network_ready: usize,
         mismatch_claims: usize,
     ) {
+        if !TX_PHASES {
+            return;
+        }
         self.tx_ap_partial_frontiers.fetch_add(1, Ordering::Relaxed);
         self.tx_ap_partial_matching_retained.fetch_add(
             u32::try_from(matching_retained).unwrap_or(u32::MAX),
@@ -1115,7 +1257,6 @@ impl Core0PerformanceCounters {
     /// standby after draining every immediately visible matching frame.
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
-    #[cfg(feature = "tx-phase-telemetry")]
     pub(crate) fn record_ap_partial_publication(
         &self,
         admitted: usize,
@@ -1128,6 +1269,9 @@ impl Core0PerformanceCounters {
         radio_owned: usize,
         unattributed_radio_owned: usize,
     ) {
+        if !TX_PHASES {
+            return;
+        }
         self.tx_ap_partial_publications
             .fetch_add(1, Ordering::Relaxed);
         for (counter, value) in [
@@ -1376,25 +1520,37 @@ impl Core0PerformanceDmaProfile {
     }
 }
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(
+    target_arch = "riscv32",
+    any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry")
+))]
 #[inline(always)]
 fn cycle_count() -> u32 {
     riscv::register::mcycle::read() as u32
 }
 
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(not(all(
+    target_arch = "riscv32",
+    any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry")
+)))]
 #[inline(always)]
 fn cycle_count() -> u32 {
     0
 }
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(
+    target_arch = "riscv32",
+    any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry")
+))]
 #[inline(always)]
 fn instruction_count() -> u32 {
     riscv::register::minstret::read() as u32
 }
 
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(not(all(
+    target_arch = "riscv32",
+    any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry")
+)))]
 #[inline(always)]
 fn instruction_count() -> u32 {
     0

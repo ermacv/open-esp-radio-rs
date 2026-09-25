@@ -29,7 +29,6 @@ pub type MaterializedPairResult<SoftwareFrame, PhysicalFrame> =
     Result<FramePair<PhysicalFrame>, FramePair<SoftwareFrame>>;
 
 /// Diagnostic snapshot of the bounded physical materialization horizon.
-#[cfg(feature = "ownership-telemetry")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct MaterializationOwnershipSnapshot {
     pub free: usize,
@@ -163,7 +162,6 @@ pub trait TxRequestSource: PhysicalTxSource {
 
     fn materialization_capacity(&self) -> usize;
 
-    #[cfg(feature = "ownership-telemetry")]
     fn ownership_snapshot(&self) -> MaterializationOwnershipSnapshot;
 }
 
@@ -182,7 +180,6 @@ impl<M: SelectedBurstMaterializer> TxRequestSource for M {
         SelectedBurstMaterializer::materialization_capacity(self)
     }
 
-    #[cfg(feature = "ownership-telemetry")]
     fn ownership_snapshot(&self) -> MaterializationOwnershipSnapshot {
         SelectedBurstMaterializer::ownership_snapshot(self)
     }
@@ -221,7 +218,6 @@ pub trait SelectedBurstMaterializer {
 
     fn materialization_capacity(&self) -> usize;
 
-    #[cfg(feature = "ownership-telemetry")]
     fn ownership_snapshot(&self) -> MaterializationOwnershipSnapshot;
 
     /// Materialize one selected batch atomically with respect to source

@@ -41,12 +41,12 @@ where
         T: WifiTxTimer,
     {
         self.prepare_ready_standby(aggregate, control, network)?;
-        #[cfg(feature = "tx-phase-telemetry")]
-        self.record_partial_frontier(network);
+        if TX_PHASE_TELEMETRY {
+            self.record_partial_frontier(network);
+        }
         Ok(())
     }
 
-    #[cfg(feature = "tx-phase-telemetry")]
     pub(super) fn record_partial_frontier(
         &self,
         network: &impl SelectedBurstMaterializer<SoftwareFrame = N, PhysicalFrame = B>,
@@ -68,7 +68,7 @@ where
             matching_retained,
             retained.saturating_sub(matching_retained),
             network.queue_len(),
-            batch.mismatch_claims,
+            batch.mismatch_claims.value(),
         );
         let ownership = network.ownership_snapshot();
         CORE0_PERFORMANCE.record_ap_partial_publication(
@@ -607,8 +607,7 @@ where
                 admission,
                 policy,
                 admitted: 0,
-                #[cfg(feature = "tx-phase-telemetry")]
-                mismatch_claims: 0,
+                mismatch_claims: Core0Tally::new(),
                 #[cfg(any(feature = "diagnostics", test))]
                 preparation_micros: 0,
             });

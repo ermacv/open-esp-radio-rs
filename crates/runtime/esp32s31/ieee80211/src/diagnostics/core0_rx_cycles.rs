@@ -981,7 +981,7 @@ impl Core0ProtocolCycleProfile {
     #[inline(always)]
     pub(crate) fn begin() -> Self {
         let performance_started = Core0PerformanceSample::read();
-        let now = performance_started.cycles;
+        let now = performance_started.cycles();
         Self {
             performance_started,
             poll_generation: CORE0_RX_CYCLES.record_protocol_frame_entry(now),
@@ -1032,7 +1032,7 @@ impl Core0ProtocolCycleProfile {
     #[inline(always)]
     pub(crate) fn finish(mut self, path: Core0ProtocolPath) {
         let performance_ended = Core0PerformanceSample::read();
-        let now = performance_ended.cycles;
+        let now = performance_ended.cycles();
         self.publish_tail = now.wrapping_sub(self.last);
         self.path = path;
         let performance_started = self.performance_started;
@@ -1167,7 +1167,7 @@ impl Core0RxRunnerCycleProfile {
     #[inline(always)]
     pub(crate) fn begin() -> Self {
         let performance_started = Core0PerformanceSample::read();
-        let now = performance_started.cycles;
+        let now = performance_started.cycles();
         CORE0_RX_CYCLES.record_runner_entry(now);
         Self {
             performance_started,
@@ -1197,7 +1197,7 @@ impl Core0RxRunnerCycleProfile {
     #[inline(always)]
     pub(crate) fn finish_before_yield(self) {
         let performance_ended = Core0PerformanceSample::read();
-        let now = performance_ended.cycles;
+        let now = performance_ended.cycles();
         let post = now.wrapping_sub(self.last);
         debug_assert_eq!(
             now.wrapping_sub(self.started),
@@ -1213,7 +1213,7 @@ impl Core0RxCycleProfile {
     #[inline(always)]
     pub(crate) fn begin() -> Self {
         let performance_started = Core0PerformanceSample::read();
-        let now = performance_started.cycles;
+        let now = performance_started.cycles();
         Self {
             performance_started,
             started: now,
@@ -1234,7 +1234,7 @@ impl Core0RxCycleProfile {
     #[inline(always)]
     pub(crate) fn finish(mut self, units: usize) {
         let performance_ended = Core0PerformanceSample::read();
-        let now = performance_ended.cycles;
+        let now = performance_ended.cycles();
         self.add_current(now.wrapping_sub(self.last));
         self.sample.units = u32::try_from(units).unwrap_or(u32::MAX);
         self.sample.total = now.wrapping_sub(self.started);

@@ -1,8 +1,7 @@
 use super::*;
 
-#[cfg(feature = "tx-phase-telemetry")]
 use crate::diagnostics::core0_rx_performance::{
-    CORE0_PERFORMANCE, Core0PerformanceSample, Core0TxPhase,
+    CORE0_PERFORMANCE, Core0PerformanceSample, Core0TxPhase, TX_PHASE_TELEMETRY,
 };
 
 #[cfg(feature = "task-poll-telemetry")]
@@ -215,10 +214,8 @@ where
 
         let interface = self.retained_prepared_tx_interface();
         let network = self.network.tx_consumer(interface);
-        #[cfg(feature = "tx-phase-telemetry")]
         let tx_phase_started = Core0PerformanceSample::read();
         self.services.advance_prepared_tx(&network)?;
-        #[cfg(feature = "tx-phase-telemetry")]
         CORE0_PERFORMANCE.record_tx_phase(
             Core0TxPhase::Prepare,
             tx_phase_started,
@@ -258,10 +255,7 @@ where
         interface: NetworkInterfaceId,
         admitted: usize,
     ) -> Result<(), B::Error> {
-        #[cfg(feature = "tx-phase-telemetry")]
-        if let Some(completed) = self.prepared_tx_completion.take() {
-            CORE0_PERFORMANCE.record_tx_prepared_gap(completed, Core0PerformanceSample::read());
-        }
+        self.prepared_tx_completion.record_gap();
         #[cfg(any(feature = "diagnostics", test))]
         self.services.mark_prepared_tx_scheduler_phase(
             PreparedTxSchedulerPhase::PreparedEntry,
@@ -270,11 +264,9 @@ where
         self.account_tx_frames(admitted);
         self.account_pair_tx_frames(interface, admitted);
         let network_tx = self.network.tx_consumer(interface);
-        #[cfg(feature = "tx-phase-telemetry")]
         let tx_phase_started = Core0PerformanceSample::read();
         let progress = self.services.start_prepared_tx(&network_tx)?;
         drop(network_tx);
-        #[cfg(feature = "tx-phase-telemetry")]
         CORE0_PERFORMANCE.record_tx_phase(
             Core0TxPhase::Publish,
             tx_phase_started,
@@ -329,10 +321,8 @@ where
         let Some(frame) = self.network.try_receive_tx(interface) else {
             return Ok(());
         };
-        #[cfg(feature = "tx-phase-telemetry")]
         let tx_phase_started = Core0PerformanceSample::read();
         self.services.prepare_tx(frame, &network).await?;
-        #[cfg(feature = "tx-phase-telemetry")]
         CORE0_PERFORMANCE.record_tx_phase(
             Core0TxPhase::Prepare,
             tx_phase_started,
@@ -345,10 +335,8 @@ where
     }
 
     async fn service_active_tx(&mut self, wake: WifiTxWake) -> Result<WifiTxProgress, B::Error> {
-        #[cfg(feature = "tx-phase-telemetry")]
         let tx_phase_started = Core0PerformanceSample::read();
         let progress = self.services.service_tx(wake).await?;
-        #[cfg(feature = "tx-phase-telemetry")]
         CORE0_PERFORMANCE.record_tx_phase(
             Core0TxPhase::Service,
             tx_phase_started,
@@ -356,8 +344,7 @@ where
         );
         if progress == WifiTxProgress::Complete {
             let origin = self.finish_active_tx();
-            #[cfg(feature = "tx-phase-telemetry")]
-            {
+            if TX_PHASE_TELEMETRY {
                 if origin == DatapathTxOrigin::Network {
                     let prepared = self.services.has_prepared_tx();
                     let prepared_frames = self.services.prepared_tx_frame_count();
@@ -370,9 +357,9 @@ where
                         preferred_frames,
                         self.network_tx_queue_len() != 0,
                     );
-                    self.prepared_tx_completion = prepared.then(Core0PerformanceSample::read);
+                    self.prepared_tx_completion.mark(prepared);
                 } else {
-                    self.prepared_tx_completion = None;
+                    self.prepared_tx_completion.mark(false);
                 }
             }
             if origin == DatapathTxOrigin::Control {
@@ -547,10 +534,8 @@ where
                         .active_tx_interface
                         .expect("active TX preparation requires one VIF owner");
                     assert_eq!(interface, active, "prepared TX cannot cross VIFs");
-                    #[cfg(feature = "tx-phase-telemetry")]
                     let tx_phase_started = Core0PerformanceSample::read();
                     self.services.prepare_tx(frame, &network).await?;
-                    #[cfg(feature = "tx-phase-telemetry")]
                     CORE0_PERFORMANCE.record_tx_phase(
                         Core0TxPhase::Prepare,
                         tx_phase_started,

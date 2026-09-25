@@ -231,7 +231,7 @@ where
                 crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
             #[cfg(feature = "task-poll-telemetry")]
             crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
-                .begin_protocol_poll(protocol_started.cycles);
+                .begin_protocol_poll(protocol_started.cycles());
             #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
             crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
                 .begin_protocol_poll(protocol_started);
@@ -248,7 +248,7 @@ where
                     crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
                 #[cfg(feature = "task-poll-telemetry")]
                 crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
-                    .end_protocol_poll(protocol_ended.cycles);
+                    .end_protocol_poll(protocol_ended.cycles());
                 crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
                     .end_protocol_poll(protocol_ended);
             }
@@ -277,7 +277,7 @@ where
                 crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
             #[cfg(feature = "task-poll-telemetry")]
             crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
-                .begin_protocol_poll(protocol_started.cycles);
+                .begin_protocol_poll(protocol_started.cycles());
             #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
             crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
                 .begin_protocol_poll(protocol_started);
@@ -291,7 +291,7 @@ where
                     crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
                 #[cfg(feature = "task-poll-telemetry")]
                 crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
-                    .end_protocol_poll(protocol_ended.cycles);
+                    .end_protocol_poll(protocol_ended.cycles());
                 crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
                     .end_protocol_poll(protocol_ended);
             }

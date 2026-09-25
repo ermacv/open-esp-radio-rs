@@ -466,17 +466,17 @@ where
             if frame_key == key {
                 return Ok(Some(frame));
             }
-            #[cfg(feature = "tx-phase-telemetry")]
-            if self
-                .prepared_standby
-                .as_ref()
-                .is_some_and(|batch| batch.admission.peer() == key.destination)
+            if TX_PHASE_TELEMETRY
+                && self
+                    .prepared_standby
+                    .as_ref()
+                    .is_some_and(|batch| batch.admission.peer() == key.destination)
             {
                 let batch = self
                     .prepared_standby
                     .as_mut()
                     .expect("the checked AP standby remains owned");
-                batch.mismatch_claims = batch.mismatch_claims.saturating_add(1);
+                batch.mismatch_claims.increment();
             }
             if let Err(frame) = self.push_active_frame(frame_key, frame) {
                 self.discard_retention(NetworkTxRetentionDropReason::ActiveQueueFull, frame);

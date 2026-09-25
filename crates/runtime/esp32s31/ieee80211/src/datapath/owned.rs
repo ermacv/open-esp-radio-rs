@@ -15,7 +15,6 @@ use oer_embassy_net_owned::{
     OwnedLinkController, OwnedNetworkRunner, OwnedNetworkTxFrame, OwnedRxPublisher,
     OwnedTxFrameSource,
 };
-#[cfg(feature = "tx-phase-telemetry")]
 use oer_ieee80211_datapath::MaterializationOwnershipSnapshot;
 use oer_ieee80211_datapath::{MaterializedPairResult, SelectedBurstMaterializer};
 use oer_network_interface::{LinkState, NetworkInterfaceId, RxEnqueueError};
@@ -600,7 +599,6 @@ impl<
         DatapathTxConsumer::promotion_capacity(self)
     }
 
-    #[cfg(feature = "tx-phase-telemetry")]
     fn ownership_snapshot(&self) -> MaterializationOwnershipSnapshot {
         DatapathTxConsumer::ownership_snapshot(self)
     }
@@ -735,7 +733,6 @@ impl<
         ))
     }
 
-    #[cfg(feature = "tx-phase-telemetry")]
     pub fn ownership_snapshot(&self) -> MaterializationOwnershipSnapshot {
         self.physical.ownership_snapshot()
     }

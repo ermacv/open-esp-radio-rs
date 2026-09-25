@@ -89,7 +89,6 @@ use oer_ieee80211_softmac::MacRxEvidence;
 
 use oer_ieee80211_rsn::{OwnedEapolFrame, RsnInterface};
 
-#[cfg(feature = "tx-phase-telemetry")]
 use crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE;
 #[cfg(feature = "diagnostics")]
 use crate::diagnostics::network::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};

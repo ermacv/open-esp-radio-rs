@@ -19,9 +19,7 @@ use oer_memory::{
     TaggedStableDmaBacking,
 };
 
-#[cfg(feature = "tx-phase-telemetry")]
 use super::tx_performance::{TX_PERFORMANCE, TxPerformanceSample};
-#[cfg(feature = "tx-phase-telemetry")]
 use oer_ieee80211_datapath::MaterializationOwnershipSnapshot;
 use oer_ieee80211_datapath::SoftwareTxFrame;
 use oer_network_interface::NetworkInterfaceId;
@@ -210,31 +208,22 @@ impl<
             "owned network frame exceeds physical TX capacity"
         );
 
-        #[cfg(feature = "tx-phase-telemetry")]
         let promotion_started = TxPerformanceSample::read();
-        #[cfg(feature = "tx-phase-telemetry")]
         let credit_acquired = promotion_started;
         let length = frame.ethernet().len();
         let lease = self.physical.pool.claim_network(index);
-        #[cfg(feature = "tx-phase-telemetry")]
         let destination_claimed = TxPerformanceSample::read();
-        #[cfg(feature = "tx-phase-telemetry")]
         let publication_started = TxPerformanceSample::read();
-        #[cfg(feature = "tx-phase-telemetry")]
         let mut copy = TxPerformanceSample::default();
         let (index, ()) = lease.publish(length, |destination| {
-            #[cfg(feature = "tx-phase-telemetry")]
             let copy_started = TxPerformanceSample::read();
             destination.copy_from_slice(frame.ethernet());
-            #[cfg(feature = "tx-phase-telemetry")]
             {
                 copy = TxPerformanceSample::read().wrapping_delta_since(copy_started);
             }
         });
-        #[cfg(feature = "tx-phase-telemetry")]
         let published = TxPerformanceSample::read();
         drop(frame);
-        #[cfg(feature = "tx-phase-telemetry")]
         let source_released = TxPerformanceSample::read();
         let promoted = TaggedStableDmaBacking::new(
             self.interface,
@@ -245,7 +234,6 @@ impl<
                 },
             ),
         );
-        #[cfg(feature = "tx-phase-telemetry")]
         TX_PERFORMANCE.record_promotion(
             length,
             promotion_started,
@@ -266,7 +254,6 @@ impl<
     ) -> Result<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>, F>
     {
         let Ok(index) = self.physical.free_claim.try_receive() else {
-            #[cfg(feature = "tx-phase-telemetry")]
             {
                 let now = TxPerformanceSample::read();
                 TX_PERFORMANCE.record_promotion_no_credit(now, now);
@@ -311,7 +298,6 @@ impl<
                 for index in reserved.iter_mut().filter_map(Option::take) {
                     self.return_reserved(index);
                 }
-                #[cfg(feature = "tx-phase-telemetry")]
                 {
                     let now = TxPerformanceSample::read();
                     TX_PERFORMANCE.record_promotion_no_credit(now, now);
@@ -340,7 +326,6 @@ impl<
         self.physical.free_claim.len()
     }
 
-    #[cfg(feature = "tx-phase-telemetry")]
     pub fn ownership_snapshot(&self) -> MaterializationOwnershipSnapshot {
         let free = self.physical.free_claim.len();
         MaterializationOwnershipSnapshot {
@@ -360,7 +345,6 @@ impl<M: RawMutex, const QUEUE_DEPTH: usize> DmaIndexReturn for PinnedTxReturn<'_
         if let Err(TrySendError::Full(_)) = self.free.try_send(index) {
             unreachable!("radio completion returns its unique SRAM index");
         }
-        #[cfg(feature = "tx-phase-telemetry")]
         TX_PERFORMANCE.record_radio_return();
     }
 }

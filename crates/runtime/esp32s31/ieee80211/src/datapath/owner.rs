@@ -19,7 +19,6 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
             active_tx_interface,
             active_tx_origin,
             prepared_tx_interface,
-            #[cfg(feature = "tx-phase-telemetry")]
             prepared_tx_completion,
             control_ready_latched,
             rx_progress,
@@ -39,7 +38,6 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
                 active_tx_interface,
                 active_tx_origin,
                 prepared_tx_interface,
-                #[cfg(feature = "tx-phase-telemetry")]
                 prepared_tx_completion,
                 control_ready_latched,
                 rx_progress,
@@ -58,7 +56,6 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
                 active_tx_interface,
                 active_tx_origin,
                 prepared_tx_interface,
-                #[cfg(feature = "tx-phase-telemetry")]
                 prepared_tx_completion,
                 control_ready_latched,
                 rx_progress,
@@ -96,7 +93,6 @@ impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R> {
             active_tx_interface: self.active_tx_interface,
             active_tx_origin: self.active_tx_origin,
             prepared_tx_interface: self.prepared_tx_interface,
-            #[cfg(feature = "tx-phase-telemetry")]
             prepared_tx_completion: self.prepared_tx_completion,
             control_ready_latched: self.control_ready_latched,
             rx_progress: self.rx_progress,
@@ -164,8 +160,8 @@ where
             active_tx_interface: None,
             active_tx_origin: None,
             prepared_tx_interface: None,
-            #[cfg(feature = "tx-phase-telemetry")]
-            prepared_tx_completion: None,
+            prepared_tx_completion:
+                crate::diagnostics::core0_rx_performance::Core0PreparedTxMark::new(),
             // Every control machine receives one initial finite step so it can
             // establish its first absolute deadline and publish startup work.
             control_ready_latched: true,

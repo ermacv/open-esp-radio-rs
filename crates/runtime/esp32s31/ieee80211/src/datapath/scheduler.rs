@@ -6,7 +6,6 @@ enum BoundaryExit<E> {
     Role(E),
 }
 
-#[cfg(feature = "tx-phase-telemetry")]
 use crate::diagnostics::core0_rx_performance::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0TxPhase,
 };
@@ -420,10 +419,8 @@ where
                             && let Some(frame) = self.network.try_receive_tx(interface)
                         {
                             assert_eq!(self.tx_interface_for(&frame), interface);
-                            #[cfg(feature = "tx-phase-telemetry")]
                             let tx_phase_started = Core0PerformanceSample::read();
                             self.services.prepare_tx(frame, &network_tx).await?;
-                            #[cfg(feature = "tx-phase-telemetry")]
                             CORE0_PERFORMANCE.record_tx_phase(
                                 Core0TxPhase::Prepare,
                                 tx_phase_started,
@@ -443,18 +440,15 @@ where
                     };
                     let interface = self.tx_interface_for(&frame);
                     let network_tx = self.network.tx_consumer(interface);
-                    #[cfg(feature = "tx-phase-telemetry")]
                     let tx_phase_started = Core0PerformanceSample::read();
                     let progress = self.services.start_tx(frame, &network_tx).await?;
                     drop(network_tx);
-                    #[cfg(feature = "tx-phase-telemetry")]
                     CORE0_PERFORMANCE.record_tx_phase(
                         Core0TxPhase::Start,
                         tx_phase_started,
                         Core0PerformanceSample::read(),
                     );
                     let admitted = self.services.last_started_tx_frame_count().max(1);
-                    #[cfg(feature = "tx-phase-telemetry")]
                     CORE0_PERFORMANCE.record_tx_initial_network_frames(admitted);
                     self.account_tx_frames(admitted);
                     self.account_pair_tx_frames(interface, admitted);

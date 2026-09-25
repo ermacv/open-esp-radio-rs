@@ -72,7 +72,6 @@ core0-rx-coarse-telemetry = ["dep:riscv"]
 # Core1 packet emission is measured at the paired embassy-net boundary.
 tx-phase-telemetry = [
     "core0-rx-coarse-telemetry",
-    "oer-ieee80211-datapath/ownership-telemetry",
 ]
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]

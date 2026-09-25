@@ -7,6 +7,8 @@ use core::marker::PhantomData;
 
 use super::*;
 
+use crate::diagnostics::core0_rx_performance::{Core0Tally, TX_PHASE_TELEMETRY};
+
 mod aggregate;
 mod airtime;
 
@@ -83,8 +85,7 @@ struct PreparedStandby {
     admission: ApAggregateAdmission,
     policy: HtAmpduTxRolePolicy,
     admitted: usize,
-    #[cfg(feature = "tx-phase-telemetry")]
-    mismatch_claims: usize,
+    mismatch_claims: Core0Tally,
     #[cfg(any(feature = "diagnostics", test))]
     preparation_micros: u64,
 }
@@ -762,8 +763,9 @@ where
         if self.prepared_buffered_release.is_some() {
             return self.start_prepared_buffered_release(control, hardware);
         }
-        #[cfg(feature = "tx-phase-telemetry")]
-        self.record_partial_frontier(network);
+        if TX_PHASE_TELEMETRY {
+            self.record_partial_frontier(network);
+        }
         let Some(_batch) = self.prepared_standby.as_ref() else {
             loop {
                 let Some(frame) = self.prepared_first.take() else {

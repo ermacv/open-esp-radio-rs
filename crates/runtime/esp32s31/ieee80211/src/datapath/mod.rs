@@ -34,10 +34,8 @@ pub mod services;
 pub(crate) mod software_tx_queue;
 mod sram_tx;
 pub mod tx;
-#[cfg(feature = "tx-phase-telemetry")]
-mod tx_performance;
+pub(crate) mod tx_performance;
 
-#[cfg(feature = "tx-phase-telemetry")]
 pub use oer_ieee80211_datapath::MaterializationOwnershipSnapshot;
 pub use oer_ieee80211_datapath::{MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame};
 pub use sram_tx::{
@@ -613,9 +611,7 @@ pub struct DatapathRunner<'irq, M: RawMutex, N, B, R> {
     active_tx_interface: Option<NetworkInterfaceId>,
     active_tx_origin: Option<DatapathTxOrigin>,
     prepared_tx_interface: Option<NetworkInterfaceId>,
-    #[cfg(feature = "tx-phase-telemetry")]
-    prepared_tx_completion:
-        Option<crate::diagnostics::core0_rx_performance::Core0PerformanceSample>,
+    prepared_tx_completion: crate::diagnostics::core0_rx_performance::Core0PreparedTxMark,
     control_ready_latched: bool,
     rx_progress: DatapathRxProgress,
     recycled_rx_probe_deadline: Option<Instant>,

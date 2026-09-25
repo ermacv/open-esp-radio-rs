@@ -157,7 +157,6 @@ impl<
     ) -> bool {
         self.physical.try_materialize_batch(sources, destinations)
     }
-    #[cfg(feature = "tx-phase-telemetry")]
     fn ownership_snapshot(
         &self,
     ) -> oer_esp32s31_ieee80211_runtime::datapath::MaterializationOwnershipSnapshot {

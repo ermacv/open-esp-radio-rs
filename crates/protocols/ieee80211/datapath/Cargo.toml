@@ -13,7 +13,6 @@ oer-network-interface = { path = "../../../network/interface" }
 
 [features]
 default = []
-ownership-telemetry = []
 
 [lints]
 workspace = true

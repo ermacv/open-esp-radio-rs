@@ -78,7 +78,6 @@ impl<S: PhysicalTxSource> TxRequestSource for NativeSource<S> {
         self.remaining.get()
     }
 
-    #[cfg(feature = "tx-phase-telemetry")]
     fn ownership_snapshot(&self) -> oer_ieee80211_datapath::MaterializationOwnershipSnapshot {
         // This fixture is used only by the aggregate test, which retains all
         // taken frames until terminal completion, after the source is dropped.

@@ -1286,11 +1286,11 @@ pub(in crate::product_hil) async fn observe_open_radio_core0_task_polls<F: Futur
         let performance_started = Core0PerformanceSample::read();
         CORE0_PERFORMANCE.begin_radio_poll(performance_started);
         #[cfg(feature = "core0-rx-cycle-telemetry")]
-        CORE0_RX_CYCLES.begin_radio_poll(performance_started.cycles);
+        CORE0_RX_CYCLES.begin_radio_poll(performance_started.cycles());
         let result = future.as_mut().poll(context);
         let performance_ended = Core0PerformanceSample::read();
         #[cfg(feature = "core0-rx-cycle-telemetry")]
-        CORE0_RX_CYCLES.end_radio_poll(performance_ended.cycles);
+        CORE0_RX_CYCLES.end_radio_poll(performance_ended.cycles());
         CORE0_PERFORMANCE.record_radio_poll(performance_started, performance_ended);
         counters.record(started.elapsed().as_micros());
         result

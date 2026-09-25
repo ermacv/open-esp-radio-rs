@@ -1,8 +1,12 @@
+// Counters and snapshots are read only by telemetry images.
+#![cfg_attr(not(feature = "tx-phase-telemetry"), allow(dead_code))]
+
 //! Diagnostic-only accounting for ESP32-S31 general-memory to SRAM TX promotion.
 //!
 //! These counters observe the physical admission boundary owned by Core0.
-//! They are absent from production builds because every successful promotion
-//! reads `mcycle` and `minstret` several times.
+//! Call sites use them unconditionally. Without `tx-phase-telemetry`, samples
+//! are zero and every record is an empty inline function, so production
+//! builds read no `mcycle`/`minstret` and retain no counter storage.
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -15,9 +19,16 @@ pub struct TxPerformanceSample {
 impl TxPerformanceSample {
     #[inline(always)]
     pub fn read() -> Self {
-        Self {
-            cycles: cycle_count(),
-            instructions: instruction_count(),
+        #[cfg(feature = "tx-phase-telemetry")]
+        {
+            Self {
+                cycles: cycle_count(),
+                instructions: instruction_count(),
+            }
+        }
+        #[cfg(not(feature = "tx-phase-telemetry"))]
+        {
+            Self::default()
         }
     }
 
@@ -182,11 +193,25 @@ impl TxPerformanceCounters {
 
     #[inline(always)]
     pub(crate) fn record_radio_return(&self) {
+        #[cfg(feature = "tx-phase-telemetry")]
         self.radio_returns.fetch_add(1, Ordering::Relaxed);
     }
 
     #[inline(always)]
     pub(crate) fn record_promotion_no_credit(
+        &self,
+        started: TxPerformanceSample,
+        ended: TxPerformanceSample,
+    ) {
+        #[cfg(not(feature = "tx-phase-telemetry"))]
+        let _ = (started, ended);
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.record_promotion_no_credit_enabled(started, ended);
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    #[inline(always)]
+    fn record_promotion_no_credit_enabled(
         &self,
         started: TxPerformanceSample,
         ended: TxPerformanceSample,
@@ -207,6 +232,47 @@ impl TxPerformanceCounters {
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     pub(crate) fn record_promotion(
+        &self,
+        bytes: usize,
+        started: TxPerformanceSample,
+        credit_acquired: TxPerformanceSample,
+        destination_claimed: TxPerformanceSample,
+        copy: TxPerformanceSample,
+        publication_started: TxPerformanceSample,
+        published: TxPerformanceSample,
+        source_released: TxPerformanceSample,
+        radio_claimed: TxPerformanceSample,
+    ) {
+        #[cfg(not(feature = "tx-phase-telemetry"))]
+        let _ = (
+            bytes,
+            started,
+            credit_acquired,
+            destination_claimed,
+            copy,
+            publication_started,
+            published,
+            source_released,
+            radio_claimed,
+        );
+        #[cfg(feature = "tx-phase-telemetry")]
+        self.record_promotion_enabled(
+            bytes,
+            started,
+            credit_acquired,
+            destination_claimed,
+            copy,
+            publication_started,
+            published,
+            source_released,
+            radio_claimed,
+        );
+    }
+
+    #[cfg(feature = "tx-phase-telemetry")]
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    fn record_promotion_enabled(
         &self,
         bytes: usize,
         started: TxPerformanceSample,
@@ -320,29 +386,29 @@ impl Default for TxPerformanceCounters {
 
 pub static TX_PERFORMANCE: TxPerformanceCounters = TxPerformanceCounters::new();
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(feature = "tx-phase-telemetry", target_arch = "riscv32"))]
 #[inline(always)]
 fn cycle_count() -> u32 {
     riscv::register::mcycle::read() as u32
 }
 
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(all(feature = "tx-phase-telemetry", not(target_arch = "riscv32")))]
 #[inline(always)]
 fn cycle_count() -> u32 {
     0
 }
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(feature = "tx-phase-telemetry", target_arch = "riscv32"))]
 #[inline(always)]
 fn instruction_count() -> u32 {
     riscv::register::minstret::read() as u32
 }
 
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(all(feature = "tx-phase-telemetry", not(target_arch = "riscv32")))]
 #[inline(always)]
 fn instruction_count() -> u32 {
     0
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "tx-phase-telemetry"))]
 mod tests;

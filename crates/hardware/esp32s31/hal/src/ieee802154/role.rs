@@ -1,7 +1,7 @@
 //! Whole-owner lifecycle for the dedicated IEEE 802.15.4 radio route.
 //!
 //! The entry owner consumes the protocol-neutral [`RadioHardware`] root
-//! directly into the PAC's IEEE 802.15.4 route. Task-side MAC/shared-PHY
+//! directly into the exclusive IEEE 802.15.4 route. Task-side MAC/shared-PHY
 //! ownership and the inactive interrupt owner remain disjoint for the complete
 //! lifecycle; no temporary Wi-Fi register owner exists. Completion of this
 //! module's final state is intentionally weaker than common-PHY, BTBB, RF, or
@@ -13,7 +13,7 @@ use core::fmt;
 
 use oer_esp32s31_pac::{
     Ieee802154FoundationSnapshot, Ieee802154InterruptSetup, Ieee802154Pti, Ieee802154TaskRegisters,
-    Ieee802154TimingPrerequisite, Ieee802154TimingReady, RadioHardware, RadioPhyReleaseError,
+    Ieee802154TimingPrerequisite, Ieee802154TimingReady,
 };
 
 #[cfg(feature = "validation-probes")]
@@ -53,12 +53,14 @@ use crate::{
     },
     owner::{Ieee802154SharedPhyBorrow, SharedPhyHal, route},
     power::{self, PowerError},
+    root::{Ieee802154Route, RadioHardware, RadioPhyReleaseError, RetainedIeee802154},
 };
 
 struct OwnedIeee802154Backend<P> {
     platform: P,
     task: Ieee802154TaskRegisters,
     interrupts: Ieee802154InterruptSetup,
+    retained: RetainedIeee802154,
 }
 
 /// Failed cold-route release retaining the complete IEEE 802.15.4 owner.
@@ -233,12 +235,17 @@ impl<P> Ieee802154Owned<P> {
 
     /// Bind an already-owned neutral radio root to the IEEE 802.15.4 route.
     pub fn from_hardware(platform: P, hardware: RadioHardware) -> Self {
-        let (task, interrupts) = hardware.into_ieee802154().separate_interrupt_owner();
+        let Ieee802154Route {
+            task,
+            interrupts,
+            retained,
+        } = hardware.into_ieee802154();
         Self {
             backend: OwnedIeee802154Backend {
                 platform,
                 task,
                 interrupts,
+                retained,
             },
         }
     }
@@ -247,6 +254,9 @@ impl<P> Ieee802154Owned<P> {
     ///
     /// This method is intentionally unavailable after the first power
     /// transition, whose partial mutation requires typed retry ownership.
+    /// A higher layer must first finish its state-specific STOP and
+    /// shared-resource teardown sequence; release then drops the retained
+    /// shared-clock leases and reunites the MAC interrupt owner.
     ///
     /// # Errors
     ///
@@ -254,29 +264,23 @@ impl<P> Ieee802154Owned<P> {
     /// platform while TX-DC PWDET, TX-IQ, RX-DCO, or Bluetooth TX-power control still
     /// awaits restoration in the PAC.
     pub fn release(self) -> Result<(P, RadioHardware), Ieee802154OwnedReleaseFailure<P>> {
+        if let Err(error) = crate::root::check_phy_restore_complete(self.backend.task.radio_phy()) {
+            return Err(Ieee802154OwnedReleaseFailure { owner: self, error });
+        }
         let OwnedIeee802154Backend {
             platform,
             task,
             interrupts,
+            retained,
         } = self.backend;
-        let cold = task.into_cold(interrupts);
-        match cold.release() {
-            Ok(hardware) => Ok((platform, hardware)),
-            Err(failure) => {
-                let (cold, error) = failure.into_parts();
-                let (task, interrupts) = cold.separate_interrupt_owner();
-                Err(Ieee802154OwnedReleaseFailure {
-                    owner: Self {
-                        backend: OwnedIeee802154Backend {
-                            platform,
-                            task,
-                            interrupts,
-                        },
-                    },
-                    error,
-                })
-            }
-        }
+        Ok((
+            platform,
+            RadioHardware::from_ieee802154(Ieee802154Route {
+                task,
+                interrupts,
+                retained,
+            }),
+        ))
     }
 
     /// Borrow the integration token before any lifecycle mutation.

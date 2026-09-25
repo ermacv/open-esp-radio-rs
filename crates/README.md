@@ -29,7 +29,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `protocols/bluetooth/le/ll/` | Portable LE PDU codecs and protocol-role state |
 | `protocols/bluetooth/hci/` | `wire` holds packet views; `transport/in_process` holds queues; `controller` retains bootstrap, command/response authority and `le` policies |
 | `protocols/ieee802154/` | `mac/frame` holds bounded bytes; `radio/{command,event,state,channel,capabilities}` holds portable contracts and one state machine |
-| `hardware/esp32s31/{pac,hal,phy}/` | PAC `ownership` and HAL `owner` retain hardware authority; domain modules hold register operations, transactions and RF algorithms |
+| `hardware/esp32s31/{pac,hal,phy}/` | PAC `ownership` partitions register authority; HAL `root` and `owner` own the radio root and protocol routes; domain modules hold register operations, transactions and RF algorithms |
 | `hardware/esp32s31/driver/ieee80211/{dma,mac}/` | S31 descriptor ownership and MAC `rx/tx/rate`; `mac/tx/metadata` lowers portable traffic intent |
 | `roles/esp32s31/ieee80211/{sta,ap}/` | Executor-free chip station and access-point role composition over the MAC driver |
 | `roles/esp32s31/bluetooth/controller/` | Executor-free LE Controller: DTM, advertising, scanning and peripheral roles, bootstrap, retirement and PHY maintenance over the Bluetooth hardware engine |
@@ -137,7 +137,8 @@ generated outputs, the publisher and the separate upstream bindings.
 See [unsafe boundaries](UNSAFE.md) for the enforced exceptions.
 
 PAC operations describe register-local fields and access. HAL operations own
-multi-register order, polling, delays, lifecycle and recovery. Handwritten
+the radio root, protocol routes, multi-register order, polling, delays,
+lifecycle and recovery. Handwritten
 code outside the restricted PAC uses typed accessors; missing fields must be
 reviewed and published through the SVD/PAC. A Rust ownership proof does not
 establish the meaning of a recovered register.

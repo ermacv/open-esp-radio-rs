@@ -1,9 +1,12 @@
 # ESP32-S31 radio PAC boundaries
 
-This package owns the restricted radio-register interface. Its handwritten
-ownership and domain modules consume reviewed generated capabilities. HAL
-borrows finite register authority and supplies multi-register sequencing,
-polling, delay, recovery and lifecycle policy.
+This package owns the restricted radio-register interface. `RadioPartitions`
+acquires the generated singleton once as opaque register partitions; register
+sets such as `WifiRadioRegisters` and `BluetoothTaskRegisters` are assembled
+from those partitions and carry the reviewed domain transactions. The PAC
+holds no protocol route: the HAL owns the neutral radio root, decides which
+partitions each exclusive route consumes, retains the others and supplies
+multi-register sequencing, polling, delay, recovery and lifecycle policy.
 
 ## Sources and generated outputs
 

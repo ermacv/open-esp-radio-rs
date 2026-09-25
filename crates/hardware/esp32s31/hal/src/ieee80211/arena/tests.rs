@@ -1,15 +1,15 @@
 use crate::{
-    RadioHardware,
-    owner::{MacInterruptSetup, RadioRuntimeOwner},
+    owner::{MacInterruptSetup, RadioRuntimeOwner, WifiColdRegisters},
+    root::RadioHardware,
 };
 
 use super::*;
 
 #[test]
 fn stable_publication_reclaims_exactly_once_and_drop_poison_is_sticky() {
-    let cold = RadioHardware::for_validation().into_wifi();
-    let (registers, _interrupt_setup) = cold.into_running();
-    let owner = RadioRuntimeOwner::from_pac(registers);
+    let cold = WifiColdRegisters::from_hardware(RadioHardware::for_validation());
+    let (registers, _interrupt_setup, retained) = cold.into_running();
+    let owner = RadioRuntimeOwner::from_pac(registers, retained);
     let arena = RadioOwnerArena::new();
     let published = arena
         .publish(owner)
@@ -40,9 +40,9 @@ fn stable_publication_reclaims_exactly_once_and_drop_poison_is_sticky() {
 
 #[test]
 fn reclaimed_owner_republishes_only_through_its_exact_arena_binding() {
-    let cold = RadioHardware::for_validation().into_wifi();
-    let (registers, _interrupt_setup) = cold.into_running();
-    let owner = RadioRuntimeOwner::from_pac(registers);
+    let cold = WifiColdRegisters::from_hardware(RadioHardware::for_validation());
+    let (registers, _interrupt_setup, retained) = cold.into_running();
+    let owner = RadioRuntimeOwner::from_pac(registers, retained);
     let arena = RadioOwnerArena::new();
     let published = arena
         .publish(owner)
@@ -75,9 +75,9 @@ fn reclaimed_owner_republishes_only_through_its_exact_arena_binding() {
 
 #[test]
 fn published_channel_capability_holds_the_arena_serialization_guard() {
-    let cold = RadioHardware::for_validation().into_wifi();
-    let (registers, _interrupt_setup) = cold.into_running();
-    let owner = RadioRuntimeOwner::from_pac(registers);
+    let cold = WifiColdRegisters::from_hardware(RadioHardware::for_validation());
+    let (registers, _interrupt_setup, retained) = cold.into_running();
+    let owner = RadioRuntimeOwner::from_pac(registers, retained);
     let arena = RadioOwnerArena::new();
     let published = arena
         .publish(owner)
@@ -103,9 +103,9 @@ fn published_channel_capability_holds_the_arena_serialization_guard() {
 
 #[test]
 fn published_wifi_mac_capability_holds_the_arena_serialization_guard() {
-    let cold = RadioHardware::for_validation().into_wifi();
-    let (registers, _interrupt_setup) = cold.into_running();
-    let owner = RadioRuntimeOwner::from_pac(registers);
+    let cold = WifiColdRegisters::from_hardware(RadioHardware::for_validation());
+    let (registers, _interrupt_setup, retained) = cold.into_running();
+    let owner = RadioRuntimeOwner::from_pac(registers, retained);
     let arena = RadioOwnerArena::new();
     let published = arena
         .publish(owner)
@@ -130,9 +130,9 @@ fn published_wifi_mac_capability_holds_the_arena_serialization_guard() {
 
 #[test]
 fn stale_access_cannot_mutate_a_reset_required_arena() {
-    let cold = RadioHardware::for_validation().into_wifi();
-    let (registers, interrupt_setup) = cold.into_running();
-    let owner = RadioRuntimeOwner::from_pac(registers);
+    let cold = WifiColdRegisters::from_hardware(RadioHardware::for_validation());
+    let (registers, interrupt_setup, retained) = cold.into_running();
+    let owner = RadioRuntimeOwner::from_pac(registers, retained);
     let mut interrupt_setup = MacInterruptSetup {
         inner: interrupt_setup,
     };

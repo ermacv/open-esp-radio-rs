@@ -9,44 +9,50 @@
 use crate::{
     BluetoothControllerHalInitConfig, BluetoothInterruptRegisters, BluetoothMemoryListPointerImage,
     BluetoothMemoryListSelector, BluetoothMemoryListSlot, MacInterruptRegisters, MacInterruptSetup,
-    MacPowerInterruptRegisters, RadioHardware, svd,
+    MacPowerInterruptRegisters, RadioPartitions,
 };
 
 use crate::{BluetoothPhyEnvironmentAddress, BluetoothPhyRegisterInitInputs};
 
-#[inline(always)]
-fn wifi_interrupts() -> svd::peripheral_ownership::WifiInterruptPeripherals {
-    let RadioHardware {
-        wifi_interrupts, ..
-    } = RadioHardware::for_validation();
-    wifi_interrupts
-}
-
-/// Construct the ordinary task-owned register partition for one probe image.
+/// Construct the ordinary task-owned register set for one probe image.
 #[inline(always)]
 pub fn wifi_radio_registers() -> crate::WifiRadioRegisters {
-    RadioHardware::for_validation().into_wifi().into_running().0
+    let RadioPartitions {
+        wifi_mac,
+        radio_phy,
+        coexistence,
+        shared_radio,
+        ieee802154,
+        ..
+    } = RadioPartitions::for_validation();
+    crate::WifiRadioRegisters::new(crate::WifiRadioParts {
+        wifi_mac,
+        ieee802154,
+        radio_phy,
+        coexistence,
+        shared_radio,
+    })
 }
 
 /// Construct the task-side interrupt setup owner used by the production
 /// connected-STA preparation transaction.
 #[inline(always)]
 pub fn mac_interrupt_setup() -> MacInterruptSetup {
-    RadioHardware::for_validation().into_wifi().into_running().1
+    RadioPartitions::for_validation().wifi_interrupts
 }
 
 /// Construct the disjoint hard-MAC interrupt capability for one probe image.
 #[inline(always)]
 pub fn mac_interrupt_registers() -> MacInterruptRegisters {
-    let interrupts = wifi_interrupts();
-    MacInterruptRegisters::from_peripheral_for_validation(interrupts.wifi_mac_interrupt)
+    MacInterruptRegisters::from_peripheral_for_validation(mac_interrupt_setup().peripheral)
 }
 
 /// Construct the disjoint power-interrupt capability for one probe image.
 #[inline(always)]
 pub fn mac_power_interrupt_registers() -> MacPowerInterruptRegisters {
-    let interrupts = wifi_interrupts();
-    MacPowerInterruptRegisters::from_peripheral_for_validation(interrupts.wifi_mac_power_interrupt)
+    MacPowerInterruptRegisters::from_peripheral_for_validation(
+        mac_interrupt_setup().power_peripheral,
+    )
 }
 
 /// Construct the active Bluetooth interrupt-bank capability for one isolated
@@ -59,13 +65,38 @@ pub fn mac_power_interrupt_registers() -> MacPowerInterruptRegisters {
 /// deliberately bypasses that lifecycle to compare one bounded transaction.
 #[inline(always)]
 pub fn bluetooth_interrupt_registers() -> BluetoothInterruptRegisters {
-    let RadioHardware {
-        bluetooth_interrupts,
-        ..
-    } = RadioHardware::for_validation();
     BluetoothInterruptRegisters {
-        peripherals: bluetooth_interrupts,
+        peripherals: RadioPartitions::for_validation()
+            .bluetooth_interrupts
+            .peripherals,
     }
+}
+
+/// Construct the Bluetooth task register set and its inactive interrupt bank.
+#[inline(always)]
+fn bluetooth_task() -> (
+    crate::BluetoothTaskRegisters,
+    crate::BluetoothInterruptSetup,
+) {
+    let RadioPartitions {
+        bluetooth,
+        bluetooth_modem_lp_timer,
+        bluetooth_interrupts,
+        radio_phy,
+        coexistence,
+        shared_radio,
+        ..
+    } = RadioPartitions::for_validation();
+    (
+        crate::BluetoothTaskRegisters::new(crate::BluetoothTaskParts {
+            bluetooth,
+            modem_lp_timer: bluetooth_modem_lp_timer,
+            radio_phy,
+            coexistence,
+            shared_radio,
+        }),
+        bluetooth_interrupts,
+    )
 }
 
 /// Execute the exact bounded MMIO transaction recovered for
@@ -90,8 +121,7 @@ pub fn bluetooth_interrupt_registers() -> BluetoothInterruptRegisters {
 )]
 #[inline(always)]
 pub unsafe fn initialize_bluetooth_baseband_v2(gain_parameter: u8) {
-    let cold = RadioHardware::for_validation().into_bluetooth();
-    let (mut task, interrupts) = cold.separate_interrupt_owner();
+    let (mut task, interrupts) = bluetooth_task();
     task.initialize_baseband_v2_arg_one(gain_parameter);
     let _powered_owners = (task, interrupts);
 }
@@ -115,8 +145,7 @@ pub unsafe fn initialize_bluetooth_baseband_v2(gain_parameter: u8) {
 )]
 #[inline(always)]
 pub unsafe fn initialize_bluetooth_controller_hal(config: BluetoothControllerHalInitConfig) {
-    let cold = RadioHardware::for_validation().into_bluetooth();
-    let (mut task, interrupts) = cold.separate_interrupt_owner();
+    let (mut task, interrupts) = bluetooth_task();
     task.initialize_controller_hal(config);
     let _powered_owners = (task, interrupts);
 }
@@ -144,8 +173,7 @@ pub unsafe fn program_bluetooth_memory_list_pointer(
     slot: BluetoothMemoryListSlot,
     image: BluetoothMemoryListPointerImage,
 ) {
-    let cold = RadioHardware::for_validation().into_bluetooth();
-    let (mut task, interrupts) = cold.separate_interrupt_owner();
+    let (mut task, interrupts) = bluetooth_task();
     // SAFETY: the caller upholds this bridge's modeled list-change and
     // pointed-storage contract; `task` is the sole validation owner.
     unsafe {
@@ -191,8 +219,7 @@ pub unsafe fn initialize_bluetooth_phy_registers(
         set_branch_control_0470_bit_18,
         runtime_configuration_low_byte,
     );
-    let cold = RadioHardware::for_validation().into_bluetooth();
-    let (mut task, interrupts) = cold.separate_interrupt_owner();
+    let (mut task, interrupts) = bluetooth_task();
     // SAFETY: the caller models every prerequisite of
     // `initialize_ble_phy_registers`; `task` is the sole validation owner.
     unsafe {

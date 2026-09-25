@@ -5,8 +5,9 @@ use oer_esp32s31_pac::{
     Ieee802154MacControl as PacMacControl, Ieee802154MacPolicySnapshot as PacMacPolicySnapshot,
     Ieee802154MultipanEnableState as PacMultipanEnableState,
     Ieee802154PanIdentity as PacPanIdentity, Ieee802154RxStateCode, Ieee802154TxStateCode,
-    RadioHardware,
 };
+
+use crate::root::{Ieee802154Route, RadioHardware};
 
 use super::{
     Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154Hal, Ieee802154PacHal,
@@ -252,8 +253,11 @@ fn state_predicate_samples_once_and_makes_no_idle_claim() {
 
 #[test]
 fn production_hal_borrows_the_dedicated_ieee802154_task_partition() {
-    let cold = RadioHardware::for_validation().into_ieee802154();
-    let (mut task, mut interrupts) = cold.separate_interrupt_owner();
+    let Ieee802154Route {
+        mut task,
+        mut interrupts,
+        retained,
+    } = RadioHardware::for_validation().into_ieee802154();
     {
         let mut hal = Ieee802154PacHal::from_owned(&mut task, &mut interrupts);
 
@@ -264,8 +268,9 @@ fn production_hal_borrows_the_dedicated_ieee802154_task_partition() {
 
     // Reuniting proves the combined borrow consumed neither disjoint
     // ownership half.
-    let _hardware = task
-        .into_cold(interrupts)
-        .release()
-        .expect("an untouched IEEE 802.15.4 route can be released");
+    let _hardware = RadioHardware::from_ieee802154(Ieee802154Route {
+        task,
+        interrupts,
+        retained,
+    });
 }

@@ -3,7 +3,6 @@ use super::{
     Ieee802154ObservedEventState, Ieee802154RxStateCode, Ieee802154StateSnapshot,
     Ieee802154TxStateCode, execute_interrupt_activation, execute_interrupt_deactivation,
 };
-use crate::RadioHardware;
 use std::vec::Vec;
 
 #[test]
@@ -56,15 +55,14 @@ fn nonzero_state_code_fails_only_the_numeric_zero_predicate() {
 
 #[test]
 fn dedicated_route_lends_the_same_narrow_mac_surface() {
-    let mut cold = RadioHardware::for_validation().into_ieee802154();
-    let mut lease = cold.radio_mut().ieee802154_register_lease();
+    let (mut task, interrupts) = crate::ownership::test_support::ieee802154_task();
+    let mut lease = task.ieee802154_register_lease();
 
     // The host reaches only the architecture-neutral fence. The lease is
-    // backed by the dedicated route rather than by a second raw singleton.
+    // backed by the dedicated register set rather than by a second raw
+    // singleton.
     lease.order_device_accesses();
-    let _hardware = cold
-        .release()
-        .expect("an untouched IEEE 802.15.4 route can be released");
+    let _parts = task.into_parts(interrupts);
 }
 
 #[derive(Debug, Eq, PartialEq)]

@@ -67,7 +67,7 @@ fn release_rechecks_hardware_instead_of_reusing_admission_observation() {
 }
 
 fn registers() -> super::RadioRuntimeOwner {
-    super::RadioRuntimeOwner::from_pac(oer_esp32s31_pac::validation::wifi_radio_registers())
+    super::RadioRuntimeOwner::claim_for_validation()
 }
 
 fn checkpoint() -> super::MacInterruptCheckpoint {

@@ -116,7 +116,6 @@ pub use bluetooth::{
             BluetoothSchedulerStoppedHeadRetirement, BluetoothSchedulerStoppedItem,
         },
     },
-    shutdown::{BluetoothPhysicalReleaseError, BluetoothPhysicalReleaseFailure},
 };
 
 pub use cfr::CfrValue;
@@ -263,13 +262,12 @@ pub mod ownership;
 pub(crate) use ownership::BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER;
 
 pub use ownership::{
-    BluetoothColdRegisters, BluetoothInterruptRegisters, BluetoothInterruptSetup,
-    BluetoothTaskRegisters, BluetoothTaskReuniteError, BluetoothTaskReuniteFailure,
-    Ieee802154ColdRegisters, Ieee802154InterruptRegisters, Ieee802154InterruptSetup,
-    Ieee802154TaskRegisters, MacInterruptEvents, MacInterruptObservation, MacInterruptSnapshot,
-    MacPowerInterruptObservation, MacPowerInterruptSnapshot, PhyRegistrationEpoch, RadioHardware,
-    RadioPhyRegisters, RadioPhyReleaseError, RadioPhyReleaseFailure, WifiColdRegisters,
-    WifiRadioRegisters,
+    BluetoothControllerPartition, BluetoothInterruptRegisters, BluetoothInterruptSetup,
+    BluetoothTaskParts, BluetoothTaskRegisters, CoexistencePartition, Ieee802154InterruptRegisters,
+    Ieee802154InterruptSetup, Ieee802154Partition, Ieee802154TaskParts, Ieee802154TaskRegisters,
+    MacInterruptEvents, MacInterruptObservation, MacInterruptSnapshot,
+    MacPowerInterruptObservation, MacPowerInterruptSnapshot, PhyRegistrationEpoch, RadioPartitions,
+    RadioPhyRegisters, SharedRadioPartition, WifiMacPartition, WifiRadioParts, WifiRadioRegisters,
 };
 
 pub(crate) use ownership::device_fence;

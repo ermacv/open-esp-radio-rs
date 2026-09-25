@@ -1,378 +1,93 @@
-use super::{MacInterruptMask, RadioHardware, RadioPhyReleaseError};
+use super::{
+    BluetoothTaskParts, BluetoothTaskRegisters, Ieee802154TaskParts, Ieee802154TaskRegisters,
+    MacInterruptMask, RadioPartitions, WifiRadioParts, WifiRadioRegisters,
+};
 
-fn occupy_wifi_restore(registers: &mut super::WifiColdRegisters) {
-    registers
-        .registers
-        .peripherals
-        .radio_phy
-        .occupy_txdc_pwdet_restore_for_test();
-}
-
-fn occupy_ieee802154_restore(registers: &mut super::Ieee802154ColdRegisters) {
-    registers
-        .task
-        .peripherals
-        .radio_phy
-        .occupy_txdc_pwdet_restore_for_test();
-}
-
-fn occupy_bluetooth_restore(registers: &mut super::BluetoothColdRegisters) {
-    registers
-        .task
-        .radio_phy
-        .occupy_txdc_pwdet_restore_for_test();
-}
-
-fn occupy_wifi_txiq_restore(registers: &mut super::WifiColdRegisters) {
-    registers
-        .registers
-        .peripherals
-        .radio_phy
-        .occupy_txiq_tone_control_restore_for_test();
-}
-
-fn occupy_ieee802154_txiq_restore(registers: &mut super::Ieee802154ColdRegisters) {
-    registers
-        .task
-        .peripherals
-        .radio_phy
-        .occupy_txiq_tone_control_restore_for_test();
-}
-
-fn occupy_bluetooth_txiq_restore(registers: &mut super::BluetoothColdRegisters) {
-    registers
-        .task
-        .radio_phy
-        .occupy_txiq_tone_control_restore_for_test();
-}
-
-fn occupy_wifi_rx_dco_restore(registers: &mut super::WifiColdRegisters) {
-    registers
-        .registers
-        .peripherals
-        .radio_phy
-        .occupy_rx_dco_control_restore_for_test();
-}
-
-fn occupy_ieee802154_rx_dco_restore(registers: &mut super::Ieee802154ColdRegisters) {
-    registers
-        .task
-        .peripherals
-        .radio_phy
-        .occupy_rx_dco_control_restore_for_test();
-}
-
-fn occupy_bluetooth_rx_dco_restore(registers: &mut super::BluetoothColdRegisters) {
-    registers
-        .task
-        .radio_phy
-        .occupy_rx_dco_control_restore_for_test();
-}
-
-fn occupy_wifi_bluetooth_tx_power_restore(registers: &mut super::WifiColdRegisters) {
-    registers
-        .registers
-        .peripherals
-        .radio_phy
-        .occupy_bluetooth_tx_power_control_restore_for_test();
-}
-
-fn occupy_ieee802154_bluetooth_tx_power_restore(registers: &mut super::Ieee802154ColdRegisters) {
-    registers
-        .task
-        .peripherals
-        .radio_phy
-        .occupy_bluetooth_tx_power_control_restore_for_test();
-}
-
-fn occupy_bluetooth_tx_power_restore(registers: &mut super::BluetoothColdRegisters) {
-    registers
-        .task
-        .radio_phy
-        .occupy_bluetooth_tx_power_control_restore_for_test();
+fn wifi_registers(partitions: RadioPartitions) -> (WifiRadioRegisters, super::MacInterruptSetup) {
+    let RadioPartitions {
+        wifi_mac,
+        wifi_interrupts,
+        radio_phy,
+        coexistence,
+        shared_radio,
+        ieee802154,
+        ..
+    } = partitions;
+    (
+        WifiRadioRegisters::new(WifiRadioParts {
+            wifi_mac,
+            ieee802154,
+            radio_phy,
+            coexistence,
+            shared_radio,
+        }),
+        wifi_interrupts,
+    )
 }
 
 #[test]
-fn pending_txdc_restore_survives_same_route_transitions_and_blocks_release() {
-    let mut wifi = RadioHardware::for_validation().into_wifi();
-    occupy_wifi_restore(&mut wifi);
-    let (task, interrupts) = wifi.into_running();
-    let wifi = task.into_cold(interrupts);
-    let Err(failure) = wifi.release() else {
-        panic!("Wi-Fi released a pending restore");
-    };
-    assert_eq!(
-        failure.error(),
-        RadioPhyReleaseError::TxDcPwdetRestorePending
-    );
-
-    let mut ieee802154 = RadioHardware::for_validation().into_ieee802154();
-    occupy_ieee802154_restore(&mut ieee802154);
-    let (task, interrupts) = ieee802154.separate_interrupt_owner();
-    let ieee802154 = task.into_cold(interrupts);
-    let Err(failure) = ieee802154.release() else {
-        panic!("IEEE 802.15.4 released a pending restore");
-    };
-    assert_eq!(
-        failure.error(),
-        RadioPhyReleaseError::TxDcPwdetRestorePending
-    );
-
-    let mut bluetooth = RadioHardware::for_validation().into_bluetooth();
-    occupy_bluetooth_restore(&mut bluetooth);
-    let (task, interrupts) = bluetooth.separate_interrupt_owner();
-    let bluetooth = task
-        .into_cold(interrupts)
-        .expect("an idle Bluetooth task owner can be reunited");
-    let Err(failure) = bluetooth.release() else {
-        panic!("Bluetooth released a pending restore");
-    };
-    assert_eq!(
-        failure.error(),
-        RadioPhyReleaseError::TxDcPwdetRestorePending
-    );
+fn wifi_register_set_returns_every_consumed_partition() {
+    let (registers, _interrupts) = wifi_registers(RadioPartitions::for_validation());
+    let WifiRadioParts { radio_phy, .. } = registers.into_parts();
+    assert!(!radio_phy.txdc_pwdet_restore_pending());
 }
 
 #[test]
-fn pending_txiq_restore_survives_same_route_transitions_and_blocks_release() {
-    let mut wifi = RadioHardware::for_validation().into_wifi();
-    occupy_wifi_txiq_restore(&mut wifi);
-    let (task, interrupts) = wifi.into_running();
-    let wifi = task.into_cold(interrupts);
-    let Err(failure) = wifi.release() else {
-        panic!("Wi-Fi released a pending TX-IQ restore");
-    };
-    assert_eq!(
-        failure.error(),
-        RadioPhyReleaseError::TxIqToneControlRestorePending
-    );
-
-    let mut ieee802154 = RadioHardware::for_validation().into_ieee802154();
-    occupy_ieee802154_txiq_restore(&mut ieee802154);
-    let (task, interrupts) = ieee802154.separate_interrupt_owner();
-    let ieee802154 = task.into_cold(interrupts);
-    let Err(failure) = ieee802154.release() else {
-        panic!("IEEE 802.15.4 released a pending TX-IQ restore");
-    };
-    assert_eq!(
-        failure.error(),
-        RadioPhyReleaseError::TxIqToneControlRestorePending
-    );
-
-    let mut bluetooth = RadioHardware::for_validation().into_bluetooth();
-    occupy_bluetooth_txiq_restore(&mut bluetooth);
-    let (task, interrupts) = bluetooth.separate_interrupt_owner();
-    let bluetooth = task
-        .into_cold(interrupts)
-        .expect("an idle Bluetooth task owner can be reunited");
-    let Err(failure) = bluetooth.release() else {
-        panic!("Bluetooth released a pending TX-IQ restore");
-    };
-    assert_eq!(
-        failure.error(),
-        RadioPhyReleaseError::TxIqToneControlRestorePending
-    );
+fn bluetooth_register_set_requires_its_modem_lp_timer_partition() {
+    let RadioPartitions {
+        bluetooth,
+        bluetooth_modem_lp_timer,
+        radio_phy,
+        coexistence,
+        shared_radio,
+        ..
+    } = RadioPartitions::for_validation();
+    let registers = BluetoothTaskRegisters::new(BluetoothTaskParts {
+        bluetooth,
+        modem_lp_timer: bluetooth_modem_lp_timer,
+        radio_phy,
+        coexistence,
+        shared_radio,
+    });
+    assert!(!registers.modem_lp_timer_separated());
+    let _parts = registers.into_parts();
 }
 
 #[test]
-fn pending_rx_dco_restore_survives_same_route_transitions_and_blocks_release() {
-    let mut wifi = RadioHardware::for_validation().into_wifi();
-    occupy_wifi_rx_dco_restore(&mut wifi);
-    let (task, interrupts) = wifi.into_running();
-    let wifi = task.into_cold(interrupts);
-    let Err(failure) = wifi.release() else {
-        panic!("Wi-Fi released a pending RX-DCO restore");
-    };
-    assert_eq!(
-        failure.error(),
-        RadioPhyReleaseError::RxDcoControlRestorePending
-    );
-
-    let mut ieee802154 = RadioHardware::for_validation().into_ieee802154();
-    occupy_ieee802154_rx_dco_restore(&mut ieee802154);
-    let (task, interrupts) = ieee802154.separate_interrupt_owner();
-    let ieee802154 = task.into_cold(interrupts);
-    let Err(failure) = ieee802154.release() else {
-        panic!("IEEE 802.15.4 released a pending RX-DCO restore");
-    };
-    assert_eq!(
-        failure.error(),
-        RadioPhyReleaseError::RxDcoControlRestorePending
-    );
-
-    let mut bluetooth = RadioHardware::for_validation().into_bluetooth();
-    occupy_bluetooth_rx_dco_restore(&mut bluetooth);
-    let (task, interrupts) = bluetooth.separate_interrupt_owner();
-    let bluetooth = task
-        .into_cold(interrupts)
-        .expect("an idle Bluetooth task owner can be reunited");
-    let Err(failure) = bluetooth.release() else {
-        panic!("Bluetooth released a pending RX-DCO restore");
-    };
-    assert_eq!(
-        failure.error(),
-        RadioPhyReleaseError::RxDcoControlRestorePending
-    );
-}
-
-#[test]
-fn pending_bluetooth_tx_power_restore_survives_route_transitions_and_blocks_release() {
-    let mut wifi = RadioHardware::for_validation().into_wifi();
-    occupy_wifi_bluetooth_tx_power_restore(&mut wifi);
-    let (task, interrupts) = wifi.into_running();
-    let wifi = task.into_cold(interrupts);
-    let Err(failure) = wifi.release() else {
-        panic!("Wi-Fi released pending Bluetooth TX-power control state");
-    };
-    assert_eq!(
-        failure.error(),
-        RadioPhyReleaseError::BluetoothTxPowerControlRestorePending
-    );
-
-    let mut ieee802154 = RadioHardware::for_validation().into_ieee802154();
-    occupy_ieee802154_bluetooth_tx_power_restore(&mut ieee802154);
-    let (task, interrupts) = ieee802154.separate_interrupt_owner();
-    let ieee802154 = task.into_cold(interrupts);
-    let Err(failure) = ieee802154.release() else {
-        panic!("IEEE 802.15.4 released pending Bluetooth TX-power control state");
-    };
-    assert_eq!(
-        failure.error(),
-        RadioPhyReleaseError::BluetoothTxPowerControlRestorePending
-    );
-
-    let mut bluetooth = RadioHardware::for_validation().into_bluetooth();
-    occupy_bluetooth_tx_power_restore(&mut bluetooth);
-    let (task, interrupts) = bluetooth.separate_interrupt_owner();
-    let bluetooth = task
-        .into_cold(interrupts)
-        .expect("an idle Bluetooth task owner can be reunited");
-    let Err(failure) = bluetooth.release() else {
-        panic!("Bluetooth released pending TX-power control state");
-    };
-    assert_eq!(
-        failure.error(),
-        RadioPhyReleaseError::BluetoothTxPowerControlRestorePending
-    );
-}
-
-#[test]
-fn cold_owner_is_consumed_by_interrupt_setup_split() {
-    let registers = RadioHardware::for_validation().into_wifi();
-    let (_running, _setup) = registers.into_running();
-}
-
-#[test]
-fn wifi_route_roundtrip_returns_the_complete_root() {
-    let wifi = RadioHardware::for_validation().into_wifi();
-    let (task, setup) = wifi.into_running();
-    let hardware = task
-        .into_cold(setup)
-        .release()
-        .expect("an untouched cold route can be released");
-
-    let bluetooth = hardware.into_bluetooth();
-    let _hardware = bluetooth
-        .release()
-        .expect("an untouched Bluetooth route can be released");
-}
-
-#[test]
-fn bluetooth_task_and_interrupt_owners_roundtrip_without_mmio() {
-    let bluetooth = RadioHardware::for_validation().into_bluetooth();
-    let (task, setup) = bluetooth.separate_interrupt_owner();
-    let hardware = task
-        .into_cold(setup)
-        .expect("an idle Bluetooth task owner can be reunited")
-        .release()
-        .expect("an untouched Bluetooth route can be released");
-
-    let wifi = hardware.into_wifi();
-    let _hardware = wifi
-        .release()
-        .expect("an untouched Wi-Fi route can be released");
-}
-
-#[test]
-fn ieee802154_route_roundtrip_returns_every_other_protocol_owner() {
-    let ieee802154 = RadioHardware::for_validation().into_ieee802154();
-    let hardware = ieee802154
-        .release()
-        .expect("a fresh IEEE 802.15.4 route has no pending PHY restore");
-
-    // The IEEE 802.15.4 epoch retains the complete generated Bluetooth
-    // controller partition behind its BTBB role and never consumes either
-    // protocol's interrupt owner.
-    let bluetooth = hardware.into_bluetooth();
-    let hardware = bluetooth
-        .release()
-        .expect("an untouched Bluetooth route can be released");
-    let wifi = hardware.into_wifi();
-    let _hardware = wifi
-        .release()
-        .expect("an untouched Wi-Fi route can be released");
-}
-
-#[test]
-fn ieee802154_task_and_interrupt_owners_reunite_without_mmio() {
-    let ieee802154 = RadioHardware::for_validation().into_ieee802154();
-    let (task, setup) = ieee802154.separate_interrupt_owner();
-    let hardware = task
-        .into_cold(setup)
-        .release()
-        .expect("an untouched IEEE 802.15.4 route can be released");
-
-    let bluetooth = hardware.into_bluetooth();
-    let _hardware = bluetooth
-        .release()
-        .expect("an untouched Bluetooth route can be released");
+fn ieee802154_register_set_reunites_its_interrupt_owner() {
+    let RadioPartitions {
+        ieee802154,
+        radio_phy,
+        coexistence,
+        bluetooth,
+        shared_radio,
+        ..
+    } = RadioPartitions::for_validation();
+    let (task, interrupts) = Ieee802154TaskRegisters::new(Ieee802154TaskParts {
+        ieee802154,
+        radio_phy,
+        coexistence,
+        bluetooth,
+        shared_radio,
+    });
+    let Ieee802154TaskParts { ieee802154, .. } = task.into_parts(interrupts);
+    let _ = ieee802154;
 }
 
 #[test]
 fn mac_hal_tail_rejects_out_of_range_calibration_before_mmio() {
-    let mut registers = RadioHardware::for_validation().into_wifi();
-    assert!(!registers.initialize_mac_hal_tail(MacInterruptMask::COLD_RX, 0x0004_0000));
-    assert!(!registers.initialize_mac_hal_tail(MacInterruptMask::NONE, u32::MAX));
+    let (mut registers, mut interrupts) = wifi_registers(RadioPartitions::for_validation());
+    assert!(!registers.initialize_mac_hal_tail(
+        &mut interrupts,
+        MacInterruptMask::COLD_RX,
+        0x0004_0000
+    ));
+    assert!(!registers.initialize_mac_hal_tail(&mut interrupts, MacInterruptMask::NONE, u32::MAX));
 }
 
 #[test]
 fn mac_txrx_callbacks_reject_out_of_range_slot_before_mmio() {
-    let mut registers = RadioHardware::for_validation().into_wifi().into_running().0;
+    let (mut registers, _interrupts) = wifi_registers(RadioPartitions::for_validation());
     assert!(!registers.initialize_mac_txrx_callbacks(11));
     assert!(!registers.initialize_mac_txrx_callbacks(u8::MAX));
-}
-
-#[test]
-fn registration_epoch_is_replaced_by_registration_and_retired_by_every_route_release() {
-    let mut wifi = RadioHardware::for_validation().into_wifi();
-    let phy = wifi.radio_mut().radio_phy_mut();
-    assert_eq!(phy.registration_epoch(), None);
-    let first = phy.begin_registration_epoch();
-    assert_eq!(phy.registration_epoch(), Some(first));
-    let second = phy.begin_registration_epoch();
-    assert_ne!(first, second);
-    assert_eq!(phy.registration_epoch(), Some(second));
-
-    let mut bluetooth = wifi
-        .release()
-        .unwrap_or_else(|_| panic!("unoccupied Wi-Fi route must release"))
-        .into_bluetooth();
-    assert_eq!(bluetooth.task.radio_phy.registration_epoch(), None);
-    let third = bluetooth.task.radio_phy.begin_registration_epoch();
-    assert!(third != first && third != second);
-
-    let mut ieee802154 = bluetooth
-        .release()
-        .unwrap_or_else(|_| panic!("unoccupied Bluetooth route must release"))
-        .into_ieee802154();
-    let phy = &mut ieee802154.task.peripherals.radio_phy;
-    assert_eq!(phy.registration_epoch(), None);
-    let fourth = phy.begin_registration_epoch();
-    assert!(fourth != first && fourth != second && fourth != third);
-
-    let mut wifi = ieee802154
-        .release()
-        .unwrap_or_else(|_| panic!("unoccupied IEEE 802.15.4 route must release"))
-        .into_wifi();
-    assert_eq!(wifi.radio_mut().radio_phy_mut().registration_epoch(), None);
 }

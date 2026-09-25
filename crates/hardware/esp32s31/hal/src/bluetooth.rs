@@ -7,10 +7,10 @@
 #![deny(unsafe_code)]
 
 use oer_esp32s31_pac::{
-    BluetoothColdRegisters as PacBluetoothColdRegisters, BluetoothControllerSramAddress,
-    BluetoothDirectionFindingDisabledBaselinePrepared, BluetoothInterruptRegisters,
-    BluetoothInterruptSetup as PacBluetoothInterruptSetup, BluetoothLowPowerClockObservation,
-    BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
+    BluetoothControllerSramAddress, BluetoothDirectionFindingDisabledBaselinePrepared,
+    BluetoothInterruptRegisters, BluetoothInterruptSetup as PacBluetoothInterruptSetup,
+    BluetoothLowPowerClockObservation, BluetoothMemoryListPointerImage,
+    BluetoothMemoryListSelector, BluetoothMemoryListSlot,
     BluetoothModemLpTimerCounterStarted as PacBluetoothModemLpTimerCounterStarted,
     BluetoothModemLpTimerHandlerPending as PacBluetoothModemLpTimerHandlerPending,
     BluetoothModemLpTimerInterruptReady as PacBluetoothModemLpTimerInterruptReady,
@@ -18,12 +18,16 @@ use oer_esp32s31_pac::{
     BluetoothModemLpTimerRegistersPrepared as PacBluetoothModemLpTimerRegistersPrepared,
     BluetoothModemLpTimerSoftwarePending as PacBluetoothModemLpTimerSoftwarePending,
     BluetoothPrimaryInterruptEpoch, BluetoothTaskRegisters as PacBluetoothTaskRegisters,
-    BluetoothTaskReuniteError as PacBluetoothTaskReuniteError,
     ModemLpTimerHandlerRegisterStep as PacBluetoothModemLpTimerHandlerRegisterStep,
     ModemLpTimerInterruptStep as PacBluetoothModemLpTimerInterruptStep,
-    ModemSysconBluetoothObservation, PlatformClockPowerObservation, RadioHardware,
-    RadioPhyReleaseError, SharedModemClockObservation,
+    ModemSysconBluetoothObservation, PlatformClockPowerObservation, SharedModemClockObservation,
 };
+
+use crate::root::{BluetoothRoute, RadioHardware, RadioPhyReleaseError, RetainedWifi};
+
+mod shutdown;
+
+pub use shutdown::{BluetoothPhysicalReleaseError, BluetoothPhysicalReleaseFailure};
 
 pub use oer_esp32s31_pac::{
     BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
@@ -35,13 +39,13 @@ pub use oer_esp32s31_pac::{
     BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerOwnerError,
     BluetoothNrtInterruptAcknowledged, BluetoothPhyEnvironmentAddress,
     BluetoothPhyEnvironmentAddressError, BluetoothPhyRegisterInitInputs,
-    BluetoothPhysicalReleaseError, BluetoothPhysicalReleaseFailure, BluetoothScanStartPublished,
-    BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,
-    BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyDisposition,
-    BluetoothSchedulerExecutionModifyPublished, BluetoothSchedulerFinishedHardwareListObserved,
-    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
-    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
-    BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothScanStartPublished, BluetoothSchedulerExecutionLockDisposition,
+    BluetoothSchedulerExecutionLockPublished, BluetoothSchedulerExecutionLockRequest,
+    BluetoothSchedulerExecutionModifyDisposition, BluetoothSchedulerExecutionModifyPublished,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListObservation,
+    BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
+    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerHardwareListHeadError,
+    BluetoothSchedulerHardwareListHeadPublished,
     BluetoothSchedulerHardwareListHeadRetirementObservation, BluetoothSchedulerHardwareListIndex,
     BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
     BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
@@ -63,7 +67,9 @@ pub use oer_esp32s31_pac::{
 /// protocol-neutral radio root.
 #[must_use = "the cold Bluetooth HAL owner retains the complete radio root"]
 pub struct ColdOwner {
-    registers: PacBluetoothColdRegisters,
+    task: PacBluetoothTaskRegisters,
+    interrupts: PacBluetoothInterruptSetup,
+    retained: RetainedWifi,
 }
 
 /// Failed cold Bluetooth release retaining the complete HAL owner.
@@ -96,58 +102,75 @@ impl ColdOwner {
     /// Capture the shared power baseline before Bluetooth retains any clocks.
     #[doc(hidden)]
     pub fn prepare_shared_power_epoch(&mut self) {
-        self.registers.prepare_shared_power_epoch();
+        self.task.radio_phy_mut().prepare_wifi_power_epoch();
     }
+
     /// Enter the exclusive Bluetooth route without touching hardware.
     pub fn from_radio_hardware(hardware: RadioHardware) -> Self {
+        let BluetoothRoute {
+            task,
+            interrupts,
+            retained,
+        } = hardware.into_bluetooth();
         Self {
-            registers: hardware.into_bluetooth(),
+            task,
+            interrupts,
+            retained,
         }
     }
 
     /// Return the unchanged protocol-neutral radio root.
     ///
+    /// Release drops every retained clock lease, restores the cold-power
+    /// baseline captured by [`Self::prepare_shared_power_epoch`] and only then
+    /// reconstructs the neutral root.
+    ///
     /// # Errors
     ///
     /// Returns [`ColdOwnerReleaseFailure`] retaining this owner while
     /// TX-DC PWDET, TX-IQ, RX-DCO, or Bluetooth TX-power control still awaits
-    /// restoration in the PAC.
-    pub fn release(self) -> Result<RadioHardware, ColdOwnerReleaseFailure> {
-        match self.registers.release() {
-            Ok(hardware) => Ok(hardware),
-            Err(failure) => {
-                let (registers, error) = failure.into_parts();
-                Err(ColdOwnerReleaseFailure {
-                    owner: Self { registers },
-                    error,
-                })
-            }
+    /// restoration, or when a cold-power baseline fails readback.
+    pub fn release(mut self) -> Result<RadioHardware, ColdOwnerReleaseFailure> {
+        if let Err(error) = crate::root::check_phy_restore_complete(self.task.radio_phy()) {
+            return Err(ColdOwnerReleaseFailure { owner: self, error });
         }
+        self.task.release_retained_clocks();
+        if let Err(checkpoint) = self.task.radio_phy_mut().restore_wifi_power_epoch() {
+            return Err(ColdOwnerReleaseFailure {
+                owner: self,
+                error: RadioPhyReleaseError::WifiPowerRestore(checkpoint),
+            });
+        }
+        Ok(RadioHardware::from_bluetooth(
+            self.task,
+            self.interrupts,
+            self.retained,
+        ))
     }
 
     #[doc(hidden)]
     pub fn prepare_shared_modem_clock_map(&mut self) {
-        self.registers.prepare_shared_modem_clock_map();
+        self.task.prepare_shared_modem_clock_map();
     }
 
     #[doc(hidden)]
     pub fn retain_coexistence_clock(&mut self) {
-        self.registers.retain_coexistence_clock();
+        self.task.retain_coexistence_clock();
     }
 
     #[doc(hidden)]
     pub fn release_coexistence_clock(&mut self) {
-        self.registers.release_coexistence_clock();
+        self.task.release_coexistence_clock();
     }
 
     #[doc(hidden)]
     pub fn retain_main_xtal_bluetooth_low_power_clock(&mut self) {
-        self.registers.retain_main_xtal_bluetooth_low_power_clock();
+        self.task.retain_main_xtal_bluetooth_low_power_clock();
     }
 
     #[doc(hidden)]
     pub fn release_bluetooth_low_power_timer(&mut self) {
-        self.registers.release_bluetooth_low_power_timer();
+        self.task.release_bluetooth_low_power_timer();
     }
 
     #[doc(hidden)]
@@ -157,71 +180,74 @@ impl ColdOwner {
         SharedModemClockObservation,
         BluetoothLowPowerClockObservation,
     ) {
-        self.registers.bluetooth_shared_clock_observation()
+        self.task.bluetooth_shared_clock_observation()
     }
 
     #[doc(hidden)]
     pub fn retain_platform_pll_source(&mut self) {
-        self.registers.retain_platform_pll_source();
+        self.task.retain_platform_pll_source();
     }
 
     #[doc(hidden)]
     pub fn release_platform_pll_source(&mut self) {
-        self.registers.release_platform_pll_source();
+        self.task.release_platform_pll_source();
     }
 
     #[doc(hidden)]
     pub fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
-        self.registers.platform_clock_power_observation()
+        self.task.platform_clock_power_observation()
     }
 
     #[doc(hidden)]
     pub fn prepare_modem_syscon_clock_map(&mut self) {
-        self.registers.prepare_modem_syscon_clock_map();
+        self.task.radio_phy_mut().prepare_modem_syscon_clock_map();
     }
 
     #[doc(hidden)]
     pub fn reset_modem_syscon_bluetooth_domains(&mut self) {
-        self.registers.reset_modem_syscon_bluetooth_domains();
+        self.task
+            .radio_phy_mut()
+            .reset_bluetooth_controller_domains();
     }
 
     #[doc(hidden)]
     pub fn modem_syscon_bluetooth_observation(&self) -> ModemSysconBluetoothObservation {
-        self.registers.modem_syscon_bluetooth_observation()
+        self.task.radio_phy().bluetooth_clock_observation()
     }
 
     #[doc(hidden)]
     pub fn retain_modem_syscon_controller_clocks(&mut self) {
-        self.registers
-            .retain_modem_syscon_bluetooth_controller_clocks();
+        self.task.retain_modem_syscon_bluetooth_controller_clocks();
     }
 
     #[doc(hidden)]
     pub fn retain_modem_syscon_apb_clocks(&mut self) {
-        self.registers.retain_modem_syscon_bluetooth_apb_clocks();
+        self.task.retain_modem_syscon_bluetooth_apb_clocks();
     }
 
     #[doc(hidden)]
     pub fn release_modem_syscon_apb_clocks(&mut self) {
-        self.registers.release_modem_syscon_bluetooth_apb_clocks();
+        self.task.release_modem_syscon_bluetooth_apb_clocks();
     }
 
     #[doc(hidden)]
     pub fn release_modem_syscon_controller_clocks(&mut self) {
-        self.registers
-            .release_modem_syscon_bluetooth_controller_clocks();
+        self.task.release_modem_syscon_bluetooth_controller_clocks();
     }
 
     /// Split ordinary task ownership from the inactive controller IRQ bank.
+    ///
+    /// This conversion performs no MMIO and does not claim that the hardware
+    /// interrupt route has been configured or enabled.
     pub fn separate_interrupt_owner(self) -> (TaskOwner, InterruptSetupOwner) {
-        let (task, interrupts) = self.registers.separate_interrupt_owner();
         (
             TaskOwner {
-                registers: task,
+                registers: self.task,
+                retained: self.retained,
                 reunitable: true,
             },
             InterruptSetupOwner {
-                registers: interrupts,
+                registers: self.interrupts,
                 reunitable: true,
             },
         )
@@ -232,6 +258,7 @@ impl ColdOwner {
 #[must_use = "the Bluetooth task owner must be reunited during verified teardown"]
 pub struct TaskOwner {
     registers: PacBluetoothTaskRegisters,
+    retained: RetainedWifi,
     reunitable: bool,
 }
 
@@ -246,8 +273,12 @@ impl TaskOwner {
         output: InterruptOutputReleasedOwner,
         timer: ModemLpTimerInterruptReadyOwner,
     ) -> Result<RadioHardware, BluetoothPhysicalReleaseFailure> {
-        self.registers
-            .release_after_phy_close(output.registers, timer.registers)
+        shutdown::release_after_phy_close(
+            self.registers,
+            self.retained,
+            output.registers,
+            timer.registers,
+        )
     }
     /// Establish the shared modem/PHY power, reset and calibration clocks.
     ///
@@ -279,30 +310,28 @@ impl TaskOwner {
                 error: TaskOwnerReuniteError::InterruptLifecycleNotRestored,
             });
         }
-        match self.registers.into_cold(interrupts.registers) {
-            Ok(registers) => Ok(ColdOwner { registers }),
-            Err(failure) => {
-                let (task, interrupts, error) = failure.into_parts();
-                Err(TaskOwnerReuniteFailure {
-                    task: TaskOwner {
-                        registers: task,
-                        reunitable: false,
-                    },
-                    interrupts: InterruptSetupOwner {
-                        registers: interrupts,
-                        reunitable: true,
-                    },
-                    error: match error {
-                        PacBluetoothTaskReuniteError::ControllerTimeLatchInFlight => {
-                            TaskOwnerReuniteError::ControllerTimeLatchInFlight
-                        }
-                        PacBluetoothTaskReuniteError::ModemLpTimerOwnerSeparated => {
-                            TaskOwnerReuniteError::ModemLpTimerOwnerSeparated
-                        }
-                    },
-                })
-            }
+        let error = if self.registers.controller_time_latch_in_flight() {
+            Some(TaskOwnerReuniteError::ControllerTimeLatchInFlight)
+        } else if self.registers.modem_lp_timer_separated() {
+            Some(TaskOwnerReuniteError::ModemLpTimerOwnerSeparated)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err(TaskOwnerReuniteFailure {
+                task: TaskOwner {
+                    reunitable: false,
+                    ..self
+                },
+                interrupts,
+                error,
+            });
         }
+        Ok(ColdOwner {
+            task: self.registers,
+            interrupts: interrupts.registers,
+            retained: self.retained,
+        })
     }
 
     pub(crate) fn radio_phy_mut(&mut self) -> &mut oer_esp32s31_pac::RadioPhyRegisters {

@@ -8,7 +8,7 @@ pub(crate) const BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER: ModemLowPowerClockDivide
         None => panic!("reviewed Bluetooth low-power divider exceeds its PAC field"),
     };
 
-/// Private Wi-Fi and shared-radio owners used by one exclusive Wi-Fi route.
+/// Private Wi-Fi and shared-radio owners used by one Wi-Fi register set.
 pub(crate) struct WifiRadioPeripheralOwners {
     pub(crate) wifi_mac: svd::peripheral_ownership::WifiMacPeripherals,
     pub(crate) ieee802154: svd::peripheral_ownership::Ieee802154Peripherals,
@@ -17,7 +17,7 @@ pub(crate) struct WifiRadioPeripheralOwners {
     pub(crate) shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
 }
 
-/// Physical owners used by one exclusive IEEE 802.15.4 route.
+/// Physical owners used by one IEEE 802.15.4 task register set.
 ///
 /// The Bluetooth controller partition is intentionally nested behind the
 /// BTBB boundary. ESP-IDF's public IEEE 802.15.4 enable order calls the shared
@@ -40,13 +40,9 @@ pub(crate) struct Ieee802154BtbbPeripheralOwners {
 
 /// Unique restricted owner of the shared radio-PHY register partition.
 ///
-/// This component is created only while the complete [`RadioHardware`] root
-/// is routed into Wi-Fi or Bluetooth. It has no acquisition or release API:
-/// callers can only borrow it through the active protocol route, so the
-/// physical PHY partition can never outlive or diverge from that route.
-///
 /// The type exposes only reviewed, named PHY transactions. It contains no
 /// Wi-Fi MAC, Bluetooth controller, coexistence, or shared-baseband owner.
+/// The HAL decides which protocol route currently holds it.
 #[must_use = "the shared PHY owner must remain inside its active radio route"]
 pub struct RadioPhyRegisters {
     pub(crate) peripherals: svd::peripheral_ownership::RadioPhyPeripherals,
@@ -59,8 +55,9 @@ pub struct RadioPhyRegisters {
 /// Identity of one PHY registration on the unique radio-PHY partition.
 ///
 /// A registration issues a new epoch before it touches hardware. The epoch
-/// stays current until another registration begins or the partition returns
-/// to [`RadioHardware`]. A registration result held apart from its hardware
+/// stays current until another registration begins or the HAL returns the
+/// partition to the neutral radio root. A registration result held apart from
+/// its hardware
 /// is valid for that hardware only while its epoch equals
 /// [`RadioPhyRegisters::registration_epoch`].
 ///
@@ -116,114 +113,68 @@ impl RadioPhyRegisters {
     }
 
     /// Retire the current registration as the partition leaves its route.
-    fn into_unregistered(mut self) -> Self {
+    ///
+    /// The HAL calls this whenever a route returns the partition to the
+    /// neutral radio root.
+    #[doc(hidden)]
+    pub fn retire_registration_epoch(&mut self) {
         self.registration = RegistrationEpochState(self.registration.issued());
-        self
     }
 }
 
-/// Why a cold protocol route cannot release the neutral radio root.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RadioPhyReleaseError {
-    /// TX-DC PWDET still owns fields that must be restored in this route.
-    TxDcPwdetRestorePending,
-    /// TX-IQ still owns a tone-control image that must be restored.
-    TxIqToneControlRestorePending,
-    /// RX-DCO still owns one or both nested control-field snapshots.
-    RxDcoControlRestorePending,
-    /// Bluetooth TX-power calibration still owns analog-control snapshots.
-    BluetoothTxPowerControlRestorePending,
-    /// A route-owned cold-power field did not return to its captured baseline.
-    WifiPowerRestore(crate::modem::platform::WifiPowerRestoreCheckpoint),
-}
+/// Opaque Wi-Fi MAC register partition.
+#[must_use = "dropping a radio partition permanently loses its register authority"]
+pub struct WifiMacPartition(svd::peripheral_ownership::WifiMacPeripherals);
 
-/// Failed neutral-root release retaining the cold route owner unchanged.
-#[must_use = "the cold route owner remains live after failed release"]
-pub struct RadioPhyReleaseFailure<Owner> {
-    pub(crate) owner: Owner,
-    pub(crate) error: RadioPhyReleaseError,
-}
+/// Opaque coexistence register partition.
+#[must_use = "dropping a radio partition permanently loses its register authority"]
+pub struct CoexistencePartition(svd::peripheral_ownership::CoexistencePeripherals);
 
-impl<Owner> RadioPhyReleaseFailure<Owner> {
-    pub const fn error(&self) -> RadioPhyReleaseError {
-        self.error
-    }
+/// Opaque Bluetooth controller register partition.
+#[must_use = "dropping a radio partition permanently loses its register authority"]
+pub struct BluetoothControllerPartition(svd::peripheral_ownership::BluetoothControllerPeripherals);
 
-    pub fn into_parts(self) -> (Owner, RadioPhyReleaseError) {
-        (self.owner, self.error)
-    }
-}
+/// Opaque shared-baseband register partition.
+#[must_use = "dropping a radio partition permanently loses its register authority"]
+pub struct SharedRadioPartition(svd::peripheral_ownership::SharedRadioPeripherals);
 
-impl<Owner> core::fmt::Debug for RadioPhyReleaseFailure<Owner> {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("RadioPhyReleaseFailure")
-            .field("error", &self.error)
-            .finish_non_exhaustive()
-    }
-}
+/// Opaque IEEE 802.15.4 MAC and interrupt-route register partition.
+#[must_use = "dropping a radio partition permanently loses its register authority"]
+pub struct Ieee802154Partition(svd::peripheral_ownership::Ieee802154Peripherals);
 
-/// Bluetooth owners retained, but not exposed, while Wi-Fi is exclusive.
-pub(crate) struct RetainedBluetoothPeripheralOwners {
-    pub(crate) bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
-    pub(crate) bluetooth_modem_lp_timer:
-        svd::peripheral_ownership::BluetoothModemLpTimerPeripherals,
-    pub(crate) bluetooth_interrupts: svd::peripheral_ownership::BluetoothInterruptPeripherals,
-}
-
-/// Wi-Fi owners retained, but not exposed, while Bluetooth is exclusive.
-pub(crate) struct RetainedWifiPeripheralOwners {
-    pub(crate) wifi_mac: svd::peripheral_ownership::WifiMacPeripherals,
-    pub(crate) wifi_interrupts: svd::peripheral_ownership::WifiInterruptPeripherals,
-    pub(crate) ieee802154: svd::peripheral_ownership::Ieee802154Peripherals,
-}
-
-/// Protocol owners that IEEE 802.15.4 does not use during its exclusive epoch.
-pub(crate) struct RetainedIeee802154PeripheralOwners {
-    pub(crate) wifi_mac: svd::peripheral_ownership::WifiMacPeripherals,
-    pub(crate) wifi_interrupts: svd::peripheral_ownership::WifiInterruptPeripherals,
-    pub(crate) bluetooth_modem_lp_timer:
-        svd::peripheral_ownership::BluetoothModemLpTimerPeripherals,
-    pub(crate) bluetooth_interrupts: svd::peripheral_ownership::BluetoothInterruptPeripherals,
-}
-
-/// Unique protocol-neutral owner of every reviewed ESP32-S31 radio region.
+/// Every reviewed ESP32-S31 radio register partition.
 ///
-/// This is the sole production acquisition root. It can be consumed by
-/// exactly one standalone protocol route; neither route can manufacture a
-/// second owner. Both routes can return the complete root after their task
-/// and interrupt capabilities have been reunited. Protocol-specific cached
-/// state is deliberately not retained in this neutral owner.
+/// This is the sole production acquisition point. The partitions carry no
+/// protocol route or lifecycle policy: the HAL composes them into register
+/// sets and returns them here only as an ownership bundle.
 ///
 /// ```compile_fail
-/// use oer_esp32s31_pac::RadioHardware;
+/// use oer_esp32s31_pac::RadioPartitions;
 ///
-/// let hardware = RadioHardware::take().unwrap();
-/// let _wifi = hardware.into_wifi();
-/// let _bluetooth = hardware.into_bluetooth();
-/// let _ieee802154 = hardware.into_ieee802154();
+/// let partitions = RadioPartitions::take().unwrap();
+/// let _first = partitions.wifi_mac;
+/// let _second = partitions.wifi_mac;
 /// ```
-#[must_use = "dropping the radio root permanently loses the unique hardware capability"]
-pub struct RadioHardware {
-    pub(crate) wifi_mac: svd::peripheral_ownership::WifiMacPeripherals,
-    pub(crate) wifi_interrupts: svd::peripheral_ownership::WifiInterruptPeripherals,
-    pub(crate) radio_phy: RadioPhyRegisters,
-    pub(crate) coexistence: svd::peripheral_ownership::CoexistencePeripherals,
-    pub(crate) bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
-    pub(crate) bluetooth_modem_lp_timer:
-        svd::peripheral_ownership::BluetoothModemLpTimerPeripherals,
-    pub(crate) bluetooth_interrupts: svd::peripheral_ownership::BluetoothInterruptPeripherals,
-    pub(crate) shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
-    pub(crate) ieee802154: svd::peripheral_ownership::Ieee802154Peripherals,
+#[must_use = "dropping the radio partitions permanently loses the unique hardware capability"]
+pub struct RadioPartitions {
+    pub wifi_mac: WifiMacPartition,
+    pub wifi_interrupts: MacInterruptSetup,
+    pub radio_phy: RadioPhyRegisters,
+    pub coexistence: CoexistencePartition,
+    pub bluetooth: BluetoothControllerPartition,
+    pub bluetooth_modem_lp_timer: BluetoothModemLpTimerRegisters,
+    pub bluetooth_interrupts: BluetoothInterruptSetup,
+    pub shared_radio: SharedRadioPartition,
+    pub ieee802154: Ieee802154Partition,
 }
 
-impl RadioHardware {
+impl RadioPartitions {
     /// Acquire the generated radio singleton once.
     pub fn take() -> Option<Self> {
         svd::Peripherals::take().map(Self::from_peripherals)
     }
 
-    /// Bind the generated singleton to the protocol-neutral restricted root.
+    /// Bind the generated singleton to the opaque partition owners.
     pub(crate) fn from_peripherals(peripherals: svd::Peripherals) -> Self {
         let svd::peripheral_ownership::PeripheralPartitions {
             wifi_mac,
@@ -237,8 +188,8 @@ impl RadioHardware {
             ieee802154,
         } = svd::peripheral_ownership::partition(peripherals);
         Self {
-            wifi_mac,
-            wifi_interrupts,
+            wifi_mac: WifiMacPartition(wifi_mac),
+            wifi_interrupts: MacInterruptSetup::from_peripherals(wifi_interrupts),
             radio_phy: RadioPhyRegisters {
                 peripherals: radio_phy,
                 shared_clock: crate::modem::shared_clock::SharedModemClockState::new(),
@@ -246,155 +197,22 @@ impl RadioHardware {
                 restore_slot: baseband::RadioPhyRestoreSlot::new(),
                 registration: RegistrationEpochState::new(),
             },
-            coexistence,
-            bluetooth,
-            bluetooth_modem_lp_timer,
-            bluetooth_interrupts,
-            shared_radio,
-            ieee802154,
+            coexistence: CoexistencePartition(coexistence),
+            bluetooth: BluetoothControllerPartition(bluetooth),
+            bluetooth_modem_lp_timer: BluetoothModemLpTimerRegisters::new(bluetooth_modem_lp_timer),
+            bluetooth_interrupts: BluetoothInterruptSetup {
+                peripherals: bluetooth_interrupts,
+            },
+            shared_radio: SharedRadioPartition(shared_radio),
+            ieee802154: Ieee802154Partition(ieee802154),
         }
     }
 
-    /// Construct the complete root inside one isolated validation image.
+    /// Construct every partition inside one isolated validation image.
     #[cfg(any(test, feature = "validation-probes"))]
     #[doc(hidden)]
     pub fn for_validation() -> Self {
         Self::from_peripherals(svd::peripheral_ownership::peripherals_for_validation())
-    }
-
-    /// Consume the neutral root into the exclusive standalone Wi-Fi route.
-    pub fn into_wifi(self) -> WifiColdRegisters {
-        let Self {
-            wifi_mac,
-            wifi_interrupts,
-            radio_phy,
-            coexistence,
-            bluetooth,
-            bluetooth_modem_lp_timer,
-            bluetooth_interrupts,
-            shared_radio,
-            ieee802154,
-        } = self;
-        WifiColdRegisters {
-            registers: WifiRadioRegisters {
-                peripherals: WifiRadioPeripheralOwners {
-                    wifi_mac,
-                    ieee802154,
-                    radio_phy,
-                    coexistence,
-                    shared_radio,
-                },
-                retained_bluetooth: RetainedBluetoothPeripheralOwners {
-                    bluetooth,
-                    bluetooth_modem_lp_timer,
-                    bluetooth_interrupts,
-                },
-                phy_i2c_clock: None,
-                coexistence_clock: None,
-                station_tbtt_wake_prepared: false,
-                station_modem_wakeup: crate::wifi::mac::modem_wakeup::StaModemWakeOwnership::new(),
-            },
-            interrupts: wifi_interrupts,
-        }
-    }
-
-    /// Consume the neutral root into the exclusive standalone Bluetooth route.
-    ///
-    /// This transition is ownership-only. It performs no controller reset,
-    /// clock, interrupt, or enable transaction.
-    pub fn into_bluetooth(self) -> BluetoothColdRegisters {
-        let Self {
-            wifi_mac,
-            wifi_interrupts,
-            radio_phy,
-            coexistence,
-            bluetooth,
-            bluetooth_modem_lp_timer,
-            bluetooth_interrupts,
-            shared_radio,
-            ieee802154,
-        } = self;
-        BluetoothColdRegisters {
-            task: BluetoothTaskRegisters {
-                bluetooth,
-                modem_lp_timer: Some(BluetoothModemLpTimerRegisters::new(
-                    bluetooth_modem_lp_timer,
-                )),
-                radio_phy,
-                coexistence,
-                shared_radio,
-                retained_wifi: RetainedWifiPeripheralOwners {
-                    wifi_mac,
-                    wifi_interrupts,
-                    ieee802154,
-                },
-                coexistence_clock: None,
-                low_power_timer_clock: None,
-                platform_pll_source: None,
-                modem_syscon_clocks: BluetoothModemSysconClockState::new(),
-                phy_i2c_clock: None,
-                modem_syscon_controller_clocks_retained: false,
-                modem_syscon_apb_clocks_retained: false,
-                controller_time_latch:
-                    crate::bluetooth::controller::time::BluetoothControllerTimeLatchOwnership::new(),
-            },
-            interrupts: BluetoothInterruptSetup {
-                peripherals: bluetooth_interrupts,
-            },
-        }
-    }
-
-    /// Consume the neutral root into the exclusive standalone IEEE 802.15.4
-    /// route.
-    ///
-    /// This ownership-only transition follows the same whole-radio rule as
-    /// [`Self::into_wifi`] and [`Self::into_bluetooth`]. It performs no module
-    /// clock, common-PHY, BTBB, coexistence, reset, DMA, or interrupt
-    /// transaction. The route owns the IEEE 802.15.4 MAC and shared resources
-    /// required by the public ESP-IDF enable sequence; Wi-Fi and Bluetooth IRQ
-    /// authority remain retained and inaccessible.
-    pub fn into_ieee802154(self) -> Ieee802154ColdRegisters {
-        let Self {
-            wifi_mac,
-            wifi_interrupts,
-            radio_phy,
-            coexistence,
-            bluetooth,
-            bluetooth_modem_lp_timer,
-            bluetooth_interrupts,
-            shared_radio,
-            ieee802154,
-        } = self;
-        let svd::peripheral_ownership::Ieee802154Peripherals {
-            ieee802154_mac,
-            ieee802154_interrupt_route,
-        } = ieee802154;
-        let (task_mac, interrupt_mac) = crate::ieee802154::ownership::split(ieee802154_mac);
-        Ieee802154ColdRegisters {
-            task: Ieee802154TaskRegisters {
-                peripherals: Ieee802154TaskPeripheralOwners {
-                    ieee802154_mac: task_mac,
-                    ieee802154_interrupt_route,
-                    radio_phy,
-                    coexistence,
-                    btbb: Ieee802154BtbbPeripheralOwners {
-                        bluetooth,
-                        shared_radio,
-                    },
-                },
-                retained: RetainedIeee802154PeripheralOwners {
-                    wifi_mac,
-                    wifi_interrupts,
-                    bluetooth_modem_lp_timer,
-                    bluetooth_interrupts,
-                },
-                phy_i2c_clock: None,
-                coexistence_clock: None,
-            },
-            interrupts: Ieee802154InterruptSetup {
-                registers: interrupt_mac,
-            },
-        }
     }
 }
 
@@ -699,14 +517,74 @@ pub(crate) fn device_fence() {
 /// ```
 pub struct WifiRadioRegisters {
     pub(crate) peripherals: WifiRadioPeripheralOwners,
-    pub(crate) retained_bluetooth: RetainedBluetoothPeripheralOwners,
     pub(crate) phy_i2c_clock: Option<SharedModemClockLease>,
     pub(crate) coexistence_clock: Option<SharedModemClockLease>,
     pub(crate) station_tbtt_wake_prepared: bool,
     pub(crate) station_modem_wakeup: crate::wifi::mac::modem_wakeup::StaModemWakeOwnership,
 }
 
+/// Partitions consumed by one Wi-Fi register set.
+pub struct WifiRadioParts {
+    pub wifi_mac: WifiMacPartition,
+    pub ieee802154: Ieee802154Partition,
+    pub radio_phy: RadioPhyRegisters,
+    pub coexistence: CoexistencePartition,
+    pub shared_radio: SharedRadioPartition,
+}
+
 impl WifiRadioRegisters {
+    /// Assemble the Wi-Fi register set. This performs no MMIO.
+    pub fn new(parts: WifiRadioParts) -> Self {
+        let WifiRadioParts {
+            wifi_mac: WifiMacPartition(wifi_mac),
+            ieee802154: Ieee802154Partition(ieee802154),
+            radio_phy,
+            coexistence: CoexistencePartition(coexistence),
+            shared_radio: SharedRadioPartition(shared_radio),
+        } = parts;
+        Self {
+            peripherals: WifiRadioPeripheralOwners {
+                wifi_mac,
+                ieee802154,
+                radio_phy,
+                coexistence,
+                shared_radio,
+            },
+            phy_i2c_clock: None,
+            coexistence_clock: None,
+            station_tbtt_wake_prepared: false,
+            station_modem_wakeup: crate::wifi::mac::modem_wakeup::StaModemWakeOwnership::new(),
+        }
+    }
+
+    /// Return the partitions after the shared-clock leases were released.
+    ///
+    /// This performs no MMIO.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a shared-clock lease is still retained.
+    pub fn into_parts(self) -> WifiRadioParts {
+        assert!(
+            self.phy_i2c_clock.is_none() && self.coexistence_clock.is_none(),
+            "Wi-Fi shared-clock leases must be released before disassembly"
+        );
+        let WifiRadioPeripheralOwners {
+            wifi_mac,
+            ieee802154,
+            radio_phy,
+            coexistence,
+            shared_radio,
+        } = self.peripherals;
+        WifiRadioParts {
+            wifi_mac: WifiMacPartition(wifi_mac),
+            ieee802154: Ieee802154Partition(ieee802154),
+            radio_phy,
+            coexistence: CoexistencePartition(coexistence),
+            shared_radio: SharedRadioPartition(shared_radio),
+        }
+    }
+
     /// Prepare the shared state maps and retain the PHY-I2C clock for this
     /// complete Wi-Fi route epoch.
     pub fn prepare_shared_modem_clock_map(&mut self) {
@@ -750,22 +628,14 @@ impl WifiRadioRegisters {
             .sample_coexistence_low_power_clock()
     }
 
-    pub(crate) fn release_retained_shared_clocks(&mut self) {
+    /// Release the coexistence and PHY-I2C shared-clock leases.
+    #[doc(hidden)]
+    pub fn release_retained_shared_clocks(&mut self) {
         if let Some(lease) = self.coexistence_clock.take() {
             self.peripherals.radio_phy.release_shared_modem_clock(lease);
         }
         if let Some(lease) = self.phy_i2c_clock.take() {
             self.peripherals.radio_phy.release_shared_modem_clock(lease);
-        }
-    }
-    /// Reunite a quiescent Wi-Fi task owner with its inactive interrupt setup.
-    ///
-    /// The caller must first disable the CPU routes and recover `interrupts`
-    /// from the finite ISR epoch. This conversion performs no MMIO.
-    pub fn into_cold(self, interrupts: MacInterruptSetup) -> WifiColdRegisters {
-        WifiColdRegisters {
-            registers: self,
-            interrupts: interrupts.into_peripherals(),
         }
     }
 
@@ -794,414 +664,6 @@ impl WifiRadioRegisters {
     }
 }
 
-/// Pre-runtime radio owner that still controls the cold MAC interrupt fields.
-///
-/// PHY setup, cold MAC initialization and polling-only scan/authentication use
-/// this owner. Consuming [`into_running`](Self::into_running) permanently
-/// removes MAC and WDEVPWR interrupt operations from the ordinary task owner
-/// and returns the initial setup token for a later dual-ISR handoff. A closed
-/// ISR epoch can return the same peripheral ownership to another setup token.
-pub struct WifiColdRegisters {
-    pub(crate) registers: WifiRadioRegisters,
-    pub(crate) interrupts: svd::peripheral_ownership::WifiInterruptPeripherals,
-}
-
-impl WifiColdRegisters {
-    /// Capture the reversible Wi-Fi power baseline before the first mutation.
-    #[doc(hidden)]
-    pub fn prepare_wifi_power_epoch(&mut self) {
-        self.registers
-            .peripherals
-            .radio_phy
-            .prepare_wifi_power_epoch();
-    }
-
-    /// Complete the one-way cold-to-running ownership transition.
-    ///
-    /// This operation itself performs no MMIO. The returned setup token keeps
-    /// MAC interrupts masked until its consuming activation transaction
-    /// creates the ISR-only [`MacInterruptRegisters`] and
-    /// [`MacPowerInterruptRegisters`] capabilities.
-    pub fn into_running(self) -> (WifiRadioRegisters, MacInterruptSetup) {
-        (
-            self.registers,
-            MacInterruptSetup::from_peripherals(self.interrupts),
-        )
-    }
-
-    /// Return every Wi-Fi, Bluetooth and shared owner to the neutral root.
-    ///
-    /// The PHY layer remains responsible for closing RF and analog state before
-    /// this call. Release drops retained shared-clock leases, restores the
-    /// non-monotonic clock/reset fields captured before Wi-Fi power-up, and
-    /// only then reconstructs the protocol-neutral owner. Global modem ICG
-    /// maps remain installed as monotonic platform initialization.
-    ///
-    /// # Errors
-    ///
-    /// Returns a failure retaining this owner while TX-DC PWDET, TX-IQ,
-    /// RX-DCO, or Bluetooth TX-power control still awaits restoration, or when
-    /// a cold-power baseline fails readback. Recover it with
-    /// [`RadioPhyReleaseFailure::into_parts`] and complete or retry the restore.
-    pub fn release(mut self) -> Result<RadioHardware, RadioPhyReleaseFailure<Self>> {
-        if self
-            .registers
-            .peripherals
-            .radio_phy
-            .txdc_pwdet_restore_pending()
-        {
-            return Err(RadioPhyReleaseFailure {
-                owner: self,
-                error: RadioPhyReleaseError::TxDcPwdetRestorePending,
-            });
-        }
-        if self
-            .registers
-            .peripherals
-            .radio_phy
-            .txiq_tone_control_restore_pending()
-        {
-            return Err(RadioPhyReleaseFailure {
-                owner: self,
-                error: RadioPhyReleaseError::TxIqToneControlRestorePending,
-            });
-        }
-        if self
-            .registers
-            .peripherals
-            .radio_phy
-            .rx_dco_control_restore_pending()
-        {
-            return Err(RadioPhyReleaseFailure {
-                owner: self,
-                error: RadioPhyReleaseError::RxDcoControlRestorePending,
-            });
-        }
-        if self
-            .registers
-            .peripherals
-            .radio_phy
-            .bluetooth_tx_power_control_restore_pending()
-        {
-            return Err(RadioPhyReleaseFailure {
-                owner: self,
-                error: RadioPhyReleaseError::BluetoothTxPowerControlRestorePending,
-            });
-        }
-        self.registers.release_retained_shared_clocks();
-        if let Err(checkpoint) = self
-            .registers
-            .peripherals
-            .radio_phy
-            .restore_wifi_power_epoch()
-        {
-            return Err(RadioPhyReleaseFailure {
-                owner: self,
-                error: RadioPhyReleaseError::WifiPowerRestore(checkpoint),
-            });
-        }
-        let Self {
-            registers:
-                WifiRadioRegisters {
-                    peripherals:
-                        WifiRadioPeripheralOwners {
-                            wifi_mac,
-                            ieee802154,
-                            radio_phy,
-                            coexistence,
-                            shared_radio,
-                        },
-                    retained_bluetooth:
-                        RetainedBluetoothPeripheralOwners {
-                            bluetooth,
-                            bluetooth_modem_lp_timer,
-                            bluetooth_interrupts,
-                        },
-                    phy_i2c_clock: _,
-                    coexistence_clock: _,
-                    station_tbtt_wake_prepared: _,
-                    station_modem_wakeup: _,
-                },
-            interrupts: wifi_interrupts,
-        } = self;
-        Ok(RadioHardware {
-            wifi_mac,
-            wifi_interrupts,
-            radio_phy: radio_phy.into_unregistered(),
-            coexistence,
-            bluetooth,
-            bluetooth_modem_lp_timer,
-            bluetooth_interrupts,
-            shared_radio,
-            ieee802154,
-        })
-    }
-
-    /// Prepare shared route clocks before the platform-owned power sequence
-    /// reaches its readback checkpoint.
-    #[doc(hidden)]
-    pub fn prepare_shared_modem_clock_map(&mut self) {
-        self.registers.prepare_shared_modem_clock_map();
-    }
-
-    /// Retain the route-owned PHY-I2C clock at its ordered power edge.
-    #[doc(hidden)]
-    pub fn retain_phy_i2c_master_clock(&mut self) {
-        self.registers.retain_phy_i2c_master_clock();
-    }
-
-    /// Read the shared route-owned portion of the power checkpoint.
-    #[doc(hidden)]
-    pub fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
-        self.registers.shared_modem_clock_observation()
-    }
-
-    #[doc(hidden)]
-    pub fn select_hp_active_modem_icg(&mut self) {
-        self.registers
-            .peripherals
-            .radio_phy
-            .select_hp_active_modem_icg();
-    }
-
-    #[doc(hidden)]
-    pub fn apply_modem_icg_selection(&mut self) {
-        self.registers
-            .peripherals
-            .radio_phy
-            .apply_modem_icg_selection();
-    }
-
-    #[doc(hidden)]
-    pub fn apply_sleep_icg_selection(&mut self) {
-        self.registers
-            .peripherals
-            .radio_phy
-            .apply_sleep_icg_selection();
-    }
-
-    #[doc(hidden)]
-    pub fn enable_modem_register_bus_clock(&mut self) {
-        self.registers
-            .peripherals
-            .radio_phy
-            .enable_modem_register_bus_clock();
-    }
-
-    #[doc(hidden)]
-    pub fn configure_modem_source_clocks(&mut self) {
-        self.registers
-            .peripherals
-            .radio_phy
-            .configure_modem_source_clocks();
-    }
-
-    #[doc(hidden)]
-    pub fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
-        self.registers
-            .peripherals
-            .radio_phy
-            .platform_clock_power_observation()
-    }
-
-    #[doc(hidden)]
-    pub fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
-        self.registers
-            .peripherals
-            .radio_phy
-            .set_wifi_baseband_and_mac_reset(asserted);
-    }
-
-    #[doc(hidden)]
-    pub fn set_wifi_baseband_reset(&mut self, asserted: bool) {
-        self.registers
-            .peripherals
-            .radio_phy
-            .set_wifi_baseband_reset(asserted);
-    }
-
-    #[doc(hidden)]
-    pub fn enable_wifi_mac_clocks(&mut self) {
-        self.registers
-            .peripherals
-            .radio_phy
-            .enable_wifi_mac_clocks();
-    }
-
-    #[doc(hidden)]
-    pub fn set_wifi_mac_reset(&mut self, asserted: bool) {
-        self.registers
-            .peripherals
-            .radio_phy
-            .set_wifi_mac_reset(asserted);
-    }
-
-    #[doc(hidden)]
-    pub fn configure_wifi_power_clock_map(&mut self) {
-        self.registers
-            .peripherals
-            .radio_phy
-            .configure_wifi_power_clock_map();
-    }
-
-    #[doc(hidden)]
-    pub fn enable_phy_calibration_clocks(&mut self) {
-        self.registers
-            .peripherals
-            .radio_phy
-            .enable_phy_calibration_clocks();
-    }
-
-    #[doc(hidden)]
-    pub fn select_phy_i2c_160mhz_source(&mut self) {
-        self.registers
-            .peripherals
-            .radio_phy
-            .select_phy_i2c_160mhz_source();
-    }
-
-    #[doc(hidden)]
-    pub fn modem_syscon_power_observation(&self) -> ModemSysconPowerObservation {
-        self.registers
-            .peripherals
-            .radio_phy
-            .modem_syscon_power_observation()
-    }
-
-    /// Preserve the vendor two-read coexistence clock sampling rule.
-    #[doc(hidden)]
-    pub fn sample_coexistence_low_power_clock(
-        &self,
-    ) -> Option<CoexistenceLowPowerClockObservation> {
-        self.registers.sample_coexistence_low_power_clock()
-    }
-
-    /// Borrow the radio-register capability during the cold lifecycle.
-    ///
-    /// This explicit bridge exists for the HAL crate, which owns the cold
-    /// hardware sequence.  Unlike the former `Deref` implementation it does
-    /// not let an arbitrary method call silently widen cold authority into a
-    /// runtime register owner.  Production crates above HAL never receive
-    /// either side of this borrow.
-    #[doc(hidden)]
-    pub fn radio(&self) -> &WifiRadioRegisters {
-        &self.registers
-    }
-
-    /// Mutably borrow the radio-register capability during the cold lifecycle.
-    #[doc(hidden)]
-    pub fn radio_mut(&mut self) -> &mut WifiRadioRegisters {
-        &mut self.registers
-    }
-
-    /// Read the cold initializer's currently published interrupt mask.
-    pub fn mac_interrupt_enable(&self) -> MacInterruptEnableState {
-        crate::wifi::mac::interrupt::observe_mac_interrupt_enable(
-            &self.interrupts.wifi_mac_interrupt,
-        )
-    }
-
-    /// Mask every MAC event and acknowledge every stale cold event.
-    pub fn mask_and_clear_all_mac_interrupts(&mut self) {
-        let interrupt = &self.interrupts.wifi_mac_interrupt;
-        crate::wifi::mac::interrupt::publish_mac_interrupt_mask(interrupt, MacInterruptMask::NONE);
-        generated::mac_interrupt_clear(interrupt, generated::MacInterruptClearImage::new(u32::MAX));
-        device_fence();
-    }
-}
-
-/// Exclusive standalone IEEE 802.15.4 owner before any IRQ handoff.
-///
-/// Unlike the old temporary Wi-Fi borrow, this value is produced only by
-/// consuming the complete [`RadioHardware`] root. It therefore owns the MAC,
-/// common PHY, shared BTBB words, and coexistence partition in one affine
-/// epoch. Possession alone does not claim that their enable sequence ran.
-#[must_use = "the cold IEEE 802.15.4 route retains every radio owner"]
-pub struct Ieee802154ColdRegisters {
-    pub(crate) task: Ieee802154TaskRegisters,
-    pub(crate) interrupts: Ieee802154InterruptSetup,
-}
-
-impl Ieee802154ColdRegisters {
-    /// Separate the ordinary task owner from the inactive interrupt owner.
-    ///
-    /// This conversion performs no MMIO. The returned interrupt setup cannot
-    /// sample or acknowledge events until its consuming activation
-    /// transaction has published the runtime event mask and cleared stale
-    /// status.
-    pub fn separate_interrupt_owner(self) -> (Ieee802154TaskRegisters, Ieee802154InterruptSetup) {
-        (self.task, self.interrupts)
-    }
-
-    /// Return every Wi-Fi, Bluetooth, IEEE 802.15.4, and shared owner to the
-    /// protocol-neutral root.
-    ///
-    /// This conversion performs no MMIO. A higher layer must first finish its
-    /// state-specific STOP and shared-resource teardown sequence.
-    ///
-    /// # Errors
-    ///
-    /// Returns a failure retaining this owner while TX-DC PWDET, TX-IQ,
-    /// RX-DCO, or Bluetooth TX-power control still awaits restoration. Recover it with
-    /// [`RadioPhyReleaseFailure::into_parts`] and complete the pending restore
-    /// first.
-    pub fn release(self) -> Result<RadioHardware, RadioPhyReleaseFailure<Self>> {
-        if self.task.peripherals.radio_phy.txdc_pwdet_restore_pending() {
-            return Err(RadioPhyReleaseFailure {
-                owner: self,
-                error: RadioPhyReleaseError::TxDcPwdetRestorePending,
-            });
-        }
-        if self
-            .task
-            .peripherals
-            .radio_phy
-            .txiq_tone_control_restore_pending()
-        {
-            return Err(RadioPhyReleaseFailure {
-                owner: self,
-                error: RadioPhyReleaseError::TxIqToneControlRestorePending,
-            });
-        }
-        if self
-            .task
-            .peripherals
-            .radio_phy
-            .rx_dco_control_restore_pending()
-        {
-            return Err(RadioPhyReleaseFailure {
-                owner: self,
-                error: RadioPhyReleaseError::RxDcoControlRestorePending,
-            });
-        }
-        if self
-            .task
-            .peripherals
-            .radio_phy
-            .bluetooth_tx_power_control_restore_pending()
-        {
-            return Err(RadioPhyReleaseFailure {
-                owner: self,
-                error: RadioPhyReleaseError::BluetoothTxPowerControlRestorePending,
-            });
-        }
-        Ok(self.task.into_hardware(self.interrupts))
-    }
-
-    /// Borrow the dedicated IEEE 802.15.4 radio owner during cold setup.
-    #[doc(hidden)]
-    pub const fn radio(&self) -> &Ieee802154TaskRegisters {
-        &self.task
-    }
-
-    /// Mutably borrow the dedicated IEEE 802.15.4 radio owner during cold
-    /// setup.
-    #[doc(hidden)]
-    pub fn radio_mut(&mut self) -> &mut Ieee802154TaskRegisters {
-        &mut self.task
-    }
-}
-
 /// Complete register ownership for one exclusive IEEE 802.15.4 epoch.
 ///
 /// Raw generated partitions remain private. The public surface is extended
@@ -1212,51 +674,81 @@ impl Ieee802154ColdRegisters {
 #[must_use = "the IEEE 802.15.4 radio owner must be released as one epoch"]
 pub struct Ieee802154TaskRegisters {
     pub(crate) peripherals: Ieee802154TaskPeripheralOwners,
-    pub(crate) retained: RetainedIeee802154PeripheralOwners,
     pub(crate) phy_i2c_clock: Option<SharedModemClockLease>,
     pub(crate) coexistence_clock: Option<SharedModemClockLease>,
 }
 
+/// Partitions consumed by one IEEE 802.15.4 task register set.
+pub struct Ieee802154TaskParts {
+    pub ieee802154: Ieee802154Partition,
+    pub radio_phy: RadioPhyRegisters,
+    pub coexistence: CoexistencePartition,
+    pub bluetooth: BluetoothControllerPartition,
+    pub shared_radio: SharedRadioPartition,
+}
+
 impl Ieee802154TaskRegisters {
-    pub(crate) fn into_hardware(mut self, interrupts: Ieee802154InterruptSetup) -> RadioHardware {
-        self.release_retained_shared_clocks();
-        let Self {
-            peripherals:
-                Ieee802154TaskPeripheralOwners {
+    /// Assemble the task register set and split the shared MAC block into its
+    /// disjoint task and interrupt owners. This performs no MMIO.
+    pub fn new(parts: Ieee802154TaskParts) -> (Self, Ieee802154InterruptSetup) {
+        let Ieee802154TaskParts {
+            ieee802154: Ieee802154Partition(ieee802154),
+            radio_phy,
+            coexistence: CoexistencePartition(coexistence),
+            bluetooth: BluetoothControllerPartition(bluetooth),
+            shared_radio: SharedRadioPartition(shared_radio),
+        } = parts;
+        let svd::peripheral_ownership::Ieee802154Peripherals {
+            ieee802154_mac,
+            ieee802154_interrupt_route,
+        } = ieee802154;
+        let (task_mac, interrupt_mac) = crate::ieee802154::ownership::split(ieee802154_mac);
+        (
+            Self {
+                peripherals: Ieee802154TaskPeripheralOwners {
                     ieee802154_mac: task_mac,
                     ieee802154_interrupt_route,
                     radio_phy,
                     coexistence,
-                    btbb:
-                        Ieee802154BtbbPeripheralOwners {
-                            bluetooth,
-                            shared_radio,
-                        },
+                    btbb: Ieee802154BtbbPeripheralOwners {
+                        bluetooth,
+                        shared_radio,
+                    },
                 },
-            retained:
-                RetainedIeee802154PeripheralOwners {
-                    wifi_mac,
-                    wifi_interrupts,
-                    bluetooth_modem_lp_timer,
-                    bluetooth_interrupts,
-                },
-            phy_i2c_clock: _,
-            coexistence_clock: _,
-        } = self;
-        let ieee802154_mac = crate::ieee802154::ownership::reunite(task_mac, interrupts.registers);
-        RadioHardware {
-            wifi_mac,
-            wifi_interrupts,
-            radio_phy: radio_phy.into_unregistered(),
+                phy_i2c_clock: None,
+                coexistence_clock: None,
+            },
+            Ieee802154InterruptSetup {
+                registers: interrupt_mac,
+            },
+        )
+    }
+
+    /// Release the retained shared-clock leases, reunite the MAC block with
+    /// its inactive interrupt owner and return the partitions.
+    pub fn into_parts(mut self, interrupts: Ieee802154InterruptSetup) -> Ieee802154TaskParts {
+        self.release_retained_shared_clocks();
+        let Ieee802154TaskPeripheralOwners {
+            ieee802154_mac: task_mac,
+            ieee802154_interrupt_route,
+            radio_phy,
             coexistence,
-            bluetooth,
-            bluetooth_modem_lp_timer,
-            bluetooth_interrupts,
-            shared_radio,
-            ieee802154: svd::peripheral_ownership::Ieee802154Peripherals {
+            btbb:
+                Ieee802154BtbbPeripheralOwners {
+                    bluetooth,
+                    shared_radio,
+                },
+        } = self.peripherals;
+        let ieee802154_mac = crate::ieee802154::ownership::reunite(task_mac, interrupts.registers);
+        Ieee802154TaskParts {
+            ieee802154: Ieee802154Partition(svd::peripheral_ownership::Ieee802154Peripherals {
                 ieee802154_mac,
                 ieee802154_interrupt_route,
-            },
+            }),
+            radio_phy,
+            coexistence: CoexistencePartition(coexistence),
+            bluetooth: BluetoothControllerPartition(bluetooth),
+            shared_radio: SharedRadioPartition(shared_radio),
         }
     }
 
@@ -1423,17 +915,6 @@ impl Ieee802154TaskRegisters {
         }
     }
 
-    /// Reunite a quiescent task owner with its inactive IRQ owner.
-    ///
-    /// This conversion performs no MMIO. The caller must first disable the
-    /// CPU route and deactivate the finite interrupt epoch.
-    pub fn into_cold(self, interrupts: Ieee802154InterruptSetup) -> Ieee802154ColdRegisters {
-        Ieee802154ColdRegisters {
-            task: self,
-            interrupts,
-        }
-    }
-
     /// Borrow the protocol-neutral PHY partition without creating another
     /// owner.
     #[doc(hidden)]
@@ -1474,164 +955,6 @@ pub struct Ieee802154InterruptRegisters {
     pub(crate) registers: crate::ieee802154::ownership::InterruptRegisters,
 }
 
-/// Exclusive standalone Bluetooth owner before task/interrupt separation.
-///
-/// The cold type exposes no controller transaction. It only preserves the
-/// reviewed raw partitions until a higher layer establishes lifecycle order.
-#[must_use = "the cold Bluetooth route retains every radio owner"]
-pub struct BluetoothColdRegisters {
-    pub(crate) task: BluetoothTaskRegisters,
-    pub(crate) interrupts: BluetoothInterruptSetup,
-}
-
-impl BluetoothColdRegisters {
-    /// Capture shared cold-power fields before the first Bluetooth clock edge.
-    #[doc(hidden)]
-    pub fn prepare_shared_power_epoch(&mut self) {
-        self.task.radio_phy.prepare_wifi_power_epoch();
-    }
-    /// Separate the ordinary task owner from the inactive interrupt owner.
-    ///
-    /// This conversion performs no MMIO and does not claim that the hardware
-    /// interrupt route has been configured or enabled.
-    pub fn separate_interrupt_owner(self) -> (BluetoothTaskRegisters, BluetoothInterruptSetup) {
-        (self.task, self.interrupts)
-    }
-
-    /// Return every Wi-Fi, Bluetooth and shared owner to the neutral root.
-    ///
-    /// # Errors
-    ///
-    /// Returns a failure retaining this owner while TX-DC PWDET, TX-IQ,
-    /// RX-DCO, or Bluetooth TX-power control still awaits restoration. Recover it with
-    /// [`RadioPhyReleaseFailure::into_parts`] and complete the pending restore
-    /// first.
-    pub fn release(mut self) -> Result<RadioHardware, RadioPhyReleaseFailure<Self>> {
-        if self.task.radio_phy.txdc_pwdet_restore_pending() {
-            return Err(RadioPhyReleaseFailure {
-                owner: self,
-                error: RadioPhyReleaseError::TxDcPwdetRestorePending,
-            });
-        }
-        if self.task.radio_phy.txiq_tone_control_restore_pending() {
-            return Err(RadioPhyReleaseFailure {
-                owner: self,
-                error: RadioPhyReleaseError::TxIqToneControlRestorePending,
-            });
-        }
-        if self.task.radio_phy.rx_dco_control_restore_pending() {
-            return Err(RadioPhyReleaseFailure {
-                owner: self,
-                error: RadioPhyReleaseError::RxDcoControlRestorePending,
-            });
-        }
-        if self
-            .task
-            .radio_phy
-            .bluetooth_tx_power_control_restore_pending()
-        {
-            return Err(RadioPhyReleaseFailure {
-                owner: self,
-                error: RadioPhyReleaseError::BluetoothTxPowerControlRestorePending,
-            });
-        }
-        self.task.release_retained_clocks();
-        if let Err(checkpoint) = self.task.radio_phy.restore_wifi_power_epoch() {
-            return Err(RadioPhyReleaseFailure {
-                owner: self,
-                error: RadioPhyReleaseError::WifiPowerRestore(checkpoint),
-            });
-        }
-        let Self { task, interrupts } = self;
-        Ok(task.into_hardware(interrupts))
-    }
-
-    #[doc(hidden)]
-    pub fn prepare_shared_modem_clock_map(&mut self) {
-        self.task.prepare_shared_modem_clock_map();
-    }
-
-    #[doc(hidden)]
-    pub fn retain_coexistence_clock(&mut self) {
-        self.task.retain_coexistence_clock();
-    }
-
-    #[doc(hidden)]
-    pub fn release_coexistence_clock(&mut self) {
-        self.task.release_coexistence_clock();
-    }
-
-    #[doc(hidden)]
-    pub fn retain_main_xtal_bluetooth_low_power_clock(&mut self) {
-        self.task.retain_main_xtal_bluetooth_low_power_clock();
-    }
-
-    #[doc(hidden)]
-    pub fn release_bluetooth_low_power_timer(&mut self) {
-        self.task.release_bluetooth_low_power_timer();
-    }
-
-    #[doc(hidden)]
-    pub fn bluetooth_shared_clock_observation(
-        &self,
-    ) -> (
-        SharedModemClockObservation,
-        BluetoothLowPowerClockObservation,
-    ) {
-        self.task.bluetooth_shared_clock_observation()
-    }
-
-    #[doc(hidden)]
-    pub fn retain_platform_pll_source(&mut self) {
-        self.task.retain_platform_pll_source();
-    }
-
-    #[doc(hidden)]
-    pub fn release_platform_pll_source(&mut self) {
-        self.task.release_platform_pll_source();
-    }
-
-    #[doc(hidden)]
-    pub fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
-        self.task.radio_phy.platform_clock_power_observation()
-    }
-
-    #[doc(hidden)]
-    pub fn prepare_modem_syscon_clock_map(&mut self) {
-        self.task.radio_phy.prepare_modem_syscon_clock_map();
-    }
-
-    #[doc(hidden)]
-    pub fn reset_modem_syscon_bluetooth_domains(&mut self) {
-        self.task.radio_phy.reset_bluetooth_controller_domains();
-    }
-
-    #[doc(hidden)]
-    pub fn modem_syscon_bluetooth_observation(&self) -> ModemSysconBluetoothObservation {
-        self.task.radio_phy.bluetooth_clock_observation()
-    }
-
-    #[doc(hidden)]
-    pub fn retain_modem_syscon_bluetooth_controller_clocks(&mut self) {
-        self.task.retain_modem_syscon_bluetooth_controller_clocks();
-    }
-
-    #[doc(hidden)]
-    pub fn retain_modem_syscon_bluetooth_apb_clocks(&mut self) {
-        self.task.retain_modem_syscon_bluetooth_apb_clocks();
-    }
-
-    #[doc(hidden)]
-    pub fn release_modem_syscon_bluetooth_apb_clocks(&mut self) {
-        self.task.release_modem_syscon_bluetooth_apb_clocks();
-    }
-
-    #[doc(hidden)]
-    pub fn release_modem_syscon_bluetooth_controller_clocks(&mut self) {
-        self.task.release_modem_syscon_bluetooth_controller_clocks();
-    }
-}
-
 /// Ordinary task-side owner for one exclusive standalone Bluetooth route.
 ///
 /// Wi-Fi and all shared resources remain retained privately. Methods on this
@@ -1645,7 +968,6 @@ pub struct BluetoothTaskRegisters {
     pub(crate) radio_phy: RadioPhyRegisters,
     pub(crate) coexistence: svd::peripheral_ownership::CoexistencePeripherals,
     pub(crate) shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
-    pub(crate) retained_wifi: RetainedWifiPeripheralOwners,
     pub(crate) coexistence_clock: Option<SharedModemClockLease>,
     pub(crate) phy_i2c_clock: Option<SharedModemClockLease>,
     pub(crate) low_power_timer_clock: Option<BluetoothLowPowerTimerLease>,
@@ -1657,51 +979,81 @@ pub struct BluetoothTaskRegisters {
         crate::bluetooth::controller::time::BluetoothControllerTimeLatchOwnership,
 }
 
-/// Why a task owner cannot be reunited with its inactive interrupt bank.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothTaskReuniteError {
-    /// A controller-time request still belongs to the task-side worker.
-    ControllerTimeLatchInFlight,
-    /// Source-127 still owns the disjoint modem low-power timer partition.
-    ModemLpTimerOwnerSeparated,
-}
-
-/// Failed Bluetooth owner reunion retaining both unique owners.
-#[must_use = "the Bluetooth task and interrupt owners remain live after failed reunion"]
-pub struct BluetoothTaskReuniteFailure {
-    pub(crate) task: BluetoothTaskRegisters,
-    pub(crate) interrupts: BluetoothInterruptSetup,
-    pub(crate) error: BluetoothTaskReuniteError,
-}
-
-impl BluetoothTaskReuniteFailure {
-    /// Return the finite reason without releasing either owner.
-    pub const fn error(&self) -> BluetoothTaskReuniteError {
-        self.error
-    }
-
-    /// Recover both unchanged owners and the failure reason.
-    pub fn into_parts(
-        self,
-    ) -> (
-        BluetoothTaskRegisters,
-        BluetoothInterruptSetup,
-        BluetoothTaskReuniteError,
-    ) {
-        (self.task, self.interrupts, self.error)
-    }
-}
-
-impl core::fmt::Debug for BluetoothTaskReuniteFailure {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("BluetoothTaskReuniteFailure")
-            .field("error", &self.error)
-            .finish_non_exhaustive()
-    }
+/// Partitions consumed by one Bluetooth task register set.
+pub struct BluetoothTaskParts {
+    pub bluetooth: BluetoothControllerPartition,
+    pub modem_lp_timer: BluetoothModemLpTimerRegisters,
+    pub radio_phy: RadioPhyRegisters,
+    pub coexistence: CoexistencePartition,
+    pub shared_radio: SharedRadioPartition,
 }
 
 impl BluetoothTaskRegisters {
+    /// Assemble the Bluetooth task register set. This performs no MMIO.
+    pub fn new(parts: BluetoothTaskParts) -> Self {
+        let BluetoothTaskParts {
+            bluetooth: BluetoothControllerPartition(bluetooth),
+            modem_lp_timer,
+            radio_phy,
+            coexistence: CoexistencePartition(coexistence),
+            shared_radio: SharedRadioPartition(shared_radio),
+        } = parts;
+        Self {
+            bluetooth,
+            modem_lp_timer: Some(modem_lp_timer),
+            radio_phy,
+            coexistence,
+            shared_radio,
+            coexistence_clock: None,
+            low_power_timer_clock: None,
+            platform_pll_source: None,
+            modem_syscon_clocks: BluetoothModemSysconClockState::new(),
+            phy_i2c_clock: None,
+            modem_syscon_controller_clocks_retained: false,
+            modem_syscon_apb_clocks_retained: false,
+            controller_time_latch:
+                crate::bluetooth::controller::time::BluetoothControllerTimeLatchOwnership::new(),
+        }
+    }
+
+    /// Release every retained clock and return the partitions.
+    ///
+    /// This performs no MMIO beyond the clock releases.
+    ///
+    /// # Panics
+    ///
+    /// Panics while the modem LP-timer partition is separated; check
+    /// [`Self::modem_lp_timer_separated`] first.
+    pub fn into_parts(mut self) -> BluetoothTaskParts {
+        self.release_retained_clocks();
+        let modem_lp_timer = self
+            .modem_lp_timer
+            .take()
+            .expect("a cold Bluetooth owner retains its modem LP-timer partition");
+        BluetoothTaskParts {
+            bluetooth: BluetoothControllerPartition(self.bluetooth),
+            modem_lp_timer,
+            radio_phy: self.radio_phy,
+            coexistence: CoexistencePartition(self.coexistence),
+            shared_radio: SharedRadioPartition(self.shared_radio),
+        }
+    }
+
+    /// Whether source 127 still owns the disjoint modem LP-timer partition.
+    pub const fn modem_lp_timer_separated(&self) -> bool {
+        self.modem_lp_timer.is_none()
+    }
+
+    /// Return the drained LP-timer partition during physical shutdown.
+    #[doc(hidden)]
+    pub fn restore_modem_lp_timer(&mut self, timer: BluetoothModemLpTimerRegisters) {
+        assert!(
+            self.modem_lp_timer.is_none(),
+            "the Bluetooth task already owns its modem LP-timer partition"
+        );
+        self.modem_lp_timer = Some(timer);
+    }
+
     /// Retain the common PHY I2C source for the complete powered epoch.
     #[doc(hidden)]
     pub fn retain_phy_i2c_master_clock(&mut self) {
@@ -1778,19 +1130,22 @@ impl BluetoothTaskRegisters {
         self.radio_phy.shared_modem_clock_observation()
     }
 
-    pub(crate) fn retain_platform_pll_source(&mut self) {
+    #[doc(hidden)]
+    pub fn retain_platform_pll_source(&mut self) {
         if self.platform_pll_source.is_none() {
             self.platform_pll_source = Some(self.radio_phy.retain_platform_pll_source());
         }
     }
 
-    pub(crate) fn release_platform_pll_source(&mut self) {
+    #[doc(hidden)]
+    pub fn release_platform_pll_source(&mut self) {
         if let Some(lease) = self.platform_pll_source.take() {
             self.radio_phy.release_platform_pll_source(lease);
         }
     }
 
-    pub(crate) fn retain_modem_syscon_bluetooth_controller_clocks(&mut self) {
+    #[doc(hidden)]
+    pub fn retain_modem_syscon_bluetooth_controller_clocks(&mut self) {
         if !self.modem_syscon_controller_clocks_retained {
             self.radio_phy
                 .retain_bluetooth_controller_clocks(&mut self.modem_syscon_clocks);
@@ -1798,7 +1153,8 @@ impl BluetoothTaskRegisters {
         }
     }
 
-    pub(crate) fn retain_modem_syscon_bluetooth_apb_clocks(&mut self) {
+    #[doc(hidden)]
+    pub fn retain_modem_syscon_bluetooth_apb_clocks(&mut self) {
         if !self.modem_syscon_apb_clocks_retained {
             self.radio_phy
                 .retain_bluetooth_apb_clocks(&mut self.modem_syscon_clocks);
@@ -1806,7 +1162,8 @@ impl BluetoothTaskRegisters {
         }
     }
 
-    pub(crate) fn release_modem_syscon_bluetooth_apb_clocks(&mut self) {
+    #[doc(hidden)]
+    pub fn release_modem_syscon_bluetooth_apb_clocks(&mut self) {
         if self.modem_syscon_apb_clocks_retained {
             self.radio_phy
                 .release_bluetooth_apb_clocks(&mut self.modem_syscon_clocks);
@@ -1814,7 +1171,8 @@ impl BluetoothTaskRegisters {
         }
     }
 
-    pub(crate) fn release_modem_syscon_bluetooth_controller_clocks(&mut self) {
+    #[doc(hidden)]
+    pub fn release_modem_syscon_bluetooth_controller_clocks(&mut self) {
         if self.modem_syscon_controller_clocks_retained {
             self.radio_phy
                 .release_bluetooth_controller_clocks(&mut self.modem_syscon_clocks);
@@ -1827,7 +1185,8 @@ impl BluetoothTaskRegisters {
         self.radio_phy.prepare_shared_modem_clock_map();
     }
 
-    pub(crate) fn retain_coexistence_clock(&mut self) {
+    #[doc(hidden)]
+    pub fn retain_coexistence_clock(&mut self) {
         if self.coexistence_clock.is_none() {
             self.coexistence_clock = Some(
                 self.radio_phy
@@ -1836,13 +1195,15 @@ impl BluetoothTaskRegisters {
         }
     }
 
-    pub(crate) fn release_coexistence_clock(&mut self) {
+    #[doc(hidden)]
+    pub fn release_coexistence_clock(&mut self) {
         if let Some(lease) = self.coexistence_clock.take() {
             self.radio_phy.release_shared_modem_clock(lease);
         }
     }
 
-    pub(crate) fn retain_main_xtal_bluetooth_low_power_clock(&mut self) {
+    #[doc(hidden)]
+    pub fn retain_main_xtal_bluetooth_low_power_clock(&mut self) {
         if self.low_power_timer_clock.is_none() {
             self.low_power_timer_clock = Some(self.radio_phy.retain_bluetooth_low_power_timer(
                 ModemLowPowerClockSource::Crystal,
@@ -1851,13 +1212,15 @@ impl BluetoothTaskRegisters {
         }
     }
 
-    pub(crate) fn release_bluetooth_low_power_timer(&mut self) {
+    #[doc(hidden)]
+    pub fn release_bluetooth_low_power_timer(&mut self) {
         if let Some(lease) = self.low_power_timer_clock.take() {
             self.radio_phy.release_bluetooth_low_power_timer(lease);
         }
     }
 
-    pub(crate) fn bluetooth_shared_clock_observation(
+    #[doc(hidden)]
+    pub fn bluetooth_shared_clock_observation(
         &self,
     ) -> (
         SharedModemClockObservation,
@@ -1869,7 +1232,9 @@ impl BluetoothTaskRegisters {
         )
     }
 
-    fn release_retained_clocks(&mut self) {
+    /// Release every clock and lease retained by this register set.
+    #[doc(hidden)]
+    pub fn release_retained_clocks(&mut self) {
         if let Some(lease) = self.phy_i2c_clock.take() {
             self.radio_phy.release_shared_modem_clock(lease);
         }
@@ -1880,73 +1245,24 @@ impl BluetoothTaskRegisters {
         self.release_platform_pll_source();
     }
 
-    pub(crate) fn into_hardware(mut self, interrupts: BluetoothInterruptSetup) -> RadioHardware {
-        self.release_retained_clocks();
-        let bluetooth_modem_lp_timer = self
-            .modem_lp_timer
-            .take()
-            .expect("a cold Bluetooth owner retains its modem LP-timer partition")
-            .into_peripherals();
-        let Self {
-            bluetooth,
-            modem_lp_timer: _,
-            radio_phy,
-            coexistence,
-            shared_radio,
-            retained_wifi:
-                RetainedWifiPeripheralOwners {
-                    wifi_mac,
-                    wifi_interrupts,
-                    ieee802154,
-                },
-            coexistence_clock: _,
-            low_power_timer_clock: _,
-            platform_pll_source: _,
-            modem_syscon_clocks: _,
-            phy_i2c_clock: _,
-            modem_syscon_controller_clocks_retained: _,
-            modem_syscon_apb_clocks_retained: _,
-            controller_time_latch: _,
-        } = self;
-        RadioHardware {
-            wifi_mac,
-            wifi_interrupts,
-            radio_phy: radio_phy.into_unregistered(),
-            coexistence,
-            bluetooth,
-            bluetooth_modem_lp_timer,
-            bluetooth_interrupts: interrupts.peripherals,
-            shared_radio,
-            ieee802154,
-        }
+    /// Reset the Bluetooth controller domains and fence the reset edge.
+    #[doc(hidden)]
+    pub fn reset_controller_domains(&mut self) {
+        self.radio_phy.reset_bluetooth_controller_domains();
+        device_fence();
     }
 
-    /// Reunite a quiescent Bluetooth task owner with its inactive IRQ owner.
-    ///
-    /// This conversion performs no MMIO. It fails while the task owner retains
-    /// an unfinished controller-time latch, returning both owners unchanged.
-    pub fn into_cold(
-        self,
-        interrupts: BluetoothInterruptSetup,
-    ) -> Result<BluetoothColdRegisters, BluetoothTaskReuniteFailure> {
-        if self.controller_time_latch.in_flight() {
-            return Err(BluetoothTaskReuniteFailure {
-                task: self,
-                interrupts,
-                error: BluetoothTaskReuniteError::ControllerTimeLatchInFlight,
-            });
-        }
-        if self.modem_lp_timer.is_none() {
-            return Err(BluetoothTaskReuniteFailure {
-                task: self,
-                interrupts,
-                error: BluetoothTaskReuniteError::ModemLpTimerOwnerSeparated,
-            });
-        }
-        Ok(BluetoothColdRegisters {
-            task: self,
-            interrupts,
-        })
+    /// Whether the Bluetooth controller domain resets read back released.
+    pub fn controller_resets_released(&self) -> bool {
+        self.radio_phy
+            .bluetooth_clock_observation()
+            .controller_resets_released
+    }
+
+    /// Borrow the protocol-neutral PHY partition for one read-only HAL scope.
+    #[doc(hidden)]
+    pub const fn radio_phy(&self) -> &RadioPhyRegisters {
+        &self.radio_phy
     }
 
     /// Borrow the protocol-neutral PHY partition for one named HAL scope.
@@ -1975,6 +1291,9 @@ pub struct BluetoothInterruptSetup {
 pub struct BluetoothInterruptRegisters {
     pub(crate) peripherals: svd::peripheral_ownership::BluetoothInterruptPeripherals,
 }
+
+#[cfg(test)]
+pub(crate) mod test_support;
 
 #[cfg(test)]
 mod tests;

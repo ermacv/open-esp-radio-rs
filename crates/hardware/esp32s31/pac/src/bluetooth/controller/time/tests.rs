@@ -8,7 +8,6 @@ use super::{
     BluetoothControllerTimeLatchRequest, BluetoothControllerTimeLatchStep,
     BluetoothControllerTimeLatchStepError, execute_latch_publication, execute_latch_step,
 };
-use crate::RadioHardware;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
@@ -216,23 +215,9 @@ fn idle_step_fails_without_any_register_access() {
 }
 
 #[test]
-fn unfinished_latch_prevents_owner_reunion_without_mmio() {
-    let cold = RadioHardware::for_validation().into_bluetooth();
-    let (mut task, interrupts) = cold.separate_interrupt_owner();
+fn unfinished_latch_is_reported_without_mmio() {
+    let (mut task, _interrupts) = crate::ownership::test_support::bluetooth_task();
+    assert!(!task.controller_time_latch_in_flight());
     assert_eq!(task.controller_time_latch.begin(), Ok(()));
-
-    let failure = match task.into_cold(interrupts) {
-        Ok(_) => panic!("an unfinished latch must retain both owners"),
-        Err(failure) => failure,
-    };
-    assert_eq!(
-        failure.error(),
-        crate::BluetoothTaskReuniteError::ControllerTimeLatchInFlight
-    );
-    let (task, _interrupts, error) = failure.into_parts();
-    assert_eq!(
-        error,
-        crate::BluetoothTaskReuniteError::ControllerTimeLatchInFlight
-    );
     assert!(task.controller_time_latch_in_flight());
 }

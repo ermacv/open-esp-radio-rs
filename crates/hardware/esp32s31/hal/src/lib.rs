@@ -3,7 +3,9 @@
 
 //! ESP32-S31 register transactions and affine radio ownership.
 //!
-//! [`owner`] retains the physical radio and grants bounded capabilities.
+//! [`root`] owns the protocol-neutral radio root and composes the restricted
+//! PAC partitions into exclusive protocol routes. [`owner`] retains the Wi-Fi
+//! route and grants bounded capabilities.
 //! [`phy`], [`ieee80211`], [`bluetooth`] and [`ieee802154`] implement domain
 //! operations through those capabilities. [`types`] exposes value contracts
 //! without granting PAC access. Protocol policy and executor waits belong to
@@ -17,15 +19,18 @@ use core::future::Future;
 use oer_esp32s31_pac::{
     Ieee802154TaskRegisters, MacInterruptRegisters as PacMacInterruptRegisters,
     MacInterruptSetup as PacMacInterruptSetup,
-    MacPowerInterruptRegisters as PacMacPowerInterruptRegisters, RadioHardware, RadioPhyRegisters,
-    RadioPhyReleaseError, WifiColdRegisters, WifiRadioRegisters,
+    MacPowerInterruptRegisters as PacMacPowerInterruptRegisters, RadioPhyRegisters,
+    WifiRadioRegisters,
 };
+
+use root::{RadioHardware, RadioPhyReleaseError};
 
 pub mod bluetooth;
 
 pub mod coex;
 
 pub mod power;
+pub mod root;
 pub mod types;
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]

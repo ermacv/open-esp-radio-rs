@@ -192,7 +192,7 @@ fn task_and_interrupt_owners_reunite_into_the_same_radio_root() {
 
     // Re-entering Wi-Fi proves that every inactive protocol and shared
     // owner survived the complete Bluetooth ownership roundtrip.
-    let _wifi = hardware.into_wifi();
+    let _wifi = oer_esp32s31_hal::owner::Radio::from_hardware((), hardware);
 }
 
 #[test]

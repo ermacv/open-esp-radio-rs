@@ -27,53 +27,67 @@ pub(crate) trait PowerSequenceBackend {
     fn shared_modem_clock_observation(&self) -> oer_esp32s31_pac::SharedModemClockObservation;
 }
 
-impl PowerSequenceBackend for oer_esp32s31_pac::WifiColdRegisters {
+impl PowerSequenceBackend for crate::owner::WifiColdRegisters {
     fn select_hp_active_modem_icg(&mut self) {
-        self.select_hp_active_modem_icg();
+        self.radio_mut()
+            .radio_phy_mut()
+            .select_hp_active_modem_icg();
     }
     fn apply_modem_icg_selection(&mut self) {
-        self.apply_modem_icg_selection();
+        self.radio_mut().radio_phy_mut().apply_modem_icg_selection();
     }
     fn apply_sleep_icg_selection(&mut self) {
-        self.apply_sleep_icg_selection();
+        self.radio_mut().radio_phy_mut().apply_sleep_icg_selection();
     }
     fn enable_modem_register_bus_clock(&mut self) {
-        self.enable_modem_register_bus_clock();
+        self.radio_mut()
+            .radio_phy_mut()
+            .enable_modem_register_bus_clock();
     }
     fn configure_modem_source_clocks(&mut self) {
-        self.configure_modem_source_clocks();
+        crate::owner::WifiColdRegisters::configure_modem_source_clocks(self);
     }
-    fn platform_clock_power_observation(&self) -> oer_esp32s31_pac::PlatformClockPowerObservation {
-        self.platform_clock_power_observation()
+    fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
+        self.radio().radio_phy().platform_clock_power_observation()
     }
     fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
-        self.set_wifi_baseband_and_mac_reset(asserted);
+        self.radio_mut()
+            .radio_phy_mut()
+            .set_wifi_baseband_and_mac_reset(asserted);
     }
     fn set_wifi_baseband_reset(&mut self, asserted: bool) {
-        self.set_wifi_baseband_reset(asserted);
+        self.radio_mut()
+            .radio_phy_mut()
+            .set_wifi_baseband_reset(asserted);
     }
     fn configure_wifi_power_clock_map(&mut self) {
-        self.configure_wifi_power_clock_map();
+        self.radio_mut()
+            .radio_phy_mut()
+            .configure_wifi_power_clock_map();
     }
     fn enable_phy_calibration_clocks(&mut self) {
-        self.enable_phy_calibration_clocks();
+        self.radio_mut()
+            .radio_phy_mut()
+            .enable_phy_calibration_clocks();
     }
     fn select_phy_i2c_160mhz_source(&mut self) {
-        self.select_phy_i2c_160mhz_source();
+        self.radio_mut()
+            .radio_phy_mut()
+            .select_phy_i2c_160mhz_source();
     }
-    fn modem_syscon_power_observation(&self) -> oer_esp32s31_pac::ModemSysconPowerObservation {
-        self.modem_syscon_power_observation()
+    fn modem_syscon_power_observation(&self) -> ModemSysconPowerObservation {
+        self.radio().radio_phy().modem_syscon_power_observation()
     }
     fn prepare_shared_modem_clock_map(&mut self) {
-        oer_esp32s31_pac::WifiColdRegisters::prepare_shared_modem_clock_map(self);
+        self.radio_mut().prepare_shared_modem_clock_map();
     }
 
     fn retain_phy_i2c_master_clock(&mut self) {
-        oer_esp32s31_pac::WifiColdRegisters::retain_phy_i2c_master_clock(self);
+        self.radio_mut().retain_phy_i2c_master_clock();
     }
 
-    fn shared_modem_clock_observation(&self) -> oer_esp32s31_pac::SharedModemClockObservation {
-        oer_esp32s31_pac::WifiColdRegisters::shared_modem_clock_observation(self)
+    fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
+        self.radio().shared_modem_clock_observation()
     }
 }
 

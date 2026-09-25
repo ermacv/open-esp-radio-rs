@@ -24,7 +24,7 @@ pub fn capture_and_acknowledge_interrupts() {
 #[inline(always)]
 pub fn clear_scheduler_hardware_list_heads() {
     let cold = oer_esp32s31_hal::bluetooth::ColdOwner::from_radio_hardware(
-        oer_esp32s31_pac::RadioHardware::for_validation(),
+        oer_esp32s31_hal::root::RadioHardware::for_validation(),
     );
     let (mut task, interrupts) = crate::resources::separate_interrupt_owner(cold);
     let cleared_lists = task.clear_scheduler_hardware_list_heads();
@@ -39,7 +39,7 @@ pub fn clear_scheduler_hardware_list_heads() {
 #[inline(always)]
 pub fn configure_and_select_phy_i2c_host(block: u8) -> u32 {
     let cold = oer_esp32s31_hal::bluetooth::ColdOwner::from_radio_hardware(
-        oer_esp32s31_pac::RadioHardware::for_validation(),
+        oer_esp32s31_hal::root::RadioHardware::for_validation(),
     );
     let (mut task, interrupts) = crate::resources::separate_interrupt_owner(cold);
     let host = {
@@ -98,7 +98,7 @@ pub unsafe fn initialize_baseband_v2(gain_parameter: u8) {
 #[inline(always)]
 pub unsafe fn initialize_controller_hal_reviewed_standalone() {
     let cold = oer_esp32s31_hal::bluetooth::ColdOwner::from_radio_hardware(
-        oer_esp32s31_pac::RadioHardware::for_validation(),
+        oer_esp32s31_hal::root::RadioHardware::for_validation(),
     );
     let (mut task, interrupts) = crate::resources::separate_interrupt_owner(cold);
     // SAFETY: forwarded unchanged from this function's `# Safety` contract,
@@ -127,7 +127,7 @@ pub unsafe fn initialize_controller_hal_reviewed_standalone() {
 #[inline(always)]
 pub unsafe fn prepare_modem_lp_timer_registers() {
     let cold = oer_esp32s31_hal::bluetooth::ColdOwner::from_radio_hardware(
-        oer_esp32s31_pac::RadioHardware::for_validation(),
+        oer_esp32s31_hal::root::RadioHardware::for_validation(),
     );
     let (mut task, interrupts) = cold.separate_interrupt_owner();
     // SAFETY: forwarded unchanged from this function's `# Safety` contract,

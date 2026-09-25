@@ -1,4 +1,4 @@
-use oer_esp32s31_pac::RadioHardware;
+use crate::root::RadioHardware;
 
 use super::Ieee802154Owned;
 
@@ -12,10 +12,7 @@ fn untouched_owner_releases_the_complete_neutral_root() {
         .release()
         .expect("an untouched IEEE 802.15.4 route can be released");
 
-    let ieee = hardware.into_ieee802154();
-    let (task, interrupts) = ieee.separate_interrupt_owner();
-    let _hardware = task
-        .into_cold(interrupts)
+    let (_platform, _hardware) = Ieee802154Owned::from_hardware(FakePlatform, hardware)
         .release()
         .expect("an untouched IEEE 802.15.4 route can be released");
 }

@@ -320,25 +320,25 @@ impl RadioPhyRestoreSlot {
         Ok(())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "validation-probes"))]
     pub(crate) fn occupy_txdc_for_test(&mut self) {
         self.kind = RadioPhyRestoreKind::TxDcPwdet;
         self.payload = [0; 8];
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "validation-probes"))]
     pub(crate) fn occupy_txiq_for_test(&mut self) {
         self.kind = RadioPhyRestoreKind::TxIqToneControl;
         self.payload = [0; 8];
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "validation-probes"))]
     pub(crate) fn occupy_rx_dco_for_test(&mut self) {
         self.kind = RadioPhyRestoreKind::RxDcoControlOne;
         self.payload = [0; 8];
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "validation-probes"))]
     pub(crate) fn occupy_bluetooth_tx_power_control_for_test(&mut self) {
         self.kind = RadioPhyRestoreKind::BluetoothTxPowerControl;
         self.payload = [0; 8];
@@ -422,39 +422,55 @@ impl RadioPhyRegisters {
         crate::generated::assert_phy_frontend_txrx_reset_state(registers);
     }
 
-    pub(crate) const fn txdc_pwdet_restore_pending(&self) -> bool {
+    /// Whether this restore obligation still blocks route release.
+    #[doc(hidden)]
+    pub const fn txdc_pwdet_restore_pending(&self) -> bool {
         self.restore_slot.txdc_pending()
     }
 
-    #[cfg(test)]
-    pub(crate) fn occupy_txdc_pwdet_restore_for_test(&mut self) {
+    /// Occupy this restore obligation inside an isolated validation image.
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub fn occupy_txdc_pwdet_restore_for_validation(&mut self) {
         self.restore_slot.occupy_txdc_for_test();
     }
 
-    pub(crate) const fn txiq_tone_control_restore_pending(&self) -> bool {
+    /// Whether this restore obligation still blocks route release.
+    #[doc(hidden)]
+    pub const fn txiq_tone_control_restore_pending(&self) -> bool {
         self.restore_slot.txiq_pending()
     }
 
-    #[cfg(test)]
-    pub(crate) fn occupy_txiq_tone_control_restore_for_test(&mut self) {
+    /// Occupy this restore obligation inside an isolated validation image.
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub fn occupy_txiq_tone_control_restore_for_validation(&mut self) {
         self.restore_slot.occupy_txiq_for_test();
     }
 
-    pub(crate) const fn rx_dco_control_restore_pending(&self) -> bool {
+    /// Whether this restore obligation still blocks route release.
+    #[doc(hidden)]
+    pub const fn rx_dco_control_restore_pending(&self) -> bool {
         self.restore_slot.rx_dco_pending()
     }
 
-    #[cfg(test)]
-    pub(crate) fn occupy_rx_dco_control_restore_for_test(&mut self) {
+    /// Occupy this restore obligation inside an isolated validation image.
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub fn occupy_rx_dco_control_restore_for_validation(&mut self) {
         self.restore_slot.occupy_rx_dco_for_test();
     }
 
-    pub(crate) const fn bluetooth_tx_power_control_restore_pending(&self) -> bool {
+    /// Whether this restore obligation still blocks route release.
+    #[doc(hidden)]
+    pub const fn bluetooth_tx_power_control_restore_pending(&self) -> bool {
         self.restore_slot.bluetooth_tx_power_control_pending()
     }
 
-    #[cfg(test)]
-    pub(crate) fn occupy_bluetooth_tx_power_control_restore_for_test(&mut self) {
+    /// Occupy this restore obligation inside an isolated validation image.
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub fn occupy_bluetooth_tx_power_control_restore_for_validation(&mut self) {
         self.restore_slot
             .occupy_bluetooth_tx_power_control_for_test();
     }

@@ -9,8 +9,9 @@ description = "ESP32-S31 Bluetooth hardware engine: controller HAL and time, BLE
 
 [features]
 # Validation constructors that role crates' host tests build hardware from.
-test-support = []
+test-support = ["oer-esp32s31-hal/validation-probes"]
 validation-probes = [
+    "oer-esp32s31-hal/validation-probes",
     "oer-esp32s31-pac/validation-probes",
     "oer-esp32s31-phy/validation-probes",
 ]

@@ -1,4 +1,4 @@
-use oer_esp32s31_pac::RadioHardware;
+use crate::{owner::WifiColdRegisters, root::RadioHardware};
 
 use super::{
     ColdOwner, ControllerHalBorrow, ControllerPublicAddress, ControllerRandomAddress,
@@ -111,7 +111,7 @@ fn untouched_task_owner_reconstructs_the_neutral_root() {
 
     // Re-entering Wi-Fi proves that the finite HAL borrow neither moved nor
     // duplicated any protocol-neutral owner.
-    let _wifi = hardware.into_wifi();
+    let _wifi = WifiColdRegisters::from_hardware(hardware);
 }
 
 #[test]

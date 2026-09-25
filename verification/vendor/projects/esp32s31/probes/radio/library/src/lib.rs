@@ -20,12 +20,10 @@ mod calibration_leaves;
 mod i2c;
 mod production_trace;
 
-/// Borrow an isolated Wi-Fi PHY partition while retaining its interrupt owner.
+/// Borrow an isolated Wi-Fi PHY partition.
 /// The closure cannot return a borrow of this temporary validation capability.
 fn with_phy<R>(call: impl FnOnce(&mut RadioPhyRegisters) -> R) -> R {
-    let (mut registers, _interrupts) = oer_esp32s31_pac::RadioHardware::for_validation()
-        .into_wifi()
-        .into_running();
+    let mut registers = oer_esp32s31_pac::validation::wifi_radio_registers();
     call(registers.radio_phy_mut())
 }
 

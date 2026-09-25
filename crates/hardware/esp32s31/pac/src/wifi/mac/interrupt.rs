@@ -180,8 +180,8 @@ fn disable_sta_beacon_filter(
 /// interrupt is routed to a CPU. Activating it publishes the final mask,
 /// clears stale events and consumes all task-side enable/clear access.
 pub struct MacInterruptSetup {
-    peripheral: svd::WifiMacInterrupt,
-    power_peripheral: svd::WifiMacPowerInterrupt,
+    pub(crate) peripheral: svd::WifiMacInterrupt,
+    pub(crate) power_peripheral: svd::WifiMacPowerInterrupt,
 }
 
 trait MacInterruptActivationBackend {
@@ -250,13 +250,19 @@ impl MacInterruptSetup {
         }
     }
 
-    /// Reassemble the generated Wi-Fi interrupt partition after a finite
-    /// inactive epoch. This is ownership-only and performs no MMIO.
-    pub(crate) fn into_peripherals(self) -> svd::peripheral_ownership::WifiInterruptPeripherals {
-        svd::peripheral_ownership::WifiInterruptPeripherals {
-            wifi_mac_interrupt: self.peripheral,
-            wifi_mac_power_interrupt: self.power_peripheral,
-        }
+    /// Read the currently published MAC interrupt mask.
+    pub fn mac_interrupt_enable(&self) -> MacInterruptEnableState {
+        observe_mac_interrupt_enable(&self.peripheral)
+    }
+
+    /// Mask every MAC event and acknowledge every stale event.
+    pub fn mask_and_clear_all_mac_interrupts(&mut self) {
+        publish_mac_interrupt_mask(&self.peripheral, MacInterruptMask::NONE);
+        crate::generated::mac_interrupt_clear(
+            &self.peripheral,
+            crate::generated::MacInterruptClearImage::new(u32::MAX),
+        );
+        device_fence();
     }
 
     /// Disable vendor hardware beacon filtering before a connected STA epoch.

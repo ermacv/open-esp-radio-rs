@@ -445,11 +445,13 @@ impl RadioPhyRegisters {
             }
         }
     }
-    pub(crate) fn prepare_modem_syscon_clock_map(&mut self) {
+    #[doc(hidden)]
+    pub fn prepare_modem_syscon_clock_map(&mut self) {
         crate::generated::prepare_modem_syscon_clock_map(&self.peripherals.modem_syscon_radio);
     }
 
-    pub(crate) fn configure_wifi_power_clock_map(&mut self) {
+    #[doc(hidden)]
+    pub fn configure_wifi_power_clock_map(&mut self) {
         self.prepare_modem_syscon_clock_map();
     }
 
@@ -478,29 +480,34 @@ impl RadioPhyRegisters {
             && modem_apb_map_bit_two
     }
 
-    pub(crate) fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
+    #[doc(hidden)]
+    pub fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
         crate::generated::set_wifi_baseband_and_mac_reset(
             &self.peripherals.modem_syscon_radio,
             modem_syscon_reset_state(asserted),
         );
     }
 
-    pub(crate) fn set_wifi_baseband_reset(&mut self, asserted: bool) {
+    #[doc(hidden)]
+    pub fn set_wifi_baseband_reset(&mut self, asserted: bool) {
         crate::generated::set_wifi_baseband_reset(
             &self.peripherals.modem_syscon_radio,
             modem_syscon_reset_state(asserted),
         );
     }
 
-    pub(crate) fn enable_phy_calibration_clocks(&mut self) {
+    #[doc(hidden)]
+    pub fn enable_phy_calibration_clocks(&mut self) {
         crate::generated::enable_phy_calibration_clocks(&self.peripherals.modem_syscon_radio);
     }
 
-    pub(crate) fn select_phy_i2c_160mhz_source(&mut self) {
+    #[doc(hidden)]
+    pub fn select_phy_i2c_160mhz_source(&mut self) {
         crate::generated::select_phy_i2c_160mhz_source(&self.peripherals.modem_syscon_radio);
     }
 
-    pub(crate) fn modem_syscon_power_observation(&self) -> ModemSysconPowerObservation {
+    #[doc(hidden)]
+    pub fn modem_syscon_power_observation(&self) -> ModemSysconPowerObservation {
         let (wifi_baseband_reset, wifi_mac_reset) =
             crate::svd::field_snapshot_read::observe_wifi_modem_resets(
                 &self.peripherals.modem_syscon_radio,
@@ -554,11 +561,13 @@ impl RadioPhyRegisters {
         }
     }
 
-    pub(crate) fn enable_wifi_mac_clocks(&mut self) {
+    #[doc(hidden)]
+    pub fn enable_wifi_mac_clocks(&mut self) {
         crate::generated::enable_wifi_mac_clocks(&self.peripherals.modem_syscon_radio);
     }
 
-    pub(crate) fn set_wifi_mac_reset(&mut self, asserted: bool) {
+    #[doc(hidden)]
+    pub fn set_wifi_mac_reset(&mut self, asserted: bool) {
         crate::generated::set_wifi_mac_reset(
             &self.peripherals.modem_syscon_radio,
             modem_syscon_reset_state(asserted),
@@ -827,7 +836,8 @@ impl RadioPhyRegisters {
         }
     }
 
-    pub(crate) fn bluetooth_clock_observation(&self) -> ModemSysconBluetoothObservation {
+    #[doc(hidden)]
+    pub fn bluetooth_clock_observation(&self) -> ModemSysconBluetoothObservation {
         let clocks = self.bluetooth_clock_baselines();
         ModemSysconBluetoothObservation {
             controller_clocks_enabled: BLUETOOTH_CONTROLLER_CLOCKS
@@ -840,7 +850,8 @@ impl RadioPhyRegisters {
         }
     }
 
-    pub(crate) fn reset_bluetooth_controller_domains(&mut self) {
+    #[doc(hidden)]
+    pub fn reset_bluetooth_controller_domains(&mut self) {
         let registers = &self.peripherals.modem_syscon_radio;
         crate::generated::set_bluetooth_mac_reset(registers, ModemSysconResetState::Asserted);
         crate::generated::set_bluetooth_mac_reset(registers, ModemSysconResetState::Released);

@@ -196,7 +196,7 @@ exit 23
         )
         .stdin(Stdio::from(slave.try_clone().unwrap()))
         .stdout(Stdio::piped())
-        .stderr(Stdio::from(slave));
+        .stderr(Stdio::from(slave.try_clone().unwrap()));
     // SAFETY: the child performs only async-signal-safe syscalls before exec.
     // It becomes the session leader and foreground owner of its private PTY.
     unsafe {
@@ -213,6 +213,9 @@ exit 23
     read_until(&mut master, &mut transcript, b"fixture-password:");
     master.write_all(b"fixture-test-token\n").unwrap();
     read_until(&mut master, &mut transcript, b"fixture-authenticated");
+    // Linux reports EIO on the master once every slave descriptor is closed,
+    // which can precede the child's final output. Keep one until it is read.
+    drop(slave);
     assert!(!String::from_utf8_lossy(&transcript).contains("fixture-test-token"));
     assert_eq!(session.0.wait().unwrap().code(), Some(23));
     let mut machine_output = Vec::new();

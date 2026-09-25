@@ -57,8 +57,8 @@ enum Scenario {
         #[arg(long)]
         phy_sdk: PathBuf,
     },
-    /// Every stage-11/12 PHY comparison scenario in sequence under one budget,
-    /// each in its own output directory; the first failure stops the run.
+    /// Every PHY comparison scenario concurrently under one budget, each in its
+    /// own output directory; any failure fails the run.
     All {
         #[command(flatten)]
         common: Common,
@@ -655,7 +655,7 @@ fn all(
         reach: None,
         ..common.clone()
     };
-    type Run<'a> = Box<dyn FnOnce() -> Result<Outcome> + 'a>;
+    type Run<'a> = Box<dyn FnOnce() -> Result<Outcome> + Send + 'a>;
     let scenarios: Vec<(&str, Run<'_>)> = vec![
         (
             "gain",
@@ -679,21 +679,57 @@ fn all(
             Box::new(|| tracking(within("tracking"), phy_sdk.clone())),
         ),
     ];
+    // Scenarios share no state: each owns its session and output directory.
+    // They run concurrently and their results join in the declared order.
+    let outcomes: Vec<(&str, f64, Result<Outcome>)> = std::thread::scope(|scope| {
+        let running: Vec<_> = scenarios
+            .into_iter()
+            .map(|(name, run)| {
+                (
+                    name,
+                    scope.spawn(move || {
+                        let start = std::time::Instant::now();
+                        let outcome = run();
+                        (start.elapsed().as_secs_f64(), outcome)
+                    }),
+                )
+            })
+            .collect();
+        running
+            .into_iter()
+            .map(|(name, handle)| {
+                let (seconds, outcome) = handle
+                    .join()
+                    .unwrap_or_else(|_| (0.0, Err(format!("scenario {name} panicked").into())));
+                (name, seconds, outcome)
+            })
+            .collect()
+    });
     let mut elapsed = vec![];
     let mut entries = vec![];
     let mut untriaged = std::collections::BTreeSet::new();
     let mut reach = std::collections::BTreeMap::new();
-    for (name, run) in scenarios {
-        let start = std::time::Instant::now();
-        let (code, claims) = run()?;
-        entries.extend(claims.entries);
-        untriaged.extend(claims.untriaged);
-        reach.insert(name, claims.reach);
-        elapsed.push((name, start.elapsed().as_secs_f64()));
-        if code != ExitCode::SUCCESS {
-            println!("scenario {name} did not pass");
-            return Ok(code);
+    let mut failed = None;
+    for (name, seconds, outcome) in outcomes {
+        elapsed.push((name, seconds));
+        match outcome {
+            Ok((code, claims)) if code == ExitCode::SUCCESS => {
+                entries.extend(claims.entries);
+                untriaged.extend(claims.untriaged);
+                reach.insert(name, claims.reach);
+            }
+            Ok((code, _)) => {
+                println!("scenario {name} did not pass");
+                failed.get_or_insert(Ok(code));
+            }
+            Err(error) => {
+                println!("scenario {name} failed: {error}");
+                failed.get_or_insert(Err(error));
+            }
         }
+    }
+    if let Some(failed) = failed {
+        return failed;
     }
     write_reach(common.reach.as_deref(), &reach)?;
     for (name, seconds) in &elapsed {

@@ -1,7 +1,6 @@
 //! Repository policies, separate from process and Cargo graph mechanics.
 
 pub mod architecture;
-pub mod bluetooth;
 pub mod docs;
 pub mod examples;
 pub mod metadata;

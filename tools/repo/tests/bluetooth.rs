@@ -1,6 +1,6 @@
 mod support;
 
-use oer_xtask::{cargo, checks::bluetooth, graph::Graph};
+use oer_xtask::{cargo, checks::architecture, graph::Graph};
 use support::Fixture;
 
 #[test]
@@ -26,7 +26,7 @@ fn optional_wifi_is_rejected_only_when_selected_by_the_consumer() {
         )
         .unwrap();
         assert_eq!(
-            bluetooth::audit(&graph, &fixture.manifest).is_ok(),
+            architecture::reject_wifi_in_bluetooth(&graph, &fixture.manifest).is_ok(),
             accepted
         );
     }
@@ -46,7 +46,7 @@ fn renamed_transitive_build_dependency_cannot_hide_wifi() {
         "[dependencies]\nqueue = { package = \"packet-helper\", path = \"../helper\" }\n",
     );
     let graph = Graph::from_value(fixture.metadata()).unwrap();
-    let error = bluetooth::audit(&graph, &fixture.manifest)
+    let error = architecture::reject_wifi_in_bluetooth(&graph, &fixture.manifest)
         .unwrap_err()
         .to_string();
     assert!(error.contains("oer-esp32s31-wifi-ap"), "{error}");
@@ -62,5 +62,5 @@ fn development_only_wifi_does_not_enter_the_production_closure() {
         "[dev-dependencies]\npeer = { package = \"oer-wifi-sta\", path = \"../helper\" }\n",
     );
     let graph = Graph::from_value(fixture.metadata()).unwrap();
-    bluetooth::audit(&graph, &fixture.manifest).unwrap();
+    architecture::reject_wifi_in_bluetooth(&graph, &fixture.manifest).unwrap();
 }

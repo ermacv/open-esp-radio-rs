@@ -111,6 +111,12 @@ pub(super) fn check(ctx: &Context) -> Result<()> {
             ],
         };
         let graph = cargo::isolated_graph(ctx, &manifest, &flags, Some(TARGET))?;
+        if matches!(
+            profile.features,
+            Some("bluetooth" | "esp32s31-bluetooth" | "embassy-esp32s31-bluetooth")
+        ) {
+            super::reject_wifi_in_bluetooth(&graph, &manifest)?;
+        }
         let packages = closure(&graph, &graph.root(&manifest)?)?;
         let contains = |name| packages.iter().any(|package| package.name.as_str() == name);
         for name in profile.required {

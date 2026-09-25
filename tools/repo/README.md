@@ -8,7 +8,6 @@ scenario verdicts or product readiness.
 Run from the repository root:
 
 ```console
-cargo xtask doctor
 cargo xtask check docs
 cargo xtask check docs --package oer-memory
 ```
@@ -20,8 +19,7 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | Command | Contract |
 | --- | --- |
 | `cargo xtask check metadata` | Locked metadata for every actual Cargo workspace island, including unstaged source moves |
-| `cargo xtask check architecture` | Run Clippy on minimum/default and supported feature profiles, applying each crate's lint policy; check layer/chip boundaries, isolated facade consumers, public type identities and composition contracts |
-| `cargo xtask check bluetooth` | Resolve isolated BLE facade profiles without Wi-Fi dependencies and compile host/target profiles including validation probes |
+| `cargo xtask check architecture` | Run Clippy on minimum/default and supported feature profiles, applying each crate's lint policy; reject Wi-Fi packages in Bluetooth facade profiles; check layer/chip boundaries, isolated facade consumers, public type identities and composition contracts |
 | `cargo xtask check safety` | Crate-root unsafe attributes match the reviewed audited list, and reviewed hardware access boundaries |
 | `cargo xtask check network` | Resolve isolated network consumers and compile supported profiles |
 | `cargo xtask check network-backpressure` | Resolve the pinned minimal Xarxa patch and test UDP device-capacity quiescence/recovery with the production adapter |

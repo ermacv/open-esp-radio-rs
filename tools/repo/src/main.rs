@@ -31,8 +31,6 @@ enum Task {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<std::ffi::OsString>,
     },
-    /// Report the basic source workflow tools in the current environment.
-    Doctor,
     Check {
         #[command(subcommand)]
         check: Check,
@@ -47,8 +45,6 @@ enum Task {
 enum Check {
     Metadata,
     Architecture,
-    /// Compile isolated Bluetooth profiles and reject Wi-Fi dependency leakage.
-    Bluetooth,
     Safety,
     Network {
         #[arg(long)]
@@ -139,18 +135,9 @@ fn run() -> Result<std::process::ExitCode> {
         Task::Build {
             build: Build::Hostapd,
         } => oer_xtask::hostapd::build(&ctx),
-        Task::Doctor => {
-            process::run(ctx.cargo().arg("--version"))?;
-            for tool in ["rustc", "git"] {
-                process::run(ctx.command(tool).arg("--version"))?;
-            }
-            println!("repository: {}", ctx.root.display());
-            Ok(())
-        }
         Task::Check { check } => match check {
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),
             Check::Architecture => checks::architecture::run(&ctx),
-            Check::Bluetooth => checks::bluetooth::run(&ctx),
             Check::Safety => checks::safety::run(&ctx),
             Check::Network { dependencies_only } => checks::network::run(&ctx, dependencies_only),
             Check::NetworkBackpressure => oer_xtask::firmware::check_network_backpressure(&ctx),

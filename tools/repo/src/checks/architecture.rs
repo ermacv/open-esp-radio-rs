@@ -1,4 +1,4 @@
-use crate::{Context, Result, cargo, process};
+use crate::{Context, Result, cargo, graph::Graph, process};
 
 use super::{TARGET, common::*};
 
@@ -24,6 +24,19 @@ pub fn run(ctx: &Context) -> Result<()> {
         "driver architecture compilation: {} isolated feature profiles",
         configurations.len()
     );
+    // `cargo test` compiles validation probes only under cfg(test), which can
+    // conceal invalid validation-only imports in the ordinary host library.
+    // The target build is part of the `--all-features` profile above.
+    process::run(ctx.cargo().args([
+        "clippy",
+        "--quiet",
+        "--locked",
+        "--offline",
+        "-p",
+        "oer-esp32s31-bluetooth",
+        "--features",
+        "validation-probes",
+    ]))?;
     facade::check(ctx)?;
     let graph = cargo::metadata(ctx, &ctx.root.join("Cargo.toml"), &[], Some(TARGET), true)?;
     for name in [
@@ -172,6 +185,24 @@ fn hil_wifi_profile(profiles: &[String]) -> Result<&str> {
         (Some(profile), None) => Ok(profile),
         _ => Err("HIL runtime must declare exactly one open-radio-hil feature profile".into()),
     }
+}
+
+/// Reject production Wi-Fi packages in a resolved Bluetooth consumer. Name
+/// prefixes also catch Wi-Fi packages that no explicit list names yet.
+pub fn reject_wifi_in_bluetooth(graph: &Graph, manifest: &std::path::Path) -> Result<()> {
+    let root = graph.root(manifest)?;
+    for id in graph.reachable(&root).keys() {
+        let name = graph.package(id).name.as_str();
+        if name.starts_with("oer-wifi")
+            || name.starts_with("oer-ieee80211")
+            || name.starts_with("oer-esp32s31-wifi")
+            || name == "oer-esp32s31-embassy-wifi"
+            || name.starts_with("embassy-net")
+        {
+            return Err(format!("Bluetooth consumer depends on Wi-Fi package {name}").into());
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

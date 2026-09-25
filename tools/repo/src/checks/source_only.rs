@@ -12,9 +12,7 @@ use std::{
 use cargo_metadata::Message;
 use sha2::{Digest, Sha256};
 
-use super::{
-    TARGET, architecture, artifacts, bluetooth, common, docs, examples, metadata, network, safety,
-};
+use super::{TARGET, architecture, artifacts, common, docs, examples, metadata, network, safety};
 use crate::{
     Context, Result, cargo,
     process::{self, owned},
@@ -180,7 +178,6 @@ impl Lane {
                 Stage::WorkspaceClippy,
                 Stage::Safety,
                 Stage::Architecture,
-                Stage::Bluetooth,
                 Stage::Publication,
                 Stage::Phy,
             ],
@@ -200,7 +197,6 @@ enum Stage {
     WorkspaceClippy,
     Safety,
     Architecture,
-    Bluetooth,
     Publication,
     Phy,
     BlobrayCoreTests,
@@ -219,7 +215,6 @@ impl Stage {
             Self::WorkspaceClippy => "workspace-clippy",
             Self::Safety => "safety",
             Self::Architecture => "architecture",
-            Self::Bluetooth => "bluetooth",
             Self::Publication => "publication",
             Self::Phy => "phy",
             Self::BlobrayCoreTests => "blobray-core-tests",
@@ -277,7 +272,6 @@ fn execute_stage(ctx: &Context, stage: Stage) -> Result<()> {
         ])),
         Stage::Safety => safety::run(ctx),
         Stage::Architecture => architecture::run(ctx),
-        Stage::Bluetooth => bluetooth::run(ctx),
         Stage::Publication => publication(ctx),
         Stage::Phy => {
             let artifact = phy(ctx)?;

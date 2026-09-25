@@ -10,16 +10,8 @@ use oer_esp32s31_pac::{
     BluetoothControllerSramAddress, BluetoothDirectionFindingDisabledBaselinePrepared,
     BluetoothInterruptRegisters, BluetoothInterruptSetup as PacBluetoothInterruptSetup,
     BluetoothLowPowerClockObservation, BluetoothMemoryListPointerImage,
-    BluetoothMemoryListSelector, BluetoothMemoryListSlot,
-    BluetoothModemLpTimerCounterStarted as PacBluetoothModemLpTimerCounterStarted,
-    BluetoothModemLpTimerHandlerPending as PacBluetoothModemLpTimerHandlerPending,
-    BluetoothModemLpTimerInterruptReady as PacBluetoothModemLpTimerInterruptReady,
-    BluetoothModemLpTimerLowPowerHardwareInitialized as PacBluetoothModemLpTimerLowPowerHardwareInitialized,
-    BluetoothModemLpTimerRegistersPrepared as PacBluetoothModemLpTimerRegistersPrepared,
-    BluetoothModemLpTimerSoftwarePending as PacBluetoothModemLpTimerSoftwarePending,
+    BluetoothMemoryListSelector, BluetoothMemoryListSlot, BluetoothModemLpTimerRegisters,
     BluetoothPrimaryInterruptEpoch, BluetoothTaskRegisters as PacBluetoothTaskRegisters,
-    ModemLpTimerHandlerRegisterStep as PacBluetoothModemLpTimerHandlerRegisterStep,
-    ModemLpTimerInterruptStep as PacBluetoothModemLpTimerInterruptStep,
     ModemSysconBluetoothObservation, PlatformClockPowerObservation, SharedModemClockObservation,
 };
 
@@ -40,16 +32,15 @@ pub use oer_esp32s31_pac::{
     BluetoothLowPowerRuntimeControlObservation, BluetoothModemLpTimerCompareDisposition,
     BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerEpoch,
     BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
-    BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerOwnerError,
-    BluetoothNrtInterruptAcknowledged, BluetoothPhyEnvironmentAddress,
-    BluetoothPhyEnvironmentAddressError, BluetoothPhyRegisterInitInputs,
-    BluetoothScanStartPublished, BluetoothSchedulerExecutionLockDisposition,
-    BluetoothSchedulerExecutionLockPublished, BluetoothSchedulerExecutionLockRequest,
-    BluetoothSchedulerExecutionModifyDisposition, BluetoothSchedulerExecutionModifyPublished,
-    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListObservation,
-    BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
-    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerHardwareListHeadError,
-    BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothModemLpTimerInterruptObservation, BluetoothNrtInterruptAcknowledged,
+    BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
+    BluetoothPhyRegisterInitInputs, BluetoothScanStartPublished,
+    BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,
+    BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyDisposition,
+    BluetoothSchedulerExecutionModifyPublished, BluetoothSchedulerFinishedHardwareListObserved,
+    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
+    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
+    BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
     BluetoothSchedulerHardwareListHeadRetirementObservation, BluetoothSchedulerHardwareListIndex,
     BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
     BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
@@ -72,6 +63,7 @@ pub use oer_esp32s31_pac::{
 #[must_use = "the cold Bluetooth HAL owner retains the complete radio root"]
 pub struct ColdOwner {
     task: PacBluetoothTaskRegisters,
+    modem_lp_timer: BluetoothModemLpTimerRegisters,
     interrupts: PacBluetoothInterruptSetup,
     retained: RetainedWifi,
     clocks: BluetoothClocks,
@@ -115,11 +107,13 @@ impl ColdOwner {
     pub fn from_radio_hardware(hardware: RadioHardware) -> Self {
         let BluetoothRoute {
             task,
+            modem_lp_timer,
             interrupts,
             retained,
         } = hardware.into_bluetooth();
         Self {
             task,
+            modem_lp_timer,
             interrupts,
             retained,
             clocks: BluetoothClocks::default(),
@@ -152,6 +146,7 @@ impl ColdOwner {
         }
         Ok(RadioHardware::from_bluetooth(
             self.task,
+            self.modem_lp_timer,
             self.interrupts,
             self.retained,
         ))
@@ -260,6 +255,7 @@ impl ColdOwner {
         (
             TaskOwner {
                 registers: self.task,
+                modem_lp_timer: Some(self.modem_lp_timer),
                 retained: self.retained,
                 clocks: self.clocks,
                 phy_restore: self.phy_restore,
@@ -277,6 +273,7 @@ impl ColdOwner {
 #[must_use = "the Bluetooth task owner must be reunited during verified teardown"]
 pub struct TaskOwner {
     registers: PacBluetoothTaskRegisters,
+    modem_lp_timer: Option<BluetoothModemLpTimerRegisters>,
     retained: RetainedWifi,
     clocks: BluetoothClocks,
     phy_restore: PhyRestoreSlot,
@@ -294,14 +291,7 @@ impl TaskOwner {
         output: InterruptOutputReleasedOwner,
         timer: ModemLpTimerInterruptReadyOwner,
     ) -> Result<RadioHardware, BluetoothPhysicalReleaseFailure> {
-        shutdown::release_after_phy_close(
-            self.registers,
-            self.retained,
-            self.clocks,
-            self.phy_restore,
-            output.registers,
-            timer.registers,
-        )
+        shutdown::release_after_phy_close(self, output.registers, timer.timer)
     }
     /// Establish the shared modem/PHY power, reset and calibration clocks.
     ///
@@ -341,7 +331,7 @@ impl TaskOwner {
         }
         let error = if self.registers.controller_time_latch_in_flight() {
             Some(TaskOwnerReuniteError::ControllerTimeLatchInFlight)
-        } else if self.registers.modem_lp_timer_separated() {
+        } else if self.modem_lp_timer.is_none() {
             Some(TaskOwnerReuniteError::ModemLpTimerOwnerSeparated)
         } else {
             None
@@ -356,12 +346,22 @@ impl TaskOwner {
                 error,
             });
         }
+        let TaskOwner {
+            registers,
+            modem_lp_timer,
+            retained,
+            clocks,
+            phy_restore,
+            reunitable: _,
+        } = self;
         Ok(ColdOwner {
-            task: self.registers,
+            task: registers,
+            modem_lp_timer: modem_lp_timer
+                .expect("an unseparated task owner retains its modem LP-timer partition"),
             interrupts: interrupts.registers,
-            retained: self.retained,
-            clocks: self.clocks,
-            phy_restore: self.phy_restore,
+            retained,
+            clocks,
+            phy_restore,
         })
     }
 
@@ -464,10 +464,22 @@ impl TaskOwner {
         &mut self,
     ) -> Result<ModemLpTimerRegistersPreparedOwner, BluetoothModemLpTimerOwnerError> {
         self.reunitable = false;
-        self.registers
-            .prepare_modem_lp_timer_registers()
-            .map(|registers| ModemLpTimerRegistersPreparedOwner { registers })
+        // Extract the partition before the first MMIO effect: cancellation or
+        // panic can only lose timer authority fail-stop.
+        let mut timer = self
+            .modem_lp_timer
+            .take()
+            .ok_or(BluetoothModemLpTimerOwnerError::OwnerSeparated)?;
+        timer.prepare_registers();
+        Ok(ModemLpTimerRegistersPreparedOwner { timer })
     }
+}
+
+/// Why task context cannot perform a modem LP-timer transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothModemLpTimerOwnerError {
+    /// The disjoint timer partition has already moved to source-127 storage.
+    OwnerSeparated,
 }
 
 /// Opaque HAL owner after the source-127 controller-register prefix.
@@ -483,7 +495,7 @@ impl TaskOwner {
 /// ```
 #[must_use = "the prepared modem LP-timer owner must continue through route setup"]
 pub struct ModemLpTimerRegistersPreparedOwner {
-    registers: PacBluetoothModemLpTimerRegistersPrepared,
+    timer: BluetoothModemLpTimerRegisters,
 }
 
 impl ModemLpTimerRegistersPreparedOwner {
@@ -504,10 +516,11 @@ impl ModemLpTimerRegistersPreparedOwner {
         task: &mut TaskOwner,
     ) -> ModemLpTimerLowPowerHardwareInitializedOwner {
         task.reunitable = false;
+        let mut timer = self.timer;
+        let runtime_control = timer.initialize_low_power_hardware(&task.registers);
         ModemLpTimerLowPowerHardwareInitializedOwner {
-            registers: self
-                .registers
-                .initialize_low_power_hardware(&mut task.registers),
+            timer,
+            runtime_control,
         }
     }
 }
@@ -515,19 +528,26 @@ impl ModemLpTimerRegistersPreparedOwner {
 /// Opaque HAL owner after the complete low-power hardware component.
 #[must_use = "the initialized modem LP-timer owner must continue through route setup"]
 pub struct ModemLpTimerLowPowerHardwareInitializedOwner {
-    registers: PacBluetoothModemLpTimerLowPowerHardwareInitialized,
+    timer: BluetoothModemLpTimerRegisters,
+    runtime_control: BluetoothLowPowerRuntimeControlObservation,
 }
 
 impl ModemLpTimerLowPowerHardwareInitializedOwner {
     /// Return the positional runtime-control branch observed during initialization.
     pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
-        self.registers.runtime_control_observation()
+        self.runtime_control
     }
 
     /// Start the runtime timer exactly once for this affine hardware epoch.
+    ///
+    /// Consuming this owner proves the command cannot be repeated through
+    /// the same timer epoch.
     pub fn start_runtime_timer(self) -> ModemLpTimerCounterStartedOwner {
+        let mut timer = self.timer;
+        timer.start_runtime_counter();
         ModemLpTimerCounterStartedOwner {
-            registers: self.registers.start_runtime_timer(),
+            timer,
+            runtime_control: self.runtime_control,
         }
     }
 }
@@ -535,29 +555,31 @@ impl ModemLpTimerLowPowerHardwareInitializedOwner {
 /// Opaque HAL owner after the one-shot BTDM runtime-timer start command.
 #[must_use = "the started modem LP timer must continue through route setup"]
 pub struct ModemLpTimerCounterStartedOwner {
-    registers: PacBluetoothModemLpTimerCounterStarted,
+    timer: BluetoothModemLpTimerRegisters,
+    runtime_control: BluetoothLowPowerRuntimeControlObservation,
 }
 
 impl ModemLpTimerCounterStartedOwner {
     /// Return the low-power runtime-control branch retained across start.
     pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
-        self.registers.runtime_control_observation()
+        self.runtime_control
     }
 
     /// Transfer the unique started timer into stable source-127 ISR storage.
     ///
-    /// This transition performs no MMIO and exposes no raw PAC owner.
+    /// This transition performs no MMIO and exposes no raw PAC owner. The
+    /// platform must store the returned value before enabling the CPU route
+    /// and recover it only after that route is disabled and no hard handler
+    /// remains in flight.
     pub fn stage_for_interrupt(self) -> ModemLpTimerInterruptReadyOwner {
-        ModemLpTimerInterruptReadyOwner {
-            registers: self.registers.stage_for_interrupt(),
-        }
+        ModemLpTimerInterruptReadyOwner { timer: self.timer }
     }
 }
 
 /// Opaque HAL owner staged for the source-127 hard handler.
 #[must_use = "the modem LP-timer interrupt owner must remain in stable ISR storage"]
 pub struct ModemLpTimerInterruptReadyOwner {
-    registers: PacBluetoothModemLpTimerInterruptReady,
+    timer: BluetoothModemLpTimerRegisters,
 }
 
 /// Result of one bounded source-127 hard-handler register step.
@@ -576,27 +598,29 @@ pub enum ModemLpTimerInterruptStep {
 /// separate fail-closed software-pending state.
 #[must_use = "the common modem LP-timer register phase remains pending"]
 pub struct ModemLpTimerHandlerPendingOwner {
-    registers: PacBluetoothModemLpTimerHandlerPending,
+    timer: BluetoothModemLpTimerRegisters,
+    observation: BluetoothModemLpTimerInterruptObservation,
 }
 
 impl ModemLpTimerHandlerPendingOwner {
     /// Return the exact positional path that selected handler dispatch.
     pub const fn observation(&self) -> BluetoothModemLpTimerInterruptObservation {
-        self.registers.observation()
+        self.observation
     }
 
     /// Execute the bounded register-acknowledgement phase of the common timer
     /// handler without invoking software or an RTOS service.
     pub fn step_registers(self) -> ModemLpTimerHandlerRegisterStep {
-        match self.registers.step_registers() {
-            PacBluetoothModemLpTimerHandlerRegisterStep::Rearmed(registers) => {
-                ModemLpTimerHandlerRegisterStep::Rearmed(ModemLpTimerInterruptReadyOwner {
-                    registers,
-                })
+        let mut timer = self.timer;
+        match timer.acknowledge_handler_registers() {
+            None => {
+                ModemLpTimerHandlerRegisterStep::Rearmed(ModemLpTimerInterruptReadyOwner { timer })
             }
-            PacBluetoothModemLpTimerHandlerRegisterStep::SoftwarePending(registers) => {
+            Some(register_observation) => {
                 ModemLpTimerHandlerRegisterStep::SoftwarePending(ModemLpTimerSoftwarePendingOwner {
-                    registers,
+                    timer,
+                    interrupt_observation: self.observation,
+                    register_observation,
                 })
             }
         }
@@ -619,18 +643,20 @@ pub enum ModemLpTimerHandlerRegisterStep {
 /// read.
 #[must_use = "software timer work and the final hardware read remain pending"]
 pub struct ModemLpTimerSoftwarePendingOwner {
-    registers: PacBluetoothModemLpTimerSoftwarePending,
+    timer: BluetoothModemLpTimerRegisters,
+    interrupt_observation: BluetoothModemLpTimerInterruptObservation,
+    register_observation: BluetoothModemLpTimerHandlerRegisterObservation,
 }
 
 impl ModemLpTimerSoftwarePendingOwner {
     /// Return the initial source-127 classifier path.
     pub const fn interrupt_observation(&self) -> BluetoothModemLpTimerInterruptObservation {
-        self.registers.interrupt_observation()
+        self.interrupt_observation
     }
 
     /// Return the positional state bytes requiring software consequences.
     pub const fn register_observation(&self) -> BluetoothModemLpTimerHandlerRegisterObservation {
-        self.registers.register_observation()
+        self.register_observation
     }
 
     /// Sample one finite positional LP-timer instant and acknowledge a newly
@@ -639,12 +665,12 @@ impl ModemLpTimerSoftwarePendingOwner {
         &mut self,
         epoch: &mut BluetoothModemLpTimerEpoch,
     ) -> BluetoothModemLpTimerCounterObservation {
-        self.registers.sample_counter(epoch)
+        self.timer.sample_counter(epoch)
     }
 
     /// Disable the currently programmed positional compare.
     pub fn disable_compare(&mut self) {
-        self.registers.disable_compare();
+        self.timer.disable_compare();
     }
 
     /// Program one positional deadline and return the exact hardware branch.
@@ -653,7 +679,7 @@ impl ModemLpTimerSoftwarePendingOwner {
         deadline: BluetoothModemLpTimerInstant,
         epoch: BluetoothModemLpTimerEpoch,
     ) -> BluetoothModemLpTimerCompareDisposition {
-        self.registers.program_compare(deadline, epoch)
+        self.timer.program_compare(deadline, epoch)
     }
 
     /// Perform the final fresh handler read and return the ISR-ready owner.
@@ -663,9 +689,9 @@ impl ModemLpTimerSoftwarePendingOwner {
     /// completed.
     #[doc(hidden)]
     pub fn complete_software(self) -> ModemLpTimerInterruptReadyOwner {
-        ModemLpTimerInterruptReadyOwner {
-            registers: self.registers.complete_software(),
-        }
+        let mut timer = self.timer;
+        timer.sample_final_state();
+        ModemLpTimerInterruptReadyOwner { timer }
     }
 }
 
@@ -676,13 +702,13 @@ impl ModemLpTimerInterruptReadyOwner {
     /// pass. The method never waits, loops, allocates or invokes an RTOS
     /// service.
     pub fn step(self) -> ModemLpTimerInterruptStep {
-        match self.registers.step() {
-            PacBluetoothModemLpTimerInterruptStep::Spurious(registers) => {
-                ModemLpTimerInterruptStep::Spurious(ModemLpTimerInterruptReadyOwner { registers })
-            }
-            PacBluetoothModemLpTimerInterruptStep::HandlerPending(registers) => {
+        let mut timer = self.timer;
+        match timer.classify_interrupt() {
+            None => ModemLpTimerInterruptStep::Spurious(ModemLpTimerInterruptReadyOwner { timer }),
+            Some(observation) => {
                 ModemLpTimerInterruptStep::HandlerPending(ModemLpTimerHandlerPendingOwner {
-                    registers,
+                    timer,
+                    observation,
                 })
             }
         }

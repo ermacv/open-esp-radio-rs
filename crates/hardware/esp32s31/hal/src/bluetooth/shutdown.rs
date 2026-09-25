@@ -5,16 +5,10 @@
 //! `modem_clock_module_mac_reset(PERIPH_BT_MODULE)` domain transaction as boot
 //! and `btdm_lp_shutdown`; no synthetic runtime-counter stop register is used.
 
-use oer_esp32s31_pac::{
-    BluetoothInterruptSetup, BluetoothModemLpTimerInterruptReady, BluetoothTaskRegisters,
-};
+use oer_esp32s31_pac::{BluetoothInterruptSetup, BluetoothModemLpTimerRegisters};
 
-use super::ColdOwner;
-use crate::{
-    clock::BluetoothClocks,
-    phy::restore::PhyRestoreSlot,
-    root::{RadioHardware, RadioPhyReleaseError, RetainedWifi},
-};
+use super::{ColdOwner, TaskOwner};
+use crate::root::{RadioHardware, RadioPhyReleaseError};
 
 /// Final physical Bluetooth release rejection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,12 +21,9 @@ pub enum BluetoothPhysicalReleaseError {
 
 enum Retained {
     Before {
-        _task: BluetoothTaskRegisters,
-        _retained: RetainedWifi,
-        _clocks: BluetoothClocks,
-        _phy_restore: PhyRestoreSlot,
+        _task: TaskOwner,
         _output: BluetoothInterruptSetup,
-        _timer: BluetoothModemLpTimerInterruptReady,
+        _timer: BluetoothModemLpTimerRegisters,
     },
     Cold {
         _owner: ColdOwner,
@@ -76,25 +67,28 @@ fn prepare(control: &mut impl Control) -> Result<(), BluetoothPhysicalReleaseErr
 }
 
 struct Hardware<'a> {
-    task: &'a mut BluetoothTaskRegisters,
-    timer: &'a mut BluetoothModemLpTimerInterruptReady,
+    task: &'a mut TaskOwner,
+    timer: &'a mut BluetoothModemLpTimerRegisters,
 }
 
 impl Control for Hardware<'_> {
     fn time_pending(&self) -> bool {
-        self.task.controller_time_latch_in_flight()
+        self.task.registers.controller_time_latch_in_flight()
     }
     fn timer_separated(&self) -> bool {
-        self.task.modem_lp_timer_separated()
+        self.task.modem_lp_timer.is_none()
     }
     fn disable_compare(&mut self) {
-        self.timer.disable_for_shutdown();
+        // The outer retired Controller owns inactive CPU routes and a drained
+        // software queue. Compare is disabled before the timer domain reset;
+        // physical counter shutdown follows from reset and clock release.
+        self.timer.disable_compare();
     }
     fn reset_controller(&mut self) {
-        self.task.reset_controller_domains();
+        self.task.registers.reset_controller_domains();
     }
     fn reset_released(&self) -> bool {
-        self.task.controller_resets_released()
+        self.task.registers.controller_resets_released()
     }
 }
 
@@ -104,12 +98,9 @@ impl Control for Hardware<'_> {
 /// last-client RF close and temperature-sensor power-down. All memory stays
 /// retained until this operation completes. Failure has no hardware escape.
 pub(super) fn release_after_phy_close(
-    mut task: BluetoothTaskRegisters,
-    retained: RetainedWifi,
-    clocks: BluetoothClocks,
-    phy_restore: PhyRestoreSlot,
+    mut task: TaskOwner,
     output: BluetoothInterruptSetup,
-    mut timer: BluetoothModemLpTimerInterruptReady,
+    mut timer: BluetoothModemLpTimerRegisters,
 ) -> Result<RadioHardware, BluetoothPhysicalReleaseFailure> {
     if let Err(error) = prepare(&mut Hardware {
         task: &mut task,
@@ -119,17 +110,22 @@ pub(super) fn release_after_phy_close(
             error,
             _retained: Retained::Before {
                 _task: task,
-                _retained: retained,
-                _clocks: clocks,
-                _phy_restore: phy_restore,
                 _output: output,
                 _timer: timer,
             },
         });
     }
-    task.restore_modem_lp_timer(timer.into_shutdown_registers());
+    let TaskOwner {
+        registers,
+        modem_lp_timer: _,
+        retained,
+        clocks,
+        phy_restore,
+        reunitable: _,
+    } = task;
     let cold = ColdOwner {
-        task,
+        task: registers,
+        modem_lp_timer: timer,
         interrupts: output,
         retained,
         clocks,

@@ -334,6 +334,7 @@ impl Session {
                 replacement: replacement.as_deref(),
                 effects: &self.effects,
                 projections: &self.projections,
+                vendor_results: None,
             },
             &blobray_backend_riscv::RiscvExecutor,
             &memory,

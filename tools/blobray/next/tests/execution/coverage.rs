@@ -371,6 +371,7 @@ fn in_process_verification_emits_the_records_of_a_project_execution() {
             replacement: Some(sources),
             effects: &[],
             projections: &[],
+            vendor_results: None,
         },
         &blobray_backend_riscv::RiscvExecutor,
         &memory,
@@ -412,6 +413,7 @@ fn in_process_verification_emits_the_records_of_a_project_execution() {
                 replacement: Some(sources),
                 effects: &[],
                 projections: &[],
+                vendor_results: None,
             },
             &blobray_backend_riscv::RiscvExecutor,
             &memory,
@@ -422,6 +424,94 @@ fn in_process_verification_emits_the_records_of_a_project_execution() {
         assert_eq!(error.code, ErrorCode::InvalidRequest);
         assert!(error.message.contains(reason), "{error:?}");
     }
+}
+
+#[test]
+fn reused_vendor_results_yield_the_records_of_a_full_execution() {
+    let executable = elf(&CLOSURE);
+    let sources: &[&[u8]] = &[&executable];
+    let memory = WorkingMemory::new(32 * 1024 * 1024).unwrap();
+    fn input<'a>(
+        request: &'a ExecutionRequest,
+        sources: &'a [&'a [u8]],
+    ) -> app::in_process::InProcessComparison<'a> {
+        app::in_process::InProcessComparison {
+            request,
+            vendor: sources,
+            replacement: request.replacement.as_ref().map(|_| sources),
+            effects: &[],
+            projections: &[],
+            vendor_results: None,
+        }
+    }
+    let executor = &blobray_backend_riscv::RiscvExecutor;
+    let verify = |request: &ExecutionRequest, vendor: Option<&app::in_process::VendorResults>| {
+        app::in_process::verify(
+            &app::in_process::InProcessComparison {
+                vendor_results: vendor,
+                ..input(request, sources)
+            },
+            executor,
+            &memory,
+            &mut || Ok(()),
+        )
+    };
+    let f = Fixture::new(&CLOSURE);
+    // A cold and a warm case comparing the program with itself; the
+    // replacement's arguments select its path.
+    let compared = |replacement_a0: u32, replacement_a1: u32| {
+        let mut request = closure_request(&f, 5, 0);
+        request.replacement = Some(request.vendor.clone());
+        request.binding = Some(CompiledBinding::SharedCore);
+        let mut replacement = request.cases[0].vendor.clone();
+        replacement.arguments[0] = Some(replacement_a0);
+        replacement.arguments[1] = Some(replacement_a1);
+        request.cases[0].replacement = Some(replacement);
+        request.cases[0].relation = Some(fixture_relation(true));
+        let mut warm = request.cases[0].clone();
+        warm.name = "warm".into();
+        warm.reset = SessionReset::Warm;
+        request.cases.push(warm);
+        request
+    };
+    let request = compared(5, 0);
+    let vendor =
+        app::in_process::vendor(&input(&request, sources), executor, &memory, &mut || Ok(()))
+            .unwrap();
+    // The same vendor side under other replacements.
+    for replacement in [(5, 0), (0, 0x1028)] {
+        let request = compared(replacement.0, replacement.1);
+        let full = verify(&request, None).unwrap();
+        assert!(!full.vendor_reused);
+        let reused = verify(&request, Some(&vendor)).unwrap();
+        assert!(reused.vendor_reused);
+        assert_eq!(reused.records, full.records);
+        assert_eq!(reused.verdict, full.verdict);
+        assert_eq!(reused.complete, full.complete);
+    }
+    // Vendor results of another vendor side are rejected.
+    let mut other = compared(5, 0);
+    other.cases[1].vendor.arguments[0] = Some(0);
+    let error = verify(&other, Some(&vendor)).err().unwrap();
+    assert_eq!(error.code, ErrorCode::InvalidRequest);
+    assert!(error.message.contains("another vendor side"), "{error:?}");
+    // A replacement that cannot complete blocks the vendor side of the warm
+    // case, which then depends on it: the request executes fully.
+    let blocking = compared(0, 0x5000);
+    let blocked_full = verify(&blocking, None).unwrap();
+    assert!(blocked_full.records.iter().any(|r| matches!(
+        r,
+        ExecutionEvidence::Outcome {
+            case: 1,
+            replacement: false,
+            stop: ExecutionStop::BlockedByPriorPhase,
+            ..
+        }
+    )));
+    let blocked = verify(&blocking, Some(&vendor)).unwrap();
+    assert!(!blocked.vendor_reused);
+    assert_eq!(blocked.records, blocked_full.records);
+    assert_eq!(blocked.verdict, blocked_full.verdict);
 }
 
 #[test]
@@ -446,6 +536,7 @@ fn in_process_coverage_matches_the_project_report() {
                     replacement: None,
                     effects: &[],
                     projections: &[],
+                    vendor_results: None,
                 },
                 &blobray_backend_riscv::RiscvExecutor,
                 &memory,

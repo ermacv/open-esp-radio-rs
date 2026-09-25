@@ -345,7 +345,9 @@ pub(crate) fn prepare_execution_worker_in(
             STREAM_BLOCK,
             blobray_store::ExecutionRecordWriter::new(disk.temporary(&stage.join("staging"))?),
         );
-        let (verdict, complete) = run_resolved(
+        let RunOutcome {
+            verdict, complete, ..
+        } = run_resolved(
             &Resolved {
                 request,
                 goals: &goals,
@@ -355,6 +357,7 @@ pub(crate) fn prepare_execution_worker_in(
                 effects: &effects.contracts,
                 sources: &sources,
             },
+            &mut VendorSide::Execute(None),
             executor,
             memory,
             &mut |record, _| {
@@ -402,18 +405,44 @@ pub(crate) struct Resolved<'r, 'm> {
     pub sources: &'r Sources<'m>,
 }
 
+/// How the vendor side of a resolved request is obtained.
+pub(crate) enum VendorSide<'v> {
+    /// Execute it; with a sink, keep each case's observation.
+    Execute(Option<&'v mut Vec<ExecutionObservation>>),
+    /// Reuse the observations and coverage of an earlier execution of the
+    /// same vendor side.
+    Reuse {
+        cases: &'v [ExecutionObservation],
+        coverage: &'v [ExecutionCoverage],
+    },
+}
+
+/// Aggregate outcome of a resolved request.
+pub(crate) struct RunOutcome {
+    pub verdict: Option<ComparisonVerdict>,
+    pub complete: bool,
+    /// False when an incomplete replacement case blocked the vendor side of
+    /// the next warm case, so the vendor observations depend on the
+    /// replacement. Reuse then stops at that case, before emitting it.
+    pub vendor_independent: bool,
+}
+
 /// Execute every case of a resolved request, handing each evidence record to
-/// `emit` in stream order. Returns the aggregate verdict and completeness.
+/// `emit` in stream order.
 pub(crate) fn run_resolved<'m>(
     resolved: &Resolved<'_, 'm>,
+    vendor: &mut VendorSide<'_>,
     executor: &dyn Executor,
     memory: &'m WorkingMemory,
     emit: &mut Emit<'_>,
     control: &mut dyn RunControl,
-) -> Result<(Option<ComparisonVerdict>, bool)> {
+) -> Result<RunOutcome> {
     let request = resolved.request;
     let mut sides: [Side<'_>; 2] = Default::default();
     let mut blocked = false;
+    // Whether `blocked` holds only because the replacement did not complete.
+    let mut blocked_by_replacement = false;
+    let mut vendor_independent = true;
     let mut complete = true;
     let mut verdict = request
         .replacement
@@ -422,6 +451,7 @@ pub(crate) fn run_resolved<'m>(
     for (index, case) in request.cases.iter().enumerate() {
         if case.reset == SessionReset::Cold {
             blocked = false;
+            blocked_by_replacement = false;
             // Release both previous address spaces before acquiring either new one.
             for side in &mut sides {
                 side.release();
@@ -443,14 +473,33 @@ pub(crate) fn run_resolved<'m>(
                 .get(index + 1)
                 .is_none_or(|next| next.reset == SessionReset::Cold),
         };
-        let left = engine.invoke(
-            &request.vendor,
-            &case.vendor,
-            invocation_preparation(resolved.tables, index, 0, resolved.goals[index][0], control)?,
-            &mut sides[0],
-            blocked,
-            control,
-        )?;
+        if blocked_by_replacement {
+            vendor_independent = false;
+            if matches!(vendor, VendorSide::Reuse { .. }) {
+                break;
+            }
+        }
+        let left = match vendor {
+            VendorSide::Reuse { cases, .. } => {
+                std::borrow::Cow::Borrowed(cases.get(index).ok_or_else(|| {
+                    Error::new(ErrorCode::Integrity, "reused vendor case is missing")
+                })?)
+            }
+            VendorSide::Execute(_) => std::borrow::Cow::Owned(engine.invoke(
+                &request.vendor,
+                &case.vendor,
+                invocation_preparation(
+                    resolved.tables,
+                    index,
+                    0,
+                    resolved.goals[index][0],
+                    control,
+                )?,
+                &mut sides[0],
+                blocked,
+                control,
+            )?),
+        };
         let right = match (&request.replacement, &case.replacement) {
             (Some(t), Some(i)) => Some(engine.invoke(
                 t,
@@ -509,23 +558,37 @@ pub(crate) fn run_resolved<'m>(
         let phase_complete =
             left.completed() && right.as_ref().is_none_or(ExecutionObservation::completed);
         complete &= phase_complete;
-        if !phase_complete {
+        if !phase_complete && !blocked {
             blocked = true;
+            blocked_by_replacement = left.completed();
         }
-        if let Some(session) = &mut sides[0].session {
+        if let VendorSide::Execute(Some(sink)) = vendor {
+            sink.push(left.as_ref().clone());
+        }
+        if let (Some(session), std::borrow::Cow::Owned(left)) = (&mut sides[0].session, left) {
             session.recycle(left);
         }
         if let (Some(session), Some(right)) = (&mut sides[1].session, right) {
             session.recycle(right);
         }
     }
+    if !vendor_independent && matches!(vendor, VendorSide::Reuse { .. }) {
+        return Ok(RunOutcome {
+            verdict,
+            complete,
+            vendor_independent,
+        });
+    }
     for (index, side) in sides.iter_mut().enumerate() {
         side.release();
         if index == 1 && request.replacement.is_none() {
             break;
         }
-        let (reached, _capacity) = side.coverage.finish(memory, control)?;
-        for part in reached.split() {
+        let parts = match vendor {
+            VendorSide::Reuse { coverage, .. } if index == 0 => coverage.to_vec(),
+            _ => side.coverage.finish(memory, control)?.0.split(),
+        };
+        for part in parts {
             control.checkpoint(1)?;
             emit(
                 ExecutionEvidence::Coverage {
@@ -536,7 +599,11 @@ pub(crate) fn run_resolved<'m>(
             )?;
         }
     }
-    Ok((verdict, complete))
+    Ok(RunOutcome {
+        verdict,
+        complete,
+        vendor_independent,
+    })
 }
 
 /// One side's live session and the coverage that outlives its sessions.

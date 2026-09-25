@@ -585,6 +585,17 @@ project execution of the same request retains. `in_process::coverage` reports th
 vendor coverage of such results, as `code-coverage` does for retained executions,
 under identities the caller assigns.
 
+`in_process::vendor` executes only the vendor side of a request's cases and
+returns its observations and coverage. Passed as `vendor_results` to `verify`
+of a request with the same vendor side (vendor target, executables, cases'
+resets, stack fills and vendor invocations, event capacity and execution
+identities), it replaces executing that side: only the replacement executes,
+and the records equal those of a full execution. Results of another vendor
+side are rejected. When an incomplete replacement case blocks the vendor side
+of the next warm case, the vendor observations depend on the replacement, and
+`verify` executes the request fully; `vendor_reused` reports which happened.
+The results live in memory only, for repeated comparisons within one process.
+
 ### ISA conformance
 
 ```console

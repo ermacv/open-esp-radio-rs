@@ -6,8 +6,13 @@
 //! their canonical encoding. Records stay in memory: no project, content store,
 //! journal or knowledge review participates. Goals must not need symbol
 //! resolution, and runtime tables and reviewed call pairs need a project.
+//!
+//! The vendor side of a request can execute once and be reused by requests
+//! that differ only in their replacement side, such as the same request over
+//! patched production images; only the replacement then executes. Reuse
+//! yields the records of a full execution.
 pub use crate::code_coverage::report_in_process as coverage;
-use crate::execution::{Resolved, Sources, run_resolved};
+use crate::execution::{Resolved, RunOutcome, Sources, VendorSide, run_resolved};
 use crate::*;
 
 fn digest(value: &impl serde::Serialize) -> Result<ArtifactId> {
@@ -30,6 +35,37 @@ pub fn projection_ref(projection: &LayoutProjection) -> Result<ProjectionRef> {
     })
 }
 
+/// Vendor observations of one request's cases and the vendor coverage over
+/// them, from `vendor`. They are reused only by requests with the same key.
+pub struct VendorResults {
+    key: ArtifactId,
+    cases: Vec<ExecutionObservation>,
+    coverage: Vec<ExecutionCoverage>,
+}
+
+/// The key of the vendor side of `input` under `executor`: everything the
+/// vendor observations depend on when no replacement case blocks them.
+fn vendor_key(input: &InProcessComparison<'_>, executor: &dyn Executor) -> Result<ArtifactId> {
+    let request = input.request;
+    digest(&serde_json::json!({
+        "schema": EXECUTION_SCHEMA,
+        "environment": crate::EXECUTION_ENVIRONMENT,
+        "executor": executor.identity(),
+        "executables": input
+            .vendor
+            .iter()
+            .map(|bytes| ArtifactId::of_bytes(bytes))
+            .collect::<Vec<_>>(),
+        "target": &request.vendor,
+        "max_events": request.max_events,
+        "cases": request
+            .cases
+            .iter()
+            .map(|case| (case.reset, case.stack_fill, &case.vendor))
+            .collect::<Vec<_>>(),
+    }))
+}
+
 pub struct InProcessComparison<'a> {
     pub request: &'a ExecutionRequest,
     /// ELF bytes of the vendor target's source, then of its companions.
@@ -38,12 +74,16 @@ pub struct InProcessComparison<'a> {
     pub replacement: Option<&'a [&'a [u8]]>,
     pub effects: &'a [EffectContract],
     pub projections: &'a [LayoutProjection],
+    /// Vendor results of this request's vendor side, from `vendor`.
+    pub vendor_results: Option<&'a VendorResults>,
 }
 
 pub struct InProcessResult {
     pub records: Vec<ExecutionEvidence>,
     pub verdict: Option<ComparisonVerdict>,
     pub complete: bool,
+    /// Whether the given vendor results replaced executing the vendor side.
+    pub vendor_reused: bool,
 }
 
 fn unsupported(what: &str) -> Error {
@@ -53,13 +93,14 @@ fn unsupported(what: &str) -> Error {
     )
 }
 
-/// Execute and compare every case of `input.request`.
-pub fn verify(
+/// Validate `input`, then run its request with the vendor side from `vendor`.
+fn run(
     input: &InProcessComparison<'_>,
+    vendor: &mut VendorSide<'_>,
     executor: &dyn Executor,
     memory: &WorkingMemory,
     control: &mut dyn RunControl,
-) -> Result<InProcessResult> {
+) -> Result<(Vec<ExecutionEvidence>, RunOutcome)> {
     let request = input.request;
     // Capabilities this path does not have fail before anything else.
     for case in &request.cases {
@@ -134,13 +175,16 @@ pub fn verify(
         }
         goals.push(resolved);
     }
-    let mut targets = vec![(&request.vendor, input.vendor)];
+    let mut targets = Vec::new();
+    if matches!(vendor, VendorSide::Execute(_)) {
+        targets.push((&request.vendor, input.vendor));
+    }
     if let (Some(target), Some(executables)) = (&request.replacement, input.replacement) {
         targets.push((target, executables));
     }
     let sources = Sources::from_executables(&targets, memory, control)?;
     let mut records = Vec::new();
-    let (verdict, complete) = run_resolved(
+    let outcome = run_resolved(
         &Resolved {
             request,
             goals: &goals,
@@ -150,6 +194,7 @@ pub fn verify(
             effects: &effects,
             sources: &sources,
         },
+        vendor,
         executor,
         memory,
         &mut |record, _| {
@@ -158,9 +203,102 @@ pub fn verify(
         },
         control,
     )?;
+    Ok((records, outcome))
+}
+
+/// Execute the vendor side of every case of `input.request` once, for reuse
+/// by `verify` of requests with the same vendor side.
+pub fn vendor(
+    input: &InProcessComparison<'_>,
+    executor: &dyn Executor,
+    memory: &WorkingMemory,
+    control: &mut dyn RunControl,
+) -> Result<VendorResults> {
+    let mut request = input.request.clone();
+    request.replacement = None;
+    request.binding = None;
+    for case in &mut request.cases {
+        case.replacement = None;
+        case.relation = None;
+    }
+    let mut cases = Vec::new();
+    let (records, _) = run(
+        &InProcessComparison {
+            request: &request,
+            replacement: None,
+            vendor_results: None,
+            ..*input
+        },
+        &mut VendorSide::Execute(Some(&mut cases)),
+        executor,
+        memory,
+        control,
+    )?;
+    Ok(VendorResults {
+        key: vendor_key(input, executor)?,
+        cases,
+        coverage: records
+            .into_iter()
+            .filter_map(|record| match record {
+                ExecutionEvidence::Coverage {
+                    replacement: false,
+                    coverage,
+                } => Some(coverage),
+                _ => None,
+            })
+            .collect(),
+    })
+}
+
+/// Execute and compare every case of `input.request`, reusing
+/// `input.vendor_results` unless a replacement case blocks the vendor side.
+pub fn verify(
+    input: &InProcessComparison<'_>,
+    executor: &dyn Executor,
+    memory: &WorkingMemory,
+    control: &mut dyn RunControl,
+) -> Result<InProcessResult> {
+    if let Some(reused) = input.vendor_results {
+        if reused.key != vendor_key(input, executor)?
+            || reused.cases.len() != input.request.cases.len()
+        {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "vendor results belong to another vendor side",
+            ));
+        }
+        let (records, outcome) = run(
+            input,
+            &mut VendorSide::Reuse {
+                cases: &reused.cases,
+                coverage: &reused.coverage,
+            },
+            executor,
+            memory,
+            control,
+        )?;
+        // A replacement case that blocked the vendor side makes the vendor
+        // observations depend on it; such a request executes fully.
+        if outcome.vendor_independent {
+            return Ok(InProcessResult {
+                records,
+                verdict: outcome.verdict,
+                complete: outcome.complete,
+                vendor_reused: true,
+            });
+        }
+    }
+    let (records, outcome) = run(
+        input,
+        &mut VendorSide::Execute(None),
+        executor,
+        memory,
+        control,
+    )?;
     Ok(InProcessResult {
         records,
-        verdict,
-        complete,
+        verdict: outcome.verdict,
+        complete: outcome.complete,
+        vendor_reused: false,
     })
 }

@@ -145,6 +145,7 @@ fn run(elf: &[u8]) -> std::result::Result<Vec<u32>, String> {
             replacement: None,
             effects: &[],
             projections: &[],
+            vendor_results: None,
         },
         &blobray_backend_riscv::RiscvExecutor,
         &memory,

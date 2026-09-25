@@ -4,13 +4,10 @@ This crate is restricted implementation detail for
 `oer-esp32s31-pac`. It intentionally exposes the low-level
 svd2rust API required to implement reviewed transactions.
 
-`src/lib.rs` is the generated backend. The three adjacent IEEE 802.15.4
-sidecars are handwritten: `ieee802154_mac_ownership.rs` implements the affine
-task/interrupt split and reunion; the two `*_validation.rs` modules contain
-feature-gated validation transactions. They each deny `unsafe_code` and
-`unsafe_op_in_unsafe_fn`, allowing unsafe only on documented reviewed
-operations. Their tests live in child files. Do not treat these sidecars as
-generated code or exempt them from ownership review.
+`src/lib.rs` is the generated backend and the package's only source file.
+Handwritten code that needs raw register access, such as the IEEE 802.15.4
+task/interrupt split and its validation transactions, lives in the closed
+parent `pac` crate.
 
 Do not depend on it from HAL, driver, application, example or HIL crates.
 Physical pointers, `steal` and raw register writers are not product APIs. The

@@ -748,19 +748,19 @@ pub enum Ieee802154ValidationEventEnableState {
 impl Ieee802154ValidationEventEnableState {
     #[cfg(feature = "validation-probes")]
     const fn from_raw(
-        readback: crate::svd::ieee802154_mac_ownership::ValidationEventEnableReadback,
+        readback: crate::ieee802154::ownership::ValidationEventEnableReadback,
     ) -> Self {
         match readback {
-            crate::svd::ieee802154_mac_ownership::ValidationEventEnableReadback::AllMasked => {
+            crate::ieee802154::ownership::ValidationEventEnableReadback::AllMasked => {
                 Self::AllMasked
             }
-            crate::svd::ieee802154_mac_ownership::ValidationEventEnableReadback::TimerPair => {
+            crate::ieee802154::ownership::ValidationEventEnableReadback::TimerPair => {
                 Self::TimerPairOnly
             }
-            crate::svd::ieee802154_mac_ownership::ValidationEventEnableReadback::EdTimerAbort => {
+            crate::ieee802154::ownership::ValidationEventEnableReadback::EdTimerAbort => {
                 Self::EdDoneTimer0RxAbortOnly
             }
-            crate::svd::ieee802154_mac_ownership::ValidationEventEnableReadback::Unexpected => {
+            crate::ieee802154::ownership::ValidationEventEnableReadback::Unexpected => {
                 Self::Unexpected
             }
         }
@@ -1003,16 +1003,16 @@ pub enum Ieee802154OperationEventEnableObservation {
 
 impl Ieee802154OperationEventEnableObservation {
     const fn from_raw(
-        readback: crate::svd::ieee802154_mac_ownership::OperationEventEnableReadback,
+        readback: crate::ieee802154::ownership::OperationEventEnableReadback,
     ) -> Self {
         match readback {
-            crate::svd::ieee802154_mac_ownership::OperationEventEnableReadback::AllMasked => {
+            crate::ieee802154::ownership::OperationEventEnableReadback::AllMasked => {
                 Self::AllMasked
             }
-            crate::svd::ieee802154_mac_ownership::OperationEventEnableReadback::EdOperation => {
+            crate::ieee802154::ownership::OperationEventEnableReadback::EdOperation => {
                 Self::EdDoneAndRxAbortOnly
             }
-            crate::svd::ieee802154_mac_ownership::OperationEventEnableReadback::Unexpected => {
+            crate::ieee802154::ownership::OperationEventEnableReadback::Unexpected => {
                 Self::Unexpected
             }
         }
@@ -1036,16 +1036,16 @@ pub enum Ieee802154OperationRxAbortEnableObservation {
 
 impl Ieee802154OperationRxAbortEnableObservation {
     const fn from_raw(
-        readback: crate::svd::ieee802154_mac_ownership::OperationRxAbortEnableReadback,
+        readback: crate::ieee802154::ownership::OperationRxAbortEnableReadback,
     ) -> Self {
         match readback {
-            crate::svd::ieee802154_mac_ownership::OperationRxAbortEnableReadback::AllMasked => {
+            crate::ieee802154::ownership::OperationRxAbortEnableReadback::AllMasked => {
                 Self::AllMasked
             }
-            crate::svd::ieee802154_mac_ownership::OperationRxAbortEnableReadback::EdOperationReasons => {
+            crate::ieee802154::ownership::OperationRxAbortEnableReadback::EdOperationReasons => {
                 Self::EdOperationReasonsOnly
             }
-            crate::svd::ieee802154_mac_ownership::OperationRxAbortEnableReadback::Unexpected => {
+            crate::ieee802154::ownership::OperationRxAbortEnableReadback::Unexpected => {
                 Self::Unexpected
             }
         }
@@ -1066,7 +1066,7 @@ pub struct Ieee802154EventObservation {
 
 impl Ieee802154EventObservation {
     const fn from_readback(
-        readback: crate::svd::ieee802154_mac_ownership::Ieee802154EventReadback,
+        readback: crate::ieee802154::ownership::Ieee802154EventReadback,
     ) -> Self {
         let mut events = Ieee802154EventMask::NONE;
         if readback.tx_done() {
@@ -1115,7 +1115,7 @@ impl Ieee802154EventObservation {
         snapshot: &crate::svd::w1c_register_snapshot::Ieee802154EventStatusSnapshot,
     ) -> Self {
         Self::from_readback(
-            crate::svd::ieee802154_mac_ownership::Ieee802154EventReadback::from_event_status_snapshot(
+            crate::ieee802154::ownership::Ieee802154EventReadback::from_event_status_snapshot(
                 snapshot,
             ),
         )
@@ -1484,7 +1484,7 @@ pub struct Ieee802154MacConfigurationReadback {
 }
 
 fn raw_identity_to_typed(
-    readback: crate::svd::ieee802154_mac_ownership::MultipanIdentityReadback,
+    readback: crate::ieee802154::ownership::MultipanIdentityReadback,
 ) -> Ieee802154PanIdentity {
     Ieee802154PanIdentity::new(
         readback.pan_id(),
@@ -1694,7 +1694,7 @@ impl Ieee802154StateSnapshot {
 #[must_use = "dropping the lease releases the unique radio-register borrow"]
 #[doc(hidden)]
 pub struct Ieee802154RegisterLease<'registers> {
-    registers: &'registers mut crate::svd::ieee802154_mac_ownership::TaskRegisters,
+    registers: &'registers mut crate::ieee802154::ownership::TaskRegisters,
     interrupt_route: &'registers crate::svd::Ieee802154InterruptRoute,
 }
 
@@ -1725,7 +1725,7 @@ pub struct Ieee802154RegisterLease<'registers> {
 /// ```
 #[must_use = "dropping the timer lease releases its exclusive task-register borrow"]
 pub struct Ieee802154TimerLease<'registers> {
-    registers: &'registers mut crate::svd::ieee802154_mac_ownership::TaskRegisters,
+    registers: &'registers mut crate::ieee802154::ownership::TaskRegisters,
 }
 
 impl Ieee802154TimerLease<'_> {
@@ -2100,7 +2100,7 @@ impl Ieee802154RegisterLease<'_> {
 #[doc(hidden)]
 pub struct Ieee802154PolledRegisterLease<'registers> {
     task: Ieee802154RegisterLease<'registers>,
-    interrupt: &'registers mut crate::svd::ieee802154_mac_ownership::InterruptRegisters,
+    interrupt: &'registers mut crate::ieee802154::ownership::InterruptRegisters,
 }
 
 impl<'registers> Deref for Ieee802154PolledRegisterLease<'registers> {
@@ -2548,7 +2548,7 @@ where
 /// activation or teardown transaction.
 struct Ieee802154PacInterruptTransitionPort<'task> {
     task: &'task mut Ieee802154TaskRegisters,
-    registers: crate::svd::ieee802154_mac_ownership::InterruptRegisters,
+    registers: crate::ieee802154::ownership::InterruptRegisters,
 }
 
 impl Ieee802154InterruptTransitionPort for Ieee802154PacInterruptTransitionPort<'_> {

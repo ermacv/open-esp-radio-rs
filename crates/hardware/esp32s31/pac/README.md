@@ -21,7 +21,6 @@ and invariants in `tools/registers/model`. Reviewed model, ownership policy and 
 | [src/generated.rs](src/generated.rs) | Generated semantic capability catalog selected by [PAC API policy](../../../../registers/esp32s31/policy/api.toml) |
 | [Radio bindings](../../../../registers/esp32s31/published/radio.bindings.toml) | Published register-to-raw-PAC binding metadata |
 | [src/ownership.rs](src/ownership.rs) and domain modules | Handwritten authority, register-local operations and restricted access |
-| [Raw sidecars](raw/README.md) | Handwritten IEEE 802.15.4 ownership and validation operations, with their own unsafe policy |
 
 Both Rust generated outputs are regenerated through the publisher. Do not
 edit them by hand or extend their lint exceptions to handwritten files. The

@@ -1,5 +1,3 @@
-#![deny(unsafe_code, unsafe_op_in_unsafe_fn)]
-
 //! Affine task/interrupt ownership split for the shared IEEE 802.15.4 MAC
 //! register block.
 //!
@@ -97,7 +95,7 @@ fn execute_transmit_security_disable<Port: TransmitSecurityProgrammingPort>(port
 /// restricted parent PAC.
 #[doc(hidden)]
 fn configure_transmit_security(
-    registers: &mut crate::Ieee802154Mac,
+    registers: &mut crate::svd::Ieee802154Mac,
     address: &[u8; 8],
     key: &[u8; 16],
     payload_offset: u8,
@@ -107,36 +105,36 @@ fn configure_transmit_security(
 
 /// Disable transmit security without claiming key/address zeroization.
 #[doc(hidden)]
-fn disable_transmit_security(registers: &mut crate::Ieee802154Mac) {
+fn disable_transmit_security(registers: &mut crate::svd::Ieee802154Mac) {
     execute_transmit_security_disable(registers);
 }
 
 /// Publish the one source-confirmed enhanced-ACK notification image.
 #[doc(hidden)]
-fn notify_enhanced_ack_generated(registers: &mut crate::Ieee802154Mac) {
-    crate::fixed_register_image::notify_ieee802154_enhanced_ack_generated(registers);
+fn notify_enhanced_ack_generated(registers: &mut crate::svd::Ieee802154Mac) {
+    crate::svd::fixed_register_image::notify_ieee802154_enhanced_ack_generated(registers);
 }
 
 /// Replace only the raw eight-bit transmit-power field while preserving every
 /// unmodeled bit in its backing word.
 #[doc(hidden)]
-fn set_tx_power_code(registers: &mut crate::Ieee802154Mac, code: u32) {
+fn set_tx_power_code(registers: &mut crate::svd::Ieee802154Mac, code: u32) {
     assert!(code <= 0xff, "TX-power code exceeds eight bits");
-    crate::masked_register_modify::set_ieee802154_tx_power_code(registers, code);
+    crate::svd::masked_register_modify::set_ieee802154_tx_power_code(registers, code);
 }
 
-impl TransmitSecurityProgrammingPort for crate::Ieee802154Mac {
+impl TransmitSecurityProgrammingPort for crate::svd::Ieee802154Mac {
     fn write_address_low(&mut self, word: u32) {
-        crate::zero_based_field_write::publish_ieee802154_security_address_low(self, word);
+        crate::svd::zero_based_field_write::publish_ieee802154_security_address_low(self, word);
     }
 
     fn write_address_high(&mut self, word: u32) {
-        crate::zero_based_field_write::publish_ieee802154_security_address_high(self, word);
+        crate::svd::zero_based_field_write::publish_ieee802154_security_address_high(self, word);
     }
 
     fn write_key_word(&mut self, index: usize, word: u32) {
         assert!(index < 4, "security key index exceeds four words");
-        crate::zero_based_field_write::publish_ieee802154_security_key_word(self, index, word);
+        crate::svd::zero_based_field_write::publish_ieee802154_security_key_word(self, index, word);
     }
 
     #[allow(
@@ -156,7 +154,7 @@ impl TransmitSecurityProgrammingPort for crate::Ieee802154Mac {
     }
 }
 
-impl MultipanIdentityProgrammingPort for crate::Ieee802154Mac {
+impl MultipanIdentityProgrammingPort for crate::svd::Ieee802154Mac {
     fn enable_context(&mut self, index: usize) {
         self.control().modify(|_, writer| match index {
             0 => writer.multipan0_enabled().set_bit(),
@@ -214,7 +212,7 @@ impl MultipanIdentityProgrammingPort for crate::Ieee802154Mac {
 /// ```
 #[must_use = "the task owner must be reunited with its interrupt owner"]
 pub struct TaskRegisters {
-    registers: crate::Ieee802154Mac,
+    registers: crate::svd::Ieee802154Mac,
 }
 
 /// Primitive readback of one source-confirmed PAN context.
@@ -456,6 +454,7 @@ pub enum OperationRxAbortEnableReadback {
 }
 
 /// Closed validation-only classification of `EVENT_ENABLE`.
+#[cfg(feature = "validation-probes")]
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ValidationEventEnableReadback {
@@ -490,7 +489,7 @@ pub struct Ieee802154EventReadback {
 }
 
 impl Ieee802154EventReadback {
-    pub(crate) fn from_event_enable(reader: &crate::ieee802154_mac::event_enable::R) -> Self {
+    pub(crate) fn from_event_enable(reader: &crate::svd::ieee802154_mac::event_enable::R) -> Self {
         Self {
             tx_done: reader.tx_done().bit_is_set(),
             rx_done: reader.rx_done().bit_is_set(),
@@ -510,7 +509,7 @@ impl Ieee802154EventReadback {
     }
 
     #[cfg(feature = "validation-probes")]
-    pub(crate) fn from_event_status(reader: &crate::ieee802154_mac::event_status::R) -> Self {
+    pub(crate) fn from_event_status(reader: &crate::svd::ieee802154_mac::event_status::R) -> Self {
         Self {
             tx_done: reader.tx_done().bit_is_set(),
             rx_done: reader.rx_done().bit_is_set(),
@@ -530,7 +529,7 @@ impl Ieee802154EventReadback {
     }
 
     pub fn from_event_status_snapshot(
-        snapshot: &crate::w1c_register_snapshot::Ieee802154EventStatusSnapshot,
+        snapshot: &crate::svd::w1c_register_snapshot::Ieee802154EventStatusSnapshot,
     ) -> Self {
         Self {
             tx_done: snapshot.tx_done(),
@@ -636,6 +635,7 @@ impl Ieee802154EventReadback {
             && !self.unclassified_13
     }
 
+    #[cfg(feature = "validation-probes")]
     const fn is_timer_pair(self) -> bool {
         self.timer0_overflow
             && self.timer1_overflow
@@ -653,6 +653,7 @@ impl Ieee802154EventReadback {
             && !self.unclassified_13
     }
 
+    #[cfg(feature = "validation-probes")]
     const fn is_ed_timer_abort(self) -> bool {
         self.rx_abort
             && self.ed_done
@@ -855,6 +856,7 @@ impl TaskRegisters {
     }
 
     /// Classify the two reset-isolated validation event selections.
+    #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_event_enable_readback(&self) -> ValidationEventEnableReadback {
         let events = self.event_enable_readback();
@@ -873,7 +875,7 @@ impl TaskRegisters {
     /// register while preserving the unowned high byte.
     #[doc(hidden)]
     pub fn set_ed_duration(&mut self, duration: u16) {
-        crate::masked_register_modify::set_ieee802154_ed_duration(
+        crate::svd::masked_register_modify::set_ieee802154_ed_duration(
             &self.registers,
             u32::from(duration),
         );
@@ -888,91 +890,103 @@ impl TaskRegisters {
     /// Publish one complete TX DMA address word.
     #[doc(hidden)]
     pub fn publish_transmit_dma_address(&mut self, address: u32) {
-        crate::full_register_write::publish_ieee802154_tx_dma_address(&self.registers, address);
+        crate::svd::full_register_write::publish_ieee802154_tx_dma_address(
+            &self.registers,
+            address,
+        );
     }
 
     /// Publish one complete RX DMA address word.
     #[doc(hidden)]
     pub fn publish_receive_dma_address(&mut self, address: u32) {
-        crate::full_register_write::publish_ieee802154_rx_dma_address(&self.registers, address);
+        crate::svd::full_register_write::publish_ieee802154_rx_dma_address(
+            &self.registers,
+            address,
+        );
     }
 
     /// Issue the fixed TX-start image.
     #[doc(hidden)]
     pub fn issue_transmit(&mut self) {
-        crate::fixed_register_image::issue_ieee802154_tx_start(&self.registers);
+        crate::svd::fixed_register_image::issue_ieee802154_tx_start(&self.registers);
     }
 
     /// Issue the fixed RX-start image.
     #[doc(hidden)]
     pub fn issue_receive(&mut self) {
-        crate::fixed_register_image::issue_ieee802154_rx_start(&self.registers);
+        crate::svd::fixed_register_image::issue_ieee802154_rx_start(&self.registers);
     }
 
     /// Issue the fixed CCA-then-TX image.
     #[doc(hidden)]
     pub fn issue_clear_channel_then_transmit(&mut self) {
-        crate::fixed_register_image::issue_ieee802154_cca_tx_start(&self.registers);
+        crate::svd::fixed_register_image::issue_ieee802154_cca_tx_start(&self.registers);
     }
 
     /// Issue the fixed ED-start image.
     #[doc(hidden)]
     pub fn issue_energy_detection(&mut self) {
-        crate::fixed_register_image::issue_ieee802154_ed_start(&self.registers);
+        crate::svd::fixed_register_image::issue_ieee802154_ed_start(&self.registers);
     }
 
     /// Issue the fixed state-specific STOP image.
     #[doc(hidden)]
     pub fn issue_stop(&mut self) {
-        crate::fixed_register_image::issue_ieee802154_stop(&self.registers);
+        crate::svd::fixed_register_image::issue_ieee802154_stop(&self.registers);
     }
 
     /// Publish one complete TIMER0 threshold word.
     #[doc(hidden)]
     pub fn publish_timer0_threshold(&mut self, threshold: u32) {
-        crate::full_register_write::publish_ieee802154_timer0_threshold(&self.registers, threshold);
+        crate::svd::full_register_write::publish_ieee802154_timer0_threshold(
+            &self.registers,
+            threshold,
+        );
     }
 
     /// Observe one complete TIMER0 counter word.
     #[doc(hidden)]
     pub fn observe_timer0_value(&self) -> u32 {
-        crate::full_register_read::observe_ieee802154_timer0_value(&self.registers)
+        crate::svd::full_register_read::observe_ieee802154_timer0_value(&self.registers)
     }
 
     /// Issue the fixed TIMER0-start image.
     #[doc(hidden)]
     pub fn issue_timer0_start(&mut self) {
-        crate::fixed_register_image::issue_ieee802154_timer0_start(&self.registers);
+        crate::svd::fixed_register_image::issue_ieee802154_timer0_start(&self.registers);
     }
 
     /// Issue the fixed TIMER0-stop image.
     #[doc(hidden)]
     pub fn issue_timer0_stop(&mut self) {
-        crate::fixed_register_image::issue_ieee802154_timer0_stop(&self.registers);
+        crate::svd::fixed_register_image::issue_ieee802154_timer0_stop(&self.registers);
     }
 
     /// Publish one complete TIMER1 threshold word.
     #[doc(hidden)]
     pub fn publish_timer1_threshold(&mut self, threshold: u32) {
-        crate::full_register_write::publish_ieee802154_timer1_threshold(&self.registers, threshold);
+        crate::svd::full_register_write::publish_ieee802154_timer1_threshold(
+            &self.registers,
+            threshold,
+        );
     }
 
     /// Observe one complete TIMER1 counter word.
     #[doc(hidden)]
     pub fn observe_timer1_value(&self) -> u32 {
-        crate::full_register_read::observe_ieee802154_timer1_value(&self.registers)
+        crate::svd::full_register_read::observe_ieee802154_timer1_value(&self.registers)
     }
 
     /// Issue the fixed TIMER1-start image.
     #[doc(hidden)]
     pub fn issue_timer1_start(&mut self) {
-        crate::fixed_register_image::issue_ieee802154_timer1_start(&self.registers);
+        crate::svd::fixed_register_image::issue_ieee802154_timer1_start(&self.registers);
     }
 
     /// Issue the fixed TIMER1-stop image.
     #[doc(hidden)]
     pub fn issue_timer1_stop(&mut self) {
-        crate::fixed_register_image::issue_ieee802154_timer1_stop(&self.registers);
+        crate::svd::fixed_register_image::issue_ieee802154_timer1_stop(&self.registers);
     }
 
     /// Replace only the recovered eight-bit channel/frequency field.
@@ -1294,133 +1308,139 @@ impl TaskRegisters {
     /// Apply the sole source-confirmed RXON delay image used by IEEE timing.
     #[doc(hidden)]
     pub fn set_rx_on_delay_50(&mut self) {
-        crate::masked_register_modify::set_ieee802154_rx_on_delay(&self.registers, 50);
+        crate::svd::masked_register_modify::set_ieee802154_rx_on_delay(&self.registers, 50);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_enable_timer_events(&mut self) {
-        crate::ieee802154_event_status_validation::enable_timer_events(&self.registers);
+        crate::ieee802154::validation::event_status::enable_timer_events(&self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_disable_all_events(&mut self) {
-        crate::ieee802154_event_status_validation::disable_all_events(&self.registers);
+        crate::ieee802154::validation::event_status::disable_all_events(&self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_timer0_value(&self) -> u32 {
-        crate::ieee802154_event_status_validation::timer0_value(&self.registers)
+        crate::ieee802154::validation::event_status::timer0_value(&self.registers)
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_timer1_value(&self) -> u32 {
-        crate::ieee802154_event_status_validation::timer1_value(&self.registers)
+        crate::ieee802154::validation::event_status::timer1_value(&self.registers)
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_set_timer_thresholds(&mut self, threshold: u32) {
-        crate::ieee802154_event_status_validation::set_timer_thresholds(&self.registers, threshold);
+        crate::ieee802154::validation::event_status::set_timer_thresholds(
+            &self.registers,
+            threshold,
+        );
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_start_timer0(&mut self) {
-        crate::ieee802154_event_status_validation::start_timer0(&self.registers);
+        crate::ieee802154::validation::event_status::start_timer0(&self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_stop_timer0(&mut self) {
-        crate::ieee802154_event_status_validation::stop_timer0(&self.registers);
+        crate::ieee802154::validation::event_status::stop_timer0(&self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_start_timer1(&mut self) {
-        crate::ieee802154_event_status_validation::start_timer1(&self.registers);
+        crate::ieee802154::validation::event_status::start_timer1(&self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_stop_timer1(&mut self) {
-        crate::ieee802154_event_status_validation::stop_timer1(&self.registers);
+        crate::ieee802154::validation::event_status::stop_timer1(&self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_enable_ed_timer_abort_events(&mut self) {
-        crate::ieee802154_ed_event_validation::enable_ed_timer_abort_events(&mut self.registers);
+        crate::ieee802154::validation::ed_event::enable_ed_timer_abort_events(&mut self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_disable_ed_events(&mut self) {
-        crate::ieee802154_ed_event_validation::disable_all_events(&mut self.registers);
+        crate::ieee802154::validation::ed_event::disable_all_events(&mut self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_enable_ed_abort_reasons(&mut self) {
-        crate::ieee802154_ed_event_validation::enable_ed_abort_reasons(&mut self.registers);
+        crate::ieee802154::validation::ed_event::enable_ed_abort_reasons(&mut self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_disable_ed_abort_reasons(&mut self) {
-        crate::ieee802154_ed_event_validation::disable_all_rx_abort_reasons(&mut self.registers);
+        crate::ieee802154::validation::ed_event::disable_all_rx_abort_reasons(&mut self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_ed_duration(&self) -> u32 {
-        crate::ieee802154_ed_event_validation::ed_duration(&self.registers)
+        crate::ieee802154::validation::ed_event::ed_duration(&self.registers)
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_set_ed_duration_eight(&mut self) {
-        crate::ieee802154_ed_event_validation::set_ed_duration_eight(&mut self.registers);
+        crate::ieee802154::validation::ed_event::set_ed_duration_eight(&mut self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_ed_timer0_value(&self) -> u32 {
-        crate::ieee802154_ed_event_validation::timer0_value(&self.registers)
+        crate::ieee802154::validation::ed_event::timer0_value(&self.registers)
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_set_ed_timer0_threshold(&mut self, threshold: u32) {
-        crate::ieee802154_ed_event_validation::set_timer0_threshold(&mut self.registers, threshold);
+        crate::ieee802154::validation::ed_event::set_timer0_threshold(
+            &mut self.registers,
+            threshold,
+        );
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_start_ed_timer0(&mut self) {
-        crate::ieee802154_ed_event_validation::start_timer0(&mut self.registers);
+        crate::ieee802154::validation::ed_event::start_timer0(&mut self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_stop_ed_timer0(&mut self) {
-        crate::ieee802154_ed_event_validation::stop_timer0(&mut self.registers);
+        crate::ieee802154::validation::ed_event::stop_timer0(&mut self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_start_ed(&mut self) {
-        crate::ieee802154_ed_event_validation::start_ed(&mut self.registers);
+        crate::ieee802154::validation::ed_event::start_ed(&mut self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_stop_ed_operation(&mut self) {
-        crate::ieee802154_ed_event_validation::stop_operation(&mut self.registers);
+        crate::ieee802154::validation::ed_event::stop_operation(&mut self.registers);
     }
 }
 
@@ -1451,7 +1471,7 @@ impl InterruptTxStatusReadback {
 
 #[must_use = "the interrupt owner must be deactivated and reunited"]
 pub struct InterruptRegisters {
-    registers: crate::Ieee802154Mac,
+    registers: crate::svd::Ieee802154Mac,
 }
 
 impl InterruptRegisters {
@@ -1459,17 +1479,17 @@ impl InterruptRegisters {
     #[inline]
     pub fn sample_event_status(
         &self,
-    ) -> crate::w1c_register_snapshot::Ieee802154EventStatusSnapshot {
-        crate::w1c_register_snapshot::sample_ieee802154_event_status(&self.registers)
+    ) -> crate::svd::w1c_register_snapshot::Ieee802154EventStatusSnapshot {
+        crate::svd::w1c_register_snapshot::sample_ieee802154_event_status(&self.registers)
     }
 
     /// Acknowledge exactly one previously sampled event field and consume it.
     #[inline]
     pub fn acknowledge_event_status(
         &mut self,
-        snapshot: crate::w1c_register_snapshot::Ieee802154EventStatusSnapshot,
+        snapshot: crate::svd::w1c_register_snapshot::Ieee802154EventStatusSnapshot,
     ) {
-        crate::w1c_register_snapshot::acknowledge_ieee802154_event_status(
+        crate::svd::w1c_register_snapshot::acknowledge_ieee802154_event_status(
             &mut self.registers,
             snapshot,
         );
@@ -1518,37 +1538,37 @@ impl InterruptRegisters {
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_event_status_events(&self) -> Ieee802154EventReadback {
-        crate::ieee802154_event_status_validation::event_status_events(&self.registers)
+        crate::ieee802154::validation::event_status::event_status_events(&self.registers)
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_write_timer0_event(&mut self) {
-        crate::ieee802154_event_status_validation::write_timer0_event(&self.registers);
+        crate::ieee802154::validation::event_status::write_timer0_event(&self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_write_timer1_event(&mut self) {
-        crate::ieee802154_event_status_validation::write_timer1_event(&self.registers);
+        crate::ieee802154::validation::event_status::write_timer1_event(&self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_ed_event_status_events(&self) -> Ieee802154EventReadback {
-        crate::ieee802154_ed_event_validation::event_status_events(&self.registers)
+        crate::ieee802154::validation::ed_event::event_status_events(&self.registers)
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_write_ed_done_event(&mut self) {
-        crate::ieee802154_ed_event_validation::write_ed_done_event(&mut self.registers);
+        crate::ieee802154::validation::ed_event::write_ed_done_event(&mut self.registers);
     }
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_write_ed_timer0_event(&mut self) {
-        crate::ieee802154_ed_event_validation::write_timer0_event(&mut self.registers);
+        crate::ieee802154::validation::ed_event::write_timer0_event(&mut self.registers);
     }
 }
 
@@ -1566,13 +1586,13 @@ impl InterruptRegisters {
     unsafe_code,
     reason = "consuming the singleton creates the disjoint task and interrupt capabilities"
 )]
-pub fn split(registers: crate::Ieee802154Mac) -> (TaskRegisters, InterruptRegisters) {
+pub fn split(registers: crate::svd::Ieee802154Mac) -> (TaskRegisters, InterruptRegisters) {
     // SAFETY: `registers` was consumed above. The duplicate remains private in
     // the IRQ role, whose safe methods touch only EVENT_STATUS, RX_STATUS,
     // TX_STATUS and ED_CONFIG observations. The task role exposed by the
     // restricted parent PAC does not offer EVENT_STATUS acknowledge or abort
     // status snapshot methods while the roles are separated.
-    let interrupt = unsafe { crate::Ieee802154Mac::steal() };
+    let interrupt = unsafe { crate::svd::Ieee802154Mac::steal() };
     (
         TaskRegisters { registers },
         InterruptRegisters {
@@ -1583,7 +1603,7 @@ pub fn split(registers: crate::Ieee802154Mac) -> (TaskRegisters, InterruptRegist
 
 /// Consume both roles and recover the unique complete MAC owner.
 #[inline]
-pub fn reunite(task: TaskRegisters, interrupt: InterruptRegisters) -> crate::Ieee802154Mac {
+pub fn reunite(task: TaskRegisters, interrupt: InterruptRegisters) -> crate::svd::Ieee802154Mac {
     let TaskRegisters { registers } = task;
     let InterruptRegisters {
         registers: _duplicate,

@@ -18,8 +18,7 @@ vcell = "0.1.3"
 
 [lints.rust]
 # Generated svd2rust 0.37.1 code keeps operations inside `unsafe fn steal`
-# without redundant inner blocks. Handwritten sidecar modules explicitly deny
-# unsafe_op_in_unsafe_fn and permit unsafe_code only on reviewed operations.
+# without redundant inner blocks. This package contains generated code only.
 unsafe_op_in_unsafe_fn = "allow"
 
 [lints.clippy]

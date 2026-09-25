@@ -57370,17 +57370,6 @@ impl Peripherals {
     }
 }
 
-#[cfg(feature = "validation-probes")]
-#[doc(hidden)]
-pub mod ieee802154_event_status_validation;
-
-#[cfg(feature = "validation-probes")]
-#[doc(hidden)]
-pub mod ieee802154_ed_event_validation;
-
-#[doc(hidden)]
-pub mod ieee802154_mac_ownership;
-
 /// Safe, SVD-declared read-and-acknowledge interrupt transactions.
 pub mod interrupt_snapshot {
 

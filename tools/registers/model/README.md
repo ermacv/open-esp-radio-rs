@@ -18,9 +18,9 @@
 - generic physical-layout and write-semantics invariants;
 - reviewed PAC transaction, binding-index and evidence-catalog schemas.
 
-The PAC pack declares `sidecar-modules` for reviewed hand-written modules that
-must remain available in every generated raw PAC build. Validation-only
-sidecars use the separate feature-gated `feature-modules` list.
+The raw PAC is generated output only. The PAC pack has no module declarations
+for hand-written code; ownership and validation transactions that need raw
+register access live in the closed parent PAC.
 
 The closed-PAC transaction pack is schema 5 only. Its
 `w1c-register-snapshots` operation binds one non-array 32-bit W1C register field

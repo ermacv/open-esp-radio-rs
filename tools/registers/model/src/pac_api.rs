@@ -15,10 +15,6 @@ pub struct PacApiPack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ownership_partitions: Vec<OwnershipPartition>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub feature_modules: Vec<FeatureModule>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub sidecar_modules: Vec<SidecarModule>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub flag_domains: Vec<FlagDomain>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub enum_domains: Vec<EnumDomain>,
@@ -94,24 +90,6 @@ pub struct OwnershipPartition {
     pub description: String,
     /// Exact SVD peripheral names consumed by this owner.
     pub peripherals: Vec<String>,
-}
-
-/// Feature-gated sidecar module preserved at the generated raw PAC root.
-///
-/// The declaration makes target-owned validation code reproducible without
-/// placing that code in the generated file or exposing it in normal builds.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct FeatureModule {
-    pub name: String,
-    pub feature: String,
-}
-
-/// Always-available hand-written module retained at the generated raw PAC root.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct SidecarModule {
-    pub name: String,
 }
 
 /// Closed writable bit-mask domain emitted into the public PAC facade.
@@ -262,8 +240,8 @@ pub struct IndirectRegisterField {
 /// Select whether an operation receives a direct closed-PAC facade bridge.
 ///
 /// `RawOnly` keeps the generated leaf available to a hand-written affine
-/// ownership sidecar without also exposing a redundant full-block wrapper in
-/// the restricted parent PAC.
+/// ownership module in the closed parent PAC without also generating a
+/// redundant full-block facade wrapper.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PacApiExposure {
@@ -314,7 +292,7 @@ pub struct FullRegisterWrite {
 ///
 /// The raw generated leaf returns `u32`; the optional facade bridge wraps that
 /// image in the declared domain. `RawOnly` is intended for affine ownership
-/// sidecars which must not recover the complete SVD block.
+/// modules which must not recover the complete SVD block.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct FullRegisterRead {
@@ -553,41 +531,6 @@ impl PacApiPack {
         self.validate_domains()?;
         let domain_names = self.domain_names();
         self.validate_indirect_register_field_domains(&domain_names)?;
-        let mut module_names = BTreeSet::new();
-        for module in &self.feature_modules {
-            if !is_lower_snake_case(&module.name) {
-                return Err(Error::message(format!(
-                    "PAC API feature-module name {:?} is not lower snake case",
-                    module.name
-                )));
-            }
-            if !is_cargo_feature_name(&module.feature) {
-                return Err(Error::message(format!(
-                    "PAC API feature-module {:?} has invalid Cargo feature {:?}",
-                    module.name, module.feature
-                )));
-            }
-            if !module_names.insert(&module.name) {
-                return Err(Error::message(format!(
-                    "PAC API contains duplicate feature-module name {:?}",
-                    module.name
-                )));
-            }
-        }
-        for module in &self.sidecar_modules {
-            if !is_lower_snake_case(&module.name) {
-                return Err(Error::message(format!(
-                    "PAC API sidecar-module name {:?} is not lower snake case",
-                    module.name
-                )));
-            }
-            if !module_names.insert(&module.name) {
-                return Err(Error::message(format!(
-                    "PAC API contains duplicate module name {:?}",
-                    module.name
-                )));
-            }
-        }
         validate_operations("interrupt-snapshot", &self.interrupt_snapshots)?;
         validate_operations("full-register-write", &self.full_register_writes)?;
         validate_operations("full-register-read", &self.full_register_reads)?;
@@ -1667,13 +1610,6 @@ fn is_lower_snake_case(value: &str) -> bool {
             .all(|byte| byte == b'_' || byte.is_ascii_lowercase() || byte.is_ascii_digit())
 }
 
-fn is_cargo_feature_name(value: &str) -> bool {
-    value.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
-        && value.bytes().all(|byte| {
-            byte == b'-' || byte == b'_' || byte.is_ascii_lowercase() || byte.is_ascii_digit()
-        })
-}
-
 fn is_upper_snake_case(value: &str) -> bool {
     value.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
         && value
@@ -1762,8 +1698,6 @@ mod tests {
             schema: 5,
             options: PacApiOptions::default(),
             ownership_partitions: Vec::new(),
-            feature_modules: Vec::new(),
-            sidecar_modules: Vec::new(),
             flag_domains: Vec::new(),
             enum_domains: Vec::new(),
             bounded_domains: Vec::new(),
@@ -1790,37 +1724,6 @@ mod tests {
             field_argument_modifies: Vec::new(),
             indexed_bit_set_modifies: Vec::new(),
         }
-    }
-
-    #[test]
-    fn validates_feature_gated_sidecar_modules() {
-        let mut pack = empty_pack();
-        pack.feature_modules.push(FeatureModule {
-            name: "event_status_validation".to_owned(),
-            feature: "validation-probes".to_owned(),
-        });
-        assert!(pack.validate().is_ok());
-
-        pack.feature_modules.push(FeatureModule {
-            name: "event_status_validation".to_owned(),
-            feature: "invalid feature".to_owned(),
-        });
-        assert!(pack.validate().is_err());
-    }
-
-    #[test]
-    fn validates_always_available_sidecar_modules() {
-        let mut pack = empty_pack();
-        pack.sidecar_modules.push(SidecarModule {
-            name: "interrupt_route_observation".to_owned(),
-        });
-        assert!(pack.validate().is_ok());
-
-        pack.feature_modules.push(FeatureModule {
-            name: "interrupt_route_observation".to_owned(),
-            feature: "validation-probes".to_owned(),
-        });
-        assert!(pack.validate().is_err());
     }
 
     #[test]

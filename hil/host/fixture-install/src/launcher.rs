@@ -4,6 +4,9 @@ use std::process::ExitCode;
 
 use crate::{ArtifactRole, Provider};
 
+#[cfg(target_os = "linux")]
+mod handoff;
+
 #[derive(Clone, Copy)]
 pub enum LaunchTarget {
     Network,
@@ -25,6 +28,21 @@ impl LaunchTarget {
             Self::Probe => ArtifactRole::ProbeHelper,
             Self::Bluetooth => ArtifactRole::BluetoothHelper,
         }
+    }
+
+    /// Installed path of this target's fixed launcher.
+    fn launcher(self) -> &'static str {
+        let role = match self {
+            Self::Network => ArtifactRole::NetworkLauncher,
+            Self::Probe => ArtifactRole::ProbeLauncher,
+            Self::Bluetooth => ArtifactRole::BluetoothLauncher,
+        };
+        self.provider()
+            .artifact_specs()
+            .iter()
+            .find(|spec| spec.role == role)
+            .map(|spec| spec.target)
+            .expect("every launch target installs its fixed launcher")
     }
 
     fn marker(self) -> &'static str {
@@ -51,8 +69,8 @@ pub(crate) mod test_support {
         let helper = lease.artifact(target.role())?;
         Ok(Command::new(helper)
             .args(arguments)
-            .env("OPEN_RADIO_GENERATION_BOUND", target.marker())
-            .env("OPEN_RADIO_GENERATION_DIR", lease.generation())
+            .env(super::handoff::BOUND, target.marker())
+            .env(super::handoff::DIRECTORY, lease.generation())
             .status()?)
     }
 }
@@ -67,32 +85,33 @@ pub fn main(target: LaunchTarget) -> ExitCode {
     }
 }
 
+/// Enter a helper that runs only through its fixed launcher.
+///
+/// A direct invocation re-enters through the installed launcher and does not
+/// return on success. Under the launcher, this adopts the provider lease it
+/// passed; keep the returned file for the helper's lifetime. Call this first
+/// in `main`.
 #[cfg(target_os = "linux")]
-pub fn adopt_lease(expected_marker: &str) -> crate::Result<std::fs::File> {
+pub fn enter(target: LaunchTarget) -> crate::Result<std::fs::File> {
+    use std::os::unix::process::CommandExt as _;
+
+    if std::env::var(handoff::BOUND).as_deref() != Ok(target.marker()) {
+        let error = std::process::Command::new(target.launcher())
+            .args(std::env::args_os().skip(1))
+            .exec();
+        return Err(format!("{}: {error}", target.launcher()).into());
+    }
+    adopt_lease(target)
+}
+
+#[cfg(target_os = "linux")]
+fn adopt_lease(target: LaunchTarget) -> crate::Result<std::fs::File> {
     use std::{
         fs::OpenOptions,
-        os::{
-            fd::{FromRawFd as _, RawFd},
-            unix::{fs::MetadataExt as _, fs::OpenOptionsExt as _},
-        },
+        os::unix::{fs::MetadataExt as _, fs::OpenOptionsExt as _},
     };
 
-    const LEASE_FD: RawFd = 9;
-    let marker = std::env::var("OPEN_RADIO_GENERATION_BOUND").unwrap_or_default();
-    if marker != expected_marker {
-        return Err("generation helper was not entered through its fixed launcher".into());
-    }
-    unsafe { std::env::remove_var("OPEN_RADIO_GENERATION_BOUND") };
-    unsafe { std::env::remove_var("OPEN_RADIO_GENERATION_DIR") };
-    if unsafe { libc::fcntl(LEASE_FD, libc::F_GETFD) } < 0 {
-        return Err("generation helper did not inherit its provider lease descriptor".into());
-    }
-    let owned_fd = unsafe { libc::fcntl(LEASE_FD, libc::F_DUPFD_CLOEXEC, 3) };
-    if owned_fd < 0 {
-        return Err(std::io::Error::last_os_error().into());
-    }
-    unsafe { libc::close(LEASE_FD) };
-    let file = unsafe { std::fs::File::from_raw_fd(owned_fd) };
+    let file = handoff::adopt(target.marker())?;
     let metadata = file.metadata()?;
     if !metadata.file_type().is_file()
         || metadata.uid() != 0
@@ -101,11 +120,7 @@ pub fn adopt_lease(expected_marker: &str) -> crate::Result<std::fs::File> {
     {
         return Err("inherited provider lease has unsafe ownership or mode".into());
     }
-    let provider = match expected_marker {
-        "linux-net" | "linux-net-probe" => "linux-net",
-        "linux-bluetooth" => "linux-bluetooth",
-        _ => return Err("unknown fixed launcher marker".into()),
-    };
+    let provider = target.provider().as_str();
     let expected = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
@@ -122,22 +137,15 @@ pub fn adopt_lease(expected_marker: &str) -> crate::Result<std::fs::File> {
 
 #[cfg(target_os = "linux")]
 fn launch(target: LaunchTarget) -> crate::Result<std::convert::Infallible> {
-    use std::{os::fd::AsRawFd as _, os::unix::process::CommandExt as _, process::Command};
+    use std::{os::unix::process::CommandExt as _, process::Command};
 
-    const LEASE_FD: libc::c_int = 9;
     let lease = super::admit_system(target.provider())?;
     let helper = lease.artifact(target.role())?;
-    if unsafe { libc::dup2(lease.file().as_raw_fd(), LEASE_FD) } < 0 {
-        return Err(std::io::Error::last_os_error().into());
-    }
-    let flags = unsafe { libc::fcntl(LEASE_FD, libc::F_GETFD) };
-    if flags < 0 || unsafe { libc::fcntl(LEASE_FD, libc::F_SETFD, flags & !libc::FD_CLOEXEC) } < 0 {
-        return Err(std::io::Error::last_os_error().into());
-    }
+    handoff::pass(lease.file())?;
     let error = Command::new(&helper)
         .args(std::env::args_os().skip(1))
-        .env("OPEN_RADIO_GENERATION_BOUND", target.marker())
-        .env("OPEN_RADIO_GENERATION_DIR", lease.generation())
+        .env(handoff::BOUND, target.marker())
+        .env(handoff::DIRECTORY, lease.generation())
         .exec();
     Err(error.into())
 }
@@ -145,4 +153,29 @@ fn launch(target: LaunchTarget) -> crate::Result<std::convert::Infallible> {
 #[cfg(not(target_os = "linux"))]
 fn launch(_target: LaunchTarget) -> crate::Result<std::convert::Infallible> {
     Err("Linux fixture launcher requires Linux".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LaunchTarget;
+    use crate::ArtifactRole;
+
+    #[test]
+    fn every_target_enters_through_its_installed_launcher() {
+        for target in [
+            LaunchTarget::Network,
+            LaunchTarget::Probe,
+            LaunchTarget::Bluetooth,
+        ] {
+            let launcher = target.launcher();
+            let spec = target
+                .provider()
+                .artifact_specs()
+                .iter()
+                .find(|spec| spec.target == launcher)
+                .unwrap();
+            assert!(spec.role.is_launcher());
+            assert_ne!(spec.role, ArtifactRole::NetworkHelper);
+        }
+    }
 }

@@ -1,10 +1,14 @@
 //! Unprivileged owner of the installed helper's bounded ATT-parameter lease.
 use super::model::Adapter;
 use crate::Result;
+use rustix::{
+    event::{PollFd, PollFlags, Timespec, poll},
+    io::Errno,
+};
 use std::{
     fs::File,
     io::Read,
-    os::fd::AsRawFd,
+    os::fd::AsFd,
     path::Path,
     process::{Command, Stdio},
     time::{Duration, Instant},
@@ -103,7 +107,7 @@ impl Drop for Lease {
     }
 }
 
-fn expect_line(pipe: &mut (impl Read + AsRawFd), expected: &[u8]) -> Result<()> {
+fn expect_line(pipe: &mut (impl Read + AsFd), expected: &[u8]) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(20);
     for expected_byte in expected {
         loop {
@@ -111,22 +115,11 @@ fn expect_line(pipe: &mut (impl Read + AsRawFd), expected: &[u8]) -> Result<()> 
             if Instant::now() >= deadline {
                 return Err("ATT helper handshake timeout".into());
             }
-            let mut fd = libc::pollfd {
-                fd: pipe.as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            };
-            // SAFETY: a single initialized pollfd borrows the live pipe descriptor.
-            let ready = unsafe { libc::poll(&mut fd, 1, 100) };
-            if ready < 0 {
-                let error = std::io::Error::last_os_error();
-                if error.kind() == std::io::ErrorKind::Interrupted {
-                    continue;
-                }
-                return Err(error.into());
-            }
-            if ready == 0 {
-                continue;
+            let timeout = Timespec::try_from(Duration::from_millis(100))?;
+            match poll(&mut [PollFd::new(pipe, PollFlags::IN)], Some(&timeout)) {
+                Ok(0) | Err(Errno::INTR) => continue,
+                Ok(_) => {}
+                Err(error) => return Err(error.into()),
             }
             let mut byte = [0];
             if pipe.read(&mut byte)? != 1 || byte[0] != *expected_byte {

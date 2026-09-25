@@ -293,7 +293,7 @@ fn test_apply(
         provider,
         bundle,
         OPERATOR,
-        unsafe { libc::geteuid() },
+        rustix::process::geteuid().as_raw(),
         effects,
     )
     .unwrap()
@@ -497,7 +497,7 @@ fn effective_policy_failure_rolls_back_and_never_runs_capabilities() {
         Provider::LinuxBluetooth,
         &bundle,
         OPERATOR,
-        unsafe { libc::geteuid() },
+        rustix::process::geteuid().as_raw(),
         &mut effects,
     )
     .unwrap();
@@ -564,7 +564,7 @@ fn every_control_stage_fails_closed_and_rollback_failure_is_reported() {
         Provider::LinuxBluetooth,
         &bundle,
         OPERATOR,
-        unsafe { libc::geteuid() },
+        rustix::process::geteuid().as_raw(),
         &mut RollbackFailure,
     )
     .unwrap();
@@ -594,7 +594,7 @@ fn abrupt_process_loss_is_recovered_from_persisted_journal() {
                 Provider::LinuxBluetooth,
                 &bundle,
                 OPERATOR,
-                unsafe { libc::geteuid() },
+                rustix::process::geteuid().as_raw(),
                 &mut crashing,
             );
         }));
@@ -613,7 +613,7 @@ fn abrupt_process_loss_is_recovered_from_persisted_journal() {
             Provider::LinuxBluetooth,
             &bundle,
             OPERATOR,
-            unsafe { libc::geteuid() },
+            rustix::process::geteuid().as_raw(),
             &mut TestEffects::passing(),
         )
         .unwrap();
@@ -651,7 +651,7 @@ fn receipt_failure_after_commit_preserves_truth_and_next_apply_finishes_recovery
         Provider::LinuxBluetooth,
         &bundle,
         OPERATOR,
-        unsafe { libc::geteuid() },
+        rustix::process::geteuid().as_raw(),
         &mut effects,
     )
     .unwrap();
@@ -677,7 +677,7 @@ fn receipt_failure_after_commit_preserves_truth_and_next_apply_finishes_recovery
         Provider::LinuxBluetooth,
         &bundle,
         OPERATOR,
-        unsafe { libc::geteuid() },
+        rustix::process::geteuid().as_raw(),
         &mut TestEffects::passing(),
     )
     .unwrap();
@@ -705,7 +705,7 @@ fn source_replacement_symlink_and_partial_installation_are_rejected() {
             Provider::LinuxBluetooth,
             &bundle,
             OPERATOR,
-            unsafe { libc::geteuid() },
+            rustix::process::geteuid().as_raw(),
             &mut TestEffects::passing(),
         )
         .is_err()
@@ -723,7 +723,7 @@ fn source_replacement_symlink_and_partial_installation_are_rejected() {
             Provider::LinuxBluetooth,
             &bundle,
             OPERATOR,
-            unsafe { libc::geteuid() },
+            rustix::process::geteuid().as_raw(),
             &mut TestEffects::passing(),
         )
         .is_err()
@@ -743,7 +743,7 @@ fn source_replacement_symlink_and_partial_installation_are_rejected() {
             Provider::LinuxNet,
             &bundle,
             OPERATOR,
-            unsafe { libc::geteuid() },
+            rustix::process::geteuid().as_raw(),
             &mut TestEffects::passing(),
         )
         .is_err()
@@ -769,7 +769,7 @@ fn manifest_traversal_operator_mismatch_and_writable_bundle_are_rejected() {
             Provider::LinuxBluetooth,
             &bundle_path,
             OPERATOR,
-            unsafe { libc::geteuid() },
+            rustix::process::geteuid().as_raw(),
             &mut TestEffects::passing(),
         )
         .is_err()
@@ -784,7 +784,7 @@ fn manifest_traversal_operator_mismatch_and_writable_bundle_are_rejected() {
             Provider::LinuxBluetooth,
             &bundle_path,
             "another_operator",
-            unsafe { libc::geteuid() },
+            rustix::process::geteuid().as_raw(),
             &mut TestEffects::passing(),
         )
         .is_err()
@@ -796,7 +796,7 @@ fn manifest_traversal_operator_mismatch_and_writable_bundle_are_rejected() {
             Provider::LinuxBluetooth,
             &bundle_path,
             OPERATOR,
-            unsafe { libc::geteuid() },
+            rustix::process::geteuid().as_raw(),
             &mut TestEffects::passing(),
         )
         .is_err()
@@ -817,7 +817,7 @@ fn unmanaged_installation_requires_explicit_recovery_without_replacing_files() {
         Provider::LinuxBluetooth,
         &bundle,
         OPERATOR,
-        unsafe { libc::geteuid() },
+        rustix::process::geteuid().as_raw(),
         &mut TestEffects::passing(),
     )
     .unwrap_err();
@@ -868,7 +868,7 @@ fn active_session_lock_refuses_upgrade_and_providers_are_independent() {
         Provider::LinuxNet,
         &upgrade,
         OPERATOR,
-        unsafe { libc::geteuid() },
+        rustix::process::geteuid().as_raw(),
         &mut TestEffects::passing(),
     )
     .unwrap_err()
@@ -888,7 +888,7 @@ fn active_session_lock_refuses_upgrade_and_providers_are_independent() {
         Provider::LinuxNet,
         &upgrade,
         OPERATOR,
-        unsafe { libc::geteuid() },
+        rustix::process::geteuid().as_raw(),
         &mut TestEffects::passing(),
     )
     .unwrap_err()
@@ -900,7 +900,7 @@ fn active_session_lock_refuses_upgrade_and_providers_are_independent() {
         Provider::LinuxBluetooth,
         &bt_bundle,
         OPERATOR,
-        unsafe { libc::geteuid() },
+        rustix::process::geteuid().as_raw(),
         &mut TestEffects::passing(),
     )
     .unwrap_err()
@@ -931,7 +931,7 @@ fn missing_launcher_is_incomplete_not_an_implicit_upgrade_path() {
         Provider::LinuxBluetooth,
         &upgrade,
         OPERATOR,
-        unsafe { libc::geteuid() },
+        rustix::process::geteuid().as_raw(),
         &mut TestEffects::passing(),
     )
     .unwrap_err();
@@ -955,7 +955,7 @@ fn writable_or_symlinked_destination_and_writable_active_generation_are_rejected
             Provider::LinuxBluetooth,
             &bundle,
             OPERATOR,
-            unsafe { libc::geteuid() },
+            rustix::process::geteuid().as_raw(),
             &mut TestEffects::passing(),
         )
         .is_err()
@@ -971,7 +971,7 @@ fn writable_or_symlinked_destination_and_writable_active_generation_are_rejected
             Provider::LinuxBluetooth,
             &bundle,
             OPERATOR,
-            unsafe { libc::geteuid() },
+            rustix::process::geteuid().as_raw(),
             &mut TestEffects::passing(),
         )
         .is_err()
@@ -998,7 +998,7 @@ fn writable_or_symlinked_destination_and_writable_active_generation_are_rejected
             Provider::LinuxBluetooth,
             &bundle,
             OPERATOR,
-            unsafe { libc::geteuid() },
+            rustix::process::geteuid().as_raw(),
             &mut TestEffects::passing(),
         )
         .is_err()
@@ -1349,7 +1349,7 @@ fn persistent_operational_lease_blocks_upgrade_until_its_owner_releases() {
         Provider::LinuxNet,
         &upgrade,
         OPERATOR,
-        unsafe { libc::geteuid() },
+        rustix::process::geteuid().as_raw(),
         &mut TestEffects::passing(),
     )
     .unwrap_err()
@@ -1361,7 +1361,7 @@ fn persistent_operational_lease_blocks_upgrade_until_its_owner_releases() {
         Provider::LinuxNet,
         &upgrade,
         OPERATOR,
-        unsafe { libc::geteuid() },
+        rustix::process::geteuid().as_raw(),
         &mut TestEffects::passing(),
     )
     .unwrap();
@@ -1397,7 +1397,7 @@ fn admission_rejects_unsafe_persistent_lease_and_parent_metadata() {
             Provider::LinuxBluetooth,
             &upgrade,
             OPERATOR,
-            unsafe { libc::geteuid() },
+            rustix::process::geteuid().as_raw(),
             &mut TestEffects::passing(),
         )
         .is_err()
@@ -1513,7 +1513,7 @@ fn lifecycle_isolated_child_entry() {
                 Provider::LinuxBluetooth,
                 &bundle,
                 OPERATOR,
-                unsafe { libc::geteuid() },
+                rustix::process::geteuid().as_raw(),
                 &mut ExitAtPolicyPublished,
             );
             std::process::exit(87);
@@ -1589,7 +1589,7 @@ fn process_loss_leaves_admission_closed_until_authorized_recovery() {
         Provider::LinuxBluetooth,
         &bundle,
         OPERATOR,
-        unsafe { libc::geteuid() },
+        rustix::process::geteuid().as_raw(),
         &mut TestEffects::passing(),
     )
     .unwrap();
@@ -1612,7 +1612,7 @@ fn interrupted_installation_rejects_a_new_operational_consumer() {
             Provider::LinuxBluetooth,
             &bundle,
             OPERATOR,
-            unsafe { libc::geteuid() },
+            rustix::process::geteuid().as_raw(),
             &mut crashing,
         );
     }));
@@ -1645,7 +1645,7 @@ fn interrupted_installation_rejects_a_new_operational_consumer() {
         Provider::LinuxBluetooth,
         &bundle,
         OPERATOR,
-        unsafe { libc::geteuid() },
+        rustix::process::geteuid().as_raw(),
         &mut TestEffects::passing(),
     )
     .unwrap();
@@ -1667,7 +1667,6 @@ fn interrupted_installation_rejects_a_new_operational_consumer() {
 #[test]
 fn direct_stable_launch_cannot_mix_loaded_and_selected_generations() {
     let _serial = serial();
-    use std::ffi::CString;
     use std::io::{Read as _, Write as _};
 
     for provider in [Provider::LinuxNet, Provider::LinuxBluetooth] {
@@ -1675,8 +1674,14 @@ fn direct_stable_launch_cannot_mix_loaded_and_selected_generations() {
         let ready = root.path().join("ready.fifo");
         let resume = root.path().join("resume.fifo");
         for fifo in [&ready, &resume] {
-            let path = CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
-            assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+            rustix::fs::mknodat(
+                rustix::fs::CWD,
+                fifo.as_path(),
+                rustix::fs::FileType::Fifo,
+                rustix::fs::Mode::from_raw_mode(0o600),
+                0,
+            )
+            .unwrap();
         }
         let effect = root.path().join("effect");
 

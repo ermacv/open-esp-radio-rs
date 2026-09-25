@@ -4,7 +4,7 @@ use std::{os::unix::net::UnixStream, time::Duration};
 #[test]
 fn prewritten_commands_do_not_hide_bytes_from_poll() {
     let (reader, mut writer) = UnixStream::pair().unwrap();
-    let control = Control::new(reader.as_raw_fd()).unwrap();
+    let control = Control::new(reader).unwrap();
     writer.write_all(b"configuration\nstart\n").unwrap();
     let deadline = Instant::now() + Duration::from_secs(1);
     assert_eq!(control.line(deadline).unwrap(), "configuration");
@@ -22,7 +22,7 @@ fn prewritten_commands_do_not_hide_bytes_from_poll() {
 #[test]
 fn oversized_command_fails_without_waiting_for_its_terminator() {
     let (reader, mut writer) = UnixStream::pair().unwrap();
-    let control = Control::new(reader.as_raw_fd()).unwrap();
+    let control = Control::new(reader).unwrap();
     writer.write_all(&[b'x'; 257]).unwrap();
     assert!(
         control

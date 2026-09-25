@@ -1,6 +1,13 @@
 //! Host UDP socket setup shared by throughput qualifiers.
 
-use std::{io, net::UdpSocket, os::fd::AsRawFd};
+use rustix::{
+    io::Errno,
+    net::{
+        RecvFlags, recv,
+        sockopt::{set_socket_recv_buffer_size, socket_recv_buffer_size},
+    },
+};
+use std::{io, net::UdpSocket};
 
 /// The saturated ESP32-S31 TX stream can exceed 90 Mbit/s.  The Linux default
 /// receive queue is commonly only 212,992 bytes, which is short enough to
@@ -14,71 +21,19 @@ pub(crate) const QUALIFICATION_RECEIVE_BUFFER_BYTES: usize = 4 * 1024 * 1024;
 /// size includes kernel bookkeeping.  Callers retain the read-back value as
 /// evidence instead of assuming that the request was accepted.
 pub(crate) fn configure_qualification_receive_buffer(socket: &UdpSocket) -> io::Result<usize> {
-    let requested = libc::c_int::try_from(QUALIFICATION_RECEIVE_BUFFER_BYTES)
-        .expect("qualification UDP receive buffer fits c_int");
-    // SAFETY: `socket` owns a live descriptor; `requested` is an initialized
-    // integer whose pointer and exact length remain valid for the call.
-    let result = unsafe {
-        libc::setsockopt(
-            socket.as_raw_fd(),
-            libc::SOL_SOCKET,
-            libc::SO_RCVBUF,
-            (&raw const requested).cast(),
-            size_of::<libc::c_int>() as libc::socklen_t,
-        )
-    };
-    if result != 0 {
-        return Err(io::Error::last_os_error());
-    }
-
-    let mut actual = 0 as libc::c_int;
-    let mut length = size_of::<libc::c_int>() as libc::socklen_t;
-    // SAFETY: both output pointers refer to live initialized storage with the
-    // declared length, and the socket descriptor remains owned for the call.
-    let result = unsafe {
-        libc::getsockopt(
-            socket.as_raw_fd(),
-            libc::SOL_SOCKET,
-            libc::SO_RCVBUF,
-            (&raw mut actual).cast(),
-            &raw mut length,
-        )
-    };
-    if result != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    if length as usize != size_of::<libc::c_int>() || actual <= 0 {
+    set_socket_recv_buffer_size(socket, QUALIFICATION_RECEIVE_BUFFER_BYTES)?;
+    let actual = socket_recv_buffer_size(socket)?;
+    if actual == 0 {
         return Err(io::Error::other("invalid SO_RCVBUF read-back"));
     }
-    usize::try_from(actual).map_err(|_| io::Error::other("negative SO_RCVBUF read-back"))
+    Ok(actual)
 }
 
 /// Linux exports the socket's cumulative drop count, including a final lost
 /// packet with no subsequent ancillary message. Read before and after collection.
 #[cfg(target_os = "linux")]
 pub(crate) fn kernel_drops(socket: &UdpSocket) -> io::Result<Option<u32>> {
-    // Linux uapi: linux/sock_diag.h, enum SK_MEMINFO_* (DROPS is entry eight).
-    let mut info = [0_u32; 9];
-    let mut length = size_of_val(&info) as libc::socklen_t;
-    let result = unsafe {
-        // SAFETY: the output array and length are live for the exact supplied size.
-        libc::getsockopt(
-            socket.as_raw_fd(),
-            libc::SOL_SOCKET,
-            libc::SO_MEMINFO,
-            info.as_mut_ptr().cast(),
-            &raw mut length,
-        )
-    };
-    if result != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    if (length as usize) < size_of_val(&info) {
-        return Err(io::Error::other(
-            "SO_MEMINFO omitted socket drop accounting",
-        ));
-    }
-    Ok(Some(info[8]))
+    open_esp_radio_hil_fixture::linux_socket::dropped_packets(socket).map(Some)
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -130,27 +85,16 @@ pub(crate) fn confirm_reverse_flow(
             next_send = now + Duration::from_millis(250);
         }
         // Per-call nonblocking receive preserves the socket's later send mode.
-        let length = unsafe {
-            // SAFETY: the live socket and output slice cover the exact lengths.
-            libc::recv(
-                socket.as_raw_fd(),
-                packet.as_mut_ptr().cast(),
-                packet.len(),
-                libc::MSG_DONTWAIT,
-            )
-        };
-        if length >= 0 {
-            if UdpProbe::decode(&packet[..length as usize]) == Some(expected) {
-                return Ok(());
+        match recv(socket, &mut packet[..], RecvFlags::DONTWAIT) {
+            Ok((length, _)) => {
+                if UdpProbe::decode(&packet[..length]) == Some(expected) {
+                    return Ok(());
+                }
+                continue;
             }
-            continue;
-        }
-        let error = io::Error::last_os_error();
-        if error.kind() == io::ErrorKind::Interrupted {
-            continue;
-        }
-        if error.kind() != io::ErrorKind::WouldBlock {
-            return Err(error.into());
+            Err(Errno::INTR) => continue,
+            Err(Errno::WOULDBLOCK) => {}
+            Err(error) => return Err(error.into()),
         }
         poll.wait(Some(next_send.min(deadline)))?;
     }

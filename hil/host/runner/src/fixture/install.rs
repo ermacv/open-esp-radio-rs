@@ -19,7 +19,7 @@ pub(crate) fn run(
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::process::CommandExt as _;
-        require_unprivileged(unsafe { libc::geteuid() })?;
+        require_unprivileged(rustix::process::geteuid().as_raw())?;
         // All downloads, patching and compilation happen without root, before
         // the installer takes terminal control for its narrow system writes.
         if provider == Provider::LinuxNet {

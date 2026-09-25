@@ -1,4 +1,5 @@
 //! HIL host process entry point.
+#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
 use std::error::Error;
 

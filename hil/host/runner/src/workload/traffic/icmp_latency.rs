@@ -1,10 +1,18 @@
 //! ICMP latency and loss qualification for an already connected target.
 
 use crate::context::Context;
+use rustix::{
+    event::{PollFd, PollFlags, Timespec, poll},
+    io::Errno,
+    net::{
+        AddressFamily, RecvFlags, SendFlags, SocketFlags, SocketType, connect, ipproto, recv, send,
+        socket_with,
+    },
+};
 use std::{
-    fs, io,
-    net::Ipv4Addr,
-    os::fd::{AsRawFd, FromRawFd, OwnedFd},
+    fs,
+    net::{Ipv4Addr, SocketAddrV4},
+    os::fd::OwnedFd,
     path::Path,
     time::{Duration, Instant},
 };
@@ -373,40 +381,13 @@ impl IcmpSocket {
         // Linux ping sockets are datagram ICMP endpoints available to groups
         // allowed by `net.ipv4.ping_group_range`; no raw-socket capability is
         // needed for the ordinary `cargo hil` path.
-        // SAFETY: `socket` has no pointer arguments. A nonnegative result is a
-        // newly owned descriptor transferred exactly once into `OwnedFd`.
-        let descriptor = unsafe {
-            libc::socket(
-                libc::AF_INET,
-                libc::SOCK_DGRAM | libc::SOCK_CLOEXEC,
-                libc::IPPROTO_ICMP,
-            )
-        };
-        if descriptor < 0 {
-            return Err(io::Error::last_os_error().into());
-        }
-        // SAFETY: the successful `socket` call returned this fresh descriptor.
-        let descriptor = unsafe { OwnedFd::from_raw_fd(descriptor) };
-        let address = libc::sockaddr_in {
-            sin_family: libc::AF_INET as libc::sa_family_t,
-            sin_port: 0,
-            sin_addr: libc::in_addr {
-                s_addr: u32::from_ne_bytes(device.octets()),
-            },
-            sin_zero: [0; 8],
-        };
-        // SAFETY: `address` is initialized for AF_INET and both it and the
-        // owned descriptor remain live for the complete call.
-        let result = unsafe {
-            libc::connect(
-                descriptor.as_raw_fd(),
-                (&raw const address).cast(),
-                size_of::<libc::sockaddr_in>() as libc::socklen_t,
-            )
-        };
-        if result < 0 {
-            return Err(io::Error::last_os_error().into());
-        }
+        let descriptor = socket_with(
+            AddressFamily::INET,
+            SocketType::DGRAM,
+            SocketFlags::CLOEXEC,
+            Some(ipproto::ICMP),
+        )?;
+        connect(&descriptor, &SocketAddrV4::new(device, 0))?;
         Ok(Self { descriptor })
     }
 
@@ -419,20 +400,8 @@ impl IcmpSocket {
         }
         let checksum = checksum(&packet);
         packet[2..4].copy_from_slice(&checksum.to_be_bytes());
-        // SAFETY: `packet` is a live byte slice and the connected descriptor
-        // remains owned by `self` for the duration of `send`.
-        let sent = unsafe {
-            libc::send(
-                self.descriptor.as_raw_fd(),
-                packet.as_ptr().cast(),
-                packet.len(),
-                0,
-            )
-        };
-        if sent < 0 {
-            return Err(io::Error::last_os_error().into());
-        }
-        if sent as usize != packet.len() {
+        let sent = send(&self.descriptor, &packet, SendFlags::empty())?;
+        if sent != packet.len() {
             return Err(format!("short ICMP send: {sent}/{}", packet.len()).into());
         }
         Ok(())
@@ -446,47 +415,22 @@ impl IcmpSocket {
             if now >= deadline {
                 return Ok(false);
             }
-            let remaining_ms =
-                i32::try_from((deadline - now).as_millis().max(1)).unwrap_or(i32::MAX);
-            let mut descriptor = libc::pollfd {
-                fd: self.descriptor.as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            };
-            // SAFETY: `descriptor` is one initialized pollfd and remains live
-            // and writable for the complete call.
-            let ready = unsafe { libc::poll(&raw mut descriptor, 1, remaining_ms.min(20)) };
-            if ready < 0 {
-                let error = io::Error::last_os_error();
-                if error.kind() == io::ErrorKind::Interrupted {
-                    continue;
-                }
-                return Err(error.into());
-            }
-            if ready == 0 {
-                continue;
+            let timeout = Timespec::try_from((deadline - now).min(Duration::from_millis(20)))?;
+            match poll(
+                &mut [PollFd::new(&self.descriptor, PollFlags::IN)],
+                Some(&timeout),
+            ) {
+                Ok(0) | Err(Errno::INTR) => continue,
+                Ok(_) => {}
+                Err(error) => return Err(error.into()),
             }
             let mut packet = [0_u8; 1_500];
-            // SAFETY: `packet` is a live writable byte array and the owned
-            // descriptor remains open for the complete call.
-            let received = unsafe {
-                libc::recv(
-                    self.descriptor.as_raw_fd(),
-                    packet.as_mut_ptr().cast(),
-                    packet.len(),
-                    0,
-                )
+            let received = match recv(&self.descriptor, &mut packet[..], RecvFlags::empty()) {
+                Ok((received, _)) => received,
+                Err(Errno::INTR | Errno::WOULDBLOCK) => continue,
+                Err(error) => return Err(error.into()),
             };
-            if received < 0 {
-                let error = io::Error::last_os_error();
-                if error.kind() == io::ErrorKind::Interrupted
-                    || error.kind() == io::ErrorKind::WouldBlock
-                {
-                    continue;
-                }
-                return Err(error.into());
-            }
-            let packet = &packet[..received as usize];
+            let packet = &packet[..received];
             if packet.len() >= 8
                 && packet[0] == 0
                 && packet[1] == 0

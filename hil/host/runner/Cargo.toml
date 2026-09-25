@@ -9,6 +9,7 @@ publish = false
 description = "Host build, placement-audit and HIL runner for open ESP radio"
 
 [dependencies]
+rustix = { version = "1.1.4", features = ["event", "fs", "net", "process", "stdio"] }
 mio = { version = "=1.2.2", features = ["os-poll", "os-ext"] }
 oer-process = { path = "../../../tools/process" }
 open-esp-radio-hil-fixture = { path = "../fixture" }

@@ -83,6 +83,10 @@ fn fixture_has_exactly_one_live_host_owner() {
 
 #[cfg(unix)]
 #[test]
+#[allow(
+    unsafe_code,
+    reason = "the regression depends on fork-inherited descriptors"
+)]
 fn dropping_owner_releases_lock_while_a_forked_child_retains_the_descriptor() {
     use std::{io::Write, os::fd::AsRawFd, os::unix::net::UnixStream};
 
@@ -129,19 +133,15 @@ fn dropping_owner_releases_lock_while_a_forked_child_retains_the_descriptor() {
     // Reap before asserting so the regression's intentional failure on the
     // old implementation cannot leave a waiting child or temporary files.
     release_child.write_all(&[1]).unwrap();
-    let mut status = 0;
-    let waited = loop {
-        // SAFETY: child is the live PID returned above; status is valid writable
-        // storage and this thread is the only waiter for that child.
-        let waited = unsafe { libc::waitpid(child, &mut status, 0) };
-        if waited >= 0 || std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted
-        {
-            break waited;
+    let child = rustix::process::Pid::from_raw(child).unwrap();
+    let status = loop {
+        match rustix::process::waitpid(Some(child), rustix::process::WaitOptions::empty()) {
+            Err(rustix::io::Errno::INTR) => continue,
+            result => break result.unwrap().unwrap().1,
         }
     };
     fs::remove_dir_all(root).unwrap();
-    assert_eq!(waited, child);
-    assert_eq!(status, 0);
+    assert!(status.exited() && status.exit_status() == Some(0));
     assert!(
         successor.is_ok(),
         "owner drop retained the fixture lock: {:?}",

@@ -3,6 +3,10 @@ mod agent;
 use super::model::{Adapter, PeerAddress};
 use crate::Result;
 pub(crate) use agent::Prompt;
+use rustix::{
+    event::{PollFd, PollFlags, Timespec, poll},
+    net::{RecvFlags, recv},
+};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -290,42 +294,31 @@ impl Drop for Owner {
 pub(crate) struct Notification(zbus::zvariant::OwnedFd);
 impl Notification {
     pub(crate) fn receive(&self) -> Result<Vec<u8>> {
-        use std::os::fd::AsRawFd;
         let deadline = Instant::now() + Duration::from_secs(3);
         loop {
             oer_process::check_cancelled()?;
             if Instant::now() >= deadline {
                 return Err("notification deadline".into());
             }
-            let mut poll = libc::pollfd {
-                fd: self.0.as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            };
-            // SAFETY: one live owned FD and a writable pollfd for this call.
-            let ready = unsafe { libc::poll(&mut poll, 1, 100) };
-            if ready < 0 {
-                return Err(std::io::Error::last_os_error().into());
-            }
-            if poll.revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0 {
+            let timeout = Timespec::try_from(Duration::from_millis(100))?;
+            let mut descriptors = [PollFd::new(&self.0, PollFlags::IN)];
+            poll(&mut descriptors, Some(&timeout))?;
+            let ready = descriptors[0].revents();
+            if ready.intersects(PollFlags::ERR | PollFlags::HUP | PollFlags::NVAL) {
                 return Err("notification transport closed".into());
             }
-            if poll.revents & libc::POLLIN != 0 {
+            if ready.contains(PollFlags::IN) {
                 let mut bytes = [0; 64];
-                // SAFETY: writable bounded buffer and live descriptor; MSG_TRUNC
-                // exposes an oversized datagram rather than accepting a prefix.
-                let count = unsafe {
-                    libc::recv(
-                        self.0.as_raw_fd(),
-                        bytes.as_mut_ptr().cast(),
-                        bytes.len(),
-                        libc::MSG_TRUNC | libc::MSG_DONTWAIT,
-                    )
-                };
-                if count <= 0 || count as usize > bytes.len() {
+                // MSG_TRUNC exposes an oversized datagram rather than a prefix.
+                let (_, length) = recv(
+                    &self.0,
+                    &mut bytes[..],
+                    RecvFlags::TRUNC | RecvFlags::DONTWAIT,
+                )?;
+                if length == 0 || length > bytes.len() {
                     return Err("invalid notification size".into());
                 }
-                return Ok(bytes[..count as usize].to_vec());
+                return Ok(bytes[..length].to_vec());
             }
         }
     }

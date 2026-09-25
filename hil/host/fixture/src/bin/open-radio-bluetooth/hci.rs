@@ -7,11 +7,23 @@ use bt_hci::{
     cmd::SyncCmd,
     event::{CommandCompleteWithStatus, Event},
 };
+use open_esp_radio_hil_fixture::linux_socket::HciAddress;
+use rustix::{
+    event::{PollFd, PollFlags, Timespec, poll},
+    io::Errno,
+    net::{
+        AddressFamily, Protocol, RecvFlags, SendFlags, SocketFlags, SocketType, bind, recv, send,
+        socket_with,
+    },
+};
 use std::{
-    io,
-    os::fd::{AsRawFd, FromRawFd, OwnedFd},
+    num::NonZeroU32,
+    os::fd::OwnedFd,
     time::{Duration, Instant},
 };
+
+/// Linux `BTPROTO_HCI`.
+const HCI_PROTOCOL: Protocol = Protocol::from_raw(NonZeroU32::new(1).unwrap());
 
 pub(super) struct Socket(pub(super) OwnedFd);
 
@@ -32,60 +44,21 @@ impl std::fmt::Display for ManagementError {
 impl std::error::Error for ManagementError {}
 
 impl Socket {
-    pub(super) fn open(index: u16, channel: u16) -> Result<Self> {
-        #[repr(C)]
-        struct Address {
-            family: libc::sa_family_t,
-            index: u16,
-            channel: u16,
-        }
-        // SAFETY: socket creates an owned descriptor, with no borrowed memory.
-        let fd = unsafe {
-            libc::socket(
-                libc::AF_BLUETOOTH,
-                libc::SOCK_RAW | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
-                1,
-            )
-        };
-        if fd < 0 {
-            return Err(io::Error::last_os_error().into());
-        }
-        // SAFETY: fd is newly created and ownership is transferred once.
-        let socket = Self(unsafe { OwnedFd::from_raw_fd(fd) });
-        let address = Address {
-            family: libc::AF_BLUETOOTH as _,
-            index,
-            channel,
-        };
-        // SAFETY: address is a live, correctly sized Linux sockaddr_hci.
-        if unsafe {
-            libc::bind(
-                socket.0.as_raw_fd(),
-                (&address as *const Address).cast(),
-                size_of::<Address>() as _,
-            )
-        } < 0
-        {
-            return Err(io::Error::last_os_error().into());
-        }
+    pub(super) fn open(address: HciAddress) -> Result<Self> {
+        let socket = Self(socket_with(
+            AddressFamily::BLUETOOTH,
+            SocketType::RAW,
+            SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
+            Some(HCI_PROTOCOL),
+        )?);
+        bind(&socket.0, &address)?;
         Ok(socket)
     }
 
     pub(super) fn send(&self, bytes: &[u8]) -> Result<()> {
         oer_process::check_cancelled()?;
-        // SAFETY: bytes is readable for its length and the descriptor is owned.
-        let count = unsafe {
-            libc::send(
-                self.0.as_raw_fd(),
-                bytes.as_ptr().cast(),
-                bytes.len(),
-                libc::MSG_NOSIGNAL,
-            )
-        };
-        if count < 0 {
-            return Err(io::Error::last_os_error().into());
-        }
-        if count as usize != bytes.len() {
+        let count = send(&self.0, bytes, SendFlags::NOSIGNAL)?;
+        if count != bytes.len() {
             return Err("short HCI socket write".into());
         }
         Ok(())
@@ -98,44 +71,26 @@ impl Socket {
                 return Err("HCI response timeout".into());
             }
             let mut bytes = vec![0; 4096];
-            // SAFETY: bytes provides writable storage and the descriptor is owned.
-            let count = unsafe {
-                libc::recv(
-                    self.0.as_raw_fd(),
-                    bytes.as_mut_ptr().cast(),
-                    bytes.len(),
-                    libc::MSG_TRUNC,
-                )
-            };
-            if count >= 0 {
-                if count == 0 || count as usize > bytes.len() {
-                    return Err("empty or truncated HCI packet".into());
+            match recv(&self.0, &mut bytes[..], RecvFlags::TRUNC) {
+                Ok((_, length)) => {
+                    if length == 0 || length > bytes.len() {
+                        return Err("empty or truncated HCI packet".into());
+                    }
+                    bytes.truncate(length);
+                    return Ok(bytes);
                 }
-                bytes.truncate(count as usize);
-                return Ok(bytes);
-            }
-            let error = io::Error::last_os_error();
-            if !matches!(
-                error.kind(),
-                io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
-            ) {
-                return Err(error.into());
+                Err(Errno::WOULDBLOCK | Errno::INTR) => {}
+                Err(error) => return Err(error.into()),
             }
             // Wake as soon as a connection event arrives, while keeping signal
             // cancellation bounded. A periodic sleep can miss the first window.
             let remaining = deadline.saturating_duration_since(Instant::now());
-            let timeout = remaining.as_millis().clamp(1, 10) as libc::c_int;
-            let mut readiness = libc::pollfd {
-                fd: self.0.as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            };
-            // SAFETY: readiness is one live pollfd with an owned descriptor.
-            if unsafe { libc::poll(&mut readiness, 1, timeout) } < 0 {
-                let error = io::Error::last_os_error();
-                if error.kind() != io::ErrorKind::Interrupted {
-                    return Err(error.into());
-                }
+            let timeout = Timespec::try_from(
+                remaining.clamp(Duration::from_millis(1), Duration::from_millis(10)),
+            )?;
+            match poll(&mut [PollFd::new(&self.0, PollFlags::IN)], Some(&timeout)) {
+                Ok(_) | Err(Errno::INTR) => {}
+                Err(error) => return Err(error.into()),
             }
         }
     }
@@ -507,7 +462,7 @@ mod tests {
         assert_eq!(&request[..4], &[1, 0x1f, 0x20, 0]);
         assert_eq!(
             server.recv(&mut request).unwrap_err().kind(),
-            io::ErrorKind::WouldBlock
+            std::io::ErrorKind::WouldBlock
         );
     }
 

@@ -143,8 +143,9 @@ fn fixture_lifecycle_harness() {
                 );
                 std::thread::sleep(Duration::from_millis(5));
             }
-            // SAFETY: this isolated process installed a SIGTERM handler above.
-            assert_eq!(unsafe { libc::kill(libc::getpid(), libc::SIGTERM) }, 0);
+            // This isolated process installed a SIGTERM handler above.
+            rustix::process::kill_process(rustix::process::getpid(), rustix::process::Signal::TERM)
+                .unwrap();
         })
     });
     {

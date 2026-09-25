@@ -15,22 +15,11 @@ static MACHINE_STDOUT: OnceLock<Mutex<Box<dyn std::io::Write + Send>>> = OnceLoc
 pub(crate) fn reserve_machine_stdout() -> Result<()> {
     #[cfg(unix)]
     let output: Box<dyn std::io::Write + Send> = {
-        use std::os::fd::FromRawFd as _;
+        use std::os::fd::AsFd as _;
 
-        // SAFETY: `dup` returns a new owned descriptor or -1. Ownership of a
-        // successful descriptor is transferred exactly once to `File`.
-        let descriptor = unsafe { libc::dup(libc::STDOUT_FILENO) };
-        if descriptor < 0 {
-            return Err(std::io::Error::last_os_error().into());
-        }
-        // SAFETY: the descriptor was just created by `dup` and is uniquely
-        // owned here.
-        let file = unsafe { File::from_raw_fd(descriptor) };
-        // SAFETY: both standard descriptors are process-owned and valid. This
-        // redirects inherited child stdout to the diagnostic stderr stream.
-        if unsafe { libc::dup2(libc::STDERR_FILENO, libc::STDOUT_FILENO) } < 0 {
-            return Err(std::io::Error::last_os_error().into());
-        }
+        let file = File::from(std::io::stdout().as_fd().try_clone_to_owned()?);
+        // Inherited child stdout now reaches the diagnostic stderr stream.
+        rustix::stdio::dup2_stdout(std::io::stderr().as_fd())?;
         Box::new(file)
     };
     #[cfg(not(unix))]

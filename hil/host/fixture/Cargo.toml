@@ -17,6 +17,7 @@ embedded-io = "0.7.1"
 embedded-io-async = "0.7.0"
 fs2 = "0.4"
 libc = "0.2"
+rustix = { version = "1.1.4", features = ["event", "fs", "net", "process"] }
 oer-ieee80211 = { path = "../../../crates/protocols/ieee80211/mac" }
 oer-process = { path = "../../../tools/process" }
 open-esp-radio-hil-fixture-install = { path = "../fixture-install" }

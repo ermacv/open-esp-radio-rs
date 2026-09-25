@@ -193,37 +193,11 @@ impl Control {
 /// the subscription. Only the startup watchdog is time based.
 #[cfg(target_os = "linux")]
 fn wait_socket(path: &Path, timeout: Duration) -> Result<()> {
-    use std::{
-        ffi::CString,
-        os::{
-            fd::{FromRawFd, OwnedFd},
-            unix::ffi::OsStrExt,
-        },
-    };
-    let parent = CString::new(
-        path.parent()
-            .ok_or("control socket has no parent")?
-            .as_os_str()
-            .as_bytes(),
-    )?;
-    // SAFETY: no borrowed memory is passed; a successful fd is owned below.
-    let fd = unsafe { libc::inotify_init1(libc::IN_NONBLOCK | libc::IN_CLOEXEC) };
-    if fd < 0 {
-        return Err(std::io::Error::last_os_error().into());
-    }
-    // SAFETY: fd is a newly created, uniquely owned descriptor.
-    let fd = unsafe { OwnedFd::from_raw_fd(fd) };
-    // SAFETY: parent is NUL-terminated and remains alive for this call.
-    if unsafe {
-        libc::inotify_add_watch(
-            fd.as_raw_fd(),
-            parent.as_ptr(),
-            libc::IN_CREATE | libc::IN_MOVED_TO,
-        )
-    } < 0
-    {
-        return Err(std::io::Error::last_os_error().into());
-    }
+    use rustix::fs::inotify::{self, CreateFlags, WatchFlags};
+
+    let parent = path.parent().ok_or("control socket has no parent")?;
+    let fd = inotify::init(CreateFlags::NONBLOCK | CreateFlags::CLOEXEC)?;
+    inotify::add_watch(&fd, parent, WatchFlags::CREATE | WatchFlags::MOVED_TO)?;
     let mut poll = Poll::new()?;
     poll.registry()
         .register(&mut SourceFd(&fd.as_raw_fd()), Token(0), Interest::READABLE)?;
@@ -249,18 +223,11 @@ fn wait_socket(path: &Path, timeout: Duration) -> Result<()> {
                     Err(error)
                 }
             })?;
+        // Event contents are irrelevant; readiness only triggers a new path check.
         let mut events = [0_u8; 4096];
-        // SAFETY: events is a writable buffer of the supplied length. Event
-        // contents are irrelevant; readiness only triggers a new path check.
-        let count = unsafe { libc::read(fd.as_raw_fd(), events.as_mut_ptr().cast(), events.len()) };
-        if count < 0 {
-            let error = std::io::Error::last_os_error();
-            if !matches!(
-                error.kind(),
-                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
-            ) {
-                return Err(error.into());
-            }
+        match rustix::io::read(&fd, &mut events) {
+            Ok(_) | Err(rustix::io::Errno::WOULDBLOCK | rustix::io::Errno::INTR) => {}
+            Err(error) => return Err(error.into()),
         }
     }
 }

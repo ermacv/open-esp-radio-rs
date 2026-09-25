@@ -5,10 +5,10 @@ use crate::{
     Result,
     transport::events::{EventPoll, deadline_after},
 };
+use rustix::net::{RecvFlags, recvfrom};
 use std::{
     fs, io,
-    net::{Ipv4Addr, UdpSocket},
-    os::fd::AsRawFd,
+    net::{Ipv4Addr, SocketAddrV4, UdpSocket},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread,
@@ -305,39 +305,11 @@ fn collect(
 
 /// MSG_DONTWAIT is local to this receive, unlike O_NONBLOCK on a cloned socket.
 fn receive(socket: &UdpSocket, packet: &mut [u8]) -> io::Result<(usize, Ipv4Addr)> {
-    // SAFETY: sockaddr_storage is valid zero-initialized output storage. The
-    // kernel receives exact live buffer lengths and owns neither pointer.
-    let mut source: libc::sockaddr_storage = unsafe { std::mem::zeroed() };
-    let mut length = std::mem::size_of_val(&source) as libc::socklen_t;
-    let received = unsafe {
-        libc::recvfrom(
-            socket.as_raw_fd(),
-            packet.as_mut_ptr().cast(),
-            packet.len(),
-            libc::MSG_DONTWAIT,
-            (&raw mut source).cast(),
-            &raw mut length,
-        )
-    };
-    if received < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    if i32::from(source.ss_family) != libc::AF_INET
-        || (length as usize) < std::mem::size_of::<libc::sockaddr_in>()
-    {
-        return Err(io::Error::other("UDP collector requires an IPv4 peer"));
-    }
-    // SAFETY: family and initialized length were checked; unaligned read does
-    // not borrow the storage through a differently aligned reference.
-    let source = unsafe {
-        (&raw const source)
-            .cast::<libc::sockaddr_in>()
-            .read_unaligned()
-    };
-    Ok((
-        received as usize,
-        Ipv4Addr::from(source.sin_addr.s_addr.to_ne_bytes()),
-    ))
+    let (received, _, source) = recvfrom(socket, packet, RecvFlags::DONTWAIT)?;
+    let source = source
+        .and_then(|source| SocketAddrV4::try_from(source).ok())
+        .ok_or_else(|| io::Error::other("UDP collector requires an IPv4 peer"))?;
+    Ok((received, *source.ip()))
 }
 
 #[cfg(test)]

@@ -29,8 +29,8 @@ fn complete_delivery_waits_for_finished_but_not_for_the_workload_deadline() {
     assert_eq!(bursts[0].datagrams, 1);
     assert_eq!(saved(output.path())["completion"], "delivered");
     // A clone's receive handling must not change the concurrent send contract.
-    let flags = unsafe { libc::fcntl(socket.as_raw_fd(), libc::F_GETFL) };
-    assert_eq!(flags & libc::O_NONBLOCK, 0);
+    let flags = rustix::fs::fcntl_getfl(&socket).unwrap();
+    assert!(!flags.contains(rustix::fs::OFlags::NONBLOCK));
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn signal_cancels_idle_collector_without_a_manual_completion_wake() {
         return;
     }
     use std::io::{BufRead, BufReader};
-    for signal in [libc::SIGINT, libc::SIGTERM] {
+    for signal in [rustix::process::Signal::INT, rustix::process::Signal::TERM] {
         let directory = tempfile::tempdir().unwrap();
         let mut child = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "workload::traffic::tx_traffic::receiver::tests::signal_cancels_idle_collector_without_a_manual_completion_wake", "--nocapture"])
@@ -134,8 +134,7 @@ fn signal_cancels_idle_collector_without_a_manual_completion_wake() {
                 break;
             }
         }
-        // SAFETY: the signal addresses only the live child owned by this test.
-        assert_eq!(unsafe { libc::kill(child.id() as i32, signal) }, 0);
+        rustix::process::kill_process(rustix::process::Pid::from_child(&child), signal).unwrap();
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
             if let Some(status) = child.try_wait().unwrap() {
@@ -183,20 +182,7 @@ fn delayed_probe_replies_do_not_become_measured_packets() {
 fn kernel_overflow_invalidates_delivery_as_an_infrastructure_failure() {
     let output = tempfile::tempdir().unwrap();
     let (socket, sender) = pair();
-    let bytes: libc::c_int = 4096;
-    // SAFETY: exact initialized integer option on a live test socket.
-    assert_eq!(
-        unsafe {
-            libc::setsockopt(
-                socket.as_raw_fd(),
-                libc::SOL_SOCKET,
-                libc::SO_RCVBUF,
-                (&raw const bytes).cast(),
-                size_of_val(&bytes) as libc::socklen_t,
-            )
-        },
-        0
-    );
+    rustix::net::sockopt::set_socket_recv_buffer_size(&socket, 4096).unwrap();
     let before = crate::transport::udp::kernel_drops(&socket).unwrap();
     // Deliberately suspend collection across a burst. This exercises the real
     // kernel failure boundary independently of the radio and serial protocol.

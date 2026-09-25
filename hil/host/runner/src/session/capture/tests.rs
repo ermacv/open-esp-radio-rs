@@ -205,7 +205,7 @@ fn signal_cancellation_harness() {
     let Ok(signal) = std::env::var("OER_HIL_CAPTURE_TEST_SIGNAL") else {
         return;
     };
-    let signal: i32 = signal.parse().unwrap();
+    let signal = rustix::process::Signal::from_named_raw(signal.parse().unwrap()).unwrap();
     let _signals = oer_process::install_signal_handlers().unwrap();
     let output = Output::new();
     let cleanup = crate::fixture::cleanup::Scope::new(&output.0);
@@ -213,8 +213,8 @@ fn signal_cancellation_harness() {
     activate(&capture, &input);
     let sender = std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(50));
-        // SAFETY: this isolated test process installed the handler above.
-        assert_eq!(unsafe { libc::kill(libc::getpid(), signal) }, 0);
+        // This isolated test process installed the handler above.
+        rustix::process::kill_process(rustix::process::getpid(), signal).unwrap();
     });
     let started = Instant::now();
     let error = capture
@@ -256,14 +256,14 @@ fn signal_cancellation_harness() {
 #[cfg(unix)]
 #[test]
 fn signals_cancel_protocol_wait_and_preserve_partial_capture() {
-    for signal in [libc::SIGINT, libc::SIGTERM] {
+    for signal in [rustix::process::Signal::INT, rustix::process::Signal::TERM] {
         let status = oer_process::owned::Child::spawn(
             std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
                     "session::capture::tests::signal_cancellation_harness",
                 ])
-                .env("OER_HIL_CAPTURE_TEST_SIGNAL", signal.to_string()),
+                .env("OER_HIL_CAPTURE_TEST_SIGNAL", signal.as_raw().to_string()),
         )
         .unwrap()
         .wait_timeout(Some(Duration::from_secs(10)))

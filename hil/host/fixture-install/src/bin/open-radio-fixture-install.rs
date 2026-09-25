@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use std::{path::PathBuf, process::ExitCode};
 
 use clap::Parser as _;

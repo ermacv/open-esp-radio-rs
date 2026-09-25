@@ -1,8 +1,15 @@
 use super::model::{self, Config, Report};
+use open_esp_radio_hil_fixture::linux_socket::LinkAddress;
+use rustix::{
+    event::{PollFd, PollFlags, Timespec, poll},
+    net::{
+        AddressFamily, SendFlags, SocketFlags, SocketType, bind, eth, netdevice::name_to_index,
+        send, socket_with,
+    },
+};
 use std::{
-    ffi::CString,
     io::Write,
-    os::fd::{AsRawFd, FromRawFd, OwnedFd},
+    os::fd::{AsFd, OwnedFd},
     process::Command,
     time::Instant,
 };
@@ -33,13 +40,13 @@ impl Drop for Monitor {
     }
 }
 
-struct Control {
-    input: i32,
+struct Control<I> {
+    input: I,
     cancel: std::os::unix::net::UnixStream,
     _notification: oer_process::CancellationNotification,
 }
-impl Control {
-    fn new(input: i32) -> Result<Self> {
+impl<I: AsFd> Control<I> {
+    fn new(input: I) -> Result<Self> {
         let (read, write) = std::os::unix::net::UnixStream::pair()?;
         write.set_nonblocking(true)?;
         let notification = oer_process::notify_on_cancel(move || {
@@ -58,29 +65,14 @@ impl Control {
             if remaining.is_zero() {
                 return Ok(false);
             }
+            let timeout = Timespec::try_from(remaining)?;
             let mut fds = [
-                libc::pollfd {
-                    fd: self.input,
-                    events: libc::POLLIN,
-                    revents: 0,
-                },
-                libc::pollfd {
-                    fd: self.cancel.as_raw_fd(),
-                    events: libc::POLLIN,
-                    revents: 0,
-                },
+                PollFd::new(&self.input, PollFlags::IN),
+                PollFd::new(&self.cancel, PollFlags::IN),
             ];
-            let timeout = remaining
-                .as_millis()
-                .saturating_add(1)
-                .min(i32::MAX as u128) as i32;
-            // SAFETY: the array contains exactly two initialized pollfd values.
-            let ready = unsafe { libc::poll(fds.as_mut_ptr(), 2, timeout) };
-            if ready < 0 {
-                return Err(std::io::Error::last_os_error().into());
-            }
+            poll(&mut fds, Some(&timeout))?;
             oer_process::check_cancelled()?;
-            if fds[0].revents != 0 {
+            if !fds[0].revents().is_empty() {
                 return Ok(true);
             }
         }
@@ -92,12 +84,9 @@ impl Control {
                 return Err("probe command timeout".into());
             }
             let mut byte = [0];
-            // SAFETY: input is the live controller descriptor; byte is a writable one-byte buffer.
-            // Do not mix buffered stdin with poll: prefetched bytes would hide readiness.
-            let count = unsafe { libc::read(self.input, byte.as_mut_ptr().cast(), 1) };
-            if count < 0 {
-                return Err(std::io::Error::last_os_error().into());
-            }
+            // Read the descriptor directly: buffered stdin could prefetch bytes
+            // and hide readiness from poll.
+            let count = rustix::io::read(self.input.as_fd(), &mut byte)?;
             if count == 0 {
                 return Err("probe controller disconnected".into());
             }
@@ -113,51 +102,19 @@ impl Control {
 }
 
 fn socket() -> Result<OwnedFd> {
-    let name = CString::new(MONITOR)?;
-    // SAFETY: name is NUL-terminated and lives through the call.
-    let index = unsafe { libc::if_nametoindex(name.as_ptr()) };
-    if index == 0 {
-        return Err(std::io::Error::last_os_error().into());
-    }
-    // SAFETY: socket creates a new descriptor; no pointers or borrowed owners.
-    let raw = unsafe {
-        libc::socket(
-            libc::AF_PACKET,
-            libc::SOCK_RAW | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
-            3u16.to_be() as i32,
-        )
-    };
-    if raw < 0 {
-        return Err(std::io::Error::last_os_error().into());
-    }
-    // SAFETY: successful socket returns one fresh owned descriptor.
-    let fd = unsafe { OwnedFd::from_raw_fd(raw) };
-    let address = libc::sockaddr_ll {
-        sll_family: libc::AF_PACKET as u16,
-        sll_protocol: 3u16.to_be(),
-        sll_ifindex: index as i32,
-        sll_hatype: 0,
-        sll_pkttype: 0,
-        sll_halen: 0,
-        sll_addr: [0; 8],
-    };
-    // SAFETY: address points to an initialized sockaddr_ll of the supplied size.
-    if unsafe {
-        libc::bind(
-            fd.as_raw_fd(),
-            (&address as *const libc::sockaddr_ll).cast(),
-            std::mem::size_of_val(&address) as libc::socklen_t,
-        )
-    } < 0
-    {
-        return Err(std::io::Error::last_os_error().into());
-    }
+    let fd = socket_with(
+        AddressFamily::PACKET,
+        SocketType::RAW,
+        SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
+        Some(eth::ALL),
+    )?;
+    bind(&fd, &LinkAddress::new(name_to_index(&fd, MONITOR)?)?)?;
     Ok(fd)
 }
 
 pub fn run() -> Result<()> {
     let _signals = oer_process::install_signal_handlers()?;
-    let control = Control::new(0)?;
+    let control = Control::new(std::io::stdin())?;
     use std::os::unix::fs::OpenOptionsExt as _;
     let lock = std::fs::OpenOptions::new()
         .read(true)
@@ -249,13 +206,8 @@ pub fn run() -> Result<()> {
                 return Err("probe pacing deadline missed; no catch-up burst permitted".into());
             }
             let frame = super::frame::encode(&config, bssid, request);
-            // SAFETY: frame remains readable for the synchronous send call.
-            let written =
-                unsafe { libc::send(fd.as_raw_fd(), frame.as_ptr().cast(), frame.len(), 0) };
-            if written < 0 {
-                return Err(std::io::Error::last_os_error().into());
-            }
-            if written as usize != frame.len() {
+            let written = send(&fd, &frame, SendFlags::empty())?;
+            if written != frame.len() {
                 return Err("partial probe injection".into());
             }
             report.submitted += 1;

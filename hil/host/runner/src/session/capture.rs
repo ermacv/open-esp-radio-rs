@@ -5,7 +5,7 @@ use super::*;
 use crate::transport::events::EventPoll;
 use std::{
     collections::VecDeque,
-    os::fd::{AsRawFd, FromRawFd, IntoRawFd},
+    os::fd::{AsRawFd, FromRawFd as _, IntoRawFd as _, OwnedFd},
 };
 
 impl SerialCapture {
@@ -297,18 +297,19 @@ impl SerialCapture {
 }
 
 fn nonblocking_serial(serial: serialport::TTYPort) -> std::result::Result<fs::File, LinkError> {
-    // SAFETY: into_raw_fd transfers sole ownership from TTYPort to this File.
-    let file = unsafe { fs::File::from_raw_fd(serial.into_raw_fd()) };
-    // SAFETY: fcntl operates on the live, exclusively owned serial descriptor.
-    let flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) };
-    if flags < 0
-        || unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0
-    {
-        return Err(LinkError::transport(format!(
-            "cannot configure nonblocking serial I/O: {}",
-            std::io::Error::last_os_error()
-        )));
-    }
+    #[allow(
+        unsafe_code,
+        reason = "serialport exposes its descriptor only as a raw fd"
+    )]
+    // SAFETY: `into_raw_fd` releases sole ownership of the open descriptor,
+    // which this `OwnedFd` takes exactly once.
+    let file = fs::File::from(unsafe { OwnedFd::from_raw_fd(serial.into_raw_fd()) });
+    let flags = rustix::fs::fcntl_getfl(&file);
+    flags
+        .and_then(|flags| rustix::fs::fcntl_setfl(&file, flags | rustix::fs::OFlags::NONBLOCK))
+        .map_err(|error| {
+            LinkError::transport(format!("cannot configure nonblocking serial I/O: {error}"))
+        })?;
     Ok(file)
 }
 

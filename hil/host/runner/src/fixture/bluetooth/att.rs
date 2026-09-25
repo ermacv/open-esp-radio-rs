@@ -2,10 +2,19 @@
 //! Requires an initially powered-off adapter; restores its power and rfkill state.
 use super::model::{Adapter, PeerAddress};
 use crate::Result;
+use open_esp_radio_hil_fixture::linux_socket::{L2capAddress, set_bluetooth_security_low};
+use rustix::{
+    event::{PollFd, PollFlags, Timespec, poll},
+    io::Errno,
+    net::{
+        AddressFamily, RecvFlags, SendFlags, SocketFlags, SocketType, bind, connect, recv, send,
+        socket_with, sockopt::socket_error,
+    },
+};
 use std::{
     fs,
-    io::{self, Write},
-    os::fd::{AsRawFd, FromRawFd, OwnedFd},
+    io::Write,
+    os::fd::OwnedFd,
     path::{Path, PathBuf},
     process::Command,
     time::{Duration, Instant},
@@ -169,92 +178,26 @@ impl Drop for Owner {
     }
 }
 
-// Linux sockaddr_l2 from bluetooth/l2cap.h; cid is little endian, address is
-// the HCI byte order. All padding is initialized before passing it to libc.
-#[repr(C)]
-struct Address {
-    family: u16,
-    psm: u16,
-    address: [u8; 6],
-    cid: u16,
-    kind: u8,
-}
-fn address(value: PeerAddress) -> Address {
-    // SAFETY: every field is an integer; zero is a valid value for all fields.
-    let mut a: Address = unsafe { std::mem::zeroed() };
-    a.family = libc::AF_BLUETOOTH as u16;
-    a.address = value.0;
-    a.cid = 4u16.to_le();
-    a.kind = 1;
-    a
-}
 pub(crate) struct Att(OwnedFd);
 impl Att {
     fn connect(local: PeerAddress, peer: PeerAddress) -> Result<Self> {
-        // SAFETY: creates an independent kernel L2CAP descriptor, no pointers.
-        let fd = unsafe {
-            libc::socket(
-                libc::AF_BLUETOOTH,
-                libc::SOCK_SEQPACKET | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
-                0,
-            )
-        };
-        if fd < 0 {
-            return Err(io::Error::last_os_error().into());
+        let socket = Self(socket_with(
+            AddressFamily::BLUETOOTH,
+            SocketType::SEQPACKET,
+            SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
+            None,
+        )?);
+        set_bluetooth_security_low(&socket.0)?;
+        bind(&socket.0, &L2capAddress::att(local.0))?;
+        match connect(&socket.0, &L2capAddress::att(peer.0)) {
+            Ok(()) | Err(Errno::INPROGRESS) => {}
+            Err(error) => return Err(error.into()),
         }
-        // SAFETY: this successful socket call transfers the unique descriptor.
-        let socket = Self(unsafe { OwnedFd::from_raw_fd(fd) });
-        let security = [1u8, 0];
-        // SAFETY: readable two-byte Linux bt_security value, live descriptor.
-        if unsafe { libc::setsockopt(fd, 274, 4, security.as_ptr().cast(), 2) } < 0 {
-            return Err(io::Error::last_os_error().into());
-        }
-        let local = address(local);
-        let remote = address(peer);
-        // SAFETY: initialized sockaddr_l2 and correct size remain live for bind.
-        if unsafe {
-            libc::bind(
-                fd,
-                (&local as *const Address).cast(),
-                std::mem::size_of::<Address>() as _,
-            )
-        } < 0
-        {
-            return Err(io::Error::last_os_error().into());
-        }
-        // SAFETY: same initialized Linux address layout for the remote endpoint.
-        let result = unsafe {
-            libc::connect(
-                fd,
-                (&remote as *const Address).cast(),
-                std::mem::size_of::<Address>() as _,
-            )
-        };
-        if result < 0 && io::Error::last_os_error().raw_os_error() != Some(libc::EINPROGRESS) {
-            return Err(io::Error::last_os_error().into());
-        }
-        socket.wait(libc::POLLOUT, Instant::now() + Duration::from_secs(10))?;
-        let mut error = 0i32;
-        let mut len = std::mem::size_of_val(&error) as libc::socklen_t;
-        // SAFETY: writable error integer and length, live socket.
-        if unsafe {
-            libc::getsockopt(
-                fd,
-                libc::SOL_SOCKET,
-                libc::SO_ERROR,
-                (&mut error as *mut i32).cast(),
-                &mut len,
-            )
-        } < 0
-        {
-            return Err(io::Error::last_os_error().into());
-        }
-        if error != 0 {
-            return Err(io::Error::from_raw_os_error(error).into());
-        }
+        socket.wait(PollFlags::OUT, Instant::now() + Duration::from_secs(10))?;
+        socket_error(&socket.0)??;
         Ok(socket)
     }
-    fn wait(&self, events: i16, deadline: Instant) -> Result<()> {
+    fn wait(&self, events: PollFlags, deadline: Instant) -> Result<()> {
         loop {
             if oer_process::cancellation_requested() {
                 return Err("ATT fixture cancelled".into());
@@ -263,57 +206,36 @@ impl Att {
             if left.is_zero() {
                 return Err("ATT fixture deadline exceeded".into());
             }
-            let mut poll = libc::pollfd {
-                fd: self.0.as_raw_fd(),
-                events,
-                revents: 0,
-            };
-            // SAFETY: one initialized pollfd remains writable for the call.
-            let result = unsafe { libc::poll(&mut poll, 1, left.as_millis().min(100) as i32) };
-            if result < 0 && io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
-                return Err(io::Error::last_os_error().into());
+            let timeout = Timespec::try_from(left.min(Duration::from_millis(100)))?;
+            let mut descriptors = [PollFd::new(&self.0, events)];
+            match poll(&mut descriptors, Some(&timeout)) {
+                Ok(0) | Err(Errno::INTR) => continue,
+                Ok(_) => {}
+                Err(error) => return Err(error.into()),
             }
-            if result > 0 {
-                if poll.revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0 {
-                    return Err("ATT socket disconnected".into());
-                }
-                if poll.revents & events != 0 {
-                    return Ok(());
-                }
+            let ready = descriptors[0].revents();
+            if ready.intersects(PollFlags::ERR | PollFlags::HUP | PollFlags::NVAL) {
+                return Err("ATT socket disconnected".into());
+            }
+            if ready.intersects(events) {
+                return Ok(());
             }
         }
     }
     pub(crate) fn send(&self, bytes: &[u8]) -> Result<()> {
-        self.wait(libc::POLLOUT, Instant::now() + Duration::from_secs(2))?;
-        // SAFETY: bytes is readable for exactly its length; descriptor is owned.
-        let n = unsafe {
-            libc::send(
-                self.0.as_raw_fd(),
-                bytes.as_ptr().cast(),
-                bytes.len(),
-                libc::MSG_NOSIGNAL,
-            )
-        };
-        if n != bytes.len() as isize {
+        self.wait(PollFlags::OUT, Instant::now() + Duration::from_secs(2))?;
+        if send(&self.0, bytes, SendFlags::NOSIGNAL)? != bytes.len() {
             return Err("incomplete ATT send".into());
         }
         Ok(())
     }
     pub(crate) fn receive(&self) -> Result<Vec<u8>> {
-        self.wait(libc::POLLIN, Instant::now() + Duration::from_secs(2))?;
+        self.wait(PollFlags::IN, Instant::now() + Duration::from_secs(2))?;
         let mut bytes = [0u8; 256];
-        // SAFETY: buffer is writable for its declared size, socket is live.
-        let n = unsafe {
-            libc::recv(
-                self.0.as_raw_fd(),
-                bytes.as_mut_ptr().cast(),
-                bytes.len(),
-                libc::MSG_TRUNC,
-            )
-        };
-        if n <= 0 || n as usize > bytes.len() {
+        let (_, length) = recv(&self.0, &mut bytes[..], RecvFlags::TRUNC)?;
+        if length == 0 || length > bytes.len() {
             return Err("invalid ATT packet size".into());
         }
-        Ok(bytes[..n as usize].to_vec())
+        Ok(bytes[..length].to_vec())
     }
 }

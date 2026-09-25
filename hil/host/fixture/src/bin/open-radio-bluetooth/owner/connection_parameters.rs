@@ -147,20 +147,21 @@ fn hold() -> Result<()> {
         if Instant::now() >= deadline {
             return Err("ATT parameter lease expired".into());
         }
-        let mut fd = libc::pollfd {
-            fd: libc::STDIN_FILENO,
-            events: libc::POLLIN,
-            revents: 0,
+        let stdin = std::io::stdin();
+        let ready = match rustix::event::poll(
+            &mut [rustix::event::PollFd::new(
+                &stdin,
+                rustix::event::PollFlags::IN,
+            )],
+            Some(&rustix::event::Timespec {
+                tv_sec: 0,
+                tv_nsec: 100_000_000,
+            }),
+        ) {
+            Ok(ready) => ready,
+            Err(rustix::io::Errno::INTR) => continue,
+            Err(error) => return Err(error.into()),
         };
-        // SAFETY: one initialized pollfd remains live throughout the bounded call.
-        let ready = unsafe { libc::poll(&mut fd, 1, 100) };
-        if ready < 0 {
-            let error = std::io::Error::last_os_error();
-            if error.kind() == std::io::ErrorKind::Interrupted {
-                continue;
-            }
-            return Err(error.into());
-        }
         if ready == 0 {
             continue;
         }

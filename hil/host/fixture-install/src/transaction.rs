@@ -17,13 +17,14 @@ mod linux {
         fs::{self, File, OpenOptions},
         io::{Read, Write},
         os::{
-            fd::{AsRawFd, FromRawFd as _, OwnedFd},
+            fd::AsFd,
             unix::{fs::MetadataExt as _, fs::OpenOptionsExt as _},
         },
         path::{Component, Path, PathBuf},
         process::Command,
     };
 
+    use rustix::fs::{Mode, OFlags};
     use serde::{Deserialize, Serialize};
     use sha2::{Digest as _, Sha256};
 
@@ -225,8 +226,8 @@ mod linux {
 
         #[cfg(test)]
         pub(crate) fn test(root: &Path, provider: Provider) -> Result<Self> {
-            let uid = unsafe { libc::geteuid() };
-            let gid = unsafe { libc::getegid() };
+            let uid = rustix::process::geteuid().as_raw();
+            let gid = rustix::process::getegid().as_raw();
             for directory in [
                 root.join("var/lib/open-radio/fixture")
                     .join(provider.as_str()),
@@ -656,7 +657,7 @@ mod linux {
         if metadata.uid() != operator_uid || metadata.mode() & 0o022 != 0 {
             return Err("prepared bundle directory must be owned by the operator and not group/world writable".into());
         }
-        let mut manifest = openat_file(directory.as_raw_fd(), "bundle.json")?;
+        let mut manifest = openat_file(&directory, "bundle.json")?;
         let manifest_metadata = manifest.metadata()?;
         if manifest_metadata.len() > MAX_MANIFEST_BYTES {
             return Err("prepared bundle manifest is too large".into());
@@ -752,13 +753,13 @@ mod linux {
         fs::create_dir(&staging)?;
         fs::set_permissions(&staging, permissions(0o700))?;
         let bundle_directory = open_absolute_directory(source_bundle)?;
-        let artifacts_directory = openat_directory(bundle_directory.as_raw_fd(), "artifacts")?;
+        let artifacts_directory = openat_directory(&bundle_directory, "artifacts")?;
         let artifacts_metadata = artifacts_directory.metadata()?;
         if artifacts_metadata.uid() != operator_uid || artifacts_metadata.mode() & 0o022 != 0 {
             return Err("prepared artifact directory has unsafe ownership or mode".into());
         }
         for artifact in &bundle.artifacts {
-            let mut source = openat_file(artifacts_directory.as_raw_fd(), &artifact.file_name)?;
+            let mut source = openat_file(&artifacts_directory, &artifact.file_name)?;
             let metadata = source.metadata()?;
             if !metadata.file_type().is_file()
                 || metadata.uid() != operator_uid
@@ -1408,10 +1409,7 @@ mod linux {
     }
 
     fn set_owner_mode(path: &Path, uid: u32, gid: u32, mode: u32) -> Result<()> {
-        let c_path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())?;
-        if unsafe { libc::chown(c_path.as_ptr(), uid, gid) } != 0 {
-            return Err(std::io::Error::last_os_error().into());
-        }
+        std::os::unix::fs::chown(path, Some(uid), Some(gid))?;
         fs::set_permissions(path, permissions(mode))?;
         Ok(())
     }
@@ -1466,7 +1464,7 @@ mod linux {
                 Component::RootDir => {}
                 Component::Normal(name) => {
                     descriptor = openat_directory(
-                        descriptor.as_raw_fd(),
+                        &descriptor,
                         name.to_str().ok_or("bundle path is not UTF-8")?,
                     )?;
                 }
@@ -1476,53 +1474,37 @@ mod linux {
         Ok(descriptor)
     }
 
+    const DIRECTORY: OFlags = OFlags::RDONLY
+        .union(OFlags::DIRECTORY)
+        .union(OFlags::CLOEXEC)
+        .union(OFlags::NOFOLLOW);
+
     fn open_root() -> Result<File> {
-        let path = std::ffi::CString::new("/")?;
-        let descriptor = unsafe {
-            libc::open(
-                path.as_ptr(),
-                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC | libc::O_NOFOLLOW,
-            )
-        };
-        owned_file(descriptor)
+        Ok(rustix::fs::open("/", DIRECTORY, Mode::empty())?.into())
     }
 
-    fn openat_directory(parent: i32, name: &str) -> Result<File> {
-        openat(
-            parent,
-            name,
-            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC | libc::O_NOFOLLOW,
-        )
+    fn openat_directory(parent: impl AsFd, name: &str) -> Result<File> {
+        openat(parent, name, DIRECTORY)
     }
 
-    fn openat_file(parent: i32, name: &str) -> Result<File> {
+    fn openat_file(parent: impl AsFd, name: &str) -> Result<File> {
         if name.contains('/') || matches!(name, "." | "..") {
             return Err("bundle member name is not finite".into());
         }
         openat(
             parent,
             name,
-            libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW,
+            OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
         )
     }
 
-    fn openat(parent: i32, name: &str, flags: i32) -> Result<File> {
-        let name = std::ffi::CString::new(name)?;
-        let descriptor = unsafe { libc::openat(parent, name.as_ptr(), flags) };
-        owned_file(descriptor)
-    }
-
-    fn owned_file(descriptor: i32) -> Result<File> {
-        if descriptor < 0 {
-            return Err(std::io::Error::last_os_error().into());
-        }
-        let descriptor = unsafe { OwnedFd::from_raw_fd(descriptor) };
-        Ok(File::from(descriptor))
+    fn openat(parent: impl AsFd, name: &str, flags: OFlags) -> Result<File> {
+        Ok(rustix::fs::openat(parent, name, flags, Mode::empty())?.into())
     }
 
     fn verify_operator(operator: &str) -> Result<u32> {
         validate_operator(operator)?;
-        if unsafe { libc::geteuid() } != 0 {
+        if !rustix::process::geteuid().is_root() {
             return Err("privileged fixture apply must run as root through sudo".into());
         }
         let sudo_uid: u32 = std::env::var("SUDO_UID")

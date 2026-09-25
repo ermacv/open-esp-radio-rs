@@ -62,20 +62,7 @@ fn reverse_confirmation_rejects_stale_nonce_and_retries_a_lost_reply() {
 #[test]
 fn kernel_drop_counter_observes_overflow_without_a_following_received_packet() {
     let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let bytes: libc::c_int = 4096;
-    // SAFETY: exact integer option on the live test socket.
-    assert_eq!(
-        unsafe {
-            libc::setsockopt(
-                socket.as_raw_fd(),
-                libc::SOL_SOCKET,
-                libc::SO_RCVBUF,
-                (&raw const bytes).cast(),
-                size_of_val(&bytes) as libc::socklen_t,
-            )
-        },
-        0
-    );
+    rustix::net::sockopt::set_socket_recv_buffer_size(&socket, 4096).unwrap();
     let before = kernel_drops(&socket).unwrap().unwrap();
     let sender = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     for _ in 0..256 {

@@ -2869,6 +2869,7 @@ dependencies = [
  "oer-process",
  "open-esp-radio-hil-fixture-install",
  "open-esp-radio-hil-protocol",
+ "rustix",
  "serde",
  "serde_json",
 ]
@@ -2881,6 +2882,7 @@ dependencies = [
  "fs2",
  "libc",
  "oer-process",
+ "rustix",
  "serde",
  "serde_json",
  "sha2",
@@ -2920,6 +2922,7 @@ dependencies = [
  "open-esp-radio-hil-protocol",
  "open-esp-radio-memory-report",
  "roxmltree",
+ "rustix",
  "serde",
  "serde_json",
  "serialport",

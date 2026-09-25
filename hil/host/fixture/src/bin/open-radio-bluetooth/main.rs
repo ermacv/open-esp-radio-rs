@@ -1,4 +1,5 @@
 //! Narrow privileged entry point: no shell, arbitrary opcodes or output paths.
+#![forbid(unsafe_code)]
 
 #[cfg(target_os = "linux")]
 mod connection_reset;
@@ -99,23 +100,15 @@ fn main() {
         return;
     }
     #[cfg(target_os = "linux")]
-    if std::env::var("OPEN_RADIO_GENERATION_BOUND").as_deref() != Ok("linux-bluetooth") {
-        use std::os::unix::process::CommandExt as _;
-        let error = std::process::Command::new("/usr/local/libexec/open-radio-bluetooth-launcher")
-            .args(std::env::args_os().skip(1))
-            .exec();
-        eprintln!("Bluetooth fixture launcher: {error}");
-        std::process::exit(1);
-    }
-    #[cfg(target_os = "linux")]
-    let _software =
-        match open_esp_radio_hil_fixture_install::launcher::adopt_lease("linux-bluetooth") {
-            Ok(lease) => lease,
-            Err(error) => {
-                eprintln!("Bluetooth fixture software lease: {error}");
-                std::process::exit(1);
-            }
-        };
+    let _software = match open_esp_radio_hil_fixture_install::launcher::enter(
+        open_esp_radio_hil_fixture_install::launcher::LaunchTarget::Bluetooth,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => {
+            eprintln!("Bluetooth fixture software lease: {error}");
+            std::process::exit(1);
+        }
+    };
     if let Command::AttParameters { adapter } | Command::RestoreAttParameters { adapter } = &command
     {
         let result = (|| -> Result<()> {

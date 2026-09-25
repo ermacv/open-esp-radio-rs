@@ -273,9 +273,12 @@ mod linux {
         use super::*;
 
         pub(crate) fn admit(root: &Path, provider: Provider) -> Result<OperationalLease> {
-            admit_at(root, provider, unsafe { libc::geteuid() }, unsafe {
-                libc::getegid()
-            })
+            admit_at(
+                root,
+                provider,
+                rustix::process::geteuid().as_raw(),
+                rustix::process::getegid().as_raw(),
+            )
         }
     }
 }

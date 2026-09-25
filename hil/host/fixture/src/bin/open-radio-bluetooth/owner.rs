@@ -9,6 +9,7 @@ use bt_hci::cmd::{
     controller_baseband::Reset,
     info::{ReadBdAddr, ReadLocalVersionInformation},
 };
+use open_esp_radio_hil_fixture::linux_socket::HciAddress;
 use std::{
     fs::{self, File, OpenOptions},
     io::Write as _,
@@ -90,8 +91,7 @@ impl Owner {
     }
 
     fn snapshot_for_parameters(adapter: Adapter, recovery: bool) -> Result<Self> {
-        // SAFETY: geteuid only reads the process identity.
-        if unsafe { libc::geteuid() } != 0 {
+        if !rustix::process::geteuid().is_root() {
             return Err("DTM requires the installed privileged Bluetooth helper".into());
         }
         match fs::DirBuilder::new()
@@ -120,7 +120,7 @@ impl Owner {
         if !recovery && connection_parameters::journal_path(adapter).try_exists()? {
             return Err("Bluetooth connection parameters require explicit helper recovery".into());
         }
-        let management = Socket::open(u16::MAX, 3)?;
+        let management = Socket::open(HciAddress::new(u16::MAX, HciAddress::CONTROL_CHANNEL))?;
         let info = management.management(adapter.0, 4, &[])?;
         let powered = powered(&info)?;
         if powered {
@@ -149,7 +149,10 @@ impl Owner {
         self.restore_needed = true;
         self.rfkill.set(false)?;
         self.manage_retry(5, &[0])?;
-        self.user = Some(Socket::open(self.adapter.0, 1)?);
+        self.user = Some(Socket::open(HciAddress::new(
+            self.adapter.0,
+            HciAddress::USER_CHANNEL,
+        ))?);
         Ok(())
     }
 

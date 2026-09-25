@@ -338,7 +338,7 @@ fn malformed_cargo_output_fails_at_the_executable_boundary() {
     )
     .unwrap();
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_oer-xtask"))
-        .args(["check", "network", "--dependencies-only"])
+        .args(["check", "network"])
         .env("CARGO", &executable)
         .output()
         .unwrap();

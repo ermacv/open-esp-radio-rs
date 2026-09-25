@@ -1,6 +1,6 @@
 //! Network policies consume package identities, resolved features and declared edges.
 
-use crate::{Context, Result, cargo, graph::Graph, process};
+use crate::{Context, Result, cargo, graph::Graph};
 use cargo_metadata::{DependencyKind, Package};
 use std::{collections::BTreeSet, path::Path};
 
@@ -516,7 +516,7 @@ pub fn profiles() -> [Profile; 22] {
     ]
 }
 
-pub fn run(context: &Context, dependencies_only: bool) -> Result<()> {
+pub fn run(context: &Context) -> Result<()> {
     for profile in profiles() {
         let manifest = context.root.join(profile.manifest);
         let flags = profile
@@ -547,35 +547,6 @@ pub fn run(context: &Context, dependencies_only: bool) -> Result<()> {
             profile.features
         );
     }
-    if !dependencies_only {
-        for profile in profiles()
-            .into_iter()
-            .filter(|p| p.boundary != Boundary::Neutral)
-            .chain([Profile {
-                boundary: Boundary::RadioCore,
-                manifest: "crates/runtime/embassy/esp32s31/ieee80211/Cargo.toml",
-                features: &[],
-            }])
-        {
-            let mut command = context.cargo();
-            command
-                .args(["check", "--manifest-path", profile.manifest, "--locked"])
-                .args(profile.features);
-            if profile.boundary.product() {
-                command.args(["--target", TARGET]);
-            } else {
-                command.arg("--all-targets");
-            }
-            process::run(&mut command)?;
-        }
-    }
-    println!(
-        "network adapter {} boundaries are clean",
-        if dependencies_only {
-            "dependency"
-        } else {
-            "compile and dependency"
-        }
-    );
+    println!("network adapter dependency boundaries are clean");
     Ok(())
 }

@@ -48,10 +48,8 @@ enum Task {
 enum Check {
     Metadata,
     Architecture,
-    Network {
-        #[arg(long)]
-        dependencies_only: bool,
-    },
+    /// Audit the resolved dependency graph of every network profile.
+    Network,
     /// Check the pinned minimal Xarxa patch with the original Embassy and driver.
     NetworkBackpressure,
     /// Check local Markdown links and the static qualification catalogs.
@@ -120,7 +118,7 @@ fn run() -> Result<std::process::ExitCode> {
         Task::Check { check } => match check {
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),
             Check::Architecture => checks::architecture::run(&ctx),
-            Check::Network { dependencies_only } => checks::network::run(&ctx, dependencies_only),
+            Check::Network => checks::network::run(&ctx),
             Check::NetworkBackpressure => oer_xtask::firmware::check_network_backpressure(&ctx),
             Check::Docs => checks::docs::run(&ctx),
             Check::Phy => checks::phy::run(&ctx),

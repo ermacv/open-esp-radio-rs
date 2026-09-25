@@ -106,7 +106,7 @@ each job runs one command, and every command also runs locally:
 
 ```console
 cargo xtask check metadata
-cargo xtask check network --dependencies-only
+cargo xtask check network
 cargo xtask check architecture
 cargo registers generate --manifest registers/esp32s31/publication/registers.toml --check
 cargo xtask check phy

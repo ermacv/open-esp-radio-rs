@@ -675,7 +675,8 @@ runner, no native HIL composition and no split-core batch transport. The shared
 physical interface currently exposes Ethernet geometry; it is not a general
 native-MSDU or scatter-gather contract.
 
-Check dependency and compilation boundaries with `cargo xtask check network`.
+Check dependency boundaries with `cargo xtask check network`; CI compiles the
+network profiles.
 Host tests cover ownership, admission and wake behavior. Hardware comparisons
 must name the exact firmware, role, PHY/channel, traffic shape, topology and
 instrumentation; resource/correctness budgets belong to the selected HIL

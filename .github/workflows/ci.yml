@@ -95,7 +95,7 @@ jobs:
       - name: Fetch every workspace
         run: for manifest in $(git ls-files '*Cargo.lock' | sed 's/Cargo.lock$/Cargo.toml/'); do cargo fetch --locked --manifest-path "$manifest"; done
       - run: cargo xtask check metadata
-      - run: cargo xtask check network --dependencies-only
+      - run: cargo xtask check network
 
   # Clippy for every production feature profile on the chip target, plus the
   # layer, facade, unsafe-code and PAC-access boundaries.
@@ -121,6 +121,43 @@ jobs:
       # A compile_fail doctest proves that publishing borrowed DMA memory
       # needs `unsafe`; the API exists only on the chip target.
       - run: cargo test --doc --locked -p oer-esp32s31-soc --features axi-gdma-mem2mem --target riscv32imafc-unknown-none-elf
+
+  # Network profiles that no other job compiles: the HIL runtime with each
+  # network stack, and the Wi-Fi composition with a single network feature.
+  network-profiles:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      TARGET: riscv32imafc-unknown-none-elf
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            hil/targets/esp32s31/target
+            crates/composition/esp32s31/embassy/ieee80211/target
+          key: network-profiles-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
+          restore-keys: network-profiles-${{ runner.os }}-
+      - name: HIL runtime
+        run: |
+          for network in embassy-network owned-network upstream-network; do
+            echo "::group::$network"
+            cargo check --locked --manifest-path hil/targets/esp32s31/runtime/Cargo.toml --target "$TARGET" \
+              --no-default-features --features "open-radio-hil,$network,code-psram,profile-psram-data,psram-task-stack"
+            echo "::endgroup::"
+          done
+      - name: Wi-Fi composition
+        run: |
+          for network in upstream-network embassy-network; do
+            echo "::group::$network"
+            cargo check --locked --manifest-path crates/composition/esp32s31/embassy/ieee80211/Cargo.toml --target "$TARGET" \
+              --no-default-features --features "$network"
+            echo "::endgroup::"
+          done
 
   # Each example is its own workspace; run Cargo from its directory so its
   # `.cargo/config.toml` selects the chip target. Every feature profile an

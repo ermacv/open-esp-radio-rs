@@ -53,6 +53,8 @@ members = [
     "crates/hardware/esp32s31/pac",
     "crates/adapters/esp-hal/esp32s31/soc",
     "crates/composition/esp32s31/embassy/bluetooth",
+    "hil/host/fixture",
+    "hil/host/fixture-install",
     "hil/host/runner",
     "qualification/evaluator",
     "tools/memory-report",

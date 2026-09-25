@@ -2853,6 +2853,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-hil-fixture"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "bt-hci-transport",
+ "clap",
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
+ "fs2",
+ "libc",
+ "oer-bluetooth-ll",
+ "oer-esp32s31-wifi-ap",
+ "oer-ieee80211",
+ "oer-process",
+ "open-esp-radio-hil-fixture-install",
+ "open-esp-radio-hil-protocol",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "open-esp-radio-hil-fixture-install"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fs2",
+ "libc",
+ "oer-process",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "open-esp-radio-hil-protocol"
 version = "0.1.0"
 dependencies = [
@@ -2871,22 +2906,17 @@ version = "0.1.0"
 dependencies = [
  "async-channel",
  "async-io",
- "bt-hci",
- "bt-hci-transport",
  "clap",
- "embedded-io 0.7.1",
- "embedded-io-async 0.7.0",
  "flate2",
  "fs2",
  "futures-lite",
  "libc",
  "mio",
  "object 0.39.1",
- "oer-bluetooth-ll",
- "oer-esp32s31-wifi-ap",
  "oer-firmware",
- "oer-ieee80211",
  "oer-process",
+ "open-esp-radio-hil-fixture",
+ "open-esp-radio-hil-fixture-install",
  "open-esp-radio-hil-protocol",
  "open-esp-radio-memory-report",
  "roxmltree",

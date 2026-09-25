@@ -8,7 +8,7 @@ use std::{
 use sha2::{Digest as _, Sha256};
 
 use super::*;
-use crate::fixture_install::{
+use crate::{
     model::validate_adapters,
     transaction::test_support::{Effects, Layout, Stage, apply, policy_bytes},
 };
@@ -576,13 +576,7 @@ fn every_control_stage_fails_closed_and_rollback_failure_is_reported() {
             .join("var/lib/open-radio/fixture/linux-bluetooth/transaction.json")
             .exists()
     );
-    assert!(
-        crate::fixture_install::admission::test_support::admit(
-            root.path(),
-            Provider::LinuxBluetooth,
-        )
-        .is_err()
-    );
+    assert!(crate::admission::test_support::admit(root.path(), Provider::LinuxBluetooth,).is_err());
 }
 
 #[test]
@@ -611,11 +605,7 @@ fn abrupt_process_loss_is_recovered_from_persisted_journal() {
                 .exists()
         );
         assert!(
-            crate::fixture_install::admission::test_support::admit(
-                root.path(),
-                Provider::LinuxBluetooth,
-            )
-            .is_err()
+            crate::admission::test_support::admit(root.path(), Provider::LinuxBluetooth,).is_err()
         );
 
         let recovered = apply(
@@ -679,13 +669,7 @@ fn receipt_failure_after_commit_preserves_truth_and_next_apply_finishes_recovery
             .join("var/lib/open-radio/fixture/linux-bluetooth/transaction.json")
             .exists()
     );
-    assert!(
-        crate::fixture_install::admission::test_support::admit(
-            root.path(),
-            Provider::LinuxBluetooth,
-        )
-        .is_err()
-    );
+    assert!(crate::admission::test_support::admit(root.path(), Provider::LinuxBluetooth,).is_err());
 
     fs::set_permissions(&receipts, fs::Permissions::from_mode(0o755)).unwrap();
     let recovered = apply(
@@ -703,13 +687,7 @@ fn receipt_failure_after_commit_preserves_truth_and_next_apply_finishes_recovery
             .join("var/lib/open-radio/fixture/linux-bluetooth/receipt.json")
             .exists()
     );
-    assert!(
-        crate::fixture_install::admission::test_support::admit(
-            root.path(),
-            Provider::LinuxBluetooth,
-        )
-        .is_ok()
-    );
+    assert!(crate::admission::test_support::admit(root.path(), Provider::LinuxBluetooth,).is_ok());
 }
 
 #[test]
@@ -1314,8 +1292,7 @@ fn installed_provider_leases_survive_modeled_run_cleanup() {
 
     let mut admissions = Vec::new();
     for provider in [Provider::LinuxNet, Provider::LinuxBluetooth] {
-        let admission =
-            crate::fixture_install::admission::test_support::admit(root.path(), provider).unwrap();
+        let admission = crate::admission::test_support::admit(root.path(), provider).unwrap();
         let helper_role = match provider {
             Provider::LinuxNet => ArtifactRole::NetworkHelper,
             Provider::LinuxBluetooth => ArtifactRole::BluetoothHelper,
@@ -1348,17 +1325,15 @@ fn persistent_operational_lease_blocks_upgrade_until_its_owner_releases() {
         &first,
         &mut TestEffects::passing(),
     );
-    let lease =
-        crate::fixture_install::admission::test_support::admit(root.path(), Provider::LinuxNet)
-            .unwrap();
+    let lease = crate::admission::test_support::admit(root.path(), Provider::LinuxNet).unwrap();
     assert!(
         fs::read_to_string(lease.artifact(ArtifactRole::NetworkHelper).unwrap())
             .unwrap()
             .contains("held-A")
     );
-    let nested = crate::fixture_install::launcher::test_support::run_at(
+    let nested = crate::launcher::test_support::run_at(
         root.path(),
-        crate::fixture_install::launcher::LaunchTarget::Network,
+        crate::launcher::LaunchTarget::Network,
         &["identity"],
     )
     .unwrap();
@@ -1413,13 +1388,7 @@ fn admission_rejects_unsafe_persistent_lease_and_parent_metadata() {
 
     let (root, lock) = installed_root();
     fs::set_permissions(&lock, fs::Permissions::from_mode(0o666)).unwrap();
-    assert!(
-        crate::fixture_install::admission::test_support::admit(
-            root.path(),
-            Provider::LinuxBluetooth,
-        )
-        .is_err()
-    );
+    assert!(crate::admission::test_support::admit(root.path(), Provider::LinuxBluetooth,).is_err());
     let (upgrade, _) = make_bundle(root.path(), Provider::LinuxBluetooth, "unsafe-upgrade");
     let layout = Layout::test(root.path(), Provider::LinuxBluetooth).unwrap();
     assert!(
@@ -1441,37 +1410,19 @@ fn admission_rejects_unsafe_persistent_lease_and_parent_metadata() {
     let (root, lock) = installed_root();
     fs::remove_file(&lock).unwrap();
     std::os::unix::fs::symlink("receipt.json", &lock).unwrap();
-    assert!(
-        crate::fixture_install::admission::test_support::admit(
-            root.path(),
-            Provider::LinuxBluetooth,
-        )
-        .is_err()
-    );
+    assert!(crate::admission::test_support::admit(root.path(), Provider::LinuxBluetooth,).is_err());
 
     let (root, lock) = installed_root();
     fs::remove_file(&lock).unwrap();
     fs::create_dir(&lock).unwrap();
-    assert!(
-        crate::fixture_install::admission::test_support::admit(
-            root.path(),
-            Provider::LinuxBluetooth,
-        )
-        .is_err()
-    );
+    assert!(crate::admission::test_support::admit(root.path(), Provider::LinuxBluetooth,).is_err());
 
     let (root, _) = installed_root();
     let state = root
         .path()
         .join("var/lib/open-radio/fixture/linux-bluetooth");
     fs::set_permissions(&state, fs::Permissions::from_mode(0o777)).unwrap();
-    assert!(
-        crate::fixture_install::admission::test_support::admit(
-            root.path(),
-            Provider::LinuxBluetooth,
-        )
-        .is_err()
-    );
+    assert!(crate::admission::test_support::admit(root.path(), Provider::LinuxBluetooth,).is_err());
 }
 
 #[test]
@@ -1494,13 +1445,7 @@ fn admission_rejects_pending_or_invalid_committed_state_without_fallback() {
         .path()
         .join("var/lib/open-radio/fixture/linux-bluetooth");
     fs::remove_file(state.join("current")).unwrap();
-    assert!(
-        crate::fixture_install::admission::test_support::admit(
-            root.path(),
-            Provider::LinuxBluetooth,
-        )
-        .is_err()
-    );
+    assert!(crate::admission::test_support::admit(root.path(), Provider::LinuxBluetooth,).is_err());
 
     let root = installed_root();
     let state = root
@@ -1508,26 +1453,17 @@ fn admission_rejects_pending_or_invalid_committed_state_without_fallback() {
         .join("var/lib/open-radio/fixture/linux-bluetooth");
     fs::remove_file(state.join("current")).unwrap();
     fs::write(state.join("current"), b"generations/not-a-selector").unwrap();
-    assert!(
-        crate::fixture_install::admission::test_support::admit(
-            root.path(),
-            Provider::LinuxBluetooth,
-        )
-        .is_err()
-    );
+    assert!(crate::admission::test_support::admit(root.path(), Provider::LinuxBluetooth,).is_err());
 
     let root = installed_root();
     let state = root
         .path()
         .join("var/lib/open-radio/fixture/linux-bluetooth");
     std::os::unix::fs::symlink("missing", state.join("transaction.json")).unwrap();
-    let error = crate::fixture_install::admission::test_support::admit(
-        root.path(),
-        Provider::LinuxBluetooth,
-    )
-    .err()
-    .unwrap()
-    .to_string();
+    let error = crate::admission::test_support::admit(root.path(), Provider::LinuxBluetooth)
+        .err()
+        .unwrap()
+        .to_string();
     assert!(error.contains("recovery-required"));
 
     let root = installed_root();
@@ -1537,13 +1473,7 @@ fn admission_rejects_pending_or_invalid_committed_state_without_fallback() {
     fs::set_permissions(&receipt, fs::Permissions::from_mode(0o644)).unwrap();
     fs::write(&receipt, b"{}\n").unwrap();
     fs::set_permissions(&receipt, fs::Permissions::from_mode(0o444)).unwrap();
-    assert!(
-        crate::fixture_install::admission::test_support::admit(
-            root.path(),
-            Provider::LinuxBluetooth,
-        )
-        .is_err()
-    );
+    assert!(crate::admission::test_support::admit(root.path(), Provider::LinuxBluetooth,).is_err());
 }
 
 #[test]
@@ -1597,12 +1527,12 @@ fn lifecycle_isolated_child_entry() {
             let (stable, target, arguments): (PathBuf, _, &[&str]) = match provider {
                 Provider::LinuxNet => (
                     root.join("usr/local/sbin/open-radio-net"),
-                    crate::fixture_install::launcher::LaunchTarget::Network,
+                    crate::launcher::LaunchTarget::Network,
                     &["identity"],
                 ),
                 Provider::LinuxBluetooth => (
                     root.join("usr/local/libexec/open-radio-bluetooth"),
-                    crate::fixture_install::launcher::LaunchTarget::Bluetooth,
+                    crate::launcher::LaunchTarget::Bluetooth,
                     &["check", "--adapter", "hci0"],
                 ),
             };
@@ -1620,9 +1550,7 @@ fn lifecycle_isolated_child_entry() {
             let mut token = String::new();
             resume_reader.read_to_string(&mut token).unwrap();
             assert_eq!(token, "continue\n");
-            let status =
-                crate::fixture_install::launcher::test_support::run_at(&root, target, arguments)
-                    .unwrap();
+            let status = crate::launcher::test_support::run_at(&root, target, arguments).unwrap();
             std::process::exit(if status.success() { 0 } else { 88 });
         }
         _ => panic!("unknown lifecycle child mode"),
@@ -1637,7 +1565,7 @@ fn process_loss_leaves_admission_closed_until_authorized_recovery() {
     let status = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "fixture_install::tests::lifecycle_isolated_child_entry",
+            "tests::lifecycle_isolated_child_entry",
             "--nocapture",
         ])
         .env("OPEN_RADIO_LIFECYCLE_CHILD", "interrupt")
@@ -1647,10 +1575,7 @@ fn process_loss_leaves_admission_closed_until_authorized_recovery() {
         .unwrap();
     assert_eq!(status.code(), Some(86));
     let external_effect = root.path().join("hardware-effect");
-    let admission = crate::fixture_install::admission::test_support::admit(
-        root.path(),
-        Provider::LinuxBluetooth,
-    );
+    let admission = crate::admission::test_support::admit(root.path(), Provider::LinuxBluetooth);
     if admission.is_ok() {
         fs::write(&external_effect, b"called").unwrap();
     }
@@ -1669,13 +1594,7 @@ fn process_loss_leaves_admission_closed_until_authorized_recovery() {
     )
     .unwrap();
     assert_eq!(recovered.state, InstallState::SoftwareVerified);
-    assert!(
-        crate::fixture_install::admission::test_support::admit(
-            root.path(),
-            Provider::LinuxBluetooth,
-        )
-        .is_ok()
-    );
+    assert!(crate::admission::test_support::admit(root.path(), Provider::LinuxBluetooth,).is_ok());
 }
 
 #[test]
@@ -1704,9 +1623,9 @@ fn interrupted_installation_rejects_a_new_operational_consumer() {
             .exists()
     );
 
-    let launch = crate::fixture_install::launcher::test_support::run_at(
+    let launch = crate::launcher::test_support::run_at(
         root.path(),
-        crate::fixture_install::launcher::LaunchTarget::Bluetooth,
+        crate::launcher::LaunchTarget::Bluetooth,
         &["check", "--adapter", "hci0"],
     );
     assert!(
@@ -1731,9 +1650,9 @@ fn interrupted_installation_rejects_a_new_operational_consumer() {
     )
     .unwrap();
     assert_eq!(recovered.state, InstallState::SoftwareVerified);
-    let launched = crate::fixture_install::launcher::test_support::run_at(
+    let launched = crate::launcher::test_support::run_at(
         root.path(),
-        crate::fixture_install::launcher::LaunchTarget::Bluetooth,
+        crate::launcher::LaunchTarget::Bluetooth,
         &["check", "--adapter", "hci0"],
     )
     .unwrap();
@@ -1775,7 +1694,7 @@ fn direct_stable_launch_cannot_mix_loaded_and_selected_generations() {
         let mut child = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "fixture_install::tests::lifecycle_isolated_child_entry",
+                "tests::lifecycle_isolated_child_entry",
                 "--nocapture",
             ])
             .env("OPEN_RADIO_LIFECYCLE_CHILD", "launch")

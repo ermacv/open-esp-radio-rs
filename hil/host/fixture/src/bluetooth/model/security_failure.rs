@@ -4,7 +4,7 @@ use open_esp_radio_hil_protocol::BluetoothSecurityFailure as Failure;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct Report {
+pub struct Report {
     pub schema: u32,
     pub adapter: String,
     pub peer: String,
@@ -31,7 +31,7 @@ pub(crate) struct Report {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct Observation {
+pub struct Observation {
     pub after_micros: u64,
     /// Incoming H4 event bytes; this is not an over-the-air capture.
     pub packet: Vec<u8>,

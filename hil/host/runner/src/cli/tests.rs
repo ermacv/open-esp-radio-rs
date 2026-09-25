@@ -313,7 +313,7 @@ fn bluetooth_dtm_v1_requires_explicit_selection() {
 
 #[test]
 fn fixture_install_requires_a_finite_provider_and_preserves_the_net_alias() {
-    use open_esp_radio_hil_runner::fixture_install::Provider;
+    use open_esp_radio_hil_fixture_install::Provider;
 
     for (name, expected) in [
         ("linux-net", Provider::LinuxNet),

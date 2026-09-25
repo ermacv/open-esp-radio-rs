@@ -1,7 +1,7 @@
 use std::{path::PathBuf, process::ExitCode};
 
 use clap::Parser as _;
-use open_esp_radio_hil_runner::fixture_install::{Provider, apply_system};
+use open_esp_radio_hil_fixture_install::{Provider, apply_system};
 
 #[derive(clap::Parser)]
 #[command(name = "open-radio-fixture-install")]

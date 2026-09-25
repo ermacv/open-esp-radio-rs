@@ -10,10 +10,7 @@ mod linux {
 
     use sha2::{Digest as _, Sha256};
 
-    use crate::{
-        Result,
-        fixture_install::{ArtifactRole, InstallResult, InstallState, Provider, RECEIPT_SCHEMA},
-    };
+    use crate::{ArtifactRole, InstallResult, InstallState, Provider, RECEIPT_SCHEMA, Result};
 
     pub struct OperationalLease {
         _file: File,
@@ -290,9 +287,7 @@ pub use linux::{OperationalLease, admit_system};
 pub struct OperationalLease;
 
 #[cfg(not(target_os = "linux"))]
-pub fn admit_system(
-    _provider: crate::fixture_install::Provider,
-) -> crate::Result<OperationalLease> {
+pub fn admit_system(_provider: crate::Provider) -> crate::Result<OperationalLease> {
     Err("Linux fixture software admission requires Linux".into())
 }
 

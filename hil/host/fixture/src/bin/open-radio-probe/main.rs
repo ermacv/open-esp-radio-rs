@@ -1,9 +1,9 @@
 //! Privileged, finite probe generator. It never reconfigures the managed peer.
 #[cfg(any(target_os = "linux", test))]
-mod frame;
+use open_esp_radio_hil_fixture::probe::frame;
 #[cfg(target_os = "linux")]
 mod linux;
-mod model;
+use open_esp_radio_hil_fixture::probe::model;
 
 fn main() {
     #[cfg(target_os = "linux")]
@@ -16,15 +16,14 @@ fn main() {
         std::process::exit(1);
     }
     #[cfg(target_os = "linux")]
-    let _software = match open_esp_radio_hil_runner::fixture_install::launcher::adopt_lease(
-        "linux-net-probe",
-    ) {
-        Ok(lease) => lease,
-        Err(error) => {
-            eprintln!("probe software lease: {error}");
-            std::process::exit(1);
-        }
-    };
+    let _software =
+        match open_esp_radio_hil_fixture_install::launcher::adopt_lease("linux-net-probe") {
+            Ok(lease) => lease,
+            Err(error) => {
+                eprintln!("probe software lease: {error}");
+                std::process::exit(1);
+            }
+        };
     #[cfg(target_os = "linux")]
     let result = linux::run();
     #[cfg(not(target_os = "linux"))]

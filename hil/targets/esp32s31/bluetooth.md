@@ -98,7 +98,7 @@ declares one 27-byte Controller-to-Host ACL credit, holds the first consumed
 fragment's credit for 300 ms, returns every credit explicitly, requires all ten
 fragments of an exact 251-byte ACL packet, reassembles and echoes it through the
 target Host facade, requires the central to complete LE Read Remote Features
-with the [shared fixture feature contract](../../host/runner/src/fixture/bluetooth/contract.rs)
+with the [shared fixture feature contract](../../host/fixture-install/src/bluetooth_contract.rs)
 and Read Remote Version Information with Core
 5.4, company value `0xffff` and subversion 1 after their successful Command
 Status events, requests an exact 120-ms interval and a two-channel map from the

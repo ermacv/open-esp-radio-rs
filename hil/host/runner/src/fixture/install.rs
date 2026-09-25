@@ -2,7 +2,7 @@
 
 use std::{path::Path, process::Command};
 
-use open_esp_radio_hil_runner::fixture_install::{INSTALLER_BINARY, Provider, build_plan, prepare};
+use open_esp_radio_hil_fixture_install::{INSTALLER_BINARY, Provider, build_plan, prepare};
 
 use crate::Result;
 
@@ -39,9 +39,14 @@ pub(crate) fn run(
             Provider::LinuxBluetooth => &["open-radio-bluetooth-launcher", "open-radio-bluetooth"],
         };
         let mut build = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
-        build
-            .current_dir(root)
-            .args(["build", "--locked", "-p", "open-esp-radio-hil-runner"]);
+        build.current_dir(root).args([
+            "build",
+            "--locked",
+            "-p",
+            "open-esp-radio-hil-fixture-install",
+            "-p",
+            "open-esp-radio-hil-fixture",
+        ]);
         for binary in provider_binaries {
             build.args(["--bin", binary]);
         }

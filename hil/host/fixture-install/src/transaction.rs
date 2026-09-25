@@ -28,7 +28,7 @@ mod linux {
     use sha2::{Digest as _, Sha256};
 
     use super::{InstallResult, Provider, Result};
-    use crate::fixture_install::{
+    use crate::{
         Artifact, BUNDLE_SCHEMA, Bundle, InstallState, RECEIPT_SCHEMA,
         model::validate_adapters,
         prepare::{sha256, validate_operator},

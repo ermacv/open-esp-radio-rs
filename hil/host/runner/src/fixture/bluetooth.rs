@@ -2,7 +2,7 @@
 
 pub(crate) mod att;
 pub(crate) mod att_parameters;
-pub(crate) mod model;
+pub(crate) use open_esp_radio_hil_fixture::bluetooth::model;
 pub(crate) mod secure_gatt;
 
 use model::{Adapter, Check, DtmVersion};

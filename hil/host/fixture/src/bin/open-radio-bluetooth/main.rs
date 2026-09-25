@@ -6,7 +6,7 @@ mod connection_reset;
 mod dtm;
 #[cfg(target_os = "linux")]
 mod hci;
-mod model;
+use open_esp_radio_hil_fixture::bluetooth::model;
 #[cfg(target_os = "linux")]
 mod owner;
 #[cfg(target_os = "linux")]
@@ -108,15 +108,14 @@ fn main() {
         std::process::exit(1);
     }
     #[cfg(target_os = "linux")]
-    let _software = match open_esp_radio_hil_runner::fixture_install::launcher::adopt_lease(
-        "linux-bluetooth",
-    ) {
-        Ok(lease) => lease,
-        Err(error) => {
-            eprintln!("Bluetooth fixture software lease: {error}");
-            std::process::exit(1);
-        }
-    };
+    let _software =
+        match open_esp_radio_hil_fixture_install::launcher::adopt_lease("linux-bluetooth") {
+            Ok(lease) => lease,
+            Err(error) => {
+                eprintln!("Bluetooth fixture software lease: {error}");
+                std::process::exit(1);
+            }
+        };
     if let Command::AttParameters { adapter } | Command::RestoreAttParameters { adapter } = &command
     {
         let result = (|| -> Result<()> {

@@ -229,20 +229,18 @@
       "toml",
       "toml_edit",
       "mio",
-      "zeroize"
+      "zeroize",
+      "open-esp-radio-hil-fixture-install"
     ],
     "bluetooth": [
-      "bt-hci",
-      "bt-hci-transport",
-      "embedded-io",
-      "embedded-io-async",
       "zbus",
       "async-channel",
       "async-io",
-      "futures-lite"
+      "futures-lite",
+      "open-esp-radio-hil-fixture"
     ],
     "ieee80211": [
-      "oer-ieee80211"
+      "open-esp-radio-hil-fixture"
     ]
   },
   "build": {
@@ -281,11 +279,20 @@
       "hil/host/runner/src/fixture/station_fixture.rs",
       "hil/host/runner/src/fixture/station_fixture/",
       "hil/host/runner/src/fixture/wpa_control.rs",
-      "hil/host/runner/src/fixture/wpa_control/"
+      "hil/host/runner/src/fixture/wpa_control/",
+      "hil/host/fixture/src/lib.rs",
+      "hil/host/fixture/src/probe.rs",
+      "hil/host/fixture/src/probe/",
+      "hil/host/fixture/src/bin/open-radio-probe/"
     ],
     "bluetooth": [
       "hil/host/runner/src/fixture/bluetooth.rs",
-      "hil/host/runner/src/fixture/bluetooth/"
+      "hil/host/runner/src/fixture/bluetooth/",
+      "hil/host/fixture/src/lib.rs",
+      "hil/host/fixture/src/bluetooth.rs",
+      "hil/host/fixture/src/bluetooth/",
+      "hil/host/fixture/src/bin/open-radio-bluetooth/",
+      "hil/host/fixture-install/src/bluetooth_contract.rs"
     ]
   },
   "workload_domains": {

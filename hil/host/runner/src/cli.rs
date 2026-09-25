@@ -247,7 +247,7 @@ pub(crate) enum FixtureCommand {
     Install {
         /// Finite Linux fixture provider to provision.
         #[arg(long, value_enum)]
-        provider: open_esp_radio_hil_runner::fixture_install::Provider,
+        provider: open_esp_radio_hil_fixture_install::Provider,
         /// Print the offline plan without executing any installer step.
         #[arg(long)]
         dry_run: bool,

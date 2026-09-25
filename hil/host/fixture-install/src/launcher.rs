@@ -2,7 +2,7 @@
 
 use std::process::ExitCode;
 
-use crate::fixture_install::{ArtifactRole, Provider};
+use crate::{ArtifactRole, Provider};
 
 #[derive(Clone, Copy)]
 pub enum LaunchTarget {
@@ -47,8 +47,7 @@ pub(crate) mod test_support {
         target: LaunchTarget,
         arguments: &[&str],
     ) -> crate::Result<std::process::ExitStatus> {
-        let lease =
-            crate::fixture_install::admission::test_support::admit(root, target.provider())?;
+        let lease = crate::admission::test_support::admit(root, target.provider())?;
         let helper = lease.artifact(target.role())?;
         Ok(Command::new(helper)
             .args(arguments)

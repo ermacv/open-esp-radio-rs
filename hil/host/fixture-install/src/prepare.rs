@@ -38,10 +38,10 @@ pub fn build_plan(root: &Path, provider: Provider, adapters: &[String]) -> Resul
     let build_steps = match provider {
         Provider::LinuxNet => vec![
             "cargo xtask build hostapd".to_owned(),
-            "cargo build --locked -p open-esp-radio-hil-runner --bin open-radio-net-launcher --bin open-radio-probe-launcher --bin open-radio-probe --bin open-radio-fixture-install --target-dir target/hil/fixture-build".to_owned(),
+            "cargo build --locked -p open-esp-radio-hil-fixture-install -p open-esp-radio-hil-fixture --bin open-radio-net-launcher --bin open-radio-probe-launcher --bin open-radio-probe --bin open-radio-fixture-install --target-dir target/hil/fixture-build".to_owned(),
         ],
         Provider::LinuxBluetooth => vec![
-            "cargo build --locked -p open-esp-radio-hil-runner --bin open-radio-bluetooth-launcher --bin open-radio-bluetooth --bin open-radio-fixture-install --target-dir target/hil/fixture-build".to_owned(),
+            "cargo build --locked -p open-esp-radio-hil-fixture-install -p open-esp-radio-hil-fixture --bin open-radio-bluetooth-launcher --bin open-radio-bluetooth --bin open-radio-fixture-install --target-dir target/hil/fixture-build".to_owned(),
         ],
     };
     Ok(InstallPlan {
@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn helper_capabilities_cannot_hold_preparation_open_indefinitely() {
-        let _serial = crate::fixture_install::tests::serial();
+        let _serial = crate::tests::serial();
         let directory = tempfile::tempdir().unwrap();
         let helper = directory.path().join("helper");
         fs::write(&helper, "#!/bin/sh\nexec sleep 60\n").unwrap();

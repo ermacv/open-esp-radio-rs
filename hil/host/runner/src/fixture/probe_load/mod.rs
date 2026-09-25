@@ -1,10 +1,8 @@
 //! Event-driven ownership of the bounded Linux probe source.
 mod air;
-#[cfg(test)]
-mod frame;
-pub(crate) mod model;
 use crate::Result;
 pub(crate) use air::verify as verify_air;
+pub(crate) use open_esp_radio_hil_fixture::probe::model;
 use std::{
     fs,
     io::{BufRead, BufReader, Read, Write},

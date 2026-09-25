@@ -1,17 +1,16 @@
 //! Shared, versioned boundary between the unprivileged runner and finite helper.
 
-#[path = "security_failure_model.rs"]
-pub(crate) mod security_failure;
+pub mod security_failure;
 
 use open_esp_radio_hil_protocol::BluetoothPeripheralTermination;
 use serde::{Deserialize, Serialize};
 
-pub(crate) use open_esp_radio_hil_runner::bluetooth_fixture_contract::{
+pub use open_esp_radio_hil_fixture_install::bluetooth_contract::{
     CONNECTION_RESET_SCHEMA, EXPECTED_REMOTE_FEATURES, HELPER_CAPABILITIES,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Adapter(pub(crate) u16);
+pub struct Adapter(pub u16);
 
 impl std::str::FromStr for Adapter {
     type Err = String;
@@ -35,33 +34,33 @@ impl std::fmt::Display for Adapter {
 /// Explicit command profile; v1 is diagnostic only, never an automatic fallback.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum DtmVersion {
+pub enum DtmVersion {
     V1,
     V2,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Check {
-    pub(crate) schema: u32,
-    pub(crate) adapter: String,
-    pub(crate) address: Option<String>,
-    pub(crate) version: Option<String>,
-    pub(crate) initial_powered: Option<bool>,
-    pub(crate) initial_soft_blocked: Option<bool>,
-    pub(crate) dtm_version: DtmVersion,
-    pub(crate) dtm_v1_advertised: bool,
-    pub(crate) dtm_v2_advertised: bool,
-    pub(crate) rx_started: bool,
-    pub(crate) rx_packets: Option<u16>,
-    pub(crate) tx_started: bool,
-    pub(crate) tx_test_end: bool,
-    pub(crate) restored: bool,
-    pub(crate) errors: Vec<String>,
+pub struct Check {
+    pub schema: u32,
+    pub adapter: String,
+    pub address: Option<String>,
+    pub version: Option<String>,
+    pub initial_powered: Option<bool>,
+    pub initial_soft_blocked: Option<bool>,
+    pub dtm_version: DtmVersion,
+    pub dtm_v1_advertised: bool,
+    pub dtm_v2_advertised: bool,
+    pub rx_started: bool,
+    pub rx_packets: Option<u16>,
+    pub tx_started: bool,
+    pub tx_test_end: bool,
+    pub restored: bool,
+    pub errors: Vec<String>,
 }
 
 impl Check {
-    pub(crate) fn new(adapter: Adapter, dtm_version: DtmVersion) -> Self {
+    pub fn new(adapter: Adapter, dtm_version: DtmVersion) -> Self {
         Self {
             schema: 2,
             adapter: adapter.to_string(),
@@ -82,7 +81,7 @@ impl Check {
     }
 
     /// This proves command acceptance only; packet reception needs an RF peer.
-    pub(crate) fn passed(&self, adapter: Adapter, dtm_version: DtmVersion) -> bool {
+    pub fn passed(&self, adapter: Adapter, dtm_version: DtmVersion) -> bool {
         self.schema == 2
             && self.dtm_version == dtm_version
             && self.adapter == adapter.to_string()
@@ -105,7 +104,7 @@ impl Check {
 
 /// One public Bluetooth peer, supplied as six hexadecimal octets.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct PeerAddress(pub(crate) [u8; 6]);
+pub struct PeerAddress(pub [u8; 6]);
 
 impl std::str::FromStr for PeerAddress {
     type Err = String;
@@ -141,76 +140,76 @@ impl std::fmt::Display for PeerAddress {
 /// Central-side connection, ACL echo and selected termination evidence.
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ConnectionReset {
-    pub(crate) schema: u32,
-    pub(crate) adapter: String,
-    pub(crate) peer: String,
-    pub(crate) hold_ms: u16,
-    pub(crate) encrypted: bool,
-    pub(crate) key_refresh: bool,
-    pub(crate) refresh_command_status: bool,
-    pub(crate) key_refresh_complete: bool,
-    pub(crate) refresh_after_micros: Option<u64>,
-    pub(crate) encryption_command_status: bool,
-    pub(crate) encryption_change: bool,
-    pub(crate) encryption_after_micros: Option<u64>,
-    pub(crate) termination: BluetoothPeripheralTermination,
-    pub(crate) initial_powered: Option<bool>,
-    pub(crate) initial_soft_blocked: Option<bool>,
-    pub(crate) connection_complete: bool,
+pub struct ConnectionReset {
+    pub schema: u32,
+    pub adapter: String,
+    pub peer: String,
+    pub hold_ms: u16,
+    pub encrypted: bool,
+    pub key_refresh: bool,
+    pub refresh_command_status: bool,
+    pub key_refresh_complete: bool,
+    pub refresh_after_micros: Option<u64>,
+    pub encryption_command_status: bool,
+    pub encryption_change: bool,
+    pub encryption_after_micros: Option<u64>,
+    pub termination: BluetoothPeripheralTermination,
+    pub initial_powered: Option<bool>,
+    pub initial_soft_blocked: Option<bool>,
+    pub connection_complete: bool,
     #[serde(default)]
-    pub(crate) remote_features_command_status: bool,
+    pub remote_features_command_status: bool,
     #[serde(default)]
-    pub(crate) remote_features_complete: bool,
+    pub remote_features_complete: bool,
     #[serde(default)]
-    pub(crate) remote_features: Option<[u8; 8]>,
+    pub remote_features: Option<[u8; 8]>,
     #[serde(default)]
-    pub(crate) remote_features_after_micros: Option<u64>,
+    pub remote_features_after_micros: Option<u64>,
     #[serde(default)]
-    pub(crate) remote_version_command_status: bool,
+    pub remote_version_command_status: bool,
     #[serde(default)]
-    pub(crate) remote_version_complete: bool,
+    pub remote_version_complete: bool,
     #[serde(default)]
-    pub(crate) remote_version: Option<u8>,
+    pub remote_version: Option<u8>,
     #[serde(default)]
-    pub(crate) remote_version_company: Option<u16>,
+    pub remote_version_company: Option<u16>,
     #[serde(default)]
-    pub(crate) remote_version_subversion: Option<u16>,
+    pub remote_version_subversion: Option<u16>,
     #[serde(default)]
-    pub(crate) remote_version_after_micros: Option<u64>,
-    pub(crate) acl_sent: bool,
-    pub(crate) acl_echo_received: bool,
-    pub(crate) acl_payload_bytes: Option<u16>,
-    pub(crate) acl_echo_hci_packets: Option<u16>,
-    pub(crate) acl_echo_after_micros: Option<u64>,
-    pub(crate) connection_update_complete: bool,
-    pub(crate) updated_interval_millis: Option<u16>,
-    pub(crate) connection_update_after_micros: Option<u64>,
+    pub remote_version_after_micros: Option<u64>,
+    pub acl_sent: bool,
+    pub acl_echo_received: bool,
+    pub acl_payload_bytes: Option<u16>,
+    pub acl_echo_hci_packets: Option<u16>,
+    pub acl_echo_after_micros: Option<u64>,
+    pub connection_update_complete: bool,
+    pub updated_interval_millis: Option<u16>,
+    pub connection_update_after_micros: Option<u64>,
     #[serde(default)]
-    pub(crate) channel_map_updated: bool,
+    pub channel_map_updated: bool,
     #[serde(default)]
-    pub(crate) channel_map_update_after_micros: Option<u64>,
+    pub channel_map_update_after_micros: Option<u64>,
     #[serde(default)]
-    pub(crate) post_update_acl_sent: bool,
+    pub post_update_acl_sent: bool,
     #[serde(default)]
-    pub(crate) post_update_acl_echo_received: bool,
+    pub post_update_acl_echo_received: bool,
     #[serde(default)]
-    pub(crate) post_update_acl_echo_hci_packets: Option<u16>,
+    pub post_update_acl_echo_hci_packets: Option<u16>,
     #[serde(default)]
-    pub(crate) post_update_acl_echo_after_micros: Option<u64>,
-    pub(crate) reset_completed: bool,
-    pub(crate) peer_rfkill_blocked: bool,
-    pub(crate) peer_rfkill_micros: Option<u64>,
-    pub(crate) peer_disconnection_complete: bool,
-    pub(crate) peer_disconnect_reason: Option<u8>,
-    pub(crate) connection_after_micros: Option<u64>,
-    pub(crate) termination_after_connection_micros: Option<u64>,
-    pub(crate) restored: bool,
-    pub(crate) errors: Vec<String>,
+    pub post_update_acl_echo_after_micros: Option<u64>,
+    pub reset_completed: bool,
+    pub peer_rfkill_blocked: bool,
+    pub peer_rfkill_micros: Option<u64>,
+    pub peer_disconnection_complete: bool,
+    pub peer_disconnect_reason: Option<u8>,
+    pub connection_after_micros: Option<u64>,
+    pub termination_after_connection_micros: Option<u64>,
+    pub restored: bool,
+    pub errors: Vec<String>,
 }
 
 impl ConnectionReset {
-    pub(crate) fn new(
+    pub fn new(
         adapter: Adapter,
         peer: PeerAddress,
         hold_ms: u16,
@@ -270,7 +269,7 @@ impl ConnectionReset {
     }
 
     #[cfg(test)]
-    pub(crate) fn passed(
+    pub fn passed(
         &self,
         adapter: Adapter,
         peer: PeerAddress,
@@ -280,7 +279,7 @@ impl ConnectionReset {
         self.passed_profile(adapter, peer, hold_ms, termination, false, false)
     }
 
-    pub(crate) fn passed_profile(
+    pub fn passed_profile(
         &self,
         adapter: Adapter,
         peer: PeerAddress,

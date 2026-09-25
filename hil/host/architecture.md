@@ -7,8 +7,18 @@ contract. Operational setup and commands are in the
 `runner/` owns the typed CLI, scenario catalog, build/flash orchestration and
 UART evidence. `linux-net/` contains only privileged fixture operations.
 [Linux Bluetooth setup](linux-bluetooth/README.md) installs the privileged helper
-for finite DTM adapter checks and peripheral ACL/recovery workloads. Its Rust
-implementation belongs to the runner's `fixture/bluetooth/` module.
+for finite DTM adapter checks and peripheral ACL/recovery workloads.
+
+Three Cargo packages separate the privilege boundaries:
+
+| Package | Binaries | Role |
+| --- | --- | --- |
+| `runner/` (`open-esp-radio-hil-runner`) | `open-esp-radio-hil-runner` | Unprivileged CLI, orchestration and evidence |
+| `fixture/` (`open-esp-radio-hil-fixture`) | `open-radio-bluetooth`, `open-radio-probe` | Finite Linux helpers; the library is their versioned request/report contract with the runner |
+| `fixture-install/` (`open-esp-radio-hil-fixture-install`) | `open-radio-fixture-install` and the three fixed launchers | Root-executed installation and admission; the runner uses the same library to plan and prepare |
+
+The installer package depends on no radio, Bluetooth or HIL execution crate, so
+its dependency graph is the whole root-executed installation surface.
 
 Fixture installation has a separate ownership boundary. The general runner
 owns the offline provider plan, unprivileged locked build, content-addressed

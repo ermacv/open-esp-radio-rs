@@ -7,39 +7,12 @@ license.workspace = true
 repository.workspace = true
 publish = false
 description = "Host build, placement-audit and HIL runner for open ESP radio"
-default-run = "open-esp-radio-hil-runner"
-
-[[bin]]
-name = "open-radio-bluetooth"
-path = "src/fixture/bluetooth/helper.rs"
-
-[[bin]]
-name = "open-radio-probe"
-path = "src/fixture/probe_load/helper.rs"
-
-[[bin]]
-name = "open-radio-fixture-install"
-path = "src/fixture_install/main.rs"
-
-[[bin]]
-name = "open-radio-net-launcher"
-path = "src/fixture_install/network_launcher.rs"
-
-[[bin]]
-name = "open-radio-probe-launcher"
-path = "src/fixture_install/probe_launcher.rs"
-
-[[bin]]
-name = "open-radio-bluetooth-launcher"
-path = "src/fixture_install/bluetooth_launcher.rs"
 
 [dependencies]
-bt-hci = "=0.10.1"
-bt-hci-transport = "=0.1.0"
-embedded-io = "0.7.1"
-embedded-io-async = "0.7.0"
 mio = { version = "=1.2.2", features = ["os-poll", "os-ext"] }
 oer-process = { path = "../../../tools/process" }
+open-esp-radio-hil-fixture = { path = "../fixture" }
+open-esp-radio-hil-fixture-install = { path = "../fixture-install" }
 object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }
 oer-firmware = { path = "../../../tools/firmware" }
 clap = { version = "4.5", features = ["derive"] }
@@ -49,7 +22,6 @@ tar = { version = "0.4", default-features = false }
 tempfile = "3"
 libc = "0.2"
 open-esp-radio-hil-protocol = { path = "../../protocol" }
-oer-ieee80211 = { path = "../../../crates/protocols/ieee80211/mac" }
 open-esp-radio-memory-report = { path = "../../../tools/memory-report" }
 serialport = { version = "4.8.1", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
@@ -63,8 +35,6 @@ async-io = "2.6"
 futures-lite = "2.6"
 
 [dev-dependencies]
-oer-bluetooth-ll = { path = "../../../crates/protocols/bluetooth/le/ll" }
-oer-esp32s31-wifi-ap = { path = "../../../crates/hardware/esp32s31/driver/ieee80211/ap" }
 roxmltree = "0.20"
 
 [lints]

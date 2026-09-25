@@ -12,6 +12,7 @@ use oer_esp32s31_ieee80211_runtime::diagnostics::rx_pipeline::{
     RxReorderAgreementObservation, RxReorderAgreementObserver, RxServiceObservation,
     RxStageDiscard,
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 /// Diagnostic observations spanning DMA staging, protocol dispatch and the
 /// final `embassy-net` publication copy.
@@ -703,10 +704,15 @@ impl RxPipelineCounters {
         );
     }
 
-    pub(crate) fn record_reorder_start(&self, tid: u8, starting_sequence: u16, window: u16) {
+    pub(crate) fn record_reorder_start(
+        &self,
+        tid: u8,
+        starting_sequence: SequenceNumber,
+        window: u16,
+    ) {
         self.reorder_starts.fetch_add(1, Ordering::Relaxed);
         self.reorder_last_start.store(
-            u32::from(starting_sequence) | (u32::from(window) << 16) | (u32::from(tid) << 26),
+            u32::from(starting_sequence.get()) | (u32::from(window) << 16) | (u32::from(tid) << 26),
             Ordering::Relaxed,
         );
     }
@@ -715,14 +721,19 @@ impl RxPipelineCounters {
         self.reorder_stops.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub(crate) fn record_reorder_first(&self, tid: u8, start: u16, sequence: u16) {
+    pub(crate) fn record_reorder_first(
+        &self,
+        tid: u8,
+        start: SequenceNumber,
+        sequence: SequenceNumber,
+    ) {
         self.reorder_first_samples.fetch_add(1, Ordering::Relaxed);
         self.reorder_last_first.store(
-            u32::from(sequence) | (u32::from(start) << 12) | (u32::from(tid) << 24),
+            u32::from(sequence.get()) | (u32::from(start.get()) << 12) | (u32::from(tid) << 24),
             Ordering::Relaxed,
         );
         self.reorder_last_first_distance.store(
-            u32::from(sequence.wrapping_sub(start) & 0x0fff),
+            u32::from(start.forward_distance(sequence)),
             Ordering::Relaxed,
         );
     }

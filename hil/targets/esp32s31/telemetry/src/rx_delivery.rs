@@ -4,6 +4,7 @@ use oer_hil_protocol::{
     RxConsumerLedgerEvidence, RxDeliveryEvidence, RxForwardGapEvidence, RxMacOrderEvidence,
     RxReorderDeliveryEvidence, RxSequenceStageEvidence,
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 const SEEN_WINDOW: usize = 256;
 const SEEN_WORDS: usize = SEEN_WINDOW / 64;
@@ -133,7 +134,7 @@ enum MacOrder {
 
 #[derive(Default)]
 struct MacOrderTracker {
-    expected: [Option<u16>; 16],
+    expected: [Option<SequenceNumber>; 16],
     last: Option<(u8, u16)>,
     last_udp: Option<u32>,
     evidence: RxMacOrderEvidence,
@@ -206,20 +207,20 @@ impl MacOrderTracker {
         }
     }
 
-    fn observe_mac(&mut self, tid: u8, sequence: u16) -> MacOrder {
-        if self.last == Some((tid, sequence)) {
+    fn observe_mac(&mut self, tid: u8, raw_sequence: u16) -> MacOrder {
+        if self.last == Some((tid, raw_sequence)) {
             return MacOrder::Same;
         }
+        let sequence = SequenceNumber::from_low_bits(raw_sequence);
         let Some(expected) = self.expected.get_mut(usize::from(tid)) else {
             return MacOrder::Forward;
         };
         let Some(frontier) = *expected else {
-            *expected = Some(sequence.wrapping_add(1) & 0x0fff);
+            *expected = Some(sequence.next());
             return MacOrder::Forward;
         };
-        let distance = sequence.wrapping_sub(frontier) & 0x0fff;
-        if distance < 0x0800 {
-            *expected = Some(sequence.wrapping_add(1) & 0x0fff);
+        if frontier.forward_distance(sequence) < SequenceNumber::HALF_SPACE {
+            *expected = Some(sequence.next());
             MacOrder::Forward
         } else {
             MacOrder::Backward

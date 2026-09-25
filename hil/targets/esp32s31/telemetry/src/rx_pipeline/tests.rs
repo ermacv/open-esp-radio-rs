@@ -1,4 +1,5 @@
 use core::sync::atomic::{AtomicU64, Ordering};
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use super::{RxCorrectnessObserver, RxPipelineCounters, RxServiceObservation};
 use oer_esp32s31_ieee80211_runtime::diagnostics::rx_pipeline::{
@@ -28,13 +29,13 @@ fn correctness_observer_keeps_required_facts_without_phase_profiling() {
 
     observer.observe(RxReorderAgreementObservation::Started {
         tid: 3,
-        starting_sequence: 10,
+        starting_sequence: SequenceNumber::new(10).unwrap(),
         window: 16,
     });
     observer.observe(RxReorderAgreementObservation::First {
         tid: 3,
-        start: 10,
-        sequence: 11,
+        start: SequenceNumber::new(10).unwrap(),
+        sequence: SequenceNumber::new(11).unwrap(),
     });
 
     let snapshot = counters.snapshot();

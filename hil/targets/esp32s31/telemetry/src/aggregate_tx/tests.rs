@@ -1,4 +1,5 @@
 use super::*;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 #[test]
 fn block_ack_readiness_is_current_state_while_transitions_are_interval_evidence() {
@@ -432,8 +433,8 @@ fn publication_balance_tracks_attempts_across_live_interval_boundaries() {
         tx_status: 0,
         block_ack_received: true,
         control: 0,
-        first_sequence: 0,
-        starting_sequence: 0,
+        first_sequence: SequenceNumber::new(0).unwrap(),
+        starting_sequence: SequenceNumber::new(0).unwrap(),
         subframes: 2,
         missing: 1,
     });

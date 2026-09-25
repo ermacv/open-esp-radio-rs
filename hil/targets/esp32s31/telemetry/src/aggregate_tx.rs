@@ -1086,8 +1086,8 @@ impl AggregateTxObserver for AggregateTxCounters {
                         .fetch_add(1, Ordering::Relaxed);
                 }
                 if block_ack_received {
-                    let lag = first_sequence.wrapping_sub(starting_sequence) & 0x0fff;
-                    let advance = starting_sequence.wrapping_sub(first_sequence) & 0x0fff;
+                    let lag = starting_sequence.forward_distance(first_sequence);
+                    let advance = first_sequence.forward_distance(starting_sequence);
                     if lag < 64 {
                         self.block_ack_start_lag_max
                             .fetch_max(u32::from(lag), Ordering::Relaxed);

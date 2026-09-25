@@ -106,7 +106,7 @@ impl Trace {
             at_low: sample.at_micros as u32,
             elapsed_us: u32::try_from(sample.elapsed_micros).unwrap_or(u32::MAX),
             lateness_us: u32::try_from(sample.timer_lateness_micros).unwrap_or(u32::MAX),
-            sequence: sample.first_sequence.into(),
+            sequence: sample.first_sequence.get().into(),
             queue: sample.queue.into(),
             available: available.into(),
             enabled: state.enabled.into(),
@@ -146,6 +146,7 @@ impl Trace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oer_ieee80211_mac::sequence::SequenceNumber;
 
     #[test]
     fn frequent_short_waits_cannot_exhaust_long_wait_capacity() {
@@ -157,7 +158,7 @@ mod tests {
                 at_micros: u64::from(sequence),
                 elapsed_micros: 5_000,
                 timer_lateness_micros: 3,
-                first_sequence: sequence,
+                first_sequence: SequenceNumber::new(sequence).unwrap(),
                 queue: 2,
                 snapshot: None,
             });
@@ -176,7 +177,7 @@ mod tests {
                     at_micros: age + u64::from(sequence),
                     elapsed_micros: age,
                     timer_lateness_micros: 0,
-                    first_sequence: sequence,
+                    first_sequence: SequenceNumber::new(sequence).unwrap(),
                     queue: 2,
                     snapshot: None,
                 });
@@ -201,7 +202,7 @@ mod tests {
             at_micros: u64::from(u32::MAX) + 27,
             elapsed_micros: 10_022,
             timer_lateness_micros: 22,
-            first_sequence: 598,
+            first_sequence: SequenceNumber::new(598).unwrap(),
             queue: 2,
             snapshot: Some(Default::default()),
         };

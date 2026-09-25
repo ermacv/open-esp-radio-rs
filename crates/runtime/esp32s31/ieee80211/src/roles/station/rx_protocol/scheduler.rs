@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::diagnostics::core0_rx_performance::Core0PathCount;
+
 impl<
     'queue,
     'pool,
@@ -83,10 +85,8 @@ where
         let mut actions = 0_usize;
         let mut consumed_frames = 0_usize;
         let mut control_preflight_needed = true;
-        #[cfg(feature = "core0-rx-coarse-telemetry")]
-        let mut direct_frames = 0_usize;
-        #[cfg(feature = "core0-rx-coarse-telemetry")]
-        let mut asynchronous_frames = 0_usize;
+        let mut direct_frames = Core0PathCount::default();
+        let mut asynchronous_frames = Core0PathCount::default();
 
         while consumed_frames < maximum_frames && actions < maximum_actions {
             if control_preflight_needed {
@@ -124,18 +124,12 @@ where
             // owner to the capacity-aware asynchronous path.
             let frame = match self.processor.try_dispatch_frame_direct(frame) {
                 Ok(_) => {
-                    #[cfg(feature = "core0-rx-coarse-telemetry")]
-                    let () = {
-                        direct_frames = direct_frames.saturating_add(1);
-                    };
+                    direct_frames.increment();
                     continue;
                 }
                 Err(frame) => frame,
             };
-            #[cfg(feature = "core0-rx-coarse-telemetry")]
-            let () = {
-                asynchronous_frames = asynchronous_frames.saturating_add(1);
-            };
+            asynchronous_frames.increment();
             let _ = self.processor.dispatch_frame(frame).await;
             // The fallback may await network capacity or create/release a BA
             // gap. A same-core control action can become visible across that
@@ -146,9 +140,7 @@ where
         ConnectedRxProtocolTurn {
             consumed_frames,
             work_remaining: self.has_ready_work(),
-            #[cfg(feature = "core0-rx-coarse-telemetry")]
             direct_frames,
-            #[cfg(feature = "core0-rx-coarse-telemetry")]
             asynchronous_frames,
         }
     }

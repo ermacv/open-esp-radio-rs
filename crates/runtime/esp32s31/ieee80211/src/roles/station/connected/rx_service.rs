@@ -226,23 +226,21 @@ where
     ) -> Result<DatapathRxProgress, Self::Error> {
         let mut fused_turn = FusedRxTurn::from_context(context, SLOTS);
         let before_dma = if self.protocol.has_ready_work() {
-            #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
             let protocol_started =
                 crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
             #[cfg(feature = "task-poll-telemetry")]
             crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
                 .begin_protocol_poll(protocol_started.cycles());
-            #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
             crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
                 .begin_protocol_poll(protocol_started);
             let turn = self
                 .protocol
                 .service_bounded(fused_turn.remaining_protocol_frames())
                 .await;
-            #[cfg(feature = "core0-rx-coarse-telemetry")]
-            crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
-                .record_protocol_paths(turn.direct_frames, turn.asynchronous_frames);
-            #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
+            crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE.record_protocol_paths(
+                turn.direct_frames.value(),
+                turn.asynchronous_frames.value(),
+            );
             {
                 let protocol_ended =
                     crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
@@ -272,20 +270,18 @@ where
         let after_dma = if remaining == 0 || !self.protocol.has_ready_work() {
             Default::default()
         } else {
-            #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
             let protocol_started =
                 crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
             #[cfg(feature = "task-poll-telemetry")]
             crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
                 .begin_protocol_poll(protocol_started.cycles());
-            #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
             crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
                 .begin_protocol_poll(protocol_started);
             let turn = self.protocol.service_bounded(remaining).await;
-            #[cfg(feature = "core0-rx-coarse-telemetry")]
-            crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
-                .record_protocol_paths(turn.direct_frames, turn.asynchronous_frames);
-            #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
+            crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE.record_protocol_paths(
+                turn.direct_frames.value(),
+                turn.asynchronous_frames.value(),
+            );
             {
                 let protocol_ended =
                     crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();

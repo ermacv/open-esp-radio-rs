@@ -1,10 +1,4 @@
-#[cfg(feature = "task-poll-telemetry")]
-use crate::diagnostics::core0_rx_cycles::{Core0RxCyclePhase, Core0RxCycleProfile};
-#[cfg(all(
-    feature = "core0-rx-coarse-telemetry",
-    not(feature = "task-poll-telemetry")
-))]
-use crate::diagnostics::core0_rx_performance::Core0PerformanceDmaProfile as Core0RxCycleProfile;
+use crate::diagnostics::profile::RxDmaProfile;
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::rx_pipeline::{RxPipelineObservation, RxPipelineObserver};
 use oer_esp32s31_ieee80211::rx::transaction::{Discard, Hooks, Phase, ServiceObservation};
@@ -16,8 +10,7 @@ pub(super) struct Context<'a> {
     observer: Option<&'a dyn RxPipelineObserver>,
     #[cfg(any(feature = "diagnostics", test))]
     started: Option<u64>,
-    #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
-    cycles: Core0RxCycleProfile,
+    cycles: RxDmaProfile,
     marker: core::marker::PhantomData<&'a ()>,
 }
 
@@ -26,8 +19,7 @@ impl<'a> Context<'a> {
     pub(super) fn new(
         #[cfg(any(feature = "diagnostics", test))] observer: Option<&'a dyn RxPipelineObserver>,
     ) -> Self {
-        #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
-        let cycles = Core0RxCycleProfile::begin();
+        let cycles = RxDmaProfile::begin();
         #[cfg(any(feature = "diagnostics", test))]
         let started = observer.map(|observer| observer.begin_service());
         Self {
@@ -35,7 +27,6 @@ impl<'a> Context<'a> {
             observer,
             #[cfg(any(feature = "diagnostics", test))]
             started,
-            #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
             cycles,
             marker: core::marker::PhantomData,
         }
@@ -62,25 +53,14 @@ impl Hooks for Context<'_> {
     }
 
     #[inline(always)]
-    fn entry_remaining(&mut self, _remaining: Option<usize>) {
-        #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
+    fn entry_remaining(&mut self, remaining: Option<usize>) {
         crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
-            .record_dma_entry_remaining(_remaining);
+            .record_dma_entry_remaining(remaining);
     }
 
     #[inline(always)]
-    fn phase(&mut self, _phase: Phase) {
-        #[cfg(feature = "task-poll-telemetry")]
-        self.cycles.switch_to(match _phase {
-            Phase::Frontier => Core0RxCyclePhase::Frontier,
-            Phase::Admission => Core0RxCyclePhase::Admission,
-            Phase::StageTake => Core0RxCyclePhase::StageTake,
-            Phase::StagePool => Core0RxCyclePhase::StagePool,
-            Phase::Recycle => Core0RxCyclePhase::Recycle,
-            Phase::Reload => Core0RxCyclePhase::Reload,
-            Phase::Publish => Core0RxCyclePhase::Publish,
-            Phase::Tail => Core0RxCyclePhase::Tail,
-        });
+    fn phase(&mut self, phase: Phase) {
+        self.cycles.switch_to(phase);
     }
 
     #[inline(always)]
@@ -144,26 +124,18 @@ impl Hooks for Context<'_> {
     }
 
     #[inline(always)]
-    fn probe_reasons(
-        &self,
-        _recycled: bool,
-        _frontier: bool,
-        _writeback: bool,
-        _republication: bool,
-    ) {
-        #[cfg(feature = "core0-rx-coarse-telemetry")]
+    fn probe_reasons(&self, recycled: bool, frontier: bool, writeback: bool, republication: bool) {
         crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE.record_dma_probe_reasons(
-            _recycled,
-            _frontier,
-            _writeback,
-            _republication,
+            recycled,
+            frontier,
+            writeback,
+            republication,
         );
     }
 
     #[inline(always)]
-    fn finish(self, _units: usize) {
-        #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
-        self.cycles.finish(_units);
+    fn finish(self, units: usize) {
+        self.cycles.finish(units);
     }
 
     #[cfg(feature = "diagnostics")]

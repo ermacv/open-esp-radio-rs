@@ -1781,8 +1781,8 @@ fn exercise_negotiated_rx_block_ack(in_order: bool) {
         assert_eq!(protocol.sink().0.0, [100, 101]);
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         {
-            assert_eq!(first_turn.direct_frames, 2);
-            assert_eq!(first_turn.asynchronous_frames, 0);
+            assert_eq!(first_turn.direct_frames.value(), 2);
+            assert_eq!(first_turn.asynchronous_frames.value(), 0);
         }
     } else {
         assert_eq!(protocol.sink().0.0, [100]);

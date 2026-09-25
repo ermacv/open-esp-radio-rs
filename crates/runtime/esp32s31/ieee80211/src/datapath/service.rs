@@ -4,13 +4,7 @@ use crate::diagnostics::core0_rx_performance::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0TxPhase, TX_PHASE_TELEMETRY,
 };
 
-#[cfg(feature = "task-poll-telemetry")]
-use crate::diagnostics::core0_rx_cycles::Core0RxRunnerCycleProfile;
-#[cfg(all(
-    feature = "core0-rx-coarse-telemetry",
-    not(feature = "task-poll-telemetry")
-))]
-use crate::diagnostics::core0_rx_performance::Core0PerformanceRunnerProfile as Core0RxRunnerCycleProfile;
+use crate::diagnostics::profile::RxRunnerProfile;
 
 impl<'irq, M: RawMutex, N, B, R> DatapathRunner<'irq, M, N, B, R>
 where
@@ -19,8 +13,7 @@ where
     R: DatapathNetworkRxSet,
 {
     pub(super) async fn service_rx(&mut self) -> Result<(), B::Error> {
-        #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
-        let mut core0_cycles = Core0RxRunnerCycleProfile::begin();
+        let mut core0_cycles = RxRunnerProfile::begin();
         let context = DatapathRxServiceContext {
             maximum_protocol_frames: rx_protocol_frame_budget(
                 self.rx_frame_deficit,
@@ -29,13 +22,11 @@ where
         };
         let serviced_before = self.services.serviced_rx_frames();
         let work_before = self.services.rx_work_counters();
-        #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
         core0_cycles.begin_driver();
         let progress = self
             .services
             .service_rx(&mut self.network_rx, context)
             .await?;
-        #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
         core0_cycles.end_driver();
         let serviced = self
             .services
@@ -45,13 +36,7 @@ where
         self.rx_frame_deficit = self
             .rx_frame_deficit
             .saturating_add(i64::try_from(serviced).unwrap_or(i64::MAX));
-        self.complete_rx_service(
-            progress,
-            work,
-            #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
-            core0_cycles,
-        )
-        .await;
+        self.complete_rx_service(progress, work, core0_cycles).await;
         // Control work has its own O(1) readiness predicate and wake future.
         // An ordinary data-only DMA pass must not force the complete control
         // machine to run once per RX frontier. If a role-specific RX turn
@@ -69,17 +54,14 @@ where
     }
 
     async fn service_rx_during_tx(&mut self) -> Result<(), B::Error> {
-        #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
-        let mut core0_cycles = Core0RxRunnerCycleProfile::begin();
+        let mut core0_cycles = RxRunnerProfile::begin();
         let serviced_before = self.services.serviced_rx_frames();
         let work_before = self.services.rx_work_counters();
-        #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
         core0_cycles.begin_driver();
         let progress = self
             .services
             .service_rx_during_tx(&mut self.network_rx)
             .await?;
-        #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
         core0_cycles.end_driver();
         let serviced = self
             .services
@@ -89,13 +71,7 @@ where
         self.rx_frame_deficit = self
             .rx_frame_deficit
             .saturating_add(i64::try_from(serviced).unwrap_or(i64::MAX));
-        self.complete_rx_service(
-            progress,
-            work,
-            #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
-            core0_cycles,
-        )
-        .await;
+        self.complete_rx_service(progress, work, core0_cycles).await;
         Ok(())
     }
 
@@ -103,15 +79,13 @@ where
         &mut self,
         progress: DatapathRxProgress,
         work: DatapathRxWorkCounters,
-        #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
-        core0_cycles: Core0RxRunnerCycleProfile,
+        core0_cycles: RxRunnerProfile,
     ) {
         self.rx_progress = progress;
         if progress != DatapathRxProgress::RecycledAppendPending {
             self.recycled_rx_probe_coalescing_level = 0;
         }
-        #[cfg(feature = "core0-rx-coarse-telemetry")]
-        crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE.record_rx_progress(progress);
+        CORE0_PERFORMANCE.record_rx_progress(progress);
         self.clear_recycled_rx_probe_deadline();
         if matches!(
             progress,
@@ -146,7 +120,6 @@ where
         // its start. Publish the terminal IRQ ownership edge before yielding:
         // otherwise an unrelated long executor poll can leave RX masked for
         // milliseconds after the durable frontier was already drained.
-        #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
         core0_cycles.finish_before_yield();
         yield_now().await;
     }
@@ -160,9 +133,7 @@ where
             let (delay, level) =
                 adaptive_recycled_rx_probe_delay(work, self.recycled_rx_probe_coalescing_level);
             self.recycled_rx_probe_coalescing_level = level;
-            #[cfg(feature = "core0-rx-coarse-telemetry")]
-            crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
-                .record_adaptive_probe_selection(delay.as_micros(), work);
+            CORE0_PERFORMANCE.record_adaptive_probe_selection(delay.as_micros(), work);
             Some(delay)
         } else {
             #[cfg(feature = "core0-rx-coarse-telemetry")]

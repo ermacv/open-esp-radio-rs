@@ -19,6 +19,13 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Whether TX-phase samples are recorded.
 const TX_PHASES: bool = cfg!(feature = "tx-phase-telemetry");
+/// Whether the coarse RX runner, DMA and interrupt counters are recorded.
+const COARSE: bool = cfg!(feature = "core0-rx-coarse-telemetry");
+/// Whether any Core0 cycle telemetry samples DMA service entry.
+const SAMPLING: bool = cfg!(any(
+    feature = "core0-rx-coarse-telemetry",
+    feature = "task-poll-telemetry"
+));
 /// Call sites whose telemetry arguments require computation guard them with
 /// this constant; production builds compile the branch out.
 pub(crate) const TX_PHASE_TELEMETRY: bool = TX_PHASES;
@@ -56,6 +63,36 @@ impl Core0PreparedTxMark {
         #[cfg(feature = "tx-phase-telemetry")]
         if let Some(completed) = self.completed.take() {
             CORE0_PERFORMANCE.record_tx_prepared_gap(completed, Core0PerformanceSample::read());
+        }
+    }
+}
+
+/// Frames that took one RX protocol path in a turn. Zero-sized and always
+/// zero without coarse Core0 telemetry.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Core0PathCount {
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    value: usize,
+}
+
+impl Core0PathCount {
+    #[inline(always)]
+    pub fn increment(&mut self) {
+        #[cfg(feature = "core0-rx-coarse-telemetry")]
+        {
+            self.value = self.value.saturating_add(1);
+        }
+    }
+
+    #[inline(always)]
+    pub const fn value(self) -> usize {
+        #[cfg(feature = "core0-rx-coarse-telemetry")]
+        {
+            self.value
+        }
+        #[cfg(not(feature = "core0-rx-coarse-telemetry"))]
+        {
+            0
         }
     }
 }
@@ -696,9 +733,7 @@ pub struct Core0PerformanceCounters {
     dma_exhaustion_resolved_le_256us: AtomicU32,
     dma_exhaustion_resolved_le_1024us: AtomicU32,
     dma_exhaustion_resolved_gt_1024us: AtomicU32,
-    #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
     dma_exhaustion_active: AtomicU32,
-    #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
     dma_exhaustion_started_cycles: AtomicU32,
 }
 
@@ -821,21 +856,24 @@ impl Core0PerformanceCounters {
             dma_exhaustion_resolved_le_256us: AtomicU32::new(0),
             dma_exhaustion_resolved_le_1024us: AtomicU32::new(0),
             dma_exhaustion_resolved_gt_1024us: AtomicU32::new(0),
-            #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
             dma_exhaustion_active: AtomicU32::new(0),
-            #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
             dma_exhaustion_started_cycles: AtomicU32::new(0),
         }
     }
 
     #[inline(always)]
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
     pub(crate) fn record_rx_interrupt_post(&self) {
+        if !COARSE {
+            return;
+        }
         self.rx_interrupt_posts.fetch_add(1, Ordering::Relaxed);
     }
 
     #[inline(always)]
     pub fn begin_radio_poll(&self, started: Core0PerformanceSample) {
+        if !SAMPLING {
+            return;
+        }
         self.active_radio_cycles
             .store(started.cycles(), Ordering::Relaxed);
         self.active_radio_instructions
@@ -849,6 +887,9 @@ impl Core0PerformanceCounters {
         started: Core0PerformanceSample,
         ended: Core0PerformanceSample,
     ) {
+        if !SAMPLING {
+            return;
+        }
         let delta = ended.wrapping_delta_since(started);
         self.radio_polls.fetch_add(1, Ordering::Relaxed);
         self.radio_cycles
@@ -877,6 +918,9 @@ impl Core0PerformanceCounters {
         started: Core0PerformanceSample,
         ended: Core0PerformanceSample,
     ) {
+        if !SAMPLING {
+            return;
+        }
         let delta = ended.wrapping_delta_since(started);
         self.runner_calls.fetch_add(1, Ordering::Relaxed);
         self.runner_cycles
@@ -904,6 +948,9 @@ impl Core0PerformanceCounters {
 
     #[inline(always)]
     pub(crate) fn begin_protocol_poll(&self, started: Core0PerformanceSample) {
+        if !SAMPLING {
+            return;
+        }
         self.active_protocol_cycles
             .store(started.cycles(), Ordering::Relaxed);
         self.active_protocol_instructions
@@ -912,6 +959,9 @@ impl Core0PerformanceCounters {
 
     #[inline(always)]
     pub(crate) fn end_protocol_poll(&self, ended: Core0PerformanceSample) {
+        if !SAMPLING {
+            return;
+        }
         let started = Core0PerformanceSample::from_parts(
             self.active_protocol_cycles.load(Ordering::Relaxed),
             self.active_protocol_instructions.load(Ordering::Relaxed),
@@ -925,8 +975,10 @@ impl Core0PerformanceCounters {
     }
 
     #[inline(always)]
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
     pub(crate) fn record_protocol_paths(&self, direct: usize, asynchronous: usize) {
+        if !COARSE {
+            return;
+        }
         self.direct_protocol_frames
             .fetch_add(u32::try_from(direct).unwrap_or(u32::MAX), Ordering::Relaxed);
         self.asynchronous_protocol_frames.fetch_add(
@@ -942,6 +994,9 @@ impl Core0PerformanceCounters {
         started: Core0PerformanceSample,
         ended: Core0PerformanceSample,
     ) {
+        if !SAMPLING {
+            return;
+        }
         let delta = ended.wrapping_delta_since(started);
         self.dma_calls.fetch_add(1, Ordering::Relaxed);
         if units == 0 {
@@ -965,11 +1020,13 @@ impl Core0PerformanceCounters {
     }
 
     #[inline(always)]
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
     pub(crate) fn record_rx_progress(
         &self,
         progress: oer_esp32s31_ieee80211::datapath::DatapathRxProgress,
     ) {
+        if !COARSE {
+            return;
+        }
         use oer_esp32s31_ieee80211::datapath::DatapathRxProgress;
 
         let counter = match progress {
@@ -986,7 +1043,6 @@ impl Core0PerformanceCounters {
     }
 
     #[inline(always)]
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
     pub(crate) fn record_dma_probe_reasons(
         &self,
         recycled: bool,
@@ -994,6 +1050,9 @@ impl Core0PerformanceCounters {
         terminal_writeback: bool,
         republication: bool,
     ) {
+        if !COARSE {
+            return;
+        }
         for (present, counter) in [
             (recycled, &self.dma_probe_recycled),
             (completed_frontier, &self.dma_probe_completed_frontier),
@@ -1007,12 +1066,14 @@ impl Core0PerformanceCounters {
     }
 
     #[inline(always)]
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
     pub(crate) fn record_adaptive_probe_selection(
         &self,
         delay_micros: u64,
         work: oer_esp32s31_ieee80211::datapath::DatapathRxWorkCounters,
     ) {
+        if !COARSE {
+            return;
+        }
         let delay_counter = match delay_micros {
             64 => &self.adaptive_probe_delay_64,
             128 => &self.adaptive_probe_delay_128,
@@ -1039,8 +1100,10 @@ impl Core0PerformanceCounters {
     /// begins. This is deliberately bucketed: it is diagnostic pressure
     /// evidence and never participates in the descriptor ownership protocol.
     #[inline(always)]
-    #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
     pub(crate) fn record_dma_entry_remaining(&self, remaining: Option<usize>) {
+        if !SAMPLING {
+            return;
+        }
         match remaining {
             Some(0) if self.dma_exhaustion_active.load(Ordering::Relaxed) == 0 => {
                 self.dma_exhaustion_started_cycles

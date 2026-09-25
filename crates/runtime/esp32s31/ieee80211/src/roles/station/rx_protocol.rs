@@ -81,12 +81,11 @@ pub struct ConnectedRxProtocolTurn {
     pub consumed_frames: usize,
     /// Commands, deadlines or frames remain ready for the next outer turn.
     pub work_remaining: bool,
-    /// Frames handled by the diagnostic synchronous in-order fast path.
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
-    pub direct_frames: usize,
-    /// Frames which retained the general asynchronous dispatch path.
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
-    pub asynchronous_frames: usize,
+    /// Frames handled by the synchronous in-order fast path (diagnostic).
+    pub direct_frames: crate::diagnostics::core0_rx_performance::Core0PathCount,
+    /// Frames which retained the general asynchronous dispatch path
+    /// (diagnostic).
+    pub asynchronous_frames: crate::diagnostics::core0_rx_performance::Core0PathCount,
 }
 
 /// Admission contract for an ordinary frame which retains its staging slot.

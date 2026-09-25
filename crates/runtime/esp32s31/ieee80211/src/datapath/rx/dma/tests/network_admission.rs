@@ -106,8 +106,8 @@ fn occupied_network_pool_retains_staging_owner_until_credit_return() {
         assert_eq!(result.consumed_frames, 1);
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         {
-            assert_eq!(result.direct_frames, 0);
-            assert_eq!(result.asynchronous_frames, 1);
+            assert_eq!(result.direct_frames.value(), 0);
+            assert_eq!(result.asynchronous_frames.value(), 1);
         }
     }
     assert_eq!(pool.claimed_slots(), 0);

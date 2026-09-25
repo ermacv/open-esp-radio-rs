@@ -116,7 +116,6 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
             pending &= !work.event_bit();
             match work {
                 IrqWork::RxSuccess => {
-                    #[cfg(feature = "core0-rx-coarse-telemetry")]
                     crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
                         .record_rx_interrupt_post();
                     #[cfg(any(feature = "diagnostics", test))]

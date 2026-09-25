@@ -17,4 +17,5 @@ pub mod core0_rx_reorder_cycles;
 pub mod core0_rx_service_histogram;
 #[cfg(feature = "diagnostics")]
 pub mod network;
+pub(crate) mod profile;
 pub mod rx_pipeline;

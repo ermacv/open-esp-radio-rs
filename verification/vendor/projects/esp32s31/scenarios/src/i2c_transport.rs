@@ -4,7 +4,8 @@
 //! peripheral assumption supplies responses only; ROM/PAC/PHY code performs
 //! every transaction.
 use crate::evidence::stop;
-use crate::harness::{Result, case, invocation, known, words, words_padded};
+use crate::harness::direct;
+use crate::harness::{Result, case, known, words};
 use crate::i2c::{I2c, models, returned_low, word_writes};
 use crate::layout::*;
 use blobray_domain::{
@@ -63,18 +64,16 @@ pub fn bank(
 }
 
 struct Transport {
-    entry: u32,
     callbacks: Vec<u32>,
 }
 
 impl Transport {
     /// The ROM interface pointer has no PT_LOAD mapping. Its explicit RAM
     /// value selects captured code, not callback response models.
-    fn memory(&self, arguments: &[u32]) -> Result<Vec<ExecutionRegion>> {
+    fn memory(&self) -> Result<Vec<ExecutionRegion>> {
         Ok(vec![
             known(ROM_INTERFACE_POINTER, 4, &words(&[CALLBACK_TABLE]))?,
             known(CALLBACK_TABLE, 16, &words(&self.callbacks))?,
-            known(ABI_WORDS, 32, &words_padded(arguments, 8, 0)?)?,
         ])
     }
 
@@ -84,13 +83,7 @@ impl Transport {
         arguments: &[u32],
         models: Vec<DeviceDeclaration>,
     ) -> Result<Invocation> {
-        Ok(invocation(
-            self.entry,
-            vec![Some(target), Some(ABI_WORDS)],
-            self.memory(arguments)?,
-            models,
-            vec![],
-        ))
+        Ok(direct(target, arguments, self.memory()?, models, vec![]))
     }
 
     /// Production reads busy before issuing a read; ROM's org leaf does not.
@@ -125,7 +118,6 @@ type Expectation = (Vec<(u32, u32)>, Option<u32>, u64);
 
 pub fn exercise(ctx: &mut I2c) -> Result<()> {
     let transport = Transport {
-        entry: ctx.probe("open_phy_trace_i2c_entry"),
         callbacks: [
             "phy_i2c_enter_critical",
             "phy_i2c_exit_critical",

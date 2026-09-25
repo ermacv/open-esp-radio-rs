@@ -1,10 +1,10 @@
 use super::*;
 
 #[test]
-fn explicit_guest_register_inputs_allow_spills_without_inventing_unknown_values() {
+fn root_callee_saved_registers_start_known_and_arguments_stay_explicit() {
     // Entry prelude sets s0, then tail-enters a conventional save/restore leaf.
-    // The alternate entry has the same body but no declared s0 input. A filled
-    // stack cannot turn that unknown register into a known stored value.
+    // The alternate entry has the same body without the prelude: a root's
+    // callee-saved registers start at zero, so its prologue can spill s0.
     let f = Fixture::new(&[
         0x00000413, 0x0080006f, 0x00000013, 0xff010113, 0x00812023, 0x00700513, 0x00012403,
         0x01010113, 0x00008067,
@@ -33,18 +33,32 @@ fn explicit_guest_register_inputs_allow_spills_without_inventing_unknown_values(
                 })
                 .unwrap()["value"]["stop"]
         };
-        assert_eq!(stop(0)["kind"], "returned");
-        assert_eq!(stop(0)["low"], 7);
-        assert_eq!(stop(1)["kind"], "incomplete");
-        assert_eq!(stop(1)["reason"]["kind"], "unknown-register");
-        assert_eq!(stop(1)["reason"]["register"], 8);
+        for case in [0, 1] {
+            assert_eq!(stop(case)["kind"], "returned");
+            assert_eq!(stop(case)["low"], 7);
+        }
     }
     let verdicts: Vec<_> = records
         .iter()
         .filter(|r| r["value"]["kind"] == "comparison")
         .map(|r| r["value"]["result"]["verdict"].as_str().unwrap())
         .collect();
-    assert_eq!(verdicts, ["MATCH", "INCOMPLETE"]);
+    assert_eq!(verdicts, ["MATCH", "MATCH"]);
+    // An argument register that is not supplied stays unknown: `sw a1, 0(sp)`.
+    let f = Fixture::new(&[0xff010113, 0x00b12023, 0x01010113, 0x00008067]);
+    let mut request = f.request();
+    request.cases[0].vendor.arguments = vec![Some(0)];
+    request.cases[0].replacement = Some(request.cases[0].vendor.clone());
+    let run = f.run(request, budget());
+    let facts = f.read(&run.execution.unwrap());
+    let stop = &facts["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["value"]["kind"] == "outcome")
+        .unwrap()["value"]["stop"];
+    assert_eq!(stop["reason"]["kind"], "unknown-register");
+    assert_eq!(stop["reason"]["register"], 11);
 }
 
 fn phases(f: &Fixture, lifetime: RegionLifetime) -> ExecutionRequest {

@@ -1,10 +1,10 @@
 //! A linked captured PHY image with compiled production and the shared
 //! stack-entry, parameter-setup and callback-installation phases.
 use crate::evidence::outcomes;
+use crate::harness::direct;
 use crate::harness::{Budget, Input};
 use crate::harness::{
-    Result, evidence, invalid, invocation, known, manifest, region, selection, symbol, words,
-    words_padded,
+    Result, evidence, invalid, known, manifest, region, selection, symbol, words,
 };
 use crate::layout::*;
 use crate::session::{Session, image_symbol, request};
@@ -207,7 +207,7 @@ impl PhyImage {
             .unwrap_or_else(|| panic!("missing root {name}"))
     }
 
-    /// Enter `target` through the stack-entry adapter with sixteen explicit words.
+    /// Enter `target` directly with explicit ABI words.
     pub fn enter(
         &self,
         target: u32,
@@ -216,42 +216,15 @@ impl PhyImage {
         observe: Vec<MemorySelection>,
         models: Vec<DeviceDeclaration>,
     ) -> Invocation {
-        let entry = self
-            .probes
-            .entry("open_phy_trace_stack_entry")
-            .expect("stack entry probe");
-        let mut regions = vec![
-            known(
-                ABI_WORDS,
-                64,
-                &words_padded(arguments, 16, 0).expect("sixteen words"),
-            )
-            .unwrap(),
-        ];
-        regions.extend(memory);
-        invocation(
-            entry,
-            vec![Some(target), Some(ABI_WORDS)],
-            regions,
-            models,
-            observe,
-        )
+        direct(target, arguments, memory, models, observe)
     }
 
-    /// Enter a prepared probe invocation through the stack-entry adapter.
-    pub fn enter_probe(&self, probe: Invocation) -> Invocation {
-        let arguments: Vec<u32> = probe
-            .arguments
-            .iter()
-            .map(|a| a.expect("known probe argument"))
-            .collect();
-        self.enter(
-            probe.entry,
-            &arguments,
-            probe.memory,
-            probe.observe_memory,
-            probe.models,
-        )
+    /// A prepared probe invocation with unused argument registers at zero.
+    pub fn enter_probe(&self, mut probe: Invocation) -> Invocation {
+        if probe.arguments.len() < 8 {
+            probe.arguments.resize(8, Some(0));
+        }
+        probe
     }
 
     /// A zero-length captured `memcpy`: the production counterpart of a

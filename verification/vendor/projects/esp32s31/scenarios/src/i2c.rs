@@ -7,8 +7,8 @@
 use crate::evidence::{events, output, stop};
 use crate::gain_state::Unmet;
 use crate::harness::{
-    Budget, Buffer, Input, Result, case, data_request, evidence, filled, invalid, invocation,
-    manifest, named_object, named_section, selection, sha256, single_argument_entry, symbol,
+    Budget, Buffer, Input, Result, case, data_request, direct, evidence, filled, invalid,
+    invocation, manifest, named_object, named_section, selection, sha256, symbol,
 };
 use crate::layout::*;
 use crate::phy::image_layout;
@@ -367,7 +367,6 @@ impl I2c {
 
     /// Command memory, descriptors, leaves and their negative outcomes.
     pub fn command_memory(&mut self) -> Result<usize> {
-        let seeded_entry = self.probe("open_phy_trace_seeded_entry");
         let init = self.root("phy_i2c_master_cmd_mem_init");
         let bank = DeviceDeclaration {
             id: "command-ram".into(),
@@ -419,13 +418,7 @@ impl I2c {
                 SessionReset::Cold,
                 true,
             ));
-            let left = invocation(
-                seeded_entry,
-                vec![Some(init), Some(0)],
-                vec![],
-                vec![bank.clone()],
-                vec![],
-            );
+            let left = direct(init, &[0], vec![], vec![bank.clone()], vec![]);
             let probe = self.probes.invoke(
                 "open_phy_trace_command_memory",
                 vec![(
@@ -435,7 +428,13 @@ impl I2c {
                 vec![bank.clone()],
                 vec![],
             )?;
-            let right = single_argument_entry(&probe, seeded_entry)?;
+            let right = direct(
+                probe.entry,
+                &[probe.arguments[0].expect("known command parameters")],
+                probe.memory,
+                probe.models,
+                probe.observe_memory,
+            );
             expected_commands.push((cases.len() as u32, command_words(dynamic)));
             cases.push(case(*name, left, Some(right), SessionReset::Warm, false));
         }
@@ -563,7 +562,8 @@ impl I2c {
         )?;
         let mut unknown = cases[1].clone();
         unknown.reset = SessionReset::Cold;
-        unknown.replacement.as_mut().unwrap().arguments[1] = None;
+        // The command-parameter pointer (`a0`) is unknown.
+        unknown.replacement.as_mut().unwrap().arguments[0] = None;
         self.compare(
             "unknown",
             vec![unknown],

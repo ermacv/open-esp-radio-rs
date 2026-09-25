@@ -125,12 +125,16 @@ fn catalog_prepares_buffers_without_inventing_private_layouts() {
         phase.memory,
         [region(0x1000, 24, &[1, 2], None, RegionLifetime::Session).unwrap()]
     );
-    let entered = single_argument_entry(&phase, 64).unwrap();
-    assert_eq!(
-        (entered.entry, entered.arguments),
-        (64, vec![Some(32), Some(0x1000)])
-    );
     assert_eq!(phase.entry, 32);
+    // Direct entry pads unused argument registers with zero and keeps stack words.
+    let entered = direct(32, &[7], vec![], vec![], vec![]);
+    assert_eq!(entered.entry, 32);
+    assert_eq!(entered.arguments[..2], [Some(7), Some(0)]);
+    assert_eq!(entered.arguments.len(), 8);
+    assert_eq!(
+        direct(32, &[1; 10], vec![], vec![], vec![]).arguments.len(),
+        10
+    );
     let sample = probes("&mut [[u16; 4]; 3]");
     assert!(
         sample
@@ -175,13 +179,6 @@ fn catalog_prepares_buffers_without_inventing_private_layouts() {
         ("right", Buffer::new(0x1004, []).into()),
     ];
     assert!(paired.invoke("paired", overlap, vec![], vec![]).is_err());
-    assert!(
-        single_argument_entry(
-            &invocation(32, vec![Some(1), Some(2)], vec![], vec![], vec![]),
-            64
-        )
-        .is_err()
-    );
 }
 
 #[test]

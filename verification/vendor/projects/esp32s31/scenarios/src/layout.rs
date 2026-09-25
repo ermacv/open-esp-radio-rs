@@ -19,8 +19,6 @@ pub const INPUT: u32 = 0x3fff_0000;
 pub const OUTPUT: u32 = 0x3fff_1000;
 /// Explicit callback table referenced through the ROM interface pointer.
 pub const CALLBACK_TABLE: u32 = 0x3fff_3000;
-/// ABI words read by the stack-entry and I2C-entry adapters.
-pub const ABI_WORDS: u32 = 0x3fff_4000;
 /// Source of a 516-byte parameter image copied by captured `memcpy`.
 pub const PARAMETER_SOURCE: u32 = 0x3fff_5000;
 /// Production-side destination of a copied parameter image.

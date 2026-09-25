@@ -3,7 +3,8 @@
 //! Expected transactions come from independent instruction reading of the
 //! authenticated archive and its ROM AGC child, not from the production result.
 use crate::evidence::stop;
-use crate::harness::{Result, case, invocation, known, words_padded};
+use crate::harness::direct;
+use crate::harness::{Result, case};
 use crate::i2c::{I2c, all_complete, returned_low, word_writes};
 use crate::layout::*;
 use crate::session::request;
@@ -14,12 +15,7 @@ use blobray_domain::{
 };
 use std::collections::BTreeMap;
 
-fn invoke(
-    shim: u32,
-    target: u32,
-    arguments: &[u32],
-    cells: &BTreeMap<u32, u32>,
-) -> Result<Invocation> {
+fn invoke(target: u32, arguments: &[u32], cells: &BTreeMap<u32, u32>) -> Result<Invocation> {
     let models = if cells.is_empty() {
         vec![]
     } else {
@@ -39,20 +35,13 @@ fn invoke(
             },
         }]
     };
-    Ok(invocation(
-        shim,
-        vec![Some(target), Some(ABI_WORDS)],
-        vec![known(ABI_WORDS, 32, &words_padded(arguments, 8, 0)?)?],
-        models,
-        vec![],
-    ))
+    Ok(direct(target, arguments, vec![], models, vec![]))
 }
 
 /// Expected writes and optional returned low word.
 type Expectation = (Vec<(u32, u32)>, Option<u32>);
 
 pub fn exercise(ctx: &mut I2c) -> Result<()> {
-    let shim = ctx.probe("open_phy_trace_i2c_entry");
     let production = ctx.probe("open_phy_calibration_leaf");
     let (mut cases, mut expected): (Vec<ExecutionCase>, Vec<Expectation>) = (vec![], vec![]);
     let mut add = |name: &str,
@@ -68,8 +57,8 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         production_arguments.extend(arguments);
         let mut row = case(
             name,
-            invoke(shim, ctx.root(root), arguments, &cells)?,
-            Some(invoke(shim, production, &production_arguments, &cells)?),
+            invoke(ctx.root(root), arguments, &cells)?,
+            Some(invoke(production, &production_arguments, &cells)?),
             SessionReset::Cold,
             false,
         );
@@ -199,7 +188,9 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
     // Positive Wi-Fi temperature conversion with a changed production input.
     let mut different = cases[5].clone();
     different.name = "changed-temperature".into();
-    different.replacement.as_mut().unwrap().memory[0].seed.bytes[4] = 88;
+    // The second ABI word's low byte carries the temperature input.
+    let argument = &mut different.replacement.as_mut().unwrap().arguments[1];
+    *argument = argument.map(|word| (word & !0xff) | 88);
     let records = ctx.compare(
         "calibration-different",
         vec![different],
@@ -218,7 +209,8 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         .collect();
     assert_eq!(returns, [Some(10), Some(11)]);
     let mut unknown = cases[5].clone();
-    unknown.name = "unknown-argument-buffer".into();
+    // The consumed temperature input word (`a1`) is unknown.
+    unknown.name = "unknown-argument".into();
     unknown.replacement.as_mut().unwrap().arguments[1] = None;
     ctx.compare(
         "calibration-unknown",

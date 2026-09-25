@@ -1,6 +1,6 @@
 //! Compiled harness call-boundary acceptance; no hardware timing claim.
 use crate::evidence::{events, stop};
-use crate::harness::{Result, case, invocation};
+use crate::harness::{Result, case, direct};
 use crate::i2c::I2c;
 use crate::layout::FREQUENCY_CONTROL;
 use blobray_domain::{
@@ -10,7 +10,6 @@ use blobray_domain::{
 };
 
 pub fn exercise(ctx: &mut I2c) -> Result<()> {
-    let shim = ctx.probe("open_phy_trace_seeded_entry");
     let owned = ctx.probe("open_phy_trace_owned_software_frequency_control");
     let ordinary = ctx.probe("open_phy_trace_dis_hw_set_freq");
     let delay_entry = ctx.captured(1, "__call_ets_delay_us");
@@ -29,11 +28,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
             }],
         },
     };
-    let arguments = ctx.probes.arguments(
-        "open_phy_trace_seeded_entry",
-        &[("entry", Some(i64::from(owned))), ("argument", Some(0))],
-    )?;
-    let mut phase = invocation(shim, arguments, vec![], vec![registers], vec![]);
+    let mut phase = direct(owned, &[0], vec![], vec![registers], vec![]);
     phase.observe_calls = Some(CallCapture {
         include_tail: true,
         argument_words: 1,

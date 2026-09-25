@@ -118,8 +118,12 @@ registers retain `unknown-register`. RAM atomics emit no MMIO or synthetic fence
 events. Their effects can be read by subsequent guest instructions; the current
 selected final-RAM and normal-memory timeline relations can observe their updates.
 
-The `static-elf/boot-data-1/byte-addressed-memory-1/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-4/external-calls-2/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1` environment maps validated ELF
-segments with their permissions and ELF-defined zero-fill. Boot-initialized data
+The `static-elf/boot-data-1/entry-registers-1/byte-addressed-memory-1/phased-regions-1/physical-goals-1/stack-words-1/single-hart-atomics-1/devices-4/external-calls-2/runtime-interfaces-1/fifo-services-1/final-memory-1/physical-calls-1/reviewed-call-pairs-1/internal-timeline-1/reviewed-projections-1/reviewed-effects-1` environment maps validated ELF
+segments with their permissions and ELF-defined zero-fill. A root starts with
+`ra` at the return sentinel, `sp` at the stack top, the explicit ABI words in
+`a0`.. and on the stack, unknown `gp`/`tp` and every other integer register at
+zero, so a prologue can save callee-saved registers without an entry adapter.
+Boot-initialized data
 is part of the image: a writable `PROGBITS` section whose bytes the file carries
 but whose address lies in a segment's zero-filled part (a ROM copies such data
 at start-up) starts with those bytes. Overlapping or out-of-file boot data is

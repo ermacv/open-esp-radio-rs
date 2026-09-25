@@ -997,8 +997,15 @@ impl Gain {
     pub fn negative(&mut self) -> Result<()> {
         let mut unknown = self.wifi_request.clone().expect("Wi-Fi matrix ran").cases;
         unknown.truncate(2);
-        let curve = &mut unknown[1].replacement.as_mut().unwrap().memory[1].seed;
-        assert_eq!(curve.address, INPUT);
+        let curve = &mut unknown[1]
+            .replacement
+            .as_mut()
+            .unwrap()
+            .memory
+            .iter_mut()
+            .find(|r| r.seed.address == INPUT)
+            .expect("curve input region")
+            .seed;
         curve.bytes.clear();
         curve.fill = None;
         let records = self
@@ -1105,7 +1112,14 @@ impl Gain {
             )?
             .identity;
         let mut changed = rows;
-        changed[1].replacement.as_mut().unwrap().memory[1]
+        changed[1]
+            .replacement
+            .as_mut()
+            .unwrap()
+            .memory
+            .iter_mut()
+            .find(|r| r.seed.address == INPUT + 256)
+            .expect("coefficient region")
             .seed
             .bytes[72] ^= 1;
         let different = self.execute(

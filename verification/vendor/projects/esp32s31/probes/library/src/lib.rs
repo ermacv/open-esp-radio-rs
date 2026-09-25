@@ -1716,38 +1716,6 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
-    /// Harness entry with explicit zero-valued integer callee-saved register inputs.
-    ///
-    /// Tail-enter `entry` with `argument` in a0 and the incoming return sentinel.
-    /// This avoids making unknown prologue spills into invented values in the
-    /// execution engine. It contains no peripheral access or PHY behavior.
-    ///
-    /// # Safety
-    /// Only enter as an isolated execution root: this destroys the caller's saved
-    /// registers. `entry` must be executable and `argument` valid for that entry.
-    #[unsafe(naked)]
-    pub unsafe fn open_phy_trace_seeded_entry(entry: u32, argument: u32) {
-        core::arch::naked_asm!(
-            "mv t0, a0",
-            "mv a0, a1",
-            "li s0, 0",
-            "li s1, 0",
-            "li s2, 0",
-            "li s3, 0",
-            "li s4, 0",
-            "li s5, 0",
-            "li s6, 0",
-            "li s7, 0",
-            "li s8, 0",
-            "li s9, 0",
-            "li s10, 0",
-            "li s11, 0",
-            "jr t0",
-        );
-    }
-}
-
-oer_probe_macros::probe! {
     /// Exercise the production software-frequency transition with an owned PHY
     /// partition. This also exposes the preserved ordinary delay-call boundary.
     pub fn open_phy_trace_owned_software_frequency_control() =>

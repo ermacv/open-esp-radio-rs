@@ -48,6 +48,8 @@ pub struct Invocation {
     pub goal: ExecutionGoal,
     /// Already lowered RV32 integer ABI words: a0..a7, then ascending stack words.
     /// `None` and omitted register words remain unknown, including on a filled stack.
+    /// Every other integer register except `ra`, `sp`, `gp` and `tp` starts at zero,
+    /// so an isolated root can save callee-saved registers in its prologue.
     /// Clients lower multiword/variadic arguments and insert ABI padding explicitly.
     pub arguments: Vec<Option<u32>>,
     pub memory: Vec<ExecutionRegion>,

@@ -1,7 +1,8 @@
 //! Captured RFPLL search and frequency maintenance against compiled production.
 use crate::calibration_prefix::delays_of;
 use crate::evidence::{events, stop};
-use crate::harness::{Result, case, invocation, known, region, words, words_padded};
+use crate::harness::direct;
+use crate::harness::{Result, case, known, region, words};
 use crate::i2c::{I2c, all_complete, models, returned_low};
 use crate::layout::*;
 use crate::phy::delay_calls;
@@ -196,7 +197,6 @@ pub fn frequency_expectation(
 type Maintenance = (String, Vec<u32>, i32, u32, Option<Vec<u32>>, u32);
 
 struct Rfpll {
-    shim: u32,
     parameter: u32,
     memcpy: u32,
     rom_delay: u32,
@@ -314,18 +314,11 @@ impl Rfpll {
         memory: Vec<ExecutionRegion>,
     ) -> Result<Invocation> {
         let mut regions = vec![
-            known(ABI_WORDS, 32, &words_padded(arguments, 8, 0)?)?,
             known(ROM_INTERFACE_POINTER, 4, &words(&[CALLBACK_TABLE]))?,
             known(CALLBACK_TABLE, 16, &words(&self.callbacks))?,
         ];
         regions.extend(memory);
-        Ok(invocation(
-            self.shim,
-            vec![Some(target), Some(ABI_WORDS)],
-            regions,
-            models,
-            vec![],
-        ))
+        Ok(direct(target, arguments, regions, models, vec![]))
     }
 
     fn delay(&self, side: bool) -> u32 {
@@ -433,7 +426,6 @@ fn in_frequency_domain(address: u32) -> bool {
 
 pub fn exercise(ctx: &mut I2c) -> Result<()> {
     let rfpll = Rfpll {
-        shim: ctx.probe("open_phy_trace_i2c_entry"),
         parameter: ctx.parameter,
         memcpy: ctx.captured(1, "memcpy"),
         rom_delay: ctx.captured(1, "ets_delay_us"),
@@ -735,7 +727,15 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         Some(ComparisonVerdict::Diff),
     )?;
     let mut unknown = original.clone();
-    unknown[0].vendor.memory[1].seed.bytes.clear();
+    unknown[0]
+        .vendor
+        .memory
+        .iter_mut()
+        .find(|r| r.seed.address == ROM_INTERFACE_POINTER)
+        .expect("interface pointer region")
+        .seed
+        .bytes
+        .clear();
     let records = ctx.submit_with(
         "rfpll-unknown-callbacks",
         &vendor,

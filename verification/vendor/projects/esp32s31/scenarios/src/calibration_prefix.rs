@@ -1,8 +1,7 @@
 //! Captured PBus/DCODE children and compiled-production failure containment.
 use crate::evidence::{events, output, stop};
-use crate::harness::{
-    Result, case, filled, invocation, known, region, selection, words, words_padded,
-};
+use crate::harness::direct;
+use crate::harness::{Result, case, known, region, selection, words};
 use crate::i2c::{I2c, all_complete, models, returned_low};
 use crate::layout::*;
 use crate::phy::delay_calls;
@@ -142,7 +141,6 @@ pub fn dcode_commands(fill: u8) -> Vec<u32> {
 }
 
 struct Prefix {
-    shim: u32,
     parameter: u32,
     memcpy: u32,
     rom_delay: u32,
@@ -158,13 +156,7 @@ impl Prefix {
         settle: bool,
         side: bool,
     ) -> Result<Invocation> {
-        let mut result = invocation(
-            self.shim,
-            vec![Some(target), Some(ABI_WORDS)],
-            vec![filled(ABI_WORDS, 32, 0)?],
-            models,
-            vec![],
-        );
+        let mut result = direct(target, &[], vec![], models, vec![]);
         if settle {
             result.calls = delay_calls(
                 "settle-delay",
@@ -186,15 +178,7 @@ impl Prefix {
         models: Vec<DeviceDeclaration>,
         observe: Vec<MemorySelection>,
     ) -> Result<Invocation> {
-        let mut regions = vec![known(ABI_WORDS, 32, &words_padded(arguments, 8, 0)?)?];
-        regions.extend(memory);
-        Ok(invocation(
-            self.shim,
-            vec![Some(target), Some(ABI_WORDS)],
-            regions,
-            models,
-            observe,
-        ))
+        Ok(direct(target, arguments, memory, models, observe))
     }
 
     /// Setup executes the captured ROM memcpy; image bytes are not overwritten
@@ -347,7 +331,6 @@ impl Prefix {
 
 pub fn exercise(ctx: &mut I2c) -> Result<()> {
     let prefix = Prefix {
-        shim: ctx.probe("open_phy_trace_i2c_entry"),
         parameter: ctx.parameter,
         memcpy: ctx.captured(1, "memcpy"),
         rom_delay: ctx.captured(1, "ets_delay_us"),

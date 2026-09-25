@@ -745,17 +745,20 @@ impl ProbeCatalog {
     }
 }
 
-/// Enter a prepared one-argument probe through an explicitly selected shim.
-pub fn single_argument_entry(phase: &Invocation, trampoline: u32) -> Result<Invocation> {
-    let [argument] = phase.arguments[..] else {
-        return Err(invalid(
-            "single-argument trampoline requires exactly one argument",
-        ));
-    };
-    let mut entered = phase.clone();
-    entered.arguments = vec![Some(phase.entry), argument];
-    entered.entry = trampoline;
-    Ok(entered)
+/// Enter `target` directly. `arguments` fill `a0`.. and unused argument
+/// registers start at zero; words beyond eight are ascending stack words.
+pub fn direct(
+    target: u32,
+    arguments: &[u32],
+    memory: Vec<ExecutionRegion>,
+    models: Vec<DeviceDeclaration>,
+    observe: Vec<MemorySelection>,
+) -> Invocation {
+    let mut words: Vec<Option<u32>> = arguments.iter().map(|w| Some(*w)).collect();
+    if words.len() < 8 {
+        words.resize(8, Some(0));
+    }
+    invocation(target, words, memory, models, observe)
 }
 
 #[cfg(test)]

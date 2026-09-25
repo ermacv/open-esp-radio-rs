@@ -3,7 +3,7 @@ use super::*;
 pub struct RiscvExecutor;
 impl Executor for RiscvExecutor {
     fn identity(&self) -> &'static str {
-        "rv32imac/execution-10/rv-asm-0.2.1"
+        "rv32imac/execution-11/rv-asm-0.2.1"
     }
     fn execute(
         &self,
@@ -17,10 +17,14 @@ impl Executor for RiscvExecutor {
             arguments,
             goal,
         } = *start;
-        let mut regs = [None; 32];
-        regs[0] = Some(0);
+        // An isolated root starts with known temporaries and callee-saved
+        // registers (zero), so a prologue can save them; gp and tp stay unknown
+        // and argument registers carry exactly the explicit ABI words.
+        let mut regs = [Some(0); 32];
         regs[1] = Some(u32::MAX - 1);
         regs[2] = Some(stack);
+        regs[3] = None;
+        regs[4] = None;
         for (i, value) in arguments.iter().enumerate() {
             regs[i + 10] = *value;
         }

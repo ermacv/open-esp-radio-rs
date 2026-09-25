@@ -211,17 +211,18 @@ fn known_indirect_calls_tail_policy_and_returns_are_distinct() {
         f.read(&run.execution.unwrap())["records"][0]["value"]["stop"]["kind"],
         "incomplete"
     );
-    let (f, point) = fixture(&[0x000280e7, 0x00000073], 0x1004);
-    let run = f.run(
-        request(
-            &f,
-            ExecutionGoal::ObserveCall {
-                target: point,
-                include_tail: true,
-            },
-        ),
-        budget(),
+    // `jalr a1`: an unsupplied argument register is an unknown target.
+    let (f, point) = fixture(&[0x000580e7, 0x00000073], 0x1004);
+    let mut unsupplied = request(
+        &f,
+        ExecutionGoal::ObserveCall {
+            target: point,
+            include_tail: true,
+        },
     );
+    unsupplied.cases[0].vendor.arguments = vec![Some(0)];
+    unsupplied.cases[0].replacement = Some(unsupplied.cases[0].vendor.clone());
+    let run = f.run(unsupplied, budget());
     assert_eq!(
         f.read(&run.execution.unwrap())["records"][0]["value"]["stop"]["reason"]["kind"],
         "unknown-register"

@@ -28,13 +28,13 @@ phy-fault-injection = [
     "oer-esp32s31-bluetooth-integration?/lifecycle-fault-injection",
     "oer-esp32s31-embassy-wifi?/lifecycle-fault-injection",
 ]
-bluetooth-radio = ["dep:oer-esp32s31-phy", "dep:heapless", "dep:bt-hci", "dep:oer-bluetooth-ll", "dep:oer-esp32s31-bluetooth", "dep:oer-esp32s31-bluetooth-embassy", "dep:oer-esp32s31-bluetooth-integration", "dep:oer-esp32s31-bluetooth-memory", "dep:oer-esp32s31-radio-platform-esp-hal", "dep:embassy-futures", "dep:embedded-io-async", "dep:open-esp-radio-hil-protocol"]
+bluetooth-radio = ["dep:oer-esp32s31-phy", "dep:heapless", "dep:bt-hci", "dep:oer-bluetooth-ll", "dep:oer-esp32s31-bluetooth", "dep:oer-esp32s31-bluetooth-embassy", "dep:oer-esp32s31-bluetooth-integration", "dep:oer-esp32s31-bluetooth-memory", "dep:oer-esp32s31-radio-platform-esp-hal", "dep:embassy-futures", "dep:embedded-io-async", "dep:open-esp-radio-hil-protocol", "open-esp-radio-hil-target-core/bluetooth"]
 bluetooth-hil = ["bluetooth-radio", "oer-esp32s31-bluetooth/dtm-diagnostics", "oer-esp32s31-bluetooth/rx-fault-injection"]
 bluetooth-gatt = ["bluetooth-radio", "dep:bluetooth-example", "dep:trouble-host"]
-bluetooth-secure-gatt = ["bluetooth-gatt", "bluetooth-example/secure-gatt-application", "dep:embassy-sync"]
-upstream-network = ["dep:embassy-net-upstream", "dep:xarxa", "oer-esp32s31-embassy-wifi/upstream-network"]
-embassy-network = ["dep:embassy-net-released", "oer-esp32s31-embassy-wifi/embassy-network"]
-owned-network = ["dep:embassy-net-owned", "dep:xarxa-owned", "oer-esp32s31-embassy-wifi/owned-network"]
+bluetooth-secure-gatt = ["bluetooth-gatt", "bluetooth-example/secure-gatt-application", "dep:embassy-sync", "open-esp-radio-hil-target-core/secure-gatt"]
+upstream-network = ["dep:embassy-net-upstream", "dep:xarxa", "oer-esp32s31-embassy-wifi/upstream-network", "open-esp-radio-hil-target-core?/upstream-network"]
+embassy-network = ["dep:embassy-net-released", "oer-esp32s31-embassy-wifi/embassy-network", "open-esp-radio-hil-target-core?/embassy-network"]
+owned-network = ["dep:embassy-net-owned", "dep:xarxa-owned", "oer-esp32s31-embassy-wifi/owned-network", "open-esp-radio-hil-target-core?/owned-network"]
 open-radio-hil = [
     "dep:oer-wifi-softmac",
     "dep:oer-esp32s31-wifi-mac",
@@ -51,6 +51,7 @@ open-radio-hil = [
     "dep:oer-esp32s31-phy",
     "dep:oer-esp32s31-wifi-esp-hal",
     "dep:open-esp-radio-hil-protocol",
+    "dep:open-esp-radio-hil-target-core",
     "dep:open-esp-radio-hil-esp32s31-telemetry",
     "dep:oer-wifi-embassy",
     "dep:postcard",
@@ -175,6 +176,7 @@ oer-esp32s31-soc.workspace = true
 oer-esp32s31-embassy-runtime.workspace = true
 oer-esp32s31-wifi-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
 open-esp-radio-hil-protocol = { workspace = true, optional = true, features = ["async-io"] }
+open-esp-radio-hil-target-core = { path = "../../../target-core", optional = true }
 oer-esp32s31-board = { path = "../../../../platform/esp32s31/board" }
 oer-esp32s31-runtime = { path = "../../../../platform/esp32s31/runtime" }
 open-esp-radio-hil-esp32s31-telemetry = { workspace = true, optional = true }

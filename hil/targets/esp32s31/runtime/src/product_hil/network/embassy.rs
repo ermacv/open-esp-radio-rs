@@ -22,7 +22,7 @@ pub(crate) type Resources = embassy_net::StackResources<16>;
 #[cfg(feature = "owned-network")]
 pub(crate) type Resources = embassy_net::StackResources<Device>;
 
-mod ipv4;
+use open_esp_radio_hil_target_core::network::embassy_ipv4 as ipv4;
 
 pub(crate) use ipv4::{Iface, configure, info};
 pub(crate) fn new(

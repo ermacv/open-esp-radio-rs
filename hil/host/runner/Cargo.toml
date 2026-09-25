@@ -63,22 +63,8 @@ async-io = "2.6"
 futures-lite = "2.6"
 
 [dev-dependencies]
-oer-bluetooth-hci = { path = "../../../crates/protocols/bluetooth/hci" }
-trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", default-features = false, features = ["default-packet-pool", "gatt", "peripheral", "security"] }
-bluetooth-example = { package = "open-esp-radio-esp32s31-bluetooth-controller-example", path = "../../../examples/esp32s31-bluetooth-controller", default-features = false, features = ["secure-gatt-application"] }
-embassy-futures = "0.1.2"
 oer-bluetooth-ll = { path = "../../../crates/protocols/bluetooth/le/ll" }
 oer-esp32s31-wifi-ap = { path = "../../../crates/hardware/esp32s31/driver/ieee80211/ap" }
-xarxa-owned = { package = "xarxa", git = "https://github.com/ermacv/xarxa.git", rev = "0d41d8e80cb617d355cf6981b6ff76635c44cadc", default-features = false, features = ["std", "alloc", "medium-ethernet", "ipv4", "udp"] }
-critical-section = { version = "1.2.0", features = ["std"] }
-embassy-net-released = { package = "embassy-net", version = "0.9.1", default-features = false, features = ["auto-icmp-echo-reply", "std", "medium-ethernet", "proto-ipv4", "dhcpv4", "udp", "tcp"] }
-oer-embassy-net-upstream = { path = "../../../crates/adapters/embassy-net/upstream" }
-# Match the target's UDP receive capacity for burst-retention tests.
-xarxa = { git = "https://github.com/embassy-rs/xarxa", rev = "14c369bbcbe8ee7167488ac9c9e18be059d83555", default-features = false, features = ["udp-rx-queue-count-16"] }
-embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "c0fdd08e94138105fba8be3133c4ced91afc30fc", features = ["dhcpv4", "medium-ethernet", "tcp-listener", "udp"] }
-embassy-time = { version = "0.5.1", features = ["std", "generic-queue-64"] }
-embassy-sync = "0.8"
-oer-xarxa-upstream = { path = "../../../crates/adapters/xarxa/upstream" }
 roxmltree = "0.20"
 
 [lints]

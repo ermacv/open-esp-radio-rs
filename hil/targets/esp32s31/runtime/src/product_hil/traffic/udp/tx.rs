@@ -74,8 +74,7 @@ pub(in crate::product_hil) struct UdpTxBenchmarkConfig {
     pub session_source: UdpTxSessionSource,
 }
 
-#[path = "multi_tx.rs"]
-mod multi_tx;
+use open_esp_radio_hil_target_core::traffic::multi_tx;
 
 async fn transmit_multi_flow(
     sockets: [&mut UdpSocket<'_>; SESSION_FLOW_CAPACITY],

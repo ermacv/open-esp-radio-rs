@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use crate::product_hil::network::sockets::{Stack, accept, listen, new_tcp};
-mod connection;
+use open_esp_radio_hil_target_core::traffic::connection;
 
 use embassy_futures::join::join;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};

@@ -5,7 +5,7 @@
 //! A failed case quarantines these static allocations until the next reset.
 
 mod counters;
-mod data;
+use open_esp_radio_hil_target_core::memory_benchmark as data;
 
 use data::{ARENA_CAPACITY, Layout, MAX_FRAMES, OFFSET};
 

@@ -2,10 +2,11 @@
 
 mod backpressure;
 mod calibration_traffic;
-mod command_pump;
 mod retirement;
 mod security;
 mod watchdog;
+
+use open_esp_radio_hil_target_core::bluetooth::command_pump;
 
 use bt_hci::{
     ControllerToHostPacket,

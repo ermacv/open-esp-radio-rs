@@ -4,8 +4,7 @@
 //! output remains available for the boot and panic paths, where the executor
 //! and the asynchronous logging transport may not be running yet.
 
-mod progress;
-mod writer;
+use open_esp_radio_hil_target_core::console::{progress, writer};
 
 use core::{
     cell::RefCell,

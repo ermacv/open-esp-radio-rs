@@ -75,6 +75,13 @@ jobs:
           key: test-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
           restore-keys: test-${{ runner.os }}-
       - run: cargo test --workspace --locked
+      # The HIL target core compiles its network modules against exactly one
+      # stack, so each configuration is a separate test run.
+      - name: HIL target core configurations
+        run: |
+          for features in secure-gatt upstream-network embassy-network owned-network; do
+            cargo test --locked -p open-esp-radio-hil-target-core --features "$features"
+          done
 
   # Repository policy gates: locked metadata and network dependency boundaries.
   policy:

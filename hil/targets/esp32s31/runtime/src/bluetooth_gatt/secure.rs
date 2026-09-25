@@ -1,12 +1,7 @@
 //! One application-owned RAM store around successive physical Controller epochs.
-#[path = "secure/reset_gate.rs"]
-mod reset_gate;
 #[path = "secure/retirement.rs"]
 mod retirement;
-#[path = "secure/state.rs"]
-mod state;
-#[path = "secure/store.rs"]
-mod store;
+use open_esp_radio_hil_target_core::bluetooth_gatt::secure::{reset_gate, state, store};
 use super::console;
 use bluetooth_example::security::{bonds::RamBondStore, epoch};
 use core::convert::Infallible;

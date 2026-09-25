@@ -16,26 +16,14 @@ mod embassy;
 #[cfg(not(feature = "upstream-network"))]
 pub(super) use embassy::*;
 #[cfg(feature = "upstream-network")]
-mod checksum;
-#[cfg(feature = "upstream-network")]
-mod ipv4;
+use open_esp_radio_hil_target_core::network::{checksum, ipv4};
 #[cfg(feature = "upstream-network")]
 pub(super) use ipv4::{configure, info};
 #[cfg(feature = "task-poll-telemetry")]
 pub(super) mod observation;
 #[cfg(feature = "task-poll-telemetry")]
-pub(super) mod progress;
-pub(crate) mod sockets;
-
-#[cfg(all(feature = "task-poll-telemetry", feature = "upstream-network"))]
-#[path = "network/progress/xarxa.rs"]
-mod progress_adapter;
-#[cfg(all(feature = "task-poll-telemetry", feature = "owned-network"))]
-#[path = "network/progress/owned.rs"]
-mod progress_adapter;
-#[cfg(all(feature = "task-poll-telemetry", feature = "embassy-network"))]
-#[path = "network/progress/smoltcp.rs"]
-mod progress_adapter;
+pub(super) use open_esp_radio_hil_target_core::network::progress;
+pub(crate) use open_esp_radio_hil_target_core::network::sockets;
 
 #[cfg(all(feature = "upstream-network", feature = "driver-observation"))]
 mod arp;

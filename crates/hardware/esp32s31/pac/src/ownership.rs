@@ -47,7 +47,6 @@ pub(crate) struct Ieee802154BtbbPeripheralOwners {
 #[must_use = "the shared PHY owner must remain inside its active radio route"]
 pub struct RadioPhyRegisters {
     pub(crate) peripherals: svd::peripheral_ownership::RadioPhyPeripherals,
-    pub(crate) restore_slot: baseband::RadioPhyRestoreSlot,
 }
 
 /// Opaque Wi-Fi MAC register partition.
@@ -120,7 +119,6 @@ impl RadioPartitions {
             wifi_interrupts: MacInterruptSetup::from_peripherals(wifi_interrupts),
             radio_phy: RadioPhyRegisters {
                 peripherals: radio_phy,
-                restore_slot: baseband::RadioPhyRestoreSlot::new(),
             },
             coexistence: CoexistencePartition(coexistence),
             bluetooth: BluetoothControllerPartition(bluetooth),

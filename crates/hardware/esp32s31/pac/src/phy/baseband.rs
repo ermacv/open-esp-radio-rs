@@ -13,14 +13,16 @@ fn vendor_register_argument(input: u32) -> crate::generated::PhyVendorRegisterAr
         .expect("every u32 fits the complete generated vendor-argument domain")
 }
 
+/// Opaque capture of the two fields owned by TX-DC PWDET calibration.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct TxDcPwdetRestoreFields {
+pub struct TxDcPwdetFields {
     table_low: u8,
     calibration: u8,
 }
 
+/// Opaque capture of the TX-IQ tone-control field state.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct TxIqToneControlFields {
+pub struct TxIqToneControlFields {
     selector_high: u8,
     low_reserved_clear_unknown: u8,
     negated_step_or_attenuation: u8,
@@ -31,317 +33,36 @@ struct TxIqToneControlFields {
     high_nibble_unknown: u8,
 }
 
-/// Preparing TX-DC PWDET was rejected before any register access.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxDcPwdetPrepareError {
-    /// Another calibration still owns the one pending restore operation.
-    RestorePending,
+/// Opaque capture of the two-bit RX-DCO calibration control field.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RxDcoControlField(u8);
+
+impl RxDcoControlField {
+    pub(crate) const fn from_capture(value: u8) -> Self {
+        Self(value)
+    }
+
+    pub(crate) const fn bits(self) -> u8 {
+        self.0
+    }
+
+    /// Construct one distinguishable capture inside a validation image.
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub const fn for_validation(value: u8) -> Self {
+        Self(value)
+    }
 }
 
-/// Restoring TX-DC PWDET was rejected before any register access.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxDcPwdetRestoreError {
-    /// No successful prepare operation owns saved fields.
-    RestoreNotPending,
-}
-
-/// A lifecycle operation would overwrite TX-DC fields awaiting restore.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxDcPwdetLifecycleError {
-    RestorePending,
-}
-
-/// Preparing a TX-IQ tone-control restore was rejected before register access.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxIqToneControlPrepareError {
-    /// Another calibration still owns the pending restore operation.
-    RestorePending,
-}
-
-/// Restoring TX-IQ tone control was rejected before register access.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxIqToneControlRestoreError {
-    /// No successful prepare operation owns saved field state.
-    RestoreNotPending,
-}
-
-/// Preparing an RX-DCO control restore was rejected before register access.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RxDcoControlPrepareError {
-    /// A different calibration owns the shared restore slot.
-    RestorePending,
-    /// Both reviewed RX-DCO nesting levels already own saved fields.
-    RestoreStackFull,
-}
-
-/// Restoring RX-DCO control was rejected before register access.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RxDcoControlRestoreError {
-    /// No RX-DCO control field is awaiting restoration.
-    RestoreNotPending,
-}
-
-/// Preparing the Bluetooth TX-power analog-control restore was rejected.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothTxPowerControlPrepareError {
-    /// Another calibration still owns the shared restore slot.
-    RestorePending,
-}
-
-/// Using the Bluetooth TX-power analog-control restore was rejected.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothTxPowerControlRestoreError {
-    /// No prepared Bluetooth TX-power analog-control restore is pending.
-    RestoreNotPending,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u8)]
-enum RadioPhyRestoreKind {
-    Empty,
-    TxDcPwdet,
-    TxIqToneControl,
-    RxDcoControlOne,
-    RxDcoControlTwo,
-    BluetoothTxPowerControl,
-}
-
-/// One private restore authority shared by mutually exclusive PHY calibrations.
-///
-/// Byte storage keeps only named accessor values and does not retain a raw
-/// register image. The owner crosses async suspension points, so the private
-/// slot remains byte-aligned.
-pub(crate) struct RadioPhyRestoreSlot {
-    kind: RadioPhyRestoreKind,
-    payload: [u8; 8],
-}
-
-impl RadioPhyRestoreSlot {
-    pub(crate) const fn new() -> Self {
+impl TxDcPwdetFields {
+    /// Construct one distinguishable capture inside a validation image.
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub const fn for_validation(table_low: u8, calibration: u8) -> Self {
         Self {
-            kind: RadioPhyRestoreKind::Empty,
-            payload: [0; 8],
+            table_low,
+            calibration,
         }
-    }
-
-    pub(crate) const fn txdc_pending(&self) -> bool {
-        matches!(self.kind, RadioPhyRestoreKind::TxDcPwdet)
-    }
-
-    pub(crate) const fn txiq_pending(&self) -> bool {
-        matches!(self.kind, RadioPhyRestoreKind::TxIqToneControl)
-    }
-
-    pub(crate) const fn rx_dco_pending(&self) -> bool {
-        matches!(
-            self.kind,
-            RadioPhyRestoreKind::RxDcoControlOne | RadioPhyRestoreKind::RxDcoControlTwo
-        )
-    }
-
-    pub(crate) const fn bluetooth_tx_power_control_pending(&self) -> bool {
-        matches!(self.kind, RadioPhyRestoreKind::BluetoothTxPowerControl)
-    }
-
-    fn prepare_txdc_with<Captured, Capture, Prepare>(
-        &mut self,
-        capture: Capture,
-        prepare: Prepare,
-    ) -> Result<(), TxDcPwdetPrepareError>
-    where
-        Capture: FnOnce() -> (TxDcPwdetRestoreFields, Captured),
-        Prepare: FnOnce(Captured),
-    {
-        if !matches!(self.kind, RadioPhyRestoreKind::Empty) {
-            return Err(TxDcPwdetPrepareError::RestorePending);
-        }
-        let (fields, captured) = capture();
-        self.payload = [fields.table_low, fields.calibration, 0, 0, 0, 0, 0, 0];
-        self.kind = RadioPhyRestoreKind::TxDcPwdet;
-        prepare(captured);
-        Ok(())
-    }
-
-    fn restore_txdc_with<Restore>(&mut self, restore: Restore) -> Result<(), TxDcPwdetRestoreError>
-    where
-        Restore: FnOnce(TxDcPwdetRestoreFields),
-    {
-        if !matches!(self.kind, RadioPhyRestoreKind::TxDcPwdet) {
-            return Err(TxDcPwdetRestoreError::RestoreNotPending);
-        }
-        let fields = TxDcPwdetRestoreFields {
-            table_low: self.payload[0],
-            calibration: self.payload[1],
-        };
-        restore(fields);
-        self.kind = RadioPhyRestoreKind::Empty;
-        self.payload = [0; 8];
-        Ok(())
-    }
-
-    fn prepare_txiq_with<Capture>(
-        &mut self,
-        capture: Capture,
-    ) -> Result<(), TxIqToneControlPrepareError>
-    where
-        Capture: FnOnce() -> TxIqToneControlFields,
-    {
-        if !matches!(self.kind, RadioPhyRestoreKind::Empty) {
-            return Err(TxIqToneControlPrepareError::RestorePending);
-        }
-        let fields = capture();
-        self.payload = [
-            fields.selector_high,
-            fields.low_reserved_clear_unknown,
-            fields.negated_step_or_attenuation,
-            u8::from(fields.tone_enable_or_arm),
-            fields.txiq_mismatch_mode_unknown,
-            fields.middle_reserved_clear_unknown,
-            fields.txiq_polarity_image,
-            fields.high_nibble_unknown,
-        ];
-        self.kind = RadioPhyRestoreKind::TxIqToneControl;
-        Ok(())
-    }
-
-    fn restore_txiq_with<Restore>(
-        &mut self,
-        restore: Restore,
-    ) -> Result<(), TxIqToneControlRestoreError>
-    where
-        Restore: FnOnce(TxIqToneControlFields),
-    {
-        if !matches!(self.kind, RadioPhyRestoreKind::TxIqToneControl) {
-            return Err(TxIqToneControlRestoreError::RestoreNotPending);
-        }
-        restore(TxIqToneControlFields {
-            selector_high: self.payload[0],
-            low_reserved_clear_unknown: self.payload[1],
-            negated_step_or_attenuation: self.payload[2],
-            tone_enable_or_arm: self.payload[3] != 0,
-            txiq_mismatch_mode_unknown: self.payload[4],
-            middle_reserved_clear_unknown: self.payload[5],
-            txiq_polarity_image: self.payload[6],
-            high_nibble_unknown: self.payload[7],
-        });
-        self.kind = RadioPhyRestoreKind::Empty;
-        self.payload = [0; 8];
-        Ok(())
-    }
-
-    pub(crate) fn prepare_rx_dco_with<Capture>(
-        &mut self,
-        capture: Capture,
-    ) -> Result<(), RxDcoControlPrepareError>
-    where
-        Capture: FnOnce() -> u8,
-    {
-        let (index, next_kind) = match self.kind {
-            RadioPhyRestoreKind::Empty => (0, RadioPhyRestoreKind::RxDcoControlOne),
-            RadioPhyRestoreKind::RxDcoControlOne => (1, RadioPhyRestoreKind::RxDcoControlTwo),
-            RadioPhyRestoreKind::RxDcoControlTwo => {
-                return Err(RxDcoControlPrepareError::RestoreStackFull);
-            }
-            _ => return Err(RxDcoControlPrepareError::RestorePending),
-        };
-        self.payload[index] = capture();
-        self.kind = next_kind;
-        Ok(())
-    }
-
-    pub(crate) fn restore_rx_dco_with<Restore>(
-        &mut self,
-        restore: Restore,
-    ) -> Result<(), RxDcoControlRestoreError>
-    where
-        Restore: FnOnce(u8),
-    {
-        let (index, next_kind) = match self.kind {
-            RadioPhyRestoreKind::RxDcoControlOne => (0, RadioPhyRestoreKind::Empty),
-            RadioPhyRestoreKind::RxDcoControlTwo => (1, RadioPhyRestoreKind::RxDcoControlOne),
-            _ => return Err(RxDcoControlRestoreError::RestoreNotPending),
-        };
-        restore(self.payload[index]);
-        self.payload[index] = 0;
-        self.kind = next_kind;
-        Ok(())
-    }
-
-    pub(crate) fn prepare_bluetooth_tx_power_control(
-        &mut self,
-    ) -> Result<(), BluetoothTxPowerControlPrepareError> {
-        if !matches!(self.kind, RadioPhyRestoreKind::Empty) {
-            return Err(BluetoothTxPowerControlPrepareError::RestorePending);
-        }
-        self.payload = [0; 8];
-        self.kind = RadioPhyRestoreKind::BluetoothTxPowerControl;
-        Ok(())
-    }
-
-    pub(crate) fn capture_bluetooth_tx_power_control_low(
-        &mut self,
-        value: u8,
-    ) -> Result<(), BluetoothTxPowerControlRestoreError> {
-        if !self.bluetooth_tx_power_control_pending() {
-            return Err(BluetoothTxPowerControlRestoreError::RestoreNotPending);
-        }
-        self.payload[0] = value;
-        Ok(())
-    }
-
-    pub(crate) fn capture_bluetooth_tx_power_control_high(
-        &mut self,
-        value: u8,
-    ) -> Result<(), BluetoothTxPowerControlRestoreError> {
-        if !self.bluetooth_tx_power_control_pending() {
-            return Err(BluetoothTxPowerControlRestoreError::RestoreNotPending);
-        }
-        self.payload[1] = value;
-        Ok(())
-    }
-
-    pub(crate) fn bluetooth_tx_power_control_values(
-        &self,
-    ) -> Result<(u8, u8), BluetoothTxPowerControlRestoreError> {
-        if !self.bluetooth_tx_power_control_pending() {
-            return Err(BluetoothTxPowerControlRestoreError::RestoreNotPending);
-        }
-        Ok((self.payload[0], self.payload[1]))
-    }
-
-    pub(crate) fn finish_bluetooth_tx_power_control_restore(
-        &mut self,
-    ) -> Result<(), BluetoothTxPowerControlRestoreError> {
-        if !self.bluetooth_tx_power_control_pending() {
-            return Err(BluetoothTxPowerControlRestoreError::RestoreNotPending);
-        }
-        self.kind = RadioPhyRestoreKind::Empty;
-        self.payload = [0; 8];
-        Ok(())
-    }
-
-    #[cfg(any(test, feature = "validation-probes"))]
-    pub(crate) fn occupy_txdc_for_test(&mut self) {
-        self.kind = RadioPhyRestoreKind::TxDcPwdet;
-        self.payload = [0; 8];
-    }
-
-    #[cfg(any(test, feature = "validation-probes"))]
-    pub(crate) fn occupy_txiq_for_test(&mut self) {
-        self.kind = RadioPhyRestoreKind::TxIqToneControl;
-        self.payload = [0; 8];
-    }
-
-    #[cfg(any(test, feature = "validation-probes"))]
-    pub(crate) fn occupy_rx_dco_for_test(&mut self) {
-        self.kind = RadioPhyRestoreKind::RxDcoControlOne;
-        self.payload = [0; 8];
-    }
-
-    #[cfg(any(test, feature = "validation-probes"))]
-    pub(crate) fn occupy_bluetooth_tx_power_control_for_test(&mut self) {
-        self.kind = RadioPhyRestoreKind::BluetoothTxPowerControl;
-        self.payload = [0; 8];
     }
 }
 
@@ -420,59 +141,6 @@ impl RadioPhyRegisters {
         let registers = &self.peripherals.phy_fedata_recovered;
         crate::generated::clear_phy_frontend_txrx_reset_state(registers);
         crate::generated::assert_phy_frontend_txrx_reset_state(registers);
-    }
-
-    /// Whether this restore obligation still blocks route release.
-    #[doc(hidden)]
-    pub const fn txdc_pwdet_restore_pending(&self) -> bool {
-        self.restore_slot.txdc_pending()
-    }
-
-    /// Occupy this restore obligation inside an isolated validation image.
-    #[cfg(any(test, feature = "validation-probes"))]
-    #[doc(hidden)]
-    pub fn occupy_txdc_pwdet_restore_for_validation(&mut self) {
-        self.restore_slot.occupy_txdc_for_test();
-    }
-
-    /// Whether this restore obligation still blocks route release.
-    #[doc(hidden)]
-    pub const fn txiq_tone_control_restore_pending(&self) -> bool {
-        self.restore_slot.txiq_pending()
-    }
-
-    /// Occupy this restore obligation inside an isolated validation image.
-    #[cfg(any(test, feature = "validation-probes"))]
-    #[doc(hidden)]
-    pub fn occupy_txiq_tone_control_restore_for_validation(&mut self) {
-        self.restore_slot.occupy_txiq_for_test();
-    }
-
-    /// Whether this restore obligation still blocks route release.
-    #[doc(hidden)]
-    pub const fn rx_dco_control_restore_pending(&self) -> bool {
-        self.restore_slot.rx_dco_pending()
-    }
-
-    /// Occupy this restore obligation inside an isolated validation image.
-    #[cfg(any(test, feature = "validation-probes"))]
-    #[doc(hidden)]
-    pub fn occupy_rx_dco_control_restore_for_validation(&mut self) {
-        self.restore_slot.occupy_rx_dco_for_test();
-    }
-
-    /// Whether this restore obligation still blocks route release.
-    #[doc(hidden)]
-    pub const fn bluetooth_tx_power_control_restore_pending(&self) -> bool {
-        self.restore_slot.bluetooth_tx_power_control_pending()
-    }
-
-    /// Occupy this restore obligation inside an isolated validation image.
-    #[cfg(any(test, feature = "validation-probes"))]
-    #[doc(hidden)]
-    pub fn occupy_bluetooth_tx_power_control_restore_for_validation(&mut self) {
-        self.restore_slot
-            .occupy_bluetooth_tx_power_control_for_test();
     }
 
     /// Enable both RX- and TX-IQ correction modes through two fresh RMWs.
@@ -726,17 +394,13 @@ impl RadioPhyRegisters {
     }
 
     /// Apply the five internal-MMIO stores of complete ROM `phy_pwdet_reg_init`.
-    pub fn initialize_power_detector_registers(&mut self) -> Result<(), TxDcPwdetLifecycleError> {
-        if self.restore_slot.txdc_pending() {
-            return Err(TxDcPwdetLifecycleError::RestorePending);
-        }
+    pub fn initialize_power_detector_registers(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         crate::svd::fixed_register_image::initialize_power_detector_table_0(bb);
         crate::svd::fixed_register_image::initialize_power_detector_table_1(bb);
         crate::generated::initialize_phy_power_detector_calibration(bb);
         crate::svd::zero_based_field_write::power_detector_reference(bb, 0xaaaa);
         crate::generated::initialize_phy_power_detector_mode(bb);
-        Ok(())
     }
 
     /// Apply the internal-MMIO portion of complete ROM `phy_en_pwdet`.
@@ -757,30 +421,20 @@ impl RadioPhyRegisters {
         );
     }
 
-    /// Save and replace the two fields owned by TX-DC PWDET calibration.
-    ///
-    /// The private restore slot is filled before either temporary field is
-    /// published. A second caller is rejected without touching MMIO, so it
-    /// cannot steal the first caller's restore authority.
-    pub fn prepare_txdc_power_detector(&mut self) -> Result<(), TxDcPwdetPrepareError> {
+    /// Capture the two fields owned by TX-DC PWDET calibration.
+    pub fn capture_txdc_power_detector(&self) -> TxDcPwdetFields {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        self.restore_slot.prepare_txdc_with(
-            || {
-                (
-                    TxDcPwdetRestoreFields {
-                        table_low:
-                            crate::svd::field_read::capture_phy_txdc_power_detector_table_low(bb),
-                        calibration:
-                            crate::svd::field_read::capture_phy_txdc_power_detector_calibration(bb),
-                    },
-                    (),
-                )
-            },
-            |()| {
-                crate::generated::prepare_phy_txdc_power_detector_table_low(bb);
-                crate::generated::prepare_phy_txdc_power_detector_calibration(bb);
-            },
-        )
+        TxDcPwdetFields {
+            table_low: crate::svd::field_read::capture_phy_txdc_power_detector_table_low(bb),
+            calibration: crate::svd::field_read::capture_phy_txdc_power_detector_calibration(bb),
+        }
+    }
+
+    /// Publish the two temporary TX-DC PWDET calibration fields.
+    pub fn apply_txdc_power_detector_calibration(&mut self) {
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        crate::generated::prepare_phy_txdc_power_detector_table_low(bb);
+        crate::generated::prepare_phy_txdc_power_detector_calibration(bb);
     }
 
     /// Select TX-DC SAR mode one after the initial PBus setup.
@@ -790,24 +444,18 @@ impl RadioPhyRegisters {
         );
     }
 
-    /// Restore the privately saved TX-DC fields and select final SAR mode.
-    ///
-    /// A caller without a successful prepare operation is rejected without
-    /// touching MMIO. The slot is cleared only after the complete restore
-    /// sequence has run.
-    pub fn restore_txdc_power_detector(&mut self) -> Result<(), TxDcPwdetRestoreError> {
+    /// Restore captured TX-DC fields and select final SAR mode.
+    pub fn restore_txdc_power_detector(&mut self, fields: TxDcPwdetFields) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        self.restore_slot.restore_txdc_with(|fields| {
-            let table_low =
-                crate::generated::PhyPowerDetectorRestoreByte::new(u32::from(fields.table_low))
-                    .expect("captured power-detector byte fits its generated restore domain");
-            let calibration =
-                crate::generated::PhyPowerDetectorRestoreByte::new(u32::from(fields.calibration))
-                    .expect("captured power-detector byte fits its generated restore domain");
-            crate::generated::restore_phy_txdc_power_detector_table_low(bb, table_low);
-            crate::generated::restore_phy_txdc_power_detector_calibration(bb, calibration);
-            crate::generated::enable_phy_power_detector_sar_mode(bb);
-        })
+        let table_low =
+            crate::generated::PhyPowerDetectorRestoreByte::new(u32::from(fields.table_low))
+                .expect("captured power-detector byte fits its generated restore domain");
+        let calibration =
+            crate::generated::PhyPowerDetectorRestoreByte::new(u32::from(fields.calibration))
+                .expect("captured power-detector byte fits its generated restore domain");
+        crate::generated::restore_phy_txdc_power_detector_table_low(bb, table_low);
+        crate::generated::restore_phy_txdc_power_detector_calibration(bb, calibration);
+        crate::generated::enable_phy_power_detector_sar_mode(bb);
     }
 
     /// Publish one zero-extended power-detector reference word.
@@ -924,55 +572,45 @@ impl RadioPhyRegisters {
         self.configure_tone_paths(true, selector, step);
     }
 
-    /// Capture the first-path word into the private TX-IQ restore slot.
-    ///
-    /// A second caller is rejected before reading the register and therefore
-    /// cannot replace another calibration's restore authority.
-    pub fn prepare_txiq_tone_control_restore(&mut self) -> Result<(), TxIqToneControlPrepareError> {
-        let bb = &self.peripherals.phy_baseband_config_oracle;
-        self.restore_slot.prepare_txiq_with(|| {
-            let (
-                selector_high,
-                low_reserved_clear_unknown,
-                negated_step_or_attenuation,
-                tone_enable_or_arm,
-                txiq_mismatch_mode_unknown,
-                middle_reserved_clear_unknown,
-                txiq_polarity_image,
-                high_nibble_unknown,
-            ) = crate::svd::field_snapshot_read::capture_phy_txiq_tone_control(bb);
-            TxIqToneControlFields {
-                selector_high,
-                low_reserved_clear_unknown,
-                negated_step_or_attenuation,
-                tone_enable_or_arm,
-                txiq_mismatch_mode_unknown,
-                middle_reserved_clear_unknown,
-                txiq_polarity_image,
-                high_nibble_unknown,
-            }
-        })
+    /// Capture the first-path TX-IQ tone-control field state.
+    pub fn capture_txiq_tone_control(&self) -> TxIqToneControlFields {
+        let (
+            selector_high,
+            low_reserved_clear_unknown,
+            negated_step_or_attenuation,
+            tone_enable_or_arm,
+            txiq_mismatch_mode_unknown,
+            middle_reserved_clear_unknown,
+            txiq_polarity_image,
+            high_nibble_unknown,
+        ) = crate::svd::field_snapshot_read::capture_phy_txiq_tone_control(
+            &self.peripherals.phy_baseband_config_oracle,
+        );
+        TxIqToneControlFields {
+            selector_high,
+            low_reserved_clear_unknown,
+            negated_step_or_attenuation,
+            tone_enable_or_arm,
+            txiq_mismatch_mode_unknown,
+            middle_reserved_clear_unknown,
+            txiq_polarity_image,
+            high_nibble_unknown,
+        }
     }
 
-    /// Restore and consume the private TX-IQ tone-control field state.
-    ///
-    /// A caller without a successful prepare operation is rejected before
-    /// MMIO. The slot is cleared only after the complete accessor write.
-    pub fn restore_txiq_tone_control(&mut self) -> Result<(), TxIqToneControlRestoreError> {
-        let bb = &self.peripherals.phy_baseband_config_oracle;
-        self.restore_slot.restore_txiq_with(|fields| {
-            crate::svd::zero_based_field_write::restore_phy_txiq_tone_control(
-                bb,
-                fields.selector_high,
-                fields.low_reserved_clear_unknown,
-                fields.negated_step_or_attenuation,
-                fields.tone_enable_or_arm,
-                fields.txiq_mismatch_mode_unknown,
-                fields.middle_reserved_clear_unknown,
-                fields.txiq_polarity_image,
-                fields.high_nibble_unknown,
-            );
-        })
+    /// Restore captured TX-IQ tone-control field state.
+    pub fn restore_txiq_tone_control(&mut self, fields: TxIqToneControlFields) {
+        crate::svd::zero_based_field_write::restore_phy_txiq_tone_control(
+            &self.peripherals.phy_baseband_config_oracle,
+            fields.selector_high,
+            fields.low_reserved_clear_unknown,
+            fields.negated_step_or_attenuation,
+            fields.tone_enable_or_arm,
+            fields.txiq_mismatch_mode_unknown,
+            fields.middle_reserved_clear_unknown,
+            fields.txiq_polarity_image,
+            fields.high_nibble_unknown,
+        );
     }
 
     /// Configure one of the two complete TX-IQ mismatch-power polarity edges.

@@ -28,8 +28,7 @@ fn wifi_registers(partitions: RadioPartitions) -> (WifiRadioRegisters, super::Ma
 #[test]
 fn wifi_register_set_returns_every_consumed_partition() {
     let (registers, _interrupts) = wifi_registers(RadioPartitions::for_validation());
-    let WifiRadioParts { radio_phy, .. } = registers.into_parts();
-    assert!(!radio_phy.txdc_pwdet_restore_pending());
+    let WifiRadioParts { .. } = registers.into_parts();
 }
 
 #[test]

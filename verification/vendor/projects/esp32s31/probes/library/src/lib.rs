@@ -20,6 +20,14 @@ mod calibration_leaves;
 mod i2c;
 mod production_trace;
 
+/// Expose externally supplied PHY registers through the HAL shared-PHY port
+/// with a fresh per-call restore slot.
+fn shared_phy(
+    registers: &mut RadioPhyRegisters,
+) -> oer_esp32s31_hal::owner::ValidationSharedPhy<'_> {
+    oer_esp32s31_hal::owner::ValidationSharedPhy::new(registers)
+}
+
 /// Borrow an isolated Wi-Fi PHY partition.
 /// The closure cannot return a borrow of this temporary validation capability.
 fn with_phy<R>(call: impl FnOnce(&mut RadioPhyRegisters) -> R) -> R {
@@ -144,7 +152,7 @@ oer_probe_macros::probe! {
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_disable_agc(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::set_enabled(registers, false);
+        oer_esp32s31_hal::phy::agc::set_enabled(&mut shared_phy(registers), false);
 }
 
 oer_probe_macros::probe! {
@@ -1069,37 +1077,37 @@ oer_probe_macros::probe! {
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_enable_agc(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::set_enabled(registers, true);
+        oer_esp32s31_hal::phy::agc::set_enabled(&mut shared_phy(registers), true);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_vht_support(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::set_vht_support(registers, input);
+        oer_esp32s31_hal::phy::baseband::set_vht_support(&mut shared_phy(registers), input);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_csidump_force_lltf_cfg(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::set_csi_dump_force_lltf(registers, input);
+        oer_esp32s31_hal::phy::baseband::set_csi_dump_force_lltf(&mut shared_phy(registers), input);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_hemu_ru26_good_res(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::configure_he_ru26_good_response(registers);
+        oer_esp32s31_hal::phy::baseband::configure_he_ru26_good_response(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_freq_band_reg_set(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::set_frequency_band(registers, input);
+        oer_esp32s31_hal::phy::baseband::set_frequency_band(&mut shared_phy(registers), input);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_fe_reg_init(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::initialize_front_end(registers);
+        oer_esp32s31_hal::phy::baseband::initialize_front_end(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_phy_fe_reg_update(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::update_front_end(registers);
+        oer_esp32s31_hal::phy::baseband::update_front_end(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
@@ -1110,64 +1118,64 @@ oer_probe_macros::probe! {
         registers: &mut RadioPhyRegisters,
     ) {
         oer_esp32s31_hal::phy::baseband::configure_tx_output_filter(
-            registers, input_0, input_1, input_2,
+            &mut shared_phy(registers), input_0, input_1, input_2,
         );
     }
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_bb_wdt_rst_enable(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::set_watchdog_reset_enabled(registers, input);
+        oer_esp32s31_hal::phy::baseband::set_watchdog_reset_enabled(&mut shared_phy(registers), input);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_bb_wdt_int_enable(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::set_watchdog_interrupt_enabled(registers, input);
+        oer_esp32s31_hal::phy::baseband::set_watchdog_interrupt_enabled(&mut shared_phy(registers), input);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_bb_wdt_timeout_clear(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::clear_watchdog_timeout(registers);
+        oer_esp32s31_hal::phy::baseband::clear_watchdog_timeout(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_ret_bb_wdt_get_status(registers: &mut RadioPhyRegisters) -> u32 =>
-        oer_esp32s31_hal::phy::baseband::watchdog_status(registers);
+        oer_esp32s31_hal::phy::baseband::watchdog_status(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_lltf_mask_en(input_0: u32, input_1: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::configure_lltf_mask(registers, input_0, input_1);
+        oer_esp32s31_hal::phy::baseband::configure_lltf_mask(&mut shared_phy(registers), input_0, input_1);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_ant_init(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::configure_antenna(registers);
+        oer_esp32s31_hal::phy::agc::configure_antenna(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_bb_wdg_cfg(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::configure_watchdog(registers);
+        oer_esp32s31_hal::phy::baseband::configure_watchdog(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_bt_filter_reg(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::frequency::configure_bt_filter(registers);
+        oer_esp32s31_hal::phy::frequency::configure_bt_filter(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_freq_module_resetn(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::frequency::reset_module(registers);
+        oer_esp32s31_hal::phy::frequency::reset_module(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_en_hw_set_freq(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::frequency::set_hardware_control(registers, true);
+        oer_esp32s31_hal::phy::frequency::set_hardware_control(&mut shared_phy(registers), true);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_dis_hw_set_freq(registers: &mut RadioPhyRegisters) {
-        oer_esp32s31_hal::phy::frequency::set_hardware_control(registers, false);
+        oer_esp32s31_hal::phy::frequency::set_hardware_control(&mut shared_phy(registers), false);
         ets_delay_us(2);
         // Keep the delay as a non-tail edge so the executor sees the named
         // harness symbol independently of linker tail-call relaxation.
@@ -1182,92 +1190,92 @@ oer_probe_macros::probe! {
         parameter_override: u32,
         registers: &mut RadioPhyRegisters,
     ) =>
-        oer_esp32s31_hal::phy::frequency::initialize_registers(registers, parameter_override != 0);
+        oer_esp32s31_hal::phy::frequency::initialize_registers(&mut shared_phy(registers), parameter_override != 0);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_iq_corr_enable(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::enable_iq_correction(registers);
+        oer_esp32s31_hal::phy::baseband::enable_iq_correction(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_noise_floor_auto_set(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::configure_noise_floor_auto(registers);
+        oer_esp32s31_hal::phy::baseband::configure_noise_floor_auto(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
-    pub fn open_phy_trace_ret_read_hw_noisefloor(registers: &RadioPhyRegisters) -> u32 =>
-        oer_esp32s31_hal::phy::baseband::read_hardware_noise_floor(registers) as u32;
+    pub fn open_phy_trace_ret_read_hw_noisefloor(registers: &mut RadioPhyRegisters) -> u32 =>
+        oer_esp32s31_hal::phy::baseband::read_hardware_noise_floor(&mut shared_phy(registers)) as u32;
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_tx_paon_set(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::configure_tx_pa_on(registers);
+        oer_esp32s31_hal::phy::baseband::configure_tx_pa_on(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_wifi_agc_sat_gain(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::set_saturation_gain(registers, input);
+        oer_esp32s31_hal::phy::agc::set_saturation_gain(&mut shared_phy(registers), input);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_enable_low_rate(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::set_low_rate_enabled(registers, true);
+        oer_esp32s31_hal::phy::agc::set_low_rate_enabled(&mut shared_phy(registers), true);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_disable_low_rate(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::set_low_rate_enabled(registers, false);
+        oer_esp32s31_hal::phy::agc::set_low_rate_enabled(&mut shared_phy(registers), false);
 }
 
 oer_probe_macros::probe! {
-    pub fn open_phy_trace_ret_is_low_rate_enabled(registers: &RadioPhyRegisters) -> u32 =>
-        u32::from(oer_esp32s31_hal::phy::agc::low_rate_enabled(registers));
+    pub fn open_phy_trace_ret_is_low_rate_enabled(registers: &mut RadioPhyRegisters) -> u32 =>
+        u32::from(oer_esp32s31_hal::phy::agc::low_rate_enabled(&mut shared_phy(registers)));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_bb_dcmem_clr(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::clear_dc_memory(registers);
+        oer_esp32s31_hal::phy::agc::clear_dc_memory(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_rx_11b_opt(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::configure_rx_11b_optimization(registers, input != 0);
+        oer_esp32s31_hal::phy::agc::configure_rx_11b_optimization(&mut shared_phy(registers), input != 0);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_rfrx_sat_rst(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::configure_rf_rx_saturation(registers, input != 0);
+        oer_esp32s31_hal::phy::agc::configure_rf_rx_saturation(&mut shared_phy(registers), input != 0);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_set_rxclk_en(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::pbus::configure_rx_clock(registers, input != 0);
+        oer_esp32s31_hal::phy::pbus::configure_rx_clock(&mut shared_phy(registers), input != 0);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_set_txclk_en(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::pbus::configure_tx_clock(registers, input != 0);
+        oer_esp32s31_hal::phy::pbus::configure_tx_clock(&mut shared_phy(registers), input != 0);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_pbus_debugmode(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::pbus::configure_debug_mode(registers);
+        oer_esp32s31_hal::phy::pbus::configure_debug_mode(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_i2c_txrate_init(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::configure_i2c_tx_rate(registers);
+        oer_esp32s31_hal::phy::baseband::configure_i2c_tx_rate(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_nrx_freq_set(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::frequency::configure_nrx_frequency(registers, input);
+        oer_esp32s31_hal::phy::frequency::configure_nrx_frequency(&mut shared_phy(registers), input);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_bb_cbw_chan_cfg(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::frequency::configure_channel_cbw(registers, input);
+        oer_esp32s31_hal::phy::frequency::configure_channel_cbw(&mut shared_phy(registers), input);
 }
 
 oer_probe_macros::probe! {
@@ -1277,7 +1285,7 @@ oer_probe_macros::probe! {
         registers: &mut RadioPhyRegisters,
     ) {
         oer_esp32s31_hal::phy::agc::initialize_registers(
-            registers,
+            &mut shared_phy(registers),
             parameter_121 as u8,
             parameter_120 as u8,
         );
@@ -1286,12 +1294,12 @@ oer_probe_macros::probe! {
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_phy_set_rx_comp_new(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::configure_rx_compensation(registers);
+        oer_esp32s31_hal::phy::agc::configure_rx_compensation(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_phy_bb_txpwr_track(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::configure_tx_power_tracking(registers, input & 1 != 0);
+        oer_esp32s31_hal::phy::baseband::configure_tx_power_tracking(&mut shared_phy(registers), input & 1 != 0);
 }
 
 oer_probe_macros::probe! {
@@ -1300,7 +1308,7 @@ oer_probe_macros::probe! {
         _enabled: u32,
         registers: &mut RadioPhyRegisters,
     ) =>
-        oer_esp32s31_hal::phy::baseband::restore_tx_gain_compensation(registers);
+        oer_esp32s31_hal::phy::baseband::restore_tx_gain_compensation(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
@@ -1311,7 +1319,7 @@ oer_probe_macros::probe! {
         registers: &mut RadioPhyRegisters,
     ) {
         oer_esp32s31_hal::phy::baseband::configure_forced_digital_gain(
-            registers,
+            &mut shared_phy(registers),
             enabled & 1 != 0,
             gain_0 as i8,
             gain_1 as i8,
@@ -1342,32 +1350,32 @@ oer_probe_macros::probe! {
 
 oer_probe_macros::probe! {
     pub fn open_phy_calibration_trace_post_init_agc(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::update_post_initialization(registers);
+        oer_esp32s31_hal::phy::agc::update_post_initialization(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_phy_reg_update_new(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::update_post_initialization(registers);
+        oer_esp32s31_hal::phy::agc::update_post_initialization(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_phy_dc_mem_clr(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::clear_dc_memory(registers);
+        oer_esp32s31_hal::phy::agc::clear_dc_memory(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_phy_set_ftm_en(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::set_ftm_enabled_from_vendor_argument(registers, input);
+        oer_esp32s31_hal::phy::agc::set_ftm_enabled_from_vendor_argument(&mut shared_phy(registers), input);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_phy_stop_tx_tone_new(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::stop_tx_tone(registers);
+        oer_esp32s31_hal::phy::baseband::stop_tx_tone(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_phy_close_fe_bb_clk(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::clock::close_frontend_baseband(registers);
+        oer_esp32s31_hal::phy::clock::close_frontend_baseband(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
@@ -1377,14 +1385,14 @@ oer_probe_macros::probe! {
         registers: &mut RadioPhyRegisters,
     ) {
         oer_esp32s31_hal::phy::baseband::configure_hccfr_from_vendor_arguments(
-            registers, enabled, value,
+            &mut shared_phy(registers), enabled, value,
         );
     }
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_phy_iccfr_en(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::configure_iccfr_gate(registers, input != 0);
+        oer_esp32s31_hal::phy::baseband::configure_iccfr_gate(&mut shared_phy(registers), input != 0);
 }
 
 oer_probe_macros::probe! {
@@ -1395,7 +1403,7 @@ oer_probe_macros::probe! {
         registers: &mut RadioPhyRegisters,
     ) {
         oer_esp32s31_hal::phy::baseband::configure_forced_iccfr_from_vendor_arguments(
-            registers, mode, enabled, value,
+            &mut shared_phy(registers), mode, enabled, value,
         );
     }
 }
@@ -1571,12 +1579,12 @@ oer_probe_macros::probe! {
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_ant_dft_cfg(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::configure_antenna_diversity(registers, input & 1 != 0);
+        oer_esp32s31_hal::phy::agc::configure_antenna_diversity(&mut shared_phy(registers), input & 1 != 0);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_btbb_wifi_bb_cfg2(registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::baseband::configure_bt_wifi_baseband(registers);
+        oer_esp32s31_hal::phy::baseband::configure_bt_wifi_baseband(&mut shared_phy(registers));
 }
 
 oer_probe_macros::probe! {
@@ -1586,13 +1594,13 @@ oer_probe_macros::probe! {
         mode: u32,
         registers: &mut RadioPhyRegisters,
     ) =>
-        oer_esp32s31_hal::phy::baseband::configure_channel_dump(registers, value, enabled, mode);
+        oer_esp32s31_hal::phy::baseband::configure_channel_dump(&mut shared_phy(registers), value, enabled, mode);
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_dac_rate_set(rate: u32, registers: &mut RadioPhyRegisters) {
         oer_esp32s31_hal::phy::baseband::configure_dac_rate(
-            registers,
+            &mut shared_phy(registers),
             oer_esp32s31_hal::types::PhyAdcRate::from_vendor_rate(rate),
         );
     }
@@ -1601,7 +1609,7 @@ oer_probe_macros::probe! {
 oer_probe_macros::probe! {
     pub fn open_phy_trace_force_pwr_index(enabled: bool, index: u8, registers: &mut RadioPhyRegisters) {
         oer_esp32s31_hal::phy::memory::configure_forced_power_index(
-            registers,
+            &mut shared_phy(registers),
             enabled,
             oer_esp32s31_hal::phy::memory::PhyForcedPowerIndex::new(u32::from(index))
                 .expect("probe input must fit the reviewed forced-power index"),
@@ -1612,14 +1620,14 @@ oer_probe_macros::probe! {
 oer_probe_macros::probe! {
     pub fn open_phy_trace_force_rx_gain(enabled: u32, gain: u32, registers: &mut RadioPhyRegisters) {
         oer_esp32s31_hal::phy::agc::configure_forced_rx_gain_from_vendor_arguments(
-            registers, enabled, gain,
+            &mut shared_phy(registers), enabled, gain,
         );
     }
 }
 
 oer_probe_macros::probe! {
     pub fn open_phy_trace_rx11blr_cfg(input: u32, registers: &mut RadioPhyRegisters) =>
-        oer_esp32s31_hal::phy::agc::configure_rx_11b_low_rate(registers, input);
+        oer_esp32s31_hal::phy::agc::configure_rx_11b_low_rate(&mut shared_phy(registers), input);
 }
 
 oer_probe_macros::probe! {
@@ -1679,7 +1687,7 @@ oer_probe_macros::probe! {
         registers: &mut RadioPhyRegisters,
     ) {
         oer_esp32s31_hal::phy::frequency::write_memory(
-            registers,
+            &mut shared_phy(registers),
             (address & 0x07ff) as u16,
             value & 0x00ff_ffff,
             mode as u8,
@@ -1701,7 +1709,7 @@ oer_probe_macros::probe! {
                 parameters[4],
                 parameters[5],
             );
-            oer_esp32s31_hal::phy::i2c::configure_command_memory(registers, inputs);
+            oer_esp32s31_hal::phy::i2c::configure_command_memory(&mut shared_phy(registers), inputs);
         })
     }
 }

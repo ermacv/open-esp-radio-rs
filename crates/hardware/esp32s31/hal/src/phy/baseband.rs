@@ -290,15 +290,13 @@ pub fn read_hardware_noise_floor(registers: &impl SharedPhyAccess) -> i32 {
 /// baseband-control leaves remain at their original positions.
 #[cfg(target_arch = "riscv32")]
 pub fn initialize_baseband(registers: &mut impl SharedPhyAccess) {
-    let registers = phy_pac_mut(registers);
-
     use crate::phy::frequency;
 
-    registers.initialize_baseband_prefix();
+    phy_pac_mut(registers).initialize_baseband_prefix();
     frequency::initialize_nrx_baseband(registers);
-    registers.initialize_baseband_middle();
+    phy_pac_mut(registers).initialize_baseband_middle();
     frequency::set_baseband_init_control(registers);
-    registers.initialize_baseband_tail();
+    phy_pac_mut(registers).initialize_baseband_tail();
 }
 
 /// Apply the complete six-edge PA-on configuration leaf.

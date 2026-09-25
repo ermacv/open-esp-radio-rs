@@ -211,7 +211,7 @@ pub(crate) fn configure_phy_txiq_correction(registers: &mut impl SharedPhyAccess
     registers.configure_tx_iq_correction(begin);
 }
 
-/// Capture tone control into the PAC-private TX-IQ restore slot.
+/// Capture tone control into the route TX-IQ restore slot.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn prepare_phy_txiq_tone_control_restore(
     registers: &mut impl SharedPhyAccess,

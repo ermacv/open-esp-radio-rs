@@ -1,5 +1,8 @@
 use super::{RadioHardware, RadioPhyReleaseError};
-use crate::{bluetooth::ColdOwner, ieee802154::role::Ieee802154Owned, owner::WifiColdRegisters};
+use crate::{
+    bluetooth::ColdOwner, ieee802154::role::Ieee802154Owned, owner::WifiColdRegisters,
+    phy::restore::PhyRestoreSlot,
+};
 
 #[derive(Clone, Copy)]
 enum Restore {
@@ -29,39 +32,39 @@ impl Restore {
     }
 }
 
-fn hardware_with_pending(restore: Restore) -> RadioHardware {
-    let mut hardware = RadioHardware::for_validation();
-    let radio_phy = &mut hardware.partitions.radio_phy;
-    match restore {
-        Restore::TxDcPwdet => radio_phy.occupy_txdc_pwdet_restore_for_validation(),
-        Restore::TxIqToneControl => radio_phy.occupy_txiq_tone_control_restore_for_validation(),
-        Restore::RxDcoControl => radio_phy.occupy_rx_dco_control_restore_for_validation(),
-        Restore::BluetoothTxPowerControl => {
-            radio_phy.occupy_bluetooth_tx_power_control_restore_for_validation();
+impl Restore {
+    fn occupy(self, slot: &mut PhyRestoreSlot) {
+        match self {
+            Self::TxDcPwdet => slot.occupy_txdc_for_test(),
+            Self::TxIqToneControl => slot.occupy_txiq_for_test(),
+            Self::RxDcoControl => slot.occupy_rx_dco_for_test(),
+            Self::BluetoothTxPowerControl => slot.occupy_bluetooth_tx_power_control_for_test(),
         }
     }
-    hardware
 }
 
 #[test]
 fn pending_restore_survives_same_route_transitions_and_blocks_every_release() {
     for restore in Restore::ALL {
-        let wifi = WifiColdRegisters::from_hardware(hardware_with_pending(restore));
-        let (registers, interrupts, retained) = wifi.into_running();
-        let wifi = WifiColdRegisters::from_running(registers, interrupts, retained);
+        let mut wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation());
+        restore.occupy(wifi.phy_restore_mut());
+        let (registers, interrupts, route) = wifi.into_running();
+        let wifi = WifiColdRegisters::from_running(registers, interrupts, route);
         let Err((_wifi, error)) = wifi.release() else {
             panic!("Wi-Fi released a pending restore");
         };
         assert_eq!(error, restore.error());
 
-        let ieee802154 = Ieee802154Owned::from_hardware((), hardware_with_pending(restore));
+        let mut ieee802154 = Ieee802154Owned::from_hardware((), RadioHardware::for_validation());
+        restore.occupy(ieee802154.phy_restore_mut());
         let Err(failure) = ieee802154.release() else {
             panic!("IEEE 802.15.4 released a pending restore");
         };
         assert_eq!(failure.error(), restore.error());
 
-        let bluetooth = ColdOwner::from_radio_hardware(hardware_with_pending(restore));
-        let (task, interrupts) = bluetooth.separate_interrupt_owner();
+        let bluetooth = ColdOwner::from_radio_hardware(RadioHardware::for_validation());
+        let (mut task, interrupts) = bluetooth.separate_interrupt_owner();
+        restore.occupy(task.phy_restore_mut());
         let bluetooth = task
             .into_cold(interrupts)
             .expect("an idle Bluetooth task owner can be reunited");
@@ -75,8 +78,8 @@ fn pending_restore_survives_same_route_transitions_and_blocks_every_release() {
 #[test]
 fn wifi_route_roundtrip_returns_the_complete_root() {
     let wifi = WifiColdRegisters::from_hardware(RadioHardware::for_validation());
-    let (registers, interrupts, retained) = wifi.into_running();
-    let Ok(hardware) = WifiColdRegisters::from_running(registers, interrupts, retained).release()
+    let (registers, interrupts, route) = wifi.into_running();
+    let Ok(hardware) = WifiColdRegisters::from_running(registers, interrupts, route).release()
     else {
         panic!("an untouched cold route can be released");
     };

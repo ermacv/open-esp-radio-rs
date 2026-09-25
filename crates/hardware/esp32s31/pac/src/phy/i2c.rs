@@ -2,10 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+use crate::RadioPhyRegisters;
 use crate::generated::PhyI2cBbpllCalibrationState;
-use crate::{
-    BluetoothTxPowerControlPrepareError, BluetoothTxPowerControlRestoreError, RadioPhyRegisters,
-};
 
 pub use crate::generated::PhyI2cField;
 
@@ -243,7 +241,8 @@ impl PhyI2cCommandMemoryInputs {
         ]
     }
 
-    const fn initialization_stage_two_pair(self, index: usize) -> Option<PhyI2cParallelWrite> {
+    /// Return the retained-wake stage-two pair at `index`, or `None` after the last.
+    pub const fn initialization_stage_two_pair(self, index: usize) -> Option<PhyI2cParallelWrite> {
         if index >= PHY_I2C_INITIALIZATION_STAGE_TWO_PAIR_COUNT {
             return None;
         }
@@ -308,70 +307,13 @@ const fn saturate_phy_i2c_value(value: i32, upper: u8, lower: u8) -> u8 {
     }
 }
 
+/// One pair of simultaneous writes on both PHY-I²C hosts.
+///
+/// Analog identities and values stay private to the PAC.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct PhyI2cParallelWrite {
+pub struct PhyI2cParallelWrite {
     first: (u8, u8, u8),
     second: (u8, u8, u8),
-}
-
-/// One finite failure while publishing current-vendor retained-wake analog
-/// initialization through both PHY-I²C hosts.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyI2cInitializationStageTwoError {
-    BusyAtStart { host: PhyI2cHost },
-    CompletionTimeout { host: PhyI2cHost, pair: u8 },
-}
-
-trait PhyI2cParallelAccess {
-    fn select_parallel_host_map(&mut self);
-    fn restore_radio_host_map(&mut self);
-    fn is_busy(&self, host: PhyI2cHost) -> bool;
-    fn start_write(&mut self, host: PhyI2cHost, block: u8, register: u8, value: u8);
-}
-
-fn configure_initialization_stage_two_with(
-    access: &mut impl PhyI2cParallelAccess,
-    inputs: PhyI2cCommandMemoryInputs,
-    maximum_observations: u32,
-) -> Result<(), PhyI2cInitializationStageTwoError> {
-    access.select_parallel_host_map();
-
-    let result = (|| {
-        for host in [PhyI2cHost::Host0, PhyI2cHost::Host1] {
-            if access.is_busy(host) {
-                return Err(PhyI2cInitializationStageTwoError::BusyAtStart { host });
-            }
-        }
-
-        let mut pair_index = 0;
-        while let Some(pair) = inputs.initialization_stage_two_pair(pair_index) {
-            let (block, register, value) = pair.first;
-            access.start_write(PhyI2cHost::Host0, block, register, value);
-            let (block, register, value) = pair.second;
-            access.start_write(PhyI2cHost::Host1, block, register, value);
-
-            for host in [PhyI2cHost::Host0, PhyI2cHost::Host1] {
-                let mut observations = 0;
-                while access.is_busy(host) {
-                    if observations == maximum_observations {
-                        return Err(PhyI2cInitializationStageTwoError::CompletionTimeout {
-                            host,
-                            pair: pair_index as u8,
-                        });
-                    }
-                    observations += 1;
-                }
-            }
-            pair_index += 1;
-        }
-        Ok(())
-    })();
-
-    // The vendor leaf restores the normal 0x3fa0 host field after the
-    // parallel sequence. OER also restores it on finite failure so diagnostic
-    // access remains well-defined; the outer RF-wake epoch still fails closed.
-    access.restore_radio_host_map();
-    result
 }
 
 const PHY_FILTER_DCAP_COMMAND_COUNT: u8 = 18;
@@ -403,24 +345,23 @@ impl PhyAdcRate {
     }
 }
 
+/// One step of a complete recovered PHY-I²C configuration operation.
+///
+/// Analog identities remain opaque; `Modify` replaces one reviewed field of
+/// the value read back from its register.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PhyI2cConfigurationCommand {
-    Read { block: u8, register: u8 },
-    Write { block: u8, register: u8, value: u8 },
-    Modify { field: PhyI2cField, value: u8 },
+pub enum PhyI2cConfigurationCommand {
+    Read(PhyI2cAddress),
+    Write(PhyI2cAddress, u8),
+    Modify(PhyI2cField, u8),
 }
 
 impl PhyI2cConfigurationCommand {
-    const fn address(self) -> (u8, u8) {
+    /// The byte register addressed by this command.
+    pub const fn address(self) -> PhyI2cAddress {
         match self {
-            Self::Read { block, register }
-            | Self::Write {
-                block, register, ..
-            } => (block, register),
-            Self::Modify { field, .. } => {
-                let address = field.address();
-                (address.block.code, address.register)
-            }
+            Self::Read(address) | Self::Write(address, _) => address,
+            Self::Modify(field, _) => field.address(),
         }
     }
 }
@@ -559,28 +500,28 @@ pub enum PhyI2cConfigurationOperation {
 }
 
 impl PhyI2cConfigurationOperation {
-    const fn command(self, index: u8) -> Option<PhyI2cConfigurationCommand> {
+    /// Return the command at `index`, or `None` after the last command.
+    pub const fn command(self, index: u8) -> Option<PhyI2cConfigurationCommand> {
         let write = match self {
             Self::ConfigureAdcRate(rate) => {
                 return match index {
-                    0 => Some(PhyI2cConfigurationCommand::Modify {
-                        field: analog_registers::ADC_RATE_CONFIGURATION,
-                        value: rate.analog_configuration_field_value(),
-                    }),
+                    0 => Some(PhyI2cConfigurationCommand::Modify(
+                        analog_registers::ADC_RATE_CONFIGURATION,
+                        rate.analog_configuration_field_value(),
+                    )),
                     _ => None,
                 };
             }
             Self::BiasRegisters => bias_register_command(index),
             Self::EnableBbpllCalibration => {
                 return match index {
-                    0 => Some(PhyI2cConfigurationCommand::Modify {
-                        field: analog_registers::ADC_RATE_CONFIGURATION,
-                        value: 0,
-                    }),
-                    1 => Some(PhyI2cConfigurationCommand::Read {
-                        block: 0x66,
-                        register: 0x04,
-                    }),
+                    0 => Some(PhyI2cConfigurationCommand::Modify(
+                        analog_registers::ADC_RATE_CONFIGURATION,
+                        0,
+                    )),
+                    1 => Some(PhyI2cConfigurationCommand::Read(PhyI2cAddress::recovered(
+                        0x66, 0x04,
+                    ))),
                     _ => None,
                 };
             }
@@ -588,47 +529,46 @@ impl PhyI2cConfigurationOperation {
             Self::InitializationStageOne(inputs) => inputs.command(index),
             Self::RcCalibrationSettings => {
                 return match index {
-                    0 => Some(PhyI2cConfigurationCommand::Modify {
-                        field: analog_registers::RC_CONFIGURATION_0,
-                        value: 3,
-                    }),
-                    1 => Some(PhyI2cConfigurationCommand::Modify {
-                        field: analog_registers::RC_CONFIGURATION_1,
-                        value: 1,
-                    }),
-                    2 => Some(PhyI2cConfigurationCommand::Modify {
-                        field: analog_registers::RC_CONFIGURATION_2,
-                        value: 9,
-                    }),
+                    0 => Some(PhyI2cConfigurationCommand::Modify(
+                        analog_registers::RC_CONFIGURATION_0,
+                        3,
+                    )),
+                    1 => Some(PhyI2cConfigurationCommand::Modify(
+                        analog_registers::RC_CONFIGURATION_1,
+                        1,
+                    )),
+                    2 => Some(PhyI2cConfigurationCommand::Modify(
+                        analog_registers::RC_CONFIGURATION_2,
+                        9,
+                    )),
                     _ => None,
                 };
             }
             Self::Sar2Initialization => {
                 return match index {
-                    0 => Some(PhyI2cConfigurationCommand::Modify {
-                        field: analog_registers::TEMPERATURE_SENSOR_SAR2_STATUS,
-                        value: 0x05,
-                    }),
-                    1 => Some(PhyI2cConfigurationCommand::Write {
-                        block: 0x69,
-                        register: 0x03,
-                        value: 0x78,
-                    }),
+                    0 => Some(PhyI2cConfigurationCommand::Modify(
+                        analog_registers::TEMPERATURE_SENSOR_SAR2_STATUS,
+                        0x05,
+                    )),
+                    1 => Some(PhyI2cConfigurationCommand::Write(
+                        PhyI2cAddress::recovered(0x69, 0x03),
+                        0x78,
+                    )),
                     _ => None,
                 };
             }
         };
         match write {
-            Some((block, register, value)) => Some(PhyI2cConfigurationCommand::Write {
-                block,
-                register,
+            Some((block, register, value)) => Some(PhyI2cConfigurationCommand::Write(
+                PhyI2cAddress::recovered(block, register),
                 value,
-            }),
+            )),
             None => None,
         }
     }
 
-    const fn command_count(self) -> u8 {
+    /// Number of commands in this operation.
+    pub const fn command_count(self) -> u8 {
         match self {
             Self::ConfigureAdcRate(_) => 1,
             Self::BiasRegisters => PHY_BIAS_REGISTER_COMMAND_COUNT,
@@ -641,231 +581,9 @@ impl PhyI2cConfigurationOperation {
     }
 }
 
-/// Current externally driven edge of a PAC-owned PHY-I²C configuration.
+/// One of the four Bluetooth TX-power analog-control byte registers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyI2cConfigurationAction {
-    StartCommand,
-    AwaitCompletionEdge,
-    Complete,
-}
-
-/// One independently delivered configuration-completion edge was consumed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyI2cConfigurationObservation {
-    StillPending,
-    EdgeConsumed,
-}
-
-/// A PAC-owned PHY-I²C configuration transaction could not advance.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyI2cConfigurationError {
-    BusyAtStart,
-    WrongAction,
-    AlreadyComplete,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PhyI2cConfigurationPhase {
-    Start,
-    AwaitRead,
-    AwaitWrite,
-    Complete,
-}
-
-trait PhyI2cConfigurationAccess {
-    fn start_read(&mut self, block: u8, register: u8) -> Result<(), ()>;
-    fn start_write(&mut self, block: u8, register: u8, value: u8) -> Result<(), ()>;
-    fn observe_read(&self) -> Result<u8, ()>;
-    fn observe_write(&self) -> Result<(), ()>;
-}
-
-/// Non-cloneable owner of one complete recovered PHY-I²C write plan.
-///
-/// Analog blocks, register identities, derived values and command counts are
-/// private PAC implementation details. Callers can only select and drive a
-/// finite semantic operation.
-#[derive(Debug, Eq, PartialEq)]
-pub struct PhyI2cConfigurationTransaction {
-    operation: PhyI2cConfigurationOperation,
-    phase: PhyI2cConfigurationPhase,
-    command_index: u8,
-    pending_write: Option<u8>,
-}
-
-impl PhyI2cConfigurationTransaction {
-    pub const fn new(operation: PhyI2cConfigurationOperation) -> Self {
-        Self {
-            operation,
-            phase: PhyI2cConfigurationPhase::Start,
-            command_index: 0,
-            pending_write: None,
-        }
-    }
-
-    pub const fn action(&self) -> PhyI2cConfigurationAction {
-        match self.phase {
-            PhyI2cConfigurationPhase::Start => PhyI2cConfigurationAction::StartCommand,
-            PhyI2cConfigurationPhase::AwaitRead | PhyI2cConfigurationPhase::AwaitWrite => {
-                PhyI2cConfigurationAction::AwaitCompletionEdge
-            }
-            PhyI2cConfigurationPhase::Complete => PhyI2cConfigurationAction::Complete,
-        }
-    }
-
-    pub fn start(
-        &mut self,
-        registers: &mut RadioPhyRegisters,
-    ) -> Result<(), PhyI2cConfigurationError> {
-        self.start_with(registers)
-    }
-
-    pub fn observe_completion_edge(
-        &mut self,
-        registers: &mut RadioPhyRegisters,
-    ) -> Result<PhyI2cConfigurationObservation, PhyI2cConfigurationError> {
-        self.observe_with(registers)
-    }
-
-    fn start_with(
-        &mut self,
-        access: &mut impl PhyI2cConfigurationAccess,
-    ) -> Result<(), PhyI2cConfigurationError> {
-        match self.phase {
-            PhyI2cConfigurationPhase::Complete => {
-                return Err(PhyI2cConfigurationError::AlreadyComplete);
-            }
-            PhyI2cConfigurationPhase::AwaitRead | PhyI2cConfigurationPhase::AwaitWrite => {
-                return Err(PhyI2cConfigurationError::WrongAction);
-            }
-            PhyI2cConfigurationPhase::Start => {}
-        }
-        let command = self
-            .operation
-            .command(self.command_index)
-            .ok_or(PhyI2cConfigurationError::WrongAction)?;
-        let (block, register) = command.address();
-        match (command, self.pending_write) {
-            (
-                PhyI2cConfigurationCommand::Read { .. } | PhyI2cConfigurationCommand::Modify { .. },
-                None,
-            ) => {
-                access
-                    .start_read(block, register)
-                    .map_err(|()| PhyI2cConfigurationError::BusyAtStart)?;
-                self.phase = PhyI2cConfigurationPhase::AwaitRead;
-            }
-            (PhyI2cConfigurationCommand::Write { value, .. }, None)
-            | (PhyI2cConfigurationCommand::Modify { .. }, Some(value)) => {
-                access
-                    .start_write(block, register, value)
-                    .map_err(|()| PhyI2cConfigurationError::BusyAtStart)?;
-                self.phase = PhyI2cConfigurationPhase::AwaitWrite;
-            }
-            (PhyI2cConfigurationCommand::Write { .. }, Some(_)) => {
-                return Err(PhyI2cConfigurationError::WrongAction);
-            }
-            (PhyI2cConfigurationCommand::Read { .. }, Some(_)) => {
-                return Err(PhyI2cConfigurationError::WrongAction);
-            }
-        }
-        Ok(())
-    }
-
-    fn observe_with(
-        &mut self,
-        access: &impl PhyI2cConfigurationAccess,
-    ) -> Result<PhyI2cConfigurationObservation, PhyI2cConfigurationError> {
-        match self.phase {
-            PhyI2cConfigurationPhase::Complete => {
-                return Err(PhyI2cConfigurationError::AlreadyComplete);
-            }
-            PhyI2cConfigurationPhase::Start => {
-                return Err(PhyI2cConfigurationError::WrongAction);
-            }
-            PhyI2cConfigurationPhase::AwaitRead => {
-                let current = match access.observe_read() {
-                    Ok(value) => value,
-                    Err(()) => return Ok(PhyI2cConfigurationObservation::StillPending),
-                };
-                match self.operation.command(self.command_index) {
-                    Some(PhyI2cConfigurationCommand::Modify { field, value }) => {
-                        self.pending_write = Some(field.replace(current, value));
-                        self.phase = PhyI2cConfigurationPhase::Start;
-                    }
-                    Some(PhyI2cConfigurationCommand::Read { .. }) => {
-                        self.command_index += 1;
-                        self.phase = if self.command_index == self.operation.command_count() {
-                            PhyI2cConfigurationPhase::Complete
-                        } else {
-                            PhyI2cConfigurationPhase::Start
-                        };
-                    }
-                    _ => return Err(PhyI2cConfigurationError::WrongAction),
-                }
-                return Ok(PhyI2cConfigurationObservation::EdgeConsumed);
-            }
-            PhyI2cConfigurationPhase::AwaitWrite => {}
-        }
-        if access.observe_write().is_err() {
-            return Ok(PhyI2cConfigurationObservation::StillPending);
-        }
-        self.pending_write = None;
-        self.command_index += 1;
-        self.phase = if self.command_index == self.operation.command_count() {
-            PhyI2cConfigurationPhase::Complete
-        } else {
-            PhyI2cConfigurationPhase::Start
-        };
-        Ok(PhyI2cConfigurationObservation::EdgeConsumed)
-    }
-}
-
-/// One complete PAC-owned Bluetooth TX-power analog-control operation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothTxPowerControlOperation {
-    /// Capture the two reviewed source values into the private PAC restore slot.
-    PrepareRestore,
-    /// Force the four reviewed analog-control registers for calibration.
-    ConfigureCalibration,
-    /// Restore all four analog-control registers and release the PAC slot.
-    Restore,
-}
-
-/// Current externally driven edge of a Bluetooth TX-power control transaction.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothTxPowerControlAction {
-    StartCommand,
-    AwaitCompletionEdge,
-    Complete(BluetoothTxPowerControlCompletion),
-}
-
-/// Semantic result of a complete Bluetooth TX-power control transaction.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothTxPowerControlCompletion {
-    RestorePrepared,
-    CalibrationConfigured,
-    Restored,
-}
-
-/// One independently delivered analog-I²C completion edge was consumed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothTxPowerControlObservation {
-    StillPending,
-    EdgeConsumed,
-}
-
-/// A PAC-owned Bluetooth TX-power control transaction could not advance.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothTxPowerControlError {
-    BusyAtStart,
-    RestorePending,
-    RestoreNotPending,
-    WrongAction,
-    AlreadyComplete,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BluetoothTxPowerControlRegister {
+pub enum BluetoothTxPowerControlRegister {
     Low0,
     Low1,
     High0,
@@ -879,295 +597,6 @@ impl BluetoothTxPowerControlRegister {
             Self::Low1 => 0x1d,
             Self::High0 => 0x1e,
             Self::High1 => 0x1f,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BluetoothTxPowerControlPhase {
-    Start,
-    Await,
-    Complete,
-}
-
-trait BluetoothTxPowerControlI2cAccess {
-    fn reserve_restore(&mut self) -> Result<(), BluetoothTxPowerControlPrepareError>;
-    fn capture_low(&mut self, value: u8) -> Result<(), BluetoothTxPowerControlRestoreError>;
-    fn capture_high(&mut self, value: u8) -> Result<(), BluetoothTxPowerControlRestoreError>;
-    fn restore_values(&self) -> Result<(u8, u8), BluetoothTxPowerControlRestoreError>;
-    fn finish_restore(&mut self) -> Result<(), BluetoothTxPowerControlRestoreError>;
-    fn start_read(&mut self, register: BluetoothTxPowerControlRegister) -> Result<(), ()>;
-    fn start_write(
-        &mut self,
-        register: BluetoothTxPowerControlRegister,
-        value: u8,
-    ) -> Result<(), ()>;
-    fn observe_read(&self) -> Result<u8, ()>;
-    fn observe_write(&self) -> Result<(), ()>;
-}
-
-/// Non-cloneable transaction which keeps all four analog-register identities,
-/// field geometry and saved values inside the PAC.
-#[derive(Debug, Eq, PartialEq)]
-pub struct BluetoothTxPowerControlTransaction {
-    operation: BluetoothTxPowerControlOperation,
-    phase: BluetoothTxPowerControlPhase,
-    step: u8,
-    scratch: u8,
-    restore_reserved: bool,
-}
-
-impl BluetoothTxPowerControlTransaction {
-    pub const fn new(operation: BluetoothTxPowerControlOperation) -> Self {
-        Self {
-            operation,
-            phase: BluetoothTxPowerControlPhase::Start,
-            step: 0,
-            scratch: 0,
-            restore_reserved: false,
-        }
-    }
-
-    pub const fn action(&self) -> BluetoothTxPowerControlAction {
-        match self.phase {
-            BluetoothTxPowerControlPhase::Start => BluetoothTxPowerControlAction::StartCommand,
-            BluetoothTxPowerControlPhase::Await => {
-                BluetoothTxPowerControlAction::AwaitCompletionEdge
-            }
-            BluetoothTxPowerControlPhase::Complete => {
-                BluetoothTxPowerControlAction::Complete(match self.operation {
-                    BluetoothTxPowerControlOperation::PrepareRestore => {
-                        BluetoothTxPowerControlCompletion::RestorePrepared
-                    }
-                    BluetoothTxPowerControlOperation::ConfigureCalibration => {
-                        BluetoothTxPowerControlCompletion::CalibrationConfigured
-                    }
-                    BluetoothTxPowerControlOperation::Restore => {
-                        BluetoothTxPowerControlCompletion::Restored
-                    }
-                })
-            }
-        }
-    }
-
-    pub fn start(
-        &mut self,
-        registers: &mut RadioPhyRegisters,
-    ) -> Result<(), BluetoothTxPowerControlError> {
-        self.start_with(registers)
-    }
-
-    pub fn observe_completion_edge(
-        &mut self,
-        registers: &mut RadioPhyRegisters,
-    ) -> Result<BluetoothTxPowerControlObservation, BluetoothTxPowerControlError> {
-        self.observe_with(registers)
-    }
-
-    fn start_with(
-        &mut self,
-        access: &mut impl BluetoothTxPowerControlI2cAccess,
-    ) -> Result<(), BluetoothTxPowerControlError> {
-        match self.phase {
-            BluetoothTxPowerControlPhase::Complete => {
-                return Err(BluetoothTxPowerControlError::AlreadyComplete);
-            }
-            BluetoothTxPowerControlPhase::Await => {
-                return Err(BluetoothTxPowerControlError::WrongAction);
-            }
-            BluetoothTxPowerControlPhase::Start => {}
-        }
-        let start_result = match self.operation {
-            BluetoothTxPowerControlOperation::PrepareRestore => self.start_prepare(access)?,
-            BluetoothTxPowerControlOperation::ConfigureCalibration
-            | BluetoothTxPowerControlOperation::Restore => self.start_write_plan(access)?,
-        };
-        if start_result.is_err() {
-            return Err(BluetoothTxPowerControlError::BusyAtStart);
-        }
-        self.phase = BluetoothTxPowerControlPhase::Await;
-        Ok(())
-    }
-
-    fn observe_with(
-        &mut self,
-        access: &mut impl BluetoothTxPowerControlI2cAccess,
-    ) -> Result<BluetoothTxPowerControlObservation, BluetoothTxPowerControlError> {
-        match self.phase {
-            BluetoothTxPowerControlPhase::Complete => {
-                return Err(BluetoothTxPowerControlError::AlreadyComplete);
-            }
-            BluetoothTxPowerControlPhase::Start => {
-                return Err(BluetoothTxPowerControlError::WrongAction);
-            }
-            BluetoothTxPowerControlPhase::Await => {}
-        }
-        let observation = match self.operation {
-            BluetoothTxPowerControlOperation::PrepareRestore => self.observe_prepare(access)?,
-            BluetoothTxPowerControlOperation::ConfigureCalibration
-            | BluetoothTxPowerControlOperation::Restore => self.observe_write_plan(access)?,
-        };
-        let Some(complete) = observation else {
-            return Ok(BluetoothTxPowerControlObservation::StillPending);
-        };
-        if complete {
-            self.phase = BluetoothTxPowerControlPhase::Complete;
-        } else {
-            self.step += 1;
-            self.phase = BluetoothTxPowerControlPhase::Start;
-        }
-        Ok(BluetoothTxPowerControlObservation::EdgeConsumed)
-    }
-
-    fn start_prepare(
-        &mut self,
-        access: &mut impl BluetoothTxPowerControlI2cAccess,
-    ) -> Result<Result<(), ()>, BluetoothTxPowerControlError> {
-        if self.step == 0 && !self.restore_reserved {
-            access.reserve_restore().map_err(|error| match error {
-                BluetoothTxPowerControlPrepareError::RestorePending => {
-                    BluetoothTxPowerControlError::RestorePending
-                }
-            })?;
-            self.restore_reserved = true;
-        }
-        Ok(access.start_read(if self.step == 0 {
-            BluetoothTxPowerControlRegister::Low0
-        } else {
-            BluetoothTxPowerControlRegister::High0
-        }))
-    }
-
-    fn start_write_plan(
-        &self,
-        access: &mut impl BluetoothTxPowerControlI2cAccess,
-    ) -> Result<Result<(), ()>, BluetoothTxPowerControlError> {
-        self.require_restore(access)?;
-        Ok(match self.step {
-            0 => access.start_write(
-                BluetoothTxPowerControlRegister::Low0,
-                self.low_value(access)?,
-            ),
-            1 => access.start_write(
-                BluetoothTxPowerControlRegister::Low1,
-                self.low_value(access)?,
-            ),
-            2 => access.start_read(BluetoothTxPowerControlRegister::High0),
-            3 => access.start_write(
-                BluetoothTxPowerControlRegister::High0,
-                analog_registers::BLUETOOTH_TX_POWER_HIGH_0
-                    .replace(self.scratch, self.high_value(access)?),
-            ),
-            4 => access.start_read(BluetoothTxPowerControlRegister::High1),
-            5 => access.start_write(
-                BluetoothTxPowerControlRegister::High1,
-                analog_registers::BLUETOOTH_TX_POWER_HIGH_1
-                    .replace(self.scratch, self.high_value(access)?),
-            ),
-            _ => return Err(BluetoothTxPowerControlError::WrongAction),
-        })
-    }
-
-    fn observe_prepare(
-        &mut self,
-        access: &mut impl BluetoothTxPowerControlI2cAccess,
-    ) -> Result<Option<bool>, BluetoothTxPowerControlError> {
-        let value = match access.observe_read() {
-            Ok(value) => value,
-            Err(()) => return Ok(None),
-        };
-        if self.step == 0 {
-            access.capture_low(value).map_err(map_restore_error)?;
-            Ok(Some(false))
-        } else {
-            access
-                .capture_high(analog_registers::BLUETOOTH_TX_POWER_HIGH_0.extract(value))
-                .map_err(map_restore_error)?;
-            Ok(Some(true))
-        }
-    }
-
-    fn observe_write_plan(
-        &mut self,
-        access: &mut impl BluetoothTxPowerControlI2cAccess,
-    ) -> Result<Option<bool>, BluetoothTxPowerControlError> {
-        match self.step {
-            2 | 4 => {
-                self.scratch = match access.observe_read() {
-                    Ok(value) => value,
-                    Err(()) => return Ok(None),
-                };
-            }
-            _ => {
-                if access.observe_write().is_err() {
-                    return Ok(None);
-                }
-            }
-        }
-        if self.step != 5 {
-            return Ok(Some(false));
-        }
-        if self.operation == BluetoothTxPowerControlOperation::Restore {
-            access.finish_restore().map_err(map_restore_error)?;
-        }
-        Ok(Some(true))
-    }
-
-    fn require_restore(
-        &self,
-        access: &impl BluetoothTxPowerControlI2cAccess,
-    ) -> Result<(), BluetoothTxPowerControlError> {
-        access
-            .restore_values()
-            .map(|_| ())
-            .map_err(map_restore_error)
-    }
-
-    fn low_value(
-        &self,
-        access: &impl BluetoothTxPowerControlI2cAccess,
-    ) -> Result<u8, BluetoothTxPowerControlError> {
-        match self.operation {
-            BluetoothTxPowerControlOperation::ConfigureCalibration => {
-                self.require_restore(access)?;
-                Ok(2)
-            }
-            BluetoothTxPowerControlOperation::Restore => access
-                .restore_values()
-                .map(|values| values.0)
-                .map_err(map_restore_error),
-            BluetoothTxPowerControlOperation::PrepareRestore => {
-                Err(BluetoothTxPowerControlError::WrongAction)
-            }
-        }
-    }
-
-    fn high_value(
-        &self,
-        access: &impl BluetoothTxPowerControlI2cAccess,
-    ) -> Result<u8, BluetoothTxPowerControlError> {
-        match self.operation {
-            BluetoothTxPowerControlOperation::ConfigureCalibration => {
-                self.require_restore(access)?;
-                Ok(2)
-            }
-            BluetoothTxPowerControlOperation::Restore => access
-                .restore_values()
-                .map(|values| values.1)
-                .map_err(map_restore_error),
-            BluetoothTxPowerControlOperation::PrepareRestore => {
-                Err(BluetoothTxPowerControlError::WrongAction)
-            }
-        }
-    }
-}
-
-const fn map_restore_error(
-    error: BluetoothTxPowerControlRestoreError,
-) -> BluetoothTxPowerControlError {
-    match error {
-        BluetoothTxPowerControlRestoreError::RestoreNotPending => {
-            BluetoothTxPowerControlError::RestoreNotPending
         }
     }
 }
@@ -1235,18 +664,107 @@ impl RadioPhyRegisters {
         crate::generated::configure_phy_i2c_host_map(&self.peripherals.i2c_ana_mst);
     }
 
-    /// Run the complete current-vendor 22-pair retained-wake PHY-I²C stage.
-    ///
-    /// The PAC owns the recovered parallel host map, analog identities and
-    /// fixed values. Dynamic values are projected from the same six retained
-    /// calibration facts used by command-memory publication. Both hardware
-    /// waits are finite, and the normal host map is restored on every return.
-    pub fn configure_phy_i2c_initialization_stage_two(
+    /// Select the parallel host map used by the retained-wake stage two.
+    pub fn select_phy_i2c_parallel_host_map(&mut self) {
+        crate::generated::configure_phy_i2c_parallel_host_map(&self.peripherals.i2c_ana_mst);
+    }
+
+    /// Restore the normal radio host map with one fresh RMW.
+    pub fn restore_phy_i2c_radio_host_map(&mut self) {
+        self.configure_phy_i2c_host_map();
+    }
+
+    /// Start both writes of one parallel pair, host zero first.
+    pub fn start_phy_i2c_parallel_pair(&mut self, pair: PhyI2cParallelWrite) {
+        let (block, register, value) = pair.first;
+        self.publish_phy_i2c_command(PhyI2cHost::Host0, block, register, value, true);
+        let (block, register, value) = pair.second;
+        self.publish_phy_i2c_command(PhyI2cHost::Host1, block, register, value, true);
+    }
+
+    /// Start one configuration read on the radio host without a read mask.
+    pub fn start_phy_i2c_configuration_read(
         &mut self,
-        inputs: PhyI2cCommandMemoryInputs,
-        maximum_observations: u32,
-    ) -> Result<(), PhyI2cInitializationStageTwoError> {
-        configure_initialization_stage_two_with(self, inputs, maximum_observations)
+        address: PhyI2cAddress,
+    ) -> Result<(), PhyI2cAccessError> {
+        self.configure_phy_i2c_host_map();
+        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
+            return Err(PhyI2cAccessError::Busy);
+        }
+        self.publish_phy_i2c_command(
+            PhyI2cHost::Host1,
+            address.block.code,
+            address.register,
+            0,
+            false,
+        );
+        Ok(())
+    }
+
+    /// Start one configuration write on the radio host.
+    pub fn start_phy_i2c_configuration_write(
+        &mut self,
+        address: PhyI2cAddress,
+        value: u8,
+    ) -> Result<(), PhyI2cAccessError> {
+        self.configure_phy_i2c_host_map();
+        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
+            return Err(PhyI2cAccessError::Busy);
+        }
+        self.publish_phy_i2c_command(
+            PhyI2cHost::Host1,
+            address.block.code,
+            address.register,
+            value,
+            true,
+        );
+        Ok(())
+    }
+
+    /// Start one Bluetooth TX-power control read with its block read mask.
+    pub fn start_bluetooth_tx_power_control_read(
+        &mut self,
+        register: BluetoothTxPowerControlRegister,
+    ) -> Result<(), PhyI2cAccessError> {
+        self.configure_phy_i2c_host_map();
+        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
+            return Err(PhyI2cAccessError::Busy);
+        }
+        self.publish_phy_i2c_read_mask(PhyI2cBlock::recovered(0x67));
+        self.publish_phy_i2c_command(PhyI2cHost::Host1, 0x67, register.address(), 0, false);
+        Ok(())
+    }
+
+    /// Start one Bluetooth TX-power control write.
+    pub fn start_bluetooth_tx_power_control_write(
+        &mut self,
+        register: BluetoothTxPowerControlRegister,
+        value: u8,
+    ) -> Result<(), PhyI2cAccessError> {
+        self.configure_phy_i2c_host_map();
+        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
+            return Err(PhyI2cAccessError::Busy);
+        }
+        self.publish_phy_i2c_command(PhyI2cHost::Host1, 0x67, register.address(), value, true);
+        Ok(())
+    }
+
+    /// Consume one completion edge of a read on `host`.
+    pub fn finish_phy_i2c_host_read(&self, host: PhyI2cHost) -> Result<u8, PhyI2cAccessError> {
+        if self.phy_i2c_master_is_busy(host) {
+            Err(PhyI2cAccessError::Busy)
+        } else {
+            Ok(self.sample_phy_i2c_result(host))
+        }
+    }
+
+    /// Consume one completion edge of a write on `host`.
+    pub fn finish_phy_i2c_host_write(&self, host: PhyI2cHost) -> Result<(), PhyI2cAccessError> {
+        if self.phy_i2c_master_is_busy(host) {
+            Err(PhyI2cAccessError::Busy)
+        } else {
+            Ok(())
+        }
     }
 
     /// Publish the finite reset command for one analog-I²C host.
@@ -1383,124 +901,3 @@ impl RadioPhyRegisters {
         }
     }
 }
-
-impl PhyI2cParallelAccess for RadioPhyRegisters {
-    fn select_parallel_host_map(&mut self) {
-        crate::generated::configure_phy_i2c_parallel_host_map(&self.peripherals.i2c_ana_mst);
-    }
-
-    fn restore_radio_host_map(&mut self) {
-        self.configure_phy_i2c_host_map();
-    }
-
-    fn is_busy(&self, host: PhyI2cHost) -> bool {
-        self.phy_i2c_master_is_busy(host)
-    }
-
-    fn start_write(&mut self, host: PhyI2cHost, block: u8, register: u8, value: u8) {
-        self.publish_phy_i2c_command(host, block, register, value, true);
-    }
-}
-
-impl PhyI2cConfigurationAccess for RadioPhyRegisters {
-    fn start_read(&mut self, block: u8, register: u8) -> Result<(), ()> {
-        self.configure_phy_i2c_host_map();
-        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
-            return Err(());
-        }
-        self.publish_phy_i2c_command(PhyI2cHost::Host1, block, register, 0, false);
-        Ok(())
-    }
-
-    fn start_write(&mut self, block: u8, register: u8, value: u8) -> Result<(), ()> {
-        self.configure_phy_i2c_host_map();
-        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
-            return Err(());
-        }
-        self.publish_phy_i2c_command(PhyI2cHost::Host1, block, register, value, true);
-        Ok(())
-    }
-
-    fn observe_read(&self) -> Result<u8, ()> {
-        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
-            Err(())
-        } else {
-            Ok(self.sample_phy_i2c_result(PhyI2cHost::Host1))
-        }
-    }
-
-    fn observe_write(&self) -> Result<(), ()> {
-        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
-            Err(())
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl BluetoothTxPowerControlI2cAccess for RadioPhyRegisters {
-    fn reserve_restore(&mut self) -> Result<(), BluetoothTxPowerControlPrepareError> {
-        self.restore_slot.prepare_bluetooth_tx_power_control()
-    }
-
-    fn capture_low(&mut self, value: u8) -> Result<(), BluetoothTxPowerControlRestoreError> {
-        self.restore_slot
-            .capture_bluetooth_tx_power_control_low(value)
-    }
-
-    fn capture_high(&mut self, value: u8) -> Result<(), BluetoothTxPowerControlRestoreError> {
-        self.restore_slot
-            .capture_bluetooth_tx_power_control_high(value)
-    }
-
-    fn restore_values(&self) -> Result<(u8, u8), BluetoothTxPowerControlRestoreError> {
-        self.restore_slot.bluetooth_tx_power_control_values()
-    }
-
-    fn finish_restore(&mut self) -> Result<(), BluetoothTxPowerControlRestoreError> {
-        self.restore_slot
-            .finish_bluetooth_tx_power_control_restore()
-    }
-
-    fn start_read(&mut self, register: BluetoothTxPowerControlRegister) -> Result<(), ()> {
-        self.configure_phy_i2c_host_map();
-        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
-            return Err(());
-        }
-        self.publish_phy_i2c_read_mask(PhyI2cBlock::recovered(0x67));
-        self.publish_phy_i2c_command(PhyI2cHost::Host1, 0x67, register.address(), 0, false);
-        Ok(())
-    }
-
-    fn start_write(
-        &mut self,
-        register: BluetoothTxPowerControlRegister,
-        value: u8,
-    ) -> Result<(), ()> {
-        self.configure_phy_i2c_host_map();
-        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
-            return Err(());
-        }
-        self.publish_phy_i2c_command(PhyI2cHost::Host1, 0x67, register.address(), value, true);
-        Ok(())
-    }
-
-    fn observe_read(&self) -> Result<u8, ()> {
-        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
-            Err(())
-        } else {
-            Ok(self.sample_phy_i2c_result(PhyI2cHost::Host1))
-        }
-    }
-
-    fn observe_write(&self) -> Result<(), ()> {
-        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
-            Err(())
-        } else {
-            Ok(())
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests;

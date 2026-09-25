@@ -12,6 +12,7 @@ use oer_esp32s31_pac::{
 use super::ColdOwner;
 use crate::{
     clock::BluetoothClocks,
+    phy::restore::PhyRestoreSlot,
     root::{RadioHardware, RadioPhyReleaseError, RetainedWifi},
 };
 
@@ -29,6 +30,7 @@ enum Retained {
         _task: BluetoothTaskRegisters,
         _retained: RetainedWifi,
         _clocks: BluetoothClocks,
+        _phy_restore: PhyRestoreSlot,
         _output: BluetoothInterruptSetup,
         _timer: BluetoothModemLpTimerInterruptReady,
     },
@@ -105,6 +107,7 @@ pub(super) fn release_after_phy_close(
     mut task: BluetoothTaskRegisters,
     retained: RetainedWifi,
     clocks: BluetoothClocks,
+    phy_restore: PhyRestoreSlot,
     output: BluetoothInterruptSetup,
     mut timer: BluetoothModemLpTimerInterruptReady,
 ) -> Result<RadioHardware, BluetoothPhysicalReleaseFailure> {
@@ -118,6 +121,7 @@ pub(super) fn release_after_phy_close(
                 _task: task,
                 _retained: retained,
                 _clocks: clocks,
+                _phy_restore: phy_restore,
                 _output: output,
                 _timer: timer,
             },
@@ -129,6 +133,7 @@ pub(super) fn release_after_phy_close(
         interrupts: output,
         retained,
         clocks,
+        phy_restore,
     };
     cold.release().map_err(|failure| {
         let (owner, error) = failure.into_parts();

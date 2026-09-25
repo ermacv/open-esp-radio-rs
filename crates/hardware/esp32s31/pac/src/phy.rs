@@ -2,31 +2,25 @@
 
 #![forbid(unsafe_code)]
 
-use super::{RadioPhyRegisters, RxDcoControlPrepareError, RxDcoControlRestoreError};
+use super::{RadioPhyRegisters, RxDcoControlField};
 
 impl RadioPhyRegisters {
-    /// Retain and clear the RX-DCO control field through two fresh reads.
-    ///
-    /// The private PAC restore slot is a two-entry LIFO because the crystal
-    /// duty operation masks this field around a nested RX-DCO calibration
-    /// which independently performs the same save/clear/restore sequence.
-    pub fn prepare_rx_dco_control_restore(&mut self) -> Result<(), RxDcoControlPrepareError> {
+    /// Capture the RX-DCO control field, then clear it with a fresh RMW.
+    pub fn capture_and_clear_rx_dco_control(&mut self) -> RxDcoControlField {
         let registers = &self.peripherals.phy_rx_dco_oracle;
-        self.restore_slot.prepare_rx_dco_with(|| {
-            let saved = crate::svd::field_read::capture_phy_rx_dco_calibration_control(registers);
-            crate::generated::clear_phy_rx_dco_calibration_control(registers);
-            saved
-        })
+        let saved = crate::svd::field_read::capture_phy_rx_dco_calibration_control(registers);
+        crate::generated::clear_phy_rx_dco_calibration_control(registers);
+        RxDcoControlField::from_capture(saved)
     }
 
-    /// Restore the most recently retained RX-DCO control field.
-    pub fn restore_rx_dco_control(&mut self) -> Result<(), RxDcoControlRestoreError> {
-        let registers = &self.peripherals.phy_rx_dco_oracle;
-        self.restore_slot.restore_rx_dco_with(|saved| {
-            let saved = crate::generated::PhyRxDcoCalibrationControl::new(u32::from(saved))
-                .expect("generated two-bit RX-DCO readback must fit its restore domain");
-            crate::generated::restore_phy_rx_dco_calibration_control(registers, saved);
-        })
+    /// Restore one captured RX-DCO control field.
+    pub fn restore_rx_dco_control(&mut self, field: RxDcoControlField) {
+        let saved = crate::generated::PhyRxDcoCalibrationControl::new(u32::from(field.bits()))
+            .expect("generated two-bit RX-DCO readback must fit its restore domain");
+        crate::generated::restore_phy_rx_dco_calibration_control(
+            &self.peripherals.phy_rx_dco_oracle,
+            saved,
+        );
     }
 
     /// Sample the full-width counter used by the SDM-stability deadline.

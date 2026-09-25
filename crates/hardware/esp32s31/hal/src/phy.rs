@@ -24,6 +24,8 @@ pub mod power_detector;
 
 pub mod prelude;
 
+pub(crate) mod restore;
+
 pub mod rx_dco;
 
 pub mod temperature;

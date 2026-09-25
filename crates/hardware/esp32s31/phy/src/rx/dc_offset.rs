@@ -828,7 +828,7 @@ pub enum PhyRxDcoBindingError {
 /// An RX-DCO restore-stack invariant was violated by target execution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxDcoHardwareInvariant {
-    /// Another calibration owns the shared PAC restore slot.
+    /// Another calibration owns the shared route restore slot.
     RestoreOwnedByOtherCalibration,
     /// More than the reviewed outer-plus-inner nesting was attempted.
     RestoreNestingExceeded,

@@ -403,7 +403,10 @@ impl RegisteredBluetoothPhyClientRelease {
     pub async fn close_rf<P, D: crate::PhyAsyncDelay>(
         mut self,
         platform: &mut P,
-        registers: &mut oer_esp32s31_hal::owner::SharedPhyHal<'_>,
+        registers: &mut oer_esp32s31_hal::owner::SharedPhyHal<
+            '_,
+            oer_esp32s31_hal::owner::route::Bluetooth,
+        >,
     ) -> Result<RegisteredBluetoothPhyRfClosed, BluetoothPhyRfCloseFailure> {
         if !self.is_last() {
             return Err(BluetoothPhyRfCloseFailure {

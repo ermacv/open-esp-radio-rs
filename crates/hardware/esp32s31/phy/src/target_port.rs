@@ -147,7 +147,7 @@ pub(crate) use radio_lifecycle::{
 
 pub(crate) async fn close_bluetooth_rf<P, D: PhyAsyncDelay>(
     platform: &mut P,
-    registers: &mut SharedPhyHal<'_>,
+    registers: &mut SharedPhyHal<'_, oer_esp32s31_hal::owner::route::Bluetooth>,
     state: &mut PhyState,
 ) -> Result<(), PhyRfCloseTemperatureFailure> {
     radio_lifecycle::observe_temperature_with_hal::<P, D>(platform, registers, state).await?;
@@ -2675,7 +2675,7 @@ where
 )]
 pub async fn run_target_bluetooth_phy_param_tracking<P, D, O>(
     platform: &mut P,
-    registers: &mut SharedPhyHal<'_>,
+    registers: &mut SharedPhyHal<'_, oer_esp32s31_hal::owner::route::Bluetooth>,
     mut tracking: RegisteredBluetoothPhyPendingTracking,
     observer: O,
 ) -> Result<TargetBluetoothPhyParamTrackingSuccess, TargetBluetoothPhyParamTrackingFailure>
@@ -2728,7 +2728,7 @@ where
 #[must_use = "deadline failure retains the poisoned Bluetooth PHY epoch"]
 pub async fn run_target_bluetooth_phy_param_tracking_until<P, D, O>(
     platform: &mut P,
-    registers: &mut SharedPhyHal<'_>,
+    registers: &mut SharedPhyHal<'_, oer_esp32s31_hal::owner::route::Bluetooth>,
     mut tracking: RegisteredBluetoothPhyPendingTracking,
     observer: O,
     deadline: crate::tracking::deadline::TrackingDeadline,
@@ -2904,7 +2904,7 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver> PhyR
 )]
 pub async fn run_target_bluetooth_phy_register<P, D, O>(
     platform: &mut P,
-    registers: &mut SharedPhyHal<'_>,
+    registers: &mut SharedPhyHal<'_, oer_esp32s31_hal::owner::route::Bluetooth>,
     config: TargetBluetoothPhyRegisterConfig,
     observer: O,
 ) -> Result<TargetBluetoothPhyRegisterSuccess, TargetBluetoothPhyRegisterFailure>

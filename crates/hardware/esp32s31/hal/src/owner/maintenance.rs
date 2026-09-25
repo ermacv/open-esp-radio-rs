@@ -6,7 +6,7 @@
 //! readbacks check that prerequisite; they do not retire software DMA leases.
 //! No BLE/IEEE 802.15.4 timeslot or concurrent coexistence grant is implied.
 
-use super::{MacInterruptCheckpoint, MacInterruptSetup, RadioRuntimeOwner, SharedPhyHal};
+use super::{MacInterruptCheckpoint, MacInterruptSetup, RadioRuntimeOwner, SharedPhyHal, route};
 use crate::ieee80211::mac::WifiMacHal;
 
 mod sealed {
@@ -139,10 +139,8 @@ fn admit<I: InterruptAuthority>(
 
 impl<I: InterruptAuthority> WifiAccess<I> {
     /// Narrow PHY borrow within the retained physical operation.
-    pub fn phy_hal(&mut self) -> SharedPhyHal<'_> {
-        SharedPhyHal {
-            registers: self.registers.registers.radio_phy_mut(),
-        }
+    pub fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Wifi> {
+        SharedPhyHal::new(self.registers.registers.radio_phy_mut())
     }
 
     /// Restore the caller's MAC postconditions after PHY children which may

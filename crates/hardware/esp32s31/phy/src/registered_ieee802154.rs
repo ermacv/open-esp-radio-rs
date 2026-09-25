@@ -338,7 +338,7 @@ impl<P> RegisteredIeee802154PendingTracking<P> {
         &mut self,
     ) -> (
         &mut P,
-        SharedPhyHal<'_>,
+        SharedPhyHal<'_, oer_esp32s31_hal::owner::route::Ieee802154>,
         &mut PhyState,
         &mut PhyPendingTracking,
     ) {

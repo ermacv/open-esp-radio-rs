@@ -18,15 +18,15 @@ changes.
 | `qualification/catalog/` and source declarations | Canonical capability identities, dependencies and source facts |
 | `qualification/targets/` | Programs that select required capabilities and evidence policy for an evaluation target |
 | Owner-specific ignored output directories | Generated API docs, run reports, measurements and verification output |
-| `docs/book.toml`, `docs/SUMMARY.md` and `tools/docs/` | mdBook configuration, guide order and the out-of-book link preprocessor; documents elsewhere remain with their owners |
+| `docs/book.toml` and `docs/SUMMARY.md` | mdBook configuration and guide order; documents elsewhere remain with their owners |
 
 The documentation tree follows code ownership. A subsystem's detailed contract
 has one canonical location; other documents link to it. Root navigation does
 not repeat a complete crate inventory or a second capability matrix.
 
-The guides in `docs/` render as an mdBook book (see the
-[documentation build](../tools/docs/README.md)); add a new guide to
-`docs/SUMMARY.md`. Links from a guide to documents or code outside `docs/`
+The guides in `docs/` render as an mdBook book (see
+[Build the guides and API documentation](#build-the-guides-and-api-documentation));
+add a new guide to `docs/SUMMARY.md`. Links from a guide to documents or code outside `docs/`
 stay relative in the source and point to the same commit on GitHub in the
 rendered book. The published site adds `cargo doc` API documentation under
 `api/`. Component documents are read on GitHub beside their owners.
@@ -132,6 +132,42 @@ including newly created files before they are staged. Arbitrary untracked task
 notes are outside that surface. Local relative links, images, references,
 directory targets, percent-encoded paths and supported anchors are checked;
 external URLs are reported as `external-not-checked`.
+
+## Build the guides and API documentation
+
+Install the tool versions that
+[the Documentation workflow](../.github/workflows/docs.yml) pins:
+
+```console
+cargo install --locked mdbook --version 0.5.4
+cargo install --locked mdbook-mermaid --version 0.17.1
+cargo install --locked mdbook-permalinks --version 3.0.2
+```
+
+From the repository root:
+
+```console
+mdbook-mermaid install docs
+mdbook build docs
+mdbook test docs
+mdbook serve docs
+cargo xtask doc
+```
+
+`mdbook-mermaid install docs` writes the Mermaid scripts that `docs/book.toml`
+loads; Git ignores them. `mdbook build docs` writes `target/book/`. The
+[mdbook-permalinks](https://docs.tonywu.dev/mdbookkit/permalinks/) preprocessor
+rewrites a guide's relative link to a file outside `docs/` into a GitHub link at
+the commit being built; links inside the book are unchanged.
+`cargo xtask doc` writes the standard Cargo documentation directories:
+`target/doc/` for host packages, `target/riscv32imafc-unknown-none-elf/doc/` for
+chip packages and the Wi-Fi composition workspace's own target directory.
+
+Pushes and pull requests run the workflow's checks and package one site: the
+book at the root and API documentation under `api/host/`, `api/esp32s31/` and
+`api/esp32s31-wifi/`. A manual run from `main` deploys it to the
+[Pages address](https://ermacv.github.io/open-esp-radio-rs/) with the official
+GitHub Pages actions.
 
 ## Basis for these conventions
 

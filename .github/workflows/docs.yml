@@ -19,6 +19,7 @@ env:
   CARGO_INCREMENTAL: '0'
   MDBOOK_VERSION: 0.5.4
   MDBOOK_MERMAID_VERSION: 0.17.1
+  MDBOOK_PERMALINKS_VERSION: 3.0.2
 
 jobs:
   build:
@@ -39,8 +40,9 @@ jobs:
             ~/.cargo/git
             ~/.cargo/bin/mdbook
             ~/.cargo/bin/mdbook-mermaid
-          key: docs-${{ runner.os }}-${{ env.MDBOOK_VERSION }}-${{ env.MDBOOK_MERMAID_VERSION }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
-          restore-keys: docs-${{ runner.os }}-${{ env.MDBOOK_VERSION }}-${{ env.MDBOOK_MERMAID_VERSION }}-
+            ~/.cargo/bin/mdbook-permalinks
+          key: docs-${{ runner.os }}-${{ env.MDBOOK_VERSION }}-${{ env.MDBOOK_MERMAID_VERSION }}-${{ env.MDBOOK_PERMALINKS_VERSION }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
+          restore-keys: docs-${{ runner.os }}-${{ env.MDBOOK_VERSION }}-${{ env.MDBOOK_MERMAID_VERSION }}-${{ env.MDBOOK_PERMALINKS_VERSION }}-
       - name: Fetch locked dependencies
         run: |
           cargo fetch --locked
@@ -53,6 +55,8 @@ jobs:
         run: |
           mdbook --version | grep -q "v$MDBOOK_VERSION" || cargo install --locked mdbook --version "$MDBOOK_VERSION"
           mdbook-mermaid --version | grep -q "$MDBOOK_MERMAID_VERSION" || cargo install --locked mdbook-mermaid --version "$MDBOOK_MERMAID_VERSION"
+          # mdbook-permalinks has no --version; the cache key carries its version.
+          command -v mdbook-permalinks >/dev/null || cargo install --locked mdbook-permalinks --version "$MDBOOK_PERMALINKS_VERSION"
       - name: Guides
         run: |
           mdbook-mermaid install docs

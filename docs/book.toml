@@ -1,6 +1,6 @@
 # Guides in this directory, rendered with `mdbook build docs`. Documents
-# elsewhere in the repository stay with their owners; links to them are
-# rewritten to the same commit on GitHub by `tools/docs/repo_links.py`.
+# elsewhere in the repository stay with their owners; mdbook-permalinks
+# rewrites links to them to the same commit on GitHub.
 [book]
 title = "Open ESP Radio"
 description = "From binary evidence to an open radio implementation"
@@ -14,9 +14,7 @@ create-missing = false
 [rust]
 edition = "2024"
 
-[preprocessor.repo-links]
-command = "python3 ../tools/docs/repo_links.py"
-before = ["links"]
+[preprocessor.permalinks]
 
 [preprocessor.mermaid]
 command = "mdbook-mermaid"

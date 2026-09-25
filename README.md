@@ -27,7 +27,7 @@ documented behavior.
 | A station application | [Buildable station example](examples/esp32s31-station/README.md) and [capability limits](crates/hardware/esp32s31/driver/FEATURES.md) | Supported board, toolchain and network configuration |
 
 Start with the [documentation routes](docs/README.md) and
-[contribution guide](CONTRIBUTING.md). The [documentation build](tools/docs/README.md)
+[contribution guide](CONTRIBUTING.md). The [documentation build](docs/documentation.md#build-the-guides-and-api-documentation)
 renders the guides in `docs/` as an mdBook with `cargo doc` API documentation
 beside it; the [Pages address](https://ermacv.github.io/open-esp-radio-rs/)
 serves them after a manual publication, and `mdbook serve docs` previews locally.

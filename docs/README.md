@@ -14,7 +14,7 @@ details live beside their owner; this directory contains shared contracts.
 
 These routes assume Rust and embedded basics. The host route needs no board or
 private binary; the hardware route names additional prerequisites at each step.
-This directory is also an [mdBook](../tools/docs/README.md) book: the
+This directory is also an [mdBook](documentation.md#build-the-guides-and-api-documentation) book: the
 [Pages address](https://ermacv.github.io/open-esp-radio-rs/) serves it with
 searchable navigation and the API documentation after a manual publication, and
 `mdbook serve docs` previews it locally.

@@ -8,7 +8,7 @@
 //! codes and check a single sensor sample before the gain bank is first read.
 //! Stuck readiness is production containment, not vendor timing equivalence. Software comparison under explicit peripheral inputs, never
 //! hardware qualification.
-use crate::contracts::{phy_contract, plumbing};
+use crate::contracts::{OutputField, output_projection, phy_contract, plumbing};
 use crate::evidence::{PhyEffect, events, output, phy_effects, stop};
 use crate::harness::{Buffer, Result, case, evidence, selection};
 use crate::i2c::{all_complete, returned_low};
@@ -18,7 +18,7 @@ use crate::phy::{PhyImage, PhyOptions, Right, image_layout, select, start_sessio
 use crate::session::request;
 use blobray_domain::{
     CommandCell, ComparisonVerdict, DeviceDeclaration, EffectReview, ExecutionCase, ExecutionEvent,
-    ExecutionEvidence, ExecutionStop, Invocation, LinkRequest, SessionReset,
+    ExecutionEvidence, ExecutionStop, Invocation, LinkRequest, ProjectionReview, SessionReset,
 };
 
 /// Offsets of the committed channel, temperature and bandwidth in `phy_param`.
@@ -27,6 +27,30 @@ const PARAMETER_TEMPERATURE: usize = 0;
 const PARAMETER_BANDWIDTH: usize = 287;
 /// Production output: channel, temperature and bandwidth halfwords.
 const SEMANTIC_BYTES: u32 = 6;
+/// Committed `phy_param` fields in production output order.
+const COMMITTED: [OutputField; 3] = [
+    OutputField {
+        name: "channel",
+        parameter: PARAMETER_CHANNEL as u32,
+        output: 0,
+        width: 2,
+        count: 1,
+    },
+    OutputField {
+        name: "temperature",
+        parameter: PARAMETER_TEMPERATURE as u32,
+        output: 2,
+        width: 2,
+        count: 1,
+    },
+    OutputField {
+        name: "bandwidth",
+        parameter: PARAMETER_BANDWIDTH as u32,
+        output: 4,
+        width: 1,
+        count: 1,
+    },
+];
 /// Untouched production output bytes.
 const OUTPUT_FILL: u8 = 0xa5;
 /// Case index of the transition after parameter setup and callback installation.
@@ -127,12 +151,13 @@ pub fn channel_models(transition: &Transition, ready: bool) -> Vec<DeviceDeclara
 /// Production channel entry compared with `phy_chip_set_chan`.
 const PRODUCTION_ENTRY: &str = "open_phy_channel_trace_state";
 
-/// Channel image, its production probe and the reviewed transition contract.
+/// Channel image, its production probe and the reviewed transition claims.
 pub struct Channel {
     pub image: PhyImage,
     rom_delay: u32,
     production_delay: u32,
     effects: EffectReview,
+    committed: ProjectionReview,
 }
 
 impl std::ops::Deref for Channel {
@@ -186,23 +211,38 @@ impl Channel {
             "phy_chip_set_chan",
             &[ROM_INPUT],
         )?;
-        let contract = phy_contract(
+        let applicability = "channel transitions under explicit sensor, PLL and readiness inputs";
+        let (vendor, production) = (
             image.vendor_endpoint("phy_chip_set_chan")?,
             image.production_endpoint(PRODUCTION_ENTRY)?,
-            plumbing(&[], MAX_EVENTS),
-            "channel transitions under explicit sensor, PLL and readiness inputs",
         );
+        let projection = output_projection(
+            vendor.clone(),
+            image.parameter,
+            production.clone(),
+            SEMANTIC_BYTES,
+            &COMMITTED,
+            applicability,
+        );
+        let contract = phy_contract(vendor, production, plumbing(&[], MAX_EVENTS), applicability);
         let effects = image.review_effects(
             "channel-effects",
             "esp32s31.phy.channel-transition.effects",
             contract,
             "every channel register effect compares exactly except analog I2C polling",
         )?;
+        let committed = image.review_projection(
+            "channel-committed",
+            "esp32s31.phy.channel-transition.committed",
+            projection,
+            "production publishes the committed channel, temperature and bandwidth",
+        )?;
         Ok(Self {
             rom_delay: image.sym(1, "ets_delay_us"),
             production_delay: image.sym(2, "ets_delay_us"),
             image,
             effects,
+            committed,
         })
     }
 
@@ -248,8 +288,11 @@ impl Channel {
             SessionReset::Warm,
             false,
         );
-        // Blobray compares every effect under the reviewed contract.
-        transition.relation.as_mut().unwrap().effects = Some(self.effects.clone());
+        // Blobray compares every effect and the committed state under the
+        // reviewed contract and projection.
+        let relation = transition.relation.as_mut().unwrap();
+        relation.effects = Some(self.effects.clone());
+        relation.projection = Some(self.committed.clone());
         Ok(vec![
             case(
                 "initialize",
@@ -304,11 +347,6 @@ fn check_transition(
     expected[2..4].copy_from_slice(&(temperature as i16).to_le_bytes());
     expected[4] = t.cbw as u8;
     assert_eq!(committed, expected, "{label}: vendor commit");
-    assert_eq!(
-        output(records, TRANSITION, true),
-        committed,
-        "{label}: production commit"
-    );
     events(records, TRANSITION, false)
 }
 
@@ -424,7 +462,9 @@ fn negative(ctx: &mut Channel) -> Result<()> {
     // The contract's occurrence bounds exceed a one-event capacity; the
     // exhaustion under test precedes any effect comparison.
     let mut rows = ctx.rows(&t, true)?;
-    rows[TRANSITION as usize].relation.as_mut().unwrap().effects = None;
+    let relation = rows[TRANSITION as usize].relation.as_mut().unwrap();
+    relation.effects = None;
+    relation.projection = None;
     let limited = request(&ctx.vendor, Some(&ctx.production), Some(t.fill), rows, 1);
     ctx.capacity_failure("negative-capacity", &limited)
 }

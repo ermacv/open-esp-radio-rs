@@ -1,10 +1,13 @@
-//! Reviewed effect contracts of PHY comparisons. Blobray evaluates them: the
-//! analog I2C transport's polling is ignored plumbing and every other MMIO,
-//! fence and delay effect compares exactly, in order and value.
+//! Reviewed effect contracts and output projections of PHY comparisons.
+//! Blobray evaluates both: the analog I2C transport's polling is ignored
+//! plumbing, every other MMIO, fence and delay effect compares exactly, in
+//! order and value, and each reviewed `phy_param` field compares with its
+//! production output location.
 use crate::layout::*;
 use blobray_domain::{
     CallEndpoint, EffectClaimCeiling, EffectContract, EffectDisposition, EffectPattern, EffectRule,
-    EffectSelector, EffectValue, UnclassifiedEffects,
+    EffectSelector, EffectValue, FieldLocation, LayoutDomain, LayoutEndpoint, LayoutField,
+    LayoutProjection, UnclassifiedEffects,
 };
 
 /// Transport registers whose reads are command polling.
@@ -134,6 +137,53 @@ pub fn phy_contract(
         claim_ceiling: EffectClaimCeiling::ReviewedEffectRefinement,
         applicability: applicability.into(),
         reason: "PHY register effects compare exactly except reviewed transport plumbing".into(),
+    }
+}
+
+/// One committed `phy_param` field and its production output location.
+pub struct OutputField {
+    pub name: &'static str,
+    /// Byte offset in `phy_param`.
+    pub parameter: u32,
+    /// Byte offset in the production output.
+    pub output: u32,
+    pub width: u8,
+    pub count: u32,
+}
+
+/// Final-state projection from the vendor `phy_param` at `parameter` to the
+/// production output at `OUTPUT`. Output bytes outside `fields` are not claimed.
+pub fn output_projection(
+    vendor: CallEndpoint,
+    parameter: u32,
+    replacement: CallEndpoint,
+    output_bytes: u32,
+    fields: &[OutputField],
+    applicability: &str,
+) -> LayoutProjection {
+    let endpoint = |entry, address, length| LayoutEndpoint {
+        entry,
+        domains: vec![LayoutDomain { address, length }],
+    };
+    let location = |offset| FieldLocation { domain: 0, offset };
+    LayoutProjection {
+        vendor: endpoint(vendor, parameter, PHY_PARAM_BYTES),
+        replacement: endpoint(replacement, OUTPUT, output_bytes),
+        fields: fields
+            .iter()
+            .map(|f| LayoutField {
+                name: f.name.into(),
+                vendor: location(f.parameter),
+                replacement: location(f.output),
+                width: f.width,
+                count: f.count,
+                final_state: true,
+                timeline: false,
+            })
+            .collect(),
+        branches: vec![],
+        applicability: applicability.into(),
+        reason: "the production output publishes the vendor's committed phy_param state".into(),
     }
 }
 

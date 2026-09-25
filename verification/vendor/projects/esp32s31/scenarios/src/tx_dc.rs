@@ -8,9 +8,9 @@
 //! PBus and SAR faults must not publish calibration, and the SAR observation
 //! limit is a failure distinct from time or work limits. Synthetic
 //! measurements establish software effects, not RF accuracy.
-use crate::contracts::{omitted_read, phy_contract, plumbing};
+use crate::contracts::{OutputField, omitted_read, output_projection, phy_contract, plumbing};
 use crate::evidence::{events, output, stop};
-use crate::harness::{Buffer, Result, case, evidence, selection};
+use crate::harness::{Buffer, Result, case, evidence, known, selection};
 use crate::i2c::{all_complete, returned_low};
 use crate::layout::*;
 use crate::phy::delay_calls;
@@ -18,8 +18,8 @@ use crate::phy::{PhyImage, PhyOptions, Right, image_layout, phy_sdk_input, selec
 use crate::session::request;
 use blobray_domain::{
     ComparisonVerdict, DeviceBehavior, DeviceDeclaration, EffectReview, EffectRule, ExecutionCase,
-    ExecutionEvent, ExecutionEvidence, ExecutionStop, Invocation, LinkRequest, RegionLifetime,
-    SessionReset,
+    ExecutionEvent, ExecutionEvidence, ExecutionStop, Invocation, LinkRequest, ProjectionReview,
+    RegionLifetime, SessionReset,
 };
 use std::path::Path;
 
@@ -62,6 +62,27 @@ const BLUETOOTH_ROWS: usize = 260;
 /// Three rows of four DC halfwords.
 const ROW_WORDS: usize = 12;
 const ROW_BYTES: u32 = (ROW_WORDS * 2) as u32;
+/// Production output: Wi-Fi rows, then Bluetooth rows. The probe writes the
+/// selected band's rows; the other band's rows start zero, like the vendor's
+/// unselected `phy_param` rows.
+const OUTPUT_BYTES: u32 = 2 * ROW_BYTES;
+/// Committed `phy_param` DC rows of both bands in production output order.
+const COMMITTED: [OutputField; 2] = [
+    OutputField {
+        name: "wifi-dc-rows",
+        parameter: WIFI_ROWS as u32,
+        output: 0,
+        width: 2,
+        count: ROW_WORDS as u32,
+    },
+    OutputField {
+        name: "bluetooth-dc-rows",
+        parameter: BLUETOOTH_ROWS as u32,
+        output: ROW_BYTES,
+        width: 2,
+        count: ROW_WORDS as u32,
+    },
+];
 /// Alternating SAR sample period.
 const ALTERNATING: [u32; 8] = [100, 100, 130, 130, 90, 90, 80, 80];
 /// Event capacity of one TX-DC root side: a complete root records about
@@ -108,6 +129,14 @@ impl Profile {
         } else {
             WIFI_ROWS
         }
+    }
+    /// Production output address of the selected band's rows.
+    fn output(&self) -> u32 {
+        OUTPUT + u32::from(self.bluetooth) * ROW_BYTES
+    }
+    /// Production output address of the other band's rows.
+    fn unselected_output(&self) -> u32 {
+        OUTPUT + u32::from(!self.bluetooth) * ROW_BYTES
     }
 }
 
@@ -231,6 +260,7 @@ pub struct TxDc {
     rom_delay: u32,
     production_delay: u32,
     effects: EffectReview,
+    committed: ProjectionReview,
 }
 
 impl std::ops::Deref for TxDc {
@@ -269,23 +299,38 @@ impl TxDc {
             // bound to the PHY SDK firmware and never executed.
             &[ROM_INPUT, PHY_SDK_INPUT],
         )?;
-        let contract = phy_contract(
+        let applicability = "TX-DC/PWDET calibration under synthetic SAR samples and explicit PBus and detector inputs";
+        let (vendor, production) = (
             image.vendor_endpoint("phy_txdc_cal_pwdet_init")?,
             image.production_endpoint(PRODUCTION_ENTRY)?,
-            tx_rules(),
-            "TX-DC/PWDET calibration under synthetic SAR samples and explicit PBus and detector inputs",
         );
+        let projection = output_projection(
+            vendor.clone(),
+            image.parameter,
+            production.clone(),
+            OUTPUT_BYTES,
+            &COMMITTED,
+            applicability,
+        );
+        let contract = phy_contract(vendor, production, tx_rules(), applicability);
         let effects = image.review_effects(
             "txdc-effects",
             "esp32s31.phy.tx-dc-pwdet.effects",
             contract,
             "every TX-DC register effect compares exactly except transport polling and unused SAR snapshots",
         )?;
+        let committed = image.review_projection(
+            "txdc-committed",
+            "esp32s31.phy.tx-dc-pwdet.committed",
+            projection,
+            "production publishes the selected band's DC rows and leaves the other band's rows",
+        )?;
         Ok(Self {
             rom_delay: image.sym(1, "ets_delay_us"),
             production_delay: image.sym(2, "ets_delay_us"),
             image,
             effects,
+            committed,
         })
     }
 
@@ -318,13 +363,18 @@ impl TxDc {
                 ("clear_tone_after_ready", i64::from(profile.clear).into()),
                 (
                     "output",
-                    Buffer::new(OUTPUT, vec![profile.fill; ROW_BYTES as usize]).into(),
+                    Buffer::new(profile.output(), vec![profile.fill; ROW_BYTES as usize]).into(),
                 ),
             ],
             models,
-            vec![selection(OUTPUT, ROW_BYTES)],
+            vec![selection(OUTPUT, OUTPUT_BYTES)],
         )?;
         let mut phase = self.enter_probe(probe);
+        phase.memory.push(known(
+            profile.unselected_output(),
+            ROW_BYTES,
+            &[0; ROW_BYTES as usize],
+        )?);
         phase.calls = delay_calls("txdc-delay", self.production_delay);
         Ok(phase)
     }
@@ -338,8 +388,11 @@ impl TxDc {
             SessionReset::Warm,
             false,
         );
-        // Blobray compares every effect under the reviewed contract.
-        root.relation.as_mut().unwrap().effects = Some(self.effects.clone());
+        // Blobray compares every effect and the committed rows under the
+        // reviewed contract and projection.
+        let relation = root.relation.as_mut().unwrap();
+        relation.effects = Some(self.effects.clone());
+        relation.projection = Some(self.committed.clone());
         Ok(vec![
             case(
                 "initialize",
@@ -369,12 +422,6 @@ fn check(label: &str, profile: &Profile, records: &[ExecutionEvidence], root: u3
     assert_eq!(
         parameters[PARAMETER_ADJUSTMENT], profile.fill,
         "{label}: Wi-Fi gain adjustment overwritten"
-    );
-    let rows = profile.rows();
-    assert_eq!(
-        output(records, root, true),
-        parameters[rows..rows + ROW_BYTES as usize],
-        "{label}: DC rows"
     );
 }
 
@@ -447,9 +494,11 @@ fn faults(ctx: &mut TxDc) -> Result<()> {
             "{name}"
         );
         assert!(all_complete(&records, case, false), "{name}");
+        let rows = output(&records, case, false);
+        let selected = (profile.output() - OUTPUT) as usize;
         assert_eq!(
-            output(&records, case, false),
-            vec![profile.fill; ROW_BYTES as usize],
+            rows[selected..][..ROW_BYTES as usize],
+            [profile.fill; ROW_BYTES as usize],
             "{name}: DC rows published"
         );
         assert!(
@@ -466,11 +515,28 @@ fn faults(ctx: &mut TxDc) -> Result<()> {
     Ok(())
 }
 
-/// A changed production tone-clear path is a DIFF, omitted callback
+/// A changed production tone-clear path is a DIFF, and so are changed
+/// unselected production rows with unchanged effects. Omitted callback
 /// installation leaves the vendor INCOMPLETE, and an undersized event
 /// capacity publishes nothing.
 fn negative(ctx: &mut TxDc) -> Result<()> {
     let profile = profiles()[0];
+    let mut unselected = ctx.rows(&profile)?;
+    let production = unselected[ROOT as usize].replacement.as_mut().unwrap();
+    let rows = production
+        .memory
+        .iter_mut()
+        .find(|r| r.seed.address == profile.unselected_output())
+        .expect("unselected production rows");
+    rows.seed.bytes = vec![profile.fill; ROW_BYTES as usize];
+    ctx.image.execute(
+        "txdc-negative-unselected-rows",
+        unselected,
+        profile.fill,
+        Right::Production,
+        ComparisonVerdict::Diff,
+        TXDC_EVENTS,
+    )?;
     let mut changed = ctx.rows(&profile)?;
     let other = Profile {
         clear: !profile.clear,
@@ -506,7 +572,9 @@ fn negative(ctx: &mut TxDc) -> Result<()> {
     // The contract's occurrence bounds exceed a one-event capacity; the
     // exhaustion under test precedes any effect comparison.
     let mut rows = ctx.rows(&profile)?;
-    rows[ROOT as usize].relation.as_mut().unwrap().effects = None;
+    let relation = rows[ROOT as usize].relation.as_mut().unwrap();
+    relation.effects = None;
+    relation.projection = None;
     let limited = request(
         &ctx.vendor,
         Some(&ctx.production),

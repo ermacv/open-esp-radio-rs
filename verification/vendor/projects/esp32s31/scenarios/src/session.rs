@@ -8,8 +8,9 @@ use blobray_application::QuerySummary;
 use blobray_domain::{
     ArtifactId, AssertionId, CallAbi, CompanionProposal, EffectContract, EffectProposalRequest,
     EffectReview, EntrySelection, ErrorCode, ExecutionRequest, ExecutionTarget, FunctionSource,
-    ImageManifest, ImageMapping, KnowledgeRevisionId, LinkRequest, ObjectId, PreparedImageId,
-    Revision, RevisionId, SymbolId, SymbolTableKind,
+    ImageManifest, ImageMapping, KnowledgeRevisionId, LayoutProjection, LinkRequest, ObjectId,
+    PreparedImageId, ProjectionProposalRequest, ProjectionReview, Revision, RevisionId, SymbolId,
+    SymbolTableKind,
 };
 use blobray_next_host::wire::RecordDocument;
 use object::{Object, ObjectSection, ObjectSymbol};
@@ -104,15 +105,55 @@ impl Session {
             actor: REVIEW_ACTOR.into(),
             reason: reason.into(),
         };
-        let mut command = args(["knowledge", "propose-effect-contract", "--request"]);
+        let (knowledge, assertion) =
+            self.review(name, "propose-effect-contract", &request, reason)?;
+        Ok(EffectReview {
+            knowledge,
+            assertion,
+        })
+    }
+
+    /// Propose `projection` as `subject` and accept exactly that proposal.
+    pub fn review_projection(
+        &mut self,
+        name: &str,
+        subject: &str,
+        projection: LayoutProjection,
+        reason: &str,
+    ) -> Result<ProjectionReview> {
+        let request = ProjectionProposalRequest {
+            subject: subject.to_owned().try_into()?,
+            projection,
+            expected_base: self.knowledge.clone(),
+            actor: REVIEW_ACTOR.into(),
+            reason: reason.into(),
+        };
+        let (knowledge, assertion) = self.review(name, "propose-projection", &request, reason)?;
+        Ok(ProjectionReview {
+            knowledge,
+            assertion,
+        })
+    }
+
+    /// Submit `request` through the knowledge `propose` command, then accept
+    /// the one assertion that proposal published. Returns the accepted
+    /// knowledge revision and the assertion.
+    fn review<T: serde::Serialize>(
+        &mut self,
+        name: &str,
+        propose: &str,
+        request: &T,
+        reason: &str,
+    ) -> Result<(KnowledgeRevisionId, AssertionId)> {
+        let mut command = args(["knowledge", propose, "--request"]);
         command.push(path_arg(
-            &self.runner.doc(&format!("{name}-proposal"), &request)?,
+            &self.runner.doc(&format!("{name}-proposal"), request)?,
         ));
         let proposed = self
             .runner
             .run_record(&format!("{name}-proposal"), &command, 0)?
             .knowledge
-            .ok_or_else(|| invalid("effect proposal published no knowledge"))?;
+            .ok_or_else(|| invalid("proposal published no knowledge"))?;
         let shown: serde_json::Value = self.runner.json(
             &format!("{name}-proposed"),
             &args(["knowledge", "show", "--revision", proposed.as_str()]),
@@ -123,7 +164,7 @@ impl Session {
             .flatten()
             .find(|r| r["value"]["proposed_in"].as_str() == Some(proposed.as_str()))
             .and_then(|r| r["value"]["id"].as_str())
-            .ok_or_else(|| invalid("effect proposal assertion missing"))?
+            .ok_or_else(|| invalid("proposed assertion missing"))?
             .parse()?;
         let accepted = self
             .runner
@@ -144,12 +185,9 @@ impl Session {
                 0,
             )?
             .knowledge
-            .ok_or_else(|| invalid("effect review published no knowledge"))?;
+            .ok_or_else(|| invalid("review published no knowledge"))?;
         self.knowledge = Some(accepted.clone());
-        Ok(EffectReview {
-            knowledge: accepted,
-            assertion,
-        })
+        Ok((accepted, assertion))
     }
 
     /// Every companion the request's closure needs, proposed by a trial link

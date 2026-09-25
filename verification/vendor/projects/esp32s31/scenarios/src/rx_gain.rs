@@ -8,7 +8,9 @@
 //! cases require a failed channel, a failed minimum search and an exhausted
 //! shared budget to leave coefficients and gain memory unpublished. Software
 //! comparison under explicit peripheral inputs, never hardware qualification.
-use crate::contracts::{omitted_read_before, phy_contract, plumbing};
+use crate::contracts::{
+    OutputField, omitted_read_before, output_projection, phy_contract, plumbing,
+};
 use crate::evidence::{PhyEffect, events, output, phy_effects, steps};
 use crate::harness::{Buffer, Result, case, evidence, selection};
 use crate::i2c::{all_complete, returned_low};
@@ -18,7 +20,7 @@ use crate::phy::{PhyImage, PhyOptions, Right, image_layout, phy_sdk_input, selec
 use crate::session::request;
 use blobray_domain::{
     CommandCell, ComparisonVerdict, DeviceDeclaration, EffectReview, EffectRule, ExecutionCase,
-    ExecutionEvidence, Invocation, LinkRequest, ReadRun, SessionReset,
+    ExecutionEvidence, Invocation, LinkRequest, ProjectionReview, ReadRun, SessionReset,
 };
 use std::path::Path;
 
@@ -197,18 +199,53 @@ pub fn parameter_image(profile: &Profile) -> Vec<u8> {
     image
 }
 
-/// Vendor RX state in production output order.
-pub fn vendor_state(parameters: &[u8]) -> Vec<u8> {
-    let mut state = parameters[WIFI_INDEX_DC..WIFI_DC_BASE + 4].to_vec();
-    state.extend_from_slice(&parameters[SHARED_INDEX_DC..RXBB_ADJUSTMENTS + 24]);
-    state.extend([
-        parameters[WIFI_LAST_INDEX],
-        0,
-        parameters[SHARED_LAST_INDEX],
-        0,
-    ]);
-    state
-}
+/// Committed RX `phy_param` fields in production output order: the 52
+/// coefficient words, then the Wi-Fi and shared last gain indices, each in
+/// the low byte of an output word.
+pub const COMMITTED: [OutputField; 6] = [
+    OutputField {
+        name: "wifi-index-dc",
+        parameter: WIFI_INDEX_DC as u32,
+        output: 0,
+        width: 2,
+        count: 16,
+    },
+    OutputField {
+        name: "wifi-dc-base",
+        parameter: WIFI_DC_BASE as u32,
+        output: 32,
+        width: 2,
+        count: 2,
+    },
+    OutputField {
+        name: "shared-index-dc",
+        parameter: SHARED_INDEX_DC as u32,
+        output: 36,
+        width: 2,
+        count: 22,
+    },
+    OutputField {
+        name: "rxbb-adjustments",
+        parameter: RXBB_ADJUSTMENTS as u32,
+        output: 80,
+        width: 2,
+        count: 12,
+    },
+    OutputField {
+        name: "wifi-last-index",
+        parameter: WIFI_LAST_INDEX as u32,
+        output: 104,
+        width: 1,
+        count: 1,
+    },
+    OutputField {
+        name: "shared-last-index",
+        parameter: SHARED_LAST_INDEX as u32,
+        output: 106,
+        width: 1,
+        count: 1,
+    },
+];
 
 /// Production output seeded with the input coefficients and untouched indices.
 fn seeded_output(profile: &Profile) -> Vec<u8> {
@@ -299,6 +336,7 @@ pub struct RxGain {
     rom_delay: u32,
     production_delay: u32,
     effects: EffectReview,
+    committed: ProjectionReview,
 }
 
 impl std::ops::Deref for RxGain {
@@ -337,23 +375,38 @@ impl RxGain {
             "phy_set_rx_gain_table",
             &[ROM_INPUT, PHY_SDK_INPUT],
         )?;
-        let contract = phy_contract(
+        let applicability = "RX gain publication and DC calibration under explicit estimator, PBus and readiness inputs";
+        let (vendor, production) = (
             image.vendor_endpoint("phy_set_rx_gain_table")?,
             image.production_endpoint(PRODUCTION_ENTRY)?,
-            rx_rules(),
-            "RX gain publication and DC calibration under explicit estimator, PBus and readiness inputs",
         );
+        let projection = output_projection(
+            vendor.clone(),
+            image.parameter,
+            production.clone(),
+            OUTPUT_BYTES,
+            &COMMITTED,
+            applicability,
+        );
+        let contract = phy_contract(vendor, production, rx_rules(), applicability);
         let effects = image.review_effects(
             "rx-effects",
             "esp32s31.phy.rx-gain.effects",
             contract,
             "every RX register effect compares exactly except transport polling and the unused skipped-DC snapshot",
         )?;
+        let committed = image.review_projection(
+            "rx-committed",
+            "esp32s31.phy.rx-gain.committed",
+            projection,
+            "production publishes the committed DC coefficients and bank limits",
+        )?;
         Ok(Self {
             rom_delay: image.sym(1, "ets_delay_us"),
             production_delay: image.sym(2, "ets_delay_us"),
             image,
             effects,
+            committed,
         })
     }
 
@@ -404,8 +457,11 @@ impl RxGain {
             SessionReset::Warm,
             false,
         );
-        // Blobray compares every effect under the reviewed contract.
-        root.relation.as_mut().unwrap().effects = Some(self.effects.clone());
+        // Blobray compares every effect and the committed state under the
+        // reviewed contract and projection.
+        let relation = root.relation.as_mut().unwrap();
+        relation.effects = Some(self.effects.clone());
+        relation.projection = Some(self.committed.clone());
         Ok(vec![
             case(
                 "initialize",
@@ -436,11 +492,6 @@ fn check(label: &str, records: &[ExecutionEvidence], root: u32) {
     assert!(
         production_steps <= vendor_steps.saturating_mul(MAX_PRODUCTION_STEP_MULTIPLIER),
         "{label}: production {production_steps} steps, vendor {vendor_steps}"
-    );
-    assert_eq!(
-        output(records, root, true),
-        vendor_state(&output(records, root, false)),
-        "{label}: semantic RX state"
     );
 }
 
@@ -621,7 +672,9 @@ fn negative(ctx: &mut RxGain) -> Result<()> {
     // The contract's occurrence bounds exceed a one-event capacity; the
     // exhaustion under test precedes any effect comparison.
     let mut rows = ctx.rows(&profile)?;
-    rows[ROOT as usize].relation.as_mut().unwrap().effects = None;
+    let relation = rows[ROOT as usize].relation.as_mut().unwrap();
+    relation.effects = None;
+    relation.projection = None;
     let limited = request(
         &ctx.vendor,
         Some(&ctx.production),
@@ -685,18 +738,18 @@ mod tests {
     }
 
     #[test]
-    fn vendor_state_follows_production_output_order() {
-        let mut parameters = vec![0u8; PHY_PARAM_BYTES as usize];
-        parameters[WIFI_INDEX_DC] = 1;
-        parameters[WIFI_DC_BASE + 3] = 2;
-        parameters[SHARED_INDEX_DC] = 3;
-        parameters[RXBB_ADJUSTMENTS + 23] = 4;
-        parameters[WIFI_LAST_INDEX] = 5;
-        parameters[SHARED_LAST_INDEX] = 6;
-        let state = vendor_state(&parameters);
-        assert_eq!(state.len(), OUTPUT_BYTES as usize);
-        assert_eq!((state[0], state[35], state[36], state[103]), (1, 2, 3, 4));
-        assert_eq!(&state[104..], [5, 0, 6, 0]);
+    fn committed_fields_tile_the_output_except_index_padding() {
+        let mut covered = vec![false; OUTPUT_BYTES as usize];
+        for field in &COMMITTED {
+            let length = (u32::from(field.width) * field.count) as usize;
+            assert!(field.parameter as usize + length <= PHY_PARAM_BYTES as usize);
+            for byte in &mut covered[field.output as usize..][..length] {
+                assert!(!*byte, "{}", field.name);
+                *byte = true;
+            }
+        }
+        let padding: Vec<_> = (0..covered.len()).filter(|i| !covered[*i]).collect();
+        assert_eq!(padding, [105, 107]);
     }
 
     #[test]

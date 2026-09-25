@@ -279,6 +279,10 @@ expectations; Blobray mechanisms supply the rest:
 - Where a scenario uses the radio aperture, every radio register without an
   explicit model is retained storage that starts with the fill pattern. Only
   semantic inputs are modeled.
+- The channel, RX-gain and TX-DC roots publish their committed `phy_param`
+  fields through a reviewed output projection: Blobray compares each field's
+  final vendor bytes with its production output location, and output padding
+  is not claimed.
 - The channel, RX-gain and TX-DC roots compare their effects under a reviewed
   effect contract ([`contracts.rs`](scenarios/src/contracts.rs)). The scenario
   proposes it through `knowledge propose-effect-contract`, accepts exactly that
@@ -642,8 +646,9 @@ Every other radio register is the retained aperture.
 
 - the reviewed RX contract MATCHes, including readiness waits;
 - production uses at most twice the vendor's steps;
-- the 52 projected per-gain, base and fine DC coefficients and the two bank
-  limits equal the vendor's committed `phy_param` state.
+- the reviewed RX output projection MATCHes: the 52 per-gain, base and fine
+  DC coefficients and the two bank limits equal the vendor's committed
+  `phy_param` state.
 
 Beyond transport plumbing and the PBus status polling interval, the contract
 lets production omit only the outer DC control snapshot that the vendor reads
@@ -721,10 +726,10 @@ the DAC read-modify-write of the ROM reselection.
 **Full-root evidence.** These cases cover channels 1, 6, 11 and 13 at both
 bandwidths and both fills. They require:
 
-- a MATCH under the reviewed channel contract;
+- a MATCH under the reviewed channel contract and output projection;
 - nonempty TX gain publication;
-- a committed channel, bandwidth and temperature that match both an independent
-  ROM `phy_tsens_attribute`/`phy_code_to_temp` oracle and the production output.
+- a committed channel, bandwidth and temperature that match an independent
+  ROM `phy_tsens_attribute`/`phy_code_to_temp` oracle.
 
 **Temperature-prefix evidence.** These cases cover all five sensor DAC windows
 at codes 0, 64, 100 and 255. They are retained as separate `prefix-*`
@@ -805,7 +810,10 @@ Every other radio register is the retained aperture.
 
 **Checks for every profile:**
 
-- the DC rows equal the vendor's committed rows;
+- the reviewed TX output projection MATCHes: the production output holds a
+  Wi-Fi and a Bluetooth row set; the probe writes the selected band's rows and
+  the other set starts zero, so both bands equal the vendor's committed
+  `phy_param` rows;
 - the reviewed TX-DC contract MATCHes, retaining every write and readiness read;
 - the vendor keeps the independently seeded Wi-Fi gain adjustment.
 
@@ -821,6 +829,7 @@ the timeout (2) and the RF operation limit (6).
 **Negative cases:**
 
 - a changed production tone-clear path is a DIFF;
+- changed unselected production rows are a DIFF of the projection alone;
 - omitted callback installation is INCOMPLETE;
 - an undersized event capacity publishes nothing.
 

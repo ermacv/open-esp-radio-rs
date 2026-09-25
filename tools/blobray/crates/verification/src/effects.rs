@@ -256,6 +256,12 @@ mod tests {
             .verdict,
             ComparisonVerdict::Diff
         );
+        // A register only one side reads from the environment is a difference.
+        let environment = vec![write(1), read(0x7000, 0), read(0x6000, 7), delay(10)];
+        assert_eq!(
+            compare(&p, vendor.clone(), environment).verdict,
+            ComparisonVerdict::Diff
+        );
         // Without the explicit policy, the same unlisted effects are unclassified.
         let mut strict = p.clone();
         strict.contract.unclassified = UnclassifiedEffects::Incomplete;

@@ -120,14 +120,20 @@ tx-psram-dma-probe = [
     "oer-esp32s31-ieee80211-dma/tx-psram-dma-probe",
 ]
 
-[lints.rust]
-unsafe_op_in_unsafe_fn = "deny"
-
-[lints.clippy]
-disallowed_methods = "deny"
+[lints]
+workspace = true
 
 [workspace]
 resolver = "3"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+# A mutable call inside `debug_assert!` disappears from optimized firmware.
+debug_assert_with_mut_call = "deny"
+# The repository `clippy.toml` lists methods radio code must not call.
+disallowed_methods = "deny"
 
 [patch."https://github.com/esp-rs/esp-pacs"]
 esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "507d14dbccfc26128b929b044d76f09cf2d1d2f6" }

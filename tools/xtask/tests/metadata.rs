@@ -3,14 +3,26 @@ use oer_xtask::{Context, checks, paths};
 use std::fs;
 use support::Fixture;
 
+const POLICY: &str =
+    "[lints]\nworkspace = true\n[workspace.lints.rust]\nunsafe_op_in_unsafe_fn = \"deny\"\n";
+
 fn fixture() -> Fixture {
     let f = Fixture::new();
-    f.write("Cargo.toml","[package]\nname = \"root-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[workspace]\n");
+    f.write(
+        "Cargo.toml",
+        &format!(
+            "[package]\nname = \"root-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[workspace]\n{POLICY}"
+        ),
+    );
     f.write("src/lib.rs", "");
     for path in ["adapter", "helper", "crates"] {
         fs::remove_dir_all(f.root().join(path)).unwrap();
     }
-    f.package("crates/old", "independent-fixture", "[workspace]\n");
+    f.package(
+        "crates/old",
+        "independent-fixture",
+        &format!("[workspace]\n{POLICY}"),
+    );
     f.write(".gitignore", "/_oracles/\n**/target/\n");
     f.git(&["init", "--quiet"]);
     f.git(&["add", "."]);
@@ -45,6 +57,15 @@ fn invalid_unstaged_workspace_fails_the_audit() {
     f.write("crates/moved/Cargo.toml", "invalid new manifest");
     assert!(checks::metadata(&f.context).is_err());
 }
+#[test]
+fn independent_workspace_without_the_root_lint_policy_fails_the_audit() {
+    let f = fixture();
+    f.package("crates/moved", "independent-fixture", "[workspace]\n");
+    let error = checks::metadata(&f.context).unwrap_err().to_string();
+    assert!(error.contains("crates/moved/Cargo.toml: [workspace.lints] differs"));
+    assert!(error.contains("package independent-fixture must declare"));
+}
+
 #[test]
 fn git_worktree_discovery_uses_its_own_source_root() {
     let f = fixture();

@@ -186,8 +186,8 @@ postcard = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 static_cell.workspace = true
 
-[lints.rust]
-unexpected_cfgs = "allow"
+[lints]
+workspace = true
 
 [build-dependencies]
 oer-esp32s31-platform-layout = { path = "../../../../platform/esp32s31/layout", features = ["build"] }

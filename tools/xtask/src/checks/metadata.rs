@@ -1,6 +1,7 @@
 use crate::{Context, Result, cargo, paths};
 use std::{collections::BTreeSet, fs};
 
+mod lints;
 mod pins;
 
 pub fn run(context: &Context) -> Result<usize> {
@@ -20,12 +21,25 @@ pub fn run(context: &Context) -> Result<usize> {
         }
         workspaces.insert(workspace);
     }
+    let mut islands = Vec::with_capacity(workspaces.len());
     for manifest in &workspaces {
-        println!(
-            "checking locked Cargo metadata: {}",
-            manifest.strip_prefix(&context.root)?.display()
-        );
-        cargo::metadata(context, manifest, &[], None, true)?;
+        let relative = manifest.strip_prefix(&context.root)?.to_path_buf();
+        println!("checking locked Cargo metadata: {}", relative.display());
+        let graph = cargo::metadata(context, manifest, &[], None, true)?;
+        let mut members = Vec::new();
+        for package in graph.metadata.workspace_packages() {
+            let path = package.manifest_path.as_std_path();
+            members.push((
+                package.name.to_string(),
+                path.strip_prefix(&context.root)?.to_path_buf(),
+                fs::read_to_string(path)?,
+            ));
+        }
+        islands.push(lints::Island {
+            manifest: relative,
+            contents: fs::read_to_string(manifest)?,
+            members,
+        });
     }
     println!(
         "locked Cargo metadata passed for {} workspace(s)",
@@ -45,6 +59,11 @@ pub fn run(context: &Context) -> Result<usize> {
     println!(
         "Git pins and root patches agree across {} lock catalog(s)",
         locks.len()
+    );
+    lints::check(std::path::Path::new("Cargo.toml"), &islands)?;
+    println!(
+        "the root lint policy applies in {} workspace(s)",
+        islands.len()
     );
     Ok(workspaces.len())
 }

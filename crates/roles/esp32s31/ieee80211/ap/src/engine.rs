@@ -16,6 +16,7 @@ use crate::{
         ApPairwiseBinding, ApPairwiseKeyStorage, ApSecurity, ApSecurityError, ApSecurityStopReport,
     },
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211_mac::{
     ap_policy::{configure_ap_receive_policy, disable_ap_receive_policy},
@@ -53,6 +54,9 @@ use oer_ieee80211_rsn::{OwnedEapolFrame, frames::RsnTxFrame};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApEngineError {
     Beacon(ApBeaconBuildError),
+    /// The retained beacon could not be stamped with the current TSF, TIM
+    /// and TBTT schedule immediately before publication.
+    BeaconPreparation,
     Probe(oer_ieee80211_mac::ap::probe::ResponseError),
     Crypto(CryptoKeyError),
     Security(ApSecurityError),
@@ -157,7 +161,7 @@ pub struct ApProtectedFrame {
 pub(crate) struct ApPreparedAmsduFrame {
     pub(crate) length: usize,
     pub(crate) peer: [u8; 6],
-    sequence_number: u16,
+    sequence_number: SequenceNumber,
     hardware_key_selector: Option<u8>,
 }
 
@@ -173,7 +177,7 @@ enum ApDataSequenceSpace {
 pub(crate) struct ApPreparedDataFrame {
     pub(crate) length: usize,
     pub(crate) peer: [u8; 6],
-    sequence_number: u16,
+    sequence_number: SequenceNumber,
     sequence_space: ApDataSequenceSpace,
     hardware_key_selector: Option<u8>,
 }
@@ -182,7 +186,7 @@ pub(crate) struct ApPreparedDataFrame {
 pub struct ApAggregateFrame {
     pub encoded: EncodedApFrame,
     pub hardware_key_selector: u8,
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
 }
 
 /// Peer and key-slot identity captured once before an aggregate claims its
@@ -410,7 +414,7 @@ impl<'storage> ApEngine<'storage> {
             channel,
             beacon_interval_tu,
             dtim_period,
-            0,
+            SequenceNumber::ZERO,
             security_mode,
         ) {
             Ok(len) => len,
@@ -596,12 +600,12 @@ impl<'storage> ApEngine<'storage> {
     }
 
     #[cfg(test)]
-    pub(crate) fn current_data_sequence(&self) -> u16 {
+    pub(crate) fn current_data_sequence(&self) -> SequenceNumber {
         self.service.current_data_sequence()
     }
 
     #[cfg(test)]
-    pub(crate) fn current_qos_sequence(&self, peer: [u8; 6], tid: u8) -> Option<u16> {
+    pub(crate) fn current_qos_sequence(&self, peer: [u8; 6], tid: u8) -> Option<SequenceNumber> {
         self.service.current_qos_sequence(peer, tid)
     }
 

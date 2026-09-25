@@ -7,6 +7,7 @@
 //! claims to produce or authenticate encrypted on-air bytes.
 
 use core::{array, fmt};
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_ieee80211_mac::{
     channel::WifiChannel,
@@ -1237,7 +1238,7 @@ pub struct EspNowPreparedEncryptedV1Tx<'payload> {
     source: EspNowUnicastAddress,
     destination: EspNowUnicastAddress,
     phy_mode: EspNowPhyMode,
-    sequence_number: u16,
+    sequence_number: SequenceNumber,
     packet_number: EspNowCcmpPacketNumber,
     random_value: EspNowRandomValue,
     payload: EspNowV1Payload<'payload>,
@@ -1272,7 +1273,7 @@ impl<'payload> EspNowPreparedEncryptedV1Tx<'payload> {
         self.phy_mode
     }
 
-    pub const fn sequence_number(self) -> u16 {
+    pub const fn sequence_number(self) -> SequenceNumber {
         self.sequence_number
     }
 

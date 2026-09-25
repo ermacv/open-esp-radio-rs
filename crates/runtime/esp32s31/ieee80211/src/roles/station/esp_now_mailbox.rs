@@ -5,6 +5,7 @@ use core::{
     future::Future,
     sync::atomic::{AtomicU32, Ordering},
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use crate::{
     datapath::rx::staging::{StagedEthernetPublication, StagedRxDisposition, StagedRxFrame},
@@ -50,7 +51,7 @@ pub struct EspNowV2RxEvent {
     pub destination: EspNowDestination,
     pub source: EspNowUnicastAddress,
     pub random_value: EspNowRandomValue,
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub retry: bool,
     pub payload_length: usize,
     pub metadata: MacRxMetadata<RxPhyInfo>,

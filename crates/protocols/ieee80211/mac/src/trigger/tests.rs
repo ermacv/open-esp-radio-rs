@@ -1,4 +1,5 @@
 use super::*;
+use crate::sequence::seq;
 
 #[test]
 fn parses_every_common_info_field_across_the_word_boundary() {
@@ -410,7 +411,7 @@ fn parses_all_dependent_user_forms() {
     assert_eq!(mu_bar.bar_type, 2);
     assert_eq!(mu_bar.tid, 10);
     assert_eq!(mu_bar.bar_information, 0x1230);
-    assert_eq!(mu_bar.starting_sequence_number, 0x123);
+    assert_eq!(mu_bar.starting_sequence_number, seq(0x123));
 
     let nfrp = parse_trigger_nfrp_user(&[0x34, 0xa2, 0xb5, 0x6b, 0xd5]).unwrap();
     assert_eq!(nfrp.starting_aid, 0x234);

@@ -7,6 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_ieee80211_softmac::MacTxWork;
 
 use core::{marker::PhantomPinned, pin::Pin};
@@ -140,7 +141,7 @@ pub struct HtAmpduTxCompletion {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RetainedAmpduRetryCompletion {
     pub completion: HtAmpduTxCompletion,
-    pub first_sequence: u16,
+    pub first_sequence: SequenceNumber,
     pub subframes: u8,
     pub decision: AmpduRetryDecision,
 }
@@ -187,7 +188,7 @@ impl HtAmpduTxCompletion {
     /// SOURCE: complete `libpp.a[lmac.o]::lmacEndFrameExchangeSequence`
     /// status-five A-MPDU branch calls `hal_mac_tx_get_blockack`, publishes the
     /// result through `ppTxqUpdateBitmap`, and then enters `ppResortTxAMPDU`.
-    pub const fn acknowledges(self, sequence: u16) -> bool {
+    pub const fn acknowledges(self, sequence: SequenceNumber) -> bool {
         (!self.tx.is_trigger_flow() || self.tx.status() == 0)
             && self.block_ack_received
             && self.block_ack.block_ack.acknowledges(sequence)

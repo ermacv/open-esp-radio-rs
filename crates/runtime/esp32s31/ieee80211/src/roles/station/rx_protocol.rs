@@ -7,6 +7,7 @@
 
 #[cfg(feature = "task-poll-telemetry")]
 use oer_esp32s31_ieee80211_sta::connected_rx::ConnectedRxDataCycleProfile;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use core::future::{Future, pending, ready};
 
@@ -314,7 +315,7 @@ pub struct ConnectedReceiveStorage<
     dispatcher: ConnectedRxDispatcher,
     dispatcher_configured: bool,
     reorder_banks: RxBlockAckReorderBanks<RX_REORDER_SLOT_DOMAIN>,
-    reorder_first_starts: [Option<u16>; RX_BLOCK_ACK_BANK_COUNT],
+    reorder_first_starts: [Option<SequenceNumber>; RX_BLOCK_ACK_BANK_COUNT],
     gap_deadlines: [Option<Instant>; RX_BLOCK_ACK_BANK_COUNT],
     retained: [Option<RetainedRxFrame<'pool, CAPACITY, SLOTS, REORDER_SLOTS>>; REORDER_SLOTS],
 }

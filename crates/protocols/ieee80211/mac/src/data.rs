@@ -270,22 +270,6 @@ impl<'a> Iterator for AmsduSubframes<'a> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SequencePlan {
-    pub next_counter: u16,
-    pub sequence_number: u16,
-    pub sequence_control: u16,
-}
-
-pub const fn advance_sequence(counter: u16) -> SequencePlan {
-    let sequence_number = counter & 0x0fff;
-    SequencePlan {
-        next_counter: counter.wrapping_add(1),
-        sequence_number,
-        sequence_control: sequence_number << 4,
-    }
-}
-
 pub const fn plan_data_encapsulation(
     role: DataInterfaceRole,
     bssid: [u8; 6],

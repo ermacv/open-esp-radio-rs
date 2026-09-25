@@ -7,7 +7,7 @@ fn mailbox_preserves_typed_hardware_order_and_capacity() {
         AccessPointProtocolAction::Hardware(AccessPointHardwareAction::ResetRxBlockAckWindow {
             hardware_index: 2,
             tid: 6,
-            starting_sequence: 0x345,
+            starting_sequence: SequenceNumber::new(0x345).unwrap(),
             window: 64,
         });
     {

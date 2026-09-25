@@ -1,6 +1,7 @@
 //! Validate fragment headers, role mapping and authenticated payload identity.
 
 use crate::ccmp::CcmpHeader;
+use crate::sequence::SequenceNumber;
 
 use super::{
     CcmpPacketNumber, DATA, DataFragmentProtection, DataInterfaceRole, FROM_DS, MORE_FRAGMENTS,
@@ -194,7 +195,7 @@ fn parse_data_header(
             receiver_address,
             transmitter_address,
             address3,
-            sequence_number: sequence_control >> 4,
+            sequence_number: SequenceNumber::from_sequence_control(sequence_control),
             qos_control,
         },
         frame_control,

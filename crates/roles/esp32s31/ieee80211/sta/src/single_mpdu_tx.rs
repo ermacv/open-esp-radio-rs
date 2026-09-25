@@ -6,6 +6,7 @@
 //! before a timer is awaited.
 
 use core::future::Future;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211::{
     esp_now::{
@@ -452,7 +453,7 @@ where
         }
     }
 
-    pub fn peek_qos_sequence(&self, tid: u8) -> Option<u16> {
+    pub fn peek_qos_sequence(&self, tid: u8) -> Option<SequenceNumber> {
         self.sequences.peek_qos(tid)
     }
 

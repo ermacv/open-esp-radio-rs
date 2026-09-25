@@ -8,6 +8,7 @@ use oer_esp32s31_ieee80211_mac::{
     tx::ampdu::HtAmpduHardware,
     tx::{HardwareOwnedTxDma, PreparedTxDma},
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 #[derive(Default)]
 pub(super) struct Hardware {
     pub(super) legacy_publications: usize,
@@ -185,7 +186,7 @@ impl RxBlockAckHardware for Hardware {
         &mut self,
         _: u8,
         _: u8,
-        _: u16,
+        _: SequenceNumber,
         _: u16,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         unreachable!()
@@ -205,7 +206,7 @@ impl RxBlockAckHardware for Hardware {
     fn reset_extra_softap_rx_block_ack_window(
         &mut self,
         _: u8,
-        _: u16,
+        _: SequenceNumber,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         unreachable!()
     }

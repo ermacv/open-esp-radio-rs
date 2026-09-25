@@ -1,5 +1,7 @@
 //! Allocation-free IEEE 802.11 management-frame construction.
 
+use crate::sequence::SequenceNumber;
+
 pub const MANAGEMENT_HEADER_LEN: usize = 24;
 pub const MAX_SSID_LEN: usize = 32;
 pub const MAX_SUPPORTED_RATES_LEN: usize = 24;
@@ -16,7 +18,6 @@ pub enum ProbeRequestError {
     SsidTooLong,
     NoSupportedRates,
     TooManySupportedRates,
-    SequenceNumberOutOfRange,
     OutputTooSmall { required: usize },
 }
 
@@ -30,7 +31,7 @@ pub struct ProbeRequest<'a> {
     pub destination: [u8; 6],
     pub source: [u8; 6],
     pub bssid: [u8; 6],
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub ssid: &'a [u8],
     pub supported_rates: &'a [u8],
 }
@@ -50,9 +51,6 @@ impl ProbeRequest<'_> {
         }
         if self.supported_rates.len() > MAX_SUPPORTED_RATES_LEN {
             return Err(ProbeRequestError::TooManySupportedRates);
-        }
-        if self.sequence_number > 0x0fff {
-            return Err(ProbeRequestError::SequenceNumberOutOfRange);
         }
 
         let first_rates_len = self
@@ -76,7 +74,7 @@ impl ProbeRequest<'_> {
         frame[4..10].copy_from_slice(&self.destination);
         frame[10..16].copy_from_slice(&self.source);
         frame[16..22].copy_from_slice(&self.bssid);
-        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
 
         let mut offset = MANAGEMENT_HEADER_LEN;
         frame[offset] = SSID_ELEMENT_ID;

@@ -20,6 +20,7 @@ use oer_esp32s31_hal::{
         MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
     },
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211_mac::{
     ap_policy::ApRxPolicyHardware,
@@ -536,7 +537,7 @@ impl CooperativeRadioHardware<'_> {
         &mut self,
         hardware_index: u8,
         tid: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
         window: u16,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         rx_ampdu_hw::reset_window(
@@ -565,7 +566,7 @@ impl CooperativeRadioHardware<'_> {
     pub fn reset_extra_softap_rx_block_ack_window(
         &mut self,
         hardware_index: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         rx_ampdu_hw::reset_extra_softap_window(
             &mut self.wifi_mac_hal(),
@@ -632,7 +633,7 @@ impl oer_esp32s31_ieee80211_mac::rx::hardware::RxBlockAckHardware for Cooperativ
         &mut self,
         hardware_index: u8,
         tid: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
         window: u16,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         CooperativeRadioHardware::reset_rx_block_ack_window(
@@ -661,7 +662,7 @@ impl oer_esp32s31_ieee80211_mac::rx::hardware::RxBlockAckHardware for Cooperativ
     fn reset_extra_softap_rx_block_ack_window(
         &mut self,
         hardware_index: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         CooperativeRadioHardware::reset_extra_softap_rx_block_ack_window(
             self,

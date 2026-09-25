@@ -1,5 +1,7 @@
 //! Allocation-free HE NDP Announcement parsing and encoding.
 
+use crate::sequence::SequenceNumber;
+
 const NDPA_FRAME_CONTROL: u16 = 0x0054;
 const NDPA_HEADER_SIZE: usize = 17;
 const HE_STA_INFO_SIZE: usize = 4;
@@ -318,8 +320,8 @@ impl<'a> HeCompressedBeamformingReport<'a> {
         &self.mpdu[10..16]
     }
 
-    pub const fn sequence_number(self) -> u16 {
-        u16::from_le_bytes([self.mpdu[22], self.mpdu[23]]) >> 4
+    pub const fn sequence_number(self) -> SequenceNumber {
+        SequenceNumber::from_sequence_control(u16::from_le_bytes([self.mpdu[22], self.mpdu[23]]))
     }
 
     pub const fn mimo_control(self) -> u64 {

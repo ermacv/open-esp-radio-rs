@@ -1,4 +1,5 @@
 use super::{StaTxBlockAckSessions, TxBlockAckDialogTokenSequence};
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 #[test]
 fn shared_dialog_tokens_reproduce_the_qualified_vendor_modulus() {
@@ -15,9 +16,15 @@ fn earliest_alarm_deadline_walks_owned_slots_without_tid_remapping() {
     let mut sessions = StaTxBlockAckSessions::new(16, 100_000, false).unwrap();
     assert_eq!(sessions.earliest_alarm_deadline(), None);
 
-    sessions.begin(0, 0, 75).unwrap();
-    sessions.begin(7, 0, 25).unwrap();
-    sessions.begin(5, 0, 50).unwrap();
+    sessions
+        .begin(0, SequenceNumber::new(0).unwrap(), 75)
+        .unwrap();
+    sessions
+        .begin(7, SequenceNumber::new(0).unwrap(), 25)
+        .unwrap();
+    sessions
+        .begin(5, SequenceNumber::new(0).unwrap(), 50)
+        .unwrap();
 
     assert_eq!(sessions.earliest_alarm_deadline(), Some(100_025));
     assert!(sessions.stop(7));

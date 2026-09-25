@@ -25,6 +25,7 @@ pub mod management;
 pub mod ndpa;
 pub mod scan;
 pub mod security;
+pub mod sequence;
 pub mod ssid;
 pub mod station;
 pub mod station_beacon;

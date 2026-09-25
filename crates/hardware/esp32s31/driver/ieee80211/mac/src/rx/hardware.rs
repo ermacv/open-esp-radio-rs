@@ -15,6 +15,7 @@ use oer_esp32s31_hal::{
         RxBlockAckEntrySnapshot,
     },
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 const RX_BLOCK_ACK_CAPACITY: u8 = 8;
 /// Highest receive BlockAck TID accepted by the vendor net80211 state machine.
@@ -32,7 +33,7 @@ pub struct S31RxBlockAckAgreement {
     pub interface: MacInterface,
     pub peer: [u8; 6],
     pub tid: u8,
-    pub starting_sequence: u16,
+    pub starting_sequence: SequenceNumber,
     pub window: u16,
 }
 
@@ -41,7 +42,6 @@ pub enum S31RxBlockAckAgreementError {
     HardwareIndex(u8),
     MulticastPeer,
     Tid(u8),
-    StartingSequence(u16),
     Window(u16),
     HardwareReadbackMismatch,
 }
@@ -74,7 +74,7 @@ pub trait RxBlockAckHardware {
         &mut self,
         hardware_index: u8,
         tid: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
         window: u16,
     ) -> Result<(), S31RxBlockAckAgreementError>;
 
@@ -91,7 +91,7 @@ pub trait RxBlockAckHardware {
     fn reset_extra_softap_rx_block_ack_window(
         &mut self,
         hardware_index: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
     ) -> Result<(), S31RxBlockAckAgreementError>;
 }
 
@@ -124,7 +124,7 @@ impl RxBlockAckHardware for WifiMacHal<'_> {
         &mut self,
         hardware_index: u8,
         tid: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
         window: u16,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         reset_window(self, hardware_index, tid, starting_sequence, window)
@@ -147,7 +147,7 @@ impl RxBlockAckHardware for WifiMacHal<'_> {
     fn reset_extra_softap_rx_block_ack_window(
         &mut self,
         hardware_index: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         reset_extra_softap_window(self, hardware_index, starting_sequence)
     }
@@ -179,7 +179,7 @@ impl RxBlockAckHardware for RadioRuntimeOwner {
         &mut self,
         hardware_index: u8,
         tid: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
         window: u16,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         reset_window(
@@ -208,7 +208,7 @@ impl RxBlockAckHardware for RadioRuntimeOwner {
     fn reset_extra_softap_rx_block_ack_window(
         &mut self,
         hardware_index: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         reset_extra_softap_window(&mut self.wifi_mac_hal(), hardware_index, starting_sequence)
     }
@@ -226,11 +226,6 @@ impl S31RxBlockAckAgreement {
         }
         if self.tid > S31_RX_BLOCK_ACK_MAX_TID {
             return Err(S31RxBlockAckAgreementError::Tid(self.tid));
-        }
-        if self.starting_sequence > 0x0fff {
-            return Err(S31RxBlockAckAgreementError::StartingSequence(
-                self.starting_sequence,
-            ));
         }
         if self.window == 0 || self.window > 0x7f {
             return Err(S31RxBlockAckAgreementError::Window(self.window));
@@ -256,7 +251,7 @@ pub fn program(
         agreement.interface,
         agreement.peer,
         MacRxBlockAckTid::new(u32::from(agreement.tid)).expect("validated receive BlockAck TID"),
-        MacRxBlockAckStartingSequence::new(u32::from(agreement.starting_sequence))
+        MacRxBlockAckStartingSequence::new(u32::from(agreement.starting_sequence.get()))
             .expect("validated receive BlockAck starting sequence"),
         MacRxBlockAckWindow::new(u32::from(agreement.window))
             .expect("validated receive BlockAck window"),
@@ -275,7 +270,7 @@ pub fn program(
         || snapshot.peer != agreement.peer
         || snapshot.interface != agreement.interface
         || u16::from(snapshot.window) != agreement.window
-        || snapshot.loaded_start_sequence != agreement.starting_sequence
+        || snapshot.loaded_start_sequence != agreement.starting_sequence.get()
     {
         return Err(S31RxBlockAckAgreementError::HardwareReadbackMismatch);
     }
@@ -305,7 +300,7 @@ pub fn reset_window(
     mmio: &mut WifiMacHal<'_>,
     hardware_index: u8,
     tid: u8,
-    starting_sequence: u16,
+    starting_sequence: SequenceNumber,
     window: u16,
 ) -> Result<(), S31RxBlockAckAgreementError> {
     if hardware_index >= RX_BLOCK_ACK_CAPACITY {
@@ -314,11 +309,6 @@ pub fn reset_window(
     if tid > S31_RX_BLOCK_ACK_MAX_TID {
         return Err(S31RxBlockAckAgreementError::Tid(tid));
     }
-    if starting_sequence > 0x0fff {
-        return Err(S31RxBlockAckAgreementError::StartingSequence(
-            starting_sequence,
-        ));
-    }
     if window == 0 || window > 0x7f {
         return Err(S31RxBlockAckAgreementError::Window(window));
     }
@@ -326,7 +316,7 @@ pub fn reset_window(
         MacRxBlockAckEntryIndex::new(u32::from(hardware_index))
             .expect("validated receive BlockAck hardware index"),
         MacRxBlockAckTid::new(u32::from(tid)).expect("validated receive BlockAck TID"),
-        MacRxBlockAckStartingSequence::new(u32::from(starting_sequence))
+        MacRxBlockAckStartingSequence::new(u32::from(starting_sequence.get()))
             .expect("validated receive BlockAck starting sequence"),
         MacRxBlockAckWindow::new(u32::from(window)).expect("validated receive BlockAck window"),
     );
@@ -347,7 +337,7 @@ pub fn program_extra_softap(
         agreement.interface,
         agreement.peer,
         MacRxBlockAckTid::new(u32::from(agreement.tid)).expect("validated receive BlockAck TID"),
-        MacRxBlockAckStartingSequence::new(u32::from(agreement.starting_sequence))
+        MacRxBlockAckStartingSequence::new(u32::from(agreement.starting_sequence.get()))
             .expect("validated receive BlockAck starting sequence"),
         MacRxBlockAckWindow::new(u32::from(agreement.window))
             .expect("validated receive BlockAck window"),
@@ -381,20 +371,15 @@ pub fn clear_extra_softap(
 pub fn reset_extra_softap_window(
     mmio: &mut WifiMacHal<'_>,
     hardware_index: u8,
-    starting_sequence: u16,
+    starting_sequence: SequenceNumber,
 ) -> Result<(), S31RxBlockAckAgreementError> {
     if hardware_index >= RX_BLOCK_ACK_CAPACITY {
         return Err(S31RxBlockAckAgreementError::HardwareIndex(hardware_index));
     }
-    if starting_sequence > 0x0fff {
-        return Err(S31RxBlockAckAgreementError::StartingSequence(
-            starting_sequence,
-        ));
-    }
     mmio.reset_extra_softap_rx_block_ack_window(
         MacExtraSoftApRxBlockAckEntryIndex::new(u32::from(hardware_index))
             .expect("validated extra-SoftAP receive BlockAck hardware index"),
-        MacRxBlockAckStartingSequence::new(u32::from(starting_sequence))
+        MacRxBlockAckStartingSequence::new(u32::from(starting_sequence.get()))
             .expect("validated receive BlockAck starting sequence"),
         MacRxBlockAckWindow::new(u32::from(crate::rx::ampdu::RX_BLOCK_ACK_MAX_WINDOW))
             .expect("vendor receive BlockAck hardware window"),

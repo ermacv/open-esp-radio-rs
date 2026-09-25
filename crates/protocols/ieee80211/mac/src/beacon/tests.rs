@@ -1,4 +1,5 @@
 use crate::ap::profile::tests::TEST_ADVERTISEMENT;
+use crate::sequence::seq;
 
 use super::{
     ApBeaconBuildError, WPA2_BEACON_CAPACITY, WPA2_PERSONAL_CCMP_PSK_RSN_IE, dtim, stamp,
@@ -53,7 +54,7 @@ fn builds_the_bounded_wpa2_ht20_beacon() {
         WifiChannel::mhz20(6).unwrap(),
         100,
         2,
-        0x0abc,
+        seq(0x0abc),
     )
     .unwrap();
 
@@ -86,7 +87,7 @@ fn ht40_beacon_advertises_the_validated_secondary_channel() {
         channel,
         100,
         2,
-        0,
+        seq(0),
     )
     .unwrap();
     assert!(
@@ -129,7 +130,7 @@ fn rejects_unrepresentable_beacon_policy_before_mutation() {
             WifiChannel::mhz20(14).unwrap(),
             100,
             2,
-            0,
+            seq(0),
         ),
         Err(ApBeaconBuildError::InvalidPrimaryChannel)
     );

@@ -2,6 +2,7 @@
 
 #[cfg(test)]
 use oer_ieee80211_mac::beacon::dtim;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_ieee80211_mac::{
     beacon::{
@@ -39,7 +40,7 @@ impl<'storage> ApBeacon<'storage> {
         channel: WifiChannel,
         beacon_interval_tu: u16,
         dtim_period: u8,
-        management_sequence: u16,
+        management_sequence: SequenceNumber,
     ) -> Result<Self, ApBeaconBuildError> {
         let len = write_wpa2_ht_beacon(
             &crate::profile::ADVERTISEMENT,
@@ -76,19 +77,16 @@ impl<'storage> ApBeacon<'storage> {
     pub fn prepare(
         &mut self,
         executor_timestamp_micros: u64,
-        management_sequence: u16,
+        management_sequence: SequenceNumber,
         group_pending: bool,
         unicast_tim_bitmap: TimPartialVirtualBitmap<'_>,
     ) -> Option<&mut [u8]> {
-        if management_sequence > 0x0fff {
-            return None;
-        }
         stamp(
             &mut self.storage[..self.len],
             executor_timestamp_micros,
             group_pending,
         )?;
-        self.storage[22..24].copy_from_slice(&(management_sequence << 4).to_le_bytes());
+        self.storage[22..24].copy_from_slice(&management_sequence.sequence_control().to_le_bytes());
         self.len = write_tim_partial_virtual_bitmap(self.storage, self.len, unicast_tim_bitmap)?;
         let now = executor_timestamp_micros as u32;
         let schedule_base = self.next_publication_tick.unwrap_or(now);

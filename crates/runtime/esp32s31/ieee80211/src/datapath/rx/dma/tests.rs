@@ -7,6 +7,7 @@ use core::{
     future::{Future, ready},
     sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use crate::{
     datapath::{
@@ -1744,7 +1745,7 @@ fn exercise_negotiated_rx_block_ack(in_order: bool) {
             interface: oer_esp32s31_ieee80211_mac::MacInterface::Station,
             peer: [8, 9, 10, 11, 12, 13],
             tid: 0,
-            starting_sequence: 100,
+            starting_sequence: SequenceNumber::new(100).unwrap(),
             window: 8,
         }),
     )

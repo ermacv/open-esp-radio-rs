@@ -3,6 +3,7 @@ use super::*;
 use crate::ap::{
     ApManagementRequest, parse_ap_management_request, profile::tests::TEST_ADVERTISEMENT,
 };
+use crate::sequence::seq;
 
 const AP: [u8; 6] = [2, 0, 0, 0, 0, 1];
 const PEER: [u8; 6] = [2, 0, 0, 0, 0, 2];
@@ -76,7 +77,7 @@ fn response_preserves_advertisement_without_tim_or_beacon_mutation() {
             WifiChannel::mhz20(13).unwrap(),
             100,
             2,
-            0,
+            seq(0),
             security,
         )
         .unwrap();
@@ -85,7 +86,7 @@ fn response_preserves_advertisement_without_tim_or_beacon_mutation() {
         assert!(matches_ssid(&beacon[..len], b"ap"));
         assert!(!matches_ssid(&beacon[..len], b"foreign"));
         let mut output = [0; 256];
-        let n = write_response(&beacon[..len], PEER, 7, 12345, &mut output).unwrap();
+        let n = write_response(&beacon[..len], PEER, seq(7), 12345, &mut output).unwrap();
         assert_eq!(beacon, before);
         assert_eq!(output[0], 0x50);
         assert_eq!(&output[4..10], &PEER);
@@ -105,7 +106,7 @@ fn response_preserves_advertisement_without_tim_or_beacon_mutation() {
         assert!(dst.is_empty());
         let mut short = std::vec![0xaa; n - 1];
         assert_eq!(
-            write_response(&beacon[..len], PEER, 0, 0, &mut short),
+            write_response(&beacon[..len], PEER, seq(0), 0, &mut short),
             Err(ResponseError::OutputTooSmall { required: n })
         );
         assert!(short.iter().all(|byte| *byte == 0xaa));

@@ -411,7 +411,7 @@ fn make_ordinary<'a, const BUFFER_SIZE: usize>(
         },
         ConnectedTxHandoff {
             security: ConnectedTxSecurity::Wpa2Personal(key),
-            sequences: StaTxSequenceCounters::new(7),
+            sequences: StaTxSequenceCounters::new(SequenceNumber::new(7).unwrap()),
             config: SingleMpduTxConfig {
                 station_address: STATION,
                 bssid: BSSID,
@@ -514,7 +514,10 @@ fn idle_aggregate_returns_ordinary_and_storage_for_station_teardown() {
     };
     assert_eq!(returned.aggregate.primary().state(), TxSlotState::Free);
     assert_eq!(returned.resources.slot.state(), TxSlotState::Free);
-    assert_eq!(returned.sequences.peek_non_qos(), 7);
+    assert_eq!(
+        returned.sequences.peek_non_qos(),
+        SequenceNumber::new(7).unwrap()
+    );
     let ConnectedTxSecurity::Wpa2Personal(key) = returned.security else {
         panic!("WPA2 test owner must return its pairwise key");
     };
@@ -616,7 +619,10 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
     let returned = tx
         .try_into_station_parts()
         .unwrap_or_else(|_| panic!("resumed station TX remains cleanly reclaimable"));
-    assert_eq!(returned.sequences.peek_non_qos(), 8);
+    assert_eq!(
+        returned.sequences.peek_non_qos(),
+        SequenceNumber::new(8).unwrap()
+    );
     let ConnectedTxSecurity::Wpa2Personal(key) = returned.security else {
         panic!("WPA2 test owner must return its pairwise key");
     };
@@ -866,8 +872,14 @@ fn aggregate_uses_exact_ba_tid_and_defers_a_different_wmm_successor() {
     };
     assert_eq!(active.traffic.tid(), 5);
     assert_eq!(active.original_subframes, 1);
-    assert_eq!(tx.ordinary.peek_qos_sequence(5), Some(8));
-    assert_eq!(tx.ordinary.peek_qos_sequence(6), Some(7));
+    assert_eq!(
+        tx.ordinary.peek_qos_sequence(5),
+        Some(SequenceNumber::new(8).unwrap())
+    );
+    assert_eq!(
+        tx.ordinary.peek_qos_sequence(6),
+        Some(SequenceNumber::new(7).unwrap())
+    );
     assert_eq!(tx.prepared_network_frame_count(), 1);
     assert_eq!(
         network.tx_queue_len(),
@@ -893,7 +905,10 @@ fn aggregate_uses_exact_ba_tid_and_defers_a_different_wmm_successor() {
         hardware.last_legacy_queue,
         Some(LegacyTxQueue::Voice.hardware_index())
     );
-    assert_eq!(tx.ordinary.peek_qos_sequence(6), Some(8));
+    assert_eq!(
+        tx.ordinary.peek_qos_sequence(6),
+        Some(SequenceNumber::new(8).unwrap())
+    );
     assert!(!tx.has_prepared_network_tx());
     assert_eq!(network.tx_queue_len(), 1);
 
@@ -1063,7 +1078,10 @@ fn he_txop_above_rts_threshold_fails_before_aggregate_sequence_or_dma() {
             txop: HeEdcaTxopLimit::from_units_32_us(94).unwrap(),
         }
     );
-    assert_eq!(tx.ordinary.peek_qos_sequence(5), Some(7));
+    assert_eq!(
+        tx.ordinary.peek_qos_sequence(5),
+        Some(SequenceNumber::new(7).unwrap())
+    );
     assert_eq!(hardware.he_publications, 0);
     assert_eq!(hardware.legacy_publications, 0);
     assert_eq!(hardware.ht_publications, 0);
@@ -1114,7 +1132,10 @@ fn peer_advertised_tiny_he_txop_cannot_wrap_into_aggregate_capacity() {
         hardware.last_legacy_queue,
         Some(LegacyTxQueue::Video.hardware_index())
     );
-    assert_eq!(tx.ordinary.peek_qos_sequence(5), Some(8));
+    assert_eq!(
+        tx.ordinary.peek_qos_sequence(5),
+        Some(SequenceNumber::new(8).unwrap())
+    );
     assert!(
         observer.observed(AggregateTxObservation::NetworkSingleMpdu {
             reason: NetworkSingleMpduReason::FreshAggregateCapacity,
@@ -2010,8 +2031,14 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
         hardware.last_ht_queue,
         Some(LegacyTxQueue::Video.hardware_index())
     );
-    assert_eq!(tx.peek_qos_sequence(5), Some(9));
-    assert_eq!(tx.peek_qos_sequence(0), Some(7));
+    assert_eq!(
+        tx.peek_qos_sequence(5),
+        Some(SequenceNumber::new(9).unwrap())
+    );
+    assert_eq!(
+        tx.peek_qos_sequence(0),
+        Some(SequenceNumber::new(7).unwrap())
+    );
 
     hardware.aggregate_completion = Some(aggregate_completion(7, 0b01));
     assert_eq!(
@@ -2025,8 +2052,14 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
     );
     assert_eq!(tx.take_last_aggregate_status(), None);
     assert!(observer.terminal.lock().unwrap().is_empty());
-    assert_eq!(tx.peek_qos_sequence(5), Some(9));
-    assert_eq!(tx.peek_qos_sequence(0), Some(7));
+    assert_eq!(
+        tx.peek_qos_sequence(5),
+        Some(SequenceNumber::new(9).unwrap())
+    );
+    assert_eq!(
+        tx.peek_qos_sequence(0),
+        Some(SequenceNumber::new(7).unwrap())
+    );
     assert_eq!(hardware.ht_publications, 2);
     assert_eq!(
         hardware.last_ht_queue,

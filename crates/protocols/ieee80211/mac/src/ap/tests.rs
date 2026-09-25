@@ -4,6 +4,7 @@ const TEST_HT_CAPABILITIES: crate::ht::HtLocalCapabilities =
     crate::ht::HtLocalCapabilities::new(0x100c, 0x03, 0xff, 0x01);
 
 use super::*;
+use crate::sequence::seq;
 
 #[test]
 fn ap_eapol_data_frame_uses_from_ds_address_mapping() {
@@ -13,7 +14,7 @@ fn ap_eapol_data_frame_uses_from_ds_address_mapping() {
     let len = ApDataFrame {
         access_point,
         destination: peer,
-        sequence_number: 9,
+        sequence_number: seq(9),
         ether_type: 0x888e,
         payload: &[1, 2, 3],
     }
@@ -45,7 +46,7 @@ fn protected_ap_frame_owns_from_ds_ccmp_and_plaintext_boundary() {
     let len = ApProtectedDataFrame {
         access_point,
         peer,
-        sequence_number: 7,
+        sequence_number: seq(7),
         user_priority: 0,
         peer_qos: true,
         more_data: false,
@@ -91,7 +92,7 @@ fn ap_amsdu_encodes_multiple_open_and_ccmp_subframes_in_order() {
     let protected_len = ApAmsduFrame {
         access_point,
         peer,
-        sequence_number: 11,
+        sequence_number: seq(11),
         user_priority: 5,
         more_data: true,
         ccmp_header: Some(ccmp),
@@ -121,7 +122,7 @@ fn ap_amsdu_encodes_multiple_open_and_ccmp_subframes_in_order() {
     let open_len = ApAmsduFrame {
         access_point,
         peer,
-        sequence_number: 12,
+        sequence_number: seq(12),
         user_priority: 0,
         more_data: false,
         ccmp_header: None,
@@ -148,7 +149,7 @@ fn ap_amsdu_fails_before_mutating_output_on_peer_or_capacity_miss() {
         ApAmsduFrame {
             access_point,
             peer,
-            sequence_number: 0,
+            sequence_number: seq(0),
             user_priority: 0,
             more_data: false,
             ccmp_header: Some([0; 8]),
@@ -167,7 +168,7 @@ fn ap_amsdu_fails_before_mutating_output_on_peer_or_capacity_miss() {
         ApAmsduFrame {
             access_point,
             peer,
-            sequence_number: 0,
+            sequence_number: seq(0),
             user_priority: 0,
             more_data: false,
             ccmp_header: Some([0; 8]),
@@ -190,7 +191,7 @@ fn protected_ap_frame_rejects_a_destination_outside_pairwise_owner() {
         ApProtectedDataFrame {
             access_point,
             peer,
-            sequence_number: 0,
+            sequence_number: seq(0),
             user_priority: 0,
             peer_qos: false,
             more_data: false,
@@ -216,7 +217,7 @@ fn protected_ap_qos_frame_encodes_in_network_headroom_without_payload_copy() {
     let encoded = ApProtectedDataFrame {
         access_point,
         peer,
-        sequence_number: 7,
+        sequence_number: seq(7),
         user_priority: 0,
         peer_qos: true,
         more_data: false,
@@ -249,7 +250,7 @@ fn ap_action_frame_and_parser_preserve_per_peer_addba_identity() {
     let length = ApActionFrame {
         access_point,
         peer,
-        sequence_number: 9,
+        sequence_number: seq(9),
         body: &body,
     }
     .encode(&mut frame)
@@ -329,7 +330,7 @@ fn peer_disconnect_frames_own_subtype_reason_and_sequence() {
             peer,
             ApPeerDisconnectKind::Disassociation,
             4,
-            7,
+            seq(7),
         ),
         Ok(AP_PEER_DISCONNECT_LEN),
     );
@@ -345,7 +346,7 @@ fn peer_disconnect_frames_own_subtype_reason_and_sequence() {
         peer,
         ApPeerDisconnectKind::Deauthentication,
         2,
-        8,
+        seq(8),
     )
     .unwrap();
     assert_eq!(&output[..2], &0x00c0_u16.to_le_bytes());
@@ -512,7 +513,8 @@ fn complete_response_encoders_own_addresses_sequence_and_status() {
     let access_point = [2, 0, 0, 0, 0, 1];
     let peer = [2, 0, 0, 0, 0, 2];
     let mut authentication = [0xaa; AP_AUTHENTICATION_RESPONSE_LEN];
-    write_open_authentication_response(&mut authentication, access_point, peer, 17, 7).unwrap();
+    write_open_authentication_response(&mut authentication, access_point, peer, 17, seq(7))
+        .unwrap();
     assert_eq!(&authentication[4..10], &peer);
     assert_eq!(&authentication[10..16], &access_point);
     assert_eq!(&authentication[26..28], &2_u16.to_le_bytes());
@@ -526,7 +528,7 @@ fn complete_response_encoders_own_addresses_sequence_and_status() {
         peer,
         0,
         0xc001,
-        8,
+        seq(8),
         WifiChannel::mhz20(6).unwrap(),
         None,
     )

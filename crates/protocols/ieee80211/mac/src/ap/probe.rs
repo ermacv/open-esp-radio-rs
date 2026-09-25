@@ -1,9 +1,10 @@
 //! Probe discovery reuses the AP's current beacon advertisement, without TIM.
 
+use crate::sequence::SequenceNumber;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResponseError {
     InvalidAdvertisement,
-    InvalidSequence,
     OutputTooSmall { required: usize },
 }
 
@@ -36,13 +37,10 @@ pub fn matches_ssid(beacon: &[u8], requested: &[u8]) -> bool {
 pub fn write_response(
     beacon: &[u8],
     peer: [u8; 6],
-    sequence: u16,
+    sequence: SequenceNumber,
     timestamp_micros: u64,
     output: &mut [u8],
 ) -> Result<usize, ResponseError> {
-    if sequence > 0x0fff {
-        return Err(ResponseError::InvalidSequence);
-    }
     let elements = beacon
         .get(36..)
         .ok_or(ResponseError::InvalidAdvertisement)?;
@@ -65,7 +63,7 @@ pub fn write_response(
     output[..2].copy_from_slice(&[0x50, 0]);
     output[2..4].fill(0);
     output[4..10].copy_from_slice(&peer);
-    output[22..24].copy_from_slice(&(sequence << 4).to_le_bytes());
+    output[22..24].copy_from_slice(&sequence.sequence_control().to_le_bytes());
     output[24..32].copy_from_slice(&timestamp_micros.to_le_bytes());
     let mut offset = 36;
     remaining = elements;

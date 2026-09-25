@@ -1,4 +1,5 @@
 use core::num::NonZeroU16;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use crate::roles::station::StationControlResources;
 
@@ -382,7 +383,7 @@ impl<'security> StationEnginePort<'security, NoopRawMutex> for ScanTransitionPor
 #[test]
 fn phase_owner_returns_runtime_target_and_security_without_reconstruction() {
     let pmk = Pmk::derive(b"password", b"ssid").expect("test WPA2 input is valid");
-    let sequences = StaTxSequenceCounters::new(9);
+    let sequences = StaTxSequenceCounters::new(SequenceNumber::new(9).unwrap());
     let station = StaAttemptStation {
         station_address: [2, 0, 0, 0, 0, 1],
         access_point: ScanRecord::EMPTY,
@@ -424,13 +425,16 @@ fn phase_owner_returns_runtime_target_and_security_without_reconstruction() {
             .1,
         [0x5a; 32]
     );
-    assert_eq!(security.sequences.peek_non_qos(), 9);
+    assert_eq!(
+        security.sequences.peek_non_qos(),
+        SequenceNumber::new(9).unwrap()
+    );
 }
 
 #[test]
 fn common_engine_rejects_running_scan_without_refresh_before_port_entry() {
     let pmk = Pmk::derive(b"password", b"ssid").expect("test WPA2 input is valid");
-    let sequences = StaTxSequenceCounters::new(3);
+    let sequences = StaTxSequenceCounters::new(SequenceNumber::new(3).unwrap());
     let station = StaAttemptStation {
         station_address: [2, 0, 0, 0, 0, 2],
         access_point: ScanRecord::EMPTY,
@@ -483,7 +487,7 @@ fn common_engine_rejects_running_scan_without_refresh_before_port_entry() {
 #[test]
 fn common_engine_selects_candidate_before_dispatching_initial_join() {
     let pmk = Pmk::derive(b"password", b"ssid").expect("test WPA2 input is valid");
-    let sequences = StaTxSequenceCounters::new(5);
+    let sequences = StaTxSequenceCounters::new(SequenceNumber::new(5).unwrap());
     let identity = StaIdentity {
         station_address: [2, 0, 0, 0, 0, 4],
         association_preference: Preference::Automatic,
@@ -541,7 +545,7 @@ fn common_engine_selects_candidate_before_dispatching_initial_join() {
 #[test]
 fn common_engine_dispatches_join_ready_scan_owner_to_reconnected_phase() {
     let pmk = Pmk::derive(b"password", b"ssid").expect("test WPA2 input is valid");
-    let sequences = StaTxSequenceCounters::new(4);
+    let sequences = StaTxSequenceCounters::new(SequenceNumber::new(4).unwrap());
     let station = StaAttemptStation {
         station_address: [2, 0, 0, 0, 0, 3],
         access_point: ScanRecord::EMPTY,
@@ -600,7 +604,7 @@ fn common_engine_dispatches_join_ready_scan_owner_to_reconnected_phase() {
 
 #[test]
 fn running_scan_completion_prepares_reconnect_only_for_a_selected_candidate() {
-    let sequences = StaTxSequenceCounters::new(0);
+    let sequences = StaTxSequenceCounters::new(SequenceNumber::new(0).unwrap());
     let pmk = Pmk::derive(b"password", b"ssid").expect("test WPA2 input is valid");
     let security = StaAttemptSecurity::new(
         pmk,

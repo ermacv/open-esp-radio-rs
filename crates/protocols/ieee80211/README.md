@@ -20,6 +20,7 @@ protocol that owns them:
 | `security/rsn` | RSN element wire syntax shared by station selection and the RSN crate; no suite policy |
 | `station/security` | Station RSN candidate policy and the selected association element |
 | `station/data` | Data codecs, with A-MSDU framing in `data/amsdu` |
+| `sequence` | `SequenceNumber`: the twelve-bit value and its modulo-4096 window arithmetic |
 | `station/sequence` | Separate management/non-QoS and per-TID TX sequence owners |
 | `data/duplicate` | Association/peer-scoped receive retry history |
 | `qos` | Typed traffic intent, UP/AC and DSCP classification helpers |
@@ -28,8 +29,11 @@ protocol that owns them:
 | `extensions/espressif/esp_now/v2/reassembly` | Caller-owned storage for a validated v2 datagram |
 
 The public Block Ack, fragmentation, station and data namespaces expose their
-protocol contracts. Consumers use `qos` for traffic intent, `extensions::wmm`
-for WMM elements and `extensions::espressif::esp_now` for vendor MAC framing.
+protocol contracts. Every frame builder, sequence owner and reorder window
+takes `sequence::SequenceNumber`, so twelve-bit range validation happens once
+at construction and raw register fields convert at the chip boundary.
+Consumers use `qos` for traffic intent, `extensions::wmm` for WMM elements and
+`extensions::espressif::esp_now` for vendor MAC framing.
 
 QoS classification includes the existing DSCP mapping and downgrade helpers.
 The actual admission/downgrade loop still belongs to chip MAC TX runtime;

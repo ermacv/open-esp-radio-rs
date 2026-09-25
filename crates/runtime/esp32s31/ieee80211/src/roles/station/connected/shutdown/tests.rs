@@ -2,6 +2,7 @@ use crate::{
     datapath::irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime},
     roles::station::tx::ConnectedTxTeardownParts,
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
@@ -144,7 +145,9 @@ impl ConnectedStaTxTeardown for TeardownTx {
             security: oer_esp32s31_ieee80211_sta::single_mpdu_tx::ConnectedTxSecurity::Wpa2Personal(
                 self.pairwise.take().expect("test TX owns its pairwise key"),
             ),
-            sequences: oer_ieee80211_mac::station::StaTxSequenceCounters::new(6),
+            sequences: oer_ieee80211_mac::station::StaTxSequenceCounters::new(
+                SequenceNumber::new(6).unwrap(),
+            ),
             aggregate: 7,
         })
     }

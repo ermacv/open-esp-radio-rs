@@ -6,12 +6,12 @@ use super::*;
 pub struct OpenAuthenticationRequest {
     pub source: [u8; 6],
     pub bssid: [u8; 6],
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
 }
 
 impl OpenAuthenticationRequest {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid, self.sequence_number)?;
+        validate_peer(self.bssid)?;
         let required = MANAGEMENT_HEADER_LEN + 6;
         if output.len() < required {
             return Err(StationFrameError::OutputTooSmall { required });
@@ -66,13 +66,13 @@ pub struct StaDisconnect {
 pub struct StaActionFrame<'a> {
     pub source: [u8; 6],
     pub bssid: [u8; 6],
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub body: &'a [u8],
 }
 
 impl StaActionFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid, self.sequence_number)?;
+        validate_peer(self.bssid)?;
         let required = MANAGEMENT_HEADER_LEN.checked_add(self.body.len()).ok_or(
             StationFrameError::OutputTooSmall {
                 required: usize::MAX,

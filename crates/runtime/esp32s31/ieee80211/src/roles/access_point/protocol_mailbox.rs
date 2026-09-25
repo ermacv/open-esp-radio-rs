@@ -1,5 +1,7 @@
 //! Typed protocol-to-radio actions for the AP RX ownership split.
 
+use oer_ieee80211_mac::sequence::SequenceNumber;
+
 /// Hardware actions inferred by the protocol consumer but executed only by
 /// the radio/PAC owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -7,7 +9,7 @@ pub enum AccessPointHardwareAction {
     ResetRxBlockAckWindow {
         hardware_index: u8,
         tid: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
         window: u16,
     },
 }

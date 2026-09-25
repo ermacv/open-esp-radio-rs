@@ -11,11 +11,11 @@ pub use oer_ieee80211_mac::block_ack::{
     TxBlockAckConfig, TxBlockAckDialogToken, TxBlockAckError, TxBlockAckResponse,
     TxBlockAckSession, parse_block_ack_action,
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 /// Strict S31 TX window recovered from the fixed vendor queue geometry.
 pub const TX_BLOCK_ACK_MAX_WINDOW: u16 = 32;
 pub const TX_AMPDU_SLOT_CAPACITY: usize = TX_BLOCK_ACK_MAX_WINDOW as usize;
-const SEQUENCE_NUMBER_MASK: u16 = 0x0fff;
 const BLOCK_ACK_BITMAP_BITS: u16 = 64;
 
 /// Shared vendor Dialog Token owner for all S31 STA TX agreements.
@@ -144,7 +144,7 @@ impl StaTxBlockAckSessions {
     pub fn begin(
         &mut self,
         tid: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
         now_us: u64,
     ) -> Result<AddbaRequest, StaTxBlockAckSessionsError> {
         let index =
@@ -306,7 +306,7 @@ impl TxAmpduSlot {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TxAmpduMpdu {
     pub slot: TxAmpduSlot,
-    pub sequence: u16,
+    pub sequence: SequenceNumber,
 }
 
 /// Semantic BlockAck information decoded by the PAC completion owner.
@@ -316,7 +316,7 @@ pub struct TxAmpduMpdu {
 /// deliberately negotiates a window of at most 32 frames.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TxBlockAckBitmap {
-    pub starting_sequence: u16,
+    pub starting_sequence: SequenceNumber,
     pub bitmap: u64,
 }
 
@@ -327,7 +327,7 @@ pub struct HtBlockAckObservation {
 }
 
 impl HtBlockAckObservation {
-    pub const fn new(control: u8, starting_sequence: u16, bitmap: u64) -> Self {
+    pub const fn new(control: u8, starting_sequence: SequenceNumber, bitmap: u64) -> Self {
         Self {
             control,
             block_ack: TxBlockAckBitmap::new(starting_sequence, bitmap),
@@ -337,9 +337,9 @@ impl HtBlockAckObservation {
 
 impl TxBlockAckBitmap {
     #[inline(always)]
-    pub const fn new(starting_sequence: u16, bitmap: u64) -> Self {
+    pub const fn new(starting_sequence: SequenceNumber, bitmap: u64) -> Self {
         Self {
-            starting_sequence: starting_sequence & SEQUENCE_NUMBER_MASK,
+            starting_sequence,
             bitmap,
         }
     }
@@ -353,13 +353,12 @@ impl TxBlockAckBitmap {
     /// even though it no longer has a bitmap bit. Only a bounded predecessor
     /// is admitted; a sequence beyond either side of the 64-entry BA window
     /// remains unacknowledged so a stale result cannot release new traffic.
-    pub const fn acknowledges(self, sequence: u16) -> bool {
-        let distance = sequence.wrapping_sub(self.starting_sequence) & SEQUENCE_NUMBER_MASK;
+    pub const fn acknowledges(self, sequence: SequenceNumber) -> bool {
+        let distance = self.starting_sequence.forward_distance(sequence);
         if distance < BLOCK_ACK_BITMAP_BITS {
             self.bitmap & (1_u64 << distance) != 0
         } else {
-            let predecessor_distance =
-                self.starting_sequence.wrapping_sub(sequence) & SEQUENCE_NUMBER_MASK;
+            let predecessor_distance = sequence.forward_distance(self.starting_sequence);
             predecessor_distance <= BLOCK_ACK_BITMAP_BITS
         }
     }
@@ -385,7 +384,7 @@ pub enum TxAmpduBatchError {
     InvalidWindow(u8),
     InvalidSlot(u8),
     DuplicateSlot(u8),
-    DuplicateSequence(u16),
+    DuplicateSequence(SequenceNumber),
     Full,
 }
 
@@ -405,7 +404,7 @@ enum TxAmpduBatchPhase {
 pub struct TxAmpduBatch {
     entries: [Option<TxAmpduMpdu>; TX_AMPDU_SLOT_CAPACITY],
     phase: TxAmpduBatchPhase,
-    starting_sequence: u16,
+    starting_sequence: SequenceNumber,
     window: u8,
     count: u8,
     completion_index: u8,
@@ -417,7 +416,7 @@ impl TxAmpduBatch {
         Self {
             entries: [None; TX_AMPDU_SLOT_CAPACITY],
             phase: TxAmpduBatchPhase::Idle,
-            starting_sequence: 0,
+            starting_sequence: SequenceNumber::ZERO,
             window: 0,
             count: 0,
             completion_index: 0,
@@ -425,14 +424,18 @@ impl TxAmpduBatch {
         }
     }
 
-    pub fn begin(&mut self, starting_sequence: u16, window: u8) -> Result<(), TxAmpduBatchError> {
+    pub fn begin(
+        &mut self,
+        starting_sequence: SequenceNumber,
+        window: u8,
+    ) -> Result<(), TxAmpduBatchError> {
         if !matches!(self.phase, TxAmpduBatchPhase::Idle) {
             return Err(TxAmpduBatchError::Busy);
         }
         if window == 0 || usize::from(window) > TX_AMPDU_SLOT_CAPACITY {
             return Err(TxAmpduBatchError::InvalidWindow(window));
         }
-        self.starting_sequence = starting_sequence & SEQUENCE_NUMBER_MASK;
+        self.starting_sequence = starting_sequence;
         self.window = window;
         self.count = 0;
         self.completion_index = 0;
@@ -444,8 +447,7 @@ impl TxAmpduBatch {
     /// Append one statically owned frame and assign its consecutive QoS
     /// sequence number. Duplicate slot ownership is rejected in O(1).
     pub fn push(&mut self, slot: u8) -> Result<TxAmpduMpdu, TxAmpduBatchError> {
-        let sequence =
-            self.starting_sequence.wrapping_add(u16::from(self.count)) & SEQUENCE_NUMBER_MASK;
+        let sequence = self.starting_sequence.wrapping_add(u16::from(self.count));
         self.push_sequence(slot, sequence)
     }
 
@@ -458,7 +460,7 @@ impl TxAmpduBatch {
     pub fn push_sequence(
         &mut self,
         slot: u8,
-        sequence: u16,
+        sequence: SequenceNumber,
     ) -> Result<TxAmpduMpdu, TxAmpduBatchError> {
         if !matches!(self.phase, TxAmpduBatchPhase::Building) {
             return Err(TxAmpduBatchError::NotBuilding);
@@ -472,7 +474,6 @@ impl TxAmpduBatch {
             return Err(TxAmpduBatchError::Full);
         }
 
-        let sequence = sequence & SEQUENCE_NUMBER_MASK;
         let mut index = 0_usize;
         while index < usize::from(self.count) {
             if self.entries[index].is_some_and(|entry| entry.sequence == sequence) {

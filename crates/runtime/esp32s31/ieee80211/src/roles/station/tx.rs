@@ -13,6 +13,7 @@
 
 #[cfg(not(any(feature = "diagnostics", test)))]
 use core::marker::PhantomData;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 #[cfg(test)]
 #[cfg(all(test, feature = "owned-network"))]
@@ -297,7 +298,7 @@ struct AggregateActive<const SLOTS: usize> {
     #[cfg(feature = "tx-wait-probe")]
     wait_probe: wait_probe::Schedule,
     #[cfg(feature = "tx-wait-probe")]
-    first_sequence: u16,
+    first_sequence: SequenceNumber,
 }
 
 #[cfg(any(feature = "tx-wait-probe", test))]
@@ -309,7 +310,7 @@ struct AggregatePrepared<const SLOTS: usize> {
     aggregate_length: u16,
     retry: AmpduRetryState<SLOTS>,
     original_subframes: u8,
-    first_sequence: u16,
+    first_sequence: SequenceNumber,
     build_stop: AggregateBuildStop,
     #[cfg(any(feature = "diagnostics", test))]
     preparation_micros: u64,

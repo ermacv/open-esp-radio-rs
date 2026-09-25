@@ -15,6 +15,7 @@ use crate::{
     },
     single_mpdu_tx::{ActionTxConfig, SingleMpduTx, SingleMpduTxError, SingleMpduTxOutcome},
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211::datapath::{DatapathControlContext, DatapathControlProgress};
 
@@ -302,7 +303,7 @@ pub trait ConnectedControlTx {
 
     fn now_micros(&self) -> u64;
 
-    fn peek_qos_sequence(&self, tid: u8) -> Option<u16>;
+    fn peek_qos_sequence(&self, tid: u8) -> Option<SequenceNumber>;
 
     fn start_action<H: TxHardware>(
         &mut self,
@@ -386,7 +387,7 @@ where
         SingleMpduTx::now_micros(self)
     }
 
-    fn peek_qos_sequence(&self, tid: u8) -> Option<u16> {
+    fn peek_qos_sequence(&self, tid: u8) -> Option<SequenceNumber> {
         SingleMpduTx::peek_qos_sequence(self, tid)
     }
 

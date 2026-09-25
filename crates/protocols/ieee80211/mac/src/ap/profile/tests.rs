@@ -1,4 +1,5 @@
 use super::*;
+use crate::sequence::seq;
 
 pub(crate) const TEST_ADVERTISEMENT: crate::ap::profile::Advertisement = {
     use crate::{
@@ -132,7 +133,7 @@ fn beacon_association_and_peer_rate_admission_use_the_supplied_profile() {
         channel,
         100,
         2,
-        0,
+        seq(0),
         WifiSecurityMode::Open,
     )
     .unwrap();
@@ -145,7 +146,7 @@ fn beacon_association_and_peer_rate_admission_use_the_supplied_profile() {
         peer,
         0,
         1,
-        0,
+        seq(0),
         channel,
         None,
         WifiSecurityMode::Wpa2Personal,

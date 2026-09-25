@@ -1,4 +1,5 @@
 use super::*;
+use crate::sequence::seq;
 
 const SOURCE: [u8; 6] = [0x02, 0x00, 0x00, 0x12, 0x34, 0x56];
 
@@ -9,7 +10,7 @@ fn encodes_wildcard_probe_request() {
         destination: BROADCAST_ADDRESS,
         source: SOURCE,
         bssid: BROADCAST_ADDRESS,
-        sequence_number: 0x123,
+        sequence_number: seq(0x123),
         ssid: b"",
         supported_rates: &[0x82, 0x84, 0x8b, 0x96],
     }
@@ -37,7 +38,7 @@ fn encodes_directed_request_and_extended_rates() {
         destination: BROADCAST_ADDRESS,
         source: SOURCE,
         bssid: BROADCAST_ADDRESS,
-        sequence_number: 0,
+        sequence_number: seq(0),
         ssid: b"open",
         supported_rates: &rates,
     }
@@ -60,7 +61,7 @@ fn rejects_invalid_inputs_before_touching_output() {
         destination: BROADCAST_ADDRESS,
         source: SOURCE,
         bssid: BROADCAST_ADDRESS,
-        sequence_number: 0,
+        sequence_number: seq(0),
         ssid: b"",
         supported_rates: &[0x82, 0x84, 0x8b, 0x96],
     }
@@ -74,19 +75,7 @@ fn rejects_invalid_inputs_before_touching_output() {
             destination: BROADCAST_ADDRESS,
             source: SOURCE,
             bssid: BROADCAST_ADDRESS,
-            sequence_number: 0x1000,
-            ssid: b"",
-            supported_rates: &[0x82],
-        }
-        .encode(&mut [0; 64]),
-        Err(ProbeRequestError::SequenceNumberOutOfRange)
-    );
-    assert_eq!(
-        ProbeRequest {
-            destination: BROADCAST_ADDRESS,
-            source: SOURCE,
-            bssid: BROADCAST_ADDRESS,
-            sequence_number: 0,
+            sequence_number: seq(0),
             ssid: &[0; MAX_SSID_LEN + 1],
             supported_rates: &[0x82],
         }
@@ -98,7 +87,7 @@ fn rejects_invalid_inputs_before_touching_output() {
             destination: BROADCAST_ADDRESS,
             source: SOURCE,
             bssid: BROADCAST_ADDRESS,
-            sequence_number: 0,
+            sequence_number: seq(0),
             ssid: b"",
             supported_rates: &[],
         }

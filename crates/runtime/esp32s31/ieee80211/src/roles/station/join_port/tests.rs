@@ -1,4 +1,5 @@
 use core::future::{Future, ready};
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxPowerPair, WifiTxPowerProfile};
 
@@ -68,8 +69,8 @@ fn he_access_point() -> ScanRecord {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Action {
     Start,
-    Authentication(u16),
-    Association(u16, u16, PhyMode),
+    Authentication(SequenceNumber),
+    Association(SequenceNumber, u16, PhyMode),
     Service,
     Stop,
     AuthenticationObserved,
@@ -189,14 +190,14 @@ fn port_orders_driver_edges_and_keeps_diagnostics_external() {
         port.start_receive().await.unwrap();
         port.transmit_open_authentication(StaAuthenticationAttempt {
             ordinal: 1,
-            sequence_number: 7,
+            sequence_number: SequenceNumber::new(7).unwrap(),
             response_timeout_ms: 1_000,
         })
         .await
         .unwrap();
         port.transmit_association(StaAssociationAttempt {
             ordinal: 1,
-            sequence_number: 8,
+            sequence_number: SequenceNumber::new(8).unwrap(),
             elapsed_ms: 0,
         })
         .await
@@ -209,8 +210,8 @@ fn port_orders_driver_edges_and_keeps_diagnostics_external() {
         hardware.actions,
         [
             Action::Start,
-            Action::Authentication(7),
-            Action::Association(8, 3, PhyMode::He20),
+            Action::Authentication(SequenceNumber::new(7).unwrap()),
+            Action::Association(SequenceNumber::new(8).unwrap(), 3, PhyMode::He20),
             Action::Service,
             Action::Stop,
         ]

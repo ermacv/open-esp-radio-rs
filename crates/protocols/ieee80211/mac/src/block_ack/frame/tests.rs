@@ -1,4 +1,5 @@
 use super::*;
+use crate::sequence::seq;
 
 #[test]
 fn parses_all_block_ack_action_bodies() {
@@ -11,7 +12,7 @@ fn parses_all_block_ack_action_bodies() {
             amsdu: true,
             window: 30,
             timeout_tu: 0,
-            starting_sequence: 0x123,
+            starting_sequence: seq(0x123),
         })
     );
     assert_eq!(

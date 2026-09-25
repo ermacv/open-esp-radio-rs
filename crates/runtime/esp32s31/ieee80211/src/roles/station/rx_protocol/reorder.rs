@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(any(feature = "diagnostics", test))]
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 #[cfg(feature = "task-poll-telemetry")]
 use crate::diagnostics::core0_rx_reorder_cycles::{
@@ -128,7 +130,12 @@ where
     /// frame appear to be the first frame even though the direct hot path has
     /// already advanced the reorder window.
     #[cfg(any(feature = "diagnostics", test))]
-    pub(super) fn observe_first_reorder_frame(&mut self, bank: usize, tid: u8, sequence: u16) {
+    pub(super) fn observe_first_reorder_frame(
+        &mut self,
+        bank: usize,
+        tid: u8,
+        sequence: SequenceNumber,
+    ) {
         let Some(start) = self.runtime.reorder_first_starts[bank].take() else {
             return;
         };

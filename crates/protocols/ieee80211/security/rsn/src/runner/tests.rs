@@ -8,6 +8,7 @@ use crate::{
 };
 
 use super::*;
+use oer_ieee80211_mac::station::StaSequenceCounter;
 
 const LOCAL: [u8; 6] = [1; 6];
 const AP: [u8; 6] = [2; 6];
@@ -17,22 +18,8 @@ const RSN: [u8; 22] = [
     0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
 ];
 
-struct TestSequence(u16);
-
-impl TestSequence {
-    const fn new(next: u16) -> Self {
-        Self(next)
-    }
-
-    fn take(&mut self) -> u16 {
-        let sequence = self.0;
-        self.0 = (self.0 + 1) & 0x0fff;
-        sequence
-    }
-
-    const fn peek(&self) -> u16 {
-        self.0
-    }
+fn seq(value: u16) -> SequenceNumber {
+    SequenceNumber::new(value).unwrap()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,7 +37,7 @@ struct Backend {
     restarts: u16,
     stops: u16,
     transmissions: u16,
-    last_sequence: Option<u16>,
+    last_sequence: Option<SequenceNumber>,
     inject_peer_attacks: bool,
 }
 
@@ -189,7 +176,7 @@ impl RsnHandshakeBackend for Backend {
     fn transmit_message2(
         &mut self,
         frame: &RsnTxFrame<512>,
-        sequence_number: u16,
+        sequence_number: SequenceNumber,
     ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         assert_eq!(
             frame.key_frame().message(),
@@ -250,7 +237,7 @@ fn pending_key_install() -> RsnPendingKeyInstall {
     let pmk = Pmk::derive(b"password", b"ssid").unwrap();
     let backend = Backend::new(Some(1), None, Some(1));
     let mut runner = RsnHandshakeRunner::new(backend, TestTimer::default(), IdentityUnwrap);
-    let mut sequence = TestSequence::new(0x123);
+    let mut sequence = StaSequenceCounter::new(seq(0x123));
     embassy_futures::block_on(runner.run(config(&pmk), &mut || sequence.take())).unwrap()
 }
 
@@ -259,7 +246,7 @@ fn message3_wait_ignores_bad_mic_wrong_replay_and_unsupported_frames() {
     let pmk = Pmk::derive(b"password", b"ssid").unwrap();
     let backend = Backend::new(Some(1), None, Some(4)).with_peer_attack_sequence();
     let mut runner = RsnHandshakeRunner::new(backend, TestTimer::default(), IdentityUnwrap);
-    let mut sequence = TestSequence::new(0x123);
+    let mut sequence = StaSequenceCounter::new(seq(0x123));
 
     let pending = embassy_futures::block_on(runner.run(config(&pmk), &mut || sequence.take()))
         .expect("untrusted peer rejects must not abort the live join");
@@ -391,7 +378,7 @@ fn message1_timeout_is_exact_and_stops_the_live_ring() {
         TestTimer::default(),
         crate::aes::RsnSoftwareAes::new(),
     );
-    let mut sequence = TestSequence::new(0x123);
+    let mut sequence = StaSequenceCounter::new(seq(0x123));
 
     assert!(matches!(
         embassy_futures::block_on(runner.run(config(&pmk), &mut || sequence.take())),
@@ -416,7 +403,7 @@ fn peer_message1_sends_m2_once_but_never_retries_it_on_local_timeout() {
         TestTimer::default(),
         crate::aes::RsnSoftwareAes::new(),
     );
-    let mut sequence = TestSequence::new(0x123);
+    let mut sequence = StaSequenceCounter::new(seq(0x123));
 
     assert!(matches!(
         embassy_futures::block_on(runner.run(config(&pmk), &mut || sequence.take())),
@@ -428,8 +415,8 @@ fn peer_message1_sends_m2_once_but_never_retries_it_on_local_timeout() {
     ));
     assert_eq!(runner.backend().restarts, 1);
     assert_eq!(runner.backend().transmissions, 1);
-    assert_eq!(runner.backend().last_sequence, Some(0x123));
-    assert_eq!(sequence.peek(), 0x124);
+    assert_eq!(runner.backend().last_sequence, Some(seq(0x123)));
+    assert_eq!(sequence.peek(), seq(0x124));
     assert_eq!(runner.timer.now_micros, 6_001_000);
     assert_eq!(
         runner.timer.waits,
@@ -446,7 +433,7 @@ fn repeated_peer_message1_is_the_only_message2_refresh_source() {
         TestTimer::default(),
         crate::aes::RsnSoftwareAes::new(),
     );
-    let mut sequence = TestSequence::new(7);
+    let mut sequence = StaSequenceCounter::new(seq(7));
 
     assert!(matches!(
         embassy_futures::block_on(runner.run(config(&pmk), &mut || sequence.take())),
@@ -456,7 +443,7 @@ fn repeated_peer_message1_is_the_only_message2_refresh_source() {
         })
     ));
     assert_eq!(runner.backend().transmissions, 2);
-    assert_eq!(sequence.peek(), 9);
+    assert_eq!(sequence.peek(), seq(9));
     assert_eq!(runner.timer.now_micros, 6_001_000);
 }
 
@@ -469,7 +456,7 @@ fn message1_on_exact_deadline_is_serviced_before_timeout() {
         TestTimer::default(),
         crate::aes::RsnSoftwareAes::new(),
     );
-    let mut sequence = TestSequence::new(0);
+    let mut sequence = StaSequenceCounter::new(seq(0));
 
     assert!(matches!(
         embassy_futures::block_on(runner.run(config(&pmk), &mut || sequence.take())),

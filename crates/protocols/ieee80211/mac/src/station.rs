@@ -16,6 +16,7 @@ use crate::{
     management::{MANAGEMENT_HEADER_LEN, MAX_SSID_LEN, MAX_SUPPORTED_RATES_LEN},
     scan::ScanRecord,
     security::WifiSecurityMode,
+    sequence::SequenceNumber,
 };
 
 const OPEN_AUTHENTICATION_FRAME_CONTROL: u16 = 0x00b0;
@@ -67,7 +68,6 @@ pub enum StationFrameError {
     NoAmsduFrames,
     EthernetFrameTooShort,
     AmsduTooLong { length: usize, maximum: usize },
-    SequenceNumberOutOfRange,
     UserPriorityOutOfRange,
     HeControlRequiresQos,
     AmsduRequiresQos,
@@ -96,12 +96,9 @@ pub use management::{
 };
 pub use security::{SelectedRsn, StaSecurityError, select_association_rsn, select_wpa2_psk_rsn};
 
-pub(crate) fn validate_peer(bssid: [u8; 6], sequence_number: u16) -> Result<(), StationFrameError> {
+pub(crate) fn validate_peer(bssid: [u8; 6]) -> Result<(), StationFrameError> {
     if bssid == [0; 6] || bssid == [0xff; 6] || bssid[0] & 1 != 0 {
         return Err(StationFrameError::InvalidBssid);
-    }
-    if sequence_number > 0x0fff {
-        return Err(StationFrameError::SequenceNumberOutOfRange);
     }
     Ok(())
 }
@@ -112,13 +109,13 @@ fn write_management_header(
     destination: [u8; 6],
     source: [u8; 6],
     bssid: [u8; 6],
-    sequence_number: u16,
+    sequence_number: SequenceNumber,
 ) {
     frame[0..2].copy_from_slice(&frame_control.to_le_bytes());
     frame[4..10].copy_from_slice(&destination);
     frame[10..16].copy_from_slice(&source);
     frame[16..22].copy_from_slice(&bssid);
-    frame[22..24].copy_from_slice(&(sequence_number << 4).to_le_bytes());
+    frame[22..24].copy_from_slice(&sequence_number.sequence_control().to_le_bytes());
 }
 
 fn read_u16(bytes: &[u8], offset: usize) -> Option<u16> {

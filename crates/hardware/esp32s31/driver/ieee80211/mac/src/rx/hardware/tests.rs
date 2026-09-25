@@ -5,7 +5,7 @@ const AGREEMENT: S31RxBlockAckAgreement = S31RxBlockAckAgreement {
     interface: MacInterface::AccessPoint,
     peer: [0x70, 0x15, 0xfb, 0xa8, 0x48, 0xf0],
     tid: 6,
-    starting_sequence: 0x0abc,
+    starting_sequence: SequenceNumber::new(0x0abc).unwrap(),
     window: 16,
 };
 

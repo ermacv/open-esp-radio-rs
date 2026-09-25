@@ -1,4 +1,5 @@
 use super::*;
+use crate::sequence::seq;
 
 const RA: [u8; 6] = [0x30, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
 const TA: [u8; 6] = [0x70, 0x15, 0xfb, 0xa8, 0x48, 0xf0];
@@ -213,7 +214,7 @@ fn decodes_the_complete_vendor_he20_compressed_feedback_header() {
         &[0xdc, 0x15, 0xc8, 0x54, 0xbc, 0x1e]
     );
     assert_eq!(decoded.transmitter_address(), &RA);
-    assert_eq!(decoded.sequence_number(), 10);
+    assert_eq!(decoded.sequence_number(), seq(10));
     assert_eq!(decoded.mimo_control(), 0x000d_c400_8208);
     assert_eq!(decoded.column_count(), 1);
     assert_eq!(decoded.row_count(), 2);

@@ -430,12 +430,10 @@ where
         H: TxHardware,
     {
         self.require_idle()?;
-        let publication =
-            self.engine
-                .prepare_beacon_publication(now_micros)
-                .ok_or(ApMacError::Engine(ApEngineError::Beacon(
-                    oer_ieee80211_mac::beacon::ApBeaconBuildError::InvalidSequenceNumber,
-                )))?;
+        let publication = self
+            .engine
+            .prepare_beacon_publication(now_micros)
+            .ok_or(ApMacError::Engine(ApEngineError::BeaconPreparation))?;
         self.transmit
             .start_encoded(hardware, ApTxClass::Beacon, publication.frame)?;
         self.pending = Some(PendingPublication::Beacon {

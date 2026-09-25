@@ -5,12 +5,15 @@ use oer_ieee80211_mac::station::StaDisconnectKind;
 #[test]
 fn authentication_runtime_owns_attempt_sequence_deadline_and_timeout_limit() {
     let mut runtime = StaAuthenticationRuntime::new(LOCAL, BSSID);
-    let mut sequence = StaSequenceCounter::new(0x0ffe);
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0x0ffe).unwrap());
 
     for ordinal in 1..=STA_AUTHENTICATION_ATTEMPT_LIMIT {
         let attempt = runtime.begin_attempt(&mut sequence).unwrap();
         assert_eq!(attempt.ordinal, ordinal);
-        assert_eq!(attempt.sequence_number, (0x0ffd + ordinal) & 0x0fff);
+        assert_eq!(
+            attempt.sequence_number,
+            SequenceNumber::new(0x0ffd).unwrap().wrapping_add(ordinal)
+        );
         assert_eq!(attempt.response_timeout_ms, STA_RESPONSE_TIMEOUT_MS);
         runtime.observe_received_frame().unwrap();
         let event = runtime.response_timed_out().unwrap();
@@ -44,7 +47,7 @@ fn authentication_runtime_owns_attempt_sequence_deadline_and_timeout_limit() {
 #[test]
 fn authentication_runtime_ignores_other_management_and_accepts_selected_peer() {
     let mut runtime = StaAuthenticationRuntime::new(LOCAL, BSSID);
-    let mut sequence = StaSequenceCounter::new(7);
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(7).unwrap());
     let attempt = runtime.begin_attempt(&mut sequence).unwrap();
     runtime.observe_received_frame().unwrap();
     assert_eq!(
@@ -67,7 +70,7 @@ fn authentication_runtime_ignores_other_management_and_accepts_selected_peer() {
 #[test]
 fn authentication_runtime_retries_disconnect_but_not_status_rejection() {
     let mut runtime = StaAuthenticationRuntime::new(LOCAL, BSSID);
-    let mut sequence = StaSequenceCounter::new(0);
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
     runtime.begin_attempt(&mut sequence).unwrap();
     runtime.observe_received_frame().unwrap();
     assert_eq!(

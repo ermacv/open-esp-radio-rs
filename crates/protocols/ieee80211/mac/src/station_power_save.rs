@@ -7,7 +7,10 @@
 //! merely encoding either frame never grants permission to stop the radio:
 //! the runtime must retain the corresponding acknowledged exchange.
 
-use crate::station::{StationFrameError, validate_peer};
+use crate::{
+    sequence::SequenceNumber,
+    station::{StationFrameError, validate_peer},
+};
 
 /// Length of a legacy Null Data MPDU, excluding the hardware-owned FCS.
 pub const STA_NULL_DATA_FRAME_LEN: usize = 24;
@@ -65,7 +68,7 @@ pub enum StaPowerManagement {
 pub struct StaNullDataFrame {
     pub station_address: [u8; 6],
     pub bssid: [u8; 6],
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub power_management: StaPowerManagement,
 }
 
@@ -76,7 +79,7 @@ impl StaNullDataFrame {
     /// `ieee80211_nullfunc_get`: Data/NullFunc + ToDS, BSSID/STA/BSSID address
     /// geometry, with the caller selecting the Power Management bit.
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid, self.sequence_number)?;
+        validate_peer(self.bssid)?;
         if output.len() < STA_NULL_DATA_FRAME_LEN {
             return Err(StationFrameError::OutputTooSmall {
                 required: STA_NULL_DATA_FRAME_LEN,
@@ -95,7 +98,7 @@ impl StaNullDataFrame {
         frame[4..10].copy_from_slice(&self.bssid);
         frame[10..16].copy_from_slice(&self.station_address);
         frame[16..22].copy_from_slice(&self.bssid);
-        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
         Ok(STA_NULL_DATA_FRAME_LEN)
     }
 }
@@ -115,7 +118,7 @@ pub struct StaPsPollFrame {
 impl StaPsPollFrame {
     /// Encode the complete control MPDU without an FCS.
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid, 0)?;
+        validate_peer(self.bssid)?;
         if output.len() < STA_PS_POLL_FRAME_LEN {
             return Err(StationFrameError::OutputTooSmall {
                 required: STA_PS_POLL_FRAME_LEN,

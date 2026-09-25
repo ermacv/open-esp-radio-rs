@@ -6,6 +6,7 @@
 //! board fixture.
 
 use core::future::Future;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use crate::connected_rx::{StaCcmpRxReplayEpoch, StaCcmpRxReplayError};
 
@@ -209,7 +210,7 @@ where
     async fn transmit_message2<'a>(
         &'a mut self,
         frame: &'a RsnTxFrame<DEFAULT_EAPOL_FRAME_CAPACITY>,
-        sequence_number: u16,
+        sequence_number: SequenceNumber,
     ) -> Result<(), Self::Error> {
         self.radio
             .transmit

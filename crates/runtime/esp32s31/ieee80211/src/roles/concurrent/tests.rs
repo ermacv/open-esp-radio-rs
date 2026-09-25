@@ -1,4 +1,5 @@
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211_dma::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
 
@@ -81,7 +82,7 @@ fn shared_rx_block_ack_owner_allocates_distinct_station_and_ap_banks() {
                 immediate: true,
                 requested_window: 16,
                 timeout_tu: 0,
-                starting_sequence: 7,
+                starting_sequence: SequenceNumber::new(7).unwrap(),
             })
             .unwrap();
         let activation = sessions.begin_pending().unwrap().unwrap();

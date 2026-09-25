@@ -132,6 +132,55 @@ impl WifiTxTimer for Timer {
 }
 
 #[test]
+fn unschedulable_beacon_reports_preparation_failure_without_publication() {
+    let ap = [2, 0, 0, 0, 0, 1];
+    let mut hardware = Hardware::default();
+    let mut beacon = [0; WPA2_BEACON_CAPACITY];
+    let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
+    let mut pairwise = crate::security::ApPairwiseKeyStorage::new();
+    // A zero beacon interval has no next TBTT, so the retained beacon cannot
+    // be stamped for publication.
+    let engine = ApEngine::start(
+        &mut hardware,
+        AccessPointService::new(
+            ap,
+            Pmk::derive(b"password", b"ap").unwrap(),
+            RsnGtk::new(1, true, [7; 16]).unwrap(),
+            oer_ieee80211_ap::AccessPointClientLimit::new(2).unwrap(),
+            oer_ieee80211_ap::AccessPointInactiveTimeout::default(),
+            &mut peers,
+        ),
+        &mut beacon,
+        &mut pairwise,
+        &WifiSsid::new(b"ap").unwrap(),
+        oer_ieee80211_mac::channel::WifiChannel::mhz20(6).unwrap(),
+        0,
+        2,
+    )
+    .unwrap_or_else(|_| panic!("AP engine starts"));
+    let mut slot = pin!(TxSlot::<512>::new_model());
+    let mut mac = ApMac::new(
+        engine,
+        WifiTxResources {
+            slot: slot.as_mut(),
+            policy: WifiTxRuntimePolicy::vendor_defaults(),
+            power: Power,
+            entropy: || 0,
+            timer: Timer,
+        },
+        ApTxConfig {
+            publication_timeout_micros: 1_000,
+        },
+    );
+
+    assert_eq!(
+        mac.publish_beacon(&mut hardware, 102_400),
+        Err(ApMacError::Engine(ApEngineError::BeaconPreparation))
+    );
+    assert_eq!(mac.observation().beacons_transmitted, 0);
+}
+
+#[test]
 fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
     let ap = [2, 0, 0, 0, 0, 1];
     let mut hardware = Hardware::default();

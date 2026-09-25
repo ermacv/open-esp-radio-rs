@@ -2,6 +2,7 @@ use core::{
     future::{Future, ready},
     pin::Pin,
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_hal::types::{
     MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
@@ -171,7 +172,7 @@ fn authentication_is_encoded_and_completed_by_the_shared_owner() {
         OpenAuthenticationRequest {
             source: [2, 3, 4, 5, 6, 7],
             bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            sequence_number: 7,
+            sequence_number: SequenceNumber::new(7).unwrap(),
         },
     ));
 
@@ -209,7 +210,7 @@ fn protected_control_preflight_rejects_before_encode_or_dma() {
             source: [2, 3, 4, 5, 6, 7],
             bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
             destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            sequence_number: 7,
+            sequence_number: SequenceNumber::new(7).unwrap(),
             user_priority: 0,
             peer_qos: true,
             ccmp_header: [1, 0, 0, 0x20, 0, 0, 0, 0],
@@ -259,7 +260,7 @@ fn ack_timeout_reuses_sequence_and_marks_the_retry_bit() {
         OpenAuthenticationRequest {
             source: [2, 3, 4, 5, 6, 7],
             bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            sequence_number: 11,
+            sequence_number: SequenceNumber::new(11).unwrap(),
         },
     ));
 
@@ -289,7 +290,7 @@ fn eapol_uses_the_recovered_voice_data_priority() {
             source: [2, 3, 4, 5, 6, 7],
             bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
             destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-            sequence_number: 8,
+            sequence_number: SequenceNumber::new(8).unwrap(),
             ether_type: 0x888e,
             payload: &[1, 2, 3, 4],
         },
@@ -316,7 +317,7 @@ fn missing_hardware_timeout_edge_quarantines_without_drop_panic() {
             OpenAuthenticationRequest {
                 source: [2, 3, 4, 5, 6, 7],
                 bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-                sequence_number: 13,
+                sequence_number: SequenceNumber::new(13).unwrap(),
             },
         ));
 
@@ -360,7 +361,7 @@ fn connected_handoff_preserves_the_descriptor_and_association_policy() {
     let connected = tx
         .try_into_connected(ConnectedTxHandoff {
             security: ConnectedTxSecurity::Wpa2Personal(key),
-            sequences: StaTxSequenceCounters::new(9),
+            sequences: StaTxSequenceCounters::new(SequenceNumber::new(9).unwrap()),
             config: SingleMpduTxConfig {
                 station_address: [2, 3, 4, 5, 6, 7],
                 bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
@@ -390,7 +391,7 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
     let frame_length = OpenAuthenticationRequest {
         source: [2, 3, 4, 5, 6, 7],
         bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-        sequence_number: 15,
+        sequence_number: SequenceNumber::new(15).unwrap(),
     }
     .encode(&mut tx.ordinary.buffer_mut().unwrap()[TX_METADATA_SIZE..])
     .unwrap();
@@ -423,7 +424,7 @@ fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
     let key_index = key.hardware_index();
     let handoff = ConnectedTxHandoff {
         security: ConnectedTxSecurity::Wpa2Personal(key),
-        sequences: StaTxSequenceCounters::new(9),
+        sequences: StaTxSequenceCounters::new(SequenceNumber::new(9).unwrap()),
         config: SingleMpduTxConfig {
             station_address: [2, 3, 4, 5, 6, 7],
             bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],

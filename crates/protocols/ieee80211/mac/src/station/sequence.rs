@@ -1,5 +1,7 @@
 //! Separate management/non-QoS and per-TID transmit sequence owners.
 
+use crate::sequence::SequenceNumber;
+
 /// Monotonic twelve-bit owner for one IEEE 802.11 transmit sequence space.
 ///
 /// A sequence number is consumed for every newly encoded MPDU. Hardware
@@ -21,25 +23,23 @@
 /// new protocol sequence number.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaSequenceCounter {
-    next: u16,
+    next: SequenceNumber,
 }
 
 impl StaSequenceCounter {
-    pub const fn new(first: u16) -> Self {
-        Self {
-            next: first & 0x0fff,
-        }
+    pub const fn new(first: SequenceNumber) -> Self {
+        Self { next: first }
     }
 
     /// Consume the next sequence number, wrapping in the 802.11 twelve-bit
     /// sequence space.
-    pub const fn take(&mut self) -> u16 {
+    pub const fn take(&mut self) -> SequenceNumber {
         let sequence = self.next;
-        self.next = self.next.wrapping_add(1) & 0x0fff;
+        self.next = sequence.next();
         sequence
     }
 
-    pub const fn peek(&self) -> u16 {
+    pub const fn peek(&self) -> SequenceNumber {
         self.next
     }
 }
@@ -63,7 +63,7 @@ pub struct StaTxSequenceCounters {
 impl StaTxSequenceCounters {
     pub const QOS_TID_COUNT: u8 = 16;
 
-    pub const fn new(first: u16) -> Self {
+    pub const fn new(first: SequenceNumber) -> Self {
         let counter = StaSequenceCounter::new(first);
         Self {
             non_qos: counter,
@@ -76,11 +76,11 @@ impl StaTxSequenceCounters {
         &mut self.non_qos
     }
 
-    pub const fn peek_non_qos(&self) -> u16 {
+    pub const fn peek_non_qos(&self) -> SequenceNumber {
         self.non_qos.peek()
     }
 
-    pub const fn take_non_qos(&mut self) -> u16 {
+    pub const fn take_non_qos(&mut self) -> SequenceNumber {
         self.non_qos.take()
     }
 
@@ -89,17 +89,17 @@ impl StaTxSequenceCounters {
         self.qos.get_mut(usize::from(tid))
     }
 
-    pub fn peek_qos(&self, tid: u8) -> Option<u16> {
+    pub fn peek_qos(&self, tid: u8) -> Option<SequenceNumber> {
         self.qos.get(usize::from(tid)).map(StaSequenceCounter::peek)
     }
 
-    pub fn take_qos(&mut self, tid: u8) -> Option<u16> {
+    pub fn take_qos(&mut self, tid: u8) -> Option<SequenceNumber> {
         self.qos_mut(tid).map(StaSequenceCounter::take)
     }
 
     /// Consume a data-frame sequence number from the wire-format-selected
     /// space: `None` for a non-QoS header, or `Some(tid)` for a QoS header.
-    pub fn take_data(&mut self, qos_tid: Option<u8>) -> Option<u16> {
+    pub fn take_data(&mut self, qos_tid: Option<u8>) -> Option<SequenceNumber> {
         match qos_tid {
             Some(tid) => self.take_qos(tid),
             None => Some(self.take_non_qos()),

@@ -10,6 +10,7 @@ use crate::{
     channel::WifiChannel,
     ht::{ht_capability_ie, ht_operation_ie},
     security::WifiSecurityMode,
+    sequence::SequenceNumber,
     ssid::WifiSsid,
 };
 
@@ -31,7 +32,6 @@ pub const WPA2_PERSONAL_CCMP_PSK_RSN_IE: [u8; 22] = [
 pub enum ApBeaconBuildError {
     InvalidPrimaryChannel,
     InvalidDtimPeriod,
-    InvalidSequenceNumber,
     OutputTooSmall { required: usize },
 }
 
@@ -168,7 +168,7 @@ pub fn write_wpa2_ht_beacon(
     channel: WifiChannel,
     beacon_interval_tu: u16,
     dtim_period: u8,
-    management_sequence: u16,
+    management_sequence: SequenceNumber,
 ) -> Result<usize, ApBeaconBuildError> {
     write_ht_beacon(
         profile,
@@ -195,7 +195,7 @@ pub fn write_ht_beacon(
     channel: WifiChannel,
     beacon_interval_tu: u16,
     dtim_period: u8,
-    management_sequence: u16,
+    management_sequence: SequenceNumber,
     security: WifiSecurityMode,
 ) -> Result<usize, ApBeaconBuildError> {
     if !(1..=13).contains(&channel.primary()) {
@@ -203,9 +203,6 @@ pub fn write_ht_beacon(
     }
     if dtim_period == 0 {
         return Err(ApBeaconBuildError::InvalidDtimPeriod);
-    }
-    if management_sequence > 0x0fff {
-        return Err(ApBeaconBuildError::InvalidSequenceNumber);
     }
 
     let wmm_parameter_ie = profile.wmm.element();
@@ -239,7 +236,7 @@ pub fn write_ht_beacon(
     frame[4..10].fill(0xff);
     frame[10..16].copy_from_slice(&access_point);
     frame[16..22].copy_from_slice(&access_point);
-    frame[22..24].copy_from_slice(&(management_sequence << 4).to_le_bytes());
+    frame[22..24].copy_from_slice(&management_sequence.sequence_control().to_le_bytes());
     frame[32..34].copy_from_slice(&beacon_interval_tu.to_le_bytes());
     let capabilities = profile.capabilities(security);
     frame[34..36].copy_from_slice(&capabilities.to_le_bytes());

@@ -1,4 +1,5 @@
 use super::*;
+use crate::sequence::seq;
 
 const STATION: [u8; 6] = [2, 3, 4, 5, 6, 7];
 const BSSID: [u8; 6] = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25];
@@ -7,7 +8,7 @@ fn frame(power_management: StaPowerManagement) -> StaNullDataFrame {
     StaNullDataFrame {
         station_address: STATION,
         bssid: BSSID,
-        sequence_number: 0x123,
+        sequence_number: seq(0x123),
         power_management,
     }
 }
@@ -56,16 +57,6 @@ fn validation_happens_before_output_is_mutated() {
         }
         .encode(&mut output),
         Err(StationFrameError::InvalidBssid)
-    );
-    assert_eq!(output, [0xa5; STA_NULL_DATA_FRAME_LEN]);
-
-    assert_eq!(
-        StaNullDataFrame {
-            sequence_number: 0x1000,
-            ..frame(StaPowerManagement::Active)
-        }
-        .encode(&mut output),
-        Err(StationFrameError::SequenceNumberOutOfRange)
     );
     assert_eq!(output, [0xa5; STA_NULL_DATA_FRAME_LEN]);
 }

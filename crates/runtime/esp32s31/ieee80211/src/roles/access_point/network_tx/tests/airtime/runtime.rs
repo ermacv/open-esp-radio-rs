@@ -1,6 +1,7 @@
 //! Real AP start/service and modeled hardware: packet, PS and budget ownership.
 
 use super::*;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 mod fifo;
 
@@ -272,7 +273,10 @@ fn run(case: Case) {
                 HtGuardInterval::Short400Ns,
                 HtChannelWidth::Mhz20,
             );
-            aggregate.active_mut().begin([4; 6], rate, 0, 0).unwrap();
+            aggregate
+                .active_mut()
+                .begin([4; 6], rate, SequenceNumber::new(0).unwrap(), 0)
+                .unwrap();
             for sequence in 0..2 {
                 device.transmit(packet(packets, 4, sequence)).unwrap();
                 let frame = source
@@ -290,7 +294,7 @@ fn run(case: Case) {
                                 length: 48,
                             },
                             hardware_key_selector: 0,
-                            sequence_number: u16::from(sequence),
+                            sequence_number: SequenceNumber::new(u16::from(sequence)).unwrap(),
                         },
                     )
                     .unwrap();

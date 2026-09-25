@@ -8,6 +8,7 @@ use crate::{
     engine::{ApAggregateBinding, ApAggregateFrame},
     tx::ApTx,
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_memory::StableDmaBacking;
 
@@ -160,7 +161,7 @@ impl From<HtAmpduTxRolePolicyError> for ApAmpduError {
 pub struct ApPreparedAmpdu {
     pub peer: [u8; 6],
     pub rate: HtRate,
-    pub first_sequence: u16,
+    pub first_sequence: SequenceNumber,
     pub subframes: u8,
     pub aggregate_length: u16,
     pub hardware_key_selector: u8,
@@ -171,8 +172,8 @@ pub struct ApAmpduCompletion {
     pub tx_status: u8,
     pub block_ack_received: bool,
     pub block_ack_control: u8,
-    pub first_sequence: u16,
-    pub starting_sequence: u16,
+    pub first_sequence: SequenceNumber,
+    pub starting_sequence: SequenceNumber,
     pub subframes: u8,
     pub missing: u8,
     pub acknowledged: u8,
@@ -195,8 +196,8 @@ enum ApAmpduState<const SLOTS: usize> {
         cookie: TxCookie,
         peer: [u8; 6],
         rate: HtRate,
-        first_sequence: u16,
-        next_sequence: u16,
+        first_sequence: SequenceNumber,
+        next_sequence: SequenceNumber,
         hardware_key_selector: u8,
     },
     Hardware {
@@ -247,14 +248,13 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         &mut self,
         peer: [u8; 6],
         rate: HtRate,
-        first_sequence: u16,
+        first_sequence: SequenceNumber,
         hardware_key_selector: u8,
     ) -> Result<(), ApAmpduError> {
         if !matches!(self.state, ApAmpduState::Idle) {
             return Err(ApAmpduError::Busy);
         }
         let cookie = self.inner.begin()?;
-        let first_sequence = first_sequence & 0x0fff;
         self.state = ApAmpduState::Building {
             cookie,
             peer,
@@ -311,7 +311,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         .ok_or(ApAmpduError::Geometry)?;
         self.inner
             .commit_ht(*cookie, backing, HtAmpduFrameRequest::new(layout, 0, *rate))?;
-        *next_sequence = (*next_sequence + 1) & 0x0fff;
+        *next_sequence = next_sequence.next();
         Ok(())
     }
 

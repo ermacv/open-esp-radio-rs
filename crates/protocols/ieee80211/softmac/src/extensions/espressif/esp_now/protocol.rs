@@ -5,6 +5,7 @@
 //! does not claim receive-filter, key-slot, PHY-low-rate or DMA authority.
 
 use core::fmt;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_ieee80211_mac::{
     channel::WifiChannel,
@@ -27,7 +28,7 @@ pub const ESP_NOW_RX_DUPLICATE_HISTORY_CAPACITY: usize = 4;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct EspNowRxFingerprint {
     random_value: EspNowRandomValue,
-    sequence_number: u16,
+    sequence_number: SequenceNumber,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1176,7 +1177,7 @@ pub struct EspNowOwnedReceivedV1 {
     destination: EspNowDestination,
     source: EspNowUnicastAddress,
     random_value: EspNowRandomValue,
-    sequence_number: u16,
+    sequence_number: SequenceNumber,
     retry: bool,
     payload_length: u8,
     payload: [u8; ESP_NOW_V1_MAX_PAYLOAD_LEN],
@@ -1218,7 +1219,7 @@ impl EspNowOwnedReceivedV1 {
         self.random_value
     }
 
-    pub const fn sequence_number(&self) -> u16 {
+    pub const fn sequence_number(&self) -> SequenceNumber {
         self.sequence_number
     }
 
@@ -1241,7 +1242,7 @@ pub struct EspNowOwnedReceivedV2 {
     destination: EspNowDestination,
     source: EspNowUnicastAddress,
     random_value: EspNowRandomValue,
-    sequence_number: u16,
+    sequence_number: SequenceNumber,
     retry: bool,
     payload_length: u16,
     payload: [u8; ESP_NOW_V2_MAX_PAYLOAD_LEN],
@@ -1280,7 +1281,7 @@ impl EspNowOwnedReceivedV2 {
         self.random_value
     }
 
-    pub const fn sequence_number(&self) -> u16 {
+    pub const fn sequence_number(&self) -> SequenceNumber {
         self.sequence_number
     }
 

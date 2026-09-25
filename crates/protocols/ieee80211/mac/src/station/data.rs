@@ -16,14 +16,14 @@ pub struct StaDataFrame<'a> {
     pub source: [u8; 6],
     pub bssid: [u8; 6],
     pub destination: [u8; 6],
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub ether_type: u16,
     pub payload: &'a [u8],
 }
 
 impl StaDataFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid, self.sequence_number)?;
+        validate_peer(self.bssid)?;
         let ethernet = ethernet_header(self.destination, self.source, self.ether_type);
         let plan = plan_data_encapsulation(
             DataInterfaceRole::Station,
@@ -48,7 +48,7 @@ impl StaDataFrame<'_> {
         let frame = &mut output[..required];
         frame.fill(0);
         frame[..header_len].copy_from_slice(&plan.header[..header_len]);
-        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
         let llc_end = header_len + plan.llc_snap.len();
         frame[header_len..llc_end].copy_from_slice(&plan.llc_snap);
         frame[llc_end..required].copy_from_slice(self.payload);
@@ -69,7 +69,7 @@ pub struct StaProtectedDataFrame<'a> {
     pub source: [u8; 6],
     pub bssid: [u8; 6],
     pub destination: [u8; 6],
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub user_priority: u8,
     pub peer_qos: bool,
     pub ccmp_header: [u8; CCMP_HEADER_LEN],
@@ -92,7 +92,7 @@ impl StaProtectedDataFrame<'_> {
         he_control: DataHeControl,
         output: &mut [u8],
     ) -> Result<usize, StationFrameError> {
-        validate_peer(self.bssid, self.sequence_number)?;
+        validate_peer(self.bssid)?;
         if self.user_priority > 7 {
             return Err(StationFrameError::UserPriorityOutOfRange);
         }
@@ -142,7 +142,7 @@ impl StaProtectedDataFrame<'_> {
         // ieee80211_encap_esfbuf` mutates the ESF header/headroom and retains
         // the existing payload; it does not clear the complete MPDU.
         frame[..header_len].copy_from_slice(&plan.header[..header_len]);
-        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
         let ccmp_end = dma_header_len + CCMP_HEADER_LEN;
         frame[dma_header_len..ccmp_end].copy_from_slice(&self.ccmp_header);
         let llc_end = ccmp_end + plan.llc_snap.len();
@@ -172,7 +172,7 @@ impl StaProtectedDataFrame<'_> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaProtectedEthernetFrame {
     pub bssid: [u8; 6],
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub user_priority: u8,
     pub peer_qos: bool,
     pub ccmp_header: [u8; CCMP_HEADER_LEN],
@@ -200,7 +200,7 @@ impl StaProtectedEthernetFrame {
         ethernet_length: usize,
         he_control: DataHeControl,
     ) -> Result<EncodedStaFrame, StationFrameError> {
-        validate_peer(self.bssid, self.sequence_number)?;
+        validate_peer(self.bssid)?;
         if self.user_priority > 7 {
             return Err(StationFrameError::UserPriorityOutOfRange);
         }
@@ -275,7 +275,7 @@ impl StaProtectedEthernetFrame {
 
         let frame = &mut storage[frame_offset..frame_end];
         frame[..header_len].copy_from_slice(&plan.header[..header_len]);
-        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
         let ccmp_end = dma_header_len + CCMP_HEADER_LEN;
         frame[dma_header_len..ccmp_end].copy_from_slice(&self.ccmp_header);
         frame[ccmp_end..prefix_len].copy_from_slice(&plan.llc_snap);
@@ -308,7 +308,7 @@ impl StaProtectedEthernetFrame {
         ethernet_length: usize,
         second_ethernet: &[u8],
     ) -> Result<EncodedStaFrame, StationFrameError> {
-        validate_peer(self.bssid, self.sequence_number)?;
+        validate_peer(self.bssid)?;
         if self.user_priority > 7 {
             return Err(StationFrameError::UserPriorityOutOfRange);
         }
@@ -383,7 +383,7 @@ impl StaProtectedEthernetFrame {
         storage[frame_offset..frame_offset + header_len]
             .copy_from_slice(&plan.header[..header_len]);
         storage[frame_offset + 22..frame_offset + 24]
-            .copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+            .copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
         let ccmp_offset = frame_offset + header_len;
         storage[ccmp_offset..ccmp_offset + CCMP_HEADER_LEN].copy_from_slice(&self.ccmp_header);
 

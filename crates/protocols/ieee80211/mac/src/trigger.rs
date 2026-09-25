@@ -14,6 +14,8 @@
 //! functions. Derived units such as dBm are exposed separately from their
 //! wire encodings.
 
+use crate::sequence::SequenceNumber;
+
 pub const TRIGGER_COMMON_INFO_LEN: usize = 8;
 pub const TRIGGER_MAC_HEADER_LEN: usize = 16;
 pub const TRIGGER_FRAME_MIN_LEN: usize = TRIGGER_MAC_HEADER_LEN + TRIGGER_COMMON_INFO_LEN;
@@ -775,7 +777,7 @@ pub struct TriggerMuBarDependentInfo {
     pub bar_type: u8,
     pub tid: u8,
     pub bar_information: u16,
-    pub starting_sequence_number: u16,
+    pub starting_sequence_number: SequenceNumber,
 }
 
 /// SOURCE\[BLOB_LIBPP_DBG_DUMP_TRIG_MUBAR_DEPENDENT]: complete
@@ -792,7 +794,7 @@ pub fn parse_trigger_mu_bar_dependent(
         bar_type: ((bar_control >> 1) & 0x0f) as u8,
         tid: (bar_control >> 12) as u8,
         bar_information,
-        starting_sequence_number: bar_information >> 4,
+        starting_sequence_number: SequenceNumber::from_sequence_control(bar_information),
     })
 }
 

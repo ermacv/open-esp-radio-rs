@@ -1,6 +1,7 @@
 //! Bounded multi-peer AP MLME and security ownership.
 
 use core::fmt;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 mod block_ack;
 mod peer;
@@ -411,7 +412,7 @@ struct ApPeer {
     /// and receiver reorder state are peer+TID agreements; sharing these
     /// counters across AP clients creates artificial holes whenever the
     /// scheduler switches peers.
-    next_qos_sequences: [u16; 8],
+    next_qos_sequences: [SequenceNumber; 8],
     tx_block_ack: TxBlockAckSession,
     power_state: ApPeerPowerState,
     buffered_unicast_frames: u16,
@@ -468,7 +469,7 @@ impl ApPeer {
             maximum_legacy_rate_500kbps: 2,
             ht: None,
             qos_supported: false,
-            next_qos_sequences: [0; 8],
+            next_qos_sequences: [SequenceNumber::ZERO; 8],
             tx_block_ack: new_ap_tx_block_ack(),
             power_state: ApPeerPowerState::Active,
             buffered_unicast_frames: 0,
@@ -583,8 +584,8 @@ pub struct AccessPointService<'peers> {
     peer_storage: Option<&'peers mut AccessPointPeerStorage>,
     client_limit: AccessPointClientLimit,
     inactive_timeout: AccessPointInactiveTimeout,
-    next_management_sequence: u16,
-    next_data_sequence: u16,
+    next_management_sequence: SequenceNumber,
+    next_data_sequence: SequenceNumber,
     status_revision: u32,
     associated_count: u8,
     authorized_count: u8,
@@ -621,8 +622,8 @@ impl<'peers> AccessPointService<'peers> {
             peer_storage: Some(peer_storage),
             client_limit,
             inactive_timeout,
-            next_management_sequence: 0,
-            next_data_sequence: 0,
+            next_management_sequence: SequenceNumber::ZERO,
+            next_data_sequence: SequenceNumber::ZERO,
             status_revision: 0,
             associated_count: 0,
             authorized_count: 0,
@@ -650,8 +651,8 @@ impl<'peers> AccessPointService<'peers> {
             peer_storage: Some(peer_storage),
             client_limit,
             inactive_timeout,
-            next_management_sequence: 0,
-            next_data_sequence: 0,
+            next_management_sequence: SequenceNumber::ZERO,
+            next_data_sequence: SequenceNumber::ZERO,
             status_revision: 0,
             associated_count: 0,
             authorized_count: 0,

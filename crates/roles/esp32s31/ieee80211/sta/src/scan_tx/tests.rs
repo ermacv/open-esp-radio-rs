@@ -127,7 +127,7 @@ fn running_scan_tx<'a>(
 fn scan_probe_request() -> ScanProbeRequest<'static> {
     ScanProbeRequest {
         source: [2, 3, 4, 5, 6, 7],
-        sequence_number: 9,
+        sequence_number: SequenceNumber::new(9).unwrap(),
         ssid: b"",
         supported_rates: &[0x82, 0x84],
         current_channel: Some(6),
@@ -170,7 +170,7 @@ fn running_scan_tx_returns_the_control_owner_after_a_probe() {
             destination: oer_ieee80211_mac::management::BROADCAST_ADDRESS,
             source: [2, 3, 4, 5, 6, 7],
             bssid: oer_ieee80211_mac::management::BROADCAST_ADDRESS,
-            sequence_number: 10,
+            sequence_number: SequenceNumber::new(10).unwrap(),
             ssid: b"",
             supported_rates: &[0x82, 0x84],
         },

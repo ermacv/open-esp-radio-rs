@@ -14,6 +14,7 @@ use crate::{
         ht_operation_ie, ht_peer_capabilities,
     },
     security::WifiSecurityMode,
+    sequence::SequenceNumber,
     station_power_save::STA_NULL_DATA_FRAME_LEN,
 };
 
@@ -33,7 +34,6 @@ const MANAGEMENT_HEADER_LEN: usize = 24;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApAssociationResponseError {
     MissingAssociationId,
-    InvalidSequenceNumber,
     OutputTooSmall { required: usize },
 }
 
@@ -48,7 +48,6 @@ pub enum ApPeerDisconnectKind {
 pub enum ApDataFrameError {
     InvalidAccessPoint,
     InvalidPeer,
-    InvalidSequenceNumber,
     InvalidUserPriority,
     EthernetFrameTooShort,
     NoAmsduFrames,
@@ -70,7 +69,7 @@ pub const AP_AMSDU_BASELINE_MAX_LEN: usize = 3_839;
 pub struct ApDataFrame<'payload> {
     pub access_point: [u8; 6],
     pub destination: [u8; 6],
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub ether_type: u16,
     pub payload: &'payload [u8],
 }
@@ -79,9 +78,6 @@ impl ApDataFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, ApDataFrameError> {
         if self.access_point[0] & 1 != 0 || self.access_point == [0; 6] {
             return Err(ApDataFrameError::InvalidAccessPoint);
-        }
-        if self.sequence_number > 0x0fff {
-            return Err(ApDataFrameError::InvalidSequenceNumber);
         }
         let mut ethernet = [0; ETHERNET_HEADER_LEN];
         ethernet[..6].copy_from_slice(&self.destination);
@@ -109,7 +105,7 @@ impl ApDataFrame<'_> {
         }
         let frame = &mut output[..required];
         frame[..header_len].copy_from_slice(&plan.header[..header_len]);
-        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
         let llc_end = header_len + plan.llc_snap.len();
         frame[header_len..llc_end].copy_from_slice(&plan.llc_snap);
         frame[llc_end..required].copy_from_slice(self.payload);
@@ -126,7 +122,7 @@ impl ApDataFrame<'_> {
 pub struct ApUnprotectedDataFrame<'frame> {
     pub access_point: [u8; 6],
     pub peer: [u8; 6],
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub more_data: bool,
     pub ethernet: &'frame [u8],
 }
@@ -135,9 +131,6 @@ impl ApUnprotectedDataFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, ApDataFrameError> {
         if self.access_point[0] & 1 != 0 || self.access_point == [0; 6] {
             return Err(ApDataFrameError::InvalidAccessPoint);
-        }
-        if self.sequence_number > 0x0fff {
-            return Err(ApDataFrameError::InvalidSequenceNumber);
         }
         if self.ethernet.len() < ETHERNET_HEADER_LEN {
             return Err(ApDataFrameError::EthernetFrameTooShort);
@@ -172,7 +165,7 @@ impl ApUnprotectedDataFrame<'_> {
         }
         let frame = &mut output[..required];
         frame[..header_len].copy_from_slice(&plan.header[..header_len]);
-        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
         let llc_end = header_len + plan.llc_snap.len();
         frame[header_len..llc_end].copy_from_slice(&plan.llc_snap);
         frame[llc_end..required].copy_from_slice(&self.ethernet[ETHERNET_HEADER_LEN..]);
@@ -189,7 +182,7 @@ impl ApUnprotectedDataFrame<'_> {
 pub struct ApProtectedDataFrame<'frame> {
     pub access_point: [u8; 6],
     pub peer: [u8; 6],
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub user_priority: u8,
     pub peer_qos: bool,
     /// Set the IEEE 802.11 More Data bit for a frame released from an AP
@@ -212,9 +205,6 @@ impl ApProtectedDataFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, ApDataFrameError> {
         if self.access_point[0] & 1 != 0 || self.access_point == [0; 6] {
             return Err(ApDataFrameError::InvalidAccessPoint);
-        }
-        if self.sequence_number > 0x0fff {
-            return Err(ApDataFrameError::InvalidSequenceNumber);
         }
         if self.user_priority > 7 {
             return Err(ApDataFrameError::InvalidUserPriority);
@@ -257,7 +247,7 @@ impl ApProtectedDataFrame<'_> {
         }
         let frame = &mut output[..required];
         frame[..header_len].copy_from_slice(&plan.header[..header_len]);
-        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
         let ccmp_end = header_len + CCMP_HEADER_LEN;
         frame[header_len..ccmp_end].copy_from_slice(&self.ccmp_header);
         let llc_end = ccmp_end + plan.llc_snap.len();
@@ -278,7 +268,7 @@ impl ApProtectedDataFrame<'_> {
 pub struct ApAmsduFrame<'a> {
     pub access_point: [u8; 6],
     pub peer: [u8; 6],
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub user_priority: u8,
     pub more_data: bool,
     pub ccmp_header: Option<[u8; CCMP_HEADER_LEN]>,
@@ -364,9 +354,6 @@ impl ApAmsduFrame<'_> {
         if self.peer[0] & 1 != 0 || self.peer == [0; 6] {
             return Err(ApDataFrameError::InvalidPeer);
         }
-        if self.sequence_number > 0x0fff {
-            return Err(ApDataFrameError::InvalidSequenceNumber);
-        }
         if self.user_priority > 7 {
             return Err(ApDataFrameError::InvalidUserPriority);
         }
@@ -413,7 +400,7 @@ impl ApAmsduFrame<'_> {
         let frame = &mut output[..required];
         frame[..crate::data::IEEE80211_QOS_DATA_HEADER_LEN]
             .copy_from_slice(&plan.header[..crate::data::IEEE80211_QOS_DATA_HEADER_LEN]);
-        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
         let mut offset = crate::data::IEEE80211_QOS_DATA_HEADER_LEN;
         if let Some(ccmp_header) = self.ccmp_header {
             frame[offset..offset + CCMP_HEADER_LEN].copy_from_slice(&ccmp_header);
@@ -454,9 +441,6 @@ impl ApProtectedDataFrame<'_> {
     ) -> Result<EncodedApFrame, ApDataFrameError> {
         if !self.peer_qos {
             return Err(ApDataFrameError::InvalidUserPriority);
-        }
-        if self.sequence_number > 0x0fff {
-            return Err(ApDataFrameError::InvalidSequenceNumber);
         }
         if self.user_priority > 7 || ethernet_length < ETHERNET_HEADER_LEN {
             return Err(if self.user_priority > 7 {
@@ -513,7 +497,7 @@ impl ApProtectedDataFrame<'_> {
         let frame_length = ethernet_length + headroom;
         let frame = &mut storage[frame_offset..ethernet_end];
         frame[..header_len].copy_from_slice(&plan.header[..header_len]);
-        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
         let ccmp_end = header_len + CCMP_HEADER_LEN;
         frame[header_len..ccmp_end].copy_from_slice(&self.ccmp_header);
         frame[ccmp_end..prefix_len].copy_from_slice(&plan.llc_snap);
@@ -659,15 +643,12 @@ pub fn parse_ap_management_request<'a>(
 pub struct ApActionFrame<'a> {
     pub access_point: [u8; 6],
     pub peer: [u8; 6],
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub body: &'a [u8],
 }
 
 impl ApActionFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, ApAssociationResponseError> {
-        if self.sequence_number > 0x0fff {
-            return Err(ApAssociationResponseError::InvalidSequenceNumber);
-        }
         let required = MANAGEMENT_HEADER_LEN.checked_add(self.body.len()).ok_or(
             ApAssociationResponseError::OutputTooSmall {
                 required: usize::MAX,
@@ -775,11 +756,8 @@ pub fn write_open_authentication_response(
     access_point: [u8; 6],
     peer: [u8; 6],
     status: u16,
-    management_sequence: u16,
+    management_sequence: SequenceNumber,
 ) -> Result<usize, ApAssociationResponseError> {
-    if management_sequence > 0x0fff {
-        return Err(ApAssociationResponseError::InvalidSequenceNumber);
-    }
     if output.len() < AP_AUTHENTICATION_RESPONSE_LEN {
         return Err(ApAssociationResponseError::OutputTooSmall {
             required: AP_AUTHENTICATION_RESPONSE_LEN,
@@ -805,7 +783,7 @@ pub fn write_ht_association_response_frame(
     peer: [u8; 6],
     status: u16,
     association_id: u16,
-    management_sequence: u16,
+    management_sequence: SequenceNumber,
     channel: WifiChannel,
     peer_ht: Option<HtPeerCapabilities>,
 ) -> Result<usize, ApAssociationResponseError> {
@@ -836,14 +814,11 @@ pub fn write_ht_association_response_frame_for_security(
     peer: [u8; 6],
     status: u16,
     association_id: u16,
-    management_sequence: u16,
+    management_sequence: SequenceNumber,
     channel: WifiChannel,
     peer_ht: Option<HtPeerCapabilities>,
     security: WifiSecurityMode,
 ) -> Result<usize, ApAssociationResponseError> {
-    if management_sequence > 0x0fff {
-        return Err(ApAssociationResponseError::InvalidSequenceNumber);
-    }
     if output.len() < AP_ASSOCIATION_RESPONSE_LEN {
         return Err(ApAssociationResponseError::OutputTooSmall {
             required: AP_ASSOCIATION_RESPONSE_LEN,
@@ -869,11 +844,8 @@ pub fn write_ap_peer_disconnect(
     peer: [u8; 6],
     kind: ApPeerDisconnectKind,
     reason: u16,
-    management_sequence: u16,
+    management_sequence: SequenceNumber,
 ) -> Result<usize, ApAssociationResponseError> {
-    if management_sequence > 0x0fff {
-        return Err(ApAssociationResponseError::InvalidSequenceNumber);
-    }
     if output.len() < AP_PEER_DISCONNECT_LEN {
         return Err(ApAssociationResponseError::OutputTooSmall {
             required: AP_PEER_DISCONNECT_LEN,
@@ -901,13 +873,13 @@ fn write_management_header(
     frame_control: u16,
     access_point: [u8; 6],
     peer: [u8; 6],
-    management_sequence: u16,
+    management_sequence: SequenceNumber,
 ) {
     frame[..2].copy_from_slice(&frame_control.to_le_bytes());
     frame[4..10].copy_from_slice(&peer);
     frame[10..16].copy_from_slice(&access_point);
     frame[16..22].copy_from_slice(&access_point);
-    frame[22..24].copy_from_slice(&(management_sequence << 4).to_le_bytes());
+    frame[22..24].copy_from_slice(&management_sequence.sequence_control().to_le_bytes());
 }
 
 /// Build the finite AP HT association response body.

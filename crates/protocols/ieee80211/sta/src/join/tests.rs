@@ -1,4 +1,5 @@
 use core::future::ready;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use super::*;
 use crate::test_support::block_on;
@@ -176,7 +177,7 @@ fn association_response(status_code: u16) -> [u8; 30] {
 fn successful_join_uses_typed_sequences_and_leaves_association_rx_live() {
     let backend = Backend::new(Some(1), Some(2));
     let mut runner = StaJoinRunner::new(backend, TestTimer::default());
-    let mut sequence = StaSequenceCounter::new(0x123);
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0x123).unwrap());
 
     assert_eq!(
         block_on(runner.authenticate(LOCAL, BSSID, &mut sequence)),
@@ -204,13 +205,13 @@ fn successful_join_uses_typed_sequences_and_leaves_association_rx_live() {
 
     assert_eq!(
         runner.backend().auth_attempts[0].unwrap().sequence_number,
-        0x123
+        SequenceNumber::new(0x123).unwrap()
     );
     assert_eq!(
         runner.backend().association_attempts[0]
             .unwrap()
             .sequence_number,
-        0x124
+        SequenceNumber::new(0x124).unwrap()
     );
     assert!(runner.backend().receive_live);
     assert_eq!(runner.backend().starts, 2);
@@ -221,7 +222,7 @@ fn successful_join_uses_typed_sequences_and_leaves_association_rx_live() {
 fn authentication_timeout_is_three_exact_one_second_epochs() {
     let backend = Backend::new(None, None);
     let mut runner = StaJoinRunner::new(backend, TestTimer::default());
-    let mut sequence = StaSequenceCounter::new(0);
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
 
     assert_eq!(
         block_on(runner.authenticate(LOCAL, BSSID, &mut sequence)),
@@ -243,7 +244,7 @@ fn authentication_timeout_is_three_exact_one_second_epochs() {
 fn association_timeout_sends_seven_requests_and_stops_rx_at_1000_ms() {
     let backend = Backend::new(None, None);
     let mut runner = StaJoinRunner::new(backend, TestTimer::default());
-    let mut sequence = StaSequenceCounter::new(7);
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(7).unwrap());
 
     assert_eq!(
         block_on(runner.associate(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal, &mut sequence,)),
@@ -271,7 +272,7 @@ fn association_timeout_sends_seven_requests_and_stops_rx_at_1000_ms() {
 fn association_response_on_exact_deadline_wins_before_timeout() {
     let backend = Backend::new(None, Some(1_000));
     let mut runner = StaJoinRunner::new(backend, TestTimer::default());
-    let mut sequence = StaSequenceCounter::new(0);
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
 
     assert!(
         block_on(runner.associate(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal, &mut sequence,))

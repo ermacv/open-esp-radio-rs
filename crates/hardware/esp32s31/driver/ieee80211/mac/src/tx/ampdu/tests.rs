@@ -430,7 +430,7 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
     let aggregate = owner.prepared_aggregate(cookie).unwrap();
     let config = HtAmpduTxConfig::new(rate, aggregate.bytes, aggregate.subframes).unwrap();
     let mut retry = AmpduRetryState::<4>::new(
-        0,
+        SequenceNumber::new(0).unwrap(),
         4,
         AmpduRetryPolicy {
             attempt_limit: 2,
@@ -446,7 +446,7 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
         .observe_retry_completion(&mut hardware, cookie, &mut retry)
         .unwrap()
         .unwrap();
-    assert_eq!(observed.first_sequence, 0);
+    assert_eq!(observed.first_sequence, SequenceNumber::new(0).unwrap());
     assert_eq!(observed.subframes, 4);
     assert_eq!(
         observed.decision,
@@ -1304,9 +1304,15 @@ fn basic_ht_assembly_rejects_he_bar_ampdu_and_bad_lengths_before_mutation() {
 #[test]
 fn station_sessions_own_vendor_tid_order_response_routing_and_alarms() {
     let mut sessions = StaTxBlockAckSessions::new(32, 100_000, true).unwrap();
-    let tid0 = sessions.begin(0, 0x100, 0).unwrap();
-    let tid7 = sessions.begin(7, 0x200, 0).unwrap();
-    let tid5 = sessions.begin(5, 0x300, 0).unwrap();
+    let tid0 = sessions
+        .begin(0, SequenceNumber::new(0x100).unwrap(), 0)
+        .unwrap();
+    let tid7 = sessions
+        .begin(7, SequenceNumber::new(0x200).unwrap(), 0)
+        .unwrap();
+    let tid5 = sessions
+        .begin(5, SequenceNumber::new(0x300).unwrap(), 0)
+        .unwrap();
     assert_eq!(
         [tid0.dialog_token, tid7.dialog_token, tid5.dialog_token],
         [1, 2, 3]
@@ -1336,7 +1342,7 @@ fn station_sessions_own_vendor_tid_order_response_routing_and_alarms() {
                     tid: 7,
                     window: 16,
                     timeout_tu: 0,
-                    starting_sequence: 0x200,
+                    starting_sequence: SequenceNumber::new(0x200).unwrap(),
                     amsdu: false,
                 }),
             }
@@ -1352,7 +1358,9 @@ fn station_sessions_own_vendor_tid_order_response_routing_and_alarms() {
 #[test]
 fn parsed_response_can_cross_the_staged_rx_ownership_boundary() {
     let mut sessions = StaTxBlockAckSessions::new(32, 100_000, true).unwrap();
-    let request = sessions.begin(0, 0x123, 0).unwrap();
+    let request = sessions
+        .begin(0, SequenceNumber::new(0x123).unwrap(), 0)
+        .unwrap();
 
     assert_eq!(
         sessions.on_response_action(BlockAckAction::AddbaResponse {
@@ -1371,7 +1379,7 @@ fn parsed_response_can_cross_the_staged_rx_ownership_boundary() {
                     tid: 0,
                     window: 16,
                     timeout_tu: 7,
-                    starting_sequence: 0x123,
+                    starting_sequence: SequenceNumber::new(0x123).unwrap(),
                     amsdu: true,
                 }),
             }
@@ -1384,7 +1392,7 @@ fn parsed_response_can_cross_the_staged_rx_ownership_boundary() {
 fn station_sessions_reject_unowned_tid_and_classify_stale_dialog_token() {
     let mut sessions = StaTxBlockAckSessions::new(32, 100_000, false).unwrap();
     assert_eq!(
-        sessions.begin(3, 0, 0),
+        sessions.begin(3, SequenceNumber::new(0).unwrap(), 0),
         Err(StaTxBlockAckSessionsError::UnsupportedTid(3))
     );
     assert_eq!(
@@ -1396,37 +1404,42 @@ fn station_sessions_reject_unowned_tid_and_classify_stale_dialog_token() {
 
 #[test]
 fn block_ack_bitmap_handles_sequence_wrap() {
-    let ack = TxBlockAckBitmap::new(0x0ffe, 0b1101);
-    assert!(ack.acknowledges(0x0ffe));
-    assert!(!ack.acknowledges(0x0fff));
-    assert!(ack.acknowledges(0));
-    assert!(ack.acknowledges(1));
-    assert!(!ack.acknowledges(2));
+    let ack = TxBlockAckBitmap::new(SequenceNumber::new(0x0ffe).unwrap(), 0b1101);
+    assert!(ack.acknowledges(SequenceNumber::new(0x0ffe).unwrap()));
+    assert!(!ack.acknowledges(SequenceNumber::new(0x0fff).unwrap()));
+    assert!(ack.acknowledges(SequenceNumber::new(0).unwrap()));
+    assert!(ack.acknowledges(SequenceNumber::new(1).unwrap()));
+    assert!(!ack.acknowledges(SequenceNumber::new(2).unwrap()));
 }
 
 #[test]
 fn block_ack_bitmap_accepts_only_bounded_sequences_left_of_an_advanced_ssn() {
-    let ack = TxBlockAckBitmap::new(105, 0b1);
-    assert!(ack.acknowledges(105));
-    assert!(ack.acknowledges(104));
-    assert!(ack.acknowledges(100));
-    assert!(!ack.acknowledges(106));
-    assert!(!ack.acknowledges(40));
+    let ack = TxBlockAckBitmap::new(SequenceNumber::new(105).unwrap(), 0b1);
+    assert!(ack.acknowledges(SequenceNumber::new(105).unwrap()));
+    assert!(ack.acknowledges(SequenceNumber::new(104).unwrap()));
+    assert!(ack.acknowledges(SequenceNumber::new(100).unwrap()));
+    assert!(!ack.acknowledges(SequenceNumber::new(106).unwrap()));
+    assert!(!ack.acknowledges(SequenceNumber::new(40).unwrap()));
 
-    let wrapped = TxBlockAckBitmap::new(0, 0b1);
-    assert!(wrapped.acknowledges(0x0fff));
-    assert!(!wrapped.acknowledges(65));
+    let wrapped = TxBlockAckBitmap::new(SequenceNumber::new(0).unwrap(), 0b1);
+    assert!(wrapped.acknowledges(SequenceNumber::new(0x0fff).unwrap()));
+    assert!(!wrapped.acknowledges(SequenceNumber::new(65).unwrap()));
 }
 
 #[test]
 fn batch_returns_one_block_ack_result_per_step() {
     let mut batch = TxAmpduBatch::new();
-    batch.begin(0x0ffe, 4).unwrap();
+    batch
+        .begin(SequenceNumber::new(0x0ffe).unwrap(), 4)
+        .unwrap();
     for slot in 3..7 {
         batch.push(slot).unwrap();
     }
     batch
-        .complete_with_block_ack(TxBlockAckBitmap::new(0x0ffe, 0b1101))
+        .complete_with_block_ack(TxBlockAckBitmap::new(
+            SequenceNumber::new(0x0ffe).unwrap(),
+            0b1101,
+        ))
         .unwrap();
 
     for (slot, sequence, disposition) in [
@@ -1440,7 +1453,7 @@ fn batch_returns_one_block_ack_result_per_step() {
             Some(TxAmpduCompletion {
                 mpdu: TxAmpduMpdu {
                     slot: TxAmpduSlot::new(slot).unwrap(),
-                    sequence,
+                    sequence: SequenceNumber::new(sequence).unwrap(),
                 },
                 disposition,
             })
@@ -1453,7 +1466,7 @@ fn batch_returns_one_block_ack_result_per_step() {
 #[test]
 fn missing_block_ack_retries_every_mpdu_without_a_drain() {
     let mut batch = TxAmpduBatch::new();
-    batch.begin(9, 2).unwrap();
+    batch.begin(SequenceNumber::new(9).unwrap(), 2).unwrap();
     batch.push(0).unwrap();
     batch.push(31).unwrap();
     batch.complete_without_block_ack().unwrap();
@@ -1472,7 +1485,7 @@ fn missing_block_ack_retries_every_mpdu_without_a_drain() {
 #[test]
 fn batch_rejects_duplicate_static_slot_ownership() {
     let mut batch = TxAmpduBatch::new();
-    batch.begin(0, 32).unwrap();
+    batch.begin(SequenceNumber::new(0).unwrap(), 32).unwrap();
     batch.push(17).unwrap();
     assert_eq!(batch.push(17), Err(TxAmpduBatchError::DuplicateSlot(17)));
 }
@@ -1480,15 +1493,32 @@ fn batch_rejects_duplicate_static_slot_ownership() {
 #[test]
 fn batch_preserves_nonconsecutive_hardware_sequences() {
     let mut batch = TxAmpduBatch::new();
-    batch.begin(0x120, 4).unwrap();
-    assert_eq!(batch.push_sequence(3, 0x120).unwrap().sequence, 0x120);
-    assert_eq!(batch.push_sequence(4, 0x123).unwrap().sequence, 0x123);
+    batch.begin(SequenceNumber::new(0x120).unwrap(), 4).unwrap();
     assert_eq!(
-        batch.push_sequence(5, 0x1123),
-        Err(TxAmpduBatchError::DuplicateSequence(0x123))
+        batch
+            .push_sequence(3, SequenceNumber::new(0x120).unwrap())
+            .unwrap()
+            .sequence,
+        SequenceNumber::new(0x120).unwrap()
+    );
+    assert_eq!(
+        batch
+            .push_sequence(4, SequenceNumber::new(0x123).unwrap())
+            .unwrap()
+            .sequence,
+        SequenceNumber::new(0x123).unwrap()
+    );
+    assert_eq!(
+        batch.push_sequence(5, SequenceNumber::new(0x123).unwrap()),
+        Err(TxAmpduBatchError::DuplicateSequence(
+            SequenceNumber::new(0x123).unwrap()
+        ))
     );
     batch
-        .complete_with_block_ack(TxBlockAckBitmap::new(0x120, 0b1001))
+        .complete_with_block_ack(TxBlockAckBitmap::new(
+            SequenceNumber::new(0x120).unwrap(),
+            0b1001,
+        ))
         .unwrap();
     assert_eq!(
         batch.next_completion().unwrap().disposition,
@@ -1504,12 +1534,15 @@ fn batch_preserves_nonconsecutive_hardware_sequences() {
 #[test]
 fn batch_never_exceeds_negotiated_or_static_window() {
     let mut batch = TxAmpduBatch::new();
-    assert_eq!(batch.begin(0, 0), Err(TxAmpduBatchError::InvalidWindow(0)));
     assert_eq!(
-        batch.begin(0, 33),
+        batch.begin(SequenceNumber::new(0).unwrap(), 0),
+        Err(TxAmpduBatchError::InvalidWindow(0))
+    );
+    assert_eq!(
+        batch.begin(SequenceNumber::new(0).unwrap(), 33),
         Err(TxAmpduBatchError::InvalidWindow(33))
     );
-    batch.begin(0, 1).unwrap();
+    batch.begin(SequenceNumber::new(0).unwrap(), 1).unwrap();
     batch.push(0).unwrap();
     assert_eq!(batch.push(1), Err(TxAmpduBatchError::Full));
 }

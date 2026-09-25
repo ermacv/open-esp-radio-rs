@@ -21,10 +21,10 @@ fn association_retry_schedule_is_finite_inside_vendor_deadline() {
 #[test]
 fn association_runtime_owns_epoch_schedule_sequence_and_timeout() {
     let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
-    let mut sequence = StaSequenceCounter::new(0x0ffc);
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0x0ffc).unwrap());
     let mut attempts = [StaAssociationAttempt {
         ordinal: 0,
-        sequence_number: 0,
+        sequence_number: SequenceNumber::new(0).unwrap(),
         elapsed_ms: 0,
     }; 7];
     let mut attempt_count = 0;
@@ -53,7 +53,12 @@ fn association_runtime_owns_epoch_schedule_sequence_and_timeout() {
     for (index, attempt) in attempts.into_iter().enumerate() {
         assert_eq!(attempt.ordinal, index as u16 + 1);
         assert_eq!(attempt.elapsed_ms, index as u32 * 160);
-        assert_eq!(attempt.sequence_number, (0x0ffc + index as u16) & 0x0fff);
+        assert_eq!(
+            attempt.sequence_number,
+            SequenceNumber::new(0x0ffc)
+                .unwrap()
+                .wrapping_add(index as u16)
+        );
     }
     assert_eq!(runtime.elapsed_ms(), STA_RESPONSE_TIMEOUT_MS);
     assert_eq!(runtime.total_received_frames(), STA_RESPONSE_TIMEOUT_MS);
@@ -66,7 +71,7 @@ fn association_runtime_owns_epoch_schedule_sequence_and_timeout() {
 #[test]
 fn association_runtime_accepts_only_selected_peer_response() {
     let mut runtime = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
-    let mut sequence = StaSequenceCounter::new(7);
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(7).unwrap());
     assert_eq!(
         runtime.begin_tick(&mut sequence).unwrap().unwrap().ordinal,
         1
@@ -109,7 +114,7 @@ fn association_runtime_accepts_only_selected_peer_response() {
 
 #[test]
 fn association_runtime_reports_peer_disconnect_and_rejection() {
-    let mut sequence = StaSequenceCounter::new(0);
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(0).unwrap());
     let mut disconnected = StaAssociationRuntime::new(LOCAL, BSSID, WifiSecurityMode::Wpa2Personal);
     disconnected.begin_tick(&mut sequence).unwrap();
     disconnected.observe_received_frame().unwrap();

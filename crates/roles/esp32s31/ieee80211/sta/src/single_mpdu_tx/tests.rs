@@ -190,7 +190,7 @@ fn make_tx<'a>(
         },
         ConnectedTxHandoff {
             security: ConnectedTxSecurity::Wpa2Personal(key),
-            sequences: StaTxSequenceCounters::new(7),
+            sequences: StaTxSequenceCounters::new(SequenceNumber::new(7).unwrap()),
             config: SingleMpduTxConfig {
                 station_address: [2, 3, 4, 5, 6, 7],
                 bssid: BSSID,
@@ -301,7 +301,7 @@ fn rejected_lr_frontier_does_not_consume_the_shared_sequence() {
             error,
             SingleMpduEspNowTxError::Backend(EspNowTxError::LongRangeUnsupported(unsupported)) if unsupported.selection == rate
         ));
-        assert_eq!(tx.sequences.peek_non_qos(), 7);
+        assert_eq!(tx.sequences.peek_non_qos(), SequenceNumber::new(7).unwrap());
         assert_eq!(hardware.publications, 0);
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
     }
@@ -330,7 +330,7 @@ fn successful_esp_now_publication_commits_one_sequence_exactly_once() {
         ),
         Ok(WifiTxProgress::Pending)
     );
-    assert_eq!(tx.sequences.peek_non_qos(), 8);
+    assert_eq!(tx.sequences.peek_non_qos(), SequenceNumber::new(8).unwrap());
     assert_eq!(hardware.publications, 1);
 }
 
@@ -430,8 +430,14 @@ fn dscp_selects_the_matching_hardware_queue_qos_tid_and_sequence_space() {
         program.packet_priority(),
         LegacyTxQueue::Voice.vendor_data_packet_priority()
     );
-    assert_eq!(tx.sequences.peek_qos(6), Some(8));
-    assert_eq!(tx.sequences.peek_qos(0), Some(7));
+    assert_eq!(
+        tx.sequences.peek_qos(6),
+        Some(SequenceNumber::new(8).unwrap())
+    );
+    assert_eq!(
+        tx.sequences.peek_qos(0),
+        Some(SequenceNumber::new(7).unwrap())
+    );
 
     hardware.completion = Some(completion(5));
     assert_eq!(
@@ -483,7 +489,10 @@ fn idle_connected_owner_returns_descriptor_key_and_sequences_for_teardown() {
     };
 
     assert_eq!(resources.slot.state(), TxSlotState::Free);
-    assert_eq!(handoff.sequences.peek_non_qos(), 7);
+    assert_eq!(
+        handoff.sequences.peek_non_qos(),
+        SequenceNumber::new(7).unwrap()
+    );
     let ConnectedTxSecurity::Wpa2Personal(key) = handoff.security else {
         panic!("WPA2 test owner must return its pairwise key");
     };

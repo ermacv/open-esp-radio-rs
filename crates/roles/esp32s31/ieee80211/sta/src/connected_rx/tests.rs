@@ -1,3 +1,4 @@
+use oer_ieee80211_mac::sequence::SequenceNumber;
 use std::vec::Vec;
 
 use oer_esp32s31_ieee80211_dma::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
@@ -1582,7 +1583,7 @@ fn preflight_detects_amsdu_without_mutating_dispatch_state() {
         Some(RxBlockAckMpduKey {
             peer: BSSID,
             tid: 0,
-            sequence: 0x123,
+            sequence: SequenceNumber::new(0x123).unwrap(),
             retry: false,
         })
     );
@@ -1645,9 +1646,9 @@ fn routes_an_addressed_block_ack_action_without_platform_effects() {
             tid: 0,
             immediate: true,
             window: 32,
-            starting_sequence: 0x123,
+            starting_sequence,
             ..
-        }
+        } if starting_sequence == SequenceNumber::new(0x123).unwrap()
     ));
 }
 

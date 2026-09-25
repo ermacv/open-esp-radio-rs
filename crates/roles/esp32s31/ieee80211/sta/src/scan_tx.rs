@@ -8,6 +8,7 @@ use crate::{
     control_tx::{ControlTransmitter, ControlTxError},
     scan::ActiveProbeOutcome,
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
@@ -18,7 +19,7 @@ use oer_ieee80211_mac::management::ProbeRequest;
 /// Complete inputs for one active-scan Probe Request publication.
 pub struct ScanProbeRequest<'a> {
     pub source: [u8; 6],
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub ssid: &'a [u8],
     pub supported_rates: &'a [u8],
     pub current_channel: Option<u8>,

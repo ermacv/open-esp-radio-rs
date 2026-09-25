@@ -13,14 +13,21 @@ fn static_storage_owns_beacon_dtim_and_next_deadline() {
         WifiChannel::mhz20(6).unwrap(),
         100,
         2,
-        3,
+        SequenceNumber::new(3).unwrap(),
     )
     .unwrap();
     assert!(beacon.publication_due(102_400));
     assert_eq!(beacon.next_delay(102_400), None);
     let mut bitmap = TimVirtualBitmap::<2>::try_new().unwrap();
     bitmap.set(TimAssociationId::new(1).unwrap(), true).unwrap();
-    let frame = beacon.prepare(102_400, 4, true, bitmap.partial()).unwrap();
+    let frame = beacon
+        .prepare(
+            102_400,
+            SequenceNumber::new(4).unwrap(),
+            true,
+            bitmap.partial(),
+        )
+        .unwrap();
     let (offset, count, period) = dtim(frame).unwrap();
     assert_eq!((count, period), (0, 2));
     assert_eq!(frame[offset + 4] & 1, 1);
@@ -47,15 +54,29 @@ fn late_publication_does_not_move_the_absolute_tbtt_schedule() {
         WifiChannel::mhz20(6).unwrap(),
         100,
         2,
-        3,
+        SequenceNumber::new(3).unwrap(),
     )
     .unwrap();
 
     let bitmap = TimVirtualBitmap::<2>::try_new().unwrap();
-    beacon.prepare(102_400, 4, false, bitmap.partial()).unwrap();
+    beacon
+        .prepare(
+            102_400,
+            SequenceNumber::new(4).unwrap(),
+            false,
+            bitmap.partial(),
+        )
+        .unwrap();
     assert_eq!(beacon.next_delay(102_400), Some((204_800, 103)));
     assert_eq!(beacon.publication_lateness(204_900), (0, 100));
 
-    beacon.prepare(204_900, 5, false, bitmap.partial()).unwrap();
+    beacon
+        .prepare(
+            204_900,
+            SequenceNumber::new(5).unwrap(),
+            false,
+            bitmap.partial(),
+        )
+        .unwrap();
     assert_eq!(beacon.next_delay(204_900), Some((307_200, 103)));
 }

@@ -6,6 +6,7 @@
 //! adapters.
 
 use core::future::Future;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use crate::{
     EapolKeyMessage, OwnedEapolFrame, Pmk, RsnInterface,
@@ -67,7 +68,7 @@ pub trait RsnHandshakeBackend {
     fn transmit_message2<'a>(
         &'a mut self,
         frame: &'a RsnTxFrame<EAPOL_CAPACITY>,
-        sequence_number: u16,
+        sequence_number: SequenceNumber,
     ) -> impl Future<Output = Result<(), Self::Error>> + 'a;
 }
 
@@ -82,11 +83,11 @@ pub trait RsnHandshakeTimer {
 /// The callback-shaped blanket implementation keeps this crate independent
 /// from a particular HMAC state type.
 pub trait RsnTxSequence {
-    fn take_sequence(&mut self) -> u16;
+    fn take_sequence(&mut self) -> SequenceNumber;
 }
 
-impl<F: FnMut() -> u16> RsnTxSequence for F {
-    fn take_sequence(&mut self) -> u16 {
+impl<F: FnMut() -> SequenceNumber> RsnTxSequence for F {
+    fn take_sequence(&mut self) -> SequenceNumber {
         self()
     }
 }

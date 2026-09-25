@@ -101,7 +101,7 @@ impl ProductionWifiEpochRunner {
         .with_descriptor_capacity(ESP32S31_STATION_PROBE_DESCRIPTOR_CAPACITY)
         .without_candidate_selection();
         let mut sequence = oer_ieee80211_mac::station::StaSequenceCounter::new(
-            (self.trng.random() & 0x0fff) as u16,
+            oer_ieee80211_mac::sequence::SequenceNumber::from_low_bits(self.trng.random() as u16),
         );
         let (scan_table, scan_frame) = station.scan_storage();
         let scan = run_esp32s31_station_scan(

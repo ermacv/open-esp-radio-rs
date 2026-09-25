@@ -3,6 +3,7 @@ use core::{
     pin::pin,
     task::{Context, Poll},
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211_sta::scan::{StaScanBackend, StaScanConfig};
 
@@ -184,7 +185,7 @@ fn block_on<F: Future>(future: F) -> F::Output {
 fn concrete_port_returns_every_owner_after_selected_candidate() {
     let mut table = ScanTable::<4>::new();
     let mut frame = [0_u8; 128];
-    let mut sequence = StaSequenceCounter::new(7);
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(7).unwrap());
     let port = ScanPort::new(
         ScanRadio::new(Phy(11), Hardware::default(), Receive(22), Transmit(33)),
         ScanStorage::new(&mut table, &mut frame, Observer::default(), &mut sequence),
@@ -246,7 +247,7 @@ fn concrete_port_returns_every_owner_after_selected_candidate() {
             Action::Observe,
         ]
     );
-    assert_eq!(parts.sequence.peek(), 8);
+    assert_eq!(parts.sequence.peek(), SequenceNumber::new(8).unwrap());
     assert_eq!(parts.table.summary().records, 1);
     assert_eq!(parts.frame.len(), 128);
 }
@@ -255,7 +256,7 @@ fn concrete_port_returns_every_owner_after_selected_candidate() {
 fn standalone_scan_records_matching_bss_without_selecting_it() {
     let mut table = ScanTable::<4>::new();
     let mut frame = [0_u8; 128];
-    let mut sequence = StaSequenceCounter::new(7);
+    let mut sequence = StaSequenceCounter::new(SequenceNumber::new(7).unwrap());
     let port = ScanPort::new(
         ScanRadio::new(Phy(11), Hardware::default(), Receive(22), Transmit(33)),
         ScanStorage::new(&mut table, &mut frame, Observer::default(), &mut sequence),
@@ -291,7 +292,7 @@ fn standalone_scan_records_matching_bss_without_selecting_it() {
     let record = &parts.table.records()[0];
     assert_eq!(&record.ssid[..usize::from(record.ssid_len)], b"test");
     assert_eq!(parts.table.records()[0].channel, 11);
-    assert_eq!(parts.sequence.peek(), 8);
+    assert_eq!(parts.sequence.peek(), SequenceNumber::new(8).unwrap());
     assert_eq!(parts.hardware.actions.last(), Some(&Action::Observe));
     assert!(
         parts

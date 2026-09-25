@@ -25,7 +25,9 @@ fn deadline_is_computed_without_an_executor_timer() {
     let mut core = core();
     assert_eq!(core.next_alarm_deadline(), None);
 
-    core.tx_block_ack.begin(7, 23, 50).unwrap();
+    core.tx_block_ack
+        .begin(7, SequenceNumber::new(23).unwrap(), 50)
+        .unwrap();
     assert_eq!(core.next_alarm_deadline(), Some(100_050));
 }
 

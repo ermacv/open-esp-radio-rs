@@ -2,6 +2,7 @@ use core::{
     future::{Future, ready},
     pin::Pin,
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use crate::{
     datapath::{
@@ -260,7 +261,7 @@ impl RxBlockAckHardware for Hardware {
         &mut self,
         hardware_index: u8,
         tid: u8,
-        starting_sequence: u16,
+        _starting_sequence: SequenceNumber,
         window: u16,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         if hardware_index >= 8 {
@@ -268,11 +269,6 @@ impl RxBlockAckHardware for Hardware {
         }
         if tid > 7 {
             return Err(S31RxBlockAckAgreementError::Tid(tid));
-        }
-        if starting_sequence > 0x0fff {
-            return Err(S31RxBlockAckAgreementError::StartingSequence(
-                starting_sequence,
-            ));
         }
         if window == 0 || window > 0x7f {
             return Err(S31RxBlockAckAgreementError::Window(window));
@@ -298,15 +294,10 @@ impl RxBlockAckHardware for Hardware {
     fn reset_extra_softap_rx_block_ack_window(
         &mut self,
         hardware_index: u8,
-        starting_sequence: u16,
+        _starting_sequence: SequenceNumber,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         if hardware_index >= 8 {
             return Err(S31RxBlockAckAgreementError::HardwareIndex(hardware_index));
-        }
-        if starting_sequence > 0x0fff {
-            return Err(S31RxBlockAckAgreementError::StartingSequence(
-                starting_sequence,
-            ));
         }
         Ok(())
     }
@@ -453,7 +444,7 @@ fn make_tx<'a>(
             security: oer_esp32s31_ieee80211_sta::single_mpdu_tx::ConnectedTxSecurity::Wpa2Personal(
                 key,
             ),
-            sequences: StaTxSequenceCounters::new(7),
+            sequences: StaTxSequenceCounters::new(SequenceNumber::new(7).unwrap()),
             config: SingleMpduTxConfig {
                 station_address: STATION,
                 bssid: BSSID,
@@ -946,7 +937,7 @@ fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
         amsdu: false,
         window: 16,
         timeout_tu: 0,
-        starting_sequence: 0x123,
+        starting_sequence: SequenceNumber::new(0x123).unwrap(),
     };
     publisher.publish(ConnectedRxEvent::BlockAck {
         action,
@@ -963,7 +954,7 @@ fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
         interface: oer_esp32s31_ieee80211_mac::MacInterface::Station,
         peer: BSSID,
         tid: 3,
-        starting_sequence: 0x123,
+        starting_sequence: SequenceNumber::new(0x123).unwrap(),
         window: 16,
     };
     assert_eq!(agreement.tid, 3);
@@ -1037,7 +1028,7 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
         amsdu: false,
         window: 16,
         timeout_tu: 0,
-        starting_sequence: 0x123,
+        starting_sequence: SequenceNumber::new(0x123).unwrap(),
     };
     publisher.publish(ConnectedRxEvent::BlockAck {
         action,
@@ -1053,7 +1044,7 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
         interface: oer_esp32s31_ieee80211_mac::MacInterface::Station,
         peer: BSSID,
         tid: 3,
-        starting_sequence: 0x123,
+        starting_sequence: SequenceNumber::new(0x123).unwrap(),
         window: 16,
     };
     let hardware_index = agreement.hardware_index;
@@ -1361,7 +1352,7 @@ fn shutdown_clears_rx_tx_block_ack_and_discards_late_control_events() {
             amsdu: false,
             window: 16,
             timeout_tu: 0,
-            starting_sequence: 0x123,
+            starting_sequence: SequenceNumber::new(0x123).unwrap(),
         },
         body: &[0; 9],
     });
@@ -1463,7 +1454,7 @@ fn station_shutdown_preserves_access_point_rx_block_ack_banks() {
             immediate: true,
             requested_window: 16,
             timeout_tu: 0,
-            starting_sequence: 7,
+            starting_sequence: SequenceNumber::new(7).unwrap(),
         })
         .unwrap();
     let activation = control.rx_block_ack().begin_pending().unwrap().unwrap();

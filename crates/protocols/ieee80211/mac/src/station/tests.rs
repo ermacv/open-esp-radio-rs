@@ -1,6 +1,7 @@
 use super::association::PhyMode;
 use super::*;
 use crate::security::rsn::RSN_CAPABILITY_MFPR;
+use crate::sequence::seq;
 
 // A synthetic profile keeps framing/admission tests independent of any chip.
 // Neither test below emits a local HT/HE element.
@@ -75,7 +76,7 @@ fn encodes_open_authentication_request() {
     let length = OpenAuthenticationRequest {
         source: LOCAL,
         bssid: BSSID,
-        sequence_number: 0x123,
+        sequence_number: seq(0x123),
     }
     .encode(&mut output)
     .unwrap();
@@ -96,7 +97,7 @@ fn encodes_sta_action_frame_around_owned_body() {
     let length = StaActionFrame {
         source: LOCAL,
         bssid: BSSID,
-        sequence_number: 0x123,
+        sequence_number: seq(0x123),
         body: &body,
     }
     .encode(&mut output)
@@ -224,7 +225,7 @@ fn association_request_contains_selected_rsn() {
     let length = AssociationRequest {
         source: LOCAL,
         access_point: &record,
-        sequence_number: 2,
+        sequence_number: seq(2),
         listen_interval: 1,
         phy: PhyMode::Legacy,
         security: WifiSecurityMode::Wpa2Personal,
@@ -251,7 +252,7 @@ fn ht20_request_fails_closed_when_the_ap_did_not_advertise_ht() {
         AssociationRequest {
             source: LOCAL,
             access_point: &record,
-            sequence_number: 2,
+            sequence_number: seq(2),
             listen_interval: 1,
             phy: PhyMode::Ht20,
             security: WifiSecurityMode::Wpa2Personal,
@@ -274,7 +275,7 @@ fn association_encoder_uses_the_explicit_local_profile() {
     let length = AssociationRequest {
         source: LOCAL,
         access_point: &record,
-        sequence_number: 2,
+        sequence_number: seq(2),
         listen_interval: 1,
         phy: PhyMode::Ht20,
         security: WifiSecurityMode::Wpa2Personal,
@@ -304,7 +305,7 @@ fn sta_data_frame_encodes_to_ds_llc_snap() {
         source: [2, 3, 4, 5, 6, 7],
         bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
         destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-        sequence_number: 0x123,
+        sequence_number: seq(0x123),
         ether_type: 0x888e,
         payload: &[1, 2, 3],
     }
@@ -326,7 +327,7 @@ fn protected_data_frame_selects_the_recovered_legacy_or_qos_layout() {
         source: [2, 3, 4, 5, 6, 7],
         bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
         destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-        sequence_number: 0x123,
+        sequence_number: seq(0x123),
         user_priority: 7,
         peer_qos: true,
         ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
@@ -360,7 +361,7 @@ fn protected_data_frame_fully_overwrites_a_reused_dma_slot() {
         source: [2, 3, 4, 5, 6, 7],
         bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
         destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-        sequence_number: 0x123,
+        sequence_number: seq(0x123),
         user_priority: 7,
         peer_qos: true,
         ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
@@ -384,7 +385,7 @@ fn protected_ethernet_frame_reuses_payload_at_its_final_dma_offset() {
     ];
     let metadata = StaProtectedEthernetFrame {
         bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
-        sequence_number: 0x123,
+        sequence_number: seq(0x123),
         user_priority: 7,
         peer_qos: true,
         ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
@@ -442,7 +443,7 @@ fn protected_ethernet_frame_reports_missing_headroom_before_mutation() {
     assert_eq!(
         StaProtectedEthernetFrame {
             bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
-            sequence_number: 0x123,
+            sequence_number: seq(0x123),
             user_priority: 0,
             peer_qos: true,
             ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
@@ -463,7 +464,7 @@ fn protected_he_control_keeps_ccmp_immediately_after_qos() {
         source: [2, 3, 4, 5, 6, 7],
         bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
         destination: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-        sequence_number: 0x123,
+        sequence_number: seq(0x123),
         user_priority: 0,
         peer_qos: true,
         ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
@@ -497,7 +498,7 @@ fn protected_amsdu_encodes_two_ethernet_frames_and_round_trips() {
     let length = StaProtectedAmsduFrame {
         source: [2, 3, 4, 5, 6, 7],
         bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
-        sequence_number: 0x123,
+        sequence_number: seq(0x123),
         user_priority: 7,
         ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
         ethernet_frames: &ethernet_frames,
@@ -547,7 +548,7 @@ fn protected_amsdu_pair_encodes_in_first_ethernet_allocation() {
     let ethernet_frames: [&[u8]; 2] = [&first, &second];
     let metadata = StaProtectedEthernetFrame {
         bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
-        sequence_number: 0x123,
+        sequence_number: seq(0x123),
         user_priority: 7,
         peer_qos: true,
         ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
@@ -596,7 +597,7 @@ fn protected_amsdu_fully_overwrites_a_reused_output_slot() {
     let encoded = StaProtectedAmsduFrame {
         source: [2, 3, 4, 5, 6, 7],
         bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
-        sequence_number: 0x123,
+        sequence_number: seq(0x123),
         user_priority: 7,
         ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
         ethernet_frames: &ethernet_frames,
@@ -620,7 +621,7 @@ fn protected_amsdu_fully_overwrites_a_reused_output_slot() {
 
     let previous = reused;
     let refreshed_length = StaProtectedAmsduFrame {
-        sequence_number: 0x456,
+        sequence_number: seq(0x456),
         ccmp_header: [9, 0, 0, 0x20, 0, 0, 0, 0],
         ..encoded
     }
@@ -651,7 +652,7 @@ fn protected_amsdu_rejects_the_unadvertised_large_class() {
         StaProtectedAmsduFrame {
             source: [2, 3, 4, 5, 6, 7],
             bssid: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
-            sequence_number: 1,
+            sequence_number: seq(1),
             user_priority: 0,
             ccmp_header: [0; CCMP_HEADER_LEN],
             ethernet_frames: &frames,

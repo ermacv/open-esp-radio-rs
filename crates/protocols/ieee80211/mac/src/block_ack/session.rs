@@ -4,8 +4,8 @@ use super::frame::{
     ADDBA_ACTION_BODY_LEN, ADDBA_REQUEST_ACTION, BLOCK_ACK_CATEGORY, BlockAckAction,
     parse_block_ack_action,
 };
+use crate::sequence::SequenceNumber;
 
-const SEQUENCE_NUMBER_MASK: u16 = 0x0fff;
 const BLOCK_ACK_WINDOW_FIELD_MAX: u16 = 0x03ff;
 
 const BA_PARAMETER_AMSDU: u16 = 1;
@@ -80,7 +80,7 @@ impl TxBlockAckDialogToken {
 pub struct AddbaRequest {
     pub generation: u32,
     pub dialog_token: u8,
-    pub starting_sequence: u16,
+    pub starting_sequence: SequenceNumber,
     pub body: [u8; ADDBA_ACTION_BODY_LEN],
     pub alarm: TxBlockAckAlarm,
 }
@@ -90,7 +90,7 @@ pub struct OperationalTxBlockAck {
     pub tid: u8,
     pub window: u16,
     pub timeout_tu: u16,
-    pub starting_sequence: u16,
+    pub starting_sequence: SequenceNumber,
     pub amsdu: bool,
 }
 
@@ -105,7 +105,7 @@ enum TxBlockAckPhase {
     Idle,
     Awaiting {
         dialog_token: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
     },
     Operational(OperationalTxBlockAck),
 }
@@ -137,7 +137,7 @@ impl TxBlockAckSession {
 
     pub fn begin(
         &mut self,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
         now_us: u64,
     ) -> Result<AddbaRequest, TxBlockAckError> {
         let dialog_token = TxBlockAckDialogToken(self.next_dialog_token);
@@ -152,7 +152,7 @@ impl TxBlockAckSession {
     /// its timeout generation, starting sequence and operational agreement.
     pub fn begin_with_dialog_token(
         &mut self,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
         now_us: u64,
         dialog_token: TxBlockAckDialogToken,
     ) -> Result<AddbaRequest, TxBlockAckError> {
@@ -161,7 +161,6 @@ impl TxBlockAckSession {
             .ok_or(TxBlockAckError::DeadlineOverflow)?;
         self.generation = next_generation(self.generation);
         let dialog_token = dialog_token.value();
-        let starting_sequence = starting_sequence & SEQUENCE_NUMBER_MASK;
         self.phase = TxBlockAckPhase::Awaiting {
             dialog_token,
             starting_sequence,
@@ -169,7 +168,7 @@ impl TxBlockAckSession {
 
         let parameters =
             encode_ba_parameters(self.config.tid, self.config.window, self.config.amsdu);
-        let sequence_control = starting_sequence << 4;
+        let sequence_control = starting_sequence.sequence_control();
         let mut body = [0_u8; ADDBA_ACTION_BODY_LEN];
         body[0] = BLOCK_ACK_CATEGORY;
         body[1] = ADDBA_REQUEST_ACTION;

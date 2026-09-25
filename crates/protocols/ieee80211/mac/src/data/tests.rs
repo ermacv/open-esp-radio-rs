@@ -95,18 +95,6 @@ fn hardware_bsr_sets_order_without_moving_dma_payload() {
 }
 
 #[test]
-fn sequence_counter_wraps_but_air_sequence_is_twelve_bits() {
-    assert_eq!(
-        advance_sequence(0x1abc),
-        SequencePlan {
-            next_counter: 0x1abd,
-            sequence_number: 0x0abc,
-            sequence_control: 0xabc0,
-        }
-    );
-}
-
-#[test]
 fn station_decapsulation_reverses_from_ds_rfc1042_data() {
     let ethernet = ethernet(DESTINATION);
     let plan = plan_data_encapsulation(

@@ -21,7 +21,7 @@ fn prospective_ethernet_admission_matches_encoded_mpdus_and_preserves_rejected_b
         let encoded_length = ApProtectedDataFrame {
             access_point: [2, 0, 0, 0, 0, 3],
             peer,
-            sequence_number: index as u16,
+            sequence_number: SequenceNumber::new(index as u16).unwrap(),
             user_priority: 0,
             peer_qos: true,
             more_data: false,

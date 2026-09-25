@@ -1,6 +1,7 @@
 extern crate std;
 
 use super::*;
+use crate::sequence::seq;
 
 const STA: [u8; 6] = [2, 0, 0, 0, 0, 1];
 const AP: [u8; 6] = [2, 0, 0, 0, 0, 2];
@@ -206,7 +207,7 @@ fn retry_out_of_order_timeout_and_oldest_eviction_are_bounded() {
         OpenDataDefragmentation::Buffered {
             evicted: Some(identity),
             ..
-        } if identity.sequence_number() == 1
+        } if identity.sequence_number() == seq(1)
     ));
     let expired = fragment(DataInterfaceRole::Station, 4, 0, true, false, &payload);
     assert!(matches!(

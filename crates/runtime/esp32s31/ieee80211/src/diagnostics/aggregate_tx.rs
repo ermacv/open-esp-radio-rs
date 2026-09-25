@@ -4,6 +4,8 @@
 //! counters, histograms, storage or report formatting. Attaching an observer
 //! must not affect retry, queue, DMA ownership or scheduling decisions.
 
+use oer_ieee80211_mac::sequence::SequenceNumber;
+
 pub use oer_esp32s31_ieee80211::ordinary_tx::{
     OrdinaryTxOutcome, OrdinaryTxReport, OrdinaryTxRetryReport,
 };
@@ -113,8 +115,8 @@ pub enum AggregateTxObservation {
         tx_status: u8,
         block_ack_received: bool,
         control: u8,
-        first_sequence: u16,
-        starting_sequence: u16,
+        first_sequence: SequenceNumber,
+        starting_sequence: SequenceNumber,
         subframes: u8,
         missing: u8,
     },
@@ -206,7 +208,7 @@ pub struct TxWaitSample {
     pub elapsed_micros: u64,
     pub timer_lateness_micros: u64,
     /// Original aggregate sequence; retained retries may contain a subset.
-    pub first_sequence: u16,
+    pub first_sequence: SequenceNumber,
     pub queue: u8,
     pub snapshot: Option<oer_esp32s31_hal::types::MacOrdinaryTxQueueSnapshot>,
 }

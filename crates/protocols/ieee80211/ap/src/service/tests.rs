@@ -147,12 +147,30 @@ fn qos_sequence_spaces_are_independent_for_each_peer_and_tid() {
     service.authenticate_open(PEER, 0);
     service.authenticate_open(OTHER, 0);
 
-    assert_eq!(service.next_qos_sequence(PEER, 0), Some(0));
-    assert_eq!(service.next_qos_sequence(PEER, 0), Some(1));
-    assert_eq!(service.current_qos_sequence(PEER, 0), Some(2));
-    assert_eq!(service.current_qos_sequence(OTHER, 0), Some(0));
-    assert_eq!(service.next_qos_sequence(OTHER, 0), Some(0));
-    assert_eq!(service.current_qos_sequence(PEER, 1), Some(0));
+    assert_eq!(
+        service.next_qos_sequence(PEER, 0),
+        Some(SequenceNumber::new(0).unwrap())
+    );
+    assert_eq!(
+        service.next_qos_sequence(PEER, 0),
+        Some(SequenceNumber::new(1).unwrap())
+    );
+    assert_eq!(
+        service.current_qos_sequence(PEER, 0),
+        Some(SequenceNumber::new(2).unwrap())
+    );
+    assert_eq!(
+        service.current_qos_sequence(OTHER, 0),
+        Some(SequenceNumber::new(0).unwrap())
+    );
+    assert_eq!(
+        service.next_qos_sequence(OTHER, 0),
+        Some(SequenceNumber::new(0).unwrap())
+    );
+    assert_eq!(
+        service.current_qos_sequence(PEER, 1),
+        Some(SequenceNumber::new(0).unwrap())
+    );
     assert_eq!(service.next_qos_sequence([0xff; 6], 0), None);
 }
 
@@ -902,9 +920,15 @@ fn management_sequence_wraps_at_twelve_bits() {
     let mut storage = AccessPointPeerStorage::new();
     let mut service = service(&mut storage);
     for expected in 0..=0x0fff {
-        assert_eq!(service.next_management_sequence(), expected);
+        assert_eq!(
+            service.next_management_sequence(),
+            SequenceNumber::new(expected).unwrap()
+        );
     }
-    assert_eq!(service.next_management_sequence(), 0);
+    assert_eq!(
+        service.next_management_sequence(),
+        SequenceNumber::new(0).unwrap()
+    );
 }
 
 #[test]

@@ -159,7 +159,7 @@ pub struct AssociationCapabilities {
 pub struct AssociationRequest<'a> {
     pub source: [u8; 6],
     pub access_point: &'a ScanRecord,
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub listen_interval: u16,
     pub phy: PhyMode,
     /// Exact BSS security selected by the station request.
@@ -178,8 +178,7 @@ impl AssociationRequest<'_> {
         output: &mut [u8],
         capabilities: &AssociationCapabilities,
     ) -> Result<usize, AssociationRequestError> {
-        validate_peer(self.access_point.bssid, self.sequence_number)
-            .map_err(AssociationRequestError::Frame)?;
+        validate_peer(self.access_point.bssid).map_err(AssociationRequestError::Frame)?;
         let ssid = self.access_point.ssid_bytes();
         if ssid.len() > MAX_SSID_LEN {
             return Err(AssociationRequestError::Frame(

@@ -9,6 +9,8 @@
 
 use core::fmt;
 
+use crate::sequence::SequenceNumber;
+
 mod v2;
 
 pub use v2::{
@@ -436,7 +438,7 @@ impl<'payload> EspNowV1Action<'payload> {
 pub struct EspNowV1Frame<'payload> {
     destination: EspNowDestination,
     source: EspNowUnicastAddress,
-    sequence_number: u16,
+    sequence_number: SequenceNumber,
     retry: bool,
     action: EspNowV1Action<'payload>,
 }
@@ -445,13 +447,10 @@ impl<'payload> EspNowV1Frame<'payload> {
     pub const fn new(
         destination: EspNowDestination,
         source: EspNowUnicastAddress,
-        sequence_number: u16,
+        sequence_number: SequenceNumber,
         random_value: EspNowRandomValue,
         payload: &'payload [u8],
     ) -> Result<Self, EspNowV1WireError> {
-        if sequence_number > 0x0fff {
-            return Err(EspNowV1WireError::InvalidSequenceNumber(sequence_number));
-        }
         let action = match EspNowV1Action::new(random_value, payload) {
             Ok(action) => action,
             Err(error) => return Err(error),
@@ -473,7 +472,7 @@ impl<'payload> EspNowV1Frame<'payload> {
         self.source
     }
 
-    pub const fn sequence_number(self) -> u16 {
+    pub const fn sequence_number(self) -> SequenceNumber {
         self.sequence_number
     }
 
@@ -503,7 +502,7 @@ impl<'payload> EspNowV1Frame<'payload> {
         output[4..10].copy_from_slice(&self.destination.bytes());
         output[10..16].copy_from_slice(&self.source.bytes());
         output[16..22].copy_from_slice(&BROADCAST_ADDRESS);
-        output[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        output[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
         self.action
             .encode(&mut output[ESP_NOW_MANAGEMENT_HEADER_LEN..])?;
         Ok(required)
@@ -548,7 +547,7 @@ impl<'payload> EspNowV1Frame<'payload> {
         Ok(Self {
             destination,
             source,
-            sequence_number: sequence_control >> 4,
+            sequence_number: SequenceNumber::from_sequence_control(sequence_control),
             retry: frame_control & RETRY_FLAG != 0,
             action,
         })
@@ -567,7 +566,7 @@ pub struct EspNowProtectedV1Envelope<'frame> {
     management_header: &'frame [u8; ESP_NOW_MANAGEMENT_HEADER_LEN],
     destination: EspNowUnicastAddress,
     source: EspNowUnicastAddress,
-    sequence_number: u16,
+    sequence_number: SequenceNumber,
     retry: bool,
     key_id: u8,
     packet_number: EspNowCcmpPacketNumber,
@@ -665,7 +664,7 @@ impl<'frame> EspNowProtectedV1Envelope<'frame> {
             management_header,
             destination,
             source,
-            sequence_number: sequence_control >> 4,
+            sequence_number: SequenceNumber::from_sequence_control(sequence_control),
             retry: frame_control & RETRY_FLAG != 0,
             key_id: (ccmp_header[3] & CCMP_KEY_ID_MASK) >> 6,
             packet_number,
@@ -687,7 +686,7 @@ impl<'frame> EspNowProtectedV1Envelope<'frame> {
         self.source
     }
 
-    pub const fn sequence_number(self) -> u16 {
+    pub const fn sequence_number(self) -> SequenceNumber {
         self.sequence_number
     }
 
@@ -812,7 +811,6 @@ pub enum EspNowV1WireError {
     PayloadTooLong { length: usize },
     OutputTooSmall { required: usize },
     FrameTooShort { minimum: usize },
-    InvalidSequenceNumber(u16),
     InvalidDestination(EspNowAddressError),
     InvalidSource(EspNowAddressError),
     InvalidBssid,
@@ -842,12 +840,6 @@ impl fmt::Display for EspNowV1WireError {
             }
             Self::FrameTooShort { minimum } => {
                 write!(formatter, "ESP-NOW input is shorter than {minimum} bytes")
-            }
-            Self::InvalidSequenceNumber(sequence) => {
-                write!(
-                    formatter,
-                    "ESP-NOW sequence number {sequence} exceeds 12 bits"
-                )
             }
             Self::InvalidDestination(error) => write!(formatter, "invalid destination: {error}"),
             Self::InvalidSource(error) => write!(formatter, "invalid source: {error}"),

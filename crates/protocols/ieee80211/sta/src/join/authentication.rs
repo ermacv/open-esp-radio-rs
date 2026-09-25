@@ -1,5 +1,6 @@
 //! Open Authentication attempts, deadline results and retry ownership.
 
+use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_ieee80211_mac::station::{
     StaDisconnect, StaSequenceCounter, parse_open_authentication_response, parse_sta_disconnect,
 };
@@ -13,7 +14,7 @@ pub const STA_AUTHENTICATION_ATTEMPT_LIMIT: u16 = 3;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaAuthenticationAttempt {
     pub ordinal: u16,
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub response_timeout_ms: u32,
 }
 

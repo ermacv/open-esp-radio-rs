@@ -1,4 +1,5 @@
 use super::*;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 #[cfg(feature = "tx-phase-telemetry")]
 use crate::diagnostics::core0_rx_performance::{
@@ -314,7 +315,7 @@ where
         &mut self,
         first: B,
         network: &I,
-        first_sequence: u16,
+        first_sequence: SequenceNumber,
         cookie: TxCookie,
         traffic: AggregateTraffic,
     ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError>

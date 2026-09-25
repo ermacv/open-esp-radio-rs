@@ -2,42 +2,43 @@
 //! Every method borrows the same service and peer storage; no second owner exists.
 
 use super::*;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 impl<'peers> AccessPointService<'peers> {
-    pub fn next_management_sequence(&mut self) -> u16 {
+    pub fn next_management_sequence(&mut self) -> SequenceNumber {
         let sequence = self.next_management_sequence;
-        self.next_management_sequence = (sequence + 1) & 0x0fff;
+        self.next_management_sequence = sequence.next();
         sequence
     }
 
     /// Consume the non-QoS data sequence space used by the initial EAPOL and
     /// legacy data path. Per-TID sequence spaces are introduced with QoS.
-    pub fn next_data_sequence(&mut self) -> u16 {
+    pub fn next_data_sequence(&mut self) -> SequenceNumber {
         let sequence = self.next_data_sequence;
-        self.next_data_sequence = (sequence + 1) & 0x0fff;
+        self.next_data_sequence = sequence.next();
         sequence
     }
 
-    pub const fn current_data_sequence(&self) -> u16 {
+    pub const fn current_data_sequence(&self) -> SequenceNumber {
         self.next_data_sequence
     }
 
     /// Consume one per-peer/per-TID sequence for protected data or the
     /// bounded Open QoS A-MSDU path. Security mode does not partition the
     /// receiver's IEEE sequence space.
-    pub fn next_qos_sequence(&mut self, peer: [u8; 6], tid: u8) -> Option<u16> {
+    pub fn next_qos_sequence(&mut self, peer: [u8; 6], tid: u8) -> Option<SequenceNumber> {
         let sequence = self
             .checked_peer_mut(peer)
             .ok()?
             .next_qos_sequences
             .get_mut(usize::from(tid))?;
         let current = *sequence;
-        *sequence = (current + 1) & 0x0fff;
+        *sequence = current.next();
         Some(current)
     }
 
     /// Inspect a peer/TID sequence without consuming it during preflight.
-    pub fn current_qos_sequence(&self, peer: [u8; 6], tid: u8) -> Option<u16> {
+    pub fn current_qos_sequence(&self, peer: [u8; 6], tid: u8) -> Option<SequenceNumber> {
         self.checked_peer(peer)
             .ok()?
             .next_qos_sequences

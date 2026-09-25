@@ -18,7 +18,7 @@ use super::*;
 pub struct StaProtectedAmsduFrame<'a> {
     pub source: [u8; 6],
     pub bssid: [u8; 6],
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub user_priority: u8,
     pub ccmp_header: [u8; CCMP_HEADER_LEN],
     pub ethernet_frames: &'a [&'a [u8]],
@@ -142,7 +142,7 @@ pub fn sta_protected_amsdu_pair_frame_length(
 
 impl StaProtectedAmsduFrame<'_> {
     fn plan(&self) -> Result<(crate::data::DataEncapPlan, usize), StationFrameError> {
-        validate_peer(self.bssid, self.sequence_number)?;
+        validate_peer(self.bssid)?;
         if self.user_priority > 7 {
             return Err(StationFrameError::UserPriorityOutOfRange);
         }
@@ -185,7 +185,7 @@ impl StaProtectedAmsduFrame<'_> {
 
         let frame = &mut output[..required];
         frame[..header_len].copy_from_slice(&plan.header[..header_len]);
-        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        frame[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
         let offset = header_len;
         frame[offset..offset + CCMP_HEADER_LEN].copy_from_slice(&self.ccmp_header);
         Ok(required)

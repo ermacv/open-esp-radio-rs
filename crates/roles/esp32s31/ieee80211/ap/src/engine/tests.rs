@@ -473,8 +473,14 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
     assert_eq!(&protected[22..24], &0x0000_u16.to_le_bytes());
     assert_eq!(&protected[26..34], &[3, 0, 0, 0x20, 0, 0, 0, 0]);
     assert_eq!(&protected[42..46], &[1, 2, 3, 4]);
-    assert_eq!(engine.service.current_data_sequence(), 1);
-    assert_eq!(engine.service.current_qos_sequence(peer, 0), Some(1));
+    assert_eq!(
+        engine.service.current_data_sequence(),
+        SequenceNumber::new(1).unwrap()
+    );
+    assert_eq!(
+        engine.service.current_qos_sequence(peer, 0),
+        Some(SequenceNumber::new(1).unwrap())
+    );
 
     let request = engine
         .service
@@ -547,7 +553,10 @@ fn message_four_installs_pairwise_key_before_authorization_is_reported() {
         .unwrap();
     assert_eq!(encoded.hardware_key_selector, Some(2));
     assert_eq!(&protected[24..32], &[3, 0, 0, 0x60, 0, 0, 0, 0]);
-    assert_eq!(engine.service.current_data_sequence(), 2);
+    assert_eq!(
+        engine.service.current_data_sequence(),
+        SequenceNumber::new(2).unwrap()
+    );
 
     // Supplicants may restart authentication without a preceding
     // deauthentication. The old PTK must leave hardware before the same
@@ -634,13 +643,22 @@ fn open_ht_peer_uses_bounded_qos_amsdu_without_key_or_block_ack_owner() {
         .encode_amsdu_ethernet_pair(&first, &second, &mut output)
         .unwrap()
         .expect("Open HT/QoS pair is admitted");
-    assert_eq!(engine.service.current_qos_sequence(peer, 0), Some(0));
+    assert_eq!(
+        engine.service.current_qos_sequence(peer, 0),
+        Some(SequenceNumber::new(0).unwrap())
+    );
     let encoded = engine.commit_prepared_amsdu(prepared, &mut output).unwrap();
     assert_eq!(encoded.hardware_key_selector, None);
     assert_eq!(&output[..2], &0x0288_u16.to_le_bytes());
     assert_eq!(output[24], 0x80);
-    assert_eq!(engine.service.current_qos_sequence(peer, 0), Some(1));
-    assert_eq!(engine.service.current_data_sequence(), 0);
+    assert_eq!(
+        engine.service.current_qos_sequence(peer, 0),
+        Some(SequenceNumber::new(1).unwrap())
+    );
+    assert_eq!(
+        engine.service.current_data_sequence(),
+        SequenceNumber::new(0).unwrap()
+    );
     assert!(
         engine
             .service

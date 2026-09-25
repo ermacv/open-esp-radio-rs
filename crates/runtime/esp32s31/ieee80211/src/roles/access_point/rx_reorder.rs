@@ -9,6 +9,7 @@ use crate::datapath::rx::reorder::{
     RX_REORDER_BACKING_SLOT_COUNT, RX_REORDER_CURRENT_SLOT, RX_REORDER_GAP_TIMEOUT_MICROS,
     RX_REORDER_SLOT_DOMAIN, RxReorderFrame, RxReorderFrameStorage, RxReorderStorageError,
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
@@ -60,7 +61,7 @@ pub(super) struct AccessPointRxReorderProgress {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct AccessPointRxWindowReset {
     pub hardware_index: u8,
-    pub starting_sequence: u16,
+    pub starting_sequence: SequenceNumber,
 }
 
 struct PendingReleasedFrame<'storage, const CAPACITY: usize> {
@@ -186,7 +187,7 @@ impl<'storage, const CAPACITY: usize> AccessPointRxReorder<'storage, CAPACITY> {
                 .banks
                 .state_mut(bank)
                 .expect("one bank identity owns one reorder state")
-                .resynchronize_stale_initial_ampdu(key.sequence, baseband_format > 3)?;
+                .resynchronize_stale_initial_ampdu(key.sequence, baseband_format > 3);
             if let Some((release, starting_sequence)) = resync {
                 resync_dispatched =
                     self.dispatch_retained_release(release, identity, &mut dispatch);

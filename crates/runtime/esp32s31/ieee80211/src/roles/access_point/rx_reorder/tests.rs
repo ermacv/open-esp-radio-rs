@@ -4,6 +4,7 @@ const PEER_A: [u8; 6] = [2, 0, 0, 0, 0, 1];
 const PEER_B: [u8; 6] = [2, 0, 0, 0, 0, 2];
 
 fn agreement(hardware_index: u8, peer: [u8; 6], starting_sequence: u16) -> RxBlockAckSnapshot {
+    let starting_sequence = SequenceNumber::new(starting_sequence).unwrap();
     RxBlockAckSnapshot {
         hardware_index,
         interface: MacInterface::AccessPoint,
@@ -39,7 +40,7 @@ fn one_gap_releases_current_then_retained_frame_in_sequence_order() {
             RxBlockAckMpduKey {
                 peer: PEER_A,
                 tid: 6,
-                sequence: 11,
+                sequence: SequenceNumber::new(11).unwrap(),
                 retry: false,
             },
             None,
@@ -58,7 +59,7 @@ fn one_gap_releases_current_then_retained_frame_in_sequence_order() {
             RxBlockAckMpduKey {
                 peer: PEER_A,
                 tid: 6,
-                sequence: 10,
+                sequence: SequenceNumber::new(10).unwrap(),
                 retry: false,
             },
             None,
@@ -101,7 +102,7 @@ fn in_order_mpdu_dispatches_without_reorder_backing_or_pending_release() {
             RxBlockAckMpduKey {
                 peer: PEER_A,
                 tid: 6,
-                sequence: 10,
+                sequence: SequenceNumber::new(10).unwrap(),
                 retry: false,
             },
             None,
@@ -130,23 +131,38 @@ fn direct_ingest_is_non_mutating_until_initial_resync_and_on_a_gap() {
         retry: false,
     };
 
-    assert_eq!(reorder.try_ingest_immediate(key(10), 1_000), Ok(None));
-    assert_eq!(reorder.banks.state(0).unwrap().next_sequence(), 10);
+    assert_eq!(
+        reorder.try_ingest_immediate(key(SequenceNumber::new(10).unwrap()), 1_000),
+        Ok(None)
+    );
+    assert_eq!(
+        reorder.banks.state(0).unwrap().next_sequence(),
+        SequenceNumber::new(10).unwrap()
+    );
 
     // The complete ingress path owns the one-time baseband resync. Once
     // that edge is complete, direct ingress may advance only an exact
     // in-order frontier.
     reorder.pending_hardware_window_reset[0] = false;
     let progress = reorder
-        .try_ingest_immediate(key(10), 1_001)
+        .try_ingest_immediate(key(SequenceNumber::new(10).unwrap()), 1_001)
         .unwrap()
         .expect("the exact frontier is admitted");
     assert!(progress.active);
     assert_eq!(progress.dispatched, 1);
-    assert_eq!(reorder.banks.state(0).unwrap().next_sequence(), 11);
+    assert_eq!(
+        reorder.banks.state(0).unwrap().next_sequence(),
+        SequenceNumber::new(11).unwrap()
+    );
 
-    assert_eq!(reorder.try_ingest_immediate(key(12), 1_002), Ok(None));
-    assert_eq!(reorder.banks.state(0).unwrap().next_sequence(), 11);
+    assert_eq!(
+        reorder.try_ingest_immediate(key(SequenceNumber::new(12).unwrap()), 1_002),
+        Ok(None)
+    );
+    assert_eq!(
+        reorder.banks.state(0).unwrap().next_sequence(),
+        SequenceNumber::new(11).unwrap()
+    );
 }
 
 #[test]
@@ -163,7 +179,7 @@ fn out_of_window_mpdu_advances_only_the_software_reorder_frontier() {
             RxBlockAckMpduKey {
                 peer: PEER_A,
                 tid: 6,
-                sequence: 20,
+                sequence: SequenceNumber::new(20).unwrap(),
                 retry: false,
             },
             None,
@@ -193,7 +209,7 @@ fn window_advance_that_closes_a_full_run_retains_release_ownership() {
                 RxBlockAckMpduKey {
                     peer: PEER_A,
                     tid: 6,
-                    sequence: sequence as u16,
+                    sequence: SequenceNumber::new(sequence as u16).unwrap(),
                     retry: false,
                 },
                 None,
@@ -211,7 +227,7 @@ fn window_advance_that_closes_a_full_run_retains_release_ownership() {
             RxBlockAckMpduKey {
                 peer: PEER_A,
                 tid: 6,
-                sequence: 8,
+                sequence: SequenceNumber::new(8).unwrap(),
                 retry: false,
             },
             None,
@@ -242,17 +258,38 @@ fn aligned_first_physical_ampdu_does_not_reset_the_hardware_window() {
     };
 
     let standalone = reorder
-        .ingest(&storage, segment(10, &bytes), key(10), None, 1, |_| {})
+        .ingest(
+            &storage,
+            segment(10, &bytes),
+            key(SequenceNumber::new(10).unwrap()),
+            None,
+            1,
+            |_| {},
+        )
         .unwrap();
     assert_eq!(standalone.hardware_window_reset, None);
 
     let first_ampdu = reorder
-        .ingest(&storage, segment(11, &bytes), key(11), Some(2), 2, |_| {})
+        .ingest(
+            &storage,
+            segment(11, &bytes),
+            key(SequenceNumber::new(11).unwrap()),
+            Some(2),
+            2,
+            |_| {},
+        )
         .unwrap();
     assert_eq!(first_ampdu.hardware_window_reset, None);
 
     let next_ampdu = reorder
-        .ingest(&storage, segment(12, &bytes), key(12), Some(2), 3, |_| {})
+        .ingest(
+            &storage,
+            segment(12, &bytes),
+            key(SequenceNumber::new(12).unwrap()),
+            Some(2),
+            3,
+            |_| {},
+        )
         .unwrap();
     assert_eq!(next_ampdu.hardware_window_reset, None);
 }
@@ -271,16 +308,30 @@ fn stale_first_ht_ampdu_rebases_to_the_negotiated_sequence() {
     };
 
     reorder
-        .ingest(&storage, segment(10, &bytes), key(10), None, 1, |_| {})
+        .ingest(
+            &storage,
+            segment(10, &bytes),
+            key(SequenceNumber::new(10).unwrap()),
+            None,
+            1,
+            |_| {},
+        )
         .unwrap();
     let stale_first_ampdu = reorder
-        .ingest(&storage, segment(10, &bytes), key(10), Some(2), 2, |_| {})
+        .ingest(
+            &storage,
+            segment(10, &bytes),
+            key(SequenceNumber::new(10).unwrap()),
+            Some(2),
+            2,
+            |_| {},
+        )
         .unwrap();
     assert_eq!(
         stale_first_ampdu.hardware_window_reset,
         Some(AccessPointRxWindowReset {
             hardware_index: 3,
-            starting_sequence: 10,
+            starting_sequence: SequenceNumber::new(10).unwrap(),
         })
     );
     assert!(!stale_first_ampdu.duplicate);
@@ -303,7 +354,7 @@ fn peer_banks_keep_equal_tid_sequence_spaces_independent() {
                 RxBlockAckMpduKey {
                     peer,
                     tid: 6,
-                    sequence,
+                    sequence: SequenceNumber::new(sequence).unwrap(),
                     retry: false,
                 },
                 None,
@@ -348,7 +399,7 @@ fn peer_teardown_discards_retained_frames_and_releases_backing() {
             RxBlockAckMpduKey {
                 peer: PEER_A,
                 tid: 6,
-                sequence: 101,
+                sequence: SequenceNumber::new(101).unwrap(),
                 retry: false,
             },
             None,
@@ -364,7 +415,7 @@ fn peer_teardown_discards_retained_frames_and_releases_backing() {
             RxBlockAckMpduKey {
                 peer: PEER_A,
                 tid: 6,
-                sequence: 100,
+                sequence: SequenceNumber::new(100).unwrap(),
                 retry: false,
             },
             None,
@@ -391,24 +442,38 @@ fn hardware_rejection_is_safe_only_for_independently_stale_or_owned_sequences() 
         sequence,
         retry: true,
     };
-    assert!(!reorder.is_duplicate_or_stale(key(10)));
-    assert!(!reorder.is_duplicate_or_stale(key(11)));
+    assert!(!reorder.is_duplicate_or_stale(key(SequenceNumber::new(10).unwrap())));
+    assert!(!reorder.is_duplicate_or_stale(key(SequenceNumber::new(11).unwrap())));
 
     let bytes = [11];
     reorder
-        .ingest(&storage, segment(11, &bytes), key(11), None, 0, |_| {})
+        .ingest(
+            &storage,
+            segment(11, &bytes),
+            key(SequenceNumber::new(11).unwrap()),
+            None,
+            0,
+            |_| {},
+        )
         .unwrap();
-    assert!(reorder.is_duplicate_or_stale(key(11)));
+    assert!(reorder.is_duplicate_or_stale(key(SequenceNumber::new(11).unwrap())));
 
     let bytes = [10];
     reorder
-        .ingest(&storage, segment(10, &bytes), key(10), None, 1, |_| {})
+        .ingest(
+            &storage,
+            segment(10, &bytes),
+            key(SequenceNumber::new(10).unwrap()),
+            None,
+            1,
+            |_| {},
+        )
         .unwrap();
-    assert!(reorder.is_duplicate_or_stale(key(10)));
-    assert!(!reorder.is_duplicate_or_stale(key(12)));
+    assert!(reorder.is_duplicate_or_stale(key(SequenceNumber::new(10).unwrap())));
+    assert!(!reorder.is_duplicate_or_stale(key(SequenceNumber::new(12).unwrap())));
     assert!(!reorder.is_duplicate_or_stale(RxBlockAckMpduKey {
         peer: PEER_B,
-        ..key(10)
+        ..key(SequenceNumber::new(10).unwrap())
     }));
 }
 
@@ -427,7 +492,7 @@ fn full_shared_backing_drops_one_frame_without_advancing_sequence_state() {
                     peer,
                     tid: 0,
                     window: 64,
-                    starting_sequence: 0,
+                    starting_sequence: SequenceNumber::new(0).unwrap(),
                 },
                 |_| {},
             )
@@ -440,7 +505,7 @@ fn full_shared_backing_drops_one_frame_without_advancing_sequence_state() {
                     RxBlockAckMpduKey {
                         peer,
                         tid: 0,
-                        sequence: sequence as u16,
+                        sequence: SequenceNumber::new(sequence as u16).unwrap(),
                         retry: false,
                     },
                     None,
@@ -460,7 +525,7 @@ fn full_shared_backing_drops_one_frame_without_advancing_sequence_state() {
             RxBlockAckMpduKey {
                 peer: [2, 0, 0, 0, 1, 0],
                 tid: 0,
-                sequence: 9,
+                sequence: SequenceNumber::new(9).unwrap(),
                 retry: false,
             },
             None,

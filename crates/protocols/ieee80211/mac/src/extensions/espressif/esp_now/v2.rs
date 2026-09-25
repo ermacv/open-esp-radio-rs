@@ -8,6 +8,8 @@
 
 use core::fmt;
 
+use crate::sequence::SequenceNumber;
+
 mod reassembly;
 pub use reassembly::EspNowV2Reassembly;
 
@@ -402,7 +404,7 @@ const fn element_count_for_payload(payload_length: usize) -> usize {
 pub struct EspNowV2Frame<'payload> {
     destination: EspNowDestination,
     source: EspNowUnicastAddress,
-    sequence_number: u16,
+    sequence_number: SequenceNumber,
     retry: bool,
     action: EspNowV2Action<'payload>,
 }
@@ -411,13 +413,10 @@ impl<'payload> EspNowV2Frame<'payload> {
     pub const fn new(
         destination: EspNowDestination,
         source: EspNowUnicastAddress,
-        sequence_number: u16,
+        sequence_number: SequenceNumber,
         random_value: EspNowRandomValue,
         payload: &'payload [u8],
     ) -> Result<Self, EspNowV2WireError> {
-        if sequence_number > 0x0fff {
-            return Err(EspNowV2WireError::InvalidSequenceNumber(sequence_number));
-        }
         let action = match EspNowV2Action::new(random_value, payload) {
             Ok(action) => action,
             Err(error) => return Err(error),
@@ -439,7 +438,7 @@ impl<'payload> EspNowV2Frame<'payload> {
         self.source
     }
 
-    pub const fn sequence_number(self) -> u16 {
+    pub const fn sequence_number(self) -> SequenceNumber {
         self.sequence_number
     }
 
@@ -469,7 +468,7 @@ impl<'payload> EspNowV2Frame<'payload> {
         output[4..10].copy_from_slice(&self.destination.bytes());
         output[10..16].copy_from_slice(&self.source.bytes());
         output[16..22].copy_from_slice(&BROADCAST_ADDRESS);
-        output[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        output[22..24].copy_from_slice(&self.sequence_number.sequence_control().to_le_bytes());
         self.action
             .encode(&mut output[ESP_NOW_MANAGEMENT_HEADER_LEN..])?;
         Ok(required)
@@ -514,7 +513,7 @@ impl<'payload> EspNowV2Frame<'payload> {
         Ok(Self {
             destination,
             source,
-            sequence_number: sequence_control >> 4,
+            sequence_number: SequenceNumber::from_sequence_control(sequence_control),
             retry: frame_control & RETRY_FLAG != 0,
             action,
         })
@@ -541,7 +540,6 @@ pub enum EspNowV2WireError {
         maximum: usize,
         actual: usize,
     },
-    InvalidSequenceNumber(u16),
     InvalidDestination(EspNowAddressError),
     InvalidSource(EspNowAddressError),
     InvalidBssid,
@@ -616,10 +614,6 @@ impl fmt::Display for EspNowV2WireError {
             Self::ActionBodyTooLong { maximum, actual } => write!(
                 formatter,
                 "ESP-NOW v2 Action body has {actual} bytes, exceeding {maximum}"
-            ),
-            Self::InvalidSequenceNumber(sequence) => write!(
-                formatter,
-                "ESP-NOW v2 sequence number {sequence} exceeds 12 bits"
             ),
             Self::InvalidDestination(error) => write!(formatter, "invalid destination: {error}"),
             Self::InvalidSource(error) => write!(formatter, "invalid source: {error}"),

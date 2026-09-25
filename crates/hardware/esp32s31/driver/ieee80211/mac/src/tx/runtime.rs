@@ -9,6 +9,7 @@ use oer_ieee80211_mac::extensions::wmm::WmmParameterSet;
 use oer_ieee80211_mac::qos::{
     WmmAccessCategory, WmmTrafficClass, WmmUserPriority, classify_ethernet_wmm,
 };
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use crate::{
     edca::{EdcaAccessPolicy, EdcaContentionParameters, EdcaParametersError, EdcaQueues},
@@ -21,7 +22,6 @@ use crate::{
     },
 };
 
-const IEEE80211_SEQUENCE_MASK: u16 = 0x0fff;
 const HARDWARE_BLOCK_ACK_WINDOW: usize = 32;
 
 /// Result of applying the peer's negotiated ACM policy to one classification.
@@ -717,7 +717,7 @@ impl AmpduRetryDecision {
 /// Sequence numbers are kept independently of descriptor indices because a
 /// partial BlockAck retry compacts only missing MPDUs toward slot zero.
 pub struct AmpduRetryState<const CAPACITY: usize> {
-    first_sequence: u16,
+    first_sequence: SequenceNumber,
     /// Original aggregate indices still represented by the compacted
     /// descriptor chain. Hardware BlockAck windows are bounded to 32 MPDUs,
     /// so one mask preserves every non-contiguous sequence after compaction
@@ -735,7 +735,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     /// Start at the first Sequence Control value already consumed by the
     /// encoded aggregate.
     pub fn new(
-        first_sequence: u16,
+        first_sequence: SequenceNumber,
         subframes: u8,
         policy: AmpduRetryPolicy,
     ) -> Result<Self, AmpduRetryError> {
@@ -760,7 +760,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             (1_u32 << subframes) - 1
         };
         Ok(Self {
-            first_sequence: first_sequence & IEEE80211_SEQUENCE_MASK,
+            first_sequence,
             pending_original_indices,
             current_subframes: subframes,
             policy,
@@ -810,8 +810,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         let mut index = 0_usize;
         while index < observed_subframes as usize {
             let original_index = self.original_index(index as u8);
-            let sequence = self.first_sequence.wrapping_add(u16::from(original_index))
-                & IEEE80211_SEQUENCE_MASK;
+            let sequence = self.first_sequence.wrapping_add(u16::from(original_index));
             if completion.acknowledges(sequence) {
                 self.acknowledged = self.acknowledged.saturating_add(1);
             } else {
@@ -837,10 +836,9 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         self.current_subframes
     }
 
-    pub const fn current_first_sequence(&self) -> u16 {
+    pub const fn current_first_sequence(&self) -> SequenceNumber {
         self.first_sequence
             .wrapping_add(self.pending_original_indices.trailing_zeros() as u16)
-            & IEEE80211_SEQUENCE_MASK
     }
 
     pub const fn aggregate_attempts(&self) -> u8 {

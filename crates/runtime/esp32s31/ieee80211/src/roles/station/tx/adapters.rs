@@ -4,6 +4,7 @@
 )]
 
 use super::*;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 impl<
     B: MaterializedTxFrame,
@@ -24,7 +25,7 @@ impl<
         self.ordinary.now_micros()
     }
 
-    fn peek_qos_sequence(&self, tid: u8) -> Option<u16> {
+    fn peek_qos_sequence(&self, tid: u8) -> Option<SequenceNumber> {
         self.ordinary.peek_qos_sequence(tid)
     }
 

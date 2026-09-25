@@ -1,4 +1,5 @@
 use oer_esp32s31_hal::types::MacKeyInstallOutcome;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_esp32s31_ieee80211_mac::crypto::{install_sta_group_ccmp, install_sta_pairwise_ccmp};
 
@@ -70,7 +71,7 @@ impl ConnectedStaTxTeardown for Tx {
             security: ConnectedTxSecurity::Wpa2Personal(
                 self.key.take().expect("test TX owns pairwise key"),
             ),
-            sequences: StaTxSequenceCounters::new(6),
+            sequences: StaTxSequenceCounters::new(SequenceNumber::new(6).unwrap()),
             aggregate: 7,
         })
     }
@@ -109,7 +110,10 @@ fn teardown_orders_control_rx_tx_and_both_key_clears() {
         .unwrap_or_else(|_| panic!("idle mock owners must stop"));
     assert_eq!(stopped.parked_rx, 4);
     assert_eq!(stopped.tx_resources, 5);
-    assert_eq!(stopped.sequences.peek_non_qos(), 6);
+    assert_eq!(
+        stopped.sequences.peek_non_qos(),
+        SequenceNumber::new(6).unwrap()
+    );
     assert_eq!(stopped.aggregate, 7);
     assert_eq!(stopped.control, 2);
     assert_eq!(stopped.hardware.cleared, [1, 4]);

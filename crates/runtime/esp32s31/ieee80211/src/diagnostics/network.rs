@@ -4,6 +4,7 @@
 use oer_esp32s31_ieee80211_mac::rx::PUBLIC_HEADER_SIZE;
 #[cfg(feature = "diagnostics")]
 use oer_ieee80211_mac::data::EthernetFrameParts;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 #[cfg(feature = "diagnostics")]
 use oer_network_interface::RxEnqueueError;
 
@@ -34,7 +35,7 @@ impl<'frame> From<EthernetFrameParts<'frame>> for RxObservedEthernetFrame<'frame
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RxQosSequenceObservation {
     pub tid: u8,
-    pub sequence: u16,
+    pub sequence: SequenceNumber,
 }
 
 /// Diagnostic observation of one exact network admission decision.
@@ -73,7 +74,7 @@ pub fn decode_public_qos_sequence(raw: &[u8]) -> Option<RxQosSequenceObservation
     let qos_offset = frame_offset + 24 + usize::from(frame_control & TO_FROM_DS == TO_FROM_DS) * 6;
     Some(RxQosSequenceObservation {
         tid: *raw.get(qos_offset)? & 0x0f,
-        sequence: sequence_control >> 4,
+        sequence: SequenceNumber::from_sequence_control(sequence_control),
     })
 }
 

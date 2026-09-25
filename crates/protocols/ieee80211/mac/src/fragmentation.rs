@@ -26,6 +26,7 @@ pub use reassembly::{
 
 use crate::ccmp::{CcmpKeyId, CcmpPacketNumber};
 use crate::data::{DataInterfaceRole, LLC_SNAP_HEADER_LEN};
+use crate::sequence::SequenceNumber;
 
 const DATA: u16 = 0x0008;
 const QOS_DATA: u16 = 0x0088;
@@ -65,7 +66,7 @@ pub struct OpenDataFragmentIdentity {
     receiver_address: [u8; 6],
     transmitter_address: [u8; 6],
     address3: [u8; 6],
-    sequence_number: u16,
+    sequence_number: SequenceNumber,
     qos_control: Option<u16>,
 }
 
@@ -90,7 +91,7 @@ impl OpenDataFragmentIdentity {
         self.address3
     }
 
-    pub const fn sequence_number(self) -> u16 {
+    pub const fn sequence_number(self) -> SequenceNumber {
         self.sequence_number
     }
 

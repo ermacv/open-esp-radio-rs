@@ -1,4 +1,5 @@
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use super::*;
 
@@ -11,7 +12,7 @@ fn mailbox_preserves_owned_agreement_edges_in_order() {
         interface: oer_esp32s31_ieee80211_mac::MacInterface::Station,
         peer: [2, 0, 0, 0, 0, 1],
         tid: 3,
-        starting_sequence: 0x0ffe,
+        starting_sequence: SequenceNumber::new(0x0ffe).unwrap(),
         window: 32,
     };
     let start = RxReorderCommand::Start(snapshot);

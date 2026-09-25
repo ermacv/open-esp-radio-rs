@@ -4,6 +4,8 @@
 //! counters, sampling, storage, report formatting or a HIL clock. Attaching an
 //! observer must not affect ownership, backpressure or scheduling decisions.
 
+use oer_ieee80211_mac::sequence::SequenceNumber;
+
 pub use oer_esp32s31_ieee80211::rx::transaction::{
     Discard as RxStageDiscard, ServiceObservation as RxServiceObservation,
 };
@@ -26,14 +28,14 @@ pub enum RxNetworkPublicationOutcome {
 pub enum RxReorderAgreementObservation {
     Started {
         tid: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
         window: u16,
     },
     Stopped,
     First {
         tid: u8,
-        start: u16,
-        sequence: u16,
+        start: SequenceNumber,
+        sequence: SequenceNumber,
     },
 }
 
@@ -85,14 +87,14 @@ pub enum RxPipelineObservation {
     },
     ReorderStarted {
         tid: u8,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
         window: u16,
     },
     ReorderStopped,
     ReorderFirst {
         tid: u8,
-        start: u16,
-        sequence: u16,
+        start: SequenceNumber,
+        sequence: SequenceNumber,
     },
     /// One addressed protected QoS MPDU before agreement/reorder handling.
     ReorderIngress {

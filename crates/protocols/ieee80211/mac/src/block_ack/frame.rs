@@ -1,5 +1,7 @@
 //! Stateless Block Ack Action body parsing and wire identifiers.
 
+use crate::sequence::SequenceNumber;
+
 pub const BLOCK_ACK_CATEGORY: u8 = 3;
 pub const ADDBA_REQUEST_ACTION: u8 = 0;
 pub const ADDBA_RESPONSE_ACTION: u8 = 1;
@@ -15,7 +17,7 @@ pub enum BlockAckAction {
         amsdu: bool,
         window: u16,
         timeout_tu: u16,
-        starting_sequence: u16,
+        starting_sequence: SequenceNumber,
     },
     AddbaResponse {
         dialog_token: u8,
@@ -44,7 +46,8 @@ pub fn parse_block_ack_action(body: &[u8]) -> Option<BlockAckAction> {
     match body[1] {
         ADDBA_REQUEST_ACTION if body.len() >= ADDBA_ACTION_BODY_LEN => {
             let parameters = u16::from_le_bytes([body[3], body[4]]);
-            let starting_sequence = u16::from_le_bytes([body[7], body[8]]) >> 4;
+            let starting_sequence =
+                SequenceNumber::from_sequence_control(u16::from_le_bytes([body[7], body[8]]));
             Some(BlockAckAction::AddbaRequest {
                 dialog_token: body[2],
                 tid: ((parameters >> 2) & 0x0f) as u8,

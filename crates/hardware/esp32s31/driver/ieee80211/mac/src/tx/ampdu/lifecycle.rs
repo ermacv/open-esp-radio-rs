@@ -3,6 +3,7 @@
 use core::pin::Pin;
 
 use oer_esp32s31_hal::types::MacHeTriggerTxQueueSnapshot;
+use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use super::{
     HtAmpduHardware, HtAmpduTxCompletion, HtAmpduTxError, HtAmpduTxStorage, HtBlockAckObservation,
@@ -41,7 +42,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             tx: decode_tx_completion(*storage.active, registers.tx()),
             block_ack: HtBlockAckObservation::new(
                 registers.block_ack_control(),
-                registers.block_ack_starting_sequence(),
+                SequenceNumber::from_low_bits(registers.block_ack_starting_sequence()),
                 registers.block_ack_bitmap(),
             ),
             block_ack_received: registers.block_ack_received(),

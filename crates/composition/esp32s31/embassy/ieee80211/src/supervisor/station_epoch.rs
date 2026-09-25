@@ -891,7 +891,9 @@ impl ProductionWifiEpochRunner {
     }
 
     fn fresh_security(&self, security: StationSecurity) -> StaAttemptSecurity<'static> {
-        let sequences = StaTxSequenceCounters::new((self.trng.random() & 0x0fff) as u16);
+        let sequences = StaTxSequenceCounters::new(
+            oer_ieee80211_mac::sequence::SequenceNumber::from_low_bits(self.trng.random() as u16),
+        );
         match security {
             StationSecurity::Open => StaAttemptSecurity::open(sequences),
             StationSecurity::Wpa2Personal(pmk) => {

@@ -129,10 +129,10 @@ fn direct_and_async_reorder_paths_share_one_first_frame_marker() {
         .try_into_processor()
         .unwrap_or_else(|_| panic!("an empty standalone queue must detach"));
 
-    processor.runtime.reorder_first_starts[0] = Some(7);
-    processor.observe_first_reorder_frame(0, 0, 8);
+    processor.runtime.reorder_first_starts[0] = Some(SequenceNumber::new(7).unwrap());
+    processor.observe_first_reorder_frame(0, 0, SequenceNumber::new(8).unwrap());
     assert_eq!(processor.runtime.reorder_first_starts[0], None);
-    processor.observe_first_reorder_frame(0, 0, 9);
+    processor.observe_first_reorder_frame(0, 0, SequenceNumber::new(9).unwrap());
     assert_eq!(processor.runtime.reorder_first_starts[0], None);
 }
 

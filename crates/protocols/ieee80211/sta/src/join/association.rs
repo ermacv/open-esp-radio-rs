@@ -1,5 +1,6 @@
 //! Association epoch, retransmission schedule and terminal response policy.
 
+use oer_ieee80211_mac::sequence::SequenceNumber;
 use oer_ieee80211_mac::{
     security::WifiSecurityMode,
     station::{
@@ -35,7 +36,7 @@ impl StaAssociationRetrySchedule {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaAssociationAttempt {
     pub ordinal: u16,
-    pub sequence_number: u16,
+    pub sequence_number: SequenceNumber,
     pub elapsed_ms: u32,
 }
 

@@ -16,7 +16,10 @@ macro_rules! rx_request {
 }
 
 fn frame(sequence: u16, slot: u8) -> RxAmpduMpdu {
-    RxAmpduMpdu { sequence, slot }
+    RxAmpduMpdu {
+        sequence: SequenceNumber::new(sequence).unwrap(),
+        slot,
+    }
 }
 
 #[test]
@@ -33,7 +36,7 @@ fn station_and_access_point_share_one_public_reorder_classifier() {
     let expected = RxBlockAckMpduKey {
         peer,
         tid: 5,
-        sequence: 0x123,
+        sequence: SequenceNumber::new(0x123).unwrap(),
         retry: false,
     };
 
@@ -65,7 +68,7 @@ fn reset_clears_sessions_without_widening_the_integration_limit() {
             true,
             64,
             0,
-            10
+            SequenceNumber::new(10).unwrap()
         ))
         .unwrap();
     let activation = sessions.begin_pending().unwrap().unwrap();
@@ -85,7 +88,7 @@ fn reset_clears_sessions_without_widening_the_integration_limit() {
             true,
             64,
             0,
-            20
+            SequenceNumber::new(20).unwrap()
         ))
         .unwrap();
     let activation = sessions.begin_pending().unwrap().unwrap();
@@ -95,26 +98,31 @@ fn reset_clears_sessions_without_widening_the_integration_limit() {
 
 #[test]
 fn in_order_frames_are_released_immediately() {
-    let mut reorder = RxBlockAckReorder::new(10, RX_BLOCK_ACK_MAX_WINDOW).unwrap();
-    assert_eq!(reorder.retains_on_ingest(10), Ok(false));
+    let mut reorder =
+        RxBlockAckReorder::new(SequenceNumber::new(10).unwrap(), RX_BLOCK_ACK_MAX_WINDOW).unwrap();
+    assert_eq!(
+        reorder.retains_on_ingest(SequenceNumber::new(10).unwrap()),
+        Ok(false)
+    );
     let release = reorder.ingest(frame(10, 0)).unwrap();
     assert_eq!(release.iter().collect::<std::vec::Vec<_>>(), [frame(10, 0)]);
-    assert_eq!(reorder.next_sequence(), 11);
+    assert_eq!(reorder.next_sequence(), SequenceNumber::new(11).unwrap());
     assert_eq!(reorder.occupied(), 0);
 }
 
 #[test]
 fn immediate_ingest_avoids_a_release_list_only_without_a_buffered_successor() {
-    let mut reorder = RxBlockAckReorderState::<65>::new(100, 16).unwrap();
+    let mut reorder =
+        RxBlockAckReorderState::<65>::new(SequenceNumber::new(100).unwrap(), 16).unwrap();
     assert_eq!(
         reorder.try_ingest_immediate(frame(100, 64)),
         Ok(Some(frame(100, 64)))
     );
-    assert_eq!(reorder.next_sequence(), 101);
+    assert_eq!(reorder.next_sequence(), SequenceNumber::new(101).unwrap());
     assert_eq!(reorder.occupied(), 0);
 
     assert_eq!(reorder.try_ingest_immediate(frame(103, 64)), Ok(None));
-    assert_eq!(reorder.next_sequence(), 101);
+    assert_eq!(reorder.next_sequence(), SequenceNumber::new(101).unwrap());
 
     assert!(reorder.ingest(frame(102, 2)).unwrap().buffered);
     assert_eq!(reorder.try_ingest_immediate(frame(101, 64)), Ok(None));
@@ -127,24 +135,35 @@ fn immediate_ingest_avoids_a_release_list_only_without_a_buffered_successor() {
 
 #[test]
 fn gap_is_buffered_and_then_released_in_sequence_order() {
-    let mut reorder = RxBlockAckReorder::new(100, RX_BLOCK_ACK_MAX_WINDOW).unwrap();
-    assert_eq!(reorder.retains_on_ingest(102), Ok(true));
+    let mut reorder =
+        RxBlockAckReorder::new(SequenceNumber::new(100).unwrap(), RX_BLOCK_ACK_MAX_WINDOW).unwrap();
+    assert_eq!(
+        reorder.retains_on_ingest(SequenceNumber::new(102).unwrap()),
+        Ok(true)
+    );
     assert!(reorder.ingest(frame(102, 2)).unwrap().buffered);
-    assert_eq!(reorder.retains_on_ingest(101), Ok(true));
+    assert_eq!(
+        reorder.retains_on_ingest(SequenceNumber::new(101).unwrap()),
+        Ok(true)
+    );
     assert!(reorder.ingest(frame(101, 1)).unwrap().buffered);
-    assert_eq!(reorder.retains_on_ingest(100), Ok(false));
+    assert_eq!(
+        reorder.retains_on_ingest(SequenceNumber::new(100).unwrap()),
+        Ok(false)
+    );
     let release = reorder.ingest(frame(100, 0)).unwrap();
     assert_eq!(
         release.iter().collect::<std::vec::Vec<_>>(),
         [frame(100, 0), frame(101, 1), frame(102, 2)]
     );
-    assert_eq!(reorder.next_sequence(), 103);
+    assert_eq!(reorder.next_sequence(), SequenceNumber::new(103).unwrap());
 }
 
 #[test]
 #[cfg(not(feature = "rx-ba-window-8"))]
 fn window_advance_releases_owned_frames_and_counts_missing_without_long_loop() {
-    let mut reorder = RxBlockAckReorder::new(0, RX_BLOCK_ACK_MAX_WINDOW).unwrap();
+    let mut reorder =
+        RxBlockAckReorder::new(SequenceNumber::new(0).unwrap(), RX_BLOCK_ACK_MAX_WINDOW).unwrap();
     reorder.ingest(frame(2, 2)).unwrap();
     reorder.ingest(frame(31, 31)).unwrap();
     let release = reorder.ingest(frame(1000, 1)).unwrap();
@@ -155,12 +174,15 @@ fn window_advance_releases_owned_frames_and_counts_missing_without_long_loop() {
     let expected_advance = 1000 - RX_BLOCK_ACK_MAX_WINDOW + 1;
     assert_eq!(release.missing, expected_advance - 2);
     assert!(release.buffered);
-    assert_eq!(reorder.next_sequence(), expected_advance);
+    assert_eq!(
+        reorder.next_sequence(),
+        SequenceNumber::new(expected_advance).unwrap()
+    );
 }
 
 #[test]
 fn async_expiry_skips_only_the_current_gap() {
-    let mut reorder = RxBlockAckReorder::new(20, 8).unwrap();
+    let mut reorder = RxBlockAckReorder::new(SequenceNumber::new(20).unwrap(), 8).unwrap();
     reorder.ingest(frame(22, 2)).unwrap();
     reorder.ingest(frame(23, 3)).unwrap();
     let release = reorder.expire_gap();
@@ -169,13 +191,16 @@ fn async_expiry_skips_only_the_current_gap() {
         release.iter().collect::<std::vec::Vec<_>>(),
         [frame(22, 2), frame(23, 3)]
     );
-    assert_eq!(reorder.next_sequence(), 24);
+    assert_eq!(reorder.next_sequence(), SequenceNumber::new(24).unwrap());
 }
 
 #[test]
 fn sequence_wrap_and_stale_rejection_are_unambiguous() {
-    let mut reorder = RxBlockAckReorder::new(0x0fff, 8).unwrap();
-    assert_eq!(reorder.retains_on_ingest(0), Ok(true));
+    let mut reorder = RxBlockAckReorder::new(SequenceNumber::new(0x0fff).unwrap(), 8).unwrap();
+    assert_eq!(
+        reorder.retains_on_ingest(SequenceNumber::new(0).unwrap()),
+        Ok(true)
+    );
     reorder.ingest(frame(0, 1)).unwrap();
     let release = reorder.ingest(frame(0x0fff, 0)).unwrap();
     assert_eq!(
@@ -184,27 +209,39 @@ fn sequence_wrap_and_stale_rejection_are_unambiguous() {
     );
     let stale = reorder.ingest(frame(0x0fff, 2)).unwrap();
     assert_eq!(stale.rejected, Some(frame(0x0fff, 2)));
-    assert_eq!(reorder.retains_on_ingest(0x0fff), Ok(false));
+    assert_eq!(
+        reorder.retains_on_ingest(SequenceNumber::new(0x0fff).unwrap()),
+        Ok(false)
+    );
 }
 
 #[test]
 fn retention_prediction_matches_window_advance_and_duplicate_edges() {
-    let mut reorder = RxBlockAckReorder::new(10, 8).unwrap();
-    assert_eq!(reorder.retains_on_ingest(20), Ok(true));
+    let mut reorder = RxBlockAckReorder::new(SequenceNumber::new(10).unwrap(), 8).unwrap();
+    assert_eq!(
+        reorder.retains_on_ingest(SequenceNumber::new(20).unwrap()),
+        Ok(true)
+    );
     reorder.ingest(frame(20, 0)).unwrap();
     assert_eq!(
-        reorder.retains_on_ingest(20),
-        Err(RxAmpduError::DuplicateSequence(20))
+        reorder.retains_on_ingest(SequenceNumber::new(20).unwrap()),
+        Err(RxAmpduError::DuplicateSequence(
+            SequenceNumber::new(20).unwrap()
+        ))
     );
 
-    let mut singleton = RxBlockAckReorderState::<1>::new(10, 1).unwrap();
-    assert_eq!(singleton.retains_on_ingest(20), Ok(false));
+    let mut singleton =
+        RxBlockAckReorderState::<1>::new(SequenceNumber::new(10).unwrap(), 1).unwrap();
+    assert_eq!(
+        singleton.retains_on_ingest(SequenceNumber::new(20).unwrap()),
+        Ok(false)
+    );
     assert!(!singleton.ingest(frame(20, 0)).unwrap().buffered);
 }
 
 #[test]
 fn a_slot_index_cannot_be_owned_twice() {
-    let mut reorder = RxBlockAckReorder::new(1, 8).unwrap();
+    let mut reorder = RxBlockAckReorder::new(SequenceNumber::new(1).unwrap(), 8).unwrap();
     reorder.ingest(frame(2, 4)).unwrap();
     assert_eq!(
         reorder.ingest(frame(3, 4)),
@@ -214,7 +251,8 @@ fn a_slot_index_cannot_be_owned_twice() {
 
 #[test]
 fn esf_slot_id_is_independent_of_reorder_window_index() {
-    let mut reorder = RxBlockAckReorder::new(1, RX_BLOCK_ACK_MAX_WINDOW).unwrap();
+    let mut reorder =
+        RxBlockAckReorder::new(SequenceNumber::new(1).unwrap(), RX_BLOCK_ACK_MAX_WINDOW).unwrap();
     let highest_valid = (RX_REORDER_SLOT_ID_CAPACITY - 1) as u8;
     let first_invalid = RX_REORDER_SLOT_ID_CAPACITY as u8;
     assert_eq!(
@@ -233,7 +271,8 @@ fn esf_slot_id_is_independent_of_reorder_window_index() {
 
 #[test]
 fn integration_can_bind_the_reorder_to_its_exact_slot_domain() {
-    let mut reorder = RxBlockAckReorderState::<40>::new(1, 8).unwrap();
+    let mut reorder =
+        RxBlockAckReorderState::<40>::new(SequenceNumber::new(1).unwrap(), 8).unwrap();
     assert_eq!(
         reorder
             .ingest(frame(1, 39))
@@ -250,16 +289,18 @@ fn integration_can_bind_the_reorder_to_its_exact_slot_domain() {
 
 #[test]
 fn window_cannot_exceed_the_owned_reorder_slot_pool() {
-    assert!(RxBlockAckReorder::new(0, RX_BLOCK_ACK_MAX_WINDOW).is_ok());
+    assert!(
+        RxBlockAckReorder::new(SequenceNumber::new(0).unwrap(), RX_BLOCK_ACK_MAX_WINDOW).is_ok()
+    );
     assert!(matches!(
-        RxBlockAckReorder::new(0, RX_BLOCK_ACK_MAX_WINDOW + 1),
+        RxBlockAckReorder::new(SequenceNumber::new(0).unwrap(), RX_BLOCK_ACK_MAX_WINDOW + 1),
         Err(RxAmpduError::InvalidWindow(_))
     ));
 }
 
 #[test]
 fn stop_releases_every_owned_slot_in_sequence_order() {
-    let mut reorder = RxBlockAckReorder::new(4094, 8).unwrap();
+    let mut reorder = RxBlockAckReorder::new(SequenceNumber::new(4094).unwrap(), 8).unwrap();
     reorder.ingest(frame(1, 3)).unwrap();
     reorder.ingest(frame(4095, 1)).unwrap();
     let release = reorder.stop();
@@ -320,7 +361,7 @@ fn station_rx_sessions_bind_protocol_window_hardware_bank_and_response() {
             true,
             1023,
             0,
-            0x0abc
+            SequenceNumber::new(0x0abc).unwrap()
         ))
         .unwrap();
     let activation = sessions.begin_pending().unwrap().unwrap();
@@ -332,7 +373,7 @@ fn station_rx_sessions_bind_protocol_window_hardware_bank_and_response() {
             peer,
             tid: 7,
             window: RX_BLOCK_ACK_MAX_WINDOW,
-            starting_sequence: 0x0abc,
+            starting_sequence: SequenceNumber::new(0x0abc).unwrap(),
         }
     );
     assert_eq!(
@@ -342,7 +383,7 @@ fn station_rx_sessions_bind_protocol_window_hardware_bank_and_response() {
             interface: MacInterface::Station,
             peer,
             tid: 7,
-            starting_sequence: 0x0abc,
+            starting_sequence: SequenceNumber::new(0x0abc).unwrap(),
             window: RX_BLOCK_ACK_MAX_WINDOW,
         }
     );
@@ -385,7 +426,7 @@ fn integration_can_narrow_the_negotiated_rx_window_without_changing_hardware_geo
             true,
             64,
             0,
-            123
+            SequenceNumber::new(123).unwrap()
         ))
         .unwrap();
 
@@ -429,7 +470,7 @@ fn replacement_and_cancel_remove_the_previous_hardware_owner() {
             true,
             32,
             0,
-            10
+            SequenceNumber::new(10).unwrap()
         ))
         .unwrap();
     let first = sessions.begin_pending().unwrap().unwrap();
@@ -444,7 +485,7 @@ fn replacement_and_cancel_remove_the_previous_hardware_owner() {
             true,
             16,
             0,
-            20
+            SequenceNumber::new(20).unwrap()
         ))
         .unwrap();
     let replacement = sessions.begin_pending().unwrap().unwrap();
@@ -467,7 +508,7 @@ fn station_rx_sessions_reject_every_unsupported_request_class() {
             false,
             32,
             0,
-            0
+            SequenceNumber::new(0).unwrap()
         )),
         Err(RxBlockAckSessionsError::DelayedPolicyUnsupported)
     );
@@ -480,7 +521,7 @@ fn station_rx_sessions_reject_every_unsupported_request_class() {
             true,
             32,
             0,
-            0
+            SequenceNumber::new(0).unwrap()
         )),
         Err(RxBlockAckSessionsError::InvalidTid(8))
     );
@@ -493,7 +534,7 @@ fn station_rx_sessions_reject_every_unsupported_request_class() {
             true,
             0,
             0,
-            0
+            SequenceNumber::new(0).unwrap()
         )),
         Err(RxBlockAckSessionsError::InvalidWindow(0))
     );
@@ -506,22 +547,9 @@ fn station_rx_sessions_reject_every_unsupported_request_class() {
             true,
             32,
             1,
-            0
+            SequenceNumber::new(0).unwrap()
         )),
         Err(RxBlockAckSessionsError::NonzeroTimeout(1))
-    );
-    assert_eq!(
-        sessions.offer(rx_request!(
-            MacInterface::Station,
-            peer,
-            1,
-            0,
-            true,
-            32,
-            0,
-            0x1000
-        )),
-        Err(RxBlockAckSessionsError::InvalidStartingSequence(0x1000))
     );
 }
 
@@ -540,7 +568,7 @@ fn access_point_peers_with_the_same_tid_receive_distinct_hardware_banks() {
             true,
             32,
             0,
-            10
+            SequenceNumber::new(10).unwrap()
         ))
         .unwrap();
     let first = sessions.begin_pending().unwrap().unwrap();
@@ -557,7 +585,7 @@ fn access_point_peers_with_the_same_tid_receive_distinct_hardware_banks() {
             true,
             32,
             0,
-            20
+            SequenceNumber::new(20).unwrap()
         ))
         .unwrap();
     let second = sessions.begin_pending().unwrap().unwrap();
@@ -590,7 +618,7 @@ fn station_and_access_point_with_the_same_peer_tid_use_distinct_banks() {
             true,
             16,
             0,
-            10
+            SequenceNumber::new(10).unwrap()
         ))
         .unwrap();
     sessions
@@ -602,7 +630,7 @@ fn station_and_access_point_with_the_same_peer_tid_use_distinct_banks() {
             true,
             16,
             0,
-            20
+            SequenceNumber::new(20).unwrap()
         ))
         .unwrap();
 
@@ -643,7 +671,7 @@ fn preparing_access_point_preserves_station_banks() {
             true,
             16,
             0,
-            10
+            SequenceNumber::new(10).unwrap()
         ))
         .unwrap();
     let station = sessions.begin_pending().unwrap().unwrap();
@@ -657,7 +685,7 @@ fn preparing_access_point_preserves_station_banks() {
             true,
             16,
             0,
-            20
+            SequenceNumber::new(20).unwrap()
         ))
         .unwrap();
 
@@ -698,7 +726,7 @@ fn request_remains_pending_while_every_hardware_bank_is_owned() {
                 true,
                 32,
                 0,
-                index as u16
+                SequenceNumber::new(index as u16).unwrap()
             ))
             .unwrap();
         let activation = sessions.begin_pending().unwrap().unwrap();
@@ -715,7 +743,7 @@ fn request_remains_pending_while_every_hardware_bank_is_owned() {
             true,
             32,
             0,
-            100
+            SequenceNumber::new(100).unwrap()
         ))
         .unwrap();
     assert!(matches!(
@@ -750,7 +778,7 @@ fn explicit_decline_removes_only_the_selected_pending_request() {
             true,
             16,
             0,
-            10
+            SequenceNumber::new(10).unwrap()
         ))
         .unwrap();
     sessions
@@ -762,7 +790,7 @@ fn explicit_decline_removes_only_the_selected_pending_request() {
             true,
             16,
             0,
-            20
+            SequenceNumber::new(20).unwrap()
         ))
         .unwrap();
 
@@ -789,7 +817,7 @@ fn peer_teardown_removes_pending_and_active_agreements_only_for_that_peer() {
             true,
             32,
             0,
-            10
+            SequenceNumber::new(10).unwrap()
         ))
         .unwrap();
     let active = sessions.begin_pending().unwrap().unwrap();
@@ -803,7 +831,7 @@ fn peer_teardown_removes_pending_and_active_agreements_only_for_that_peer() {
             true,
             32,
             0,
-            20
+            SequenceNumber::new(20).unwrap()
         ))
         .unwrap();
     sessions
@@ -815,7 +843,7 @@ fn peer_teardown_removes_pending_and_active_agreements_only_for_that_peer() {
             true,
             32,
             0,
-            30
+            SequenceNumber::new(30).unwrap()
         ))
         .unwrap();
 

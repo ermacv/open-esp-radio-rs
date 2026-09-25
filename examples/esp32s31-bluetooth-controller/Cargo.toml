@@ -78,5 +78,3 @@ scope = "development"
 layer = "application"
 platform = "chip"
 chip = "esp32s31"
-supported-feature-profiles = ["advertising-smoke", "trouble-gatt", "trouble-secure-gatt", "gatt-application", "secure-gatt-application"]
-host-tests = true

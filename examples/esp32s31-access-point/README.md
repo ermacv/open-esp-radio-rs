@@ -20,8 +20,9 @@ peer's half-close: pending replies and FIN are drained before socket reuse.
 Transport errors or a two-second close deadline trigger abort and another
 bounded reset drain; if reset cannot drain, the old socket is retired.
 
-The application service lifecycle has host regression tests, included in
-`cargo xtask check examples`.
+The application service lifecycle has host regression tests; run them from this
+directory with `cargo test --lib --target <host>`, for example
+`x86_64-unknown-linux-gnu`.
 
 Run Cargo from this workspace so its embedded target configuration is used:
 

@@ -6,7 +6,6 @@ use std::{
 use cargo_metadata::{DependencyKind, Metadata, Package, PackageId};
 
 use crate::{Context, Result, cargo, graph::Graph, paths};
-use sha2::{Digest as _, Sha256};
 use std::process::Command;
 
 pub struct ProductionPackage {
@@ -19,50 +18,15 @@ pub struct ProductionPackage {
 pub struct SourcePackage {
     pub package: Package,
     pub manifest: PathBuf,
-    pub workspace_manifest: PathBuf,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum CargoBuildProfile {
-    Dev,
-    Release,
-}
-
-impl CargoBuildProfile {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Dev => "dev",
-            Self::Release => "release",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum CargoTargetSelection {
-    DefaultTargets,
-    Lib(String),
-}
-
-impl CargoTargetSelection {
-    pub fn label(&self) -> String {
-        match self {
-            Self::DefaultTargets => "default-targets".into(),
-            Self::Lib(name) => format!("lib:{name}"),
-        }
-    }
-}
-
-/// One feature-isolated Cargo invocation. Checks add their own purpose while
-/// sharing this selection identity.
+/// One feature-isolated `cargo` invocation on a package.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct CargoConfiguration {
     pub manifest: PathBuf,
-    pub workspace_manifest: PathBuf,
     pub package: String,
     pub target: String,
     pub features: Vec<String>,
-    pub build_profile: CargoBuildProfile,
-    pub cargo_target: CargoTargetSelection,
 }
 
 impl CargoConfiguration {
@@ -70,45 +34,8 @@ impl CargoConfiguration {
         command
             .args(["--locked", "--offline", "--manifest-path"])
             .arg(&self.manifest)
-            .args(["--package", &self.package, "--target", &self.target]);
-        if self.build_profile == CargoBuildProfile::Release {
-            command.arg("--release");
-        }
-        match &self.cargo_target {
-            CargoTargetSelection::DefaultTargets => {}
-            CargoTargetSelection::Lib(_) => {
-                command.arg("--lib");
-            }
-        }
-        command.args(&self.features);
-    }
-
-    pub fn id(&self, root: &Path) -> Result<String> {
-        let manifest = self.manifest.strip_prefix(root)?;
-        let workspace = self.workspace_manifest.strip_prefix(root)?;
-        let identity = format!(
-            "workspace={}\nmanifest={}\npackage={}\ntarget={}\nfeatures={:?}\nbuild-profile={}\ncargo-target={}",
-            workspace.display(),
-            manifest.display(),
-            self.package,
-            self.target,
-            self.features,
-            self.build_profile.label(),
-            self.cargo_target.label(),
-        );
-        let digest = format!("{:x}", Sha256::digest(identity.as_bytes()));
-        let stem = self
-            .package
-            .chars()
-            .map(|character| {
-                if character.is_ascii_alphanumeric() || character == '-' {
-                    character
-                } else {
-                    '-'
-                }
-            })
-            .collect::<String>();
-        Ok(format!("{stem}-{}", &digest[..16]))
+            .args(["--package", &self.package, "--target", &self.target])
+            .args(&self.features);
     }
 }
 
@@ -224,7 +151,6 @@ pub fn source_packages(ctx: &Context) -> Result<Vec<SourcePackage>> {
                     SourcePackage {
                         package: package.clone(),
                         manifest,
-                        workspace_manifest: workspace_manifest.clone(),
                     },
                 )
                 .is_some()
@@ -463,155 +389,19 @@ pub fn maximal_profiles(package: &Package) -> Result<Vec<Vec<String>>> {
 }
 
 pub fn architecture_configurations(
-    ctx: &Context,
     packages: &[ProductionPackage],
     target: &str,
 ) -> Result<Vec<CargoConfiguration>> {
-    let root_workspace = ctx.root.join("Cargo.toml").canonicalize()?;
     let mut configurations = Vec::new();
     for item in packages {
-        let workspace_manifest = if item.workspace_member {
-            root_workspace.clone()
-        } else {
-            cargo::workspace_manifest(ctx, &item.manifest)?
-        };
         for features in compilation_profiles(&item.package)? {
             configurations.push(CargoConfiguration {
                 manifest: item.manifest.clone(),
-                workspace_manifest: workspace_manifest.clone(),
                 package: item.package.name.to_string(),
                 target: target.into(),
                 features,
-                build_profile: CargoBuildProfile::Dev,
-                cargo_target: CargoTargetSelection::DefaultTargets,
             });
         }
-    }
-    Ok(configurations)
-}
-
-fn application_profiles(package: &Package) -> Result<Vec<Vec<String>>> {
-    let mut profiles = if uses_default_configuration(package)? {
-        vec![Vec::new()]
-    } else {
-        Vec::new()
-    };
-    profiles.extend(
-        declared_profiles(package)?
-            .into_iter()
-            .map(|profile| vec!["--no-default-features".into(), "--features".into(), profile]),
-    );
-    if profiles.is_empty() {
-        return Err(format!(
-            "package {} disables its default configuration without a supported feature profile",
-            package.name
-        )
-        .into());
-    }
-    Ok(profiles)
-}
-
-pub fn uses_default_configuration(package: &Package) -> Result<bool> {
-    match package
-        .metadata
-        .get("open-radio")
-        .and_then(|metadata| metadata.get("default-configuration"))
-    {
-        None => Ok(true),
-        Some(value) => value.as_bool().ok_or_else(|| {
-            format!(
-                "package {} open-radio.default-configuration must be a boolean",
-                package.name
-            )
-            .into()
-        }),
-    }
-}
-
-pub fn example_configurations(ctx: &Context, target: &str) -> Result<Vec<CargoConfiguration>> {
-    let mut configurations = Vec::new();
-    for item in source_packages(ctx)? {
-        let class = classification(&item.package)?;
-        let relative = item.manifest.strip_prefix(&ctx.root)?;
-        if class.layer != "application" || !relative.starts_with("examples") {
-            continue;
-        }
-        if !matches!(class.platform, Platform::Chip("esp32s31")) {
-            return Err(format!(
-                "example package {} has unsupported platform {:?}",
-                item.package.name, class.platform
-            )
-            .into());
-        }
-        if !item
-            .package
-            .targets
-            .iter()
-            .any(|target| target.kind.contains(&cargo_metadata::TargetKind::Bin))
-        {
-            return Err(
-                format!("example package {} has no binary target", item.package.name).into(),
-            );
-        }
-        for features in application_profiles(&item.package)? {
-            configurations.push(CargoConfiguration {
-                manifest: item.manifest.clone(),
-                workspace_manifest: item.workspace_manifest.clone(),
-                package: item.package.name.to_string(),
-                target: target.into(),
-                features,
-                build_profile: CargoBuildProfile::Release,
-                cargo_target: CargoTargetSelection::DefaultTargets,
-            });
-        }
-    }
-    if configurations.is_empty() {
-        return Err("no ESP32-S31 example configurations found".into());
-    }
-    Ok(configurations)
-}
-
-pub fn example_host_test_configurations(
-    ctx: &Context,
-    host: &str,
-) -> Result<Vec<CargoConfiguration>> {
-    let mut configurations = Vec::new();
-    for item in source_packages(ctx)? {
-        let class = classification(&item.package)?;
-        let relative = item.manifest.strip_prefix(&ctx.root)?;
-        if class.layer != "application" || !relative.starts_with("examples") {
-            continue;
-        }
-        let host_tests = item
-            .package
-            .metadata
-            .get("open-radio")
-            .and_then(|metadata| metadata.get("host-tests"))
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-        if !host_tests {
-            continue;
-        }
-        let library = item
-            .package
-            .targets
-            .iter()
-            .find(|target| target.kind.contains(&cargo_metadata::TargetKind::Lib))
-            .ok_or_else(|| {
-                format!(
-                    "package {} enables open-radio.host-tests without a library target",
-                    item.package.name
-                )
-            })?;
-        configurations.push(CargoConfiguration {
-            manifest: item.manifest,
-            workspace_manifest: item.workspace_manifest,
-            package: item.package.name.to_string(),
-            target: host.into(),
-            features: Vec::new(),
-            build_profile: CargoBuildProfile::Dev,
-            cargo_target: CargoTargetSelection::Lib(library.name.clone()),
-        });
     }
     Ok(configurations)
 }

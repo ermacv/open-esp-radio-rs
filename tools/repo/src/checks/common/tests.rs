@@ -404,12 +404,4 @@ fn source_package_discovery_covers_independent_and_ignored_workspace_members() {
             .collect::<BTreeSet<_>>(),
         BTreeSet::from(["island-package", "new-package"])
     );
-    assert_eq!(
-        packages
-            .iter()
-            .map(|package| &package.workspace_manifest)
-            .collect::<BTreeSet<_>>()
-            .len(),
-        2
-    );
 }

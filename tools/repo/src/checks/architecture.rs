@@ -11,7 +11,7 @@ const HIL_RUNTIME: &str = "hil/targets/esp32s31/runtime/Cargo.toml";
 pub fn run(ctx: &Context) -> Result<()> {
     let packages = production_packages(ctx)?;
     validate_production_edges(&packages)?;
-    let configurations = architecture_configurations(ctx, &packages, TARGET)?;
+    let configurations = architecture_configurations(&packages, TARGET)?;
     // Clippy compiles each isolated profile and applies every crate's own
     // lint policy from its manifest `[lints]` and crate attributes.
     for configuration in &configurations {

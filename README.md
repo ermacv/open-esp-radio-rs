@@ -109,14 +109,17 @@ cargo xtask check metadata
 cargo xtask check network --dependencies-only
 cargo xtask check safety
 cargo xtask check architecture
-cargo xtask check examples
 cargo registers generate --manifest registers/esp32s31/publication/registers.toml --check
 cargo xtask check phy
 cargo xtask check images
 ```
 
 They need the embedded target; `check images` also needs `espflash` and the
-toolchain's `llvm-tools` component on `PATH`. Together they check dependency
+toolchain's `llvm-tools` component on `PATH`. Each example is checked from its
+own directory, as its `examples` CI job shows: `cargo check --release --locked`
+for the default and every listed feature profile, plus
+`cargo test --lib --locked --target <host>` where the example has host tests.
+Together they check dependency
 and ownership boundaries, generated PAC outputs and compiled artifacts. Independent example,
 integration, HIL and Blobray workspaces have their own build configuration; the
 root workspace check alone does not cover them. Blobray host tests run with

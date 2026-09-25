@@ -55,7 +55,6 @@ enum Check {
     },
     /// Check the pinned minimal Xarxa patch with the original Embassy and driver.
     NetworkBackpressure,
-    Examples,
     /// Check local Markdown links and the static qualification catalogs.
     Docs,
     /// Build the PHY library for the chip target and audit its artifact and graph.
@@ -125,7 +124,6 @@ fn run() -> Result<std::process::ExitCode> {
             Check::Safety => checks::safety::run(&ctx),
             Check::Network { dependencies_only } => checks::network::run(&ctx, dependencies_only),
             Check::NetworkBackpressure => oer_xtask::firmware::check_network_backpressure(&ctx),
-            Check::Examples => checks::examples::run(&ctx),
             Check::Docs => checks::docs::run(&ctx),
             Check::Phy => checks::phy::run(&ctx),
             Check::Images => checks::images::run(&ctx),

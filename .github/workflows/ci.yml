@@ -120,10 +120,33 @@ jobs:
       - name: Fetch every workspace
         run: for manifest in $(git ls-files '*Cargo.lock' | sed 's/Cargo.lock$/Cargo.toml/'); do cargo fetch --locked --manifest-path "$manifest"; done
       - run: cargo xtask check architecture
+      # A compile_fail doctest proves that publishing borrowed DMA memory
+      # needs `unsafe`; the API exists only on the chip target.
+      - run: cargo test --doc --locked -p oer-esp32s31-soc --features axi-gdma-mem2mem --target riscv32imafc-unknown-none-elf
 
+  # Each example is its own workspace; run Cargo from its directory so its
+  # `.cargo/config.toml` selects the chip target. Every feature profile an
+  # example supports is checked, and host tests cover application libraries.
   examples:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - example: esp32s31-access-point
+            profiles: default owned-network embassy-network
+            host-tests: true
+          - example: esp32s31-bluetooth-controller
+            profiles: default advertising-smoke trouble-gatt trouble-secure-gatt gatt-application secure-gatt-application
+            host-tests: true
+          - example: esp32s31-monitor
+            profiles: default
+          - example: esp32s31-station
+            profiles: default embassy-network owned-network
+    defaults:
+      run:
+        working-directory: examples/${{ matrix.example }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -133,13 +156,25 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-            examples/*/target
-          key: examples-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock') }}
-          restore-keys: examples-${{ runner.os }}-
-      - name: Fetch every workspace
-        run: for manifest in $(git ls-files '*Cargo.lock' | sed 's/Cargo.lock$/Cargo.toml/'); do cargo fetch --locked --manifest-path "$manifest"; done
-      - run: cargo xtask check examples
+            examples/${{ matrix.example }}/target
+          key: ${{ matrix.example }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', format('examples/{0}/Cargo.lock', matrix.example)) }}
+          restore-keys: ${{ matrix.example }}-${{ runner.os }}-
+      - name: Check feature profiles
+        env:
+          PROFILES: ${{ matrix.profiles }}
+        run: |
+          for profile in $PROFILES; do
+            echo "::group::$profile"
+            if [ "$profile" = default ]; then
+              cargo check --release --locked
+            else
+              cargo check --release --locked --no-default-features --features "$profile"
+            fi
+            echo "::endgroup::"
+          done
+      - name: Host tests
+        if: matrix.host-tests
+        run: cargo test --lib --locked --target x86_64-unknown-linux-gnu
 
   # Register models, generated SVD/PAC outputs and the compiled PHY library.
   publication:

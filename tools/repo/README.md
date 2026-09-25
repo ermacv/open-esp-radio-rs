@@ -23,7 +23,6 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask check network` | Resolve isolated network consumers and compile supported profiles |
 | `cargo xtask check network-backpressure` | Resolve the pinned minimal Xarxa patch and test UDP device-capacity quiescence/recovery with the production adapter |
 | `cargo xtask check network --dependencies-only` | Check the same dependency boundaries without compiling profiles |
-| `cargo xtask check examples` | Target type checks of the four examples, station/AP network profiles, both BLE smoke configurations and host application-library tests |
 | `cargo xtask check docs` | Check owned Markdown local links and check/render the static qualification catalogs and programs; API documentation is `cargo xtask doc` |
 | `cargo xtask doc` | Build API documentation as docs.rs would: one `cargo doc --no-deps` per `[package.metadata.docs.rs]` target with `RUSTDOCFLAGS=-D warnings`, then `cargo test --doc --workspace` |
 | `cargo xtask check phy` | Build the PHY library for the chip target and audit its artifact and dependency graph |

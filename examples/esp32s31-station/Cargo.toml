@@ -67,4 +67,3 @@ scope = "development"
 layer = "application"
 platform = "chip"
 chip = "esp32s31"
-supported-feature-profiles = ["embassy-network", "owned-network"]

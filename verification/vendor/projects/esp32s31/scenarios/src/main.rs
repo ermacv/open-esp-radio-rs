@@ -6,7 +6,7 @@ use oer_esp32s31_vendor_scenarios::{
     gain::{Gain, Options},
     gain_state::{self, Unmet},
     harness::{Budget, Result},
-    harness_edges, i2c, i2c_transport,
+    harness_edges, i2c, i2c_transport, mutation_campaign,
     phy::PhyOptions,
     research, rfpll, rx_gain, session, tracking, tx_dc,
 };
@@ -75,6 +75,42 @@ enum Scenario {
         #[arg(long)]
         index: Option<PathBuf>,
     },
+    /// Mutate executed production PHY code and run every mutant against the
+    /// scenarios that reach it; writes `mutants.json` below `--output`.
+    Mutants {
+        /// `blobray` executable.
+        #[arg(long)]
+        binary: PathBuf,
+        /// Pinned `libphy.a`.
+        #[arg(long)]
+        library: PathBuf,
+        /// Pinned ROM ELF.
+        #[arg(long)]
+        rom: PathBuf,
+        /// External linker selected for image preparation.
+        #[arg(long)]
+        linker: PathBuf,
+        /// Authenticated bootloader SDK firmware.
+        #[arg(long)]
+        sdk: PathBuf,
+        /// Authenticated PHY SDK firmware.
+        #[arg(long)]
+        phy_sdk: PathBuf,
+        /// Authenticated `librftest.a`.
+        #[arg(long)]
+        rftest: PathBuf,
+        /// Ignored output root for worktrees, logs and the report.
+        #[arg(long)]
+        output: PathBuf,
+        /// Production source directory to mutate, relative to the repository root.
+        #[arg(long, default_value = MUTATION_SCOPE)]
+        scope: PathBuf,
+        /// Parallel workers, each with its own worktree and build.
+        #[arg(long, default_value_t = MUTATION_WORKERS)]
+        workers: usize,
+        #[command(flatten)]
+        budget: Budget,
+    },
     /// Combined calibration and parameter tracking parents with their real
     /// children, RFPLL corrections and failed-TX containment.
     Tracking {
@@ -142,6 +178,38 @@ struct Common {
     output: PathBuf,
     #[command(flatten)]
     budget: Budget,
+    /// Write the production probe instructions each scenario's retained
+    /// executions reached, as a JSON map from scenario name to addresses.
+    #[arg(long)]
+    reach: Option<PathBuf>,
+}
+
+/// Production PHY sources a mutation run changes by default.
+const MUTATION_SCOPE: &str = "crates/hardware/esp32s31/phy/src";
+/// Default mutation workers; each runs one scenario (about two cores) at a time.
+const MUTATION_WORKERS: usize = 4;
+
+/// Write `reach` when requested.
+fn write_reach(
+    path: Option<&Path>,
+    reach: &std::collections::BTreeMap<&str, std::collections::BTreeSet<u32>>,
+) -> Result<()> {
+    if let Some(path) = path {
+        let mut bytes = serde_json::to_vec(reach)?;
+        bytes.push(b'\n');
+        std::fs::write(path, bytes)?;
+    }
+    Ok(())
+}
+
+/// Exit code of one scenario, after writing its reach when requested.
+fn single(name: &str, reach: Option<PathBuf>, outcome: Result<Outcome>) -> Result<ExitCode> {
+    let (code, claims) = outcome?;
+    write_reach(
+        reach.as_deref(),
+        &std::collections::BTreeMap::from([(name, claims.reach)]),
+    )?;
+    Ok(code)
 }
 
 /// Evidence entries and untriaged coverage of one scenario, alongside its
@@ -443,13 +511,10 @@ fn tracking(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
 mod evidence {
     use super::*;
 
+    use oer_esp32s31_vendor_scenarios::{PROBES_MANIFEST, PROBES_PACKAGE, PROBES_TARGET};
+
     /// Qualification target of this scenario package.
     const TARGET: &str = "esp32s31";
-    /// Probe workspace and the probe ELF package whose path dependencies are
-    /// the compiled production sources.
-    const PROBES_MANIFEST: &str = "verification/vendor/projects/esp32s31/probes/Cargo.toml";
-    const PROBES_PACKAGE: &str = "oer-verification-esp32s31-probes-elf";
-    const PROBES_TARGET: &str = "riscv32imafc-unknown-none-elf";
     /// Blobray workspace and this scenario package, whose path dependencies
     /// are the scenario code and the Blobray engine behind every verdict.
     const TOOL_MANIFEST: &str = "tools/blobray/Cargo.toml";
@@ -583,8 +648,10 @@ fn all(
     rftest: PathBuf,
     index: Option<PathBuf>,
 ) -> Result<ExitCode> {
+    // Only `all` writes the combined reach.
     let within = |name: &str| Common {
         output: common.output.join(name),
+        reach: None,
         ..common.clone()
     };
     type Run<'a> = Box<dyn FnOnce() -> Result<Outcome> + 'a>;
@@ -614,17 +681,20 @@ fn all(
     let mut elapsed = vec![];
     let mut entries = vec![];
     let mut untriaged = std::collections::BTreeSet::new();
+    let mut reach = std::collections::BTreeMap::new();
     for (name, run) in scenarios {
         let start = std::time::Instant::now();
         let (code, claims) = run()?;
         entries.extend(claims.entries);
         untriaged.extend(claims.untriaged);
+        reach.insert(name, claims.reach);
         elapsed.push((name, start.elapsed().as_secs_f64()));
         if code != ExitCode::SUCCESS {
             println!("scenario {name} did not pass");
             return Ok(code);
         }
     }
+    write_reach(common.reach.as_deref(), &reach)?;
     for (name, seconds) in &elapsed {
         println!("{name} {seconds:.1}s");
     }
@@ -644,13 +714,103 @@ fn all(
     Ok(ExitCode::SUCCESS)
 }
 
+fn mutants(scenario: Scenario) -> Result<ExitCode> {
+    let Scenario::Mutants {
+        binary,
+        library,
+        rom,
+        linker,
+        sdk,
+        phy_sdk,
+        rftest,
+        output,
+        scope,
+        workers,
+        budget,
+    } = scenario
+    else {
+        unreachable!("only the mutants subcommand")
+    };
+    let path = |flag: &str, p: &Path| -> Result<[std::ffi::OsString; 2]> {
+        Ok([flag.into(), std::path::absolute(p)?.into()])
+    };
+    let mut common = vec![];
+    for (flag, p) in [
+        ("--binary", &binary),
+        ("--library", &library),
+        ("--rom", &rom),
+        ("--linker", &linker),
+    ] {
+        common.extend(path(flag, p)?);
+    }
+    common.extend(budget.arguments());
+    let phy_sdk_args = path("--phy-sdk", &phy_sdk)?.to_vec();
+    let mut i2c_args = path("--sdk", &sdk)?.to_vec();
+    i2c_args.extend(phy_sdk_args.clone());
+    let suites = std::collections::BTreeMap::from([
+        ("gain".to_owned(), path("--rftest", &rftest)?.to_vec()),
+        ("i2c".to_owned(), i2c_args),
+        ("channel".to_owned(), vec![]),
+        ("rx-gain".to_owned(), phy_sdk_args.clone()),
+        ("tx-dc".to_owned(), phy_sdk_args.clone()),
+        ("tracking".to_owned(), phy_sdk_args),
+    ]);
+    std::fs::create_dir_all(&output)?;
+    let campaign = mutation_campaign::Campaign {
+        root: evidence::root()?,
+        scope,
+        output: std::path::absolute(&output)?,
+        workers,
+        scenarios: std::env::current_exe()?,
+        common,
+        suites,
+    };
+    let report = campaign.run()?;
+    let mut bytes = serde_json::to_vec_pretty(&report)?;
+    bytes.push(b'\n');
+    let path = output.join("mutants.json");
+    std::fs::write(&path, bytes)?;
+    let mut counts = std::collections::BTreeMap::new();
+    for result in &report.results {
+        let kind = match &result.outcome {
+            mutation_campaign::Outcome::Killed { .. } => "killed",
+            mutation_campaign::Outcome::Survived => "survived",
+            mutation_campaign::Outcome::Equivalent => "equivalent",
+            mutation_campaign::Outcome::Unviable => "unviable",
+        };
+        *counts.entry(kind).or_insert(0usize) += 1;
+    }
+    for result in &report.results {
+        if matches!(result.outcome, mutation_campaign::Outcome::Survived) {
+            println!(
+                "SURVIVED {} {:?} -> {:?} [{}]",
+                result.id,
+                result.mutant.original,
+                result.mutant.replacement,
+                result.scenarios.join(",")
+            );
+        }
+    }
+    println!("mutants {counts:?}; report {}", path.display());
+    Ok(ExitCode::SUCCESS)
+}
+
 fn main() -> ExitCode {
     let result = match Cli::parse().scenario {
-        Scenario::Gain { common, rftest } => gain(common, rftest).map(|o| o.0),
-        Scenario::Channel { common } => channel(common).map(|o| o.0),
-        Scenario::RxGain { common, phy_sdk } => rx_gain(common, phy_sdk).map(|o| o.0),
-        Scenario::TxDc { common, phy_sdk } => tx_dc(common, phy_sdk).map(|o| o.0),
-        Scenario::Tracking { common, phy_sdk } => tracking(common, phy_sdk).map(|o| o.0),
+        scenario @ Scenario::Mutants { .. } => mutants(scenario),
+        Scenario::Gain { common, rftest } => {
+            single("gain", common.reach.clone(), gain(common, rftest))
+        }
+        Scenario::Channel { common } => single("channel", common.reach.clone(), channel(common)),
+        Scenario::RxGain { common, phy_sdk } => {
+            single("rx-gain", common.reach.clone(), rx_gain(common, phy_sdk))
+        }
+        Scenario::TxDc { common, phy_sdk } => {
+            single("tx-dc", common.reach.clone(), tx_dc(common, phy_sdk))
+        }
+        Scenario::Tracking { common, phy_sdk } => {
+            single("tracking", common.reach.clone(), tracking(common, phy_sdk))
+        }
         Scenario::All {
             common,
             sdk,
@@ -684,7 +844,7 @@ fn main() -> ExitCode {
             common,
             sdk,
             phy_sdk,
-        } => i2c(common, sdk, phy_sdk).map(|o| o.0),
+        } => single("i2c", common.reach.clone(), i2c(common, sdk, phy_sdk)),
     };
     result.unwrap_or_else(|error| {
         eprintln!("error: {error}");

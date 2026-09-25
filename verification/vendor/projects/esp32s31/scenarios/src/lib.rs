@@ -17,6 +17,8 @@ pub mod harness_edges;
 pub mod i2c;
 pub mod i2c_transport;
 pub mod layout;
+pub mod mutation;
+pub mod mutation_campaign;
 pub mod phy;
 pub mod research;
 pub mod rfpll;
@@ -25,6 +27,12 @@ pub mod session;
 pub mod tracking;
 pub mod tracking_graph;
 pub mod tx_dc;
+
+/// Probe workspace and the probe ELF package whose path dependencies are
+/// the compiled production sources, relative to the repository root.
+pub const PROBES_MANIFEST: &str = "verification/vendor/projects/esp32s31/probes/Cargo.toml";
+pub const PROBES_PACKAGE: &str = "oer-verification-esp32s31-probes-elf";
+pub const PROBES_TARGET: &str = "riscv32imafc-unknown-none-elf";
 
 /// Pinned `libphy.a` archive (ESP-IDF PHY source revision `b88e4b76`).
 pub const I2C_LIBRARY_SHA: &str =

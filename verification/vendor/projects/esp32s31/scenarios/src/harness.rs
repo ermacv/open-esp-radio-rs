@@ -46,11 +46,26 @@ pub enum LimitMode {
     Watchdog,
 }
 impl LimitMode {
-    fn argument(self) -> &'static str {
+    pub fn argument(self) -> &'static str {
         match self {
             Self::Kernel => "kernel",
             Self::Watchdog => "watchdog",
         }
+    }
+}
+
+impl Budget {
+    /// The command-line arguments that select this budget.
+    pub fn arguments(&self) -> Vec<std::ffi::OsString> {
+        [
+            ("--limit-mode", self.limit_mode.argument().to_owned()),
+            ("--timeout-secs", self.timeout_secs.to_string()),
+            ("--working-memory-mib", self.working_memory_mib.to_string()),
+            ("--max-work-units", self.max_work_units.to_string()),
+        ]
+        .into_iter()
+        .flat_map(|(flag, value)| [flag.into(), value.into()])
+        .collect()
     }
 }
 

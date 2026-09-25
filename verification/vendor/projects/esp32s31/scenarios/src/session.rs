@@ -50,6 +50,8 @@ struct Claimed<'a> {
 pub struct Claims {
     pub entries: Vec<evidence_index::Entry>,
     pub untriaged: std::collections::BTreeSet<evidence_index::Location>,
+    /// Production probe instructions any retained execution reached.
+    pub reach: std::collections::BTreeSet<u32>,
 }
 
 /// One compared case of a retained execution.
@@ -618,7 +620,24 @@ impl Session {
             .collect::<Result<Vec<_>>>()?;
         observed.check(suite, decisions)?;
         let (_, untriaged) = crate::coverage::Observed::classify(decisions, &observed.uncovered);
-        Ok(Claims { entries, untriaged })
+        let reach = self
+            .artifacts
+            .iter()
+            .flat_map(|artifact| &artifact.document.records)
+            .filter_map(|record| match &record.value {
+                blobray_domain::ExecutionEvidence::Coverage {
+                    replacement: true,
+                    coverage,
+                } => Some(coverage.instructions.iter().copied()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        Ok(Claims {
+            entries,
+            untriaged,
+            reach,
+        })
     }
 
     /// Run a request that must fail for capacity and publish nothing.

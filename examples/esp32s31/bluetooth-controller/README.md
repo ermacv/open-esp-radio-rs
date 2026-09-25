@@ -38,13 +38,13 @@ executor and radio startup; `Bluetooth Controller ready` closes cold start.
 
 Cold-start failures distinguish common-PHY power/readback checkpoints from
 registration and calibration errors. Both retain the powered radio owner and
-prevent HCI startup. See the [Bluetooth capability inventory](../../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md)
+prevent HCI startup. See the [Bluetooth capability inventory](../../../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md)
 for the remaining maintenance and shutdown boundaries.
 
 This is a board smoke sequence, not recorded HIL evidence. Meaningful RF
 validation still requires a suitable peer or tester, controlled RF conditions
 and the repository's HIL evidence process. The
-[Bluetooth HIL scenario](../../hil/host/linux-bluetooth/README.md) provides
+[Bluetooth HIL scenario](../../../hil/host/linux-bluetooth/README.md) provides
 host-controlled DTM windows, independent receiver counts and silence controls.
 
 Build and flash the complete application from the repository root:
@@ -57,7 +57,7 @@ cargo xtask build firmware bluetooth-controller --features trouble-gatt
 cargo xtask build firmware bluetooth-controller --features trouble-secure-gatt
 ```
 
-The [shared platform](../../platform/esp32s31/README.md) initializes PSRAM,
+The [shared platform](../../../platform/esp32s31/README.md) initializes PSRAM,
 relocates the application and supplies SRAM interrupt stacks. Image and stack
 audits run before packaging or flashing. A plain `cargo build` inside this
 workspace produces the stage-two ELF, which requires the shared bootstrap.
@@ -72,7 +72,7 @@ accepted connections exercise a separate, incomplete peripheral lifecycle.
 
 The nonconnectable case exercises all three primary channels. The connectable
 case selects channel 37 to fit the S31 backend's
-[single-channel connectable boundary](../../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md#legacy-advertising-and-scanning).
+[single-channel connectable boundary](../../../crates/hardware/esp32s31/driver/bluetooth/FEATURES.md#legacy-advertising-and-scanning).
 The application library owns these typed parameter commands; host tests check
 that each smoke command fits its role's channel capacity.
 
@@ -106,7 +106,7 @@ measurements or assigned product identity. `trouble-gatt` and
 side of the HCI transport.
 
 The application is the separate portable
-[GATT application library](../bluetooth-gatt/README.md), used by
+[GATT application library](../../bluetooth-gatt/README.md), used by
 both this binary and the `bluetooth-gatt` HIL image; neither depends on the
 other. Its observer receives values only and never owns HCI or supplies ATT
 replies. This example's `gatt-application` feature only selects that library;
@@ -205,9 +205,9 @@ automated `bluetooth-trouble-secure-gatt` scenario composes this secure
 application with framed observations and explicit decisions after comparing
 independent DUT/BlueZ numbers. It does not prove human presence or change this
 standalone profile's manual consent boundary; see its
-[fixture contract](../../hil/host/linux-bluetooth/README.md#secure-trouble-gatt-fixture).
+[fixture contract](../../../hil/host/linux-bluetooth/README.md#secure-trouble-gatt-fixture).
 Neither source scenario establishes current hardware qualification.
 
 ```console
-cargo test --manifest-path examples/esp32s31-bluetooth-controller/Cargo.toml --no-default-features --features secure-gatt-application --lib
+cargo test --manifest-path examples/esp32s31/bluetooth-controller/Cargo.toml --no-default-features --features secure-gatt-application --lib
 ```

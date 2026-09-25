@@ -170,7 +170,7 @@ A selected AP is input to the station join lifecycle. Open Authentication and
 Association precede WPA2 key establishment. The radio data path then carries
 network traffic; the application's selected network stack owns DHCP and sockets.
 See the [station lifecycle sequence](binary-to-station.md#from-finding-an-ap-to-an-ip-application)
-and [buildable station example](../examples/esp32s31-station/README.md).
+and [buildable station example](../examples/esp32s31/station/README.md).
 
 When changing this path, choose checks for the claim: a host regression for
 transition behavior, register publication checks for model/API changes,

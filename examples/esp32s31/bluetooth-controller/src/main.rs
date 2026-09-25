@@ -20,7 +20,7 @@ use bt_hci::{
     controller::Controller,
 };
 #[cfg(feature = "advertising-smoke")]
-use oer_example_esp32s31_bluetooth_controller::AdvertisingSmokeCase;
+use oer_esp32s31_example_bluetooth_controller::AdvertisingSmokeCase;
 
 #[cfg(feature = "trouble-gatt")]
 use embassy_time::Duration;

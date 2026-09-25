@@ -24,7 +24,7 @@ documented behavior.
 | Radio drivers and embedded Rust | [Follow a real channel change](docs/channel-walkthrough.md) from reviewed hardware facts to STA | Source reading and host tests need no board; on-air work needs ESP32-S31 hardware |
 | Binary analysis and hardware research | [Blobray task map](tools/blobray/README.md#choose-a-task) and the synthetic exercise | Linux host; real research also needs your own identified vendor artifacts |
 | Portable Rust and resource ownership | [First host contribution](docs/first-contribution.md) | Rust basics and public build dependencies; no private inputs |
-| A station application | [Buildable station example](examples/esp32s31-station/README.md) and [capability limits](crates/hardware/esp32s31/driver/FEATURES.md) | Supported board, toolchain and network configuration |
+| A station application | [Buildable station example](examples/esp32s31/station/README.md) and [capability limits](crates/hardware/esp32s31/driver/FEATURES.md) | Supported board, toolchain and network configuration |
 
 Start with the [documentation routes](docs/README.md) and
 [contribution guide](CONTRIBUTING.md). The [documentation build](docs/documentation.md#build-the-guides-and-api-documentation)
@@ -45,8 +45,8 @@ The workspace is licensed under [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACH
 | Build and validate a station | [ESP32-S31 route](docs/station-hardware.md) |
 | Use the public `oer` API | [Radio facade](crates/oer/README.md) |
 | Choose a network stack and understand its patches | [Network implementations](docs/network-implementations.md) |
-| Build a station application | [Station example](examples/esp32s31-station/README.md) |
-| Build another radio role | [AP](examples/esp32s31-access-point/README.md), [monitor](examples/esp32s31-monitor/README.md), [Bluetooth controller](examples/esp32s31-bluetooth-controller/README.md) |
+| Build a station application | [Station example](examples/esp32s31/station/README.md) |
+| Build another radio role | [AP](examples/esp32s31/access-point/README.md), [monitor](examples/esp32s31/monitor/README.md), [Bluetooth controller](examples/esp32s31/bluetooth-controller/README.md) |
 | Understand component boundaries | [Repository architecture](docs/architecture.md) |
 | See implementation, knowledge, observations and next work | [Project capability map](qualification/README.md#everyday-status-and-next-work) |
 | Assess a selected STA or BLE scope | [Qualification programs](qualification/README.md) |

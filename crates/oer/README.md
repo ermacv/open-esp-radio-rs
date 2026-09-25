@@ -39,7 +39,7 @@ That composition does not require Wi-Fi STA/AP, Embassy networking or Xarxa.
 `systems::esp32s31::embassy::bluetooth` also reexports the cold-start inputs
 that the driver path lacks: scheduler allocation and default TX power values,
 `DtmRecheckPeriod`, the esp-hal radio platform, the deadline watchdog and SoC
-`entropy::Entropy`. The [Bluetooth controller example](../../examples/esp32s31-bluetooth-controller/)
+`entropy::Entropy`. The [Bluetooth controller example](../../examples/esp32s31/bluetooth-controller/)
 uses only the facade besides its board runtime and executor.
 Cargo features are additive: another dependency enabling `wifi` on the same
 facade also enables portable Wi-Fi in the final feature union.
@@ -47,9 +47,9 @@ facade also enables portable Wi-Fi in the final feature union.
 For a ready ESP32-S31 Embassy Wi-Fi composition, select one of
 `upstream-xarxa`, `owned-xarxa`, or `embassy-smoltcp`. The composition is exposed
 at `systems::esp32s31::embassy::wifi`, together with every input needed to
-construct it; the [station](../../examples/esp32s31-station/),
-[access-point](../../examples/esp32s31-access-point/) and
-[monitor](../../examples/esp32s31-monitor/) examples use only this path. Network profiles are alternatives and
+construct it; the [station](../../examples/esp32s31/station/),
+[access-point](../../examples/esp32s31/access-point/) and
+[monitor](../../examples/esp32s31/monitor/) examples use only this path. Network profiles are alternatives and
 are checked separately. Stack dependencies and patch ownership are described
 in [network implementations](../../docs/network-implementations.md).
 

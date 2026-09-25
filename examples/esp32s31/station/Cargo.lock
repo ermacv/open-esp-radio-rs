@@ -1272,6 +1272,25 @@ name = "oer-esp32s31-coex"
 version = "0.1.0"
 
 [[package]]
+name = "oer-esp32s31-example-station"
+version = "0.1.0"
+dependencies = [
+ "embassy-executor",
+ "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-net 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=1fa0957c07398f83c9795b645a5a6ceda1270f91)",
+ "embassy-net 0.9.1 (git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc)",
+ "esp-backtrace",
+ "esp-hal",
+ "esp-println",
+ "oer-esp32s31-executor-embassy",
+ "oer-esp32s31-platform-layout",
+ "oer-esp32s31-platform-runtime",
+ "open-esp-radio",
+ "static_cell",
+]
+
+[[package]]
 name = "oer-esp32s31-executor-embassy"
 version = "0.1.0"
 dependencies = [
@@ -1520,25 +1539,6 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "esp-hal",
-]
-
-[[package]]
-name = "oer-example-esp32s31-station"
-version = "0.1.0"
-dependencies = [
- "embassy-executor",
- "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-net 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "embassy-net 0.9.1 (git+https://github.com/ermacv/embassy.git?rev=1fa0957c07398f83c9795b645a5a6ceda1270f91)",
- "embassy-net 0.9.1 (git+https://github.com/embassy-rs/embassy?rev=c0fdd08e94138105fba8be3133c4ced91afc30fc)",
- "esp-backtrace",
- "esp-hal",
- "esp-println",
- "oer-esp32s31-executor-embassy",
- "oer-esp32s31-platform-layout",
- "oer-esp32s31-platform-runtime",
- "open-esp-radio",
- "static_cell",
 ]
 
 [[package]]

@@ -233,7 +233,7 @@ reason = "shutdown future retains the unique interrupt, connected runner and tas
 
 
 [[reviewed_frames]]
-function_contains = "TaskStorage<oer_example_esp32s31_station"
+function_contains = "TaskStorage<oer_esp32s31_example_station"
 source_ends_with = ["embassy-executor-0.10.0/src/raw/mod.rs"]
 max_bytes = 14336
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
@@ -261,14 +261,14 @@ execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_fre
 reason = "one-time Bluetooth cold start transfers the configured controller ownership graph to its statically stored application future on CPU0"
 
 [[reviewed_frames]]
-function_contains = "Join3<oer_example_esp32s31_bluetooth_controller"
+function_contains = "Join3<oer_esp32s31_example_bluetooth_controller"
 source_ends_with = ["embassy-futures-0.1.2/src/join.rs"]
 max_bytes = 14336
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }
 reason = "the Bluetooth application concurrently polls typed HCI commands, events and a pinned hardware runner on CPU0"
 
 [[reviewed_frames]]
-function_contains = "TaskStorage<oer_example_esp32s31_bluetooth_controller"
+function_contains = "TaskStorage<oer_esp32s31_example_bluetooth_controller"
 source_ends_with = ["embassy-executor-0.10.0/src/raw/mod.rs"]
 max_bytes = 18432
 execution_stack = { storage_symbol = "__open_radio_cpu0_task_stack", minimum_free_bytes = 16384 }

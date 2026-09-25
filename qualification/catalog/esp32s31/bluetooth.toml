@@ -2980,7 +2980,7 @@ section = "bluetooth-hci-host-boundary"
 title = "Trouble Host integration"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "[Production composition](../../../../composition/esp32s31/embassy/bluetooth/src/trouble.rs) consumes the source-owned `bt-hci` Controller facade into a released `trouble-host` 0.8.0 stack with peripheral/GATT support and retains its exact hardware runner beside it. The [`trouble-gatt` standalone application](../../../../../examples/esp32s31-bluetooth-controller/README.md) builds that target composition with a bounded read/write GATT service. A portable integration test proves the affine ownership boundary, while the [typed-HCI tests](../../../../protocols/bluetooth/hci/src/controller/bootstrap/tests.rs) drive the real Trouble runner through bootstrap. Connected GATT interoperability still lacks HIL evidence."
+scope-and-limitations = "[Production composition](../../../../composition/esp32s31/embassy/bluetooth/src/trouble.rs) consumes the source-owned `bt-hci` Controller facade into a released `trouble-host` 0.8.0 stack with peripheral/GATT support and retains its exact hardware runner beside it. The [`trouble-gatt` standalone application](../../../../../examples/esp32s31/bluetooth-controller/README.md) builds that target composition with a bounded read/write GATT service. A portable integration test proves the affine ownership boundary, while the [typed-HCI tests](../../../../protocols/bluetooth/hci/src/controller/bootstrap/tests.rs) drive the real Trouble runner through bootstrap. Connected GATT interoperability still lacks HIL evidence."
 
 [[items]]
 id = "bluetooth-controller-scheduler-timebase"

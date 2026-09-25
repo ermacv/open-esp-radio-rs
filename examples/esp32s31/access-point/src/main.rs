@@ -19,7 +19,7 @@ use oer::wifi::{
     WifiMacAddress, WifiSsid,
 };
 
-use oer_example_esp32s31_access_point::{dhcp, network, services};
+use oer_esp32s31_example_access_point::{dhcp, network, services};
 
 use oer_esp32s31_executor_embassy::{self as platform_executor, Executor};
 

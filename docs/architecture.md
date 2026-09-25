@@ -20,7 +20,7 @@ reading route through these boundaries.
 | [Verification](../verification/README.md) | Reusable chip knowledge and concrete vendor comparison projects | Private artifacts are caller inputs, never production dependencies |
 | [HIL](../hil/README.md) | Typed protocol, lab fixtures, scenarios, target images and sealed observations | Produces hardware evidence; does not decide product readiness |
 | [Qualification](../qualification/README.md) | Engineering map, capability declarations and independent assessment of a selected scope | Consumes evidence; does not run the hardware or vendor implementation |
-| [Examples](../examples/esp32s31-station/README.md) | Board/application composition and API usage | Own credentials, stack and sockets; do not depend on the HIL harness |
+| [Examples](../examples/esp32s31/station/README.md) | Board/application composition and API usage | Own credentials, stack and sockets; do not depend on the HIL harness |
 
 A directory identifies an owner. A Cargo workspace identifies a joint build
 and lockfile boundary. They need not coincide, and a logical module does not

@@ -1,7 +1,7 @@
 # Bluetooth GATT application
 
 `oer-example-bluetooth-gatt` is the portable Trouble Host GATT
-application of the [Bluetooth controller example](../esp32s31-bluetooth-controller/README.md).
+application of the [Bluetooth controller example](../esp32s31/bluetooth-controller/README.md).
 The example binary and the Bluetooth HIL firmware both compose it; it is a
 library so that neither consumer depends on the other.
 
@@ -20,4 +20,4 @@ cargo test -p oer-example-bluetooth-gatt --all-features
 ```
 
 The security scope and its limits are described in the example README's
-[authenticated GATT profile](../esp32s31-bluetooth-controller/README.md#authenticated-gatt-profile).
+[authenticated GATT profile](../esp32s31/bluetooth-controller/README.md#authenticated-gatt-profile).

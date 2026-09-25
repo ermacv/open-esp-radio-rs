@@ -21,9 +21,9 @@ This crate also reexports every input of `new`, `RadioConfig` and
 PHY, SoC or esp-hal adapter dependency; board startup and the executor remain
 application-owned.
 
-Use the buildable [station](../../../../../examples/esp32s31-station/),
-[access-point](../../../../../examples/esp32s31-access-point/) and
-[monitor](../../../../../examples/esp32s31-monitor/) applications as the
+Use the buildable [station](../../../../../examples/esp32s31/station/),
+[access-point](../../../../../examples/esp32s31/access-point/) and
+[monitor](../../../../../examples/esp32s31/monitor/) applications as the
 copyable entry points. They are compiled for the repository's pinned
 ESP32-S31 target and exact Cargo feature profiles by the documentation gate.
 

@@ -1,5 +1,5 @@
 [package]
-name = "oer-example-esp32s31-bluetooth-controller"
+name = "oer-esp32s31-example-bluetooth-controller"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.97.1"
@@ -20,7 +20,7 @@ gatt-application = ["dep:gatt-application", "dep:trouble-host"]
 secure-gatt-application = ["gatt-application", "gatt-application/secure", "trouble-host/security", "dep:embassy-futures"]
 
 [[bin]]
-name = "oer-example-esp32s31-bluetooth-controller"
+name = "oer-esp32s31-example-bluetooth-controller"
 path = "src/main.rs"
 required-features = ["firmware"]
 
@@ -28,19 +28,19 @@ required-features = ["firmware"]
 bt-hci = "=0.10.1"
 embassy-sync = "0.8.0"
 embassy-futures = { version = "0.1.2", optional = true }
-gatt-application = { package = "oer-example-bluetooth-gatt", path = "../bluetooth-gatt", optional = true }
+gatt-application = { package = "oer-example-bluetooth-gatt", path = "../../bluetooth-gatt", optional = true }
 trouble-host = { version = "=0.8.0", git = "https://github.com/ermacv/trouble", rev = "a6af435ba1539cead0afce04718ad8a089bcc4b9", optional = true, default-features = false, features = ["default-packet-pool", "gatt", "peripheral"] }
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
-oer-esp32s31-platform-runtime = { optional = true, path = "../../platform/esp32s31/runtime", features = ["psram-task-stack"] }
+oer-esp32s31-platform-runtime = { optional = true, path = "../../../platform/esp32s31/runtime", features = ["psram-task-stack"] }
 embassy-time = { version = "0.5.1", optional = true }
 static_cell = { version = "2.1.1", optional = true }
 embassy-executor = { optional = true, version = "0.10.0", default-features = false }
 esp-backtrace = { optional = true, git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
 esp-hal = { optional = true, git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["esp32s31", "rt", "unstable"] }
 esp-println = { optional = true, git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["auto", "esp32s31", "log-04"] }
-oer = { package = "open-esp-radio", optional = true, path = "../../crates/oer", default-features = false, features = ["embassy-esp32s31-bluetooth"] }
-oer-esp32s31-executor-embassy = { optional = true, path = "../../crates/adapters/embassy/esp32s31/executor", features = ["esp32s31"] }
+oer = { package = "open-esp-radio", optional = true, path = "../../../crates/oer", default-features = false, features = ["embassy-esp32s31-bluetooth"] }
+oer-esp32s31-executor-embassy = { optional = true, path = "../../../crates/adapters/embassy/esp32s31/executor", features = ["esp32s31"] }
 
 [profile.release]
 codegen-units = 1
@@ -51,7 +51,7 @@ panic = "abort"
 strip = false
 
 [dev-dependencies]
-oer-bluetooth-hci = { path = "../../crates/protocols/bluetooth/hci" }
+oer-bluetooth-hci = { path = "../../../crates/protocols/bluetooth/hci" }
 embassy-futures = "0.1.2"
 critical-section = { version = "1.2.0", features = ["std"] }
 
@@ -70,7 +70,7 @@ embassy-time = { version = "0.5.1", registry = "crates-io" }
 resolver = "3"
 
 [build-dependencies]
-oer-esp32s31-platform-layout = { path = "../../platform/esp32s31/layout", features = ["build"], optional = true }
+oer-esp32s31-platform-layout = { path = "../../../platform/esp32s31/layout", features = ["build"], optional = true }
 
 [package.metadata.open-radio]
 scope = "development"

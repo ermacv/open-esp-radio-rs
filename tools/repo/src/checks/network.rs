@@ -393,12 +393,12 @@ pub fn profiles() -> [Profile; 22] {
     [
         Profile {
             boundary: ReleasedEmbassyProduct,
-            manifest: "examples/esp32s31-access-point/Cargo.toml",
+            manifest: "examples/esp32s31/access-point/Cargo.toml",
             features: &["--no-default-features", "--features", "embassy-network"],
         },
         Profile {
             boundary: OwnedProduct,
-            manifest: "examples/esp32s31-access-point/Cargo.toml",
+            manifest: "examples/esp32s31/access-point/Cargo.toml",
             features: &["--no-default-features", "--features", "owned-network"],
         },
         Profile {
@@ -436,12 +436,12 @@ pub fn profiles() -> [Profile; 22] {
         },
         Profile {
             boundary: UpstreamApplication,
-            manifest: "examples/esp32s31-station/Cargo.toml",
+            manifest: "examples/esp32s31/station/Cargo.toml",
             features: &["--no-default-features", "--features", "upstream-network"],
         },
         Profile {
             boundary: UpstreamApplication,
-            manifest: "examples/esp32s31-access-point/Cargo.toml",
+            manifest: "examples/esp32s31/access-point/Cargo.toml",
             features: &["--no-default-features", "--features", "upstream-network"],
         },
         Profile {
@@ -505,12 +505,12 @@ pub fn profiles() -> [Profile; 22] {
         },
         Profile {
             boundary: OwnedProduct,
-            manifest: "examples/esp32s31-station/Cargo.toml",
+            manifest: "examples/esp32s31/station/Cargo.toml",
             features: &["--no-default-features", "--features", "owned-network"],
         },
         Profile {
             boundary: ReleasedEmbassyProduct,
-            manifest: "examples/esp32s31-station/Cargo.toml",
+            manifest: "examples/esp32s31/station/Cargo.toml",
             features: &["--no-default-features", "--features", "embassy-network"],
         },
     ]

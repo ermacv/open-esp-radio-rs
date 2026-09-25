@@ -24,10 +24,7 @@ pub fn build(
         }
         None
     };
-    let directory = ctx
-        .root
-        .join("examples")
-        .join(format!("esp32s31-{example}"));
+    let directory = ctx.root.join("examples/esp32s31").join(example);
     let manifest = directory.join("Cargo.toml");
     let contents = fs::read_to_string(&manifest)?;
     let data: toml::Table = toml::from_str(&contents)?;

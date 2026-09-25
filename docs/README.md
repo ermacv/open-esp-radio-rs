@@ -10,7 +10,7 @@ details live beside their owner; this directory contains shared contracts.
 | Understand the architecture | [From binary evidence to a Wi-Fi station](binary-to-station.md) | [Worked channel change](channel-walkthrough.md), [responsibility and dependency reference](architecture.md) |
 | Make a first contribution | [Host tutorial](first-contribution.md) | [Contribution workflow](../CONTRIBUTING.md) |
 | Investigate hardware | [Blobray task map](../tools/blobray/README.md#choose-a-task) | [Reviewed models and publication](../registers/README.md), [PHY research](phy/README.md) |
-| Build and validate a station | [ESP32-S31 route](station-hardware.md) | [Application example](../examples/esp32s31-station/README.md), [HIL](../hil/README.md), [qualification](../qualification/README.md) |
+| Build and validate a station | [ESP32-S31 route](station-hardware.md) | [Application example](../examples/esp32s31/station/README.md), [HIL](../hil/README.md), [qualification](../qualification/README.md) |
 
 These routes assume Rust and embedded basics. The host route needs no board or
 private binary; the hardware route names additional prerequisites at each step.

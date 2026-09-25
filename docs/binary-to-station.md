@@ -86,7 +86,7 @@ The detailed boundaries are:
 | Chip driver | MAC/DMA/IRQ operations and hardware resource ownership | [Station backend](../crates/roles/esp32s31/ieee80211/sta/README.md) |
 | IEEE 802.11 / STA | Frame rules, protocol transitions and portable policy | [Station policy](../crates/protocols/ieee80211/sta/README.md) |
 | Runtime | Execution, timers, wakeups and owners retained across awaits | [Runtime](../crates/runtime/README.md) |
-| Composition / application | System assembly, requested role, network stack and user behavior | [Composition](../crates/composition/esp32s31/embassy/ieee80211/README.md), [station example](../examples/esp32s31-station/README.md) |
+| Composition / application | System assembly, requested role, network stack and user behavior | [Composition](../crates/composition/esp32s31/embassy/ieee80211/README.md), [station example](../examples/esp32s31/station/README.md) |
 
 PAC means *peripheral access crate*. HAL means *hardware abstraction layer*;
 here its operations carry restricted authority, not arbitrary register access.
@@ -133,7 +133,7 @@ it does not generate this radio PAC. See the
 | Reviewed data + HAL → PHY | Tables, coefficients and hardware operations → channel/calibration algorithms | Source profile, representation, applicability and algorithm boundary | [PHY comparison](phy/README.md) and [source policy](source-policy.md) |
 | HAL + PHY → chip driver | Hardware capabilities → MAC/DMA/IRQ transitions with retained owners | Acquisition, publication, completion and failure ownership | [Driver architecture](../crates/README.md); memory/ownership regressions and compiled probes |
 | Protocol + driver → runtime | Portable requests and concrete ports → scheduled radio operations | Deadlines, cancellation, wakeups and owner return | [Runtime](../crates/runtime/README.md) and [portable scan tests](../crates/protocols/ieee80211/sta/src/scan/tests.rs) |
-| Runtime → application | Composed hardware lifetime → role/control and packet interfaces | Board storage, credentials, stack and socket policy | [Station example](../examples/esp32s31-station/README.md); selected target build and HIL |
+| Runtime → application | Composed hardware lifetime → role/control and packet interfaces | Board storage, credentials, stack and socket policy | [Station example](../examples/esp32s31/station/README.md); selected target build and HIL |
 | Observations → qualification | Compiled comparisons and sealed device runs → assessment of selected requirements | Scope, freshness and accepted observation methods | [Evidence contract](verification-and-qualification.md) and [qualification](../qualification/README.md) |
 
 Registers are only part of hardware knowledge. RF algorithms may require
@@ -207,7 +207,7 @@ is qualified. IEEE 802.11 Open Authentication precedes Association; WPA2 key
 establishment is a later security exchange. DHCP belongs to the application's
 network stack and uses the established data path. Reconnection repeats parts
 of this lifecycle while preserving the resource-return rules. Follow the
-[station example](../examples/esp32s31-station/README.md) for the implemented
+[station example](../examples/esp32s31/station/README.md) for the implemented
 network choices and retry behavior.
 
 ## What counts as evidence?

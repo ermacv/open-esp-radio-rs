@@ -12,7 +12,7 @@ PCAPNG serialization belong to HIL host tooling.
 Run Cargo from this workspace so its embedded target configuration is used:
 
 ```console
-cd examples/esp32s31-monitor
+cd examples/esp32s31/monitor
 cargo check --release
 ```
 
@@ -23,7 +23,7 @@ cargo xtask build firmware monitor
 cargo xtask build firmware monitor --flash --monitor --port /dev/ttyACM0
 ```
 
-The [shared platform](../../platform/esp32s31/README.md) initializes PSRAM,
+The [shared platform](../../../platform/esp32s31/README.md) initializes PSRAM,
 relocates the separately linked application and keeps DMA and interrupt storage
 in SRAM. The command checks ELF placement and stack frames before packaging
 or flashing. `cargo build` in this example produces only the stage-two ELF;

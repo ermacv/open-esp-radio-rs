@@ -70,5 +70,5 @@ disable switches, physical addresses, BA sessions or packet-pool replacements.
 The product's `upstream-network` feature composes these endpoints with the
 same physical scheduler as the other integrations. Applications own original
 Embassy stack storage, interfaces and sockets; see the
-[station example](../../../../examples/esp32s31-station/README.md) and
+[station example](../../../../examples/esp32s31/station/README.md) and
 [dependency contract](../../../../docs/wifi-egress.md).

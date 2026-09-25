@@ -10,7 +10,7 @@ layout. Run Cargo from this directory so its target and linker configuration
 is applied:
 
 ```console
-cd examples/esp32s31-station
+cd examples/esp32s31/station
 cargo check --release
 ```
 
@@ -18,7 +18,7 @@ cargo check --release
 
 The default is **upstream Xarxa**, matching HIL and the example builder. Use an
 explicit selection when comparing them; the
-[implementation guide](../../docs/network-implementations.md) explains the
+[implementation guide](../../../docs/network-implementations.md) explains the
 crates, patches and shared Wi-Fi boundary.
 
 Build a complete image from the repository root:
@@ -67,14 +67,14 @@ cargo xtask build firmware station
 cargo xtask build firmware station --flash --monitor --port /dev/ttyACM0
 ```
 
-The [shared platform](../../platform/esp32s31/README.md) initializes PSRAM,
+The [shared platform](../../../platform/esp32s31/README.md) initializes PSRAM,
 relocates the separately linked application and keeps DMA and interrupt storage
 in SRAM. The command checks ELF placement and stack frames before packaging
 or flashing. `cargo build` in this example produces only the stage-two ELF;
 flash the complete image through `xtask`. Hardware readiness still requires
 appropriate scenario evidence.
 
-See the [original Xarxa contract](../../docs/wifi-egress.md#original-upstream-integration)
+See the [original Xarxa contract](../../../docs/wifi-egress.md#original-upstream-integration)
 for packet-pool exhaustion, RX scheduling and ownership limits.
 
 The connected radio is a finite lifecycle epoch rather than a terminal task.
@@ -85,5 +85,5 @@ sockets stay alive across link down/up. Before the next association, a finite
 RX and ordinary TX descriptor. It returns every owner and a fresh `ScanRecord`
 before the stopped RX resources are split for reconnect. A fresh `ScanRecord`
 can select another BSSID or channel. Product readiness is determined by the
-[qualification program](../../qualification/targets/esp32s31/wifi-sta.toml) and
+[qualification program](../../../qualification/targets/esp32s31/wifi-sta.toml) and
 current evidence, independently of this application's source check.

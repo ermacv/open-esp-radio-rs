@@ -37,6 +37,10 @@ embassy-time = { version = "0.5.1", features = ["std", "generic-queue-64"] }
 [lints]
 workspace = true
 
+[package.metadata.docs.rs]
+# Document the complete application, including the `secure` module.
+features = ["secure"]
+
 [package.metadata.open-radio]
 scope = "development"
 layer = "application"

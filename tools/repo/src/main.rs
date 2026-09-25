@@ -58,11 +58,10 @@ enum Check {
     Examples,
     /// Check local Markdown links and the static qualification catalogs.
     Docs,
-    SourceOnly {
-        /// Internal: run one independent lane of the checkpoint.
-        #[arg(long, hide = true)]
-        lane: Option<String>,
-    },
+    /// Build the PHY library for the chip target and audit its artifact and graph.
+    Phy,
+    /// Build both final HIL application images and run their target audits.
+    Images,
     BlobrayStandalone,
 }
 
@@ -128,10 +127,8 @@ fn run() -> Result<std::process::ExitCode> {
             Check::NetworkBackpressure => oer_xtask::firmware::check_network_backpressure(&ctx),
             Check::Examples => checks::examples::run(&ctx),
             Check::Docs => checks::docs::run(&ctx),
-            Check::SourceOnly { lane: None } => checks::source_only::run(&ctx),
-            Check::SourceOnly { lane: Some(lane) } => {
-                checks::source_only::run_lane(&ctx, checks::source_only::Lane::parse(&lane)?)
-            }
+            Check::Phy => checks::phy::run(&ctx),
+            Check::Images => checks::images::run(&ctx),
             Check::BlobrayStandalone => checks::standalone::run(&ctx),
         },
         Task::Build {

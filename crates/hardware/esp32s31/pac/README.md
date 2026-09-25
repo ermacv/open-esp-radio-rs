@@ -43,9 +43,10 @@ by either PAC is not itself hardware qualification of a radio operation.
 
 ## Validation
 
-`cargo xtask check source-only` validates register sources, dependency direction,
-handwritten unsafe boundaries and the final linked image. It also checks
-source-only publication reproducibility unconditionally. Artifact-scoped
+`cargo registers generate --check`, `cargo xtask check architecture`,
+`cargo xtask check safety` and `cargo xtask check images` validate register
+sources, dependency direction, handwritten unsafe boundaries and the final
+linked image. Publication checks also cover source-only publication reproducibility unconditionally. Artifact-scoped
 publication is additionally checked when its review report is present.
 Generated addresses, masks and field positions are not regression test oracles;
 ownership and memory protocols are tested through behavior and typed contracts.

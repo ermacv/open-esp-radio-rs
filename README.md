@@ -101,9 +101,23 @@ documentation target with `RUSTDOCFLAGS=-D warnings`, as each package's
 `[package.metadata.docs.rs]` selects, and `cargo test --doc --workspace`. Run
 focused package tests and the relevant target profile while iterating.
 
-Use `cargo xtask check source-only` for the complete source checkpoint. It also needs the embedded target and the selected
-toolchain's `llvm-tools-preview` component. It checks dependency and ownership
-boundaries, generated PAC outputs and compiled artifacts. Independent example,
+The complete source checkpoint is the [CI workflow](.github/workflows/ci.yml):
+each job runs one command, and every command also runs locally:
+
+```console
+cargo xtask check metadata
+cargo xtask check network --dependencies-only
+cargo xtask check safety
+cargo xtask check architecture
+cargo xtask check examples
+cargo registers generate --manifest registers/esp32s31/publication/registers.toml --check
+cargo xtask check phy
+cargo xtask check images
+```
+
+They need the embedded target; `check images` also needs `espflash` and the
+toolchain's `llvm-tools` component on `PATH`. Together they check dependency
+and ownership boundaries, generated PAC outputs and compiled artifacts. Independent example,
 integration, HIL and Blobray workspaces have their own build configuration; the
 root workspace check alone does not cover them. Blobray host tests run with
 `cargo test --manifest-path tools/blobray/Cargo.toml --workspace --locked --offline`

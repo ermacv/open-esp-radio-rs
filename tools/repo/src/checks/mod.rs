@@ -3,10 +3,11 @@
 pub mod architecture;
 pub mod docs;
 pub mod examples;
+pub mod images;
 pub mod metadata;
 pub mod network;
+pub mod phy;
 pub mod safety;
-pub mod source_only;
 pub mod standalone;
 pub mod vendor;
 

@@ -172,7 +172,7 @@ Aliases/old grammar are not portability requirements.
 - Stage 01: domain record-memory tests; Next functions/images tests; affected
   knowledge/data/research regressions; real PHY script; relevant existing gates.
 - Full checkpoints: stages 01, 06, 10, 12, 14, 17 and 20, including relevant
-  integration suites and `cargo xtask check source-only`.
+  integration suites and the repository CI checks.
 - Real workflows use built-in supervision with explicit limiter mode. Kernel
   cgroup integration requires delegated controllers; unavailable is not passed.
   Watchdog evidence never claims kernel enforcement. Hardware qualification is
@@ -826,7 +826,7 @@ current owner docs and the ordinary stage gates. No partial unit is completion.
 | 12.7 | active | RX gain/calibration: `phy_rfpll/rx_gain.rs`. Both complete roots, DC/table guards, signed estimators, delayed I2C/settle, projected coefficients and bank limits; failed channel, minimum search and shared budget preserve prior coefficients. Readiness observations and genuine output publication remain visible. |
 | 12.8 | pending | TX-DC/PWDET: `phy_rfpll/tx_dc_pwdet.rs`. Actual search/PBus/SAR children, Wi-Fi/BT selection, DC rows, constant/alternating samples and tone/settle paths. Independent PBus/SAR faults cannot publish calibration; observation capacity differs from time/work limits. Preserve seeded gain adjustment and explicit unused-read exclusions. |
 | 12.9 | pending | Combined calibration and tracking parents: `phy_rfpll/combined.rs`, `phy_rfpll/parent.rs`, `phy_rfpll/graph.rs`. Execute real children, guards/grant order, channel 13/HT40, client/thermal domains, RFPLL disabled/enabled and signed corrections. Failed TX preserves pre-calibration state and earlier completed power/RFPLL state. Modeled child completions cannot satisfy complete-parent acceptance. |
-| 12.10 | pending | Combined practical-PHY checkpoint: all units and stage-11 scenarios work together under native identities, shared budgets and preservation. Complete required intrinsic/reviewed-summary coverage with direct semantic/unknown/resource tests and explicit applicability; changing model, summary or production invalidates identity. No summary impersonates executed capture. All relevant integration suites, standalone, formatting, strict Clippy, owned public/private docs and `cargo xtask check source-only` pass before closing stage 12. |
+| 12.10 | pending | Combined practical-PHY checkpoint: all units and stage-11 scenarios work together under native identities, shared budgets and preservation. Complete required intrinsic/reviewed-summary coverage with direct semantic/unknown/resource tests and explicit applicability; changing model, summary or production invalidates identity. No summary impersonates executed capture. All relevant integration suites, standalone, formatting, strict Clippy, owned public/private docs and the repository CI checks pass before closing stage 12. |
 
 Required engine/intrinsic or peripheral mechanisms belong to the first unit that
 needs them and must be fully contracted/tested there; 12.10 audits their combined

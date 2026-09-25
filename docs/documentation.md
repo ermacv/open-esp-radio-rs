@@ -114,7 +114,6 @@ only there. `cargo xtask doc` runs one `cargo doc --no-deps` per documentation
 target with `RUSTDOCFLAGS=-D warnings`, so broken intra-doc links fail, and
 `cargo test --doc --workspace` for all host doctests. Private items are
 documented locally with `cargo doc --document-private-items`.
-`cargo xtask check source-only` includes only static documentation checks.
 
 These commands use locked, offline Cargo operations. Rendered catalog views live
 below `target/docs/catalogs/`. The commands do not query external links, load

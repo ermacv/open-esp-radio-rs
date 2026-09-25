@@ -53,15 +53,14 @@ cargo test --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets
 cargo qualification validate --manifest qualification/targets/esp32s31/wifi-sta.toml
-cargo xtask check source-only
 ```
 
 Use `cargo xtask check docs` for Markdown/catalog changes and `cargo xtask doc`
 for API changes: it runs `cargo doc --no-deps` with `RUSTDOCFLAGS=-D warnings`
 for every package's `[package.metadata.docs.rs]` target and features, plus
-`cargo test --doc --workspace`. `cargo xtask check source-only` is a full
-checkpoint, not the default after
-an individual edit. Run the relevant target, architecture, safety and artifact
+`cargo test --doc --workspace`. The CI jobs in `.github/workflows/ci.yml` are
+the full source checkpoint, not the default after an individual edit; each job
+is one command listed in `tools/repo/README.md`. Run the relevant target, architecture, safety and artifact
 checks when changing their ownership boundaries; a partial check is not full
 repository coverage.
 

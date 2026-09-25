@@ -48,7 +48,7 @@ Run commands from the repository root unless the component guide says otherwise.
 | Hardware readiness claim | Applicable dated [HIL](hil/README.md) evidence and independent [qualification](qualification/README.md) |
 
 `cargo xtask doc` is the complete API checkpoint;
-`cargo xtask check source-only` is the full source checkpoint. Run them when the
+the CI jobs in `.github/workflows/ci.yml` are the full source checkpoint. Run them when the
 change or final checkpoint requires their coverage, not after every paragraph.
 Passing a focused check is not full repository coverage. Documentation examples
 must distinguish host execution, target compilation and attached-hardware runs.

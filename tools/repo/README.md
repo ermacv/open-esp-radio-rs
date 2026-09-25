@@ -26,7 +26,8 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask check examples` | Target type checks of the four examples, station/AP network profiles, both BLE smoke configurations and host application-library tests |
 | `cargo xtask check docs` | Check owned Markdown local links and check/render the static qualification catalogs and programs; API documentation is `cargo xtask doc` |
 | `cargo xtask doc` | Build API documentation as docs.rs would: one `cargo doc --no-deps` per `[package.metadata.docs.rs]` target with `RUSTDOCFLAGS=-D warnings`, then `cargo test --doc --workspace` |
-| `cargo xtask check source-only` | Compose repository suites once, including static links/catalogs, Cargo/Clippy, publication and both final performance/correctness Wi-Fi image builds and audits; no public/private API documentation build |
+| `cargo xtask check phy` | Build the PHY library for the chip target and audit its artifact and dependency graph |
+| `cargo xtask check images` | Build both final performance/correctness HIL application images and run their target audits |
 | `cargo xtask check blobray-standalone` | Extract generic Blobray source, check path-dependency containment and compile every target, including its launcher |
 | `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it and `--monitor` opens the console |
 | `cargo xtask build vendor-probes --chip esp32s31` | Build the selected project's three Rust comparison artifacts |
@@ -44,8 +45,8 @@ standard `[package.metadata.docs.rs]` table.
 
 Use focused package tests and target builds for the code being changed. Run
 `check docs` for prose/catalog changes and `cargo xtask doc` for API changes.
-`check source-only` is the source/image integration checkpoint and is not
-required after every local edit. Shared contracts,
+The CI jobs in `.github/workflows/ci.yml` are the full source checkpoint; they
+are not required after every local edit. Shared contracts,
 Cargo feature policy, generated PAC and firmware layout changes need the relevant
 broader architecture, safety and artifact checks. Partial checks do not establish
 full repository coverage.
@@ -57,14 +58,8 @@ are not repository documentation. External URLs are counted as
 rendering neither load runtime evidence nor evaluate readiness, and the command
 performs no hardware operations.
 
-`source-only` first builds the HIL runner, then runs
-independent jobs concurrently: the final images and three lanes, `root`
-(repository gates, Clippy, safety, architecture and publication over
-`target/`), `blobray` (core tests and the audit host in `tools/blobray/target`)
-and `examples`. Each lane owns one Cargo target directory, so lanes never wait
-on each other's build lock; its stages run in order and its log is printed
-when it finishes. The first failing job cancels every other job. Both image classes
-build at once: each owns its output directory and resolves through a private
+`check images` first builds the HIL runner and the Blobray audit host in
+`tools/blobray/target`. Both image classes then build at once: each owns its output directory and resolves through a private
 copy of the committed lockfile. The image owner builds the real performance and
 correctness application images through the HIL builder, checks each class's
 fresh stack, placement and packed-image artifacts, and runs the final radio
@@ -74,7 +69,6 @@ paths and builder/final-audit verdicts. A failed or incomplete correctness
 build cannot be replaced by a previous application image or a successful
 performance build. This gate does not run on hardware or measure runtime stack
 high-water.
-Within `source-only`, documentation checks only static links and catalogs.
 
 Network dependency checks distinguish released Embassy, original upstream,
 maintained owned and research contracts. Released Embassy products

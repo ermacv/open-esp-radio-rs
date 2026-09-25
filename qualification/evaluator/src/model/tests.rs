@@ -227,7 +227,7 @@ pub(crate) fn native_evidence(root: &Path, roots: &[(&str, &str, &str)]) -> Nati
                 production: format!("open_{symbol}"),
                 verdict: scenario_evidence::MATCH.into(),
                 cases: 1,
-                executions: vec!["ab".repeat(32)],
+                reviews: vec!["ab".repeat(32)],
                 coverage: scenario_evidence::Coverage {
                     blocks: scenario_evidence::Count {
                         reached: 1,

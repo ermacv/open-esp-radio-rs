@@ -611,6 +611,7 @@ impl Session {
         } = claimed;
         let mut cases = 0;
         let mut executions = vec![];
+        let mut reviews = std::collections::BTreeSet::new();
         for artifact in &self.artifacts {
             let selected: Vec<_> = artifact
                 .compared
@@ -626,6 +627,23 @@ impl Session {
             }
             cases += selected.len() as u64;
             executions.push(artifact.identity.as_str().to_owned());
+            // Contracts and projections the pair's comparisons selected.
+            for case in &artifact.request.cases {
+                let Some(relation) = &case.relation else {
+                    continue;
+                };
+                if case.vendor.entry != vendor
+                    || case.replacement.as_ref().map(|r| r.entry) != Some(production)
+                {
+                    continue;
+                }
+                if let Some(EffectContractRef::Content { contract }) = &relation.effects {
+                    reviews.insert(contract.as_str().to_owned());
+                }
+                if let Some(ProjectionRef::Content { projection }) = &relation.projection {
+                    reviews.insert(projection.as_str().to_owned());
+                }
+            }
         }
         if executions.is_empty() {
             return Err(invalid(format!(
@@ -710,7 +728,7 @@ impl Session {
             production: entry.into(),
             verdict: evidence_index::MATCH.into(),
             cases,
-            executions,
+            reviews: reviews.into_iter().collect(),
             coverage,
         })
     }

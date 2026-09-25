@@ -1,11 +1,11 @@
 {
-  "schema": 2,
+  "schema": 3,
   "command": "vendor-scenario all",
   "target": "esp32s31",
   "inputs": {
     "archive": "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "528b34f0b7c335680dc4a5165af536ea17cae2216225dd4ad5aa612279e2cb3b",
+    "production": "134a0cf8dc4f6644126ef7d3157b5405ba91042d46e581c040272faa95caae8c",
     "rftest": "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e",
     "rom": "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
@@ -53,7 +53,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "abea47edf86683621fa8e8ba52950ccf79508add6ebea04ea324f403c0eef4e2"
+      "sha256": "4ba2a322fd1ec5e9c4e6bd88527b6fa0be3138cd5e0d37099c0774cb7570206d"
     },
     {
       "path": "crates/memory",
@@ -109,7 +109,7 @@
     },
     {
       "path": "tools/blobray/crates/application",
-      "sha256": "33c9194eda2ca1ba3c7adc561ed398c638a51f5eaa9cb540a8678a3143a964b8"
+      "sha256": "6197b1a3c68c231342ffdba7c3fb018a5f77cbcde139f8cfe279e12e4ef81300"
     },
     {
       "path": "tools/blobray/crates/artifacts",
@@ -117,7 +117,7 @@
     },
     {
       "path": "tools/blobray/crates/domain",
-      "sha256": "43da789f187d003b1ca28b777a7a5caded5791a8825ae51833c569f780e4a594"
+      "sha256": "d64d8b84b525cb7f64a4ecc933781bee8d8295f3546387be6b486f1304247cd8"
     },
     {
       "path": "tools/blobray/crates/knowledge",
@@ -125,19 +125,19 @@
     },
     {
       "path": "tools/blobray/crates/riscv",
-      "sha256": "610b6b31da9a846192e05178fdd42f252107923566a7f9e4dd635b021dc1d5c4"
+      "sha256": "c3a47918ead1fae751794e6a4d629661f91c908c09d25cdf9455829e6487c543"
     },
     {
       "path": "tools/blobray/crates/store",
-      "sha256": "935a8ae2d7d36179af95f08d4c8be1097b8d746967b885ac561afcf95cb4b1a3"
+      "sha256": "4a535deb7497cb6e908758c2bc70261e2fba80f0b29b6f75ac729e7eb0efc2f9"
     },
     {
       "path": "tools/blobray/crates/verification",
-      "sha256": "6704498af9241c956069904e63ce4bf3bf4df63ecf47e90ab5ef9a2e30b0270a"
+      "sha256": "4234b4d39a9bd40add87326bd80a0bb16f649b577e0cedc4a3c0f43c7085e1c8"
     },
     {
       "path": "tools/blobray/next",
-      "sha256": "5e833b1a2278de807e383405958a7ae7a73084effa074e63499bbee7d4d09dd0"
+      "sha256": "b676703589d881a20f11a4f6b6917798372bd43a19e997c90c843d7871b223b3"
     },
     {
       "path": "verification/vendor/harness/codegen",
@@ -153,15 +153,15 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/probes/library",
-      "sha256": "9b10a5768d5b5fc5cead971dda562038847980571e45081ee7528902e054e190"
+      "sha256": "05f000fbf74eae5ebef0d09d1ee70d1f5a9995090f6611482a4a000d66f40191"
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "c201db7092a7a941a823482aff357e74e175d0075102609a0b89b38f102eeddf"
+      "sha256": "7f9e3e04c8feada5ed841aa3cf075122d34a03cf57a4a17bbfc5cbff04b30de7"
     },
     {
       "path": "verification/vendor/schema",
-      "sha256": "f7d867bb99e6fe2e23ba9b848963473006d766bdb66c898ff3fe213303f61eae"
+      "sha256": "b6035a3eb8f41324f5eacd15dd81fa966c9ca42ca1c5b0f8e0f3479daa4fe3e5"
     }
   ],
   "entries": [
@@ -172,10 +172,7 @@
       "production": "open_phy_channel_trace_calculate_tx_gain",
       "verdict": "match",
       "cases": 396,
-      "executions": [
-        "74618b7b7d3016137abbd67ad6eb071bbf62baec891bdd33fc05910683d02e0d",
-        "a44a5d5c220d61f05c743a0ff760bfe6872f8c2a2f714e5b197956ae6a38f986"
-      ],
+      "reviews": [],
       "coverage": {
         "blocks": {
           "reached": 34,
@@ -196,9 +193,7 @@
       "production": "open_phy_channel_trace_publish_tx_gain",
       "verdict": "match",
       "cases": 24,
-      "executions": [
-        "0257c2a7cb3ce7cfae4073391069e713c7fa8b3d388d241a6edee0eb74f67032"
-      ],
+      "reviews": [],
       "coverage": {
         "blocks": {
           "reached": 16,
@@ -219,11 +214,7 @@
       "production": "open_phy_bluetooth_trace_calculate_gain",
       "verdict": "match",
       "cases": 157,
-      "executions": [
-        "acb3c7e10aca714082f0cb7b183cde187358089348d06efc5877efec1ab96d41",
-        "8a0dbe54eec1a9aefb32a72aaa09eb278c178c7095a9d4f11084d39df759ebbc",
-        "853fe993762837b828cfcd2ab6ad7fc570a1a5d38cb1d1ff90a88b765f10be80"
-      ],
+      "reviews": [],
       "coverage": {
         "blocks": {
           "reached": 37,
@@ -244,9 +235,7 @@
       "production": "open_phy_bluetooth_trace_tx_gain",
       "verdict": "match",
       "cases": 120,
-      "executions": [
-        "8a0dbe54eec1a9aefb32a72aaa09eb278c178c7095a9d4f11084d39df759ebbc"
-      ],
+      "reviews": [],
       "coverage": {
         "blocks": {
           "reached": 54,
@@ -267,9 +256,7 @@
       "production": "open_phy_trace_command_memory",
       "verdict": "match",
       "cases": 4,
-      "executions": [
-        "397ea3f105f8da6d878b08d3374624ba2a3b0f485e763fdebe94516f5061b535"
-      ],
+      "reviews": [],
       "coverage": {
         "blocks": {
           "reached": 7,
@@ -290,8 +277,8 @@
       "production": "open_phy_trace_i2c_host",
       "verdict": "match",
       "cases": 13,
-      "executions": [
-        "de756c2497642bb7122d21766c6cc3f23d2e83f5827ebbad6ecb64bd315b9284"
+      "reviews": [
+        "c58743209cdd2d0613de705eaffa88b5fb298afbe1f9c18c0577cc7d6f184a96"
       ],
       "coverage": {
         "blocks": {
@@ -313,8 +300,8 @@
       "production": "open_phy_trace_i2c_transfer",
       "verdict": "match",
       "cases": 4,
-      "executions": [
-        "de756c2497642bb7122d21766c6cc3f23d2e83f5827ebbad6ecb64bd315b9284"
+      "reviews": [
+        "01e20ba583917edfd5ea093b0afe774930560bea7b9f239b5148f2e454bd8b9e"
       ],
       "coverage": {
         "blocks": {
@@ -336,8 +323,8 @@
       "production": "open_phy_trace_i2c_transfer",
       "verdict": "match",
       "cases": 8,
-      "executions": [
-        "de756c2497642bb7122d21766c6cc3f23d2e83f5827ebbad6ecb64bd315b9284"
+      "reviews": [
+        "7e7dddf52469d11930d880507b358560d2a6ba79f01e8c7ff77091cefdeddd59"
       ],
       "coverage": {
         "blocks": {
@@ -359,8 +346,8 @@
       "production": "open_phy_trace_i2c_transfer",
       "verdict": "match",
       "cases": 4,
-      "executions": [
-        "de756c2497642bb7122d21766c6cc3f23d2e83f5827ebbad6ecb64bd315b9284"
+      "reviews": [
+        "19a42d31c4f8d5b72e7e617a997585251db46a2ee571cd62bd2b4edbf709bc3e"
       ],
       "coverage": {
         "blocks": {
@@ -382,8 +369,8 @@
       "production": "open_phy_trace_i2c_transfer",
       "verdict": "match",
       "cases": 8,
-      "executions": [
-        "de756c2497642bb7122d21766c6cc3f23d2e83f5827ebbad6ecb64bd315b9284"
+      "reviews": [
+        "84be0af3fdd7015d2bfce27617f84a2eba02b5989e5b7a153db158bfcf8f3d11"
       ],
       "coverage": {
         "blocks": {
@@ -405,8 +392,8 @@
       "production": "open_phy_trace_i2c_reset",
       "verdict": "match",
       "cases": 3,
-      "executions": [
-        "de756c2497642bb7122d21766c6cc3f23d2e83f5827ebbad6ecb64bd315b9284"
+      "reviews": [
+        "f74bc6c37013f08689869fab050dbbd628e06e95f126f2b95c0376b87963d613"
       ],
       "coverage": {
         "blocks": {
@@ -428,9 +415,7 @@
       "production": "open_phy_calibration_trace_pbus_clear",
       "verdict": "match",
       "cases": 24,
-      "executions": [
-        "62975a184504b6a154fdcb92ed64c7f5314904b1b7263b73db0ff0b8056de403"
-      ],
+      "reviews": [],
       "coverage": {
         "blocks": {
           "reached": 11,
@@ -451,9 +436,7 @@
       "production": "open_phy_calibration_leaf",
       "verdict": "match",
       "cases": 2,
-      "executions": [
-        "cf11dda3f95786ffa6c19e9700287baf43e946d076b08a0a326f0073b44e90d0"
-      ],
+      "reviews": [],
       "coverage": {
         "blocks": {
           "reached": 2,
@@ -474,9 +457,7 @@
       "production": "open_phy_calibration_leaf",
       "verdict": "match",
       "cases": 3,
-      "executions": [
-        "cf11dda3f95786ffa6c19e9700287baf43e946d076b08a0a326f0073b44e90d0"
-      ],
+      "reviews": [],
       "coverage": {
         "blocks": {
           "reached": 1,
@@ -497,9 +478,7 @@
       "production": "open_phy_calibration_leaf",
       "verdict": "match",
       "cases": 4,
-      "executions": [
-        "cf11dda3f95786ffa6c19e9700287baf43e946d076b08a0a326f0073b44e90d0"
-      ],
+      "reviews": [],
       "coverage": {
         "blocks": {
           "reached": 8,
@@ -520,9 +499,7 @@
       "production": "open_phy_calibration_leaf",
       "verdict": "match",
       "cases": 2,
-      "executions": [
-        "cf11dda3f95786ffa6c19e9700287baf43e946d076b08a0a326f0073b44e90d0"
-      ],
+      "reviews": [],
       "coverage": {
         "blocks": {
           "reached": 2,
@@ -543,8 +520,8 @@
       "production": "open_phy_rfpll_trace_search",
       "verdict": "match",
       "cases": 36,
-      "executions": [
-        "53af6c8dfb8322f6c4ad78914e49269bd2419329ac579811fa537c1913ecc6db"
+      "reviews": [
+        "76163e96c62edd29750cddd256a8071951a2b425340845955bf736fa140b4b6a"
       ],
       "coverage": {
         "blocks": {
@@ -566,8 +543,8 @@
       "production": "open_phy_rfpll_trace_maintain",
       "verdict": "match",
       "cases": 48,
-      "executions": [
-        "5d7286755cca427107c5e44215a427254c4af3367220628602cf9754347c32e4"
+      "reviews": [
+        "68a55bd5e185f95c8596dc8ae734a021ed73c0735b64ae3abc8a5e657605ce4b"
       ],
       "coverage": {
         "blocks": {
@@ -589,8 +566,8 @@
       "production": "open_phy_rfpll_trace_track",
       "verdict": "match",
       "cases": 10,
-      "executions": [
-        "4b0cc51f1ccfc47e98e303eea9a1be0be77c791910f25d8a472efba3fe7655e8"
+      "reviews": [
+        "bef9faa653413e12069308b56cb86184b893a28056e2eccd685e5516456beacf"
       ],
       "coverage": {
         "blocks": {
@@ -612,9 +589,9 @@
       "production": "open_phy_channel_trace_state",
       "verdict": "match",
       "cases": 56,
-      "executions": [
-        "8fb5ab0986f43f078eb244a1d03d9923f5eb0d375461ce3a7962dcc0a65abe9c",
-        "a71de98eaacefcd8ab622f58dda7c355f43f4bb13e43e5da532d66918a1fc7e4"
+      "reviews": [
+        "521da71eb8cdcfe1e3f63088e3bcaa044c9d136bcf80b9f922f3f03b8f281f68",
+        "a615d19a3afadef2589d87b96bbe45d0989dd14b75cefb6064daa3364b1727a3"
       ],
       "coverage": {
         "blocks": {
@@ -630,15 +607,38 @@
       }
     },
     {
+      "suite": "channel",
+      "source": "rom",
+      "symbol": "phy_tsens_temp_read_local",
+      "production": "open_phy_trace_temperature_sample",
+      "verdict": "match",
+      "cases": 1280,
+      "reviews": [
+        "567ffd576eb433176ba0d82b4259572ec3f306d858a5f4f64f98d25213463aab"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 39,
+          "total": 43
+        },
+        "directions": {
+          "reached": 28,
+          "total": 36
+        },
+        "excluded": 0,
+        "untriaged": 12
+      }
+    },
+    {
       "suite": "rx-gain",
       "source": "archive",
       "symbol": "phy_set_rx_gain_table",
       "production": "open_phy_calibration_trace_rx_gain",
       "verdict": "match",
       "cases": 56,
-      "executions": [
-        "3343b9ff7a02fc4df1250717566349b880413c918e91568f8ffb8abd14a11e58",
-        "f06a52d8d51022e803b54d9ab85e2e95dca96a2290035aec08fdc5d4127ef5c8"
+      "reviews": [
+        "3800a276c7bc8efc2c4fb340cba15eb7c95d16eb8bcf4f69f297745eab45352b",
+        "e6676f91a23539256199b8bcac64da3d5c6795771f98063c658af61cf7b1fb23"
       ],
       "coverage": {
         "blocks": {
@@ -660,8 +660,9 @@
       "production": "open_phy_calibration_trace_tx_dc_pwdet",
       "verdict": "match",
       "cases": 64,
-      "executions": [
-        "bfccbcc3a3d5862f4f50e2314946583e76e76f24aece5db50790b9df3a57fcb4"
+      "reviews": [
+        "6ce85866d96a1ad24f5371b63980177181bf2bc8b40de5fc6b1ff828331bc1d9",
+        "f883cc46c02b707eb2cb9021a30fafdb9ca1e38a77ad452bf82d66a270292939"
       ],
       "coverage": {
         "blocks": {
@@ -683,8 +684,9 @@
       "production": "open_phy_calibration_trace_combined",
       "verdict": "match",
       "cases": 80,
-      "executions": [
-        "6942ee343d840ad14b8935d7fdb96d3856b8f7cc9a95cd83d01f580fceddda2a"
+      "reviews": [
+        "5f6dd954ef601675d3b9c43750fc1b388b10b9c33a56b23f3dbbaaa9111b7eb6",
+        "8d77310dd80bc9db567d81f569ee04cae480161c59540d34d4c794becd0cf637"
       ],
       "coverage": {
         "blocks": {
@@ -706,11 +708,9 @@
       "production": "open_phy_tracking_trace_parent",
       "verdict": "match",
       "cases": 320,
-      "executions": [
-        "4ea33ec311ffd7723ef4bb50d49cd1f57c54dba682036877402596bfe1fecd8c",
-        "7820a8df485db34ef0293eb3ebe86f6220055ae43506a64f9735931eb35143d5",
-        "bd578a2714fd5e128f2864e962ec7317ddc79fb29558104c94d360799889cba6",
-        "d716b54e42bbdb10692ea24b8f85653b41e1c29e022de0c81f3837d197d31c3e"
+      "reviews": [
+        "afce92737a9ffccd3bca60a1b24f2885eb44f3e2e5f1df78ff3b66001c091d0f",
+        "fba31177b74f953f419e2358422fc263c6493bf81f35597eb5bf5338013b9a59"
       ],
       "coverage": {
         "blocks": {

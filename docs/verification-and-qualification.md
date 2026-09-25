@@ -107,12 +107,14 @@ native evidence index
 
 - one entry per claimed vendor root: scenario (`suite`), vendor source
   (`archive` or `rom`), root symbol, compiled production entry, the number of
-  compared cases and the retained Blobray executions that hold them. A claim
-  exists only when every retained case comparing that exact root/entry pair is
-  MATCH under its reviewed effect contract and output projection; an
-  unsupported claim fails the run instead of being written. Each entry also
-  carries the vendor coverage of the root's closure over those executions
-  (Blobray `code-coverage`): basic blocks and branch directions reached out of
+  compared cases and the content digests of the effect contracts and output
+  projections those comparisons selected. Contracts and projections are typed
+  values in the scenario code, reviewed through git. A claim exists only when
+  every case of the run comparing that exact root/entry pair is MATCH; an
+  unsupported claim fails the run instead of being written. The run keeps only
+  these results, not executions that could be reopened. Each entry also
+  carries the vendor coverage of the root's closure over those comparisons
+  (Blobray in-process coverage): basic blocks and branch directions reached out of
   all, and how many uncovered ones a reviewed decision excludes or remain
   untriaged;
 - every untriaged uncovered location of the claimed closures, by vendor
@@ -127,7 +129,7 @@ The index carries identities and verdicts only, never vendor bytes.
 Qualification reads the index named by the program's `[verification]
 evidence-index` (catalogs name it in `[validation] evidence-index`), checks
 schema, producer command and chip target, requires every entry to be a MATCH
-claim with executions whose coverage accounts for every uncovered location,
+claim with compared cases whose coverage accounts for every uncovered location,
 and recomputes every recorded directory digest. Coverage is reported, not a
 readiness gate: it shows which vendor behavior the comparisons never
 exercised. Any

@@ -13,11 +13,11 @@ use std::{
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Index format.
-pub const SCHEMA: u32 = 2;
+pub const SCHEMA: u32 = 3;
 /// Producer command recorded in every index.
 pub const COMMAND: &str = "vendor-scenario all";
 /// The only verdict an entry carries: a claim exists only when its root
-/// compared with MATCH in every retained execution that selects it.
+/// compared with MATCH in every comparison of the run that selects it.
 pub const MATCH: &str = "match";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -94,9 +94,12 @@ pub struct Entry {
     /// Compiled production entry compared with the root.
     pub production: String,
     pub verdict: String,
-    /// Compared cases and the retained executions that hold them.
+    /// Compared cases of the root/entry pair.
     pub cases: u64,
-    pub executions: Vec<String>,
+    /// SHA-256 content digests of the effect contracts and output
+    /// projections those comparisons selected, ascending and unique. The
+    /// contracts are typed values reviewed through git.
+    pub reviews: Vec<String>,
     pub coverage: Coverage,
 }
 
@@ -165,7 +168,11 @@ impl Index {
         }
         let mut seen = std::collections::BTreeSet::new();
         for entry in &self.entries {
-            if entry.verdict != MATCH || entry.cases == 0 || entry.executions.is_empty() {
+            if entry.verdict != MATCH
+                || entry.cases == 0
+                || entry.reviews.windows(2).any(|w| w[0] >= w[1])
+                || entry.reviews.iter().any(|r| !valid(r))
+            {
                 return Err(format!(
                     "entry {} {} is not a MATCH claim",
                     entry.source, entry.symbol

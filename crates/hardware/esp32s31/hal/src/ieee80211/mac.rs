@@ -28,33 +28,11 @@ use crate::types::{
 
 use oer_memory::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
 
-use oer_esp32s31_coex::{CoexClockHardware, CoexClockSelector, CoexError, CoexTimerClock};
-
 use oer_esp32s31_pac::{
-    CoexistenceLowPowerClockObservation, CoexistenceLowPowerClockSource, StaModemWakeConfig,
-    StaModemWakePrepareError, StaModemWakeRestore, StaModemWakeRestoreFailure,
-    StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreFailure, WifiColdRegisters,
-    WifiRadioRegisters,
+    CoexistenceLowPowerClockObservation, StaModemWakeConfig, StaModemWakePrepareError,
+    StaModemWakeRestore, StaModemWakeRestoreFailure, StaTbttWakePrepareError, StaTbttWakeRestore,
+    StaTbttWakeRestoreFailure, WifiColdRegisters, WifiRadioRegisters,
 };
-
-pub(crate) fn coex_timer_clock_for_chip(
-    observation: Option<CoexistenceLowPowerClockObservation>,
-    real_chip: bool,
-) -> Result<CoexTimerClock, CoexError> {
-    let observation = observation.ok_or(CoexError::UnsupportedClock)?;
-    let selector = match observation.source {
-        CoexistenceLowPowerClockSource::Selector1 => CoexClockSelector::Selector1,
-        CoexistenceLowPowerClockSource::Selector2 => CoexClockSelector::Selector2,
-        CoexistenceLowPowerClockSource::Selector4 => CoexClockSelector::Selector4,
-        CoexistenceLowPowerClockSource::Selector8 => CoexClockSelector::Selector8,
-    };
-    Ok(CoexTimerClock::from_hardware_fields(
-        selector,
-        observation.divider_minus_one,
-        40,
-        real_chip,
-    ))
-}
 
 /// Complete identity of one hardware MAC interface.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -287,9 +265,14 @@ impl<'registers> WifiMacColdHal<'registers> {
     }
 }
 
-impl CoexClockHardware for WifiMacColdHal<'_> {
-    fn sample(&mut self) -> Result<CoexTimerClock, CoexError> {
-        coex_timer_clock_for_chip(self.registers.sample_coexistence_low_power_clock(), true)
+impl WifiMacColdHal<'_> {
+    /// Sample the shared coexistence low-power clock selection once.
+    ///
+    /// Each call performs fresh reads; `None` reports an unreviewed encoding.
+    pub fn sample_coexistence_low_power_clock(
+        &mut self,
+    ) -> Option<CoexistenceLowPowerClockObservation> {
+        self.registers.sample_coexistence_low_power_clock()
     }
 }
 
@@ -915,9 +898,14 @@ impl<'registers> WifiMacHal<'registers> {
     }
 }
 
-impl CoexClockHardware for WifiMacHal<'_> {
-    fn sample(&mut self) -> Result<CoexTimerClock, CoexError> {
-        coex_timer_clock_for_chip(self.pac().sample_coexistence_low_power_clock(), true)
+impl WifiMacHal<'_> {
+    /// Sample the shared coexistence low-power clock selection once.
+    ///
+    /// Each call performs fresh reads; `None` reports an unreviewed encoding.
+    pub fn sample_coexistence_low_power_clock(
+        &mut self,
+    ) -> Option<CoexistenceLowPowerClockObservation> {
+        self.pac().sample_coexistence_low_power_clock()
     }
 }
 

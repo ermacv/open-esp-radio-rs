@@ -7,6 +7,12 @@ license.workspace = true
 repository.workspace = true
 description = "Allocation-free ESP32-S31 radio coexistence policy and timer ownership"
 
+[features]
+validation-probes = ["oer-esp32s31-hal/validation-probes"]
+
+[dependencies]
+oer-esp32s31-hal = { path = "../../hal" }
+
 [lints]
 workspace = true
 

@@ -28,6 +28,7 @@ not assume which executor wakes its timers.
 | `esp32s31/ieee80211/src/roles/station/maintenance/` | Connected-station PHY maintenance request protocol, automatic tracking control, pause timeline and terminal-failure classification; the composition owns the static request owner, the physical round trip and system reset |
 | `esp32s31/ieee80211/src/roles/esp_now/mailbox/` | Bounded ESP-NOW application RX/TX mailboxes shared by the connected station and the standalone role |
 | `esp32s31/ieee80211/src/datapath/` | Packet handoff and async composition around chip transactions; depends on no role module, and `datapath/network` owns the STA/AP network interface identities |
+| `esp32s31/ieee80211/src/datapath/owned.rs` | The only `owned-network` code: owned-adapter RX/link bindings, single and dual owned networks and the pinned-SRAM `DatapathTxConsumer` |
 | `esp32s31/ieee80211/src/diagnostics/` | Optional execution observation |
 | `esp32s31/bluetooth/src/controller/` | One controller epoch, command/response boundaries and timer progress |
 | `esp32s31/bluetooth/src/session/` | Finite DTM, advertising, scanning and peripheral sessions |

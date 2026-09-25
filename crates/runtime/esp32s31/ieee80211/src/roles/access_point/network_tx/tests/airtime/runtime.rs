@@ -120,7 +120,7 @@ fn run(case: Case) {
 
     use crate::{
         datapath::{
-            DatapathTxConsumer, PinnedTxPool, PinnedTxResources,
+            PinnedTxPool, PinnedTxResources, owned::DatapathTxConsumer,
             tx::resources::AggregateTxResources,
         },
         roles::access_point::*,

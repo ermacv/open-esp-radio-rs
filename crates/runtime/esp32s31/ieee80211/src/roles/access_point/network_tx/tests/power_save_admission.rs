@@ -1,6 +1,6 @@
 //! Full endpoint admission must fit AP retention through PS release/rollback.
 
-use crate::datapath::{DatapathTxConsumer, PinnedTxPool, PinnedTxResources};
+use crate::datapath::{PinnedTxPool, PinnedTxResources, owned::DatapathTxConsumer};
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 

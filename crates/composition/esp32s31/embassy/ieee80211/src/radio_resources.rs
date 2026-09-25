@@ -38,7 +38,7 @@ use oer_embassy_net_upstream::{
 
 use oer_esp32s31_ieee80211_dma::tx_ampdu_storage::AmpduDmaStorage;
 #[cfg(feature = "owned-network")]
-use oer_esp32s31_ieee80211_runtime::datapath::network::DualOwnedDatapathNetwork;
+use oer_esp32s31_ieee80211_runtime::datapath::owned::DualOwnedDatapathNetwork;
 
 #[cfg(feature = "embassy-network")]
 use oer_esp32s31_ieee80211_embassy_net_upstream::{DualEmbassyDatapathNetwork, EmbassyTxFrame};

@@ -85,7 +85,7 @@ fn exercise_pause(active: bool, fail_completion: bool) {
         PinnedTxResources::<NoopRawMutex, 64, 16, 8, 1>::new(),
     ));
     let pool = PinnedTxPool::<64, 16, 8, 1>::pin_static(Box::leak(Box::new(PinnedTxPool::new())));
-    let network = network::OwnedDatapathNetwork::new(owned, resources.split(pool));
+    let network = owned::OwnedDatapathNetwork::new(owned, resources.split(pool));
     network.set_link_state(interface, LinkState::Up);
     let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
     let completion = Signal::new();
@@ -219,7 +219,7 @@ fn controlled_stop_upgrades_pause_during_tx_drain_or_while_paused() {
         ));
         let pool =
             PinnedTxPool::<64, 16, 8, 1>::pin_static(Box::leak(Box::new(PinnedTxPool::new())));
-        let network = network::OwnedDatapathNetwork::new(owned, resources.split(pool));
+        let network = owned::OwnedDatapathNetwork::new(owned, resources.split(pool));
         network.set_link_state(interface, LinkState::Up);
         let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
         let completion = Signal::new();
@@ -291,7 +291,7 @@ fn control_exchange_waits_for_each_terminal_event_without_admitting_prepared_dat
         PinnedTxResources::<NoopRawMutex, 64, 16, 8, 1>::new(),
     ));
     let pool = PinnedTxPool::<64, 16, 8, 1>::pin_static(Box::leak(Box::new(PinnedTxPool::new())));
-    let network = network::OwnedDatapathNetwork::new(owned, resources.split(pool));
+    let network = owned::OwnedDatapathNetwork::new(owned, resources.split(pool));
     network.set_link_state(interface, LinkState::Up);
     let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
     let completion = Signal::new();

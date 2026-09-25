@@ -6,8 +6,9 @@ use core::{
 };
 
 use crate::datapath::{
-    DatapathTxConsumer, PinnedTxFrame, PinnedTxPool, PinnedTxResources,
-    network::{DatapathNetwork, OwnedDatapathNetwork},
+    PinnedTxFrame, PinnedTxPool, PinnedTxResources,
+    network::DatapathNetwork,
+    owned::{DatapathTxConsumer, OwnedDatapathNetwork},
 };
 
 use oer_embassy_net_owned::{

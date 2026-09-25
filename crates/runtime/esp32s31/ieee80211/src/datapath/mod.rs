@@ -27,6 +27,8 @@ use oer_network_interface::{LinkState, NetworkInterfaceId};
 pub mod irq;
 pub mod maintenance;
 pub mod network;
+#[cfg(feature = "owned-network")]
+pub mod owned;
 pub mod rx;
 pub mod services;
 pub(crate) mod software_tx_queue;
@@ -38,8 +40,6 @@ mod tx_performance;
 #[cfg(feature = "tx-phase-telemetry")]
 pub use oer_ieee80211_datapath::MaterializationOwnershipSnapshot;
 pub use oer_ieee80211_datapath::{MaterializedTxFrame, SelectedBurstMaterializer, SoftwareTxFrame};
-#[cfg(feature = "owned-network")]
-pub use sram_tx::DatapathTxConsumer;
 pub use sram_tx::{
     PinnedTxConsumer, PinnedTxFrame, PinnedTxInterfaceConsumer, PinnedTxPool, PinnedTxResources,
 };

@@ -1,6 +1,6 @@
 //! Deficit selection over real producer, retained and power-save owners.
 
-use crate::datapath::{DatapathTxConsumer, PinnedTxPool, PinnedTxResources};
+use crate::datapath::{PinnedTxPool, PinnedTxResources, owned::DatapathTxConsumer};
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 

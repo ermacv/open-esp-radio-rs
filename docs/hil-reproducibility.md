@@ -86,8 +86,11 @@ commit nor a stored ELF changes that rule.
 
 `BuildProvenance` contains the build ID/type, image class, runtime profile,
 target, selected network integration, effective runtime features, source materials, lock/file identities, tool/environment
-information and output subjects. `manifest.json` binds the application/build
-used by a scenario. The build record and lab observations have different
+information and output subjects. The image builder records the tool versions
+when it builds (`image::Artifacts::environment`); archival never re-queries the
+host, so a recorded version names the tool that produced the image. A tool
+without a version leaves the build composition unestablished for reviews.
+`manifest.json` binds the application/build used by a scenario. The build record and lab observations have different
 owners and meanings.
 
 ```text

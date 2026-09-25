@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     Result,
-    image::{ImageClass, Integration},
+    image::{Artifacts, ImageClass},
 };
 use std::path::{Path, PathBuf};
 
@@ -16,27 +16,20 @@ pub(super) struct Context<'a> {
     pub source_materials: &'a [SourceMaterial],
     pub snapshot_materials: &'a [BuildFileMaterial],
 }
-pub(super) struct Inputs<'a> {
-    pub selection: (ImageClass, Integration),
-    pub application: &'a Path,
-    pub runtime_elf: &'a Path,
-    pub runtime_bin: &'a Path,
-    pub bootstrap_elf: &'a Path,
-    pub effective_locks: (&'a Path, &'a Path),
-}
 pub(super) fn archive(
     context: Context<'_>,
-    inputs: Inputs<'_>,
+    image: ImageClass,
+    artifacts: &Artifacts,
 ) -> Result<(FirmwareArtifact, PathBuf)> {
-    let Inputs {
-        selection,
-        application,
-        runtime_elf,
-        runtime_bin,
-        bootstrap_elf,
-        effective_locks,
-    } = inputs;
-    let (image, _) = selection;
+    let selection = (image, artifacts.network);
+    let application = &artifacts.application_image;
+    let runtime_elf = &artifacts.runtime_elf;
+    let runtime_bin = &artifacts.runtime_bin;
+    let bootstrap_elf = &artifacts.bootstrap_elf;
+    let effective_locks = (
+        &artifacts.effective_embedded_lock,
+        &artifacts.effective_bootstrap_lock,
+    );
     let firmware_directory = PathBuf::from("firmware").join(image.id());
     let application_path = firmware_directory.join("application.bin");
     let archived_application = context.directory.join(&application_path);
@@ -128,6 +121,7 @@ pub(super) fn archive(
         context.source_materials.to_vec(),
         subjects,
         locks,
+        artifacts.environment.clone(),
     )?;
     atomic_json(&context.directory.join(&build_provenance_path), &provenance)?;
     let artifact = FirmwareArtifact {

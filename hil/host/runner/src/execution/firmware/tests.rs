@@ -35,6 +35,7 @@ fn build_inputs(root: &Path) -> Artifacts {
         effective_embedded_lock: root.join("hil/targets/esp32s31/Cargo.lock"),
         effective_bootstrap_lock: root.join("platform/esp32s31/Cargo.lock"),
         application_image: root.join("build/application.bin"),
+        environment: hil_core::evidence::build::BuildEnvironment::synthetic(),
     }
 }
 

@@ -97,17 +97,8 @@ pub fn publish(
             source_materials: &sources,
             snapshot_materials: &materials,
         },
-        firmware::Inputs {
-            selection: (class, artifacts.network),
-            application: &artifacts.application_image,
-            runtime_elf: &artifacts.runtime_elf,
-            runtime_bin: &artifacts.runtime_bin,
-            bootstrap_elf: &artifacts.bootstrap_elf,
-            effective_locks: (
-                &artifacts.effective_embedded_lock,
-                &artifacts.effective_bootstrap_lock,
-            ),
-        },
+        class,
+        artifacts,
     )?;
     let source = sources
         .first()

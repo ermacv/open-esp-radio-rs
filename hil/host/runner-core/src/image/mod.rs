@@ -393,6 +393,8 @@ pub struct Artifacts {
     pub effective_embedded_lock: PathBuf,
     pub effective_bootstrap_lock: PathBuf,
     pub application_image: PathBuf,
+    /// Host tools that produced this build, recorded in its provenance.
+    pub environment: crate::evidence::build::BuildEnvironment,
 }
 
 pub fn build(
@@ -600,6 +602,7 @@ fn build_resolved(
         effective_embedded_lock,
         effective_bootstrap_lock,
         application_image,
+        environment: crate::evidence::build::BuildEnvironment::capture(),
     })
 }
 

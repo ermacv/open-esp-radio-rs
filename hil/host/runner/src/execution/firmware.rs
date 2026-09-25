@@ -76,17 +76,7 @@ fn archive_and_flash_built(
     session: &mut RunSession,
     flash: impl FnOnce(&Artifacts) -> Result<()>,
 ) -> Result<Option<Failure>> {
-    artifacts.application_image = session.record_firmware(
-        (class, artifacts.network),
-        &artifacts.application_image,
-        &artifacts.runtime_elf,
-        &artifacts.runtime_bin,
-        &artifacts.bootstrap_elf,
-        (
-            &artifacts.effective_embedded_lock,
-            &artifacts.effective_bootstrap_lock,
-        ),
-    )?;
+    artifacts.application_image = session.record_firmware(class, &artifacts)?;
     session.record_event(
         "image-build-finished",
         None,

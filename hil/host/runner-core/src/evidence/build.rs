@@ -96,20 +96,68 @@ pub(super) struct BuildSubject {
     pub(super) sha256: String,
 }
 
+/// One host tool that took part in a firmware build.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(super) struct BuildTool {
-    pub(super) name: String,
-    pub(super) program: String,
-    pub(super) version: Option<String>,
+pub struct BuildTool {
+    pub name: String,
+    pub program: String,
+    pub version: Option<String>,
 }
 
+/// Host tools and inherited settings under which a firmware image was built.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(super) struct BuildEnvironment {
-    pub(super) tools: Vec<BuildTool>,
-    pub(super) inherited_rustflags: Option<String>,
-    pub(super) inherited_encoded_rustflags: Option<String>,
-    pub(super) cargo_incremental: String,
-    pub(super) source_date_epoch: Option<String>,
+pub struct BuildEnvironment {
+    pub tools: Vec<BuildTool>,
+    pub inherited_rustflags: Option<String>,
+    pub inherited_encoded_rustflags: Option<String>,
+    pub cargo_incremental: String,
+    pub source_date_epoch: Option<String>,
+}
+
+/// Tools recorded for every build: name, program override variable, default program.
+const BUILD_TOOLS: [(&str, &str, &str); 5] = [
+    ("rustc", "RUSTC", "rustc"),
+    ("cargo", "CARGO", "cargo"),
+    ("llvm-objcopy", "LLVM_OBJCOPY", "llvm-objcopy"),
+    ("llvm-nm", "LLVM_NM", "llvm-nm"),
+    ("espflash", "ESPFLASH", "espflash"),
+];
+
+impl BuildEnvironment {
+    /// Query the tools the image builder runs. Call it when the build runs,
+    /// so the record names the tools that produced the image.
+    pub fn capture() -> Self {
+        Self {
+            tools: BUILD_TOOLS
+                .into_iter()
+                .map(|(name, variable, fallback)| build_tool(name, variable, fallback))
+                .collect(),
+            inherited_rustflags: env::var("RUSTFLAGS").ok(),
+            inherited_encoded_rustflags: env::var("CARGO_ENCODED_RUSTFLAGS").ok(),
+            cargo_incremental: String::from("0"),
+            source_date_epoch: env::var("SOURCE_DATE_EPOCH").ok(),
+        }
+    }
+
+    /// A fixed environment in which every recorded tool reports a version,
+    /// independent of the tools installed on the test host.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn synthetic() -> Self {
+        Self {
+            tools: BUILD_TOOLS
+                .into_iter()
+                .map(|(name, _, program)| BuildTool {
+                    name: name.to_owned(),
+                    program: program.to_owned(),
+                    version: Some(format!("{name} synthetic-test-version")),
+                })
+                .collect(),
+            inherited_rustflags: None,
+            inherited_encoded_rustflags: None,
+            cargo_incremental: String::from("0"),
+            source_date_epoch: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -447,6 +495,7 @@ pub(super) fn create_provenance(
     sources: Vec<SourceMaterial>,
     subjects: Vec<BuildSubject>,
     effective_locks: Vec<BuildFileMaterial>,
+    environment: BuildEnvironment,
 ) -> Result<BuildProvenance> {
     let (image, network) = selection;
     let mut files = [
@@ -463,22 +512,6 @@ pub(super) fn create_provenance(
     .collect::<Result<Vec<_>>>()?;
     files.extend(effective_locks);
     files.sort_by(|left, right| left.name.cmp(&right.name));
-    let environment = BuildEnvironment {
-        tools: [
-            ("rustc", "RUSTC", "rustc"),
-            ("cargo", "CARGO", "cargo"),
-            ("llvm-objcopy", "LLVM_OBJCOPY", "llvm-objcopy"),
-            ("llvm-nm", "LLVM_NM", "llvm-nm"),
-            ("espflash", "ESPFLASH", "espflash"),
-        ]
-        .into_iter()
-        .map(|(name, variable, fallback)| build_tool(name, variable, fallback))
-        .collect(),
-        inherited_rustflags: env::var("RUSTFLAGS").ok(),
-        inherited_encoded_rustflags: env::var("CARGO_ENCODED_RUSTFLAGS").ok(),
-        cargo_incremental: String::from("0"),
-        source_date_epoch: env::var("SOURCE_DATE_EPOCH").ok(),
-    };
     Ok(BuildProvenance {
         schema: BUILD_PROVENANCE_SCHEMA,
         build_id,

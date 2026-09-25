@@ -378,15 +378,14 @@ fn firmware_record_archives_the_exact_application() {
         .unwrap();
     first_session
         .record_firmware(
-            (
-                ImageClass::Correctness,
-                crate::image::Integration::UpstreamXarxa,
+            ImageClass::Correctness,
+            &test_artifacts(
+                &application,
+                &runtime_elf,
+                &runtime_bin,
+                &bootstrap_elf,
+                &effective_embedded_lock,
             ),
-            &application,
-            &runtime_elf,
-            &runtime_bin,
-            &bootstrap_elf,
-            (&effective_embedded_lock, &effective_embedded_lock),
         )
         .unwrap();
     let artifact = &first_session.manifest.firmware[0];
@@ -463,15 +462,14 @@ fn firmware_record_archives_the_exact_application() {
     assert!(
         first_session
             .record_firmware(
-                (
-                    ImageClass::Correctness,
-                    crate::image::Integration::UpstreamXarxa
+                ImageClass::Correctness,
+                &test_artifacts(
+                    &application,
+                    &runtime_elf,
+                    &runtime_bin,
+                    &bootstrap_elf,
+                    &effective_embedded_lock,
                 ),
-                &application,
-                &runtime_elf,
-                &runtime_bin,
-                &bootstrap_elf,
-                (&effective_embedded_lock, &effective_embedded_lock),
             )
             .is_err()
     );
@@ -488,15 +486,14 @@ fn firmware_record_archives_the_exact_application() {
     second.bind_source_snapshot(snapshot.directory()).unwrap();
     second
         .record_firmware(
-            (
-                ImageClass::Correctness,
-                crate::image::Integration::UpstreamXarxa,
+            ImageClass::Correctness,
+            &test_artifacts(
+                &application,
+                &runtime_elf,
+                &runtime_bin,
+                &bootstrap_elf,
+                &effective_embedded_lock,
             ),
-            &application,
-            &runtime_elf,
-            &runtime_bin,
-            &bootstrap_elf,
-            (&effective_embedded_lock, &effective_embedded_lock),
         )
         .unwrap();
     assert_eq!(
@@ -537,15 +534,14 @@ fn replayed_firmware_bundle_is_self_contained_after_origin_removal() {
     source.bind_source_snapshot(snapshot.directory()).unwrap();
     source
         .record_firmware(
-            (
-                ImageClass::Correctness,
-                crate::image::Integration::UpstreamXarxa,
+            ImageClass::Correctness,
+            &test_artifacts(
+                &application,
+                &runtime_elf,
+                &runtime_bin,
+                &bootstrap_elf,
+                &effective_embedded_lock,
             ),
-            &application,
-            &runtime_elf,
-            &runtime_bin,
-            &bootstrap_elf,
-            (&effective_embedded_lock, &effective_embedded_lock),
         )
         .unwrap();
     source.finish(Vec::new()).unwrap();
@@ -786,6 +782,7 @@ fn provenance_retains_actual_network_selection_even_when_cargo_features_match() 
             vec![],
             vec![],
             vec![],
+            crate::evidence::build::BuildEnvironment::synthetic(),
         )
         .unwrap();
         assert_eq!(provenance.parameters.network.as_deref(), Some(network.id()));
@@ -861,3 +858,25 @@ fn history_counts_sealed_attempt_once_before_and_after_campaign_completion() {
 }
 
 mod workflow;
+
+/// Upstream-Xarxa correctness artifacts over the given files, with one lock
+/// standing in for both effective locks and a host-independent environment.
+fn test_artifacts(
+    application: &Path,
+    runtime_elf: &Path,
+    runtime_bin: &Path,
+    bootstrap_elf: &Path,
+    lock: &Path,
+) -> crate::image::Artifacts {
+    crate::image::Artifacts {
+        network: crate::image::Integration::UpstreamXarxa,
+        output: application.parent().unwrap().to_path_buf(),
+        runtime_elf: runtime_elf.to_path_buf(),
+        runtime_bin: runtime_bin.to_path_buf(),
+        bootstrap_elf: bootstrap_elf.to_path_buf(),
+        effective_embedded_lock: lock.to_path_buf(),
+        effective_bootstrap_lock: lock.to_path_buf(),
+        application_image: application.to_path_buf(),
+        environment: crate::evidence::build::BuildEnvironment::synthetic(),
+    }
+}

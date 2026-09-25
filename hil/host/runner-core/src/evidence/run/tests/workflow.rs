@@ -216,6 +216,7 @@ source-paths = ["phy.rs"]
         bootstrap_elf: output.join("bootstrap.elf"),
         effective_embedded_lock: root.join("hil/targets/esp32s31/Cargo.lock"),
         effective_bootstrap_lock: root.join("target/bootstrap.lock"),
+        environment: crate::evidence::build::BuildEnvironment::synthetic(),
     };
     let directory = root.join("target/hil/esp32s31/runs/observed-a");
     fs::create_dir_all(&directory).unwrap();
@@ -268,18 +269,7 @@ source-paths = ["phy.rs"]
     run.repository_root = root.into();
     run.target_directory = root.join("target/hil/esp32s31");
     run.bind_source_snapshot(captured.directory()).unwrap();
-    run.record_firmware(
-        (scenario.image, artifacts.network),
-        &artifacts.application_image,
-        &artifacts.runtime_elf,
-        &artifacts.runtime_bin,
-        &artifacts.bootstrap_elf,
-        (
-            &artifacts.effective_embedded_lock,
-            &artifacts.effective_bootstrap_lock,
-        ),
-    )
-    .unwrap();
+    run.record_firmware(scenario.image, &artifacts).unwrap();
     let result = ScenarioResult::from_repetitions(
         scenario.id.clone(),
         scenario.image,

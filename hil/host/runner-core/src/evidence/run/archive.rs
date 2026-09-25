@@ -10,14 +10,9 @@ use crate::{Result, image::ImageClass};
 impl RunSession {
     pub fn record_firmware(
         &mut self,
-        selection: (ImageClass, crate::image::Integration),
-        application: &Path,
-        runtime_elf: &Path,
-        runtime_bin: &Path,
-        bootstrap_elf: &Path,
-        effective_locks: (&Path, &Path),
+        image: ImageClass,
+        artifacts: &crate::image::Artifacts,
     ) -> Result<PathBuf> {
-        let (image, _) = selection;
         if self
             .manifest
             .firmware
@@ -39,14 +34,8 @@ impl RunSession {
                 source_materials: &self.source_materials,
                 snapshot_materials: &self.snapshot_materials,
             },
-            crate::evidence::firmware::Inputs {
-                selection,
-                application,
-                runtime_elf,
-                runtime_bin,
-                bootstrap_elf,
-                effective_locks,
-            },
+            image,
+            artifacts,
         )?;
         self.manifest.firmware.retain(|entry| entry.image != image);
         self.manifest.firmware.push(artifact);

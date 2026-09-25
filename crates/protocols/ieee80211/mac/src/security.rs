@@ -12,3 +12,5 @@ pub enum WifiSecurityMode {
     /// WPA2-Personal using RSN, PSK authentication and CCMP.
     Wpa2Personal,
 }
+
+pub mod rsn;

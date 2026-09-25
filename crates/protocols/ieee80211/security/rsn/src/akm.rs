@@ -6,12 +6,12 @@
 //! is an exhaustive match so adding a suite forces every dependent decision.
 
 use hmac::{Hmac, Mac};
+use oer_ieee80211_mac::security::rsn::ieee_suite;
 use sha1::Sha1;
 use zeroize::Zeroize;
 
 use crate::{RSN_KCK_LEN, RSN_PTK_LEN};
 
-const RSN_OUI: [u8; 3] = [0x00, 0x0f, 0xac];
 const PTK_EXPANSION_LABEL: &[u8] = b"Pairwise key expansion";
 
 /// Length of every EAPOL-Key MIC produced by a supported suite.
@@ -38,7 +38,7 @@ impl Akm {
         let type_ = match self {
             Self::Psk => 2,
         };
-        [RSN_OUI[0], RSN_OUI[1], RSN_OUI[2], type_]
+        ieee_suite(type_)
     }
 
     /// Key Information descriptor version carried by every EAPOL-Key frame.

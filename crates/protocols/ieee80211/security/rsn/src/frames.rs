@@ -1,5 +1,6 @@
 //! Fixed WPA2-CCMP EAPOL frame construction and GTK key-data parsing.
 
+use oer_ieee80211_mac::security::rsn::{RSN_ELEMENT_ID, RSN_OUI};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::state::{RsnApState, RsnStaState, RsnTransmit, RsnTxMessage};
@@ -15,10 +16,8 @@ pub const RSN_PLAIN_KEY_DATA_CAPACITY: usize = 128;
 pub const RSN_TX_EAPOL_CAPACITY: usize = 512;
 pub const RSN_TX_ETHERNET_CAPACITY: usize = RSN_TX_EAPOL_CAPACITY + 14;
 
-const RSN_ELEMENT_ID: u8 = 0x30;
 const RSNXE_ELEMENT_ID: u8 = 0xf4;
 const VENDOR_ELEMENT_ID: u8 = 0xdd;
-const RSN_OUI: [u8; 3] = [0x00, 0x0f, 0xac];
 const GTK_KDE_TYPE: u8 = 1;
 const EAPOL_ETHERTYPE: [u8; 2] = [0x88, 0x8e];
 

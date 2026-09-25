@@ -2,6 +2,11 @@
 
 use super::*;
 
+use crate::security::rsn::{
+    RSN_AKM_PSK, RSN_CAPABILITY_MFPC, RSN_CAPABILITY_MFPR, RSN_CAPABILITY_SPP_AMSDU_CAPABLE,
+    RSN_CIPHER_CCMP, RsnElement, RsnSyntaxError, ieee_suite,
+};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaSecurityError {
     SecurityModeMismatch,
@@ -36,62 +41,28 @@ pub fn select_wpa2_psk_rsn(access_point: &ScanRecord) -> Result<SelectedRsn, Sta
         return Err(StaSecurityError::SecurityModeMismatch);
     }
     let rsn = access_point.rsn_ie_bytes();
-    if rsn.len() < 2 || rsn[0] != 48 || usize::from(rsn[1]) + 2 != rsn.len() {
-        return Err(if rsn.is_empty() {
-            StaSecurityError::MissingRsn
-        } else {
-            StaSecurityError::MalformedRsn
-        });
+    if rsn.is_empty() {
+        return Err(StaSecurityError::MissingRsn);
     }
+    let rsn = RsnElement::parse(rsn).map_err(|error| match error {
+        RsnSyntaxError::Malformed => StaSecurityError::MalformedRsn,
+        RsnSyntaxError::UnsupportedVersion => StaSecurityError::UnsupportedVersion,
+    })?;
 
-    let body = &rsn[2..];
-    let mut offset = 0;
-    if read_rsn_u16(body, &mut offset)? != 1 {
-        return Err(StaSecurityError::UnsupportedVersion);
-    }
-    if !is_rsn_suite(read_rsn_suite(body, &mut offset)?, RSN_CIPHER_CCMP) {
+    if rsn.group_data_cipher() != ieee_suite(RSN_CIPHER_CCMP) {
         return Err(StaSecurityError::UnsupportedGroupCipher);
     }
-
-    let pairwise_count = usize::from(read_rsn_u16(body, &mut offset)?);
-    let mut has_ccmp = false;
-    for _ in 0..pairwise_count {
-        has_ccmp |= is_rsn_suite(read_rsn_suite(body, &mut offset)?, RSN_CIPHER_CCMP);
-    }
-    if !has_ccmp {
+    if !rsn.pairwise_ciphers().contains(ieee_suite(RSN_CIPHER_CCMP)) {
         return Err(StaSecurityError::UnsupportedPairwiseCipher);
     }
-
-    let akm_count = usize::from(read_rsn_u16(body, &mut offset)?);
-    let mut has_psk = false;
-    for _ in 0..akm_count {
-        has_psk |= is_rsn_suite(read_rsn_suite(body, &mut offset)?, RSN_AKM_PSK);
-    }
-    if !has_psk {
+    if !rsn.akm_suites().contains(ieee_suite(RSN_AKM_PSK)) {
         return Err(StaSecurityError::UnsupportedAkm);
     }
-    let capabilities = if offset < body.len() {
-        read_rsn_u16(body, &mut offset)?
-    } else {
-        0
-    };
-    if offset < body.len() {
-        let pmkid_count = usize::from(read_rsn_u16(body, &mut offset)?);
-        let pmkid_bytes = pmkid_count
-            .checked_mul(16)
-            .ok_or(StaSecurityError::MalformedRsn)?;
-        skip_rsn_bytes(body, &mut offset, pmkid_bytes)?;
-    }
-    if offset < body.len() {
-        // The optional Group Management Cipher Suite is retained only as a
-        // syntactic boundary. This WPA2 profile does not negotiate PMF, and
-        // MFPR is rejected below.
-        if capabilities & RSN_CAPABILITY_MFPC == 0 {
-            return Err(StaSecurityError::MalformedRsn);
-        }
-        let _group_management_cipher = read_rsn_suite(body, &mut offset)?;
-    }
-    if offset != body.len() {
+    // An advertised PMKID list is ignored. The optional Group Management
+    // Cipher Suite is retained only as a boundary accepted with MFPC. This
+    // WPA2 profile does not negotiate PMF, and MFPR is rejected.
+    let capabilities = rsn.capabilities().unwrap_or(0);
+    if rsn.group_management_cipher().is_some() && capabilities & RSN_CAPABILITY_MFPC == 0 {
         return Err(StaSecurityError::MalformedRsn);
     }
     if capabilities & RSN_CAPABILITY_MFPR != 0 {
@@ -145,35 +116,4 @@ pub fn select_association_rsn(
         WifiSecurityMode::Open => Err(StaSecurityError::SecurityModeMismatch),
         WifiSecurityMode::Wpa2Personal => select_wpa2_psk_rsn(access_point),
     }
-}
-
-fn read_rsn_u16(bytes: &[u8], offset: &mut usize) -> Result<u16, StaSecurityError> {
-    let value = bytes
-        .get(*offset..*offset + 2)
-        .ok_or(StaSecurityError::MalformedRsn)?;
-    *offset += 2;
-    Ok(u16::from_le_bytes([value[0], value[1]]))
-}
-
-fn read_rsn_suite(bytes: &[u8], offset: &mut usize) -> Result<[u8; 4], StaSecurityError> {
-    let value = bytes
-        .get(*offset..*offset + 4)
-        .ok_or(StaSecurityError::MalformedRsn)?;
-    *offset += 4;
-    Ok([value[0], value[1], value[2], value[3]])
-}
-
-fn skip_rsn_bytes(bytes: &[u8], offset: &mut usize, length: usize) -> Result<(), StaSecurityError> {
-    let end = offset
-        .checked_add(length)
-        .ok_or(StaSecurityError::MalformedRsn)?;
-    bytes
-        .get(*offset..end)
-        .ok_or(StaSecurityError::MalformedRsn)?;
-    *offset = end;
-    Ok(())
-}
-
-fn is_rsn_suite(suite: [u8; 4], selector: u8) -> bool {
-    suite[..3] == RSN_OUI && suite[3] == selector
 }

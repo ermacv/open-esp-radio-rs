@@ -17,7 +17,8 @@ protocol that owns them:
 | `ap/profile` | Explicit advertisement values; the chip AP profile selects rates, capabilities and WMM parameters |
 | `station/association` | Association capability types, validation and encoding |
 | `station/management` | Probe/authentication management codecs |
-| `station/security` | Security IE parsing and validation |
+| `security/rsn` | RSN element wire syntax shared by station selection and the RSN crate; no suite policy |
+| `station/security` | Station RSN candidate policy and the selected association element |
 | `station/data` | Data codecs, with A-MSDU framing in `data/amsdu` |
 | `station/sequence` | Separate management/non-QoS and per-TID TX sequence owners |
 | `data/duplicate` | Association/peer-scoped receive retry history |
@@ -34,7 +35,7 @@ QoS classification includes the existing DSCP mapping and downgrade helpers.
 The actual admission/downgrade loop still belongs to chip MAC TX runtime;
 parsing an advertised WMM Parameter Set neither acquires admission nor selects
 a hardware queue. AP encoders take an explicit `Advertisement`;
-`chips/esp32s31/ieee80211/ap/src/profile.rs` selects the existing hardware
+`roles/esp32s31/ieee80211/ap/src/profile.rs` selects the existing hardware
 advertisement. The portable codec carries no implicit ESP32-S31 profile.
 
 `softmac/src/contract` describes operation ownership, service capabilities,

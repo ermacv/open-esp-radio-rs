@@ -9,6 +9,7 @@ description = "Allocation-free RSN (WPA2/WPA3) protocol types and four-way-hands
 readme = "README.md"
 
 [dependencies]
+oer-ieee80211-mac = { path = "../../mac" }
 aes = { version = "0.8.4", default-features = false }
 hmac = { version = "0.12.1", default-features = false }
 pbkdf2 = { version = "0.12.2", default-features = false, features = ["hmac"] }

@@ -57,13 +57,44 @@ fn rejects_non_ccmp_non_psk_and_required_pmf() {
 
 #[test]
 fn accepts_zero_pmkid_count_and_rejects_nonzero_lists() {
-    let mut ie = [0_u8; 24];
+    let mut ie = [0_u8; 40];
     ie[..22].copy_from_slice(&rsn(4, 2, 0));
     ie[1] = 22;
-    assert!(validate_rsn_element(&ie).is_ok());
+    assert!(validate_rsn_element(&ie[..24]).is_ok());
+    ie[1] = 38;
     ie[22..24].copy_from_slice(&1_u16.to_le_bytes());
     assert_eq!(
-        validate_rsn_element(&ie),
+        validate_rsn_element(&ie[..40]),
         Err(RsnElementError::PmkidCachingUnsupported)
     );
+}
+
+#[test]
+fn malformed_elements_are_rejected_before_policy() {
+    // One PMKID announced without its 16 bytes.
+    let mut truncated_pmkid = [0_u8; 24];
+    truncated_pmkid[..22].copy_from_slice(&rsn(4, 2, 0));
+    truncated_pmkid[1] = 22;
+    truncated_pmkid[22..24].copy_from_slice(&1_u16.to_le_bytes());
+    assert_eq!(
+        validate_rsn_element(&truncated_pmkid),
+        Err(RsnElementError::Malformed)
+    );
+
+    // Unsupported pairwise cipher inside a truncated element.
+    let mut truncated = rsn(2, 2, 0);
+    truncated[1] = 19;
+    assert_eq!(
+        validate_rsn_element(&truncated[..21]),
+        Err(RsnElementError::Malformed)
+    );
+}
+
+#[test]
+fn group_management_cipher_is_rejected_without_pmf() {
+    let mut ie = [0_u8; 28];
+    ie[..22].copy_from_slice(&rsn(4, 2, 1 << 7));
+    ie[1] = 26;
+    ie[24..28].copy_from_slice(&[0x00, 0x0f, 0xac, 6]);
+    assert_eq!(validate_rsn_element(&ie), Err(RsnElementError::Malformed));
 }

@@ -2870,6 +2870,7 @@ dependencies = [
  "aes",
  "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "hmac",
+ "oer-ieee80211-mac",
  "pbkdf2",
  "sha1",
  "zeroize",

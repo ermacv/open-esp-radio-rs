@@ -8,7 +8,7 @@ transmit and key-install requests.
 | Module | Responsibility |
 | --- | --- |
 | `akm` | `Akm`, the negotiated suite: selector, key descriptor version, PTK expansion and EAPOL-Key MIC |
-| `element` | Association RSN element validation and selection of its first supported suite |
+| `element` | Association RSN element policy and selection of its first supported suite; wire syntax is `oer_ieee80211_mac::security::rsn` |
 | `crypto` | Zeroizing PMK/PTK owners, PSK passphrase derivation and the association security binding |
 | `eapol` | Validated borrowed/owned EAPOL-Key packets and MIC verification |
 | `frames` | EAPOL-Key/Ethernet construction, GTK key data and owned security elements |

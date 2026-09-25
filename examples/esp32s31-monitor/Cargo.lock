@@ -1441,6 +1441,7 @@ version = "0.1.0"
 dependencies = [
  "aes",
  "hmac",
+ "oer-ieee80211-mac",
  "pbkdf2",
  "sha1",
  "zeroize",

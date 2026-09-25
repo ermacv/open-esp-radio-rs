@@ -1,5 +1,6 @@
 use super::association::PhyMode;
 use super::*;
+use crate::security::rsn::RSN_CAPABILITY_MFPR;
 
 // A synthetic profile keeps framing/admission tests independent of any chip.
 // Neither test below emits a local HT/HE element.

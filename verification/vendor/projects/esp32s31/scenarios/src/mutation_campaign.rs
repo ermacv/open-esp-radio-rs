@@ -24,6 +24,8 @@ pub struct Campaign {
     pub root: PathBuf,
     /// Production source directory to mutate, relative to `root`.
     pub scope: PathBuf,
+    /// Source regions to mutate; a run always names them explicitly.
+    pub targets: Vec<Target>,
     /// Ignored output root for worktrees, logs and the report.
     pub output: PathBuf,
     pub workers: usize,
@@ -33,6 +35,47 @@ pub struct Campaign {
     pub common: Vec<OsString>,
     /// Each scenario's own arguments.
     pub suites: BTreeMap<String, Vec<OsString>>,
+}
+
+/// A file relative to the repository root, optionally limited to an
+/// inclusive line range: `FILE` or `FILE:START-END`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Target {
+    pub file: PathBuf,
+    pub lines: Option<(u32, u32)>,
+}
+
+impl std::str::FromStr for Target {
+    type Err = String;
+    fn from_str(text: &str) -> std::result::Result<Self, String> {
+        let (file, lines) = match text.rsplit_once(':') {
+            Some((file, range)) => {
+                let (start, end) = range
+                    .split_once('-')
+                    .ok_or_else(|| format!("{text}: expected FILE:START-END"))?;
+                let parse = |n: &str| n.parse::<u32>().map_err(|e| format!("{text}: {e}"));
+                let (start, end) = (parse(start)?, parse(end)?);
+                if start == 0 || start > end {
+                    return Err(format!("{text}: empty line range"));
+                }
+                (file, Some((start, end)))
+            }
+            None => (text, None),
+        };
+        Ok(Self {
+            file: file.into(),
+            lines,
+        })
+    }
+}
+
+impl Target {
+    pub fn selects(&self, mutant: &Mutant) -> bool {
+        mutant.file == self.file
+            && self
+                .lines
+                .is_none_or(|(start, end)| (start..=end).contains(&mutant.line))
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -175,6 +218,9 @@ impl Campaign {
     }
 
     pub fn run(&self) -> Result<Report> {
+        if self.targets.is_empty() {
+            return Err(invalid("name at least one --target FILE[:START-END]"));
+        }
         if !git(
             &self.root,
             &["status", "--porcelain", "--untracked-files=no"],
@@ -253,7 +299,10 @@ impl Campaign {
             let source = std::fs::read_to_string(workers[0].tree.join(file))?;
             let numbers: BTreeSet<u32> = executed.keys().copied().collect();
             let file_suites: BTreeSet<String> = executed.values().flatten().cloned().collect();
-            for mutant in generate(file, &source, &numbers)? {
+            for mutant in generate(file, &source, &numbers)?
+                .into_iter()
+                .filter(|m| self.targets.iter().any(|t| t.selects(m)))
+            {
                 let last = source[..mutant.end].matches('\n').count() as u32 + 1;
                 let mut suites: BTreeSet<String> = executed
                     .range(mutant.line..=last)
@@ -392,5 +441,26 @@ mod tests {
             .find(|m| m.operator == crate::mutation::Operator::Order)
             .unwrap();
         assert_eq!(touched(&order, source), (2, 3));
+    }
+
+    #[test]
+    fn targets_select_a_file_or_a_line_range_of_it() {
+        let mutant = |line| Mutant {
+            file: "phy/a.rs".into(),
+            line,
+            column: 1,
+            operator: crate::mutation::Operator::Constant,
+            start: 0,
+            end: 1,
+            original: "1".into(),
+            replacement: "2".into(),
+        };
+        let file: Target = "phy/a.rs".parse().unwrap();
+        let range: Target = "phy/a.rs:10-12".parse().unwrap();
+        assert!(file.selects(&mutant(3)));
+        assert!(range.selects(&mutant(10)) && range.selects(&mutant(12)));
+        assert!(!range.selects(&mutant(13)));
+        assert!(!"phy/b.rs".parse::<Target>().unwrap().selects(&mutant(3)));
+        assert!("phy/a.rs:12-10".parse::<Target>().is_err());
     }
 }

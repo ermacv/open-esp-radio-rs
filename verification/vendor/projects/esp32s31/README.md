@@ -433,14 +433,19 @@ follow-up case or a reviewed decision.
 ## Mutation run
 
 `vendor-scenario mutants` asks whether the scenarios notice a single-point
-defect in the production PHY they compare:
+defect in a named region of the production PHY they compare. A run is always
+targeted: each `--target FILE[:START-END]` selects a source file, optionally a
+line range, and only mutants there run. A mutant costs an incremental LTO probe
+rebuild and a full rerun of every scenario reaching it, including the unchanged
+vendor side, so a whole-crate run takes hours and is not a routine check.
 
 ```console
 cargo xtask vendor-scenario mutants --library /private/libphy.a \
   --rom /private/esp32s31_rev0_rom.elf --linker /usr/bin/ld.lld \
   --sdk /private/bootloader.elf --phy-sdk /private/phy_tracking_reference.elf \
   --rftest /private/librftest.a --output target/verification/mutants \
-  --limit-mode watchdog --workers 4
+  --limit-mode watchdog --workers 4 \
+  --target crates/hardware/esp32s31/phy/src/analog/temperature.rs:130-160
 ```
 
 Tracked files must equal `HEAD`: each worker checks out a detached worktree of
@@ -449,7 +454,7 @@ runs. A baseline run of every scenario records, through `--reach`, the
 production probe instructions its retained executions reached; the probe's
 debug line information maps them to source lines of `--scope` (default the
 production PHY crate), including inlined frames. Mutants apply only to those
-lines: an integer literal or scalar integer constant plus one, a comparison
+lines of the targets: an integer literal or scalar integer constant plus one, a comparison
 replaced by its boundary neighbor or negation, a negated branch condition,
 `min`/`max` exchanged and two adjacent register writes exchanged. Each mutant is
 rebuilt and runs the scenarios whose baseline reached its lines; the first

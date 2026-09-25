@@ -102,6 +102,10 @@ enum Scenario {
         /// Ignored output root for worktrees, logs and the report.
         #[arg(long)]
         output: PathBuf,
+        /// Source region to mutate, `FILE` or `FILE:START-END` relative to the
+        /// repository root; repeat for several. A run is always targeted.
+        #[arg(long = "target", required = true)]
+        targets: Vec<mutation_campaign::Target>,
         /// Production source directory to mutate, relative to the repository root.
         #[arg(long, default_value = MUTATION_SCOPE)]
         scope: PathBuf,
@@ -725,6 +729,7 @@ fn mutants(scenario: Scenario) -> Result<ExitCode> {
         rftest,
         output,
         scope,
+        targets,
         workers,
         budget,
     } = scenario
@@ -759,6 +764,7 @@ fn mutants(scenario: Scenario) -> Result<ExitCode> {
     let campaign = mutation_campaign::Campaign {
         root: evidence::root()?,
         scope,
+        targets,
         output: std::path::absolute(&output)?,
         workers,
         scenarios: std::env::current_exe()?,

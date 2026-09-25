@@ -111,7 +111,6 @@ link recipe supplies input order, layout and tool identity. Image manifests
 The selected linker checks ABI compatibility across selected inputs. Floating-point instruction
 semantics remain unsupported in static research; concrete execution uses the separate
 [execution contract](../execution/README.md#concrete-execution-and-comparison). Unsupported instructions stay gaps.
-No legacy configuration reader participates.
 
 For an existing static linked ELF, import it and run `analyze-project --project
 research` without `--image`. With no `--plan`, the command creates a frozen plan
@@ -191,8 +190,7 @@ Records are streamed to quota-admitted staging files. Publication of manifest,
 record closure and completed run uses one transaction and does not change current
 revision. Recovery never promotes loose function output to success.
 
-The standalone workspace and crate-boundary tests include these components and
-prohibit dependencies on the legacy backend. Format support is defined once in
+The standalone workspace and crate-boundary tests include these components. Format support is defined once in
 [JSON and checks](../interfaces-formats/README.md#json-and-checks).
 
 ### Values and memory effects
@@ -528,7 +526,7 @@ rejects conflicting/out-of-section mappings and non-RV32 code markers,
 and separates embedded data from instructions. Ordinary labels never authorize
 skipping bytes. Every section must match its executable file-backed load range.
 The common RV32 decoder/lifter and integer
-constant evaluator provide the analysis; no legacy backend participates.
+constant evaluator provide the analysis.
 
 The linear scan records direct branch/jump targets and locally resolved JALR
 targets, resetting values at data intervals, control transfers and unknown instructions. Unresolved

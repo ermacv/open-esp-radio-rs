@@ -18,7 +18,7 @@ The pure [knowledge crate](../../../crates/knowledge/README.md) owns claim and t
 rules. Application owns occurrence/evidence validation and review orchestration.
 Store owns content identities, event history and transactional publication. CLI
 only supplies the same typed requests used by API clients. Accepted hypotheses
-remain hypotheses; review does not authenticate a legacy proof.
+remain hypotheses; review does not authenticate a proof.
 
 ```console
 blobray knowledge --project PROJECT --limit-mode watchdog validate --change change.json
@@ -28,8 +28,6 @@ blobray knowledge --project PROJECT --limit-mode watchdog history --revision KNO
 blobray knowledge --project PROJECT --limit-mode watchdog export --output knowledge.json
 blobray backup --project PROJECT --output project.blobray --limit-mode watchdog
 blobray restore --backup project.blobray --project NEW_PROJECT --limit-mode watchdog
-blobray import-legacy --request legacy.json --project NEW_PROJECT --limit-mode watchdog
-blobray legacy --project NEW_PROJECT --format json --limit-mode watchdog
 blobray export-payload --project NEW_PROJECT --id PAYLOAD_SHA --output retained.bin --limit-mode watchdog
 ```
 
@@ -86,46 +84,6 @@ exist. Cancellation or a copy failure cannot replace an existing project. A
 crash at exposure can leave an empty destination or a complete state directory;
 there is no partial project publication. A post-publication directory-sync error
 is reported and may leave a complete destination requiring verification.
-
-`LegacyRequest` has `manifest` (the original project TOML), optional `run_spec`,
-`roots`, `inputs` and `target` (`riscv32-ilp32`). Paths use the lossless
-`OriginPath` encoding. Additional `inputs` use `ImportBinding`: role, origin and
-optional expected digest. The schema-1 run spec contributes its ordered exact
-role/path bindings. No binary paths are inferred from symbol names. All inputs
-must be stable while capturing; the importer never modifies its source project.
-
-The adapter captures the entire manifest directory, including hidden caches,
-revision snapshots, reviewed packs, comparison outputs and compiled binding
-files present there. It follows the supported TOML file-reference fields and
-captures additional caller-selected private roots. Symlink records preserve the
-link target and separately capture the target; cycles are deduplicated. Every
-file and top-level TOML table/value or array-table item has a catalog outcome:
-`converted`, `preserved-unresolved`, `unsupported` or `missing-payload`. The
-original file remains available by content digest, including all nested fields,
-provenance, schema inputs and recovered hardware/calibration data.
-
-The active conversion is schema-1 code boundaries with exact source digest,
-source role, member, section and one matching function entry. It validates the
-extent and records the old decision with actor `legacy-import`. Legacy names
-remain in the proposal note; they are not automatically accepted as new name
-claims. Ambiguous occurrences and conflicting decisions remain unresolved.
-Unsupported ABI/interface/register representations and opaque files (including
-compressed snapshots) remain verbatim and are not activated. References embedded
-inside opaque formats are not interpreted: supply their external payload roots
-explicitly. Catalog status reports this limitation; a completed capture does not
-mean full semantic conversion or legacy feature parity.
-
-Discovery is iterative and bounded: 16,384 paths, 4 MiB aggregate path bytes,
-4,096 bytes per path, TOML nesting 64 and an 8 MiB per-document parser ceiling.
-Private project builds admit at most 4 MiB of metadata before another bounded
-event, with 16 MiB of reserved SQLite growth/journal headroom.
-Exceeding a bound fails the operation without exposing the new project. Working
-capacity also admits the path catalog and each parsed document. Temporary
-capacity covers retained bytes and destination copying; insufficient capacity
-fails rather than discarding evidence. Runtime result inspection permits six
-directory levels and up to one million entries. Kernel/watchdog process limits
-remain necessary for allocation in third-party libraries; these APIs do not
-claim a single mmap arena or a process-wide no-allocation guarantee.
 
 ## Reviewed interface declarations
 

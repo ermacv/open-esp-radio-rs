@@ -144,8 +144,7 @@ See the [library contract](../../next/reference/analysis/README.md#library-inves
 `KnowledgeRevisionId` is separate from source revisions. Expected-base checks,
 the inserted decision and the completed durable run share an immediate SQLite
 transaction. Retention verifies evidence roots before publication.
-`legacy_imports` roots the immutable capture/conversion catalog and original
-payloads. Doctor verifies both closures; no cache deletion or GC is implemented.
+Doctor verifies the retained closure; no cache deletion or GC is implemented.
 
 Backup pins a database read snapshot and streams CAS bytes. Restore builds a
 private project and verifies its complete retained closure before application

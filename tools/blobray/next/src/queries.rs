@@ -99,7 +99,6 @@ fn render_unbuffered(
             | app::QuerySummary::TargetAudit { .. }
             | app::QuerySummary::KnowledgeValidation { .. }
             | app::QuerySummary::RetainedPayload { .. }
-            | app::QuerySummary::Legacy { .. }
             | app::QuerySummary::Preservation { .. }
             | app::QuerySummary::Knowledge { .. }
             | app::QuerySummary::InvestigationPlan { .. }
@@ -569,9 +568,6 @@ impl app::QuerySink for Records<'_> {
             });
         }
         self.record("data", r, c)
-    }
-    fn legacy(&mut self, r: &LegacyRecord, c: &mut dyn RunControl) -> Result<()> {
-        self.record("legacy-record", r, c)
     }
     fn knowledge_entry(&mut self, r: &KnowledgeEntry, c: &mut dyn RunControl) -> Result<()> {
         self.record("assertion", r, c)

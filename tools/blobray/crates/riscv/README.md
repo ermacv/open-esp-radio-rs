@@ -3,7 +3,7 @@
 Owns the `FunctionDecoder` and `FunctionSemantics` implementations over pinned rv-asm 0.2.1 and RISC-V
 relocation interpretation. It receives bytes and structural facts, never a
 project, archive path or publication capability. Unsupported encodings remain
-explicit gaps. Legacy backend state and orchestration are not dependencies.
+explicit gaps.
 
 Lifting returns bounded typed operations over RV32 registers. Loads, stores and
 atomics describe effects without reading memory. Compressed instructions use the

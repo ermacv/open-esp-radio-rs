@@ -35,8 +35,8 @@ verification never depends on Wi-Fi/PHY probe wrappers.
 Use the [shared probe compiler](../../../harness/README.md) to declare each
 entry once with `oer_probe_macros::probe!`. It generates the C export, linker root
 and embedded ABI catalog. Simple adapters use `=> expression;`; complex and naked
-adapters retain explicit bodies. Existing symbol names and C projections remain
-the compatibility boundary for legacy consumers.
+adapters retain explicit bodies. Symbol names and C projections are the
+boundary the scenarios select.
 
 The primary build command validates the resulting executable entries as well as
 compiling the three images:

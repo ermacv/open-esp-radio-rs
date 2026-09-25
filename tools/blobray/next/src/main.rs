@@ -339,7 +339,7 @@ enum Command {
         #[command(flatten)]
         limits: ResourceOptions,
     },
-    /// Export exact preserved bytes using a digest from the legacy/evidence catalog.
+    /// Export exact preserved bytes using a digest from the evidence catalog.
     ExportPayload {
         #[arg(long)]
         project: PathBuf,
@@ -347,22 +347,6 @@ enum Command {
         id: ArtifactId,
         #[arg(long)]
         output: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Preserve a legacy project and explicitly selected private roots into a new Next project.
-    ImportLegacy {
-        #[arg(long)]
-        request: PathBuf,
-        #[arg(long)]
-        project: PathBuf,
-        #[command(flatten)]
-        limits: ResourceOptions,
-    },
-    /// Read the lossless legacy capture catalog and conversion outcomes.
-    Legacy {
-        #[arg(long)]
-        project: PathBuf,
         #[command(flatten)]
         limits: ResourceOptions,
     },
@@ -917,36 +901,6 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             handle
                 .take_output()?
                 .export_payload(&output, &|| signals.cancelled())?;
-        }
-        Command::Legacy { project, limits } => {
-            return read_query(project, ReadQuery::Legacy, limits, format);
-        }
-        Command::ImportLegacy {
-            request,
-            project,
-            limits,
-        } => {
-            let request = read_json_file(&request)?;
-            let application = limits.application()?;
-            let _diagnostics = TemporaryDiagnostics(&application, format);
-            let signals = Signals::new()?;
-            let handle = application.start_query(
-                &project,
-                ReadQuery::ImportLegacy { request },
-                limits.budget()?,
-            )?;
-            if !wait_handle(&handle, &signals, format) {
-                return Ok(ExitCode::FAILURE);
-            }
-            let mut output = handle.take_output()?;
-            output.publish_restore(&project, &|| signals.cancelled())?;
-            match format {
-                Format::Json => println!(
-                    "{}",
-                    serde_json::to_string(output.summary()).map_err(|e| invalid(&e.to_string()))?
-                ),
-                Format::Human => println!("Project preserved at {}", project.display()),
-            }
         }
         Command::Backup {
             project,

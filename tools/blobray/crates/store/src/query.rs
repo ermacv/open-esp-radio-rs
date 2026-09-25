@@ -819,9 +819,8 @@ impl Project {
         }
         if schema >= 6 {
             let head = self.current_knowledge()?;
-            if head.is_some() || self.legacy_manifest(control)?.is_some() {
+            if head.is_some() {
                 let _metadata = memory.reserve(2 * 1024 * 1024, control.position())?;
-                self.visit_legacy(control, &mut |_, _| Ok(()))?;
                 let mut parent = None;
                 self.knowledge_history(head.as_ref(), control, &mut |id, event, _| {
                     if event.change.expected_base != parent {

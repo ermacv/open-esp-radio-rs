@@ -5,7 +5,7 @@ Its internal dependencies are [domain](../domain/README.md),
 [artifacts](../artifacts/README.md), [analysis](../analysis/README.md) and
 [store](../store/README.md), [knowledge](../knowledge/README.md) and
 [verification](../verification/README.md).
-It does not depend on the legacy engine or a concrete Linux process adapter.
+It does not depend on a concrete Linux process adapter.
 
 Saved register research uses the existing scoped navigation fact owner and one
 operation-local declaration interval/name index. It retains exact evidence,
@@ -151,12 +151,9 @@ and uses `blobray-knowledge` for conflicts/transitions. Store atomically publish
 the event and run outcome. `ReadQuery::Knowledge` freezes its head at admission;
 `ValidateKnowledge` checks a change without publication.
 
-Backup, restore and legacy import use the same supervised query lifecycle. The
-legacy adapter can create a writer only for its new private staging project;
-it cannot mutate the original legacy project or an existing destination. The
-caller publishes a verified new project with `QueryOutput::publish_restore`.
-Original bytes, unresolved references and unsupported representations remain
-explicit catalog records. [Commands and contracts](../../next/reference/knowledge-review/README.md#knowledge-and-preservation)
+Backup and restore use the same supervised query lifecycle. Restore cannot
+mutate an existing destination; the caller publishes a verified new project with
+`QueryOutput::publish_restore`. [Commands and contracts](../../next/reference/knowledge-review/README.md#knowledge-and-preservation)
 define the formats, bounds, publication boundary and supported conversions.
 
 `ReadQuery::NamedLinkPlan` resolves one defined entry in an explicit input and

@@ -3,8 +3,7 @@
 This directory is the architecture authority for Blobray Next. Implemented
 profiles and remaining target interfaces are distinguished in
 [workflows](workflows.md); the [operator reference](../../next/README.md)
-owns CLI syntax and current format versions. Legacy architecture documents govern
-only the retained legacy engine and do not define Next behavior.
+owns CLI syntax and current format versions.
 
 This document owns purpose, component boundaries and dependency direction.
 [Contracts](contracts.md) owns identities, interfaces, persistence and resource
@@ -232,48 +231,13 @@ receive a validated snapshot and produce an export bundle with provenance; they
 cannot modify research observations or comparison verdicts. HAL, driver and
 qualification behavior remains with those external owners.
 
-## Disposition of existing responsibilities
-
-This mapping defines destination responsibilities, not a code-movement recipe.
-Existing algorithms require validation against the target contracts before reuse.
-
-| Existing responsibility | Target disposition |
-| --- | --- |
-| Contracts, analysis-model, semantics and execution-model shared values | Consolidate shared identity/effect vocabulary in domain; keep comparison algorithms in verification and executable behavior in selected backends/models |
-| Container parsing embedded in backend-riscv | Separate format inspection into artifacts; retain ISA-specific decode, relocation semantics and execution in the backend |
-| CapturedSourceSet, CapturedArtifact and verification ExecutionInputs | One imported-source ownership contract; provide borrowed views and job-owned file materialization as adapters |
-| Linkage inventory and archive execution linking | Preserve inventory, candidate association and selected image as distinct results; unify image-preparation ownership |
-| Direct analysis, project passes and low-level commands | One application operation path and one pass declaration used by planning and execution |
-| Query store, stage cache and function memoization | Store owns durability and retention; computational memoization remains disposable and dependency-qualified |
-| Published outputs, revision snapshots and verification evidence history | One durable publication/reference mechanism; retain their different semantic records |
-| Code, function, interface and register workspaces | Distinct knowledge modules sharing review transactions, applicability and evidence references |
-| Symbol correspondence and lineage | Distinct analysis modules; knowledge owns acceptance of their suggested transfers |
-| Navigation, research prioritization and status | Query projections over a selected snapshot; no independent publication authority |
-| Flow/function investigation and semantic IR exports | Analysis/query operations; rendering and file export consume their results |
-| CLI-owned verification and policy orchestration | Move use-case ownership into application; verifier remains the verdict authority |
-| TUI worker, linker children and limiter | One application job lifecycle with platform-specific process supervision |
-| Register publication and reference generation | Separate downstream consumers; retain required tables, coefficients and provenance |
-| Chip/project hosts and providers | Explicit composition outside generic code; preserve facts/model applicability boundaries |
-
-After consumers use the target owner, redundant coordinators, live-path reload
-paths, global provider installation and cache-as-durable-state interfaces have no
-place in the new architecture. Removing them requires preservation of their
-necessary behavior, inputs and evidence. Similar names alone do not establish
-duplication.
-
-The disposition applies to Next as well as legacy. Materializing helpers are
+Materializing helpers are
 adapters over the same validated stream and require explicit caller limits and
 supervision obligations; they cannot become an alternative operation engine.
 The target application API exposes retained read capabilities, not concrete store
 handles or filesystem staging protocols. Host wire/render types stay outside
 the shared research vocabulary. The currently callable, narrower interfaces and
 their limitations remain documented in [Next](../../next/README.md).
-
-Retirement requires every consumer to use the target owner, required records to
-have preservation outcomes, and the corresponding workflow contracts to be
-exercised. A cache name does not establish disposability. Existing occurrence,
-pass-dependency and publication checks are useful behavioral evidence; copying
-their coordinators or private formats is not an architectural requirement.
 
 ## Basis for the decisions
 
@@ -304,7 +268,7 @@ the [acceptance scenarios](workflows.md#acceptance-scenarios). No engine is adop
 solely because it already parses archives or stores an analysis database.
 
 Register source publication is owned by [the register tool](../../../registers/README.md),
-with separate reviewed contracts/model/review modules and no legacy execution dependency.
+with separate reviewed contracts/model/review modules and no execution dependency.
 That owner also initializes native source geometry and captures SVD imports without
 accepting hardware claims. Next's saved register catalogue uses the application
 navigation owner, pure expression observations and indexed knowledge applicability;

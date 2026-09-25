@@ -436,22 +436,14 @@ mod evidence {
     /// Probe workspace and the probe ELF package whose path dependencies are
     /// the compiled production sources.
     const PROBES_MANIFEST: &str = "verification/vendor/projects/esp32s31/probes/Cargo.toml";
-    const PROBES_PACKAGE: &str = "open-esp-radio-verification-esp32s31-probes-elf";
+    const PROBES_PACKAGE: &str = "oer-verification-esp32s31-probes-elf";
     const PROBES_TARGET: &str = "riscv32imafc-unknown-none-elf";
-    /// Scenario code and the Blobray engine that establish every verdict.
-    const TOOL_SOURCES: [&str; 11] = [
-        "verification/vendor/projects/esp32s31/scenarios",
-        "verification/vendor/schema",
-        "tools/blobray/crates/domain",
-        "tools/blobray/crates/store",
-        "tools/blobray/crates/application",
-        "tools/blobray/crates/verification",
-        "tools/blobray/crates/knowledge",
-        "tools/blobray/crates/artifacts",
-        "tools/blobray/crates/backend-riscv",
-        "tools/blobray/crates/riscv",
-        "tools/blobray/next",
-    ];
+    /// Blobray workspace and this scenario package, whose path dependencies
+    /// are the scenario code and the Blobray engine behind every verdict.
+    const TOOL_MANIFEST: &str = "tools/blobray/Cargo.toml";
+    const TOOL_PACKAGE: &str = env!("CARGO_PKG_NAME");
+    /// Shared schema sources the scenarios include by path.
+    const SCHEMA_SOURCES: &str = "verification/vendor/schema";
 
     /// Repository root: this package lives five directories below it.
     pub fn root() -> Result<PathBuf> {
@@ -465,18 +457,22 @@ mod evidence {
         Ok(format!("{:x}", Sha256::digest(std::fs::read(path)?)))
     }
 
-    /// Path packages of the probe ELF's resolved dependency closure.
-    fn production_sources(root: &Path) -> Result<Vec<PathBuf>> {
-        let output = std::process::Command::new("cargo")
+    /// Path packages in the resolved dependency closure of `package`.
+    fn path_closure(
+        root: &Path,
+        manifest: &str,
+        package: &str,
+        platform: Option<&str>,
+    ) -> Result<Vec<PathBuf>> {
+        let mut command = std::process::Command::new("cargo");
+        command
             .current_dir(root)
             .args(["metadata", "--format-version", "1", "--offline", "--locked"])
-            .args([
-                "--filter-platform",
-                PROBES_TARGET,
-                "--manifest-path",
-                PROBES_MANIFEST,
-            ])
-            .output()?;
+            .args(["--manifest-path", manifest]);
+        if let Some(platform) = platform {
+            command.args(["--filter-platform", platform]);
+        }
+        let output = command.output()?;
         if !output.status.success() {
             return Err(String::from_utf8_lossy(&output.stderr).into_owned().into());
         }
@@ -494,7 +490,7 @@ mod evidence {
         let nodes = metadata["resolve"]["nodes"]
             .as_array()
             .ok_or("cargo metadata resolve")?;
-        let mut pending = vec![id_of(PROBES_PACKAGE).ok_or("probe package missing")?];
+        let mut pending = vec![id_of(package).ok_or_else(|| format!("package {package} missing"))?];
         let mut seen = std::collections::BTreeSet::new();
         while let Some(id) = pending.pop() {
             if !seen.insert(id.clone()) {
@@ -533,8 +529,10 @@ mod evidence {
         ] {
             inputs.insert(role.to_owned(), sha256(path)?);
         }
-        let mut directories = production_sources(&root)?;
-        directories.extend(TOOL_SOURCES.iter().map(PathBuf::from));
+        let mut directories =
+            path_closure(&root, PROBES_MANIFEST, PROBES_PACKAGE, Some(PROBES_TARGET))?;
+        directories.extend(path_closure(&root, TOOL_MANIFEST, TOOL_PACKAGE, None)?);
+        directories.push(PathBuf::from(SCHEMA_SOURCES));
         directories.sort();
         directories.dedup();
         let sources = directories

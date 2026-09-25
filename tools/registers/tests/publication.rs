@@ -65,10 +65,7 @@ fn publication_dependency_graph_has_no_binary_execution_authority() {
             continue;
         }
         assert!(
-            !name.starts_with("blobray")
-                && !name.contains("execution-model")
-                && !name.contains("backend-riscv")
-                && name != "open-radio-vendor-contracts",
+            !name.starts_with("blobray"),
             "forbidden publication dependency: {name}"
         );
         let package = metadata

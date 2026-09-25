@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
-fn new_core_obeys_crate_boundaries_and_does_not_depend_on_legacy() {
+fn core_obeys_crate_boundaries() {
     let metadata = cargo_metadata::MetadataCommand::new()
         .manifest_path(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
         .no_deps()

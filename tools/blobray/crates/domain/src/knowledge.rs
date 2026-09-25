@@ -213,32 +213,3 @@ pub struct KnowledgeEvent {
     pub revision: KnowledgeRevisionId,
     pub manifest: KnowledgeManifest,
 }
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum LegacyOutcome {
-    Converted { revision: KnowledgeRevisionId },
-    PreservedUnresolved { reason: String },
-    Unsupported { reason: String },
-    MissingPayload { reason: String },
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LegacyRecord {
-    pub origin: OriginPath,
-    pub selector: String,
-    pub capture: Capture,
-    pub outcome: LegacyOutcome,
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LegacyManifest {
-    pub schema: u32,
-    pub project: ProjectId,
-    pub source: OriginPath,
-    pub records: ArtifactId,
-    pub record_count: u64,
-    pub converted: u64,
-    pub missing: u64,
-    pub unsupported: u64,
-}

@@ -1021,7 +1021,6 @@ impl Application {
             ReadQuery::ExecutePlan { .. }
                 | ReadQuery::AuditTargets { .. }
                 | ReadQuery::Restore { .. }
-                | ReadQuery::ImportLegacy { .. }
         ) {
             if let ReadQuery::PlanInvestigation { request, .. } = &mut query
                 && let Some(image) = &request.image

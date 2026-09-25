@@ -168,7 +168,7 @@ Delivery continues the original work budget/deadline and accepts cancellation.
 Only one delivery attempt is allowed: output I/O failure can leave a prefix and
 must not cause an implicit retry. Read-query diagnostics are returned to the
 caller, not persisted in the project. Temporary results use the bounded storage
-contract below. No separately invoked `blobray-run` is required.
+contract below.
 
 Capacity exhaustion returns `resource-limited` with an optional structured
 `error.memory`: requested reservation, available/limit bytes and phase/input/member.
@@ -280,7 +280,7 @@ before publication. Local filesystem durability does not imply equivalent
 network-filesystem guarantees.
 
 All committed revisions are retained. There is no CAS garbage collector, pruning,
-compaction or legacy-data migration. Failed imports or image preparations may leave unreferenced CAS
+compaction or data migration. Failed imports or image preparations may leave unreferenced CAS
 objects. Recovery cleans owned temporary work, not retained objects. Source
 metadata detects ordinary capture mutation; without expected digests or an
 external filesystem snapshot, several mutable inputs are not an atomic source

@@ -30,12 +30,12 @@ clear image crosses this boundary. Sequencing and hardware qualification stay
 above the generated raw helper.
 
 It does not know about ELF files, discovery facts, ESP32-S31, PAC helper
-contents or output paths. The vendor validator composes it with observed MMIO
-facts, the project memory map and target-owned reviewed packs. RTOS, NVS,
+contents or output paths. The [register tool](../README.md) composes it with
+explicitly selected reviewed publication inputs. RTOS, NVS,
 logging and delay semantics remain outside this crate.
 
-The format and editing workflow are documented in
-[`../../blobray/docs/registers-and-pac.md`](../../blobray/docs/registers-and-pac.md).
+The format and editing workflow are documented by the
+[register tool](../README.md).
 An absent physical register is created only by one reviewed
 `register-identity = "REGION.NAME"` assertion. The removed
 `register-declaration` and `register-name` kinds are explicit errors. The

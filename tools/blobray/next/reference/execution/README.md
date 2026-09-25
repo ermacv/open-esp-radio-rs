@@ -7,7 +7,7 @@ Run explicit RV32 scenarios with selected inputs, device models and comparison o
 ## Concrete execution and comparison
 
 `execute`, `compare`, `replay` and `execution` use the existing supervised
-operation/query paths. No legacy engine or external limiter participates.
+operation/query paths. No external limiter participates.
 Execution requests, manifests and journal/storage versions follow [current formats](../interfaces-formats/README.md#current-formats). The completed journal record is the publication
 reference. No second result index or current-source change is needed.
 

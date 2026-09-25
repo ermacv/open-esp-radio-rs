@@ -145,10 +145,6 @@ impl QueryOutput {
                 ReadQuery::RetainedPayload { id },
                 QuerySummary::RetainedPayload { id: actual, .. },
             ) if id == actual => None,
-            (ReadQuery::Legacy, QuerySummary::Legacy { .. }) => None,
-            (ReadQuery::ImportLegacy { .. }, QuerySummary::Preservation { restored: true, .. }) => {
-                None
-            }
             (
                 ReadQuery::Backup,
                 QuerySummary::Preservation {
@@ -351,7 +347,7 @@ impl QueryOutput {
         }
         self.export_file(destination, cancelled)
     }
-    /// Export a retained legacy/provenance payload by its exact content identity.
+    /// Export a retained provenance payload by its exact content identity.
     pub fn export_payload(
         &mut self,
         destination: &Path,

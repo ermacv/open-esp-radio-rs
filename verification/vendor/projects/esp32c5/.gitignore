@@ -1,3 +1,0 @@
-# Generated facts and persistent Blobray cache are local derived state.
-generated/
-/local.toml

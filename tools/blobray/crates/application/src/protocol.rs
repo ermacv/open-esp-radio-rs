@@ -149,10 +149,6 @@ pub enum ReadQuery {
     RetainedPayload {
         id: ArtifactId,
     },
-    ImportLegacy {
-        request: LegacyRequest,
-    },
-    Legacy,
     Backup,
     Restore {
         bundle: OriginPath,

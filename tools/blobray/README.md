@@ -87,15 +87,13 @@ top-level command and subcommands. JSON format is useful for automation; it is
 not a separate analysis engine. `Completed` describes run termination and may
 coexist with partial coverage or an `INCOMPLETE` comparison.
 
-The retained legacy documentation explicitly describes another engine. Its
-project command grammar is unavailable through the current command. TUI,
-reference-code generation, retention GC and cross-revision rebase remain
-unimplemented in Next. Design obligations do not make those features callable.
-Use the current references to select commands and their supported scope.
+TUI, reference-code generation, retention GC and cross-revision rebase are not
+implemented. Design obligations do not make those features callable. Use the
+current references to select commands and their supported scope.
 
 ## Start an investigation
 
-Blobray and the vendor provider crates form the separate `tools/blobray` Cargo
+Blobray and the typed vendor scenarios form the separate `tools/blobray` Cargo
 workspace, with its own `Cargo.lock` and `tools/blobray/target` directory, so
 Blobray dependencies never change the radio workspace. From the repository
 root, `cargo blobray` and `--manifest-path tools/blobray/Cargo.toml` select it.
@@ -144,11 +142,8 @@ remain conditional on the selected cases and explicit modeling assumptions.
 [Reviewed effect contracts](next/reference/comparison/README.md#reviewed-effect-comparison) are
 implemented and retain their conditional claim ceiling. Cross-revision
 correspondence/rebase, retention GC, reference-code generation and TUI remain
-pending. Unsupported execution remains `INCOMPLETE`; these limitations do not
-enable the old engine implicitly.
+pending. Unsupported execution remains `INCOMPLETE`.
 
-The old facade sources still contain unported responsibilities. They are not the
-normal command, and their command grammar is not supported by `cargo blobray`.
 The [architecture](docs/design/architecture.md), [contracts](docs/design/contracts.md)
 and [workflows](docs/design/workflows.md) distinguish implemented scope from target
 obligations. Qualifying production behavior remains an external responsibility.

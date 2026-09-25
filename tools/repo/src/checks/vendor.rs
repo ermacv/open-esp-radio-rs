@@ -68,7 +68,7 @@ pub fn run(context: &Context, chip: &str, list_roles: bool) -> Result<()> {
         Ok(())
     })?;
     eprintln!(
-        "Rust analysis inputs are ready. Capture the ELF inputs with cargo blobray import, then select an explicit comparison request; see tools/blobray/next/README.md."
+        "Rust analysis inputs are ready; the typed vendor scenarios compare them (cargo xtask vendor-scenario)."
     );
     Ok(())
 }

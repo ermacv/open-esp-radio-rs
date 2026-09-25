@@ -25,9 +25,9 @@ llvm-tools-preview` for the selected toolchain; the audit uses its bundled
 | `cargo xtask doc` | Build API documentation as docs.rs would: one `cargo doc --no-deps` per `[package.metadata.docs.rs]` target with `RUSTDOCFLAGS=-D warnings`, then `cargo test --doc --workspace` |
 | `cargo xtask check phy` | Build the PHY library for the chip target and audit its artifact and dependency graph |
 | `cargo xtask check images` | Build both final performance/correctness HIL application images and run their target audits |
-| `cargo xtask check blobray-standalone` | Extract generic Blobray source, check path-dependency containment and compile every target, including its launcher |
+| `cargo xtask check blobray-standalone` | Extract generic Blobray source, check path-dependency containment, then build and test every Blobray crate |
 | `cargo xtask build firmware <example>` | Build, audit and package a complete staged application; `--flash` writes it and `--monitor` opens the console |
-| `cargo xtask build vendor-probes --chip esp32s31` | Build the selected project's three Rust comparison artifacts |
+| `cargo xtask build vendor-probes --chip esp32s31` | Build the three Rust probe images of the ESP32-S31 vendor comparison |
 | `cargo xtask build vendor-probes --chip esp32s31 --list-roles` | List declared artifact roles without building or authenticating an artifact |
 
 The root Cargo alias selects this package. `--root PATH` selects an explicit
@@ -87,7 +87,6 @@ Run the orchestration regressions with:
 
 ```console
 cargo test -p oer-xtask
-cargo test --manifest-path tools/blobray/Cargo.toml -p blobray --test launcher
 ```
 
 Tests exercise actual temporary Cargo graphs, ownership, argument boundaries,

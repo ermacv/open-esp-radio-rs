@@ -3,9 +3,8 @@
 `blobray-next` imports immutable inputs, analyzes selected RV32 functions or
 whole libraries, prepares synthetic images, executes explicit RV32 scenarios,
 compares compiled observations, retains reviewed knowledge and
-preserves projects through backup/restore and phased legacy capture. The API and
-CLI share supervised work, cancellation, publication and recovery. It is
-independent of the legacy engine; `cargo blobray` selects this host.
+preserves projects through backup/restore. The API and CLI share supervised
+work, cancellation, publication and recovery; `cargo blobray` selects this host.
 The [architecture](../docs/design/architecture.md) owns module authority;
 [contracts](../docs/design/contracts.md) owns identities, assessment, lifetime and
 resource rules; [workflows](../docs/design/workflows.md) distinguishes implemented

@@ -205,10 +205,9 @@ pack and evidence catalogs explicitly. It does not select private vendor
 binaries. Full vendor investigations add their own artifact context. These
 compositions have separate validation requirements.
 
-`verification/vendor/chips` contains reusable chip identity and providers.
-`verification/vendor/projects` selects concrete investigation inputs, overlays,
-compiled probes and an analysis host. Generic Blobray providers and neutral
-analysis types do not depend on that host composition.
+`verification/vendor/projects` holds each chip's typed comparison scenarios,
+compiled probes and native evidence index. Generic Blobray crates do not depend
+on a chip project; the scenarios depend on Blobray.
 
 ## HIL and operating-system boundaries
 

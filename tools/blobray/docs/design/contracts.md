@@ -695,12 +695,6 @@ without the generating CLI. Downstream generators consume those contracts or a
 snapshot reader, never private SQLite tables or pack offsets. Implementation
 documents must publish their actual wire schemas before those APIs ship.
 
-Legacy import is an explicit adapter described by the
-[preservation workflow](workflows.md#preserve-existing-investigations). It retains
-original bytes and identifiers, reports every mapping and unresolved record, and
-does not overwrite its input project. Structural readability alone cannot
-authenticate an old proof or establish its applicability to the new revision.
-
 ### Local value analysis boundary
 
 The implemented [value and memory-effect contract](../../next/reference/analysis/README.md#values-and-memory-effects)
@@ -722,9 +716,7 @@ extent is explicit in an investigation plan.
 
 Storage metadata and journal format support follow the result-assessment contract above.
 Backup/restore preserve source, analysis, publication and knowledge identities.
-The legacy adapter preserves bytes and records unsupported semantics; it does
-not import the legacy engine or qualify old comparison results. Existing target
-executable ABI/interface validators and register-publication policies remain outside
+Existing target executable ABI/interface validators and register-publication policies remain outside
 this implemented review vocabulary. Reviewed MMIO region/register interpretation is implemented.
 
 ### Implemented PHY/ROM research boundary
@@ -1265,7 +1257,7 @@ Three finite native declarations own selector delivery, static callback
 registration/delivery and broker subscription. Participants are exact saved
 analysis/call/condition/load/store identities, with explicit physical RV32 ABI
 words and selector/object/queue/domain fields. Upstream and terminal paths retain
-ordered exact hops. No name lookup, legacy pack or implicit analysis participates.
+ordered exact hops. No name lookup or implicit analysis participates.
 
 Application shares navigation's physical selection and target keys. A synchronous
 borrowed-facts consumer prepares only required observations while one saved record
@@ -1456,7 +1448,7 @@ width, immutable response sequence and phase/session lifetime. Application
 `external_calls` owns admitted copies and cursors; `execution_calls` validates full
 responses and mutates only session-owned normal memory. Device and call models have
 separate explicit ports and ID namespaces, and share completion/closure semantics.
-No global response registry or legacy resolver participates.
+No global response registry participates.
 
 The backend invokes the required `ExecutionMemory::call` port at eligible transfers,
 after checking observe-call goals. An unselected transfer executes captured code;

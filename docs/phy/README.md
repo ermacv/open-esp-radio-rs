@@ -1,46 +1,39 @@
 # PHY compiled comparison
 
-PHY comparison uses authenticated vendor and Rust artifacts through
-[Blobray verification](../../tools/blobray/docs/verification.md). The
+PHY comparison executes authenticated vendor artifacts and compiled Rust probes
+in the [typed vendor scenarios](../../verification/vendor/projects/esp32s31/README.md). The
 [PHY inventory entry point](../../crates/hardware/esp32s31/phy/FEATURES.md) links
 the canonical catalog and its generated primitive/consumer view; comparison reports describe
 evidence for exact declared boundaries, not general RF readiness.
 
 ## Inputs and ownership
 
-The [ESP32-S31 investigation](../../verification/vendor/projects/esp32s31/README.md)
-selects the reviewed radio model, upstream platform register catalog, vendor
-identities, dispositions, execution profiles and compiled Rust bindings.
-Caller-owned artifact paths belong in its ignored run spec. The separate
+Each scenario authenticates its private vendor inputs by SHA-256, selects exact
+vendor roots and compiled production probe entries, and declares its input
+domain, peripheral models and expected verdicts. Private artifact paths are
+explicit scenario arguments. The separate
 [source-only publication](../../registers/esp32s31/publication/README.md)
 checks generated PAC/model consistency without authenticating private binaries.
 
 [Comparison probes](../../verification/vendor/projects/esp32s31/probes/README.md)
 retain entry points into production PHY/HAL code. A probe's name or a generated
 reference is not evidence that the shipping entry executes that behavior.
-Dispositions describe replacement ownership and scope; profiles define the
-explicit input domain, environment, observations and comparison policy.
 
 ## Evidence and limits
 
-The current verifier records `evidence_class` as `production-trace`,
-`shared-core` or `static-analysis`. Only exact compiled production execution
-can supply production-trace evidence. Matching a model or a shared child does
-not qualify the composed PHY registration or channel-switch entry.
+Every case compares vendor execution with the exact compiled production entry
+and has an expected verdict: `MATCH`, `DIFF` or `INCOMPLETE`. Missing probes,
+unresolved calls, unknown state or incomplete execution stay explicit and never
+become a match. Effect contracts name each ignored or omitted vendor effect
+with its reason; any other unclassified effect fails the comparison. Matching a
+shared child does not qualify the composed PHY registration or channel-switch
+entry.
 
-Function statuses include `match`, `bounded-match`, `mismatch`, `incomplete`,
-`implemented-unqualified` and `uncovered`. Missing probes, unresolved calls,
-unknown state or incomplete execution must remain explicit. A bounded match
-applies only to its declared preconditions. State-only comparison does not
-prove equality of omitted MMIO or calls; reviewed call and effect contracts
-retain their separately declared scope.
-
-Stateful profiles carry explicitly retained writable memory across ordered
-cases, while stacks, MMIO responses and device models remain phase-local.
-The [verification contract](../../tools/blobray/docs/verification.md)
-defines the accepted profile policies and evidence-baseline rules. Regression
-gates protect accepted evidence; completion gates require the selected scope.
-Neither can manufacture an implementation or hide an observed difference.
+Ordered cases carry explicitly retained writable memory, while stacks, MMIO
+responses and peripheral models remain phase-local. Negative cases with
+deliberately changed inputs must produce `DIFF`, so a comparison that cannot
+distinguish them fails. A scenario cannot manufacture an implementation or hide
+an observed difference.
 
 ## Readiness
 

@@ -63,9 +63,6 @@ pub enum QuerySummary {
         id: ArtifactId,
         length: u64,
     },
-    Legacy {
-        manifest: Option<LegacyManifest>,
-    },
     Preservation {
         restored: bool,
         summary: PreservationSummary,
@@ -239,12 +236,6 @@ pub trait QuerySink: InventorySink + DoctorSink {
             "consumer does not support audit findings",
         ))
     }
-    fn legacy(&mut self, _: &LegacyRecord, _: &mut dyn RunControl) -> Result<()> {
-        Err(Error::new(
-            ErrorCode::InvalidRequest,
-            "consumer does not support legacy records",
-        ))
-    }
     fn knowledge_entry(&mut self, _: &KnowledgeEntry, _: &mut dyn RunControl) -> Result<()> {
         Err(Error::new(
             ErrorCode::InvalidRequest,
@@ -373,7 +364,6 @@ enum RecordRef<'a> {
     Data(&'a DataRecord),
     TargetAudit(&'a TargetAuditRecord),
     Execution(&'a ExecutionEvidence),
-    Legacy(&'a LegacyRecord),
     KnowledgeEntry(&'a KnowledgeEntry),
     KnowledgeEvent(&'a KnowledgeEvent),
     InvestigationEntry(&'a PlanEntry),
@@ -411,7 +401,6 @@ enum Record {
     Data(DataRecord),
     TargetAudit(TargetAuditRecord),
     Execution(ExecutionEvidence),
-    Legacy(LegacyRecord),
     KnowledgeEntry(KnowledgeEntry),
     KnowledgeEvent(KnowledgeEvent),
     InvestigationEntry(PlanEntry),
@@ -809,27 +798,6 @@ pub fn prepare_query_with_tools(
                 QuerySummary::RetainedPayload {
                     id: id.clone(),
                     length: source.len(),
-                }
-            }
-            ReadQuery::ImportLegacy { request } => QuerySummary::Preservation {
-                restored: true,
-                summary: crate::legacy::prepare_legacy(
-                    stage,
-                    work,
-                    request,
-                    decoder.ok_or_else(|| {
-                        Error::new(ErrorCode::Incompatible, "knowledge decoder unavailable")
-                    })?,
-                    &memory,
-                    &disk,
-                    control,
-                )?,
-            },
-            ReadQuery::Legacy => {
-                let _fixed = memory.reserve(2 * 1024 * 1024, control.position())?;
-                QuerySummary::Legacy {
-                    manifest: Project::open(&work.project.to_path()?)?
-                        .visit_legacy(control, &mut |r, c| spool.push(RecordRef::Legacy(r), c))?,
                 }
             }
             ReadQuery::Backup => {
@@ -1374,7 +1342,6 @@ pub(crate) fn visit(
             Record::Navigation(r) => sink.navigation(&r, control)?,
             Record::Interface(r) => sink.interface(&r, control)?,
             Record::TargetAudit(r) => sink.target_audit(&r, control)?,
-            Record::Legacy(r) => sink.legacy(&r, control)?,
             Record::KnowledgeEntry(r) => sink.knowledge_entry(&r, control)?,
             Record::KnowledgeEvent(r) => sink.knowledge_event(&r, control)?,
             Record::InvestigationEntry(r) => sink.investigation_entry(&r, control)?,

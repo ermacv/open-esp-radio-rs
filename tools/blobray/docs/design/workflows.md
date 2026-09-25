@@ -52,7 +52,7 @@ connection. Existing CLI commands are not the authority for these boundaries.
 | Can this interpretation be accepted and explained later? | evidence-bearing candidate → knowledge validation → review transaction → retained knowledge revision | [Review](contracts.md#analysis-knowledge-and-verification-ports), [retention](contracts.md#durable-repository-and-disposable-cache) | K1, K4, K5, P3 |
 | What remains applicable after an input/model change? | new revision → correspondence/lineage proposals → explicit review → dependency-qualified recomputation | [Identity](contracts.md#identity-and-provenance), [passes](contracts.md#analysis-knowledge-and-verification-ports) | A8, K2, K3 |
 | Does the compiled Rust implementation satisfy the declared comparison? | identified pair → prepared images → sessions → verifier → retained evidence | [Comparison](contracts.md#analysis-knowledge-and-verification-ports) | V1, V2, V3, A5 |
-| Can I cancel, recover, clean caches or move the project? | supervisor or explicit maintenance/export → retained roots and leased closure → validated outcome | [Jobs](contracts.md#jobs-cancellation-and-failures), [retention](contracts.md#durable-repository-and-disposable-cache) | J1–J5, P1–P6, M1, M2 |
+| Can I cancel, recover, clean caches or move the project? | supervisor or explicit maintenance/export → retained roots and leased closure → validated outcome | [Jobs](contracts.md#jobs-cancellation-and-failures), [retention](contracts.md#durable-repository-and-disposable-cache) | J1–J5, P1–P6, M2 |
 
 A workflow requires all its relevant authority, resource and coverage contracts,
 not just its successful path. Resource containment does not make a wrong symbol
@@ -277,34 +277,6 @@ snapshot or versioned export. Their outputs retain links to the knowledge and
 evidence used. Generator failure does not invalidate the research publication,
 and generated code does not acquire a stronger proof class through publication.
 
-## Preserve existing investigations
-
-Compatibility preserves valuable data and its meaning; existing commands and
-private Rust APIs need not retain their shape. A legacy import adapter runs
-against a captured source project and creates a separate target repository.
-
-The import inventory includes reviewed packs, provenance/schema inputs,
-revision identities, saved correspondence/lineage, compiled-input bindings,
-comparison evidence, publication manifests and referenced generated payloads.
-Required tables and coefficients are included with their original provenance.
-The adapter follows dependency references, including evidence retained by the
-legacy cache, rather than assuming that everything called a cache is disposable.
-
-Each source record receives one explicit outcome:
-
-| Outcome | Preservation and use |
-| --- | --- |
-| Converted and validated | New typed record retains original identity, original bytes and an explicit mapping |
-| Preserved but unresolved | Original bytes/provenance remain available; missing dependencies or ambiguous mapping block affected claims |
-| Unsupported representation | Opaque original record is retained with its format identity and diagnostic; it does not become an accepted assertion |
-| Missing source payload | Manifest retains the original reference and missing identity; affected proof remains unavailable |
-
-No entry is silently omitted. The import report maps records and counts their
-outcomes; it is an operation artifact in ignored output storage, not a tracked
-migration diary. The old project remains usable with the old tool. A new current
-publication is exposed only after validating the imported closure and its stated
-limitations. Operator review is required to resolve uncertain semantic mappings.
-
 ## Acceptance scenarios
 
 These are required behavioral checks for a future implementation, not a record
@@ -356,7 +328,6 @@ layout or generated register constants.
 | I1 | Issue equivalent requests through API, CLI/JSON and TUI | Same selection, revision, results and diagnostics; only presentation differs | application, frontends |
 | I2 | Create two applications with different provider sets | Independent behavior and identities without process-global interference | host composition |
 | I3 | Open an absent cache or query an existing snapshot | No hidden analysis, repair, migration or writer acquisition | query interface |
-| M1 | Import legacy data with unknown schema, missing dependency or ambiguous identity | Every record has a preservation outcome; original project remains unchanged | legacy adapter |
 | M2 | Backup, move and restore; original input paths are unavailable | Retained closure verifies and remains readable; missing replay tools are reported | store, application |
 | B1 | Build generic Blobray without open-radio-specific providers | No generic dependency on production code, chip hosts or qualification policy | crate dependency checks |
 | B2 | Attempt a forbidden dependency or mutation through a read handle | Dependency checks or type boundary reject it | architecture and API checks |

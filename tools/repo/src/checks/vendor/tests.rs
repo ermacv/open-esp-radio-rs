@@ -132,24 +132,3 @@ fn every_requested_artifact_receives_the_explicit_job_override() {
     .unwrap();
     assert_eq!(calls, PROBES.len());
 }
-
-#[test]
-fn declared_artifact_roles_cover_the_project_verification_consumers() {
-    let context = Context::discover().unwrap();
-    let project_root = context.root.join(PROJECT);
-    let project: toml::Value =
-        toml::from_str(&std::fs::read_to_string(project_root.join("vendor-project.toml")).unwrap())
-            .unwrap();
-    let addon = project["verification-addon"].as_str().unwrap();
-    let verification: toml::Value =
-        toml::from_str(&std::fs::read_to_string(project_root.join(addon)).unwrap()).unwrap();
-    let consumed: BTreeSet<_> = verification["suites"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|suite| suite["rust-artifact-role"].as_str().unwrap())
-        .collect();
-    let declared: BTreeSet<_> = PROBES.iter().map(|probe| probe.role).collect();
-    assert!(!consumed.is_empty());
-    assert_eq!(declared, consumed);
-}

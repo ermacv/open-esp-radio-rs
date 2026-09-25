@@ -8,19 +8,8 @@ must lower.
 
 ## Authenticated connection contracts
 
-The current `libble_app.a` connection functions are rooted by the
-`ble-peripheral-connection-hardware` Blobray scope. The corresponding current
-symbols are recorded in `functions/reviewed.toml` and can be inspected without
-exporting a disassembly dump:
-
-```console
-tools/blobray/target/blobray/blobray inspect function \
-  --project verification/vendor/projects/esp32s31/vendor-project.toml \
-  ble-controller:r_sym_ble_2ZQ4FJGb6hQUDPQ9jp4a --full
-tools/blobray/target/blobray/blobray inspect function \
-  --project verification/vendor/projects/esp32s31/vendor-project.toml \
-  ble-controller:r_sym_ble_DCD5eVhcHQ9ueSpewKn1 --full
-```
+The current `libble_app.a` connection functions are identified below by their
+symbol names.
 
 `r_sym_ble_2ZQ4FJGb6hQUDPQ9jp4a`, reviewed as
 `ble_lll_conn_reset_link_state`, proves two direct semantic transfers from the

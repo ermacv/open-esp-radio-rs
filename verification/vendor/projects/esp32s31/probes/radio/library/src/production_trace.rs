@@ -519,10 +519,10 @@ oer_probe_macros::probe! {
     /// Input: current/RX/TX temperatures, channel, bandwidth, crystal selector,
     /// threshold (256 selects the default). Output: semantic references and DC banks.
     pub fn open_phy_calibration_trace_combined(
-        input: &[u16; 7],
+        input: &[u16; 8],
         wifi: bool,
         bluetooth: bool,
-        output: &mut [u16; 81],
+        output: &mut [u16; 87],
     ) -> u32 {
         use oer_esp32s31_phy::{
             tracking::{calibration::*, parameters::*},
@@ -537,6 +537,8 @@ oer_probe_macros::probe! {
             crystal_selector: input[5] as u8,
             threshold_override: (input[6] < 256).then_some(input[6] as u8),
         });
+        let [shared_last, wifi_last] = input[7].to_le_bytes();
+        validation::seed_rx_table_last_indices(&mut state, shared_last, wifi_last);
         let mut radio =
             oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
         let mut observer = oer_esp32s31_phy::NoopPhyTargetObserver;
@@ -564,10 +566,31 @@ oer_probe_macros::probe! {
                 0
             }
         };
-        snapshot_calibration(&state, output);
+        snapshot_calibration(&state, (&mut output[..81]).try_into().unwrap());
+        snapshot_committed(&state, (&mut output[81..]).try_into().unwrap());
 
         status
     }
+}
+
+/// Committed calibration state in the vendor `phy_param` byte order: the eight
+/// DCODE codes, the two status bytes holding the RX-gain DC (0x80 of the
+/// first) and RX-gain table (0x02 of the second) completion flags, then the
+/// shared and Wi-Fi RX-gain table last indices.
+fn snapshot_committed(state: &oer_esp32s31_phy::PhyState, output: &mut [u16; 6]) {
+    let snapshot = oer_esp32s31_phy::validation::calibration_snapshot(state);
+    let dcode = snapshot.common.dcode;
+    for (destination, pair) in output[..4].iter_mut().zip(dcode.chunks_exact(2)) {
+        *destination = u16::from_le_bytes([pair[0], pair[1]]);
+    }
+    output[4] = u16::from_le_bytes([
+        if snapshot.wifi.rx_gain_dc_calibrated { 0x80 } else { 0 },
+        if snapshot.wifi.rx_gain_tables_initialized { 0x02 } else { 0 },
+    ]);
+    output[5] = u16::from_le_bytes([
+        snapshot.wifi.shared_rx_table_last_index,
+        snapshot.wifi.wifi_rx_table_last_index,
+    ]);
 }
 
 fn snapshot_calibration(state: &oer_esp32s31_phy::PhyState, output: &mut [u16; 81]) {
@@ -611,10 +634,10 @@ oer_probe_macros::probe! {
     /// Status: 0 terminal owner, 1 contained hardware failure, 2 incomplete success,
     /// 3 erroneous ordinary-owner recovery after an executor failure.
     pub fn open_phy_tracking_trace_parent(
-        input: &[u16; 10],
+        input: &[u16; 11],
         wifi: bool,
         bluetooth: bool,
-        output: &mut [u16; 88],
+        output: &mut [u16; 94],
     ) -> u32 {
         use oer_esp32s31_phy::{
             tracking::{calibration::*, parameters::*},
@@ -633,6 +656,8 @@ oer_probe_macros::probe! {
             input[7] as i8,
             input[8] != 0,
         );
+        let [shared_last, wifi_last] = input[10].to_le_bytes();
+        validation::seed_rx_table_last_indices(&mut state, shared_last, wifi_last);
         let clients = PhyParamTrackRequest::new(wifi, bluetooth);
         let mut pending = if input[9] != 0 {
             validation::parameter_tracking_with_rfpll(&state, clients)
@@ -688,6 +713,7 @@ oer_probe_macros::probe! {
             PhyWifiI2cTrackingBand::Hot => 3,
         };
         output[87] = validation::rfpll_reference_temperature(&state) as u16;
+        snapshot_committed(&state, (&mut output[88..]).try_into().unwrap());
         status
     }
 }

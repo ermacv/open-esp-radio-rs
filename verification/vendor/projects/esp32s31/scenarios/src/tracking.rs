@@ -29,10 +29,15 @@ pub type Options = PhyOptions;
 /// Event capacity of one tracking root side.
 const TRACKING_EVENTS: u32 = 1 << 20;
 /// Production probe input and output words of the combined root and parent.
-const COMBINED_INPUT_WORDS: usize = 7;
-const PARENT_INPUT_WORDS: usize = 10;
-const COMBINED_OUTPUT_BYTES: u32 = 162;
-const PARENT_OUTPUT_BYTES: u32 = 176;
+const COMBINED_INPUT_WORDS: usize = 8;
+const PARENT_INPUT_WORDS: usize = 11;
+const COMBINED_OUTPUT_BYTES: u32 = 174;
+const PARENT_OUTPUT_BYTES: u32 = 188;
+/// Calibration snapshot bytes both roots start with.
+const SNAPSHOT_BYTES: usize = 162;
+/// Committed-state bytes every root ends with: DCODE codes, status bytes and
+/// the shared and Wi-Fi RX-gain table last indices.
+const COMMITTED_BYTES: u32 = 12;
 /// Untouched production output bytes.
 const OUTPUT_FILL: u8 = 0xa5;
 /// Channel, bandwidth and crystal selector of every case.
@@ -56,6 +61,12 @@ const RFPLL_ENABLED: usize = 10;
 const POWER_ENABLED: usize = 11;
 const TONE_CLEAR: usize = 427;
 const GAIN_ADJUSTMENT: usize = 434;
+/// `phy_param` offsets of the committed calibration state: the eight codes
+/// ROM `phy_dcode_cal_init` stores from 0x1a1, and the status word whose
+/// 0x80 and 0x200 bits `phy_set_rx_gain_table` sets after RX-gain DC and
+/// table completion.
+const DCODE: usize = 0x1a1;
+const CALIBRATION_STATUS: usize = 0xa4;
 /// Initial retained values the children consume.
 const RX_PATH: u8 = 0xbf;
 const TX_PATH: u8 = 1;
@@ -158,6 +169,24 @@ impl Root {
         if self == Root::Parent {
             fields.extend(PARENT);
         }
+        let committed = self.output_bytes() - COMMITTED_BYTES;
+        fields.extend([
+            field("dcode", DCODE, committed, 1, 8),
+            field(
+                "calibration-status",
+                CALIBRATION_STATUS,
+                committed + 8,
+                1,
+                2,
+            ),
+            field(
+                "rx-table-last-indices",
+                SHARED_LAST_INDEX,
+                committed + 10,
+                1,
+                2,
+            ),
+        ]);
         fields
     }
 }
@@ -200,6 +229,8 @@ impl Case {
                 u16::from(self.correction.is_some()),
             ]);
         }
+        // The retained RX-gain table last indices both sides start from.
+        words.push(u16::from_le_bytes([INITIAL_SHARED_LAST, INITIAL_WIFI_LAST]));
         words
     }
     fn parameters(&self, root: Root) -> Vec<u8> {
@@ -735,7 +766,7 @@ fn failed_tx(ctx: &mut Tracking) -> Result<()> {
                 .iter()
                 .flat_map(|w| w.to_le_bytes())
                 .collect();
-            expected.resize(COMBINED_OUTPUT_BYTES as usize, 0);
+            expected.resize(SNAPSHOT_BYTES, 0);
             if root == Root::Parent {
                 let mut words = COMPLETED_POWER.to_vec();
                 words.extend([
@@ -745,6 +776,8 @@ fn failed_tx(ctx: &mut Tracking) -> Result<()> {
                 ]);
                 expected.extend(words.iter().flat_map(|w| w.to_le_bytes()));
             }
+            expected.extend([0; COMMITTED_BYTES as usize - 2]);
+            expected.extend([INITIAL_SHARED_LAST, INITIAL_WIFI_LAST]);
             expectations.push((profile.label(root), expected));
         }
     }

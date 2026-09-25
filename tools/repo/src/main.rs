@@ -63,8 +63,6 @@ enum Check {
 
 #[derive(Subcommand)]
 enum Build {
-    /// Build the pinned hostapd with explicit HIL coexistence policy support.
-    Hostapd,
     /// Build and audit a bootable example with the shared ESP32-S31 bootstrap.
     Firmware {
         #[arg(value_parser = ["station", "access-point", "monitor", "bluetooth-controller"])]
@@ -111,9 +109,6 @@ fn run() -> Result<std::process::ExitCode> {
         Task::VendorScenario { chip, args } => {
             return oer_xtask::vendor_scenario::run(&ctx, &chip, &args);
         }
-        Task::Build {
-            build: Build::Hostapd,
-        } => oer_xtask::hostapd::build(&ctx),
         Task::Doc => oer_xtask::doc::run(&ctx),
         Task::Check { check } => match check {
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),

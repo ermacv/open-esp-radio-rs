@@ -1,8 +1,8 @@
 //! Pinned hostapd preparation for the Linux HIL fixture; never owns a radio.
-use crate::{Context, Result, process};
-use fs2::FileExt;
+use crate::Result;
+use oer_process as process;
 use sha2::{Digest, Sha256};
-use std::{fs, path::Path};
+use std::{fs, path::Path, process::Command};
 
 const URL: &str = "https://w1.fi/releases/hostapd-2.12.tar.gz";
 const SOURCE_SHA256: &str = "f43502561c28ba47ab77e18e1a973d07361c68cc8b14178e619bd5796b70eabd";
@@ -17,11 +17,17 @@ fn verify_source(bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-pub fn build(ctx: &Context) -> Result<()> {
+fn command(root: &Path, program: impl AsRef<std::ffi::OsStr>) -> Command {
+    let mut command = Command::new(program);
+    command.current_dir(root);
+    command
+}
+
+pub(crate) fn build(root: &Path) -> Result<()> {
     if !cfg!(target_os = "linux") {
         return Err("the hostapd fixture build requires Linux".into());
     }
-    let output = ctx.root.join("target/hil/hostapd");
+    let output = root.join("target/hil/hostapd");
     fs::create_dir_all(&output)?;
     let lock = fs::OpenOptions::new()
         .create(true)
@@ -29,13 +35,13 @@ pub fn build(ctx: &Context) -> Result<()> {
         .read(true)
         .write(true)
         .open(output.join("build.lock"))?;
-    lock.try_lock_exclusive()
+    lock.try_lock()
         .map_err(|_| "another hostapd build owns the output directory")?;
-    let recipe = ctx.root.join("hil/host/linux-net/hostapd");
+    let recipe = root.join("hil/host/linux-net/hostapd");
     let patch = fs::read(recipe.join("300-noscan.patch"))?;
     let config = fs::read(recipe.join("build.config"))?;
-    let compiler = tool_version(ctx.command("cc").arg("--version"))?;
-    let libraries = tool_version(ctx.command("pkg-config").args([
+    let compiler = tool_version(command(root, "cc").arg("--version"))?;
+    let libraries = tool_version(command(root, "pkg-config").args([
         "--modversion",
         "libnl-3.0",
         "libnl-genl-3.0",
@@ -51,14 +57,14 @@ pub fn build(ctx: &Context) -> Result<()> {
         && old["inputs"] == inputs
         && old["binary_sha256"] == digest(&bytes)
     {
-        println!("hostapd build verified: {}", binary.display());
+        eprintln!("hostapd build verified: {}", binary.display());
         return Ok(());
     }
     let archive = output.join("hostapd-2.12.tar.gz");
     if !archive.exists() {
         let download = tempfile::NamedTempFile::new_in(&output)?;
         process::run(
-            ctx.command("curl")
+            command(root, "curl")
                 .args([
                     "--fail",
                     "--location",
@@ -77,7 +83,7 @@ pub fn build(ctx: &Context) -> Result<()> {
     verify_source(&fs::read(&archive)?)?;
     let work = tempfile::tempdir_in(&output)?;
     process::run(
-        ctx.command("tar")
+        command(root, "tar")
             .arg("-xzf")
             .arg(&archive)
             .arg("-C")
@@ -85,14 +91,14 @@ pub fn build(ctx: &Context) -> Result<()> {
     )?;
     let source = work.path().join("hostapd-2.12");
     process::run(
-        ctx.command("patch")
+        command(root, "patch")
             .current_dir(&source)
             .args(["--batch", "--fuzz=0", "-p1", "-i"])
             .arg(recipe.join("300-noscan.patch")),
     )?;
     fs::write(source.join("hostapd/.config"), config)?;
     process::run(
-        ctx.command("make")
+        command(root, "make")
             .current_dir(source.join("hostapd"))
             .env_remove("MAKEFLAGS")
             .env_remove("MFLAGS")
@@ -103,7 +109,7 @@ pub fn build(ctx: &Context) -> Result<()> {
             .args(["CC=cc", "hostapd"]),
     )?;
     let built = source.join("hostapd/hostapd");
-    verify_policy(ctx, &built, work.path())?;
+    verify_policy(root, &built, work.path())?;
     let mut staged = tempfile::NamedTempFile::new_in(&output)?;
     std::io::copy(&mut fs::File::open(&built)?, &mut staged)?;
     fs::set_permissions(staged.path(), fs::metadata(&built)?.permissions())?;
@@ -113,19 +119,19 @@ pub fn build(ctx: &Context) -> Result<()> {
     let mut staged = tempfile::NamedTempFile::new_in(&output)?;
     serde_json::to_writer_pretty(&mut staged, &record)?;
     staged.persist(provenance)?;
-    println!(
+    eprintln!(
         "hostapd built and policy parser verified: {}",
         binary.display()
     );
     Ok(())
 }
 
-fn verify_policy(ctx: &Context, binary: &Path, directory: &Path) -> Result<()> {
+fn verify_policy(root: &Path, binary: &Path, directory: &Path) -> Result<()> {
     use oer_process::CommandExt as _;
     let config = directory.join("parser.conf");
     // An intentional final syntax error prevents all driver initialization.
     fs::write(&config, "noscan=1\nht_coex=1\noer_parser_stop=1\n")?;
-    let output = ctx.command(binary).arg(&config).supervised_output()?;
+    let output = command(root, binary).arg(&config).supervised_output()?;
     let diagnostic = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),

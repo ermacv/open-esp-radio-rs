@@ -13,7 +13,6 @@ pub mod doc;
 pub mod firmware;
 pub mod graph;
 pub mod hil;
-pub mod hostapd;
 pub mod paths;
 pub mod process;
 pub mod vendor_scenario;

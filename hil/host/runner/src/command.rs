@@ -26,6 +26,9 @@ pub(crate) fn run() -> Result<()> {
                     adapter,
                 },
         } => return fixture::install::run(&root, provider, dry_run, &adapter),
+        CliCommand::Fixture {
+            command: crate::cli::FixtureCommand::BuildHostapd,
+        } => return fixture::hostapd::build(&root),
         command => command,
     };
     let lab_path = cli
@@ -35,8 +38,9 @@ pub(crate) fn run() -> Result<()> {
 
     match command {
         CliCommand::Fixture {
-            command: crate::cli::FixtureCommand::Install { .. },
-        } => unreachable!("install commands return before lab configuration is resolved"),
+            command:
+                crate::cli::FixtureCommand::Install { .. } | crate::cli::FixtureCommand::BuildHostapd,
+        } => unreachable!("install and build commands return before lab configuration is resolved"),
         CliCommand::Fixture {
             command: crate::cli::FixtureCommand::ProbePlan,
         } => {

@@ -1,12 +1,13 @@
 # Linux fixture hostapd
 
-`cargo xtask build hostapd` owns downloading, SHA-256 verification, patching,
-configuration, compilation and parser verification. `cargo hil fixture install --provider linux-net`
-invokes that build before handing the terminal to sudo. No prebuilt binary from
+`cargo hil fixture build-hostapd` owns downloading, SHA-256 verification,
+patching, configuration, compilation and parser verification. `cargo hil fixture
+install --provider linux-net` runs the same build before handing the terminal to
+sudo. No prebuilt binary from
 `/tmp` or an unrelated system package is used.
 
 The source is [hostapd 2.12](https://w1.fi/releases/hostapd-2.12.tar.gz), pinned
-by archive SHA-256 in `tools/repo/src/hostapd.rs`. The tracked `build.config`
+by archive SHA-256 in `hil/host/runner/src/fixture/hostapd.rs`. The tracked `build.config`
 enables nl80211, HT/VHT/HE, WPA2 and control sockets for this fixture.
 `300-noscan.patch` is the unmodified OpenWrt patch from commit
 [4abffae9b4e82604716cdcb30886469a435fe8bc](https://github.com/openwrt/openwrt/blob/4abffae9b4e82604716cdcb30886469a435fe8bc/package/network/services/hostapd/patches/300-noscan.patch).

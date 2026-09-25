@@ -243,6 +243,8 @@ pub(crate) enum FixtureCommand {
         #[arg(long, default_value = "0", value_parser = clap::value_parser!(u16).range(0..=5000))]
         hold_ms: u16,
     },
+    /// Build the pinned hostapd with explicit HIL coexistence policy support.
+    BuildHostapd,
     /// Prepare and install one versioned Linux fixture software bundle.
     Install {
         /// Finite Linux fixture provider to provision.

@@ -23,11 +23,7 @@ pub(crate) fn run(
         // All downloads, patching and compilation happen without root, before
         // the installer takes terminal control for its narrow system writes.
         if provider == Provider::LinuxNet {
-            oer_process::run(
-                Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
-                    .current_dir(root)
-                    .args(["xtask", "build", "hostapd"]),
-            )?;
+            super::hostapd::build(root)?;
         }
 
         let provider_binaries: &[&str] = match provider {

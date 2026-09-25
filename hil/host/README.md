@@ -533,8 +533,8 @@ packet. These are supplemental UART diagnostics, not MAC completion or host
 reception evidence. The current per-flow records do not correlate individual
 packets with hardware publication and completion.
 
-`cargo hil fixture install --provider linux-net` first runs `cargo xtask build hostapd` without
-root, then installs the resulting binary, build provenance and helper through
+`cargo hil fixture install --provider linux-net` first builds hostapd as
+`cargo hil fixture build-hostapd` does, without root, then installs the resulting binary, build provenance and helper through
 interactive sudo. The build uses the pinned hostapd release and reviewed
 [coexistence patch](linux-net/hostapd/README.md). It requires a C compiler,
 make, pkg-config, libnl3 and OpenSSL development files, curl, tar and patch.

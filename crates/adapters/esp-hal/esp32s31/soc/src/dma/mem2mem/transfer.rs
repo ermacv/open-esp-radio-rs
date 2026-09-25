@@ -295,6 +295,10 @@ impl<'transfer, 'buffer, 'd> AxiGdmaMem2MemPreparedOwner<'transfer, 'buffer, 'd>
     /// independently of the transfer's lifetime.
     ///
     /// ```compile_fail,E0133
+    /// # #![no_std]
+    /// # #![no_main]
+    /// # #[panic_handler]
+    /// # fn panic(_: &core::panic::PanicInfo) -> ! { loop {} }
     /// use oer_esp32s31_soc::AxiGdmaMem2MemPreparedOwner;
     /// fn publish(prepared: AxiGdmaMem2MemPreparedOwner<'_, '_, '_>) {
     ///     // Borrowed DMA publication requires an explicit lifetime proof.

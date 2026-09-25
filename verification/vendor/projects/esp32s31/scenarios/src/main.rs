@@ -53,6 +53,21 @@ enum Scenario {
         #[arg(long)]
         phy_sdk: PathBuf,
     },
+    /// Every stage-11/12 PHY comparison scenario in sequence under one budget,
+    /// each in its own output directory; the first failure stops the run.
+    All {
+        #[command(flatten)]
+        common: Common,
+        /// Authenticated bootloader SDK firmware (calibration leaves and prefix).
+        #[arg(long)]
+        sdk: PathBuf,
+        /// Authenticated PHY SDK firmware (RFPLL and diagnostics symbols).
+        #[arg(long)]
+        phy_sdk: PathBuf,
+        /// Authenticated `librftest.a` (RF-test power producer).
+        #[arg(long)]
+        rftest: PathBuf,
+    },
     /// Combined calibration and parameter tracking parents with their real
     /// children, RFPLL corrections and failed-TX containment.
     Tracking {
@@ -98,7 +113,7 @@ enum Scenario {
     },
 }
 
-#[derive(clap::Args)]
+#[derive(Clone, clap::Args)]
 struct Common {
     /// `blobray` executable.
     #[arg(long)]
@@ -262,6 +277,53 @@ fn tracking(common: Common, phy_sdk: PathBuf) -> Result<ExitCode> {
     ))
 }
 
+/// Run every PHY comparison scenario; each must pass with no unmet obligation.
+fn all(common: Common, sdk: PathBuf, phy_sdk: PathBuf, rftest: PathBuf) -> Result<ExitCode> {
+    let within = |name: &str| Common {
+        output: common.output.join(name),
+        ..common.clone()
+    };
+    type Run<'a> = Box<dyn FnOnce() -> Result<ExitCode> + 'a>;
+    let scenarios: Vec<(&str, Run<'_>)> = vec![
+        (
+            "gain",
+            Box::new(|| gain(within("gain"), Some(rftest.clone()))),
+        ),
+        (
+            "i2c",
+            Box::new(|| i2c(within("i2c"), Some(sdk.clone()), Some(phy_sdk.clone()))),
+        ),
+        ("channel", Box::new(|| channel(within("channel")))),
+        (
+            "rx-gain",
+            Box::new(|| rx_gain(within("rx-gain"), phy_sdk.clone())),
+        ),
+        (
+            "tx-dc",
+            Box::new(|| tx_dc(within("tx-dc"), phy_sdk.clone())),
+        ),
+        (
+            "tracking",
+            Box::new(|| tracking(within("tracking"), phy_sdk.clone())),
+        ),
+    ];
+    let mut elapsed = vec![];
+    for (name, run) in scenarios {
+        let start = std::time::Instant::now();
+        let code = run()?;
+        elapsed.push((name, start.elapsed().as_secs_f64()));
+        if code != ExitCode::SUCCESS {
+            println!("scenario {name} did not pass");
+            return Ok(code);
+        }
+    }
+    for (name, seconds) in &elapsed {
+        println!("{name} {seconds:.1}s");
+    }
+    println!("all PHY comparison scenarios passed");
+    Ok(ExitCode::SUCCESS)
+}
+
 fn main() -> ExitCode {
     let result = match Cli::parse().scenario {
         Scenario::Gain { common, rftest } => gain(common, rftest),
@@ -269,6 +331,12 @@ fn main() -> ExitCode {
         Scenario::RxGain { common, phy_sdk } => rx_gain(common, phy_sdk),
         Scenario::TxDc { common, phy_sdk } => tx_dc(common, phy_sdk),
         Scenario::Tracking { common, phy_sdk } => tracking(common, phy_sdk),
+        Scenario::All {
+            common,
+            sdk,
+            phy_sdk,
+            rftest,
+        } => all(common, sdk, phy_sdk, rftest),
         Scenario::Research {
             binary,
             library,

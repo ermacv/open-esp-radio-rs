@@ -27,6 +27,22 @@ Each operation's working capacity, deadline and work budget are the scenario's
 cgroup memory control; watchdog is an explicit sampled-RSS policy. Run JSON files
 are the measurement authority, not this documentation.
 
+## All PHY comparison scenarios
+
+`all` runs every stage-11/12 PHY comparison scenario (`gain`, `i2c`, `channel`,
+`rx-gain`, `tx-dc`, `tracking`) in sequence under one budget, each in its own
+directory below `--output`. It requires every optional input, so no obligation
+is left unmet, stops at the first failure and prints each scenario's duration.
+
+```console
+cargo xtask vendor-scenario all --library /private/libphy.a \
+  --rom /private/esp32s31_rev0_rom.elf \
+  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
+  --sdk /private/bootloader.elf --phy-sdk /private/phy_tracking_reference.elf \
+  --rftest /private/librftest.a \
+  --linker /usr/bin/ld.lld --output target/blobray-research/all --limit-mode watchdog
+```
+
 ## Captured I2C command-memory comparison
 
 The `i2c` scenario ([`i2c.rs`](scenarios/src/i2c.rs)) compares the authenticated archive/ROM command initializer

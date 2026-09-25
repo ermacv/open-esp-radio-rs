@@ -32,10 +32,9 @@ fn wifi_register_set_returns_every_consumed_partition() {
 }
 
 #[test]
-fn bluetooth_register_set_requires_its_modem_lp_timer_partition() {
+fn bluetooth_register_set_returns_every_consumed_partition() {
     let RadioPartitions {
         bluetooth,
-        bluetooth_modem_lp_timer,
         radio_phy,
         coexistence,
         shared_radio,
@@ -43,12 +42,11 @@ fn bluetooth_register_set_requires_its_modem_lp_timer_partition() {
     } = RadioPartitions::for_validation();
     let registers = BluetoothTaskRegisters::new(BluetoothTaskParts {
         bluetooth,
-        modem_lp_timer: bluetooth_modem_lp_timer,
         radio_phy,
         coexistence,
         shared_radio,
     });
-    assert!(!registers.modem_lp_timer_separated());
+    assert!(!registers.controller_time_latch_in_flight());
     let _parts = registers.into_parts();
 }
 

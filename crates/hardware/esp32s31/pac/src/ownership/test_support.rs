@@ -8,7 +8,6 @@ use super::{
 pub(crate) fn bluetooth_task() -> (BluetoothTaskRegisters, BluetoothInterruptSetup) {
     let RadioPartitions {
         bluetooth,
-        bluetooth_modem_lp_timer,
         bluetooth_interrupts,
         radio_phy,
         coexistence,
@@ -18,7 +17,6 @@ pub(crate) fn bluetooth_task() -> (BluetoothTaskRegisters, BluetoothInterruptSet
     (
         BluetoothTaskRegisters::new(BluetoothTaskParts {
             bluetooth,
-            modem_lp_timer: bluetooth_modem_lp_timer,
             radio_phy,
             coexistence,
             shared_radio,

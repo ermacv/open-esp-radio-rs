@@ -4,7 +4,9 @@
 //! controller hardware-enable path, the complete low-power configuration
 //! component, the MMIO prefix immediately before ESP32-S31 installs interrupt
 //! source 127, and the bounded register classifier and hardware-acknowledgement
-//! phase at the start of that source's handler. These transactions do not
+//! transactions at the start of that source's handler. Each method is one
+//! finite transaction over the timer partition; the order in which the
+//! lifecycle may call them belongs to the HAL. These transactions do not
 //! initialize the vendor software environment, publish ISR storage, install a
 //! CPU route, dispatch the software timer queue, or claim that the controller,
 //! Link Layer, or HCI is live.
@@ -32,56 +34,6 @@ impl BluetoothModemLpTimerRegisters {
     }
 }
 
-/// Timer-register ownership after the exact BTDM runtime-timer start command.
-///
-/// Consuming the preceding low-power owner makes the command one-shot for this
-/// hardware epoch. This state does not prove source-127 route setup, a working
-/// software timer queue, controller readiness, or a physical time unit.
-#[must_use = "the started runtime timer must feed controller-enable ownership"]
-pub struct BluetoothModemLpTimerCounterStarted {
-    timer: BluetoothModemLpTimerRegisters,
-    runtime_control: BluetoothLowPowerRuntimeControlObservation,
-}
-
-/// Why task context cannot perform a modem LP-timer transition.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothModemLpTimerOwnerError {
-    /// The disjoint timer partition has already moved to source-127 storage.
-    OwnerSeparated,
-}
-
-/// Timer-register ownership after the exact source-127 register prefix.
-///
-/// This state proves only that the eight reviewed MMIO operations completed
-/// and were followed by a device fence. The vendor path still publishes a RAM
-/// flag and installs the CPU route after this prefix.
-///
-/// There is deliberately no conversion back to the ordinary task or cold
-/// owner because the reviewed teardown does not restore these register
-/// images:
-///
-/// ```compile_fail
-/// use oer_esp32s31_pac::BluetoothModemLpTimerRegistersPrepared;
-///
-/// fn bypass_teardown(prepared: BluetoothModemLpTimerRegistersPrepared) {
-///     let _task = prepared.into_task();
-/// }
-/// ```
-///
-/// The prepared owner is affine:
-///
-/// ```compile_fail
-/// use oer_esp32s31_pac::BluetoothModemLpTimerRegistersPrepared;
-///
-/// fn duplicate(prepared: BluetoothModemLpTimerRegistersPrepared) {
-///     let _second = prepared.clone();
-/// }
-/// ```
-#[must_use = "the prepared modem LP-timer registers must continue through route setup"]
-pub struct BluetoothModemLpTimerRegistersPrepared {
-    timer: BluetoothModemLpTimerRegisters,
-}
-
 /// Hardware branch observed while completing the BTDM low-power component.
 ///
 /// The positional names retain only the independently reviewed register facts;
@@ -92,34 +44,6 @@ pub enum BluetoothLowPowerRuntimeControlObservation {
     Control2Clear,
     /// `CONTROL_2` was set, so the fresh-read `CONTROL_1` publication ran.
     Control2SetControl1Published,
-}
-
-/// Timer ownership after the complete low-power hardware component.
-///
-/// The generated fixed-register sequence owns every command image, array
-/// index and ordering fact. This handwritten state retains only ownership and
-/// the reviewed conditional edge over generated field accessors.
-#[must_use = "the initialized modem LP-timer owner must continue through route setup"]
-pub struct BluetoothModemLpTimerLowPowerHardwareInitialized {
-    timer: BluetoothModemLpTimerRegisters,
-    runtime_control: BluetoothLowPowerRuntimeControlObservation,
-}
-
-impl BluetoothModemLpTimerLowPowerHardwareInitialized {
-    /// Return the conditional runtime-control branch observed at initialization.
-    pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
-        self.runtime_control
-    }
-}
-
-/// Source-127 timer registers staged for exclusive placement in stable ISR storage.
-///
-/// Controller task ownership is disjoint and may continue ordinary scheduler
-/// work. A spurious hardware entry returns this state unchanged; a real timer
-/// dispatch consumes it into the next common-handler register phase.
-#[must_use = "the source-127 owner must remain in stable ISR storage"]
-pub struct BluetoothModemLpTimerInterruptReady {
-    timer: BluetoothModemLpTimerRegisters,
 }
 
 /// Exact positional path by which source 127 reached its software handler.
@@ -136,58 +60,6 @@ pub enum BluetoothModemLpTimerInterruptObservation {
     /// `CONTROL_0058.bit2` was set and a second fresh read supplied the image
     /// in which `CONTROL_0058.bit1` was published.
     Control2SetControl1Published,
-}
-
-/// Source-127 ownership after the register prefix selected the software timer
-/// handler.
-///
-/// This owner exposes the initial positional observation and exactly one
-/// bounded transition into the common handler's register-acknowledgement
-/// phase. It cannot be rearmed directly, returned to task context or discarded
-/// into an apparently ready interrupt owner.
-#[must_use = "the common modem LP-timer register phase remains pending"]
-pub struct BluetoothModemLpTimerHandlerPending {
-    ready: BluetoothModemLpTimerInterruptReady,
-    observation: BluetoothModemLpTimerInterruptObservation,
-}
-
-impl BluetoothModemLpTimerHandlerPending {
-    /// Return the exact register path which requires timer-handler dispatch.
-    pub const fn observation(&self) -> BluetoothModemLpTimerInterruptObservation {
-        self.observation
-    }
-
-    /// Acknowledge the two positional state bytes at the start of the common
-    /// timer handler.
-    ///
-    /// This second finite step never waits, loops, allocates or invokes
-    /// software. If neither byte requests work, the vendor path performs its
-    /// final fresh read and the source-127 owner is ready again. Otherwise the
-    /// owner remains affine in [`BluetoothModemLpTimerSoftwarePending`] until
-    /// the matching software state transition and final read are implemented.
-    pub fn step_registers(self) -> ModemLpTimerHandlerRegisterStep {
-        let disposition = {
-            let mut transaction = HardwareModemLpTimerTransaction {
-                registers: &self.ready.timer.peripherals.btdm_runtime_control,
-            };
-            execute_modem_lp_timer_handler_registers(&mut transaction)
-        };
-
-        match disposition {
-            ModemLpTimerHandlerRegisterDisposition::Rearmed => {
-                ModemLpTimerHandlerRegisterStep::Rearmed(self.ready)
-            }
-            ModemLpTimerHandlerRegisterDisposition::SoftwarePending(register_observation) => {
-                ModemLpTimerHandlerRegisterStep::SoftwarePending(
-                    BluetoothModemLpTimerSoftwarePending {
-                        ready: self.ready,
-                        interrupt_observation: self.observation,
-                        register_observation,
-                    },
-                )
-            }
-        }
-    }
 }
 
 /// Positional state acknowledged by the common source-127 timer handler.
@@ -212,88 +84,6 @@ impl BluetoothModemLpTimerHandlerRegisterObservation {
     /// Whether the sampled low byte of `STATE_002C` was nonzero.
     pub const fn state_002c_low_byte_was_nonzero(self) -> bool {
         self.state_002c_low_byte_nonzero
-    }
-}
-
-/// Source-127 owner after hardware state acknowledgement exposed required
-/// software work.
-///
-/// This state deliberately cannot be rearmed. The vendor handler mutates a
-/// software epoch, may dispatch its timer queue, and then performs a final
-/// fresh `STATE_0024` read. Those actions belong above the PAC and must be
-/// represented by a later explicit completion transition.
-#[must_use = "software timer work and the final hardware read remain pending"]
-pub struct BluetoothModemLpTimerSoftwarePending {
-    ready: BluetoothModemLpTimerInterruptReady,
-    interrupt_observation: BluetoothModemLpTimerInterruptObservation,
-    register_observation: BluetoothModemLpTimerHandlerRegisterObservation,
-}
-
-impl BluetoothModemLpTimerSoftwarePending {
-    /// Return the initial source-127 classifier path.
-    pub const fn interrupt_observation(&self) -> BluetoothModemLpTimerInterruptObservation {
-        self.interrupt_observation
-    }
-
-    /// Return the state bytes whose software consequences remain pending.
-    pub const fn register_observation(&self) -> BluetoothModemLpTimerHandlerRegisterObservation {
-        self.register_observation
-    }
-
-    /// Sample one complete positional LP-timer instant.
-    ///
-    /// A newly observed rollover advances `epoch` before the fresh counter
-    /// read and publishes the exact hardware acknowledgement. The method is
-    /// finite and returns without polling.
-    pub fn sample_counter(
-        &mut self,
-        epoch: &mut BluetoothModemLpTimerEpoch,
-    ) -> BluetoothModemLpTimerCounterObservation {
-        let mut transaction = HardwareModemLpTimerTransaction {
-            registers: &self.ready.timer.peripherals.btdm_runtime_control,
-        };
-        execute_modem_lp_timer_counter_sample(&mut transaction, epoch)
-    }
-
-    /// Disable the currently programmed positional compare.
-    pub fn disable_compare(&mut self) {
-        let mut transaction = HardwareModemLpTimerTransaction {
-            registers: &self.ready.timer.peripherals.btdm_runtime_control,
-        };
-        execute_modem_lp_timer_compare_disable(&mut transaction);
-    }
-
-    /// Program one positional deadline using the current software epoch.
-    ///
-    /// The exact finite transaction either requests immediate software work,
-    /// publishes the deadline low counter image, or places a half-range
-    /// checkpoint when the deadline is at least one full low-counter span
-    /// away. It never waits for the compare to fire.
-    pub fn program_compare(
-        &mut self,
-        deadline: BluetoothModemLpTimerInstant,
-        epoch: BluetoothModemLpTimerEpoch,
-    ) -> BluetoothModemLpTimerCompareDisposition {
-        let mut transaction = HardwareModemLpTimerTransaction {
-            registers: &self.ready.timer.peripherals.btdm_runtime_control,
-        };
-        execute_modem_lp_timer_compare_program(&mut transaction, deadline, epoch)
-    }
-
-    /// Perform the common handler's final fresh state read after software work.
-    ///
-    /// This lower transition cannot prove that the no-RTOS timer queue was
-    /// drained. The HAL/controller composition must keep the owner private and
-    /// call this method only from its completed software state.
-    #[doc(hidden)]
-    pub fn complete_software(self) -> BluetoothModemLpTimerInterruptReady {
-        {
-            let mut transaction = HardwareModemLpTimerTransaction {
-                registers: &self.ready.timer.peripherals.btdm_runtime_control,
-            };
-            transaction.sample_final_state_0024();
-        }
-        self.ready
     }
 }
 
@@ -387,24 +177,6 @@ pub enum BluetoothModemLpTimerCompareDisposition {
     Deadline,
     /// A half-range checkpoint was used for a more distant deadline.
     HalfRangeCheckpoint,
-}
-
-/// Result of the common handler's bounded register-acknowledgement phase.
-#[must_use = "retain the ready owner or complete the required software work"]
-pub enum ModemLpTimerHandlerRegisterStep {
-    /// No software work was requested and the final fresh read completed.
-    Rearmed(BluetoothModemLpTimerInterruptReady),
-    /// At least one acknowledged state byte requires software work.
-    SoftwarePending(BluetoothModemLpTimerSoftwarePending),
-}
-
-/// Result of one finite source-127 handler prefix.
-#[must_use = "retain the ready owner or complete the required software handler"]
-pub enum ModemLpTimerInterruptStep {
-    /// `STATUS_0038` was zero; the handler returned without further MMIO.
-    Spurious(BluetoothModemLpTimerInterruptReady),
-    /// A reviewed branch requires the common software timer handler.
-    HandlerPending(BluetoothModemLpTimerHandlerPending),
 }
 
 trait ModemLpTimerTransaction {
@@ -756,39 +528,22 @@ impl ModemLpTimerRuntimeTransaction for HardwareModemLpTimerTransaction<'_> {
     }
 }
 
-impl BluetoothTaskRegisters {
+impl BluetoothModemLpTimerRegisters {
     /// Apply the exact controller-register prefix before source 127 is routed.
     ///
     /// SOURCE: public ESP32-S31 `libbtdm_common.a` member `9.o`, complete
     /// symbol `r_sym_bt_waDX0omCE7oLuPVSoPOK`, role-mapped by the public
     /// same-chip unobfuscated `r_btdm_hal_rtc_init`. The body performs seven
     /// writes and one fresh read in the exact order encoded by this module.
-    /// A single device fence follows the last write.
-    ///
-    /// This transition extracts the timer partition before the first MMIO
-    /// effect while leaving the disjoint controller task owner in place.
-    /// Cancellation or panic can therefore only lose timer authority
-    /// fail-stop. The returned state exposes no rollback because the reviewed
-    /// source-127 teardown does not reverse these eight operations.
-    #[doc(hidden)]
-    pub fn prepare_modem_lp_timer_registers(
-        &mut self,
-    ) -> Result<BluetoothModemLpTimerRegistersPrepared, BluetoothModemLpTimerOwnerError> {
-        let timer = self
-            .modem_lp_timer
-            .take()
-            .ok_or(BluetoothModemLpTimerOwnerError::OwnerSeparated)?;
-        {
-            let mut transaction = HardwareModemLpTimerTransaction {
-                registers: &timer.peripherals.btdm_runtime_control,
-            };
-            execute_modem_lp_timer_prepare(&mut transaction);
-        }
-        Ok(BluetoothModemLpTimerRegistersPrepared { timer })
+    /// A single device fence follows the last write. The reviewed source-127
+    /// teardown does not reverse these eight operations.
+    pub fn prepare_registers(&mut self) {
+        let mut transaction = HardwareModemLpTimerTransaction {
+            registers: &self.peripherals.btdm_runtime_control,
+        };
+        execute_modem_lp_timer_prepare(&mut transaction);
     }
-}
 
-impl BluetoothModemLpTimerRegistersPrepared {
     /// Complete the reviewed BTDM low-power hardware component.
     ///
     /// SOURCE: complete public ESP32-S31 `libbtdm_common.a` member `20.o`
@@ -798,106 +553,115 @@ impl BluetoothModemLpTimerRegistersPrepared {
     /// samples `CONTROL_2`, and conditionally publishes `CONTROL_1` from a
     /// fresh read. A device fence closes this restricted-PAC transaction.
     ///
-    /// The disjoint task owner supplies only `BTDM_LOW_POWER_CONFIG`; this
-    /// prepared owner supplies only `BTDM_RUNTIME_CONTROL`. Neither register
-    /// block can alias, and task ownership remains available after return.
-    #[doc(hidden)]
+    /// The task register set supplies only `BTDM_LOW_POWER_CONFIG`; this
+    /// partition supplies only `BTDM_RUNTIME_CONTROL`. Neither register block
+    /// can alias.
     pub fn initialize_low_power_hardware(
-        self,
-        task: &mut BluetoothTaskRegisters,
-    ) -> BluetoothModemLpTimerLowPowerHardwareInitialized {
-        let runtime_control = {
-            let mut transaction = HardwareModemLpTimerLowPowerInitTransaction {
-                config: &task.bluetooth.btdm_low_power_config,
-                runtime_control: &self.timer.peripherals.btdm_runtime_control,
-            };
-            execute_modem_lp_timer_low_power_init(&mut transaction)
+        &mut self,
+        task: &BluetoothTaskRegisters,
+    ) -> BluetoothLowPowerRuntimeControlObservation {
+        let mut transaction = HardwareModemLpTimerLowPowerInitTransaction {
+            config: &task.bluetooth.btdm_low_power_config,
+            runtime_control: &self.peripherals.btdm_runtime_control,
         };
-        BluetoothModemLpTimerLowPowerHardwareInitialized {
-            timer: self.timer,
-            runtime_control,
-        }
+        execute_modem_lp_timer_low_power_init(&mut transaction)
     }
-}
 
-impl BluetoothModemLpTimerLowPowerHardwareInitialized {
     /// Start the BTDM runtime timer during controller hardware enable.
     ///
     /// SOURCE: complete current `libbtdm_common.a` member `9.o` symbol
     /// `r_sym_bt_ymLPVGRY14FVW494j9ZD` writes the sole reviewed command and
     /// returns. The instruction-identical public same-chip predecessor names
-    /// the operation `r_btdm_hal_rtc_start`; its complete caller places this
-    /// edge after controller output preparation and before primary CPU-route
-    /// allocation. Consuming this owner proves the command cannot be repeated
-    /// through the same timer epoch.
-    pub fn start_runtime_timer(self) -> BluetoothModemLpTimerCounterStarted {
+    /// the operation `r_btdm_hal_rtc_start`.
+    pub fn start_runtime_counter(&mut self) {
         let mut transaction = HardwareModemLpTimerTransaction {
-            registers: &self.timer.peripherals.btdm_runtime_control,
+            registers: &self.peripherals.btdm_runtime_control,
         };
         execute_modem_lp_timer_start(&mut transaction);
-        BluetoothModemLpTimerCounterStarted {
-            timer: self.timer,
-            runtime_control: self.runtime_control,
+    }
+
+    /// Execute exactly one source-127 register-classification prefix.
+    ///
+    /// The method never waits, loops, allocates or calls software. A zero
+    /// `STATUS_0038` returns `None` after one read. Every other branch is
+    /// fenced and returns the path that requires the common timer handler.
+    pub fn classify_interrupt(&mut self) -> Option<BluetoothModemLpTimerInterruptObservation> {
+        let mut transaction = HardwareModemLpTimerTransaction {
+            registers: &self.peripherals.btdm_runtime_control,
+        };
+        match execute_modem_lp_timer_interrupt(&mut transaction) {
+            ModemLpTimerInterruptDisposition::Spurious => None,
+            ModemLpTimerInterruptDisposition::HandlerPending(observation) => Some(observation),
         }
     }
-}
 
-impl BluetoothModemLpTimerCounterStarted {
-    /// Return the low-power runtime-control branch retained across start.
-    pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
-        self.runtime_control
-    }
-
-    /// Move the started timer-register owner into source-127 ISR storage.
+    /// Acknowledge the two positional state bytes at the start of the common
+    /// timer handler.
     ///
-    /// This transition performs no MMIO. The platform must store the returned
-    /// value before enabling the CPU route and recover it only after that route
-    /// is disabled and no hard handler remains in flight.
-    pub fn stage_for_interrupt(self) -> BluetoothModemLpTimerInterruptReady {
-        BluetoothModemLpTimerInterruptReady { timer: self.timer }
-    }
-}
-
-impl BluetoothModemLpTimerInterruptReady {
-    /// The outer retired Controller owns inactive CPU routes and a drained
-    /// software queue. Disable compare before resetting the timer domain;
-    /// physical counter shutdown follows from reset and clock-lease release.
-    #[doc(hidden)]
-    pub fn disable_for_shutdown(&mut self) {
+    /// This finite transaction never waits, loops, allocates or invokes
+    /// software. If neither byte requests work, the vendor path performs its
+    /// final fresh read and this returns `None`. Otherwise it returns the
+    /// state bytes whose software consequences remain pending.
+    pub fn acknowledge_handler_registers(
+        &mut self,
+    ) -> Option<BluetoothModemLpTimerHandlerRegisterObservation> {
         let mut transaction = HardwareModemLpTimerTransaction {
-            registers: &self.timer.peripherals.btdm_runtime_control,
+            registers: &self.peripherals.btdm_runtime_control,
+        };
+        match execute_modem_lp_timer_handler_registers(&mut transaction) {
+            ModemLpTimerHandlerRegisterDisposition::Rearmed => None,
+            ModemLpTimerHandlerRegisterDisposition::SoftwarePending(observation) => {
+                Some(observation)
+            }
+        }
+    }
+
+    /// Sample one complete positional LP-timer instant.
+    ///
+    /// A newly observed rollover advances `epoch` before the fresh counter
+    /// read and publishes the exact hardware acknowledgement. The method is
+    /// finite and returns without polling.
+    pub fn sample_counter(
+        &mut self,
+        epoch: &mut BluetoothModemLpTimerEpoch,
+    ) -> BluetoothModemLpTimerCounterObservation {
+        let mut transaction = HardwareModemLpTimerTransaction {
+            registers: &self.peripherals.btdm_runtime_control,
+        };
+        execute_modem_lp_timer_counter_sample(&mut transaction, epoch)
+    }
+
+    /// Disable the currently programmed positional compare.
+    pub fn disable_compare(&mut self) {
+        let mut transaction = HardwareModemLpTimerTransaction {
+            registers: &self.peripherals.btdm_runtime_control,
         };
         execute_modem_lp_timer_compare_disable(&mut transaction);
     }
 
-    /// Return the drained timer partition after compare was disabled.
-    #[doc(hidden)]
-    pub fn into_shutdown_registers(self) -> BluetoothModemLpTimerRegisters {
-        self.timer
-    }
-    /// Execute exactly one source-127 register-classification prefix.
+    /// Program one positional deadline using the current software epoch.
     ///
-    /// The method never waits, loops, allocates or calls software. A zero
-    /// `STATUS_0038` returns the ready owner after one read. Every other branch
-    /// is fenced and retains the unique owner in
-    /// [`BluetoothModemLpTimerHandlerPending`] for the next finite common
-    /// handler register step.
-    pub fn step(self) -> ModemLpTimerInterruptStep {
-        let disposition = {
-            let mut transaction = HardwareModemLpTimerTransaction {
-                registers: &self.timer.peripherals.btdm_runtime_control,
-            };
-            execute_modem_lp_timer_interrupt(&mut transaction)
+    /// The exact finite transaction either requests immediate software work,
+    /// publishes the deadline low counter image, or places a half-range
+    /// checkpoint when the deadline is at least one full low-counter span
+    /// away. It never waits for the compare to fire.
+    pub fn program_compare(
+        &mut self,
+        deadline: BluetoothModemLpTimerInstant,
+        epoch: BluetoothModemLpTimerEpoch,
+    ) -> BluetoothModemLpTimerCompareDisposition {
+        let mut transaction = HardwareModemLpTimerTransaction {
+            registers: &self.peripherals.btdm_runtime_control,
         };
-        match disposition {
-            ModemLpTimerInterruptDisposition::Spurious => ModemLpTimerInterruptStep::Spurious(self),
-            ModemLpTimerInterruptDisposition::HandlerPending(observation) => {
-                ModemLpTimerInterruptStep::HandlerPending(BluetoothModemLpTimerHandlerPending {
-                    ready: self,
-                    observation,
-                })
-            }
-        }
+        execute_modem_lp_timer_compare_program(&mut transaction, deadline, epoch)
+    }
+
+    /// Perform the common handler's final fresh state read after software work.
+    pub fn sample_final_state(&mut self) {
+        let mut transaction = HardwareModemLpTimerTransaction {
+            registers: &self.peripherals.btdm_runtime_control,
+        };
+        transaction.sample_final_state_0024();
     }
 }
 

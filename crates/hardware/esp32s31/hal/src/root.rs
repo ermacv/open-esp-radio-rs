@@ -140,11 +140,11 @@ impl RadioHardware {
         BluetoothRoute {
             task: BluetoothTaskRegisters::new(BluetoothTaskParts {
                 bluetooth,
-                modem_lp_timer: bluetooth_modem_lp_timer,
                 radio_phy,
                 coexistence,
                 shared_radio,
             }),
+            modem_lp_timer: bluetooth_modem_lp_timer,
             interrupts: bluetooth_interrupts,
             retained: RetainedWifi {
                 wifi_mac,
@@ -155,18 +155,14 @@ impl RadioHardware {
     }
 
     /// Reconstruct the root from a Bluetooth route.
-    ///
-    /// # Panics
-    ///
-    /// Panics while the modem LP-timer partition is separated from the task.
     pub(crate) fn from_bluetooth(
         task: BluetoothTaskRegisters,
+        modem_lp_timer: BluetoothModemLpTimerRegisters,
         interrupts: BluetoothInterruptSetup,
         retained: RetainedWifi,
     ) -> Self {
         let BluetoothTaskParts {
             bluetooth,
-            modem_lp_timer,
             radio_phy,
             coexistence,
             shared_radio,
@@ -319,6 +315,7 @@ pub(crate) struct WifiRoute {
 /// Registers and inactive interrupt bank of one exclusive Bluetooth route.
 pub(crate) struct BluetoothRoute {
     pub(crate) task: BluetoothTaskRegisters,
+    pub(crate) modem_lp_timer: BluetoothModemLpTimerRegisters,
     pub(crate) interrupts: BluetoothInterruptSetup,
     pub(crate) retained: RetainedWifi,
 }

@@ -80,7 +80,6 @@ fn bluetooth_task() -> (
 ) {
     let RadioPartitions {
         bluetooth,
-        bluetooth_modem_lp_timer,
         bluetooth_interrupts,
         radio_phy,
         coexistence,
@@ -90,7 +89,6 @@ fn bluetooth_task() -> (
     (
         crate::BluetoothTaskRegisters::new(crate::BluetoothTaskParts {
             bluetooth,
-            modem_lp_timer: bluetooth_modem_lp_timer,
             radio_phy,
             coexistence,
             shared_radio,

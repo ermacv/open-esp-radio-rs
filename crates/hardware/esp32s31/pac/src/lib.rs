@@ -66,14 +66,9 @@ pub use bluetooth::{
     },
     modem_timer::{
         BluetoothLowPowerRuntimeControlObservation, BluetoothModemLpTimerCompareDisposition,
-        BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerCounterStarted,
-        BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerPending,
+        BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerEpoch,
         BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
-        BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerInterruptReady,
-        BluetoothModemLpTimerLowPowerHardwareInitialized, BluetoothModemLpTimerOwnerError,
-        BluetoothModemLpTimerRegisters, BluetoothModemLpTimerRegistersPrepared,
-        BluetoothModemLpTimerSoftwarePending, ModemLpTimerHandlerRegisterStep,
-        ModemLpTimerInterruptStep,
+        BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerRegisters,
     },
     phy::{
         BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,

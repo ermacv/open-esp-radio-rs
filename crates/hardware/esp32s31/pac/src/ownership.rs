@@ -872,7 +872,6 @@ pub struct Ieee802154InterruptRegisters {
 #[must_use = "the Bluetooth task owner must be reunited before release"]
 pub struct BluetoothTaskRegisters {
     pub(crate) bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
-    pub(crate) modem_lp_timer: Option<BluetoothModemLpTimerRegisters>,
     pub(crate) radio_phy: RadioPhyRegisters,
     pub(crate) coexistence: svd::peripheral_ownership::CoexistencePeripherals,
     pub(crate) shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
@@ -883,7 +882,6 @@ pub struct BluetoothTaskRegisters {
 /// Partitions consumed by one Bluetooth task register set.
 pub struct BluetoothTaskParts {
     pub bluetooth: BluetoothControllerPartition,
-    pub modem_lp_timer: BluetoothModemLpTimerRegisters,
     pub radio_phy: RadioPhyRegisters,
     pub coexistence: CoexistencePartition,
     pub shared_radio: SharedRadioPartition,
@@ -894,14 +892,12 @@ impl BluetoothTaskRegisters {
     pub fn new(parts: BluetoothTaskParts) -> Self {
         let BluetoothTaskParts {
             bluetooth: BluetoothControllerPartition(bluetooth),
-            modem_lp_timer,
             radio_phy,
             coexistence: CoexistencePartition(coexistence),
             shared_radio: SharedRadioPartition(shared_radio),
         } = parts;
         Self {
             bluetooth,
-            modem_lp_timer: Some(modem_lp_timer),
             radio_phy,
             coexistence,
             shared_radio,
@@ -911,38 +907,13 @@ impl BluetoothTaskRegisters {
     }
 
     /// Return the partitions. This performs no MMIO.
-    ///
-    /// # Panics
-    ///
-    /// Panics while the modem LP-timer partition is separated; check
-    /// [`Self::modem_lp_timer_separated`] first.
-    pub fn into_parts(mut self) -> BluetoothTaskParts {
-        let modem_lp_timer = self
-            .modem_lp_timer
-            .take()
-            .expect("a cold Bluetooth owner retains its modem LP-timer partition");
+    pub fn into_parts(self) -> BluetoothTaskParts {
         BluetoothTaskParts {
             bluetooth: BluetoothControllerPartition(self.bluetooth),
-            modem_lp_timer,
             radio_phy: self.radio_phy,
             coexistence: CoexistencePartition(self.coexistence),
             shared_radio: SharedRadioPartition(self.shared_radio),
         }
-    }
-
-    /// Whether source 127 still owns the disjoint modem LP-timer partition.
-    pub const fn modem_lp_timer_separated(&self) -> bool {
-        self.modem_lp_timer.is_none()
-    }
-
-    /// Return the drained LP-timer partition during physical shutdown.
-    #[doc(hidden)]
-    pub fn restore_modem_lp_timer(&mut self, timer: BluetoothModemLpTimerRegisters) {
-        assert!(
-            self.modem_lp_timer.is_none(),
-            "the Bluetooth task already owns its modem LP-timer partition"
-        );
-        self.modem_lp_timer = Some(timer);
     }
 
     #[doc(hidden)]

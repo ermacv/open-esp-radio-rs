@@ -139,9 +139,13 @@ fn registration_epoch_is_replaced_by_registration_and_retired_by_every_route_rel
     let third = phy.begin_registration_epoch();
     assert!(third != first && third != second);
 
-    let mut ieee802154 =
-        RadioHardware::from_bluetooth(bluetooth.task, bluetooth.interrupts, bluetooth.retained)
-            .into_ieee802154();
+    let mut ieee802154 = RadioHardware::from_bluetooth(
+        bluetooth.task,
+        bluetooth.modem_lp_timer,
+        bluetooth.interrupts,
+        bluetooth.retained,
+    )
+    .into_ieee802154();
     let phy = ieee802154.task.radio_phy_mut();
     assert_eq!(phy.registration_epoch(), None);
     let fourth = phy.begin_registration_epoch();

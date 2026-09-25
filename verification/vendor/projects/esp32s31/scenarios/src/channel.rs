@@ -1,14 +1,15 @@
 //! Channel restoration over the captured archive's installed ROM callbacks
 //! against compiled production.
 //!
-//! Full-root cases establish ordered channel effects, TX gain publication and
-//! the committed channel, bandwidth and temperature. Temperature-prefix cases
-//! cover every sensor window; their ordered-effect claim ends where the gain
-//! bank is first read and is retained as separate evidence, never as full-root
-//! equivalence. Stuck readiness is production containment, not vendor timing
-//! equivalence. Software comparison under explicit peripheral inputs, never
+//! Every transition compares its complete effect stream under the reviewed
+//! channel contract. Full-root cases cover every channel class and bandwidth
+//! and establish TX gain publication and the committed channel, bandwidth and
+//! temperature. Temperature-prefix cases cover every sensor window at boundary
+//! codes and check a single sensor sample before the gain bank is first read.
+//! Stuck readiness is production containment, not vendor timing equivalence. Software comparison under explicit peripheral inputs, never
 //! hardware qualification.
-use crate::evidence::{PhyEffect, environment_reads, events, output, phy_effects, stop};
+use crate::contracts::{phy_contract, plumbing};
+use crate::evidence::{PhyEffect, events, output, phy_effects, stop};
 use crate::harness::{Buffer, Result, case, evidence, selection};
 use crate::i2c::{all_complete, returned_low};
 use crate::layout::*;
@@ -16,8 +17,8 @@ use crate::phy::delay_calls;
 use crate::phy::{PhyImage, PhyOptions, Right, image_layout, select, start_session};
 use crate::session::request;
 use blobray_domain::{
-    CommandCell, ComparisonVerdict, DeviceDeclaration, ExecutionCase, ExecutionEvidence,
-    ExecutionStop, Invocation, LinkRequest, SessionReset,
+    CommandCell, ComparisonVerdict, DeviceDeclaration, EffectReview, ExecutionCase, ExecutionEvent,
+    ExecutionEvidence, ExecutionStop, Invocation, LinkRequest, SessionReset,
 };
 
 /// Offsets of the committed channel, temperature and bandwidth in `phy_param`.
@@ -123,11 +124,15 @@ pub fn channel_models(transition: &Transition, ready: bool) -> Vec<DeviceDeclara
     ]
 }
 
-/// Channel image and its production probe.
+/// Production channel entry compared with `phy_chip_set_chan`.
+const PRODUCTION_ENTRY: &str = "open_phy_channel_trace_state";
+
+/// Channel image, its production probe and the reviewed transition contract.
 pub struct Channel {
     pub image: PhyImage,
     rom_delay: u32,
     production_delay: u32,
+    effects: EffectReview,
 }
 
 impl std::ops::Deref for Channel {
@@ -174,17 +179,30 @@ impl Channel {
             roots: vec![select(&session, 0, "phy_get_romfunc_addr")?],
             layout: image_layout(),
         };
-        let image = PhyImage::link(
+        let mut image = PhyImage::link(
             session,
             &link,
             &options.linker,
             "phy_chip_set_chan",
             &[ROM_INPUT],
         )?;
+        let contract = phy_contract(
+            image.vendor_endpoint("phy_chip_set_chan")?,
+            image.production_endpoint(PRODUCTION_ENTRY)?,
+            plumbing(&[], MAX_EVENTS),
+            "channel transitions under explicit sensor, PLL and readiness inputs",
+        );
+        let effects = image.review_effects(
+            "channel-effects",
+            "esp32s31.phy.channel-transition.effects",
+            contract,
+            "every channel register effect compares exactly except analog I2C polling",
+        )?;
         Ok(Self {
             rom_delay: image.sym(1, "ets_delay_us"),
             production_delay: image.sym(2, "ets_delay_us"),
             image,
+            effects,
         })
     }
 
@@ -202,7 +220,7 @@ impl Channel {
 
     pub fn production_phase(&self, t: &Transition, ready: bool) -> Result<Invocation> {
         let probe = self.probes.invoke(
-            "open_phy_channel_trace_state",
+            PRODUCTION_ENTRY,
             vec![
                 ("channel_or_frequency", i64::from(t.channel).into()),
                 ("cbw", i64::from(t.cbw).into()),
@@ -230,12 +248,8 @@ impl Channel {
             SessionReset::Warm,
             false,
         );
-        let relation = transition.relation.as_mut().unwrap();
-        // Polling counts and transport reads are implementation plumbing; the
-        // ordered effect comparison below reviews every remaining read.
-        relation.events.mmio_read = false;
-        relation.events.delay = false;
-        relation.returns.low = false;
+        // Blobray compares every effect under the reviewed contract.
+        transition.relation.as_mut().unwrap().effects = Some(self.effects.clone());
         Ok(vec![
             case(
                 "initialize",
@@ -272,13 +286,13 @@ pub fn vendor_semantic(parameters: &[u8]) -> [u8; SEMANTIC_BYTES as usize] {
     ]
 }
 
-/// Independent semantic expectations and vendor/production agreement of one
-/// completed transition. Returns the ordered effects of both sides.
+/// Independent semantic expectations of one completed transition. Returns the
+/// vendor's raw events.
 fn check_transition(
     label: &str,
     t: &Transition,
     records: &[ExecutionEvidence],
-) -> (Vec<PhyEffect>, Vec<PhyEffect>) {
+) -> Vec<ExecutionEvent> {
     assert_eq!(returned_low(records, TRANSITION, true), Some(0), "{label}");
     for side in [false, true] {
         assert!(all_complete(records, TRANSITION, side), "{label} {side}");
@@ -295,16 +309,7 @@ fn check_transition(
         committed,
         "{label}: production commit"
     );
-    let (vendor, production) = (
-        events(records, TRANSITION, false),
-        events(records, TRANSITION, true),
-    );
-    assert_eq!(
-        environment_reads(&vendor),
-        environment_reads(&production),
-        "{label}: environment-supplied registers"
-    );
-    (phy_effects(&vendor, &[]), phy_effects(&production, &[]))
+    events(records, TRANSITION, false)
 }
 
 fn gain_writes(effects: &[PhyEffect]) -> usize {
@@ -320,22 +325,20 @@ pub fn exercise(ctx: &mut Channel) -> Result<()> {
         let label = format!("full-{}", t.label());
         let rows = ctx.rows(&t, true)?;
         let executed = ctx.compare(&label, rows, t.fill)?;
-        let (vendor, production) = check_transition(&label, &t, &executed.records);
-        assert_eq!(vendor, production, "{label}: channel effects");
-        assert!(gain_writes(&vendor) > 0, "{label}: no gain publication");
+        let vendor = check_transition(&label, &t, &executed.records);
+        assert!(
+            gain_writes(&phy_effects(&vendor)) > 0,
+            "{label}: no gain publication"
+        );
     }
-    // Temperature-prefix evidence: every sensor DAC window at boundary codes.
-    // The claim is limited to effects before the gain bank is first read.
+    // Temperature-prefix evidence: every sensor DAC window at boundary codes,
+    // compared completely, with one sensor sample before gain publication.
     for t in prefix_transitions() {
         let label = format!("prefix-{}", t.label());
         let rows = ctx.rows(&t, true)?;
         let executed = ctx.compare(&label, rows, t.fill)?;
-        let (vendor, production) = check_transition(&label, &t, &executed.records);
-        assert_eq!(
-            temperature_prefix(&vendor),
-            temperature_prefix(&production),
-            "{label}: temperature prefix"
-        );
+        let vendor = check_transition(&label, &t, &executed.records);
+        temperature_prefix(&phy_effects(&vendor));
     }
     stuck_readiness(ctx)?;
     negative(ctx)
@@ -372,7 +375,7 @@ fn stuck_readiness(ctx: &mut Channel) -> Result<()> {
             "{label}: semantic output published"
         );
         let observed = events(&records, 0, false);
-        let effects = phy_effects(&observed, &[]);
+        let effects = phy_effects(&observed);
         assert_eq!(gain_writes(&effects), 0, "{label}: gain published");
         assert!(
             effects
@@ -418,7 +421,10 @@ fn negative(ctx: &mut Channel) -> Result<()> {
         ),
         "uninstalled callbacks must not complete"
     );
-    let rows = ctx.rows(&t, true)?;
+    // The contract's occurrence bounds exceed a one-event capacity; the
+    // exhaustion under test precedes any effect comparison.
+    let mut rows = ctx.rows(&t, true)?;
+    rows[TRANSITION as usize].relation.as_mut().unwrap().effects = None;
     let limited = request(&ctx.vendor, Some(&ctx.production), Some(t.fill), rows, 1);
     ctx.capacity_failure("negative-capacity", &limited)
 }

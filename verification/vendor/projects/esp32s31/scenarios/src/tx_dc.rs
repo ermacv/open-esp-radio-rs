@@ -8,7 +8,8 @@
 //! PBus and SAR faults must not publish calibration, and the SAR observation
 //! limit is a failure distinct from time or work limits. Synthetic
 //! measurements establish software effects, not RF accuracy.
-use crate::evidence::{PhyEffect, environment_reads, events, output, phy_effects, stop};
+use crate::contracts::{omitted_read, phy_contract, plumbing};
+use crate::evidence::{events, output, stop};
 use crate::harness::{Buffer, Result, case, evidence, selection};
 use crate::i2c::{all_complete, returned_low};
 use crate::layout::*;
@@ -16,10 +17,11 @@ use crate::phy::delay_calls;
 use crate::phy::{PhyImage, PhyOptions, Right, image_layout, phy_sdk_input, select, start_session};
 use crate::session::request;
 use blobray_domain::{
-    ComparisonVerdict, DeviceBehavior, DeviceDeclaration, ExecutionCase, ExecutionEvent,
-    ExecutionEvidence, ExecutionStop, Invocation, LinkRequest, RegionLifetime, SessionReset,
+    ComparisonVerdict, DeviceBehavior, DeviceDeclaration, EffectReview, EffectRule, ExecutionCase,
+    ExecutionEvent, ExecutionEvidence, ExecutionStop, Invocation, LinkRequest, RegionLifetime,
+    SessionReset,
 };
-use std::{collections::BTreeSet, path::Path};
+use std::path::Path;
 
 pub type Options = PhyOptions;
 
@@ -32,6 +34,8 @@ const SAR_SAMPLE_SHIFT: u32 = 17;
 /// Result words the ROM `phy_read_sar_dout` snapshots but its tone-average
 /// caller never consumes; production does not read them.
 const SAR_UNUSED: [u32; 3] = [0x2010_0820, 0x2010_0824, 0x2010_0828];
+/// Production TX-DC entry compared with `phy_txdc_cal_pwdet_init`.
+const PRODUCTION_ENTRY: &str = "open_phy_calibration_trace_tx_dc_pwdet";
 /// Bluetooth PBus path word.
 const BLUETOOTH_PBUS_PATH: u32 = 0x2010_0894;
 /// Low-power SAR control word outside the radio block.
@@ -206,28 +210,27 @@ pub fn tx_models(profile: &Profile, status: u32, detector: u32) -> Vec<DeviceDec
     models
 }
 
-/// Ordered effects without transport plumbing and without the three SAR
-/// result words the vendor snapshots but never consumes.
-pub fn tx_effects(observed: &[ExecutionEvent]) -> Vec<PhyEffect> {
-    phy_effects(observed, &[PBUS_STATUS])
-        .into_iter()
-        .filter(|e| !matches!(e, PhyEffect::Read(address, _) if SAR_UNUSED.contains(address)))
-        .collect()
-}
-
-/// Environment-supplied registers under the same exclusion as `tx_effects`.
-pub fn tx_environment(observed: &[ExecutionEvent]) -> BTreeSet<u32> {
-    let mut read = environment_reads(observed);
+/// Reviewed rules of the TX-DC root: transport plumbing, the PBus status
+/// polling interval and the three SAR result words the vendor snapshots but
+/// never consumes.
+pub fn tx_rules() -> Vec<EffectRule> {
+    let mut rules = plumbing(&[PBUS_STATUS], TXDC_EVENTS);
     for address in SAR_UNUSED {
-        read.remove(&address);
+        rules.push(omitted_read(
+            format!("sar-unused-{address:08x}"),
+            address,
+            TXDC_EVENTS,
+            "phy_read_sar_dout snapshots this result word; its tone-average caller never consumes it",
+        ));
     }
-    read
+    rules
 }
 
 pub struct TxDc {
     pub image: PhyImage,
     rom_delay: u32,
     production_delay: u32,
+    effects: EffectReview,
 }
 
 impl std::ops::Deref for TxDc {
@@ -257,7 +260,7 @@ impl TxDc {
             roots: vec![select(&session, 0, "phy_get_romfunc_addr")?],
             layout: image_layout(),
         };
-        let image = PhyImage::link(
+        let mut image = PhyImage::link(
             session,
             &link,
             &options.linker,
@@ -266,10 +269,23 @@ impl TxDc {
             // bound to the PHY SDK firmware and never executed.
             &[ROM_INPUT, PHY_SDK_INPUT],
         )?;
+        let contract = phy_contract(
+            image.vendor_endpoint("phy_txdc_cal_pwdet_init")?,
+            image.production_endpoint(PRODUCTION_ENTRY)?,
+            tx_rules(),
+            "TX-DC/PWDET calibration under synthetic SAR samples and explicit PBus and detector inputs",
+        );
+        let effects = image.review_effects(
+            "txdc-effects",
+            "esp32s31.phy.tx-dc-pwdet.effects",
+            contract,
+            "every TX-DC register effect compares exactly except transport polling and unused SAR snapshots",
+        )?;
         Ok(Self {
             rom_delay: image.sym(1, "ets_delay_us"),
             production_delay: image.sym(2, "ets_delay_us"),
             image,
+            effects,
         })
     }
 
@@ -291,7 +307,7 @@ impl TxDc {
         models: Vec<DeviceDeclaration>,
     ) -> Result<Invocation> {
         let probe = self.probes.invoke(
-            "open_phy_calibration_trace_tx_dc_pwdet",
+            PRODUCTION_ENTRY,
             vec![
                 (
                     "input",
@@ -322,12 +338,8 @@ impl TxDc {
             SessionReset::Warm,
             false,
         );
-        let relation = root.relation.as_mut().unwrap();
-        // Polling and transport reads are implementation plumbing; the ordered
-        // effect comparison reviews every remaining read and delay.
-        relation.events.mmio_read = false;
-        relation.events.delay = false;
-        relation.returns.low = false;
+        // Blobray compares every effect under the reviewed contract.
+        root.relation.as_mut().unwrap().effects = Some(self.effects.clone());
         Ok(vec![
             case(
                 "initialize",
@@ -363,17 +375,6 @@ fn check(label: &str, profile: &Profile, records: &[ExecutionEvidence], root: u3
         output(records, root, true),
         parameters[rows..rows + ROW_BYTES as usize],
         "{label}: DC rows"
-    );
-    let (vendor, production) = (events(records, root, false), events(records, root, true));
-    assert_eq!(
-        tx_environment(&vendor),
-        tx_environment(&production),
-        "{label}: environment-supplied registers"
-    );
-    assert_eq!(
-        tx_effects(&vendor),
-        tx_effects(&production),
-        "{label}: TX-DC effects"
     );
 }
 
@@ -502,7 +503,10 @@ fn negative(ctx: &mut TxDc) -> Result<()> {
         stop(&records, ROOT, false),
         ExecutionStop::Incomplete { .. }
     ));
-    let rows = ctx.rows(&profile)?;
+    // The contract's occurrence bounds exceed a one-event capacity; the
+    // exhaustion under test precedes any effect comparison.
+    let mut rows = ctx.rows(&profile)?;
+    rows[ROOT as usize].relation.as_mut().unwrap().effects = None;
     let limited = request(
         &ctx.vendor,
         Some(&ctx.production),
@@ -516,6 +520,7 @@ fn negative(ctx: &mut TxDc) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use blobray_domain::EffectDisposition;
 
     fn read(address: u32, value: u32) -> ExecutionEvent {
         ExecutionEvent::Read {
@@ -533,7 +538,7 @@ mod tests {
             all.iter()
                 .any(|p| matches!(p.samples, Samples::Alternating))
         );
-        let labels: BTreeSet<_> = all.iter().map(Profile::label).collect();
+        let labels: std::collections::BTreeSet<_> = all.iter().map(Profile::label).collect();
         assert_eq!(labels.len(), all.len());
     }
 
@@ -564,23 +569,19 @@ mod tests {
     }
 
     #[test]
-    fn only_unused_sar_words_are_excluded() {
-        let observed = [
-            read(SAR_UNUSED[0], 1),
-            read(SAR_RESULT, 123 << SAR_SAMPLE_SHIFT),
-            read(SAR_UNUSED[2], 1),
-            read(DETECTOR_STATUS, DETECTOR_READY),
-        ];
-        assert_eq!(
-            tx_effects(&observed),
-            [
-                PhyEffect::Read(SAR_RESULT, 123 << SAR_SAMPLE_SHIFT),
-                PhyEffect::Read(DETECTOR_STATUS, DETECTOR_READY)
-            ]
-        );
-        assert_eq!(
-            tx_environment(&observed),
-            BTreeSet::from([SAR_RESULT, DETECTOR_STATUS])
-        );
+    fn contract_omits_only_unused_sar_words() {
+        let rules = tx_rules();
+        let omitted = |event: &ExecutionEvent| {
+            rules
+                .iter()
+                .filter(|r| r.vendor.unwrap().selects(event, None))
+                .map(|r| r.disposition)
+                .collect::<Vec<_>>()
+        };
+        for address in SAR_UNUSED {
+            assert_eq!(omitted(&read(address, 1)), [EffectDisposition::Omitted]);
+        }
+        assert!(omitted(&read(SAR_RESULT, 123 << SAR_SAMPLE_SHIFT)).is_empty());
+        assert!(omitted(&read(DETECTOR_STATUS, DETECTOR_READY)).is_empty());
     }
 }

@@ -7,13 +7,13 @@ use crate::harness::{
     Result, evidence, invalid, known, manifest, region, selection, symbol, words,
 };
 use crate::layout::*;
-use crate::session::{Session, image_symbol, request};
+use crate::session::{Session, image_symbol, image_symbol_id, request};
 use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_domain::{
-    ArtifactId, ComparisonVerdict, DataSelector, DeviceDeclaration, EntrySelection, ExecutionCase,
-    ExecutionEvidence, ExecutionRegion, ExecutionRequest, ExecutionStop, ExecutionTarget,
-    ImageLayout, ImageRegion, Invocation, LinkRequest, MemorySelection, ObjectId, ObjectLocation,
-    RegionLifetime,
+    ArtifactId, CallEndpoint, ComparisonVerdict, DataSelector, DeviceDeclaration, EntrySelection,
+    ExecutionCase, ExecutionEvidence, ExecutionRegion, ExecutionRequest, ExecutionStop,
+    ExecutionTarget, FunctionSource, ImageLayout, ImageRegion, Invocation, KnowledgeOccurrence,
+    LinkRequest, MemorySelection, ObjectId, ObjectLocation, RegionLifetime, ReviewedCallBoundary,
 };
 use std::{
     collections::BTreeMap,
@@ -205,6 +205,38 @@ impl PhyImage {
             .roots
             .get(name)
             .unwrap_or_else(|| panic!("missing root {name}"))
+    }
+
+    /// Exact code endpoint of the linked image root `name`.
+    pub fn vendor_endpoint(&self, name: &str) -> Result<CallEndpoint> {
+        let symbol = image_symbol_id(&self.run.join("image/image.elf"), &self.image_object, name)?;
+        Ok(CallEndpoint {
+            occurrence: KnowledgeOccurrence {
+                revision: self.revision.clone(),
+                source: self.vendor.source.clone(),
+                object: self.image_object.clone(),
+                symbol: Some(symbol),
+            },
+            boundary: ReviewedCallBoundary::Code {
+                address: self.root(name),
+            },
+        })
+    }
+
+    /// Exact code endpoint of the compiled production function `name`.
+    pub fn production_endpoint(&self, name: &str) -> Result<CallEndpoint> {
+        let record = symbol(&self.inventory, 2, name)?;
+        Ok(CallEndpoint {
+            occurrence: KnowledgeOccurrence {
+                revision: self.revision.clone(),
+                source: FunctionSource::Input { input: 2 },
+                object: record.id.object.clone(),
+                symbol: Some(record.id.clone()),
+            },
+            boundary: ReviewedCallBoundary::Code {
+                address: u32::try_from(record.value)?,
+            },
+        })
     }
 
     /// Enter `target` directly with explicit ABI words.

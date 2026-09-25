@@ -278,8 +278,17 @@ expectations; Blobray mechanisms supply the rest:
   scenarios compare delay sequences instead of declaring budgets.
 - Where a scenario uses the radio aperture, every radio register without an
   explicit model is retained storage that starts with the fill pattern. Only
-  semantic inputs are modeled, and both sides must read the same never-written
-  registers.
+  semantic inputs are modeled.
+- The channel, RX-gain and TX-DC roots compare their effects under a reviewed
+  effect contract ([`contracts.rs`](scenarios/src/contracts.rs)). The scenario
+  proposes it through `knowledge propose-effect-contract`, accepts exactly that
+  proposal and selects the accepted review in each root's relation. Blobray
+  evaluates it with `unclassified: required`: analog I2C transport reads,
+  read-mask and host-map writes, and the single-microsecond wait before a
+  transport or declared status read are ignored plumbing; every other MMIO,
+  fence and delay effect compares exactly, in order and value. Because every
+  read compares, both sides necessarily consume the same never-written
+  registers. Each verdict carries the `reviewed-effect-refinement` claim.
 - ROM storage addresses name their ROM symbols (`rom_phyFuns`,
   `phy_param_rom`, `g_phyFuns_instance`) and are checked against the captured
   ROM inventory at session start.
@@ -631,14 +640,16 @@ Every other radio register is the retained aperture.
 
 **Checks for every profile:**
 
-- ordered effects match on both sides, including readiness waits;
-- both sides read the same never-written registers;
+- the reviewed RX contract MATCHes, including readiness waits;
 - production uses at most twice the vendor's steps;
 - the 52 projected per-gain, base and fine DC coefficients and the two bank
   limits equal the vendor's committed `phy_param` state.
 
-The only exclusion is the outer DC control snapshot that the vendor reads when
-DC is skipped.
+Beyond transport plumbing and the PBus status polling interval, the contract
+lets production omit only the outer DC control snapshot that the vendor reads
+when DC is skipped. That snapshot is the DC control read immediately followed
+by the first read of table initialization or of initialized-table publication;
+the calibration path never reads DC control in that position.
 
 **Production-only failures, per fill.** Each must leave the seeded coefficients
 and gain memory unpublished:
@@ -693,12 +704,10 @@ production side runs `open_phy_channel_trace_state`.
 - the cleared work mode and the transport read-mask and host-map words.
 
 Every other radio register is retained storage that starts with the fill
-pattern (the radio aperture described above). Both sides must read the same
-never-written registers.
+pattern (the radio aperture described above).
 
-**Relation.** The native relation compares ordered MMIO writes. A runner-side
-comparison then reviews every non-transport read and every requested delay. It
-excludes only three things:
+**Relation.** Every transition compares under the reviewed channel contract.
+It ignores only three things:
 
 - transport-port reads;
 - read-mask and host-map accesses;
@@ -712,15 +721,15 @@ the DAC read-modify-write of the ROM reselection.
 **Full-root evidence.** These cases cover channels 1, 6, 11 and 13 at both
 bandwidths and both fills. They require:
 
-- identical ordered effects;
+- a MATCH under the reviewed channel contract;
 - nonempty TX gain publication;
 - a committed channel, bandwidth and temperature that match both an independent
   ROM `phy_tsens_attribute`/`phy_code_to_temp` oracle and the production output.
 
 **Temperature-prefix evidence.** These cases cover all five sensor DAC windows
 at codes 0, 64, 100 and 255. They are retained as separate `prefix-*`
-executions. Their ordered-effect claim ends at the first gain-bank read, with
-exactly one sensor sample before it. They make no whole-channel claim.
+executions. Each compares its complete transition under the channel contract
+and takes exactly one sensor sample before the first gain-bank read.
 
 **Stuck readiness.** The production-only case must return failure without
 writing gain data or semantic output, after sampling readiness.
@@ -797,12 +806,12 @@ Every other radio register is the retained aperture.
 **Checks for every profile:**
 
 - the DC rows equal the vendor's committed rows;
-- ordered effects match, retaining every write and readiness read;
-- both sides read the same never-written registers;
+- the reviewed TX-DC contract MATCHes, retaining every write and readiness read;
 - the vendor keeps the independently seeded Wi-Fi gain adjustment.
 
-The only exclusions are PBus readiness-wait delays and the three unused SAR
-words.
+Beyond transport plumbing and the PBus status polling interval, the contract
+lets production omit only the three SAR result words the vendor snapshots but
+never consumes.
 
 **Production-only faults.** A stuck PBus transaction (typed failure 4) and a
 detector that never becomes ready (the SAR observation limit, failure 5) publish

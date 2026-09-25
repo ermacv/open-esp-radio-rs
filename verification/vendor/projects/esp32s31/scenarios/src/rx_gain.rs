@@ -8,7 +8,8 @@
 //! cases require a failed channel, a failed minimum search and an exhausted
 //! shared budget to leave coefficients and gain memory unpublished. Software
 //! comparison under explicit peripheral inputs, never hardware qualification.
-use crate::evidence::{PhyEffect, environment_reads, events, output, phy_effects, steps};
+use crate::contracts::{omitted_read_before, phy_contract, plumbing};
+use crate::evidence::{PhyEffect, events, output, phy_effects, steps};
 use crate::harness::{Buffer, Result, case, evidence, selection};
 use crate::i2c::{all_complete, returned_low};
 use crate::layout::*;
@@ -16,8 +17,8 @@ use crate::phy::delay_calls;
 use crate::phy::{PhyImage, PhyOptions, Right, image_layout, phy_sdk_input, select, start_session};
 use crate::session::request;
 use blobray_domain::{
-    CommandCell, ComparisonVerdict, DeviceDeclaration, ExecutionCase, ExecutionEvidence,
-    Invocation, LinkRequest, ReadRun, SessionReset,
+    CommandCell, ComparisonVerdict, DeviceDeclaration, EffectReview, EffectRule, ExecutionCase,
+    ExecutionEvidence, Invocation, LinkRequest, ReadRun, SessionReset,
 };
 use std::path::Path;
 
@@ -57,6 +58,14 @@ const DC_CALIBRATED: u8 = 1;
 const TABLES_INITIALIZED: u8 = 2;
 /// Outer DC control snapshot the vendor reads even when DC is skipped.
 const DC_CONTROL: u32 = 0x2010_0434;
+/// Registers the vendor reads immediately after that skipped-DC snapshot,
+/// before table initialization and with initialized tables. Calibration never
+/// reads DC control immediately before either.
+const SKIPPED_DC_SUCCESSORS: [u32; 2] = [0x2010_088c, 0x2010_702c];
+/// Skipped-DC snapshots per root.
+const SKIPPED_DC_SNAPSHOTS: u32 = 1;
+/// Production RX entry compared with `phy_set_rx_gain_table`.
+const PRODUCTION_ENTRY: &str = "open_phy_calibration_trace_rx_gain";
 /// DC estimator readiness (bit 16), signed samples and activity.
 const ESTIMATOR_READY: u32 = 0x2010_047c;
 const ESTIMATOR_DONE: u32 = 0x10000;
@@ -269,31 +278,27 @@ pub fn rx_models(profile: &Profile, ready: bool) -> Vec<DeviceDeclaration> {
     models
 }
 
-/// Ordered effects; a skipped DC path still snapshots the outer DC control on
-/// the vendor side, which is not an effect.
-pub fn rx_effects(observed: &[blobray_domain::ExecutionEvent], flags: u8) -> Vec<PhyEffect> {
-    phy_effects(observed, &[PBUS_STATUS])
-        .into_iter()
-        .filter(|e| flags == 0 || !matches!(e, PhyEffect::Read(DC_CONTROL, _)))
-        .collect()
-}
-
-/// Environment-supplied registers under the same exclusion as `rx_effects`.
-pub fn rx_environment(
-    observed: &[blobray_domain::ExecutionEvent],
-    flags: u8,
-) -> std::collections::BTreeSet<u32> {
-    let mut read = environment_reads(observed);
-    if flags != 0 {
-        read.remove(&DC_CONTROL);
+/// Reviewed rules of the RX root: transport plumbing, the PBus status polling
+/// interval and the vendor's unused skipped-DC snapshot.
+pub fn rx_rules() -> Vec<EffectRule> {
+    let mut rules = plumbing(&[PBUS_STATUS], MAX_EVENTS);
+    for successor in SKIPPED_DC_SUCCESSORS {
+        rules.push(omitted_read_before(
+            format!("skipped-dc-snapshot-{successor:08x}"),
+            DC_CONTROL,
+            successor,
+            SKIPPED_DC_SNAPSHOTS,
+            "the vendor snapshots DC control on the skipped-DC path and never uses the value",
+        ));
     }
-    read
+    rules
 }
 
 pub struct RxGain {
     pub image: PhyImage,
     rom_delay: u32,
     production_delay: u32,
+    effects: EffectReview,
 }
 
 impl std::ops::Deref for RxGain {
@@ -325,17 +330,30 @@ impl RxGain {
         };
         // ROM first; the co-located RFPLL diagnostics reference `phy_printf`,
         // bound to the authenticated PHY SDK firmware and never executed.
-        let image = PhyImage::link(
+        let mut image = PhyImage::link(
             session,
             &link,
             &options.linker,
             "phy_set_rx_gain_table",
             &[ROM_INPUT, PHY_SDK_INPUT],
         )?;
+        let contract = phy_contract(
+            image.vendor_endpoint("phy_set_rx_gain_table")?,
+            image.production_endpoint(PRODUCTION_ENTRY)?,
+            rx_rules(),
+            "RX gain publication and DC calibration under explicit estimator, PBus and readiness inputs",
+        );
+        let effects = image.review_effects(
+            "rx-effects",
+            "esp32s31.phy.rx-gain.effects",
+            contract,
+            "every RX register effect compares exactly except transport polling and the unused skipped-DC snapshot",
+        )?;
         Ok(Self {
             rom_delay: image.sym(1, "ets_delay_us"),
             production_delay: image.sym(2, "ets_delay_us"),
             image,
+            effects,
         })
     }
 
@@ -361,7 +379,7 @@ impl RxGain {
             .flat_map(|v| v.to_le_bytes())
             .collect();
         let probe = self.probes.invoke(
-            "open_phy_calibration_trace_rx_gain",
+            PRODUCTION_ENTRY,
             vec![
                 ("input", Buffer::new(INPUT, input).into()),
                 ("flags", i64::from(profile.flags).into()),
@@ -386,12 +404,8 @@ impl RxGain {
             SessionReset::Warm,
             false,
         );
-        let relation = root.relation.as_mut().unwrap();
-        // Polling and transport reads are implementation plumbing; the ordered
-        // effect comparison reviews every remaining read and delay.
-        relation.events.mmio_read = false;
-        relation.events.delay = false;
-        relation.returns.low = false;
+        // Blobray compares every effect under the reviewed contract.
+        root.relation.as_mut().unwrap().effects = Some(self.effects.clone());
         Ok(vec![
             case(
                 "initialize",
@@ -412,7 +426,7 @@ impl RxGain {
     }
 }
 
-fn check(label: &str, profile: &Profile, records: &[ExecutionEvidence], root: u32) {
+fn check(label: &str, records: &[ExecutionEvidence], root: u32) {
     assert_eq!(returned_low(records, root, true), Some(0), "{label}");
     for side in [false, true] {
         assert!(all_complete(records, root, side), "{label} {side}");
@@ -427,17 +441,6 @@ fn check(label: &str, profile: &Profile, records: &[ExecutionEvidence], root: u3
         output(records, root, true),
         vendor_state(&output(records, root, false)),
         "{label}: semantic RX state"
-    );
-    let (vendor, production) = (events(records, root, false), events(records, root, true));
-    assert_eq!(
-        rx_environment(&vendor, profile.flags),
-        rx_environment(&production, profile.flags),
-        "{label}: environment-supplied registers"
-    );
-    assert_eq!(
-        rx_effects(&vendor, profile.flags),
-        rx_effects(&production, profile.flags),
-        "{label}: RX effects"
     );
 }
 
@@ -458,7 +461,7 @@ pub fn exercise(ctx: &mut RxGain) -> Result<()> {
             let executed = ctx.compare(&label, rows, fill)?;
             for (i, profile) in selected.iter().enumerate() {
                 let root = i as u32 * PROFILE_CASES + ROOT;
-                check(&profile.label(), profile, &executed.records, root);
+                check(&profile.label(), &executed.records, root);
             }
         }
     }
@@ -484,7 +487,7 @@ fn assert_unpublished(label: &str, profile: &Profile, records: &[ExecutionEviden
         "{label}: output published"
     );
     assert!(
-        !rx_effects(&events(records, case, false), 0)
+        !phy_effects(&events(records, case, false))
             .iter()
             .any(|e| matches!(e, PhyEffect::Write(GAIN_INDEX, _))),
         "{label}: gain memory published"
@@ -575,7 +578,7 @@ fn containment(ctx: &mut RxGain) -> Result<()> {
                 "{label}"
             );
             assert_unpublished(&label, &profile, &records, case);
-            let minima = rx_effects(&events(&records, case, false), 0)
+            let minima = phy_effects(&events(&records, case, false))
                 .iter()
                 .filter(|e| matches!(e, PhyEffect::Read(ESTIMATOR_READY, ESTIMATOR_DONE)))
                 .count() as u32;
@@ -615,7 +618,10 @@ fn negative(ctx: &mut RxGain) -> Result<()> {
         ComparisonVerdict::Incomplete,
         MAX_EVENTS,
     )?;
-    let rows = ctx.rows(&profile)?;
+    // The contract's occurrence bounds exceed a one-event capacity; the
+    // exhaustion under test precedes any effect comparison.
+    let mut rows = ctx.rows(&profile)?;
+    rows[ROOT as usize].relation.as_mut().unwrap().effects = None;
     let limited = request(
         &ctx.vendor,
         Some(&ctx.production),
@@ -694,22 +700,24 @@ mod tests {
     }
 
     #[test]
-    fn readiness_waits_stay_visible_and_only_skipped_dc_snapshot_is_excluded() {
+    fn contract_selects_only_the_skipped_dc_snapshot_and_polling_waits() {
+        let rules = rx_rules();
+        let selected = |event: &ExecutionEvent, next: &ExecutionEvent| {
+            rules
+                .iter()
+                .filter(|r| r.vendor.unwrap().selects(event, Some(next)))
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>()
+        };
         let delay = ExecutionEvent::DelayMicros { value: 1 };
-        // A wait before an estimator readiness read is an effect.
-        assert_eq!(
-            rx_effects(&[delay.clone(), read(ESTIMATOR_READY, 0)], 0),
-            [PhyEffect::Delay(1), PhyEffect::Read(ESTIMATOR_READY, 0)]
-        );
-        // A wait before a PBus status read is transport plumbing.
-        assert_eq!(
-            rx_effects(&[delay, read(PBUS_STATUS, 0)], 0),
-            [PhyEffect::Read(PBUS_STATUS, 0)]
-        );
-        let snapshot = [read(DC_CONTROL, 7)];
-        assert_eq!(rx_effects(&snapshot, 0).len(), 1);
-        assert!(rx_effects(&snapshot, DC_CALIBRATED).is_empty());
-        assert!(rx_environment(&snapshot, 0).contains(&DC_CONTROL));
-        assert!(rx_environment(&snapshot, DC_CALIBRATED).is_empty());
+        // A wait before an estimator readiness read is compared; one before a
+        // PBus status read is polling.
+        assert!(selected(&delay, &read(ESTIMATOR_READY, 0)).is_empty());
+        assert_eq!(selected(&delay, &read(PBUS_STATUS, 0)).len(), 1);
+        // Only the snapshot before a skipped-path successor may be omitted.
+        for successor in SKIPPED_DC_SUCCESSORS {
+            assert_eq!(selected(&read(DC_CONTROL, 7), &read(successor, 0)).len(), 1);
+        }
+        assert!(selected(&read(DC_CONTROL, 7), &read(DC_CONTROL, 7)).is_empty());
     }
 }

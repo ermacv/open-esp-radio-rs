@@ -6,18 +6,22 @@ use crate::harness::{
 use crate::layout::*;
 use blobray_application::QuerySummary;
 use blobray_domain::{
-    ArtifactId, CallAbi, CompanionProposal, EntrySelection, ErrorCode, ExecutionRequest,
-    ExecutionTarget, FunctionSource, ImageManifest, ImageMapping, LinkRequest, PreparedImageId,
-    Revision, RevisionId,
+    ArtifactId, AssertionId, CallAbi, CompanionProposal, EffectContract, EffectProposalRequest,
+    EffectReview, EntrySelection, ErrorCode, ExecutionRequest, ExecutionTarget, FunctionSource,
+    ImageManifest, ImageMapping, KnowledgeRevisionId, LinkRequest, ObjectId, PreparedImageId,
+    Revision, RevisionId, SymbolId, SymbolTableKind,
 };
 use blobray_next_host::wire::RecordDocument;
-use object::{Object, ObjectSymbol};
+use object::{Object, ObjectSection, ObjectSymbol};
 use std::{
     collections::BTreeMap,
     ffi::OsString,
     fs,
     path::{Path, PathBuf},
 };
+
+/// Actor recorded on the knowledge reviews this package submits.
+const REVIEW_ACTOR: &str = "oer-esp32s31-vendor-scenarios";
 
 /// One retained execution and the evidence read immediately after it.
 pub struct Artifact {
@@ -34,6 +38,8 @@ pub struct Session {
     pub inventory: Revision,
     pub probes: ProbeCatalog,
     pub artifacts: Vec<Artifact>,
+    /// Head of the project's knowledge after this session's reviews.
+    pub knowledge: Option<KnowledgeRevisionId>,
 }
 
 /// A prepared image and its resolved roots, including the entry.
@@ -78,6 +84,71 @@ impl Session {
             inventory,
             probes,
             artifacts: vec![],
+            knowledge: None,
+        })
+    }
+
+    /// Propose `contract` as `subject`, then accept exactly that proposal as
+    /// the scenario's review. Returns the accepted review a relation selects.
+    pub fn review_effects(
+        &mut self,
+        name: &str,
+        subject: &str,
+        contract: EffectContract,
+        reason: &str,
+    ) -> Result<EffectReview> {
+        let request = EffectProposalRequest {
+            subject: subject.to_owned().try_into()?,
+            contract,
+            expected_base: self.knowledge.clone(),
+            actor: REVIEW_ACTOR.into(),
+            reason: reason.into(),
+        };
+        let mut command = args(["knowledge", "propose-effect-contract", "--request"]);
+        command.push(path_arg(
+            &self.runner.doc(&format!("{name}-proposal"), &request)?,
+        ));
+        let proposed = self
+            .runner
+            .run_record(&format!("{name}-proposal"), &command, 0)?
+            .knowledge
+            .ok_or_else(|| invalid("effect proposal published no knowledge"))?;
+        let shown: serde_json::Value = self.runner.json(
+            &format!("{name}-proposed"),
+            &args(["knowledge", "show", "--revision", proposed.as_str()]),
+        )?;
+        let assertion: AssertionId = shown["records"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|r| r["value"]["proposed_in"].as_str() == Some(proposed.as_str()))
+            .and_then(|r| r["value"]["id"].as_str())
+            .ok_or_else(|| invalid("effect proposal assertion missing"))?
+            .parse()?;
+        let accepted = self
+            .runner
+            .run_record(
+                &format!("{name}-review"),
+                &args([
+                    "knowledge",
+                    "accept",
+                    "--assertion",
+                    assertion.as_str(),
+                    "--base",
+                    proposed.as_str(),
+                    "--actor",
+                    REVIEW_ACTOR,
+                    "--reason",
+                    reason,
+                ]),
+                0,
+            )?
+            .knowledge
+            .ok_or_else(|| invalid("effect review published no knowledge"))?;
+        self.knowledge = Some(accepted.clone());
+        Ok(EffectReview {
+            knowledge: accepted,
+            assertion,
         })
     }
 
@@ -383,6 +454,33 @@ pub fn image_symbol(elf: &Path, listing: &Path, name: &str) -> Result<(u32, u64)
     fs::write(listing, lines)?;
     match matches[..] {
         [one] => Ok(one),
+        _ => Err(invalid(format!(
+            "{name}: {} image definitions",
+            matches.len()
+        ))),
+    }
+}
+
+/// Static-table identity of the unique defined `name` in an exported image
+/// ELF whose payload is `object`.
+pub fn image_symbol_id(elf: &Path, object: &ObjectId, name: &str) -> Result<SymbolId> {
+    let bytes = fs::read(elf)?;
+    let file = object::File::parse(&*bytes)?;
+    let table = file
+        .sections()
+        .find(|s| s.name() == Ok(".symtab"))
+        .ok_or_else(|| invalid("image has no static symbol table"))?;
+    let matches: Vec<_> = file
+        .symbols()
+        .filter(|s| !s.is_undefined() && s.name() == Ok(name))
+        .collect();
+    match matches[..] {
+        [ref one] => Ok(SymbolId {
+            object: object.clone(),
+            table: SymbolTableKind::Static,
+            table_section: u32::try_from(table.index().0)?,
+            index: one.index().0 as u64,
+        }),
         _ => Err(invalid(format!(
             "{name}: {} image definitions",
             matches.len()

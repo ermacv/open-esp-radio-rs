@@ -199,7 +199,8 @@ complete; no Python scenario code remains. Unit 12.6 is complete: channel
 restoration, all temperature-prefix sensor windows and stuck readiness.
 Checkpoint 12.M (mechanisms instead of handwritten knowledge) is complete.
 Units 12.7 (RX gain/calibration) and 12.8 (TX-DC/PWDET) are complete.
-Checkpoint 12.N (native claims) is active; unit 12.9 follows it. Stages then
+Checkpoint 12.N (native claims) is active: 12.N.1 is complete and 12.N.2 is
+next; unit 12.9 follows the checkpoint. Stages then
 run in the order 13, 14, 20 (legacy removal), 15–19, 21.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
@@ -1320,7 +1321,24 @@ they must exist first.
 
 | Unit | Status | Acceptance |
 | --- | --- | --- |
-| 12.N.1 | pending | Runner-side effect filters become reviewed effect contracts evaluated by Blobray: transport plumbing, the single-microsecond delay before a transport or PBus status read, the vendor's unused SAR and skipped-DC snapshots, and readiness-wait visibility. A contract may declare `unclassified: required` (user decision): effects outside its rules then compare exactly in order and value, while the strict every-effect-classified policy remains available. An `ignored` disposition retains raw effects without pairing them, and a pattern may select an effect by its immediate successor. Blobray enters the selected root directly with deterministic callee-saved registers (user decision), so contracts and evidence bind the real vendor and production functions and the probe entry adapters are removed. Each contract is reviewed through knowledge assertions and bound by identity; verdicts carry the claim. |
+| 12.N.1 | done | Runner-side effect filters become reviewed effect contracts evaluated by Blobray: transport plumbing, the single-microsecond delay before a transport or PBus status read, the vendor's unused SAR and skipped-DC snapshots, and readiness-wait visibility. A contract may declare `unclassified: required` (user decision): effects outside its rules then compare exactly in order and value, while the strict every-effect-classified policy remains available. An `ignored` disposition retains raw effects without pairing them, and a pattern may select an effect by its immediate successor. Blobray enters the selected root directly with deterministic callee-saved registers (user decision), so contracts and evidence bind the real vendor and production functions and the probe entry adapters are removed. Each contract is reviewed through knowledge assertions and bound by identity; verdicts carry the claim. |
 | 12.N.2 | pending | Semantic output mappings (`phy_param` fields ↔ production output) become reviewed layout projections with final-state comparison. The aperture reports the never-written registers each side read as evidence, and a relation can require them equal. |
 | 12.N.3 | pending | Execution capacity and cost: stack fill per case (no per-fill request split), lazy event-capacity admission, and a compact retained event encoding with an unchanged logical evidence contract. The largest current request (TX-DC) needs neither per-fill splitting nor hundreds of megabytes of evidence. |
 | 12.N.4 | pending | Every existing scenario (gain, i2c, channel, rx-gain, tx-dc) moves to native claims. Scenario code keeps peripheral inputs, matrices and independent oracles; runner-side comparison code is removed. Cases, verdicts, negatives and preservation are unchanged; each scenario's retained verdict alone establishes its claim. |
+
+Unit 12.N.1 acceptance: effect contracts gained the explicit
+`unclassified: required` policy, the `ignored` disposition and the
+`followed_by` successor selector. Verification and retained admission share a
+one-event lookahead, so an unmatched effect under the explicit policy compares
+exactly and ignored effects never shift alignment. Blobray enters roots
+directly and the probe entry adapters are removed. The channel, RX-gain and
+TX-DC scenarios propose their contracts through
+`knowledge propose-effect-contract`, accept exactly those proposals and select
+the reviews in every root relation with all four event channels. The runner-side
+effect filters and environment-read comparisons are removed. The RX
+skipped-DC snapshot is selected by its immediate successor, and the unused SAR
+words are omitted reads. Temperature-prefix transitions now match completely.
+Every retained root verdict carries `reviewed-effect-refinement`. All six
+scenarios, cases, negatives and preservation pass; the i2c family's remaining
+read exclusions move in 12.N.4. All Blobray tests, formatting, strict Clippy
+and the docs check pass.

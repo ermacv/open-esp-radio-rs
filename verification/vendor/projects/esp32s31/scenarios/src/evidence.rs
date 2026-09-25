@@ -2,7 +2,6 @@
 //!
 //! Every helper fails instead of guessing: unknown, unavailable or
 //! noncontiguous bytes and unknown call words are never read as values.
-use crate::layout::{I2C_HOST_MAP, I2C_PORTS, I2C_READ_MASK, RADIO_MMIO, RADIO_MMIO_BYTES};
 use blobray_domain::{
     ExecutionEvent, ExecutionEvidence, ExecutionStop, ObservedCallTarget, ObservedWord,
 };
@@ -185,31 +184,7 @@ pub fn effects(observed: &[ExecutionEvent], ignore_calls: bool) -> Vec<Effect> {
         .collect()
 }
 
-/// Radio registers whose first access in the phase is a read, excluding the
-/// transport: the values the environment supplied rather than the code wrote.
-/// Both sides of a comparison must consume the same environment.
-pub fn environment_reads(observed: &[ExecutionEvent]) -> std::collections::BTreeSet<u32> {
-    let mut written = std::collections::BTreeSet::new();
-    let mut read = std::collections::BTreeSet::new();
-    for event in observed {
-        match event {
-            ExecutionEvent::Read { address, .. }
-                if (RADIO_MMIO..RADIO_MMIO + RADIO_MMIO_BYTES).contains(address)
-                    && !is_transport(*address)
-                    && !written.contains(address) =>
-            {
-                read.insert(*address);
-            }
-            ExecutionEvent::Write { address, .. } => {
-                written.insert(*address);
-            }
-            _ => {}
-        }
-    }
-    read
-}
-
-/// One ordered PHY effect of a runner-side comparison.
+/// One ordered word MMIO effect or requested delay of one side.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyEffect {
     Read(u32, u32),
@@ -217,18 +192,11 @@ pub enum PhyEffect {
     Delay(u32),
 }
 
-/// Analog I2C transport registers whose reads are command polling.
-fn is_transport(address: u32) -> bool {
-    I2C_PORTS.contains(&address) || matches!(address, I2C_READ_MASK | I2C_HOST_MAP)
-}
-
-/// Ordered word MMIO effects and requested delays, without transport
-/// plumbing: transport reads, read-mask and host-map writes, and the
-/// single-microsecond delay immediately before a transport read or a read of
-/// one of `wait_status`. Every other delay, including readiness waits, stays
-/// visible. Non-word MMIO fails.
-pub fn phy_effects(observed: &[ExecutionEvent], wait_status: &[u32]) -> Vec<PhyEffect> {
-    let ordered: Vec<PhyEffect> = observed
+/// Ordered word MMIO effects and requested delays of one side, for
+/// single-side characterization. Blobray compares the two sides under the
+/// reviewed effect contract. Non-word MMIO fails.
+pub fn phy_effects(observed: &[ExecutionEvent]) -> Vec<PhyEffect> {
+    observed
         .iter()
         .filter_map(|event| match event {
             ExecutionEvent::Read {
@@ -247,28 +215,12 @@ pub fn phy_effects(observed: &[ExecutionEvent], wait_status: &[u32]) -> Vec<PhyE
             ExecutionEvent::DelayMicros { value } => Some(PhyEffect::Delay(*value)),
             _ => None,
         })
-        .collect();
-    ordered
-        .iter()
-        .enumerate()
-        .filter(|(i, effect)| match effect {
-            PhyEffect::Read(address, _) => !is_transport(*address),
-            PhyEffect::Write(address, _) => !matches!(*address, I2C_READ_MASK | I2C_HOST_MAP),
-            PhyEffect::Delay(1) => !matches!(
-                ordered.get(i + 1),
-                Some(PhyEffect::Read(address, _))
-                    if is_transport(*address) || wait_status.contains(address)
-            ),
-            PhyEffect::Delay(_) => true,
-        })
-        .map(|(_, effect)| *effect)
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::*;
     use blobray_domain::FinalMemoryChunk;
 
     fn chunk(offset: u32, known: u16, available: u16, selection: u16) -> ExecutionEvidence {
@@ -312,45 +264,34 @@ mod tests {
     }
 
     #[test]
-    fn phy_effects_drop_transport_plumbing_only() {
-        use crate::layout::I2C_PORT_0;
-        let read = |address, value| ExecutionEvent::Read {
-            address,
-            width: 4,
-            value,
-        };
-        let write = |address, value| ExecutionEvent::Write {
-            address,
-            width: 4,
-            value,
-        };
-        let delay = |value| ExecutionEvent::DelayMicros { value };
+    fn phy_effects_keep_order_and_reject_narrow_mmio() {
         let observed = [
-            write(I2C_READ_MASK, 1),
-            write(I2C_PORT_0, 0x0400_0669),
-            delay(1),
-            read(I2C_PORT_0, 0x0455_0669),
-            read(TEMPERATURE_CODE, 100),
-            delay(1),
-            read(CHANNEL_STATUS, 0x100),
-            delay(1),
-            read(PBUS_STATUS, 0),
-            delay(10),
-            read(I2C_HOST_MAP, 0),
+            ExecutionEvent::Write {
+                address: 8,
+                width: 4,
+                value: 1,
+            },
+            ExecutionEvent::DelayMicros { value: 1 },
+            ExecutionEvent::Read {
+                address: 8,
+                width: 4,
+                value: 2,
+            },
         ];
         assert_eq!(
-            phy_effects(&observed, &[PBUS_STATUS]),
+            phy_effects(&observed),
             [
-                PhyEffect::Write(I2C_PORT_0, 0x0400_0669),
-                PhyEffect::Read(TEMPERATURE_CODE, 100),
+                PhyEffect::Write(8, 1),
                 PhyEffect::Delay(1),
-                PhyEffect::Read(CHANNEL_STATUS, 0x100),
-                PhyEffect::Read(PBUS_STATUS, 0),
-                PhyEffect::Delay(10),
+                PhyEffect::Read(8, 2)
             ]
         );
-        // Without a declared status, its readiness wait stays visible.
-        assert!(phy_effects(&observed, &[]).len() == 7);
+        let narrow = [ExecutionEvent::Read {
+            address: 8,
+            width: 1,
+            value: 2,
+        }];
+        assert!(std::panic::catch_unwind(|| phy_effects(&narrow)).is_err());
     }
 
     fn transfer(kind: ObservedCallTarget) -> ExecutionEvent {

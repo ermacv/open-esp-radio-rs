@@ -3010,28 +3010,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-register-contracts"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "oer-register-model"
+version = "0.1.0"
+dependencies = [
+ "oer-register-contracts",
+ "oer-register-review",
+ "serde",
+ "svd-encoder",
+ "svd-parser",
+ "svd-rs",
+ "thiserror 2.0.19",
+ "toml_edit",
+]
+
+[[package]]
+name = "oer-register-review"
+version = "0.1.0"
+dependencies = [
+ "oer-register-contracts",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.19",
+ "toml_edit",
+]
+
+[[package]]
 name = "oer-register-tool"
 version = "0.1.0"
 dependencies = [
  "cargo_metadata",
  "clap",
  "oer-process",
- "oer-reviewed-contracts",
- "open-esp-radio-register-model",
- "open-radio-vendor-review",
+ "oer-register-contracts",
+ "oer-register-model",
+ "oer-register-review",
  "serde",
  "svd2rust",
  "tempfile",
  "toml_edit",
-]
-
-[[package]]
-name = "oer-reviewed-contracts"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "sha2",
 ]
 
 [[package]]
@@ -3107,32 +3133,6 @@ dependencies = [
  "oer-network-interface",
  "oer-radio",
  "oer-radio-embassy",
-]
-
-[[package]]
-name = "open-esp-radio-register-model"
-version = "0.1.0"
-dependencies = [
- "oer-reviewed-contracts",
- "open-radio-vendor-review",
- "serde",
- "svd-encoder",
- "svd-parser",
- "svd-rs",
- "thiserror 2.0.19",
- "toml_edit",
-]
-
-[[package]]
-name = "open-radio-vendor-review"
-version = "0.1.0"
-dependencies = [
- "oer-reviewed-contracts",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.19",
- "toml_edit",
 ]
 
 [[package]]

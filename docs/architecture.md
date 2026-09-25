@@ -82,9 +82,7 @@ an adapter add structure without renaming. Wi-Fi is `ieee80211` in package and
 directory names alike; the facade module `oer::wifi` and `Wifi*` types keep the
 user-facing name. Compositions end in `-system`. The public facade
 `open-esp-radio` (library `oer`) is the only branded name. The architecture
-check enforces the prefix. The Blobray workspace names its own packages, and
-the packages outside it whose names Blobray consumes are renamed together with
-Blobray; the check lists them explicitly.
+check enforces the prefix. The Blobray workspace names its own packages.
 
 ## From policy to an application
 

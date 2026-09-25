@@ -61,10 +61,6 @@ pub fn package_for_manifest<'a>(metadata: &'a Metadata, manifest: &Path) -> Resu
     Ok(package)
 }
 
-/// Register-tool packages that keep their established names outside the
-/// repository naming rule.
-const ESTABLISHED_NAMES: &[&str] = &["open-esp-radio-register-model", "open-radio-vendor-review"];
-
 /// Every package is `oer-<tokens>`; the public facade alone is `open-esp-radio`.
 pub fn validate_package_name(name: &str, layer: &str) -> Result<()> {
     let valid = if layer == "facade" {
@@ -78,7 +74,7 @@ pub fn validate_package_name(name: &str, layer: &str) -> Result<()> {
                             .bytes()
                             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
                 })
-        }) || ESTABLISHED_NAMES.contains(&name)
+        })
     };
     if valid {
         Ok(())

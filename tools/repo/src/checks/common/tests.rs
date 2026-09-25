@@ -489,6 +489,7 @@ fn package_names_share_one_prefix_and_only_the_facade_is_branded() {
     }
     for (name, layer) in [
         ("open-esp-radio-hil-runner", "hil"),
+        ("open-esp-radio-register-model", "tool"),
         ("oer-Wifi", "protocol"),
         ("oer--mac", "protocol"),
         ("oer-", "protocol"),

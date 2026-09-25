@@ -1,6 +1,6 @@
 # Sparse reviewed knowledge
 
-`open-radio-vendor-review` owns the generic, human-sized facts that survive
+`oer-register-review` owns the generic, human-sized facts that survive
 regeneration of Blobray observations and vendor artifact updates.
 
 The crate deliberately does not know about specific chips, register names, ABI

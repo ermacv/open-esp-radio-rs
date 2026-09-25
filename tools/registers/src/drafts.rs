@@ -1,6 +1,6 @@
 //! Exclusive draft creation; the manifest is the last published file.
 use crate::*;
-use open_esp_radio_register_model::{ModelDraft, ModelInit};
+use oer_register_model::{ModelDraft, ModelInit};
 use std::io::Write;
 
 /// Create a native unreviewed model in a new directory from an explicit TOML request.

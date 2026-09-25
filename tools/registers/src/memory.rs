@@ -1,5 +1,5 @@
 use crate::Result;
-use open_esp_radio_register_model::{RegisterEvidenceSet, RegisterModel};
+use oer_register_model::{RegisterEvidenceSet, RegisterModel};
 use serde::Deserialize;
 use std::{collections::BTreeSet, path::Path};
 #[derive(Deserialize)]

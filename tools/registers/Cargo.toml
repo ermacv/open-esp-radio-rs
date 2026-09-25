@@ -13,9 +13,9 @@ name = "registers"
 path = "src/main.rs"
 
 [dependencies]
-open-esp-radio-register-model = { path = "model" }
-open-radio-vendor-review = { path = "review" }
-oer-reviewed-contracts = { path = "contracts" }
+oer-register-model = { path = "model" }
+oer-register-review = { path = "review" }
+oer-register-contracts = { path = "contracts" }
 oer-process = { path = "../process" }
 clap = { version = "=4.5.48", features = ["derive"] }
 serde = { version = "=1.0.229", features = ["derive"] }

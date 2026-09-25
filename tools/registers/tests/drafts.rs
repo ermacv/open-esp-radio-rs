@@ -1,5 +1,5 @@
 //! Synthetic source-authoring lifecycle; no generated hardware constants are asserted.
-use open_esp_radio_register_model::RegisterModel;
+use oer_register_model::RegisterModel;
 use std::{fs, path::Path, process::Command};
 
 const INIT: &str = r#"

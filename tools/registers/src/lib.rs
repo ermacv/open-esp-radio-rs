@@ -1,8 +1,6 @@
 //! Source-only publication from one validated reviewed model. No binary-analysis authority.
-use oer_reviewed_contracts::ApplicabilityContext;
-use open_esp_radio_register_model::{
-    PacApiPack, RegisterEvidenceSet, RegisterLintPack, RegisterModel,
-};
+use oer_register_contracts::ApplicabilityContext;
+use oer_register_model::{PacApiPack, RegisterEvidenceSet, RegisterLintPack, RegisterModel};
 use serde::Deserialize;
 use std::{
     collections::BTreeSet,
@@ -84,7 +82,7 @@ impl Publication {
             return Err("publication chip differs from register model".into());
         }
         let paths = |items: &[PathBuf]| items.iter().map(|p| base.join(p)).collect::<Vec<_>>();
-        let review = open_radio_vendor_review::ReviewKnowledge::load_all(&paths(&m.reviewed))?
+        let review = oer_register_review::ReviewKnowledge::load_all(&paths(&m.reviewed))?
             .select_for(&context)?;
         model.apply_review_knowledge(&review)?;
         let api = PacApiPack::load(&base.join(&m.api))?;
@@ -120,7 +118,7 @@ impl Publication {
         {
             return Err("unsupported PAC target or edition".into());
         }
-        open_esp_radio_register_model::validate_pac_crate_name(&outputs.crate_name)?;
+        oer_register_model::validate_pac_crate_name(&outputs.crate_name)?;
         let mut input_paths: BTreeSet<_> = model.loaded_inputs().keys().cloned().collect();
         for p in m.reviewed.iter().chain(m.evidence.iter()).chain([
             &m.api,
@@ -176,10 +174,8 @@ impl Publication {
         raw.push_str(&self.api.render_rust(&svd)?);
         let raw = host::format(&raw, &self.outputs.edition)?;
         let api = host::format(&self.api.render_facade_rust()?, &self.outputs.edition)?;
-        let bindings = open_esp_radio_register_model::generate_pac_binding_index(
-            &svd,
-            &self.outputs.crate_name,
-        )?;
+        let bindings =
+            oer_register_model::generate_pac_binding_index(&svd, &self.outputs.crate_name)?;
         let outputs = [
             (&self.outputs.svd, svd),
             (&self.outputs.pac_raw, raw),

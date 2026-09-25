@@ -1,6 +1,6 @@
 # Register model library
 
-`open-esp-radio-register-model` owns the portable register publication formats:
+`oer-register-model` owns the portable register publication formats:
 
 - safe loading of a multi-file TOML model;
 - native unreviewed initialization from explicit peripheral geometry and import

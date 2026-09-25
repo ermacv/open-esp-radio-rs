@@ -1,5 +1,5 @@
 [package]
-name = "open-esp-radio-register-model"
+name = "oer-register-model"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,8 +9,8 @@ publish = false
 description = "Versioned editable register model and clean CMSIS-SVD materialization"
 
 [dependencies]
-oer-reviewed-contracts = { path = "../contracts" }
-open-radio-vendor-review = { path = "../review" }
+oer-register-contracts = { path = "../contracts" }
+oer-register-review = { path = "../review" }
 serde = { version = "=1.0.229", features = ["derive"] }
 svd-encoder = "=0.14.7"
 svd-parser = { version = "=0.14.9", features = ["expand"] }

@@ -14,11 +14,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use oer_reviewed_contracts::{
+use oer_register_contracts::{
     Applicability, ApplicabilityContext, EffectiveFactMetadata, FactClassification, RecordMetadata,
     RevisionOccurrenceId, SemanticEntityId,
 };
-use oer_reviewed_contracts::{EntityDomain, FactProvenance};
+use oer_register_contracts::{EntityDomain, FactProvenance};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -719,7 +719,7 @@ fn invalid<T>(pack: &str, reason: impl Into<String>) -> Result<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oer_reviewed_contracts::{ArtifactIdentity, EntityDomain, RevisionOccurrenceId};
+    use oer_register_contracts::{ArtifactIdentity, EntityDomain, RevisionOccurrenceId};
 
     const BASE: &str = r#"
 schema = 2

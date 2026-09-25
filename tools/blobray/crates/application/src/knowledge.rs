@@ -287,10 +287,7 @@ pub fn prepare_knowledge_worker(
             .ok_or_else(|| invalid("working capacity missing"))?,
     )?;
     let disk = blobray_store::TemporaryBudget::open(stage)?;
-    let mut control = blobray_store::TemporaryControl {
-        control,
-        budget: &disk,
-    };
+    let mut control = blobray_store::TemporaryControl::new(control, &disk);
     let result = prepare_with(stage, work, decoder, &memory, &disk, &mut control);
     control.memory_phases(&memory.phase_observations());
     control.working_memory(memory.observation());

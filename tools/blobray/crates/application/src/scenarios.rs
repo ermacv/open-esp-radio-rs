@@ -228,10 +228,7 @@ pub fn prepare_scenario_worker(
             .ok_or_else(|| invalid("working capacity missing"))?,
     )?;
     let disk = blobray_store::TemporaryBudget::open(stage)?;
-    let mut control = blobray_store::TemporaryControl {
-        control: c,
-        budget: &disk,
-    };
+    let mut control = blobray_store::TemporaryControl::new(c, &disk);
     let c: &mut dyn RunControl = &mut control;
     let result = (|| {
         let _capacity = memory.reserve(1024 * 1024, c.position())?;

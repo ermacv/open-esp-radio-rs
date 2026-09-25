@@ -3,7 +3,7 @@ use crate::*;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Read, Seek, Write},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -439,9 +439,22 @@ fn io(e: std::io::Error) -> Error {
     storage_io(e)
 }
 struct Metered<'a> {
-    file: &'a mut blobray_store::TemporaryFile,
+    file: &'a mut dyn Write,
     control: &'a mut dyn RunControl,
     failure: Option<Error>,
+}
+/// A typed storage failure from a temporary-file write.
+fn write_failure(e: &std::io::Error) -> Error {
+    if let Some(typed) = e.get_ref().and_then(|e| e.downcast_ref::<Error>()) {
+        typed.clone()
+    } else if matches!(
+        e.kind(),
+        std::io::ErrorKind::StorageFull | std::io::ErrorKind::QuotaExceeded
+    ) {
+        Error::new(ErrorCode::DiskFull, e.to_string())
+    } else {
+        io(std::io::Error::new(e.kind(), e.to_string()))
+    }
 }
 impl Write for Metered<'_> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
@@ -465,16 +478,23 @@ impl Write for Metered<'_> {
         self.file.flush()
     }
 }
+/// Length-prefixed records, serialized once in memory and written in blocks.
 struct Spool {
-    file: blobray_store::TemporaryFile,
+    file: std::io::BufWriter<blobray_store::TemporaryFile>,
+    record: Vec<u8>,
 }
 impl Spool {
+    fn new(file: blobray_store::TemporaryFile) -> Self {
+        Self {
+            file: std::io::BufWriter::with_capacity(STREAM_BLOCK, file),
+            record: Vec::new(),
+        }
+    }
     fn push(&mut self, record: RecordRef<'_>, control: &mut dyn RunControl) -> Result<()> {
         control.checkpoint(1)?;
-        let start = self.file.stream_position().map_err(io)?;
-        self.file.write_all(&[0; 8]).map_err(io)?;
+        self.record.clear();
         let mut writer = Metered {
-            file: &mut self.file,
+            file: &mut self.record,
             control,
             failure: None,
         };
@@ -483,13 +503,20 @@ impl Spool {
             return Err(e);
         }
         result.map_err(|e| Error::new(ErrorCode::Io, e.to_string()))?;
-        let end = self.file.stream_position().map_err(io)?;
-        self.file.seek(SeekFrom::Start(start)).map_err(io)?;
+        let length = (self.record.len() as u64).to_le_bytes();
         self.file
-            .write_all(&(end - start - 8).to_le_bytes())
-            .map_err(io)?;
-        self.file.seek(SeekFrom::Start(end)).map_err(io)?;
-        Ok(())
+            .write_all(&length)
+            .and_then(|()| self.file.write_all(&self.record))
+            .map_err(|e| write_failure(&e))
+    }
+    /// Flush buffered records and make them durable.
+    fn finish(self) -> Result<blobray_store::TemporaryFile> {
+        let file = self
+            .file
+            .into_inner()
+            .map_err(|e| write_failure(e.error()))?;
+        file.sync_all().map_err(io)?;
+        Ok(file)
     }
 }
 impl ElfSink for Spool {
@@ -559,17 +586,12 @@ pub fn prepare_query_with_tools(
             .ok_or_else(|| Error::new(ErrorCode::InvalidRequest, "working capacity missing"))?,
     )?;
     let disk = blobray_store::TemporaryBudget::open(stage)?;
-    let mut metered = blobray_store::TemporaryControl {
-        control,
-        budget: &disk,
-    };
+    let mut metered = blobray_store::TemporaryControl::new(control, &disk);
     let control: &mut dyn RunControl = &mut metered;
     let result = (|| {
         let _fixed = memory.reserve(CONTROL_MESSAGE_BYTES as u64, control.position())?;
 
-        let mut spool = Spool {
-            file: disk.create(&stage.join("query-records"))?,
-        };
+        let mut spool = Spool::new(disk.create(&stage.join("query-records"))?);
         let summary = match &work.query {
             ReadQuery::Trace { request } => {
                 let project = Project::open(&work.project.to_path()?)?;
@@ -1272,7 +1294,7 @@ pub fn prepare_query_with_tools(
                 }
             }
         };
-        spool.file.sync_all().map_err(io)?;
+        spool.finish()?;
         crate::protocol::write_request(disk.create(&stage.join("query-summary.json"))?, &summary)
     })();
     control.memory_phases(&memory.phase_observations());

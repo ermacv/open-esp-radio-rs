@@ -57,6 +57,12 @@ coordinator share that deadline and transfer charged work through the bounded
 worker report; retention never receives a fresh budget. Libraries install no
 signal handlers. The private worker host converts SIGTERM/SIGINT into cooperative
 cancellation, while the guard retains forced cleanup after the grace period.
+Every checkpoint checks cancellation and the exact work limit. The clock, the
+deadline and progress publication are sampled on a context's first checkpoint
+and then at least every 32 checkpoints or 4096 work units, so hot loops do not
+read the clock per step and zero-unit waiting loops still reach the deadline.
+Temporary-storage usage is reported on the same stride; the budget itself
+enforces capacity on every allocation.
 
 Work policy 1 charges one unit per visited structural record and one per block of
 up to 4096 bytes for each read, hash, copy, delimiter scan or serialization output
@@ -66,7 +72,8 @@ not CPU instruction counts, and are not refunded after an I/O error. Accounting
 also includes closure-record/framing visits. Repeated execution with the same
 inputs, retained objects and policy has the same work cost; reusing an existing
 object requires verification and can change the cost compared with an empty store.
-JSON output is buffered into bounded writes. ELF string scans, explicit table
+JSON output, execution evidence and query record spools are buffered into
+bounded writes. ELF string scans, explicit table
 loops, capture, hashing and coordinator reads have cooperative checkpoints.
 Opaque third-party calls, allocator operations, filesystem calls and final sync
 are not promised to be interruptible inside the call; the owned worker remains

@@ -50,10 +50,7 @@ pub(crate) fn prepare_function_worker_in(
             "unsupported function worker request",
         ));
     }
-    let mut control = blobray_store::TemporaryControl {
-        control,
-        budget: disk,
-    };
+    let mut control = blobray_store::TemporaryControl::new(control, disk);
     let result = (|| {
         let _fixed = memory.reserve(1024 * 1024, control.position())?;
         let project = Project::open(&work.project.to_path()?)?;

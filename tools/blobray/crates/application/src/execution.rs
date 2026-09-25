@@ -141,7 +141,7 @@ fn session<'a>(
     Ok(session)
 }
 fn evidence(
-    file: &mut blobray_store::TemporaryFile,
+    file: &mut impl Write,
     case: u32,
     replacement: bool,
     observation: &ExecutionObservation,
@@ -262,10 +262,7 @@ pub(crate) fn prepare_execution_worker_in(
             "execution implementation differs from recipe",
         ));
     }
-    let mut control = blobray_store::TemporaryControl {
-        control: c,
-        budget: disk,
-    };
+    let mut control = blobray_store::TemporaryControl::new(c, disk);
     let result = (|| {
         let _control = memory.reserve(2 * 1024 * 1024, control.position())?;
         let project = Project::open(&work.project.to_path()?)?;
@@ -290,7 +287,11 @@ pub(crate) fn prepare_execution_worker_in(
             .replacement
             .as_ref()
             .map(|_| ComparisonVerdict::Match);
-        let mut file = disk.temporary(&stage.join("staging"))?;
+        // Records are small; buffer them so each is not its own metered write.
+        let mut file = std::io::BufWriter::with_capacity(
+            STREAM_BLOCK,
+            disk.temporary(&stage.join("staging"))?,
+        );
         for (index, case) in request.cases.iter().enumerate() {
             if case.reset == SessionReset::Cold {
                 blocked = false;
@@ -387,6 +388,9 @@ pub(crate) fn prepare_execution_worker_in(
         drop(vendor);
         drop(replacement);
         let staging = Staging::with_temporary_budget(stage, disk.clone())?;
+        let file = file
+            .into_inner()
+            .map_err(|error| storage_io(error.into_error()))?;
         let records = staging.retain_temporary(file, &mut control)?;
         staging.execution_receipt(
             &ExecutionManifest {

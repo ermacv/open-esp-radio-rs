@@ -493,10 +493,7 @@ pub(crate) fn prepare_investigation_worker_in(
             "investigation producer differs from plan",
         ));
     }
-    let mut metered = blobray_store::TemporaryControl {
-        control,
-        budget: disk,
-    };
+    let mut metered = blobray_store::TemporaryControl::new(control, disk);
     let c: &mut dyn RunControl = &mut metered;
     let result = (|| {
         let _fixed = memory.reserve(2 * 1024 * 1024, c.position())?;

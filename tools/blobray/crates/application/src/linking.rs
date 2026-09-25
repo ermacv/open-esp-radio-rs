@@ -683,10 +683,7 @@ pub fn prepare_image_worker(
             .ok_or_else(|| invalid("image working capacity missing"))?,
     )?;
     let disk = TemporaryBudget::open(stage)?;
-    let mut temporary_control = blobray_store::TemporaryControl {
-        control,
-        budget: &disk,
-    };
+    let mut temporary_control = blobray_store::TemporaryControl::new(control, &disk);
     let result = prepare_image_inner(
         stage,
         work,

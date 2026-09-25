@@ -1,8 +1,16 @@
 //! One operation-wide cooperative work counter and deadline.
 use blobray_domain::*;
 
+/// Checkpoints between clock samples: the deadline and progress observation
+/// are checked on the first checkpoint and then at least every this many calls
+/// or work units. Cancellation and the work limit are checked on every call.
+const CLOCK_STRIDE_CALLS: u32 = 32;
+const CLOCK_STRIDE_UNITS: u64 = 4096;
+
 pub struct RunContext<'a> {
     environment: &'a dyn RunEnvironment,
+    /// Calls and units since the last clock sample; `None` before the first.
+    unsampled: Option<(u32, u64)>,
     started_ms: u64,
     deadline_ms: u64,
     limit: u64,
@@ -28,6 +36,7 @@ impl<'a> RunContext<'a> {
         }
         Ok(Self {
             environment,
+            unsampled: None,
             started_ms,
             deadline_ms,
             limit,
@@ -39,7 +48,10 @@ impl<'a> RunContext<'a> {
         self.progress
     }
     fn account_time(&mut self) {
-        let elapsed = self.environment.now_ms().saturating_sub(self.started_ms);
+        self.account_time_at(self.environment.now_ms());
+    }
+    fn account_time_at(&mut self, now: u64) {
+        let elapsed = now.saturating_sub(self.started_ms);
         self.progress.phases.add(
             self.progress.position.phase,
             elapsed.saturating_sub(self.progress.elapsed_ms),
@@ -90,12 +102,24 @@ impl RunControl for RunContext<'_> {
         if let Some(error) = &self.failure {
             return Err(error.clone());
         }
-        let now = self.environment.now_ms();
-        self.account_time();
+        let sample = match self.unsampled {
+            None => true,
+            Some((calls, pending)) => {
+                calls + 1 >= CLOCK_STRIDE_CALLS
+                    || pending.saturating_add(units) >= CLOCK_STRIDE_UNITS
+            }
+        };
+        let now = if sample {
+            let now = self.environment.now_ms();
+            self.account_time_at(now);
+            Some(now)
+        } else {
+            None
+        };
         self.progress.sequence = self.progress.sequence.saturating_add(1);
         let stop = if self.environment.cancelled() {
             Some((StopReason::Cancelled, ErrorCode::Cancelled))
-        } else if now >= self.deadline_ms {
+        } else if now.is_some_and(|now| now >= self.deadline_ms) {
             Some((StopReason::Deadline, ErrorCode::TimedOut))
         } else if units > self.limit - self.progress.work_used {
             Some((StopReason::Work, ErrorCode::ResourceLimited))
@@ -124,6 +148,12 @@ impl RunControl for RunContext<'_> {
         self.progress
             .phases
             .add(self.progress.position.phase, 0, units);
+        if !sample {
+            let (calls, pending) = self.unsampled.unwrap();
+            self.unsampled = Some((calls + 1, pending.saturating_add(units)));
+            return Ok(());
+        }
+        self.unsampled = Some((0, 0));
         let result = self.environment.observe(&self.progress);
         if let Err(error) = &result {
             self.failure = Some(error.clone());
@@ -210,6 +240,32 @@ mod tests {
             }
         );
         assert_eq!(p.elapsed_ms, 60);
+    }
+    #[test]
+    fn deadline_is_sampled_within_the_clock_stride() {
+        let env = environment();
+        let budget = ResourceBudget::default();
+        let mut context = RunContext::new(&env, 100, 200, &budget, None).unwrap();
+        context.checkpoint(0).unwrap();
+        env.time.set(200);
+        // Zero-unit waiting loops still reach a clock sample.
+        let mut calls = 0;
+        let error = loop {
+            calls += 1;
+            if let Err(error) = context.checkpoint(0) {
+                break error;
+            }
+        };
+        assert_eq!(error.code, ErrorCode::TimedOut);
+        assert!(calls <= CLOCK_STRIDE_CALLS);
+        // Large work samples at once.
+        let mut context = RunContext::new(&env, 100, 300, &budget, None).unwrap();
+        context.checkpoint(1).unwrap();
+        env.time.set(300);
+        assert_eq!(
+            context.checkpoint(CLOCK_STRIDE_UNITS).unwrap_err().code,
+            ErrorCode::TimedOut
+        );
     }
     #[test]
     fn exact_budget_boundary_and_overflow_are_sticky() {

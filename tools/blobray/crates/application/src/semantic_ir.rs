@@ -71,10 +71,7 @@ pub fn prepare_ir_worker(
             .ok_or_else(|| invalid("working capacity missing"))?,
     )?;
     let disk = blobray_store::TemporaryBudget::open(stage)?;
-    let mut control = blobray_store::TemporaryControl {
-        control: c,
-        budget: &disk,
-    };
+    let mut control = blobray_store::TemporaryControl::new(c, &disk);
     let result = build(stage, work, &memory, &disk, &mut control);
     control.memory_phases(&memory.phase_observations());
     control.working_memory(memory.observation());

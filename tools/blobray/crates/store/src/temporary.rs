@@ -317,6 +317,20 @@ impl Drop for TemporaryFile {
 pub struct TemporaryControl<'a> {
     pub control: &'a mut dyn RunControl,
     pub budget: &'a TemporaryBudget,
+    /// Checkpoints since temporary usage was last reported.
+    unreported: u32,
+}
+/// Checkpoints between temporary-usage reports; the budget itself enforces
+/// capacity on every allocation, so reporting is observation only.
+const USAGE_REPORT_STRIDE: u32 = 32;
+impl<'a> TemporaryControl<'a> {
+    pub fn new(control: &'a mut dyn RunControl, budget: &'a TemporaryBudget) -> Self {
+        Self {
+            control,
+            budget,
+            unreported: USAGE_REPORT_STRIDE,
+        }
+    }
 }
 impl RunControl for TemporaryControl<'_> {
     fn measure(&mut self, metric: WorkMetric, amount: u64) {
@@ -326,8 +340,12 @@ impl RunControl for TemporaryControl<'_> {
         self.control.progress()
     }
     fn checkpoint(&mut self, units: u64) -> Result<()> {
-        self.budget.position(self.control.position());
-        self.control.temporary_storage(self.budget.usage());
+        // `set_position` keeps the budget's position current.
+        self.unreported += 1;
+        if self.unreported >= USAGE_REPORT_STRIDE {
+            self.unreported = 0;
+            self.control.temporary_storage(self.budget.usage());
+        }
         self.control.checkpoint(units)
     }
     fn position(&self) -> RunPosition {

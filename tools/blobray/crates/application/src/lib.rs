@@ -111,10 +111,7 @@ pub fn prepare_import(
         stage,
         work,
         &memory,
-        &mut blobray_store::TemporaryControl {
-            control,
-            budget: &disk,
-        },
+        &mut blobray_store::TemporaryControl::new(control, &disk),
         disk.clone(),
     );
     control.memory_phases(&memory.phase_observations());

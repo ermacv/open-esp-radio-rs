@@ -6,9 +6,10 @@
 //! authenticated RF-test archive the producer is reported as an unmet
 //! obligation, never omitted.
 use crate::evidence::{Access, Effect, calls, effects, events, has_events, output, stop};
-use crate::gain::{Gain, Right, arithmetic, gain_models, publication, signed8};
+use crate::gain::{Gain, arithmetic, gain_models, publication, signed8};
 use crate::harness::{Result, case, filled, known, region, selection, words};
 use crate::layout::*;
+use crate::phy::Right;
 use blobray_domain::{
     ArtifactId, CallCapture, CallWordCount, ComparisonVerdict, DeviceBehavior, DeviceDeclaration,
     ExecutionGap, ExecutionRequest, ExecutionStop, MemoryAccess, RegionLifetime, RegisterCell,
@@ -82,7 +83,7 @@ fn storage(g: &mut Gain) -> Result<Baseline> {
     let memset = g.sym(1, "memset");
     let memcpy = g.sym(1, "memcpy");
     let mut baseline = None;
-    for fill in [0x5a, 0xa5] {
+    for fill in FILLS {
         let adjustments = [0u8, 1, 31, 127, 128, 255];
         for batch in (0..6).step_by(6) {
             let (mut rows, mut states) = (vec![], vec![]);
@@ -347,7 +348,7 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
     let set_gain = g.root("phy_wifi_set_tx_gain_new");
     let mac = g.root("mac_power_set");
     let mut publishing = None;
-    for fill in [0x5a, 0xa5] {
+    for fill in FILLS {
         for batch in (0..POWER.len()).step_by(POWER.len()) {
             let mut rows = vec![];
             for &(target, attenuation, _, _, _) in &POWER[batch..] {

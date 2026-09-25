@@ -439,7 +439,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
     let (vendor, replacement) = (ctx.vendor.clone(), ctx.replacement.clone());
     for (name, cap, statuses, candidates, selected) in search_cases() {
         let mut baseline = None;
-        for fill in [0x5au8, 0xa5] {
+        for fill in FILLS {
             for busy in [0u32, 1] {
                 let label = format!("rfpll-search-{name}-{fill}-{busy}");
                 let mut row = case(
@@ -538,7 +538,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         }
     }
     for (name, statuses, delta, initial, contents, channel) in &maintenance {
-        for fill in [0x5au8, 0xa5] {
+        for fill in FILLS {
             let label = format!("rfpll-maintain-{name}-{channel}-{fill}");
             let mut rows = vec![
                 case(

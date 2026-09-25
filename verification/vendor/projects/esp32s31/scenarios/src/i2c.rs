@@ -11,13 +11,14 @@ use crate::harness::{
     manifest, named_object, named_section, selection, sha256, single_argument_entry, symbol,
 };
 use crate::layout::*;
+use crate::phy::image_layout;
 use crate::session::{Artifact, Session, image_symbol, request};
 use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_domain::{
     ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration, EntrySelection,
     ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionGap, ExecutionStop, ExecutionTarget,
-    FunctionSource, ImageLayout, ImageRegion, LinkRequest, MemoryAccess, ModelStatus,
-    RegionLifetime, RegisterCell, SessionReset,
+    FunctionSource, LinkRequest, MemoryAccess, ModelStatus, RegionLifetime, RegisterCell,
+    SessionReset,
 };
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
@@ -326,16 +327,7 @@ impl I2c {
             inputs: vec![0],
             entry: select(0, "phy_i2c_master_cmd_mem_init")?,
             roots: roots.iter().map(|n| select(0, n)).collect::<Result<_>>()?,
-            layout: ImageLayout {
-                code: ImageRegion {
-                    start: 0x1100_0000,
-                    length: 0x100_0000,
-                },
-                data: ImageRegion {
-                    start: 0x2000_0000,
-                    length: 0x100_0000,
-                },
-            },
+            layout: image_layout(),
         };
         let linked = session.link(&link, &options.linker, "phy_i2c_master_cmd_mem_init")?;
         // Independent current-ELF symbol selection: an inexact source mapping is not

@@ -19,6 +19,8 @@ pub const ABI_WORDS: u32 = 0x3fff_4000;
 pub const PARAMETER_SOURCE: u32 = 0x3fff_5000;
 /// Production-side destination of a copied parameter image.
 pub const PARAMETER_DESTINATION: u32 = 0x3fff_6000;
+/// Production-side copy of a parameter image in scratch input RAM.
+pub const PARAMETER_COPY: u32 = INPUT + 0x800;
 /// Size of the captured `phy_param` object.
 pub const PHY_PARAM_BYTES: u32 = 516;
 
@@ -28,6 +30,8 @@ pub const ROM_INTERFACE_POINTER: u32 = 0x2f07_fc3c;
 pub const ROM_PARAMETER_POINTER: u32 = 0x2f07_fc40;
 /// Captured ROM callback table installed by `phy_get_romfunc_addr`.
 pub const ROM_CALLBACK_TABLE: u32 = 0x2f07_f944;
+/// Callback-table slot observed after the captured installer runs.
+pub const INSTALLED_CALLBACK_SLOT: u32 = ROM_CALLBACK_TABLE + 0x28;
 
 /// Packed-command ports of the two analog I2C hosts.
 pub const I2C_PORT_0: u32 = 0x2010_f800;
@@ -47,9 +51,22 @@ pub const COMMAND_BUSY: u32 = 0x0200_0000;
 /// Analog I2C command RAM: 45 aligned command words written by the PHY.
 pub const COMMAND_RAM: u32 = 0x2010_fc00;
 
+/// Placement of linked vendor images.
+pub const IMAGE_CODE_START: u32 = 0x1100_0000;
+pub const IMAGE_DATA_START: u32 = 0x2000_0000;
+pub const IMAGE_REGION_BYTES: u64 = 0x100_0000;
+
 /// Execution stack of both implementations.
 pub const STACK_ADDRESS: u32 = 0x3ffe_0000;
 pub const STACK_BYTES: u32 = 0x8000;
+/// Stack and peripheral fill patterns exercised by every matrix.
+pub const FILLS: [u8; 2] = [0x5a, 0xa5];
+
+/// A fill byte replicated into every byte of a register word.
+pub fn fill_word(fill: u8) -> u32 {
+    u32::from(fill) * 0x0101_0101
+}
+
 /// Event capacity of one phase in the finite matrices.
 pub const MAX_EVENTS: u32 = 32768;
 

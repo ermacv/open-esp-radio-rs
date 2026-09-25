@@ -600,18 +600,74 @@ estimator inputs exercise arithmetic/search paths, not an analog convergence or
 RF-quality model. No hardware timing or maintenance-grant claim follows from a
 matching trace.
 
-The separate channel comparison executes `phy_get_romfunc_addr` before
-`phy_chip_set_chan` in the same execution session. This retains the actual
-temperature, TX-gain and RX-compensation callbacks rather than manually
-selecting ROM replacements. Its temperature-prefix profile compares effects
-through the first gain-publication boundary with all five valid sensor ranges;
-it makes no claim about gain publication or whole-channel equivalence.
-Both channel profiles separately compare committed channel, bandwidth and
-temperature. This is channel state, not the enclosing RXCAL reference commit.
-A stuck-readiness profile requires failure without gain or semantic publication.
-The complete-root gate includes gain publication using the current archive's
-actual callback and coefficient profile. It compares all ordered channel effects
-without filtering gain writes; it does not qualify the enclosing RXCAL parent.
+The `channel` scenario of the [typed scenario package](scenarios/src/channel.rs)
+compares channel restoration. Inputs are the same as for the gain scenario, without an RF-test archive:
+
+```console
+cargo xtask vendor-scenario channel --library /private/libphy.a \
+  --rom /private/esp32s31_rev0_rom.elf \
+  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
+  --linker /usr/bin/ld.lld --output target/blobray-research/channel --limit-mode watchdog
+```
+
+Each case runs three phases in one execution session:
+
+1. copy zeroed parameters;
+2. run the real `phy_get_romfunc_addr` installer;
+3. execute `phy_chip_set_chan`.
+
+The installer supplies the archive's own temperature, TX-gain and
+RX-compensation callbacks, so no ROM replacement is selected by hand. The
+production side runs `open_phy_channel_trace_state`.
+
+**Peripheral inputs.** The models declare these inputs explicitly:
+
+- the sensor DAC and PLL analog cells;
+- the temperature code;
+- channel readiness;
+- the retained channel, AGC, baseband and gain registers;
+- the gain-memory data ports;
+- the two TX-capacitance command words.
+
+**Relation.** The native relation compares ordered MMIO writes. A runner-side
+comparison then reviews every non-transport read and every requested delay. It
+excludes only three things:
+
+- transport-port reads;
+- read-mask and host-map accesses;
+- the single-microsecond delay before a transport read.
+
+Delay budgets are exact for both sides. Production waits before the transport
+read of each analog command. An out-of-range sensor sample adds the DAC
+read-modify-write of the ROM reselection.
+
+**Full-root evidence.** These cases cover channels 1, 6, 11 and 13 at both
+bandwidths and both fills. They require:
+
+- identical ordered effects;
+- nonempty TX gain publication;
+- a committed channel, bandwidth and temperature that match both an independent
+  ROM `phy_tsens_attribute`/`phy_code_to_temp` oracle and the production output.
+
+**Temperature-prefix evidence.** These cases cover all five sensor DAC windows
+at codes 0, 64, 100 and 255. They are retained as separate `prefix-*`
+executions. Their ordered-effect claim ends at the first gain-bank read, with
+exactly one sensor sample before it. They make no whole-channel claim.
+
+**Stuck readiness.** The production-only case must return failure without
+writing gain data or semantic output, after sampling readiness.
+
+**Negative cases:**
+
+- a changed production channel is a DIFF;
+- omitted callback installation leaves the vendor INCOMPLETE;
+- an undersized event capacity publishes nothing.
+
+All runs replay after move/backup/restore. Stuck readiness runs production's
+full bounded poll, which dominates the run's roughly one-minute duration.
+
+This is channel state, not the enclosing RXCAL reference commit, and not RF
+qualification.
 
 Gain publication has an independent complete-body comparison using identical
 synthetic DC rows, baseband settings, RF settings and digital adjustments.

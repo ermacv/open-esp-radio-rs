@@ -6,6 +6,7 @@
 //! this verification owner; generic Blobray has no chip dependency.
 pub mod calibration_leaves;
 pub mod calibration_prefix;
+pub mod channel;
 pub mod evidence;
 pub mod gain;
 pub mod gain_state;
@@ -14,6 +15,7 @@ pub mod harness_edges;
 pub mod i2c;
 pub mod i2c_transport;
 pub mod layout;
+pub mod phy;
 pub mod research;
 pub mod rfpll;
 pub mod session;

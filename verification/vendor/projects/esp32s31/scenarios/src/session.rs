@@ -92,6 +92,19 @@ impl Session {
             path_arg(&plan),
         ]);
         runner.call("plan", &command, 0)?;
+        let description: blobray_domain::LinkPlanDescription =
+            serde_json::from_slice(&fs::read(&plan)?)?;
+        if !description.ready() {
+            let blockers: Vec<_> = description
+                .blockers
+                .iter()
+                .map(|b| b.message.as_str())
+                .collect();
+            return Err(invalid(format!(
+                "link plan blocked: {}",
+                blockers.join("; ")
+            )));
+        }
         let mut command = args(["prepare-image", "--plan"]);
         command.extend([path_arg(&plan), "--linker".into(), linker]);
         let image = runner

@@ -1,7 +1,7 @@
 //! Run one authenticated ESP32-S31 vendor-comparison scenario.
 use clap::{Parser, Subcommand};
 use oer_esp32s31_vendor_scenarios::{
-    calibration_leaves, calibration_prefix,
+    calibration_leaves, calibration_prefix, channel,
     gain::{Gain, Options},
     gain_state::{self, Unmet},
     harness::{Budget, Result},
@@ -26,6 +26,12 @@ enum Scenario {
         /// Authenticated `librftest.a`; without it the producer obligation stays unmet.
         #[arg(long)]
         rftest: Option<PathBuf>,
+    },
+    /// Channel restoration over installed ROM callbacks: full-root channel,
+    /// temperature prefix over every sensor range and stuck-readiness containment.
+    Channel {
+        #[command(flatten)]
+        common: Common,
     },
     /// Captured PHY research, navigation, register/data review and
     /// source-free preservation of every retained result.
@@ -168,9 +174,30 @@ fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result
     ))
 }
 
+fn channel(common: Common) -> Result<ExitCode> {
+    let options = channel::Options {
+        binary: common.binary,
+        library: common.library,
+        rom: common.rom,
+        production: common.production,
+        linker: common.linker,
+        output: common.output,
+        budget: common.budget,
+    };
+    let mut ctx = channel::Channel::new(&options)?;
+    channel::exercise(&mut ctx)?;
+    ctx.preserve(0)?;
+    Ok(finish(
+        &[],
+        "authenticated channel restoration, temperature prefix, containment and source-free replay passed",
+        &ctx.run,
+    ))
+}
+
 fn main() -> ExitCode {
     let result = match Cli::parse().scenario {
         Scenario::Gain { common, rftest } => gain(common, rftest),
+        Scenario::Channel { common } => channel(common),
         Scenario::Research {
             binary,
             library,

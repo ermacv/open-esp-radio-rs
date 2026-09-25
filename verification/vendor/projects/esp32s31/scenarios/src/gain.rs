@@ -3,23 +3,21 @@
 //! Explicit finite software inputs only; no RF, protocol or whole-TXCAL
 //! qualification. Private inputs and retained requests/evidence belong in the
 //! selected ignored output.
-use crate::evidence::{Access, Effect, calls, effects, events, has_events, outcomes, output, stop};
+use crate::evidence::{Access, Effect, calls, effects, events, has_events, output, stop};
 use crate::harness::{
-    Budget, Buffer, Input, Result, case, data_request, evidence, filled, invalid, invocation,
-    known, manifest, named_object, named_section, region, selection, sha256, symbol, words,
-    words_padded,
+    Budget, Buffer, Input, Result, case, data_request, filled, invalid, known, named_object,
+    named_section, region, selection, sha256, symbol, words,
 };
 use crate::layout::*;
-use crate::session::{Session, image_symbol, request};
+use crate::phy::{PhyImage, Right, image_layout};
+use crate::session::Session;
 use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_domain::{
-    ArtifactId, CallCapture, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration,
-    EntrySelection, ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionGap,
-    ExecutionRegion, ExecutionRequest, ExecutionStop, ExecutionTarget, FunctionSource, ImageLayout,
-    ImageRegion, Invocation, LinkRequest, MemorySelection, ObjectId, ObjectLocation,
-    ObservedCallTarget, RegionLifetime, RegisterCell, SessionReset,
+    CallCapture, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration,
+    EntrySelection, ExecutionEvent, ExecutionGap, ExecutionRequest, ExecutionStop, FunctionSource,
+    Invocation, LinkRequest, ObservedCallTarget, RegionLifetime, RegisterCell, SessionReset,
 };
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::{fs, path::PathBuf};
 
 /// Pinned `librftest.a` from the same PHY source revision as the archive.
 pub const RFTEST_SHA: &str = "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e";
@@ -127,7 +125,7 @@ pub fn gain_models(base: u32, fill: u8) -> Vec<DeviceDeclaration> {
                         address,
                         width: 4,
                         value: if address == 0x2010_0844 {
-                            u32::from(fill) * 0x0101_0101
+                            fill_word(fill)
                         } else {
                             0
                         },
@@ -152,7 +150,7 @@ pub fn publication(
     let rf = halfwords(&calculated[count * 3..count * 5]);
     let seed_data = words(seed_words);
     let mut result = vec![(Access::Read, 0x2010_0408, (base << 24) | 0x005a_a55a)];
-    let mut control = u32::from(fill) * 0x0101_0101;
+    let mut control = fill_word(fill);
     for i in 0..count {
         let index = match bb[i] {
             0 => 0,
@@ -190,22 +188,6 @@ pub fn publication(
     result
 }
 
-/// Which implementation, if any, is compared with the captured vendor side.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Right {
-    /// Vendor characterization; relations and verdict are absent.
-    None,
-    Production,
-    /// Vendor-boundary characterization against a second vendor invocation.
-    Vendor,
-}
-
-pub struct Executed {
-    pub records: Vec<ExecutionEvidence>,
-    pub request: ExecutionRequest,
-    pub identity: ArtifactId,
-}
-
 pub struct Options {
     pub binary: PathBuf,
     pub library: PathBuf,
@@ -219,13 +201,8 @@ pub struct Options {
 
 /// Linked captured gain image, compiled production and retained evidence.
 pub struct Gain {
-    pub session: Session,
+    pub image: PhyImage,
     pub coefficients: Vec<u8>,
-    pub roots: BTreeMap<String, u32>,
-    pub parameter: u32,
-    pub image_object: ObjectId,
-    pub vendor: ExecutionTarget,
-    pub production: ExecutionTarget,
     wifi_request: Option<ExecutionRequest>,
     bluetooth_request: Option<ExecutionRequest>,
     publication_request: Option<ExecutionRequest>,
@@ -233,14 +210,14 @@ pub struct Gain {
 }
 
 impl std::ops::Deref for Gain {
-    type Target = Session;
-    fn deref(&self) -> &Session {
-        &self.session
+    type Target = PhyImage;
+    fn deref(&self) -> &PhyImage {
+        &self.image
     }
 }
 impl std::ops::DerefMut for Gain {
-    fn deref_mut(&mut self) -> &mut Session {
-        &mut self.session
+    fn deref_mut(&mut self) -> &mut PhyImage {
+        &mut self.image
     }
 }
 
@@ -359,16 +336,7 @@ impl Gain {
                 .iter()
                 .map(|n| root(0, n))
                 .collect::<Result<_>>()?,
-            layout: ImageLayout {
-                code: ImageRegion {
-                    start: 0x1100_0000,
-                    length: 0x100_0000,
-                },
-                data: ImageRegion {
-                    start: 0x2000_0000,
-                    length: 0x100_0000,
-                },
-            },
+            layout: image_layout(),
         };
         if options.rftest.is_some() {
             link.inputs.push(3);
@@ -376,127 +344,15 @@ impl Gain {
                 link.roots.push(root(3, name)?);
             }
         }
-        let linked = session.link(&link, &options.linker, roots[0])?;
-        let parameter = image_symbol(
-            &run.join("image/image.elf"),
-            &run.join("image-symbols.txt"),
-            "phy_param",
-        )?;
-        if parameter.1 != u64::from(PHY_PARAM_BYTES) {
-            return Err(invalid(
-                "phy_param does not have the expected 516-byte extent",
-            ));
-        }
-        let (vendor, production) = session.targets(&linked.image)?;
+        let image = PhyImage::link(session, &link, &options.linker, roots[0])?;
         Ok(Self {
-            vendor,
-            production,
-            image_object: ObjectId {
-                artifact: linked.manifest.elf.clone(),
-                location: ObjectLocation::Standalone,
-            },
-            session,
+            image,
             coefficients,
-            roots: linked.roots,
-            parameter: parameter.0,
             wifi_request: None,
             bluetooth_request: None,
             publication_request: None,
             coefficient_address: None,
         })
-    }
-
-    pub fn sym(&self, input: usize, name: &str) -> u32 {
-        let value = symbol(&self.inventory, input, name)
-            .unwrap_or_else(|e| panic!("{e}"))
-            .value;
-        u32::try_from(value).expect("RV32 symbol")
-    }
-
-    pub fn root(&self, name: &str) -> u32 {
-        *self
-            .roots
-            .get(name)
-            .unwrap_or_else(|| panic!("missing root {name}"))
-    }
-
-    /// Enter `target` through the stack-entry adapter with sixteen explicit words.
-    pub fn enter(
-        &self,
-        target: u32,
-        arguments: &[u32],
-        memory: Vec<ExecutionRegion>,
-        observe: Vec<MemorySelection>,
-        models: Vec<DeviceDeclaration>,
-    ) -> Invocation {
-        let entry = self
-            .probes
-            .entry("open_phy_trace_stack_entry")
-            .expect("stack entry probe");
-        let mut regions = vec![
-            known(
-                ABI_WORDS,
-                64,
-                &words_padded(arguments, 16, 0).expect("sixteen words"),
-            )
-            .unwrap(),
-        ];
-        regions.extend(memory);
-        invocation(
-            entry,
-            vec![Some(target), Some(ABI_WORDS)],
-            regions,
-            models,
-            observe,
-        )
-    }
-
-    /// Enter a prepared probe invocation through the stack-entry adapter.
-    pub fn enter_probe(&self, probe: Invocation) -> Invocation {
-        let arguments: Vec<u32> = probe
-            .arguments
-            .iter()
-            .map(|a| a.expect("known probe argument"))
-            .collect();
-        self.enter(
-            probe.entry,
-            &arguments,
-            probe.memory,
-            probe.observe_memory,
-            probe.models,
-        )
-    }
-
-    /// Copy 516 parameter bytes into the captured `phy_param` or a production buffer.
-    pub fn setup(&self, data: &[u8], production: bool) -> Invocation {
-        let memcpy = self.sym(1, "memcpy");
-        if production {
-            self.enter(
-                memcpy,
-                &[INPUT + 0x800, INPUT, PHY_PARAM_BYTES],
-                vec![
-                    known(INPUT, PHY_PARAM_BYTES, data).unwrap(),
-                    region(
-                        INPUT + 0x800,
-                        PHY_PARAM_BYTES,
-                        &[],
-                        None,
-                        RegionLifetime::Session,
-                    )
-                    .unwrap(),
-                ],
-                vec![],
-                vec![],
-            )
-        } else {
-            self.enter(
-                memcpy,
-                &[self.parameter, INPUT, PHY_PARAM_BYTES],
-                vec![known(INPUT, PHY_PARAM_BYTES, data).unwrap()],
-                vec![],
-                vec![],
-            )
-        }
     }
 
     pub fn wifi_phase(&self, channel: u32, fill: u8, capture: bool) -> Invocation {
@@ -526,108 +382,6 @@ impl Gain {
         phase
     }
 
-    pub fn execute(
-        &mut self,
-        label: &str,
-        mut rows: Vec<ExecutionCase>,
-        fill: u8,
-        right: Right,
-        verdict: ComparisonVerdict,
-        maximum: u32,
-    ) -> Result<Executed> {
-        if right == Right::None {
-            for row in &mut rows {
-                row.relation = None;
-            }
-        }
-        let replacement = match right {
-            Right::None => None,
-            Right::Production => Some(self.production.clone()),
-            Right::Vendor => Some(self.vendor.clone()),
-        };
-        let count = rows.len() * if replacement.is_some() { 2 } else { 1 };
-        let request = request(
-            &self.vendor,
-            replacement.as_ref(),
-            Some(fill),
-            rows,
-            maximum,
-        );
-        let expected = (right != Right::None).then_some(verdict);
-        let artifact = self.session.submit(label, &request, expected)?;
-        let summary = manifest(&artifact.document);
-        let records = evidence(&artifact.document);
-        let stops = outcomes(&records);
-        assert_eq!(stops.len(), count, "{label}");
-        if matches!(verdict, ComparisonVerdict::Match | ComparisonVerdict::Diff) {
-            assert!(summary.complete, "{label}");
-            assert!(
-                stops
-                    .iter()
-                    .all(|s| matches!(s, ExecutionStop::Returned { .. })),
-                "{label}: {stops:?}"
-            );
-        }
-        let identity = artifact.identity.clone();
-        Ok(Executed {
-            records,
-            request,
-            identity,
-        })
-    }
-
-    /// Run with the default comparison expectation and event capacity.
-    pub fn compare(&mut self, label: &str, rows: Vec<ExecutionCase>, fill: u8) -> Result<Executed> {
-        self.execute(
-            label,
-            rows,
-            fill,
-            Right::Production,
-            ComparisonVerdict::Match,
-            MAX_EVENTS,
-        )
-    }
-
-    /// Vendor-only characterization that must complete.
-    pub fn characterize_vendor(
-        &mut self,
-        label: &str,
-        rows: Vec<ExecutionCase>,
-        fill: u8,
-    ) -> Result<Executed> {
-        self.execute(
-            label,
-            rows,
-            fill,
-            Right::None,
-            ComparisonVerdict::Match,
-            MAX_EVENTS,
-        )
-    }
-
-    pub fn last_manifest_complete(&self) -> bool {
-        manifest(&self.artifacts.last().expect("retained execution").document).complete
-    }
-
-    /// Exact image bytes at a linked address, checked against the source identity.
-    pub fn image_data(&self, name: &str, address: u32, length: u64) -> Result<Vec<u8>> {
-        let request = blobray_domain::DataRequest {
-            occurrence: blobray_domain::KnowledgeOccurrence {
-                revision: self.revision.clone(),
-                source: self.vendor.source.clone(),
-                object: self.image_object.clone(),
-                symbol: None,
-            },
-            ranges: vec![DataSelector::Image {
-                address: u64::from(address),
-                length,
-            }],
-            analyses: vec![],
-            pointer_table: None,
-        };
-        self.runner.data(name, &request, &self.run.join(name))
-    }
-
     pub fn coefficient_boundaries(&mut self) -> Result<()> {
         // The legacy input matrix leaves some table intervals unselected in the
         // production path. Select every authenticated threshold exactly, without
@@ -643,7 +397,7 @@ impl Gain {
                 .map(|v| i32::from(v as i16))
                 .collect();
             let length = if bluetooth { 80 } else { 160 };
-            for fill in [0x5a, 0xa5] {
+            for fill in FILLS {
                 // Every threshold of one profile and fill is one request.
                 for batch in (0..18).step_by(18) {
                     let (mut rows, mut expected) = (vec![], vec![]);
@@ -744,7 +498,7 @@ impl Gain {
     pub fn characterize(&mut self) -> Result<()> {
         let memcpy = self.sym(1, "memcpy");
         let kernel_address = self.sym(1, "phy_wifi_get_tx_gain");
-        for fill in [0x5a, 0xa5] {
+        for fill in FILLS {
             let mut specs = vec![];
             for curve in [CURVES[0], CURVES[2], CURVES[3]] {
                 for channel in [1, 6, 11, 12, 13] {
@@ -890,7 +644,7 @@ impl Gain {
     }
 
     pub fn wifi(&mut self) -> Result<()> {
-        for fill in [0x5a, 0xa5] {
+        for fill in FILLS {
             let mut specs = vec![];
             for curve in CURVES {
                 for channel in [1, 2, 5, 6, 7, 10, 11, 12, 13] {
@@ -967,7 +721,7 @@ impl Gain {
     }
 
     pub fn publish_wifi(&mut self) -> Result<()> {
-        for fill in [0x5a, 0xa5] {
+        for fill in FILLS {
             let (mut rows, mut expectations) = (vec![], vec![]);
             for seed_value in [0u32, 0x1357_2468, 0xffff_ffff] {
                 for base in [0u32, 32, 224, 255] {
@@ -1037,28 +791,9 @@ impl Gain {
         Ok(())
     }
 
-    fn install_callbacks(&self, observed_slot: u32) -> Result<Invocation> {
-        Ok(self.enter(
-            self.root("phy_get_romfunc_addr"),
-            &[],
-            vec![
-                region(
-                    ROM_INTERFACE_POINTER,
-                    4,
-                    &words(&[ROM_CALLBACK_TABLE]),
-                    None,
-                    RegionLifetime::Session,
-                )?,
-                region(ROM_PARAMETER_POINTER, 4, &[], None, RegionLifetime::Session)?,
-            ],
-            vec![selection(observed_slot, 4)],
-            vec![],
-        ))
-    }
-
     pub fn bluetooth(&mut self) -> Result<()> {
         let tab = self.root("phy_bt_get_tx_tab_new");
-        for fill in [0x5a, 0xa5] {
+        for fill in FILLS {
             let mut specs = vec![];
             for curve in [[0u8, 0, 0], [127, 128, 255], [255, 31, 128]] {
                 for (base, attenuation, correction) in [
@@ -1076,14 +811,13 @@ impl Gain {
             for batch in (0..specs.len()).step_by(specs.len()) {
                 let (mut rows, mut expected) = (vec![], vec![]);
                 for &(curve, base, attenuation, correction, bank) in &specs[batch..] {
-                    let f = u32::from(fill);
                     let mut packed: Vec<u32> = (0..6)
-                        .map(|i| (f * 0x0101_0101).wrapping_add(i * 0x0102_0305))
+                        .map(|i| fill_word(fill).wrapping_add(i * 0x0102_0305))
                         .collect();
                     let mut curve_word = curve.to_vec();
                     curve_word.push((correction & 255) as u8);
                     packed.extend([
-                        f * 0x0101,
+                        fill_word(fill) & 0xffff,
                         u32::from_le_bytes(curve_word.try_into().unwrap()),
                         base as u32 | ((attenuation as u32) << 8),
                     ]);
@@ -1102,14 +836,8 @@ impl Gain {
                         SessionReset::Cold,
                         false,
                     ));
-                    let install = self.install_callbacks(0x2f07_f96c)?;
-                    let noop = self.enter(
-                        self.sym(1, "memcpy"),
-                        &[INPUT + 0x800, INPUT + 0x800, 0],
-                        vec![],
-                        vec![],
-                        vec![],
-                    );
+                    let install = self.install_callbacks(INSTALLED_CALLBACK_SLOT)?;
+                    let noop = self.noop();
                     rows.push(case(
                         "install-captured-callbacks",
                         install,
@@ -1261,7 +989,7 @@ impl Gain {
                 self.sym(1, "phy_wifi_get_tx_tab_"),
                 &[13, OUTPUT, OUTPUT + 32, OUTPUT + 96, 0],
                 vec![
-                    known(self.sym(1, "phy_param_rom"), 4, &words(&[INPUT + 0x800]))?,
+                    known(self.sym(1, "phy_param_rom"), 4, &words(&[PARAMETER_COPY]))?,
                     filled(OUTPUT, 160, 0xa5)?,
                 ],
                 vec![selection(OUTPUT, 160)],
@@ -1359,7 +1087,7 @@ impl Gain {
             self.sym(1, "phy_wifi_get_tx_gain"),
             &[
                 13,
-                INPUT + 0x800 + 241,
+                PARAMETER_COPY + 241,
                 0,
                 0,
                 INPUT + 256,

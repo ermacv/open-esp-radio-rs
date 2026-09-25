@@ -390,7 +390,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
     let pbus = ctx.captured(1, "phy_pbus_clear_reg");
     let production = ctx.probe("open_phy_calibration_trace_pbus_clear");
     let (vendor, replacement) = (ctx.vendor.clone(), ctx.replacement.clone());
-    for fill in [0x5au8, 0xa5] {
+    for fill in FILLS {
         let (mut cases, mut expected) = (vec![], vec![]);
         for initial in [0u32, 0xa5a5_5a58, 0x5a5a_a5a4] {
             for settle in [false, true] {
@@ -529,7 +529,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
     }
     let (frequency_writes, nrx_writes) = dcode_frequency_writes();
     for crystal in 0..4u32 {
-        for fill in [0x5au8, 0xa5] {
+        for fill in FILLS {
             for busy in [0u32, 2] {
                 let label = format!("dcode-{crystal}-{fill}-{busy}");
                 let mut rows = vec![

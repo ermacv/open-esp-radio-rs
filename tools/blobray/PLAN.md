@@ -194,7 +194,9 @@ gain arithmetic, coefficient boundaries and full Wi-Fi/BT publication. Stage 12.
 is complete: gain state and the RF-test producer. Checkpoint 12.R is active:
 typed Rust verification scenarios replace the Python runners before 12.6.
 Checkpoint 12.R, including checkpoint 12.P (execution performance), is
-complete; no Python scenario code remains. Unit 12.6 is active.
+complete; no Python scenario code remains. Unit 12.6 is complete: channel
+restoration, all temperature-prefix sensor windows and stuck readiness. Unit
+12.7 is active.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -820,8 +822,8 @@ current owner docs and the ordinary stage gates. No partial unit is completion.
 | 12.4 | done | Gain arithmetic and publication: `phy_rfpll/gain_calculation.rs`, `phy_rfpll/tx_gain.rs`, `phy_rfpll/bluetooth_gain.rs`. Actual current coefficient selection and ROM kernel inputs, signed narrowing, additive current versus subtractive ROM behavior, boundary curves, complete Wi-Fi/BT publishers and bank wrap. Independently authenticate coefficients; changing coefficients changes dependency identity. |
 | 12.5 | done | Gain state and RF-test producer: `phy_rfpll/gain_state.rs`, `phy_rfpll/gain_producer.rs`. Execute real backup/destruction/recovery/init/consumption and the separately authenticated RF-test power producer, including rounding/saturation and gain/MAC publication. Preserve their characterization scope; vendor storage support is not inferred for production. Missing RF-test input remains an unmet obligation, never an omitted case. |
 | 12.R | done | Typed Rust verification scenarios, detailed below. Every current Python scenario, oracle and host test moves to a Rust owner package with unchanged cases, verdicts, negatives and preservation; Python is removed. Stage 12.6–12.10 obligations are unchanged. |
-| 12.6 | active | Channel restoration: `phy_rfpll/channel.rs`. Actual callback installation, all temperature-prefix sensor ranges, full-root gain publication and committed channel/bandwidth/temperature; stuck readiness cannot publish gain or semantic output. Prefix and full-root evidence remain distinct. |
-| 12.7 | pending | RX gain/calibration: `phy_rfpll/rx_gain.rs`. Both complete roots, DC/table guards, signed estimators, delayed I2C/settle, projected coefficients and bank limits; failed channel, minimum search and shared budget preserve prior coefficients. Readiness observations and genuine output publication remain visible. |
+| 12.6 | done | Channel restoration: `phy_rfpll/channel.rs`. Actual callback installation, all temperature-prefix sensor ranges, full-root gain publication and committed channel/bandwidth/temperature; stuck readiness cannot publish gain or semantic output. Prefix and full-root evidence remain distinct. |
+| 12.7 | active | RX gain/calibration: `phy_rfpll/rx_gain.rs`. Both complete roots, DC/table guards, signed estimators, delayed I2C/settle, projected coefficients and bank limits; failed channel, minimum search and shared budget preserve prior coefficients. Readiness observations and genuine output publication remain visible. |
 | 12.8 | pending | TX-DC/PWDET: `phy_rfpll/tx_dc_pwdet.rs`. Actual search/PBus/SAR children, Wi-Fi/BT selection, DC rows, constant/alternating samples and tone/settle paths. Independent PBus/SAR faults cannot publish calibration; observation capacity differs from time/work limits. Preserve seeded gain adjustment and explicit unused-read exclusions. |
 | 12.9 | pending | Combined calibration and tracking parents: `phy_rfpll/combined.rs`, `phy_rfpll/parent.rs`, `phy_rfpll/graph.rs`. Execute real children, guards/grant order, channel 13/HT40, client/thermal domains, RFPLL disabled/enabled and signed corrections. Failed TX preserves pre-calibration state and earlier completed power/RFPLL state. Modeled child completions cannot satisfy complete-parent acceptance. |
 | 12.10 | pending | Combined practical-PHY checkpoint: all units and stage-11 scenarios work together under native identities, shared budgets and preservation. Complete required intrinsic/reviewed-summary coverage with direct semantic/unknown/resource tests and explicit applicability; changing model, summary or production invalidates identity. No summary impersonates executed capture. All relevant integration suites, standalone, formatting, strict Clippy, owned public/private docs and `cargo xtask check source-only` pass before closing stage 12. |
@@ -981,6 +983,25 @@ unmet producer obligation and exits with status 2. With it, all 216 retained
 executions reopen and replay exactly after move and backup/restore; without it,
 all 204 do. Host oracle tests and the docs check pass. These are vendor
 characterizations: no production storage or RF power API is inferred.
+
+
+12.6 acceptance: the typed `channel` scenario links `phy_chip_set_chan` with
+the real `phy_get_romfunc_addr` installer and authenticated ROM companions,
+and executes parameter setup, installation and the transition in one session
+against `open_phy_channel_trace_state`. Sixteen full-root cases (channels 1, 6,
+11 and 13, both bandwidths and fills) match on native ordered writes and on
+runner-side ordered reads/writes/delays, publish TX gain, and commit a channel,
+bandwidth and temperature equal to an independent ROM sensor oracle and to
+the production output. Forty temperature-prefix cases cover all five sensor
+windows at codes 0, 64, 100 and 255. They are retained separately and
+compare ordered effects only up to the first gain-bank read, with exactly one
+sensor sample. Delay budgets are exact: out-of-range samples add the DAC
+reselection's read-modify-write. Stuck readiness (both fills) returns
+failure without gain data or semantic output. A changed production channel
+is DIFF, omitted installation is INCOMPLETE, and event exhaustion publishes
+nothing. All 60 retained executions reopen and replay exactly after move and
+backup/restore. Host oracle tests, Clippy and the docs check pass. This is
+channel state, not RXCAL or RF qualification.
 
 
 ### Checkpoint 12.R: typed Rust verification scenarios

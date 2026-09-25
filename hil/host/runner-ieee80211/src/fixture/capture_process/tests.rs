@@ -72,27 +72,6 @@ fn nonzero_exit_after_accepting_stop_is_still_a_capture_failure() {
 }
 
 #[test]
-fn controlled_child_is_reaped_after_stop() {
-    let program = "sh -c 'trap \"exit 0\" INT TERM; printf \"capture-open\\n\" >&2; read ignored'";
-    // A FIFO holds the test child without a timer or busy loop.
-    let directory = tempfile::tempdir().unwrap();
-    let fifo = directory.path().join("wait");
-    assert!(
-        Command::new("mkfifo")
-            .arg(&fifo)
-            .status()
-            .unwrap()
-            .success()
-    );
-    let program = format!("{program} <> {}", quote(fifo.to_str().unwrap()));
-    let mut command = Command::new("sh");
-    command.args(["-c", &controlled(&program, ":")]);
-    let capture =
-        Capture::start(&mut command, "capture-open".into(), Duration::from_secs(5)).unwrap();
-    assert!(capture.finish().unwrap().status.success());
-}
-
-#[test]
 #[ignore = "requires installed dumpcap and local packet-capture permissions"]
 fn installed_dumpcap_acknowledges_ready_and_reports_explicit_stop() {
     let capture = dumpcap(

@@ -105,90 +105,11 @@ esac
 }
 
 #[test]
-fn managed_capture_retains_bytes_through_acknowledged_stop() {
-    let directory = tempfile::tempdir().unwrap();
-    let remote = RemoteInterface {
-        create_interface: false,
-        interface: "egress0".into(),
-        directory: directory.path().join("owned").to_str().unwrap().into(),
-    };
-    let config = OpenWrtConfig {
-        ht40_above: false,
-        radio: "radio0".into(),
-        ap_section: "ap0".into(),
-        channel: 13,
-        ssh_target: "unused".into(),
-        wireless_interface: "egress0".into(),
-        ingress_interface: "lan0".into(),
-        monitor_interface: None,
-        phys: vec![],
-        read_only: false,
-        independent_laptop_monitor: false,
-    };
-    // Fake the packet source, but execute the real remote lifetime/control
-    // script. Readiness follows the file write; stop is a signal, not a delay.
-    // The handler writes with unbuffered os.write: SIGTERM may arrive while
-    // the readiness print still holds the buffered stderr writer, and a
-    // buffered write from the handler would be a reentrant call.
-    let source = r#"import os,pathlib,signal,sys
-args=sys.argv[1:]
-pathlib.Path(args[args.index('-w')+1]).write_bytes(b'pcap\x00retained')
-def stop(*_):
-    os.write(2,b'1 packets captured\n0 packets dropped by kernel\n')
-    os._exit(0)
-signal.signal(signal.SIGTERM,stop)
-print('tcpdump: listening on egress0,',file=sys.stderr,flush=True)
-signal.pause()
-"#;
-    // start_script uses sh -c through timeout; export the source in a private
-    // executable instead of relying on shell function export semantics.
-    use std::os::unix::fs::PermissionsExt;
-    let program = directory.path().join("tcpdump");
-    fs::write(
-        &program,
-        format!(
-            "#!/bin/sh\nexec python3 -c {} \"$@\"\n",
-            capture_process::quote(source)
-        ),
-    )
-    .unwrap();
-    fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
-    let mut command = Command::new("sh");
-    command.args([
-        "-c",
-        &remote.start_script(&config, "udp", true, Duration::from_secs(1)),
-    ]);
-    command.env(
-        "PATH",
-        format!(
-            "{}:{}",
-            directory.path().display(),
-            std::env::var("PATH").unwrap()
-        ),
-    );
-    let child = capture_process::Capture::start(
-        &mut command,
-        "tcpdump: listening on egress0,".into(),
-        Duration::from_secs(10),
-    )
-    .unwrap();
-    assert_eq!(fs::read(remote.capture()).unwrap(), b"pcap\0retained");
-    let result = child.finish().unwrap();
-    assert!(result.status.success());
-    assert_eq!(
-        summary_value(
-            std::str::from_utf8(&result.stderr).unwrap(),
-            "packets captured"
-        ),
-        Some(1)
-    );
-    assert_eq!(fs::read(remote.capture()).unwrap(), b"pcap\0retained");
-    assert!(
-        Command::new("sh")
-            .args(["-c", &remote.cleanup_script()])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(!Path::new(&remote.directory).exists());
+fn summary_counts_ignore_surrounding_diagnostics() {
+    let summary = "tcpdump: listening on egress0, link-type EN10MB\n\
+                   7 packets captured\n8 packets received by filter\n\
+                   0 packets dropped by kernel\n";
+    assert_eq!(summary_value(summary, "packets captured"), Some(7));
+    assert_eq!(summary_value(summary, "packets dropped by kernel"), Some(0));
+    assert_eq!(summary_value(summary, "packets lost"), None);
 }

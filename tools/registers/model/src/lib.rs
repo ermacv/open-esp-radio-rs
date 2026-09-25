@@ -31,12 +31,12 @@ mod register_lints;
 
 pub use pac_api::{
     BitwiseComposedDomain, BitwiseComposedDomainArgument, BitwiseComposedValueType, BoundedDomain,
-    EnumDomain, EnumValue, FeatureModule, FieldOrModify, FixedRegisterImage, FixedRegisterSequence,
+    EnumDomain, EnumValue, FieldOrModify, FixedRegisterImage, FixedRegisterSequence,
     FixedRegisterSequenceStep, FixedRegisterWrite, FlagDomain, FlagValue, FullRegisterRead,
     FullRegisterWrite, IndirectRegisterField, IndirectRegisterFieldDomain, InterruptSnapshot,
     MaskedRegisterModify, OpaqueDomain, OwnershipPartition, PacApiExposure, PacApiOptions,
-    PacApiPack, RegisterImageRead, RegisterImageWrite, SidecarModule, W1cRegisterSnapshot,
-    ZeroBasedFieldWrite, ZeroRegisterWrite,
+    PacApiPack, RegisterImageRead, RegisterImageWrite, W1cRegisterSnapshot, ZeroBasedFieldWrite,
+    ZeroRegisterWrite,
 };
 pub use pac_bindings::{generate_pac_binding_index, validate_pac_crate_name};
 pub use register_evidence::{

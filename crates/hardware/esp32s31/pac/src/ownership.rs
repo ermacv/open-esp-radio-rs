@@ -25,7 +25,7 @@ pub(crate) struct WifiRadioPeripheralOwners {
 /// the Bluetooth controller. Keeping the complete generated partition private
 /// lets reviewed BTBB transactions be added without exposing BLE/EDR methods.
 pub(crate) struct Ieee802154TaskPeripheralOwners {
-    pub(crate) ieee802154_mac: svd::ieee802154_mac_ownership::TaskRegisters,
+    pub(crate) ieee802154_mac: crate::ieee802154::ownership::TaskRegisters,
     pub(crate) ieee802154_interrupt_route: svd::Ieee802154InterruptRoute,
     pub(crate) radio_phy: RadioPhyRegisters,
     pub(crate) coexistence: svd::peripheral_ownership::CoexistencePeripherals,
@@ -369,7 +369,7 @@ impl RadioHardware {
             ieee802154_mac,
             ieee802154_interrupt_route,
         } = ieee802154;
-        let (task_mac, interrupt_mac) = svd::ieee802154_mac_ownership::split(ieee802154_mac);
+        let (task_mac, interrupt_mac) = crate::ieee802154::ownership::split(ieee802154_mac);
         Ieee802154ColdRegisters {
             task: Ieee802154TaskRegisters {
                 peripherals: Ieee802154TaskPeripheralOwners {
@@ -1243,7 +1243,7 @@ impl Ieee802154TaskRegisters {
             phy_i2c_clock: _,
             coexistence_clock: _,
         } = self;
-        let ieee802154_mac = svd::ieee802154_mac_ownership::reunite(task_mac, interrupts.registers);
+        let ieee802154_mac = crate::ieee802154::ownership::reunite(task_mac, interrupts.registers);
         RadioHardware {
             wifi_mac,
             wifi_interrupts,
@@ -1461,7 +1461,7 @@ impl Ieee802154TaskRegisters {
 /// transaction consumes this value.
 #[must_use = "the IEEE 802.15.4 interrupt setup must remain paired with its task owner"]
 pub struct Ieee802154InterruptSetup {
-    pub(crate) registers: svd::ieee802154_mac_ownership::InterruptRegisters,
+    pub(crate) registers: crate::ieee802154::ownership::InterruptRegisters,
 }
 
 /// Disjoint IEEE 802.15.4 event/status capability for the hard ISR.
@@ -1471,7 +1471,7 @@ pub struct Ieee802154InterruptSetup {
 /// reunited with the task owner before the whole radio can be released.
 #[must_use = "the IEEE 802.15.4 interrupt owner must be deactivated and reunited"]
 pub struct Ieee802154InterruptRegisters {
-    pub(crate) registers: svd::ieee802154_mac_ownership::InterruptRegisters,
+    pub(crate) registers: crate::ieee802154::ownership::InterruptRegisters,
 }
 
 /// Exclusive standalone Bluetooth owner before task/interrupt separation.

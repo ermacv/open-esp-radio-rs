@@ -127,8 +127,8 @@ handlers and role epochs through the same static interrupt resources. See the
 ## Register and execution boundaries
 
 The radio-register direction is reviewed SVD → `pac/raw` accessors → semantic
-`pac` → `hal` → chip driver. The raw package also contains handwritten trusted
-sidecars; generated provenance does not extend to those files. The separate
+`pac` → `hal` → chip driver. The raw package contains only generated output;
+handwritten ownership and validation transactions live in `pac`. The separate
 upstream chain is `esp-pacs` through `esp-hal`, bound in
 `adapters/esp-hal/esp32s31/`. Its `soc/` adapter contains non-radio SoC
 transactions, cache/MMU access and GDMA ownership; it is not generated PAC

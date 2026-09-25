@@ -1,11 +1,9 @@
-extern crate std;
-
-use self::std::vec::Vec;
 use super::{
     MultipanIdentityProgrammingPort, TransmitSecurityProgrammingPort,
     execute_multipan_identity_configuration, execute_transmit_security_configuration,
     execute_transmit_security_disable,
 };
+use std::vec::Vec;
 
 #[derive(Debug, Eq, PartialEq)]
 enum Operation {

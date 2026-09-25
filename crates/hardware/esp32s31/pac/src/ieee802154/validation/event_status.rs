@@ -1,5 +1,3 @@
-#![deny(unsafe_code, unsafe_op_in_unsafe_fn)]
-
 //! Closed IEEE 802.15.4 `EVENT_STATUS` validation transaction.
 //!
 //! This module is compiled only into validation images. Production code uses
@@ -9,12 +7,12 @@
 
 #[inline]
 fn order_device_accesses() {
-    crate::device_access::fence();
+    crate::svd::device_access::fence();
 }
 
 /// Enable only the two validation timer events.
 #[inline]
-pub fn enable_timer_events(registers: &crate::Ieee802154Mac) {
+pub fn enable_timer_events(registers: &crate::svd::Ieee802154Mac) {
     registers.event_enable().modify(|_, writer| {
         writer.tx_done().clear_bit();
         writer.rx_done().clear_bit();
@@ -36,7 +34,7 @@ pub fn enable_timer_events(registers: &crate::Ieee802154Mac) {
 
 /// Replace only the event-enable field with zero during cleanup.
 #[inline]
-pub fn disable_all_events(registers: &crate::Ieee802154Mac) {
+pub fn disable_all_events(registers: &crate::svd::Ieee802154Mac) {
     registers.event_enable().modify(|_, writer| {
         writer.tx_done().clear_bit();
         writer.rx_done().clear_bit();
@@ -59,24 +57,24 @@ pub fn disable_all_events(registers: &crate::Ieee802154Mac) {
 /// Return one semantic `EVENT_STATUS` sample through generated field readers.
 #[inline]
 pub fn event_status_events(
-    registers: &crate::Ieee802154Mac,
-) -> crate::ieee802154_mac_ownership::Ieee802154EventReadback {
+    registers: &crate::svd::Ieee802154Mac,
+) -> crate::ieee802154::ownership::Ieee802154EventReadback {
     order_device_accesses();
-    crate::ieee802154_mac_ownership::Ieee802154EventReadback::from_event_status(
+    crate::ieee802154::ownership::Ieee802154EventReadback::from_event_status(
         &registers.event_status().read(),
     )
 }
 
 /// Return one complete timer-zero counter sample.
 #[inline]
-pub fn timer0_value(registers: &crate::Ieee802154Mac) -> u32 {
+pub fn timer0_value(registers: &crate::svd::Ieee802154Mac) -> u32 {
     order_device_accesses();
     registers.timer0_value().read().value().bits()
 }
 
 /// Return one complete timer-one counter sample.
 #[inline]
-pub fn timer1_value(registers: &crate::Ieee802154Mac) -> u32 {
+pub fn timer1_value(registers: &crate::svd::Ieee802154Mac) -> u32 {
     order_device_accesses();
     registers.timer1_value().read().value().bits()
 }
@@ -87,7 +85,7 @@ pub fn timer1_value(registers: &crate::Ieee802154Mac) -> u32 {
     unsafe_code,
     reason = "the reviewed validation transaction admits only its constrained register operation"
 )]
-pub fn set_timer_thresholds(registers: &crate::Ieee802154Mac, threshold: u32) {
+pub fn set_timer_thresholds(registers: &crate::svd::Ieee802154Mac, threshold: u32) {
     // SAFETY: both generated registers are complete 32-bit write-only words.
     // The validation HAL admits only a nonzero field-sized threshold.
     unsafe {
@@ -107,7 +105,7 @@ pub fn set_timer_thresholds(registers: &crate::Ieee802154Mac, threshold: u32) {
     unsafe_code,
     reason = "the reviewed validation transaction admits only its constrained register operation"
 )]
-pub fn start_timer0(registers: &crate::Ieee802154Mac) {
+pub fn start_timer0(registers: &crate::svd::Ieee802154Mac) {
     // SAFETY: the generated field admits this finite public-LL opcode and the
     // command is issued only by the closed validation transaction.
     unsafe {
@@ -124,7 +122,7 @@ pub fn start_timer0(registers: &crate::Ieee802154Mac) {
     unsafe_code,
     reason = "the reviewed validation transaction admits only its constrained register operation"
 )]
-pub fn stop_timer0(registers: &crate::Ieee802154Mac) {
+pub fn stop_timer0(registers: &crate::svd::Ieee802154Mac) {
     // SAFETY: see [`start_timer0`]; this is the paired finite stop opcode.
     unsafe {
         registers
@@ -140,7 +138,7 @@ pub fn stop_timer0(registers: &crate::Ieee802154Mac) {
     unsafe_code,
     reason = "the reviewed validation transaction admits only its constrained register operation"
 )]
-pub fn start_timer1(registers: &crate::Ieee802154Mac) {
+pub fn start_timer1(registers: &crate::svd::Ieee802154Mac) {
     // SAFETY: the generated field admits this finite public-LL opcode and the
     // command is issued only by the closed validation transaction.
     unsafe {
@@ -157,7 +155,7 @@ pub fn start_timer1(registers: &crate::Ieee802154Mac) {
     unsafe_code,
     reason = "the reviewed validation transaction admits only its constrained register operation"
 )]
-pub fn stop_timer1(registers: &crate::Ieee802154Mac) {
+pub fn stop_timer1(registers: &crate::svd::Ieee802154Mac) {
     // SAFETY: see [`start_timer1`]; this is the paired finite stop opcode.
     unsafe {
         registers
@@ -173,7 +171,7 @@ pub fn stop_timer1(registers: &crate::Ieee802154Mac) {
     unsafe_code,
     reason = "the reviewed validation transaction admits only its constrained register operation"
 )]
-pub fn write_timer0_event(registers: &crate::Ieee802154Mac) {
+pub fn write_timer0_event(registers: &crate::svd::Ieee802154Mac) {
     // SAFETY: the generated field accessor selects only TIMER0 in this
     // reset-isolated validation transaction.
     unsafe {
@@ -190,7 +188,7 @@ pub fn write_timer0_event(registers: &crate::Ieee802154Mac) {
     unsafe_code,
     reason = "the reviewed validation transaction admits only its constrained register operation"
 )]
-pub fn write_timer1_event(registers: &crate::Ieee802154Mac) {
+pub fn write_timer1_event(registers: &crate::svd::Ieee802154Mac) {
     // SAFETY: the generated field accessor selects only TIMER1 in this
     // reset-isolated validation transaction.
     unsafe {

@@ -31,16 +31,15 @@ attribute. The table below maps package identities to source owners.
 ## Generated access and trusted handwritten code
 
 `hardware/esp32s31/pac/raw/` is the `oer-esp32s31-pac-raw` package.
-It contains SVD-generated register access and handwritten ownership/transport
-sidecars. Generated volatile access is checked through the generator/publisher
-pipeline. Handwritten sidecars must carry their own safety proofs, deny unsafe
-operations in unsafe functions and permit unsafe code only at documented
-scoped exceptions. Do not classify the whole package as generated source.
+It contains only SVD-generated register access, checked through the
+generator/publisher pipeline. The publisher has no declaration for
+handwritten modules in this package.
 
 `hardware/esp32s31/pac/` contains the handwritten semantic radio PAC and its
 generated capability catalog in `src/generated.rs`. The
 [PAC provenance map](hardware/esp32s31/pac/README.md) distinguishes both generated
-Rust outputs from ownership modules and raw sidecars. Non-radio register
+Rust outputs from its handwritten ownership, domain and validation modules,
+including the IEEE 802.15.4 task/interrupt split. Non-radio register
 access through upstream `esp-hal`/`esp-pacs` belongs to
 `adapters/esp-hal/esp32s31/soc/`, which also contains cache/MMU and GDMA
 transactions. Its Cargo package is `oer-esp32s31-soc-esp-hal`; its implementation

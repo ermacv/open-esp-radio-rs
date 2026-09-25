@@ -176,17 +176,6 @@ peripherals = [
     "IEEE802154_INTERRUPT_ROUTE",
 ]
 
-[[feature-modules]]
-name = "ieee802154_event_status_validation"
-feature = "validation-probes"
-
-[[feature-modules]]
-name = "ieee802154_ed_event_validation"
-feature = "validation-probes"
-
-[[sidecar-modules]]
-name = "ieee802154_mac_ownership"
-
 [[w1c-register-snapshots]]
 name = "ieee802154_event_status"
 peripheral = "IEEE802154_MAC"

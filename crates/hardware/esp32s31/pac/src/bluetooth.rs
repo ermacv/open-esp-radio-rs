@@ -19,4 +19,3 @@ pub(crate) mod phy;
 pub(crate) mod scan;
 
 pub(crate) mod scheduler;
-pub(crate) mod shutdown;

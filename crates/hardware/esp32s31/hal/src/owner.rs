@@ -14,7 +14,10 @@ use super::*;
 
 mod interrupt_checkpoint;
 pub mod maintenance;
+mod wifi_cold;
+
 pub use interrupt_checkpoint::MacInterruptCheckpoint;
+pub(crate) use wifi_cold::WifiColdRegisters;
 
 /// Powered-lifecycle PHY capability.
 ///
@@ -426,15 +429,18 @@ impl<P> core::fmt::Debug for RadioReleaseFailure<P> {
 /// capabilities.
 pub struct RadioRuntimeOwner {
     pub(crate) registers: WifiRadioRegisters,
+    retained: crate::root::RetainedBluetooth,
 }
 
 impl RadioRuntimeOwner {
     /// Construct the running register owner inside an isolated validation
     /// image without exposing the underlying PAC owner.
-    #[cfg(feature = "validation-probes")]
+    #[cfg(any(test, feature = "validation-probes"))]
     #[doc(hidden)]
     pub fn claim_for_validation() -> Self {
-        Self::from_pac(oer_esp32s31_pac::validation::wifi_radio_registers())
+        let (registers, _interrupts, retained) =
+            WifiColdRegisters::from_hardware(RadioHardware::for_validation()).into_running();
+        Self::from_pac(registers, retained)
     }
 
     pub fn wifi_mac_hal(&mut self) -> wifi_mac::WifiMacHal<'_> {
@@ -516,8 +522,14 @@ impl RadioRuntimeOwner {
         self.registers.he_trigger_receive_diagnostics()
     }
 
-    pub(crate) fn from_pac(registers: WifiRadioRegisters) -> Self {
-        Self { registers }
+    pub(crate) fn from_pac(
+        registers: WifiRadioRegisters,
+        retained: crate::root::RetainedBluetooth,
+    ) -> Self {
+        Self {
+            registers,
+            retained,
+        }
     }
 
     pub(crate) fn pac(&self) -> &WifiRadioRegisters {
@@ -773,7 +785,7 @@ impl<P> Radio<P, state::Owned> {
         Self {
             peripheral,
             state: state::Owned {
-                registers: hardware.into_wifi(),
+                registers: WifiColdRegisters::from_hardware(hardware),
             },
         }
     }
@@ -788,7 +800,7 @@ impl<P> Radio<P, state::Owned> {
         Self {
             peripheral,
             state: state::Owned {
-                registers: RadioHardware::for_validation().into_wifi(),
+                registers: WifiColdRegisters::from_hardware(RadioHardware::for_validation()),
             },
         }
     }
@@ -808,16 +820,13 @@ impl<P> Radio<P, state::Owned> {
         let Self { peripheral, state } = self;
         match state.registers.release() {
             Ok(hardware) => Ok((peripheral, hardware)),
-            Err(failure) => {
-                let (registers, error) = failure.into_parts();
-                Err(RadioReleaseFailure {
-                    radio: Radio {
-                        peripheral,
-                        state: state::Owned { registers },
-                    },
-                    error,
-                })
-            }
+            Err((registers, error)) => Err(RadioReleaseFailure {
+                radio: Radio {
+                    peripheral,
+                    state: state::Owned { registers },
+                },
+                error,
+            }),
         }
     }
 
@@ -941,18 +950,15 @@ impl<P> Radio<P, state::Powered> {
         } = self;
         match registers.registers.release() {
             Ok(hardware) => Ok(Radio::from_hardware(peripheral, hardware)),
-            Err(failure) => {
-                let (registers, error) = failure.into_parts();
-                Err(ColdReunionFailure {
-                    _radio: Radio {
-                        peripheral,
-                        state: state::Powered {
-                            registers: PhyHal { registers },
-                        },
+            Err((registers, error)) => Err(ColdReunionFailure {
+                _radio: Radio {
+                    peripheral,
+                    state: state::Powered {
+                        registers: PhyHal { registers },
                     },
-                    error: error.into(),
-                })
-            }
+                },
+                error: error.into(),
+            }),
         }
     }
 }
@@ -960,11 +966,11 @@ impl<P> Radio<P, state::Powered> {
 impl<P> Radio<P, state::Powered> {
     /// Complete the one-way ownership transition after cold MAC setup.
     pub fn into_running(self) -> Radio<P, state::Running> {
-        let (registers, interrupts) = self.state.registers.registers.into_running();
+        let (registers, interrupts, retained) = self.state.registers.registers.into_running();
         Radio {
             peripheral: self.peripheral,
             state: state::Running {
-                registers: RadioRuntimeOwner::from_pac(registers),
+                registers: RadioRuntimeOwner::from_pac(registers, retained),
                 interrupts: MacInterruptSetup { inner: interrupts },
             },
         }
@@ -1013,11 +1019,12 @@ impl<P> Radio<P, state::Running> {
     /// value. RF and shared clocks stay physically powered.
     #[doc(hidden)]
     pub fn reunite_powered(self) -> Radio<P, state::Powered> {
-        let registers = self
-            .state
-            .registers
-            .registers
-            .into_cold(self.state.interrupts.inner);
+        let RadioRuntimeOwner {
+            registers,
+            retained,
+        } = self.state.registers;
+        let registers =
+            WifiColdRegisters::from_running(registers, self.state.interrupts.inner, retained);
         Radio {
             peripheral: self.peripheral,
             state: state::Powered {

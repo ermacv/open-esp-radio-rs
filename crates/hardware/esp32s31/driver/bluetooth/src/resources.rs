@@ -54,7 +54,7 @@ use {
     oer_esp32s31_hal::types::BluetoothPhyRegisterInitInputs,
 };
 
-use oer_esp32s31_pac::{RadioHardware, RadioPhyReleaseError};
+use oer_esp32s31_hal::root::{RadioHardware, RadioPhyReleaseError};
 
 #[cfg(any(target_arch = "riscv32", test, feature = "test-support"))]
 use crate::controller_time::ControllerTimeWorker;
@@ -288,7 +288,7 @@ impl TaskResources {
         output: oer_esp32s31_hal::bluetooth::InterruptOutputReleasedOwner,
         timer: oer_esp32s31_hal::bluetooth::ModemLpTimerInterruptReadyOwner,
     ) -> Result<
-        oer_esp32s31_pac::RadioHardware,
+        oer_esp32s31_hal::root::RadioHardware,
         oer_esp32s31_hal::bluetooth::BluetoothPhysicalReleaseFailure,
     > {
         self.registers.release_after_phy_close(output, timer)

@@ -1,4 +1,4 @@
-use super::{Radio, state};
+use super::{Radio, WifiColdRegisters, state};
 
 #[derive(Debug, Eq, PartialEq)]
 struct TestPeripheral {
@@ -93,11 +93,10 @@ fn unpowered_owner_releases_platform_and_neutral_radio_roots() {
         .expect("an untouched Wi-Fi route can be released");
     assert_eq!(peripheral, TestPeripheral { id: 9, ready: true });
 
-    let hardware = hardware
-        .into_bluetooth()
+    let hardware = crate::bluetooth::ColdOwner::from_radio_hardware(hardware)
         .release()
         .expect("an untouched Bluetooth route can be released");
-    let _wifi = hardware.into_wifi();
+    let _wifi = WifiColdRegisters::from_hardware(hardware);
 }
 
 #[test]
@@ -110,8 +109,7 @@ fn released_hardware_reenters_wifi_after_exclusive_bluetooth_route() {
     let (peripheral, hardware) = owned
         .release()
         .expect("an untouched Wi-Fi route can be released");
-    let hardware = hardware
-        .into_bluetooth()
+    let hardware = crate::bluetooth::ColdOwner::from_radio_hardware(hardware)
         .release()
         .expect("an untouched Bluetooth route can be released");
 

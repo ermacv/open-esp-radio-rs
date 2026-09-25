@@ -30,12 +30,6 @@ impl BluetoothModemLpTimerRegisters {
     ) -> Self {
         Self { peripherals }
     }
-
-    pub(crate) fn into_peripherals(
-        self,
-    ) -> svd::peripheral_ownership::BluetoothModemLpTimerPeripherals {
-        self.peripherals
-    }
 }
 
 /// Timer-register ownership after the exact BTDM runtime-timer start command.
@@ -868,14 +862,17 @@ impl BluetoothModemLpTimerInterruptReady {
     /// The outer retired Controller owns inactive CPU routes and a drained
     /// software queue. Disable compare before resetting the timer domain;
     /// physical counter shutdown follows from reset and clock-lease release.
-    pub(super) fn disable_for_shutdown(&mut self) {
+    #[doc(hidden)]
+    pub fn disable_for_shutdown(&mut self) {
         let mut transaction = HardwareModemLpTimerTransaction {
             registers: &self.timer.peripherals.btdm_runtime_control,
         };
         execute_modem_lp_timer_compare_disable(&mut transaction);
     }
 
-    pub(super) fn into_shutdown_registers(self) -> BluetoothModemLpTimerRegisters {
+    /// Return the drained timer partition after compare was disabled.
+    #[doc(hidden)]
+    pub fn into_shutdown_registers(self) -> BluetoothModemLpTimerRegisters {
         self.timer
     }
     /// Execute exactly one source-127 register-classification prefix.

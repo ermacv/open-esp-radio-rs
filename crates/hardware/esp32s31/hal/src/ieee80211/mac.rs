@@ -31,8 +31,10 @@ use oer_memory::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
 use oer_esp32s31_pac::{
     CoexistenceLowPowerClockObservation, StaModemWakeConfig, StaModemWakePrepareError,
     StaModemWakeRestore, StaModemWakeRestoreFailure, StaTbttWakePrepareError, StaTbttWakeRestore,
-    StaTbttWakeRestoreFailure, WifiColdRegisters, WifiRadioRegisters,
+    StaTbttWakeRestoreFailure, WifiRadioRegisters,
 };
+
+use crate::owner::WifiColdRegisters;
 
 /// Complete identity of one hardware MAC interface.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -167,7 +167,8 @@ impl RadioPhyRegisters {
     ///
     /// A retry of the same partially executed power-up keeps the original
     /// baseline instead of sampling its own mutations as a new cold state.
-    pub(crate) fn prepare_wifi_power_epoch(&mut self) {
+    #[doc(hidden)]
+    pub fn prepare_wifi_power_epoch(&mut self) {
         if self.platform_clock_power.wifi_power_baseline.is_some() {
             return;
         }
@@ -187,7 +188,8 @@ impl RadioPhyRegisters {
     /// Shared MODEM_LPCON leases must be released before this operation. ICG
     /// state maps are monotonic global initialization and deliberately remain
     /// installed, matching the vendor modem-clock manager.
-    pub(crate) fn restore_wifi_power_epoch(&mut self) -> Result<(), WifiPowerRestoreCheckpoint> {
+    #[doc(hidden)]
+    pub fn restore_wifi_power_epoch(&mut self) -> Result<(), WifiPowerRestoreCheckpoint> {
         let Some(baseline) = self.platform_clock_power.wifi_power_baseline else {
             return Ok(());
         };
@@ -224,28 +226,34 @@ impl RadioPhyRegisters {
         Ok(())
     }
 
-    pub(crate) fn select_hp_active_modem_icg(&mut self) {
+    #[doc(hidden)]
+    pub fn select_hp_active_modem_icg(&mut self) {
         crate::svd::fixed_register_image::select_hp_active_modem_icg(&self.peripherals.pmu_radio);
     }
 
-    pub(crate) fn apply_modem_icg_selection(&mut self) {
+    #[doc(hidden)]
+    pub fn apply_modem_icg_selection(&mut self) {
         crate::svd::fixed_register_image::apply_modem_icg_selection(&self.peripherals.pmu_radio);
     }
 
-    pub(crate) fn apply_sleep_icg_selection(&mut self) {
+    #[doc(hidden)]
+    pub fn apply_sleep_icg_selection(&mut self) {
         crate::svd::fixed_register_image::apply_sleep_icg_selection(&self.peripherals.pmu_radio);
     }
 
-    pub(crate) fn enable_modem_register_bus_clock(&mut self) {
+    #[doc(hidden)]
+    pub fn enable_modem_register_bus_clock(&mut self) {
         crate::generated::enable_modem_register_bus_clock(&self.peripherals.hp_sys_clkrst_radio);
     }
 
-    pub(crate) fn configure_modem_source_clocks(&mut self) {
+    #[doc(hidden)]
+    pub fn configure_modem_source_clocks(&mut self) {
         crate::generated::enable_modem_reference_160m_clock(&self.peripherals.hp_sys_clkrst_radio);
         crate::generated::configure_modem_source_clocks(&self.peripherals.hp_sys_clkrst_radio);
     }
 
-    pub(crate) fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
+    #[doc(hidden)]
+    pub fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
         let hp_active_icg_code =
             crate::svd::field_read::observe_hp_active_modem_icg_code(&self.peripherals.pmu_radio);
         let modem_register_bus_clock_enabled =

@@ -2,13 +2,12 @@
 
 #![forbid(unsafe_code)]
 
-use crate::{MacInterruptMask, WifiColdRegisters};
+use crate::{MacInterruptMask, MacInterruptSetup, WifiRadioRegisters};
 
-impl WifiColdRegisters {
+impl WifiRadioRegisters {
     /// Set the cold-start request bit.
     pub fn request_mac_cold_start(&mut self) {
-        self.registers
-            .peripherals
+        self.peripherals
             .wifi_mac
             .wifi_mac_cold_handshake
             .control()
@@ -17,8 +16,7 @@ impl WifiColdRegisters {
 
     /// Sample the cold-start ready field once.
     pub fn sample_mac_cold_start_ready(&self) -> bool {
-        self.registers
-            .peripherals
+        self.peripherals
             .wifi_mac
             .wifi_mac_cold_handshake
             .control()
@@ -26,11 +24,13 @@ impl WifiColdRegisters {
             .ready()
             .bit_is_set()
     }
+}
 
+impl MacInterruptSetup {
     /// Mask every MAC interrupt source.
     pub fn mask_all_mac_interrupts(&mut self) {
         crate::wifi::mac::interrupt::publish_mac_interrupt_mask(
-            &self.interrupts.wifi_mac_interrupt,
+            &self.peripheral,
             MacInterruptMask::NONE,
         );
     }
@@ -38,7 +38,7 @@ impl WifiColdRegisters {
     /// Acknowledge every pending MAC interrupt source.
     pub fn clear_all_mac_interrupts(&mut self) {
         crate::generated::mac_interrupt_clear(
-            &self.interrupts.wifi_mac_interrupt,
+            &self.peripheral,
             crate::generated::MacInterruptClearImage::new(u32::MAX),
         );
     }

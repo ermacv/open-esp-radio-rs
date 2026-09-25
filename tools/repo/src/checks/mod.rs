@@ -6,7 +6,6 @@ pub mod images;
 pub mod metadata;
 pub mod network;
 pub mod phy;
-pub mod safety;
 pub mod standalone;
 pub mod vendor;
 

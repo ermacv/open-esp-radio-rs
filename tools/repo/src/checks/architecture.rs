@@ -3,6 +3,7 @@ use crate::{Context, Result, cargo, graph::Graph, process};
 use super::{TARGET, common::*};
 
 mod facade;
+mod unsafe_policy;
 
 const INTEGRATION: &str = "crates/composition/esp32s31/embassy/ieee80211/Cargo.toml";
 const INTEGRATION_PACKAGE: &str = "oer-esp32s31-embassy-wifi";
@@ -11,6 +12,7 @@ const HIL_RUNTIME: &str = "hil/targets/esp32s31/runtime/Cargo.toml";
 pub fn run(ctx: &Context) -> Result<()> {
     let packages = production_packages(ctx)?;
     validate_production_edges(&packages)?;
+    unsafe_policy::check(&packages)?;
     let configurations = architecture_configurations(&packages, TARGET)?;
     // Clippy compiles each isolated profile and applies every crate's own
     // lint policy from its manifest `[lints]` and crate attributes.

@@ -22,10 +22,11 @@ not accept a comment above an attribute that spans several lines.
 
 `cargo clippy --workspace --all-targets` applies these lints on the host, and
 `cargo xtask check architecture` runs Clippy for every production feature
-profile on the target. [`cargo xtask check safety`](../tools/repo/src/checks/safety.rs)
-keeps the reviewed audited-unsafe list and the crate-root attributes in
-agreement and checks the direct-PAC-dependency list; generated PAC code has no
-crate-root unsafe attribute. The table below maps package identities to source owners.
+profile on the target. It also
+[checks](../tools/repo/src/checks/architecture/unsafe_policy.rs) that the
+reviewed audited-unsafe list and the crate-root attributes agree, and the
+direct-PAC-dependency list; generated PAC code has no crate-root unsafe
+attribute. The table below maps package identities to source owners.
 
 ## Generated access and trusted handwritten code
 

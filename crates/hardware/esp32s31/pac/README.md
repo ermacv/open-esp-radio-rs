@@ -43,8 +43,8 @@ by either PAC is not itself hardware qualification of a radio operation.
 
 ## Validation
 
-`cargo registers generate --check`, `cargo xtask check architecture`,
-`cargo xtask check safety` and `cargo xtask check images` validate register
+`cargo registers generate --check`, `cargo xtask check architecture` and
+`cargo xtask check images` validate register
 sources, dependency direction, handwritten unsafe boundaries and the final
 linked image. Publication checks also cover source-only publication reproducibility unconditionally. Artifact-scoped
 publication is additionally checked when its review report is present.

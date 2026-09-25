@@ -76,8 +76,7 @@ jobs:
           restore-keys: test-${{ runner.os }}-
       - run: cargo test --workspace --locked
 
-  # Repository policy gates: package classes, network dependency boundaries
-  # and the crate-root unsafe policy.
+  # Repository policy gates: locked metadata and network dependency boundaries.
   policy:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -97,10 +96,9 @@ jobs:
         run: for manifest in $(git ls-files '*Cargo.lock' | sed 's/Cargo.lock$/Cargo.toml/'); do cargo fetch --locked --manifest-path "$manifest"; done
       - run: cargo xtask check metadata
       - run: cargo xtask check network --dependencies-only
-      - run: cargo xtask check safety
 
   # Clippy for every production feature profile on the chip target, plus the
-  # layer and facade isolation checks.
+  # layer, facade, unsafe-code and PAC-access boundaries.
   architecture:
     runs-on: ubuntu-24.04
     timeout-minutes: 60

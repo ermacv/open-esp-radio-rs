@@ -48,7 +48,6 @@ enum Task {
 enum Check {
     Metadata,
     Architecture,
-    Safety,
     Network {
         #[arg(long)]
         dependencies_only: bool,
@@ -121,7 +120,6 @@ fn run() -> Result<std::process::ExitCode> {
         Task::Check { check } => match check {
             Check::Metadata => checks::metadata::run(&ctx).map(|_| ()),
             Check::Architecture => checks::architecture::run(&ctx),
-            Check::Safety => checks::safety::run(&ctx),
             Check::Network { dependencies_only } => checks::network::run(&ctx, dependencies_only),
             Check::NetworkBackpressure => oer_xtask::firmware::check_network_backpressure(&ctx),
             Check::Docs => checks::docs::run(&ctx),

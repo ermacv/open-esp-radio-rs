@@ -1,6 +1,9 @@
-use crate::{Context, Result, process};
+//! Unsafe-code and PAC-access boundaries of production packages.
+//!
+//! The crate-root attributes are the lint policy that rustc and Clippy
+//! enforce; this check keeps them in agreement with the reviewed lists.
 
-use super::common::*;
+use crate::{Result, checks::common::ProductionPackage};
 
 const GENERATED: &str = "oer-esp32s31-pac-raw";
 const AUDITED_UNSAFE: &[&str] = &[
@@ -28,17 +31,6 @@ const PAC_CONSUMERS: &[&str] = &[
     "oer-esp32s31-ieee802154-runtime",
     "oer-esp32s31-ieee802154-esp-hal",
 ];
-const TEST_PACKAGES: &[&str] = &[
-    "oer-memory",
-    "oer-esp32s31-pac",
-    "oer-esp32s31-hal",
-    "oer-esp32s31-phy",
-    "oer-esp32s31-bluetooth",
-    "oer-esp32s31-ieee802154-dma",
-    "oer-esp32s31-ieee802154-runtime",
-    "oer-esp32s31-wifi-dma",
-];
-
 /// The crate-root attribute that states each production library's unsafe
 /// policy. Rustc and Clippy enforce it in every build; this check keeps the
 /// reviewed audited list and the source attributes in agreement.
@@ -67,9 +59,8 @@ fn library_root(package: &cargo_metadata::Package) -> Option<&std::path::Path> {
         .map(|target| target.src_path.as_std_path())
 }
 
-pub fn run(ctx: &Context) -> Result<()> {
-    let packages = production_packages(ctx)?;
-    for item in &packages {
+pub(super) fn check(packages: &[ProductionPackage]) -> Result<()> {
+    for item in packages {
         let name = item.package.name.as_str();
         let Some(root) = library_root(&item.package) else {
             return Err(format!("driver package has no library target: {name}").into());
@@ -95,15 +86,23 @@ pub fn run(ctx: &Context) -> Result<()> {
             .into());
         }
     }
-    let mut tests = ctx.cargo();
-    tests.args(["test", "--quiet", "--locked", "--offline"]);
-    for name in TEST_PACKAGES {
-        tests.args(["--package", name]);
-    }
-    process::run(&mut tests)?;
-    eprintln!(
-        "driver safety audit passed ({} production packages)",
-        packages.len()
-    );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audited_packages_deny_and_others_forbid_unsafe_code() {
+        assert_eq!(required_attribute(GENERATED), None);
+        assert_eq!(
+            required_attribute("oer-esp32s31-hal"),
+            Some("#![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]")
+        );
+        assert_eq!(
+            required_attribute("oer-wifi-sta"),
+            Some("#![forbid(unsafe_code)]")
+        );
+    }
 }

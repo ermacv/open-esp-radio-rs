@@ -19,6 +19,7 @@ pub use oer_esp32s31_hal::types::PhyGainMemoryEntry;
 ///
 /// The ESP32-S31 `set_bb_wdg` body is exactly one `ret` instruction.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub const fn set_bb_wdg() {}
 
 pub const PHY_TX_CFR_ENTRY_COUNT: u8 = 32;
@@ -397,6 +398,7 @@ impl PhyTxCfrMmioBinding {
         }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> PhyTxCfrAction {
         self.action
     }
@@ -517,6 +519,7 @@ impl PhyBbMmioBinding {
         Self { action }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> PhyBbMmioAction {
         self.action
     }
@@ -855,6 +858,7 @@ pub struct PhyBbInitTransition {
 }
 
 impl PhyBbInitTransition {
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn new(state: crate::state::PhyState) -> Self {
         Self::new_on_channel(state, 11)
     }

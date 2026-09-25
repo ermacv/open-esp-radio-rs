@@ -572,14 +572,14 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                 .registration
                 .calibration_path
             {
-                oer_esp32s31_phy::calibration::registration::PhyCalibrationPath::PartialFromCache => {
+                oer_esp32s31_phy::PhyCalibrationPath::PartialFromCache => {
                     oer_radio::wifi::WifiRadioCalibrationPath::RestoredCache
                 }
-                oer_esp32s31_phy::calibration::registration::PhyCalibrationPath::FullAfterRejectedCache => {
+                oer_esp32s31_phy::PhyCalibrationPath::FullAfterRejectedCache => {
                     oer_radio::wifi::WifiRadioCalibrationPath::RejectedCache
                 }
-                oer_esp32s31_phy::calibration::registration::PhyCalibrationPath::FullForCache
-                | oer_esp32s31_phy::calibration::registration::PhyCalibrationPath::FullUncached => {
+                oer_esp32s31_phy::PhyCalibrationPath::FullForCache
+                | oer_esp32s31_phy::PhyCalibrationPath::FullUncached => {
                     oer_radio::wifi::WifiRadioCalibrationPath::Full
                 }
             };

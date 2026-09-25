@@ -19,6 +19,7 @@
 
 /// Split one packed DC value exactly as pinned archive `get_dc_value`.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub fn get_dc_value(output: &mut [u16; 2], value: u32) {
     output[0] = (value >> 16) as u16;
     output[1] = value as u16;

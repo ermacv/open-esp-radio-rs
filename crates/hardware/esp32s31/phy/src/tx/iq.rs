@@ -1595,6 +1595,7 @@ impl PhyTxIqMmioBinding {
         }
     }
 
+    #[cfg(feature = "validation-probes")]
     pub const fn action(&self) -> PhyTxIqCalibrationAction {
         self.action
     }

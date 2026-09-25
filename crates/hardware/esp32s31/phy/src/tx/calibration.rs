@@ -12,12 +12,14 @@
 
 /// Complete pinned debug helper; this ESP32-S31 archive always returns zero.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub const fn get_bias_ref_code() -> u32 {
     0
 }
 
 /// Apply complete pinned `phy_tx_atten_comp` wrapping byte arithmetic.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub fn phy_tx_atten_comp(values: &mut [u8; 3]) {
     values[1] = values[1].wrapping_add(3);
     values[2] = values[2].wrapping_add(4);
@@ -1524,6 +1526,7 @@ impl PhyTxCalibrationEnvironmentMmioBinding {
         }
     }
 
+    #[cfg(feature = "validation-probes")]
     pub const fn action(&self) -> PhyTxCalibrationEnvironmentAction {
         self.action
     }
@@ -1586,6 +1589,7 @@ impl PhyTxCapSearchMmioBinding {
         }
     }
 
+    #[cfg(feature = "validation-probes")]
     pub const fn action(&self) -> PhyTxCapSearchAction {
         self.action
     }

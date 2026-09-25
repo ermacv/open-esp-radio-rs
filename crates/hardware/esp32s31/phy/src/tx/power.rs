@@ -217,6 +217,10 @@ pub enum PhyPowerControlPointAction {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "each completion names the tone action it answers: ConfigureTone, ToneSar, StopTone"
+)]
 pub enum PhyPowerControlPointCompletion {
     ToneConfigured {
         identity: u8,

@@ -7,12 +7,9 @@ use super::{
     PhyCalibrationTrackingPort, PhyParamTrackingPort, PhyRegisterPort, PhyRegisterRunError,
     run_phy_calibration_tracking, run_phy_param_tracking, run_phy_register,
 };
-use crate::{
-    PhyRegisterAction,
-    calibration::registration::{
-        PhyRegisterCompletion, PhyRegisterExternalBinding, PhyRegisterMmioCompletion,
-        PhyRegisterTransition,
-    },
+use crate::calibration::registration::{
+    PhyRegisterAction, PhyRegisterCompletion, PhyRegisterExternalBinding,
+    PhyRegisterMmioCompletion, PhyRegisterTransition,
 };
 
 fn run_ready<F: Future>(future: F) -> F::Output {

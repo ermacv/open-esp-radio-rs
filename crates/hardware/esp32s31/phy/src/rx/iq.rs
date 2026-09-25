@@ -2126,6 +2126,7 @@ impl PhyRxIqEstimatorMmioBinding {
         }
     }
 
+    #[cfg(feature = "validation-probes")]
     pub const fn action(&self) -> PhyRxIqEstimatorAction {
         self.action
     }

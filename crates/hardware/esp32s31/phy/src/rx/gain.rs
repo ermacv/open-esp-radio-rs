@@ -1147,10 +1147,10 @@ pub enum PhyRxGainInitBindingError {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyRxGainInitHardwareInvariant {
-    RestoreOwnedByOtherCalibration,
-    RestoreNestingExceeded,
-    RestoreNotPending,
+pub enum PhyRxGainInitRestoreInvariant {
+    OwnedByOtherCalibration,
+    NestingExceeded,
+    NotPending,
 }
 
 // Compact operation identity; coefficient products stay in the transition.
@@ -1197,16 +1197,16 @@ impl PhyRxGainInitMmioBinding {
     pub fn execute_target(
         self,
         registers: &mut impl oer_esp32s31_hal::owner::SharedPhyAccess,
-    ) -> Result<PhyRxGainInitCompletion, PhyRxGainInitHardwareInvariant> {
+    ) -> Result<PhyRxGainInitCompletion, PhyRxGainInitRestoreInvariant> {
         match self.operation {
             InitMmio::PrepareDcControlRestore => {
                 oer_esp32s31_hal::phy::rx_dco::prepare_control_restore(registers).map_err(
                     |error| match error {
                         oer_esp32s31_hal::types::RxDcoControlPrepareError::RestorePending => {
-                            PhyRxGainInitHardwareInvariant::RestoreOwnedByOtherCalibration
+                            PhyRxGainInitRestoreInvariant::OwnedByOtherCalibration
                         }
                         oer_esp32s31_hal::types::RxDcoControlPrepareError::RestoreStackFull => {
-                            PhyRxGainInitHardwareInvariant::RestoreNestingExceeded
+                            PhyRxGainInitRestoreInvariant::NestingExceeded
                         }
                     },
                 )?;
@@ -1214,7 +1214,7 @@ impl PhyRxGainInitMmioBinding {
             }
             InitMmio::RestoreDcControl => {
                 oer_esp32s31_hal::phy::rx_dco::restore_control(registers)
-                    .map_err(|_| PhyRxGainInitHardwareInvariant::RestoreNotPending)?;
+                    .map_err(|_| PhyRxGainInitRestoreInvariant::NotPending)?;
                 Ok(PhyRxGainInitCompletion::DcControlRestored)
             }
             InitMmio::ConfigureLimits { wifi_last_index } => {

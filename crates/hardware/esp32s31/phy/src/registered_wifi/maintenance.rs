@@ -139,7 +139,8 @@ impl RegisteredWifiPhy {
 mod target {
     use super::*;
     use crate::{
-        PhyAsyncDelay, PhyTargetObserver, run_phy_param_tracking,
+        PhyAsyncDelay, PhyTargetObserver,
+        executor::run_phy_param_tracking,
         state::client::PhyTrackPoisoned,
         target_port::{TargetPhyParamTrackingError, TargetPhyParamTrackingPort},
         tracking::parameters::PhyParamTrackingOutcome,

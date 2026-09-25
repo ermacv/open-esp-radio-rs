@@ -389,6 +389,7 @@ impl PhyRegisterTransition {
         Self::new(crate::state::PhyConfig::production())
     }
 
+    #[cfg(feature = "validation-probes")]
     pub const fn with_production_config_on_channel(channel_or_frequency: u16) -> Self {
         Self::new_on_channel(crate::state::PhyConfig::production(), channel_or_frequency)
     }
@@ -405,6 +406,7 @@ impl PhyRegisterTransition {
         )
     }
 
+    #[cfg(feature = "validation-probes")]
     pub const fn with_production_config_on_channel_and_calibration(
         channel_or_frequency: u16,
         identity: PhyCalibrationIdentity,
@@ -421,6 +423,7 @@ impl PhyRegisterTransition {
     /// Return the freshly completed full- or partial-calibration cache.
     ///
     /// Failed and in-progress transitions never expose a cache as persistable.
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn calibration_cache(&self) -> Option<&crate::state::PhyCalibrationCache> {
         (self.calibration_cache_ready && matches!(self.phase.as_ref(), Some(Phase::Complete(_))))
             .then_some(())
@@ -1270,6 +1273,7 @@ impl PhyRegisterMmioBinding {
         Self { action }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> PhyRegisterMmioAction {
         self.action
     }

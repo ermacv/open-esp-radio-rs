@@ -1,6 +1,18 @@
 #![no_std]
 // The private `ieee802154_timing_boundary` module is the sole scoped override.
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
+// The registration and tracking graphs run only through the chip target
+// ports, which exist only for `riscv32`. Host builds type-check the graphs and
+// their hardware bindings, and tests drive the models, but nothing on the host
+// calls every binding. Dead code is enforced by the chip build.
+#![cfg_attr(
+    not(target_arch = "riscv32"),
+    allow(
+        dead_code,
+        unused_imports,
+        reason = "host builds type-check the graphs that only chip target ports drive"
+    )
+)]
 
 //! Source-only ESP32-S31 shared RF/PHY ownership frontier.
 //!
@@ -45,17 +57,32 @@ pub mod target_executor;
 #[cfg(target_arch = "riscv32")]
 pub mod target_port;
 
+#[cfg(feature = "validation-probes")]
 pub mod analog;
+#[cfg(not(feature = "validation-probes"))]
+mod analog;
+#[cfg(feature = "validation-probes")]
 pub mod calibration;
+#[cfg(not(feature = "validation-probes"))]
+mod calibration;
+#[cfg(feature = "validation-probes")]
 pub mod channel;
+#[cfg(not(feature = "validation-probes"))]
+mod channel;
 mod hardware;
 mod ieee802154_timing_boundary;
 #[cfg(any(target_arch = "riscv32", test))]
 mod lifecycle;
+#[cfg(feature = "validation-probes")]
 pub mod rx;
+#[cfg(not(feature = "validation-probes"))]
+mod rx;
 pub mod state;
 pub mod tracking;
+#[cfg(feature = "validation-probes")]
 pub mod tx;
+#[cfg(not(feature = "validation-probes"))]
+mod tx;
 
 mod registered_bluetooth;
 mod registered_ieee802154;
@@ -71,17 +98,28 @@ mod size_limits;
 #[cfg(feature = "validation-probes")]
 pub mod validation;
 
+/// Vendor RF-calibration version stamped into calibration caches.
+pub use analog::rfpll::phy_get_rf_cal_version;
+// Value results of registration children that protocol reports and HIL
+// evidence carry. The transitions that produce them stay crate-private.
+#[cfg(feature = "registration-diagnostics")]
+pub use calibration::registration::RfCalibrationDiagnostics;
 pub use calibration::registration::{
-    PhyCalibrationIdentity, PhyCalibrationPath, PhyRegisterAction, PhyRegisterCompletion,
-    PhyRegisterExternalBinding, PhyRegisterFailure, PhyRegisterLocalStep, PhyRegisterOutcome,
-    PhyRegisterTransition, RegisteredPhyState,
+    PhyCalibrationIdentity, PhyCalibrationPath, PhyRegisterFailure, PhyRegisterOutcome,
+    RegisteredPhyState,
 };
+#[cfg(feature = "validation-probes")]
+pub use calibration::registration::{
+    PhyRegisterAction, PhyRegisterCompletion, PhyRegisterExternalBinding, PhyRegisterLocalStep,
+    PhyRegisterTransition,
+};
+#[cfg(feature = "validation-probes")]
 pub use executor::{
-    PhyCalibrationTrackingPort, PhyCalibrationTrackingRunError, PhyParamTrackingPort,
-    PhyParamTrackingRunError, PhyRegisterPort, PhyRegisterRunError, run_phy_calibration_tracking,
-    run_phy_param_tracking, run_phy_register,
+    PhyCalibrationTrackingPort, PhyParamTrackingPort, PhyRegisterPort,
+    run_phy_calibration_tracking, run_phy_param_tracking, run_phy_register,
 };
-#[cfg(any(target_arch = "riscv32", test))]
+pub use executor::{PhyCalibrationTrackingRunError, PhyParamTrackingRunError, PhyRegisterRunError};
+#[cfg(all(any(target_arch = "riscv32", test), feature = "validation-probes"))]
 pub use lifecycle::{
     PhyRfWakeAction, PhyRfWakeCompletion, PhyRfWakeOperation, PhyRfWakeOutcome,
     PhyRfWakeTransition, PhyRfWakeTransitionError,
@@ -125,6 +163,14 @@ pub use state::{
     PhyCalibrationSnapshot, PhyCommonCalibration, PhyConfig, PhyState, PhyWifiCalibration,
 };
 pub use tx::power::{PhyTxTargetPowerPair, PhyTxTargetPowerProfile};
+pub use {
+    analog::{
+        dcode::PhyDcodeOutcome, pbus::PhyPbusClearOutcome, temperature::PhyTemperatureOutcome,
+    },
+    channel::PhyChipChannelFailure,
+    rx::{gain::PhyRxGainInitOutcome, gain_calibration::PhyRxGainDcQuality},
+    tx::dc_power_detector::PhyTxDcPwdetOutcome,
+};
 /// Shared finite observation/attempt bound used by target executors and host
 /// checks of typed timeout paths. This is not a microsecond duration: direct
 /// readiness sampling and timer-backed bus retries have different costs.

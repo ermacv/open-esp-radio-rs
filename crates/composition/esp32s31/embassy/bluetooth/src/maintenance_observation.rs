@@ -15,7 +15,7 @@ pub struct MaintenanceMeasurements {
     pub restored: u32,
     pub common_calibrations: u32,
     /// Quality of the latest completed RX DC product; light tracking retains it.
-    pub latest_rx_quality: Option<oer_esp32s31_phy::rx::gain_calibration::PhyRxGainDcQuality>,
+    pub latest_rx_quality: Option<oer_esp32s31_phy::PhyRxGainDcQuality>,
     pub bluetooth_calibrations: u32,
     pub maximum_execution_micros: u32,
     pub maximum_restoration_micros: u32,
@@ -292,7 +292,7 @@ mod tests {
     }
     #[test]
     fn light_tracking_retains_the_latest_rx_product_quality() {
-        let quality = oer_esp32s31_phy::rx::gain_calibration::PhyRxGainDcQuality::default();
+        let quality = oer_esp32s31_phy::PhyRxGainDcQuality::default();
         let mut m = MaintenanceMeasurements::default();
         m.begin(100, None, None);
         let report = oer_esp32s31_phy::tracking::observation::Report {

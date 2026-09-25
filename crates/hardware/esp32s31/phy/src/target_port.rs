@@ -16,8 +16,7 @@ pub mod rfpll;
 pub mod temperature;
 
 use crate::{
-    HARDWARE_EDGE_LIMIT, PhyCalibrationTrackingPort, PhyParamTrackingPort,
-    PhyParamTrackingRunError, PhyRegisterPort, PhyRegisterRunError,
+    HARDWARE_EDGE_LIMIT, PhyParamTrackingRunError, PhyRegisterRunError,
     analog::{
         dcode::{PhyDcodeCompletion, PhyDcodeExternalBinding},
         i2c::{PhyRfInitPrefixAction, PhyRfInitPrefixCompletion},
@@ -49,6 +48,10 @@ use crate::{
         PhyChipChannelFailure, PhyChipChannelOutcome, PhyChipChannelRequest,
         PhyChipChannelTransition, PhyWifiTxGainImage, PhyWifiTxGainRequest,
     },
+    executor::{
+        PhyCalibrationTrackingPort, PhyParamTrackingPort, PhyRegisterPort,
+        run_phy_calibration_tracking, run_phy_param_tracking, run_phy_register,
+    },
     registered_bluetooth::{
         RegisteredBluetoothPhy, RegisteredBluetoothPhyClient,
         RegisteredBluetoothPhyPendingTracking, RegisteredBluetoothPhyTrackPoisoned,
@@ -61,7 +64,6 @@ use crate::{
         RegisteredPhyPendingTracking, RegisteredPhyRadio, RegisteredPhyTrackPoisoned,
         TargetRegisteredPhyEpoch,
     },
-    run_phy_calibration_tracking, run_phy_param_tracking, run_phy_register,
     rx::{
         dc_offset::{
             PhyRxDcMinimumCompletion, PhyRxDcMinimumExternalBinding, PhyRxDcoCompletion,
@@ -271,7 +273,7 @@ pub struct PhyTargetPortCounters {
 /// The powered radio and inner model transition are deliberately inseparable.
 /// Callers can construct only a fresh production attempt and pass it once to
 /// [`run_target_phy_register`]. There is no conversion from a caller-driven
-/// [`PhyRegisterTransition`], because such a transition may already contain
+/// `PhyRegisterTransition`, because such a transition may already contain
 /// synthetic completions.
 #[must_use = "a target PHY attempt uniquely owns the powered radio"]
 pub struct TargetPhyRegisterAttempt<P> {
@@ -705,7 +707,7 @@ impl TargetRegistrationWitness {
     }
 }
 
-/// Complete target-side implementation of [`PhyRegisterPort`].
+/// Complete target-side implementation of the registration graph port.
 pub struct TargetPhyRegisterPort<'a, P, R, D, O = NoopPhyTargetObserver> {
     platform: &'a mut P,
     registers: &'a mut R,
@@ -3066,7 +3068,7 @@ where
 
 /// Drive one opaque fresh attempt through the concrete ESP32-S31 target port.
 ///
-/// Unlike [`crate::run_phy_register`], this function does not accept a caller-
+/// Unlike the model driver `run_phy_register`, this function does not accept a caller-
 /// supplied port or a raw caller-driven transition. The exact transition that
 /// receives every concrete target completion and the exact powered radio epoch
 /// remain hidden inside `attempt`. Terminal success produces one result which

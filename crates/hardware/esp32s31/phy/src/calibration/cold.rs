@@ -8,12 +8,14 @@
 ///
 /// The compiled vendor archive returns this independent value verbatim.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub const fn phy_get_rfdata_num() -> u32 {
     0x20c
 }
 
 /// Required pinned `libphy.a::phy_internal_delay` vendor-ABI no-op leaf.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub const fn phy_internal_delay() -> u32 {
     0
 }
@@ -57,9 +59,7 @@ use crate::{
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_hal::owner::SharedPhyAccess;
 
-pub use crate::state::{
-    PhyDot11pConfiguration, PhyRegisterTemperatureControl, PhyState, PhyTemperatureTrackingDebug,
-};
+pub use crate::state::{PhyRegisterTemperatureControl, PhyState};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyColdI2cRequest {
@@ -2223,6 +2223,7 @@ impl PhyRfColdInit {
         &self.state
     }
 
+    #[cfg(feature = "validation-probes")]
     pub const fn action(&self) -> PhyRfInitPrefixAction {
         self.transition.action()
     }

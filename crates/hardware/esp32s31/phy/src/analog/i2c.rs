@@ -15,19 +15,23 @@
 
 /// Required pinned `libphy.a` vendor-ABI no-op leaf; the body is one `ret`.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub const fn phy_get_i2c_data() {}
 
 /// Complete pinned target hook; the ESP32-S31 archive body is one `ret`.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub const fn phy_i2c_enter_critical() {}
 
 /// Complete pinned target hook; the ESP32-S31 archive body is one `ret`.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub const fn phy_i2c_exit_critical() {}
 
 /// Initialize the six-byte master-memory descriptor exactly as the pinned
 /// archive leaf.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub fn phy_i2c_master_mem_cfg(configuration: &mut [u8; 6]) {
     configuration[0] = 0;
     configuration[1] = 0;
@@ -39,6 +43,7 @@ pub fn phy_i2c_master_mem_cfg(configuration: &mut [u8; 6]) {
 
 /// Initialize the command-memory descriptor and its two-word mode value.
 #[inline]
+#[cfg(feature = "validation-probes")]
 pub fn phy_i2c_master_command_mem_cfg(configuration: &mut [u8; 8], mode: &mut u32) {
     configuration[3] = 1;
     configuration[4] = 1;
@@ -294,6 +299,7 @@ impl OpenI2cXpdTransition {
         }
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn samples(self) -> u16 {
         self.samples
     }

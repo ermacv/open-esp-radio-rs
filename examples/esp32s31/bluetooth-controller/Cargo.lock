@@ -1385,10 +1385,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-coex"
-version = "0.1.0"
-
-[[package]]
 name = "oer-esp32s31-example-bluetooth-controller"
 version = "0.1.0"
 dependencies = [
@@ -1428,17 +1424,8 @@ dependencies = [
 name = "oer-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
- "oer-esp32s31-coex",
- "oer-esp32s31-ieee802154-irq",
  "oer-esp32s31-pac",
  "oer-memory",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee802154-irq"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-pac",
 ]
 
 [[package]]

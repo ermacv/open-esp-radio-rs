@@ -3,17 +3,18 @@
 
 //! Executor-neutral coexistence policy, clock conversion and timer state.
 //!
-//! Platform register ownership deliberately lives outside this crate. The
-//! custom radio PAC owns the COEX timer bank and the reviewed shared modem
-//! clock fields sampled through [`CoexClockHardware`]. The concrete timer HAL
-//! bridge is validation-only; live protocol runtimes do not compose this core
-//! into an operational coexistence service.
+//! Register ownership deliberately lives outside this crate. The radio HAL
+//! owns the COEX timer bank and the reviewed shared modem clock fields; this
+//! crate implements [`CoexClockHardware`] for the HAL's Wi-Fi MAC capabilities
+//! and drives the timer bank only from validation images. Live protocol
+//! runtimes do not compose this core into an operational coexistence service.
 
 #[cfg(test)]
 extern crate std;
 
 mod clock;
 mod core;
+mod hal;
 mod model;
 mod scheduler;
 mod timer;
@@ -26,6 +27,10 @@ pub use model::{
 };
 pub use scheduler::{CoexPhase, CoexSchedule, CoexScheduler};
 pub use timer::{CoexTimerHardware, program_timer};
+
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub mod validation;
 
 #[cfg(test)]
 mod tests;

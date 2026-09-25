@@ -34,7 +34,7 @@ oer-esp32s31-radio-esp-hal = { path = "../../../../../crates/adapters/esp-hal/es
 oer-memory = { path = "../../../../../crates/memory" }
 oer-esp32s31-hal = { path = "../../../../../crates/hardware/esp32s31/hal", features = ["validation-probes"] }
 oer-esp32s31-bluetooth = { path = "../../../../../crates/hardware/esp32s31/driver/bluetooth", features = ["validation-probes"] }
-oer-esp32s31-coex = { path = "../../../../../crates/hardware/esp32s31/driver/coex" }
+oer-esp32s31-coex = { path = "../../../../../crates/hardware/esp32s31/driver/coex", features = ["validation-probes"] }
 oer-esp32s31-pac = { path = "../../../../../crates/hardware/esp32s31/pac", features = ["validation-probes"] }
 oer-esp32s31-phy = { path = "../../../../../crates/hardware/esp32s31/phy" }
 oer-esp32s31-ieee80211-mac = { path = "../../../../../crates/hardware/esp32s31/driver/ieee80211/mac", features = ["validation-probes", "validation-raw-dma"] }

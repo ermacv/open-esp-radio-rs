@@ -231,22 +231,22 @@ oer_probe_macros::probe! {
 
 oer_probe_macros::probe! {
     pub fn open_coex_trace_coex_hw_timer_enable(index: u32) =>
-        oer_esp32s31_hal::coex::validation_enable_timer(index);
+        oer_esp32s31_coex::validation::enable_timer(index);
 }
 
 oer_probe_macros::probe! {
     pub fn open_coex_trace_coex_hw_timer_disable(index: u32) =>
-        oer_esp32s31_hal::coex::validation_disable_timer(index);
+        oer_esp32s31_coex::validation::disable_timer(index);
 }
 
 oer_probe_macros::probe! {
     pub fn open_coex_trace_coex_hw_timer_force(index: u32) =>
-        oer_esp32s31_hal::coex::validation_force_timer(index);
+        oer_esp32s31_coex::validation::force_timer(index);
 }
 
 oer_probe_macros::probe! {
     pub fn open_coex_trace_coex_hw_timer_unforce(index: u32) =>
-        oer_esp32s31_hal::coex::validation_unforce_timer(index);
+        oer_esp32s31_coex::validation::unforce_timer(index);
 }
 
 oer_probe_macros::probe! {
@@ -332,7 +332,7 @@ oer_probe_macros::probe! {
         } else {
             CoexClient::Wifi
         };
-        let _ = oer_esp32s31_hal::coex::validation_program_timer(
+        let _ = oer_esp32s31_coex::validation::program_timer(
             is_real_chip != 0,
             index,
             client,
@@ -364,7 +364,7 @@ oer_probe_macros::probe! {
             duration,
         };
         let result =
-            oer_esp32s31_hal::coex::validation_core_request(is_real_chip != 0, client != 0, request);
+            oer_esp32s31_coex::validation::core_request(is_real_chip != 0, client != 0, request);
         match result {
             Ok(_) => 0,
             Err(CoexError::InvalidEvent) => 0x102,
@@ -382,7 +382,7 @@ oer_probe_macros::probe! {
         let Ok(event) = CoexEventId::new(event as u8) else {
             return 0x102;
         };
-        match oer_esp32s31_hal::coex::validation_core_release(event) {
+        match oer_esp32s31_coex::validation::core_release(event) {
             Ok(_) => 0,
             Err(CoexError::InvalidEvent) => 0x102,
             Err(_) => u32::MAX,

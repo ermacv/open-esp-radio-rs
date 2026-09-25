@@ -1,234 +1,74 @@
-//! Closed HAL bridge for the radio-owned coexistence timer bank.
+//! Closed HAL capability for the radio-owned coexistence timer bank.
 //!
-//! The executor-neutral COEX core sees only [`CoexTimerHardware`]. Raw PAC
-//! ownership stays inside this adapter and is never exposed through `Deref`.
+//! [`CoexTimerBank`] borrows the running Wi-Fi register owner and exposes
+//! only named timer transactions and the shared low-power clock sample.
+//! Coexistence policy, tick conversion and cleanup bookkeeping belong to the
+//! coexistence driver, which consumes this capability through its own ports.
+//! The bank is reachable only from validation images; no live protocol
+//! runtime composes an operational coexistence service.
 
 #![cfg(feature = "validation-probes")]
 
-use core::cell::RefCell;
-
-use oer_esp32s31_coex::{
-    CoexClient, CoexClockHardware, CoexError, CoexPti, CoexTimerClock, CoexTimerHardware,
-    CoexTimerIndex,
-};
-
 use oer_esp32s31_pac::{
-    CoexTimerClientValue, CoexTimerPtiValue, CoexTimerRegister, WifiRadioRegisters,
+    CoexTimerClientValue, CoexTimerPtiValue, CoexTimerRegister,
+    CoexistenceLowPowerClockObservation, WifiRadioRegisters,
 };
 
-const fn pac_timer(index: CoexTimerIndex) -> CoexTimerRegister {
-    match index {
-        CoexTimerIndex::Timer0 => CoexTimerRegister::Timer0,
-        CoexTimerIndex::Timer1 => CoexTimerRegister::Timer1,
-        CoexTimerIndex::Timer2 => CoexTimerRegister::Timer2,
-        CoexTimerIndex::Timer3 => CoexTimerRegister::Timer3,
-        CoexTimerIndex::Timer4 => CoexTimerRegister::Timer4,
+/// Borrowed authority over the five coexistence hardware timers.
+///
+/// Every method is one finite register transaction. A write does not report
+/// RF admission or grant revocation.
+pub struct CoexTimerBank<'registers> {
+    registers: &'registers mut WifiRadioRegisters,
+}
+
+impl<'registers> CoexTimerBank<'registers> {
+    pub(crate) fn from_owned(registers: &'registers mut WifiRadioRegisters) -> Self {
+        Self { registers }
     }
-}
 
-struct ValidationCoexRegisters<'registers> {
-    registers: RefCell<&'registers mut WifiRadioRegisters>,
-    real_chip: bool,
-}
-
-impl<'registers> ValidationCoexRegisters<'registers> {
-    fn new(registers: &'registers mut WifiRadioRegisters, real_chip: bool) -> Self {
-        Self {
-            registers: RefCell::new(registers),
-            real_chip,
-        }
-    }
-}
-
-struct CoexTimerHal<'registers, 'owner> {
-    owner: &'owner ValidationCoexRegisters<'registers>,
-}
-
-struct CoexClockHal<'registers, 'owner> {
-    owner: &'owner ValidationCoexRegisters<'registers>,
-}
-
-impl CoexClockHardware for CoexClockHal<'_, '_> {
-    fn sample(&mut self) -> Result<CoexTimerClock, CoexError> {
-        crate::ieee80211::mac::coex_timer_clock_for_chip(
-            self.owner
-                .registers
-                .borrow()
-                .sample_coexistence_low_power_clock(),
-            self.owner.real_chip,
-        )
-    }
-}
-
-#[doc(hidden)]
-pub fn validation_enable_timer(index: u32) {
-    let Some(timer) = CoexTimerRegister::new(index as u8) else {
-        return;
-    };
-    crate::owner::RadioRuntimeOwner::claim_for_validation()
-        .pac_mut()
-        .enable_coex_timer(timer);
-}
-
-#[doc(hidden)]
-pub fn validation_disable_timer(index: u32) {
-    let Some(timer) = CoexTimerRegister::new(index as u8) else {
-        return;
-    };
-    crate::owner::RadioRuntimeOwner::claim_for_validation()
-        .pac_mut()
-        .disable_coex_timer(timer);
-}
-
-#[doc(hidden)]
-pub fn validation_force_timer(index: u32) {
-    let Some(timer) = CoexTimerRegister::new(index as u8) else {
-        return;
-    };
-    crate::owner::RadioRuntimeOwner::claim_for_validation()
-        .pac_mut()
-        .force_coex_timer(timer);
-}
-
-#[doc(hidden)]
-pub fn validation_unforce_timer(index: u32) {
-    let Some(timer) = CoexTimerRegister::new(index as u8) else {
-        return;
-    };
-    crate::owner::RadioRuntimeOwner::claim_for_validation()
-        .pac_mut()
-        .unforce_coex_timer(timer);
-}
-
-/// Execute one complete COEX timer program against an isolated validation
-/// owner. The caller supplies only the chip clock environment and typed values.
-#[cfg(feature = "validation-probes")]
-#[doc(hidden)]
-pub fn validation_program_timer(
-    real_chip: bool,
-    index: CoexTimerIndex,
-    client: CoexClient,
-    pti: CoexPti,
-    latency: u32,
-    duration: u32,
-) -> Result<(), CoexError> {
-    let mut owner = crate::owner::RadioRuntimeOwner::claim_for_validation();
-    let registers = ValidationCoexRegisters::new(owner.pac_mut(), real_chip);
-    let mut timer = CoexTimerHal { owner: &registers };
-    let mut clock = CoexClockHal { owner: &registers };
-    oer_esp32s31_coex::program_timer(
-        &mut timer, &mut clock, index, client, pti, latency, duration,
-    )
-}
-
-/// Execute one enabled COEX-core request against an isolated validation
-/// owner. The boolean selects Bluetooth (`false`) or Wi-Fi (`true`).
-#[cfg(feature = "validation-probes")]
-#[doc(hidden)]
-pub fn validation_core_request(
-    real_chip: bool,
-    wifi: bool,
-    request: oer_esp32s31_coex::CoexClientRequest,
-) -> Result<(), CoexError> {
-    use oer_esp32s31_coex::{CoexCore, CoexPtiTable};
-
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
-    core.enable();
-    let mut owner = crate::owner::RadioRuntimeOwner::claim_for_validation();
-    let registers = ValidationCoexRegisters::new(owner.pac_mut(), real_chip);
-    let mut timer = CoexTimerHal { owner: &registers };
-    let mut clock = CoexClockHal { owner: &registers };
-    if wifi {
-        core.request_wifi(&mut timer, &mut clock, request)
-            .map(|_| ())
-    } else {
-        core.request_bluetooth(&mut timer, &mut clock, request)
-            .map(|_| ())
-    }
-}
-
-/// Execute one COEX-core release against an isolated validation owner.
-#[cfg(feature = "validation-probes")]
-#[doc(hidden)]
-pub fn validation_core_release(event: oer_esp32s31_coex::CoexEventId) -> Result<(), CoexError> {
-    use oer_esp32s31_coex::{CoexCore, CoexPtiTable};
-
-    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
-    let mut owner = crate::owner::RadioRuntimeOwner::claim_for_validation();
-    let registers = ValidationCoexRegisters::new(owner.pac_mut(), true);
-    let mut timer = CoexTimerHal { owner: &registers };
-    core.release(&mut timer, event).map(|_| ())
-}
-
-impl CoexTimerHardware for CoexTimerHal<'_, '_> {
-    fn configure_request(
+    /// Publish the client and PTI request fields of one timer.
+    pub fn configure(
         &mut self,
-        index: CoexTimerIndex,
-        client: CoexClient,
-        pti: CoexPti,
-    ) -> Result<(), CoexError> {
-        let client = CoexTimerClientValue::new(client as u32).ok_or(CoexError::Hardware)?;
-        let pti = CoexTimerPtiValue::new(u32::from(pti.value())).ok_or(CoexError::Hardware)?;
-        self.owner
-            .registers
-            .borrow_mut()
-            .configure_coex_timer(pac_timer(index), client, pti);
-        Ok(())
+        timer: CoexTimerRegister,
+        client: CoexTimerClientValue,
+        pti: CoexTimerPtiValue,
+    ) {
+        self.registers.configure_coex_timer(timer, client, pti);
     }
 
-    fn set_primary_target(
-        &mut self,
-        index: CoexTimerIndex,
-        tick_image: u32,
-    ) -> Result<(), CoexError> {
-        self.owner
-            .registers
-            .borrow_mut()
-            .set_coex_timer_primary_target(pac_timer(index), tick_image);
-        Ok(())
+    /// Publish one already converted primary target tick image.
+    pub fn set_primary_target(&mut self, timer: CoexTimerRegister, tick_image: u32) {
+        self.registers
+            .set_coex_timer_primary_target(timer, tick_image);
     }
 
-    fn set_secondary_target(
-        &mut self,
-        index: CoexTimerIndex,
-        tick_image: u32,
-    ) -> Result<(), CoexError> {
-        self.owner
-            .registers
-            .borrow_mut()
-            .set_coex_timer_secondary_target(pac_timer(index), tick_image);
-        Ok(())
+    /// Publish one already converted secondary target tick image.
+    pub fn set_secondary_target(&mut self, timer: CoexTimerRegister, tick_image: u32) {
+        self.registers
+            .set_coex_timer_secondary_target(timer, tick_image);
     }
 
-    fn enable(&mut self, index: CoexTimerIndex) -> Result<(), CoexError> {
-        self.owner
-            .registers
-            .borrow_mut()
-            .enable_coex_timer(pac_timer(index));
-        Ok(())
+    pub fn enable(&mut self, timer: CoexTimerRegister) {
+        self.registers.enable_coex_timer(timer);
     }
 
-    fn disable(&mut self, index: CoexTimerIndex) -> Result<(), CoexError> {
-        self.owner
-            .registers
-            .borrow_mut()
-            .disable_coex_timer(pac_timer(index));
-        Ok(())
+    pub fn disable(&mut self, timer: CoexTimerRegister) {
+        self.registers.disable_coex_timer(timer);
     }
 
-    fn force(&mut self, index: CoexTimerIndex) -> Result<(), CoexError> {
-        self.owner
-            .registers
-            .borrow_mut()
-            .force_coex_timer(pac_timer(index));
-        Ok(())
+    pub fn force(&mut self, timer: CoexTimerRegister) {
+        self.registers.force_coex_timer(timer);
     }
 
-    fn unforce(&mut self, index: CoexTimerIndex) -> Result<(), CoexError> {
-        self.owner
-            .registers
-            .borrow_mut()
-            .unforce_coex_timer(pac_timer(index));
-        Ok(())
+    pub fn unforce(&mut self, timer: CoexTimerRegister) {
+        self.registers.unforce_coex_timer(timer);
+    }
+
+    /// Sample the shared coexistence low-power clock selection once.
+    ///
+    /// Each call performs fresh reads; `None` reports an unreviewed encoding.
+    pub fn sample_low_power_clock(&mut self) -> Option<CoexistenceLowPowerClockObservation> {
+        self.registers.sample_coexistence_low_power_clock()
     }
 }

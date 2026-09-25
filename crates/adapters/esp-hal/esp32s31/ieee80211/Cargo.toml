@@ -11,7 +11,6 @@ description = "ESP-HAL whole-radio singleton and platform adapter for ESP32-S31"
 default = []
 esp32s31 = [
     "dep:esp-hal",
-    "dep:oer-esp32s31-coex",
     "dep:oer-esp32s31-hal",
     "dep:oer-esp32s31-phy",
     "dep:oer-esp32s31-ieee80211",
@@ -21,7 +20,6 @@ esp32s31 = [
 
 [dependencies]
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "890fd49cfb0c438c4df450d88b059c62a0a724b8", default-features = false, features = ["esp32s31", "unstable"], optional = true }
-oer-esp32s31-coex = { path = "../../../../hardware/esp32s31/driver/coex", optional = true }
 oer-esp32s31-hal = { path = "../../../../hardware/esp32s31/hal", optional = true }
 oer-esp32s31-phy = { path = "../../../../hardware/esp32s31/phy", optional = true }
 oer-esp32s31-ieee80211 = { path = "../../../../hardware/esp32s31/driver/ieee80211", optional = true }

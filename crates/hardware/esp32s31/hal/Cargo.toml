@@ -12,13 +12,10 @@ validation-probes = ["oer-esp32s31-pac/validation-probes"]
 
 [dependencies]
 oer-memory = { path = "../../../memory" }
-oer-esp32s31-coex = { path = "../driver/coex" }
-oer-esp32s31-ieee802154-irq = { path = "../driver/ieee802154/irq" }
 oer-esp32s31-pac = { path = "../pac" }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
-oer-esp32s31-ieee802154-irq = { path = "../driver/ieee802154/irq" }
 oer-esp32s31-pac = { path = "../pac", features = ["validation-probes"] }
 
 [lints]

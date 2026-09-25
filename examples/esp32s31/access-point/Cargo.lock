@@ -1308,10 +1308,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-coex"
-version = "0.1.0"
-
-[[package]]
 name = "oer-esp32s31-example-access-point"
 version = "0.1.0"
 dependencies = [
@@ -1350,8 +1346,6 @@ dependencies = [
 name = "oer-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
- "oer-esp32s31-coex",
- "oer-esp32s31-ieee802154-irq",
  "oer-esp32s31-pac",
  "oer-memory",
 ]
@@ -1411,7 +1405,6 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "esp-hal",
- "oer-esp32s31-coex",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee80211",
  "oer-esp32s31-ieee80211-mac",
@@ -1524,13 +1517,6 @@ dependencies = [
  "oer-ieee80211-runtime",
  "oer-network-interface",
  "oer-xarxa-upstream",
-]
-
-[[package]]
-name = "oer-esp32s31-ieee802154-irq"
-version = "0.1.0"
-dependencies = [
- "oer-esp32s31-pac",
 ]
 
 [[package]]

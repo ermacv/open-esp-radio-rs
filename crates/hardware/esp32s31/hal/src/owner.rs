@@ -510,6 +510,13 @@ impl RadioRuntimeOwner {
         wifi_mac::WifiMacHal::from_owned(&mut self.registers)
     }
 
+    /// Borrow the coexistence timer bank inside an isolated validation image.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn coex_timer_bank(&mut self) -> crate::coex::CoexTimerBank<'_> {
+        crate::coex::CoexTimerBank::from_owned(&mut self.registers)
+    }
+
     pub fn channel_hal<'owner, P>(
         &'owner mut self,
         platform: &'owner mut P,

@@ -132,18 +132,15 @@ fn idle_peer_does_not_bank_credit_or_erase_retry_debt() {
 
 #[test]
 fn late_completion_cannot_debit_a_new_association() {
-    use crate::{RadioEgressKey, RadioPeer, TrafficIdentifier};
-    use oer_network_interface::NetworkInterfaceId;
-    let key = |generation| {
-        RadioEgressKey::new(
-            NetworkInterfaceId::new(1),
-            7,
-            RadioPeer::Unicast {
-                slot: 0,
-                generation,
-            },
-            TrafficIdentifier::new(0).unwrap(),
-        )
+    // A station slot key that carries its association generation.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct PeerKey {
+        slot: u8,
+        generation: u16,
+    }
+    let key = |generation| PeerKey {
+        slot: 0,
+        generation,
     };
     let candidate = |generation| AirtimeCandidate {
         key: key(generation),

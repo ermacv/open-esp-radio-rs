@@ -1902,7 +1902,7 @@ fn research_sram_batch_uses_station_encode_retry_and_terminal_credit_return() {
 
     use oer_network_engine::PinnedBatchResources;
 
-    use oer_ieee80211_datapath::ReservedTxBatch;
+    use oer_network_engine::ReservedTxBatch;
 
     type ResearchPool =
         PinnedDmaTxPool<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, TEST_QUEUE_DEPTH>;

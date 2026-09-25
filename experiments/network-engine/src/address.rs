@@ -1,4 +1,4 @@
-use oer_ieee80211_datapath::RadioEgressKey;
+use crate::RadioEgressKey;
 
 /// Ethernet MAC address used by the research engine.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

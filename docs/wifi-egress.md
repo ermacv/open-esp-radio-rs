@@ -579,11 +579,6 @@ must retain their scope independently of measured completion residence.
 - `PhysicalTxSource` transfers final physical owners synchronously.
 - `SelectedBurstMaterializer` observes queued work and implements
   reserve-before-remove single/batch promotion.
-- `EgressWorkProvider` and `ReservedTxBatch` let deferred research work emit a
-  selected prefix directly into an already reserved physical batch.
-- `SelectedTxSource` constructs one deferred frame per physical take, keeping
-  unrequested work with its provider and returning unused reservations when
-  the selection ends.
 - `TxRequestSource` admits a selected request without requiring Ethernet bytes.
   The STA `start_request` entry returns the original request when busy or unable
   to materialize it. Packet-backed sources implement this through the existing
@@ -660,8 +655,10 @@ synchronous call; queued ARP/ICMP replies own independent work. EAPOL remains
 with the radio security owner. ARP caching and unresolved datagram retention,
 fragments, IPv6, DHCP and TCP are not implemented there.
 
-For deferred TX, `SelectedTxSource` connects bounded network work to physical
-takes after the radio reserves a batch. It consumes only the requested prefix
+For deferred TX, the research engine's own `SelectedTxSource` (with its
+`EgressWorkProvider` and `ReservedTxBatch` contracts) connects bounded network
+work to physical takes after the radio reserves a batch. These deferred-egress
+types live in `experiments/network-engine`, not in the production datapath. It consumes only the requested prefix
 under the selected frame and byte budgets. Construction reports and physical
 credit return are separate from transmission receipts. Selection matches the
 complete flow identity, but current epoch and peer eligibility validation

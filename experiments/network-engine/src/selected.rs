@@ -5,9 +5,9 @@ use core::{
     num::{NonZeroU16, NonZeroU32},
 };
 
-use crate::{
-    EgressSelection, EgressWorkProvider, FillStopReason, PhysicalTxSource, ReservedTxBatch,
-};
+use oer_ieee80211_datapath::PhysicalTxSource;
+
+use crate::egress::{EgressSelection, EgressWorkProvider, FillStopReason, ReservedTxBatch};
 
 /// Construction accounting when the radio releases a selected source.
 ///

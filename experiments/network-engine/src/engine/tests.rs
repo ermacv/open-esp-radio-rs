@@ -3,7 +3,7 @@ extern crate std;
 use core::num::{NonZeroU16, NonZeroU32};
 use std::vec::Vec;
 
-use oer_ieee80211_datapath::{BatchWriteError, EgressDemand, RadioPeer, ReservedTxBatch};
+use crate::{BatchWriteError, EgressDemand, RadioPeer, ReservedTxBatch};
 
 use super::*;
 use crate::checksum::internet_checksum;

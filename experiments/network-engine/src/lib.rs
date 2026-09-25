@@ -12,12 +12,19 @@
 
 mod address;
 mod checksum;
+mod egress;
 mod engine;
 mod payload;
 mod physical;
+mod selected;
 mod work;
 
 pub use address::{Ipv4Address, MacAddress, ResolvedIpv4Route, UdpEndpoint};
+pub use egress::{
+    AdmissionClass, BatchWriteError, DeferredTxWork, EgressDemand, EgressFlowKey, EgressSelection,
+    EgressWorkProvider, EnqueueError, FillFailure, FillOutcome, FillStopReason, FixedEgressQueue,
+    RadioEgressKey, RadioPeer, ReservedTxBatch, TrafficIdentifier, TrafficIdentifierError,
+};
 pub use engine::{
     EngineCounters, IngressDisposition, IngressReport, RadioRouteClassifier, ResearchNetworkConfig,
     ResearchNetworkEngine, TxEnqueueError, TxEnqueueFailure, UdpDatagram,
@@ -26,4 +33,5 @@ pub use payload::InlinePayload;
 pub use physical::{
     PinnedBatchAllocator, PinnedBatchResources, PinnedResearchTxFrame, PinnedReservedTxBatch,
 };
+pub use selected::{SelectedTxReport, SelectedTxSource};
 pub use work::FrameWriteError;

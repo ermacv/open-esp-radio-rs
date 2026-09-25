@@ -8,7 +8,10 @@ target does not compose this engine.
 The current engine is allocation-free and synchronous. It owns bounded
 general-memory UDP/control work, parses Ethernet/ARP/IPv4/ICMP/UDP, reports
 durable `EgressDemand`, and writes only radio-selected work into a caller-owned
-`ReservedTxBatch`. No complete Ethernet-frame staging tier is required for
+`ReservedTxBatch`. The deferred-egress contracts (`FixedEgressQueue`,
+`EgressWorkProvider`, `ReservedTxBatch`, `SelectedTxSource` and their radio
+flow keys) are defined here; the production datapath has no consumer for
+them. No complete Ethernet-frame staging tier is required for
 normal UDP TX.
 
 ## Payload ownership
@@ -67,7 +70,7 @@ responsibility.
 
 ## Construction on radio demand
 
-The common datapath's `SelectedTxSource` adapts an exclusive
+This crate's `SelectedTxSource` adapts an exclusive
 `EgressWorkProvider` borrow and an empty reserved physical batch into a
 `PhysicalTxSource`. Each physical take constructs at most one frame. A radio
 consumer that stops early leaves all unrequested payload owners in the engine,

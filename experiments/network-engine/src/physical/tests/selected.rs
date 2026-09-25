@@ -1,6 +1,6 @@
 use super::*;
+use crate::{FillStopReason, SelectedTxSource};
 use core::cell::Cell;
-use oer_ieee80211_datapath::{FillStopReason, SelectedTxSource};
 use std::rc::Rc;
 
 #[derive(Debug)]

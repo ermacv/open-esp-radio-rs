@@ -17,19 +17,9 @@ use oer_network_interface::NetworkInterfaceId;
 
 pub mod airtime;
 
-mod egress;
 mod queues;
-mod selected;
 
 pub use queues::TxQueues;
-
-pub use selected::{SelectedTxReport, SelectedTxSource};
-
-pub use egress::{
-    AdmissionClass, BatchWriteError, DeferredTxWork, EgressDemand, EgressFlowKey, EgressSelection,
-    EgressWorkProvider, EnqueueError, FillFailure, FillOutcome, FillStopReason, FixedEgressQueue,
-    RadioEgressKey, RadioPeer, ReservedTxBatch, TrafficIdentifier, TrafficIdentifierError,
-};
 
 /// Two owners that must cross a materialization boundary atomically.
 pub type FramePair<Frame> = (Frame, Frame);

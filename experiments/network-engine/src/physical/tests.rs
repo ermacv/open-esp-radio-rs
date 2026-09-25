@@ -5,10 +5,11 @@ mod selected;
 use core::num::{NonZeroU16, NonZeroU32};
 use std::{boxed::Box, vec::Vec};
 
-use oer_ieee80211_datapath::{
-    AdmissionClass, EgressDemand, EgressFlowKey, EgressSelection, MaterializedTxFrame,
-    RadioEgressKey, RadioPeer, TrafficIdentifier,
+use crate::{
+    AdmissionClass, EgressDemand, EgressFlowKey, EgressSelection, RadioEgressKey, RadioPeer,
+    TrafficIdentifier,
 };
+use oer_ieee80211_datapath::MaterializedTxFrame;
 use oer_memory::PinnedDmaTxPool;
 
 use super::*;
@@ -202,7 +203,7 @@ fn oversized_payload_preserves_source_and_physical_reservation() {
         .unwrap();
     assert_eq!(
         outcome.stop,
-        oer_ieee80211_datapath::FillStopReason::FrameTooLong { capacity: 1600 }
+        crate::FillStopReason::FrameTooLong { capacity: 1600 }
     );
     assert_eq!(outcome.frames, 1);
     assert_eq!(outcome.bytes, 47);

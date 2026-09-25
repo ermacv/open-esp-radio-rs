@@ -1,4 +1,4 @@
-use oer_ieee80211_datapath::{
+use crate::{
     AdmissionClass, EgressFlowKey, EgressSelection, EgressWorkProvider, EnqueueError, FillFailure,
     FillOutcome, FixedEgressQueue, RadioEgressKey, ReservedTxBatch, TrafficIdentifier,
 };
@@ -218,7 +218,7 @@ impl<
         )))
     }
 
-    pub fn visit_demands(&self, visitor: impl FnMut(oer_ieee80211_datapath::EgressDemand)) {
+    pub fn visit_demands(&self, visitor: impl FnMut(crate::EgressDemand)) {
         self.queue.visit_demands(visitor);
     }
 
@@ -555,7 +555,7 @@ impl<const FLOWS: usize, const WORK: usize, const CAPACITY: usize, Payload: AsRe
 {
     type WriteError = FrameWriteError;
 
-    fn visit_demands(&self, visitor: impl FnMut(oer_ieee80211_datapath::EgressDemand)) {
+    fn visit_demands(&self, visitor: impl FnMut(crate::EgressDemand)) {
         self.queue.visit_demands(visitor);
     }
 

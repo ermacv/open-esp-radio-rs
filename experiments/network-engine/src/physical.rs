@@ -2,7 +2,8 @@
 
 use core::{cell::Cell, pin::Pin};
 
-use oer_ieee80211_datapath::{BatchWriteError, PhysicalTxSource, ReservedTxBatch};
+use crate::{BatchWriteError, ReservedTxBatch};
+use oer_ieee80211_datapath::PhysicalTxSource;
 use oer_memory::{
     AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, DmaIndexReturn, PinnedDmaTxPool,
     PinnedDmaTxRadioLease, ReturningStableDmaBacking, TaggedStableDmaBacking,

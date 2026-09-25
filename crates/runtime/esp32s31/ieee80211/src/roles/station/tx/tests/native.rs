@@ -8,14 +8,12 @@ use core::{
 use oer_memory::PinnedDmaTxPool;
 
 use oer_network_engine::{
-    Ipv4Address, MacAddress, PinnedBatchResources, ResearchNetworkConfig, ResearchNetworkEngine,
-    ResolvedIpv4Route,
+    AdmissionClass, EgressSelection, FillStopReason, Ipv4Address, MacAddress, PinnedBatchResources,
+    RadioEgressKey, RadioPeer, ResearchNetworkConfig, ResearchNetworkEngine, ResolvedIpv4Route,
+    SelectedTxSource, TrafficIdentifier,
 };
 
-use oer_ieee80211_datapath::{
-    AdmissionClass, EgressSelection, FillStopReason, PhysicalTxSource, RadioEgressKey, RadioPeer,
-    SelectedTxSource, TrafficIdentifier, TxRequest, TxRequestSource,
-};
+use oer_ieee80211_datapath::{PhysicalTxSource, TxRequest, TxRequestSource};
 
 use std::{boxed::Box, rc::Rc};
 

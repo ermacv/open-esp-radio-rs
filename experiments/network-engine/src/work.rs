@@ -1,4 +1,4 @@
-use oer_ieee80211_datapath::{DeferredTxWork, EgressFlowKey};
+use crate::{DeferredTxWork, EgressFlowKey};
 
 use crate::{
     Ipv4Address, MacAddress, UdpEndpoint,

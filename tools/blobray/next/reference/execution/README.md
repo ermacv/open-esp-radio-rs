@@ -619,7 +619,8 @@ Sinks are the replacement observations `blobray_verification::compared_observati
 lists for each case's relation, at event granularity: the step that emitted a
 compared event, the argument registers of a compared call (words beyond the
 eight argument registers are not followed), the selected return words, the
-last writers of compared final-memory selections, and the returning step when
+last writers of compared final-memory selections and projected final-state
+fields, and the returning step when
 the case returned. A backward walk from the sinks marks observed steps. An unconditional transfer
 (call, jump or return) offers no alternative path: every later step of its
 phase runs only through it, so it is marked when any later step of its phase

@@ -427,5 +427,7 @@ mod resources;
 
 use crate::datapath::tx::aggregate::AggregateTxServiceEvent;
 
+#[cfg(any(test, all(feature = "test-support", not(target_pointer_width = "32"))))]
+pub mod test_support;
 #[cfg(all(test, feature = "owned-network"))]
 mod tests;

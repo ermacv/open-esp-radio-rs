@@ -22,8 +22,8 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
   live in `crates/adapters/` and `crates/composition/`. Stable-memory contracts
   live in `crates/memory/`; network values live in `crates/network/interface/`
   and stack adapters in `crates/adapters/{embassy-net,xarxa}/`.
-  `experiments/network-engine/` owns the experimental network engine and may
-  be used by production tests, never by production dependencies.
+  `experiments/network-engine/` owns the experimental network engine; its tests
+  may compose production owners, and no production package depends on it.
   Concrete Wi-Fi and Bluetooth
   radio execution lives in `crates/runtime/esp32s31/` as executor-independent
   async code over `embassy-time`; the Embassy executor/time platform backend

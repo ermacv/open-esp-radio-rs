@@ -1,6 +1,4 @@
 use core::{
-    future::{Future, ready},
-    pin::Pin,
     sync::atomic::{AtomicU8, Ordering},
     task::{Context, Waker},
 };
@@ -15,49 +13,34 @@ use oer_embassy_net_owned::{
     NetworkInterfaceId, NoopRawMutex, OwnedEndpointResources, OwnedNetworkDevice,
 };
 
-use oer_esp32s31_hal::types::{
-    MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
-    MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtTxProgram,
-    MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
-    MacTxDetachReason, MacTxQueueDetached,
-};
-
-use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxPowerPair, WifiTxResources};
+use oer_esp32s31_hal::types::MacTxCompletionObservation;
 
 use oer_esp32s31_ieee80211_mac::{
-    crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
     rx::HeGuardIntervalAndLtf,
     tx::{
-        HardwareOwnedTxDma, HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate,
-        LegacyRate, PreparedTxDma, TxSlot,
+        HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, TxSlot,
         ampdu::{HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage},
         protection::{
             ErpProtectionMode, HeTxopDurationRtsThreshold, HtProtectionMode,
             TxProtectionAdmissionError, TxProtectionReason, WifiTxProtectionPolicy,
         },
-        runtime::WifiTxRuntimePolicy,
     },
 };
 
 use oer_esp32s31_ieee80211_sta::{
     connected_control::ConnectedControlTx,
-    single_mpdu_tx::{ActionTxConfig, ConnectedTxHandoff, ConnectedTxSecurity, SingleMpduTxConfig},
+    single_mpdu_tx::{ActionTxConfig, ConnectedTxSecurity},
 };
 
-use oer_ieee80211_mac::{
-    extensions::wmm::parse_wmm_parameter_element,
-    qos::WmmAccessCategory,
-    station::{STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaTxSequenceCounters},
-};
-
-use oer_ieee80211_softmac::MacTxPlan;
+use oer_ieee80211_mac::extensions::wmm::parse_wmm_parameter_element;
 
 use super::*;
 
 use xarxa_driver::{PacketBuf, PacketBufAllocator, PacketPool, PacketPoolStorage};
 
-mod native;
 mod terminal;
+
+use super::test_support::*;
 
 #[derive(Default)]
 struct RecordingAggregateTxObserver {
@@ -104,20 +87,6 @@ impl RecordingAggregateTxObserver {
     }
 }
 
-const STATION: [u8; 6] = [2, 3, 4, 5, 6, 7];
-const BSSID: [u8; 6] = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25];
-const TEST_FRAME_CAPACITY: usize = 64;
-const TEST_HEADROOM: usize = oer_esp32s31_ieee80211_mac::tx::ampdu::TX_AMPDU_METADATA_SIZE
-    + STA_PROTECTED_QOS_ETHERNET_HEADROOM;
-const TEST_TRAILER: usize = 12;
-const TEST_QUEUE_DEPTH: usize = 3;
-const TEST_SLOTS: usize = 3;
-const TEST_BUFFER_SIZE: usize = 256;
-const TEST_RATE: HtRate = HtRate::new(
-    HtMcs::Mcs7,
-    HtGuardInterval::Short400Ns,
-    HtChannelWidth::Mhz20,
-);
 const STANDARD_WMM: [u8; 26] = [
     221, 24, 0x00, 0x50, 0xf2, 0x02, 1, 1, 0x85, 0, 0x03, 0xa4, 0, 0, 0x27, 0xa4, 0, 0, 0x42, 0x43,
     94, 0, 0x72, 0x32, 47, 0,
@@ -191,161 +160,6 @@ impl<const F: usize, const H: usize, const T: usize, const Q: usize> Network<F, 
     }
 }
 
-#[derive(Default)]
-struct Hardware {
-    legacy_publications: usize,
-    ht_publications: usize,
-    he_publications: usize,
-    last_legacy_queue: Option<u8>,
-    last_ht_queue: Option<u8>,
-    last_he_queue: Option<u8>,
-    ordinary_completion: Option<MacTxCompletionObservation>,
-    aggregate_completion: Option<MacHtAmpduCompletionObservation>,
-    abort_requests: usize,
-    timeout_detaches: usize,
-    timeout_detach_succeeds: bool,
-}
-
-impl CcmpKeyHardware for Hardware {
-    fn install_sta_ccmp_entry(
-        &mut self,
-        _index: u8,
-        _identity: oer_esp32s31_hal::types::MacCcmpKeyIdentity,
-        _temporal_key: &[u8; 16],
-    ) -> MacKeyInstallOutcome {
-        MacKeyInstallOutcome::Installed
-    }
-
-    fn clear_ccmp_entry(&mut self, _index: u8) {}
-}
-
-impl oer_esp32s31_ieee80211_mac::tx::TxHardware for Hardware {
-    fn prepare_bound_legacy_tx(
-        &mut self,
-        _dma: &dyn PreparedTxDma,
-        queue: u8,
-        _program: MacLegacyTxProgram,
-    ) -> bool {
-        self.legacy_publications += 1;
-        self.last_legacy_queue = Some(queue);
-        true
-    }
-
-    fn start_bound_legacy_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {}
-
-    fn prepare_bound_ht_tx(
-        &mut self,
-        _dma: &dyn PreparedTxDma,
-        queue: u8,
-        _program: MacHtTxProgram,
-    ) -> bool {
-        self.ht_publications += 1;
-        self.last_ht_queue = Some(queue);
-        true
-    }
-
-    fn start_bound_ht_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {}
-
-    fn prepare_bound_he_tx(
-        &mut self,
-        _dma: &dyn PreparedTxDma,
-        queue: u8,
-        _program: MacHeTxProgram,
-    ) -> bool {
-        self.he_publications += 1;
-        self.last_he_queue = Some(queue);
-        true
-    }
-
-    fn start_bound_he_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {}
-
-    fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionObservation> {
-        self.ordinary_completion.take()
-    }
-
-    fn begin_tx_timeout_abort(&mut self, _queue: u8) -> bool {
-        self.abort_requests += 1;
-        true
-    }
-
-    fn with_tx_queue_detached<R>(
-        &mut self,
-        _queue: u8,
-        expected_descriptor_head: u32,
-        reason: MacTxDetachReason,
-        detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
-    ) -> MacTxDetachOutcome<R> {
-        match reason {
-            MacTxDetachReason::Timeout => {
-                self.timeout_detaches += 1;
-                if self.timeout_detach_succeeds {
-                    MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::new_model(
-                        expected_descriptor_head,
-                    )))
-                } else {
-                    MacTxDetachOutcome::Failed
-                }
-            }
-            MacTxDetachReason::Collision | MacTxDetachReason::Completed => {
-                MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::new_model(
-                    expected_descriptor_head,
-                )))
-            }
-        }
-    }
-}
-
-impl HtAmpduHardware for Hardware {
-    fn take_ht_ampdu_completion(&mut self, _queue: u8) -> Option<MacHtAmpduCompletionObservation> {
-        self.aggregate_completion.take()
-    }
-
-    fn prepare_he_trigger_based_queue(
-        &mut self,
-        _policy: MacHeTbTidLimit,
-        _reservation: MacHeTbLinkReservation,
-        _tid: MacHeTid,
-        _mpdu_lengths: &[u16],
-        _queued_msdu_bytes: u32,
-    ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError> {
-        unreachable!("HT tests never publish a trigger-based HE queue")
-    }
-
-    fn clear_he_trigger_based_queue(&mut self, _reservation: MacHeTbLinkReservation) {}
-}
-
-struct Power;
-
-impl WifiTxPowerProfile for Power {
-    fn power_pair(&self, _rate_code: u8) -> WifiTxPowerPair {
-        WifiTxPowerPair {
-            primary: 5,
-            alternate: 6,
-        }
-    }
-}
-
-#[derive(Default)]
-struct Timer {
-    now: u64,
-}
-
-impl WifiTxTimer for Timer {
-    fn now_micros(&self) -> u64 {
-        self.now
-    }
-
-    fn wait_until(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now = deadline_micros;
-        ready(())
-    }
-
-    fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_ {
-        self.now += micros;
-        ready(())
-    }
-}
-
 fn context() -> Context<'static> {
     Context::from_waker(Waker::noop())
 }
@@ -381,51 +195,6 @@ fn send_short_frame(device: &mut Device) {
         .transmit(&mut context())
         .expect("free pinned network slot")
         .consume(8, |frame| frame.fill(0));
-}
-
-fn aggregate_completion(starting_sequence: u16, bitmap: u64) -> MacHtAmpduCompletionObservation {
-    MacHtAmpduCompletionObservation::new_model(
-        MacTxCompletionObservation::new_model(0, 0),
-        0,
-        starting_sequence,
-        bitmap,
-        true,
-    )
-}
-
-fn make_ordinary<'a, const BUFFER_SIZE: usize>(
-    slot: Pin<&'a mut TxSlot<BUFFER_SIZE>>,
-    hardware: &mut Hardware,
-) -> SingleMpduTx<'a, Power, fn() -> u32, Timer, BUFFER_SIZE> {
-    fn entropy() -> u32 {
-        0x1234_5678
-    }
-
-    let key = install_sta_pairwise_ccmp(hardware, BSSID, &[0x5a; 16]).unwrap();
-    SingleMpduTx::new(
-        WifiTxResources {
-            slot,
-            policy: WifiTxRuntimePolicy::vendor_defaults(),
-            power: Power,
-            entropy,
-            timer: Timer::default(),
-        },
-        ConnectedTxHandoff {
-            security: ConnectedTxSecurity::Wpa2Personal(key),
-            sequences: StaTxSequenceCounters::new(SequenceNumber::new(7).unwrap()),
-            config: SingleMpduTxConfig {
-                station_address: STATION,
-                bssid: BSSID,
-                peer_qos: true,
-                exchange: MacTxPlan {
-                    access_category: WmmAccessCategory::BestEffort,
-                    initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
-                    publication_limit: 2,
-                    publication_timeout_micros: 250_000,
-                },
-            },
-        },
-    )
 }
 
 fn make_network() -> (Device, Network) {
@@ -1894,106 +1663,6 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
     for _ in 0..TEST_QUEUE_DEPTH {
         drop(network.try_receive_tx_direct().unwrap());
     }
-}
-
-#[test]
-fn research_sram_batch_uses_station_encode_retry_and_terminal_credit_return() {
-    use oer_memory::PinnedDmaTxPool;
-
-    use oer_network_engine::PinnedBatchResources;
-
-    use oer_network_engine::ReservedTxBatch;
-
-    type ResearchPool =
-        PinnedDmaTxPool<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, TEST_QUEUE_DEPTH>;
-    let pool = ResearchPool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(
-        ResearchPool::new(),
-    )));
-    let resources = PinnedBatchResources::<TEST_QUEUE_DEPTH>::new();
-    let allocator = resources.bind(pool);
-    let mut batch = allocator
-        .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH)
-        .unwrap();
-    for marker in 1..=TEST_QUEUE_DEPTH as u8 {
-        batch
-            .try_write(17, |frame| {
-                frame[..6].copy_from_slice(&[0x30, 0x31, 0x32, 0x33, 0x34, marker]);
-                frame[6..12].copy_from_slice(&STATION);
-                frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
-                frame[14..].fill(marker);
-                Ok::<_, core::convert::Infallible>(())
-            })
-            .unwrap();
-    }
-    let first = batch.try_take_physical().unwrap();
-    let mut hardware = Hardware::default();
-    let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
-    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
-    let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
-    let mut retention = RetainedAmpduDmaStorage::new();
-    let mut tx = ConnectedTx::new_for_test(
-        ordinary,
-        AggregateTxResources::single(
-            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
-            &mut retention,
-        ),
-        AggregateTxConfig {
-            rate: TxPhyRate::Ht(TEST_RATE),
-            frame_limit: TEST_SLOTS as u8,
-            attempt_limit: 2,
-            completion_timeout_us: 250_000,
-            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
-        },
-    )
-    .unwrap();
-    tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
-    assert_eq!(
-        tx.start_network(&mut hardware, first, &batch),
-        Ok(WifiTxProgress::Pending)
-    );
-    assert_eq!(batch.pending_frames(), 0);
-    assert_eq!(allocator.free_credits(), 0);
-    // The batch wrapper does not own frames after the radio takes them.
-    drop(batch);
-    assert_eq!(allocator.free_credits(), 0);
-
-    hardware.aggregate_completion = Some(aggregate_completion(7, 0b001));
-    assert_eq!(
-        tx.service(
-            &mut hardware,
-            WifiTxWake::Interrupt {
-                events: EVENT_TX_COMPLETE
-            },
-        ),
-        Ok(WifiTxProgress::Pending)
-    );
-    assert_eq!(hardware.ht_publications, 2);
-    assert_eq!(allocator.free_credits(), 0);
-
-    hardware.aggregate_completion = Some(aggregate_completion(8, 0b11));
-    assert_eq!(
-        tx.service(
-            &mut hardware,
-            WifiTxWake::Interrupt {
-                events: EVENT_TX_COMPLETE
-            },
-        ),
-        Ok(WifiTxProgress::Complete)
-    );
-    let status = tx.take_last_aggregate_status().unwrap();
-    assert_eq!(status.result, MacAmpduTxResult::Delivered);
-    assert_eq!(status.original_subframes, 3);
-    assert_eq!(status.aggregate_attempts, 2);
-    assert_eq!(allocator.free_credits(), TEST_QUEUE_DEPTH);
-    let _parts = tx
-        .try_into_teardown_parts()
-        .unwrap_or_else(|_| panic!("completed research TX detaches"));
-    assert_eq!(allocator.free_credits(), TEST_QUEUE_DEPTH);
-    assert!(
-        allocator
-            .try_reserve::<TEST_QUEUE_DEPTH>(NetworkInterfaceId::new(0), TEST_QUEUE_DEPTH)
-            .is_some()
-    );
 }
 
 #[test]

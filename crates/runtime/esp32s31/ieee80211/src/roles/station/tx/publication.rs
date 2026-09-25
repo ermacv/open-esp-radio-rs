@@ -508,7 +508,8 @@ where
         self.prepare_network_standby(first, network);
     }
 
-    pub(super) fn can_prepare_network_tx(&self) -> bool {
+    /// Whether a standby network transaction can be prepared now.
+    pub fn can_prepare_network_tx(&self) -> bool {
         // The second arena pipelines only the batch after an aggregate that
         // is already hardware-owned. An ordinary transaction may be a
         // control frame sharing sequence/key policy with this owner; letting

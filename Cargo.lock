@@ -2462,7 +2462,6 @@ dependencies = [
  "oer-ieee80211-softmac",
  "oer-ieee80211-sta",
  "oer-memory",
- "oer-network-engine",
  "oer-network-interface",
  "riscv",
  "static_cell",
@@ -2934,7 +2933,10 @@ dependencies = [
 name = "oer-network-engine"
 version = "0.1.0"
 dependencies = [
+ "oer-esp32s31-ieee80211-mac",
+ "oer-esp32s31-ieee80211-runtime",
  "oer-ieee80211-datapath",
+ "oer-ieee80211-softmac",
  "oer-memory",
  "oer-network-interface",
 ]

@@ -90,8 +90,10 @@ where
         })
     }
 
-    #[cfg(all(test, feature = "owned-network"))]
-    pub(super) fn new_for_test(
+    /// Builds an owner from model resources with a fixed association and rate
+    /// control input, bypassing association negotiation.
+    #[cfg(any(test, all(feature = "test-support", not(target_pointer_width = "32"))))]
+    pub fn new_for_test(
         ordinary: SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
         ampdu: AggregateTxResources<'ampdu, B, SLOTS, AMPDU_BUFFER_SIZE>,
         config: AggregateTxConfig,

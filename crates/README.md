@@ -41,7 +41,7 @@ Cargo package identities are independent of this directory hierarchy.
 | `runtime/esp32s31/{ieee80211,bluetooth}/` | Executor-independent radio execution over `embassy-time`; Wi-Fi role/datapath owners and Bluetooth controller/session owners |
 | `adapters/embassy-net/{owned,upstream}/`, `adapters/embassy-net/esp32s31/ieee80211-upstream/` | Owned-packet and released-interface network adapters; the chip bridge binds the released interface to Wi-Fi execution |
 | `adapters/xarxa/upstream/`, `adapters/xarxa/esp32s31/ieee80211-upstream/` | Original Xarxa driver, packet-owner queues and explicit pool-allocation failure; the chip bridge binds it to Wi-Fi execution |
-| `../experiments/network-engine/` | Experimental synchronous network engine; currently consumed only by a driver test |
+| `../experiments/network-engine/` | Experimental synchronous network engine; no production package depends on it, and its host tests drive the STA TX owner |
 | `composition/esp32s31/embassy/{ieee80211,bluetooth}/` | Static resources, one-time claims, final bindings and the concrete whole-radio lifecycle runners |
 
 `memory` owns backing stability, range proofs and affine handoff; chip DMA
@@ -54,8 +54,8 @@ bridge lives in `adapters/xarxa/esp32s31/ieee80211-upstream` and the released
 Embassy bridge in `adapters/embassy-net/esp32s31/ieee80211-upstream`; all integrations
 share the existing radio scheduler and final SRAM allocator.
 `../experiments/network-engine` contains an experimental engine and physical materializer;
-its only external repository
-consumer is a host test of the materializer. Product radio policy cannot
+no production package depends on it. Its host tests compose the STA TX owner
+through the runtime's `test-support` models. Product radio policy cannot
 depend on either network adapters or research; the architecture audit follows
 transitive normal/build dependencies across their domain paths.
 

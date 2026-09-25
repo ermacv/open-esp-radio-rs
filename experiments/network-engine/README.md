@@ -96,7 +96,9 @@ The STA TX owner also exposes `start_request` over the common `TxRequestSource`
 contract. A request need not contain Ethernet bytes. Busy and first-frame
 materialization refusals return that request unchanged; after successful
 materialization, the shared encoder, BA and retry owners govern the physical
-frame. Host tests exercise this entry with the real research engine. The
+frame. This crate's `station_tx` host tests exercise this entry with the real
+research engine over the runtime's `test-support` hardware models; the
+production runtime does not depend on this crate. The
 product scheduler still requires complete software-frame requests; a native
 network owner, its selection tickets and supervisor composition are not wired.
 

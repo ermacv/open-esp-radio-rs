@@ -123,7 +123,33 @@ const SENSOR_SELECTION: &str = "equivalent over the whole sensor domain: \
     window yields an out-of-window temperature at this bound";
 const TEMPERATURE: &str = "crates/hardware/esp32s31/phy/src/analog/temperature.rs";
 
+/// The reset-DAC path: the vendor ROM would index its sensor table out of
+/// bounds, so no vendor comparison applies; a production host test kills it.
+const RESET_PATH: &str = "reset-DAC path without a vendor comparison; killed by \
+    analog::temperature::tests::reset_dac_is_primed_to_the_first_rom_range_before_sampling";
+
 pub const REVIEWED: &[Reviewed] = &[
+    Reviewed {
+        file: TEMPERATURE,
+        source_line: "const RESET_DAC: u8 = 0;",
+        original: "0",
+        replacement: "1",
+        reason: RESET_PATH,
+    },
+    Reviewed {
+        file: TEMPERATURE,
+        source_line: "const DEFAULT_DAC: u8 = 5;",
+        original: "5",
+        replacement: "6",
+        reason: RESET_PATH,
+    },
+    Reviewed {
+        file: TEMPERATURE,
+        source_line: "const DEFAULT_SENSOR_INDEX: u8 = 0;",
+        original: "0",
+        replacement: "1",
+        reason: RESET_PATH,
+    },
     Reviewed {
         file: TEMPERATURE,
         source_line: "if temperature >= current.low && temperature <= current.high {",

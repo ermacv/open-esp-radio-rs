@@ -1021,5 +1021,4 @@ fn map_prerequisites<Before, After>(
 }
 
 #[cfg(test)]
-#[path = "registered_ieee802154/tests.rs"]
 mod tests;

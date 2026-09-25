@@ -285,6 +285,7 @@ impl PhyParamTrackingTransition {
         }
     }
 
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn selected(
         request: PhyParamTrackRequest,
         policy: PhyParamTrackingPolicy,

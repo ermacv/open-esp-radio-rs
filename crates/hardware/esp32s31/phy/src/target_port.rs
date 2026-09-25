@@ -53,9 +53,11 @@ use crate::{
         RegisteredBluetoothPhy, RegisteredBluetoothPhyClient,
         RegisteredBluetoothPhyPendingTracking, RegisteredBluetoothPhyTrackPoisoned,
     },
-    registered_radio::{
+    registered_ieee802154::{
         RegisteredIeee802154Client, RegisteredIeee802154Clocked,
         RegisteredIeee802154PendingTracking, RegisteredIeee802154TrackPoisoned,
+    },
+    registered_radio::{
         RegisteredPhyPendingTracking, RegisteredPhyRadio, RegisteredPhyTrackPoisoned,
         TargetRegisteredPhyEpoch,
     },

@@ -58,6 +58,7 @@ pub mod tracking;
 pub mod tx;
 
 mod registered_bluetooth;
+mod registered_ieee802154;
 mod registered_radio;
 mod registered_wifi;
 pub use registered_wifi::{
@@ -95,7 +96,7 @@ pub use registered_bluetooth::{
     RegisteredBluetoothPhyTrackEvaluation, RegisteredBluetoothPhyTrackEvaluationFailure,
     RegisteredBluetoothPhyTrackPoisoned,
 };
-pub use registered_radio::{
+pub use registered_ieee802154::{
     RegisteredIeee802154Client, RegisteredIeee802154ClientAcquire,
     RegisteredIeee802154ClientAcquireFailure, RegisteredIeee802154Clocked,
     RegisteredIeee802154FoundationConfigured, RegisteredIeee802154FoundationTransitionFailure,
@@ -104,8 +105,10 @@ pub use registered_radio::{
     RegisteredIeee802154OperationFailed, RegisteredIeee802154PendingTrack,
     RegisteredIeee802154PendingTracking, RegisteredIeee802154Reset,
     RegisteredIeee802154ResetTransitionFailure, RegisteredIeee802154TimingReady,
-    RegisteredIeee802154TrackPoisoned, RegisteredPhyClientAcquire,
-    RegisteredPhyClientAcquireFailure, RegisteredPhyClientRelease,
+    RegisteredIeee802154TrackPoisoned,
+};
+pub use registered_radio::{
+    RegisteredPhyClientAcquire, RegisteredPhyClientAcquireFailure, RegisteredPhyClientRelease,
     RegisteredPhyClientReleaseDisposition, RegisteredPhyClientReleaseFailure,
     RegisteredPhyPendingTrack, RegisteredPhyPendingTracking, RegisteredPhyPoweredIdle,
     RegisteredPhyRadio, RegisteredPhyRfClosed, RegisteredPhyTrackEvaluation,

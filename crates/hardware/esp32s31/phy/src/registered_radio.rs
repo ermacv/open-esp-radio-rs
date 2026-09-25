@@ -20,23 +20,8 @@ use crate::{
     tracking::parameters::{PhyParamTrackRequest, PhyParamTrackingAction},
 };
 
-#[path = "registered_ieee802154.rs"]
-mod ieee802154;
 #[cfg(target_arch = "riscv32")]
-#[path = "registered_radio/wifi_integration.rs"]
 mod wifi_integration;
-
-pub use ieee802154::{
-    RegisteredIeee802154Client, RegisteredIeee802154ClientAcquire,
-    RegisteredIeee802154ClientAcquireFailure, RegisteredIeee802154Clocked,
-    RegisteredIeee802154FoundationConfigured, RegisteredIeee802154FoundationTransitionFailure,
-    RegisteredIeee802154MacPolicyConfigured, RegisteredIeee802154MacPolicyRecovery,
-    RegisteredIeee802154MacPolicyTransitionFailure, RegisteredIeee802154OperationCompleted,
-    RegisteredIeee802154OperationFailed, RegisteredIeee802154PendingTrack,
-    RegisteredIeee802154PendingTracking, RegisteredIeee802154Reset,
-    RegisteredIeee802154ResetTransitionFailure, RegisteredIeee802154TimingReady,
-    RegisteredIeee802154TrackPoisoned,
-};
 
 /// Unique powered-radio owner carrying proof of target PHY registration.
 ///

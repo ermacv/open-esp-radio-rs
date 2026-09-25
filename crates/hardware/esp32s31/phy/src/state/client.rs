@@ -18,11 +18,6 @@
 //! again while refreshing timestamps; the periodic callback performs only the
 //! per-class refresh samples.
 
-#![allow(
-    dead_code,
-    reason = "the model awaits fallible timer, PHY-lock, and tracking-child executors"
-)]
-
 use core::fmt;
 
 use crate::tracking::parameters::{
@@ -204,6 +199,7 @@ impl PhyClientState {
         Self::empty(period_micros, None)
     }
 
+    #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
     const fn empty(
         period_micros: u64,
         epoch: Option<oer_esp32s31_hal::owner::PhyRegistrationEpoch>,
@@ -342,6 +338,7 @@ impl PhyClientState {
 
     /// Selected Wi-Fi work retains client ownership but does not acknowledge
     /// unrelated periodic work or advance its timestamps.
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn begin_wifi_operation(
         self,
         policy: PhyParamTrackingPolicy,

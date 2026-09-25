@@ -882,8 +882,15 @@ fn observer_dependency_manifest_detects_features_but_ignores_dev_only_inputs() {
 fn archive_evaluation_reuses_prepared_descriptor_even_when_runner_cannot_build() {
     let fixture = setup();
     let root = &fixture.0;
-    // This is outside the fixture's observer mechanism. Any hidden build would fail.
-    fs::write(root.join("hil/host/runner/src/main.rs"), "this is not Rust").unwrap();
+    // Replace Cargo's output directories with files: any hidden build fails,
+    // while the observer inputs and the prepared descriptor stay unchanged.
+    for directory in ["target/hil/observer-build", "target/debug"] {
+        let path = root.join(directory);
+        if path.exists() {
+            fs::remove_dir_all(&path).unwrap();
+        }
+        fs::write(&path, "not a directory").unwrap();
+    }
     let index = fixture.load().unwrap();
     assert_eq!(index.scenarios["exchange"].len(), 2);
     assert!(index.scenarios["exchange"].iter().all(|o| {

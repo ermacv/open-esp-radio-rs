@@ -211,6 +211,11 @@ executable and its embedded build/source identity. Firmware capture does not
 replace this identity. The qualification evaluator uses
 [`observer-inputs.json`](../schema/observer-inputs.json) to select relevant
 observer inputs; it does not require equality of the entire runner binary.
+Its schema-3 registry maps each workload to a dependency domain (`common`,
+`ieee80211`, `bluetooth`, `system` or `ieee802154`) whose direct dependencies
+are the runner family packages. A workload's source inputs are the runner
+package, every path package in its domain's projected dependency closure and
+the listed non-Cargo `data` files; source paths are never enumerated.
 Legacy bundles need an explicit provenance review before becoming applicable.
 
 `RunSession` also publishes `attempts/<scenario>.json` immediately after a

@@ -94,6 +94,31 @@ pub fn projection(resolved: &Value, dependencies: &BTreeSet<String>) -> Result<V
     )
 }
 
+/// Version of `hil/schema/observer-inputs.json`.
+///
+/// Schema 3 scopes observer inputs by Cargo packages: a workload's inputs are
+/// the runner package, the path packages reachable from its domain's direct
+/// dependencies and the registry's non-Cargo `data` files.
+pub const REGISTRY_SCHEMA: u64 = 3;
+
+/// Reject a registry of another schema before reading any scope from it.
+pub fn check_registry_schema(registry: &Value) -> Result<()> {
+    if registry["schema"] != REGISTRY_SCHEMA {
+        return Err("unsupported observer input registry".into());
+    }
+    Ok(())
+}
+
+/// Every workload kind the registry maps to a dependency domain.
+pub fn workloads(registry: &Value) -> Result<Vec<String>> {
+    Ok(registry["workload_domains"]
+        .as_object()
+        .ok_or("observer workload domains missing")?
+        .keys()
+        .cloned()
+        .collect())
+}
+
 /// Registry scope for the selected workload; all direct dependencies must have an owner.
 pub fn dependencies(registry: &Value, kind: &str) -> Result<BTreeSet<String>> {
     let groups = registry["dependencies"]
@@ -205,6 +230,22 @@ pub fn take_unit_profiles(projection: &mut Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registry_schema_and_workloads_come_from_the_domain_map() {
+        let registry = json!({
+            "schema": 3,
+            "workload_domains": {"udp": "ieee80211", "bluetooth-dtm": "bluetooth"},
+            "dependencies": {"common": ["core"], "ieee80211": ["wifi"], "bluetooth": ["ble"]},
+        });
+        check_registry_schema(&registry).unwrap();
+        assert_eq!(workloads(&registry).unwrap(), ["bluetooth-dtm", "udp"]);
+        let udp = dependencies(&registry, "udp").unwrap();
+        assert!(udp.contains("core") && udp.contains("wifi") && !udp.contains("ble"));
+        let mut legacy = registry;
+        legacy["schema"] = json!(2);
+        assert!(check_registry_schema(&legacy).is_err());
+    }
 
     fn fixture() -> Value {
         json!({"nodes":[

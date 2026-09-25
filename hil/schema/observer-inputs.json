@@ -1,245 +1,11 @@
 {
-  "schema": 2,
-  "common": [
-    "hil/host/runner/build.rs",
-    "hil/host/runner/src/execution.rs",
-    "hil/host/runner/src/execution/",
-    "hil/host/runner-core/src/scenario.rs",
-    "hil/host/runner-core/src/scenario/",
-    "hil/host/runner-core/src/session.rs",
-    "hil/host/runner-core/src/session/",
-    "hil/host/runner-core/src/evidence/run.rs",
-    "hil/host/runner-core/src/evidence/run/",
-    "hil/host/runner-core/src/evidence/comparison.rs",
-    "hil/host/runner-core/src/lab/",
-    "hil/protocol/",
-    "tools/process/",
-    "hil/schema/scenario-v4-defaults.json",
-    "hil/host/runner-core/src/error.rs",
-    "hil/host/runner-core/src/device/",
-    "hil/host/runner-core/src/transport/",
-    "hil/host/runner-core/src/evidence/measurements.rs",
-    "hil/host/runner-core/src/evidence/measurements/",
-    "tools/firmware/",
-    "hil/host/runner/src/main.rs",
-    "hil/host/runner/src/command.rs",
-    "hil/host/runner-core/src/image/",
-    "tools/memory-report/",
-    "hil/schema/src/",
-    "hil/host/runner/src/fixture/mod.rs",
-    "hil/host/runner-core/src/fixture/cleanup.rs",
-    "hil/host/runner/src/fixture/preflight.rs",
-    "hil/host/runner-wifi/src/fixture/prepared.rs",
-    "hil/host/runner-core/src/fixture/software.rs",
-    "hil/host/runner-wifi/src/fixture/local/network_helper.rs",
-    "hil/host/runner/src/fixture/install.rs",
-    "hil/host/runner-core/src/context.rs",
-    "hil/host/runner-core/src/durable.rs",
-    "hil/host/runner-core/src/failure.rs",
-    "hil/host/fixture/src/linux_socket.rs",
-    "hil/host/fixture/src/lib.rs",
-    "hil/host/runner-wifi/src/fixture/local.rs",
-    "hil/host/runner-wifi/src/fixture/openwrt.rs",
-    "hil/host/runner-core/Cargo.toml",
-    "hil/host/runner-core/src/lib.rs",
-    "hil/host/runner-core/src/fixture.rs",
-    "hil/host/runner-core/src/workload.rs",
-    "hil/host/runner-core/src/repository.rs"
+  "schema": 3,
+  "data": [
+    "hil/schema/scenario-v4-defaults.json"
   ],
-  "workloads": {
-    "access-point": [
-      "hil/host/runner-wifi/src/workload/ieee80211/",
-      "hil/host/runner-wifi/src/workload/traffic/",
-      "hil/host/runner-core/src/workload/phy/",
-      "hil/host/runner-wifi/src/evidence/rx_delivery.rs",
-      "crates/protocols/ieee80211/mac/"
-    ],
-    "bluetooth-acl-backpressure": [
-      "hil/host/runner-bluetooth/src/workload/bluetooth.rs",
-      "hil/host/runner-bluetooth/src/workload/bluetooth/",
-      "hil/host/runner-core/src/workload/phy/"
-    ],
-    "bluetooth-acl-calibration": [
-      "hil/host/runner-bluetooth/src/workload/bluetooth.rs",
-      "hil/host/runner-bluetooth/src/workload/bluetooth/",
-      "hil/host/runner-core/src/workload/phy/"
-    ],
-    "bluetooth-dtm": [
-      "hil/host/runner-bluetooth/src/workload/bluetooth.rs",
-      "hil/host/runner-bluetooth/src/workload/bluetooth/",
-      "hil/host/runner-core/src/workload/phy/"
-    ],
-    "bluetooth-encrypted-acl": [
-      "hil/host/runner-bluetooth/src/workload/bluetooth.rs",
-      "hil/host/runner-bluetooth/src/workload/bluetooth/",
-      "hil/host/runner-core/src/workload/phy/"
-    ],
-    "bluetooth-gatt": [
-      "hil/host/runner-bluetooth/src/workload/bluetooth.rs",
-      "hil/host/runner-bluetooth/src/workload/bluetooth/",
-      "hil/host/runner-core/src/workload/phy/"
-    ],
-    "bluetooth-maintenance-deadline": [
-      "hil/host/runner-bluetooth/src/workload/bluetooth.rs",
-      "hil/host/runner-bluetooth/src/workload/bluetooth/",
-      "hil/host/runner-core/src/workload/phy/"
-    ],
-    "bluetooth-peripheral": [
-      "hil/host/runner-bluetooth/src/workload/bluetooth.rs",
-      "hil/host/runner-bluetooth/src/workload/bluetooth/",
-      "hil/host/runner-core/src/workload/phy/"
-    ],
-    "bluetooth-phy-watchdog": [
-      "hil/host/runner-bluetooth/src/workload/bluetooth.rs",
-      "hil/host/runner-bluetooth/src/workload/bluetooth/",
-      "hil/host/runner-core/src/workload/phy/"
-    ],
-    "bluetooth-secure-gatt": [
-      "hil/host/runner-bluetooth/src/workload/bluetooth.rs",
-      "hil/host/runner-bluetooth/src/workload/bluetooth/",
-      "hil/host/runner-core/src/workload/phy/"
-    ],
-    "bluetooth-secure-gatt-hci-read-failure": [
-      "hil/host/runner-bluetooth/src/workload/bluetooth.rs",
-      "hil/host/runner-bluetooth/src/workload/bluetooth/",
-      "hil/host/runner-core/src/workload/phy/"
-    ],
-    "bluetooth-secure-gatt-timing": [
-      "hil/host/runner-bluetooth/src/workload/bluetooth.rs",
-      "hil/host/runner-bluetooth/src/workload/bluetooth/",
-      "hil/host/runner-core/src/workload/phy/"
-    ],
-    "bluetooth-security-failure": [
-      "hil/host/runner-bluetooth/src/workload/bluetooth.rs",
-      "hil/host/runner-bluetooth/src/workload/bluetooth/",
-      "hil/host/runner-core/src/workload/phy/"
-    ],
-    "bluetooth-watchdog-reset": [
-      "hil/host/runner-bluetooth/src/workload/bluetooth.rs",
-      "hil/host/runner-bluetooth/src/workload/bluetooth/",
-      "hil/host/runner-core/src/workload/phy/"
-    ],
-    "boot-smoke": [
-      "hil/host/runner-system/src/workload/system/",
-      "tools/memory-report/",
-      "hil/host/runner-system/Cargo.toml",
-      "hil/host/runner-system/src/lib.rs",
-      "hil/host/runner-system/src/workload.rs"
-    ],
-    "icmp": [
-      "hil/host/runner-wifi/src/workload/ieee80211/",
-      "hil/host/runner-wifi/src/workload/traffic/",
-      "hil/host/runner-core/src/workload/phy/",
-      "hil/host/runner-wifi/src/evidence/rx_delivery.rs",
-      "crates/protocols/ieee80211/mac/"
-    ],
-    "ieee802154-ed-event": [
-      "hil/host/runner-ieee802154/src/workload/ieee802154/",
-      "hil/host/runner-ieee802154/Cargo.toml",
-      "hil/host/runner-ieee802154/src/lib.rs",
-      "hil/host/runner-ieee802154/src/workload.rs"
-    ],
-    "ieee802154-event-status": [
-      "hil/host/runner-ieee802154/src/workload/ieee802154/",
-      "hil/host/runner-ieee802154/Cargo.toml",
-      "hil/host/runner-ieee802154/src/lib.rs",
-      "hil/host/runner-ieee802154/src/workload.rs"
-    ],
-    "memory-benchmark": [
-      "hil/host/runner-system/src/workload/system/",
-      "tools/memory-report/",
-      "hil/host/runner-system/Cargo.toml",
-      "hil/host/runner-system/src/lib.rs",
-      "hil/host/runner-system/src/workload.rs"
-    ],
-    "monitor-capture": [
-      "hil/host/runner-wifi/src/workload/ieee80211/",
-      "hil/host/runner-wifi/src/workload/traffic/",
-      "hil/host/runner-core/src/workload/phy/",
-      "hil/host/runner-wifi/src/evidence/rx_delivery.rs",
-      "crates/protocols/ieee80211/mac/"
-    ],
-    "station-access-point": [
-      "hil/host/runner-wifi/src/workload/ieee80211/",
-      "hil/host/runner-wifi/src/workload/traffic/",
-      "hil/host/runner-core/src/workload/phy/",
-      "hil/host/runner-wifi/src/evidence/rx_delivery.rs",
-      "crates/protocols/ieee80211/mac/"
-    ],
-    "station-access-point-reconnect": [
-      "hil/host/runner-wifi/src/workload/ieee80211/",
-      "hil/host/runner-wifi/src/workload/traffic/",
-      "hil/host/runner-core/src/workload/phy/",
-      "hil/host/runner-wifi/src/evidence/rx_delivery.rs",
-      "crates/protocols/ieee80211/mac/"
-    ],
-    "station-ap-absence": [
-      "hil/host/runner-wifi/src/workload/ieee80211/",
-      "hil/host/runner-wifi/src/workload/traffic/",
-      "hil/host/runner-core/src/workload/phy/",
-      "hil/host/runner-wifi/src/evidence/rx_delivery.rs",
-      "crates/protocols/ieee80211/mac/"
-    ],
-    "station-ap-loss": [
-      "hil/host/runner-wifi/src/workload/ieee80211/",
-      "hil/host/runner-wifi/src/workload/traffic/",
-      "hil/host/runner-core/src/workload/phy/",
-      "hil/host/runner-wifi/src/evidence/rx_delivery.rs",
-      "crates/protocols/ieee80211/mac/"
-    ],
-    "station-reconnect": [
-      "hil/host/runner-wifi/src/workload/ieee80211/",
-      "hil/host/runner-wifi/src/workload/traffic/",
-      "hil/host/runner-core/src/workload/phy/",
-      "hil/host/runner-wifi/src/evidence/rx_delivery.rs",
-      "crates/protocols/ieee80211/mac/"
-    ],
-    "system-watchdog": [
-      "hil/host/runner-system/src/workload/system/",
-      "hil/host/runner-system/Cargo.toml",
-      "hil/host/runner-system/src/lib.rs",
-      "hil/host/runner-system/src/workload.rs"
-    ],
-    "tcp": [
-      "hil/host/runner-wifi/src/workload/ieee80211/",
-      "hil/host/runner-wifi/src/workload/traffic/",
-      "hil/host/runner-core/src/workload/phy/",
-      "hil/host/runner-wifi/src/evidence/rx_delivery.rs",
-      "crates/protocols/ieee80211/mac/"
-    ],
-    "timebase": [
-      "hil/host/runner-system/src/workload/system/",
-      "hil/host/runner-system/Cargo.toml",
-      "hil/host/runner-system/src/lib.rs",
-      "hil/host/runner-system/src/workload.rs"
-    ],
-    "udp": [
-      "hil/host/runner-wifi/src/workload/ieee80211/",
-      "hil/host/runner-wifi/src/workload/traffic/",
-      "hil/host/runner-core/src/workload/phy/",
-      "hil/host/runner-wifi/src/evidence/rx_delivery.rs",
-      "crates/protocols/ieee80211/mac/"
-    ],
-    "wifi-phy-watchdog": [
-      "hil/host/runner-wifi/src/workload/ieee80211/",
-      "hil/host/runner-wifi/src/workload/traffic/",
-      "hil/host/runner-core/src/workload/phy/",
-      "hil/host/runner-wifi/src/evidence/rx_delivery.rs",
-      "crates/protocols/ieee80211/mac/"
-    ],
-    "wifi-role": [
-      "hil/host/runner-wifi/src/workload/ieee80211/",
-      "hil/host/runner-wifi/src/workload/traffic/",
-      "hil/host/runner-core/src/workload/phy/",
-      "hil/host/runner-wifi/src/evidence/rx_delivery.rs",
-      "crates/protocols/ieee80211/mac/"
-    ]
-  },
   "dependencies": {
     "common": [
       "open-esp-radio-hil-runner-core",
-      "open-esp-radio-hil-runner-system",
-      "open-esp-radio-hil-runner-ieee802154",
       "rustix",
       "oer-process",
       "open-esp-radio-hil-fixture-install",
@@ -252,70 +18,17 @@
       "sha2",
       "toml_edit"
     ],
+    "ieee80211": [
+      "open-esp-radio-hil-runner-wifi"
+    ],
     "bluetooth": [
       "open-esp-radio-hil-runner-bluetooth"
     ],
-    "ieee80211": [
-      "open-esp-radio-hil-runner-wifi"
-    ]
-  },
-  "build": {
-    "profile": "debug"
-  },
-  "domains": {
-    "common": [],
-    "ieee80211": [
-      "hil/host/runner-wifi/src/fixture/capture_process.rs",
-      "hil/host/runner-wifi/src/fixture/capture_process/",
-      "hil/host/runner-wifi/src/fixture/channel.rs",
-      "hil/host/runner-core/src/fixture/cleanup/",
-      "hil/host/runner-wifi/src/fixture/controlled_ap.rs",
-      "hil/host/runner-wifi/src/fixture/local/client.rs",
-      "hil/host/runner-wifi/src/fixture/local/client/",
-      "hil/host/runner-wifi/src/fixture/openwrt/client.rs",
-      "hil/host/runner-wifi/src/fixture/openwrt/client/",
-      "hil/host/runner-wifi/src/fixture/local/wire_capture.rs",
-      "hil/host/runner-wifi/src/fixture/local/air_monitor.rs",
-      "hil/host/runner-wifi/src/fixture/local/air_monitor/",
-      "hil/host/runner-wifi/src/fixture/local/ap.rs",
-      "hil/host/runner-wifi/src/fixture/local/ap/",
-      "hil/host/runner-wifi/src/fixture/local/evidence.rs",
-      "hil/host/runner-wifi/src/fixture/local/evidence/",
-      "hil/host/runner-wifi/src/fixture/local/network_helper/",
-      "hil/host/runner-wifi/src/fixture/openwrt/air_monitor.rs",
-      "hil/host/runner-wifi/src/fixture/openwrt/ap.rs",
-      "hil/host/runner-wifi/src/fixture/openwrt/ap/",
-      "hil/host/runner-wifi/src/fixture/openwrt/capture.rs",
-      "hil/host/runner-wifi/src/fixture/openwrt/capture/",
-      "hil/host/runner-wifi/src/fixture/openwrt/evidence.rs",
-      "hil/host/runner-wifi/src/fixture/openwrt/evidence/",
-      "hil/host/runner-wifi/src/fixture/openwrt/tx_monitor.rs",
-      "hil/host/runner-wifi/src/fixture/openwrt/tx_monitor/",
-      "hil/host/runner-wifi/src/fixture/probe_load/",
-      "hil/host/runner-wifi/src/fixture/station_fixture.rs",
-      "hil/host/runner-wifi/src/fixture/station_fixture/",
-      "hil/host/runner-wifi/src/fixture/local/wpa_control.rs",
-      "hil/host/runner-wifi/src/fixture/local/wpa_control/",
-      "hil/host/fixture/src/probe.rs",
-      "hil/host/fixture/src/probe/",
-      "hil/host/fixture/src/bin/open-radio-probe/",
-      "hil/host/runner-wifi/Cargo.toml",
-      "hil/host/runner-wifi/src/lib.rs",
-      "hil/host/runner-wifi/src/evidence.rs",
-      "hil/host/runner-wifi/src/fixture.rs",
-      "hil/host/runner-wifi/src/workload.rs"
+    "system": [
+      "open-esp-radio-hil-runner-system"
     ],
-    "bluetooth": [
-      "hil/host/runner-bluetooth/src/fixture/bluetooth.rs",
-      "hil/host/runner-bluetooth/src/fixture/bluetooth/",
-      "hil/host/fixture/src/bluetooth.rs",
-      "hil/host/fixture/src/bluetooth/",
-      "hil/host/fixture/src/bin/open-radio-bluetooth/",
-      "hil/host/fixture-install/src/bluetooth_contract.rs",
-      "hil/host/runner-bluetooth/Cargo.toml",
-      "hil/host/runner-bluetooth/src/lib.rs",
-      "hil/host/runner-bluetooth/src/fixture.rs",
-      "hil/host/runner-bluetooth/src/workload.rs"
+    "ieee802154": [
+      "open-esp-radio-hil-runner-ieee802154"
     ]
   },
   "workload_domains": {
@@ -333,20 +46,20 @@
     "bluetooth-secure-gatt-timing": "bluetooth",
     "bluetooth-security-failure": "bluetooth",
     "bluetooth-watchdog-reset": "bluetooth",
-    "boot-smoke": "common",
+    "boot-smoke": "system",
     "icmp": "ieee80211",
-    "ieee802154-ed-event": "common",
-    "ieee802154-event-status": "common",
-    "memory-benchmark": "common",
+    "ieee802154-ed-event": "ieee802154",
+    "ieee802154-event-status": "ieee802154",
+    "memory-benchmark": "system",
     "monitor-capture": "ieee80211",
     "station-access-point": "ieee80211",
     "station-access-point-reconnect": "ieee80211",
     "station-ap-absence": "ieee80211",
     "station-ap-loss": "ieee80211",
     "station-reconnect": "ieee80211",
-    "system-watchdog": "common",
+    "system-watchdog": "system",
     "tcp": "ieee80211",
-    "timebase": "common",
+    "timebase": "system",
     "udp": "ieee80211",
     "wifi-phy-watchdog": "ieee80211",
     "wifi-role": "ieee80211"
@@ -383,5 +96,8 @@
     "udp": true,
     "wifi-phy-watchdog": true,
     "wifi-role": true
+  },
+  "build": {
+    "profile": "debug"
   }
 }

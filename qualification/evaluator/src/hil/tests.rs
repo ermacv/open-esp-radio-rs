@@ -430,16 +430,15 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
     fs::write(root.join("observer.rs"), b"test observer").unwrap();
     let registry: serde_json::Value =
         serde_json::from_str(include_str!("../../../../hil/schema/observer-inputs.json")).unwrap();
-    let workloads: BTreeMap<_, _> = registry["workloads"]
+    let domains: BTreeMap<_, _> = registry["workload_domains"]
         .as_object()
         .unwrap()
         .keys()
-        .map(|k| (k, Vec::<String>::new()))
+        .map(|k| (k, "common"))
         .collect();
-    let domains: BTreeMap<_, _> = workloads.keys().map(|k| (k, "common")).collect();
     fs::write(
         root.join("hil/schema/observer-inputs.json"),
-        serde_json::to_vec(&json!({"schema":2,"common":["observer.rs"],"workloads":workloads,"timing":registry["timing"],"workload_domains":domains,"domains":{"common":[]},"dependencies":{"common":[],"bluetooth":[],"ieee80211":[]},"build":{"profile":"debug","opt_level":"0","debug":"true"}}))
+        serde_json::to_vec(&json!({"schema":3,"data":["observer.rs"],"workload_domains":domains,"timing":registry["timing"],"dependencies":{"common":[]},"build":{"profile":"debug","opt_level":"0","debug":"true"}}))
             .unwrap(),
     )
     .unwrap();
@@ -454,7 +453,10 @@ pub(super) fn add_current_build(root: &Path, run: &Path) {
     )
     .unwrap();
     let resolved = prepare_observer(root);
-    let build = json!({"schema":2,"inputs":{"observer.rs":sha256_file(&root.join("observer.rs")).unwrap()},"compiler":configuration["compiler"],"environment":configuration["environment"],"resolved":resolved});
+    let build = json!({"schema":2,"inputs":{
+        "observer.rs":sha256_file(&root.join("observer.rs")).unwrap(),
+        "hil/host/runner/src/main.rs":sha256_file(&root.join("hil/host/runner/src/main.rs")).unwrap(),
+    },"compiler":configuration["compiler"],"environment":configuration["environment"],"resolved":resolved});
     manifest["runner"] = json!({"observer":{"schema":1,"executable_sha256":"aa".repeat(32),"build_sha256":format!("{:x}",Sha256::digest(serde_json::to_vec(&build).unwrap())),"build":build}});
 
     manifest["firmware"] = json!([{

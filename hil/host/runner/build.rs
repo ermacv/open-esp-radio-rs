@@ -108,12 +108,13 @@ fn main() {
     let registry: serde_json::Value =
         serde_json::from_slice(&fs::read(root.join("hil/schema/observer-inputs.json")).unwrap())
             .unwrap();
+    observer_build::check_registry_schema(&registry).expect("supported observer input registry");
     observer_build::validate_registry(&resolved, &registry)
         .expect("every observer dependency has a scope");
-    for kind in registry["workloads"].as_object().unwrap().keys() {
+    for kind in observer_build::workloads(&registry).unwrap() {
         observer_build::projection(
             &resolved,
-            &observer_build::dependencies(&registry, kind).unwrap(),
+            &observer_build::dependencies(&registry, &kind).unwrap(),
         )
         .expect("validate observer dependency scope");
     }

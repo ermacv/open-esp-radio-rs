@@ -37,15 +37,10 @@ impl Current {
         resolved["configuration"] =
             json!({"compiler":build["compiler"],"environment":build["environment"]});
         let registry: Value = read_json(&root.join("hil/schema/observer-inputs.json"))?;
+        build_inputs::check_registry_schema(&registry)?;
         build_inputs::validate_registry(&resolved, &registry)?;
-        for kind in std::iter::once("").chain(
-            registry["workloads"]
-                .as_object()
-                .ok_or("observer workloads missing")?
-                .keys()
-                .map(String::as_str),
-        ) {
-            build_inputs::projection(&resolved, &build_inputs::dependencies(&registry, kind)?)?;
+        for kind in std::iter::once(String::new()).chain(build_inputs::workloads(&registry)?) {
+            build_inputs::projection(&resolved, &build_inputs::dependencies(&registry, &kind)?)?;
         }
         let mut live = resolved.clone();
         for (path, manifest) in live["manifests"]
@@ -172,41 +167,43 @@ fn lock_dependencies(resolved: &Value) -> Result<Value> {
     Ok(json!(packages))
 }
 
-fn prefixes(root: &Path, document: Option<&Value>) -> Result<Vec<PathBuf>> {
-    let registry: Value = read_json(&root.join("hil/schema/observer-inputs.json"))?;
-    if registry["schema"] != 2 {
-        return Err("unsupported observer input registry".into());
-    }
-    let mut prefixes = registry["common"]
-        .as_array()
-        .ok_or("observer common inputs missing")?
-        .clone();
-    if let Some(kind) = document
-        .and_then(|d| d.pointer("/workload/kind"))
-        .and_then(Value::as_str)
+/// A workload's source inputs: the registry's data files and, for the runner
+/// and every path package in the projected dependency closure, its sources,
+/// build script and manifest.
+fn source_inputs(root: &Path, projection: &Value) -> Result<Vec<PathBuf>> {
+    let mut prefixes = data_inputs(root)?;
+    for path in projection["manifests"]
+        .as_object()
+        .ok_or("observer manifests missing")?
+        .keys()
     {
-        prefixes.extend(
-            registry["workloads"][kind]
-                .as_array()
-                .ok_or("unmapped workload observer")?
-                .iter()
-                .cloned(),
-        );
-        let domain = registry["workload_domains"][kind]
-            .as_str()
-            .ok_or("observer workload domain missing")?;
-        prefixes.extend(
-            registry["domains"][domain]
-                .as_array()
-                .ok_or("observer domain inputs missing")?
-                .iter()
-                .cloned(),
-        );
+        let directory = Path::new(path)
+            .parent()
+            .ok_or("dependency directory missing")?;
+        for path in [
+            directory.join("src"),
+            directory.join("build.rs"),
+            PathBuf::from(path),
+        ] {
+            if root.join(&path).exists() {
+                prefixes.push(path);
+            }
+        }
     }
-    prefixes
-        .into_iter()
-        .map(|prefix| {
-            let path = PathBuf::from(prefix.as_str().ok_or("invalid observer input")?);
+    Ok(prefixes)
+}
+
+/// Non-Cargo observer inputs; Cargo packages are selected from the projected
+/// dependency closure instead.
+fn data_inputs(root: &Path) -> Result<Vec<PathBuf>> {
+    let registry: Value = read_json(&root.join("hil/schema/observer-inputs.json"))?;
+    build_inputs::check_registry_schema(&registry)?;
+    registry["data"]
+        .as_array()
+        .ok_or("observer data inputs missing")?
+        .iter()
+        .map(|input| {
+            let path = PathBuf::from(input.as_str().ok_or("invalid observer input")?);
             if !safe_relative(&path) {
                 return Err("observer input escapes repository".into());
             }
@@ -341,28 +338,7 @@ pub(super) fn compatible(
     if old_dependencies != new_dependencies {
         return Ok(false);
     }
-    let mut prefixes = prefixes(root, document.as_ref())?;
-    for path in new_dependencies["manifests"]
-        .as_object()
-        .ok_or("observer manifests missing")?
-        .keys()
-    {
-        if path == "hil/host/runner/Cargo.toml" {
-            continue;
-        }
-        let directory = Path::new(path)
-            .parent()
-            .ok_or("dependency directory missing")?;
-        for path in [
-            directory.join("src"),
-            directory.join("build.rs"),
-            PathBuf::from(path),
-        ] {
-            if root.join(&path).exists() {
-                prefixes.push(path);
-            }
-        }
-    }
+    let prefixes = source_inputs(root, &new_dependencies)?;
     // Used manifests have already been compared through the shared Cargo
     // projection. Their raw bytes remain provenance, but dev-only declarations
     // must not reintroduce an unrelated dependency through the file selector.
@@ -546,41 +522,75 @@ mod tests {
     }
 
     #[test]
-    fn catalog_observers_are_mapped_without_binding_other_workloads_or_reports() {
+    fn catalog_workloads_select_only_their_family_packages() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let registry: Value = read_json(&root.join("hil/schema/observer-inputs.json")).unwrap();
         let catalog = ScenarioCatalog::load(&root, Path::new("hil/scenarios")).unwrap();
-        let mut seen = BTreeSet::new();
+        let family = |kind: &str| {
+            let names = build_inputs::dependencies(&registry, kind).unwrap();
+            [
+                "open-esp-radio-hil-runner-wifi",
+                "open-esp-radio-hil-runner-bluetooth",
+                "open-esp-radio-hil-runner-system",
+                "open-esp-radio-hil-runner-ieee802154",
+            ]
+            .into_iter()
+            .filter(|package| names.contains(*package))
+            .collect::<Vec<_>>()
+        };
         for document in catalog.definitions.values() {
             let kind = document
                 .pointer("/workload/kind")
                 .unwrap()
                 .as_str()
                 .unwrap();
-            if seen.insert(kind) {
-                let prefixes = prefixes(&root, Some(document)).unwrap();
-                assert!(!inputs(&root, &prefixes).unwrap().is_empty());
-                assert!(!selected(
-                    Path::new("hil/host/runner-core/src/evidence/reporting/history.rs"),
-                    &prefixes
-                ));
-                if kind == "udp" {
-                    assert!(selected(
-                        Path::new("hil/host/runner-wifi/src/workload/traffic/rx_traffic.rs"),
-                        &prefixes
-                    ));
-                    assert!(!selected(
-                        Path::new("hil/host/runner-bluetooth/src/workload/bluetooth/deadline.rs"),
-                        &prefixes
-                    ));
-                    assert!(!selected(
-                        Path::new("hil/host/runner-bluetooth/src/fixture/bluetooth/att.rs"),
-                        &prefixes
-                    ));
-                    assert!(!selected(Path::new("Cargo.lock"), &prefixes));
-                    assert!(selected(Path::new("hil/protocol/Cargo.toml"), &prefixes));
-                    assert!(selected(Path::new("tools/process/Cargo.toml"), &prefixes));
-                }
-            }
+            let packages = family(kind);
+            assert_eq!(
+                packages.len(),
+                1,
+                "{kind} selects exactly one family: {packages:?}"
+            );
+            assert!(
+                build_inputs::dependencies(&registry, kind)
+                    .unwrap()
+                    .contains("open-esp-radio-hil-runner-core")
+            );
         }
+        assert_eq!(family("udp"), ["open-esp-radio-hil-runner-wifi"]);
+        assert_eq!(
+            family("bluetooth-dtm"),
+            ["open-esp-radio-hil-runner-bluetooth"]
+        );
+        assert_eq!(family("boot-smoke"), ["open-esp-radio-hil-runner-system"]);
+        assert!(!data_inputs(&root).unwrap().is_empty());
+    }
+
+    #[test]
+    fn projected_packages_and_data_are_the_only_source_inputs() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let projection = json!({"manifests": {
+            "hil/host/runner/Cargo.toml": {},
+            "hil/host/runner-wifi/Cargo.toml": {},
+        }});
+        let prefixes = source_inputs(&root, &projection).unwrap();
+        let wifi = Path::new("hil/host/runner-wifi/src/workload/traffic/rx_traffic.rs");
+        assert!(selected(wifi, &prefixes));
+        assert!(selected(
+            Path::new("hil/host/runner/src/execution.rs"),
+            &prefixes
+        ));
+        assert!(selected(
+            Path::new("hil/schema/scenario-v4-defaults.json"),
+            &prefixes
+        ));
+        assert!(!selected(
+            Path::new("hil/host/runner-bluetooth/src/workload/bluetooth/deadline.rs"),
+            &prefixes
+        ));
+        assert!(!selected(
+            Path::new("hil/host/runner-wifi/src/workload/traffic/tests.rs"),
+            &prefixes
+        ));
+        assert!(!selected(Path::new("Cargo.lock"), &prefixes));
     }
 }

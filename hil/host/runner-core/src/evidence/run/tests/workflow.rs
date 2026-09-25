@@ -68,7 +68,7 @@ fn producer_evaluator_and_resumed_plan_transfer_wifi_across_ble_but_reject_phy_c
     write(
         root,
         "hil/schema/observer-inputs.json",
-        r#"{"schema":2,"common":["hil/host/runner/src/session/reboot.rs"],"workloads":{"station-ap-loss":[],"boot-smoke":[]},"timing":{"station-ap-loss":false,"boot-smoke":false},"workload_domains":{"station-ap-loss":"common","boot-smoke":"common"},"domains":{"common":[]},"dependencies":{"common":[],"bluetooth":[],"ieee80211":[]},"build":{"profile":"debug","opt_level":"0","debug":"true"}}"#,
+        r#"{"schema":3,"data":[],"timing":{"station-ap-loss":false,"boot-smoke":false},"workload_domains":{"station-ap-loss":"common","boot-smoke":"common"},"dependencies":{"common":[]},"build":{"profile":"debug","opt_level":"0","debug":"true"}}"#,
     );
     write(
         root,
@@ -244,7 +244,10 @@ source-paths = ["phy.rs"]
     let observer = run.manifest.runner.observer.as_mut().unwrap();
     observer["build"] = json!({
         "schema": 2,
+        // The runner package's sources are always observer inputs.
         "inputs": {
+            "hil/host/runner/src/main.rs":
+                sha256_file(&root.join("hil/host/runner/src/main.rs")).unwrap(),
             "hil/host/runner/src/session/reboot.rs":
                 sha256_file(&root.join("hil/host/runner/src/session/reboot.rs")).unwrap(),
         },

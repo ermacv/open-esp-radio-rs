@@ -196,7 +196,7 @@ fn trace_channel(channel_or_frequency: u32, cbw: u32) -> Result<oer_esp32s31_phy
     let mut state = oer_esp32s31_phy::PhyState::default();
     let mut observer = oer_esp32s31_phy::target_port::NoopPhyTargetObserver;
     embassy_futures::block_on(
-        oer_esp32s31_phy::target_port::select_phy_channel_with_hal::<ProductionTraceDelay, _, _>(
+        oer_esp32s31_phy::validation::select_channel::<ProductionTraceDelay, _, _>(
             &mut state,
             channel_or_frequency as u16,
             cbw as u8,

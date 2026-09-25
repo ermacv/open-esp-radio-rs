@@ -3109,9 +3109,11 @@ where
 }
 
 /// Select a PHY channel with the same finite target contract used by cold
-/// registration.
-/// Select a PHY channel through a temporary borrow of the complete HAL owner.
-pub async fn select_phy_channel_with_hal<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
+/// registration, through a temporary borrow of the complete HAL owner.
+///
+/// The raw state is not a registration proof, so this entry stays inside the
+/// crate; callers select channels through a registered owner.
+pub(crate) async fn select_phy_channel_with_hal<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
     state: &mut PhyState,
     channel_or_frequency: u16,
     cbw: u8,
@@ -3159,7 +3161,7 @@ pub async fn switch_registered_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObs
 }
 
 /// Stop, retune and restart through a temporary borrow of the HAL owner.
-pub async fn switch_phy_channel_with_hal_and_mac_restart<
+pub(crate) async fn switch_phy_channel_with_hal_and_mac_restart<
     D: PhyAsyncDelay,
     P,
     O: PhyTargetObserver,

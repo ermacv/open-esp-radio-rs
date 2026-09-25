@@ -146,6 +146,5 @@ pub use target_port::{
     run_target_bluetooth_phy_param_tracking, run_target_bluetooth_phy_param_tracking_until,
     run_target_bluetooth_phy_register, run_target_ieee802154_phy_param_tracking,
     run_target_ieee802154_phy_register, run_target_phy_param_tracking, run_target_phy_register,
-    select_phy_channel_with_hal, select_registered_wifi_channel,
-    switch_phy_channel_with_hal_and_mac_restart, switch_registered_wifi_channel,
+    select_registered_wifi_channel, switch_registered_wifi_channel,
 };

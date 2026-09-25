@@ -32,6 +32,27 @@ pub fn configure_and_select_phy_i2c_host(
     }
 }
 
+/// Execute the production channel selection over an unregistered fixture
+/// state for compiled vendor comparison. Ordinary builds reach channel
+/// selection only through a registered owner.
+#[cfg(target_arch = "riscv32")]
+pub async fn select_channel<D: crate::PhyAsyncDelay, P, O: crate::PhyTargetObserver>(
+    state: &mut crate::PhyState,
+    channel_or_frequency: u16,
+    cbw: u8,
+    channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,
+    observer: &mut O,
+) -> Result<(), crate::PhyTargetPortError> {
+    crate::target_port::select_phy_channel_with_hal::<D, _, _>(
+        state,
+        channel_or_frequency,
+        cbw,
+        channel,
+        observer,
+    )
+    .await
+}
+
 /// Construct ordinary semantic inputs without a registration or admission proof.
 pub fn calibration_tracking_state(
     parameters: crate::tracking::calibration::PhyCalibrationTrackingParameters,

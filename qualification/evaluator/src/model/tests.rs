@@ -6,7 +6,6 @@ target = "test-radio"
 required-capabilities = ["channel-switch"]
 
 [verification]
-project = "tools/verification-project.toml"
 evidence-index = "evidence/vendor.json"
 
 [hil]
@@ -156,19 +155,14 @@ fn dependency_cycles_fail_closed() {
 }
 
 #[test]
-fn hardware_sources_are_bound_to_the_selected_project_and_suite() {
+fn vendor_evidence_must_name_a_declared_root() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
         .unwrap();
-    let dispositions = DispositionIndex::load_project(
-        &root.join("verification/vendor/projects/esp32s31/vendor-project.toml"),
-    )
-    .unwrap();
     let scenarios = ScenarioCatalog::load(&root, Path::new("hil/scenarios")).unwrap();
     let context = StaticContext {
         root: &root,
-        dispositions: &dispositions,
         scenario_catalog: &scenarios,
     };
     let mut capability = toml_edit::de::from_str::<ManifestDocument>(COMPLETE)
@@ -176,198 +170,152 @@ fn hardware_sources_are_bound_to_the_selected_project_and_suite() {
         .capabilities
         .remove(0);
     capability.hil_requirements.clear();
-    capability.hil_not_applicable = Some("hardware-comparison-fixture".into());
-    capability.vendor_roots[0].source = "libpp".into();
-    capability.vendor_roots[0].symbol = "hal_mac_txq_enable".into();
-    capability.vendor_evidence[0] = VendorEvidenceRef {
-        suite: "ordinary-tx-ownership".into(),
-        source: "libpp".into(),
-        symbol: "hal_mac_txq_enable".into(),
-    };
+    capability.hil_not_applicable = Some("vendor-evidence-fixture".into());
     validate_capability_declaration(&capability, &context).unwrap();
+    let mut other = capability.clone();
+    other.vendor_evidence[0].symbol = "undeclared_root".into();
+    assert!(validate_capability_declaration(&other, &context).is_err());
+    let mut repeated = capability.clone();
+    repeated
+        .vendor_evidence
+        .push(repeated.vendor_evidence[0].clone());
+    assert!(validate_capability_declaration(&repeated, &context).is_err());
+}
 
-    for (source, symbol, suite) in [
-        (
-            "unknown-source",
-            "hal_mac_txq_enable",
-            "ordinary-tx-ownership",
-        ),
-        ("libpp", "unknown_symbol", "ordinary-tx-ownership"),
-        ("libpp", "hal_mac_txq_enable", "unknown-suite"),
-        ("libpp", "hal_mac_txq_enable", "tx-protection-control"),
-        ("archive", "hal_mac_txq_enable", "ordinary-tx-ownership"),
-    ] {
-        let mut invalid = capability.clone();
-        invalid.vendor_roots[0].source = source.into();
-        invalid.vendor_roots[0].symbol = symbol.into();
-        invalid.vendor_evidence[0] = VendorEvidenceRef {
-            suite: suite.into(),
-            source: source.into(),
-            symbol: symbol.into(),
-        };
-        assert!(validate_capability_declaration(&invalid, &context).is_err());
-        invalid.vendor_evidence.clear();
-        if source != "libpp" || symbol != "hal_mac_txq_enable" {
-            assert!(validate_capability_declaration(&invalid, &context).is_err());
-        }
+/// A temporary repository root with one digested source directory.
+pub(crate) struct Fixture(pub(crate) PathBuf);
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
     }
 }
 
-#[test]
-fn corrupt_and_invalid_vendor_indexes_fail_closed() {
-    let path = std::env::temp_dir().join(format!(
-        "open-radio-invalid-vendor-index-{}.json",
+pub(crate) fn fixture_root(name: &str) -> Fixture {
+    let root = std::env::temp_dir().join(format!(
+        "oer-scenario-evidence-{name}-{}",
         std::process::id()
     ));
-    std::fs::write(&path, "{not-json").unwrap();
-    assert!(VendorEvidenceIndex::load(&path, "test").is_err());
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(root.join("production/src")).unwrap();
+    fs::write(root.join("production/src/lib.rs"), b"production-input").unwrap();
+    Fixture(root)
+}
 
-    std::fs::write(
-        &path,
-        r#"{
-  "schema_version": 1,
-  "command": "wrong-command",
-  "project": "test",
-  "complete_project_run": true,
-  "entries": []
-}"#,
-    )
-    .unwrap();
-    let error = VendorEvidenceIndex::load(&path, "test")
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("unsupported or incomplete"), "{error}");
-    std::fs::remove_file(path).unwrap();
+/// A current native index over `root/production` holding MATCH entries for
+/// `(suite, source, symbol)` roots.
+pub(crate) fn native_evidence(root: &Path, roots: &[(&str, &str, &str)]) -> NativeEvidence {
+    let path = PathBuf::from("production");
+    if !root.join(&path).exists() {
+        fs::create_dir_all(root.join("production/src")).unwrap();
+        fs::write(root.join("production/src/lib.rs"), b"production-input").unwrap();
+    }
+    let index = scenario_evidence::Index {
+        schema: scenario_evidence::SCHEMA,
+        command: scenario_evidence::COMMAND.into(),
+        target: "test-radio".into(),
+        inputs: BTreeMap::new(),
+        sources: vec![scenario_evidence::SourceDigest {
+            sha256: scenario_evidence::digest_directory(root, &path).unwrap(),
+            path,
+        }],
+        entries: roots
+            .iter()
+            .map(|(suite, source, symbol)| scenario_evidence::Entry {
+                suite: (*suite).into(),
+                source: (*source).into(),
+                symbol: (*symbol).into(),
+                production: format!("open_{symbol}"),
+                verdict: scenario_evidence::MATCH.into(),
+                cases: 1,
+                executions: vec!["ab".repeat(32)],
+            })
+            .collect(),
+    };
+    index.validate("test-radio").unwrap();
+    let current = index.is_current(root);
+    NativeEvidence { index, current }
 }
 
 #[test]
-fn vendor_entries_keep_contract_identity_and_do_not_inherit_another_roots_result() {
-    use serde_json::json;
-    let root = std::env::temp_dir().join(format!("oer-vendor-contracts-{}", std::process::id()));
-    fs::create_dir(&root).unwrap();
-    struct Cleanup(PathBuf);
-    impl Drop for Cleanup {
-        fn drop(&mut self) {
-            fs::remove_dir_all(&self.0).unwrap();
-        }
-    }
-    let _cleanup = Cleanup(root.clone());
-    for name in ["bluetooth.rs", "wifi.rs"] {
-        fs::write(root.join(name), b"production-input").unwrap();
-    }
-    let make_entry = |path: &str, symbol: &str| {
-        json!({
-            "comparison":comparison_fixture(&root, "radio", symbol, symbol),
-            "suite":"radio","source":"archive","symbol":symbol,
-            "evidence_class":"production-trace","status":"match","release_eligible":true,
-            "rust_component":symbol,"evidence_digest":"ab".repeat(32),"baseline_passed":true,
-            "artifact_hashes":[{"role":"source:archive:artifact","sha256":"cd".repeat(32)},
-                {"role":"production","sha256":"ef".repeat(32)}],
-            "source_hashes":[{"path":path,"sha256":format!("{:x}",Sha256::digest(b"production-input"))}],
-            "release_blockers":[]
-        })
-    };
-    let mut document = json!({"schema_version":1,"command":"project verify vendor evidence index",
-        "project":"test","complete_project_run":true,
-        "entries":[make_entry("bluetooth.rs","ble-publish"),make_entry("wifi.rs","wifi-publish")]});
-    let path = root.join("index.json");
-    let write_index = |document: &serde_json::Value| {
-        fs::write(&path, serde_json::to_vec(document).unwrap()).unwrap();
-    };
-    write_index(&document);
-    let index = VendorEvidenceIndex::load(&path, "test").unwrap();
-    assert_eq!(
-        index.current_release_count(&root, Path::new("comparison-project.toml")),
-        2
-    );
-    assert_eq!(
-        index.current_release_count(&root, Path::new("comparison-project.toml")),
-        2
-    );
-    let ble = VendorEvidenceRef {
+fn native_index_supports_only_current_match_entries_of_the_referenced_suite() {
+    let fixture = fixture_root("supports");
+    let root = &fixture.0;
+    let evidence = native_evidence(root, &[("radio", "archive", "set_channel")]);
+    let reference = VendorEvidenceRef {
         suite: "radio".into(),
         source: "archive".into(),
-        symbol: "ble-publish".into(),
+        symbol: "set_channel".into(),
     };
-    let wifi = VendorEvidenceRef {
-        symbol: "wifi-publish".into(),
-        ..ble.clone()
+    assert!(evidence.current && evidence.supports(&reference));
+    assert_eq!(evidence.current_entries(), 1);
+    let other_suite = VendorEvidenceRef {
+        suite: "unrelated".into(),
+        ..reference.clone()
     };
-    let absent = VendorEvidenceRef {
-        symbol: "unverified-root".into(),
-        ..ble.clone()
-    };
-    assert!(index.get(&absent).is_none());
+    assert!(!evidence.supports(&other_suite));
+    // A changed production source makes the whole index stale.
+    fs::write(
+        root.join("production/src/lib.rs"),
+        b"changed-production-input",
+    )
+    .unwrap();
+    let stale = native_evidence_reloaded(root, evidence.index);
+    assert!(!stale.current && !stale.supports(&reference));
+    assert_eq!(stale.current_entries(), 0);
+    // A new file in a digested directory is also a change.
+    fs::write(root.join("production/src/lib.rs"), b"production-input").unwrap();
+    assert!(native_evidence_reloaded(root, stale.index.clone()).current);
+    // Documentation establishes no verdict.
+    fs::write(root.join("production/README.md"), b"notes").unwrap();
+    assert!(native_evidence_reloaded(root, stale.index.clone()).current);
+    fs::write(root.join("production/src/new.rs"), b"").unwrap();
+    assert!(!native_evidence_reloaded(root, stale.index).current);
+}
 
-    // A producer's release flag cannot override DIFF/INCOMPLETE, baseline
-    // failure, supporting-only evidence, or unresolved comparison blockers.
-    for (field, value) in [
-        ("status", json!("diff")),
-        ("status", json!("incomplete")),
-        ("evidence_class", json!("shared-core")),
-        ("baseline_passed", json!(false)),
-        ("release_blockers", json!(["contract-not-closed"])),
-    ] {
-        let mut changed = document.clone();
-        changed["entries"][0][field] = value;
-        write_index(&changed);
-        let index = VendorEvidenceIndex::load(&path, "test").unwrap();
-        assert!(
-            !index
-                .get(&ble)
-                .unwrap()
-                .is_current_release_evidence(&root, Path::new("comparison-project.toml"))
-        );
-        assert!(
-            index
-                .get(&wifi)
-                .unwrap()
-                .is_current_release_evidence(&root, Path::new("comparison-project.toml"))
-        );
+fn native_evidence_reloaded(root: &Path, index: scenario_evidence::Index) -> NativeEvidence {
+    let current = index.is_current(root);
+    NativeEvidence { index, current }
+}
+
+#[test]
+fn corrupt_unsupported_and_non_match_native_indexes_fail_closed() {
+    let fixture = fixture_root("invalid");
+    let root = &fixture.0;
+    let path = Path::new("index.json");
+    // Absent evidence supports nothing, but is not an error.
+    let absent = NativeEvidence::load(root, path, "test-radio").unwrap();
+    assert!(!absent.current && absent.index.entries.is_empty());
+    fs::write(root.join(path), "{not-json").unwrap();
+    assert!(NativeEvidence::load(root, path, "test-radio").is_err());
+    let valid = native_evidence(root, &[("radio", "archive", "set_channel")]).index;
+    let write = |index: &scenario_evidence::Index| {
+        fs::write(root.join(path), serde_json::to_vec(index).unwrap()).unwrap();
+    };
+    write(&valid);
+    assert!(
+        NativeEvidence::load(root, path, "test-radio")
+            .unwrap()
+            .current
+    );
+    assert!(NativeEvidence::load(root, path, "other-radio").is_err());
+    let mut changed = valid.clone();
+    changed.command = "project verify vendor evidence index".into();
+    write(&changed);
+    assert!(NativeEvidence::load(root, path, "test-radio").is_err());
+    for verdict in ["diff", "incomplete"] {
+        let mut changed = valid.clone();
+        changed.entries[0].verdict = verdict.into();
+        write(&changed);
+        assert!(NativeEvidence::load(root, path, "test-radio").is_err());
     }
-    fs::write(root.join("bluetooth.rs"), b"changed-production-input").unwrap();
-    assert!(
-        !index
-            .get(&ble)
-            .unwrap()
-            .is_current_release_evidence(&root, Path::new("comparison-project.toml"))
-    );
-    assert!(
-        index
-            .get(&wifi)
-            .unwrap()
-            .is_current_release_evidence(&root, Path::new("comparison-project.toml"))
-    );
-    // This checks only the existing per-entry source binding. It does not
-    // assert that this synthetic file list is a complete cross-image impact set.
-
-    document["complete_project_run"] = json!(false);
-    write_index(&document);
-    assert!(VendorEvidenceIndex::load(&path, "test").is_err());
-    document["schema_version"] = json!(2);
-    document["suite_states"] = json!({"radio":"complete","unrelated":"incomplete"});
-    write_index(&document);
-    let partial = VendorEvidenceIndex::load(&path, "test").unwrap();
-    assert!(
-        partial
-            .get(&wifi)
-            .unwrap()
-            .is_current_release_evidence(&root, Path::new("comparison-project.toml"))
-    );
-    document["suite_states"]["radio"] = json!("incomplete");
-    write_index(&document);
-    assert!(VendorEvidenceIndex::load(&path, "test").is_err());
-    document["suite_states"]["radio"] = json!("complete");
-    document["complete_project_run"] = json!(true);
-    let duplicate = document["entries"][0].clone();
-    document["entries"].as_array_mut().unwrap().push(duplicate);
-    write_index(&document);
-    assert!(
-        VendorEvidenceIndex::load(&path, "test")
-            .unwrap_err()
-            .to_string()
-            .contains("repeats")
-    );
+    let mut repeated = valid.clone();
+    repeated.entries.push(repeated.entries[0].clone());
+    write(&repeated);
+    assert!(NativeEvidence::load(root, path, "test-radio").is_err());
+    let mut escaping = valid.clone();
+    escaping.sources[0].path = PathBuf::from("../outside");
+    write(&escaping);
+    assert!(NativeEvidence::load(root, path, "test-radio").is_err());
 }
 
 // Called with independently sealed archived observations by the review tests.
@@ -378,25 +326,20 @@ pub(crate) fn assert_reviewed_hil(
     catalog: &ScenarioCatalog,
 ) {
     let declarations = BTreeMap::from([(document.id.clone(), document.clone())]);
-    let dispositions = DispositionIndex {
-        project_manifest: PathBuf::from("comparison-project.toml"),
-        entries: BTreeMap::new(),
-        suite_entries: BTreeSet::new(),
-        project_id: "test".into(),
-        vendor_evidence_index: None,
-    };
-    let vendor = VendorEvidenceIndex {
-        schema_version: 1,
-        command: "project verify vendor evidence index".into(),
-        project: "test".into(),
-        complete_project_run: true,
-        suite_states: BTreeMap::new(),
-        entries: vec![],
+    let evidence = NativeEvidence {
+        index: scenario_evidence::Index {
+            schema: scenario_evidence::SCHEMA,
+            command: scenario_evidence::COMMAND.into(),
+            target: "test-radio".into(),
+            inputs: BTreeMap::new(),
+            sources: vec![],
+            entries: vec![],
+        },
+        current: false,
     };
     let context = EvaluationContext {
         root,
-        dispositions: &dispositions,
-        vendor_index: &vendor,
+        evidence: &evidence,
         scenario_catalog: catalog,
         hil_index: index,
         declarations: &declarations,
@@ -411,211 +354,4 @@ pub(crate) fn assert_reviewed_hil(
             .iter()
             .any(|r| r.starts_with("hil:old/exchange"))
     );
-}
-
-pub(super) fn comparison_fixture(
-    root: &Path,
-    suite: &str,
-    symbol: &str,
-    component: &str,
-) -> comparison::Binding {
-    comparison::models::fixture(root);
-    let project = root.join("comparison-project.toml");
-    fs::write(
-        &project,
-        "id = 'test'\ntarget-spec = 'target.toml'\nchip-pack = 'chip.toml'\nverification-addon = 'comparison-addon.toml'\n",
-    )
-    .unwrap();
-    let addon = root.join("comparison-addon.toml");
-    let mut document = fs::read_to_string(&addon)
-        .unwrap_or_else(|_| "model-inputs = 'model-inputs.json'\n".into());
-    let marker = format!("id = '{suite}'");
-    if !document.contains(&marker) {
-        document.push_str(&format!("\n[[suites]]\n{marker}\nmodel-mechanisms = ['abi']\nprofiles = ['{suite}-profiles.toml']\ndispositions = ['{suite}-functions.toml']\nbaselines = ['{suite}-baselines.toml']\n[[suites.vendor]]\nsource = 'archive'\nall = true\nartifact-sha256 = '{}'\n", "cd".repeat(32)));
-        fs::write(&addon, document).unwrap();
-    }
-    for (suffix, row) in [
-        (
-            "profiles",
-            format!(
-                "[[profiles]]\nvendor-source = 'archive'\nvendor-symbol = '{symbol}'\nname = '{symbol}'\ncompare-return = true\n"
-            ),
-        ),
-        (
-            "functions",
-            format!(
-                "[[functions]]\nsource = 'archive'\nsymbol = '{symbol}'\nrust-component = '{component}'\neffect-contract = 'exact'\n"
-            ),
-        ),
-        (
-            "baselines",
-            format!(
-                "[[evidence]]\nsource = 'archive'\nsymbol = '{symbol}'\ndigest = '{}'\n",
-                "ab".repeat(32)
-            ),
-        ),
-    ] {
-        let path = root.join(format!("{suite}-{suffix}.toml"));
-        let mut text = fs::read_to_string(&path).unwrap_or_default();
-        if !text.contains(&format!("symbol = '{symbol}'")) {
-            text.push_str(&row);
-            fs::write(path, text).unwrap();
-        }
-    }
-    let artifacts = [("source:archive:artifact".into(), "cd".repeat(32))]
-        .into_iter()
-        .collect();
-    let current = comparison::current(
-        root,
-        Path::new("comparison-project.toml"),
-        suite,
-        "archive",
-        symbol,
-        &artifacts,
-    )
-    .unwrap();
-    comparison::Binding {
-        project_manifest: "comparison-project.toml".into(),
-        sha256: current.sha256,
-    }
-}
-
-#[test]
-fn comparison_inputs_invalidate_only_their_own_evidence_and_ignore_annotations() {
-    let root = std::env::temp_dir().join(format!("oer-comparison-inputs-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
-    let first = comparison_fixture(&root, "first", "first", "driver::first");
-    let second = comparison_fixture(&root, "second", "second", "driver::second");
-    let artifacts = [("source:archive:artifact".into(), "cd".repeat(32))]
-        .into_iter()
-        .collect();
-    let current = |suite: &str| {
-        comparison::current(
-            &root,
-            Path::new("comparison-project.toml"),
-            suite,
-            "archive",
-            suite,
-            &artifacts,
-        )
-        .unwrap()
-    };
-    for (path, from, to) in [
-        (
-            "first-profiles.toml",
-            "compare-return = true",
-            "compare-return = false",
-        ),
-        (
-            "first-functions.toml",
-            "effect-contract = 'exact'",
-            "effect-contract = 'bounded'",
-        ),
-        ("first-functions.toml", "driver::first", "driver::other"),
-        ("first-baselines.toml", &"ab".repeat(32), &"ef".repeat(32)),
-        (
-            "comparison-addon.toml",
-            &format!("artifact-sha256 = '{}'", "cd".repeat(32)),
-            &format!("artifact-sha256 = '{}'", "ef".repeat(32)),
-        ),
-    ] {
-        let path = root.join(path);
-        let before = fs::read_to_string(&path).unwrap();
-        fs::write(&path, before.replacen(from, to, 1)).unwrap();
-        assert_ne!(current("first").sha256, first.sha256);
-        assert_eq!(current("second").sha256, second.sha256);
-        fs::write(path, before).unwrap();
-    }
-    let path = root.join("first-profiles.toml");
-    let text = fs::read_to_string(&path).unwrap();
-    fs::write(
-        path,
-        format!("{text}\ndescription = 'clarified text'\n# spelling fix\n"),
-    )
-    .unwrap();
-    assert_eq!(current("first").sha256, first.sha256);
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn public_artifact_bindings_cover_primary_companion_and_auxiliary_images() {
-    let root = std::env::temp_dir().join(format!("oer-public-artifacts-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
-    comparison_fixture(&root, "radio", "entry", "driver::entry");
-    let mut artifacts = BTreeMap::from([("source:archive:artifact".into(), "cd".repeat(32))]);
-    let check = |artifacts: &BTreeMap<String, String>| {
-        comparison::current(
-            &root,
-            Path::new("comparison-project.toml"),
-            "radio",
-            "archive",
-            "entry",
-            artifacts,
-        )
-        .unwrap()
-        .public_artifacts_bound
-    };
-    assert!(check(&artifacts));
-    artifacts.insert("source:archive:companion".into(), "ef".repeat(32));
-    artifacts.insert("auxiliary:linked-image".into(), "12".repeat(32));
-    assert!(!check(&artifacts));
-    let addon = root.join("comparison-addon.toml");
-    let before = fs::read_to_string(&addon).unwrap();
-    fs::write(&addon, format!("{before}\n[suites.artifact-bindings]\n'source:archive:companion' = '{}'\n'auxiliary:linked-image' = '{}'\n", "ef".repeat(32), "12".repeat(32))).unwrap();
-    assert!(check(&artifacts));
-    artifacts.insert("auxiliary:linked-image".into(), "34".repeat(32));
-    assert!(!check(&artifacts));
-    let current = fs::read_to_string(&addon).unwrap();
-    fs::write(
-        &addon,
-        current.replace(&format!("artifact-sha256 = '{}'", "cd".repeat(32)), ""),
-    )
-    .unwrap();
-    artifacts.insert("auxiliary:linked-image".into(), "12".repeat(32));
-    assert!(!check(&artifacts));
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn suite_model_identity_tracks_used_mechanisms_and_target_without_report_or_ble_leakage() {
-    let root = std::env::temp_dir().join(format!("oer-suite-model-scope-{}", std::process::id()));
-    fs::create_dir_all(&root).unwrap();
-    comparison_fixture(&root, "wifi", "wifi", "driver::wifi");
-    comparison_fixture(&root, "ble", "ble", "driver::ble");
-    fs::write(root.join("ble-model.rs"), "BLE A").unwrap();
-    fs::write(root.join("model-inputs.json"), r#"{"schema":1,"mechanisms":{"abi":{"implementation":["model.rs"],"contracts":[]},"ble":{"implementation":["ble-model.rs"],"contracts":[]}}}"#).unwrap();
-    let addon = fs::read_to_string(root.join("comparison-addon.toml"))
-        .unwrap()
-        .replace(
-            "id = 'ble'\nmodel-mechanisms = ['abi']",
-            "id = 'ble'\nmodel-mechanisms = ['abi', 'ble']",
-        );
-    fs::write(root.join("comparison-addon.toml"), addon).unwrap();
-    let identity = |suite| {
-        comparison::current(
-            &root,
-            Path::new("comparison-project.toml"),
-            suite,
-            "archive",
-            suite,
-            &BTreeMap::new(),
-        )
-        .unwrap()
-        .sha256
-    };
-    let wifi = identity("wifi");
-    let ble = identity("ble");
-    fs::write(root.join("ble-model.rs"), "BLE B").unwrap();
-    fs::write(root.join("report.rs"), "new renderer").unwrap();
-    assert_eq!(wifi, identity("wifi"));
-    assert_ne!(ble, identity("ble"));
-    let target = fs::read_to_string(root.join("target.toml"))
-        .unwrap()
-        .replace(
-            "riscv32imac-unknown-none-elf",
-            "riscv32imafc-unknown-none-elf",
-        );
-    fs::write(root.join("target.toml"), target).unwrap();
-    assert_ne!(wifi, identity("wifi"));
-    fs::remove_dir_all(root).unwrap();
 }

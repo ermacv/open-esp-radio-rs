@@ -26,22 +26,12 @@ impl StaticProgramRoot {
         .unwrap();
         fs::write(path.join("Cargo.toml"), "[workspace]\n").unwrap();
         fs::write(
-            path.join("verification.toml"),
-            "id = \"test\"\nverification-addon = \"verification-addon.toml\"\n",
-        )
-        .unwrap();
-        fs::write(
-            path.join("verification-addon.toml"),
-            "evidence-index = \"vendor.json\"\n",
-        )
-        .unwrap();
-        fs::write(
             path.join("catalog/source.toml"),
             r#"schema = 3
 id = "test-catalog"
 
 [validation]
-verification-project = "verification.toml"
+evidence-index = "vendor.json"
 hil-catalog = "scenarios"
 
 [[capabilities]]
@@ -81,7 +71,6 @@ catalogs = ["catalog/source.toml"]
 catalog-capabilities = [{selected}]
 
 [verification]
-project = "verification.toml"
 evidence-index = "vendor.json"
 
 [hil]
@@ -177,10 +166,6 @@ fn absent_vendor_index_allows_status_and_hil_planning_without_qualifying_hardwar
             "hil-requirements = [{ scenario = \"static\", minimum-repetitions = 1 }]",
         );
         if hardware {
-            fs::write(root.path.join("disposition.toml"),
-                "[[functions]]\nsource = \"libpp\"\nsymbol = \"hardware_publish\"\nrust-component = \"driver::publish\"\neffect-contract = \"exact-effects-v2\"\n").unwrap();
-            fs::write(root.path.join("verification-addon.toml"),
-                "evidence-index = \"vendor.json\"\n[[suites]]\nid = \"hardware\"\ndispositions = [\"disposition.toml\"]\n[[suites.vendor]]\nsource = \"libpp\"\nsymbols = [\"hardware_publish\"]\n").unwrap();
             document = document.replace(
                 "vendor-not-applicable = \"source-only-contract\"",
                 "vendor-roots = [{ source = \"libpp\", symbol = \"hardware_publish\" }]\nvendor-evidence = [{ suite = \"hardware\", source = \"libpp\", symbol = \"hardware_publish\" }]",

@@ -96,8 +96,7 @@ catalog-capabilities = [
 ]
 
 [verification]
-project = "verification/vendor/projects/esp32s31/vendor-project.toml"
-evidence-index = "verification/vendor/projects/esp32s31/evidence/vendor-evidence.json"
+evidence-index = "verification/vendor/projects/esp32s31/evidence/scenario-evidence.json"
 
 [hil]
 target = "esp32s31"

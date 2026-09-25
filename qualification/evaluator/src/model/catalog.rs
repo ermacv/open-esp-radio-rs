@@ -1,9 +1,9 @@
 //! Canonical capability catalogs and source-owned domain inventory.
 
 use super::{
-    BTreeMap, BTreeSet, CapabilityDocument, DispositionIndex, HilConfig, ManifestDocument, Path,
-    PathBuf, QUALIFICATION_SCHEMA, Result, ScenarioCatalog, Sha256, StaticContext,
-    VerificationConfig, fs, slug, validate_capability_declaration, validate_relative_path,
+    BTreeMap, BTreeSet, CapabilityDocument, HilConfig, ManifestDocument, Path, PathBuf,
+    QUALIFICATION_SCHEMA, Result, ScenarioCatalog, Sha256, StaticContext, VerificationConfig, fs,
+    slug, validate_capability_declaration, validate_relative_path,
 };
 use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
@@ -15,7 +15,8 @@ pub(crate) const CAPABILITY_CATALOG_SCHEMA: u16 = 3;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CatalogView {
-    pub(crate) research_projects: BTreeSet<PathBuf>,
+    /// Scenario evidence indexes the catalogs validate against.
+    pub(crate) evidence_indexes: BTreeSet<PathBuf>,
     pub(crate) sources: Vec<SourceIdentity>,
     pub(crate) capabilities: BTreeMap<String, CapabilityDocument>,
     pub(crate) scopes: BTreeMap<String, CapabilityScope>,
@@ -217,7 +218,7 @@ struct InventoryItemDocument {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct CatalogValidation {
-    verification_project: PathBuf,
+    evidence_index: PathBuf,
     hil_catalog: PathBuf,
 }
 
@@ -244,7 +245,6 @@ struct CatalogDocument {
 struct LoadedCatalog {
     id: String,
     path: PathBuf,
-    verification_project: PathBuf,
     hil_catalog: PathBuf,
     document: CatalogDocument,
 }
@@ -293,15 +293,15 @@ impl CatalogView {
             {
                 return Err(format!("capability catalog {catalog_id} is empty").into());
             }
-            let (verification_project, hil_catalog) = match (document.validation.take(), fallback) {
-                (Some(validation), _) => (validation.verification_project, validation.hil_catalog),
-                (None, Some((verification, hil))) => (verification.project.clone(), hil.catalog.clone()),
+            let (evidence_index, hil_catalog) = match (document.validation.take(), fallback) {
+                (Some(validation), _) => (validation.evidence_index, validation.hil_catalog),
+                (None, Some((verification, hil))) => (verification.evidence_index.clone(), hil.catalog.clone()),
                 (None, None) => return Err(format!(
                     "capability catalog {catalog_id} needs [validation] for standalone static checking"
                 ).into()),
             };
-            validate_relative_path(&verification_project)?;
-            view.research_projects.insert(verification_project.clone());
+            validate_relative_path(&evidence_index)?;
+            view.evidence_indexes.insert(evidence_index);
             validate_relative_path(&hil_catalog)?;
             view.sources.push(SourceIdentity {
                 id: catalog_id.clone(),
@@ -312,7 +312,6 @@ impl CatalogView {
             loaded_catalogs.push(LoadedCatalog {
                 id: catalog_id,
                 path: relative.clone(),
-                verification_project,
                 hil_catalog,
                 document,
             });
@@ -339,12 +338,9 @@ impl CatalogView {
         }
 
         for loaded in loaded_catalogs {
-            let dispositions =
-                DispositionIndex::load_project(&root.join(&loaded.verification_project))?;
             let scenarios = ScenarioCatalog::load(root, &loaded.hil_catalog)?;
             let context = StaticContext {
                 root,
-                dispositions: &dispositions,
                 scenario_catalog: &scenarios,
             };
             for mut capability in loaded.document.capabilities {

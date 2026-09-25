@@ -31,7 +31,7 @@ pub(crate) struct ProjectMap {
     pub(crate) repository_commit: Option<String>,
     pub(crate) repository_dirty: Option<bool>,
     pub(crate) sources: Vec<Input>,
-    pub(crate) research_projects: BTreeSet<PathBuf>,
+    pub(crate) evidence_indexes: BTreeSet<PathBuf>,
     pub(crate) entries: Vec<Entry>,
     pub(crate) next: Vec<Action>,
 }
@@ -211,7 +211,7 @@ impl ProjectMap {
                     sha256: s.sha256.clone(),
                 })
                 .collect(),
-            research_projects: catalog.research_projects.clone(),
+            evidence_indexes: catalog.evidence_indexes.clone(),
             entries: Vec::new(),
             next: Vec::new(),
         };
@@ -222,8 +222,8 @@ impl ProjectMap {
                 path: s.path.clone(),
                 sha256: s.sha256.clone(),
             });
-            map.research_projects
-                .insert(program.evidence_inputs.verification_project.clone());
+            map.evidence_indexes
+                .insert(program.evidence_inputs.vendor_evidence_index.clone());
         }
         let mut fact_ids = BTreeSet::new();
         for id in selected {

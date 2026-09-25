@@ -2,7 +2,7 @@ schema = 3
 id = "esp32s31-wifi-phy"
 
 [validation]
-verification-project = "verification/vendor/projects/esp32s31/vendor-project.toml"
+evidence-index = "verification/vendor/projects/esp32s31/evidence/scenario-evidence.json"
 hil-catalog = "hil/scenarios"
 
 [[source-facts]]
@@ -212,11 +212,11 @@ depends-on = ["rf-bb-initialization"]
 vendor-roots = [
   { source = "archive", symbol = "phy_chip_set_chan" },
 ]
+vendor-evidence = [
+  { suite = "channel", source = "archive", symbol = "phy_chip_set_chan" },
+]
 hil-requirements = [
   { scenario = "station-reconnect-ht40", minimum-repetitions = 1 },
-]
-gaps = [
-  { axis = "vendor", id = "channel-production-trace-difference-unreviewed" },
 ]
 
 [capabilities.catalog-scope]
@@ -600,6 +600,9 @@ depends-on = ["rx-tx-dma", "interrupt-recovery", "async-deadlines"]
 vendor-roots = [
   { source = "archive", symbol = "phy_param_track_tot" },
 ]
+vendor-evidence = [
+  { suite = "tracking", source = "archive", symbol = "phy_param_track_tot" },
+]
 hil-requirements = [
   { scenario = "diagnostic-station-phy-rxcal-delivery-rx", minimum-repetitions = 3 },
   { scenario = "diagnostic-station-phy-txcal-delivery-rx", minimum-repetitions = 3 },
@@ -610,7 +613,6 @@ hil-requirements = [
   { scenario = "diagnostic-station-phy-calibration-task-poll", minimum-repetitions = 3 },
 ]
 gaps = [
-  { axis = "vendor", id = "current-compiled-calibration-comparison-not-release-evidence" },
   { axis = "hil", id = "repeated-current-clean-rf-quality-cells-missing" },
 ]
 
@@ -758,12 +760,14 @@ depends-on = ["runtime-phy-calibration", "channel-selection-switch"]
 vendor-roots = [
   { source = "archive", symbol = "phy_param_track_tot" },
 ]
+vendor-evidence = [
+  { suite = "tracking", source = "archive", symbol = "phy_param_track_tot" },
+]
 hil-requirements = [
   { scenario = "diagnostic-station-phy-rfpll-observed", minimum-repetitions = 3 },
   { scenario = "diagnostic-station-phy-rfpll-thermal-observed", minimum-repetitions = 1 },
 ]
 gaps = [
-  { axis = "vendor", id = "current-compiled-rfpll-parent-comparison-not-release-evidence" },
   { axis = "hil", id = "opposite-thermal-correction-and-radiated-rf-quality-missing" },
 ]
 

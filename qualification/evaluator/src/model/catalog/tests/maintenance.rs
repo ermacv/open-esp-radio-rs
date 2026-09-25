@@ -63,24 +63,6 @@ fn software_policy_does_not_require_vendor_equivalence_or_hide_hardware_obligati
                 .any(|g| g.axis == crate::model::Axis::Vendor)
         );
     }
-    let addon: toml_edit::DocumentMut = fs::read_to_string(
-        root.join("verification/vendor/projects/esp32s31/verification-addon.toml"),
-    )
-    .unwrap()
-    .parse()
-    .unwrap();
-    let suites = addon["suites"].as_array_of_tables().unwrap();
-    let gate = |id| {
-        suites
-            .iter()
-            .find(|s| s["id"].as_str() == Some(id))
-            .unwrap()["gate"]
-            .as_str()
-            .unwrap()
-    };
-    assert_eq!(gate("libpp-tx-retry"), "informational");
-    assert_eq!(gate("ordinary-tx-ownership"), "completion");
-    assert_eq!(gate("tx-protection-control"), "completion");
 }
 
 #[test]

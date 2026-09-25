@@ -97,76 +97,36 @@ state that boundary in their scope limitations. WPA2 depends separately on
 hardware key publication, crypto activation and retirement; its handshake and
 replay/deadline policy do not require vendor equivalence.
 
-A vendor comparison is qualification-eligible only when all of these hold:
+Vendor evidence comes from the typed vendor scenarios in
+[`verification/vendor/projects/esp32s31/scenarios`](../verification/vendor/projects/esp32s31/scenarios).
+`vendor-scenario all --index <path>` runs every PHY comparison scenario under one
+budget and, only when all of them pass with no unmet obligation, writes the
+native evidence index
+`verification/vendor/projects/esp32s31/evidence/scenario-evidence.json`
+([schema](../verification/vendor/schema/scenario-evidence.rs)). It records:
 
-1. the vendor side is a concrete replay;
-2. the Rust binding is `exact-production-entry`, not a generated reference,
-   shared production core or verification projection;
-3. the reviewed production component resolves to source and compiled symbols;
-4. the compiled artifact is fresh relative to production source;
-5. the comparison is `match` or an explicitly bounded match;
-6. the accepted evidence baseline passes with a reproducible identity;
-7. the evidence row is explicitly release eligible and has no blockers;
-8. every named production source still matches its recorded hash; unrelated
-   dirty files do not invalidate an independent result;
-9. the per-comparison identity matches the current selected project, production
-   binding, profile/contracts, baseline and policy, and every hardware artifact
-   matches that suite's explicit public SHA-256 binding;
-10. the suite's declared target/ABI and model mechanisms match the actual loaded
-    contracts and implementation linked into the comparison host.
+- one entry per claimed vendor root: scenario (`suite`), vendor source
+  (`archive` or `rom`), root symbol, compiled production entry, the number of
+  compared cases and the retained Blobray executions that hold them. A claim
+  exists only when every retained case comparing that exact root/entry pair is
+  MATCH under its reviewed effect contract and output projection; an
+  unsupported claim fails the run instead of being written;
+- SHA-256 identities of the authenticated private inputs and the production
+  probe ELF;
+- directory digests of every source the verdicts depend on: the probe ELF's
+  resolved path-dependency closure (production crates and probes), the
+  scenario package, the shared schema and the Blobray engine.
 
-`project verify` writes the compact
-`verification/vendor/.../evidence/vendor-evidence.json` after each completed
-suite. Schema 2 records per-suite completion; beginning a rerun marks that suite
-incomplete and removes its old current rows. Other suites remain available.
-Content-addressed history preserves earlier outcomes, including failures. Qualification follows the selected project's
-`verification-addon`, requires the configured index to be that exact output,
-checks its command and project identity, validates proof class/status/hash
-shape and re-hashes every referenced production source. It independently
-recomputes the comparison identity against the selected project. Missing public
-artifact bindings or legacy rows without comparison identity remain historical;
-private binaries are not required to check these declarations. A partial run
-updates only its selected suites.
-
-Before loading profiles, dispositions, baselines or executable artifacts,
-`verify inventory` and `verify source` copy their selected inputs into private
-execution storage. Loaders, comparisons and report hashes use those same
-copies. Reports retain the original diagnostic paths, but never re-read those
-paths to assign a new identity to an old verdict. Publication compares the
-executed input hashes with the current comparison inputs; an edit during
-execution therefore leaves the observation historical and blocks its current
-release eligibility. This storage covers the selected inputs, not a repository
-snapshot, and is removed when the command completes.
-
-Suites declare `model-mechanisms` from their add-on's `model-inputs` registry.
-Each mechanism selects implementation sources and loaded hardware contracts.
-The ESP32-S31 host embeds implementation hashes at build time. Register-model
-loaders retain the exact parsed manifest/fragment text; SVD, reviewed overlays
-and memory-map loaders capture their input identity while loading. Publication
-selects the suite's required subset from this complete provenance, checks the
-actual target/provider, and refuses to bind a verdict to changed inputs. A
-selected contract must still belong to the current chip/project. Report
-renderers and undeclared foreign mechanisms do not enter this identity.
-Project verification installs the suite's admission scope before comparison.
-Model summaries and device instances check their mechanism at the call boundary;
-register lookups check ownership derived from the loaded hardware contracts.
-An undeclared mechanism or unowned register blocks publication of an eligible
-result. Only denied mechanisms are retained, not a dynamic dependency graph.
-Persistent function facts are not reused inside an admission scope because they
-do not retain these call checks. Ordinary analysis retains its cache.
-Execution without a declared scope is marked `unscoped` and cannot establish
-qualification eligibility. Publication requires the `enforced-v1` admission
-record as well as matching inputs. Missing model provenance or admission leaves
-earlier observations historical. A changed
-shared ABI or shared interpretation source affects all suites declaring it;
-mechanism-specific changes affect its declared consumers.
-
-An absent index means no vendor evidence is available: affected capabilities
-remain unqualified while status and HIL planning still work. An unreadable,
-malformed or inconsistent existing index remains an error. Source IDs are those
-selected by the verification project's suites, including `libpp`, `coex` and
-`phy-current`. A root needs a selected disposition; an evidence reference must
-also name the suite that selects that exact source and symbol.
+The index carries identities and verdicts only, never vendor bytes.
+Qualification reads the index named by the program's `[verification]
+evidence-index` (catalogs name it in `[validation] evidence-index`), checks
+schema, producer command and chip target, requires every entry to be a MATCH
+claim with executions, and recomputes every recorded directory digest. Any
+change to those sources makes the whole index stale: stale evidence supports
+no claim until the scenarios run again. An absent index means no vendor
+evidence is available: affected capabilities remain unqualified while status
+and HIL planning still work. An unreadable, malformed or inconsistent existing
+index remains an error.
 
 The qualification manifest names vendor roots and explicit evidence rows:
 
@@ -175,15 +135,16 @@ vendor-roots = [
   { source = "archive", symbol = "phy_chip_set_chan" },
 ]
 vendor-evidence = [
-  { suite = "phy", source = "archive", symbol = "phy_chip_set_chan" },
+  { suite = "channel", source = "archive", symbol = "phy_chip_set_chan" },
 ]
 ```
 
-The evaluator derives:
+An evidence reference must name one of the capability's roots. The evaluator
+derives:
 
-- `qualified` only when every root has current release-eligible
-  `production-trace` evidence and no source-only anchor remains;
-- `mapped` when reviewed roots or anchors exist but strict evidence is absent;
+- `qualified` only when every root has a reference with a MATCH entry in the
+  current index and no source-only anchor remains;
+- `mapped` when reviewed roots or anchors exist but current evidence is absent;
 - `unmapped` when neither exists;
 - `not-applicable` only from an explicit reason and with no vendor references.
 

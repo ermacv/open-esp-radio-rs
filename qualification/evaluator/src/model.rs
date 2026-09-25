@@ -1,5 +1,6 @@
-#[path = "../../../verification/vendor/schema/comparison.rs"]
-mod comparison;
+#[path = "../../../verification/vendor/schema/scenario-evidence.rs"]
+pub(crate) mod scenario_evidence;
+use sha2::Sha256;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -7,7 +8,6 @@ use std::{
 };
 
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 
 use crate::{
     Result,
@@ -232,7 +232,6 @@ pub(crate) struct EvidenceInputs {
     pub(crate) verification_entries: usize,
     pub(crate) verification_current_release_entries: usize,
     pub(crate) hil: HilEvidenceSummary,
-    pub(crate) verification_project: PathBuf,
     pub(crate) vendor_evidence_index: PathBuf,
     pub(crate) hil_catalog: PathBuf,
     pub(crate) hil_runs: PathBuf,
@@ -312,7 +311,6 @@ pub(super) struct ValidatedProgram {
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct VerificationConfig {
-    project: PathBuf,
     evidence_index: PathBuf,
 }
 
@@ -443,7 +441,6 @@ impl ManifestDocument {
     fn validate_program_structure(&self, root: &Path) -> Result<()> {
         let target = slug(&self.target, "qualification target")?;
         slug(&self.hil.target, "HIL target")?;
-        validate_relative_path(&self.verification.project)?;
         validate_relative_path(&self.verification.evidence_index)?;
         validate_relative_path(&self.hil.catalog)?;
         validate_relative_path(&self.hil.runs)?;
@@ -461,12 +458,9 @@ impl ManifestDocument {
             );
         }
 
-        let dispositions = DispositionIndex::load_project(&root.join(&self.verification.project))?;
-        validate_evidence_index_binding(root, &self.verification, &dispositions)?;
         let scenarios = ScenarioCatalog::load(root, &self.hil.catalog)?;
         let context = StaticContext {
             root,
-            dispositions: &dispositions,
             scenario_catalog: &scenarios,
         };
         let mut declarations = BTreeMap::new();
@@ -511,19 +505,15 @@ impl ValidatedProgram {
             .ok_or("qualification program was not resolved")?;
         let target = slug(&document.target, "qualification target")?;
         let hil_target = slug(&document.hil.target, "HIL target")?;
-        let dispositions =
-            DispositionIndex::load_project(&root.join(&document.verification.project))?;
-        let configured_index = root.join(&document.verification.evidence_index);
         let repository = RepositoryState::read(root)?;
-        let vendor_index = VendorEvidenceIndex::load(&configured_index, &dispositions.project_id)?;
+        let evidence =
+            NativeEvidence::load(root, &document.verification.evidence_index, &hil_target)?;
         let scenario_catalog = ScenarioCatalog::load(root, &document.hil.catalog)?;
         let hil_index = HilEvidenceIndex::load(root, &document.hil.runs, &hil_target, &repository)?;
         let evidence_inputs = EvidenceInputs {
-            verification_entries: vendor_index.entries.len(),
-            verification_current_release_entries: vendor_index
-                .current_release_count(root, &document.verification.project),
+            verification_entries: evidence.index.entries.len(),
+            verification_current_release_entries: evidence.current_entries(),
             hil: hil_index.summary().clone(),
-            verification_project: document.verification.project.clone(),
             vendor_evidence_index: document.verification.evidence_index.clone(),
             hil_catalog: document.hil.catalog.clone(),
             hil_runs: document.hil.runs.clone(),
@@ -535,8 +525,7 @@ impl ValidatedProgram {
             .collect();
         let context = EvaluationContext {
             root,
-            dispositions: &dispositions,
-            vendor_index: &vendor_index,
+            evidence: &evidence,
             scenario_catalog: &scenario_catalog,
             hil_index: &hil_index,
             declarations: &declarations,
@@ -568,30 +557,8 @@ impl ValidatedProgram {
     }
 }
 
-fn validate_evidence_index_binding(
-    root: &Path,
-    verification: &VerificationConfig,
-    dispositions: &DispositionIndex,
-) -> Result<()> {
-    let configured_index = root.join(&verification.evidence_index);
-    let project_index = dispositions
-        .vendor_evidence_index
-        .as_ref()
-        .ok_or("verification project has no evidence-index output")?;
-    if configured_index != *project_index {
-        return Err(format!(
-            "qualification vendor evidence index {} does not match verification project output {}",
-            configured_index.display(),
-            project_index.display()
-        )
-        .into());
-    }
-    Ok(())
-}
-
 pub(crate) struct StaticContext<'a> {
     root: &'a Path,
-    dispositions: &'a DispositionIndex,
     scenario_catalog: &'a ScenarioCatalog,
 }
 
@@ -604,8 +571,7 @@ struct ValidatedDeclaration {
 
 struct EvaluationContext<'a> {
     root: &'a Path,
-    dispositions: &'a DispositionIndex,
-    vendor_index: &'a VendorEvidenceIndex,
+    evidence: &'a NativeEvidence,
     scenario_catalog: &'a ScenarioCatalog,
     hil_index: &'a HilEvidenceIndex,
     declarations: &'a BTreeMap<String, CapabilityDocument>,
@@ -619,7 +585,6 @@ fn evaluate_capability(
         &document,
         &StaticContext {
             root: context.root,
-            dispositions: context.dispositions,
             scenario_catalog: context.scenario_catalog,
         },
     )?;
@@ -670,15 +635,9 @@ fn evaluate_capability(
 
     let mut evidence = Vec::new();
 
-    let (vendor, vendor_evidence) = derive_vendor_proof(
-        &id,
-        &document,
-        context.vendor_index,
-        context.root,
-        &context.dispositions.project_manifest,
-    )?;
+    let (vendor, vendor_evidence) = derive_vendor_proof(&id, &document, context.evidence)?;
     evidence.extend(vendor_evidence);
-    validate_vendor_contract(&id, &document, vendor, context.dispositions)?;
+    validate_vendor_contract(&id, &document, vendor)?;
     if vendor.is_terminal() {
         if has_gap(&gaps, Axis::Vendor) {
             return Err(format!("terminal vendor axis for {id} retains a vendor gap").into());
@@ -845,35 +804,11 @@ fn validate_capability_declaration_inner(
             )
             .into());
         }
-        if !context.dispositions.suite_entries.contains(&(
-            reference.suite.clone(),
-            reference.source.clone(),
-            reference.symbol.clone(),
-        )) {
-            return Err(format!(
-                "vendor evidence {} {} {} for {id} is not selected with a disposition in that suite",
-                reference.suite, reference.source, reference.symbol
-            )
-            .into());
-        }
     }
     for root in &document.vendor_roots {
         slug(&root.source, "vendor source")?;
         if root.symbol.trim().is_empty() {
             return Err(format!("vendor root for {id} has an empty symbol").into());
-        }
-        let disposition = context.dispositions.get(root).ok_or_else(|| {
-            format!(
-                "vendor root {} {} for {id} has no disposition",
-                root.source, root.symbol
-            )
-        })?;
-        if !disposition.has_rust_component {
-            return Err(format!(
-                "vendor root {} {} for {id} has no rust-component",
-                root.source, root.symbol
-            )
-            .into());
         }
     }
 
@@ -996,7 +931,6 @@ fn validate_vendor_contract(
     id: &str,
     document: &CapabilityDocument,
     proof: VendorProof,
-    dispositions: &DispositionIndex,
 ) -> Result<()> {
     match proof {
         VendorProof::Qualified => {
@@ -1014,37 +948,13 @@ fn validate_vendor_contract(
         }
         VendorProof::Unmapped | VendorProof::NotApplicable => {}
     }
-    for root in &document.vendor_roots {
-        let disposition = dispositions.get(root).ok_or_else(|| {
-            format!(
-                "vendor root {} {} for {id} has no disposition",
-                root.source, root.symbol
-            )
-        })?;
-        if !disposition.has_rust_component {
-            return Err(format!(
-                "vendor root {} {} for {id} has no rust-component",
-                root.source, root.symbol
-            )
-            .into());
-        }
-        if proof == VendorProof::Qualified && !disposition.has_contract {
-            return Err(format!(
-                "vendor-qualified root {} {} for {id} has no executable contract",
-                root.source, root.symbol
-            )
-            .into());
-        }
-    }
     Ok(())
 }
 
 fn derive_vendor_proof(
     id: &str,
     document: &CapabilityDocument,
-    index: &VendorEvidenceIndex,
-    root: &Path,
-    project_manifest: &Path,
+    evidence: &NativeEvidence,
 ) -> Result<(VendorProof, Vec<String>)> {
     if let Some(reason) = document.vendor_not_applicable.as_deref() {
         validate_reason(reason, "vendor-not-applicable", id)?;
@@ -1091,9 +1001,7 @@ fn derive_vendor_proof(
             document.vendor_evidence.iter().any(|reference| {
                 reference.source == *source
                     && reference.symbol == *symbol
-                    && index.get(reference).is_some_and(|entry| {
-                        entry.is_current_release_evidence(root, project_manifest)
-                    })
+                    && evidence.supports(reference)
             })
         });
     if all_roots_release_eligible && document.vendor_anchors.is_empty() {
@@ -1221,364 +1129,66 @@ fn validate_dependencies(capabilities: &BTreeMap<String, Capability>) -> Result<
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug)]
-struct DispositionEntry {
-    has_rust_component: bool,
-    has_contract: bool,
+/// The native scenario evidence index and whether its sources are current.
+/// A missing index supports no claim.
+pub(crate) struct NativeEvidence {
+    pub(crate) index: scenario_evidence::Index,
+    pub(crate) current: bool,
 }
 
-#[derive(Debug)]
-struct DispositionIndex {
-    project_manifest: PathBuf,
-    entries: BTreeMap<(String, String), DispositionEntry>,
-    suite_entries: BTreeSet<(String, String, String)>,
-    project_id: String,
-    vendor_evidence_index: Option<PathBuf>,
-}
-
-impl DispositionIndex {
-    fn load_project(path: &Path) -> Result<Self> {
-        let input = fs::read_to_string(path).map_err(|error| {
-            format!(
-                "cannot read verification project {}: {error}",
-                path.display()
-            )
-        })?;
-        let project: VerificationProjectDocument = toml_edit::de::from_str(&input)?;
-        let project_base = path
-            .parent()
-            .ok_or_else(|| format!("verification project has no parent: {}", path.display()))?;
-        validate_relative_path(&project.verification_addon)?;
-        let addon_path = project_base.join(project.verification_addon);
-        let addon: VerificationAddonDocument =
-            toml_edit::de::from_str(&fs::read_to_string(&addon_path)?)?;
-        let base = addon_path.parent().ok_or_else(|| {
-            format!(
-                "verification add-on has no parent: {}",
-                addon_path.display()
-            )
-        })?;
-        let vendor_evidence_index = addon
-            .evidence_index
-            .map(|path| {
-                validate_relative_path(&path)?;
-                Ok::<_, Box<dyn std::error::Error>>(base.join(path))
-            })
-            .transpose()?;
-        let mut entries = BTreeMap::new();
-        let mut suite_entries = BTreeSet::new();
-        for suite in addon.suites {
-            for relative in suite.dispositions {
-                validate_relative_path(&relative)?;
-                let path = base.join(relative);
-                let document: DispositionDocument =
-                    toml_edit::de::from_str(&fs::read_to_string(&path)?)?;
-                for function in document.functions {
-                    if !suite.vendor.iter().any(|selection| {
-                        selection.source == function.source
-                            && (selection.all
-                                || selection.symbols.contains(&function.symbol)
-                                || selection
-                                    .prefix
-                                    .as_ref()
-                                    .is_some_and(|prefix| function.symbol.starts_with(prefix)))
-                    }) {
-                        continue;
-                    }
-                    suite_entries.insert((
-                        suite.id.clone(),
-                        function.source.clone(),
-                        function.symbol.clone(),
-                    ));
-                    let key = (function.source, function.symbol);
-                    let entry = DispositionEntry {
-                        has_rust_component: function.rust_component.is_some(),
-                        has_contract: function.semantic_contract.is_some()
-                            || function.effect_contract.is_some(),
-                    };
-                    if let Some(previous) = entries.insert(key.clone(), entry)
-                        && (previous.has_rust_component != entry.has_rust_component
-                            || previous.has_contract != entry.has_contract)
-                    {
-                        return Err(
-                            format!("conflicting disposition entry {} {}", key.0, key.1).into()
-                        );
-                    }
-                }
+impl NativeEvidence {
+    fn load(root: &Path, path: &Path, target: &str) -> Result<Self> {
+        let index = match fs::read_to_string(root.join(path)) {
+            Ok(input) => {
+                let index: scenario_evidence::Index = serde_json::from_str(&input)?;
+                index.validate(target).map_err(|error| {
+                    format!("scenario evidence index {}: {error}", path.display())
+                })?;
+                index
             }
-        }
-        Ok(Self {
-            entries,
-            suite_entries,
-            project_manifest: path.to_owned(),
-            project_id: project.id,
-            vendor_evidence_index,
-        })
-    }
-
-    fn get(&self, root: &VendorRoot) -> Option<&DispositionEntry> {
-        self.entries
-            .get(&(root.source.clone(), root.symbol.clone()))
-    }
-}
-
-#[derive(Deserialize)]
-struct VerificationProjectDocument {
-    id: String,
-    #[serde(rename = "verification-addon")]
-    verification_addon: PathBuf,
-}
-
-#[derive(Deserialize)]
-struct VerificationAddonDocument {
-    #[serde(rename = "evidence-index")]
-    evidence_index: Option<PathBuf>,
-    #[serde(default)]
-    suites: Vec<VerificationSuiteDocument>,
-}
-
-#[derive(Deserialize)]
-struct VerificationSuiteDocument {
-    id: String,
-    #[serde(default)]
-    vendor: Vec<VerificationSelectionDocument>,
-    #[serde(default)]
-    dispositions: Vec<PathBuf>,
-}
-
-#[derive(Deserialize)]
-struct VerificationSelectionDocument {
-    source: String,
-    prefix: Option<String>,
-    #[serde(default)]
-    all: bool,
-    #[serde(default)]
-    symbols: Vec<String>,
-}
-
-#[derive(Deserialize)]
-struct DispositionDocument {
-    #[serde(default)]
-    functions: Vec<DispositionFunctionDocument>,
-}
-
-#[derive(Deserialize)]
-struct DispositionFunctionDocument {
-    source: String,
-    symbol: String,
-    #[serde(rename = "rust-component")]
-    rust_component: Option<String>,
-    #[serde(rename = "semantic-contract")]
-    semantic_contract: Option<String>,
-    #[serde(rename = "effect-contract")]
-    effect_contract: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct VendorEvidenceIndex {
-    schema_version: u32,
-    command: String,
-    project: String,
-    complete_project_run: bool,
-    entries: Vec<VendorEvidenceIndexEntry>,
-    #[serde(default)]
-    suite_states: BTreeMap<String, String>,
-}
-
-impl VendorEvidenceIndex {
-    fn load(path: &Path, expected_project: &str) -> Result<Self> {
-        let input = match fs::read_to_string(path) {
-            Ok(input) => input,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(Self {
-                    schema_version: 2,
-                    command: "project verify vendor evidence index".into(),
-                    project: expected_project.into(),
-                    complete_project_run: false,
-                    entries: Vec::new(),
-                    suite_states: BTreeMap::new(),
+                    index: scenario_evidence::Index {
+                        schema: scenario_evidence::SCHEMA,
+                        command: scenario_evidence::COMMAND.into(),
+                        target: target.into(),
+                        inputs: BTreeMap::new(),
+                        sources: vec![],
+                        entries: vec![],
+                    },
+                    current: false,
                 });
             }
             Err(error) => {
                 return Err(format!(
-                    "cannot read vendor evidence index {}: {error}",
+                    "cannot read scenario evidence index {}: {error}",
                     path.display()
                 )
                 .into());
             }
         };
-        let index: Self = serde_json::from_str(&input)?;
-        if !matches!(index.schema_version, 1 | 2)
-            || index.command != "project verify vendor evidence index"
-            || index.project != expected_project
-            || (index.schema_version == 1 && !index.complete_project_run)
-            || (index.schema_version == 2
-                && (index
-                    .suite_states
-                    .values()
-                    .any(|s| !matches!(s.as_str(), "complete" | "incomplete"))
-                    || index.entries.iter().any(|e| {
-                        index.suite_states.get(&e.suite).map(String::as_str) != Some("complete")
-                    })))
-        {
-            return Err(format!(
-                "vendor evidence index {} is unsupported or incomplete",
-                path.display()
-            )
-            .into());
-        }
-        let mut identities = BTreeSet::new();
-        for entry in &index.entries {
-            if !identities.insert((&entry.suite, &entry.source, &entry.symbol)) {
-                return Err(format!(
-                    "vendor evidence index repeats {} {} {}",
-                    entry.suite, entry.source, entry.symbol
-                )
-                .into());
-            }
-        }
-        Ok(index)
+        let current = index.is_current(root);
+        Ok(Self { index, current })
     }
 
-    fn get(&self, reference: &VendorEvidenceRef) -> Option<&VendorEvidenceIndexEntry> {
-        self.entries.iter().find(|entry| {
-            entry.suite == reference.suite
-                && entry.source == reference.source
-                && entry.symbol == reference.symbol
-        })
-    }
-
-    fn current_release_count(&self, root: &Path, project_manifest: &Path) -> usize {
-        self.entries
-            .iter()
-            .filter(|entry| entry.is_current_release_evidence(root, project_manifest))
-            .count()
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct VendorEvidenceIndexEntry {
-    #[serde(default)]
-    comparison: Option<comparison::Binding>,
-    suite: String,
-    source: String,
-    symbol: String,
-    evidence_class: String,
-    status: String,
-    release_eligible: bool,
-    rust_component: Option<String>,
-    evidence_digest: Option<String>,
-    baseline_passed: bool,
-    artifact_hashes: Vec<VendorEvidenceArtifactHash>,
-    source_hashes: Vec<VendorEvidenceSourceHash>,
-    #[serde(default)]
-    release_blockers: Vec<String>,
-}
-
-impl VendorEvidenceIndexEntry {
-    fn is_current_release_evidence(&self, root: &Path, project_manifest: &Path) -> bool {
-        let artifact_roles = self
-            .artifact_hashes
-            .iter()
-            .map(|artifact| artifact.role.as_str())
-            .collect::<BTreeSet<_>>();
-        let source_paths = self
-            .source_hashes
-            .iter()
-            .map(|source| source.path.as_path())
-            .collect::<BTreeSet<_>>();
-        if !self.release_eligible
-            || self.evidence_class != "production-trace"
-            || !matches!(self.status.as_str(), "match" | "bounded-match")
-            || !self.baseline_passed
-            || self.rust_component.is_none()
-            || !self.evidence_digest.as_deref().is_some_and(valid_sha256)
-            || !artifact_roles.contains(format!("source:{}:artifact", self.source).as_str())
-            || self.artifact_hashes.is_empty()
-            || artifact_roles.len() != self.artifact_hashes.len()
-            || artifact_roles.iter().any(|role| role.is_empty())
-            || self
-                .artifact_hashes
-                .iter()
-                .any(|artifact| !valid_sha256(&artifact.sha256))
-            || self.source_hashes.is_empty()
-            || source_paths.len() != self.source_hashes.len()
-            || !self.release_blockers.is_empty()
-        {
-            return false;
-        }
-        let Some(binding) = &self.comparison else {
-            return false;
-        };
-        if validate_relative_path(&binding.project_manifest).is_err()
-            || root.join(&binding.project_manifest).canonicalize().ok()
-                != root.join(project_manifest).canonicalize().ok()
-        {
-            return false;
-        }
-        let hashes = self
-            .artifact_hashes
-            .iter()
-            .filter(|a| {
-                a.role.starts_with("source:")
-                    || a.role.starts_with("auxiliary:")
-                    || a.role == "rust-probes"
+    /// A current index holds a MATCH entry for the referenced suite and root.
+    fn supports(&self, reference: &VendorEvidenceRef) -> bool {
+        self.current
+            && self.index.entries.iter().any(|entry| {
+                entry.suite == reference.suite
+                    && entry.source == reference.source
+                    && entry.symbol == reference.symbol
+                    && entry.verdict == scenario_evidence::MATCH
             })
-            .map(|a| (a.role.clone(), a.sha256.clone()))
-            .collect();
-        let Ok(current) = comparison::current(
-            root,
-            &binding.project_manifest,
-            &self.suite,
-            &self.source,
-            &self.symbol,
-            &hashes,
-        ) else {
-            return false;
-        };
-        if !current.public_artifacts_bound
-            || current.sha256 != binding.sha256
-            || current.component != self.rust_component
-            || !self
-                .evidence_digest
-                .as_ref()
-                .is_some_and(|d| current.baseline_digests.contains(d))
-            || current
-                .artifact_pins
-                .iter()
-                .any(|(role, hash)| hashes.get(role) != Some(hash))
-        {
-            return false;
-        }
-        self.source_hashes.iter().all(|source| {
-            validate_relative_path(&source.path).is_ok()
-                && valid_sha256(&source.sha256)
-                && fs::symlink_metadata(root.join(&source.path))
-                    .is_ok_and(|metadata| metadata.file_type().is_file())
-                && fs::read(root.join(&source.path)).is_ok_and(|contents| {
-                    format!("{:x}", Sha256::digest(contents)) == source.sha256
-                })
-        })
     }
-}
 
-#[derive(Debug, Deserialize)]
-struct VendorEvidenceArtifactHash {
-    role: String,
-    sha256: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct VendorEvidenceSourceHash {
-    path: PathBuf,
-    sha256: String,
-}
-
-fn valid_sha256(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    fn current_entries(&self) -> usize {
+        if self.current {
+            self.index.entries.len()
+        } else {
+            0
+        }
+    }
 }
 
 #[cfg(test)]

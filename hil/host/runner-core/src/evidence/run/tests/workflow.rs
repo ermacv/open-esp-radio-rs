@@ -129,27 +129,11 @@ fn producer_evaluator_and_resumed_plan_transfer_wifi_across_ble_but_reject_phy_c
     );
     write(
         root,
-        "verification.toml",
-        "id = \"test\"\nverification-addon = \"verification-addon.toml\"\n",
-    );
-    write(
-        root,
-        "verification-addon.toml",
-        "evidence-index = \"target/vendor.json\"\n",
-    );
-    write(
-        root,
-        "target/vendor.json",
-        r#"{"schema_version":2,"command":"project verify vendor evidence index","project":"test","complete_project_run":false,"entries":[],"suite_states":{}}"#,
-    );
-    write(
-        root,
         "program.toml",
         r#"schema = 4
 target = "wifi-test"
 required-capabilities = ["wifi", "base"]
 [verification]
-project = "verification.toml"
 evidence-index = "target/vendor.json"
 [hil]
 target = "esp32s31"

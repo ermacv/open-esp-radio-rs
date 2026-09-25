@@ -4,9 +4,8 @@ mod maintenance;
 use crate::{
     hil::{HilEvidenceIndex, RepositoryState, ScenarioCatalog},
     model::{
-        DispositionEntry, DispositionIndex, EvaluationContext, EvidenceInputs, HilProof,
-        Qualification, VendorEvidenceArtifactHash, VendorEvidenceIndex, VendorEvidenceIndexEntry,
-        VendorEvidenceSourceHash, VendorProof, evaluate_capability, validate_dependencies,
+        EvaluationContext, EvidenceInputs, HilProof, NativeEvidence, Qualification, VendorProof,
+        evaluate_capability, tests::native_evidence, validate_dependencies,
     },
 };
 
@@ -16,7 +15,6 @@ target = "test-radio"
 required-capabilities = ["base-phy", "wifi-channel"]
 
 [verification]
-project = "verification.toml"
 evidence-index = "vendor.json"
 
 [hil]
@@ -92,16 +90,6 @@ impl TestRoot {
         fs::create_dir_all(path.join("catalog")).unwrap();
         fs::create_dir_all(path.join("scenarios")).unwrap();
         fs::write(path.join("Cargo.toml"), "[workspace]\n").unwrap();
-        fs::write(
-            path.join("verification.toml"),
-            "id = \"test\"\nverification-addon = \"verification-addon.toml\"\n",
-        )
-        .unwrap();
-        fs::write(
-            path.join("verification-addon.toml"),
-            "evidence-index = \"vendor.json\"\n",
-        )
-        .unwrap();
         fs::write(
             path.join("scenarios/wifi-channel.toml"),
             "schema = 4\nid = \"wifi-channel\"\nrepetitions = 1\n",
@@ -204,21 +192,7 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
         .collect::<Vec<_>>();
     assert_eq!(canonical_without_scope, legacy_documents);
 
-    let dispositions = DispositionIndex {
-        project_manifest: PathBuf::from("comparison-project.toml"),
-        entries: BTreeMap::new(),
-        suite_entries: BTreeSet::new(),
-        project_id: "test".to_owned(),
-        vendor_evidence_index: None,
-    };
-    let vendor_index = VendorEvidenceIndex {
-        suite_states: BTreeMap::new(),
-        schema_version: 1,
-        command: "project verify vendor evidence index".to_owned(),
-        project: "test".to_owned(),
-        complete_project_run: true,
-        entries: Vec::new(),
-    };
+    let evidence = native_evidence(&root.path, &[]);
     let scenario_catalog = ScenarioCatalog::load(&root.path, Path::new("scenarios")).unwrap();
     let hil_index = HilEvidenceIndex::default();
     let context = EvaluationContext {
@@ -227,8 +201,7 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
             .map(|d| (d.id.clone(), d.clone()))
             .collect(),
         root: &root.path,
-        dispositions: &dispositions,
-        vendor_index: &vendor_index,
+        evidence: &evidence,
         scenario_catalog: &scenario_catalog,
         hil_index: &hil_index,
     };
@@ -260,7 +233,6 @@ fn resolution_preserves_evaluation_and_missing_evidence() {
             verification_entries: 0,
             verification_current_release_entries: 0,
             hil: Default::default(),
-            verification_project: PathBuf::from("verification.toml"),
             vendor_evidence_index: PathBuf::from("vendor.json"),
             hil_catalog: PathBuf::from("scenarios"),
             hil_runs: PathBuf::from("runs"),
@@ -490,131 +462,71 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
     ))
     .unwrap();
 
-    let dispositions = DispositionIndex {
-        project_manifest: PathBuf::from("comparison-project.toml"),
-        suite_entries: [("base-suite", "base_root"), ("wifi-suite", "wifi_root")]
-            .into_iter()
-            .map(|(suite, symbol)| (suite.into(), "archive".into(), symbol.into()))
-            .collect(),
-        entries: ["base_root", "wifi_root"]
-            .into_iter()
-            .map(|symbol| {
-                (
-                    ("archive".to_owned(), symbol.to_owned()),
-                    DispositionEntry {
-                        has_rust_component: true,
-                        has_contract: true,
-                    },
-                )
-            })
-            .collect(),
-        project_id: "test".to_owned(),
-        vendor_evidence_index: None,
-    };
     let scenarios = ScenarioCatalog::load(&root.path, Path::new("scenarios")).unwrap();
-    let source_sha = format!(
-        "{:x}",
-        Sha256::digest(fs::read(root.path.join("Cargo.toml")).unwrap())
-    );
-    let vendor_entry = |suite: &str, symbol: &str| VendorEvidenceIndexEntry {
-        comparison: Some(crate::model::tests::comparison_fixture(
-            &root.path,
-            suite,
-            symbol,
-            "crate::component",
-        )),
-        suite: suite.to_owned(),
-        source: "archive".to_owned(),
-        symbol: symbol.to_owned(),
-        evidence_class: "production-trace".to_owned(),
-        status: "match".to_owned(),
-        release_eligible: true,
-        rust_component: Some("crate::component".to_owned()),
-        evidence_digest: Some("ab".repeat(32)),
-        baseline_passed: true,
-        artifact_hashes: vec![VendorEvidenceArtifactHash {
-            role: "source:archive:artifact".to_owned(),
-            sha256: "cd".repeat(32),
-        }],
-        source_hashes: vec![VendorEvidenceSourceHash {
-            path: PathBuf::from("Cargo.toml"),
-            sha256: source_sha.clone(),
-        }],
-        release_blockers: Vec::new(),
+    let base_root = ("base-suite", "archive", "base_root");
+    let wifi_root = ("wifi-suite", "archive", "wifi_root");
+    let wrong_source = ("base-suite", "rom", "base_root");
+    let stale = |entries: &[(&str, &str, &str)]| NativeEvidence {
+        current: false,
+        ..native_evidence(&root.path, entries)
     };
-    let mut stale_entry = vendor_entry("base-suite", "base_root");
-    stale_entry.source_hashes[0].sha256 = "ef".repeat(32);
-    let mut wrong_source_entry = vendor_entry("base-suite", "base_root");
-    wrong_source_entry.source = "rom".to_owned();
     let cases = [
-        ("no-evidence", Vec::new(), Vec::new(), true, 0usize),
+        (
+            "no-evidence",
+            native_evidence(&root.path, &[]),
+            Vec::new(),
+            true,
+            0usize,
+        ),
         (
             "partial-vendor",
-            vec![
-                vendor_entry("base-suite", "base_root"),
-                vendor_entry("wifi-suite", "wifi_root"),
-            ],
+            native_evidence(&root.path, &[base_root, wifi_root]),
             Vec::new(),
             true,
             0,
         ),
         (
             "partial-hil",
-            Vec::new(),
+            native_evidence(&root.path, &[]),
             vec![("base-phy", 1usize), ("wifi-channel", 1usize)],
             true,
             0,
         ),
         (
             "stale-vendor-source",
-            vec![stale_entry, vendor_entry("wifi-suite", "wifi_root")],
+            stale(&[base_root, wifi_root]),
             vec![("base-phy", 1usize), ("wifi-channel", 1usize)],
             true,
             0,
         ),
         (
             "wrong-vendor-source",
-            vec![wrong_source_entry, vendor_entry("wifi-suite", "wifi_root")],
+            native_evidence(&root.path, &[wrong_source, wifi_root]),
             vec![("base-phy", 1usize), ("wifi-channel", 1usize)],
             true,
             0,
         ),
         (
             "sufficient-positive",
-            vec![
-                vendor_entry("base-suite", "base_root"),
-                vendor_entry("wifi-suite", "wifi_root"),
-            ],
+            native_evidence(&root.path, &[base_root, wifi_root]),
             vec![("base-phy", 1usize), ("wifi-channel", 1usize)],
             true,
             2,
         ),
         (
             "dirty-evaluator",
-            vec![
-                vendor_entry("base-suite", "base_root"),
-                vendor_entry("wifi-suite", "wifi_root"),
-            ],
+            native_evidence(&root.path, &[base_root, wifi_root]),
             vec![("base-phy", 1usize), ("wifi-channel", 1usize)],
             false,
             2,
         ),
     ];
-    for (name, entries, hil_entries, clean, ready) in cases {
-        let vendor = VendorEvidenceIndex {
-            suite_states: BTreeMap::new(),
-            schema_version: 1,
-            command: "project verify vendor evidence index".to_owned(),
-            project: "test".to_owned(),
-            complete_project_run: true,
-            entries,
-        };
+    for (name, evidence, hil_entries, clean, ready) in cases {
         let hil = HilEvidenceIndex::synthetic(&hil_entries);
         let context = EvaluationContext {
             declarations: &inline.iter().map(|d| (d.id.clone(), d.clone())).collect(),
             root: &root.path,
-            dispositions: &dispositions,
-            vendor_index: &vendor,
+            evidence: &evidence,
             scenario_catalog: &scenarios,
             hil_index: &hil,
         };
@@ -638,7 +550,6 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
                 verification_entries: 0,
                 verification_current_release_entries: 0,
                 hil: Default::default(),
-                verification_project: PathBuf::from("verification.toml"),
                 vendor_evidence_index: PathBuf::from("vendor.json"),
                 hil_catalog: PathBuf::from("scenarios"),
                 hil_runs: PathBuf::from("runs"),
@@ -660,20 +571,12 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
         assert_eq!(qualification.ready_count(), ready, "case {name}");
     }
 
-    let only_wifi_vendor = VendorEvidenceIndex {
-        suite_states: BTreeMap::new(),
-        schema_version: 1,
-        command: "project verify vendor evidence index".to_owned(),
-        project: "test".to_owned(),
-        complete_project_run: true,
-        entries: vec![vendor_entry("wifi-suite", "wifi_root")],
-    };
+    let only_wifi_vendor = native_evidence(&root.path, &[wifi_root]);
     let hil = HilEvidenceIndex::synthetic(&[("base-phy", 1), ("wifi-channel", 1)]);
     let context = EvaluationContext {
         declarations: &inline.iter().map(|d| (d.id.clone(), d.clone())).collect(),
         root: &root.path,
-        dispositions: &dispositions,
-        vendor_index: &only_wifi_vendor,
+        evidence: &only_wifi_vendor,
         scenario_catalog: &scenarios,
         hil_index: &hil,
     };
@@ -695,7 +598,6 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
             verification_entries: 1,
             verification_current_release_entries: 1,
             hil: Default::default(),
-            verification_project: PathBuf::from("verification.toml"),
             vendor_evidence_index: PathBuf::from("vendor.json"),
             hil_catalog: PathBuf::from("scenarios"),
             hil_runs: PathBuf::from("runs"),
@@ -716,20 +618,12 @@ fn inline_and_catalog_forms_match_across_the_evidence_matrix() {
     };
     assert!(!qualification.is_ready("wifi-channel"));
 
-    let only_base_vendor = VendorEvidenceIndex {
-        suite_states: BTreeMap::new(),
-        schema_version: 1,
-        command: "project verify vendor evidence index".to_owned(),
-        project: "test".to_owned(),
-        complete_project_run: true,
-        entries: vec![vendor_entry("base-suite", "base_root")],
-    };
+    let only_base_vendor = native_evidence(&root.path, &[base_root]);
     let inline = parse(&format!("{PROGRAM_PREFIX}{base}{wifi}")).capabilities;
     let context = EvaluationContext {
         declarations: &inline.iter().map(|d| (d.id.clone(), d.clone())).collect(),
         root: &root.path,
-        dispositions: &dispositions,
-        vendor_index: &only_base_vendor,
+        evidence: &only_base_vendor,
         scenario_catalog: &scenarios,
         hil_index: &hil,
     };
@@ -758,7 +652,7 @@ source-paths = ["Cargo.toml"]
 
 const TEST_CATALOG_VALIDATION: &str = r#"
 [validation]
-verification-project = "verification.toml"
+evidence-index = "vendor.json"
 hil-catalog = "scenarios"
 "#;
 

@@ -118,10 +118,10 @@ pub(super) fn print(map: &ProjectMap, next_only: bool, details: bool) {
             action.reason
         );
     }
-    for project in &map.research_projects {
+    for index in &map.evidence_indexes {
         println!(
-            "RESEARCH\t{}\tinspect existing Blobray project status / project research next",
-            project.display()
+            "EVIDENCE\t{}\tregenerate with vendor-scenario all --index after production or scenario changes",
+            index.display()
         );
     }
 }
@@ -250,12 +250,12 @@ pub(super) fn markdown(map: &ProjectMap, output: &Path, root: &Path) -> Result<S
             ));
         }
     }
-    text.push_str("\n## Research owners\n\nUse the existing Blobray project status and research-next views for the detailed research backlog.\n\n");
-    for project in &map.research_projects {
+    text.push_str("\n## Vendor evidence indexes\n\nThe typed vendor scenarios regenerate these indexes with `vendor-scenario all --index`; a production or scenario change makes them stale.\n\n");
+    for index in &map.evidence_indexes {
         text.push_str(&format!(
             "- [{}]({})\n",
-            project.display(),
-            crate::inventory::link_to(project, output, root)?
+            index.display(),
+            crate::inventory::link_to(index, output, root)?
         ));
     }
     Ok(text)

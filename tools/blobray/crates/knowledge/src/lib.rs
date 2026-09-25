@@ -222,10 +222,11 @@ pub fn conflicts(a: &KnowledgeProposal, b: &KnowledgeProposal) -> bool {
             KnowledgeClaim::EffectContract { contract: x },
             KnowledgeClaim::EffectContract { contract: y },
         ) => {
+            // A contract is a claim about one endpoint pair; one side may
+            // pair with several counterparts under different contracts.
             x != y
                 && (a.subject == b.subject
-                    || x.vendor == y.vendor
-                    || x.replacement == y.replacement)
+                    || (x.vendor == y.vendor && x.replacement == y.replacement))
         }
         (
             KnowledgeClaim::LayoutProjection { projection: x },
@@ -233,8 +234,8 @@ pub fn conflicts(a: &KnowledgeProposal, b: &KnowledgeProposal) -> bool {
         ) => {
             x != y
                 && (a.subject == b.subject
-                    || x.vendor.entry == y.vendor.entry
-                    || x.replacement.entry == y.replacement.entry)
+                    || (x.vendor.entry == y.vendor.entry
+                        && x.replacement.entry == y.replacement.entry))
         }
 
         (
@@ -409,6 +410,38 @@ mod tests {
         validate_proposal(&b).unwrap();
         b.evidence.clear();
         assert!(validate_proposal(&b).is_err());
+    }
+    #[test]
+    fn effect_contracts_conflict_per_subject_or_endpoint_pair() {
+        let base = proposal();
+        let endpoint = |address| CallEndpoint {
+            occurrence: base.occurrence.clone(),
+            boundary: ReviewedCallBoundary::Code { address },
+        };
+        let contract = |vendor, replacement, reason: &str| EffectContract {
+            vendor: endpoint(vendor),
+            replacement: endpoint(replacement),
+            rules: vec![],
+            unclassified: UnclassifiedEffects::Required,
+            claim_ceiling: EffectClaimCeiling::SelectedEffectEquality,
+            applicability: "fixture".into(),
+            reason: reason.into(),
+        };
+        let with = |subject: &str, contract| KnowledgeProposal {
+            subject: subject.to_owned().try_into().unwrap(),
+            claim: KnowledgeClaim::EffectContract {
+                contract: Box::new(contract),
+            },
+            ..base.clone()
+        };
+        let a = with("a", contract(0x1000, 0x2000, "one"));
+        // One production function may pair with several vendor functions.
+        assert!(!conflicts(&a, &with("b", contract(0x1100, 0x2000, "two"))));
+        assert!(!conflicts(&a, &with("b", contract(0x1000, 0x2100, "two"))));
+        // A different claim about the same pair or subject conflicts.
+        assert!(conflicts(&a, &with("b", contract(0x1000, 0x2000, "two"))));
+        assert!(conflicts(&a, &with("a", contract(0x1100, 0x2100, "two"))));
+        assert!(!conflicts(&a, &with("b", contract(0x1000, 0x2000, "one"))));
     }
     #[test]
     fn occurrence_binding_is_revision_and_input_qualified() {

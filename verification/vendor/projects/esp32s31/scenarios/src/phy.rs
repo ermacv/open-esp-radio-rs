@@ -306,11 +306,39 @@ impl PhyImage {
     pub fn execute(
         &mut self,
         label: &str,
+        rows: Vec<ExecutionCase>,
+        fill: u8,
+        right: Right,
+        verdict: ComparisonVerdict,
+        maximum: u32,
+    ) -> Result<Executed> {
+        self.run(label, rows, fill, right, verdict, maximum, true)
+    }
+
+    /// `execute` for checks that need no guest events: Blobray still
+    /// validates every record, but events are not read back.
+    pub fn execute_without_events(
+        &mut self,
+        label: &str,
+        rows: Vec<ExecutionCase>,
+        fill: u8,
+        right: Right,
+        verdict: ComparisonVerdict,
+        maximum: u32,
+    ) -> Result<Executed> {
+        self.run(label, rows, fill, right, verdict, maximum, false)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run(
+        &mut self,
+        label: &str,
         mut rows: Vec<ExecutionCase>,
         fill: u8,
         right: Right,
         verdict: ComparisonVerdict,
         maximum: u32,
+        events: bool,
     ) -> Result<Executed> {
         if right == Right::None {
             for row in &mut rows {
@@ -331,7 +359,9 @@ impl PhyImage {
             maximum,
         );
         let expected = (right != Right::None).then_some(verdict);
-        let artifact = self.session.submit(label, &request, expected)?;
+        let artifact = self
+            .session
+            .submit_records(label, &request, expected, events)?;
         let summary = manifest(&artifact.document);
         let records = evidence(&artifact.document);
         let stops = outcomes(&records);

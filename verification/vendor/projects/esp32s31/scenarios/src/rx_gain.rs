@@ -12,7 +12,7 @@ use crate::contracts::{
     OutputField, omitted_read_before, output_projection, phy_contract, plumbing,
 };
 use crate::evidence::{PhyEffect, events, output, phy_effects, steps};
-use crate::harness::{Buffer, Result, case, evidence, selection};
+use crate::harness::{Buffer, Result, case, evidence, selection, with_stack_fill};
 use crate::i2c::{all_complete, returned_low};
 use crate::layout::*;
 use crate::phy::delay_calls;
@@ -462,23 +462,26 @@ impl RxGain {
         let relation = root.relation.as_mut().unwrap();
         relation.effects = Some(self.effects.clone());
         relation.projection = Some(self.committed.clone());
-        Ok(vec![
-            case(
-                "initialize",
-                self.setup(&image, false),
-                Some(self.setup(&image, true)),
-                SessionReset::Cold,
-                false,
-            ),
-            case(
-                "install-captured-callbacks",
-                self.install_callbacks(INSTALLED_CALLBACK_SLOT)?,
-                Some(self.noop()),
-                SessionReset::Warm,
-                false,
-            ),
-            root,
-        ])
+        Ok(with_stack_fill(
+            vec![
+                case(
+                    "initialize",
+                    self.setup(&image, false),
+                    Some(self.setup(&image, true)),
+                    SessionReset::Cold,
+                    false,
+                ),
+                case(
+                    "install-captured-callbacks",
+                    self.install_callbacks(INSTALLED_CALLBACK_SLOT)?,
+                    Some(self.noop()),
+                    SessionReset::Warm,
+                    false,
+                ),
+                root,
+            ],
+            profile.fill,
+        ))
     }
 }
 
@@ -495,25 +498,27 @@ fn check(label: &str, records: &[ExecutionEvidence], root: u32) {
     );
 }
 
-/// Each matrix is one request per stack fill; every profile starts cold.
+/// Each matrix is one request; every profile starts cold with its own stack fill.
 pub fn exercise(ctx: &mut RxGain) -> Result<()> {
     for (name, matrix) in [
         ("publication", publication_profiles()),
         ("calibration", calibration_profiles()),
     ] {
-        for fill in FILLS {
-            let selected: Vec<Profile> =
-                matrix.iter().copied().filter(|p| p.fill == fill).collect();
-            let mut rows = vec![];
-            for profile in &selected {
-                rows.extend(ctx.rows(profile)?);
-            }
-            let label = format!("rx-{name}-fill{fill:x}");
-            let executed = ctx.compare(&label, rows, fill)?;
-            for (i, profile) in selected.iter().enumerate() {
-                let root = i as u32 * PROFILE_CASES + ROOT;
-                check(&profile.label(), &executed.records, root);
-            }
+        let mut rows = vec![];
+        for profile in &matrix {
+            rows.extend(ctx.rows(profile)?);
+        }
+        let executed = ctx.image.execute_without_events(
+            &format!("rx-{name}"),
+            rows,
+            FILLS[0],
+            Right::Production,
+            ComparisonVerdict::Match,
+            MAX_EVENTS,
+        )?;
+        for (i, profile) in matrix.iter().enumerate() {
+            let root = i as u32 * PROFILE_CASES + ROOT;
+            check(&profile.label(), &executed.records, root);
         }
     }
     containment(ctx)?;

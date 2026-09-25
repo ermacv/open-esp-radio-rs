@@ -336,6 +336,17 @@ impl Session {
         request: &ExecutionRequest,
         verdict: Option<blobray_domain::ComparisonVerdict>,
     ) -> Result<&Artifact> {
+        self.submit_records(label, request, verdict, true)
+    }
+
+    /// `submit`, reading guest event records only when `events` is set.
+    pub fn submit_records(
+        &mut self,
+        label: &str,
+        request: &ExecutionRequest,
+        verdict: Option<blobray_domain::ComparisonVerdict>,
+        events: bool,
+    ) -> Result<&Artifact> {
         let command = if request.replacement.is_some() {
             "compare"
         } else {
@@ -348,9 +359,12 @@ impl Session {
             .run_record(label, &invocation, 0)?
             .execution
             .ok_or_else(|| invalid(format!("{label}: no execution published")))?;
-        let document = self
-            .runner
-            .execution(&format!("{label}-evidence"), &identity)?;
+        let name = format!("{label}-evidence");
+        let document = if events {
+            self.runner.execution(&name, &identity)?
+        } else {
+            self.runner.execution_without_events(&name, &identity)?
+        };
         assert_eq!(manifest(&document).verdict, verdict, "{label}");
         self.artifacts.push(Artifact {
             label: label.into(),

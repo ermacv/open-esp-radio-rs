@@ -10,7 +10,7 @@
 //! measurements establish software effects, not RF accuracy.
 use crate::contracts::{OutputField, omitted_read, output_projection, phy_contract, plumbing};
 use crate::evidence::{events, output, stop};
-use crate::harness::{Buffer, Result, case, evidence, known, selection};
+use crate::harness::{Buffer, Result, case, evidence, known, selection, with_stack_fill};
 use crate::i2c::{all_complete, returned_low};
 use crate::layout::*;
 use crate::phy::delay_calls;
@@ -393,23 +393,26 @@ impl TxDc {
         let relation = root.relation.as_mut().unwrap();
         relation.effects = Some(self.effects.clone());
         relation.projection = Some(self.committed.clone());
-        Ok(vec![
-            case(
-                "initialize",
-                self.setup(&image, false),
-                Some(self.setup(&image, true)),
-                SessionReset::Cold,
-                false,
-            ),
-            case(
-                "install-captured-callbacks",
-                self.install_callbacks(INSTALLED_CALLBACK_SLOT)?,
-                Some(self.noop()),
-                SessionReset::Warm,
-                false,
-            ),
-            root,
-        ])
+        Ok(with_stack_fill(
+            vec![
+                case(
+                    "initialize",
+                    self.setup(&image, false),
+                    Some(self.setup(&image, true)),
+                    SessionReset::Cold,
+                    false,
+                ),
+                case(
+                    "install-captured-callbacks",
+                    self.install_callbacks(INSTALLED_CALLBACK_SLOT)?,
+                    Some(self.noop()),
+                    SessionReset::Warm,
+                    false,
+                ),
+                root,
+            ],
+            profile.fill,
+        ))
     }
 }
 
@@ -425,28 +428,24 @@ fn check(label: &str, profile: &Profile, records: &[ExecutionEvidence], root: u3
     );
 }
 
-/// Each fill's profiles are one request; every profile starts cold.
+/// All profiles are one request; each starts cold with its own stack fill.
 pub fn exercise(ctx: &mut TxDc) -> Result<()> {
     let all = profiles();
-    for fill in FILLS {
-        let selected: Vec<Profile> = all.iter().copied().filter(|p| p.fill == fill).collect();
-        let mut rows = vec![];
-        for profile in &selected {
-            rows.extend(ctx.rows(profile)?);
-        }
-        let label = format!("txdc-fill{fill:x}");
-        let executed = ctx.image.execute(
-            &label,
-            rows,
-            fill,
-            Right::Production,
-            ComparisonVerdict::Match,
-            TXDC_EVENTS,
-        )?;
-        for (i, profile) in selected.iter().enumerate() {
-            let root = i as u32 * PROFILE_CASES + ROOT;
-            check(&profile.label(), profile, &executed.records, root);
-        }
+    let mut rows = vec![];
+    for profile in &all {
+        rows.extend(ctx.rows(profile)?);
+    }
+    let executed = ctx.image.execute_without_events(
+        "txdc",
+        rows,
+        FILLS[0],
+        Right::Production,
+        ComparisonVerdict::Match,
+        TXDC_EVENTS,
+    )?;
+    for (i, profile) in all.iter().enumerate() {
+        let root = i as u32 * PROFILE_CASES + ROOT;
+        check(&profile.label(), profile, &executed.records, root);
     }
     faults(ctx)?;
     negative(ctx)

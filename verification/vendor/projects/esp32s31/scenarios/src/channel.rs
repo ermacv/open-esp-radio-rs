@@ -10,7 +10,7 @@
 //! hardware qualification.
 use crate::contracts::{OutputField, output_projection, phy_contract, plumbing};
 use crate::evidence::{PhyEffect, events, output, phy_effects, stop};
-use crate::harness::{Buffer, Result, case, evidence, selection};
+use crate::harness::{Buffer, Result, case, evidence, selection, with_stack_fill};
 use crate::i2c::{all_complete, returned_low};
 use crate::layout::*;
 use crate::phy::delay_calls;
@@ -53,7 +53,9 @@ const COMMITTED: [OutputField; 3] = [
 ];
 /// Untouched production output bytes.
 const OUTPUT_FILL: u8 = 0xa5;
-/// Case index of the transition after parameter setup and callback installation.
+/// Cases of one transition: parameter setup, callback installation and the
+/// transition itself, at this index.
+const TRANSITION_CASES: u32 = 3;
 const TRANSITION: u32 = 2;
 /// Retained temperature-sensor DAC analog selector (block 0x69, register 6).
 const TEMPERATURE_DAC: u32 = 0x0669;
@@ -293,7 +295,7 @@ impl Channel {
         let relation = transition.relation.as_mut().unwrap();
         relation.effects = Some(self.effects.clone());
         relation.projection = Some(self.committed.clone());
-        Ok(vec![
+        let rows = vec![
             case(
                 "initialize",
                 self.setup(&zero, false),
@@ -313,7 +315,8 @@ impl Channel {
                 false,
             ),
             transition,
-        ])
+        ];
+        Ok(with_stack_fill(rows, t.fill))
     }
 }
 
@@ -335,19 +338,20 @@ fn check_transition(
     label: &str,
     t: &Transition,
     records: &[ExecutionEvidence],
+    root: u32,
 ) -> Vec<ExecutionEvent> {
-    assert_eq!(returned_low(records, TRANSITION, true), Some(0), "{label}");
+    assert_eq!(returned_low(records, root, true), Some(0), "{label}");
     for side in [false, true] {
-        assert!(all_complete(records, TRANSITION, side), "{label} {side}");
+        assert!(all_complete(records, root, side), "{label} {side}");
     }
-    let committed = vendor_semantic(&output(records, TRANSITION, false));
+    let committed = vendor_semantic(&output(records, root, false));
     let (temperature, _) = sensor_expectation(t.dac)(t.code);
     let mut expected = [0u8; SEMANTIC_BYTES as usize];
     expected[..2].copy_from_slice(&(t.channel as u16).to_le_bytes());
     expected[2..4].copy_from_slice(&(temperature as i16).to_le_bytes());
     expected[4] = t.cbw as u8;
     assert_eq!(committed, expected, "{label}: vendor commit");
-    events(records, TRANSITION, false)
+    events(records, root, false)
 }
 
 fn gain_writes(effects: &[PhyEffect]) -> usize {
@@ -358,25 +362,30 @@ fn gain_writes(effects: &[PhyEffect]) -> usize {
 }
 
 pub fn exercise(ctx: &mut Channel) -> Result<()> {
-    // Full-root evidence: every channel class and bandwidth, including TX gain publication.
-    for t in full_transitions() {
-        let label = format!("full-{}", t.label());
-        let rows = ctx.rows(&t, true)?;
-        let executed = ctx.compare(&label, rows, t.fill)?;
-        let vendor = check_transition(&label, &t, &executed.records);
-        assert!(
-            gain_writes(&phy_effects(&vendor)) > 0,
-            "{label}: no gain publication"
-        );
-    }
-    // Temperature-prefix evidence: every sensor DAC window at boundary codes,
-    // compared completely, with one sensor sample before gain publication.
-    for t in prefix_transitions() {
-        let label = format!("prefix-{}", t.label());
-        let rows = ctx.rows(&t, true)?;
-        let executed = ctx.compare(&label, rows, t.fill)?;
-        let vendor = check_transition(&label, &t, &executed.records);
-        temperature_prefix(&phy_effects(&vendor));
+    // Full-root evidence: every channel class and bandwidth, including TX
+    // gain publication. Temperature-prefix evidence: every sensor DAC window
+    // at boundary codes, compared completely, with one sensor sample before
+    // gain publication. Each matrix is one request; every transition starts
+    // cold with its own stack fill.
+    for (name, matrix) in [
+        ("full", full_transitions()),
+        ("prefix", prefix_transitions()),
+    ] {
+        let mut rows = vec![];
+        for t in &matrix {
+            rows.extend(ctx.rows(t, true)?);
+        }
+        let executed = ctx.compare(&format!("channel-{name}"), rows, FILLS[0])?;
+        for (i, t) in matrix.iter().enumerate() {
+            let label = format!("{name}-{}", t.label());
+            let root = i as u32 * TRANSITION_CASES + TRANSITION;
+            let vendor = phy_effects(&check_transition(&label, t, &executed.records, root));
+            if name == "full" {
+                assert!(gain_writes(&vendor) > 0, "{label}: no gain publication");
+            } else {
+                temperature_prefix(&vendor);
+            }
+        }
     }
     stuck_readiness(ctx)?;
     negative(ctx)
@@ -385,6 +394,7 @@ pub fn exercise(ctx: &mut Channel) -> Result<()> {
 /// Production containment: a channel that never reports readiness fails
 /// without publishing gain or semantic output. Not vendor timing equivalence.
 fn stuck_readiness(ctx: &mut Channel) -> Result<()> {
+    let mut rows = vec![];
     for fill in FILLS {
         let t = Transition {
             channel: 13,
@@ -393,26 +403,30 @@ fn stuck_readiness(ctx: &mut Channel) -> Result<()> {
             code: 100,
             fill,
         };
-        let label = format!("stuck-readiness-fill{fill:x}");
         let mut row = case(
-            &label,
+            format!("stuck-readiness-fill{fill:x}"),
             ctx.production_phase(&t, false)?,
             None,
             SessionReset::Cold,
             false,
         );
         row.relation = None;
-        let production = ctx.production.clone();
-        let request = request(&production, None, Some(fill), vec![row], MAX_EVENTS);
-        let records = evidence(&ctx.submit(&label, &request, None)?.document);
-        assert_eq!(returned_low(&records, 0, false), Some(1), "{label}");
-        assert!(all_complete(&records, 0, false), "{label}");
+        row.stack_fill = Some(fill);
+        rows.push(row);
+    }
+    let production = ctx.production.clone();
+    let request = request(&production, None, None, rows, MAX_EVENTS);
+    let records = evidence(&ctx.submit("stuck-readiness", &request, None)?.document);
+    for (case, fill) in FILLS.iter().enumerate() {
+        let (case, label) = (case as u32, format!("stuck-readiness-fill{fill:x}"));
+        assert_eq!(returned_low(&records, case, false), Some(1), "{label}");
+        assert!(all_complete(&records, case, false), "{label}");
         assert_eq!(
-            output(&records, 0, false),
+            output(&records, case, false),
             [OUTPUT_FILL; SEMANTIC_BYTES as usize],
             "{label}: semantic output published"
         );
-        let observed = events(&records, 0, false);
+        let observed = events(&records, case, false);
         let effects = phy_effects(&observed);
         assert_eq!(gain_writes(&effects), 0, "{label}: gain published");
         assert!(

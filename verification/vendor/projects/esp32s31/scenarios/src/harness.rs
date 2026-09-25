@@ -162,6 +162,18 @@ impl Runner {
         self.json(name, &args(["execution", "--id", id.as_str()]))
     }
 
+    /// Every record except guest events, after Blobray validates all records.
+    pub fn execution_without_events(
+        &self,
+        name: &str,
+        id: &ArtifactId,
+    ) -> Result<ExecutionDocument> {
+        self.json(
+            name,
+            &args(["execution", "--no-events", "--id", id.as_str()]),
+        )
+    }
+
     /// The retained manifest after Blobray verifies the request and record
     /// payload digests; records are not decoded or returned.
     pub fn execution_summary(&self, name: &str, id: &ArtifactId) -> Result<ExecutionDocument> {
@@ -530,10 +542,20 @@ pub fn case(
     ExecutionCase {
         name: name.into(),
         reset,
+        stack_fill: None,
         relation: Some(relation(memory)),
         vendor,
         replacement,
     }
+}
+
+/// Cases of one profile with its stack fill: one request can hold profiles of
+/// several fills.
+pub fn with_stack_fill(mut rows: Vec<ExecutionCase>, fill: u8) -> Vec<ExecutionCase> {
+    for row in &mut rows {
+        row.stack_fill = Some(fill);
+    }
+    rows
 }
 
 pub fn data_request(

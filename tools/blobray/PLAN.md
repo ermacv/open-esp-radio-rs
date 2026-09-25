@@ -199,8 +199,8 @@ complete; no Python scenario code remains. Unit 12.6 is complete: channel
 restoration, all temperature-prefix sensor windows and stuck readiness.
 Checkpoint 12.M (mechanisms instead of handwritten knowledge) is complete.
 Units 12.7 (RX gain/calibration) and 12.8 (TX-DC/PWDET) are complete.
-Checkpoint 12.N (native claims) is active: 12.N.1 and 12.N.2 are complete and
-12.N.3 is next; unit 12.9 follows the checkpoint. Stages then
+Checkpoint 12.N (native claims) is active: 12.N.1–12.N.3 are complete and
+12.N.4 is next; unit 12.9 follows the checkpoint. Stages then
 run in the order 13, 14, 20 (legacy removal), 15–19, 21.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
@@ -1323,7 +1323,7 @@ they must exist first.
 | --- | --- | --- |
 | 12.N.1 | done | Runner-side effect filters become reviewed effect contracts evaluated by Blobray: transport plumbing, the single-microsecond delay before a transport or PBus status read, the vendor's unused SAR and skipped-DC snapshots, and readiness-wait visibility. A contract may declare `unclassified: required` (user decision): effects outside its rules then compare exactly in order and value, while the strict every-effect-classified policy remains available. An `ignored` disposition retains raw effects without pairing them, and a pattern may select an effect by its immediate successor. Blobray enters the selected root directly with deterministic callee-saved registers (user decision), so contracts and evidence bind the real vendor and production functions and the probe entry adapters are removed. Each contract is reviewed through knowledge assertions and bound by identity; verdicts carry the claim. |
 | 12.N.2 | done | Semantic output mappings (`phy_param` fields ↔ production output) become reviewed layout projections with final-state comparison. The aperture reports the never-written registers each side read as evidence, and a relation can require them equal. |
-| 12.N.3 | pending | Execution capacity and cost: stack fill per case (no per-fill request split), lazy event-capacity admission, and a compact retained event encoding with an unchanged logical evidence contract. The largest current request (TX-DC) needs neither per-fill splitting nor hundreds of megabytes of evidence. |
+| 12.N.3 | done | Execution capacity and cost: stack fill per case (no per-fill request split), lazy event-capacity admission, and a compact retained event encoding with an unchanged logical evidence contract. The largest current request (TX-DC) needs neither per-fill splitting nor hundreds of megabytes of evidence. |
 | 12.N.4 | pending | Every existing scenario (gain, i2c, channel, rx-gain, tx-dc) moves to native claims. Scenario code keeps peripheral inputs, matrices and independent oracles; runner-side comparison code is removed. Cases, verdicts, negatives and preservation are unchanged; each scenario's retained verdict alone establishes its claim. |
 
 Unit 12.N.1 acceptance: effect contracts gained the explicit
@@ -1354,3 +1354,18 @@ dropped as redundant. Under `unclassified: required` every non-plumbing read
 compares exactly, so both sides necessarily consume the same never-written
 registers; a verification test fixes that an environment read on one side
 alone is DIFF. All three scenarios, negatives and preservation pass.
+
+Unit 12.N.3 acceptance: an execution case may set `stack_fill`, which replaces
+both targets' stack fill for its phases, so one request holds profiles of
+several fills. Session event capacity is admitted into working memory as
+events occur, doubling up to `max_events`, instead of reserving the bound up
+front. Retained records are the unchanged logical JSONL stream stored as one
+raw deflate stream (execution schema 20); readers decode it under the same
+per-record bound and work budget, and truncated, trailing or non-deflate
+payloads are integrity failures. `execution --no-events` validates every
+record but returns no guest events. The TX-DC matrix is one request whose
+retained objects total 46 MB instead of about half a gigabyte, and its
+scenario reads back no events; RX-gain matrices and the channel full-root,
+temperature-prefix and stuck-readiness sets are also single requests. All six
+scenarios, all Blobray tests, formatting, strict Clippy and the docs check
+pass. Remaining per-fill splits in the gain and i2c families move in 12.N.4.

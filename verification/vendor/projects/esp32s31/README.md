@@ -636,7 +636,7 @@ installer and executes the root. The models declare these inputs:
 
 Every other radio register is the retained aperture.
 
-**Matrices.** Each matrix is one request per fill.
+**Matrices.** Each matrix is one request; each profile sets its own stack fill.
 
 - Publication takes both DC/table guards: 16 profiles.
 - Calibration uses samples 0, ±64 and ±2^24: 40 profiles.
@@ -724,7 +724,8 @@ transport read of each analog command, and an out-of-range sensor sample adds
 the DAC read-modify-write of the ROM reselection.
 
 **Full-root evidence.** These cases cover channels 1, 6, 11 and 13 at both
-bandwidths and both fills. They require:
+bandwidths and both fills, in one `channel-full` execution where each
+transition sets its own stack fill. They require:
 
 - a MATCH under the reviewed channel contract and output projection;
 - nonempty TX gain publication;
@@ -732,8 +733,8 @@ bandwidths and both fills. They require:
   ROM `phy_tsens_attribute`/`phy_code_to_temp` oracle.
 
 **Temperature-prefix evidence.** These cases cover all five sensor DAC windows
-at codes 0, 64, 100 and 255. They are retained as separate `prefix-*`
-executions. Each compares its complete transition under the channel contract
+at codes 0, 64, 100 and 255. They are retained as a separate `channel-prefix`
+execution. Each compares its complete transition under the channel contract
 and takes exactly one sensor sample before the first gain-bank read.
 
 **Stuck readiness.** The production-only case must return failure without
@@ -746,7 +747,7 @@ writing gain data or semantic output, after sampling readiness.
 - an undersized event capacity publishes nothing.
 
 All runs replay after move/backup/restore. Stuck readiness runs production's
-full bounded poll, which dominates the run's roughly one-minute duration.
+full bounded poll for both fills in one request.
 
 This is channel state, not the enclosing RXCAL reference commit, and not RF
 qualification.
@@ -789,7 +790,7 @@ Like `rx-gain`, it requires `--phy-sdk` for the never-executed `phy_printf`.
 Its ROM table slots that the installer does not override (for example the tone
 SAR reader) come from the ROM's boot-initialized data.
 
-**Matrix.** 64 profiles in one request per fill:
+**Matrix.** 64 profiles in one request, each with its own stack fill:
 
 - Wi-Fi and Bluetooth selection;
 - constant SAR samples 0, 123 and 8191, and an alternating stream (a cyclic

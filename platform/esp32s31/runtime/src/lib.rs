@@ -14,7 +14,7 @@ pub unsafe fn adopt_psram(
     peripheral: esp_hal::peripherals::PSRAM<'static>,
 ) -> esp_hal::psram::Psram {
     unsafe {
-        let psram = oer_esp32s31_board::adopt_initialized_psram(peripheral);
+        let psram = oer_esp32s31_platform_board::adopt_initialized_psram(peripheral);
         esp_hal::interrupt::reinitialize_vectoring_after_handoff();
         #[cfg(feature = "psram-task-stack")]
         stacks::install_current_hart_interrupt_stack();

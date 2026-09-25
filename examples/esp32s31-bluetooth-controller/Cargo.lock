@@ -1384,13 +1384,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-board"
-version = "0.1.0"
-dependencies = [
- "esp-hal",
-]
-
-[[package]]
 name = "oer-esp32s31-coex"
 version = "0.1.0"
 
@@ -1448,6 +1441,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-esp32s31-platform-board"
+version = "0.1.0"
+dependencies = [
+ "esp-hal",
+]
+
+[[package]]
+name = "oer-esp32s31-platform-runtime"
+version = "0.1.0"
+dependencies = [
+ "esp-hal",
+ "oer-esp32s31-platform-board",
+]
+
+[[package]]
 name = "oer-esp32s31-radio-esp-hal"
 version = "0.1.0"
 dependencies = [
@@ -1459,14 +1467,6 @@ dependencies = [
  "oer-esp32s31-bluetooth-controller",
  "oer-esp32s31-hal",
  "oer-esp32s31-phy",
-]
-
-[[package]]
-name = "oer-esp32s31-runtime"
-version = "0.1.0"
-dependencies = [
- "esp-hal",
- "oer-esp32s31-board",
 ]
 
 [[package]]
@@ -1504,7 +1504,7 @@ dependencies = [
  "esp-println",
  "oer-bluetooth-hci",
  "oer-esp32s31-executor-embassy",
- "oer-esp32s31-runtime",
+ "oer-esp32s31-platform-runtime",
  "oer-example-bluetooth-gatt",
  "oer-firmware",
  "open-esp-radio",

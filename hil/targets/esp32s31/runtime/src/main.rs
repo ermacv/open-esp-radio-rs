@@ -125,7 +125,7 @@ mod phy_calibration_artifact;
 #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
 mod product_hil;
 #[cfg(feature = "psram-task-stack")]
-use oer_esp32s31_runtime::stacks as psram_task_stack;
+use oer_esp32s31_platform_runtime::stacks as psram_task_stack;
 
 const DATA_SENTINEL: u32 = 0x5353_31d2;
 const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
@@ -255,7 +255,7 @@ unsafe extern "C" {
     static _stack_start: u8;
 }
 
-use oer_esp32s31_runtime as _;
+use oer_esp32s31_platform_runtime as _;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
@@ -330,7 +330,7 @@ extern "C" fn runtime_main() -> ! {
     // runtime. `esp_hal::init()` cannot carry process-local mapping metadata
     // across that ELF boundary, so stage two explicitly adopts the live
     // hardware mapping without reinitializing the PSRAM device or MMU.
-    let _psram = unsafe { oer_esp32s31_runtime::adopt_psram(peripherals.PSRAM) };
+    let _psram = unsafe { oer_esp32s31_platform_runtime::adopt_psram(peripherals.PSRAM) };
     exception::install_stack_guard(ptr::addr_of!(_stack_end) as usize);
     #[cfg(all(feature = "open-radio-hil", not(feature = "memory-benchmark")))]
     let l1_cache = L1_CACHE_PERFORMANCE.init(
@@ -390,7 +390,7 @@ extern "C" fn runtime_main() -> ! {
 
     // SAFETY: bootstrap intentionally hands MIE over clear, and timer and
     // software wake interrupt ownership is complete at this point.
-    unsafe { oer_esp32s31_runtime::enable_interrupts_after_handoff() };
+    unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
 
     #[cfg(feature = "bluetooth-gatt")]
     bluetooth_gatt::start(
@@ -524,7 +524,7 @@ fn run_app_core(app_interrupt: SoftwareInterrupt<'static, 1>) -> ! {
     // SAFETY: Core 1 enters directly from ROM rather than through
     // `_runtime_start` with MIE clear; its per-hart vector state and stack
     // ownership are complete, so hand interrupt enable to its executor.
-    unsafe { oer_esp32s31_runtime::enable_interrupts_after_handoff() };
+    unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
     APP_EXECUTOR
         .init(Executor::<1>::new(app_interrupt))
         .run(|spawner| {

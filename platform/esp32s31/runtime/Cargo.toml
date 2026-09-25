@@ -1,5 +1,5 @@
 [package]
-name = "oer-esp32s31-runtime"
+name = "oer-esp32s31-platform-runtime"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,7 +12,7 @@ multicore = []
 
 [dependencies]
 esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
-oer-esp32s31-board = { path = "../board" }
+oer-esp32s31-platform-board = { path = "../board" }
 
 [package.metadata.open-radio]
 scope = "development"

@@ -1176,13 +1176,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-board"
-version = "0.1.0"
-dependencies = [
- "esp-hal",
-]
-
-[[package]]
 name = "oer-esp32s31-coex"
 version = "0.1.0"
 
@@ -1380,11 +1373,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-runtime"
+name = "oer-esp32s31-platform-board"
 version = "0.1.0"
 dependencies = [
  "esp-hal",
- "oer-esp32s31-board",
+]
+
+[[package]]
+name = "oer-esp32s31-platform-runtime"
+version = "0.1.0"
+dependencies = [
+ "esp-hal",
+ "oer-esp32s31-platform-board",
 ]
 
 [[package]]
@@ -1405,7 +1405,7 @@ dependencies = [
  "esp-hal",
  "esp-println",
  "oer-esp32s31-executor-embassy",
- "oer-esp32s31-runtime",
+ "oer-esp32s31-platform-runtime",
  "oer-firmware",
  "open-esp-radio",
  "static_cell",

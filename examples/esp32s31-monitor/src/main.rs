@@ -35,7 +35,7 @@ extern "C" fn runtime_main() -> ! {
     let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
     // SAFETY: the common stage-two entry runs after the board bootstrap,
     // with global interrupts disabled and the PSRAM mapping intact.
-    let _psram = unsafe { oer_esp32s31_runtime::adopt_psram(peripherals.PSRAM) };
+    let _psram = unsafe { oer_esp32s31_platform_runtime::adopt_psram(peripherals.PSRAM) };
 
     static WATCHDOG: StaticCell<DeadlineWatchdog> = StaticCell::new();
     let watchdog = WATCHDOG.init(DeadlineWatchdog::new(peripherals.TIMG1));
@@ -59,7 +59,7 @@ extern "C" fn runtime_main() -> ! {
     )));
     // SAFETY: timer and executor handlers are now bound on CPU0, and the staged
     // handoff has kept MIE clear since `adopt_psram`.
-    unsafe { oer_esp32s31_runtime::enable_interrupts_after_handoff() };
+    unsafe { oer_esp32s31_platform_runtime::enable_interrupts_after_handoff() };
     executor.run(|spawner| {
         spawner.spawn(
             monitor_task(spawner, radio, trng, watchdog)

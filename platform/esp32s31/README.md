@@ -27,11 +27,11 @@ It does not return or carry Rust peripheral owners across the image boundary.
 
 Stage-two assembly initializes application data and SRAM interrupt/DMA sections
 before entering `runtime_main`. The application calls `esp_hal::init`, then
-unsafely adopts the bootstrap mapping through `oer_esp32s31_runtime::adopt_psram`
+unsafely adopts the bootstrap mapping through `oer_esp32s31_platform_runtime::adopt_psram`
 with its unique PSRAM token. This also reinitializes vectoring and installs the
 per-core SRAM interrupt stack. Global interrupts remain disabled until the
 application binds its timers and executor handlers; it then calls the unsafe
-`oer_esp32s31_runtime::enable_interrupts_after_handoff` once per hart. PSRAM
+`oer_esp32s31_platform_runtime::enable_interrupts_after_handoff` once per hart. PSRAM
 must not be reset or remapped after handoff.
 
 Standalone applications use PSRAM for code, ordinary data and a 192-KiB CPU0

@@ -3,11 +3,11 @@
 
 esp_bootloader_esp_idf::esp_app_desc!(
     "0.1.0",
-    "oer-esp32s31-bootstrap",
+    "oer-esp32s31-platform-bootstrap",
     "00:00:00",
     "2026-07-31",
     "6.1",
-    oer_esp32s31_board::FLASH_MMU_PAGE_SIZE_BYTES,
+    oer_esp32s31_platform_board::FLASH_MMU_PAGE_SIZE_BYTES,
     0,
     u16::MAX,
     0
@@ -15,7 +15,7 @@ esp_bootloader_esp_idf::esp_app_desc!(
 
 use core::{arch::asm, ffi::CStr, mem::size_of, ptr};
 
-use oer_esp32s31_board as board;
+use oer_esp32s31_platform_board as board;
 use oer_esp32s31_soc_esp_hal::{FLASH_XIP_END, FLASH_XIP_START, FlashMmu};
 use static_cell::ConstStaticCell;
 

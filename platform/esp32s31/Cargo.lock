@@ -982,29 +982,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "oer-esp32s31-board"
+name = "oer-esp32s31-platform-board"
 version = "0.1.0"
 dependencies = [
  "esp-hal",
 ]
 
 [[package]]
-name = "oer-esp32s31-bootstrap"
+name = "oer-esp32s31-platform-bootstrap"
 version = "0.1.0"
 dependencies = [
  "esp-bootloader-esp-idf",
  "esp-hal",
- "oer-esp32s31-board",
+ "oer-esp32s31-platform-board",
  "oer-esp32s31-soc-esp-hal",
  "static_cell",
 ]
 
 [[package]]
-name = "oer-esp32s31-runtime"
+name = "oer-esp32s31-platform-runtime"
 version = "0.1.0"
 dependencies = [
  "esp-hal",
- "oer-esp32s31-board",
+ "oer-esp32s31-platform-board",
 ]
 
 [[package]]

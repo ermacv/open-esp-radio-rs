@@ -27,6 +27,6 @@ fn main() {
 
     println!("cargo:rustc-link-search={}", linker_dir.display());
     for argument in ["-Trom/esp32s31-eco0.x", "-Tbootstrap/link.x", "--nmagic"] {
-        println!("cargo:rustc-link-arg-bin=oer-esp32s31-bootstrap={argument}");
+        println!("cargo:rustc-link-arg-bin=oer-esp32s31-platform-bootstrap={argument}");
     }
 }

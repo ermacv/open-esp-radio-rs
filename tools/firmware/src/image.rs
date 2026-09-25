@@ -2,7 +2,7 @@ use crate::Result;
 use oer_process::CommandExt;
 use std::{collections::BTreeMap, env, ffi::OsString, fs, path::Path, process::Command};
 pub const TARGET: &str = "riscv32imafc-unknown-none-elf";
-pub const BOOTSTRAP_BIN: &str = "oer-esp32s31-bootstrap";
+pub const BOOTSTRAP_BIN: &str = "oer-esp32s31-platform-bootstrap";
 fn program_from_env(variable: &str, fallback: &str) -> OsString {
     env::var_os(variable).unwrap_or_else(|| fallback.into())
 }

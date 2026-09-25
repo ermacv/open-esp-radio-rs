@@ -17,9 +17,17 @@ struct Segment<'a> {
     marks: ScratchBytes<'a>,
 }
 
+/// Indirect transfers admitted by one working-memory reservation.
+const TRANSFER_ADMISSION: usize = 256;
+/// Working memory admitted per recorded indirect transfer.
+const TRANSFER_COST: u64 = 64;
+
 #[derive(Default)]
 pub(crate) struct CodeCoverage<'a> {
     segments: Vec<Segment<'a>>,
+    /// Distinct (site, target) of executed indirect transfers.
+    transfers: std::collections::BTreeSet<(u32, u32)>,
+    transfer_capacity: Vec<MemoryReservation<'a>>,
     /// Segment of the most recent mark; straight-line code stays in one segment.
     last: usize,
 }
@@ -76,6 +84,34 @@ impl<'a> CodeCoverage<'a> {
         self.mark(site, if taken { TAKEN } else { FALLTHROUGH });
     }
 
+    /// An indirect call or jump executed at `site` in tracked code.
+    pub fn transfer(
+        &mut self,
+        site: u32,
+        target: u32,
+        memory: &'a WorkingMemory,
+        c: &mut dyn RunControl,
+    ) -> Result<()> {
+        if !self
+            .segments
+            .iter()
+            .any(|s| site.wrapping_sub(s.address) < s.length)
+            || self.transfers.contains(&(site, target))
+        {
+            return Ok(());
+        }
+        if self.transfers.len() == self.transfer_capacity.len() * TRANSFER_ADMISSION {
+            let reservation =
+                memory.reserve(TRANSFER_ADMISSION as u64 * TRANSFER_COST, c.position())?;
+            self.transfer_capacity.try_reserve(1).map_err(|_| {
+                Error::new(ErrorCode::ResourceLimited, "coverage allocation refused")
+            })?;
+            self.transfer_capacity.push(reservation);
+        }
+        self.transfers.insert((site, target));
+        Ok(())
+    }
+
     /// The accumulated coverage, with the reservation that admits its vectors.
     pub fn finish(
         &self,
@@ -97,7 +133,9 @@ impl<'a> CodeCoverage<'a> {
         }
         let reservation = memory.reserve(
             (instructions * std::mem::size_of::<u32>()
-                + branches * std::mem::size_of::<BranchCoverage>()) as u64,
+                + branches * std::mem::size_of::<BranchCoverage>()
+                + self.transfers.len() * std::mem::size_of::<IndirectTransfer>())
+                as u64,
             c.position(),
         )?;
         let refused = |_| Error::new(ErrorCode::ResourceLimited, "coverage allocation refused");
@@ -131,6 +169,15 @@ impl<'a> CodeCoverage<'a> {
                 }
             }
         }
+        coverage
+            .transfers
+            .try_reserve_exact(self.transfers.len())
+            .map_err(refused)?;
+        coverage.transfers.extend(
+            self.transfers
+                .iter()
+                .map(|&(site, target)| IndirectTransfer { site, target }),
+        );
         Ok((coverage, reservation))
     }
 }

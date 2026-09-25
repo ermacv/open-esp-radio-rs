@@ -431,14 +431,17 @@ pub(crate) fn prepare_execution_worker_in(
                 break;
             }
             let (reached, _capacity) = side.coverage.finish(memory, &mut control)?;
-            write_control_message(
-                &mut file,
-                &ExecutionEvidence::Coverage {
-                    replacement: index == 1,
-                    coverage: reached,
-                },
-            )?;
-            file.write_all(b"\n").map_err(storage_io)?;
+            for part in reached.split() {
+                control.checkpoint(1)?;
+                write_control_message(
+                    &mut file,
+                    &ExecutionEvidence::Coverage {
+                        replacement: index == 1,
+                        coverage: part,
+                    },
+                )?;
+                file.write_all(b"\n").map_err(storage_io)?;
+            }
         }
         drop(sides);
         let staging = Staging::with_temporary_budget(stage, disk.clone())?;

@@ -34,6 +34,8 @@ struct Reached {
     instructions: BTreeSet<u32>,
     /// Observed (taken, fallthrough) per branch site.
     branches: BTreeMap<u32, (bool, bool)>,
+    /// Observed targets of executed indirect transfers, by site.
+    transfers: BTreeMap<u32, BTreeSet<u32>>,
     roots: BTreeSet<u32>,
     boundaries: BTreeSet<u32>,
 }
@@ -59,7 +61,8 @@ fn collect(
                 ));
             }
         }
-        let mut coverage = None;
+        let mut coverage = ExecutionCoverage::default();
+        let mut vendor_records = 0u64;
         blobray_store::validate_execution_records_with(
             &execution.manifest,
             request,
@@ -72,16 +75,30 @@ fn collect(
                     coverage: vendor,
                 } = record
                 {
-                    coverage = Some(vendor.clone());
+                    vendor_records += 1;
+                    coverage
+                        .instructions
+                        .extend_from_slice(&vendor.instructions);
+                    coverage.branches.extend_from_slice(&vendor.branches);
+                    coverage.transfers.extend_from_slice(&vendor.transfers);
                 }
                 Ok(())
             },
         )?;
-        let coverage =
-            coverage.ok_or_else(|| Error::new(ErrorCode::Integrity, "vendor coverage missing"))?;
+        if vendor_records == 0 {
+            return Err(Error::new(ErrorCode::Integrity, "vendor coverage missing"));
+        }
         for pc in coverage.instructions {
             c.checkpoint(1)?;
             reached.instructions.insert(pc);
+        }
+        for transfer in coverage.transfers {
+            c.checkpoint(1)?;
+            reached
+                .transfers
+                .entry(transfer.site)
+                .or_default()
+                .insert(transfer.target);
         }
         for branch in coverage.branches {
             c.checkpoint(1)?;
@@ -196,6 +213,7 @@ pub(crate) fn report(
             roots: &roots,
             boundaries: &reached.boundaries,
             function_starts: &starts,
+            observed: &reached.transfers,
             code: &Code { segments },
             semantics,
         },

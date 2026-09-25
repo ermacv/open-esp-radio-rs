@@ -706,13 +706,22 @@ pub enum ExecutionEvidence {
         case: u32,
         result: CaseComparison,
     },
-    /// One per side after the last case: code that side reached over the
-    /// whole execution.
+    /// After the last case, the vendor side's records and then the
+    /// replacement's: code that side reached over the whole execution, split
+    /// into ascending, disjoint address ranges that each fit one record.
     Coverage {
         replacement: bool,
         coverage: ExecutionCoverage,
     },
 }
+/// Executed instructions in one coverage record; with the branch bound, one
+/// record stays within a control message.
+pub const MAX_COVERAGE_RECORD_INSTRUCTIONS: usize = 1536;
+/// Branches in one coverage record.
+pub const MAX_COVERAGE_RECORD_BRANCHES: usize = 512;
+/// Indirect transfers in one coverage record.
+pub const MAX_COVERAGE_RECORD_TRANSFERS: usize = 256;
+
 /// Code one side reached in its executable captured segments over every phase
 /// of an execution. Execution from writable RAM is not captured code.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -722,6 +731,15 @@ pub struct ExecutionCoverage {
     pub instructions: Vec<u32>,
     /// Conditional branches with the directions they took, ascending by site.
     pub branches: Vec<BranchCoverage>,
+    /// Distinct targets of executed indirect calls and jumps (not returns),
+    /// ascending by site and target.
+    pub transfers: Vec<IndirectTransfer>,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IndirectTransfer {
+    pub site: u32,
+    pub target: u32,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -735,8 +753,19 @@ impl ExecutionCoverage {
     /// belongs to an executed instruction.
     pub fn validate(&self, c: &mut dyn RunControl) -> Result<()> {
         let invalid = || Error::new(ErrorCode::Integrity, "invalid execution coverage");
-        c.checkpoint((self.instructions.len() + self.branches.len()) as u64 / 1024 + 1)?;
-        if self.instructions.iter().any(|pc| pc & 1 != 0)
+        c.checkpoint(
+            (self.instructions.len() + self.branches.len() + self.transfers.len()) as u64 / 1024
+                + 1,
+        )?;
+        if self.instructions.len() > MAX_COVERAGE_RECORD_INSTRUCTIONS
+            || self.branches.len() > MAX_COVERAGE_RECORD_BRANCHES
+            || self.transfers.len() > MAX_COVERAGE_RECORD_TRANSFERS
+            || self.transfers.windows(2).any(|w| w[0] >= w[1])
+            || self
+                .transfers
+                .iter()
+                .any(|t| self.instructions.binary_search(&t.site).is_err())
+            || self.instructions.iter().any(|pc| pc & 1 != 0)
             || self.instructions.windows(2).any(|w| w[0] >= w[1])
             || self.branches.windows(2).any(|w| w[0].site >= w[1].site)
             || self.branches.iter().any(|b| {
@@ -746,5 +775,75 @@ impl ExecutionCoverage {
             return Err(invalid());
         }
         Ok(())
+    }
+    /// Split into ascending records within the record bounds. Each record
+    /// holds the branches of its own instructions; empty coverage stays one
+    /// empty record.
+    pub fn split(self) -> Vec<ExecutionCoverage> {
+        let mut records = Vec::new();
+        let mut branches = self.branches.into_iter().peekable();
+        let mut transfers = self.transfers.into_iter().peekable();
+        let mut current = ExecutionCoverage::default();
+        for pc in self.instructions {
+            let branch = branches.next_if(|b| b.site == pc);
+            let mut targets = Vec::new();
+            while let Some(transfer) = transfers.next_if(|t| t.site == pc) {
+                targets.push(transfer);
+            }
+            if current.instructions.len() == MAX_COVERAGE_RECORD_INSTRUCTIONS
+                || (branch.is_some() && current.branches.len() == MAX_COVERAGE_RECORD_BRANCHES)
+                || current.transfers.len() + targets.len() > MAX_COVERAGE_RECORD_TRANSFERS
+            {
+                records.push(std::mem::take(&mut current));
+            }
+            current.instructions.push(pc);
+            current.branches.extend(branch);
+            current.transfers.extend(targets);
+        }
+        if records.is_empty() || !current.instructions.is_empty() {
+            records.push(current);
+        }
+        records
+    }
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+    #[test]
+    fn coverage_splits_into_bounded_ascending_records_that_keep_branches_with_their_sites() {
+        let instructions: Vec<u32> = (0..MAX_COVERAGE_RECORD_INSTRUCTIONS as u32 + 3)
+            .map(|i| 0x1000 + 4 * i)
+            .collect();
+        // More branches than one record holds, all before the instruction bound.
+        let branches: Vec<BranchCoverage> = instructions[..MAX_COVERAGE_RECORD_BRANCHES + 1]
+            .iter()
+            .map(|site| BranchCoverage {
+                site: *site,
+                taken: true,
+                fallthrough: false,
+            })
+            .collect();
+        let whole = ExecutionCoverage {
+            instructions: instructions.clone(),
+            branches: branches.clone(),
+            transfers: vec![],
+        };
+        let parts = whole.split();
+        assert!(parts.len() >= 2);
+        let mut last = None;
+        for part in &parts {
+            part.validate(&mut || Ok(())).unwrap();
+            assert!(last.is_none_or(|l| part.instructions[0] > l));
+            last = part.instructions.last().copied();
+        }
+        let rejoined: Vec<u32> = parts.iter().flat_map(|p| p.instructions.clone()).collect();
+        assert_eq!(rejoined, instructions);
+        let rejoined: Vec<_> = parts.iter().flat_map(|p| p.branches.clone()).collect();
+        assert_eq!(rejoined, branches);
+        assert_eq!(
+            ExecutionCoverage::default().split(),
+            vec![ExecutionCoverage::default()]
+        );
     }
 }

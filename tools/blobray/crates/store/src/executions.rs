@@ -357,8 +357,12 @@ pub fn validate_execution_records_with(
     let mut relation_complete = true;
     let mut environment_complete = true;
     let mut verdict = manifest.verdict.map(|_| ComparisonVerdict::Match);
-    // Vendor coverage, then replacement coverage, after the last case.
+    // Vendor coverage, then replacement coverage, after the last case: per
+    // side, whether a record arrived and the highest address so far. Only a
+    // side's single record may be empty.
     let mut coverage = [false, request.replacement.is_none()];
+    let mut covered: [Option<u32>; 2] = [None, None];
+    let mut empty = [false, false];
     crate::execution_records::visit_execution_records(source, c, |record, c| {
         visit(&record, c)?;
         if let ExecutionEvidence::Coverage {
@@ -366,14 +370,25 @@ pub fn validate_execution_records_with(
             coverage: reached,
         } = &record
         {
+            let side = usize::from(*replacement);
             if case as usize != request.cases.len()
-                || coverage[usize::from(*replacement)]
-                || (*replacement && !coverage[0])
+                || (*replacement && (!coverage[0] || request.replacement.is_none()))
+                || (!*replacement && request.replacement.is_some() && coverage[1])
+                || empty[side]
+                || (coverage[side] && reached.instructions.is_empty())
+                || reached
+                    .instructions
+                    .first()
+                    .is_some_and(|first| covered[side].is_some_and(|last| *first <= last))
             {
                 return Err(integrity("execution coverage order differs"));
             }
             reached.validate(c)?;
-            coverage[usize::from(*replacement)] = true;
+            coverage[side] = true;
+            empty[side] = reached.instructions.is_empty();
+            if let Some(last) = reached.instructions.last() {
+                covered[side] = Some(*last);
+            }
             return Ok(());
         }
         if case as usize >= request.cases.len() {

@@ -550,15 +550,20 @@ sets retain a small fraction of their logical size. Readers decode it under the
 same per-record bound and work budget and see exactly the logical records;
 a truncated, trailing or non-deflate payload is an integrity failure.
 
-After the last case, one `coverage` record per side lists the code that side
-reached over the whole execution: strictly ascending executed instruction
-addresses and, for each conditional branch that executed, whether it was taken
-and whether it fell through. Only executable captured segments count; code run
+After the last case, `coverage` records list the code each side reached over
+the whole execution, vendor records first: strictly ascending executed
+instruction addresses and, for each conditional branch that executed, whether it
+was taken and whether it fell through, and the distinct targets of executed
+indirect calls and jumps other than returns. A side's coverage is split into
+records of ascending, disjoint address ranges of at most 1,536 instructions,
+512 branches and 256 indirect transfers, each holding the branches and
+transfers of its own instructions; empty coverage is a single empty record. Only executable captured segments count; code run
 from caller RAM does not. Coverage accumulates across cold resets and does not
 depend on the selected timeline. Each side keeps one mark byte per halfword of
-its executable segments in working memory. The validator requires both records
-in vendor-then-replacement order and rejects unordered addresses, a branch with
-no direction or a branch direction of an instruction that never executed.
+its executable segments in working memory. The validator requires each side's
+records in vendor-then-replacement order and rejects unordered or overlapping
+records, a branch with no direction or a branch direction of an instruction that
+never executed.
 The coordinator checks the admitted recipe and stream structure before
 atomically committing the result reference and completed run. Cancellation,
 limits or corruption cannot publish partial evidence. Process-level OOM and
@@ -574,12 +579,14 @@ blobray code-coverage --project PROJECT --execution EXECUTION_SHA [--execution E
 target; executions of different targets, or a repeated execution, are rejected.
 Every distinct vendor invocation entry is a root. From each root the closure
 explores executable captured code by recursive descent: conditional branches,
-direct jumps and calls, and `auipc`/`lui` + `jalr` pairs whose target the
-immediately preceding upper immediate defines. A plain jump to another defined
+direct jumps and calls, `auipc`/`lui` + `jalr` pairs whose target the
+immediately preceding upper immediate defines, and the observed targets of any
+other executed indirect transfer. A plain jump to another defined
 code symbol's start is a tail call. The closure does not enter call-model and
 FIFO-service binding addresses or goal symbols; those transfer sites are
-`modeled`. Other indirect transfers, and direct transfers leaving executable
-captured code, are `unresolved`; a `jalr x0, 0(ra)` return is neither.
+`modeled`. Indirect transfers with neither kind of target, typically ones that
+never executed, and direct transfers leaving executable captured code, are
+`unresolved`; a `jalr x0, 0(ra)` return is neither.
 Undecodable instructions are `gaps`.
 
 The summary names the decoder and semantic identities and carries the report.

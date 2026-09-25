@@ -527,6 +527,10 @@ impl ExecutionMemory for Session<'_> {
         self.capture_call(input, c)
     }
     fn call(&mut self, input: &CallInput, c: &mut dyn RunControl) -> Result<CallDispatch> {
+        if input.indirect {
+            self.coverage
+                .transfer(input.site, input.target, self.memory, c)?;
+        }
         if input.indirect
             && let Some(result) = self.interface_call(input, c)?
         {

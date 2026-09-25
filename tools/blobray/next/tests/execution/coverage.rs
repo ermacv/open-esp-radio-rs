@@ -44,6 +44,7 @@ fn coverage_accumulates_each_side_across_cold_sessions() {
                 taken: true,
                 fallthrough: true,
             }],
+            transfers: vec![],
         }
     );
     assert_eq!(
@@ -55,6 +56,7 @@ fn coverage_accumulates_each_side_across_cold_sessions() {
                 taken: true,
                 fallthrough: false,
             }],
+            transfers: vec![],
         }
     );
 }
@@ -213,8 +215,18 @@ fn code_coverage_reports_root_closures_boundaries_and_unions() {
     let taken = f.run(closure_request(&f, 0, 0x1028), budget());
     assert_eq!(taken.state, RunState::Completed, "{taken:?}");
     let taken = taken.execution.unwrap();
+    let (_, rows) = super::interfaces::run(&f, closure_request(&f, 0, 0x1028));
+    assert_eq!(
+        coverage(&rows, false).transfers,
+        vec![IndirectTransfer {
+            site: 0x1018,
+            target: 0x1028
+        }]
+    );
     let both = report(&f, &[&fallthrough, &taken]);
     assert!(both.roots[0].blocks.complete() && both.roots[0].directions.complete());
+    // The observed target resolves the executed indirect call.
+    assert!(both.functions[0].unresolved.is_empty(), "{both:?}");
     assert!(
         both.functions
             .iter()

@@ -3,9 +3,10 @@
 //! Each function is explored by recursive descent from its entry through
 //! direct branches and jumps. Direct calls, and `auipc`/`lui` + `jalr` pairs
 //! whose target is known from the immediately preceding upper-immediate
-//! instruction, add callees. A jump to another function's defined start is a
-//! tail transfer. Transfers to declared boundaries stop the closure; other
-//! indirect transfers stay unresolved.
+//! instruction, add callees; so do the observed targets of other executed
+//! indirect transfers. A jump to another function's defined start is a tail
+//! transfer. Transfers to declared boundaries stop the closure; indirect
+//! transfers with neither a static nor an observed target stay unresolved.
 use blobray_domain::*;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -23,6 +24,8 @@ pub struct ClosureInput<'a> {
     pub boundaries: &'a BTreeSet<u32>,
     /// Defined function starts, which make a plain jump a tail transfer.
     pub function_starts: &'a BTreeSet<u32>,
+    /// Observed targets of executed indirect transfers, by site.
+    pub observed: &'a BTreeMap<u32, BTreeSet<u32>>,
     pub code: &'a dyn CodeMemory,
     pub semantics: &'a dyn FunctionSemantics,
 }
@@ -188,9 +191,16 @@ impl Walker<'_, '_> {
                             ),
                             // `jalr x0, 0(ra)` returns to the caller.
                             None if !link && base == 1 && offset == 0 => {}
-                            None => {
-                                f.unresolved.insert(pc);
-                            }
+                            None => match self.input.observed.get(&pc) {
+                                Some(targets) => {
+                                    for target in targets {
+                                        self.transfer(&mut f, entry, pc, *target, link);
+                                    }
+                                }
+                                None => {
+                                    f.unresolved.insert(pc);
+                                }
+                            },
                         }
                         if link {
                             pc = next;

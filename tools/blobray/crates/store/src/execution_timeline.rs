@@ -276,6 +276,7 @@ mod tests {
         let reached = |instructions: Vec<u32>, branches: Vec<BranchCoverage>| ExecutionCoverage {
             instructions,
             branches,
+            transfers: vec![],
         };
         let row = |replacement, coverage| ExecutionEvidence::Coverage {
             replacement,
@@ -295,6 +296,14 @@ mod tests {
             validate_rows(&manifest, &all)
         };
         with(vec![row(false, valid.clone()), row(true, valid.clone())]).unwrap();
+        // A side may continue in ascending records; empty coverage is one record.
+        let later = reached(vec![0x2000], vec![]);
+        with(vec![
+            row(false, valid.clone()),
+            row(false, later.clone()),
+            row(true, reached(vec![], vec![])),
+        ])
+        .unwrap();
         for tail in [
             vec![],
             vec![row(false, valid.clone())],
@@ -303,6 +312,22 @@ mod tests {
                 row(false, valid.clone()),
                 row(false, valid.clone()),
                 row(true, valid.clone()),
+            ],
+            // Records of a side must ascend, and an empty record stands alone.
+            vec![
+                row(false, later.clone()),
+                row(false, valid.clone()),
+                row(true, valid.clone()),
+            ],
+            vec![
+                row(false, reached(vec![], vec![])),
+                row(false, later.clone()),
+                row(true, valid.clone()),
+            ],
+            vec![
+                row(false, valid.clone()),
+                row(true, valid.clone()),
+                row(false, later.clone()),
             ],
             // A branch direction of an instruction that never executed.
             vec![

@@ -18,10 +18,13 @@ fn defsym(bin: &str, name: &str, value: u32) {
 
 fn link(bin: &str, linker_dir: &Path, scripts: &[&str], entry: &str) {
     for script in scripts {
-        println!(
-            "cargo:rerun-if-changed={}",
-            linker_dir.join(script).display()
+        let path = linker_dir.join(script);
+        assert!(
+            path.is_file(),
+            "platform linker script {} is missing; pass the platform `linker` directory",
+            path.display()
         );
+        println!("cargo:rerun-if-changed={}", path.display());
     }
     println!("cargo:rustc-link-search={}", linker_dir.display());
     for argument in ["-Trom/esp32s31-eco0.x", entry, "--nmagic"] {

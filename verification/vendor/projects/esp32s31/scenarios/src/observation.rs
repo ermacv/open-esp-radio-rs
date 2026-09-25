@@ -25,18 +25,112 @@ pub fn root() -> Result<PathBuf> {
 /// A source line of one file, relative to the repository root.
 pub type SourceLine = (PathBuf, u32);
 
-/// A reviewed decision on an executed line no compared observation depends on.
-/// `source_line` is the line's trimmed text, so the decision survives
-/// unrelated line shifts.
+/// A reviewed decision on executed lines no compared observation depends on.
+/// Each place is a file below `SCOPE` and a line's trimmed text, so the
+/// decision survives unrelated line shifts.
 #[derive(Clone, Copy, Debug)]
 pub struct Decision {
-    pub file: &'static str,
-    pub source_line: &'static str,
     pub reason: &'static str,
+    pub places: &'static [(&'static str, &'static str)],
 }
 
 /// Reviewed unobserved lines.
-pub const DECISIONS: &[Decision] = &[];
+pub const DECISIONS: &[Decision] = &[
+    Decision {
+        reason: "execution statistics of the RX-gain and TX-DC executors; they \
+            report effort to production diagnostics and have no vendor counterpart",
+        places: &[
+            ("rx/gain_calibration.rs", "stats.minimum_searches += 1;"),
+            (
+                "rx/gain_calibration.rs",
+                "stats.minimum_operations += completion.operations();",
+            ),
+            (
+                "rx/gain_calibration.rs",
+                "stats.settle_1us += 2 * u32::from(completion.estimators());",
+            ),
+            (
+                "target_port/calibration.rs",
+                "execution.minimum_searches += 1;",
+            ),
+            (
+                "target_port/calibration.rs",
+                "execution.minimum_operations += completion.operations();",
+            ),
+            (
+                "target_port/calibration.rs",
+                "execution.outer_operations += 1;",
+            ),
+            (
+                "target_port/calibration.rs",
+                "execution.minimum_searches += stats.minimum_searches;",
+            ),
+            (
+                "target_port/calibration.rs",
+                "execution.minimum_operations += stats.minimum_operations;",
+            ),
+            (
+                "target_port/calibration.rs",
+                "execution.settle_1us += stats.settle_1us;",
+            ),
+            ("target_port/calibration.rs", "execution.settle_10us += 1;"),
+        ],
+    },
+    Decision {
+        reason: "failure payload: the measurement, observation count or force-test \
+            transaction a timed-out step reports; every compared case completes",
+        places: &[
+            (
+                "target_port/calibration.rs",
+                "measurement: measurement_base + 1,",
+            ),
+            (
+                "target_port/calibration.rs",
+                "PhyPbusForceTest::new(1, 1, shared_control),",
+            ),
+            ("tx/dc_power_detector.rs", "let measurement = self"),
+            (
+                "tx/dc_power_detector.rs",
+                ".wrapping_add(self.total_measurements);",
+            ),
+            (
+                "tx/dc_power_detector.rs",
+                "observations = observations.wrapping_add(1);",
+            ),
+            ("tx/dc_power_detector.rs", "for transaction in ["),
+            (
+                "tx/dc_power_detector.rs",
+                "PhyPbusForceTest::new(4, 2, u16::from(tx_path_value) << 3),",
+            ),
+        ],
+    },
+    Decision {
+        reason: "spills and reloads of capability references (register access, radio \
+            channel, platform, observer) that the probes bind to zero-sized or no-op \
+            implementations; the register effects themselves are compared",
+        places: &[
+            ("target_port.rs", "registers: &mut impl SharedPhyAccess,"),
+            (
+                "target_port.rs",
+                "channel: &mut oer_esp32s31_hal::ieee80211::channel::RadioChannelHal<'_, P>,",
+            ),
+            ("target_port.rs", "observer: &mut O,"),
+            ("target_port.rs", "platform: &mut P,"),
+            ("target_port.rs", "&'port mut self,"),
+            ("target_port.rs", "&mut self.observer,"),
+            ("target_port.rs", "self.platform,"),
+            ("target_port.rs", "self.registers,"),
+            (
+                "target_port/rfpll.rs",
+                "registers: &mut impl SharedPhyAccess,",
+            ),
+            (
+                "target_port/temperature.rs",
+                "registers: &mut impl SharedPhyAccess,",
+            ),
+        ],
+    },
+];
 
 /// Executed and observed production PHY lines.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -165,10 +259,11 @@ impl Sources {
         let mut untriaged = BTreeSet::new();
         for line in unobserved {
             let text = self.text(root, line)?;
-            if decisions
-                .iter()
-                .any(|d| line.0 == Path::new(d.file) && text == d.source_line)
-            {
+            if decisions.iter().any(|d| {
+                d.places
+                    .iter()
+                    .any(|(file, source)| line.0 == Path::new(SCOPE).join(file) && text == *source)
+            }) {
                 reviewed.insert(line.clone());
             } else {
                 untriaged.insert(line.clone());
@@ -177,7 +272,7 @@ impl Sources {
         Ok((reviewed, untriaged))
     }
 
-    /// Every decision must still match an unobserved line.
+    /// Every place of every decision must still match an unobserved line.
     pub fn check(
         &mut self,
         root: &Path,
@@ -187,21 +282,22 @@ impl Sources {
         let mut matched = BTreeSet::new();
         for line in unobserved {
             let text = self.text(root, line)?.to_owned();
-            for (index, decision) in decisions.iter().enumerate() {
-                if line.0 == Path::new(decision.file) && text == decision.source_line {
-                    matched.insert(index);
+            for decision in decisions {
+                for place in decision.places {
+                    if line.0 == Path::new(SCOPE).join(place.0) && text == place.1 {
+                        matched.insert(*place);
+                    }
                 }
             }
         }
         match decisions
             .iter()
-            .enumerate()
-            .find(|(index, _)| !matched.contains(index))
+            .flat_map(|d| d.places)
+            .find(|place| !matched.contains(*place))
         {
-            Some((_, stale)) => Err(invalid(format!(
-                "observation decision for `{}` in {} matches no unobserved line; \
-                 the line is observed or no longer executed",
-                stale.source_line, stale.file
+            Some((file, source)) => Err(invalid(format!(
+                "observation decision for `{source}` in {file} matches no unobserved line; \
+                 the line is observed or no longer executed"
             ))),
             None => Ok(()),
         }
@@ -213,6 +309,7 @@ mod tests {
     use super::*;
 
     const FILE: &str = "crates/hardware/esp32s31/phy/src/example.rs";
+    const PLACE: &str = "example.rs";
 
     fn root() -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
@@ -227,9 +324,8 @@ mod tests {
     }
 
     const DECIDED: &[Decision] = &[Decision {
-        file: FILE,
-        source_line: "let unused = 1;",
         reason: "test",
+        places: &[(PLACE, "let unused = 1;")],
     }];
 
     #[test]

@@ -82,12 +82,13 @@ fn storage(g: &mut Gain) -> Result<Baseline> {
     assert_eq!(startup, [0]);
     let memset = g.sym(1, "memset");
     let memcpy = g.sym(1, "memcpy");
-    let mut baseline = None;
+    // Both fills are one request; each case sets its own stack fill.
+    let mut parts = vec![];
     for fill in FILLS {
         let adjustments = [0u8, 1, 31, 127, 128, 255];
-        for batch in (0..6).step_by(6) {
+        {
             let (mut rows, mut states) = (vec![], vec![]);
-            for &adjustment in &adjustments[batch..] {
+            for &adjustment in &adjustments {
                 let mut state: Vec<u8> = (0..PHY_PARAM_BYTES)
                     .map(|i| (i * 37 + u32::from(fill)) as u8)
                     .collect();
@@ -173,8 +174,13 @@ fn storage(g: &mut Gain) -> Result<Baseline> {
                 }
                 states.push(state);
             }
-            let executed = g.characterize_vendor(&format!("storage-{fill}-{batch}"), rows, fill)?;
-            let records = &executed.records;
+            parts.push((fill, rows, (fill, states)));
+        }
+    }
+    let executed = g.characterize_fills("storage", parts)?;
+    for ((fill, states), records) in &executed.parts {
+        let (fill, records) = (*fill, records.as_slice());
+        {
             assert!(!has_events(records));
             for (i, state) in states.iter().enumerate() {
                 let offset = 11 * i as u32;
@@ -210,15 +216,14 @@ fn storage(g: &mut Gain) -> Result<Baseline> {
                 assert_eq!(at(9), initialized);
                 assert_eq!(at(10), expected);
             }
-            if batch == 0 && fill == 0x5a {
-                baseline = Some(Baseline {
-                    request: executed.request,
-                    identity: executed.identity,
-                });
-            }
         }
     }
-    Ok(baseline.expect("first storage batch"))
+    // The first profiles belong to the first fill, as the negatives expect.
+    assert_eq!(FILLS[0], 0x5a);
+    Ok(Baseline {
+        request: executed.request,
+        identity: executed.identity,
+    })
 }
 
 fn storage_negative(g: &mut Gain, baseline: &Baseline) -> Result<()> {
@@ -347,11 +352,12 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
     let tab = g.root("phy_wifi_get_tx_tab_new");
     let set_gain = g.root("phy_wifi_set_tx_gain_new");
     let mac = g.root("mac_power_set");
-    let mut publishing = None;
+    // Both fills are one request; each case sets its own stack fill.
+    let mut parts = vec![];
     for fill in FILLS {
-        for batch in (0..POWER.len()).step_by(POWER.len()) {
+        {
             let mut rows = vec![];
-            for &(target, attenuation, _, _, _) in &POWER[batch..] {
+            for &(target, attenuation, _, _, _) in &POWER {
                 let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
                 data[80..98].fill((target & 255) as u8);
                 data[6] = 84;
@@ -434,10 +440,14 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
                     false,
                 ));
             }
-            let executed = g.characterize_vendor(&format!("power-{fill}-{batch}"), rows, fill)?;
-            let records = &executed.records;
-            for (i, &(target, attenuation, adjustment, index, publish)) in
-                POWER[batch..].iter().enumerate()
+            parts.push((fill, rows, fill));
+        }
+    }
+    let executed = g.characterize_fills("power", parts)?;
+    for (fill, records) in &executed.parts {
+        let (fill, records) = (*fill, records.as_slice());
+        {
+            for (i, &(target, attenuation, adjustment, index, publish)) in POWER.iter().enumerate()
             {
                 let i = i as u32;
                 assert_eq!(output(records, 3 * i + 1, false), tab.to_le_bytes());
@@ -469,12 +479,11 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
                     "{target} {attenuation} {fill}"
                 );
             }
-            if fill == 0x5a {
-                publishing = Some(executed.request);
-            }
         }
     }
-    Ok(publishing.expect("publishing batch"))
+    // The first profiles belong to the 0x5a fill, as the negatives expect.
+    assert_eq!(FILLS[0], 0x5a);
+    Ok(executed.request)
 }
 
 /// Rows of the first publishing policy case (`POWER[9]`, 80/-5) in the 0x5a request.

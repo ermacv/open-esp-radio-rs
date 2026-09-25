@@ -1,13 +1,14 @@
 //! Captured RFPLL search and frequency maintenance against compiled production.
 use crate::calibration_prefix::delays_of;
+use crate::contracts::{omitted_read_before, port_polling};
 use crate::evidence::{events, stop};
 use crate::harness::direct;
-use crate::harness::{Result, case, known, region, words};
+use crate::harness::{Result, case, known, region, with_stack_fill, words};
 use crate::i2c::{I2c, all_complete, models, returned_low};
 use crate::layout::*;
 use crate::phy::delay_calls;
 use blobray_domain::{
-    CommandCell, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, ExecutionCase,
+    CommandCell, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, EffectRule, ExecutionCase,
     ExecutionEvent, ExecutionGap, ExecutionRegion, ExecutionStop, Invocation, MemoryAccess,
     ModelStatus, ReadRun, RegionLifetime, RegisterCell, SessionReset,
 };
@@ -403,21 +404,18 @@ impl Rfpll {
     }
 }
 
-/// Frequency-control envelope: every read/write/fence/delay except transport
-/// port reads and the two transport control writes.
-fn envelope(events: &[ExecutionEvent]) -> Vec<ExecutionEvent> {
-    events
-        .iter()
-        .filter(|e| match e {
-            ExecutionEvent::Read { address, .. } => !(I2C_PORT_0..=I2C_HOST_MAP).contains(address),
-            ExecutionEvent::Write { address, .. } => {
-                !matches!(*address, I2C_READ_MASK | I2C_HOST_MAP)
-            }
-            ExecutionEvent::Fence { .. } | ExecutionEvent::DelayMicros { .. } => true,
-            _ => false,
-        })
-        .cloned()
-        .collect()
+/// Port polling and the vendor's additional channel-status sample
+/// immediately before a frequency-control read.
+fn maintain_rules() -> Vec<EffectRule> {
+    let mut rules = port_polling(MAX_EVENTS);
+    rules.push(omitted_read_before(
+        "channel-status-resample".into(),
+        CHANNEL_STATUS,
+        FREQUENCY_CONTROL,
+        1,
+        "the vendor samples channel status again immediately before reading frequency control",
+    ));
+    rules
 }
 
 fn in_frequency_domain(address: u32) -> bool {
@@ -444,61 +442,74 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         .to_vec(),
     };
     let (vendor, replacement) = (ctx.vendor.clone(), ctx.replacement.clone());
+    let search_effects = ctx.review_pair(
+        "rfpll-search",
+        ctx.root_endpoint("phy_rfpll_cap_init_cal_new")?,
+        ctx.input_endpoint(2, "open_phy_rfpll_trace_search")?,
+        port_polling(MAX_EVENTS),
+        "RFPLL capacitor search under explicit capacitor, status and busy inputs",
+    )?;
+    let search_row =
+        |label: String, cap: i32, statuses: &[u32], busy: u32| -> Result<ExecutionCase> {
+            let mut row = case(
+                label,
+                rfpll.search(false, cap, statuses, busy)?,
+                Some(rfpll.search(true, cap, statuses, busy)?),
+                SessionReset::Cold,
+                false,
+            );
+            let relation = row.relation.as_mut().unwrap();
+            relation.returns.low = true;
+            relation.effects = Some(search_effects.clone());
+            Ok(row)
+        };
+    // Every search profile is one request; each case sets its own stack fill.
+    let (mut rows, mut expectations) = (vec![], vec![]);
     for (name, cap, statuses, candidates, selected) in search_cases() {
-        let mut baseline = None;
         for fill in FILLS {
             for busy in [0u32, 1] {
                 let label = format!("rfpll-search-{name}-{fill}-{busy}");
-                let mut row = case(
-                    label.clone(),
-                    rfpll.search(false, cap, &statuses, busy)?,
-                    Some(rfpll.search(true, cap, &statuses, busy)?),
-                    SessionReset::Cold,
-                    false,
-                );
-                let relation = row.relation.as_mut().unwrap();
-                relation.returns.low = true;
-                relation.events.mmio_read = false;
-                let records = ctx.submit_with(
-                    &label,
-                    &vendor,
-                    Some(&replacement),
-                    Some(fill),
-                    vec![row],
-                    MAX_EVENTS,
-                    Some(ComparisonVerdict::Match),
-                )?;
-                for side in [false, true] {
-                    let low = returned_low(&records, 0, side);
-                    assert_eq!(low, Some((selected - cap) as u32), "{label} {side}");
-                    let observed = events(&records, 0, side);
-                    let commands: Vec<_> = observed
-                        .iter()
-                        .filter_map(|e| match e {
-                            ExecutionEvent::Write {
-                                address: address @ (I2C_PORT_0 | I2C_PORT_1),
-                                value,
-                                ..
-                            } => Some((*address, *value)),
-                            _ => None,
-                        })
-                        .collect();
-                    assert_eq!(
-                        commands,
-                        expected_commands(&candidates, selected),
-                        "{label} {side}"
-                    );
-                    let waits = delays_of(&observed);
-                    assert_eq!(waits, vec![5; statuses.len()], "{label} {side}");
-                    let facts = (low, commands, waits);
-                    assert!(
-                        baseline.as_ref().is_none_or(|b| *b == facts),
-                        "{label} {side}"
-                    );
-                    baseline = Some(facts);
-                    assert!(all_complete(&records, 0, side), "{label} {side}");
-                }
+                let mut row = search_row(label.clone(), cap, &statuses, busy)?;
+                row.stack_fill = Some(fill);
+                rows.push(row);
+                expectations.push((label, cap, statuses.clone(), candidates.clone(), selected));
             }
+        }
+    }
+    let records = ctx.submit_with(
+        "rfpll-search",
+        &vendor,
+        Some(&replacement),
+        None,
+        rows,
+        MAX_EVENTS,
+        Some(ComparisonVerdict::Match),
+    )?;
+    for (case, (label, cap, statuses, candidates, selected)) in expectations.iter().enumerate() {
+        let (case, cap, selected) = (case as u32, *cap, *selected);
+        for side in [false, true] {
+            let low = returned_low(&records, case, side);
+            assert_eq!(low, Some((selected - cap) as u32), "{label} {side}");
+            let observed = events(&records, case, side);
+            let commands: Vec<_> = observed
+                .iter()
+                .filter_map(|e| match e {
+                    ExecutionEvent::Write {
+                        address: address @ (I2C_PORT_0 | I2C_PORT_1),
+                        value,
+                        ..
+                    } => Some((*address, *value)),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                commands,
+                expected_commands(candidates, selected),
+                "{label} {side}"
+            );
+            let waits = delays_of(&observed);
+            assert_eq!(waits, vec![5; statuses.len()], "{label} {side}");
+            assert!(all_complete(&records, case, side), "{label} {side}");
         }
     }
     let mut maintenance: Vec<Maintenance> = vec![];
@@ -544,7 +555,16 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
             ));
         }
     }
-    for (name, statuses, delta, initial, contents, channel) in &maintenance {
+    let maintain_effects = ctx.review_pair(
+        "rfpll-maintain",
+        ctx.root_endpoint("phy_rfpll_cap_track_new")?,
+        ctx.input_endpoint(2, "open_phy_rfpll_trace_maintain")?,
+        maintain_rules(),
+        "RFPLL frequency maintenance under explicit status, frequency-memory and channel inputs",
+    )?;
+    // Every maintenance profile is one request; each sets its own stack fill.
+    let (mut all, mut labels) = (vec![], vec![]);
+    for (name, statuses, _, initial, contents, channel) in &maintenance {
         for fill in FILLS {
             let label = format!("rfpll-maintain-{name}-{channel}-{fill}");
             let mut rows = vec![
@@ -579,83 +599,87 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                     false,
                 ),
             ];
-            rows[1].relation.as_mut().unwrap().events.mmio_read = false;
-            let records = ctx.submit_with(
-                &label,
-                &vendor,
-                Some(&replacement),
-                Some(fill),
-                rows,
-                MAX_EVENTS,
-                Some(ComparisonVerdict::Match),
-            )?;
-            let mut projected_sides = vec![];
-            for side in [false, true] {
-                let low = returned_low(&records, 1, side);
-                if side {
-                    assert_eq!(low, Some(*delta as u32), "{label}");
-                }
-                let observed = events(&records, 1, side);
-                let mut expected_waits = vec![2];
-                expected_waits.extend(vec![5; statuses.len()]);
-                assert_eq!(delays_of(&observed), expected_waits, "{label}");
-                let mut projected = envelope(&observed);
-                if !side && contents.is_some() {
-                    let indices: Vec<_> = projected
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, e)| {
-                            matches!(
-                                e,
-                                ExecutionEvent::Read {
-                                    address: CHANNEL_STATUS,
-                                    ..
-                                }
-                            )
-                        })
-                        .map(|(i, _)| i)
-                        .collect();
-                    assert_eq!(indices.len(), 3, "{label}");
-                    let removed = projected.remove(indices[1]);
-                    assert!(
+            rows[1].relation.as_mut().unwrap().effects = Some(maintain_effects.clone());
+            all.extend(with_stack_fill(rows, fill));
+            labels.push(label);
+        }
+    }
+    let records = ctx.submit_with(
+        "rfpll-maintain",
+        &vendor,
+        Some(&replacement),
+        None,
+        all,
+        MAX_EVENTS,
+        Some(ComparisonVerdict::Match),
+    )?;
+    let profiles = maintenance
+        .iter()
+        .flat_map(|m| FILLS.map(|_| m))
+        .zip(&labels)
+        .enumerate();
+    for (i, ((_, statuses, delta, initial, contents, channel), label)) in profiles {
+        let measured = 2 * i as u32 + 1;
+        for side in [false, true] {
+            let low = returned_low(&records, measured, side);
+            if side {
+                assert_eq!(low, Some(*delta as u32), "{label}");
+            }
+            let observed = events(&records, measured, side);
+            let mut expected_waits = vec![2];
+            expected_waits.extend(vec![5; statuses.len()]);
+            assert_eq!(delays_of(&observed), expected_waits, "{label}");
+            let mut projected = observed.clone();
+            if !side && contents.is_some() {
+                let indices: Vec<_> = projected
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, e)| {
                         matches!(
-                            removed,
+                            e,
                             ExecutionEvent::Read {
-                                value: 0x2582_4e5a,
+                                address: CHANNEL_STATUS,
                                 ..
                             }
-                        ),
-                        "{label}"
-                    );
-                }
-                let frequency: Vec<_> = projected
-                    .iter()
-                    .filter_map(|e| match e {
-                        ExecutionEvent::Read { address, value, .. }
-                            if in_frequency_domain(*address) =>
-                        {
-                            Some((false, *address, *value))
-                        }
-                        ExecutionEvent::Write { address, value, .. }
-                            if in_frequency_domain(*address) =>
-                        {
-                            Some((true, *address, *value))
-                        }
-                        _ => None,
+                        )
                     })
+                    .map(|(i, _)| i)
                     .collect();
-                assert_eq!(
-                    frequency,
-                    frequency_expectation(*initial, contents.as_deref(), *delta, *channel),
-                    "{label} {side}"
+                assert_eq!(indices.len(), 3, "{label}");
+                let removed = projected.remove(indices[1]);
+                assert!(
+                    matches!(
+                        removed,
+                        ExecutionEvent::Read {
+                            value: 0x2582_4e5a,
+                            ..
+                        }
+                    ),
+                    "{label}"
                 );
-                assert!(all_complete(&records, 1, side), "{label} {side}");
-                projected_sides.push(projected);
             }
+            let frequency: Vec<_> = projected
+                .iter()
+                .filter_map(|e| match e {
+                    ExecutionEvent::Read { address, value, .. }
+                        if in_frequency_domain(*address) =>
+                    {
+                        Some((false, *address, *value))
+                    }
+                    ExecutionEvent::Write { address, value, .. }
+                        if in_frequency_domain(*address) =>
+                    {
+                        Some((true, *address, *value))
+                    }
+                    _ => None,
+                })
+                .collect();
             assert_eq!(
-                projected_sides[0], projected_sides[1],
-                "{label}: frequency envelope differs"
+                frequency,
+                frequency_expectation(*initial, contents.as_deref(), *delta, *channel),
+                "{label} {side}"
             );
+            assert!(all_complete(&records, measured, side), "{label} {side}");
         }
     }
     let label = "rfpll-maintenance-timeout";
@@ -704,7 +728,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         );
         let relation = row.relation.as_mut().unwrap();
         relation.returns.low = true;
-        relation.events.mmio_read = false;
+        relation.effects = Some(search_effects.clone());
         vec![row]
     };
     let mut changed = original.clone();
@@ -771,7 +795,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
             false,
         ),
     ];
-    diagnostics[1].relation.as_mut().unwrap().events.mmio_read = false;
+    diagnostics[1].relation.as_mut().unwrap().effects = Some(maintain_effects.clone());
     let records = ctx.submit_with(
         "rfpll-diagnostics-unmapped",
         &vendor,
@@ -787,7 +811,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         ExecutionStop::Incomplete { reason: ExecutionGap::Memory { address, access: MemoryAccess::Fetch }, .. } if address == printf
     ));
     let mut raw = original.clone();
-    raw[0].relation.as_mut().unwrap().events.mmio_read = true;
+    raw[0].relation.as_mut().unwrap().effects = None;
     ctx.submit_with(
         "rfpll-raw-polling",
         &vendor,
@@ -797,6 +821,10 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         MAX_EVENTS,
         Some(ComparisonVerdict::Diff),
     )?;
+    let mut original = original;
+    // The contract's occurrence bounds exceed a one-event capacity; the
+    // exhaustion under test precedes any effect comparison.
+    original[0].relation.as_mut().unwrap().effects = None;
     let limited = crate::session::request(&vendor, Some(&replacement), Some(0x5a), original, 1);
     ctx.capacity_failure("rfpll-capacity", &limited)
 }

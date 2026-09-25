@@ -555,6 +555,8 @@ fn assert_unpublished(label: &str, profile: &Profile, records: &[ExecutionEviden
 /// budget all fail without publishing coefficients or gain memory. One
 /// production-only request per fill; each root starts cold.
 fn containment(ctx: &mut RxGain) -> Result<()> {
+    // Both fills are one request; each root sets its own stack fill.
+    let (mut rows, mut parts) = (vec![], vec![]);
     for fill in FILLS {
         let profile = Profile {
             flags: 0,
@@ -610,35 +612,39 @@ fn containment(ctx: &mut RxGain) -> Result<()> {
                 }
             });
         }
-        let mut rows = vec![];
         for failure in &failures {
             let mut row = case(
-                failure.label.clone(),
+                format!("{}-fill{fill:x}", failure.label),
                 ctx.production_phase(&profile, failure.models.clone())?,
                 None,
                 SessionReset::Cold,
                 false,
             );
             row.relation = None;
+            row.stack_fill = Some(fill);
             rows.push(row);
         }
-        let label = format!("rx-containment-fill{fill:x}");
-        let production = ctx.production.clone();
-        let request = request(&production, None, Some(fill), rows, BUDGET_EVENTS);
-        let records = evidence(&ctx.submit(&label, &request, None)?.document);
-        for (case, failure) in failures.iter().enumerate() {
-            let (case, label) = (case as u32, format!("{label}-{}", failure.label));
+        parts.push((profile, failures));
+    }
+    let production = ctx.production.clone();
+    let request = request(&production, None, None, rows, BUDGET_EVENTS);
+    let records = evidence(&ctx.submit("rx-containment", &request, None)?.document);
+    let mut case = 0u32;
+    for (profile, failures) in &parts {
+        for failure in failures {
+            let label = format!("rx-containment-fill{:x}-{}", profile.fill, failure.label);
             assert_eq!(
                 returned_low(&records, case, false),
                 Some(failure.outcome),
                 "{label}"
             );
-            assert_unpublished(&label, &profile, &records, case);
+            assert_unpublished(&label, profile, &records, case);
             let minima = phy_effects(&events(&records, case, false))
                 .iter()
                 .filter(|e| matches!(e, PhyEffect::Read(ESTIMATOR_READY, ESTIMATOR_DONE)))
                 .count() as u32;
             assert!(failure.minima.contains(&minima), "{label}: {minima} minima");
+            case += 1;
         }
     }
     Ok(())

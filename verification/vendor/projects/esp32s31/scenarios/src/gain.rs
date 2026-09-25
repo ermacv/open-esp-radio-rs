@@ -370,11 +370,12 @@ impl Gain {
                 .map(|v| i32::from(v as i16))
                 .collect();
             let length = if bluetooth { 80 } else { 160 };
+            // Every threshold of one profile is one request over both fills.
+            let mut parts = vec![];
             for fill in FILLS {
-                // Every threshold of one profile and fill is one request.
-                for batch in (0..18).step_by(18) {
+                {
                     let (mut rows, mut expected) = (vec![], vec![]);
-                    for (index, threshold) in high.iter().enumerate().skip(batch).take(18) {
+                    for (index, threshold) in high.iter().enumerate() {
                         let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
                         let (left, right, correction);
                         if bluetooth {
@@ -450,18 +451,17 @@ impl Gain {
                             true,
                         ));
                     }
-                    let label = format!(
-                        "coefficient-boundary-{}-{fill}-{batch}",
-                        python_bool(bluetooth)
-                    );
-                    let executed = self.compare(&label, rows, fill)?;
-                    assert!(!has_events(&executed.records));
-                    for (i, value) in expected.iter().enumerate() {
-                        let case = 2 * i as u32 + 1;
-                        assert_eq!(value.len(), length);
-                        assert_eq!(&output(&executed.records, case, false), value);
-                        assert_eq!(&output(&executed.records, case, true), value);
-                    }
+                    parts.push((fill, rows, expected));
+                }
+            }
+            let label = format!("coefficient-boundary-{}", python_bool(bluetooth));
+            for (expected, records) in self.compare_fills(&label, parts)?.parts {
+                assert!(!has_events(&records));
+                for (i, value) in expected.iter().enumerate() {
+                    let case = 2 * i as u32 + 1;
+                    assert_eq!(value.len(), length);
+                    assert_eq!(&output(&records, case, false), value);
+                    assert_eq!(&output(&records, case, true), value);
                 }
             }
         }
@@ -471,166 +471,162 @@ impl Gain {
     pub fn characterize(&mut self) -> Result<()> {
         let memcpy = self.sym(1, "memcpy");
         let kernel_address = self.sym(1, "phy_wifi_get_tx_gain");
-        for fill in FILLS {
-            let mut specs = vec![];
-            for curve in [CURVES[0], CURVES[2], CURVES[3]] {
-                for channel in [1, 6, 11, 12, 13] {
-                    for (base, adjustment, correction) in [
-                        (0, 0, 0),
-                        (127, 1, 127),
-                        (128, 255, -128),
-                        (255, 1, -17),
-                        (0, 255, 17),
-                    ] {
-                        specs.push((curve, channel, base, adjustment, correction));
-                    }
+        let mut specs = vec![];
+        for curve in [CURVES[0], CURVES[2], CURVES[3]] {
+            for channel in [1, 6, 11, 12, 13] {
+                for (base, adjustment, correction) in [
+                    (0, 0, 0),
+                    (127, 1, 127),
+                    (128, 255, -128),
+                    (255, 1, -17),
+                    (0, 255, 17),
+                ] {
+                    specs.push((curve, channel, base, adjustment, correction));
                 }
             }
-            for batch in (0..specs.len()).step_by(specs.len()) {
-                let selected = &specs[batch..];
-                let data_for =
-                    |(curve, _, base, adjustment, correction): &([u8; 6], u32, i32, i32, i32)| {
-                        let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
-                        data[241..247].copy_from_slice(curve);
-                        data[247] = (correction & 255) as u8;
-                        data[291] = *base as u8;
-                        data[434] = *adjustment as u8;
-                        data
-                    };
-                let mut rows = vec![];
-                for spec in selected {
-                    rows.push(case(
-                        "initialize",
-                        self.setup(&data_for(spec), false),
-                        None,
-                        SessionReset::Cold,
-                        false,
-                    ));
-                    rows.push(case(
-                        "current-kernel-inputs",
-                        self.wifi_phase(spec.1, fill, true),
-                        None,
-                        SessionReset::Warm,
-                        false,
-                    ));
-                }
-                let records = self
-                    .characterize_vendor(&format!("kernel-inputs-{fill}-{batch}"), rows, fill)?
-                    .records;
-                let mut direct_rows = vec![];
-                for (i, spec) in selected.iter().enumerate() {
-                    let (_, channel, base, adjustment, correction) = *spec;
-                    let observed = events(&records, 2 * i as u32 + 1, false);
-                    assert!(observed.iter().all(|e| matches!(
-                        e,
-                        ExecutionEvent::CallTransfer { .. }
-                            | ExecutionEvent::TransferArgument { .. }
-                    )));
-                    let kernel = calls(&observed, kernel_address);
-                    let effective = signed8((base + adjustment) & 255);
-                    assert_eq!(kernel.len(), 1);
-                    assert_eq!(
-                        kernel[0][..4],
-                        [
-                            channel,
-                            self.parameter + 241,
-                            correction as u32,
-                            effective as u32
-                        ]
-                    );
-                    let copies = calls(&observed, memcpy);
-                    assert!(copies.len() == 3 && copies.iter().all(|c| c[2] == 36));
-                    let sources: Vec<u32> = copies.iter().map(|c| c[1]).collect();
-                    assert_eq!(
-                        sources,
-                        (0..3).map(|i| sources[0] + i * 36).collect::<Vec<_>>()
-                    );
-                    if self.coefficient_address.is_none() {
-                        let address = sources[0] - 108;
-                        self.coefficient_address = Some(address);
-                        assert_eq!(
-                            self.image_data("linked-coefficients", address, 216)?,
-                            self.coefficients
-                        );
-                    }
-                    assert_eq!(sources[0], self.coefficient_address.unwrap() + 108);
-                    assert_eq!(
-                        kernel[0][4..7],
-                        copies.iter().map(|c| c[0]).collect::<Vec<_>>()[..]
-                    );
-                    assert_eq!(kernel[0][7..], [OUTPUT, OUTPUT + 32, OUTPUT + 96, 0]);
-                    let mut arguments = vec![
+        }
+        let data_for =
+            |(curve, _, base, adjustment, correction): &([u8; 6], u32, i32, i32, i32)| {
+                let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
+                data[241..247].copy_from_slice(curve);
+                data[247] = (correction & 255) as u8;
+                data[291] = *base as u8;
+                data[434] = *adjustment as u8;
+                data
+            };
+        // Both fills are one request per phase; each case sets its stack fill.
+        let mut parts = vec![];
+        for fill in FILLS {
+            let mut rows = vec![];
+            for spec in &specs {
+                rows.push(case(
+                    "initialize",
+                    self.setup(&data_for(spec), false),
+                    None,
+                    SessionReset::Cold,
+                    false,
+                ));
+                rows.push(case(
+                    "current-kernel-inputs",
+                    self.wifi_phase(spec.1, fill, true),
+                    None,
+                    SessionReset::Warm,
+                    false,
+                ));
+            }
+            parts.push((fill, rows, fill));
+        }
+        let mut direct_parts = vec![];
+        for (fill, records) in self.characterize_fills("kernel-inputs", parts)?.parts {
+            let mut direct_rows = vec![];
+            for (i, spec) in specs.iter().enumerate() {
+                let (_, channel, base, adjustment, correction) = *spec;
+                let observed = events(&records, 2 * i as u32 + 1, false);
+                assert!(observed.iter().all(|e| matches!(
+                    e,
+                    ExecutionEvent::CallTransfer { .. } | ExecutionEvent::TransferArgument { .. }
+                )));
+                let kernel = calls(&observed, kernel_address);
+                let effective = signed8((base + adjustment) & 255);
+                assert_eq!(kernel.len(), 1);
+                assert_eq!(
+                    kernel[0][..4],
+                    [
                         channel,
                         self.parameter + 241,
                         correction as u32,
-                        effective as u32,
-                    ];
-                    arguments.extend(&sources);
-                    arguments.extend([OUTPUT, OUTPUT + 32, OUTPUT + 96, 0]);
-                    let direct = self.enter(
-                        kernel_address,
-                        &arguments,
-                        vec![filled(OUTPUT, 160, fill)?],
-                        vec![selection(OUTPUT, 160)],
-                        vec![],
+                        effective as u32
+                    ]
+                );
+                let copies = calls(&observed, memcpy);
+                assert!(copies.len() == 3 && copies.iter().all(|c| c[2] == 36));
+                let sources: Vec<u32> = copies.iter().map(|c| c[1]).collect();
+                assert_eq!(
+                    sources,
+                    (0..3).map(|i| sources[0] + i * 36).collect::<Vec<_>>()
+                );
+                if self.coefficient_address.is_none() {
+                    let address = sources[0] - 108;
+                    self.coefficient_address = Some(address);
+                    assert_eq!(
+                        self.image_data("linked-coefficients", address, 216)?,
+                        self.coefficients
                     );
-                    direct_rows.push(case(
-                        "initialize",
-                        self.setup(&data_for(spec), false),
-                        None,
-                        SessionReset::Cold,
-                        false,
-                    ));
-                    direct_rows.push(case(
-                        "direct-ROM-kernel",
-                        direct,
-                        None,
-                        SessionReset::Warm,
-                        false,
-                    ));
                 }
-                let direct = self
-                    .characterize_vendor(
-                        &format!("kernel-direct-{fill}-{batch}"),
-                        direct_rows,
-                        fill,
-                    )?
-                    .records;
-                assert!(!has_events(&direct));
-                for (i, (curve, channel, base, adjustment, correction)) in
-                    selected.iter().enumerate()
-                {
-                    let expected = arithmetic(
-                        &self.coefficients[108..],
-                        curve,
-                        signed8((base + adjustment) & 255),
-                        *correction,
-                        Some(*channel),
-                    );
-                    let case = 2 * i as u32 + 1;
-                    assert_eq!(output(&records, case, false), expected);
-                    assert_eq!(output(&direct, case, false), expected);
-                }
+                assert_eq!(sources[0], self.coefficient_address.unwrap() + 108);
+                assert_eq!(
+                    kernel[0][4..7],
+                    copies.iter().map(|c| c[0]).collect::<Vec<_>>()[..]
+                );
+                assert_eq!(kernel[0][7..], [OUTPUT, OUTPUT + 32, OUTPUT + 96, 0]);
+                let mut arguments = vec![
+                    channel,
+                    self.parameter + 241,
+                    correction as u32,
+                    effective as u32,
+                ];
+                arguments.extend(&sources);
+                arguments.extend([OUTPUT, OUTPUT + 32, OUTPUT + 96, 0]);
+                let direct = self.enter(
+                    kernel_address,
+                    &arguments,
+                    vec![filled(OUTPUT, 160, fill)?],
+                    vec![selection(OUTPUT, 160)],
+                    vec![],
+                );
+                direct_rows.push(case(
+                    "initialize",
+                    self.setup(&data_for(spec), false),
+                    None,
+                    SessionReset::Cold,
+                    false,
+                ));
+                direct_rows.push(case(
+                    "direct-ROM-kernel",
+                    direct,
+                    None,
+                    SessionReset::Warm,
+                    false,
+                ));
+            }
+            direct_parts.push((fill, direct_rows, records));
+        }
+        for (records, direct) in self
+            .characterize_fills("kernel-direct", direct_parts)?
+            .parts
+        {
+            assert!(!has_events(&direct));
+            for (i, (curve, channel, base, adjustment, correction)) in specs.iter().enumerate() {
+                let expected = arithmetic(
+                    &self.coefficients[108..],
+                    curve,
+                    signed8((base + adjustment) & 255),
+                    *correction,
+                    Some(*channel),
+                );
+                let case = 2 * i as u32 + 1;
+                assert_eq!(output(&records, case, false), expected);
+                assert_eq!(output(&direct, case, false), expected);
             }
         }
         Ok(())
     }
 
     pub fn wifi(&mut self) -> Result<()> {
-        for fill in FILLS {
-            let mut specs = vec![];
-            for curve in CURVES {
-                for channel in [1, 2, 5, 6, 7, 10, 11, 12, 13] {
-                    for (base, correction) in
-                        [(0, 0), (-128, 127), (127, -128), (31, -17), (-31, 17)]
-                    {
-                        specs.push((curve, channel, base, correction));
-                    }
+        let mut specs = vec![];
+        for curve in CURVES {
+            for channel in [1, 2, 5, 6, 7, 10, 11, 12, 13] {
+                for (base, correction) in [(0, 0), (-128, 127), (127, -128), (31, -17), (-31, 17)] {
+                    specs.push((curve, channel, base, correction));
                 }
             }
-            for batch in (0..specs.len()).step_by(specs.len()) {
+        }
+        // Both fills are one request; each case sets its own stack fill.
+        let mut parts = vec![];
+        for fill in FILLS {
+            {
                 let mut rows = vec![];
-                for &(curve, channel, base, correction) in &specs[batch..] {
+                for &(curve, channel, base, correction) in &specs {
                     let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
                     data[241..247].copy_from_slice(&curve);
                     data[247] = (correction & 255) as u8;
@@ -663,12 +659,15 @@ impl Gain {
                         true,
                     ));
                 }
-                let executed = self.compare(&format!("wifi-{fill}-{batch}"), rows, fill)?;
-                if self.wifi_request.is_none() {
-                    self.wifi_request = Some(executed.request);
-                }
-                assert!(!has_events(&executed.records));
-                for (i, &(curve, channel, base, correction)) in specs[batch..].iter().enumerate() {
+                parts.push((fill, rows, fill));
+            }
+        }
+        let executed = self.compare_fills("wifi", parts)?;
+        self.wifi_request = Some(executed.request);
+        for (fill, records) in executed.parts {
+            {
+                assert!(!has_events(&records));
+                for (i, &(curve, channel, base, correction)) in specs.iter().enumerate() {
                     let expected = arithmetic(
                         &self.coefficients[108..],
                         &curve,
@@ -677,16 +676,8 @@ impl Gain {
                         Some(channel),
                     );
                     let case = 2 * i as u32 + 1;
-                    assert_eq!(
-                        output(&executed.records, case, false),
-                        expected,
-                        "{batch} {case}"
-                    );
-                    assert_eq!(
-                        output(&executed.records, case, true),
-                        expected,
-                        "{batch} {case}"
-                    );
+                    assert_eq!(output(&records, case, false), expected, "{fill} {case}");
+                    assert_eq!(output(&records, case, true), expected, "{fill} {case}");
                 }
             }
         }
@@ -694,6 +685,8 @@ impl Gain {
     }
 
     pub fn publish_wifi(&mut self) -> Result<()> {
+        // Both fills are one request; each case sets its own stack fill.
+        let mut parts = vec![];
         for fill in FILLS {
             let (mut rows, mut expectations) = (vec![], vec![]);
             for seed_value in [0u32, 0x1357_2468, 0xffff_ffff] {
@@ -747,15 +740,18 @@ impl Gain {
                     ));
                 }
             }
-            let executed = self.compare(&format!("publish-wifi-{fill}"), rows, fill)?;
-            self.publication_request = Some(executed.request);
+            parts.push((fill, rows, expectations));
+        }
+        let executed = self.compare_fills("publish-wifi", parts)?;
+        self.publication_request = Some(executed.request);
+        for (expectations, records) in executed.parts {
             for (i, expected) in expectations.iter().enumerate() {
                 assert!(matches!(
-                    stop(&executed.records, i as u32, true),
+                    stop(&records, i as u32, true),
                     ExecutionStop::Returned { low: Some(0), .. }
                 ));
                 for side in [false, true] {
-                    let observed = events(&executed.records, i as u32, side);
+                    let observed = events(&records, i as u32, side);
                     assert_eq!(observed.len(), 161);
                     assert_eq!(&effects(&observed, false), expected, "{i} {side}");
                 }
@@ -766,24 +762,26 @@ impl Gain {
 
     pub fn bluetooth(&mut self) -> Result<()> {
         let tab = self.root("phy_bt_get_tx_tab_new");
-        for fill in FILLS {
-            let mut specs = vec![];
-            for curve in [[0u8, 0, 0], [127, 128, 255], [255, 31, 128]] {
-                for (base, attenuation, correction) in [
-                    (0, 0, 0),
-                    (127, 255, 127),
-                    (128, 1, -128),
-                    (255, 31, -17),
-                    (0, 127, 17),
-                ] {
-                    for bank in [0u32, 32, 224, 255] {
-                        specs.push((curve, base, attenuation, correction, bank));
-                    }
+        let mut specs = vec![];
+        for curve in [[0u8, 0, 0], [127, 128, 255], [255, 31, 128]] {
+            for (base, attenuation, correction) in [
+                (0, 0, 0),
+                (127, 255, 127),
+                (128, 1, -128),
+                (255, 31, -17),
+                (0, 127, 17),
+            ] {
+                for bank in [0u32, 32, 224, 255] {
+                    specs.push((curve, base, attenuation, correction, bank));
                 }
             }
-            for batch in (0..specs.len()).step_by(specs.len()) {
+        }
+        // Both fills are one request; each case sets its own stack fill.
+        let mut parts = vec![];
+        for fill in FILLS {
+            {
                 let (mut rows, mut expected) = (vec![], vec![]);
-                for &(curve, base, attenuation, correction, bank) in &specs[batch..] {
+                for &(curve, base, attenuation, correction, bank) in &specs {
                     let mut packed: Vec<u32> = (0..6)
                         .map(|i| fill_word(fill).wrapping_add(i * 0x0102_0305))
                         .collect();
@@ -886,11 +884,14 @@ impl Gain {
                         publication(&packed[..6], packed[6], &calculated, 16, bank, fill, true);
                     expected.push((calculated, writes));
                 }
-                let executed = self.compare(&format!("bluetooth-{fill}-{batch}"), rows, fill)?;
-                if self.bluetooth_request.is_none() {
-                    self.bluetooth_request = Some(executed.request);
-                }
-                let records = &executed.records;
+                parts.push((fill, rows, expected));
+            }
+        }
+        let executed = self.compare_fills("bluetooth", parts)?;
+        self.bluetooth_request = Some(executed.request);
+        for (expected, records) in executed.parts {
+            let records = &records;
+            {
                 for (i, (calculated, writes)) in expected.iter().enumerate() {
                     let i = i as u32;
                     assert_eq!(output(records, 4 * i + 1, false), tab.to_le_bytes());
@@ -902,7 +903,7 @@ impl Gain {
                         assert_eq!(&output(records, 4 * i + 3, side), calculated);
                         let observed = effects(&events(records, 4 * i + 3, side), true);
                         assert_eq!(observed.len(), 81);
-                        assert_eq!(&observed, writes, "{batch} {i} {side}");
+                        assert_eq!(&observed, writes, "{i} {side}");
                     }
                 }
             }

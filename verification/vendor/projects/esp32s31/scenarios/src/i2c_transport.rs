@@ -3,15 +3,16 @@
 //! Scenario expectations are independent of either execution result. The
 //! peripheral assumption supplies responses only; ROM/PAC/PHY code performs
 //! every transaction.
+use crate::contracts::port_polling;
 use crate::evidence::stop;
 use crate::harness::direct;
 use crate::harness::{Result, case, known, words};
 use crate::i2c::{I2c, models, returned_low, word_writes};
 use crate::layout::*;
 use blobray_domain::{
-    CommandCell, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, DeviceIssue, ExecutionCase,
-    ExecutionEvent, ExecutionEvidence, ExecutionRegion, ExecutionStop, Invocation, ModelStatus,
-    RegionLifetime, RegisterCell, SessionReset,
+    CommandCell, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, DeviceIssue, EffectReview,
+    ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionRegion, ExecutionStop, Invocation,
+    ModelStatus, RegionLifetime, RegisterCell, SessionReset,
 };
 
 /// Independent `.iram1` +0x44..+0x60 instruction reading.
@@ -87,10 +88,12 @@ impl Transport {
     }
 
     /// Production reads busy before issuing a read; ROM's org leaf does not.
-    /// Compare every write and selected return, retaining all excluded reads.
+    /// The reviewed contract ignores port polling only; every other effect
+    /// and the selected return compare.
     #[allow(clippy::too_many_arguments)]
     fn paired(
         &self,
+        effects: &EffectReview,
         name: &str,
         left: u32,
         left_words: &[u32],
@@ -107,7 +110,7 @@ impl Transport {
             false,
         );
         let relation = row.relation.as_mut().unwrap();
-        relation.events.mmio_read = false;
+        relation.effects = Some(effects.clone());
         relation.returns.low = returns;
         Ok(row)
     }
@@ -128,10 +131,28 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         .to_vec(),
     };
     let transfer = ctx.probe("open_phy_trace_i2c_transfer");
+    let applicability = "analog I2C transactions under explicit port responses and busy states";
+    let review = |ctx: &mut I2c, name: &str, vendor, production: &str| {
+        let production = ctx.input_endpoint(2, production)?;
+        ctx.review_pair(
+            name,
+            vendor,
+            production,
+            port_polling(MAX_EVENTS),
+            applicability,
+        )
+    };
+    let host_effects = review(
+        ctx,
+        "transport-host",
+        ctx.root_endpoint("phy_get_i2c_hostid_new")?,
+        "open_phy_trace_i2c_host",
+    )?;
     let (mut cases, mut expected): (Vec<ExecutionCase>, Vec<Expectation>) = (vec![], vec![]);
     let hosts = [1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0];
     for (block, host) in (0x61..0x6e).zip(hosts) {
         cases.push(transport.paired(
+            &host_effects,
             &format!("host-{block:x}"),
             ctx.root("phy_get_i2c_hostid_new"),
             &[block],
@@ -148,6 +169,16 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         "phy_i2c_readReg_Mask",
         "phy_i2c_writeReg_Mask",
     ];
+    let mut transfer_effects = vec![];
+    for name in names {
+        let vendor = ctx.input_endpoint(1, name)?;
+        transfer_effects.push(review(
+            ctx,
+            &format!("transport-{name}"),
+            vendor,
+            "open_phy_trace_i2c_transfer",
+        )?);
+    }
     for profile in 0..8u32 {
         let host = profile / 4;
         let (block, register, sample, high, low, maximum, mask, cleared, set_value) = if host == 0 {
@@ -180,6 +211,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                     bank(Some(selector), sample, mode != 1, busy, [0, 0]),
                 ];
                 cases.push(transport.paired(
+                    &transfer_effects[mode as usize],
                     &format!("transfer-{profile}-{busy}-{value}"),
                     target,
                     &arguments,
@@ -217,8 +249,15 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
     }
     let reset = ctx.captured(1, "phy_i2c_master_reset");
     let reset_replacement = ctx.probe("open_phy_trace_i2c_reset");
+    let reset_effects = review(
+        ctx,
+        "transport-reset",
+        ctx.input_endpoint(1, "phy_i2c_master_reset")?,
+        "open_phy_trace_i2c_reset",
+    )?;
     for (initial, busy) in [([0, 0], 0), ([1, 1], 0), ([1, 1], 2)] {
         cases.push(transport.paired(
+            &reset_effects,
             &format!("reset-{}-{busy}", initial[0]),
             reset,
             &[],
@@ -306,6 +345,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
     // The captured masked-write ABI permits out-of-field bits to spill; the
     // production field update clips them. Preserve that known difference.
     let wide = transport.paired(
+        &transfer_effects[3],
         "out-of-field-value",
         ctx.captured(1, "phy_i2c_writeReg_Mask"),
         &[0x66, 0, 4, 3, 2, 7],
@@ -338,6 +378,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
     assert_eq!(port, [0x0400_0466, 0x05be_0466, 0x0400_0466, 0x05ae_0466]);
     // Finite supplied completion edges expire before a delayed read becomes ready.
     let timeout = transport.paired(
+        &transfer_effects[0],
         "edge-schedule-exhausted",
         ctx.captured(1, "phy_i2c_readReg"),
         &[0x66, 0, 4],
@@ -362,6 +403,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
     // The actual shipping reset helper has a finite 10,000-observation bound;
     // ROM keeps polling. Exclude void returns but keep the pending model obligation.
     let timeout = transport.paired(
+        &reset_effects,
         "production-reset-timeout",
         reset,
         &[],

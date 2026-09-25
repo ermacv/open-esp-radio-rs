@@ -102,9 +102,11 @@ on both hosts with immediate and delayed completion, and idle/busy reset. Each
 of its forty cases checks independent expected command writes and applicable
 read returns, not just equality between implementations. Cases use independent
 cold instances and are batched to fit the ordinary request-size limit. The
-relation selects all writes, fences and delays, plus read-operation returns.
-Raw MMIO reads remain retained but are excluded from equality because production
-performs a pre-issue readiness check. Void returns are explicitly excluded.
+relation selects read-operation returns and a reviewed effect contract per
+vendor/production pair: production performs a pre-issue readiness check, so the
+contract ignores analog I2C port reads, and every other read, write, fence and
+delay compares exactly, including the read-mask and host-map accesses. Void
+returns are explicitly excluded.
 
 Exhausted scripted replies must produce INCOMPLETE without retained-value
 fallback. An out-of-field write must produce DIFF: captured code spills the
@@ -165,15 +167,14 @@ children. ROM I2C callbacks select captured archive code. The peripheral bank
 supplies retained CKGEN values and eight finite samples; delay responses expose
 requested microseconds only. No model replaces a calibration algorithm.
 
-The native DCODE relation compares every MMIO write, fence, requested delay and
-each of the eight selected final bytes. Production performs extra I2C busy
-prechecks, so raw reads are retained but excluded from that native relation. The
-runner additionally compares the complete ordered read/write/delay/fence stream
-except reads of the two command ports. It also independently checks the four
-frequency programs, NRX values, forty CKGEN commands, sample consumption and exact
-output `[0,63,31,32,32,31,63,0]`. These extra runner assertions are not part of the
-native MATCH claim. An unfiltered native comparison retains the expected polling
-DIFF; no blanket peripheral aperture exclusion is used by the independent check.
+The DCODE relation compares each of the eight selected final bytes and every
+effect under a reviewed contract. Production performs extra I2C busy prechecks,
+so the contract ignores reads of the two command ports; every other read, write,
+fence and requested delay compares exactly. The runner independently checks the
+four frequency programs, NRX values, forty CKGEN commands, sample consumption and
+exact output `[0,63,31,32,32,31,63,0]`. The DCODE and PBus matrices are one
+request each, with a stack fill per case. A comparison without the contract
+retains the expected polling DIFF.
 
 Stuck channel readiness, stuck I2C and a read/modify/write whose halves individually
 fit but jointly exhaust the production budget must return their specific failure,
@@ -223,16 +224,15 @@ requested delays must remain exactly two microseconds followed by the search
 settles. The stuck-command case returns the production timeout, leaves the first
 command pending and must not restore hardware frequency control.
 
-Native search comparison selects low return, all MMIO writes, fences and delays;
-maintenance selects those events without the vendor's void return. Raw reads are
-retained. The runner additionally compares the ordered frequency envelope:
-transport-aperture reads and its two mapping-control writes are excluded, while
-command-port writes and every other read/write/fence/delay remain. For nonzero
-maintenance only, the vendor's second frequency-control read is the installed
-layout query; its count and exact value are checked before excluding that one
-observation. Production owns that fixed layout. These additional assertions are
-not included in the native MATCH claim; an unfiltered polling comparison retains
-DIFF. Changed capacitor input, unknown callback pointer, unmapped diagnostics and
+Search comparison selects the low return; maintenance omits the vendor's void
+return. Both compare every effect under a reviewed contract that ignores analog
+I2C port reads; every other read, write, fence and delay compares exactly. For
+nonzero maintenance only, the vendor samples channel status once more
+immediately before reading frequency control: the installed layout query, whose
+count and exact value the runner checks. The maintenance contract lets
+production omit that one read; production owns that fixed layout. Search and
+maintenance are one request each, with a stack fill per case. A comparison
+without the contract retains the polling DIFF. Changed capacitor input, unknown callback pointer, unmapped diagnostics and
 event exhaustion have explicit DIFF/INCOMPLETE/no-publication checks. The combined
 runner retains the entire matrix for source-free backup, move, restore and exact
 replay. Software observations do not establish hardware/RF or grant qualification.

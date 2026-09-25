@@ -1,15 +1,16 @@
 //! Captured PBus/DCODE children and compiled-production failure containment.
+use crate::contracts::port_polling;
 use crate::evidence::{events, output, stop};
 use crate::harness::direct;
-use crate::harness::{Result, case, known, region, selection, words};
+use crate::harness::{Result, case, known, region, selection, with_stack_fill, words};
 use crate::i2c::{I2c, all_complete, models, returned_low};
 use crate::layout::*;
 use crate::phy::delay_calls;
 use blobray_domain::{
     CommandCell, CommandObservation, ComparisonDifference, ComparisonVerdict, DeviceBehavior,
-    DeviceDeclaration, ExecutionEvent, ExecutionEvidence, ExecutionGap, ExecutionRegion,
-    ExecutionStop, Invocation, MemoryAccess, MemorySelection, ModelStatus, ReadRun, RegionLifetime,
-    RegisterCell, SessionReset,
+    DeviceDeclaration, ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionGap,
+    ExecutionRegion, ExecutionStop, Invocation, MemoryAccess, MemorySelection, ModelStatus,
+    ReadRun, RegionLifetime, RegisterCell, SessionReset,
 };
 
 const DESTINATION: u32 = PARAMETER_DESTINATION;
@@ -348,23 +349,28 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
     let pbus = ctx.captured(1, "phy_pbus_clear_reg");
     let production = ctx.probe("open_phy_calibration_trace_pbus_clear");
     let (vendor, replacement) = (ctx.vendor.clone(), ctx.replacement.clone());
-    for fill in FILLS {
+    // Both fills are one request; each case sets its own stack fill.
+    {
         let (mut cases, mut expected) = (vec![], vec![]);
-        for initial in [0u32, 0xa5a5_5a58, 0x5a5a_a5a4] {
-            for settle in [false, true] {
-                for busy in [0u32, 2] {
-                    let m = pbus_models(initial, settle, busy);
-                    cases.push(case(
-                        format!(
-                            "pbus-{initial:x}-{}-{busy}-{fill}",
-                            if settle { "True" } else { "False" }
-                        ),
-                        prefix.invoke(pbus, m.clone(), settle, false)?,
-                        Some(prefix.invoke(production, m, settle, true)?),
-                        SessionReset::Cold,
-                        false,
-                    ));
-                    expected.push((expected_writes(initial, settle), settle, busy));
+        for fill in FILLS {
+            for initial in [0u32, 0xa5a5_5a58, 0x5a5a_a5a4] {
+                for settle in [false, true] {
+                    for busy in [0u32, 2] {
+                        let m = pbus_models(initial, settle, busy);
+                        let mut row = case(
+                            format!(
+                                "pbus-{initial:x}-{}-{busy}-{fill}",
+                                if settle { "True" } else { "False" }
+                            ),
+                            prefix.invoke(pbus, m.clone(), settle, false)?,
+                            Some(prefix.invoke(production, m, settle, true)?),
+                            SessionReset::Cold,
+                            false,
+                        );
+                        row.stack_fill = Some(fill);
+                        cases.push(row);
+                        expected.push((expected_writes(initial, settle), settle, busy));
+                    }
                 }
             }
         }
@@ -374,10 +380,10 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
             .enumerate()
         {
             let records = ctx.submit_with(
-                &format!("pbus-{fill}-{batch}"),
+                &format!("pbus-{batch}"),
                 &vendor,
                 Some(&replacement),
-                Some(fill),
+                None,
                 rows.to_vec(),
                 MAX_EVENTS,
                 Some(ComparisonVerdict::Match),
@@ -390,7 +396,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                         assert_eq!(low, Some(0));
                     }
                     let observed = events(&records, i, side);
-                    assert_eq!(&writes_of(&observed), writes, "{fill} {batch} {i} {side}");
+                    assert_eq!(&writes_of(&observed), writes, "{batch} {i} {side}");
                     assert_eq!(
                         delays_of(&observed),
                         if *settle { vec![1, 2] } else { vec![] }
@@ -486,11 +492,20 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         )));
     }
     let (frequency_writes, nrx_writes) = dcode_frequency_writes();
-    for crystal in 0..4u32 {
-        for fill in FILLS {
-            for busy in [0u32, 2] {
-                let label = format!("dcode-{crystal}-{fill}-{busy}");
-                let mut rows = vec![
+    // Production performs an additional busy precheck before each read
+    // command; the reviewed contract ignores port reads, and every other
+    // read, write, fence, delay and the measured bytes compare.
+    let dcode = ctx.review_pair(
+        "prefix-dcode",
+        ctx.input_endpoint(2, "open_phy_trace_two_void_entries")?,
+        ctx.input_endpoint(2, "open_phy_calibration_trace_dcode")?,
+        port_polling(MAX_EVENTS),
+        "PBus clear then DCODE calibration under explicit crystal, CKGEN and busy inputs",
+    )?;
+    let dcode_rows =
+        |ctx: &I2c, crystal: u32, fill: u8, busy: u32, label: &str| -> Result<Vec<ExecutionCase>> {
+            Ok(with_stack_fill(
+                vec![
                     case(
                         "initialize-parameters",
                         prefix.setup(crystal as u8, false)?,
@@ -499,103 +514,108 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                         false,
                     ),
                     case(
-                        label.clone(),
+                        label,
                         prefix.measured(ctx, crystal, fill, busy, false)?,
                         Some(prefix.measured(ctx, crystal, fill, busy, true)?),
                         SessionReset::Warm,
                         true,
                     ),
-                ];
-                // Preserve the raw event difference: production performs an
-                // additional busy precheck before each read command. The native
-                // selected relation covers all writes, fences, delays and final
-                // bytes. The independent check below also compares every other
-                // read, without pretending the native MATCH includes those reads.
-                if crystal == 0 && fill == 0x5a && busy == 0 {
-                    ctx.submit_with(
-                        "dcode-raw-polling-difference",
-                        &vendor,
-                        Some(&replacement),
-                        Some(fill),
-                        rows.clone(),
-                        MAX_EVENTS,
-                        Some(ComparisonVerdict::Diff),
-                    )?;
-                }
-                rows[1].relation.as_mut().unwrap().events.mmio_read = false;
-                let records = ctx.submit_with(
-                    &label,
-                    &vendor,
-                    Some(&replacement),
-                    Some(fill),
-                    rows,
-                    MAX_EVENTS,
-                    Some(ComparisonVerdict::Match),
-                )?;
-                for side in [false, true] {
-                    let low = returned_low(&records, 1, side);
-                    if side {
-                        assert_eq!(low, Some(0), "{label}");
-                    }
-                    assert_eq!(
-                        output(&records, 1, side),
-                        [0, 63, 31, 32, 32, 31, 63, 0],
-                        "{label} {side}"
-                    );
-                    let observed = events(&records, 1, side);
-                    assert_eq!(delays_of(&observed), [1, 10, 1, 10, 1, 10, 1, 10]);
-                    let writes = writes_of(&observed);
-                    assert_eq!(writes[..28], expected_writes(0, false)[..], "{label}");
-                    let at = |address: u32| {
-                        writes
-                            .iter()
-                            .filter(|(a, _)| *a == address)
-                            .map(|(_, v)| *v)
-                            .collect::<Vec<_>>()
-                    };
-                    assert_eq!(at(FREQUENCY_CONTROL), frequency_writes, "{label}");
-                    assert_eq!(at(0x2010_7848), nrx_writes, "{label}");
-                    let ports: Vec<_> = writes
-                        .iter()
-                        .filter(|(a, _)| matches!(*a, I2C_PORT_0 | I2C_PORT_1))
-                        .copied()
-                        .collect();
-                    assert_eq!(
-                        ports,
-                        dcode_commands(fill)
-                            .into_iter()
-                            .map(|v| (I2C_PORT_1, v))
-                            .collect::<Vec<_>>(),
-                        "{label}"
-                    );
-                    let ckgen = models(&records, 1, side)
-                        .into_iter()
-                        .find(|m| m.id == "ckgen")
-                        .expect("ckgen model");
-                    assert_eq!(
-                        ckgen.commands,
-                        Some(CommandObservation {
-                            issued: 40,
-                            completed: 40,
-                            resets: 0,
-                            aborted: 0,
-                            pending: 0,
-                            scripted_reads: 8
-                        }),
-                        "{label}"
-                    );
-                    assert!(
-                        models(&records, 1, side)
-                            .iter()
-                            .all(|m| m.status == ModelStatus::Complete)
-                    );
-                }
-                assert_eq!(
-                    required_events(&records, false),
-                    required_events(&records, true),
-                    "{label}"
-                );
+                ],
+                fill,
+            ))
+        };
+    // The raw event difference stays visible without the contract.
+    let raw = dcode_rows(ctx, 0, 0x5a, 0, "dcode-0-90-0")?;
+    ctx.submit_with(
+        "dcode-raw-polling-difference",
+        &vendor,
+        Some(&replacement),
+        None,
+        raw,
+        MAX_EVENTS,
+        Some(ComparisonVerdict::Diff),
+    )?;
+    let mut labels = vec![];
+    let mut rows = vec![];
+    for crystal in 0..4u32 {
+        for fill in FILLS {
+            for busy in [0u32, 2] {
+                let label = format!("dcode-{crystal}-{fill}-{busy}");
+                let mut profile = dcode_rows(ctx, crystal, fill, busy, &label)?;
+                profile[1].relation.as_mut().unwrap().effects = Some(dcode.clone());
+                rows.extend(profile);
+                labels.push((label, fill));
             }
+        }
+    }
+    let records = ctx.submit_with(
+        "dcode",
+        &vendor,
+        Some(&replacement),
+        None,
+        rows,
+        MAX_EVENTS,
+        Some(ComparisonVerdict::Match),
+    )?;
+    for (i, (label, fill)) in labels.iter().enumerate() {
+        let (label, fill, measured) = (label.as_str(), *fill, 2 * i as u32 + 1);
+        for side in [false, true] {
+            let low = returned_low(&records, measured, side);
+            if side {
+                assert_eq!(low, Some(0), "{label}");
+            }
+            assert_eq!(
+                output(&records, measured, side),
+                [0, 63, 31, 32, 32, 31, 63, 0],
+                "{label} {side}"
+            );
+            let observed = events(&records, measured, side);
+            assert_eq!(delays_of(&observed), [1, 10, 1, 10, 1, 10, 1, 10]);
+            let writes = writes_of(&observed);
+            assert_eq!(writes[..28], expected_writes(0, false)[..], "{label}");
+            let at = |address: u32| {
+                writes
+                    .iter()
+                    .filter(|(a, _)| *a == address)
+                    .map(|(_, v)| *v)
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(at(FREQUENCY_CONTROL), frequency_writes, "{label}");
+            assert_eq!(at(0x2010_7848), nrx_writes, "{label}");
+            let ports: Vec<_> = writes
+                .iter()
+                .filter(|(a, _)| matches!(*a, I2C_PORT_0 | I2C_PORT_1))
+                .copied()
+                .collect();
+            assert_eq!(
+                ports,
+                dcode_commands(fill)
+                    .into_iter()
+                    .map(|v| (I2C_PORT_1, v))
+                    .collect::<Vec<_>>(),
+                "{label}"
+            );
+            let ckgen = models(&records, measured, side)
+                .into_iter()
+                .find(|m| m.id == "ckgen")
+                .expect("ckgen model");
+            assert_eq!(
+                ckgen.commands,
+                Some(CommandObservation {
+                    issued: 40,
+                    completed: 40,
+                    resets: 0,
+                    aborted: 0,
+                    pending: 0,
+                    scripted_reads: 8
+                }),
+                "{label}"
+            );
+            assert!(
+                models(&records, measured, side)
+                    .iter()
+                    .all(|m| m.status == ModelStatus::Complete)
+            );
         }
     }
     for (ready, busy, expected_commands) in
@@ -700,7 +720,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
             true,
         ),
     ];
-    original[1].relation.as_mut().unwrap().events.mmio_read = false;
+    original[1].relation.as_mut().unwrap().effects = Some(dcode.clone());
     let mut changed = original.clone();
     if let DeviceBehavior::CommandBank(bank) = &mut changed[1]
         .replacement
@@ -752,6 +772,9 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
             ..
         }
     ));
+    // The contract's occurrence bounds exceed a one-event capacity; the
+    // exhaustion under test precedes any effect comparison.
+    original[1].relation.as_mut().unwrap().effects = None;
     let limited = crate::session::request(&vendor, Some(&replacement), Some(0x5a), original, 1);
     ctx.capacity_failure("dcode-capacity", &limited)
 }
@@ -772,20 +795,6 @@ pub fn delays_of(events: &[ExecutionEvent]) -> Vec<u32> {
         .filter_map(|e| match e {
             ExecutionEvent::DelayMicros { value } => Some(*value),
             _ => None,
-        })
-        .collect()
-}
-
-/// Reads, writes, fences and delays of case 1 except transport-port reads.
-fn required_events(records: &[ExecutionEvidence], side: bool) -> Vec<ExecutionEvent> {
-    events(records, 1, side)
-        .into_iter()
-        .filter(|e| match e {
-            ExecutionEvent::Read { address, .. } => !matches!(*address, I2C_PORT_0 | I2C_PORT_1),
-            ExecutionEvent::Write { .. }
-            | ExecutionEvent::Fence { .. }
-            | ExecutionEvent::DelayMicros { .. } => true,
-            _ => false,
         })
         .collect()
 }

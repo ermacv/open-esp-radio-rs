@@ -199,8 +199,7 @@ complete; no Python scenario code remains. Unit 12.6 is complete: channel
 restoration, all temperature-prefix sensor windows and stuck readiness.
 Checkpoint 12.M (mechanisms instead of handwritten knowledge) is complete.
 Units 12.7 (RX gain/calibration) and 12.8 (TX-DC/PWDET) are complete.
-Checkpoint 12.N (native claims) is active: 12.N.1–12.N.3 are complete and
-12.N.4 is next; unit 12.9 follows the checkpoint. Stages then
+Checkpoint 12.N (native claims) is complete; unit 12.9 is next. Stages then
 run in the order 13, 14, 20 (legacy removal), 15–19, 21.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
@@ -1324,7 +1323,7 @@ they must exist first.
 | 12.N.1 | done | Runner-side effect filters become reviewed effect contracts evaluated by Blobray: transport plumbing, the single-microsecond delay before a transport or PBus status read, the vendor's unused SAR and skipped-DC snapshots, and readiness-wait visibility. A contract may declare `unclassified: required` (user decision): effects outside its rules then compare exactly in order and value, while the strict every-effect-classified policy remains available. An `ignored` disposition retains raw effects without pairing them, and a pattern may select an effect by its immediate successor. Blobray enters the selected root directly with deterministic callee-saved registers (user decision), so contracts and evidence bind the real vendor and production functions and the probe entry adapters are removed. Each contract is reviewed through knowledge assertions and bound by identity; verdicts carry the claim. |
 | 12.N.2 | done | Semantic output mappings (`phy_param` fields ↔ production output) become reviewed layout projections with final-state comparison. The aperture reports the never-written registers each side read as evidence, and a relation can require them equal. |
 | 12.N.3 | done | Execution capacity and cost: stack fill per case (no per-fill request split), lazy event-capacity admission, and a compact retained event encoding with an unchanged logical evidence contract. The largest current request (TX-DC) needs neither per-fill splitting nor hundreds of megabytes of evidence. |
-| 12.N.4 | pending | Every existing scenario (gain, i2c, channel, rx-gain, tx-dc) moves to native claims. Scenario code keeps peripheral inputs, matrices and independent oracles; runner-side comparison code is removed. Cases, verdicts, negatives and preservation are unchanged; each scenario's retained verdict alone establishes its claim. |
+| 12.N.4 | done | Every existing scenario (gain, i2c, channel, rx-gain, tx-dc) moves to native claims. Scenario code keeps peripheral inputs, matrices and independent oracles; runner-side comparison code is removed. Cases, verdicts, negatives and preservation are unchanged; each scenario's retained verdict alone establishes its claim. |
 
 Unit 12.N.1 acceptance: effect contracts gained the explicit
 `unclassified: required` policy, the `ignored` disposition and the
@@ -1369,3 +1368,19 @@ scenario reads back no events; RX-gain matrices and the channel full-root,
 temperature-prefix and stuck-readiness sets are also single requests. All six
 scenarios, all Blobray tests, formatting, strict Clippy and the docs check
 pass. Remaining per-fill splits in the gain and i2c families move in 12.N.4.
+
+Unit 12.N.4 acceptance: by user decision, effect contracts and layout
+projections conflict only for the same subject or the same vendor/replacement
+endpoint pair, so one function may pair with several counterparts. The I2C
+transport, DCODE and RFPLL search/maintenance comparisons select reviewed
+contracts that ignore only analog I2C port reads; read-mask and host-map
+accesses, waits and every other effect compare exactly. RFPLL maintenance lets
+production omit the vendor's channel-status sample immediately before a
+frequency-control read. The runner-side stream comparisons (DCODE required
+events, RFPLL frequency envelope and cross-side search baseline) are removed;
+independent oracles remain. Every per-fill request split in the gain, gain
+state, PBus, DCODE, RFPLL and RX containment sets is one request with a stack
+fill per case. All six scenarios, their negatives and preservation pass. Known
+cost: proposing or accepting a contract whose endpoint is a captured input
+symbol walks the whole 17 MB revision manifest two or three times (about
+0.45 s each), which adds about 17 s to the I2C scenario.

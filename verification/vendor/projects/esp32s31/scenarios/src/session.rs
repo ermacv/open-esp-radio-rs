@@ -6,11 +6,12 @@ use crate::harness::{
 use crate::layout::*;
 use blobray_application::QuerySummary;
 use blobray_domain::{
-    ArtifactId, AssertionId, CallAbi, CompanionProposal, EffectContract, EffectProposalRequest,
-    EffectReview, EntrySelection, ErrorCode, ExecutionRequest, ExecutionTarget, FunctionSource,
-    ImageManifest, ImageMapping, KnowledgeRevisionId, LayoutProjection, LinkRequest, ObjectId,
-    PreparedImageId, ProjectionProposalRequest, ProjectionReview, Revision, RevisionId, SymbolId,
-    SymbolTableKind,
+    ArtifactId, AssertionId, CallAbi, CallEndpoint, CompanionProposal, EffectContract,
+    EffectProposalRequest, EffectReview, EntrySelection, ErrorCode, ExecutionRequest,
+    ExecutionTarget, FunctionSource, ImageManifest, ImageMapping, KnowledgeOccurrence,
+    KnowledgeRevisionId, LayoutProjection, LinkRequest, ObjectId, PreparedImageId,
+    ProjectionProposalRequest, ProjectionReview, ReviewedCallBoundary, Revision, RevisionId,
+    SymbolId, SymbolTableKind,
 };
 use blobray_next_host::wire::RecordDocument;
 use object::{Object, ObjectSection, ObjectSymbol};
@@ -86,6 +87,43 @@ impl Session {
             probes,
             artifacts: vec![],
             knowledge: None,
+        })
+    }
+
+    /// Exact code endpoint of the linked image symbol `name` at `address`,
+    /// in the image `target` executes.
+    pub fn image_endpoint(
+        &self,
+        target: &ExecutionTarget,
+        object: &ObjectId,
+        name: &str,
+        address: u32,
+    ) -> Result<CallEndpoint> {
+        let symbol = image_symbol_id(&self.run.join("image/image.elf"), object, name)?;
+        Ok(CallEndpoint {
+            occurrence: KnowledgeOccurrence {
+                revision: self.revision.clone(),
+                source: target.source.clone(),
+                object: object.clone(),
+                symbol: Some(symbol),
+            },
+            boundary: ReviewedCallBoundary::Code { address },
+        })
+    }
+
+    /// Exact code endpoint of the captured symbol `name` in `input`.
+    pub fn input_endpoint(&self, input: u64, name: &str) -> Result<CallEndpoint> {
+        let record = crate::harness::symbol(&self.inventory, input as usize, name)?;
+        Ok(CallEndpoint {
+            occurrence: KnowledgeOccurrence {
+                revision: self.revision.clone(),
+                source: FunctionSource::Input { input },
+                object: record.id.object.clone(),
+                symbol: Some(record.id.clone()),
+            },
+            boundary: ReviewedCallBoundary::Code {
+                address: u32::try_from(record.value)?,
+            },
         })
     }
 

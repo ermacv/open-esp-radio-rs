@@ -1,19 +1,19 @@
 //! A linked captured PHY image with compiled production and the shared
 //! stack-entry, parameter-setup and callback-installation phases.
-use crate::evidence::outcomes;
+use crate::evidence::{outcomes, split_cases};
 use crate::harness::direct;
-use crate::harness::{Budget, Input};
+use crate::harness::{Budget, Input, with_stack_fill};
 use crate::harness::{
     Result, evidence, invalid, known, manifest, region, selection, symbol, words,
 };
 use crate::layout::*;
-use crate::session::{Session, image_symbol, image_symbol_id, request};
+use crate::session::{Session, image_symbol, request};
 use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_domain::{
     ArtifactId, CallEndpoint, ComparisonVerdict, DataSelector, DeviceDeclaration, EntrySelection,
     ExecutionCase, ExecutionEvidence, ExecutionRegion, ExecutionRequest, ExecutionStop,
-    ExecutionTarget, FunctionSource, ImageLayout, ImageRegion, Invocation, KnowledgeOccurrence,
-    LinkRequest, MemorySelection, ObjectId, ObjectLocation, RegionLifetime, ReviewedCallBoundary,
+    ExecutionTarget, ImageLayout, ImageRegion, Invocation, LinkRequest, MemorySelection, ObjectId,
+    ObjectLocation, RegionLifetime,
 };
 use std::{
     collections::BTreeMap,
@@ -32,6 +32,14 @@ pub enum Right {
 
 pub struct Executed {
     pub records: Vec<ExecutionEvidence>,
+    pub request: ExecutionRequest,
+    pub identity: ArtifactId,
+}
+
+/// Parts of one request over several stack fills, each with its tag and its
+/// records renumbered from case zero, and the submitted request.
+pub struct FillResults<T> {
+    pub parts: Vec<(T, Vec<ExecutionEvidence>)>,
     pub request: ExecutionRequest,
     pub identity: ArtifactId,
 }
@@ -209,34 +217,13 @@ impl PhyImage {
 
     /// Exact code endpoint of the linked image root `name`.
     pub fn vendor_endpoint(&self, name: &str) -> Result<CallEndpoint> {
-        let symbol = image_symbol_id(&self.run.join("image/image.elf"), &self.image_object, name)?;
-        Ok(CallEndpoint {
-            occurrence: KnowledgeOccurrence {
-                revision: self.revision.clone(),
-                source: self.vendor.source.clone(),
-                object: self.image_object.clone(),
-                symbol: Some(symbol),
-            },
-            boundary: ReviewedCallBoundary::Code {
-                address: self.root(name),
-            },
-        })
+        self.session
+            .image_endpoint(&self.vendor, &self.image_object, name, self.root(name))
     }
 
     /// Exact code endpoint of the compiled production function `name`.
     pub fn production_endpoint(&self, name: &str) -> Result<CallEndpoint> {
-        let record = symbol(&self.inventory, 2, name)?;
-        Ok(CallEndpoint {
-            occurrence: KnowledgeOccurrence {
-                revision: self.revision.clone(),
-                source: FunctionSource::Input { input: 2 },
-                object: record.id.object.clone(),
-                symbol: Some(record.id.clone()),
-            },
-            boundary: ReviewedCallBoundary::Code {
-                address: u32::try_from(record.value)?,
-            },
-        })
+        self.session.input_endpoint(2, name)
     }
 
     /// Enter `target` directly with explicit ABI words.
@@ -393,6 +380,56 @@ impl PhyImage {
             ComparisonVerdict::Match,
             MAX_EVENTS,
         )
+    }
+
+    /// One MATCH request over parts that each set their own stack fill.
+    /// Returns every part's tag with its records renumbered from case zero,
+    /// so a check written for one part's own request applies unchanged.
+    pub fn compare_fills<T>(
+        &mut self,
+        label: &str,
+        parts: Vec<(u8, Vec<ExecutionCase>, T)>,
+    ) -> Result<FillResults<T>> {
+        self.execute_fills(label, parts, Right::Production)
+    }
+
+    /// `compare_fills` for a vendor-only characterization that must complete.
+    pub fn characterize_fills<T>(
+        &mut self,
+        label: &str,
+        parts: Vec<(u8, Vec<ExecutionCase>, T)>,
+    ) -> Result<FillResults<T>> {
+        self.execute_fills(label, parts, Right::None)
+    }
+
+    fn execute_fills<T>(
+        &mut self,
+        label: &str,
+        parts: Vec<(u8, Vec<ExecutionCase>, T)>,
+        right: Right,
+    ) -> Result<FillResults<T>> {
+        let (mut rows, mut counts, mut tags) = (vec![], vec![], vec![]);
+        for (fill, part, tag) in parts {
+            counts.push(part.len() as u32);
+            rows.extend(with_stack_fill(part, fill));
+            tags.push(tag);
+        }
+        let executed = self.execute(
+            label,
+            rows,
+            FILLS[0],
+            right,
+            ComparisonVerdict::Match,
+            MAX_EVENTS,
+        )?;
+        Ok(FillResults {
+            parts: tags
+                .into_iter()
+                .zip(split_cases(&executed.records, &counts))
+                .collect(),
+            request: executed.request,
+            identity: executed.identity,
+        })
     }
 
     /// Vendor-only characterization that must complete.

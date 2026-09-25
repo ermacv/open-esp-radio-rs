@@ -15,10 +15,10 @@ use crate::phy::image_layout;
 use crate::session::{Artifact, Session, image_symbol, request};
 use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_domain::{
-    ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration, EntrySelection,
-    ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionGap, ExecutionStop, ExecutionTarget,
-    FunctionSource, LinkRequest, MemoryAccess, ModelStatus, RegionLifetime, RegisterCell,
-    SessionReset,
+    CallEndpoint, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration, EffectReview,
+    EffectRule, EntrySelection, ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionGap,
+    ExecutionStop, ExecutionTarget, FunctionSource, LinkRequest, MemoryAccess, ModelStatus,
+    ObjectId, ObjectLocation, RegionLifetime, RegisterCell, SessionReset,
 };
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
@@ -141,6 +141,8 @@ pub fn unmet(sdk: bool, phy_sdk: bool) -> Vec<Unmet> {
 pub struct I2c {
     pub session: Session,
     pub roots: BTreeMap<String, u32>,
+    /// The linked image, whose roots are vendor endpoints.
+    pub image_object: ObjectId,
     pub parameter: u32,
     pub vendor: ExecutionTarget,
     pub replacement: ExecutionTarget,
@@ -295,6 +297,10 @@ impl I2c {
         );
         let (vendor, replacement) = session.targets(&linked.image)?;
         Ok(Self {
+            image_object: ObjectId {
+                artifact: linked.manifest.elf.clone(),
+                location: ObjectLocation::Standalone,
+            },
             session,
             roots: linked.roots,
             parameter,
@@ -308,6 +314,31 @@ impl I2c {
             .roots
             .get(name)
             .unwrap_or_else(|| panic!("missing root {name}"))
+    }
+
+    /// Exact code endpoint of the linked image root `name`.
+    pub fn root_endpoint(&self, name: &str) -> Result<CallEndpoint> {
+        self.session
+            .image_endpoint(&self.vendor, &self.image_object, name, self.root(name))
+    }
+
+    /// Propose and accept `rules` as the effect contract between `vendor` and
+    /// `replacement` under `unclassified: required`.
+    pub fn review_pair(
+        &mut self,
+        name: &str,
+        vendor: CallEndpoint,
+        replacement: CallEndpoint,
+        rules: Vec<EffectRule>,
+        applicability: &str,
+    ) -> Result<EffectReview> {
+        let contract = crate::contracts::phy_contract(vendor, replacement, rules, applicability);
+        self.session.review_effects(
+            name,
+            &format!("esp32s31.phy.{name}.effects"),
+            contract,
+            applicability,
+        )
     }
 
     /// Address of a declared production probe.

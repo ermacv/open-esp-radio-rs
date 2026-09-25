@@ -218,6 +218,37 @@ pub fn phy_effects(observed: &[ExecutionEvent]) -> Vec<PhyEffect> {
         .collect()
 }
 
+/// Records of consecutive case ranges of one request, each renumbered from
+/// zero: the first `counts[0]` cases form part 0, and so on. Checks written
+/// for one profile's request then apply unchanged to a merged request.
+pub fn split_cases(records: &[ExecutionEvidence], counts: &[u32]) -> Vec<Vec<ExecutionEvidence>> {
+    let mut starts = vec![0u32];
+    for count in counts {
+        starts.push(starts.last().unwrap() + count);
+    }
+    let mut parts = vec![vec![]; counts.len()];
+    for record in records {
+        let mut record = record.clone();
+        let case = match &mut record {
+            ExecutionEvidence::FinalMemory { case, .. }
+            | ExecutionEvidence::FifoService { case, .. }
+            | ExecutionEvidence::RuntimeTable { case, .. }
+            | ExecutionEvidence::CallModel { case, .. }
+            | ExecutionEvidence::Model { case, .. }
+            | ExecutionEvidence::Event { case, .. }
+            | ExecutionEvidence::Outcome { case, .. }
+            | ExecutionEvidence::Comparison { case, .. } => case,
+        };
+        let part = starts
+            .windows(2)
+            .position(|w| (w[0]..w[1]).contains(case))
+            .expect("record case outside the declared parts");
+        *case -= starts[part];
+        parts[part].push(record);
+    }
+    parts
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,6 +269,29 @@ mod tests {
                 known,
             },
         }
+    }
+
+    #[test]
+    fn split_cases_renumbers_each_part_from_zero() {
+        let records = [chunk(0, 3, 3, 0), chunk(0, 3, 3, 0), chunk(0, 3, 3, 0)];
+        let mut records = records.to_vec();
+        for (i, r) in records.iter_mut().enumerate() {
+            if let ExecutionEvidence::FinalMemory { case, .. } = r {
+                *case = [0, 2, 3][i];
+            }
+        }
+        let parts = split_cases(&records, &[2, 2]);
+        let cases = |part: &[ExecutionEvidence]| -> Vec<u32> {
+            part.iter()
+                .map(|r| match r {
+                    ExecutionEvidence::FinalMemory { case, .. } => *case,
+                    _ => unreachable!(),
+                })
+                .collect()
+        };
+        assert_eq!(cases(&parts[0]), [0]);
+        assert_eq!(cases(&parts[1]), [0, 1]);
+        assert!(std::panic::catch_unwind(|| split_cases(&records, &[1])).is_err());
     }
 
     #[test]

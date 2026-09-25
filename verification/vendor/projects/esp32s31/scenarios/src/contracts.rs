@@ -81,6 +81,21 @@ pub fn omitted_read_before(
     }
 }
 
+/// Analog I2C port reads, which poll command completion and return read
+/// data. Waits and transport configuration accesses stay compared.
+pub fn port_polling(maximum: u32) -> Vec<EffectRule> {
+    I2C_PORTS
+        .map(|address| {
+            ignored(
+                format!("port-read-{address:08x}"),
+                word(read, address),
+                maximum,
+                "analog I2C completion polling; read data reaches compared state",
+            )
+        })
+        .to_vec()
+}
+
 /// Transport reads, read-mask and host-map writes, and the single-microsecond
 /// wait immediately before a transport read or a read of one of
 /// `wait_status`. Every other delay, including readiness waits, stays compared.

@@ -9,6 +9,8 @@ use core::ops::ControlFlow;
 
 #[cfg(target_arch = "riscv32")]
 mod recurring;
+#[cfg(target_arch = "riscv32")]
+pub(crate) use recurring::PeripheralConnectionRecurringScheduling;
 #[cfg(all(test, not(target_arch = "riscv32")))]
 #[path = "scheduler/recurring/transaction.rs"]
 mod recurring_transaction_tests;
@@ -482,14 +484,134 @@ impl PeripheralConnectionSchedulerCompleted {
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY> {
+/// Role scheduler operations composed from the powered runtime's primitives.
+pub(crate) trait PeripheralConnectionScheduling<const SCHEDULER_CAPACITY: usize> {
     /// Admit one causal first-connection window into the common timeline.
     #[cfg(any(target_arch = "riscv32", test))]
     #[allow(
         clippy::result_large_err,
         reason = "the no-alloc failure returns the exact affine connection candidate"
     )]
-    pub(crate) fn admit_peripheral_connection_first_event(
+    fn admit_peripheral_connection_first_event(
+        &mut self,
+        candidate: PeripheralConnectionFirstEventCandidate,
+        admission: PeripheralConnectionAdmissionObservation,
+    ) -> Result<
+        PeripheralConnectionFirstPreSequence,
+        PeripheralConnectionFirstEventPreparationFailure,
+    >;
+
+    /// Authorize the second deadline and encode only the resolved connection window.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[allow(
+        clippy::result_large_err,
+        reason = "the no-alloc failure returns the exact affine connection candidate"
+    )]
+    fn prepare_peripheral_connection_first_event(
+        &mut self,
+        admitted: PeripheralConnectionFirstPreSequence,
+        sequence: PeripheralConnectionSequenceObservation,
+        default_tx_power: oer_esp32s31_bluetooth_memory::PeripheralConnectionDefaultTxPowerDbm,
+        direction_finding_workspace: oer_esp32s31_bluetooth_memory::DirectionFindingWorkspaceLink,
+    ) -> Result<PeripheralConnectionEventPrepared, PeripheralConnectionFirstEventPreparationFailure>;
+
+    /// Release one unpublished connection event and its exact timeline slot.
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn cancel_peripheral_connection_first_event(
+        &mut self,
+        prepared: PeripheralConnectionEventPrepared,
+    ) -> (
+        crate::le::peripheral::PeripheralConnectionRuntimeAllocation,
+        oer_bluetooth_ll::connection::LePeripheralConnection,
+    );
+
+    /// Release an admitted connection candidate before sequence authorization.
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn cancel_peripheral_connection_first_pre_sequence(
+        &mut self,
+        admitted: PeripheralConnectionFirstPreSequence,
+    ) -> (
+        crate::le::peripheral::PeripheralConnectionRuntimeAllocation,
+        oer_bluetooth_ll::connection::LePeripheralConnection,
+    );
+
+    /// Join the selected connection item to this epoch's empty scheduler list.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[allow(
+        clippy::result_large_err,
+        reason = "the no-alloc failure retains the complete affine connection event"
+    )]
+    fn prepare_peripheral_connection_empty_list_merge(
+        &mut self,
+        prepared: PeripheralConnectionEventPrepared,
+    ) -> Result<
+        PeripheralConnectionEmptySchedulerMergePrepared,
+        PeripheralConnectionEmptySchedulerMergeFailure,
+    >;
+
+    /// Restore an unpublished connection merge through the same scheduler epoch.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg_attr(
+        all(target_arch = "riscv32", not(test)),
+        expect(
+            dead_code,
+            reason = "host ownership tests exercise pre-publication merge recovery; the current first-event actor publishes the merge directly"
+        )
+    )]
+    #[allow(
+        clippy::result_large_err,
+        reason = "the no-alloc cancellation failure retains the complete affine merge"
+    )]
+    fn cancel_peripheral_connection_empty_list_merge(
+        &mut self,
+        merged: PeripheralConnectionEmptySchedulerMergePrepared,
+    ) -> Result<PeripheralConnectionEventPrepared, PeripheralConnectionEmptySchedulerMergePrepared>;
+
+    /// Publish selector-two RX memory and the exact connection scheduler head.
+    ///
+    /// Common-list identity is validated before the first irreversible MMIO.
+    /// An RX publication proof mismatch after that boundary is returned as a
+    /// sealed fail-stop retaining every affine owner; only a validated join
+    /// may continue to scheduler-head publication.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        clippy::result_large_err,
+        reason = "the powered task owner and exact connection graph retain every PAC publication prerequisite"
+    )]
+    fn publish_peripheral_connection_scheduler_head(
+        &mut self,
+        merged: PeripheralConnectionEmptySchedulerMergePrepared,
+    ) -> Result<
+        PeripheralConnectionSchedulerHeadPublished,
+        PeripheralConnectionSchedulerHeadPublicationFailure,
+    >;
+
+    /// Stop and retire the exact running peripheral item without accepting a
+    /// synthetic completion. The aborted graph continues through the ordinary
+    /// software unlink and recycle tail.
+    #[cfg(target_arch = "riscv32")]
+    fn step_peripheral_connection_stop(
+        &mut self,
+        storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
+        running: SingleItemSchedulerRunning<PeripheralConnectionCompletionRole>,
+        stop: BluetoothSchedulerStop,
+    ) -> PeripheralConnectionSchedulerStopStep;
+
+    /// Copy RX results and release the connection event's three lower owners.
+    #[cfg(target_arch = "riscv32")]
+    fn recycle_peripheral_connection_completed(
+        &mut self,
+        ready: SingleItemSchedulerSoftwareListRemovalReady<PeripheralConnectionCompletionRole>,
+    ) -> PeripheralConnectionRecycleOutcome;
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<const SCHEDULER_CAPACITY: usize> PeripheralConnectionScheduling<SCHEDULER_CAPACITY>
+    for ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
+{
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn admit_peripheral_connection_first_event(
         &mut self,
         candidate: PeripheralConnectionFirstEventCandidate,
         admission: PeripheralConnectionAdmissionObservation,
@@ -498,17 +620,16 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         PeripheralConnectionFirstEventPreparationFailure,
     > {
         let requested = candidate.requested_window();
-        let timing_policy =
-            SchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
-        match self
-            .runtime
-            .scheduler_timeline_mut()
-            .reserve_initial_window(
-                requested.start(),
-                requested.end(),
-                timing_policy,
-                admission.sample,
-            ) {
+        let timing_policy = SchedulerTimingPolicy::from_scheduler_config(
+            self.scheduler_config(),
+            self.controller_time_scale(),
+        );
+        match self.scheduler_timeline_mut().reserve_initial_window(
+            requested.start(),
+            requested.end(),
+            timing_policy,
+            admission.sample,
+        ) {
             Ok(reservation) => Ok(PeripheralConnectionFirstPreSequence {
                 candidate,
                 reservation,
@@ -520,13 +641,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Authorize the second deadline and encode only the resolved connection window.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[allow(
-        clippy::result_large_err,
-        reason = "the no-alloc failure returns the exact affine connection candidate"
-    )]
-    pub(crate) fn prepare_peripheral_connection_first_event(
+    fn prepare_peripheral_connection_first_event(
         &mut self,
         admitted: PeripheralConnectionFirstPreSequence,
         sequence: PeripheralConnectionSequenceObservation,
@@ -569,9 +685,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Release one unpublished connection event and its exact timeline slot.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn cancel_peripheral_connection_first_event(
+    fn cancel_peripheral_connection_first_event(
         &mut self,
         prepared: PeripheralConnectionEventPrepared,
     ) -> (
@@ -583,9 +698,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         event.cancel()
     }
 
-    /// Release an admitted connection candidate before sequence authorization.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn cancel_peripheral_connection_first_pre_sequence(
+    fn cancel_peripheral_connection_first_pre_sequence(
         &mut self,
         admitted: PeripheralConnectionFirstPreSequence,
     ) -> (
@@ -600,13 +714,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         candidate.cancel()
     }
 
-    /// Join the selected connection item to this epoch's empty scheduler list.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[allow(
-        clippy::result_large_err,
-        reason = "the no-alloc failure retains the complete affine connection event"
-    )]
-    pub(crate) fn prepare_peripheral_connection_empty_list_merge(
+    fn prepare_peripheral_connection_empty_list_merge(
         &mut self,
         prepared: PeripheralConnectionEventPrepared,
     ) -> Result<
@@ -616,7 +725,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         let PeripheralConnectionEventPrepared { event, reservation } = prepared;
         let event = event.prepare_scheduler_admission();
         let address = event.scheduler_head();
-        if let Err(error) = self._scheduler_list.prepare_first_item(address) {
+        if let Err(error) = self.scheduler_list_mut().prepare_first_item(address) {
             return Err(PeripheralConnectionEmptySchedulerMergeFailure {
                 error,
                 prepared: PeripheralConnectionEventPrepared {
@@ -628,26 +737,14 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         Ok(PeripheralConnectionEmptySchedulerMergePrepared { event, reservation })
     }
 
-    /// Restore an unpublished connection merge through the same scheduler epoch.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[allow(
-        clippy::result_large_err,
-        reason = "the no-alloc cancellation failure retains the complete affine merge"
-    )]
-    #[cfg_attr(
-        all(target_arch = "riscv32", not(test)),
-        expect(
-            dead_code,
-            reason = "host ownership tests exercise pre-publication merge recovery; the current first-event actor publishes the merge directly"
-        )
-    )]
-    pub(crate) fn cancel_peripheral_connection_empty_list_merge(
+    fn cancel_peripheral_connection_empty_list_merge(
         &mut self,
         merged: PeripheralConnectionEmptySchedulerMergePrepared,
     ) -> Result<PeripheralConnectionEventPrepared, PeripheralConnectionEmptySchedulerMergePrepared>
     {
         if !self
-            ._scheduler_list
+            .scheduler_list_mut()
             .cancel_first_item(merged.scheduler_item_address())
         {
             return Err(merged);
@@ -659,19 +756,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Publish selector-two RX memory and the exact connection scheduler head.
-    ///
-    /// Common-list identity is validated before the first irreversible MMIO.
-    /// An RX publication proof mismatch after that boundary is returned as a
-    /// sealed fail-stop retaining every affine owner; only a validated join
-    /// may continue to scheduler-head publication.
     #[cfg(target_arch = "riscv32")]
-    #[allow(
-        unsafe_code,
-        clippy::result_large_err,
-        reason = "the powered task owner and exact connection graph retain every PAC publication prerequisite"
-    )]
-    pub(crate) fn publish_peripheral_connection_scheduler_head(
+    fn publish_peripheral_connection_scheduler_head(
         &mut self,
         merged: PeripheralConnectionEmptySchedulerMergePrepared,
     ) -> Result<
@@ -694,10 +780,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         };
         let PeripheralConnectionEmptySchedulerMergePrepared { event, reservation } = merged;
         let (graph, remainder) = event.prepare_publication().into_parts();
-        // SAFETY: `self` holds the sole powered task epoch; the connection graph
-        // and its detached scheduler item move into this publication and stay
-        // retained by its success or failure owner.
-        let graph = match unsafe { self.task.publish_peripheral_connection_rx_memory(graph) } {
+        let graph = match self.publish_peripheral_connection_rx_memory(graph) {
             Ok(graph) => graph,
             Err(mismatch) => {
                 return Err(PeripheralConnectionSchedulerHeadPublicationFailure {
@@ -720,11 +803,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Stop and retire the exact running peripheral item without accepting a
-    /// synthetic completion. The aborted graph continues through the ordinary
-    /// software unlink and recycle tail.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn step_peripheral_connection_stop(
+    fn step_peripheral_connection_stop(
         &mut self,
         storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
         running: SingleItemSchedulerRunning<PeripheralConnectionCompletionRole>,
@@ -732,23 +812,23 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     ) -> PeripheralConnectionSchedulerStopStep {
         let address = running.scheduler_item_address();
         if running.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self._scheduler_list.retains_running_first_item(address)
-            || self.runtime.scheduler_finished_lists_mut().is_active()
+            || !self
+                .scheduler_list_mut()
+                .retains_running_first_item(address)
+            || self.scheduler_finished_lists_mut().is_active()
         {
             return PeripheralConnectionSchedulerStopStep::IdentityMismatch {
                 _running: running,
                 _stop: stop,
             };
         }
-        let stopped = match self.task.step_scheduler_stop(storage, stop) {
+        let stopped = match self.step_scheduler_stop(storage, stop) {
             Ok(BluetoothSchedulerStopStep::Stopped(stopped)) => stopped,
             Ok(BluetoothSchedulerStopStep::Pending(stop)) | Err(stop) => {
                 return PeripheralConnectionSchedulerStopStep::Pending { running, stop };
             }
         };
-        let captured = self
-            .task
-            .transfer_stopped_scheduler_finished_lists(&stopped);
+        let captured = self.transfer_stopped_scheduler_finished_lists(&stopped);
         let rest = match captured.pop_lowest() {
             BluetoothSchedulerFinishedListPop::List {
                 observed,
@@ -766,7 +846,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
             };
         }
         let (item, run, retained) = running.into_parts();
-        let stopped = match self.task.retire_stopped_scheduler_head(stopped, run) {
+        let stopped = match self.retire_stopped_scheduler_head(stopped, run) {
             oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedHeadRetirement::Retired(
                 stopped,
             ) => stopped,
@@ -790,18 +870,17 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 };
             }
         };
-        self._scheduler_list
+        self.scheduler_list_mut()
             .retain_completion_observed_first_item(address);
-        self._scheduler_list
+        self.scheduler_list_mut()
             .retain_hardware_head_empty_first_item(address);
         PeripheralConnectionSchedulerStopStep::Retired(
             SingleItemSchedulerHardwareHeadEmptyObserved::new(item, head, retained),
         )
     }
 
-    /// Copy RX results and release the connection event's three lower owners.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recycle_peripheral_connection_completed(
+    fn recycle_peripheral_connection_completed(
         &mut self,
         ready: SingleItemSchedulerSoftwareListRemovalReady<PeripheralConnectionCompletionRole>,
     ) -> PeripheralConnectionRecycleOutcome {
@@ -810,7 +889,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         let address = ready.scheduler_item_address();
         if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
             || !self
-                ._scheduler_list
+                .scheduler_list_mut()
                 .retains_software_list_removal_ready_first_item(address)
         {
             return ControlFlow::Break(PeripheralConnectionRecycleFailure::new(
@@ -818,7 +897,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 ready,
             ));
         }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
+        if self.scheduler_finished_lists_mut().is_active() {
             return ControlFlow::Break(PeripheralConnectionRecycleFailure::new(
                 PeripheralConnectionRecycleFailureCause::FinishedListDrainStillActive,
                 ready,
@@ -847,11 +926,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 ));
             }
         };
-        let release = match self
-            .runtime
-            .scheduler_timeline_mut()
-            .prepare_release(reservation)
-        {
+        let release = match self.scheduler_timeline_mut().prepare_release(reservation) {
             Ok(release) => release,
             Err(failure) => {
                 let reservation = failure.into_reservation();
@@ -864,7 +939,10 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         };
         let event = extracted.commit();
         release.commit();
-        self._scheduler_list.commit_recycled_first_item();
+        self.scheduler_list_mut().commit_recycled_first_item();
         ControlFlow::Continue(PeripheralConnectionSchedulerRecycled { event })
     }
 }
+
+#[cfg(test)]
+mod tests;

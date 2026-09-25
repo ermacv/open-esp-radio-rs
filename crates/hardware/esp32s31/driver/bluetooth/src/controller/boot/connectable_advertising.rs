@@ -8,6 +8,9 @@
 //! with the complete owner graph instead of being converted into an HCI error.
 
 #![forbid(unsafe_code)]
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(unused_imports)]
+use crate::le::advertising::connectable::scheduler::LegacyConnectableAdvertisingScheduling;
 
 use crate::{
     SchedulerInstant,

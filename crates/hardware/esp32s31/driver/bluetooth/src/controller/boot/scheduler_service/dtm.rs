@@ -1,4 +1,7 @@
 //! Direct Test Mode scheduler service operations.
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(unused_imports)]
+use crate::le::dtm::scheduler::lifecycle::DtmScheduling;
 
 use super::super::{
     ControllerPublishedTaskService, DtmPostUnlinkArmError, DtmPostUnlinkArmStep,

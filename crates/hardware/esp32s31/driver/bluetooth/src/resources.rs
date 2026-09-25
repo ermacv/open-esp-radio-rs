@@ -873,5 +873,84 @@ impl InterruptBankOwner {
     }
 }
 
+/// Memory-graph publication with the powered task epoch as its proof.
+///
+/// [`crate::runtime_resources::ControllerPoweredTaskRuntime`] is the sole
+/// powered task epoch, and each prepared graph is an owned value that moves
+/// into the returned published or mismatch owner, which retains it pinned.
+/// Together they discharge the lower `unsafe` publication contracts, so roles
+/// publish graphs without `unsafe`.
+#[cfg(target_arch = "riscv32")]
+impl<const SCHEDULER_CAPACITY: usize>
+    crate::runtime_resources::ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
+{
+    /// Publish the response-capable advertising graph's RX memory.
+    #[allow(
+        unsafe_code,
+        clippy::result_large_err,
+        reason = "the powered task epoch and the owned graph discharge the publication contract"
+    )]
+    pub(crate) fn publish_legacy_connectable_advertising_rx_memory(
+        &mut self,
+        prepared: LegacyConnectableAdvertisingMemoryGraphPublicationPrepared,
+    ) -> Result<
+        LegacyConnectableAdvertisingMemoryGraphRxPublished,
+        LegacyConnectableAdvertisingMemoryGraphPublicationMismatch,
+    > {
+        // SAFETY: `self` is the sole powered task epoch, and `prepared` (with
+        // its loaned RX pool) moves into the returned owner, which retains it.
+        unsafe {
+            self.task
+                .publish_legacy_connectable_advertising_rx_memory(prepared)
+        }
+    }
+
+    /// Publish the passive scanner graph's RX memory.
+    #[allow(
+        unsafe_code,
+        reason = "the powered task epoch and the owned graph discharge the publication contract"
+    )]
+    pub(crate) fn publish_passive_scan_rx_memory(
+        &mut self,
+        prepared: PassiveScanMemoryGraphPublicationPrepared,
+    ) -> Result<PassiveScanMemoryGraphPublished, PassiveScanMemoryGraphPublicationMismatch> {
+        // SAFETY: `self` is the sole powered task epoch, and `prepared` moves
+        // into the returned owner, which retains it.
+        unsafe { self.task.publish_passive_scan_rx_memory(prepared) }
+    }
+
+    /// Publish one peripheral connection graph's RX memory.
+    #[allow(
+        unsafe_code,
+        clippy::result_large_err,
+        reason = "the powered task epoch and the owned graph discharge the publication contract"
+    )]
+    pub(crate) fn publish_peripheral_connection_rx_memory(
+        &mut self,
+        prepared: PeripheralConnectionMemoryGraphPublicationPrepared,
+    ) -> Result<
+        PeripheralConnectionMemoryGraphRxPublished,
+        PeripheralConnectionMemoryGraphPublicationMismatch,
+    > {
+        // SAFETY: `self` is the sole powered task epoch, and `prepared` with
+        // its detached scheduler item moves into the returned owner.
+        unsafe { self.task.publish_peripheral_connection_rx_memory(prepared) }
+    }
+
+    /// Publish the scan-start command for an RX-published scanner graph.
+    #[allow(
+        unsafe_code,
+        reason = "the powered task epoch and the owned graph discharge the publication contract"
+    )]
+    pub(crate) fn publish_passive_scan_command(
+        &mut self,
+        published: PassiveScanMemoryGraphPublished,
+    ) -> PassiveScanMemoryGraphCommandPublished {
+        // SAFETY: `self` is the sole powered scanner epoch, and the exact
+        // RX-published graph moves into the returned command-published state.
+        unsafe { self.task.publish_passive_scan_command(published) }
+    }
+}
+
 #[cfg(test)]
 mod tests;

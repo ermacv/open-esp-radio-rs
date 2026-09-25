@@ -3,6 +3,15 @@
 //! Startup, stable interrupt publication and controller-time acquisition stay
 //! in the parent module. This module owns the operational scheduler surface:
 //! list publication, RUN, completion draining, post-unlink gating and recycle.
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(unused_imports)]
+use crate::le::advertising::connectable::scheduler::LegacyConnectableAdvertisingScheduling;
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(unused_imports)]
+use crate::le::advertising::scheduler::LegacyAdvertisingScheduling;
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(unused_imports)]
+use crate::le::scanning::scheduler::PassiveScanScheduling;
 
 pub(crate) mod connectable_advertising;
 mod connection;

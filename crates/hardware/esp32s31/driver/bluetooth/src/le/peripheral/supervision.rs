@@ -63,8 +63,7 @@ mod tests {
     fn receive_timestamp_projects_through_a_nonzero_epoch_and_raw_wrap() {
         use crate::{ControllerSchedulerEpoch, ControllerTimeSample};
         use oer_esp32s31_bluetooth_memory::PeripheralConnectionReceiveTime;
-        let scale = oer_esp32s31_pac::BluetoothControllerHalInitConfig::reviewed_standalone()
-            .controller_time_scale();
+        let scale = crate::controller_hal::reviewed_standalone_time_scale();
         let epoch = ControllerSchedulerEpoch::new(
             ControllerTimeSample::for_validation(u32::MAX - 99),
             50_000,

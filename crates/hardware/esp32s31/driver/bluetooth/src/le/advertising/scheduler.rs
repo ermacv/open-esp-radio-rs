@@ -296,14 +296,149 @@ impl core::fmt::Debug for LegacyAdvertisingFirstEventPreparationFailure<'_> {
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY> {
+/// Role scheduler operations composed from the powered runtime's primitives.
+pub(crate) trait LegacyAdvertisingScheduling<const SCHEDULER_CAPACITY: usize> {
     /// Admit one already projected first advertising event into the common timeline.
     #[cfg(any(target_arch = "riscv32", test))]
     #[expect(
         clippy::result_large_err,
         reason = "the recoverable failure retains the exact affine radio state and continuation owners without allocation"
     )]
-    pub fn admit_legacy_advertising_first_event<'a>(
+    fn admit_legacy_advertising_first_event<'a>(
+        &mut self,
+        candidate: LegacyAdvertisingFirstEventCandidate<'a>,
+        admission: LegacyAdvertisingAdmissionObservation,
+    ) -> Result<
+        LegacyAdvertisingFirstPreSequence<'a>,
+        LegacyAdvertisingFirstEventPreparationFailure<'a>,
+    >;
+
+    /// Authorize the second deadline and encode the overlap-resolved event image.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the recoverable failure retains the exact affine radio state and continuation owners without allocation"
+    )]
+    fn prepare_legacy_advertising_first_event<'a>(
+        &mut self,
+        admitted: LegacyAdvertisingFirstPreSequence<'a>,
+        sequence: LegacyAdvertisingSequenceObservation,
+    ) -> Result<LegacyAdvertisingEventPrepared<'a>, LegacyAdvertisingFirstEventPreparationFailure<'a>>;
+
+    /// Reserve one exact recurring advertising window without displacement.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc rejection retains the complete recurring event"
+    )]
+    fn admit_legacy_advertising_recurring_event<'a>(
+        &mut self,
+        candidate: LegacyAdvertisingRecurringEventCandidate<'a>,
+    ) -> Result<
+        LegacyAdvertisingRecurringPreSequence<'a>,
+        LegacyAdvertisingRecurringEventPreparationFailure<'a>,
+    >;
+
+    /// Authorize the recurring deadline and encode its complete event chain.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc rejection retains the complete recurring event"
+    )]
+    fn prepare_legacy_advertising_recurring_event<'a>(
+        &mut self,
+        admitted: LegacyAdvertisingRecurringPreSequence<'a>,
+        sequence: LegacyAdvertisingSequenceObservation,
+    ) -> Result<
+        LegacyAdvertisingEventPrepared<'a>,
+        LegacyAdvertisingRecurringEventPreparationFailure<'a>,
+    >;
+
+    /// Release an unpublished first advertising event and restore both owners.
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn cancel_legacy_advertising_first_event<'a>(
+        &mut self,
+        prepared: LegacyAdvertisingEventPrepared<'a>,
+    ) -> crate::le::advertising::LegacyAdvertisingCancelled<'a>;
+
+    /// Release an admitted first event before its sequence sample arrives.
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn cancel_legacy_advertising_first_pre_sequence<'a>(
+        &mut self,
+        admitted: LegacyAdvertisingFirstPreSequence<'a>,
+    ) -> crate::le::advertising::LegacyAdvertisingCancelled<'a>;
+
+    /// Release an admitted recurring event before its sequence sample arrives.
+    #[cfg(target_arch = "riscv32")]
+    fn cancel_legacy_advertising_recurring_pre_sequence<'a>(
+        &mut self,
+        admitted: LegacyAdvertisingRecurringPreSequence<'a>,
+    ) -> crate::le::advertising::LegacyAdvertisingRecurringCancelled<'a>;
+
+    /// Join one prepared advertising item to this epoch's empty scheduler list.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the recoverable failure retains the exact affine radio state and continuation owners without allocation"
+    )]
+    fn prepare_legacy_advertising_empty_list_merge<'a>(
+        &mut self,
+        prepared: LegacyAdvertisingEventPrepared<'a>,
+    ) -> Result<
+        LegacyAdvertisingEmptySchedulerMergePrepared<'a>,
+        LegacyAdvertisingEmptySchedulerMergeFailure<'a>,
+    >;
+
+    /// Cancel a not-yet-published advertising merge through the same list epoch.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[expect(
+        clippy::result_large_err,
+        reason = "an identity rejection retains the complete advertising merge"
+    )]
+    fn cancel_legacy_advertising_empty_list_merge<'a>(
+        &mut self,
+        merged: LegacyAdvertisingEmptySchedulerMergePrepared<'a>,
+    ) -> Result<LegacyAdvertisingEventPrepared<'a>, LegacyAdvertisingEmptySchedulerMergePrepared<'a>>;
+
+    /// Publish one prepared advertising item through the common head edge.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "pre-MMIO rejection retains the complete advertising merge"
+    )]
+    fn publish_legacy_advertising_scheduler_head<'a>(
+        &mut self,
+        merged: LegacyAdvertisingEmptySchedulerMergePrepared<'a>,
+    ) -> Result<
+        LegacyAdvertisingSchedulerHeadPublished<'a>,
+        LegacyAdvertisingSchedulerHeadPublicationFailure<'a>,
+    >;
+
+    /// Release the advertising memory, timeline and source-list owners together.
+    #[cfg(target_arch = "riscv32")]
+    fn recycle_legacy_advertising_completed<'a>(
+        &mut self,
+        ready: SingleItemSchedulerSoftwareListRemovalReady<
+            crate::le::advertising::legacy::completion::LegacyAdvertisingCompletionRole<'a>,
+        >,
+    ) -> LegacyAdvertisingSchedulerRecycleStep<'a>;
+
+    /// Reclaim one response-capable advertising graph and classify its copied RX batch.
+    #[cfg(target_arch = "riscv32")]
+    fn recycle_legacy_connectable_advertising_completed(
+        &mut self,
+        ready: SingleItemSchedulerSoftwareListRemovalReady<
+            crate::le::advertising::connectable::completion::LegacyConnectableAdvertisingCompletionRole,
+        >,
+    ) -> crate::le::advertising::connectable::completion::LegacyConnectableAdvertisingRecycleStep;
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<const SCHEDULER_CAPACITY: usize> LegacyAdvertisingScheduling<SCHEDULER_CAPACITY>
+    for ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
+{
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn admit_legacy_advertising_first_event<'a>(
         &mut self,
         candidate: LegacyAdvertisingFirstEventCandidate<'a>,
         admission: LegacyAdvertisingAdmissionObservation,
@@ -312,17 +447,16 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         LegacyAdvertisingFirstEventPreparationFailure<'a>,
     > {
         let raw_window = candidate.raw_window();
-        let timing_policy =
-            SchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
-        match self
-            .runtime
-            .scheduler_timeline_mut()
-            .reserve_initial_window(
-                raw_window.start(),
-                raw_window.end(),
-                timing_policy,
-                admission.sample,
-            ) {
+        let timing_policy = SchedulerTimingPolicy::from_scheduler_config(
+            self.scheduler_config(),
+            self.controller_time_scale(),
+        );
+        match self.scheduler_timeline_mut().reserve_initial_window(
+            raw_window.start(),
+            raw_window.end(),
+            timing_policy,
+            admission.sample,
+        ) {
             Ok(reservation) => Ok(LegacyAdvertisingFirstPreSequence {
                 candidate,
                 reservation,
@@ -334,13 +468,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Authorize the second deadline and encode the overlap-resolved event image.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the recoverable failure retains the exact affine radio state and continuation owners without allocation"
-    )]
-    pub fn prepare_legacy_advertising_first_event<'a>(
+    fn prepare_legacy_advertising_first_event<'a>(
         &mut self,
         admitted: LegacyAdvertisingFirstPreSequence<'a>,
         sequence: LegacyAdvertisingSequenceObservation,
@@ -376,13 +505,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Reserve one exact recurring advertising window without displacement.
     #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the no-alloc rejection retains the complete recurring event"
-    )]
-    pub fn admit_legacy_advertising_recurring_event<'a>(
+    fn admit_legacy_advertising_recurring_event<'a>(
         &mut self,
         candidate: LegacyAdvertisingRecurringEventCandidate<'a>,
     ) -> Result<
@@ -390,13 +514,15 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         LegacyAdvertisingRecurringEventPreparationFailure<'a>,
     > {
         let raw_window = candidate.raw_window();
-        let timing_policy =
-            SchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
-        match self
-            .runtime
-            .scheduler_timeline_mut()
-            .reserve_recurring_window(raw_window.start(), raw_window.end(), timing_policy)
-        {
+        let timing_policy = SchedulerTimingPolicy::from_scheduler_config(
+            self.scheduler_config(),
+            self.controller_time_scale(),
+        );
+        match self.scheduler_timeline_mut().reserve_recurring_window(
+            raw_window.start(),
+            raw_window.end(),
+            timing_policy,
+        ) {
             Ok(reservation) => Ok(LegacyAdvertisingRecurringPreSequence {
                 candidate,
                 reservation,
@@ -408,13 +534,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Authorize the recurring deadline and encode its complete event chain.
     #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the no-alloc rejection retains the complete recurring event"
-    )]
-    pub fn prepare_legacy_advertising_recurring_event<'a>(
+    fn prepare_legacy_advertising_recurring_event<'a>(
         &mut self,
         admitted: LegacyAdvertisingRecurringPreSequence<'a>,
         sequence: LegacyAdvertisingSequenceObservation,
@@ -455,9 +576,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Release an unpublished first advertising event and restore both owners.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub fn cancel_legacy_advertising_first_event<'a>(
+    fn cancel_legacy_advertising_first_event<'a>(
         &mut self,
         prepared: LegacyAdvertisingEventPrepared<'a>,
     ) -> crate::le::advertising::LegacyAdvertisingCancelled<'a> {
@@ -466,9 +586,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         image.cancel()
     }
 
-    /// Release an admitted first event before its sequence sample arrives.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn cancel_legacy_advertising_first_pre_sequence<'a>(
+    fn cancel_legacy_advertising_first_pre_sequence<'a>(
         &mut self,
         admitted: LegacyAdvertisingFirstPreSequence<'a>,
     ) -> crate::le::advertising::LegacyAdvertisingCancelled<'a> {
@@ -480,9 +599,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         candidate.cancel()
     }
 
-    /// Release an admitted recurring event before its sequence sample arrives.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_legacy_advertising_recurring_pre_sequence<'a>(
+    fn cancel_legacy_advertising_recurring_pre_sequence<'a>(
         &mut self,
         admitted: LegacyAdvertisingRecurringPreSequence<'a>,
     ) -> crate::le::advertising::LegacyAdvertisingRecurringCancelled<'a> {
@@ -494,13 +612,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         candidate.cancel()
     }
 
-    /// Join one prepared advertising item to this epoch's empty scheduler list.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the recoverable failure retains the exact affine radio state and continuation owners without allocation"
-    )]
-    pub fn prepare_legacy_advertising_empty_list_merge<'a>(
+    fn prepare_legacy_advertising_empty_list_merge<'a>(
         &mut self,
         prepared: LegacyAdvertisingEventPrepared<'a>,
     ) -> Result<
@@ -510,7 +623,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         let LegacyAdvertisingEventPrepared { image, reservation } = prepared;
         let item = image.prepare_scheduler_bookkeeping();
         let address = item.scheduler_item_address();
-        if let Err(error) = self._scheduler_list.prepare_first_item(address) {
+        if let Err(error) = self.scheduler_list_mut().prepare_first_item(address) {
             return Err(LegacyAdvertisingEmptySchedulerMergeFailure {
                 error,
                 prepared: LegacyAdvertisingEventPrepared {
@@ -525,19 +638,14 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Cancel a not-yet-published advertising merge through the same list epoch.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[expect(
-        clippy::result_large_err,
-        reason = "an identity rejection retains the complete advertising merge"
-    )]
-    pub fn cancel_legacy_advertising_empty_list_merge<'a>(
+    fn cancel_legacy_advertising_empty_list_merge<'a>(
         &mut self,
         merged: LegacyAdvertisingEmptySchedulerMergePrepared<'a>,
     ) -> Result<LegacyAdvertisingEventPrepared<'a>, LegacyAdvertisingEmptySchedulerMergePrepared<'a>>
     {
         if !self
-            ._scheduler_list
+            .scheduler_list_mut()
             .cancel_first_item(merged.scheduler_item_address())
         {
             return Err(merged);
@@ -549,13 +657,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Publish one prepared advertising item through the common head edge.
     #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "pre-MMIO rejection retains the complete advertising merge"
-    )]
-    pub(crate) fn publish_legacy_advertising_scheduler_head<'a>(
+    fn publish_legacy_advertising_scheduler_head<'a>(
         &mut self,
         merged: LegacyAdvertisingEmptySchedulerMergePrepared<'a>,
     ) -> Result<
@@ -579,9 +682,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Release the advertising memory, timeline and source-list owners together.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recycle_legacy_advertising_completed<'a>(
+    fn recycle_legacy_advertising_completed<'a>(
         &mut self,
         ready: SingleItemSchedulerSoftwareListRemovalReady<
             crate::le::advertising::legacy::completion::LegacyAdvertisingCompletionRole<'a>,
@@ -596,14 +698,14 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         let address = ready.scheduler_item_address();
         if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
             || !self
-                ._scheduler_list
+                .scheduler_list_mut()
                 .retains_software_list_removal_ready_first_item(address)
         {
             return LegacyAdvertisingSchedulerRecycleStep::SchedulerIdentityMismatch {
                 _ready: ready,
             };
         }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
+        if self.scheduler_finished_lists_mut().is_active() {
             return LegacyAdvertisingSchedulerRecycleStep::FinishedListDrainStillActive {
                 _ready: ready,
             };
@@ -628,11 +730,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 };
             }
         };
-        let release = match self
-            .runtime
-            .scheduler_timeline_mut()
-            .prepare_release(reservation)
-        {
+        let release = match self.scheduler_timeline_mut().prepare_release(reservation) {
             Ok(release) => release,
             Err(failure) => {
                 let reservation = failure.into_reservation();
@@ -648,13 +746,12 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         };
         let item = prepared.commit();
         release.commit();
-        self._scheduler_list.commit_recycled_first_item();
+        self.scheduler_list_mut().commit_recycled_first_item();
         LegacyAdvertisingSchedulerRecycleStep::Recycled(LegacyAdvertisingSchedulerRecycled { item })
     }
 
-    /// Reclaim one response-capable advertising graph and classify its copied RX batch.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recycle_legacy_connectable_advertising_completed(
+    fn recycle_legacy_connectable_advertising_completed(
         &mut self,
         ready: SingleItemSchedulerSoftwareListRemovalReady<
             crate::le::advertising::connectable::completion::LegacyConnectableAdvertisingCompletionRole,
@@ -670,14 +767,14 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         let address = ready.scheduler_item_address();
         if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
             || !self
-                ._scheduler_list
+                .scheduler_list_mut()
                 .retains_software_list_removal_ready_first_item(address)
         {
             return LegacyConnectableAdvertisingRecycleStep::SchedulerIdentityMismatch {
                 _ready: ready,
             };
         }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
+        if self.scheduler_finished_lists_mut().is_active() {
             return LegacyConnectableAdvertisingRecycleStep::FinishedListDrainStillActive {
                 _ready: ready,
             };
@@ -723,11 +820,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 };
             }
         };
-        let release = match self
-            .runtime
-            .scheduler_timeline_mut()
-            .prepare_release(reservation)
-        {
+        let release = match self.scheduler_timeline_mut().prepare_release(reservation) {
             Ok(release) => release,
             Err(failure) => {
                 let reservation = failure.into_reservation();
@@ -745,7 +838,10 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         };
         let recycled = extracted.commit();
         release.commit();
-        self._scheduler_list.commit_recycled_first_item();
+        self.scheduler_list_mut().commit_recycled_first_item();
         LegacyConnectableAdvertisingRecycleStep::Classified(remainder.classify_recycled(recycled))
     }
 }
+
+#[cfg(test)]
+mod tests;

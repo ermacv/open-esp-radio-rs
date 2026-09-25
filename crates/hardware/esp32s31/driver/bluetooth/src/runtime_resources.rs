@@ -212,7 +212,6 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     /// Scheduler time scale retained by this exact powered Controller epoch.
-    #[cfg(target_arch = "riscv32")]
     pub(crate) const fn controller_time_scale(
         &self,
     ) -> oer_esp32s31_pac::BluetoothControllerTimeScale {
@@ -220,7 +219,6 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     /// Source-owned scheduler policy retained by this powered epoch.
-    #[cfg(target_arch = "riscv32")]
     pub(crate) const fn scheduler_config(&self) -> crate::scheduler::SchedulerSoftwareConfig {
         self.config
     }
@@ -433,5 +431,101 @@ impl<const SC: usize> ControllerTaskRuntime<'_, SC> {
     pub(crate) fn clear_notifications_after_cold_release(&self) {
         let _ = self.scheduler_wake.take();
         let _ = self.scheduler_lock_modify_events.take();
+    }
+}
+
+/// Scheduler state and task operations that role integrations compose.
+///
+/// Roles reach the powered runtime only through these methods, never through
+/// its fields, so its ownership invariants stay in this module.
+#[cfg(any(target_arch = "riscv32", test))]
+impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY> {
+    /// Mutable access to the exclusive first-item epoch.
+    pub(crate) fn scheduler_list_mut(&mut self) -> &mut SchedulerExclusiveListEpoch {
+        self._scheduler_list
+    }
+
+    /// The software reservation timeline of this epoch.
+    pub(crate) fn scheduler_timeline_mut(&mut self) -> &mut SchedulerTimeline<SCHEDULER_CAPACITY> {
+        self.runtime.scheduler_timeline_mut()
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY> {
+    /// Serialize one finite common-stop step with the interrupt owner.
+    pub(crate) fn step_scheduler_stop(
+        &mut self,
+        storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
+        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    ) -> Result<
+        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopStep,
+        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    > {
+        self.task.step_scheduler_stop(storage, stop)
+    }
+
+    /// The finished-list worker of this epoch.
+    pub(crate) fn scheduler_finished_lists_mut(
+        &mut self,
+    ) -> &mut crate::scheduler::finished_lists::SchedulerFinishedListWorker {
+        self.runtime.scheduler_finished_lists_mut()
+    }
+
+    /// Capture one fenced finished-list transfer into this epoch's worker.
+    pub(crate) fn capture_scheduler_finished_lists(
+        &mut self,
+        wake: crate::interrupt::SchedulerWakeBatch,
+    ) -> Result<(), crate::scheduler::SchedulerFinishedListCaptureError> {
+        self.task
+            .capture_scheduler_finished_lists(self.runtime.scheduler_finished_lists_mut(), wake)
+    }
+
+    /// Transfer the finished lists of a stopped scheduler.
+    pub(crate) fn transfer_stopped_scheduler_finished_lists(
+        &mut self,
+        stopped: &oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped,
+    ) -> oer_esp32s31_hal::bluetooth::BluetoothSchedulerFinishedListObservation {
+        self.task.transfer_stopped_scheduler_finished_lists(stopped)
+    }
+
+    /// Perform one fresh fenced hardware-head retirement observation.
+    pub(crate) fn observe_scheduler_hardware_list_head_retirement(
+        &mut self,
+        run: oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadRetirementObservation {
+        self.task
+            .observe_scheduler_hardware_list_head_retirement(run)
+    }
+
+    /// Recheck the software-list removal predicate with the interrupt owner.
+    pub(crate) fn recheck_scheduler_software_list_removal(
+        &mut self,
+        storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
+        head: oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> Result<
+        oer_esp32s31_hal::bluetooth::BluetoothSchedulerSoftwareListRemovalJoin,
+        oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadEmptyObserved,
+    > {
+        self.task
+            .recheck_scheduler_software_list_removal(storage, head)
+    }
+
+    /// Retire the stopped hardware scheduler head.
+    pub(crate) fn retire_stopped_scheduler_head(
+        &mut self,
+        stopped: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopped,
+        run: oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedHeadRetirement {
+        self.task.retire_stopped_scheduler_head(stopped, run)
+    }
+
+    /// Finish removing the scheduler software list after an empty head.
+    pub(crate) fn finish_scheduler_software_list_removal(
+        &mut self,
+        idle: oer_esp32s31_hal::bluetooth::BluetoothSchedulerSoftwareListRemovalIdle,
+        head: oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> oer_esp32s31_hal::bluetooth::BluetoothSchedulerSoftwareListRemovalJoin {
+        self.task.finish_scheduler_software_list_removal(idle, head)
     }
 }

@@ -16,8 +16,6 @@ use oer_esp32s31_bluetooth_memory::{
     DtmSchedulerAllocationConfig, DtmSchedulerItemCompletionStatus,
 };
 
-use oer_esp32s31_pac::BluetoothControllerHalInitConfig;
-
 use super::{
     DtmActiveReceiverCpuOwned, DtmActiveTransmitterCpuOwned, DtmEventContext,
     DtmReceiverCommandFacts, DtmReceiverCpuOwned, DtmReceiverEvent, DtmReceiverEventContext,
@@ -46,7 +44,7 @@ fn epoch() -> ControllerSchedulerEpoch {
     ControllerSchedulerEpoch::new(
         ControllerTimeSample::for_validation(100),
         1_000,
-        BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
+        crate::controller_hal::reviewed_standalone_time_scale(),
     )
 }
 
@@ -95,7 +93,7 @@ fn item(role: DtmRole) -> DtmSchedulerItemEvent {
 fn timing_policy() -> SchedulerTimingPolicy {
     SchedulerTimingPolicy::from_scheduler_config(
         crate::scheduler::SchedulerSoftwareConfig::reviewed_standalone(),
-        BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
+        crate::controller_hal::reviewed_standalone_time_scale(),
     )
 }
 

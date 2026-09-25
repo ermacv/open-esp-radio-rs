@@ -162,10 +162,6 @@ where
     S: SchedulerRunInterruptStorage,
 {
     /// Validate every recoverable condition, then publish RX, HEAD, event and RUN.
-    #[allow(
-        unsafe_code,
-        reason = "this consuming boundary retains the pinned graph and sole task owner across the non-rollback MMIO suffix"
-    )]
     pub(crate) fn start_legacy_connectable_advertising_scheduler(
         mut self,
         merged: LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
@@ -210,14 +206,10 @@ where
                 .task
                 .program_random_device_address_while_idle(random_address);
         }
-        // SAFETY: this runtime holds the sole powered task epoch, and the
-        // response-capable graph with its loaned RX pool moves into this
-        // publication and stays retained by its success or failure owner.
-        let memory = match unsafe {
-            self.runtime
-                .task
-                .publish_legacy_connectable_advertising_rx_memory(memory)
-        } {
+        let memory = match self
+            .runtime
+            .publish_legacy_connectable_advertising_rx_memory(memory)
+        {
             Ok(memory) => memory,
             Err(mismatch) => {
                 return LegacyConnectableAdvertisingSchedulerStartStep::FailStop(

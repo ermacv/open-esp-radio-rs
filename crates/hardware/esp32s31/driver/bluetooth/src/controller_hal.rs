@@ -15,6 +15,11 @@ use crate::{
 
 use oer_esp32s31_pac::{BluetoothControllerHalInitConfig, BluetoothControllerTimeScale};
 
+/// Controller time scale of the reviewed standalone HAL configuration.
+pub const fn reviewed_standalone_time_scale() -> BluetoothControllerTimeScale {
+    BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale()
+}
+
 /// Affine selection of the supported standalone always-awake DTM profile.
 ///
 /// The marker records only that this Controller epoch was constructed without

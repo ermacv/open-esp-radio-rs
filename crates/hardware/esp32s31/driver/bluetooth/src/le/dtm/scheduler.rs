@@ -34,3 +34,6 @@ pub(crate) use lifecycle::{
     DtmTransmitterFirstStaged, DtmTransmitterRecurringPreSequence,
     classify_dtm_first_preparation_completion,
 };
+
+#[cfg(test)]
+mod scheduler_tests;

@@ -169,9 +169,84 @@ impl LegacyConnectableAdvertisingEmptySchedulerMergePrepared {
     clippy::result_large_err,
     reason = "connectable admission and rollback retain the exact event graph and scheduler reservation without allocation"
 )]
-impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY> {
+/// Role scheduler operations composed from the powered runtime's primitives.
+pub(crate) trait LegacyConnectableAdvertisingScheduling<const SCHEDULER_CAPACITY: usize> {
     /// Admit the complete response-capable first window into the common timeline.
-    pub(crate) fn admit_legacy_connectable_advertising_first_event(
+    fn admit_legacy_connectable_advertising_first_event(
+        &mut self,
+        candidate: LegacyConnectableAdvertisingEventCandidate,
+        admission: LegacyConnectableAdvertisingAdmissionObservation,
+    ) -> Result<
+        LegacyConnectableAdvertisingPreSequence,
+        LegacyConnectableAdvertisingEventPreparationFailure,
+    >;
+
+    /// Reserve one exact phase-locked response-capable successor.
+    ///
+    /// Recurrence never enters the initial overlap-displacement path: changing
+    /// this start would corrupt the portable interval phase. A collision is a
+    /// finite retry retaining the complete candidate.
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn admit_legacy_connectable_advertising_recurring_event(
+        &mut self,
+        candidate: LegacyConnectableAdvertisingEventCandidate,
+    ) -> Result<
+        LegacyConnectableAdvertisingPreSequence,
+        LegacyConnectableAdvertisingEventPreparationFailure,
+    >;
+
+    /// Authorize the fresh sequence sample and encode accepted start/end fields.
+    fn prepare_legacy_connectable_advertising_event(
+        &mut self,
+        admitted: LegacyConnectableAdvertisingPreSequence,
+        sequence: LegacyConnectableAdvertisingSequenceObservation,
+    ) -> Result<
+        LegacyConnectableAdvertisingEventPrepared,
+        LegacyConnectableAdvertisingEventPreparationFailure,
+    >;
+
+    /// Release an admitted event before its fresh sequence sample arrives.
+    fn cancel_legacy_connectable_advertising_pre_sequence(
+        &mut self,
+        admitted: LegacyConnectableAdvertisingPreSequence,
+    ) -> Result<
+        LegacyConnectableAdvertisingCancelled,
+        LegacyConnectableAdvertisingCancellationInvariant,
+    >;
+
+    /// Release complete event fields and their sequence-ready reservation.
+    #[cfg(target_arch = "riscv32")]
+    fn cancel_legacy_connectable_advertising_event(
+        &mut self,
+        prepared: LegacyConnectableAdvertisingEventPrepared,
+    ) -> Result<
+        LegacyConnectableAdvertisingCancelled,
+        LegacyConnectableAdvertisingCancellationInvariant,
+    >;
+
+    /// Join one response-capable item to this epoch's exact empty list.
+    fn prepare_legacy_connectable_advertising_empty_list_merge(
+        &mut self,
+        prepared: LegacyConnectableAdvertisingEventPrepared,
+    ) -> Result<
+        LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
+        LegacyConnectableAdvertisingEmptySchedulerMergeFailure,
+    >;
+
+    /// Cancel only through the same exclusive list and timeline owners.
+    fn cancel_legacy_connectable_advertising_empty_list_merge(
+        &mut self,
+        merged: LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
+    ) -> Result<
+        LegacyConnectableAdvertisingCancelled,
+        LegacyConnectableAdvertisingEmptySchedulerCancelFailure,
+    >;
+}
+
+impl<const SCHEDULER_CAPACITY: usize> LegacyConnectableAdvertisingScheduling<SCHEDULER_CAPACITY>
+    for ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
+{
+    fn admit_legacy_connectable_advertising_first_event(
         &mut self,
         candidate: LegacyConnectableAdvertisingEventCandidate,
         admission: LegacyConnectableAdvertisingAdmissionObservation,
@@ -180,17 +255,16 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         LegacyConnectableAdvertisingEventPreparationFailure,
     > {
         let requested = candidate.raw_window();
-        let timing_policy =
-            SchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
-        match self
-            .runtime
-            .scheduler_timeline_mut()
-            .reserve_initial_window(
-                requested.start(),
-                requested.end(),
-                timing_policy,
-                admission.sample,
-            ) {
+        let timing_policy = SchedulerTimingPolicy::from_scheduler_config(
+            self.scheduler_config(),
+            self.controller_time_scale(),
+        );
+        match self.scheduler_timeline_mut().reserve_initial_window(
+            requested.start(),
+            requested.end(),
+            timing_policy,
+            admission.sample,
+        ) {
             Ok(reservation) => Ok(LegacyConnectableAdvertisingPreSequence {
                 candidate,
                 reservation: LegacyConnectableAdvertisingPreSequenceReservation::Initial(
@@ -204,13 +278,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Reserve one exact phase-locked response-capable successor.
-    ///
-    /// Recurrence never enters the initial overlap-displacement path: changing
-    /// this start would corrupt the portable interval phase. A collision is a
-    /// finite retry retaining the complete candidate.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn admit_legacy_connectable_advertising_recurring_event(
+    fn admit_legacy_connectable_advertising_recurring_event(
         &mut self,
         candidate: LegacyConnectableAdvertisingEventCandidate,
     ) -> Result<
@@ -218,13 +287,15 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         LegacyConnectableAdvertisingEventPreparationFailure,
     > {
         let requested = candidate.raw_window();
-        let timing_policy =
-            SchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
-        match self
-            .runtime
-            .scheduler_timeline_mut()
-            .reserve_recurring_window(requested.start(), requested.end(), timing_policy)
-        {
+        let timing_policy = SchedulerTimingPolicy::from_scheduler_config(
+            self.scheduler_config(),
+            self.controller_time_scale(),
+        );
+        match self.scheduler_timeline_mut().reserve_recurring_window(
+            requested.start(),
+            requested.end(),
+            timing_policy,
+        ) {
             Ok(reservation) => Ok(LegacyConnectableAdvertisingPreSequence {
                 candidate,
                 reservation: LegacyConnectableAdvertisingPreSequenceReservation::Recurring(
@@ -238,8 +309,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Authorize the fresh sequence sample and encode accepted start/end fields.
-    pub(crate) fn prepare_legacy_connectable_advertising_event(
+    fn prepare_legacy_connectable_advertising_event(
         &mut self,
         admitted: LegacyConnectableAdvertisingPreSequence,
         sequence: LegacyConnectableAdvertisingSequenceObservation,
@@ -301,8 +371,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Release an admitted event before its fresh sequence sample arrives.
-    pub(crate) fn cancel_legacy_connectable_advertising_pre_sequence(
+    fn cancel_legacy_connectable_advertising_pre_sequence(
         &mut self,
         admitted: LegacyConnectableAdvertisingPreSequence,
     ) -> Result<
@@ -324,9 +393,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         candidate.cancel()
     }
 
-    /// Release complete event fields and their sequence-ready reservation.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_legacy_connectable_advertising_event(
+    fn cancel_legacy_connectable_advertising_event(
         &mut self,
         prepared: LegacyConnectableAdvertisingEventPrepared,
     ) -> Result<
@@ -338,8 +406,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         image.cancel()
     }
 
-    /// Join one response-capable item to this epoch's exact empty list.
-    pub(crate) fn prepare_legacy_connectable_advertising_empty_list_merge(
+    fn prepare_legacy_connectable_advertising_empty_list_merge(
         &mut self,
         prepared: LegacyConnectableAdvertisingEventPrepared,
     ) -> Result<
@@ -349,7 +416,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         let LegacyConnectableAdvertisingEventPrepared { image, reservation } = prepared;
         let item = image.prepare_scheduler_bookkeeping();
         let address = item.scheduler_item_address();
-        if let Err(error) = self._scheduler_list.prepare_first_item(address) {
+        if let Err(error) = self.scheduler_list_mut().prepare_first_item(address) {
             return Err(LegacyConnectableAdvertisingEmptySchedulerMergeFailure {
                 error,
                 prepared: LegacyConnectableAdvertisingEventPrepared {
@@ -364,8 +431,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Cancel only through the same exclusive list and timeline owners.
-    pub(crate) fn cancel_legacy_connectable_advertising_empty_list_merge(
+    fn cancel_legacy_connectable_advertising_empty_list_merge(
         &mut self,
         merged: LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
     ) -> Result<
@@ -373,7 +439,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         LegacyConnectableAdvertisingEmptySchedulerCancelFailure,
     > {
         if !self
-            ._scheduler_list
+            .scheduler_list_mut()
             .cancel_first_item(merged.scheduler_item_address())
         {
             return Err(

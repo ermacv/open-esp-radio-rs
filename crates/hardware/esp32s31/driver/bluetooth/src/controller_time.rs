@@ -19,7 +19,9 @@ pub enum ControllerTimeRetirementError {
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-use oer_esp32s31_pac::{BluetoothControllerLatchedTime, BluetoothControllerTimeScale};
+use oer_esp32s31_pac::BluetoothControllerLatchedTime;
+/// Controller-time to scheduler-time scale of one HAL configuration.
+pub use oer_esp32s31_pac::BluetoothControllerTimeScale;
 
 /// One ordered controller-time sample from the always-awake latch path.
 #[derive(Debug, Eq, PartialEq)]

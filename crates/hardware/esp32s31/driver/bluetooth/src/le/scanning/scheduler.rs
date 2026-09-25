@@ -360,19 +360,105 @@ pub(crate) enum PassiveScanSchedulerRecycleStep {
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY> {
+/// Role scheduler operations composed from the powered runtime's primitives.
+pub(crate) trait PassiveScanScheduling<const SCHEDULER_CAPACITY: usize> {
     /// Admit one requested passive-scanner window into the common timeline.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub fn admit_passive_scan_first_event(
+    fn admit_passive_scan_first_event(
+        &mut self,
+        candidate: PassiveScanFirstEventCandidate,
+        admission: PassiveScanAdmissionObservation,
+    ) -> Result<PassiveScanFirstPreSequence, PassiveScanFirstEventPreparationFailure>;
+
+    /// Authorize the second deadline and only then encode the
+    /// overlap-resolved scanner window into private SRAM.
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn prepare_passive_scan_first_event(
+        &mut self,
+        admitted: PassiveScanFirstPreSequence,
+        sequence: PassiveScanSequenceObservation,
+    ) -> Result<PassiveScanEventPrepared, PassiveScanFirstEventPreparationFailure>;
+
+    /// Release one unpublished scanner event and its exact timeline slot.
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn cancel_passive_scan_first_event(
+        &mut self,
+        prepared: PassiveScanEventPrepared,
+    ) -> PassiveScanMemoryGraphCpuOwned;
+
+    /// Release an admitted scanner candidate before its sequence sample arrives.
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn cancel_passive_scan_first_pre_sequence(
+        &mut self,
+        admitted: PassiveScanFirstPreSequence,
+    ) -> PassiveScanMemoryGraphCpuOwned;
+
+    /// Join the detached first scanner item to this epoch's empty scheduler list.
+    ///
+    /// The private scanner graph has already removed the item from its free
+    /// chain. This transition atomically reserves the same address in the
+    /// source-owned common list without publishing MMIO.
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn prepare_passive_scan_empty_list_merge(
+        &mut self,
+        prepared: PassiveScanEventPrepared,
+    ) -> Result<PassiveScanEmptySchedulerMergePrepared, PassiveScanEmptySchedulerMergeFailure>;
+
+    /// Restore an unpublished scanner merge through the same scheduler epoch.
+    ///
+    /// Success restores both the common empty-list proof and the selected
+    /// scanner item's position in the private three-item free chain.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg_attr(
+        all(target_arch = "riscv32", not(test)),
+        expect(
+            dead_code,
+            reason = "the scanner lifecycle publishes every merge; host tests exercise the rollback"
+        )
+    )]
+    fn cancel_passive_scan_empty_list_merge(
+        &mut self,
+        merged: PassiveScanEmptySchedulerMergePrepared,
+    ) -> Result<PassiveScanEventPrepared, PassiveScanEmptySchedulerMergePrepared>;
+
+    /// Publish the complete lower passive-scanner transaction.
+    ///
+    /// The common list identity and scheduler-head encoding are checked before
+    /// MMIO. An RX publication mismatch seals every owner after that first
+    /// write; only a matching RX proof continues to the restricted scanner
+    /// command and scheduler head in the reviewed hardware order.
+    #[cfg(target_arch = "riscv32")]
+    fn publish_passive_scan_scheduler_head(
+        &mut self,
+        merged: PassiveScanEmptySchedulerMergePrepared,
+    ) -> Result<PassiveScanSchedulerHeadPublished, PassiveScanSchedulerHeadPublicationFailure>;
+
+    /// Extract RX packets and release the scanner memory and common-list owners.
+    #[cfg(target_arch = "riscv32")]
+    fn recycle_passive_scan_completed(
+        &mut self,
+        ready: SingleItemSchedulerSoftwareListRemovalReady<
+            crate::le::scanning::passive::active::PassiveScanCompletionRole,
+        >,
+    ) -> PassiveScanSchedulerRecycleStep;
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<const SCHEDULER_CAPACITY: usize> PassiveScanScheduling<SCHEDULER_CAPACITY>
+    for ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
+{
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn admit_passive_scan_first_event(
         &mut self,
         candidate: PassiveScanFirstEventCandidate,
         admission: PassiveScanAdmissionObservation,
     ) -> Result<PassiveScanFirstPreSequence, PassiveScanFirstEventPreparationFailure> {
         let requested = candidate.requested_window();
-        let timing_policy =
-            SchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
+        let timing_policy = SchedulerTimingPolicy::from_scheduler_config(
+            self.scheduler_config(),
+            self.controller_time_scale(),
+        );
         match self
-            .runtime
             .scheduler_timeline_mut()
             .reserve_phase_locked_initial_window(
                 requested.start(),
@@ -391,10 +477,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Authorize the second deadline and only then encode the
-    /// overlap-resolved scanner window into private SRAM.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub fn prepare_passive_scan_first_event(
+    fn prepare_passive_scan_first_event(
         &mut self,
         admitted: PassiveScanFirstPreSequence,
         sequence: PassiveScanSequenceObservation,
@@ -418,9 +502,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         Ok(PassiveScanEventPrepared { graph, reservation })
     }
 
-    /// Release one unpublished scanner event and its exact timeline slot.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub fn cancel_passive_scan_first_event(
+    fn cancel_passive_scan_first_event(
         &mut self,
         prepared: PassiveScanEventPrepared,
     ) -> PassiveScanMemoryGraphCpuOwned {
@@ -429,9 +512,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         graph.into_cpu_owned()
     }
 
-    /// Release an admitted scanner candidate before its sequence sample arrives.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn cancel_passive_scan_first_pre_sequence(
+    fn cancel_passive_scan_first_pre_sequence(
         &mut self,
         admitted: PassiveScanFirstPreSequence,
     ) -> PassiveScanMemoryGraphCpuOwned {
@@ -443,20 +525,15 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         candidate.cancel()
     }
 
-    /// Join the detached first scanner item to this epoch's empty scheduler list.
-    ///
-    /// The private scanner graph has already removed the item from its free
-    /// chain. This transition atomically reserves the same address in the
-    /// source-owned common list without publishing MMIO.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub fn prepare_passive_scan_empty_list_merge(
+    fn prepare_passive_scan_empty_list_merge(
         &mut self,
         prepared: PassiveScanEventPrepared,
     ) -> Result<PassiveScanEmptySchedulerMergePrepared, PassiveScanEmptySchedulerMergeFailure> {
         let PassiveScanEventPrepared { graph, reservation } = prepared;
         let graph = graph.prepare_scheduler_admission();
         let address = graph.scheduler_head();
-        if let Err(error) = self._scheduler_list.prepare_first_item(address) {
+        if let Err(error) = self.scheduler_list_mut().prepare_first_item(address) {
             return Err(PassiveScanEmptySchedulerMergeFailure {
                 error,
                 prepared: PassiveScanEventPrepared {
@@ -468,17 +545,13 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         Ok(PassiveScanEmptySchedulerMergePrepared { graph, reservation })
     }
 
-    /// Restore an unpublished scanner merge through the same scheduler epoch.
-    ///
-    /// Success restores both the common empty-list proof and the selected
-    /// scanner item's position in the private three-item free chain.
     #[cfg(any(target_arch = "riscv32", test))]
-    pub fn cancel_passive_scan_empty_list_merge(
+    fn cancel_passive_scan_empty_list_merge(
         &mut self,
         merged: PassiveScanEmptySchedulerMergePrepared,
     ) -> Result<PassiveScanEventPrepared, PassiveScanEmptySchedulerMergePrepared> {
         if !self
-            ._scheduler_list
+            .scheduler_list_mut()
             .cancel_first_item(merged.scheduler_item_address())
         {
             return Err(merged);
@@ -490,18 +563,12 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Publish the complete lower passive-scanner transaction.
-    ///
-    /// The common list identity and scheduler-head encoding are checked before
-    /// MMIO. An RX publication mismatch seals every owner after that first
-    /// write; only a matching RX proof continues to the restricted scanner
-    /// command and scheduler head in the reviewed hardware order.
     #[cfg(target_arch = "riscv32")]
     #[allow(
         unsafe_code,
         reason = "the powered task owner and exact scanner graph jointly retain every PAC publication prerequisite"
     )]
-    pub(crate) fn publish_passive_scan_scheduler_head(
+    fn publish_passive_scan_scheduler_head(
         &mut self,
         merged: PassiveScanEmptySchedulerMergePrepared,
     ) -> Result<PassiveScanSchedulerHeadPublished, PassiveScanSchedulerHeadPublicationFailure> {
@@ -519,10 +586,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         };
         let PassiveScanEmptySchedulerMergePrepared { graph, reservation } = merged;
         let graph = graph.prepare_publication();
-        // SAFETY: `self` holds the sole powered task epoch, and the exact scanner
-        // graph moves into this publication and stays retained by its success or
-        // failure owner.
-        let graph = match unsafe { self.task.publish_passive_scan_rx_memory(graph) } {
+        let graph = match self.publish_passive_scan_rx_memory(graph) {
             Ok(graph) => graph,
             Err(mismatch) => {
                 let error = mismatch.error();
@@ -537,9 +601,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 });
             }
         };
-        // SAFETY: `graph` is the RX-published scanner graph returned above, and
-        // `self` still holds the sole powered scanner epoch.
-        let graph = unsafe { self.task.publish_passive_scan_command(graph) };
+        let graph = self.publish_passive_scan_command(graph);
         let publication = self.publish_validated_first_scheduler_item_head(address, index, head);
         Ok(PassiveScanSchedulerHeadPublished {
             graph,
@@ -548,9 +610,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Extract RX packets and release the scanner memory and common-list owners.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recycle_passive_scan_completed(
+    fn recycle_passive_scan_completed(
         &mut self,
         ready: SingleItemSchedulerSoftwareListRemovalReady<
             crate::le::scanning::passive::active::PassiveScanCompletionRole,
@@ -565,12 +626,12 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         let address = ready.scheduler_item_address();
         if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
             || !self
-                ._scheduler_list
+                .scheduler_list_mut()
                 .retains_software_list_removal_ready_first_item(address)
         {
             return PassiveScanSchedulerRecycleStep::SchedulerIdentityMismatch { _ready: ready };
         }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
+        if self.scheduler_finished_lists_mut().is_active() {
             return PassiveScanSchedulerRecycleStep::FinishedListDrainStillActive { _ready: ready };
         }
         let PassiveScanSchedulerRecycleReady {
@@ -608,11 +669,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 };
             }
         };
-        let release = match self
-            .runtime
-            .scheduler_timeline_mut()
-            .prepare_release(reservation)
-        {
+        let release = match self.scheduler_timeline_mut().prepare_release(reservation) {
             Ok(release) => release,
             Err(failure) => {
                 let reservation = failure.into_reservation();
@@ -628,7 +685,10 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         };
         let graph = extracted.commit();
         release.commit();
-        self._scheduler_list.commit_recycled_first_item();
+        self.scheduler_list_mut().commit_recycled_first_item();
         PassiveScanSchedulerRecycleStep::Recycled(PassiveScanSchedulerRecycled { graph })
     }
 }
+
+#[cfg(test)]
+mod tests;

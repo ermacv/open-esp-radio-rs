@@ -12,8 +12,6 @@ use oer_esp32s31_bluetooth_memory::{
     NonScanningRxMemoryStorage,
 };
 
-use oer_esp32s31_pac::BluetoothControllerHalInitConfig;
-
 use super::{
     LegacyAdvertisingEventWindow, LegacyAdvertisingRecurringTimingObservation,
     LegacyAdvertisingTimingObservation,
@@ -93,7 +91,7 @@ fn later_radio_ready_shifts_the_complete_window_without_changing_duration() {
 
 #[test]
 fn connectable_first_event_reserves_preparation_and_memory_supplied_duration() {
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch =
         ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(100), 1_000, scale);
     let observation = LegacyAdvertisingTimingObservation {
@@ -126,7 +124,7 @@ fn connectable_first_event_reserves_preparation_and_memory_supplied_duration() {
 fn connectable_recurrence_preserves_portable_phase_and_complete_graph_duration() {
     let config = SchedulerSoftwareConfig::reviewed_standalone();
     let post_anchor_duration = connectable_post_anchor_duration();
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch =
         ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(100), 1_000, scale);
     let first = LegacyAdvertisingEventWindow::first_with_post_anchor_duration(
@@ -156,7 +154,7 @@ fn connectable_recurrence_preserves_portable_phase_and_complete_graph_duration()
 
 #[test]
 fn late_connectable_first_event_shifts_both_endpoints_without_shortening() {
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch =
         ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(100), 1_000, scale);
     let observation = LegacyAdvertisingTimingObservation {
@@ -189,7 +187,7 @@ fn late_connectable_first_event_shifts_both_endpoints_without_shortening() {
 fn connectable_radio_ready_at_nominal_start_keeps_the_full_preparation_lead() {
     let config = SchedulerSoftwareConfig::reviewed_standalone();
     let post_anchor_duration = connectable_post_anchor_duration();
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch =
         ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(100), 1_000, scale);
     let observation = LegacyAdvertisingTimingObservation {
@@ -216,7 +214,7 @@ fn connectable_radio_ready_at_nominal_start_keeps_the_full_preparation_lead() {
 fn connectable_first_event_preserves_its_duration_across_scheduler_wrap() {
     let config = SchedulerSoftwareConfig::reviewed_standalone();
     let post_anchor_duration = connectable_post_anchor_duration();
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch =
         ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(100), 1_000, scale);
     let radio_ready = instant(1_800);
@@ -256,7 +254,7 @@ fn first_event_uses_signed_wrapping_order_and_live_epoch_projection() {
     assert_eq!(window.anchor().image(), 1_851);
     assert_eq!(window.end().image(), 2_035);
 
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch =
         ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(100), 1_000, scale);
     let (raw, item_duration) = window
@@ -284,7 +282,7 @@ fn recurring_event_advances_nominal_phase_and_reserves_the_complete_chain() {
     assert_eq!(recurring.anchor().image(), 32_107);
     assert_eq!(recurring.end().image(), 32_259);
 
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch =
         ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(100), 1_000, scale);
     let (raw, item_duration) = recurring
@@ -295,7 +293,7 @@ fn recurring_event_advances_nominal_phase_and_reserves_the_complete_chain() {
 
 #[test]
 fn first_advertising_deadline_keeps_two_milliseconds_at_standalone_tick_rate() {
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let config = SchedulerSoftwareConfig::reviewed_standalone();
     let first = ControllerTimeSample::for_validation(6_243);
     let epoch = ControllerSchedulerEpoch::from_first_live_update(&first, scale);

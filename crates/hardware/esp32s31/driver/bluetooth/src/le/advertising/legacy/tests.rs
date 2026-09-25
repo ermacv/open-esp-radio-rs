@@ -17,8 +17,6 @@ use oer_esp32s31_bluetooth_memory::{
     LegacyAdvertisingMemoryGraphStorage,
 };
 
-use oer_esp32s31_pac::BluetoothControllerHalInitConfig;
-
 use super::{
     LegacyAdvertisingCancelledRestoreOutcome, LegacyAdvertisingDefaultTxPowerDbm,
     LegacyAdvertisingFirstEventCandidateOutcome, LegacyAdvertisingLinkStateResetOutcome,
@@ -179,7 +177,7 @@ fn sealed_live_timing_forms_a_cancellable_first_event_candidate() {
             panic!("the portable producer emits the restricted PDU form")
         }
     };
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let timing = LegacyAdvertisingTimingObservation {
         current: SchedulerInstant::from_image(10_000),
         radio_ready: SchedulerInstant::from_image(11_999),

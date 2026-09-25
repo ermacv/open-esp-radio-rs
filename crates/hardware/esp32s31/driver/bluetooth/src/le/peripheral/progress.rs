@@ -23,7 +23,7 @@ impl PeripheralConnectionProgressDeadline {
         observed_micros: u64,
         sampled_ticks: u32,
         end_ticks: u32,
-        scale: oer_esp32s31_pac::BluetoothControllerTimeScale,
+        scale: crate::controller_time::BluetoothControllerTimeScale,
     ) -> Self {
         let delta = end_ticks.wrapping_sub(sampled_ticks);
         let budget = if delta as i32 > 0 {
@@ -98,8 +98,7 @@ mod tests {
             observed,
             sample,
             end,
-            oer_esp32s31_pac::BluetoothControllerHalInitConfig::reviewed_standalone()
-                .controller_time_scale(),
+            crate::controller_hal::reviewed_standalone_time_scale(),
         )
     }
 

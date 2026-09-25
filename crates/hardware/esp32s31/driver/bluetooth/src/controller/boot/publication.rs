@@ -678,26 +678,14 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     /// The consuming BLE-PHY state proves that controller HAL, scheduler,
     /// low-power hardware, common PHY, BTBB, BLE PHY initialization and public
     /// Controller-address publication all belong to this epoch. CPU routes
-    /// remain inaccessible, so the lower unsafe interrupt prerequisite is
-    /// discharged here and never exported.
-    #[allow(
-        unsafe_code,
-        reason = "the complete Controller typestate proves the HAL interrupt prerequisites"
-    )]
+    /// remain inaccessible; the BLE-PHY engine discharges the interrupt
+    /// prerequisite when it releases the bank, and hands the timer out only
+    /// with the output already prepared.
     pub fn prepare_controller_output_and_start_runtime_timer(
         mut self,
     ) -> ControllerOutputTimerStarted<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
-        let (interrupts, timer) = self.take_activation_owners();
-        let (interrupt_output, timer) = prepare_output_then_start_timer(
-            interrupts,
-            timer,
-            |interrupts| {
-                // SAFETY: `self` retains the matching complete powered
-                // Controller epoch and no CPU-route owner has been exposed.
-                unsafe { interrupts.prepare_controller_output() }
-            },
-            |timer| timer.start_runtime_timer(),
-        );
+        let (interrupt_output, timer) = self.take_activation_owners_with_output_prepared();
+        let timer = timer.start_runtime_timer();
 
         ControllerOutputTimerStarted {
             initialized: self,
@@ -708,20 +696,6 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-fn prepare_output_then_start_timer<Interrupt, Timer, Output, Started>(
-    interrupt: Interrupt,
-    timer: Timer,
-    prepare_output: impl FnOnce(Interrupt) -> Output,
-    start_timer: impl FnOnce(Timer) -> Started,
-) -> (Output, Started) {
-    let output = prepare_output(interrupt);
-    let timer = start_timer(timer);
-    (output, timer)
-}
-
-#[cfg(test)]
-mod tests;
-
 #[cfg(target_arch = "riscv32")]
 impl<P, const MT: usize, const SC: usize> ControllerInterruptOwnersReady<P, MT, SC> {
     #[allow(

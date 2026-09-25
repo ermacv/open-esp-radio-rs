@@ -160,8 +160,7 @@ fn missing_clock_order_overflow_and_past_events_never_grant_a_window() {
 #[test]
 fn real_epoch_projects_both_window_edges_across_raw_controller_wrap() {
     use crate::{ControllerSchedulerEpoch, ControllerTimeSample, scheduler::SchedulerRawWindow};
-    let scale = oer_esp32s31_pac::BluetoothControllerHalInitConfig::reviewed_standalone()
-        .controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch = ControllerSchedulerEpoch::new(
         ControllerTimeSample::for_validation(u32::MAX - 99),
         50_000,

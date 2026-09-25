@@ -1,3 +1,6 @@
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(unused_imports)]
+use crate::le::advertising::connectable::scheduler::LegacyConnectableAdvertisingScheduling;
 use crate::{
     ControllerSchedulerEpoch, ControllerTimeSample, LegacyAdvertisingRecurringTimingObservation,
     SchedulerInstant,

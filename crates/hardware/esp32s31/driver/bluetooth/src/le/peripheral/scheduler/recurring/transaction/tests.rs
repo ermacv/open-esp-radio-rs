@@ -20,8 +20,6 @@ use oer_bluetooth_ll::connection::{
     LePeripheralConnectionEventDelta, LePeripheralConnectionEventPeerActivity,
 };
 
-use oer_esp32s31_pac::BluetoothControllerHalInitConfig;
-
 use super::{PeripheralConnectionRecurringCandidateError, prepare_recurring_protocol_proposal};
 
 #[test]
@@ -180,7 +178,7 @@ fn epoch(micros_anchor: u32) -> ControllerSchedulerEpoch {
     ControllerSchedulerEpoch::new(
         ControllerTimeSample::for_validation(100),
         micros_anchor,
-        BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
+        crate::controller_hal::reviewed_standalone_time_scale(),
     )
 }
 

@@ -12,8 +12,6 @@ use oer_bluetooth_ll::connection::{
 
 use oer_esp32s31_bluetooth_memory::PeripheralConnectionEventSpan;
 
-use oer_esp32s31_pac::BluetoothControllerHalInitConfig;
-
 use super::{
     LE_CONNECTION_COMMON_RESERVE_MICROS, LE_RECURRING_FIXED_GUARD_MICROS,
     LE_RECURRING_RECEIVE_CPU_TIME_TAIL_MICROS, LE_RECURRING_SCHEDULER_BOUNDARY_GUARD_MICROS,
@@ -43,7 +41,7 @@ fn epoch(micros_anchor: u32) -> ControllerSchedulerEpoch {
     ControllerSchedulerEpoch::new(
         ControllerTimeSample::for_validation(100),
         micros_anchor,
-        BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
+        crate::controller_hal::reviewed_standalone_time_scale(),
     )
 }
 

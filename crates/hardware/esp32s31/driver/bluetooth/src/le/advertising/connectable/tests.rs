@@ -31,8 +31,6 @@ use oer_esp32s31_bluetooth_memory::{
     PeripheralConnectionMemoryGraphModelAddress, PeripheralConnectionMemoryGraphStorage,
 };
 
-use oer_esp32s31_pac::BluetoothControllerHalInitConfig;
-
 use super::{
     LegacyConnectableAdvertisingPortableRxOutcome, LegacyConnectableAdvertisingReceivedPdu,
     LegacyConnectableAdvertisingRuntimeBeginFailure, LegacyConnectableAdvertisingRuntimeResources,
@@ -172,7 +170,7 @@ fn sample_phase() -> crate::le::advertising::LegacyAdvertisingEventPhase {
     let prepared = connectable
         .begin_event(definition, &mut peripheral)
         .unwrap_or_else(|_| panic!("the isolated validation resources must prepare"));
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch =
         ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(100), 1_000, scale);
     let candidate = prepared
@@ -424,7 +422,7 @@ fn no_connection_restore_returns_both_runtime_slots_atomically() {
     let prepared = connectable
         .begin_event(definition, &mut peripheral)
         .unwrap_or_else(|_| panic!("the disjoint idle owners must prepare"));
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch =
         ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(100), 1_000, scale);
     let candidate = prepared
@@ -546,7 +544,7 @@ fn foreign_no_connection_restore_preserves_the_exact_role_owner() {
     let prepared = origin
         .begin_event(definition, &mut peripheral)
         .unwrap_or_else(|_| panic!("the disjoint idle owners must prepare"));
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch =
         ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(100), 1_000, scale);
     let candidate = prepared

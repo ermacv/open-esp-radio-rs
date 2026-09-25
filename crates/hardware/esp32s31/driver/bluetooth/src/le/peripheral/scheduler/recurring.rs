@@ -405,9 +405,89 @@ impl PeripheralConnectionRecurringSchedulerCommitted {
     }
 }
 
-impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY> {
+/// Role scheduler operations composed from the powered runtime's primitives.
+pub(crate) trait PeripheralConnectionRecurringScheduling<const SCHEDULER_CAPACITY: usize> {
     /// Reserve one exact recurring connection window without displacement.
-    pub(crate) fn admit_peripheral_connection_recurring_event(
+    fn admit_peripheral_connection_recurring_event(
+        &mut self,
+        candidate: PeripheralConnectionRecurringEventCandidate,
+    ) -> ControlFlow<
+        PeripheralConnectionRecurringEventPreparationFailure,
+        PeripheralConnectionRecurringPreSequence,
+    >;
+
+    /// Authorize the recurring deadline and encode its infallible event fields.
+    fn prepare_peripheral_connection_recurring_event(
+        &mut self,
+        admitted: PeripheralConnectionRecurringPreSequence,
+        sequence: PeripheralConnectionSequenceObservation,
+    ) -> ControlFlow<
+        PeripheralConnectionRecurringEventPreparationFailure,
+        PeripheralConnectionRecurringEventPrepared,
+    >;
+
+    fn cancel_peripheral_connection_recurring_pre_sequence(
+        &mut self,
+        admitted: PeripheralConnectionRecurringPreSequence,
+    ) -> (
+        PeripheralConnectionSchedulerCompleted,
+        LePeripheralConnectionEventDelta,
+    );
+
+    fn cancel_peripheral_connection_recurring_event(
+        &mut self,
+        prepared: PeripheralConnectionRecurringEventPrepared,
+    ) -> (
+        PeripheralConnectionSchedulerCompleted,
+        LePeripheralConnectionEventDelta,
+    );
+
+    fn prepare_peripheral_connection_recurring_empty_list_merge(
+        &mut self,
+        prepared: PeripheralConnectionRecurringEventPrepared,
+    ) -> ControlFlow<
+        PeripheralConnectionRecurringEmptySchedulerMergeFailure,
+        PeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    >;
+
+    fn cancel_peripheral_connection_recurring_empty_list_merge(
+        &mut self,
+        merged: PeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    ) -> ControlFlow<
+        PeripheralConnectionRecurringEmptySchedulerMergePrepared,
+        PeripheralConnectionRecurringEventPrepared,
+    >;
+
+    /// Seal the exact common-list identity and encodable hardware head.
+    fn validate_peripheral_connection_recurring_scheduler(
+        &self,
+        merged: PeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    ) -> ControlFlow<
+        PeripheralConnectionRecurringSchedulerValidationFailure,
+        PeripheralConnectionRecurringSchedulerValidated,
+    >;
+
+    /// Publish the already committed event through the RX/head suffix.
+    ///
+    /// A proof mismatch after RX-list MMIO seals the committed LL successor,
+    /// its HAL publication and every remaining scheduler owner in one
+    /// fail-stop value. It cannot be recovered as a retryable merge.
+    fn publish_peripheral_connection_recurring_scheduler_head(
+        &mut self,
+        committed: PeripheralConnectionRecurringSchedulerCommitted,
+    ) -> ControlFlow<
+        PeripheralConnectionRecurringSchedulerPublicationFailStop,
+        (
+            crate::le::peripheral::scheduler::PeripheralConnectionSchedulerHeadPublished,
+            BluetoothSchedulerRunInterruptsPrepared,
+        ),
+    >;
+}
+
+impl<const SCHEDULER_CAPACITY: usize> PeripheralConnectionRecurringScheduling<SCHEDULER_CAPACITY>
+    for ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
+{
+    fn admit_peripheral_connection_recurring_event(
         &mut self,
         candidate: PeripheralConnectionRecurringEventCandidate,
     ) -> ControlFlow<
@@ -415,13 +495,15 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         PeripheralConnectionRecurringPreSequence,
     > {
         let raw_window = candidate.raw_window();
-        let timing_policy =
-            SchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
-        match self
-            .runtime
-            .scheduler_timeline_mut()
-            .reserve_recurring_window(raw_window.start(), raw_window.end(), timing_policy)
-        {
+        let timing_policy = SchedulerTimingPolicy::from_scheduler_config(
+            self.scheduler_config(),
+            self.controller_time_scale(),
+        );
+        match self.scheduler_timeline_mut().reserve_recurring_window(
+            raw_window.start(),
+            raw_window.end(),
+            timing_policy,
+        ) {
             Ok(reservation) => ControlFlow::Continue(PeripheralConnectionRecurringPreSequence {
                 candidate,
                 reservation,
@@ -435,8 +517,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Authorize the recurring deadline and encode its infallible event fields.
-    pub(crate) fn prepare_peripheral_connection_recurring_event(
+    fn prepare_peripheral_connection_recurring_event(
         &mut self,
         admitted: PeripheralConnectionRecurringPreSequence,
         sequence: PeripheralConnectionSequenceObservation,
@@ -466,7 +547,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    pub(crate) fn cancel_peripheral_connection_recurring_pre_sequence(
+    fn cancel_peripheral_connection_recurring_pre_sequence(
         &mut self,
         admitted: PeripheralConnectionRecurringPreSequence,
     ) -> (
@@ -481,7 +562,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         candidate.cancel()
     }
 
-    pub(crate) fn cancel_peripheral_connection_recurring_event(
+    fn cancel_peripheral_connection_recurring_event(
         &mut self,
         prepared: PeripheralConnectionRecurringEventPrepared,
     ) -> (
@@ -493,7 +574,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         event.cancel()
     }
 
-    pub(crate) fn prepare_peripheral_connection_recurring_empty_list_merge(
+    fn prepare_peripheral_connection_recurring_empty_list_merge(
         &mut self,
         prepared: PeripheralConnectionRecurringEventPrepared,
     ) -> ControlFlow<
@@ -509,7 +590,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
             },
         };
         let address = event.scheduler_head();
-        if let Err(error) = self._scheduler_list.prepare_first_item(address) {
+        if let Err(error) = self.scheduler_list_mut().prepare_first_item(address) {
             return ControlFlow::Break(PeripheralConnectionRecurringEmptySchedulerMergeFailure {
                 error,
                 prepared: PeripheralConnectionRecurringEventPrepared {
@@ -524,7 +605,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    pub(crate) fn cancel_peripheral_connection_recurring_empty_list_merge(
+    fn cancel_peripheral_connection_recurring_empty_list_merge(
         &mut self,
         merged: PeripheralConnectionRecurringEmptySchedulerMergePrepared,
     ) -> ControlFlow<
@@ -532,7 +613,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         PeripheralConnectionRecurringEventPrepared,
     > {
         if !self
-            ._scheduler_list
+            .scheduler_list_mut()
             .cancel_first_item(merged.scheduler_item_address())
         {
             return ControlFlow::Break(merged);
@@ -545,8 +626,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Seal the exact common-list identity and encodable hardware head.
-    pub(crate) fn validate_peripheral_connection_recurring_scheduler(
+    fn validate_peripheral_connection_recurring_scheduler(
         &self,
         merged: PeripheralConnectionRecurringEmptySchedulerMergePrepared,
     ) -> ControlFlow<
@@ -568,16 +648,11 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Publish the already committed event through the RX/head suffix.
-    ///
-    /// A proof mismatch after RX-list MMIO seals the committed LL successor,
-    /// its HAL publication and every remaining scheduler owner in one
-    /// fail-stop value. It cannot be recovered as a retryable merge.
     #[allow(
         unsafe_code,
         reason = "the HAL publication consumes the unique task-side peripheral memory owner"
     )]
-    pub(crate) fn publish_peripheral_connection_recurring_scheduler_head(
+    fn publish_peripheral_connection_recurring_scheduler_head(
         &mut self,
         committed: PeripheralConnectionRecurringSchedulerCommitted,
     ) -> ControlFlow<
@@ -591,10 +666,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         let index = BluetoothSchedulerHardwareListIndex::ZERO;
         let (event, reservation, head, interrupts) = committed.into_parts();
         let (graph, remainder) = event.into_parts();
-        // SAFETY: `self` holds the sole powered task epoch and consumes the unique
-        // task-side peripheral memory owner; the graph and its scheduler item stay
-        // retained by the success or fail-stop owner.
-        let graph = match unsafe { self.task.publish_peripheral_connection_rx_memory(graph) } {
+        let graph = match self.publish_peripheral_connection_rx_memory(graph) {
             Ok(graph) => graph,
             Err(mismatch) => {
                 return ControlFlow::Break(

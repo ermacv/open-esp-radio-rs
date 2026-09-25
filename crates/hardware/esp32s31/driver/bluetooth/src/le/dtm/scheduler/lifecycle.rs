@@ -936,9 +936,481 @@ pub enum DtmSchedulerHardwareHeadRetirementStep<Role> {
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY> {
+/// Role scheduler operations composed from the powered runtime's primitives.
+pub(crate) trait DtmScheduling<const SCHEDULER_CAPACITY: usize> {
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn admit_initial_dtm_event(
+    fn admit_initial_dtm_event(
+        &mut self,
+        event: DtmSchedulerItemEvent,
+        now: &ControllerSchedulerNow,
+        admission_sample: ControllerTimeSample,
+    ) -> Result<DtmSchedulerReservation<SchedulerInitialAdmissionResolved>, SchedulerReservationError>;
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn reserve_recurring_dtm_event(
+        &mut self,
+        event: DtmSchedulerItemEvent,
+        now: &ControllerSchedulerNow,
+    ) -> Result<DtmSchedulerReservation<SchedulerRecurringReserved>, SchedulerReservationError>;
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn finish_dtm_sequence_authorization<State>(
+        &mut self,
+        result: Result<
+            DtmSchedulerReservation<SchedulerSequenceReady>,
+            DtmSchedulerSequenceAuthorizationFailure<State>,
+        >,
+    ) -> Result<DtmSchedulerReservation<SchedulerSequenceReady>, DtmControllerEventPreparationError>;
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn release_dtm_reservation<State>(&mut self, reservation: DtmSchedulerReservation<State>);
+
+    /// Reject initial TX before RF readiness can form a scheduler candidate.
+    #[cfg(target_arch = "riscv32")]
+    fn reject_dtm_transmitter_first_before_stage(
+        &mut self,
+        owner: DtmPreparedTxGraph,
+        error: ControllerTimeAcquisitionError,
+    ) -> DtmControllerTxPreparationFailure;
+
+    /// Form one initial transmitter candidate from a private fresh current.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each typed input is a distinct reviewed DTM authority"
+    )]
+    fn stage_dtm_transmitter_first_item(
+        &self,
+        owner: DtmPreparedTxGraph,
+        link_state: DtmLinkStateReset,
+        channel: DtmChannel,
+        phy: DtmPhy,
+        requested_interval_micros: u16,
+        now: ControllerSchedulerNow,
+        timing_ready: crate::AlwaysAwakeTimingReady,
+    ) -> Result<DtmTransmitterFirstStaged, DtmControllerTxPreparationFailure>;
+
+    /// Consume the initial admission sample and retain the resolved reservation.
+    #[cfg(target_arch = "riscv32")]
+    fn admit_dtm_transmitter_first_item(
+        &mut self,
+        staged: DtmTransmitterFirstStaged,
+        admission_sample: ControllerTimeSample,
+    ) -> Result<DtmTransmitterFirstPreSequence, DtmControllerTxPreparationFailure>;
+
+    /// Return an unreserved initial transmitter after a time-phase failure.
+    #[cfg(target_arch = "riscv32")]
+    fn cancel_dtm_transmitter_first_staged(
+        &mut self,
+        staged: DtmTransmitterFirstStaged,
+        error: ControllerTimeAcquisitionError,
+    ) -> DtmControllerTxPreparationFailure;
+
+    /// Release initial TX admission and return every retry resource.
+    #[cfg(target_arch = "riscv32")]
+    fn cancel_dtm_transmitter_first_pre_sequence(
+        &mut self,
+        pre_sequence: DtmTransmitterFirstPreSequence,
+        error: ControllerTimeAcquisitionError,
+    ) -> DtmControllerTxPreparationFailure;
+
+    /// Authorize initial TX sequence time, then prepare and merge the graph.
+    #[cfg(target_arch = "riscv32")]
+    fn finish_dtm_transmitter_first_item(
+        &mut self,
+        pre_sequence: DtmTransmitterFirstPreSequence,
+        sequence_sample: ControllerTimeSample,
+    ) -> Result<
+        DtmEmptySchedulerMergePrepared<DtmTransmitterEvent, DtmInitialSchedulerItemPhase>,
+        DtmControllerTxPreparationFailure,
+    >;
+
+    /// Reject initial RX before RF readiness can form a scheduler candidate.
+    #[cfg(target_arch = "riscv32")]
+    fn reject_dtm_receiver_first_before_stage(
+        &mut self,
+        owner: DtmReceiverCpuOwned,
+        error: ControllerTimeAcquisitionError,
+    ) -> DtmControllerRxPreparationFailure;
+
+    /// Form one initial receiver candidate from a private fresh current.
+    #[cfg(target_arch = "riscv32")]
+    fn stage_dtm_receiver_first_item(
+        &self,
+        owner: DtmReceiverCpuOwned,
+        link_state: DtmLinkStateReset,
+        channel: DtmChannel,
+        phy: DtmPhy,
+        now: ControllerSchedulerNow,
+        timing_ready: crate::AlwaysAwakeTimingReady,
+    ) -> Result<DtmReceiverFirstStaged, DtmControllerRxPreparationFailure>;
+
+    /// Consume the initial admission sample and retain the resolved reservation.
+    #[cfg(target_arch = "riscv32")]
+    fn admit_dtm_receiver_first_item(
+        &mut self,
+        staged: DtmReceiverFirstStaged,
+        admission_sample: ControllerTimeSample,
+    ) -> Result<DtmReceiverFirstPreSequence, DtmControllerRxPreparationFailure>;
+
+    /// Return an unreserved initial receiver after a time-phase failure.
+    #[cfg(target_arch = "riscv32")]
+    fn cancel_dtm_receiver_first_staged(
+        &mut self,
+        staged: DtmReceiverFirstStaged,
+        error: ControllerTimeAcquisitionError,
+    ) -> DtmControllerRxPreparationFailure;
+
+    /// Release initial RX admission and return every retry resource.
+    #[cfg(target_arch = "riscv32")]
+    fn cancel_dtm_receiver_first_pre_sequence(
+        &mut self,
+        pre_sequence: DtmReceiverFirstPreSequence,
+        error: ControllerTimeAcquisitionError,
+    ) -> DtmControllerRxPreparationFailure;
+
+    /// Authorize initial RX sequence time, then prepare and merge the graph.
+    #[cfg(target_arch = "riscv32")]
+    fn finish_dtm_receiver_first_item(
+        &mut self,
+        pre_sequence: DtmReceiverFirstPreSequence,
+        sequence_sample: ControllerTimeSample,
+    ) -> Result<
+        DtmEmptySchedulerMergePrepared<DtmReceiverEvent, DtmInitialSchedulerItemPhase>,
+        DtmControllerRxPreparationFailure,
+    >;
+
+    /// Form one recurring transmitter candidate from a private fresh current.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "no-alloc staging rejection returns the complete active TX owner for retry"
+    )]
+    fn stage_dtm_transmitter_recurring_item(
+        &self,
+        owner: DtmActiveTransmitterCpuOwned,
+        now: ControllerSchedulerNow,
+    ) -> Result<DtmTransmitterRecurringStaged, DtmControllerTxRecurringPreparationFailure>;
+
+    /// Reserve the exact recurring TX window before sequence acquisition.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "no-alloc reservation rejection returns the unchanged active TX owner"
+    )]
+    fn reserve_dtm_transmitter_recurring_item(
+        &mut self,
+        staged: DtmTransmitterRecurringStaged,
+    ) -> Result<DtmTransmitterRecurringPreSequence, DtmControllerTxRecurringPreparationFailure>;
+
+    /// Return an unreserved recurring transmitter after a time-phase failure.
+    #[cfg(target_arch = "riscv32")]
+    fn cancel_dtm_transmitter_recurring_staged(
+        &mut self,
+        staged: DtmTransmitterRecurringStaged,
+        error: ControllerTimeAcquisitionError,
+    ) -> DtmControllerTxRecurringPreparationFailure;
+
+    /// Release recurring TX reservation and return the unchanged active owner.
+    #[cfg(target_arch = "riscv32")]
+    fn cancel_dtm_transmitter_recurring_pre_sequence(
+        &mut self,
+        pre_sequence: DtmTransmitterRecurringPreSequence,
+        error: ControllerTimeAcquisitionError,
+    ) -> DtmControllerTxRecurringPreparationFailure;
+
+    /// Authorize recurring TX sequence time, then prepare and merge the graph.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "no-alloc preparation rollback returns the complete active TX owner after releasing its reservation"
+    )]
+    fn finish_dtm_transmitter_recurring_item(
+        &mut self,
+        pre_sequence: DtmTransmitterRecurringPreSequence,
+        sequence_sample: ControllerTimeSample,
+    ) -> Result<
+        DtmEmptySchedulerMergePrepared<DtmTransmitterEvent, DtmRecurringSchedulerItemPhase>,
+        DtmControllerTxRecurringPreparationFailure,
+    >;
+
+    /// Reject recurring RX before ordered RF/current inputs can form a candidate.
+    #[cfg(target_arch = "riscv32")]
+    fn reject_dtm_receiver_recurring_before_stage(
+        &mut self,
+        owner: DtmActiveReceiverCpuOwned,
+        error: ControllerTimeAcquisitionError,
+    ) -> DtmControllerRxRecurringPreparationFailure;
+
+    /// Form one recurring receiver candidate from private fresh timing inputs.
+    #[cfg(target_arch = "riscv32")]
+    fn stage_dtm_receiver_recurring_item(
+        &self,
+        owner: DtmActiveReceiverCpuOwned,
+        now: ControllerSchedulerNow,
+        timing_ready: crate::AlwaysAwakeTimingReady,
+    ) -> Result<DtmReceiverRecurringStaged, DtmControllerRxRecurringPreparationFailure>;
+
+    /// Reserve the exact recurring RX window before sequence acquisition.
+    #[cfg(target_arch = "riscv32")]
+    fn reserve_dtm_receiver_recurring_item(
+        &mut self,
+        staged: DtmReceiverRecurringStaged,
+    ) -> Result<DtmReceiverRecurringPreSequence, DtmControllerRxRecurringPreparationFailure>;
+
+    /// Return an unreserved recurring receiver after a time-phase failure.
+    #[cfg(target_arch = "riscv32")]
+    fn cancel_dtm_receiver_recurring_staged(
+        &mut self,
+        staged: DtmReceiverRecurringStaged,
+        error: ControllerTimeAcquisitionError,
+    ) -> DtmControllerRxRecurringPreparationFailure;
+
+    /// Release recurring RX reservation and return the unchanged active owner.
+    #[cfg(target_arch = "riscv32")]
+    fn cancel_dtm_receiver_recurring_pre_sequence(
+        &mut self,
+        pre_sequence: DtmReceiverRecurringPreSequence,
+        error: ControllerTimeAcquisitionError,
+    ) -> DtmControllerRxRecurringPreparationFailure;
+
+    /// Authorize recurring RX sequence time, then prepare and merge the graph.
+    #[cfg(target_arch = "riscv32")]
+    fn finish_dtm_receiver_recurring_item(
+        &mut self,
+        pre_sequence: DtmReceiverRecurringPreSequence,
+        sequence_sample: ControllerTimeSample,
+    ) -> Result<
+        DtmEmptySchedulerMergePrepared<DtmReceiverEvent, DtmRecurringSchedulerItemPhase>,
+        DtmControllerRxRecurringPreparationFailure,
+    >;
+
+    /// Join one prepared DTM item to this epoch's still-empty scheduler list.
+    ///
+    /// This consumes no hardware permission. The returned state merely proves
+    /// that the source-owned list and the item-side empty-list links were
+    /// advanced together.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc failure returns the complete affine CPU-owned DTM item"
+    )]
+    fn prepare_dtm_empty_list_merge<Role, Phase>(
+        &mut self,
+        item: DtmSchedulerBookkeepingPrepared<Role, Phase>,
+    ) -> Result<
+        DtmEmptySchedulerMergePrepared<Role, Phase>,
+        DtmEmptySchedulerMergeFailure<Role, Phase>,
+    >
+    where
+        Phase: DtmSchedulerItemPhase<Role>;
+
+    /// Cancel a not-yet-published sole-item merge through the same epoch.
+    ///
+    /// A state from another or already advanced scheduler is returned
+    /// unchanged and cannot reopen this list.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc identity failure returns the complete affine merged item"
+    )]
+    fn cancel_dtm_empty_list_merge<Role, Phase>(
+        &mut self,
+        merged: DtmEmptySchedulerMergePrepared<Role, Phase>,
+    ) -> Result<
+        DtmSchedulerBookkeepingPrepared<Role, Phase>,
+        DtmEmptySchedulerMergePrepared<Role, Phase>,
+    >
+    where
+        Phase: DtmSchedulerItemPhase<Role>;
+
+    /// Cancel one not-yet-published TX event and release its private timeline
+    /// reservation before returning the graph and complete test program.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc identity failure retains the complete affine merged graph"
+    )]
+    fn cancel_dtm_transmitter_first_item(
+        &mut self,
+        merged: DtmEmptySchedulerMergePrepared<DtmTransmitterEvent, DtmInitialSchedulerItemPhase>,
+    ) -> Result<
+        (DtmMemoryGraphCpuOwned, DtmPayloadPattern, DtmPayloadLength),
+        DtmEmptySchedulerMergePrepared<DtmTransmitterEvent, DtmInitialSchedulerItemPhase>,
+    >;
+
+    /// Cancel one not-yet-published RX event and release its private timeline
+    /// reservation before returning the graph/session aggregate.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc identity failure retains the complete affine merged graph"
+    )]
+    fn cancel_dtm_receiver_first_item(
+        &mut self,
+        merged: DtmEmptySchedulerMergePrepared<DtmReceiverEvent, DtmInitialSchedulerItemPhase>,
+    ) -> Result<
+        DtmReceiverCpuOwned,
+        DtmEmptySchedulerMergePrepared<DtmReceiverEvent, DtmInitialSchedulerItemPhase>,
+    >;
+
+    /// Cancel one not-yet-published recurring TX event and recover the exact
+    /// active command owner retained before this candidate was prepared.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc identity failure retains the complete affine merged graph"
+    )]
+    fn cancel_dtm_transmitter_recurring_item(
+        &mut self,
+        merged: DtmEmptySchedulerMergePrepared<DtmTransmitterEvent, DtmRecurringSchedulerItemPhase>,
+    ) -> Result<
+        DtmActiveTransmitterCpuOwned,
+        DtmEmptySchedulerMergePrepared<DtmTransmitterEvent, DtmRecurringSchedulerItemPhase>,
+    >;
+
+    /// Cancel one not-yet-published recurring RX event and recover the exact
+    /// active command owner retained before this candidate was prepared.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc identity failure retains the complete affine merged graph"
+    )]
+    fn cancel_dtm_receiver_recurring_item(
+        &mut self,
+        merged: DtmEmptySchedulerMergePrepared<DtmReceiverEvent, DtmRecurringSchedulerItemPhase>,
+    ) -> Result<
+        DtmActiveReceiverCpuOwned,
+        DtmEmptySchedulerMergePrepared<DtmReceiverEvent, DtmRecurringSchedulerItemPhase>,
+    >;
+
+    /// Publish the merge-selected sole item after the complete hardware
+    /// initialization chain has made interrupt routes stable but inactive.
+    ///
+    /// This remains crate-private so an early scheduler state cannot publish a
+    /// graph before PHY, BTBB, BLE-PHY and stable interrupt ownership exist.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "pre-MMIO rejection returns the complete no-alloc affine DTM graph"
+    )]
+    fn publish_dtm_scheduler_head<Role, Phase>(
+        &mut self,
+        merged: DtmEmptySchedulerMergePrepared<Role, Phase>,
+    ) -> Result<DtmSchedulerHeadPublished<Role>, DtmSchedulerHeadPublicationFailure<Role, Phase>>
+    where
+        Phase: DtmSchedulerItemPhase<Role>;
+
+    /// Stop only the source-owned sole DTM item. No finished-list transfer is
+    /// performed until the common stop has completed; it is captured once.
+    #[cfg(target_arch = "riscv32")]
+    fn step_dtm_stop<Role>(
+        &mut self,
+        storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
+        running: DtmSchedulerRunning<Role>,
+        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
+    ) -> DtmSchedulerStopStep<Role>;
+
+    /// Perform one fresh, bounded DTM completion observation.
+    ///
+    /// The affine list token never crosses this Controller operation before it
+    /// is joined to the matching running epoch. This prevents a caller from
+    /// retaining a list-zero token and replaying it against a later DTM event.
+    #[cfg(target_arch = "riscv32")]
+    fn observe_dtm_completion<Role>(
+        &mut self,
+        running: DtmSchedulerRunning<Role>,
+        wake: SchedulerWakeBatch,
+    ) -> DtmSchedulerCompletionStep<Role>;
+
+    /// Continue one already captured finished-list drain for a running DTM
+    /// graph without performing another hardware transfer.
+    ///
+    /// The caller can reach this edge only with the opaque provenance token
+    /// returned by the preceding step. Exactly one list from that same capture
+    /// is consumed. This operation never performs a fresh capture.
+    #[cfg(target_arch = "riscv32")]
+    fn continue_dtm_running_finished_list_drain<Role>(
+        &mut self,
+        pending: SchedulerFinishedListDrainPending<DtmSchedulerRunning<Role>>,
+    ) -> DtmSchedulerRunningDrainStep<Role>;
+
+    /// Continue the same captured finished-list drain after DTM list zero has
+    /// already yielded a non-sentinel completion.
+    ///
+    /// This operation never captures hardware. Its opaque input proves that
+    /// the same capture retained another list. It returns one unrelated list
+    /// token and either the ordinary completion owner or a new continuation
+    /// token for the same capture.
+    #[cfg(target_arch = "riscv32")]
+    fn continue_dtm_completed_finished_list_drain<Role>(
+        &mut self,
+        pending: SchedulerFinishedListDrainPending<DtmSchedulerCompletionObserved<Role>>,
+    ) -> DtmSchedulerCompletionObservedDrainStep<Role>;
+
+    /// Perform one fresh fenced hardware-head retirement observation for the
+    /// exact completion retained by this Controller epoch.
+    #[cfg(target_arch = "riscv32")]
+    fn observe_dtm_hardware_head_retirement<Role>(
+        &mut self,
+        completed: DtmSchedulerCompletionObserved<Role>,
+    ) -> DtmSchedulerHardwareHeadRetirementStep<Role>;
+
+    /// Remove the exact empty-head DTM item from the source-owned software
+    /// list without recreating the vendor intrusive container.
+    #[cfg(target_arch = "riscv32")]
+    fn unlink_dtm_software_list<Role>(
+        &mut self,
+        observed: DtmSchedulerHardwareHeadEmptyObserved<Role>,
+    ) -> DtmSchedulerSoftwareListUnlinkStep<Role>;
+
+    /// Join one freshly serviced primary scheduler event to the exact
+    /// already-unlinked DTM item.
+    ///
+    /// A busy event performs no task-side command read. Any pending result
+    /// consumes that event and retains the unlinked graph for a later event.
+    #[cfg(target_arch = "riscv32")]
+    fn join_dtm_software_list_removal<Role>(
+        &mut self,
+        unlinked: DtmSchedulerSoftwareListUnlinked<Role>,
+        event: crate::interrupt::PrimarySchedulerEvent,
+    ) -> DtmSchedulerSoftwareListRemovalJoin<Role>;
+
+    /// Recheck one already-unlinked DTM graph without requiring another
+    /// primary interrupt edge.
+    #[cfg(target_arch = "riscv32")]
+    fn recheck_dtm_software_list_removal<Role>(
+        &mut self,
+        storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
+        unlinked: DtmSchedulerSoftwareListUnlinked<Role>,
+    ) -> DtmSchedulerSoftwareListRemovalRecheck<Role>;
+
+    /// Return one removal-ready DTM graph to source-owned CPU state.
+    ///
+    /// TX and RX non-success outcomes may recycle directly. RX success is
+    /// retained for the specialized drain/account/re-arm transaction. The
+    /// timeline reservation and reviewed descriptor links are released in one
+    /// bounded transaction.
+    #[cfg(target_arch = "riscv32")]
+    fn recycle_dtm_completed<Role>(
+        &mut self,
+        ready: DtmSchedulerSoftwareListRemovalReady<Role>,
+    ) -> DtmSchedulerRecycleStep<Role>;
+
+    /// Drain, account and re-arm one successful removal-ready RX event.
+    #[cfg(target_arch = "riscv32")]
+    fn recycle_dtm_receiver_success(
+        &mut self,
+        ready: DtmSchedulerSoftwareListRemovalReady<crate::le::dtm::DtmReceiverEvent>,
+    ) -> DtmSchedulerRxSuccessRecycleStep;
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<const SCHEDULER_CAPACITY: usize> DtmScheduling<SCHEDULER_CAPACITY>
+    for ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
+{
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn admit_initial_dtm_event(
         &mut self,
         event: DtmSchedulerItemEvent,
         now: &ControllerSchedulerNow,
@@ -946,43 +1418,41 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     ) -> Result<DtmSchedulerReservation<SchedulerInitialAdmissionResolved>, SchedulerReservationError>
     {
         let epoch = now.epoch();
-        let timing_policy =
-            SchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
-        let window = self
-            .runtime
-            .scheduler_timeline_mut()
-            .reserve_initial_window(
-                event.raw_start(epoch),
-                event.raw_end(epoch),
-                timing_policy,
-                admission_sample,
-            )?;
+        let timing_policy = SchedulerTimingPolicy::from_scheduler_config(
+            self.scheduler_config(),
+            self.controller_time_scale(),
+        );
+        let window = self.scheduler_timeline_mut().reserve_initial_window(
+            event.raw_start(epoch),
+            event.raw_end(epoch),
+            timing_policy,
+            admission_sample,
+        )?;
         Ok(DtmSchedulerReservation::new(window, event, epoch))
     }
 
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn reserve_recurring_dtm_event(
+    fn reserve_recurring_dtm_event(
         &mut self,
         event: DtmSchedulerItemEvent,
         now: &ControllerSchedulerNow,
     ) -> Result<DtmSchedulerReservation<SchedulerRecurringReserved>, SchedulerReservationError>
     {
         let epoch = now.epoch();
-        let timing_policy =
-            SchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
-        let window = self
-            .runtime
-            .scheduler_timeline_mut()
-            .reserve_recurring_window(
-                event.raw_start(epoch),
-                event.raw_end(epoch),
-                timing_policy,
-            )?;
+        let timing_policy = SchedulerTimingPolicy::from_scheduler_config(
+            self.scheduler_config(),
+            self.controller_time_scale(),
+        );
+        let window = self.scheduler_timeline_mut().reserve_recurring_window(
+            event.raw_start(epoch),
+            event.raw_end(epoch),
+            timing_policy,
+        )?;
         Ok(DtmSchedulerReservation::new(window, event, epoch))
     }
 
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn finish_dtm_sequence_authorization<State>(
+    fn finish_dtm_sequence_authorization<State>(
         &mut self,
         result: Result<
             DtmSchedulerReservation<SchedulerSequenceReady>,
@@ -1008,9 +1478,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         self.release_scheduler_reservation(reservation.into_window());
     }
 
-    /// Reject initial TX before RF readiness can form a scheduler candidate.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn reject_dtm_transmitter_first_before_stage(
+    fn reject_dtm_transmitter_first_before_stage(
         &mut self,
         owner: DtmPreparedTxGraph,
         error: ControllerTimeAcquisitionError,
@@ -1021,13 +1490,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         )
     }
 
-    /// Form one initial transmitter candidate from a private fresh current.
     #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "each typed input is a distinct reviewed DTM authority"
-    )]
-    pub(crate) fn stage_dtm_transmitter_first_item(
+    fn stage_dtm_transmitter_first_item(
         &self,
         owner: DtmPreparedTxGraph,
         link_state: DtmLinkStateReset,
@@ -1048,10 +1512,10 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
         let timing = DtmTxTimingMicros::new(owner.length(), phy, requested_interval_micros)
             .scheduler_timing();
-        let margin = self.config.preparation_lead_micros();
+        let margin = self.scheduler_config().preparation_lead_micros();
         let current = dtm_scheduler_current(&now);
         let window = timing.initial_event_window(
-            self.config,
+            self.scheduler_config(),
             current,
             timing_ready.into_scheduler_instant(),
         );
@@ -1078,9 +1542,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Consume the initial admission sample and retain the resolved reservation.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn admit_dtm_transmitter_first_item(
+    fn admit_dtm_transmitter_first_item(
         &mut self,
         staged: DtmTransmitterFirstStaged,
         admission_sample: ControllerTimeSample,
@@ -1101,9 +1564,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Return an unreserved initial transmitter after a time-phase failure.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_dtm_transmitter_first_staged(
+    fn cancel_dtm_transmitter_first_staged(
         &mut self,
         staged: DtmTransmitterFirstStaged,
         error: ControllerTimeAcquisitionError,
@@ -1111,9 +1573,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         self.reject_dtm_transmitter_first_before_stage(staged.owner, error)
     }
 
-    /// Release initial TX admission and return every retry resource.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_dtm_transmitter_first_pre_sequence(
+    fn cancel_dtm_transmitter_first_pre_sequence(
         &mut self,
         pre_sequence: DtmTransmitterFirstPreSequence,
         error: ControllerTimeAcquisitionError,
@@ -1122,9 +1583,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         self.cancel_dtm_transmitter_first_staged(pre_sequence.staged, error)
     }
 
-    /// Authorize initial TX sequence time, then prepare and merge the graph.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn finish_dtm_transmitter_first_item(
+    fn finish_dtm_transmitter_first_item(
         &mut self,
         pre_sequence: DtmTransmitterFirstPreSequence,
         sequence_sample: ControllerTimeSample,
@@ -1205,9 +1665,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Reject initial RX before RF readiness can form a scheduler candidate.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn reject_dtm_receiver_first_before_stage(
+    fn reject_dtm_receiver_first_before_stage(
         &mut self,
         owner: DtmReceiverCpuOwned,
         error: ControllerTimeAcquisitionError,
@@ -1218,9 +1677,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Form one initial receiver candidate from a private fresh current.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn stage_dtm_receiver_first_item(
+    fn stage_dtm_receiver_first_item(
         &self,
         owner: DtmReceiverCpuOwned,
         link_state: DtmLinkStateReset,
@@ -1238,10 +1696,10 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 owner,
             });
         }
-        let margin = self.config.preparation_lead_micros();
+        let margin = self.scheduler_config().preparation_lead_micros();
         let current = dtm_scheduler_current(&now);
         let window = crate::DtmRxInitialEventWindow::new(
-            self.config,
+            self.scheduler_config(),
             current,
             timing_ready.into_scheduler_instant(),
         );
@@ -1267,9 +1725,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Consume the initial admission sample and retain the resolved reservation.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn admit_dtm_receiver_first_item(
+    fn admit_dtm_receiver_first_item(
         &mut self,
         staged: DtmReceiverFirstStaged,
         admission_sample: ControllerTimeSample,
@@ -1290,9 +1747,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Return an unreserved initial receiver after a time-phase failure.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_dtm_receiver_first_staged(
+    fn cancel_dtm_receiver_first_staged(
         &mut self,
         staged: DtmReceiverFirstStaged,
         error: ControllerTimeAcquisitionError,
@@ -1300,9 +1756,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         self.reject_dtm_receiver_first_before_stage(staged.owner, error)
     }
 
-    /// Release initial RX admission and return every retry resource.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_dtm_receiver_first_pre_sequence(
+    fn cancel_dtm_receiver_first_pre_sequence(
         &mut self,
         pre_sequence: DtmReceiverFirstPreSequence,
         error: ControllerTimeAcquisitionError,
@@ -1311,9 +1766,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         self.cancel_dtm_receiver_first_staged(pre_sequence.staged, error)
     }
 
-    /// Authorize initial RX sequence time, then prepare and merge the graph.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn finish_dtm_receiver_first_item(
+    fn finish_dtm_receiver_first_item(
         &mut self,
         pre_sequence: DtmReceiverFirstPreSequence,
         sequence_sample: ControllerTimeSample,
@@ -1386,13 +1840,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Form one recurring transmitter candidate from a private fresh current.
     #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "no-alloc staging rejection returns the complete active TX owner for retry"
-    )]
-    pub(crate) fn stage_dtm_transmitter_recurring_item(
+    fn stage_dtm_transmitter_recurring_item(
         &self,
         owner: DtmActiveTransmitterCpuOwned,
         now: ControllerSchedulerNow,
@@ -1400,7 +1849,11 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         let current = dtm_scheduler_current(&now);
         let next_window = owner
             .timing()
-            .advance_event_window(self.config, owner.last_committed_window(), current)
+            .advance_event_window(
+                self.scheduler_config(),
+                owner.last_committed_window(),
+                current,
+            )
             .window();
         let event =
             match DtmSchedulerItemEvent::new_transmitter(owner.channel(), owner.phy(), next_window)
@@ -1422,13 +1875,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Reserve the exact recurring TX window before sequence acquisition.
     #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "no-alloc reservation rejection returns the unchanged active TX owner"
-    )]
-    pub(crate) fn reserve_dtm_transmitter_recurring_item(
+    fn reserve_dtm_transmitter_recurring_item(
         &mut self,
         staged: DtmTransmitterRecurringStaged,
     ) -> Result<DtmTransmitterRecurringPreSequence, DtmControllerTxRecurringPreparationFailure>
@@ -1448,9 +1896,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Return an unreserved recurring transmitter after a time-phase failure.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_dtm_transmitter_recurring_staged(
+    fn cancel_dtm_transmitter_recurring_staged(
         &mut self,
         staged: DtmTransmitterRecurringStaged,
         error: ControllerTimeAcquisitionError,
@@ -1461,9 +1908,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Release recurring TX reservation and return the unchanged active owner.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_dtm_transmitter_recurring_pre_sequence(
+    fn cancel_dtm_transmitter_recurring_pre_sequence(
         &mut self,
         pre_sequence: DtmTransmitterRecurringPreSequence,
         error: ControllerTimeAcquisitionError,
@@ -1472,13 +1918,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         self.cancel_dtm_transmitter_recurring_staged(pre_sequence.staged, error)
     }
 
-    /// Authorize recurring TX sequence time, then prepare and merge the graph.
     #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "no-alloc preparation rollback returns the complete active TX owner after releasing its reservation"
-    )]
-    pub(crate) fn finish_dtm_transmitter_recurring_item(
+    fn finish_dtm_transmitter_recurring_item(
         &mut self,
         pre_sequence: DtmTransmitterRecurringPreSequence,
         sequence_sample: ControllerTimeSample,
@@ -1548,9 +1989,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Reject recurring RX before ordered RF/current inputs can form a candidate.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn reject_dtm_receiver_recurring_before_stage(
+    fn reject_dtm_receiver_recurring_before_stage(
         &mut self,
         owner: DtmActiveReceiverCpuOwned,
         error: ControllerTimeAcquisitionError,
@@ -1561,9 +2001,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Form one recurring receiver candidate from private fresh timing inputs.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn stage_dtm_receiver_recurring_item(
+    fn stage_dtm_receiver_recurring_item(
         &self,
         owner: DtmActiveReceiverCpuOwned,
         now: ControllerSchedulerNow,
@@ -1571,7 +2010,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     ) -> Result<DtmReceiverRecurringStaged, DtmControllerRxRecurringPreparationFailure> {
         let current = dtm_scheduler_current(&now);
         let next_window = DtmRxRecurringEventWindow::for_runtime(
-            self.config,
+            self.scheduler_config(),
             current,
             timing_ready.into_scheduler_instant(),
         );
@@ -1597,9 +2036,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Reserve the exact recurring RX window before sequence acquisition.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn reserve_dtm_receiver_recurring_item(
+    fn reserve_dtm_receiver_recurring_item(
         &mut self,
         staged: DtmReceiverRecurringStaged,
     ) -> Result<DtmReceiverRecurringPreSequence, DtmControllerRxRecurringPreparationFailure> {
@@ -1618,9 +2056,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Return an unreserved recurring receiver after a time-phase failure.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_dtm_receiver_recurring_staged(
+    fn cancel_dtm_receiver_recurring_staged(
         &mut self,
         staged: DtmReceiverRecurringStaged,
         error: ControllerTimeAcquisitionError,
@@ -1628,9 +2065,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         self.reject_dtm_receiver_recurring_before_stage(staged.owner, error)
     }
 
-    /// Release recurring RX reservation and return the unchanged active owner.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_dtm_receiver_recurring_pre_sequence(
+    fn cancel_dtm_receiver_recurring_pre_sequence(
         &mut self,
         pre_sequence: DtmReceiverRecurringPreSequence,
         error: ControllerTimeAcquisitionError,
@@ -1639,9 +2075,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         self.cancel_dtm_receiver_recurring_staged(pre_sequence.staged, error)
     }
 
-    /// Authorize recurring RX sequence time, then prepare and merge the graph.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn finish_dtm_receiver_recurring_item(
+    fn finish_dtm_receiver_recurring_item(
         &mut self,
         pre_sequence: DtmReceiverRecurringPreSequence,
         sequence_sample: ControllerTimeSample,
@@ -1723,17 +2158,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Join one prepared DTM item to this epoch's still-empty scheduler list.
-    ///
-    /// This consumes no hardware permission. The returned state merely proves
-    /// that the source-owned list and the item-side empty-list links were
-    /// advanced together.
-    #[expect(
-        clippy::result_large_err,
-        reason = "the no-alloc failure returns the complete affine CPU-owned DTM item"
-    )]
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn prepare_dtm_empty_list_merge<Role, Phase>(
+    fn prepare_dtm_empty_list_merge<Role, Phase>(
         &mut self,
         item: DtmSchedulerBookkeepingPrepared<Role, Phase>,
     ) -> Result<
@@ -1744,7 +2170,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         Phase: DtmSchedulerItemPhase<Role>,
     {
         let address = item.scheduler_item_address();
-        if let Err(error) = self._scheduler_list.prepare_first_item(address) {
+        if let Err(error) = self.scheduler_list_mut().prepare_first_item(address) {
             return Err(DtmEmptySchedulerMergeFailure { error, item });
         }
         Ok(DtmEmptySchedulerMergePrepared {
@@ -1752,16 +2178,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Cancel a not-yet-published sole-item merge through the same epoch.
-    ///
-    /// A state from another or already advanced scheduler is returned
-    /// unchanged and cannot reopen this list.
-    #[expect(
-        clippy::result_large_err,
-        reason = "the no-alloc identity failure returns the complete affine merged item"
-    )]
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_dtm_empty_list_merge<Role, Phase>(
+    fn cancel_dtm_empty_list_merge<Role, Phase>(
         &mut self,
         merged: DtmEmptySchedulerMergePrepared<Role, Phase>,
     ) -> Result<
@@ -1772,7 +2190,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         Phase: DtmSchedulerItemPhase<Role>,
     {
         if !self
-            ._scheduler_list
+            .scheduler_list_mut()
             .cancel_first_item(merged.scheduler_item_address())
         {
             return Err(merged);
@@ -1780,14 +2198,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         Ok(merged.item.cancel())
     }
 
-    /// Cancel one not-yet-published TX event and release its private timeline
-    /// reservation before returning the graph and complete test program.
     #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the no-alloc identity failure retains the complete affine merged graph"
-    )]
-    pub(crate) fn cancel_dtm_transmitter_first_item(
+    fn cancel_dtm_transmitter_first_item(
         &mut self,
         merged: DtmEmptySchedulerMergePrepared<DtmTransmitterEvent, DtmInitialSchedulerItemPhase>,
     ) -> Result<
@@ -1802,14 +2214,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         Ok((memory, pattern, length))
     }
 
-    /// Cancel one not-yet-published RX event and release its private timeline
-    /// reservation before returning the graph/session aggregate.
     #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the no-alloc identity failure retains the complete affine merged graph"
-    )]
-    pub(crate) fn cancel_dtm_receiver_first_item(
+    fn cancel_dtm_receiver_first_item(
         &mut self,
         merged: DtmEmptySchedulerMergePrepared<DtmReceiverEvent, DtmInitialSchedulerItemPhase>,
     ) -> Result<
@@ -1822,14 +2228,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         Ok(owner)
     }
 
-    /// Cancel one not-yet-published recurring TX event and recover the exact
-    /// active command owner retained before this candidate was prepared.
     #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the no-alloc identity failure retains the complete affine merged graph"
-    )]
-    pub(crate) fn cancel_dtm_transmitter_recurring_item(
+    fn cancel_dtm_transmitter_recurring_item(
         &mut self,
         merged: DtmEmptySchedulerMergePrepared<DtmTransmitterEvent, DtmRecurringSchedulerItemPhase>,
     ) -> Result<
@@ -1842,14 +2242,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         Ok(owner)
     }
 
-    /// Cancel one not-yet-published recurring RX event and recover the exact
-    /// active command owner retained before this candidate was prepared.
     #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the no-alloc identity failure retains the complete affine merged graph"
-    )]
-    pub(crate) fn cancel_dtm_receiver_recurring_item(
+    fn cancel_dtm_receiver_recurring_item(
         &mut self,
         merged: DtmEmptySchedulerMergePrepared<DtmReceiverEvent, DtmRecurringSchedulerItemPhase>,
     ) -> Result<
@@ -1862,17 +2256,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         Ok(owner)
     }
 
-    /// Publish the merge-selected sole item after the complete hardware
-    /// initialization chain has made interrupt routes stable but inactive.
-    ///
-    /// This remains crate-private so an early scheduler state cannot publish a
-    /// graph before PHY, BTBB, BLE-PHY and stable interrupt ownership exist.
     #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "pre-MMIO rejection returns the complete no-alloc affine DTM graph"
-    )]
-    pub(crate) fn publish_dtm_scheduler_head<Role, Phase>(
+    fn publish_dtm_scheduler_head<Role, Phase>(
         &mut self,
         merged: DtmEmptySchedulerMergePrepared<Role, Phase>,
     ) -> Result<DtmSchedulerHeadPublished<Role>, DtmSchedulerHeadPublicationFailure<Role, Phase>>
@@ -1891,10 +2276,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         Ok(DtmSchedulerHeadPublished { item, publication })
     }
 
-    /// Stop only the source-owned sole DTM item. No finished-list transfer is
-    /// performed until the common stop has completed; it is captured once.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn step_dtm_stop<Role>(
+    fn step_dtm_stop<Role>(
         &mut self,
         storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
         running: DtmSchedulerRunning<Role>,
@@ -1905,23 +2288,23 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         };
         let address = running.scheduler_item_address();
         if running.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self._scheduler_list.retains_running_first_item(address)
-            || self.runtime.scheduler_finished_lists_mut().is_active()
+            || !self
+                .scheduler_list_mut()
+                .retains_running_first_item(address)
+            || self.scheduler_finished_lists_mut().is_active()
         {
             return DtmSchedulerStopStep::IdentityMismatch {
                 _running: running,
                 _stop: stop,
             };
         }
-        let stopped = match self.task.step_scheduler_stop(storage, stop) {
+        let stopped = match self.step_scheduler_stop(storage, stop) {
             Ok(BluetoothSchedulerStopStep::Stopped(stopped)) => stopped,
             Ok(BluetoothSchedulerStopStep::Pending(stop)) | Err(stop) => {
                 return DtmSchedulerStopStep::Pending { running, stop };
             }
         };
-        let captured = self
-            .task
-            .transfer_stopped_scheduler_finished_lists(&stopped);
+        let captured = self.transfer_stopped_scheduler_finished_lists(&stopped);
         let rest = match captured.pop_lowest() {
             BluetoothSchedulerFinishedListPop::List {
                 observed,
@@ -1939,7 +2322,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
             };
         }
         let DtmSchedulerRunning { item, run } = running;
-        let stopped = match self.task.retire_stopped_scheduler_head(stopped, run) {
+        let stopped = match self.retire_stopped_scheduler_head(stopped, run) {
             oer_esp32s31_hal::bluetooth::BluetoothSchedulerStoppedHeadRetirement::Retired(
                 stopped,
             ) => stopped,
@@ -1961,43 +2344,38 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 };
             }
         };
-        self._scheduler_list
+        self.scheduler_list_mut()
             .retain_completion_observed_first_item(address);
-        self._scheduler_list
+        self.scheduler_list_mut()
             .retain_hardware_head_empty_first_item(address);
         DtmSchedulerStopStep::Retired(DtmSchedulerHardwareHeadRetirementStep::EmptyObserved(
             DtmSchedulerHardwareHeadEmptyObserved { item, head },
         ))
     }
 
-    /// Perform one fresh, bounded DTM completion observation.
-    ///
-    /// The affine list token never crosses this Controller operation before it
-    /// is joined to the matching running epoch. This prevents a caller from
-    /// retaining a list-zero token and replaying it against a later DTM event.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn observe_dtm_completion<Role>(
+    fn observe_dtm_completion<Role>(
         &mut self,
         running: DtmSchedulerRunning<Role>,
         wake: SchedulerWakeBatch,
     ) -> DtmSchedulerCompletionStep<Role> {
         let address = running.scheduler_item_address();
         if running.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self._scheduler_list.retains_running_first_item(address)
+            || !self
+                .scheduler_list_mut()
+                .retains_running_first_item(address)
         {
             return DtmSchedulerCompletionStep::SchedulerIdentityMismatch(running);
         }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
+        if self.scheduler_finished_lists_mut().is_active() {
             return DtmSchedulerCompletionStep::DrainAlreadyActive(running);
         }
 
-        let capture = self
-            .task
-            .capture_scheduler_finished_lists(self.runtime.scheduler_finished_lists_mut(), wake);
+        let capture = self.capture_scheduler_finished_lists(wake);
         if capture.is_err() {
             return DtmSchedulerCompletionStep::DrainAlreadyActive(running);
         }
-        let step = self.runtime.scheduler_finished_lists_mut().step();
+        let step = self.scheduler_finished_lists_mut().step();
         let crate::scheduler::SchedulerFinishedListWorkerStep::List { observed, more } = step
         else {
             return DtmSchedulerCompletionStep::NoFinishedList(running);
@@ -2023,7 +2401,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 )
             }
             DtmRunningEventCompletionObservation::CompletionObserved(item) => {
-                self._scheduler_list
+                self.scheduler_list_mut()
                     .retain_completion_observed_first_item(address);
                 DtmSchedulerCompletionStep::CompletionObserved(
                     SchedulerFinishedListDrainState::from_worker_step(
@@ -2035,28 +2413,24 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Continue one already captured finished-list drain for a running DTM
-    /// graph without performing another hardware transfer.
-    ///
-    /// The caller can reach this edge only with the opaque provenance token
-    /// returned by the preceding step. Exactly one list from that same capture
-    /// is consumed. This operation never performs a fresh capture.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn continue_dtm_running_finished_list_drain<Role>(
+    fn continue_dtm_running_finished_list_drain<Role>(
         &mut self,
         pending: SchedulerFinishedListDrainPending<DtmSchedulerRunning<Role>>,
     ) -> DtmSchedulerRunningDrainStep<Role> {
         let address = pending.owner().scheduler_item_address();
         if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self._scheduler_list.retains_running_first_item(address)
+            || !self
+                .scheduler_list_mut()
+                .retains_running_first_item(address)
         {
             return DtmSchedulerRunningDrainStep::SchedulerIdentityMismatch(pending);
         }
-        if !self.runtime.scheduler_finished_lists_mut().is_active() {
+        if !self.scheduler_finished_lists_mut().is_active() {
             return DtmSchedulerRunningDrainStep::DrainLost(pending);
         }
 
-        let step = self.runtime.scheduler_finished_lists_mut().step();
+        let step = self.scheduler_finished_lists_mut().step();
         let crate::scheduler::SchedulerFinishedListWorkerStep::List { observed, more } = step
         else {
             return DtmSchedulerRunningDrainStep::DrainLost(pending);
@@ -2083,7 +2457,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 )
             }
             DtmRunningEventCompletionObservation::CompletionObserved(item) => {
-                self._scheduler_list
+                self.scheduler_list_mut()
                     .retain_completion_observed_first_item(address);
                 DtmSchedulerRunningDrainStep::CompletionObserved(
                     SchedulerFinishedListDrainState::from_worker_step(
@@ -2095,31 +2469,24 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Continue the same captured finished-list drain after DTM list zero has
-    /// already yielded a non-sentinel completion.
-    ///
-    /// This operation never captures hardware. Its opaque input proves that
-    /// the same capture retained another list. It returns one unrelated list
-    /// token and either the ordinary completion owner or a new continuation
-    /// token for the same capture.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn continue_dtm_completed_finished_list_drain<Role>(
+    fn continue_dtm_completed_finished_list_drain<Role>(
         &mut self,
         pending: SchedulerFinishedListDrainPending<DtmSchedulerCompletionObserved<Role>>,
     ) -> DtmSchedulerCompletionObservedDrainStep<Role> {
         let address = pending.owner().scheduler_item_address();
         if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
             || !self
-                ._scheduler_list
+                .scheduler_list_mut()
                 .retains_completion_observed_first_item(address)
         {
             return DtmSchedulerCompletionObservedDrainStep::SchedulerIdentityMismatch(pending);
         }
-        if !self.runtime.scheduler_finished_lists_mut().is_active() {
+        if !self.scheduler_finished_lists_mut().is_active() {
             return DtmSchedulerCompletionObservedDrainStep::DrainLost(pending);
         }
 
-        let step = self.runtime.scheduler_finished_lists_mut().step();
+        let step = self.scheduler_finished_lists_mut().step();
         let crate::scheduler::SchedulerFinishedListWorkerStep::List { observed, more } = step
         else {
             return DtmSchedulerCompletionObservedDrainStep::DrainLost(pending);
@@ -2138,29 +2505,25 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Perform one fresh fenced hardware-head retirement observation for the
-    /// exact completion retained by this Controller epoch.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn observe_dtm_hardware_head_retirement<Role>(
+    fn observe_dtm_hardware_head_retirement<Role>(
         &mut self,
         completed: DtmSchedulerCompletionObserved<Role>,
     ) -> DtmSchedulerHardwareHeadRetirementStep<Role> {
         let address = completed.scheduler_item_address();
         if completed.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
             || !self
-                ._scheduler_list
+                .scheduler_list_mut()
                 .retains_completion_observed_first_item(address)
         {
             return DtmSchedulerHardwareHeadRetirementStep::SchedulerIdentityMismatch(completed);
         }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
+        if self.scheduler_finished_lists_mut().is_active() {
             return DtmSchedulerHardwareHeadRetirementStep::FinishedListDrainStillActive(completed);
         }
 
         let DtmSchedulerCompletionObserved { item, run } = completed;
-        match self
-            .task
-            .observe_scheduler_hardware_list_head_retirement(run)
+        match self.observe_scheduler_hardware_list_head_retirement(run)
         {
             BluetoothSchedulerHardwareListHeadRetirementObservation::ExpectedHeadStillPublished {
                 run,
@@ -2182,7 +2545,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                     Some(address),
                     "the retired hardware head must retain the exact completed DTM identity"
                 );
-                self._scheduler_list
+                self.scheduler_list_mut()
                     .retain_hardware_head_empty_first_item(address);
                 DtmSchedulerHardwareHeadRetirementStep::EmptyObserved(
                     DtmSchedulerHardwareHeadEmptyObserved { item, head },
@@ -2191,18 +2554,16 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Remove the exact empty-head DTM item from the source-owned software
-    /// list without recreating the vendor intrusive container.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn unlink_dtm_software_list<Role>(
+    fn unlink_dtm_software_list<Role>(
         &mut self,
         observed: DtmSchedulerHardwareHeadEmptyObserved<Role>,
     ) -> DtmSchedulerSoftwareListUnlinkStep<Role> {
         let address = observed.scheduler_item_address();
         if observed.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || self.runtime.scheduler_finished_lists_mut().is_active()
+            || self.scheduler_finished_lists_mut().is_active()
             || !self
-                ._scheduler_list
+                .scheduler_list_mut()
                 .unlink_software_list_first_item(address)
         {
             return DtmSchedulerSoftwareListUnlinkStep::SchedulerIdentityMismatch(observed);
@@ -2215,21 +2576,18 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         })
     }
 
-    /// Join one freshly serviced primary scheduler event to the exact
-    /// already-unlinked DTM item.
-    ///
-    /// A busy event performs no task-side command read. Any pending result
-    /// consumes that event and retains the unlinked graph for a later event.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn join_dtm_software_list_removal<Role>(
+    fn join_dtm_software_list_removal<Role>(
         &mut self,
         unlinked: DtmSchedulerSoftwareListUnlinked<Role>,
         event: crate::interrupt::PrimarySchedulerEvent,
     ) -> DtmSchedulerSoftwareListRemovalJoin<Role> {
         let address = unlinked.scheduler_item_address();
         if unlinked.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || self.runtime.scheduler_finished_lists_mut().is_active()
-            || !self._scheduler_list.retains_unlinked_first_item(address)
+            || self.scheduler_finished_lists_mut().is_active()
+            || !self
+                .scheduler_list_mut()
+                .retains_unlinked_first_item(address)
         {
             return DtmSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch {
                 unlinked,
@@ -2244,7 +2602,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
             BluetoothSchedulerSoftwareListRemovalInterruptStep::Idle(idle) => idle,
         };
         let DtmSchedulerSoftwareListUnlinked { item, head } = unlinked;
-        match self.task.finish_scheduler_software_list_removal(idle, head) {
+        match self.finish_scheduler_software_list_removal(idle, head) {
             BluetoothSchedulerSoftwareListRemovalJoin::Pending { head } => {
                 DtmSchedulerSoftwareListRemovalJoin::Pending(DtmSchedulerSoftwareListUnlinked {
                     item,
@@ -2252,7 +2610,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 })
             }
             BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
-                self._scheduler_list
+                self.scheduler_list_mut()
                     .retain_software_list_removal_ready_first_item(address);
                 DtmSchedulerSoftwareListRemovalJoin::Ready(DtmSchedulerSoftwareListRemovalReady {
                     item,
@@ -2262,27 +2620,24 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Recheck one already-unlinked DTM graph without requiring another
-    /// primary interrupt edge.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recheck_dtm_software_list_removal<Role>(
+    fn recheck_dtm_software_list_removal<Role>(
         &mut self,
         storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
         unlinked: DtmSchedulerSoftwareListUnlinked<Role>,
     ) -> DtmSchedulerSoftwareListRemovalRecheck<Role> {
         let address = unlinked.scheduler_item_address();
         if unlinked.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || self.runtime.scheduler_finished_lists_mut().is_active()
-            || !self._scheduler_list.retains_unlinked_first_item(address)
+            || self.scheduler_finished_lists_mut().is_active()
+            || !self
+                .scheduler_list_mut()
+                .retains_unlinked_first_item(address)
         {
             return DtmSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(unlinked);
         }
 
         let DtmSchedulerSoftwareListUnlinked { item, head } = unlinked;
-        let join = match self
-            .task
-            .recheck_scheduler_software_list_removal(storage, head)
-        {
+        let join = match self.recheck_scheduler_software_list_removal(storage, head) {
             Ok(join) => join,
             Err(head) => {
                 return DtmSchedulerSoftwareListRemovalRecheck::StorageUnavailable(
@@ -2298,7 +2653,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
                 })
             }
             BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
-                self._scheduler_list
+                self.scheduler_list_mut()
                     .retain_software_list_removal_ready_first_item(address);
                 DtmSchedulerSoftwareListRemovalRecheck::Ready(
                     DtmSchedulerSoftwareListRemovalReady {
@@ -2310,26 +2665,20 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Return one removal-ready DTM graph to source-owned CPU state.
-    ///
-    /// TX and RX non-success outcomes may recycle directly. RX success is
-    /// retained for the specialized drain/account/re-arm transaction. The
-    /// timeline reservation and reviewed descriptor links are released in one
-    /// bounded transaction.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recycle_dtm_completed<Role>(
+    fn recycle_dtm_completed<Role>(
         &mut self,
         ready: DtmSchedulerSoftwareListRemovalReady<Role>,
     ) -> DtmSchedulerRecycleStep<Role> {
         let address = ready.scheduler_item_address();
         if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
             || !self
-                ._scheduler_list
+                .scheduler_list_mut()
                 .retains_software_list_removal_ready_first_item(address)
         {
             return DtmSchedulerRecycleStep::SchedulerIdentityMismatch(ready);
         }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
+        if self.scheduler_finished_lists_mut().is_active() {
             return DtmSchedulerRecycleStep::FinishedListDrainStillActive(ready);
         }
         if ready.role() == DtmRole::Receiver
@@ -2339,9 +2688,9 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
 
         let DtmSchedulerSoftwareListRemovalReady { item, _removal } = ready;
-        match item.recycle(self.runtime.scheduler_timeline_mut(), _removal) {
+        match item.recycle(self.scheduler_timeline_mut(), _removal) {
             Ok(timeline_released) => {
-                self._scheduler_list.commit_recycled_first_item();
+                self.scheduler_list_mut().commit_recycled_first_item();
                 DtmSchedulerRecycleStep::Recycled(timeline_released.finish_source_list_release())
             }
             Err(failure) => {
@@ -2368,21 +2717,20 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
     }
 
-    /// Drain, account and re-arm one successful removal-ready RX event.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recycle_dtm_receiver_success(
+    fn recycle_dtm_receiver_success(
         &mut self,
         ready: DtmSchedulerSoftwareListRemovalReady<crate::le::dtm::DtmReceiverEvent>,
     ) -> DtmSchedulerRxSuccessRecycleStep {
         let address = ready.scheduler_item_address();
         if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
             || !self
-                ._scheduler_list
+                .scheduler_list_mut()
                 .retains_software_list_removal_ready_first_item(address)
         {
             return DtmSchedulerRxSuccessRecycleStep::SchedulerIdentityMismatch(ready);
         }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
+        if self.scheduler_finished_lists_mut().is_active() {
             return DtmSchedulerRxSuccessRecycleStep::FinishedListDrainStillActive(ready);
         }
         if ready.status() != DtmSchedulerItemCompletionStatus::Zero {
@@ -2390,9 +2738,9 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         }
 
         let DtmSchedulerSoftwareListRemovalReady { item, _removal } = ready;
-        match item.recycle_receiver_success(self.runtime.scheduler_timeline_mut(), _removal) {
+        match item.recycle_receiver_success(self.scheduler_timeline_mut(), _removal) {
             Ok(timeline_released) => {
-                self._scheduler_list.commit_recycled_first_item();
+                self.scheduler_list_mut().commit_recycled_first_item();
                 DtmSchedulerRxSuccessRecycleStep::Rearmed(
                     timeline_released.finish_source_list_release(),
                 )

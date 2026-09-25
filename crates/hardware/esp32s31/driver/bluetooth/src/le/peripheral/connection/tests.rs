@@ -16,8 +16,6 @@ use oer_esp32s31_bluetooth_memory::{
     PeripheralConnectionSchedulerPriority,
 };
 
-use oer_esp32s31_pac::BluetoothControllerHalInitConfig;
-
 use super::{
     Le1MPacketStartTiming, PeripheralConnectionRuntimeBeginError,
     PeripheralConnectionRuntimeConfig, PeripheralConnectionRuntimeResources,
@@ -269,7 +267,7 @@ fn first_event_projects_one_preparation_window_without_losing_ownership() {
             ),
             Le1MPacketStartTiming::from_scheduler_micros(packet_start_micros),
         );
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch =
         ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(100), 9_000, scale);
     let config = SchedulerSoftwareConfig::reviewed_standalone();
@@ -320,7 +318,7 @@ fn prepublication_retry_keeps_the_causal_packet_window_and_exact_allocation() {
     let mut runtime = runtime(0x2f00_5800);
     let request = LeLegacyConnectionRequest::decode(&connection_request()).unwrap();
     let packet_start = u32::MAX - 4_000;
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch = ControllerSchedulerEpoch::new(
         ControllerTimeSample::for_validation(700),
         u32::MAX - 8_000,
@@ -370,7 +368,7 @@ fn resolved_connection_fields_remain_affine_and_cancel_losslessly() {
     )
     .prepare_event()
     .channel();
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch =
         ControllerSchedulerEpoch::new(ControllerTimeSample::for_validation(300), 20_000, scale);
     let candidate = runtime

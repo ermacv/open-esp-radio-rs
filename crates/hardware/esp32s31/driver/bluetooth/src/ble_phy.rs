@@ -240,16 +240,32 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         self.phy_report
     }
 
-    pub(crate) fn take_activation_owners(
+    /// Take the interrupt bank with its controller output prepared, and the
+    /// low-power timer hardware, exactly once for this completed epoch.
+    ///
+    /// The bank leaves this engine's custody here for the first time, so no
+    /// CPU-route installer can have received it; this complete initialization
+    /// is the matching Controller epoch. Both discharge the output
+    /// preparation contract. The timer is returned unstarted and only with
+    /// the prepared output, so it cannot be started before the output.
+    #[allow(
+        unsafe_code,
+        reason = "the completed epoch and first custody transfer discharge the output contract"
+    )]
+    pub(crate) fn take_activation_owners_with_output_prepared(
         &mut self,
     ) -> (
-        InterruptBankOwner,
+        oer_esp32s31_hal::bluetooth::InterruptOutputPreparedOwner,
         ModemLpTimerLowPowerHardwareInitializedOwner,
     ) {
         let controller = &mut self.controller;
-        let interrupts = controller.take_interrupt_owner();
+        let interrupts: InterruptBankOwner = controller.take_interrupt_owner();
         let timer = controller.take_timer_hardware();
-        (interrupts, timer)
+        // SAFETY: `self` is the completed matching Controller initialization,
+        // and the bank has just left its one-shot custody, so all three CPU
+        // routes remain inactive.
+        let output = unsafe { interrupts.prepare_controller_output() };
+        (output, timer)
     }
 
     /// Split the already initialized hardware runtime after this

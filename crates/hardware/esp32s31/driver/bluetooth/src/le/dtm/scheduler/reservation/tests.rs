@@ -7,8 +7,6 @@ use crate::{
     },
 };
 
-use oer_esp32s31_pac::BluetoothControllerHalInitConfig;
-
 use super::DtmSchedulerReservation;
 
 fn sample(raw_time: u32) -> ControllerTimeSample {
@@ -17,7 +15,7 @@ fn sample(raw_time: u32) -> ControllerTimeSample {
 
 #[test]
 fn dtm_envelope_retains_the_event_and_epoch_outside_the_common_timeline() {
-    let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+    let scale = crate::controller_hal::reviewed_standalone_time_scale();
     let epoch = ControllerSchedulerEpoch::new(sample(100), 1_000, scale);
     let event = DtmSchedulerItemEvent::new_initial_receiver(
         DtmChannel::new(5).expect("channel is valid"),

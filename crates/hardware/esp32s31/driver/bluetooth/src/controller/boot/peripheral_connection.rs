@@ -1,4 +1,10 @@
 //! Peripheral-connection controller preparation, completion, and recurrence.
+#[cfg(target_arch = "riscv32")]
+#[allow(unused_imports)]
+use crate::le::peripheral::scheduler::PeripheralConnectionRecurringScheduling;
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(unused_imports)]
+use crate::le::peripheral::scheduler::PeripheralConnectionScheduling;
 
 use core::ops::ControlFlow;
 

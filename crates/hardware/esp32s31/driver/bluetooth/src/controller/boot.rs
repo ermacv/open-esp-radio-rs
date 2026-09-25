@@ -1,4 +1,13 @@
 //! Controller-output and runtime-timer activation after BLE PHY initialization.
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(unused_imports)]
+use crate::le::advertising::scheduler::LegacyAdvertisingScheduling;
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(unused_imports)]
+use crate::le::dtm::scheduler::lifecycle::DtmScheduling;
+#[cfg(any(target_arch = "riscv32", test))]
+#[allow(unused_imports)]
+use crate::le::scanning::scheduler::PassiveScanScheduling;
 
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod connectable_advertising;

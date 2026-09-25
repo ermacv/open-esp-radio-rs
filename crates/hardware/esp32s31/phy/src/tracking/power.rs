@@ -176,6 +176,7 @@ impl PhyTxPowerTrackingTransition {
         }
     }
 
+    #[cfg(test)]
     pub const fn decision(self) -> PhyTxPowerTrackingDecision {
         self.decision
     }

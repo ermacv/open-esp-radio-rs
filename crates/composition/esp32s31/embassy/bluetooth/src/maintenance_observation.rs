@@ -6,7 +6,7 @@
 use oer_esp32s31_bluetooth_controller::le::peripheral::maintenance::PeripheralMaintenanceRun;
 use oer_esp32s31_phy::tracking::observation::{OPERATION_COUNT, Timing};
 #[cfg(any(test, target_arch = "riscv32"))]
-use oer_esp32s31_phy::tracking::{observation::Operation, parameters::PhyParamTrackingOutcome};
+use oer_esp32s31_phy::tracking::{PhyParamTrackingOutcome, observation::Operation};
 
 /// Boot-lifetime measurements; operation timings nest and must not be summed.
 #[derive(Clone, Copy, Debug, Default)]

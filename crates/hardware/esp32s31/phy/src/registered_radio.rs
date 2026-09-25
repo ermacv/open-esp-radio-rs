@@ -17,7 +17,7 @@ use crate::{
         PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackEvaluation,
         PhyTrackEvaluationFailure, PhyTrackPoisoned, PhyTrackTimeError,
     },
-    tracking::parameters::{PhyParamTrackRequest, PhyParamTrackingAction},
+    tracking::parameters::PhyParamTrackRequest,
 };
 
 #[cfg(target_arch = "riscv32")]
@@ -934,7 +934,8 @@ pub struct RegisteredPhyPendingTracking<P> {
 }
 
 impl<P> RegisteredPhyPendingTracking<P> {
-    pub const fn action(&self) -> PhyParamTrackingAction {
+    #[cfg(test)]
+    pub(crate) const fn action(&self) -> crate::tracking::parameters::PhyParamTrackingAction {
         self.pending.action()
     }
 

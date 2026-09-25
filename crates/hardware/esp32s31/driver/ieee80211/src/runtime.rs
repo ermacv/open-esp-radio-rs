@@ -257,7 +257,7 @@ impl<P> WifiStopped<P> {
     ) -> Result<
         (
             Self,
-            Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
+            Option<oer_esp32s31_phy::tracking::PhyParamTrackingOutcome>,
         ),
         WifiMaintenanceFailure<P>,
     > {
@@ -551,7 +551,7 @@ impl<P> WifiRoleOwner<P> {
         (
             Self,
             oer_esp32s31_hal::owner::maintenance::WifiAccess<I>,
-            Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
+            Option<oer_esp32s31_phy::tracking::PhyParamTrackingOutcome>,
         ),
         WifiRoleMaintenanceFailure<P, I>,
     > {

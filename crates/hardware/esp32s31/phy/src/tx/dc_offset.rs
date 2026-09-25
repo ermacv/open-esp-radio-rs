@@ -94,6 +94,13 @@ pub enum PhyTxDcCompletion {
         value: u16,
     },
     PbusCompleted(PhyPbusForceTest),
+    #[cfg_attr(
+        not(any(test, feature = "validation-probes")),
+        allow(
+            dead_code,
+            reason = "only the validation binding constructs this timeout"
+        )
+    )]
     PbusTimedOut(PhyPbusForceTest),
     TxClockConfigured,
     ToneConfigured {
@@ -114,6 +121,13 @@ pub enum PhyTxDcCompletion {
         iteration: u8,
         ready: bool,
     },
+    #[cfg_attr(
+        not(any(test, feature = "validation-probes")),
+        allow(
+            dead_code,
+            reason = "only the validation binding constructs this timeout"
+        )
+    )]
     ReadyDeadlineElapsed {
         gain_index: u8,
         iteration: u8,

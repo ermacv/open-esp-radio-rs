@@ -305,6 +305,7 @@ pub struct PhyCalibrationTrackingTransition {
 }
 
 impl PhyCalibrationTrackingTransition {
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn new(
         request: PhyCalibrationTrackingRequest,
         parameters: PhyCalibrationTrackingParameters,

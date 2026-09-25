@@ -13,6 +13,7 @@ use core::marker::PhantomData;
 
 pub mod calibration;
 pub mod rfpll;
+#[cfg(feature = "validation-probes")]
 pub mod temperature;
 
 use crate::{

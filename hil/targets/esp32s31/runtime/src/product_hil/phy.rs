@@ -204,7 +204,7 @@ pub(super) async fn run_service_window() -> Result<
 }
 
 pub(super) fn rfpll_evidence(
-    value: oer_esp32s31_phy::tracking::rfpll::Observation,
+    value: oer_esp32s31_phy::tracking::RfpllObservation,
 ) -> oer_hil_protocol::RfpllEvidence {
     oer_hil_protocol::RfpllEvidence {
         temperature: value.request.current_temperature,

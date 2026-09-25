@@ -20,7 +20,7 @@ use oer_esp32s31_phy::{
 
 use oer_esp32s31_phy::{
     state::client::{PhyModemClient, PhyPllTrackClock},
-    tracking::parameters::PhyParamTrackingOutcome,
+    tracking::PhyParamTrackingOutcome,
 };
 use oer_ieee80211_mac::channel::WifiChannel;
 

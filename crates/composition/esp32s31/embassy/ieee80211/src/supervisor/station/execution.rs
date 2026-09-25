@@ -387,10 +387,7 @@ fn complete_protection(
 #[inline(never)]
 fn finish_pause(
     _mailbox: &ConnectedDatapathMailbox,
-    result: Result<
-        Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>,
-        super::PauseError,
-    >,
+    result: Result<Option<oer_esp32s31_phy::tracking::PhyParamTrackingOutcome>, super::PauseError>,
     elapsed_micros: u64,
 ) {
     super::pause_request::REQUESTS.finish(result.map(|tracking| super::PauseReport {

@@ -52,10 +52,14 @@ extern crate std;
 pub mod executor;
 #[cfg(feature = "lifecycle-fault-injection")]
 pub mod fault_injection;
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(target_arch = "riscv32", feature = "validation-probes"))]
 pub mod target_executor;
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(target_arch = "riscv32", not(feature = "validation-probes")))]
+mod target_executor;
+#[cfg(all(target_arch = "riscv32", feature = "validation-probes"))]
 pub mod target_port;
+#[cfg(all(target_arch = "riscv32", not(feature = "validation-probes")))]
+mod target_port;
 
 #[cfg(feature = "validation-probes")]
 pub mod analog;
@@ -188,12 +192,15 @@ pub use target_port::{
     TargetIeee802154PhyParamTrackingFailure, TargetIeee802154PhyParamTrackingSuccess,
     TargetIeee802154PhyRegisterConfig, TargetIeee802154PhyRegisterError,
     TargetIeee802154PhyRegisterFailure, TargetIeee802154PhyRegisterSuccess,
-    TargetPhyCalibrationTrackingPort, TargetPhyParamTrackingError, TargetPhyParamTrackingFailure,
-    TargetPhyParamTrackingPort, TargetPhyParamTrackingSuccess, TargetPhyRegisterAttempt,
-    TargetPhyRegisterError, TargetPhyRegisterFailure, TargetPhyRegisterPort,
+    TargetPhyParamTrackingError, TargetPhyParamTrackingFailure, TargetPhyParamTrackingSuccess,
+    TargetPhyRegisterAttempt, TargetPhyRegisterError, TargetPhyRegisterFailure,
     TargetPhyRegisterSuccess, TargetPhyRegisterTerminalParts,
     run_target_bluetooth_phy_param_tracking, run_target_bluetooth_phy_param_tracking_until,
     run_target_bluetooth_phy_register, run_target_ieee802154_phy_param_tracking,
     run_target_ieee802154_phy_register, run_target_phy_param_tracking, run_target_phy_register,
     select_registered_wifi_channel, switch_registered_wifi_channel,
+};
+#[cfg(all(target_arch = "riscv32", feature = "validation-probes"))]
+pub use target_port::{
+    TargetPhyCalibrationTrackingPort, TargetPhyParamTrackingPort, TargetPhyRegisterPort,
 };

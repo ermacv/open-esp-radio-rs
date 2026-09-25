@@ -53,8 +53,20 @@ pub enum PhyRxSaturationCompletion {
     DebugModeConfigured,
     PbusCompleted(PhyPbusForceTest),
     PbusTimedOut(PhyPbusForceTest),
-    DelayElapsed { micros: u32 },
-    StatusSampled { sample_index: u8, active: bool },
+    DelayElapsed {
+        micros: u32,
+    },
+    StatusSampled {
+        sample_index: u8,
+        active: bool,
+    },
+    #[cfg_attr(
+        not(any(test, feature = "validation-probes")),
+        allow(
+            dead_code,
+            reason = "only the validation binding constructs this timeout"
+        )
+    )]
     CaptureTimedOut,
     WorkModeConfigured,
 }
@@ -292,14 +304,17 @@ impl PhyRxSaturationPbusBinding {
         })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> crate::analog::pbus::PhyPbusHardwareAction {
         self.hardware.action()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn started(&mut self) -> Result<(), crate::analog::pbus::PhyPbusHardwareBindingError> {
         self.hardware.started()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_completed(
         &mut self,
         completed: bool,

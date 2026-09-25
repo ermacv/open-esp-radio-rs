@@ -15,7 +15,7 @@ mod observation;
 use super::pause_request::timeline::Edge;
 
 pub(super) type Role = oer_esp32s31_ieee80211::runtime::WifiRoleOwner<EspHalRadioPeripheral>;
-type TrackingOutcome = Option<oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome>;
+type TrackingOutcome = Option<oer_esp32s31_phy::tracking::PhyParamTrackingOutcome>;
 
 type PausedRx = ConnectedRx<RxRingPaused<'static, RX_DESCRIPTOR_COUNT>>;
 type FailedRx = ConnectedRx<RxRingResumeFailure<'static, RX_DESCRIPTOR_COUNT>>;

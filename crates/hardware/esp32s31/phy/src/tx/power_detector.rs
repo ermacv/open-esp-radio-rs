@@ -131,6 +131,13 @@ pub enum PhyPwdetAction {
 pub enum PhyPwdetCompletion {
     PbusDebugModeConfigured,
     PbusCompleted(PhyPbusForceTest),
+    #[cfg_attr(
+        not(any(test, feature = "validation-probes")),
+        allow(
+            dead_code,
+            reason = "only the validation binding constructs this timeout"
+        )
+    )]
     PbusTimedOut(PhyPbusForceTest),
     TxClockConfigured {
         enabled: bool,
@@ -158,6 +165,13 @@ pub enum PhyPwdetCompletion {
         sample_index: u8,
         ready: bool,
     },
+    #[cfg_attr(
+        not(any(test, feature = "validation-probes")),
+        allow(
+            dead_code,
+            reason = "only the validation binding constructs this timeout"
+        )
+    )]
     SarReadyDeadlineElapsed {
         measurement_index: u8,
         sample_index: u8,

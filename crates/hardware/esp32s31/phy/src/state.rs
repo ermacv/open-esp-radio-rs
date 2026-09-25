@@ -5,6 +5,8 @@
 //! keeps those values in semantic fields instead.  Vendor offsets belong to
 //! qualification code, never to the live radio owner.
 
+#[cfg(test)]
+use crate::calibration::bluetooth::{PhyBluetoothTxDcTransition, PhyBluetoothTxPowerTransition};
 use crate::{
     analog::crystal_duty::XtalDutyCalibrationParameters,
     analog::dcode::{PhyDcodeOutcome, PhyDcodeParameters},
@@ -18,10 +20,10 @@ use crate::{
         PhyRxTableInitParameters,
     },
     calibration::bluetooth::{
-        PhyBluetoothTxDcPwdetTransition, PhyBluetoothTxDcTransition, PhyBluetoothTxGainImage,
-        PhyBluetoothTxGainInitOutcome, PhyBluetoothTxGainInitParameters,
-        PhyBluetoothTxGainInitTransition, PhyBluetoothTxGainParameters, PhyBluetoothTxPowerOutcome,
-        PhyBluetoothTxPowerParameters, PhyBluetoothTxPowerTransition, calculate_bluetooth_tx_gain,
+        PhyBluetoothTxDcPwdetTransition, PhyBluetoothTxGainImage, PhyBluetoothTxGainInitOutcome,
+        PhyBluetoothTxGainInitParameters, PhyBluetoothTxGainInitTransition,
+        PhyBluetoothTxGainParameters, PhyBluetoothTxPowerOutcome, PhyBluetoothTxPowerParameters,
+        calculate_bluetooth_tx_gain,
     },
     channel::{
         PhyChipChannelOutcome, PhyChipChannelParameters, PhyWifiTxGainImage, PhyWifiTxGainRequest,
@@ -623,7 +625,9 @@ impl PhyState {
         self.bluetooth.power_tracking
     }
 
-    pub const fn bluetooth_tx_dc_transition(&self) -> PhyBluetoothTxDcTransition {
+    #[cfg(test)]
+
+    pub(crate) const fn bluetooth_tx_dc_transition(&self) -> PhyBluetoothTxDcTransition {
         PhyBluetoothTxDcTransition::new(
             PhyTxDcParameters {
                 pbus_rx_path_value: self.config.pbus_rx_path,
@@ -650,7 +654,7 @@ impl PhyState {
         self.bluetooth.tx_dco
     }
 
-    pub const fn bluetooth_tx_dc_pwdet_transition(&self) -> PhyBluetoothTxDcPwdetTransition {
+    pub(crate) const fn bluetooth_tx_dc_pwdet_transition(&self) -> PhyBluetoothTxDcPwdetTransition {
         PhyBluetoothTxDcPwdetTransition::new(
             PhyTxDcPwdetParameters {
                 dco: self.bluetooth.tx_dco,
@@ -676,7 +680,9 @@ impl PhyState {
         }
     }
 
-    pub fn bluetooth_tx_power_transition(&self) -> PhyBluetoothTxPowerTransition {
+    #[cfg(test)]
+
+    pub(crate) fn bluetooth_tx_power_transition(&self) -> PhyBluetoothTxPowerTransition {
         PhyBluetoothTxPowerTransition::new(self.bluetooth_tx_power_parameters())
     }
 
@@ -759,7 +765,7 @@ impl PhyState {
         calculate_bluetooth_tx_gain(parameters)
     }
 
-    pub fn bluetooth_tx_gain_init_transition(&self) -> PhyBluetoothTxGainInitTransition {
+    pub(crate) fn bluetooth_tx_gain_init_transition(&self) -> PhyBluetoothTxGainInitTransition {
         PhyBluetoothTxGainInitTransition::new(PhyBluetoothTxGainInitParameters {
             crystal_selector: self.common.crystal_selector,
             capacitance: self.wifi.tx_capacitance,

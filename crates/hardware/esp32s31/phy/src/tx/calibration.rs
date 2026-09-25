@@ -92,6 +92,13 @@ pub enum PhyTxCalibrationEnvironmentAction {
 pub enum PhyTxCalibrationEnvironmentCompletion {
     PbusDebugModeConfigured,
     PbusCompleted(PhyPbusForceTest),
+    #[cfg_attr(
+        not(any(test, feature = "validation-probes")),
+        allow(
+            dead_code,
+            reason = "only the validation binding constructs this timeout"
+        )
+    )]
     PbusTimedOut(PhyPbusForceTest),
     TxClockConfigured {
         enabled: bool,
@@ -1650,14 +1657,17 @@ impl PhyTxCalibrationEnvironmentPbusBinding {
         })
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn action(&self) -> crate::analog::pbus::PhyPbusHardwareAction {
         self.hardware.action()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn started(&mut self) -> Result<(), crate::analog::pbus::PhyPbusHardwareBindingError> {
         self.hardware.started()
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub fn observe_completed(
         &mut self,
         completed: bool,
@@ -1696,6 +1706,7 @@ impl PhyTxCalibrationEnvironmentPbusBinding {
             .map_err(PhyTxCapExternalBindingError::Pbus)
     }
 
+    #[cfg(any(test, feature = "validation-probes"))]
     pub const fn into_timeout_completion(self) -> PhyTxCalibrationEnvironmentCompletion {
         PhyTxCalibrationEnvironmentCompletion::PbusTimedOut(self.transaction)
     }

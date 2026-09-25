@@ -107,7 +107,7 @@ use crate::{
         PhyClientAcquireOutcome, PhyClientSnapshot, PhyClientState, PhyModemClient,
         PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackPoisoned,
     },
-    tracking::parameters::{PhyParamTrackRequest, PhyParamTrackingAction},
+    tracking::parameters::PhyParamTrackRequest,
 };
 
 /// Registered whole-radio owner after IEEE 802.15.4 clock readback.
@@ -326,7 +326,8 @@ pub struct RegisteredIeee802154PendingTracking<P> {
 }
 
 impl<P> RegisteredIeee802154PendingTracking<P> {
-    pub const fn action(&self) -> PhyParamTrackingAction {
+    #[cfg(test)]
+    pub(crate) const fn action(&self) -> crate::tracking::parameters::PhyParamTrackingAction {
         self.pending.action()
     }
 

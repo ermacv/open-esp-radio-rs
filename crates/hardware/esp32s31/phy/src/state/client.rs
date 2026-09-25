@@ -5,7 +5,7 @@
 //! Bluetooth plus IEEE 802.15.4 a shared timestamp. This module reproduces only
 //! those software decisions. It performs no MMIO and does not arm a real
 //! timer. A due request retains the unique owner while the exact outer
-//! [`crate::tracking::parameters::PhyParamTrackingTransition`] is executed.
+//! parameter-tracking transition is executed.
 //! Its recovered TX-power, Wi-Fi PHY-I2C, calibration, RFPLL and temperature
 //! children compose into live-state owners; calibration hardware effects stay
 //! explicit unresolved actions until their target bindings are owned.
@@ -682,7 +682,7 @@ impl PhyPendingTracking {
         }
     }
 
-    pub const fn action(&self) -> PhyParamTrackingAction {
+    pub(crate) const fn action(&self) -> PhyParamTrackingAction {
         self.transition.action()
     }
 

@@ -5,7 +5,7 @@
 
 use super::*;
 use oer_esp32s31_bluetooth_runtime::controller::maintenance::PhyMaintenancePolicy;
-use oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome;
+use oer_esp32s31_phy::tracking::PhyParamTrackingOutcome;
 use {
     oer_esp32s31_bluetooth::{
         resources::platform_retirement::ControllerRuntimePlatform,

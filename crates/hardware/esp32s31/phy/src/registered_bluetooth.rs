@@ -22,7 +22,7 @@ use crate::{
         PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackEvaluation,
         PhyTrackEvaluationFailure, PhyTrackPoisoned, PhyTrackTimeError,
     },
-    tracking::parameters::{PhyParamTrackRequest, PhyParamTrackingAction},
+    tracking::parameters::PhyParamTrackRequest,
 };
 
 /// Target-registered common PHY before the Bluetooth client is acquired.
@@ -619,7 +619,8 @@ pub struct RegisteredBluetoothPhyPendingTracking {
 
 impl RegisteredBluetoothPhyPendingTracking {
     /// Inspect the next semantic target operation.
-    pub const fn action(&self) -> PhyParamTrackingAction {
+    #[cfg(test)]
+    pub(crate) const fn action(&self) -> crate::tracking::parameters::PhyParamTrackingAction {
         self.pending.action()
     }
 

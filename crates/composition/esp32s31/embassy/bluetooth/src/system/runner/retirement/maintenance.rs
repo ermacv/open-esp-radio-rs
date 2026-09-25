@@ -4,7 +4,7 @@ use super::*;
 use oer_esp32s31_bluetooth_controller::controller::{
     ControllerPhyMaintenanceError, ControllerPhyMaintenanceFailure,
 };
-use oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome;
+use oer_esp32s31_phy::tracking::PhyParamTrackingOutcome;
 use oer_esp32s31_radio_esp_hal::{
     EspHalBluetoothInterruptRetirementError, EspHalBluetoothInterruptStorageError,
 };

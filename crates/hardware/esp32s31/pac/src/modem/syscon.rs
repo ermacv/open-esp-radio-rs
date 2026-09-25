@@ -90,8 +90,11 @@ pub struct ModemSysconIeee802154ResetObservation {
     pub apb_reset_released: bool,
 }
 
+/// One logical Bluetooth MODEM_SYSCON clock group.
+///
+/// Each group owns a disjoint set of physical clock gates.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ModemSysconBluetoothClock {
+pub enum ModemSysconBluetoothClock {
     WifiBaseband80x1,
     Etm,
     BluetoothMac,
@@ -100,9 +103,11 @@ enum ModemSysconBluetoothClock {
     BluetoothBaseband,
 }
 
-const BLUETOOTH_CLOCK_COUNT: usize = 6;
+/// Number of logical Bluetooth clock groups.
+pub const BLUETOOTH_CLOCK_COUNT: usize = 6;
 const BLUETOOTH_PHYSICAL_CLOCK_COUNT: usize = 11;
-const BLUETOOTH_CONTROLLER_CLOCKS: [ModemSysconBluetoothClock; 6] = [
+/// Logical groups reported by the controller-clock observation.
+pub const BLUETOOTH_CONTROLLER_CLOCKS: [ModemSysconBluetoothClock; 6] = [
     ModemSysconBluetoothClock::WifiBaseband80x1,
     ModemSysconBluetoothClock::Etm,
     ModemSysconBluetoothClock::BluetoothMac,
@@ -110,7 +115,8 @@ const BLUETOOTH_CONTROLLER_CLOCKS: [ModemSysconBluetoothClock; 6] = [
     ModemSysconBluetoothClock::BluetoothApb,
     ModemSysconBluetoothClock::BluetoothBaseband,
 ];
-const BLUETOOTH_APB_CLOCKS: [ModemSysconBluetoothClock; 3] = [
+/// Logical groups reported by the APB-clock observation.
+pub const BLUETOOTH_APB_CLOCKS: [ModemSysconBluetoothClock; 3] = [
     ModemSysconBluetoothClock::Etm,
     ModemSysconBluetoothClock::BluetoothMac,
     ModemSysconBluetoothClock::BluetoothApb,
@@ -140,11 +146,6 @@ const fn modem_syscon_reset_state(asserted: bool) -> ModemSysconResetState {
     }
 }
 
-pub(crate) struct BluetoothModemSysconClockState {
-    counts: [u8; BLUETOOTH_CLOCK_COUNT],
-    baseline: BluetoothClockBaseline,
-}
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ModemSysconBluetoothObservation {
     pub controller_clocks_enabled: bool,
@@ -156,13 +157,6 @@ pub struct ModemSysconBluetoothObservation {
 pub enum WifiBasebandAgcUpdate {
     Initialization,
     RegisterUpdatesEnabled,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BluetoothClockTransition {
-    Enable,
-    Restore(BluetoothClockBaseline),
-    NoChange,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -180,8 +174,9 @@ enum BluetoothPhysicalClock {
     BluetoothBaseband,
 }
 
+/// Opaque readback of the physical gates of Bluetooth clock groups.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct BluetoothClockBaseline([bool; BLUETOOTH_PHYSICAL_CLOCK_COUNT]);
+pub struct BluetoothClockBaseline([bool; BLUETOOTH_PHYSICAL_CLOCK_COUNT]);
 
 impl Default for BluetoothClockBaseline {
     fn default() -> Self {
@@ -198,7 +193,15 @@ impl BluetoothClockBaseline {
         self.0[clock as usize] = enabled;
     }
 
-    const fn all_enabled(self, clock: ModemSysconBluetoothClock) -> bool {
+    /// A baseline with every physical gate enabled, for validation images.
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub const fn all_enabled_for_validation() -> Self {
+        Self([true; BLUETOOTH_PHYSICAL_CLOCK_COUNT])
+    }
+
+    /// Whether every physical gate of `clock` was enabled.
+    pub const fn all_enabled(self, clock: ModemSysconBluetoothClock) -> bool {
         let clocks = clock.physical_clocks();
         let mut index = 0;
         while index < clocks.len() {
@@ -211,71 +214,9 @@ impl BluetoothClockBaseline {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct UnbalancedBluetoothClockRelease;
-
-impl BluetoothModemSysconClockState {
-    pub(crate) const fn new() -> Self {
-        Self {
-            counts: [0; BLUETOOTH_CLOCK_COUNT],
-            baseline: BluetoothClockBaseline([false; BLUETOOTH_PHYSICAL_CLOCK_COUNT]),
-        }
-    }
-
-    fn retain(
-        &mut self,
-        clock: ModemSysconBluetoothClock,
-        observed_baseline: Option<BluetoothClockBaseline>,
-    ) -> BluetoothClockTransition {
-        let index = clock.index();
-        if self.counts[index] == 0 {
-            let baseline = observed_baseline.expect("first retain requires one MMIO observation");
-            for &physical in clock.physical_clocks() {
-                self.baseline.record(physical, baseline.contains(physical));
-            }
-            self.counts[index] = 1;
-            if baseline.all_enabled(clock) {
-                BluetoothClockTransition::NoChange
-            } else {
-                BluetoothClockTransition::Enable
-            }
-        } else {
-            assert!(observed_baseline.is_none());
-            self.counts[index] = self.counts[index]
-                .checked_add(1)
-                .expect("Bluetooth route MODEM_SYSCON reference count cannot overflow");
-            BluetoothClockTransition::NoChange
-        }
-    }
-
-    fn release(
-        &mut self,
-        clock: ModemSysconBluetoothClock,
-    ) -> Result<BluetoothClockTransition, UnbalancedBluetoothClockRelease> {
-        let index = clock.index();
-        if self.counts[index] == 0 {
-            return Err(UnbalancedBluetoothClockRelease);
-        }
-        self.counts[index] -= 1;
-        if self.counts[index] != 0 {
-            return Ok(BluetoothClockTransition::NoChange);
-        }
-        let mut baseline = BluetoothClockBaseline::default();
-        for &physical in clock.physical_clocks() {
-            baseline.record(physical, self.baseline.contains(physical));
-            self.baseline.record(physical, false);
-        }
-        let transition = if baseline.all_enabled(clock) {
-            BluetoothClockTransition::NoChange
-        } else {
-            BluetoothClockTransition::Restore(baseline)
-        };
-        Ok(transition)
-    }
-}
-
 impl ModemSysconBluetoothClock {
-    const fn index(self) -> usize {
+    /// Position of this group in [`RadioPhyRegisters::bluetooth_clock_baselines`].
+    pub const fn index(self) -> usize {
         match self {
             Self::WifiBaseband80x1 => 0,
             Self::Etm => 1,
@@ -383,68 +324,6 @@ impl RadioPhyRegisters {
         );
     }
 
-    pub(crate) fn retain_bluetooth_controller_clocks(
-        &mut self,
-        state: &mut BluetoothModemSysconClockState,
-    ) {
-        self.retain_bluetooth_clock_set(state, &BLUETOOTH_CONTROLLER_CLOCKS);
-    }
-
-    pub(crate) fn retain_bluetooth_apb_clocks(
-        &mut self,
-        state: &mut BluetoothModemSysconClockState,
-    ) {
-        self.retain_bluetooth_clock_set(state, &BLUETOOTH_APB_CLOCKS);
-    }
-
-    pub(crate) fn release_bluetooth_apb_clocks(
-        &mut self,
-        state: &mut BluetoothModemSysconClockState,
-    ) {
-        self.release_bluetooth_clock_set(state, &BLUETOOTH_APB_CLOCKS);
-    }
-
-    pub(crate) fn release_bluetooth_controller_clocks(
-        &mut self,
-        state: &mut BluetoothModemSysconClockState,
-    ) {
-        self.release_bluetooth_clock_set(state, &BLUETOOTH_CONTROLLER_CLOCKS);
-    }
-
-    fn retain_bluetooth_clock_set(
-        &mut self,
-        state: &mut BluetoothModemSysconClockState,
-        clocks: &[ModemSysconBluetoothClock],
-    ) {
-        self.prepare_modem_syscon_clock_map();
-        let baselines = clocks
-            .iter()
-            .any(|clock| state.counts[clock.index()] == 0)
-            .then(|| self.bluetooth_clock_baselines());
-        for &clock in clocks {
-            let index = clock.index();
-            let baseline = (state.counts[index] == 0)
-                .then(|| baselines.expect("first group retain sampled the clock registers")[index]);
-            if state.retain(clock, baseline) == BluetoothClockTransition::Enable {
-                self.set_bluetooth_clock_enabled(clock, true);
-            }
-        }
-    }
-
-    fn release_bluetooth_clock_set(
-        &mut self,
-        state: &mut BluetoothModemSysconClockState,
-        clocks: &[ModemSysconBluetoothClock],
-    ) {
-        for &clock in clocks {
-            let transition = state
-                .release(clock)
-                .expect("unbalanced Bluetooth MODEM_SYSCON release");
-            if let BluetoothClockTransition::Restore(baseline) = transition {
-                self.restore_bluetooth_clock(clock, baseline);
-            }
-        }
-    }
     #[doc(hidden)]
     pub fn prepare_modem_syscon_clock_map(&mut self) {
         crate::generated::prepare_modem_syscon_clock_map(&self.peripherals.modem_syscon_radio);
@@ -714,7 +593,9 @@ impl RadioPhyRegisters {
         }
     }
 
-    fn bluetooth_clock_baselines(&self) -> [BluetoothClockBaseline; BLUETOOTH_CLOCK_COUNT] {
+    /// Sample every Bluetooth clock group in one readback.
+    #[doc(hidden)]
+    pub fn bluetooth_clock_baselines(&self) -> [BluetoothClockBaseline; BLUETOOTH_CLOCK_COUNT] {
         let (
             etm_enabled,
             modem_security_enabled,
@@ -776,6 +657,12 @@ impl RadioPhyRegisters {
         baselines
     }
 
+    /// Enable every physical gate of one Bluetooth clock group.
+    #[doc(hidden)]
+    pub fn enable_bluetooth_clock(&mut self, device: ModemSysconBluetoothClock) {
+        self.set_bluetooth_clock_enabled(device, true);
+    }
+
     fn set_bluetooth_clock_enabled(&mut self, device: ModemSysconBluetoothClock, enabled: bool) {
         let state = modem_syscon_clock_gate_state(enabled);
         let registers = &self.peripherals.modem_syscon_radio;
@@ -802,7 +689,9 @@ impl RadioPhyRegisters {
         }
     }
 
-    fn restore_bluetooth_clock(
+    /// Restore the physical gates of one group from a captured baseline.
+    #[doc(hidden)]
+    pub fn restore_bluetooth_clock(
         &mut self,
         device: ModemSysconBluetoothClock,
         baseline: BluetoothClockBaseline,
@@ -896,6 +785,3 @@ impl RadioPhyRegisters {
             && !modem_security_reset
     }
 }
-
-#[cfg(test)]
-mod tests;

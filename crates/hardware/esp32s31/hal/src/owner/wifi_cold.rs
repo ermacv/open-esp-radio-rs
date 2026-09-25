@@ -6,9 +6,17 @@ use oer_esp32s31_pac::{
 };
 
 use crate::{
+    clock::WifiClocks,
+    power::RoutePower,
     root::{RadioHardware, RadioPhyReleaseError, RetainedBluetooth, WifiRoute},
     types::{MacInterruptEnableState, MacInterruptMask},
 };
+
+/// Route-scoped Wi-Fi state that travels between the cold and runtime owners.
+pub(crate) struct WifiRouteState {
+    retained: RetainedBluetooth,
+    clocks: WifiClocks,
+}
 
 /// Pre-runtime Wi-Fi route that still controls the cold MAC interrupt fields.
 ///
@@ -19,7 +27,7 @@ use crate::{
 pub(crate) struct WifiColdRegisters {
     registers: WifiRadioRegisters,
     interrupts: PacMacInterruptSetup,
-    retained: RetainedBluetooth,
+    route: WifiRouteState,
 }
 
 impl WifiColdRegisters {
@@ -33,7 +41,10 @@ impl WifiColdRegisters {
         Self {
             registers,
             interrupts,
-            retained,
+            route: WifiRouteState {
+                retained,
+                clocks: WifiClocks::default(),
+            },
         }
     }
 
@@ -41,10 +52,8 @@ impl WifiColdRegisters {
     ///
     /// This operation performs no MMIO. The returned setup token keeps MAC
     /// interrupts masked until its consuming activation transaction.
-    pub(crate) fn into_running(
-        self,
-    ) -> (WifiRadioRegisters, PacMacInterruptSetup, RetainedBluetooth) {
-        (self.registers, self.interrupts, self.retained)
+    pub(crate) fn into_running(self) -> (WifiRadioRegisters, PacMacInterruptSetup, WifiRouteState) {
+        (self.registers, self.interrupts, self.route)
     }
 
     /// Reunite a quiescent runtime register set with its inactive interrupt
@@ -53,12 +62,12 @@ impl WifiColdRegisters {
     pub(crate) fn from_running(
         registers: WifiRadioRegisters,
         interrupts: PacMacInterruptSetup,
-        retained: RetainedBluetooth,
+        route: WifiRouteState,
     ) -> Self {
         Self {
             registers,
             interrupts,
-            retained,
+            route,
         }
     }
 
@@ -79,20 +88,37 @@ impl WifiColdRegisters {
         if let Err(error) = crate::root::check_phy_restore_complete(self.registers.radio_phy()) {
             return Err((self, error));
         }
-        self.registers.release_retained_shared_clocks();
-        if let Err(checkpoint) = self.registers.radio_phy_mut().restore_wifi_power_epoch() {
+        let phy = self.registers.radio_phy_mut();
+        self.route.clocks.shared.release_all(phy);
+        if let Err(checkpoint) = self.route.clocks.power.restore(phy, false) {
             return Err((self, RadioPhyReleaseError::WifiPowerRestore(checkpoint)));
         }
         Ok(RadioHardware::from_wifi(
             self.registers,
             self.interrupts,
-            self.retained,
+            self.route.retained,
         ))
     }
 
     /// Capture the reversible Wi-Fi power baseline before the first mutation.
     pub(crate) fn prepare_wifi_power_epoch(&mut self) {
-        self.registers.radio_phy_mut().prepare_wifi_power_epoch();
+        self.route.clocks.power.prepare(self.registers.radio_phy());
+    }
+
+    /// Borrow the shared PHY and route clock leases for the power sequence.
+    pub(crate) fn power_route(&mut self) -> RoutePower<'_> {
+        RoutePower {
+            phy: self.registers.radio_phy_mut(),
+            leases: &mut self.route.clocks.shared,
+        }
+    }
+
+    /// Retain the coexistence clock once for the Wi-Fi MAC epoch.
+    pub(crate) fn retain_coexistence_clock(&mut self) {
+        self.route
+            .clocks
+            .shared
+            .retain_coexistence(self.registers.radio_phy_mut());
     }
 
     pub(crate) fn radio(&self) -> &WifiRadioRegisters {

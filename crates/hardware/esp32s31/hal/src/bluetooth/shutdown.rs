@@ -10,7 +10,10 @@ use oer_esp32s31_pac::{
 };
 
 use super::ColdOwner;
-use crate::root::{RadioHardware, RadioPhyReleaseError, RetainedWifi};
+use crate::{
+    clock::BluetoothClocks,
+    root::{RadioHardware, RadioPhyReleaseError, RetainedWifi},
+};
 
 /// Final physical Bluetooth release rejection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -25,6 +28,7 @@ enum Retained {
     Before {
         _task: BluetoothTaskRegisters,
         _retained: RetainedWifi,
+        _clocks: BluetoothClocks,
         _output: BluetoothInterruptSetup,
         _timer: BluetoothModemLpTimerInterruptReady,
     },
@@ -100,6 +104,7 @@ impl Control for Hardware<'_> {
 pub(super) fn release_after_phy_close(
     mut task: BluetoothTaskRegisters,
     retained: RetainedWifi,
+    clocks: BluetoothClocks,
     output: BluetoothInterruptSetup,
     mut timer: BluetoothModemLpTimerInterruptReady,
 ) -> Result<RadioHardware, BluetoothPhysicalReleaseFailure> {
@@ -112,6 +117,7 @@ pub(super) fn release_after_phy_close(
             _retained: Retained::Before {
                 _task: task,
                 _retained: retained,
+                _clocks: clocks,
                 _output: output,
                 _timer: timer,
             },
@@ -122,6 +128,7 @@ pub(super) fn release_after_phy_close(
         task,
         interrupts: output,
         retained,
+        clocks,
     };
     cold.release().map_err(|failure| {
         let (owner, error) = failure.into_parts();

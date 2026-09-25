@@ -16,8 +16,9 @@ pub struct PlatformClockPowerObservation {
     pub modem_source_clocks_configured: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct PlatformPllSourceBaseline {
+/// Opaque readback of the upstream PLL-source fields a route may change.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PlatformPllSourceBaseline {
     ref_160m_clock_enabled: bool,
     modem_apb_clock_enabled: bool,
     modem_reset_asserted: bool,
@@ -53,13 +54,14 @@ impl PlatformPllSourceBaseline {
     }
 }
 
-/// Packed semantic baseline retained across the complete async radio epoch.
+/// Packed semantic cold-power baseline captured before the first Wi-Fi or
+/// shared Bluetooth power edge.
 ///
 /// The stored non-zero representation reserves zero for `Option::None` and
 /// keeps 29 independent boolean fields in four bytes. Register geometry does
 /// not enter this value; each bit represents one named decoded field.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct WifiPowerBaseline(NonZeroU32);
+pub struct WifiPowerBaseline(NonZeroU32);
 
 impl WifiPowerBaseline {
     const MODEM_BUS_SHIFT: u32 = 0;
@@ -84,6 +86,17 @@ impl WifiPowerBaseline {
         self.0.get() - 1
     }
 
+    /// Construct one distinguishable baseline inside a validation image.
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub fn for_validation(modem_register_bus_clock_enabled: bool) -> Self {
+        Self::new(
+            modem_register_bus_clock_enabled,
+            PlatformPllSourceBaseline::default(),
+            ModemSysconPowerBaseline::default(),
+        )
+    }
+
     fn modem_register_bus_clock_enabled(self) -> bool {
         self.bits() & (1 << Self::MODEM_BUS_SHIFT) != 0
     }
@@ -97,114 +110,44 @@ impl WifiPowerBaseline {
     }
 }
 
-/// Exact stage whose route-owned cold-power baseline did not read back.
+/// Exact stage whose restored cold-power baseline did not read back.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WifiPowerRestoreCheckpoint {
+pub enum WifiPowerRestoreReadback {
     ModemSyscon,
     ModemSourceClocks,
     ModemRegisterBusClock,
-    PlatformPllLease,
-}
-
-/// Linear proof of one retained upstream PLL-source dependency.
-pub(crate) struct PlatformPllSourceLease {
-    _private: (),
-}
-
-pub(crate) struct PlatformClockPowerState {
-    pll_source_retain_count: u16,
-    pll_source_baseline: Option<PlatformPllSourceBaseline>,
-    wifi_power_baseline: Option<WifiPowerBaseline>,
-}
-
-impl PlatformClockPowerState {
-    pub(crate) const fn new() -> Self {
-        Self {
-            pll_source_retain_count: 0,
-            pll_source_baseline: None,
-            wifi_power_baseline: None,
-        }
-    }
-
-    fn retain(&mut self, baseline: PlatformPllSourceBaseline) -> bool {
-        let first = self.pll_source_retain_count == 0;
-        if first {
-            self.pll_source_baseline = Some(baseline);
-        }
-        self.pll_source_retain_count = self
-            .pll_source_retain_count
-            .checked_add(1)
-            .expect("platform PLL source retain count cannot overflow");
-        first
-    }
-
-    fn release(&mut self) -> Option<PlatformPllSourceBaseline> {
-        assert!(
-            self.pll_source_retain_count != 0,
-            "unbalanced platform PLL source release"
-        );
-        self.pll_source_retain_count -= 1;
-        if self.pll_source_retain_count == 0 {
-            self.pll_source_baseline.take()
-        } else {
-            None
-        }
-    }
-
-    fn capture_wifi_power_baseline(&mut self, baseline: WifiPowerBaseline) {
-        if self.wifi_power_baseline.is_none() {
-            self.wifi_power_baseline = Some(baseline);
-        }
-    }
-
-    fn complete_wifi_power_restore(&mut self) {
-        self.wifi_power_baseline = None;
-    }
 }
 
 impl RadioPhyRegisters {
-    /// Capture the route-owned fields before the first Wi-Fi cold-power edge.
-    ///
-    /// A retry of the same partially executed power-up keeps the original
-    /// baseline instead of sampling its own mutations as a new cold state.
+    /// Capture every non-monotonic field changed by the cold-power path.
     #[doc(hidden)]
-    pub fn prepare_wifi_power_epoch(&mut self) {
-        if self.platform_clock_power.wifi_power_baseline.is_some() {
-            return;
-        }
-        let baseline = WifiPowerBaseline::new(
+    pub fn capture_wifi_power_baseline(&self) -> WifiPowerBaseline {
+        WifiPowerBaseline::new(
             crate::svd::field_read::observe_modem_register_bus_clock(
                 &self.peripherals.hp_sys_clkrst_radio,
             ),
             self.platform_pll_source_baseline(),
             self.modem_syscon_power_baseline(),
-        );
-        self.platform_clock_power
-            .capture_wifi_power_baseline(baseline);
+        )
     }
 
-    /// Restore every non-monotonic field changed by the Wi-Fi cold-power path.
+    /// Restore one captured cold-power baseline and verify each stage.
     ///
-    /// Shared MODEM_LPCON leases must be released before this operation. ICG
-    /// state maps are monotonic global initialization and deliberately remain
-    /// installed, matching the vendor modem-clock manager.
+    /// ICG state maps are monotonic global initialization and deliberately
+    /// remain installed, matching the vendor modem-clock manager.
     #[doc(hidden)]
-    pub fn restore_wifi_power_epoch(&mut self) -> Result<(), WifiPowerRestoreCheckpoint> {
-        let Some(baseline) = self.platform_clock_power.wifi_power_baseline else {
-            return Ok(());
-        };
-        if self.platform_clock_power.pll_source_retain_count != 0 {
-            return Err(WifiPowerRestoreCheckpoint::PlatformPllLease);
-        }
-
+    pub fn restore_wifi_power_baseline(
+        &mut self,
+        baseline: WifiPowerBaseline,
+    ) -> Result<(), WifiPowerRestoreReadback> {
         self.restore_modem_syscon_power_baseline(baseline.modem_syscon());
         if self.modem_syscon_power_baseline() != baseline.modem_syscon() {
-            return Err(WifiPowerRestoreCheckpoint::ModemSyscon);
+            return Err(WifiPowerRestoreReadback::ModemSyscon);
         }
 
         self.restore_platform_pll_source_baseline(baseline.pll_source());
         if self.platform_pll_source_baseline() != baseline.pll_source() {
-            return Err(WifiPowerRestoreCheckpoint::ModemSourceClocks);
+            return Err(WifiPowerRestoreReadback::ModemSourceClocks);
         }
 
         crate::generated::restore_modem_register_bus_clock(
@@ -219,10 +162,8 @@ impl RadioPhyRegisters {
             &self.peripherals.hp_sys_clkrst_radio,
         ) != baseline.modem_register_bus_clock_enabled()
         {
-            return Err(WifiPowerRestoreCheckpoint::ModemRegisterBusClock);
+            return Err(WifiPowerRestoreReadback::ModemRegisterBusClock);
         }
-
-        self.platform_clock_power.complete_wifi_power_restore();
         Ok(())
     }
 
@@ -287,7 +228,9 @@ impl RadioPhyRegisters {
         }
     }
 
-    fn platform_pll_source_baseline(&self) -> PlatformPllSourceBaseline {
+    /// Capture the upstream PLL-source fields a route may change.
+    #[doc(hidden)]
+    pub fn platform_pll_source_baseline(&self) -> PlatformPllSourceBaseline {
         let ref_160m_clock_enabled = crate::svd::field_read::observe_modem_reference_160m_clock(
             &self.peripherals.hp_sys_clkrst_radio,
         );
@@ -312,22 +255,9 @@ impl RadioPhyRegisters {
         }
     }
 
-    pub(crate) fn retain_platform_pll_source(&mut self) -> PlatformPllSourceLease {
-        let baseline = self.platform_pll_source_baseline();
-        if self.platform_clock_power.retain(baseline) {
-            self.configure_modem_source_clocks();
-        }
-        PlatformPllSourceLease { _private: () }
-    }
-
-    pub(crate) fn release_platform_pll_source(&mut self, _lease: PlatformPllSourceLease) {
-        let Some(baseline) = self.platform_clock_power.release() else {
-            return;
-        };
-        self.restore_platform_pll_source_baseline(baseline);
-    }
-
-    fn restore_platform_pll_source_baseline(&mut self, baseline: PlatformPllSourceBaseline) {
+    /// Restore one captured upstream PLL-source baseline.
+    #[doc(hidden)]
+    pub fn restore_platform_pll_source_baseline(&mut self, baseline: PlatformPllSourceBaseline) {
         if baseline.ref_160m_clock_enabled {
             crate::generated::enable_modem_reference_160m_clock(
                 &self.peripherals.hp_sys_clkrst_radio,

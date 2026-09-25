@@ -2,7 +2,8 @@
 
 use super::*;
 
-pub(crate) const BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER: ModemLowPowerClockDivider =
+/// Reviewed Bluetooth low-power timer divider for the main crystal source.
+pub const BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER: ModemLowPowerClockDivider =
     match ModemLowPowerClockDivider::new(399) {
         Some(divider) => divider,
         None => panic!("reviewed Bluetooth low-power divider exceeds its PAC field"),
@@ -46,8 +47,6 @@ pub(crate) struct Ieee802154BtbbPeripheralOwners {
 #[must_use = "the shared PHY owner must remain inside its active radio route"]
 pub struct RadioPhyRegisters {
     pub(crate) peripherals: svd::peripheral_ownership::RadioPhyPeripherals,
-    pub(crate) shared_clock: crate::modem::shared_clock::SharedModemClockState,
-    pub(crate) platform_clock_power: crate::modem::platform::PlatformClockPowerState,
     pub(crate) restore_slot: baseband::RadioPhyRestoreSlot,
     pub(crate) registration: RegistrationEpochState,
 }
@@ -192,8 +191,6 @@ impl RadioPartitions {
             wifi_interrupts: MacInterruptSetup::from_peripherals(wifi_interrupts),
             radio_phy: RadioPhyRegisters {
                 peripherals: radio_phy,
-                shared_clock: crate::modem::shared_clock::SharedModemClockState::new(),
-                platform_clock_power: crate::modem::platform::PlatformClockPowerState::new(),
                 restore_slot: baseband::RadioPhyRestoreSlot::new(),
                 registration: RegistrationEpochState::new(),
             },
@@ -517,8 +514,6 @@ pub(crate) fn device_fence() {
 /// ```
 pub struct WifiRadioRegisters {
     pub(crate) peripherals: WifiRadioPeripheralOwners,
-    pub(crate) phy_i2c_clock: Option<SharedModemClockLease>,
-    pub(crate) coexistence_clock: Option<SharedModemClockLease>,
     pub(crate) station_tbtt_wake_prepared: bool,
     pub(crate) station_modem_wakeup: crate::wifi::mac::modem_wakeup::StaModemWakeOwnership,
 }
@@ -550,25 +545,13 @@ impl WifiRadioRegisters {
                 coexistence,
                 shared_radio,
             },
-            phy_i2c_clock: None,
-            coexistence_clock: None,
             station_tbtt_wake_prepared: false,
             station_modem_wakeup: crate::wifi::mac::modem_wakeup::StaModemWakeOwnership::new(),
         }
     }
 
-    /// Return the partitions after the shared-clock leases were released.
-    ///
-    /// This performs no MMIO.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a shared-clock lease is still retained.
+    /// Return the partitions. This performs no MMIO.
     pub fn into_parts(self) -> WifiRadioParts {
-        assert!(
-            self.phy_i2c_clock.is_none() && self.coexistence_clock.is_none(),
-            "Wi-Fi shared-clock leases must be released before disassembly"
-        );
         let WifiRadioPeripheralOwners {
             wifi_mac,
             ieee802154,
@@ -591,28 +574,6 @@ impl WifiRadioRegisters {
         self.peripherals.radio_phy.prepare_shared_modem_clock_map();
     }
 
-    /// Retain the PHY-I2C gate at its exact late power-sequence edge.
-    pub fn retain_phy_i2c_master_clock(&mut self) {
-        if self.phy_i2c_clock.is_none() {
-            self.phy_i2c_clock = Some(
-                self.peripherals
-                    .radio_phy
-                    .retain_shared_modem_clock(SharedModemClock::PhyI2cMaster),
-            );
-        }
-    }
-
-    /// Retain the coexistence clock once for the Wi-Fi MAC epoch.
-    pub fn retain_coexistence_clock(&mut self) {
-        if self.coexistence_clock.is_none() {
-            self.coexistence_clock = Some(
-                self.peripherals
-                    .radio_phy
-                    .retain_shared_modem_clock(SharedModemClock::Coexistence),
-            );
-        }
-    }
-
     /// Read the route-owned shared clock checkpoint.
     pub fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
         self.peripherals.radio_phy.shared_modem_clock_observation()
@@ -626,17 +587,6 @@ impl WifiRadioRegisters {
         self.peripherals
             .radio_phy
             .sample_coexistence_low_power_clock()
-    }
-
-    /// Release the coexistence and PHY-I2C shared-clock leases.
-    #[doc(hidden)]
-    pub fn release_retained_shared_clocks(&mut self) {
-        if let Some(lease) = self.coexistence_clock.take() {
-            self.peripherals.radio_phy.release_shared_modem_clock(lease);
-        }
-        if let Some(lease) = self.phy_i2c_clock.take() {
-            self.peripherals.radio_phy.release_shared_modem_clock(lease);
-        }
     }
 
     /// Borrow the shared PHY component without exposing another owner.
@@ -674,8 +624,6 @@ impl WifiRadioRegisters {
 #[must_use = "the IEEE 802.15.4 radio owner must be released as one epoch"]
 pub struct Ieee802154TaskRegisters {
     pub(crate) peripherals: Ieee802154TaskPeripheralOwners,
-    pub(crate) phy_i2c_clock: Option<SharedModemClockLease>,
-    pub(crate) coexistence_clock: Option<SharedModemClockLease>,
 }
 
 /// Partitions consumed by one IEEE 802.15.4 task register set.
@@ -715,8 +663,6 @@ impl Ieee802154TaskRegisters {
                         shared_radio,
                     },
                 },
-                phy_i2c_clock: None,
-                coexistence_clock: None,
             },
             Ieee802154InterruptSetup {
                 registers: interrupt_mac,
@@ -724,10 +670,9 @@ impl Ieee802154TaskRegisters {
         )
     }
 
-    /// Release the retained shared-clock leases, reunite the MAC block with
-    /// its inactive interrupt owner and return the partitions.
-    pub fn into_parts(mut self, interrupts: Ieee802154InterruptSetup) -> Ieee802154TaskParts {
-        self.release_retained_shared_clocks();
+    /// Reunite the MAC block with its inactive interrupt owner and return the
+    /// partitions. This performs no MMIO.
+    pub fn into_parts(self, interrupts: Ieee802154InterruptSetup) -> Ieee802154TaskParts {
         let Ieee802154TaskPeripheralOwners {
             ieee802154_mac: task_mac,
             ieee802154_interrupt_route,
@@ -755,27 +700,6 @@ impl Ieee802154TaskRegisters {
     pub fn prepare_shared_modem_clock_map(&mut self) {
         self.peripherals.radio_phy.prepare_shared_modem_clock_map();
     }
-
-    pub fn retain_phy_i2c_master_clock(&mut self) {
-        if self.phy_i2c_clock.is_none() {
-            let lease = self
-                .peripherals
-                .radio_phy
-                .retain_shared_modem_clock(SharedModemClock::PhyI2cMaster);
-            self.phy_i2c_clock = Some(lease);
-        }
-    }
-
-    pub fn retain_coexistence_clock(&mut self) {
-        if self.coexistence_clock.is_none() {
-            let lease = self
-                .peripherals
-                .radio_phy
-                .retain_shared_modem_clock(SharedModemClock::Coexistence);
-            self.coexistence_clock = Some(lease);
-        }
-    }
-
     pub fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
         self.peripherals.radio_phy.shared_modem_clock_observation()
     }
@@ -905,16 +829,6 @@ impl Ieee802154TaskRegisters {
     ) -> ModemSysconIeee802154ResetObservation {
         self.peripherals.radio_phy.ieee802154_reset_observation()
     }
-
-    pub(crate) fn release_retained_shared_clocks(&mut self) {
-        if let Some(lease) = self.coexistence_clock.take() {
-            self.peripherals.radio_phy.release_shared_modem_clock(lease);
-        }
-        if let Some(lease) = self.phy_i2c_clock.take() {
-            self.peripherals.radio_phy.release_shared_modem_clock(lease);
-        }
-    }
-
     /// Borrow the protocol-neutral PHY partition without creating another
     /// owner.
     #[doc(hidden)]
@@ -968,13 +882,6 @@ pub struct BluetoothTaskRegisters {
     pub(crate) radio_phy: RadioPhyRegisters,
     pub(crate) coexistence: svd::peripheral_ownership::CoexistencePeripherals,
     pub(crate) shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
-    pub(crate) coexistence_clock: Option<SharedModemClockLease>,
-    pub(crate) phy_i2c_clock: Option<SharedModemClockLease>,
-    pub(crate) low_power_timer_clock: Option<BluetoothLowPowerTimerLease>,
-    pub(crate) platform_pll_source: Option<crate::modem::platform::PlatformPllSourceLease>,
-    pub(crate) modem_syscon_clocks: BluetoothModemSysconClockState,
-    pub(crate) modem_syscon_controller_clocks_retained: bool,
-    pub(crate) modem_syscon_apb_clocks_retained: bool,
     pub(crate) controller_time_latch:
         crate::bluetooth::controller::time::BluetoothControllerTimeLatchOwnership,
 }
@@ -1004,28 +911,18 @@ impl BluetoothTaskRegisters {
             radio_phy,
             coexistence,
             shared_radio,
-            coexistence_clock: None,
-            low_power_timer_clock: None,
-            platform_pll_source: None,
-            modem_syscon_clocks: BluetoothModemSysconClockState::new(),
-            phy_i2c_clock: None,
-            modem_syscon_controller_clocks_retained: false,
-            modem_syscon_apb_clocks_retained: false,
             controller_time_latch:
                 crate::bluetooth::controller::time::BluetoothControllerTimeLatchOwnership::new(),
         }
     }
 
-    /// Release every retained clock and return the partitions.
-    ///
-    /// This performs no MMIO beyond the clock releases.
+    /// Return the partitions. This performs no MMIO.
     ///
     /// # Panics
     ///
     /// Panics while the modem LP-timer partition is separated; check
     /// [`Self::modem_lp_timer_separated`] first.
     pub fn into_parts(mut self) -> BluetoothTaskParts {
-        self.release_retained_clocks();
         let modem_lp_timer = self
             .modem_lp_timer
             .take()
@@ -1052,17 +949,6 @@ impl BluetoothTaskRegisters {
             "the Bluetooth task already owns its modem LP-timer partition"
         );
         self.modem_lp_timer = Some(timer);
-    }
-
-    /// Retain the common PHY I2C source for the complete powered epoch.
-    #[doc(hidden)]
-    pub fn retain_phy_i2c_master_clock(&mut self) {
-        if self.phy_i2c_clock.is_none() {
-            self.phy_i2c_clock = Some(
-                self.radio_phy
-                    .retain_shared_modem_clock(SharedModemClock::PhyI2cMaster),
-            );
-        }
     }
 
     #[doc(hidden)]
@@ -1131,92 +1017,8 @@ impl BluetoothTaskRegisters {
     }
 
     #[doc(hidden)]
-    pub fn retain_platform_pll_source(&mut self) {
-        if self.platform_pll_source.is_none() {
-            self.platform_pll_source = Some(self.radio_phy.retain_platform_pll_source());
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn release_platform_pll_source(&mut self) {
-        if let Some(lease) = self.platform_pll_source.take() {
-            self.radio_phy.release_platform_pll_source(lease);
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn retain_modem_syscon_bluetooth_controller_clocks(&mut self) {
-        if !self.modem_syscon_controller_clocks_retained {
-            self.radio_phy
-                .retain_bluetooth_controller_clocks(&mut self.modem_syscon_clocks);
-            self.modem_syscon_controller_clocks_retained = true;
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn retain_modem_syscon_bluetooth_apb_clocks(&mut self) {
-        if !self.modem_syscon_apb_clocks_retained {
-            self.radio_phy
-                .retain_bluetooth_apb_clocks(&mut self.modem_syscon_clocks);
-            self.modem_syscon_apb_clocks_retained = true;
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn release_modem_syscon_bluetooth_apb_clocks(&mut self) {
-        if self.modem_syscon_apb_clocks_retained {
-            self.radio_phy
-                .release_bluetooth_apb_clocks(&mut self.modem_syscon_clocks);
-            self.modem_syscon_apb_clocks_retained = false;
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn release_modem_syscon_bluetooth_controller_clocks(&mut self) {
-        if self.modem_syscon_controller_clocks_retained {
-            self.radio_phy
-                .release_bluetooth_controller_clocks(&mut self.modem_syscon_clocks);
-            self.modem_syscon_controller_clocks_retained = false;
-        }
-    }
-
-    #[doc(hidden)]
     pub fn prepare_shared_modem_clock_map(&mut self) {
         self.radio_phy.prepare_shared_modem_clock_map();
-    }
-
-    #[doc(hidden)]
-    pub fn retain_coexistence_clock(&mut self) {
-        if self.coexistence_clock.is_none() {
-            self.coexistence_clock = Some(
-                self.radio_phy
-                    .retain_shared_modem_clock(SharedModemClock::Coexistence),
-            );
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn release_coexistence_clock(&mut self) {
-        if let Some(lease) = self.coexistence_clock.take() {
-            self.radio_phy.release_shared_modem_clock(lease);
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn retain_main_xtal_bluetooth_low_power_clock(&mut self) {
-        if self.low_power_timer_clock.is_none() {
-            self.low_power_timer_clock = Some(self.radio_phy.retain_bluetooth_low_power_timer(
-                ModemLowPowerClockSource::Crystal,
-                BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER,
-            ));
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn release_bluetooth_low_power_timer(&mut self) {
-        if let Some(lease) = self.low_power_timer_clock.take() {
-            self.radio_phy.release_bluetooth_low_power_timer(lease);
-        }
     }
 
     #[doc(hidden)]
@@ -1230,19 +1032,6 @@ impl BluetoothTaskRegisters {
             self.radio_phy.shared_modem_clock_observation(),
             self.radio_phy.bluetooth_low_power_clock_observation(),
         )
-    }
-
-    /// Release every clock and lease retained by this register set.
-    #[doc(hidden)]
-    pub fn release_retained_clocks(&mut self) {
-        if let Some(lease) = self.phy_i2c_clock.take() {
-            self.radio_phy.release_shared_modem_clock(lease);
-        }
-        self.release_bluetooth_low_power_timer();
-        self.release_coexistence_clock();
-        self.release_modem_syscon_bluetooth_apb_clocks();
-        self.release_modem_syscon_bluetooth_controller_clocks();
-        self.release_platform_pll_source();
     }
 
     /// Reset the Bluetooth controller domains and fence the reset edge.

@@ -10,8 +10,7 @@ use oer_esp32s31_pac::{
     BluetoothControllerPartition, BluetoothInterruptSetup, BluetoothModemLpTimerRegisters,
     BluetoothTaskParts, BluetoothTaskRegisters, Ieee802154InterruptSetup, Ieee802154Partition,
     Ieee802154TaskParts, Ieee802154TaskRegisters, MacInterruptSetup, RadioPartitions,
-    RadioPhyRegisters, WifiMacPartition, WifiPowerRestoreCheckpoint, WifiRadioParts,
-    WifiRadioRegisters,
+    RadioPhyRegisters, WifiMacPartition, WifiRadioParts, WifiRadioRegisters,
 };
 
 /// Unique protocol-neutral owner of every reviewed ESP32-S31 radio region.
@@ -274,6 +273,19 @@ pub enum RadioPhyReleaseError {
     BluetoothTxPowerControlRestorePending,
     /// A route-owned cold-power field did not return to its captured baseline.
     WifiPowerRestore(WifiPowerRestoreCheckpoint),
+}
+
+/// Exact stage whose route-owned cold-power baseline could not be restored.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiPowerRestoreCheckpoint {
+    /// Modem syscon clocks and resets did not read back.
+    ModemSyscon,
+    /// The upstream PLL-source fields did not read back.
+    ModemSourceClocks,
+    /// The modem register bus clock did not read back.
+    ModemRegisterBusClock,
+    /// The route still retains its platform PLL-source lease.
+    PlatformPllLease,
 }
 
 /// Reject release while a PHY calibration still owns a restore obligation.

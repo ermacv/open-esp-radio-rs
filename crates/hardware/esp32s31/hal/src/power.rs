@@ -6,8 +6,11 @@
 //! start transition.
 
 use oer_esp32s31_pac::{
-    ModemSysconPowerObservation, PlatformClockPowerObservation, SharedModemClockObservation,
+    ModemSysconPowerObservation, PlatformClockPowerObservation, RadioPhyRegisters,
+    SharedModemClockObservation,
 };
+
+use crate::clock::SharedClockLeases;
 
 pub(crate) trait PowerSequenceBackend {
     fn select_hp_active_modem_icg(&mut self);
@@ -27,179 +30,57 @@ pub(crate) trait PowerSequenceBackend {
     fn shared_modem_clock_observation(&self) -> oer_esp32s31_pac::SharedModemClockObservation;
 }
 
-impl PowerSequenceBackend for crate::owner::WifiColdRegisters {
-    fn select_hp_active_modem_icg(&mut self) {
-        self.radio_mut()
-            .radio_phy_mut()
-            .select_hp_active_modem_icg();
-    }
-    fn apply_modem_icg_selection(&mut self) {
-        self.radio_mut().radio_phy_mut().apply_modem_icg_selection();
-    }
-    fn apply_sleep_icg_selection(&mut self) {
-        self.radio_mut().radio_phy_mut().apply_sleep_icg_selection();
-    }
-    fn enable_modem_register_bus_clock(&mut self) {
-        self.radio_mut()
-            .radio_phy_mut()
-            .enable_modem_register_bus_clock();
-    }
-    fn configure_modem_source_clocks(&mut self) {
-        crate::owner::WifiColdRegisters::configure_modem_source_clocks(self);
-    }
-    fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
-        self.radio().radio_phy().platform_clock_power_observation()
-    }
-    fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
-        self.radio_mut()
-            .radio_phy_mut()
-            .set_wifi_baseband_and_mac_reset(asserted);
-    }
-    fn set_wifi_baseband_reset(&mut self, asserted: bool) {
-        self.radio_mut()
-            .radio_phy_mut()
-            .set_wifi_baseband_reset(asserted);
-    }
-    fn configure_wifi_power_clock_map(&mut self) {
-        self.radio_mut()
-            .radio_phy_mut()
-            .configure_wifi_power_clock_map();
-    }
-    fn enable_phy_calibration_clocks(&mut self) {
-        self.radio_mut()
-            .radio_phy_mut()
-            .enable_phy_calibration_clocks();
-    }
-    fn select_phy_i2c_160mhz_source(&mut self) {
-        self.radio_mut()
-            .radio_phy_mut()
-            .select_phy_i2c_160mhz_source();
-    }
-    fn modem_syscon_power_observation(&self) -> ModemSysconPowerObservation {
-        self.radio().radio_phy().modem_syscon_power_observation()
-    }
-    fn prepare_shared_modem_clock_map(&mut self) {
-        self.radio_mut().prepare_shared_modem_clock_map();
-    }
-
-    fn retain_phy_i2c_master_clock(&mut self) {
-        self.radio_mut().retain_phy_i2c_master_clock();
-    }
-
-    fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
-        self.radio().shared_modem_clock_observation()
-    }
+/// Power-sequence port over one route's shared PHY and its clock leases.
+pub(crate) struct RoutePower<'route> {
+    pub(crate) phy: &'route mut RadioPhyRegisters,
+    pub(crate) leases: &'route mut SharedClockLeases,
 }
 
-impl PowerSequenceBackend for oer_esp32s31_pac::Ieee802154TaskRegisters {
+impl PowerSequenceBackend for RoutePower<'_> {
     fn select_hp_active_modem_icg(&mut self) {
-        self.select_hp_active_modem_icg();
+        self.phy.select_hp_active_modem_icg();
     }
     fn apply_modem_icg_selection(&mut self) {
-        self.apply_modem_icg_selection();
+        self.phy.apply_modem_icg_selection();
     }
     fn apply_sleep_icg_selection(&mut self) {
-        self.apply_sleep_icg_selection();
+        self.phy.apply_sleep_icg_selection();
     }
     fn enable_modem_register_bus_clock(&mut self) {
-        self.enable_modem_register_bus_clock();
+        self.phy.enable_modem_register_bus_clock();
     }
     fn configure_modem_source_clocks(&mut self) {
-        self.configure_modem_source_clocks();
+        self.phy.configure_modem_source_clocks();
     }
-    fn platform_clock_power_observation(&self) -> oer_esp32s31_pac::PlatformClockPowerObservation {
-        self.platform_clock_power_observation()
-    }
-    fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
-        self.set_wifi_baseband_and_mac_reset(asserted);
-    }
-    fn set_wifi_baseband_reset(&mut self, asserted: bool) {
-        self.set_wifi_baseband_reset(asserted);
-    }
-    fn configure_wifi_power_clock_map(&mut self) {
-        self.configure_wifi_power_clock_map();
-    }
-    fn enable_phy_calibration_clocks(&mut self) {
-        self.enable_phy_calibration_clocks();
-    }
-    fn select_phy_i2c_160mhz_source(&mut self) {
-        self.select_phy_i2c_160mhz_source();
-    }
-    fn modem_syscon_power_observation(&self) -> oer_esp32s31_pac::ModemSysconPowerObservation {
-        self.modem_syscon_power_observation()
-    }
-    fn prepare_shared_modem_clock_map(&mut self) {
-        self.prepare_shared_modem_clock_map();
-    }
-
-    fn retain_phy_i2c_master_clock(&mut self) {
-        self.retain_phy_i2c_master_clock();
-    }
-
-    fn shared_modem_clock_observation(&self) -> oer_esp32s31_pac::SharedModemClockObservation {
-        self.shared_modem_clock_observation()
-    }
-}
-
-impl PowerSequenceBackend for oer_esp32s31_pac::BluetoothTaskRegisters {
-    fn select_hp_active_modem_icg(&mut self) {
-        self.select_hp_active_modem_icg();
-    }
-
-    fn apply_modem_icg_selection(&mut self) {
-        self.apply_modem_icg_selection();
-    }
-
-    fn apply_sleep_icg_selection(&mut self) {
-        self.apply_sleep_icg_selection();
-    }
-
-    fn enable_modem_register_bus_clock(&mut self) {
-        self.enable_modem_register_bus_clock();
-    }
-
-    fn configure_modem_source_clocks(&mut self) {
-        self.configure_modem_source_clocks();
-    }
-
-    fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
-        self.set_wifi_baseband_and_mac_reset(asserted);
-    }
-
-    fn set_wifi_baseband_reset(&mut self, asserted: bool) {
-        self.set_wifi_baseband_reset(asserted);
-    }
-
-    fn configure_wifi_power_clock_map(&mut self) {
-        self.configure_wifi_power_clock_map();
-    }
-
-    fn enable_phy_calibration_clocks(&mut self) {
-        self.enable_phy_calibration_clocks();
-    }
-
-    fn select_phy_i2c_160mhz_source(&mut self) {
-        self.select_phy_i2c_160mhz_source();
-    }
-
     fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
-        self.platform_clock_power_observation()
+        self.phy.platform_clock_power_observation()
     }
-
+    fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
+        self.phy.set_wifi_baseband_and_mac_reset(asserted);
+    }
+    fn set_wifi_baseband_reset(&mut self, asserted: bool) {
+        self.phy.set_wifi_baseband_reset(asserted);
+    }
+    fn configure_wifi_power_clock_map(&mut self) {
+        self.phy.configure_wifi_power_clock_map();
+    }
+    fn enable_phy_calibration_clocks(&mut self) {
+        self.phy.enable_phy_calibration_clocks();
+    }
+    fn select_phy_i2c_160mhz_source(&mut self) {
+        self.phy.select_phy_i2c_160mhz_source();
+    }
     fn modem_syscon_power_observation(&self) -> ModemSysconPowerObservation {
-        self.modem_syscon_power_observation()
+        self.phy.modem_syscon_power_observation()
     }
-
-    fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
-        self.shared_modem_clock_observation()
-    }
-
     fn prepare_shared_modem_clock_map(&mut self) {
-        self.prepare_shared_modem_clock_map();
+        self.phy.prepare_shared_modem_clock_map();
     }
-
     fn retain_phy_i2c_master_clock(&mut self) {
-        self.retain_phy_i2c_master_clock();
+        self.leases.retain_phy_i2c(self.phy);
+    }
+    fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
+        self.phy.shared_modem_clock_observation()
     }
 }
 

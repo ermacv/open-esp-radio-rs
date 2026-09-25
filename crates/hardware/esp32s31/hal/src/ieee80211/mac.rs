@@ -28,11 +28,7 @@ use crate::types::{
 
 use oer_memory::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
 
-use oer_esp32s31_pac::{
-    CoexistenceLowPowerClockObservation, StaModemWakeConfig, StaModemWakePrepareError,
-    StaModemWakeRestore, StaModemWakeRestoreFailure, StaTbttWakePrepareError, StaTbttWakeRestore,
-    StaTbttWakeRestoreFailure, WifiRadioRegisters,
-};
+use oer_esp32s31_pac::{CoexistenceLowPowerClockObservation, WifiRadioRegisters};
 
 use crate::owner::WifiColdRegisters;
 
@@ -764,48 +760,6 @@ impl<'registers> WifiMacHal<'registers> {
 
     pub fn station_tsf(&mut self) -> u64 {
         self.pac_mut().station_tsf()
-    }
-
-    /// Apply only the reviewed raw modem-wakeup field transaction and retain
-    /// its exact rollback obligation. This does not derive counter units or
-    /// authorize RF/PHY sleep.
-    pub fn configure_station_modem_wakeup(
-        &mut self,
-        config: StaModemWakeConfig,
-    ) -> Result<StaModemWakeRestore, StaModemWakePrepareError> {
-        self.pac_mut().configure_station_modem_wakeup(config)
-    }
-
-    /// Consume the exact field rollback returned by
-    /// [`Self::configure_station_modem_wakeup`].
-    pub fn restore_station_modem_wakeup(
-        &mut self,
-        restore: StaModemWakeRestore,
-    ) -> Result<(), StaModemWakeRestoreFailure> {
-        self.pac_mut().restore_station_modem_wakeup(restore)
-    }
-
-    /// Value-only quarantine diagnostic for a missing rollback token.
-    pub fn station_modem_wakeup_restore_pending(&self) -> bool {
-        self.pac().station_modem_wakeup_restore_pending()
-    }
-
-    /// Program only the reviewed station-TBTT wake prefix. The returned token
-    /// owns rollback; this operation does not claim RF/PHY sleep entry.
-    pub fn prepare_station_tbtt_wake(
-        &mut self,
-        wake_tsf: u64,
-    ) -> Result<StaTbttWakeRestore, StaTbttWakePrepareError> {
-        self.pac_mut().prepare_station_tbtt_wake(wake_tsf)
-    }
-
-    /// Consume the exact rollback obligation created by
-    /// [`Self::prepare_station_tbtt_wake`].
-    pub fn restore_station_tbtt_wake(
-        &mut self,
-        restore: StaTbttWakeRestore,
-    ) -> Result<(), StaTbttWakeRestoreFailure> {
-        self.pac_mut().restore_station_tbtt_wake(restore)
     }
 
     pub fn program_rx_block_ack_entry(

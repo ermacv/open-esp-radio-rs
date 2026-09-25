@@ -645,6 +645,22 @@ impl RadioRuntimeOwner {
     pub(crate) fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
         (self.registers.radio_phy_mut(), self.route.phy_restore_mut())
     }
+
+    /// Borrow the Wi-Fi register set together with the station wake state.
+    pub(crate) fn station_wake_parts_mut(
+        &mut self,
+    ) -> (
+        &mut WifiRadioRegisters,
+        &mut crate::ieee80211::station_wake::StationWakeState,
+    ) {
+        (&mut self.registers, self.route.station_wake_mut())
+    }
+
+    /// Borrow the station TBTT and modem-wakeup capability.
+    pub fn station_wake_hal(&mut self) -> crate::ieee80211::station_wake::StationWakeHal<'_> {
+        let (registers, state) = self.station_wake_parts_mut();
+        crate::ieee80211::station_wake::StationWakeHal::from_owned(registers, state)
+    }
 }
 
 /// Task-side setup authority for one finite MAC interrupt epoch.

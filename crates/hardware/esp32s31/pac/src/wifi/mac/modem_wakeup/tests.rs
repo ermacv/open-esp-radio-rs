@@ -195,29 +195,3 @@ fn configure_restore_is_field_exact_and_gate_ordered() {
     model.operations.clear();
     assert_eq!(model, initial);
 }
-
-#[test]
-fn forgotten_restore_token_permanently_poisons_the_owner() {
-    let mut ownership = StaModemWakeOwnership::new();
-    ownership.acquire().unwrap();
-    let restore = StaModemWakeRestore {
-        previous: StaModemWakeSnapshot {
-            beacon_miss_timeout: 0,
-            beacon_miss_limit: 0,
-            beacon_miss_limit_wakeup_enabled: false,
-            modem_sleep_limit: 0,
-            modem_sleep_limit_wakeup_enabled: false,
-            wakeup_protect_enabled: false,
-            wakeup_protect_early_time: 0,
-            tbtt_auto_period: 0,
-            tbtt_auto_period_enabled: false,
-        },
-    };
-    drop(restore);
-
-    assert!(ownership.configured());
-    assert_eq!(
-        ownership.acquire(),
-        Err(StaModemWakePrepareError::AlreadyConfigured)
-    );
-}

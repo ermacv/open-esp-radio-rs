@@ -512,8 +512,6 @@ pub(crate) fn device_fence() {
 /// ```
 pub struct WifiRadioRegisters {
     pub(crate) peripherals: WifiRadioPeripheralOwners,
-    pub(crate) station_tbtt_wake_prepared: bool,
-    pub(crate) station_modem_wakeup: crate::wifi::mac::modem_wakeup::StaModemWakeOwnership,
 }
 
 /// Partitions consumed by one Wi-Fi register set.
@@ -543,8 +541,6 @@ impl WifiRadioRegisters {
                 coexistence,
                 shared_radio,
             },
-            station_tbtt_wake_prepared: false,
-            station_modem_wakeup: crate::wifi::mac::modem_wakeup::StaModemWakeOwnership::new(),
         }
     }
 

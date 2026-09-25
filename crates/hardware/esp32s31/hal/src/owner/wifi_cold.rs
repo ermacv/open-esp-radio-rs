@@ -7,6 +7,7 @@ use oer_esp32s31_pac::{
 
 use crate::{
     clock::WifiClocks,
+    ieee80211::station_wake::StationWakeState,
     phy::restore::PhyRestoreSlot,
     power::RoutePower,
     root::{RadioHardware, RadioPhyReleaseError, RetainedBluetooth, WifiRoute},
@@ -18,11 +19,16 @@ pub(crate) struct WifiRouteState {
     retained: RetainedBluetooth,
     clocks: WifiClocks,
     phy_restore: PhyRestoreSlot,
+    station_wake: StationWakeState,
 }
 
 impl WifiRouteState {
     pub(crate) fn phy_restore_mut(&mut self) -> &mut PhyRestoreSlot {
         &mut self.phy_restore
+    }
+
+    pub(crate) fn station_wake_mut(&mut self) -> &mut StationWakeState {
+        &mut self.station_wake
     }
 }
 
@@ -53,6 +59,7 @@ impl WifiColdRegisters {
                 retained,
                 clocks: WifiClocks::default(),
                 phy_restore: PhyRestoreSlot::default(),
+                station_wake: StationWakeState::default(),
             },
         }
     }

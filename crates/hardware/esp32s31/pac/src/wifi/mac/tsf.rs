@@ -4,21 +4,13 @@
 
 use crate::{WifiRadioRegisters, device_fence, svd};
 
-/// Failure to start the reviewed station-TBTT wake prefix.
+/// The station-TBTT wake gates are not in the reviewed idle image.
+///
+/// The complete vendor disable leaf leaves RTC CONTROL bit 21 asserted.
+/// Entry therefore requires that exact idle image: synthesizing a clear
+/// during rollback would not be evidence-backed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StaTbttWakePrepareError {
-    AlreadyPrepared,
-    /// The complete vendor disable leaf leaves RTC CONTROL bit 21 asserted.
-    /// Entry therefore requires that exact idle image: synthesizing a clear
-    /// during rollback would not be evidence-backed.
-    WakeGateBaselineUnsupported,
-}
-
-/// Failure to consume one station-TBTT rollback obligation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StaTbttWakeRestoreError {
-    NotPrepared,
-}
+pub struct StaTbttWakeGateBaselineUnsupported;
 
 /// Affine rollback token for the reviewed station-TBTT wake prefix.
 #[must_use = "a prepared station TBTT wake prefix must be restored"]
@@ -32,12 +24,6 @@ impl StaTbttWakeRestore {
     pub const fn programmed_target_bits_35_10(&self) -> u32 {
         self.programmed_target_bits_35_10
     }
-}
-
-/// Failed rollback retaining the unique obligation token.
-pub struct StaTbttWakeRestoreFailure {
-    pub error: StaTbttWakeRestoreError,
-    pub restore: StaTbttWakeRestore,
 }
 
 /// Snapshot either or both station TSF words using the complete ROM leaf's
@@ -147,10 +133,7 @@ impl WifiRadioRegisters {
     pub fn prepare_station_tbtt_wake(
         &mut self,
         wake_tsf: u64,
-    ) -> Result<StaTbttWakeRestore, StaTbttWakePrepareError> {
-        if self.station_tbtt_wake_prepared {
-            return Err(StaTbttWakePrepareError::AlreadyPrepared);
-        }
+    ) -> Result<StaTbttWakeRestore, StaTbttWakeGateBaselineUnsupported> {
         let rtc = &self.peripherals.wifi_mac.wifi_mac_rtc_timer_update;
         if rtc
             .sta_tsf_control()
@@ -159,7 +142,7 @@ impl WifiRadioRegisters {
             .bit_is_set()
             || rtc.control().read().sta_tsf_wakeup_enable().bit_is_clear()
         {
-            return Err(StaTbttWakePrepareError::WakeGateBaselineUnsupported);
+            return Err(StaTbttWakeGateBaselineUnsupported);
         }
 
         let target = &self.peripherals.wifi_mac.wifi_mac_sta_tbtt_target;
@@ -177,7 +160,6 @@ impl WifiRadioRegisters {
                 .expect("masked station-TBTT target is a reviewed 26-bit value"),
         );
         self.set_station_tsf_wakeup(true);
-        self.station_tbtt_wake_prepared = true;
         device_fence();
         Ok(StaTbttWakeRestore {
             previous_target_bits_35_10,
@@ -189,24 +171,13 @@ impl WifiRadioRegisters {
     /// image, then restore the exact target field retained by preparation.
     /// The baseline check guarantees exact gate restoration without an
     /// invented clear of RTC CONTROL bit 21.
-    pub fn restore_station_tbtt_wake(
-        &mut self,
-        restore: StaTbttWakeRestore,
-    ) -> Result<(), StaTbttWakeRestoreFailure> {
-        if !self.station_tbtt_wake_prepared {
-            return Err(StaTbttWakeRestoreFailure {
-                error: StaTbttWakeRestoreError::NotPrepared,
-                restore,
-            });
-        }
+    pub fn restore_station_tbtt_wake(&mut self, restore: StaTbttWakeRestore) {
         self.set_station_tsf_wakeup(false);
         crate::generated::publish_station_tbtt_target(
             &self.peripherals.wifi_mac.wifi_mac_sta_tbtt_target,
             crate::generated::StationTbttTargetBits35To10::new(restore.previous_target_bits_35_10)
                 .expect("saved station-TBTT target is a reviewed 26-bit value"),
         );
-        self.station_tbtt_wake_prepared = false;
         device_fence();
-        Ok(())
     }
 }

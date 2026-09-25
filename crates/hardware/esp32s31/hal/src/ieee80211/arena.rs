@@ -185,6 +185,32 @@ impl RadioOwnerArena {
         Ok(crate::ieee80211::mac::WifiMacHal::from_published(registers))
     }
 
+    /// Borrow the published owner only through the closed station wake
+    /// capability. The returned guard is the complete synchronous
+    /// serialization interval.
+    pub fn try_station_wake_hal(
+        &self,
+    ) -> Result<crate::ieee80211::station_wake::StationWakeHal<'_>, RadioOwnerArenaError> {
+        match self.state() {
+            RadioOwnerArenaState::Empty => {
+                return Err(RadioOwnerArenaError::MissingOwner);
+            }
+            RadioOwnerArenaState::ResetRequired => {
+                return Err(RadioOwnerArenaError::ResetRequired);
+            }
+            RadioOwnerArenaState::Published => {}
+        }
+        let slot = self
+            .registers
+            .try_borrow_mut()
+            .map_err(|_| RadioOwnerArenaError::Borrowed)?;
+        let owner = RefMut::filter_map(slot, Option::as_mut)
+            .map_err(|_| RadioOwnerArenaError::MissingOwner)?;
+        let (registers, state) =
+            RefMut::map_split(owner, RadioRuntimeOwner::station_wake_parts_mut);
+        Ok(crate::ieee80211::station_wake::StationWakeHal::from_published(registers, state))
+    }
+
     /// Run one fallible, bounded observation without creating a copyable raw
     /// register capability.
     ///
@@ -454,6 +480,14 @@ impl<'arena> RadioAccess<'arena> {
         &self,
     ) -> Result<crate::ieee80211::mac::WifiMacHal<'arena>, RadioOwnerArenaError> {
         self.arena.try_wifi_mac_hal()
+    }
+
+    /// Start one serialized station wake transaction without exposing the
+    /// published PAC owner.
+    pub fn try_station_wake_hal(
+        &self,
+    ) -> Result<crate::ieee80211::station_wake::StationWakeHal<'arena>, RadioOwnerArenaError> {
+        self.arena.try_station_wake_hal()
     }
 
     /// Prepare the finite connected-STA interrupt state while the runtime

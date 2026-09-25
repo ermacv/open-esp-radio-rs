@@ -15,6 +15,7 @@ use super::*;
 mod interrupt_checkpoint;
 pub mod maintenance;
 pub use interrupt_checkpoint::MacInterruptCheckpoint;
+pub use oer_esp32s31_pac::PhyRegistrationEpoch;
 
 /// Powered-lifecycle PHY capability.
 ///
@@ -191,6 +192,14 @@ impl Ieee802154SharedPhyBorrow for Ieee802154TaskRegisters {}
 /// borrow but cannot implement this trait for an arbitrary owner or recover
 /// the underlying PAC.
 pub trait SharedPhyAccess: sealed::SharedPhyAccess {
+    /// The registration that currently describes this PHY partition.
+    ///
+    /// A registration result held apart from its hardware is valid for this
+    /// borrow only while its recorded epoch equals this value.
+    fn registration_epoch(&self) -> Option<PhyRegistrationEpoch> {
+        sealed::SharedPhyAccess::pac(self).registration_epoch()
+    }
+
     fn set_phy_calibration_clock(&mut self, enabled: bool) {
         sealed::SharedPhyAccess::pac_mut(self).set_phy_calibration_clock(enabled);
     }
@@ -335,7 +344,15 @@ pub trait SharedPhyContext: SharedPhyAccess + sealed::SharedPhyContext {
 /// even when entered by the standalone Bluetooth lifecycle. Implementations
 /// sample it through the retained PAC owner; this capability conveys no Wi-Fi
 /// MAC or protocol-role ownership.
-pub trait PhyInitializationAccess: SharedPhyContext + sealed::PhyInitializationAccess {}
+pub trait PhyInitializationAccess: SharedPhyContext + sealed::PhyInitializationAccess {
+    /// Begin a registration and retire every earlier epoch of this partition.
+    ///
+    /// Registration calls this before its first hardware edge. Any other call
+    /// only invalidates existing registration results; it cannot mint one.
+    fn begin_registration_epoch(&mut self) -> PhyRegistrationEpoch {
+        sealed::SharedPhyAccess::pac_mut(self).begin_registration_epoch()
+    }
+}
 
 impl sealed::SharedPhyAccess for PhyHal {
     fn pac(&self) -> &RadioPhyRegisters {

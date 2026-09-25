@@ -10,7 +10,7 @@ impl PhyPllTrackClock for Clock {
     }
 }
 fn owner() -> RegisteredWifiPhy {
-    let clients = PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS)
+    let clients = PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS)
         .acquire(PhyModemClient::Wifi, &mut Clock(0))
         .unwrap_or_else(|_| panic!("acquisition failed"))
         .into_owner()
@@ -23,40 +23,93 @@ fn owner() -> RegisteredWifiPhy {
     }
 }
 
+type PoweredRadio = oer_esp32s31_hal::owner::Radio<(), oer_esp32s31_hal::owner::state::Powered>;
+
+/// A powered radio and a Wi-Fi owner registered in its current epoch.
+fn registered_radio(acquire_wifi: bool) -> (RegisteredWifiPhy, PoweredRadio) {
+    use oer_esp32s31_hal::owner::PhyInitializationAccess;
+    let mut radio =
+        oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+    let epoch = radio.phy_hal_mut().begin_registration_epoch();
+    let mut clients = PhyClientState::for_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS, epoch);
+    if acquire_wifi {
+        clients = clients
+            .acquire(PhyModemClient::Wifi, &mut Clock(0))
+            .unwrap_or_else(|_| panic!("acquisition failed"))
+            .into_owner()
+            .unwrap_or_else(|_| panic!("unexpected initial tracking"));
+    }
+    let owner = RegisteredWifiPhy {
+        registered: RegisteredPhyState::from_wrapper_test_model(PhyState::new(
+            PhyConfig::production(),
+        )),
+        clients,
+    };
+    (owner, radio)
+}
+
 #[test]
 fn wifi_release_reunites_only_after_preserving_the_last_client_fact() {
-    let released = owner()
-        .release_wifi_client()
-        .unwrap_or_else(|_| panic!("registered Wi-Fi client must release"));
-    assert!(released.is_last());
-    let radio =
-        oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
-    let release = released.reunite(radio);
+    let (owner, radio) = registered_radio(true);
+    let release = owner
+        .release_wifi_client(radio)
+        .unwrap_or_else(|_| panic!("registered Wi-Fi client must release into its radio"));
     let crate::RegisteredPhyClientReleaseDisposition::Last(idle) = release.into_disposition()
     else {
-        panic!("last detached Wi-Fi release must mint the powered-idle owner");
+        panic!("last Wi-Fi release must mint the powered-idle owner");
     };
     assert!(idle.client_snapshot().is_empty());
 }
 
 #[test]
-fn missing_wifi_release_returns_the_exact_detached_owner() {
-    let owner = RegisteredWifiPhy {
-        registered: RegisteredPhyState::from_wrapper_test_model(PhyState::new(
-            PhyConfig::production(),
-        )),
-        clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
-    };
+fn missing_wifi_release_returns_the_exact_owner_and_radio() {
+    let (owner, radio) = registered_radio(false);
     let failure = owner
-        .release_wifi_client()
+        .release_wifi_client(radio)
         .err()
         .expect("missing Wi-Fi client must fail");
     assert_eq!(
         failure.error(),
-        crate::state::client::PhyClientReleaseError::NotAcquired(PhyModemClient::Wifi)
+        crate::RegisteredWifiPhyClientReleaseError::Client(
+            crate::state::client::PhyClientReleaseError::NotAcquired(PhyModemClient::Wifi)
+        )
     );
-    assert!(failure.into_owner().client_snapshot().is_empty());
+    let (owner, _radio) = failure.into_parts();
+    assert!(owner.client_snapshot().is_empty());
 }
+
+#[test]
+fn wifi_release_rejects_a_radio_registered_again_without_releasing_the_client() {
+    use oer_esp32s31_hal::owner::PhyInitializationAccess;
+    let (owner, mut radio) = registered_radio(true);
+    radio.phy_hal_mut().begin_registration_epoch();
+    let failure = owner
+        .release_wifi_client(radio)
+        .err()
+        .expect("a later registration must invalidate the detached owner");
+    assert_eq!(
+        failure.error(),
+        crate::RegisteredWifiPhyClientReleaseError::EpochMismatch
+    );
+    let (owner, _radio) = failure.into_parts();
+    assert!(owner.client_snapshot().contains(PhyModemClient::Wifi));
+}
+
+#[test]
+fn wifi_release_rejects_a_model_owner_without_registration() {
+    let owner = owner();
+    let radio =
+        oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+    let failure = owner
+        .release_wifi_client(radio)
+        .err()
+        .expect("a host model owner cannot describe any radio");
+    assert_eq!(
+        failure.error(),
+        crate::RegisteredWifiPhyClientReleaseError::EpochMismatch
+    );
+}
+
 #[test]
 fn early_maintenance_preserves_owner_and_deadline() {
     let owner = owner();
@@ -65,6 +118,7 @@ fn early_maintenance_preserves_owner_and_deadline() {
         .evaluate(
             WifiPhyMaintenanceRequest::Track,
             &mut Clock(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+            true,
         )
         .unwrap_or_else(|_| panic!("evaluation failed"))
     {
@@ -78,6 +132,7 @@ fn elapsed_deadline_retains_wifi_until_tracking_completes() {
         .evaluate(
             WifiPhyMaintenanceRequest::Track,
             &mut Clock(DEFAULT_PLL_TRACK_PERIOD_MICROS + 1),
+            true,
         )
         .unwrap_or_else(|_| panic!("evaluation failed"))
     {
@@ -115,6 +170,7 @@ fn explicit_calibration_preserves_registered_policy_and_real_deadline() {
         .evaluate(
             WifiPhyMaintenanceRequest::Calibrate,
             &mut Clock(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+            true,
         )
         .unwrap_or_else(|_| panic!("evaluation failed"))
     {
@@ -135,6 +191,7 @@ fn selected_observation_does_not_acknowledge_periodic_calibration() {
         .evaluate(
             WifiPhyMaintenanceRequest::Operation(Operation::Temperature),
             &mut Clock(100),
+            true,
         )
         .unwrap_or_else(|_| panic!("selection failed"))
     else {
@@ -175,6 +232,7 @@ fn automatic_selection_rechecks_sample_age_after_waiting_for_admission() {
                 maximum_age_micros: 1000,
             },
             &mut Clock(1101),
+            true,
         )
         .unwrap_or_else(|_| panic!("clock failed"))
     else {
@@ -215,7 +273,7 @@ fn explicit_rfpll_forces_measurement_without_enabling_periodic_work() {
         registered: _,
         mut pending,
     } = owner
-        .evaluate(request, &mut Clock(100))
+        .evaluate(request, &mut Clock(100), true)
         .unwrap_or_else(|_| panic!("selection failed"))
     else {
         panic!("explicit measurement waited for periodic deadline")
@@ -282,7 +340,7 @@ fn observed_rfpll_requires_a_completed_recent_acquisition_without_changing_polic
             );
             let before = owner.client_snapshot();
             match owner
-                .evaluate(request, &mut Clock(now))
+                .evaluate(request, &mut Clock(now), true)
                 .unwrap_or_else(|_| panic!("clock rejected"))
             {
                 Evaluation::Idle(owner) => {
@@ -298,4 +356,19 @@ fn observed_rfpll_requires_a_completed_recent_acquisition_without_changing_polic
             }
         }
     }
+}
+
+#[test]
+fn stale_registration_is_rejected_before_any_selection() {
+    let owner = owner();
+    let before = owner.client_snapshot();
+    let Err((owner, rejection)) = owner.evaluate(
+        WifiPhyMaintenanceRequest::Calibrate,
+        &mut Clock(DEFAULT_PLL_TRACK_PERIOD_MICROS + 1),
+        false,
+    ) else {
+        panic!("a stale registration must not select maintenance work");
+    };
+    assert_eq!(rejection, Rejection::EpochMismatch);
+    assert_eq!(owner.client_snapshot(), before);
 }

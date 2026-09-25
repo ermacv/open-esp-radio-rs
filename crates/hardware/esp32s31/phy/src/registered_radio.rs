@@ -323,11 +323,16 @@ impl<P> TargetRegisteredPhyEpoch<P> {
         self.phy.state()
     }
 
-    pub(crate) fn into_registered_radio(self) -> RegisteredPhyRadio<P> {
+    pub(crate) fn into_registered_radio(mut self) -> RegisteredPhyRadio<P> {
+        // The coupled radio still carries the epoch its registration began.
+        let clients = PhyClientState::for_registration_of(
+            DEFAULT_PLL_TRACK_PERIOD_MICROS,
+            &*self.radio.phy_hal_mut(),
+        );
         RegisteredPhyRadio {
             radio: self.radio,
             phy: self.phy,
-            clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+            clients,
         }
     }
 }

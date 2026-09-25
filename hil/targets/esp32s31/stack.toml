@@ -84,8 +84,8 @@ reason = "atomic connected composition retains the validated plan and complete s
 [[reviewed_frames]]
 function_contains = "::supervisor::new::{closure#0}"
 source_ends_with = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/mod.rs", "oer-esp32s31-ieee80211-system-0.1.0/src/supervisor/mod.rs"]
-max_bytes = 19712
-reason = "one-time production constructor initializes and transfers the complete role-neutral physical, STA, AP, monitor, owned network endpoint and external diagnostic-storage owner graph into static task ownership on the PSRAM stack; the correctness image retains its value-only driver observation state, and the stopped frontier retains the immutable cold-restart policy while registered PHY state and its shared client scheduler remain affine through role transfers"
+max_bytes = 21504
+reason = "one-time production constructor initializes and transfers the complete role-neutral physical, STA, AP, monitor, owned network endpoint and external diagnostic-storage owner graph into static task ownership on the PSRAM stack; the correctness image retains its value-only driver observation state, and the stopped frontier retains the immutable cold-restart policy while registered PHY state and its shared client scheduler remain affine through role transfers; every radio owner copy in this graph carries the PHY partition's registration epoch"
 
 [[reviewed_frames]]
 function_contains = "::radio_resources::initialize_network"

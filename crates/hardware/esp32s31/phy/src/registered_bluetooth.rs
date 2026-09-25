@@ -43,10 +43,12 @@ impl RegisteredBluetoothPhy {
         state: PhyState,
         witness: crate::target_port::TargetRegistrationWitness,
     ) -> Self {
+        let epoch = witness.epoch();
         Self {
             registered: RegisteredPhyState::from_target_completion(state, witness),
-            clients: PhyClientState::for_registered_epoch(
+            clients: PhyClientState::for_registration(
                 crate::state::client::DEFAULT_PLL_TRACK_PERIOD_MICROS,
+                epoch,
             ),
         }
     }
@@ -388,8 +390,9 @@ impl RegisteredBluetoothPhyClientRelease {
     ///
     /// The caller retains the matching platform, stopped Controller/BTBB,
     /// inactive IRQ routes and drained timers for this exact registration.
-    /// No second client may use RF during the operation. Non-final release is
-    /// rejected before MMIO. The temperature preflight and close graph are the
+    /// No second client may use RF during the operation. Non-final release and
+    /// a registration that no longer describes `registers` are rejected before
+    /// MMIO. The temperature preflight and close graph are the
     /// same target implementation used by the Wi-Fi radio lifecycle.
     ///
     /// # Cancellation
@@ -413,6 +416,13 @@ impl RegisteredBluetoothPhyClientRelease {
                 _owner: self,
                 error: crate::PhyTargetPortError::HardwareInvariant,
                 retryable: true,
+            });
+        }
+        if !self.outcome.owner().describes(&*registers) {
+            return Err(BluetoothPhyRfCloseFailure {
+                _owner: self,
+                error: crate::PhyTargetPortError::RegistrationEpochMismatch,
+                retryable: false,
             });
         }
         if let Err(error) = crate::target_port::close_bluetooth_rf::<P, D>(
@@ -621,6 +631,15 @@ impl RegisteredBluetoothPhyPendingTracking {
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn target_tracking_parts(&mut self) -> (&mut PhyState, &mut PhyPendingTracking) {
         (self.registered.target_state_mut(), &mut self.pending)
+    }
+
+    /// Whether this tracking belongs to the registration of `hardware`.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn describes(
+        &self,
+        hardware: &impl oer_esp32s31_hal::owner::SharedPhyAccess,
+    ) -> bool {
+        self.pending.describes(hardware)
     }
 
     #[cfg(target_arch = "riscv32")]

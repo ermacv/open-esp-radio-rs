@@ -341,3 +341,38 @@ fn mac_txrx_callbacks_reject_out_of_range_slot_before_mmio() {
     assert!(!registers.initialize_mac_txrx_callbacks(11));
     assert!(!registers.initialize_mac_txrx_callbacks(u8::MAX));
 }
+
+#[test]
+fn registration_epoch_is_replaced_by_registration_and_retired_by_every_route_release() {
+    let mut wifi = RadioHardware::for_validation().into_wifi();
+    let phy = wifi.radio_mut().radio_phy_mut();
+    assert_eq!(phy.registration_epoch(), None);
+    let first = phy.begin_registration_epoch();
+    assert_eq!(phy.registration_epoch(), Some(first));
+    let second = phy.begin_registration_epoch();
+    assert_ne!(first, second);
+    assert_eq!(phy.registration_epoch(), Some(second));
+
+    let mut bluetooth = wifi
+        .release()
+        .unwrap_or_else(|_| panic!("unoccupied Wi-Fi route must release"))
+        .into_bluetooth();
+    assert_eq!(bluetooth.task.radio_phy.registration_epoch(), None);
+    let third = bluetooth.task.radio_phy.begin_registration_epoch();
+    assert!(third != first && third != second);
+
+    let mut ieee802154 = bluetooth
+        .release()
+        .unwrap_or_else(|_| panic!("unoccupied Bluetooth route must release"))
+        .into_ieee802154();
+    let phy = &mut ieee802154.task.peripherals.radio_phy;
+    assert_eq!(phy.registration_epoch(), None);
+    let fourth = phy.begin_registration_epoch();
+    assert!(fourth != first && fourth != second && fourth != third);
+
+    let mut wifi = ieee802154
+        .release()
+        .unwrap_or_else(|_| panic!("unoccupied IEEE 802.15.4 route must release"))
+        .into_wifi();
+    assert_eq!(wifi.radio_mut().radio_phy_mut().registration_epoch(), None);
+}

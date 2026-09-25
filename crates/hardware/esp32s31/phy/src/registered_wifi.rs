@@ -5,12 +5,11 @@
 //! frontier. Channel operations borrow that frontier's HAL; the semantic state
 //! and client scheduler cannot be replaced by callers.
 
+use oer_esp32s31_hal::owner::{Radio, state::Powered};
+
 use crate::{
     PhyState, RegisteredPhyState,
-    state::client::{
-        PhyClientReleaseError, PhyClientReleaseFailure, PhyClientReleaseOutcome, PhyClientSnapshot,
-        PhyClientState, PhyModemClient,
-    },
+    state::client::{PhyClientReleaseError, PhyClientSnapshot, PhyClientState, PhyModemClient},
 };
 
 /// Wi-Fi's retained registration and client scheduler, without a raw-state
@@ -79,72 +78,73 @@ impl RegisteredWifiPhy {
         self.clients.snapshot()
     }
 
-    /// Release the Wi-Fi client while retaining the detached registration and
-    /// scheduler owner for reunion with the same physical radio epoch.
+    /// Release the Wi-Fi client and reunite the registration with the powered
+    /// radio returned by the same stopped runtime frontier.
+    ///
+    /// The registration must still describe that radio's PHY partition, and
+    /// the Wi-Fi client must be present. Either rejection returns this owner
+    /// and the radio unchanged.
     #[allow(
         clippy::result_large_err,
-        reason = "failure must retain the allocation-free registered PHY owner"
+        reason = "failure must retain the allocation-free registered PHY owner and radio"
     )]
-    pub fn release_wifi_client(
+    pub fn release_wifi_client<P>(
         self,
-    ) -> Result<RegisteredWifiPhyClientRelease, RegisteredWifiPhyClientReleaseFailure> {
+        mut radio: Radio<P, Powered>,
+    ) -> Result<crate::RegisteredPhyClientRelease<P>, RegisteredWifiPhyClientReleaseFailure<P>>
+    {
+        if !self.clients.describes(&*radio.phy_hal_mut()) {
+            return Err(RegisteredWifiPhyClientReleaseFailure {
+                owner: self,
+                radio,
+                error: RegisteredWifiPhyClientReleaseError::EpochMismatch,
+            });
+        }
         let Self {
             registered,
             clients,
         } = self;
         match clients.release(PhyModemClient::Wifi) {
-            Ok(outcome) => Ok(RegisteredWifiPhyClientRelease {
-                registered,
-                outcome,
-            }),
+            Ok(outcome) => Ok(crate::RegisteredPhyClientRelease::from_detached_parts(
+                radio, registered, outcome,
+            )),
             Err(failure) => Err(RegisteredWifiPhyClientReleaseFailure {
-                registered,
-                failure,
+                error: RegisteredWifiPhyClientReleaseError::Client(failure.error()),
+                owner: Self {
+                    registered,
+                    clients: failure.into_owner(),
+                },
+                radio,
             }),
         }
     }
 }
 
-/// Successful Wi-Fi client release awaiting reunion with its physical owner.
-#[must_use = "the detached release must be reunited with its physical radio epoch"]
-pub struct RegisteredWifiPhyClientRelease {
-    registered: RegisteredPhyState,
-    outcome: PhyClientReleaseOutcome,
+/// Why the Wi-Fi client could not be released into its powered radio.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RegisteredWifiPhyClientReleaseError {
+    /// The registration no longer describes the radio's PHY partition.
+    EpochMismatch,
+    /// The client set rejected the release.
+    Client(PhyClientReleaseError),
 }
 
-impl RegisteredWifiPhyClientRelease {
-    pub const fn is_last(&self) -> bool {
-        self.outcome.is_last()
-    }
-
-    /// Reunite the release result with the powered radio returned by the same
-    /// stopped runtime frontier.
-    #[doc(hidden)]
-    pub fn reunite<P>(
-        self,
-        radio: oer_esp32s31_hal::owner::Radio<P, oer_esp32s31_hal::owner::state::Powered>,
-    ) -> crate::RegisteredPhyClientRelease<P> {
-        crate::RegisteredPhyClientRelease::from_detached_parts(radio, self.registered, self.outcome)
-    }
+/// Rejected Wi-Fi client release retaining the unchanged owner and radio.
+#[must_use = "failed release retains the registered PHY owner and the powered radio"]
+pub struct RegisteredWifiPhyClientReleaseFailure<P> {
+    owner: RegisteredWifiPhy,
+    radio: Radio<P, Powered>,
+    error: RegisteredWifiPhyClientReleaseError,
 }
 
-/// Rejected Wi-Fi client release retaining the exact detached PHY owner.
-#[must_use = "failed release retains the detached registered PHY owner"]
-pub struct RegisteredWifiPhyClientReleaseFailure {
-    registered: RegisteredPhyState,
-    failure: PhyClientReleaseFailure,
-}
-
-impl RegisteredWifiPhyClientReleaseFailure {
-    pub const fn error(&self) -> PhyClientReleaseError {
-        self.failure.error()
+impl<P> RegisteredWifiPhyClientReleaseFailure<P> {
+    pub const fn error(&self) -> RegisteredWifiPhyClientReleaseError {
+        self.error
     }
 
-    pub fn into_owner(self) -> RegisteredWifiPhy {
-        RegisteredWifiPhy {
-            registered: self.registered,
-            clients: self.failure.into_owner(),
-        }
+    /// Return the unchanged registered owner and powered radio.
+    pub fn into_parts(self) -> (RegisteredWifiPhy, Radio<P, Powered>) {
+        (self.owner, self.radio)
     }
 }
 

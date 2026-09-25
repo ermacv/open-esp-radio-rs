@@ -31,7 +31,7 @@ fn registered_state() -> RegisteredPhyState {
 fn model_prerequisites() -> RegisteredIeee802154Prerequisites {
     let registered = registered_state();
     let gain_parameter = registered.state().register_init_parameters().parameter_120;
-    let clients = PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS)
+    let clients = PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS)
         .acquire(PhyModemClient::Ieee802154, &mut FixedClock(0))
         .unwrap_or_else(|_| panic!("model client acquisition must succeed"))
         .into_owner()

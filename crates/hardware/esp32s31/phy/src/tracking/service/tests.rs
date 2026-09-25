@@ -7,7 +7,7 @@ fn snapshot() -> Inspection {
         RegisteredPhyState::from_wrapper_test_model(PhyState::new(PhyConfig::production()));
     let mut result = Inspection::registered(
         &registered,
-        PhyClientState::for_registered_epoch(1000).snapshot(),
+        PhyClientState::without_registration(1000).snapshot(),
         0,
     )
     .unwrap();

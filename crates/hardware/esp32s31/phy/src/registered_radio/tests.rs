@@ -25,7 +25,7 @@ fn registered_radio_with_state(state: PhyState) -> RegisteredPhyRadio<TestPlatfo
     RegisteredPhyRadio {
         radio,
         phy: RegisteredPhyState::from_wrapper_test_model(state),
-        clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+        clients: PhyClientState::without_registration(DEFAULT_PLL_TRACK_PERIOD_MICROS),
     }
 }
 

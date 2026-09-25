@@ -6,6 +6,14 @@ use crate::{
     state::client::{PhyPendingTracking, PhyPllTrackClock, PhyTrackTimeError},
 };
 
+/// Why admission rejected the request before selecting any hardware work.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Rejection {
+    /// The registration no longer describes the admitted hardware.
+    EpochMismatch,
+    Clock(PhyTrackTimeError),
+}
+
 pub(super) enum Evaluation {
     Idle(RegisteredWifiPhy),
     Pending {
@@ -19,11 +27,17 @@ impl RegisteredWifiPhy {
         clippy::result_large_err,
         reason = "failure retains the unique registered owner"
     )]
+    /// `registration_current` reports whether this registration still
+    /// describes the admitted hardware; a stale registration selects nothing.
     pub(super) fn evaluate(
         self,
         request: WifiPhyMaintenanceRequest,
         clock: &mut impl PhyPllTrackClock,
-    ) -> Result<Evaluation, (Self, PhyTrackTimeError)> {
+        registration_current: bool,
+    ) -> Result<Evaluation, (Self, Rejection)> {
+        if !registration_current {
+            return Err((self, Rejection::EpochMismatch));
+        }
         let Self {
             registered,
             clients,
@@ -50,7 +64,7 @@ impl RegisteredWifiPhy {
                         registered,
                         clients,
                     },
-                    error,
+                    Rejection::Clock(error),
                 ));
             }
             if !clients
@@ -101,7 +115,7 @@ impl RegisteredWifiPhy {
                         registered,
                         clients: failure.into_owner(),
                     },
-                    error,
+                    Rejection::Clock(error),
                 ));
             }
         };
@@ -156,13 +170,16 @@ mod target {
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub enum WifiPhyMaintenanceError {
+        /// The registration no longer describes the admitted hardware: the
+        /// partition was registered again or returned to the cold root.
+        EpochMismatch,
         Clock(PhyTrackTimeError),
         Tracking(TargetPhyParamTrackingError),
     }
 
     // Neither frontier may be converted into a usable PHY after failure.
     enum FailedOwner {
-        Clock {
+        Admission {
             _owner: RegisteredWifiPhy,
         },
         Tracking {
@@ -191,7 +208,9 @@ mod target {
         /// caller must retain stopped or paused descriptor resources. Success returns
         /// access with the same interrupt-owner type for MAC restoration and
         /// checked release. A paused checkpoint is never converted to a cold
-        /// setup. This API does not supply a joint-radio coex grant. Cancellation or
+        /// setup. A registration that no longer describes the admitted
+        /// hardware fails before any access. This API does not supply a
+        /// joint-radio coex grant. Cancellation or
         /// failure requires reset: neither PHY nor register/IRQ ownership can
         /// be recovered from the dropped future or an error.
         #[allow(
@@ -209,20 +228,25 @@ mod target {
             (Self, WifiAccess<I>, Option<PhyParamTrackingOutcome>),
             WifiPhyMaintenanceFailure<I>,
         > {
-            let (mut registered, mut pending) = match self.evaluate(request, clock) {
-                Ok(Evaluation::Idle(owner)) => return Ok((owner, access, None)),
-                Ok(Evaluation::Pending {
-                    registered,
-                    pending,
-                }) => (registered, pending),
-                Err((owner, error)) => {
-                    return Err(WifiPhyMaintenanceFailure {
-                        _owner: FailedOwner::Clock { _owner: owner },
-                        _access: access,
-                        error: WifiPhyMaintenanceError::Clock(error),
-                    });
-                }
-            };
+            let registration_current = self.clients.describes(&access.phy_hal());
+            let (mut registered, mut pending) =
+                match self.evaluate(request, clock, registration_current) {
+                    Ok(Evaluation::Idle(owner)) => return Ok((owner, access, None)),
+                    Ok(Evaluation::Pending {
+                        registered,
+                        pending,
+                    }) => (registered, pending),
+                    Err((owner, rejection)) => {
+                        return Err(WifiPhyMaintenanceFailure {
+                            _owner: FailedOwner::Admission { _owner: owner },
+                            _access: access,
+                            error: match rejection {
+                                Rejection::EpochMismatch => WifiPhyMaintenanceError::EpochMismatch,
+                                Rejection::Clock(error) => WifiPhyMaintenanceError::Clock(error),
+                            },
+                        });
+                    }
+                };
             let result = {
                 let mut registers = access.phy_hal();
                 let mut port = TargetPhyParamTrackingPort::<_, _, D, _>::new(

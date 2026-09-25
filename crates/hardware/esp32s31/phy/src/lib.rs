@@ -61,7 +61,7 @@ mod registered_bluetooth;
 mod registered_radio;
 mod registered_wifi;
 pub use registered_wifi::{
-    RegisteredWifiPhy, RegisteredWifiPhyClientRelease, RegisteredWifiPhyClientReleaseFailure,
+    RegisteredWifiPhy, RegisteredWifiPhyClientReleaseError, RegisteredWifiPhyClientReleaseFailure,
     WifiPhyMaintenanceRequest,
 };
 #[cfg(target_arch = "riscv32")]

@@ -260,6 +260,9 @@ pub enum PhyTargetPortError {
     HardwareInvariant,
     RfOperationLimit,
     UnexpectedBinding,
+    /// A registration held apart from its hardware no longer describes the
+    /// borrowed PHY partition; the operation touched no hardware.
+    RegistrationEpochMismatch,
 }
 
 /// Complete the registration tail's bounded read-only PHY-I2C transaction.

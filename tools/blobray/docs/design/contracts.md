@@ -1960,12 +1960,25 @@ on each side must not overlap, including overlapping MMIO spans and wildcard
 versus specific delays. There is no first-rule precedence. Fence patterns have no
 separate value constraint because their complete observation is the masks.
 
+A pattern may add a `followed_by` selector: it then selects an effect only when
+the immediately next concrete MMIO, fence or delay effect on the same side matches
+that selector. The end of the case has no successor. Two patterns whose base
+selectors overlap are distinct only when both carry non-overlapping successor
+selectors. Verification and retained admission evaluate the successor with the
+same one-event lookahead; no other context or history is expressible.
+
+`unclassified` selects the treatment of effects that no rule selects. The default
+`incomplete` keeps the every-effect-classified policy below. The explicit
+`required` policy compares such effects exactly, in order and value, as though a
+required rule over their own identity selected them; it adds no count obligation.
+
 | Disposition | Ordered comparison obligation |
 | --- | --- |
 | `required` | Identical patterns on both sides; every selected occurrence compares exactly, including values and order among other selected observables. |
 | `omitted` | Identical patterns; replacement may omit vendor occurrences. Every retained replacement occurrence must equal a vendor occurrence in order. Removing an occurrence never licenses changing its value or moving it across a selected call, memory access or other effect. |
 | `replaced` | Both explicit patterns must hold; corresponding occurrences compare by the same rule identity and order. Values are constrained by the individual patterns, without an implicit physical equality requirement. |
 | `added` | Only a replacement pattern; matching replacement effects discharge its count/value obligations and remain raw evidence outside the paired stream. |
+| `ignored` | Identical patterns with any value and a positive maximum. Matching effects on either side are implementation plumbing: they remain raw evidence outside the paired stream, discharge only count bounds and never shift alignment. |
 | `forbidden` | Identical selectors on both sides, unconstrained value and zero counts. Any matching observed occurrence is a known violation. |
 
 A minimum of zero means required when observed. Otherwise missing exercise is
@@ -1976,7 +1989,7 @@ constraints establish DIFF from actual observations, even if execution stopped
 later. A completed shorter required stream also establishes a difference; an
 unfinished prefix cannot establish equality or an absent future effect.
 
-Every raw concrete effect is classified. Unclassified observations produce
+Under the default policy every raw concrete effect is classified. Unclassified observations produce
 INCOMPLETE and stop positional alignment: an unknown omission/replacement must
 not shift subsequent positions into a fabricated mismatch. Independently known
 return/final-memory differences and directly observed policy violations can still
@@ -1988,7 +2001,7 @@ remain retained and replayable.
 
 `CaseComparison.effect_claim` exposes the selected claim ceiling even for DIFF or
 INCOMPLETE. `selected-effect-equality` permits only required/forbidden rules;
-`reviewed-effect-refinement` is mandatory for omitted/replaced/added rules. MATCH
+`reviewed-effect-refinement` is mandatory for omitted/replaced/added/ignored rules. MATCH
 under the latter means the reviewed refinement held for these concrete cases,
 not physical event equality, general equivalence or hardware qualification.
 `effect_gap` identifies the first vendor-side gap, then replacement-side gap:

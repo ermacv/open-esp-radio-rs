@@ -344,6 +344,9 @@ pub fn validate_execution_records_with(
         CallRelationIndex::new(None, &manifest.call_pairs, true, c)?,
     ];
     let mut effects: [Option<EffectTracker<'_>>; 2] = [None, None];
+    // A contract rule may depend on the side's next concrete effect, so each
+    // effect is classified once its successor, or the side's outcome, arrives.
+    let mut pending_effect: Option<(ExecutionEvent, u32)> = None;
     let mut prepared = None;
     let mut part = EvidencePart::Events;
     let mut memory_state = [MemoryState::new(), MemoryState::new()];
@@ -579,7 +582,10 @@ pub fn validate_execution_records_with(
                 if is_contract_effect(&event)
                     && let Some(tracker) = &mut effects[usize::from(side)]
                 {
-                    tracker.observe(&event, events, c)?;
+                    if let Some((prior, ordinal)) = pending_effect.take() {
+                        tracker.observe(&prior, Some(&event), ordinal, c)?;
+                    }
+                    pending_effect = Some((event.clone(), events));
                 }
                 events += 1;
                 if events > request.max_events {
@@ -592,6 +598,11 @@ pub fn validate_execution_records_with(
                 stop,
                 steps,
             } => {
+                if let Some((prior, ordinal)) = pending_effect.take()
+                    && let Some(tracker) = &mut effects[usize::from(side)]
+                {
+                    tracker.observe(&prior, None, ordinal, c)?;
+                }
                 if i != case || replacement != side || outcome {
                     return Err(integrity("execution outcome order differs"));
                 }

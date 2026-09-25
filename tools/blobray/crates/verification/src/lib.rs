@@ -324,6 +324,8 @@ struct Selected<'a> {
     side: bool,
     effects: Option<EffectTracker<'a>>,
     total: usize,
+    /// Index of the next concrete effect after the current event; only advances.
+    next_effect: usize,
 }
 impl<'a> Selected<'a> {
     fn new(
@@ -336,6 +338,7 @@ impl<'a> Selected<'a> {
         c: &mut dyn RunControl,
     ) -> Result<Self> {
         Ok(Self {
+            next_effect: 0,
             total: remaining.len(),
             effects: effects
                 .map(|e| EffectTracker::new(&e.contract, side, c))
@@ -385,10 +388,32 @@ impl<'a> Selected<'a> {
             } else if matches!(event, ExecutionEvent::TransferArgument { .. }) {
                 return Err(invalid());
             } else if is_contract_effect(event) && self.effects.is_some() {
-                let ordinal = u32::try_from(self.total - self.remaining.len() - 1)
+                let position = self.total - self.remaining.len() - 1;
+                let ordinal = u32::try_from(position)
                     .map_err(|_| Error::new(ErrorCode::Integrity, "effect ordinal overflow"))?;
-                let selection = self.effects.as_mut().unwrap().observe(event, ordinal, c)?;
-                if !matches!(selection, EffectSelection::Added(_)) {
+                // `remaining` starts after this event; each scan ends at the
+                // next effect, so the scans cover every event once.
+                if self.next_effect <= position {
+                    let start = self.total - self.remaining.len();
+                    self.next_effect = self
+                        .remaining
+                        .iter()
+                        .position(is_contract_effect)
+                        .map_or(self.total, |i| start + i);
+                }
+                let next = self
+                    .next_effect
+                    .checked_sub(self.total - self.remaining.len())
+                    .and_then(|i| self.remaining.get(i));
+                let selection = self
+                    .effects
+                    .as_mut()
+                    .unwrap()
+                    .observe(event, next, ordinal, c)?;
+                if !matches!(
+                    selection,
+                    EffectSelection::Added(_) | EffectSelection::Ignored(_)
+                ) {
                     return Ok(Some(Observation::Effect(event, selection)));
                 }
             } else if self.relation.events.selects(event) {

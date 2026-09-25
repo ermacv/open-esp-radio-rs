@@ -29,6 +29,10 @@ pub enum EffectValue {
 pub struct EffectPattern {
     pub selector: EffectSelector,
     pub value: EffectValue,
+    /// The pattern applies only when the side's next concrete effect matches
+    /// this selector, for example a plumbing delay before a transport read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub followed_by: Option<EffectSelector>,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -40,6 +44,24 @@ pub enum EffectDisposition {
     Replaced,
     Added,
     Forbidden,
+    /// Implementation plumbing on either side: matching effects remain raw
+    /// evidence but are neither paired nor value-constrained.
+    Ignored,
+}
+/// Treatment of concrete effects that no rule selects.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UnclassifiedEffects {
+    /// Every effect must be classified; an unclassified one is INCOMPLETE.
+    #[default]
+    Incomplete,
+    /// Effects outside the rules compare exactly, in order and value.
+    Required,
+}
+impl UnclassifiedEffects {
+    fn is_incomplete(&self) -> bool {
+        *self == Self::Incomplete
+    }
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -61,6 +83,8 @@ pub struct EffectContract {
     pub vendor: CallEndpoint,
     pub replacement: CallEndpoint,
     pub rules: Vec<EffectRule>,
+    #[serde(default, skip_serializing_if = "UnclassifiedEffects::is_incomplete")]
+    pub unclassified: UnclassifiedEffects,
     pub claim_ceiling: EffectClaimCeiling,
     pub applicability: String,
     pub reason: String,
@@ -180,6 +204,14 @@ impl EffectSelector {
 }
 impl EffectPattern {
     fn validate(self) -> Result<()> {
+        if let Some(next) = self.followed_by {
+            EffectPattern {
+                selector: next,
+                value: EffectValue::Any,
+                followed_by: None,
+            }
+            .validate()?;
+        }
         match self.selector {
             EffectSelector::MmioRead { address, width }
             | EffectSelector::MmioWrite { address, width } => {
@@ -208,6 +240,21 @@ impl EffectPattern {
             EffectSelector::Delay { micros: None } => (),
         }
         Ok(())
+    }
+    /// The pattern selects `event` whose immediately next concrete effect is `next`.
+    pub fn selects(self, event: &ExecutionEvent, next: Option<&ExecutionEvent>) -> bool {
+        self.selector.matches(event)
+            && self
+                .followed_by
+                .is_none_or(|f| next.is_some_and(|n| f.matches(n)))
+    }
+    /// Two patterns can select the same effect.
+    pub fn overlaps(self, other: Self) -> bool {
+        self.selector.overlaps(other.selector)
+            && match (self.followed_by, other.followed_by) {
+                (Some(a), Some(b)) => a.overlaps(b),
+                _ => true,
+            }
     }
     fn accepts(self, event: &ExecutionEvent) -> bool {
         match self.value {
@@ -266,6 +313,12 @@ impl EffectContract {
                 EffectDisposition::Required | EffectDisposition::Omitted => {
                     r.vendor.is_some() && r.vendor == r.replacement && r.max_occurrences > 0
                 }
+                EffectDisposition::Ignored => {
+                    r.vendor.is_some()
+                        && r.vendor == r.replacement
+                        && r.max_occurrences > 0
+                        && r.vendor.is_some_and(|p| p.value == EffectValue::Any)
+                }
                 EffectDisposition::Replaced => {
                     r.vendor.is_some() && r.replacement.is_some() && r.max_occurrences > 0
                 }
@@ -295,7 +348,7 @@ impl EffectContract {
                     if self.rules[..i]
                         .iter()
                         .filter_map(|r| r.pattern(side))
-                        .any(|q| p.selector.overlaps(q.selector))
+                        .any(|q| p.overlaps(q))
                     {
                         return Err(invalid());
                     }
@@ -343,6 +396,9 @@ impl EffectContract {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EffectSelection {
     Required(u16),
+    /// Selected by no rule under `unclassified: required`: compared exactly.
+    Unlisted,
+    Ignored(u16),
     Omitted(u16),
     Replaced(u16),
     Added(u16),
@@ -373,9 +429,11 @@ impl<'a> EffectTracker<'a> {
             first_violation: None,
         })
     }
+    /// Classify `event`; `next` is the same side's next concrete effect, if any.
     pub fn observe(
         &mut self,
         event: &ExecutionEvent,
+        next: Option<&ExecutionEvent>,
         ordinal: u32,
         c: &mut dyn RunControl,
     ) -> Result<EffectSelection> {
@@ -410,9 +468,12 @@ impl<'a> EffectTracker<'a> {
         }
         let Some((i, r, p)) = self.contract.rules.iter().enumerate().find_map(|(i, r)| {
             r.pattern(self.replacement)
-                .filter(|p| p.selector.matches(event))
+                .filter(|p| p.selects(event, next))
                 .map(|p| (i, r, p))
         }) else {
+            if self.contract.unclassified == UnclassifiedEffects::Required {
+                return Ok(EffectSelection::Unlisted);
+            }
             self.first_unclassified
                 .get_or_insert(EffectGap::Unclassified {
                     replacement: self.replacement,
@@ -448,6 +509,7 @@ impl<'a> EffectTracker<'a> {
             EffectDisposition::Omitted => EffectSelection::Omitted(i as u16),
             EffectDisposition::Replaced => EffectSelection::Replaced(i as u16),
             EffectDisposition::Added => EffectSelection::Added(i as u16),
+            EffectDisposition::Ignored => EffectSelection::Ignored(i as u16),
             EffectDisposition::Forbidden => unreachable!(),
         })
     }

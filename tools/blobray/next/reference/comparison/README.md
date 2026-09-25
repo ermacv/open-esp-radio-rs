@@ -167,17 +167,25 @@ occurrence/boundary shape as call correspondence), `rules`, `claim_ceiling`,
 `selector` with `value: {kind: "any"}` or `{kind: "exact", value: N}`.
 Selectors are `mmio-read`/`mmio-write` with physical address and width,
 `delay` with `micros` (a value or explicit `null` for all delays), or `fence` with
-predecessor/successor masks. Per-side selectors cannot overlap.
+predecessor/successor masks. An optional `followed_by` selector restricts a pattern
+to effects whose immediately next concrete effect on the same side matches it.
+Per-side patterns cannot overlap: base selectors may overlap only when both
+patterns carry non-overlapping `followed_by` selectors.
+
+`unclassified` is `incomplete` by default: every effect must be selected by a rule.
+`unclassified: "required"` compares effects that no rule selects exactly, in order
+and value, as if a required rule selected them.
 
 Required rules compare identical observations. Omitted rules permit an ordered
 subsequence of exact vendor effects; replaced rules require both explicit patterns
-in corresponding order. Added rules validate replacement-only effects. Forbidden
-rules reject observed occurrences. Missing exercise and unclassified effects are
+in corresponding order. Added rules validate replacement-only effects. Ignored rules
+use identical patterns with `value: any` and retain matching effects on either side
+as raw evidence without pairing them. Forbidden rules reject observed occurrences. Missing exercise and unclassified effects are
 INCOMPLETE; known differences are DIFF. A zero minimum means required when observed;
 an omitted rule always allows zero replacement occurrences. Rules reset per case.
 
 `claim_ceiling: "selected-effect-equality"` permits only required/forbidden rules.
-Omitted/replaced/added rules require `"reviewed-effect-refinement"`. Each saved
+Omitted/replaced/added/ignored rules require `"reviewed-effect-refinement"`. Each saved
 `CaseComparison` exposes this ceiling as `effect_claim` and its first unclassified
 or unexercised obligation as `effect_gap`. A policy violation reports exact side,
 raw event ordinal and rule ordinal in `difference`. MATCH with a refinement is

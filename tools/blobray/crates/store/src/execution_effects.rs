@@ -164,6 +164,7 @@ mod tests {
             index: 1,
         });
         let pattern = EffectPattern {
+            followed_by: None,
             selector: EffectSelector::MmioWrite {
                 address: 0x3000,
                 width: 4,
@@ -171,6 +172,7 @@ mod tests {
             value: EffectValue::Any,
         };
         let contract = EffectContract {
+            unclassified: UnclassifiedEffects::Incomplete,
             vendor: endpoint.clone(),
             replacement: endpoint.clone(),
             rules: vec![EffectRule {

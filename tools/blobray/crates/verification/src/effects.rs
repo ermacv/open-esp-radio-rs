@@ -43,13 +43,18 @@ pub(super) fn inspect(
     report.claim = Some(selected.contract.claim_ceiling);
     for (replacement, observation) in [(false, left), (true, right)] {
         let mut tracker = EffectTracker::new(&selected.contract, replacement, c)?;
-        for (ordinal, event) in observation.events.iter().enumerate() {
+        let mut effects = observation
+            .events
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| is_contract_effect(e))
+            .peekable();
+        while let Some((ordinal, event)) = effects.next() {
             c.checkpoint(1)?;
-            if is_contract_effect(event) {
-                let ordinal = u32::try_from(ordinal)
-                    .map_err(|_| Error::new(ErrorCode::Integrity, "effect ordinal overflow"))?;
-                tracker.observe(event, ordinal, c)?;
-            }
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| Error::new(ErrorCode::Integrity, "effect ordinal overflow"))?;
+            let next = effects.peek().map(|(_, e)| *e);
+            tracker.observe(event, next, ordinal, c)?;
         }
         report.gap = report.gap.or(tracker.gap());
         report.violation = report.violation.or(tracker.first_violation());
@@ -90,6 +95,7 @@ mod tests {
     }
     fn pattern(selector: EffectSelector) -> EffectPattern {
         EffectPattern {
+            followed_by: None,
             selector,
             value: EffectValue::Any,
         }
@@ -117,6 +123,7 @@ mod tests {
                 assertion: id.as_str().parse().unwrap(),
             },
             contract: EffectContract {
+                unclassified: UnclassifiedEffects::Incomplete,
                 vendor: endpoint(),
                 replacement: endpoint(),
                 rules,
@@ -177,6 +184,116 @@ mod tests {
         )
         .unwrap()
     }
+    fn read(address: u32, value: u32) -> ExecutionEvent {
+        ExecutionEvent::Read {
+            address,
+            width: 4,
+            value,
+        }
+    }
+    fn delay(value: u32) -> ExecutionEvent {
+        ExecutionEvent::DelayMicros { value }
+    }
+    /// Unlisted effects compare exactly; transport reads and the one-microsecond
+    /// delay immediately before one are ignored plumbing.
+    fn plumbing() -> ResolvedEffectContract {
+        let transport = EffectSelector::MmioRead {
+            address: 0x5000,
+            width: 4,
+        };
+        let ignored = |name: &str, pattern: EffectPattern| EffectRule {
+            name: name.into(),
+            vendor: Some(pattern),
+            replacement: Some(pattern),
+            disposition: EffectDisposition::Ignored,
+            min_occurrences: 0,
+            max_occurrences: 64,
+            reason: "transport plumbing".into(),
+        };
+        let mut p = policy(vec![
+            ignored("transport-read", pattern(transport)),
+            ignored(
+                "transport-wait",
+                EffectPattern {
+                    followed_by: Some(transport),
+                    ..pattern(EffectSelector::Delay { micros: Some(1) })
+                },
+            ),
+        ]);
+        p.contract.unclassified = UnclassifiedEffects::Required;
+        p
+    }
+    #[test]
+    fn unlisted_effects_compare_exactly_around_ignored_plumbing() {
+        let p = plumbing();
+        p.contract.validate().unwrap();
+        // Different transport polling and its waits do not matter.
+        let vendor = vec![write(1), read(0x5000, 0), read(0x6000, 7), delay(10)];
+        let production = vec![
+            write(1),
+            delay(1),
+            read(0x5000, 9),
+            read(0x5000, 9),
+            read(0x6000, 7),
+            delay(10),
+        ];
+        let result = compare(&p, vendor.clone(), production);
+        assert_eq!(result.verdict, ComparisonVerdict::Match);
+        assert_eq!(result.effect_gap, None);
+        // A one-microsecond wait before anything else stays a compared effect.
+        let visible = vec![write(1), delay(1), read(0x6000, 7), delay(10)];
+        assert_eq!(
+            compare(&p, vendor.clone(), visible).verdict,
+            ComparisonVerdict::Diff
+        );
+        // Unlisted values and order still compare.
+        assert_eq!(
+            compare(
+                &p,
+                vendor.clone(),
+                vec![write(2), read(0x6000, 7), delay(10)]
+            )
+            .verdict,
+            ComparisonVerdict::Diff
+        );
+        // Without the explicit policy, the same unlisted effects are unclassified.
+        let mut strict = p.clone();
+        strict.contract.unclassified = UnclassifiedEffects::Incomplete;
+        assert_eq!(
+            compare(&strict, vendor.clone(), vendor).verdict,
+            ComparisonVerdict::Incomplete
+        );
+    }
+    #[test]
+    fn context_selectors_overlap_only_when_both_contexts_can() {
+        let delay_before = |address| EffectPattern {
+            followed_by: Some(EffectSelector::MmioRead { address, width: 4 }),
+            ..pattern(EffectSelector::Delay { micros: Some(1) })
+        };
+        let rule = |name: &str, p: EffectPattern| EffectRule {
+            name: name.into(),
+            vendor: Some(p),
+            replacement: Some(p),
+            disposition: EffectDisposition::Ignored,
+            min_occurrences: 0,
+            max_occurrences: 4,
+            reason: "plumbing".into(),
+        };
+        let mut distinct = plumbing();
+        distinct.contract.rules = vec![
+            rule("a", delay_before(0x5000)),
+            rule("b", delay_before(0x5004)),
+        ];
+        distinct.contract.validate().unwrap();
+        let mut ambiguous = distinct.clone();
+        ambiguous.contract.rules[1] = rule("b", pattern(EffectSelector::Delay { micros: Some(1) }));
+        assert!(ambiguous.contract.validate().is_err());
+        // An ignored rule never constrains values.
+        let mut exact = distinct;
+        exact.contract.rules[0].vendor.as_mut().unwrap().value = EffectValue::Exact { value: 1 };
+        exact.contract.rules[0].replacement = exact.contract.rules[0].vendor;
+        assert!(exact.contract.validate().is_err());
+    }
     #[test]
     fn omission_preserves_order_and_values_of_every_retained_effect() {
         let p = policy(vec![rule(EffectDisposition::Omitted)]);
@@ -232,6 +349,7 @@ mod tests {
         let mut replaced = rule(EffectDisposition::Replaced);
         replaced.vendor.as_mut().unwrap().value = EffectValue::Exact { value: 7 };
         replaced.replacement = Some(EffectPattern {
+            followed_by: None,
             selector: EffectSelector::Delay { micros: Some(9) },
             value: EffectValue::Exact { value: 9 },
         });
@@ -384,6 +502,7 @@ mod tests {
         }
         let mut x = p.clone();
         let pat = EffectPattern {
+            followed_by: None,
             selector: EffectSelector::MmioWrite {
                 address: 0x4000,
                 width: 1,

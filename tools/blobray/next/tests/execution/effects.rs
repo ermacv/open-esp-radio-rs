@@ -21,6 +21,7 @@ fn setup(omit: bool) -> (Fixture, ExecutionRequest, EffectContract) {
         boundary: ReviewedCallBoundary::Code { address: 0x1000 },
     };
     let pattern = EffectPattern {
+        followed_by: None,
         selector: EffectSelector::MmioWrite {
             address: 0x3000,
             width: 4,
@@ -28,6 +29,7 @@ fn setup(omit: bool) -> (Fixture, ExecutionRequest, EffectContract) {
         value: EffectValue::Any,
     };
     let p = EffectContract {
+        unclassified: UnclassifiedEffects::Incomplete,
         vendor: endpoint(pa),
         replacement: endpoint(pb),
         rules: vec![EffectRule {
@@ -514,6 +516,7 @@ fn effect_policy_composes_with_reviewed_abi_layout_timeline_returns_and_final_ra
         Some(projection.knowledge.clone()),
     );
     let pattern = EffectPattern {
+        followed_by: None,
         selector: EffectSelector::MmioWrite {
             address: 0x6000,
             width: 4,
@@ -521,6 +524,7 @@ fn effect_policy_composes_with_reviewed_abi_layout_timeline_returns_and_final_ra
         value: EffectValue::Exact { value: 11 },
     };
     let contract = EffectContract {
+        unclassified: UnclassifiedEffects::Incomplete,
         vendor: root_a,
         replacement: root_b,
         rules: vec![EffectRule {

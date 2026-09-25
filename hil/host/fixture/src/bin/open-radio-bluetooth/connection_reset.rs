@@ -720,18 +720,20 @@ mod tests {
     fn remote_feature_completion_cannot_precede_command_status() {
         let (client, server) = std::os::unix::net::UnixDatagram::pair().unwrap();
         client.set_nonblocking(true).unwrap();
-        let sender = std::thread::spawn(move || {
-            server
-                .send(&[4, 0x3e, 12, 4, 0, 1, 0, 0x19, 0x40, 0, 0, 0, 0, 0, 0])
-                .unwrap();
-        });
+        // Queue the peer event before the command is written. The peer end
+        // stays open until the exchange ends: a closed datagram peer would
+        // turn the command write into ECONNREFUSED instead of the ordering
+        // error under test.
+        server
+            .send(&[4, 0x3e, 12, 4, 0, 1, 0, 0x19, 0x40, 0, 0, 0, 0, 0, 0])
+            .unwrap();
         let adapter = super::super::model::Adapter(0);
         let peer = super::super::model::PeerAddress([1, 2, 3, 4, 5, 6]);
         let mut report =
             ConnectionReset::new(adapter, peer, 0, BluetoothPeripheralTermination::PeerReset);
         let error = read_remote_features(&Socket(client.into()), ConnHandle::new(1), &mut report)
             .unwrap_err();
-        sender.join().unwrap();
+        drop(server);
         assert!(
             error
                 .to_string()
@@ -777,10 +779,10 @@ mod tests {
         ] {
             let (client, server) = std::os::unix::net::UnixDatagram::pair().unwrap();
             client.set_nonblocking(true).unwrap();
-            let sender = std::thread::spawn(move || {
-                server.send(&[4, 0x13, 1, 0]).unwrap();
-                server.send(&[4, 5, 4, 0, 1, 0, reason]).unwrap();
-            });
+            // Queue both peer events and keep the peer end open for the
+            // whole exchange, so no write can race its closure.
+            server.send(&[4, 0x13, 1, 0]).unwrap();
+            server.send(&[4, 5, 4, 0, 1, 0, reason]).unwrap();
             let adapter = super::super::model::Adapter(0);
             let peer = super::super::model::PeerAddress([1, 2, 3, 4, 5, 6]);
             let mut report = ConnectionReset::new(adapter, peer, 0, termination);
@@ -793,7 +795,7 @@ mod tests {
                 &mut report,
             )
             .unwrap();
-            sender.join().unwrap();
+            drop(server);
             assert!(report.peer_disconnection_complete);
             assert_eq!(report.peer_disconnect_reason, Some(reason));
             assert!(report.termination_after_connection_micros.is_some());

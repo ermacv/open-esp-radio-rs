@@ -127,12 +127,15 @@ fn managed_capture_retains_bytes_through_acknowledged_stop() {
     };
     // Fake the packet source, but execute the real remote lifetime/control
     // script. Readiness follows the file write; stop is a signal, not a delay.
-    let source = r#"import pathlib,signal,sys
+    // The handler writes with unbuffered os.write: SIGTERM may arrive while
+    // the readiness print still holds the buffered stderr writer, and a
+    // buffered write from the handler would be a reentrant call.
+    let source = r#"import os,pathlib,signal,sys
 args=sys.argv[1:]
 pathlib.Path(args[args.index('-w')+1]).write_bytes(b'pcap\x00retained')
 def stop(*_):
-    print('1 packets captured\n0 packets dropped by kernel',file=sys.stderr,flush=True)
-    sys.exit(0)
+    os.write(2,b'1 packets captured\n0 packets dropped by kernel\n')
+    os._exit(0)
 signal.signal(signal.SIGTERM,stop)
 print('tcpdump: listening on egress0,',file=sys.stderr,flush=True)
 signal.pause()

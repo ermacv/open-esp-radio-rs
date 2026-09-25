@@ -459,7 +459,10 @@ lines of the targets: an integer literal or scalar integer constant plus one, a 
 replaced by its boundary neighbor or negation, a negated branch condition,
 `min`/`max` exchanged and two adjacent register writes exchanged. Repeated
 `--scenario` options restrict the baseline and every mutant to those scenarios,
-so a check that new cases kill known survivors runs only those cases. Each mutant is
+so a check that new cases kill known survivors runs only those cases. A surviving mutant
+matching a reviewed decision in [`mutation.rs`](scenarios/src/mutation.rs) (file,
+trimmed source line and replacement, with its reason) is reported as `REVIEWED`;
+a decision on a mutant the scenarios now kill is reported as `STALE-DECISION`. Each mutant is
 rebuilt and runs the scenarios whose baseline reached its lines; the first
 failing scenario kills it. A mutant whose executable sections equal the
 baseline's is equivalent and does not run; one that does not build is unviable.

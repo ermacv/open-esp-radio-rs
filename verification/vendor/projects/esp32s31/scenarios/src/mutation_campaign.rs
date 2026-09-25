@@ -454,6 +454,7 @@ mod tests {
             end: 1,
             original: "1".into(),
             replacement: "2".into(),
+            source_line: "1".into(),
         };
         let file: Target = "phy/a.rs".parse().unwrap();
         let range: Target = "phy/a.rs:10-12".parse().unwrap();

@@ -102,6 +102,112 @@ pub struct Mutant {
     pub end: usize,
     pub original: String,
     pub replacement: String,
+    /// The trimmed source line the mutant starts on; reviewed decisions
+    /// match it, so they survive unrelated line shifts.
+    pub source_line: String,
+}
+
+/// A reviewed decision on a mutant the scenarios cannot kill.
+pub struct Reviewed {
+    pub file: &'static str,
+    pub source_line: &'static str,
+    pub original: &'static str,
+    pub replacement: &'static str,
+    pub reason: &'static str,
+}
+
+/// `selected_dac` choices the exhaustive temperature-sensor comparison
+/// cannot distinguish: it covers every code of every sensor window.
+const SENSOR_SELECTION: &str = "equivalent over the whole sensor domain: \
+    the next DAC applies only outside the current window, and no code of any \
+    window yields an out-of-window temperature at this bound";
+const TEMPERATURE: &str = "crates/hardware/esp32s31/phy/src/analog/temperature.rs";
+
+pub const REVIEWED: &[Reviewed] = &[
+    Reviewed {
+        file: TEMPERATURE,
+        source_line: "if temperature >= current.low && temperature <= current.high {",
+        original: ">=",
+        replacement: ">",
+        reason: SENSOR_SELECTION,
+    },
+    Reviewed {
+        file: TEMPERATURE,
+        source_line: "if temperature >= current.low && temperature <= current.high {",
+        original: "<=",
+        replacement: "<",
+        reason: SENSOR_SELECTION,
+    },
+    Reviewed {
+        file: TEMPERATURE,
+        source_line: "} else if temperature > 99 {",
+        original: ">",
+        replacement: ">=",
+        reason: SENSOR_SELECTION,
+    },
+    Reviewed {
+        file: TEMPERATURE,
+        source_line: "} else if temperature > 99 {",
+        original: "99",
+        replacement: "100",
+        reason: SENSOR_SELECTION,
+    },
+    Reviewed {
+        file: TEMPERATURE,
+        source_line: "} else if temperature > 79 {",
+        original: ">",
+        replacement: ">=",
+        reason: SENSOR_SELECTION,
+    },
+    Reviewed {
+        file: TEMPERATURE,
+        source_line: "} else if temperature > 79 {",
+        original: "79",
+        replacement: "80",
+        reason: SENSOR_SELECTION,
+    },
+    Reviewed {
+        file: TEMPERATURE,
+        source_line: "} else if temperature >= -9 {",
+        original: ">=",
+        replacement: ">",
+        reason: SENSOR_SELECTION,
+    },
+    Reviewed {
+        file: TEMPERATURE,
+        source_line: "} else if temperature >= -9 {",
+        original: "9",
+        replacement: "10",
+        reason: SENSOR_SELECTION,
+    },
+    Reviewed {
+        file: TEMPERATURE,
+        source_line: "} else if temperature < -29 {",
+        original: "<",
+        replacement: "<=",
+        reason: SENSOR_SELECTION,
+    },
+    Reviewed {
+        file: TEMPERATURE,
+        source_line: "} else if temperature < -29 {",
+        original: "29",
+        replacement: "30",
+        reason: SENSOR_SELECTION,
+    },
+];
+
+impl Reviewed {
+    pub fn matches(&self, mutant: &Mutant) -> bool {
+        mutant.file == Path::new(self.file)
+            && mutant.source_line == self.source_line
+            && mutant.original == self.original
+            && mutant.replacement == self.replacement
+    }
+}
+
+/// The reviewed decision on `mutant`, if any.
+pub fn reviewed(mutant: &Mutant) -> Option<&'static Reviewed> {
+    REVIEWED.iter().find(|r| r.matches(mutant))
 }
 
 impl Mutant {
@@ -175,15 +281,25 @@ impl Generator<'_> {
         if original == replacement {
             return;
         }
+        let line = span.start().line;
+        let line_end = self
+            .lines
+            .starts
+            .get(line)
+            .map_or(self.lines.source.len(), |next| next - 1);
+        let source_line = self.lines.source[self.lines.starts[line - 1]..line_end]
+            .trim()
+            .to_owned();
         self.mutants.push(Mutant {
             file: self.file.clone(),
-            line: span.start().line as u32,
+            line: line as u32,
             column: span.start().column as u32 + 1,
             operator,
             start,
             end,
             original,
             replacement,
+            source_line,
         });
     }
     fn executed(&self, span: proc_macro2::Span) -> bool {
@@ -427,5 +543,21 @@ mod tests {
         let modify = changed.find("bus.b.modify").unwrap();
         assert!(modify < write);
         assert_eq!(changed.len(), SOURCE.len());
+    }
+
+    #[test]
+    fn reviewed_decisions_match_their_source_line_after_a_shift() {
+        let source = "fn selected(temperature: i16) -> u8 {\n    if false {\n        0\n    } else if temperature > 99 {\n        5\n    } else {\n        1\n    }\n}\n";
+        for prefix in ["", "\n\n\n"] {
+            let text = format!("{prefix}{source}");
+            let executed: BTreeSet<u32> = (1..=12).collect();
+            let mutants = generate(Path::new(TEMPERATURE), &text, &executed).unwrap();
+            let bound = mutants
+                .iter()
+                .find(|m| m.original == "99")
+                .expect("threshold mutant");
+            assert_eq!(bound.source_line, "} else if temperature > 99 {");
+            assert!(reviewed(bound).is_some());
+        }
     }
 }

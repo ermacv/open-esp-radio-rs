@@ -801,14 +801,23 @@ fn mutants(scenario: Scenario) -> Result<ExitCode> {
         *counts.entry(kind).or_insert(0usize) += 1;
     }
     for result in &report.results {
-        if matches!(result.outcome, mutation_campaign::Outcome::Survived) {
-            println!(
+        let decision = oer_esp32s31_vendor_scenarios::mutation::reviewed(&result.mutant);
+        match (&result.outcome, decision) {
+            (mutation_campaign::Outcome::Survived, None) => println!(
                 "SURVIVED {} {:?} -> {:?} [{}]",
                 result.id,
                 result.mutant.original,
                 result.mutant.replacement,
                 result.scenarios.join(",")
-            );
+            ),
+            (mutation_campaign::Outcome::Survived, Some(decision)) => {
+                println!("REVIEWED {}: {}", result.id, decision.reason)
+            }
+            // A decision on a mutant the scenarios now kill no longer holds.
+            (mutation_campaign::Outcome::Killed { .. }, Some(_)) => {
+                println!("STALE-DECISION {}", result.id)
+            }
+            _ => {}
         }
     }
     println!("mutants {counts:?}; report {}", path.display());

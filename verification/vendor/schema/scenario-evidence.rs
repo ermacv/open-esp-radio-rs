@@ -13,7 +13,7 @@ use std::{
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Index format.
-pub const SCHEMA: u32 = 3;
+pub const SCHEMA: u32 = 4;
 /// Producer command recorded in every index.
 pub const COMMAND: &str = "vendor-scenario all";
 /// The only verdict an entry carries: a claim exists only when its root
@@ -35,6 +35,32 @@ pub struct Index {
     /// Uncovered vendor locations of claimed root closures that no reviewed
     /// decision excludes yet, ascending and unique.
     pub untriaged: Vec<Location>,
+    /// Executed production PHY source lines that no compared observation
+    /// depends on and no reviewed decision covers yet, ascending and unique.
+    pub unobserved: Vec<SourceLine>,
+}
+
+/// Production PHY source lines a claim's executions executed, by whether a
+/// compared observation of those executions depends on them. A line another
+/// claim observes can be unobserved here; the index lists only lines no
+/// scenario observes.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Observation {
+    pub executed: u64,
+    pub observed: u64,
+    /// Unobserved lines a reviewed decision covers.
+    pub reviewed: u64,
+    /// Unobserved lines without a decision.
+    pub untriaged: u64,
+}
+
+/// One line of a repository source file.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct SourceLine {
+    pub path: PathBuf,
+    pub line: u32,
 }
 
 /// Reached and total basic blocks or branch directions.
@@ -101,6 +127,7 @@ pub struct Entry {
     /// contracts are typed values reviewed through git.
     pub reviews: Vec<String>,
     pub coverage: Coverage,
+    pub observation: Observation,
 }
 
 /// SHA-256 over every file below `relative`, excluding `target` and hidden
@@ -193,6 +220,14 @@ impl Index {
                 )
                 .into());
             }
+            let o = &entry.observation;
+            if o.observed + o.reviewed + o.untriaged != o.executed {
+                return Err(format!(
+                    "entry {} {} has inconsistent observation",
+                    entry.source, entry.symbol
+                )
+                .into());
+            }
             if !seen.insert((
                 &entry.suite,
                 &entry.source,
@@ -204,6 +239,11 @@ impl Index {
         }
         if self.untriaged.windows(2).any(|w| w[0] >= w[1]) {
             return Err("untriaged locations are not ascending and unique".into());
+        }
+        if self.unobserved.windows(2).any(|w| w[0] >= w[1])
+            || self.unobserved.iter().any(|l| !is_relative(&l.path))
+        {
+            return Err("unobserved lines are not relative, ascending and unique".into());
         }
         Ok(())
     }

@@ -116,9 +116,14 @@ native evidence index
   carries the vendor coverage of the root's closure over those comparisons
   (Blobray in-process coverage): basic blocks and branch directions reached out of
   all, and how many uncovered ones a reviewed decision excludes or remain
-  untriaged;
+  untriaged. It also counts the production PHY source lines those
+  comparisons executed, the lines a compared observation depends on (Blobray
+  observation dependence), and how many of the rest a reviewed decision
+  covers or remain untriaged;
 - every untriaged uncovered location of the claimed closures, by vendor
   function, offset and kind (block, taken or fallthrough direction);
+- every executed production PHY line that no scenario's compared observations
+  depend on and no reviewed decision covers, by path and line;
 - SHA-256 identities of the authenticated private inputs and the production
   probe ELF;
 - directory digests of every source the verdicts depend on: the probe ELF's
@@ -129,10 +134,11 @@ The index carries identities and verdicts only, never vendor bytes.
 Qualification reads the index named by the program's `[verification]
 evidence-index` (catalogs name it in `[validation] evidence-index`), checks
 schema, producer command and chip target, requires every entry to be a MATCH
-claim with compared cases whose coverage accounts for every uncovered location,
-and recomputes every recorded directory digest. Coverage is reported, not a
-readiness gate: it shows which vendor behavior the comparisons never
-exercised. Any
+claim with compared cases whose coverage accounts for every uncovered location
+and whose observation counts account for every executed line, and recomputes
+every recorded directory digest. Coverage and observation are reported, not
+readiness gates: they show which vendor behavior the comparisons never
+exercised and which executed production lines they cannot notice. Any
 change to those sources makes the whole index stale: stale evidence supports
 no claim until the scenarios run again. An absent index means no vendor
 evidence is available: affected capabilities remain unqualified while status

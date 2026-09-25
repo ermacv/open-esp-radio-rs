@@ -420,47 +420,23 @@ millicode) as whole functions. A decision on a closure function that is fully
 covered fails its scenario. Untriaged locations are pending work: each becomes a
 follow-up case or a reviewed decision.
 
-## Mutation run
+## Observation decisions
 
-`vendor-scenario mutants` asks whether the scenarios notice a single-point
-defect in a named region of the production PHY they compare. A run is always
-targeted: each `--target FILE[:START-END]` selects a source file, optionally a
-line range, and only mutants there run. A mutant costs an incremental LTO probe
-rebuild and a full rerun of every scenario reaching it, including the unchanged
-vendor side, so a whole-crate run takes hours and is not a routine check.
-
-```console
-cargo xtask vendor-scenario mutants --library /private/libphy.a \
-  --rom /private/esp32s31_rev0_rom.elf --linker /usr/bin/ld.lld \
-  --sdk /private/bootloader.elf --phy-sdk /private/phy_tracking_reference.elf \
-  --rftest /private/librftest.a --output target/verification/mutants \
-  --limit-mode watchdog --workers 4 \
-  --target crates/hardware/esp32s31/phy/src/analog/temperature.rs:130-160 \
-  --scenario channel
-```
-
-Tracked files must equal `HEAD`: each worker checks out a detached worktree of
-`HEAD` below `--output` with its own Cargo target directory, reused by later
-runs. A baseline run of every scenario records, through `--reach`, the
-production probe instructions its retained executions reached; the probe's
-debug line information maps them to source lines of `--scope` (default the
-production PHY crate), including inlined frames. Mutants apply only to those
-lines of the targets: an integer literal or scalar integer constant plus one, a comparison
-replaced by its boundary neighbor or negation, a negated branch condition,
-`min`/`max` exchanged and two adjacent register writes exchanged. Repeated
-`--scenario` options restrict the baseline and every mutant to those scenarios,
-so a check that new cases kill known survivors runs only those cases. A surviving mutant
-matching a reviewed decision in [`mutation.rs`](scenarios/src/mutation.rs) (file,
-trimmed source line and replacement, with its reason) is reported as `REVIEWED`;
-a decision on a mutant the scenarios now kill is reported as `STALE-DECISION`. Each mutant is
-rebuilt and runs the scenarios whose baseline reached its lines; the first
-failing scenario kills it. A mutant whose executable sections equal the
-baseline's is equivalent and does not run; one that does not build is unviable.
-Each finished mutant is appended to `journal-<commit>.jsonl` below `--output`;
-a rerun at the same commit keeps those results and runs only the rest.
-`mutants.json` below `--output` lists every mutant with its scenarios, outcome
-and duration; surviving mutants are printed and become follow-up cases or
-reviewed decisions.
+Every compared request also reports, through Blobray observation dependence,
+which executed production instructions a compared observation depends on:
+data dependence through registers and memory, control dependence on
+conditional branches and the transfers that lead to observed code. The probe's
+debug line information maps those instructions to production PHY source lines,
+including inlined frames; a line is observed when any of its executed
+instructions is. Each evidence entry counts the lines its executions executed,
+observed, reviewed and left untriaged. A line executed but observed by no
+scenario is either reviewed by a decision in
+[`observation.rs`](scenarios/src/observation.rs) (file and trimmed source line,
+with its reason) or listed as unobserved in the evidence index. A decision that
+matches no unobserved line fails `all`. Unobserved lines are pending work: each
+becomes a follow-up case, a relation that compares its effect, or a reviewed
+decision. Dependence is a necessary condition for a comparison to notice a
+defect on a line, not a sufficient one.
 
 ## Contract ownership
 

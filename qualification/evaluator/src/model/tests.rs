@@ -240,9 +240,16 @@ pub(crate) fn native_evidence(root: &Path, roots: &[(&str, &str, &str)]) -> Nati
                     excluded: 0,
                     untriaged: 0,
                 },
+                observation: scenario_evidence::Observation {
+                    executed: 1,
+                    observed: 1,
+                    reviewed: 0,
+                    untriaged: 0,
+                },
             })
             .collect(),
         untriaged: vec![],
+        unobserved: vec![],
     };
     index.validate("test-radio").unwrap();
     let current = index.is_current(root);
@@ -348,6 +355,7 @@ pub(crate) fn assert_reviewed_hil(
             sources: vec![],
             entries: vec![],
             untriaged: vec![],
+            unobserved: vec![],
         },
         current: false,
     };
@@ -400,5 +408,35 @@ fn native_index_coverage_must_account_for_every_uncovered_location() {
     listed.validate("test-radio").unwrap();
     // Listed locations are ascending and unique.
     listed.untriaged = vec![location(4), location(4)];
+    assert!(listed.validate("test-radio").is_err());
+}
+
+#[test]
+fn native_index_observation_must_account_for_every_executed_line() {
+    let fixture = fixture_root("observation");
+    let evidence = native_evidence(&fixture.0, &[("radio", "archive", "set_channel")]);
+    let rejected = |mutate: &dyn Fn(&mut scenario_evidence::Index)| {
+        let mut index = evidence.index.clone();
+        mutate(&mut index);
+        index.validate("test-radio").is_err()
+    };
+    // An executed line neither observed, reviewed nor untriaged.
+    assert!(rejected(&|i| i.entries[0].observation.executed = 2));
+    let line = |line| scenario_evidence::SourceLine {
+        path: "production/src/lib.rs".into(),
+        line,
+    };
+    let mut listed = evidence.index.clone();
+    listed.entries[0].observation.executed = 2;
+    listed.entries[0].observation.untriaged = 1;
+    listed.unobserved = vec![line(3)];
+    listed.validate("test-radio").unwrap();
+    // Listed lines are relative, ascending and unique.
+    listed.unobserved = vec![line(3), line(3)];
+    assert!(listed.validate("test-radio").is_err());
+    listed.unobserved = vec![scenario_evidence::SourceLine {
+        path: "/production/src/lib.rs".into(),
+        line: 3,
+    }];
     assert!(listed.validate("test-radio").is_err());
 }

@@ -6,7 +6,7 @@ use oer_esp32s31_vendor_scenarios::{
     gain::{Gain, Options},
     gain_state::{self, Unmet},
     harness::{Budget, Result},
-    harness_edges, i2c, i2c_transport, mutation_campaign,
+    harness_edges, i2c, i2c_transport, observation,
     phy::PhyOptions,
     research, rfpll, rx_gain, session, tracking, tx_dc,
 };
@@ -75,50 +75,6 @@ enum Scenario {
         #[arg(long)]
         index: Option<PathBuf>,
     },
-    /// Mutate executed production PHY code and run every mutant against the
-    /// scenarios that reach it; writes `mutants.json` below `--output`.
-    Mutants {
-        /// `blobray` executable.
-        #[arg(long)]
-        binary: PathBuf,
-        /// Pinned `libphy.a`.
-        #[arg(long)]
-        library: PathBuf,
-        /// Pinned ROM ELF.
-        #[arg(long)]
-        rom: PathBuf,
-        /// External linker selected for image preparation.
-        #[arg(long)]
-        linker: PathBuf,
-        /// Authenticated bootloader SDK firmware.
-        #[arg(long)]
-        sdk: PathBuf,
-        /// Authenticated PHY SDK firmware.
-        #[arg(long)]
-        phy_sdk: PathBuf,
-        /// Authenticated `librftest.a`.
-        #[arg(long)]
-        rftest: PathBuf,
-        /// Ignored output root for worktrees, logs and the report.
-        #[arg(long)]
-        output: PathBuf,
-        /// Source region to mutate, `FILE` or `FILE:START-END` relative to the
-        /// repository root; repeat for several. A run is always targeted.
-        #[arg(long = "target", required = true)]
-        targets: Vec<mutation_campaign::Target>,
-        /// Run only these scenarios, for the baseline and every mutant;
-        /// repeat for several. All scenarios when omitted.
-        #[arg(long = "scenario")]
-        scenarios: Vec<String>,
-        /// Production source directory to mutate, relative to the repository root.
-        #[arg(long, default_value = MUTATION_SCOPE)]
-        scope: PathBuf,
-        /// Parallel workers, each with its own worktree and build.
-        #[arg(long, default_value_t = MUTATION_WORKERS)]
-        workers: usize,
-        #[command(flatten)]
-        budget: Budget,
-    },
     /// Combined calibration and parameter tracking parents with their real
     /// children, RFPLL corrections and failed-TX containment.
     Tracking {
@@ -186,38 +142,11 @@ struct Common {
     output: PathBuf,
     #[command(flatten)]
     budget: Budget,
-    /// Write the production probe instructions each scenario's retained
-    /// executions reached, as a JSON map from scenario name to addresses.
-    #[arg(long)]
-    reach: Option<PathBuf>,
 }
 
-/// Production PHY sources a mutation run changes by default.
-const MUTATION_SCOPE: &str = "crates/hardware/esp32s31/phy/src";
-/// Default mutation workers; each runs one scenario (about two cores) at a time.
-const MUTATION_WORKERS: usize = 4;
-
-/// Write `reach` when requested.
-fn write_reach(
-    path: Option<&Path>,
-    reach: &std::collections::BTreeMap<&str, std::collections::BTreeSet<u32>>,
-) -> Result<()> {
-    if let Some(path) = path {
-        let mut bytes = serde_json::to_vec(reach)?;
-        bytes.push(b'\n');
-        std::fs::write(path, bytes)?;
-    }
-    Ok(())
-}
-
-/// Exit code of one scenario, after writing its reach when requested.
-fn single(name: &str, reach: Option<PathBuf>, outcome: Result<Outcome>) -> Result<ExitCode> {
-    let (code, claims) = outcome?;
-    write_reach(
-        reach.as_deref(),
-        &std::collections::BTreeMap::from([(name, claims.reach)]),
-    )?;
-    Ok(code)
+/// Exit code of one scenario.
+fn single(outcome: Result<Outcome>) -> Result<ExitCode> {
+    Ok(outcome?.0)
 }
 
 /// Evidence entries and untriaged coverage of one scenario, alongside its
@@ -523,12 +452,7 @@ mod evidence {
     /// Shared schema sources the scenarios include by path.
     const SCHEMA_SOURCES: &str = "verification/vendor/schema";
 
-    /// Repository root: this package lives five directories below it.
-    pub fn root() -> Result<PathBuf> {
-        Ok(Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../../..")
-            .canonicalize()?)
-    }
+    pub use oer_esp32s31_vendor_scenarios::observation::root;
 
     fn sha256(path: &Path) -> Result<String> {
         use sha2::{Digest, Sha256};
@@ -599,6 +523,7 @@ mod evidence {
         optional: &[&PathBuf; 3],
         entries: Vec<Entry>,
         untriaged: Vec<evidence_index::Location>,
+        unobserved: Vec<evidence_index::SourceLine>,
     ) -> Result<Index> {
         let root = root()?;
         let mut inputs = std::collections::BTreeMap::new();
@@ -635,6 +560,7 @@ mod evidence {
             sources,
             entries,
             untriaged,
+            unobserved,
         };
         index.validate(TARGET)?;
         Ok(index)
@@ -649,10 +575,8 @@ fn all(
     rftest: PathBuf,
     index: Option<PathBuf>,
 ) -> Result<ExitCode> {
-    // Only `all` writes the combined reach.
     let within = |name: &str| Common {
         output: common.output.join(name),
-        reach: None,
         ..common.clone()
     };
     type Run<'a> = Box<dyn FnOnce() -> Result<Outcome> + Send + 'a>;
@@ -708,7 +632,7 @@ fn all(
     let mut elapsed = vec![];
     let mut entries = vec![];
     let mut untriaged = std::collections::BTreeSet::new();
-    let mut reach = std::collections::BTreeMap::new();
+    let mut lines = observation::Lines::default();
     let mut failed = None;
     for (name, seconds, outcome) in outcomes {
         elapsed.push((name, seconds));
@@ -716,7 +640,7 @@ fn all(
             Ok((code, claims)) if code == ExitCode::SUCCESS => {
                 entries.extend(claims.entries);
                 untriaged.extend(claims.untriaged);
-                reach.insert(name, claims.reach);
+                lines.extend(&claims.lines);
             }
             Ok((code, _)) => {
                 println!("scenario {name} did not pass");
@@ -731,7 +655,21 @@ fn all(
     if let Some(failed) = failed {
         return failed;
     }
-    write_reach(common.reach.as_deref(), &reach)?;
+    // A line is unobserved when no scenario observes it; every decision must
+    // still review one.
+    let root = observation::root()?;
+    let unobserved_lines = lines.unobserved();
+    let mut sources = observation::Sources::default();
+    sources.check(&root, observation::DECISIONS, &unobserved_lines)?;
+    let (reviewed, unobserved) =
+        sources.classify(&root, observation::DECISIONS, &unobserved_lines)?;
+    println!(
+        "{} of {} executed production PHY lines observed; {} unobserved reviewed, {} untriaged",
+        lines.observed.len(),
+        lines.executed.len(),
+        reviewed.len(),
+        unobserved.len()
+    );
     for (name, seconds) in &elapsed {
         println!("{name} {seconds:.1}s");
     }
@@ -741,6 +679,10 @@ fn all(
             &[&sdk, &phy_sdk, &rftest],
             entries,
             untriaged.into_iter().collect(),
+            unobserved
+                .into_iter()
+                .map(|(path, line)| evidence_index::SourceLine { path, line })
+                .collect(),
         )?;
         let mut bytes = serde_json::to_vec_pretty(&index)?;
         bytes.push(b'\n');
@@ -751,121 +693,13 @@ fn all(
     Ok(ExitCode::SUCCESS)
 }
 
-fn mutants(scenario: Scenario) -> Result<ExitCode> {
-    let Scenario::Mutants {
-        binary,
-        library,
-        rom,
-        linker,
-        sdk,
-        phy_sdk,
-        rftest,
-        output,
-        scope,
-        targets,
-        scenarios,
-        workers,
-        budget,
-    } = scenario
-    else {
-        unreachable!("only the mutants subcommand")
-    };
-    let path = |flag: &str, p: &Path| -> Result<[std::ffi::OsString; 2]> {
-        Ok([flag.into(), std::path::absolute(p)?.into()])
-    };
-    let mut common = vec![];
-    for (flag, p) in [
-        ("--binary", &binary),
-        ("--library", &library),
-        ("--rom", &rom),
-        ("--linker", &linker),
-    ] {
-        common.extend(path(flag, p)?);
-    }
-    common.extend(budget.arguments());
-    let phy_sdk_args = path("--phy-sdk", &phy_sdk)?.to_vec();
-    let mut i2c_args = path("--sdk", &sdk)?.to_vec();
-    i2c_args.extend(phy_sdk_args.clone());
-    let mut suites = std::collections::BTreeMap::from([
-        ("gain".to_owned(), path("--rftest", &rftest)?.to_vec()),
-        ("i2c".to_owned(), i2c_args),
-        ("channel".to_owned(), vec![]),
-        ("rx-gain".to_owned(), phy_sdk_args.clone()),
-        ("tx-dc".to_owned(), phy_sdk_args.clone()),
-        ("tracking".to_owned(), phy_sdk_args),
-    ]);
-    if let Some(unknown) = scenarios.iter().find(|s| !suites.contains_key(*s)) {
-        return Err(format!("unknown scenario {unknown}").into());
-    }
-    if !scenarios.is_empty() {
-        suites.retain(|name, _| scenarios.contains(name));
-    }
-    std::fs::create_dir_all(&output)?;
-    let campaign = mutation_campaign::Campaign {
-        root: evidence::root()?,
-        scope,
-        targets,
-        output: std::path::absolute(&output)?,
-        workers,
-        scenarios: std::env::current_exe()?,
-        common,
-        suites,
-    };
-    let report = campaign.run()?;
-    let mut bytes = serde_json::to_vec_pretty(&report)?;
-    bytes.push(b'\n');
-    let path = output.join("mutants.json");
-    std::fs::write(&path, bytes)?;
-    let mut counts = std::collections::BTreeMap::new();
-    for result in &report.results {
-        let kind = match &result.outcome {
-            mutation_campaign::Outcome::Killed { .. } => "killed",
-            mutation_campaign::Outcome::Survived => "survived",
-            mutation_campaign::Outcome::Equivalent => "equivalent",
-            mutation_campaign::Outcome::Unviable => "unviable",
-        };
-        *counts.entry(kind).or_insert(0usize) += 1;
-    }
-    for result in &report.results {
-        let decision = oer_esp32s31_vendor_scenarios::mutation::reviewed(&result.mutant);
-        match (&result.outcome, decision) {
-            (mutation_campaign::Outcome::Survived, None) => println!(
-                "SURVIVED {} {:?} -> {:?} [{}]",
-                result.id,
-                result.mutant.original,
-                result.mutant.replacement,
-                result.scenarios.join(",")
-            ),
-            (mutation_campaign::Outcome::Survived, Some(decision)) => {
-                println!("REVIEWED {}: {}", result.id, decision.reason)
-            }
-            // A decision on a mutant the scenarios now kill no longer holds.
-            (mutation_campaign::Outcome::Killed { .. }, Some(_)) => {
-                println!("STALE-DECISION {}", result.id)
-            }
-            _ => {}
-        }
-    }
-    println!("mutants {counts:?}; report {}", path.display());
-    Ok(ExitCode::SUCCESS)
-}
-
 fn main() -> ExitCode {
     let result = match Cli::parse().scenario {
-        scenario @ Scenario::Mutants { .. } => mutants(scenario),
-        Scenario::Gain { common, rftest } => {
-            single("gain", common.reach.clone(), gain(common, rftest))
-        }
-        Scenario::Channel { common } => single("channel", common.reach.clone(), channel(common)),
-        Scenario::RxGain { common, phy_sdk } => {
-            single("rx-gain", common.reach.clone(), rx_gain(common, phy_sdk))
-        }
-        Scenario::TxDc { common, phy_sdk } => {
-            single("tx-dc", common.reach.clone(), tx_dc(common, phy_sdk))
-        }
-        Scenario::Tracking { common, phy_sdk } => {
-            single("tracking", common.reach.clone(), tracking(common, phy_sdk))
-        }
+        Scenario::Gain { common, rftest } => single(gain(common, rftest)),
+        Scenario::Channel { common } => single(channel(common)),
+        Scenario::RxGain { common, phy_sdk } => single(rx_gain(common, phy_sdk)),
+        Scenario::TxDc { common, phy_sdk } => single(tx_dc(common, phy_sdk)),
+        Scenario::Tracking { common, phy_sdk } => single(tracking(common, phy_sdk)),
         Scenario::All {
             common,
             sdk,
@@ -899,7 +733,7 @@ fn main() -> ExitCode {
             common,
             sdk,
             phy_sdk,
-        } => single("i2c", common.reach.clone(), i2c(common, sdk, phy_sdk)),
+        } => single(i2c(common, sdk, phy_sdk)),
     };
     result.unwrap_or_else(|error| {
         eprintln!("error: {error}");

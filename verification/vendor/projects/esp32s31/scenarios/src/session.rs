@@ -31,6 +31,9 @@ pub struct Artifact {
     pub complete: bool,
     /// Vendor and production entries and the verdict of every compared case.
     pub compared: Vec<ComparedCase>,
+    /// Executed production instructions and those a compared observation
+    /// depends on.
+    pub observed: blobray_application::in_process::ObservedInstructions,
 }
 
 /// One claimed pair: `symbol` of vendor `source` at `vendor`, compared with
@@ -48,8 +51,17 @@ struct Claimed<'a> {
 pub struct Claims {
     pub entries: Vec<evidence_index::Entry>,
     pub untriaged: std::collections::BTreeSet<evidence_index::Location>,
-    /// Production probe instructions any retained execution reached.
-    pub reach: std::collections::BTreeSet<u32>,
+    /// Production PHY lines the claims' executions executed and observed.
+    pub lines: crate::observation::Lines,
+}
+
+/// Production PHY lines of the claims of one scenario.
+struct ClaimLines {
+    map: crate::observation::LineMap,
+    root: PathBuf,
+    sources: crate::observation::Sources,
+    /// Lines of every claim so far.
+    lines: crate::observation::Lines,
 }
 
 /// One compared case of a retained execution.
@@ -335,7 +347,7 @@ impl Session {
                 effects: &self.effects,
                 projections: &self.projections,
                 vendor_results: None,
-                dependence: None,
+                dependence: Some(&blobray_backend_riscv::RiscvDecoder),
             },
             &blobray_backend_riscv::RiscvExecutor,
             &memory,
@@ -589,6 +601,7 @@ impl Session {
             verdict: result.verdict,
             complete: result.complete,
             compared,
+            observed: result.observed.unwrap_or_default(),
         });
         Ok(self.artifacts.last().unwrap())
     }
@@ -603,6 +616,7 @@ impl Session {
         claimed: Claimed<'_>,
         decisions: &[crate::coverage::Decision],
         observed: &mut crate::coverage::Observed,
+        lines: &mut ClaimLines,
     ) -> Result<evidence_index::Entry> {
         let Claimed {
             source,
@@ -723,6 +737,25 @@ impl Session {
             untriaged: untriaged.len() as u64,
         };
         observed.uncovered.extend(locations);
+        let mut executed = std::collections::BTreeSet::new();
+        let mut depended = std::collections::BTreeSet::new();
+        for artifact in &selected {
+            executed.extend(&artifact.observed.executed);
+            depended.extend(&artifact.observed.observed);
+        }
+        let claim_lines = lines.map.lines(&executed, &depended);
+        let (reviewed, untriaged) = lines.sources.classify(
+            &lines.root,
+            crate::observation::DECISIONS,
+            &claim_lines.unobserved(),
+        )?;
+        let observation = evidence_index::Observation {
+            executed: claim_lines.executed.len() as u64,
+            observed: claim_lines.observed.len() as u64,
+            reviewed: reviewed.len() as u64,
+            untriaged: untriaged.len() as u64,
+        };
+        lines.lines.extend(&claim_lines);
         Ok(evidence_index::Entry {
             suite: suite.into(),
             source: source.into(),
@@ -732,6 +765,7 @@ impl Session {
             cases,
             reviews: reviews.into_iter().collect(),
             coverage,
+            observation,
         })
     }
 
@@ -747,6 +781,18 @@ impl Session {
         decisions: &[crate::coverage::Decision],
     ) -> Result<Claims> {
         let mut observed = crate::coverage::Observed::default();
+        let executed: std::collections::BTreeSet<u32> = self
+            .artifacts
+            .iter()
+            .flat_map(|a| a.observed.executed.iter().copied())
+            .collect();
+        let root = crate::observation::root()?;
+        let mut lines = ClaimLines {
+            map: crate::observation::LineMap::new(&self.inputs[PROBE_INPUT], &executed, &root)?,
+            root,
+            sources: Default::default(),
+            lines: Default::default(),
+        };
         let entries = list
             .iter()
             .map(|(source, symbol, production)| {
@@ -771,6 +817,7 @@ impl Session {
                     },
                     decisions,
                     &mut observed,
+                    &mut lines,
                 )
             })
             .collect::<Result<Vec<_>>>()?;
@@ -781,23 +828,10 @@ impl Session {
             steps as f64 / seconds.max(f64::EPSILON) / 1e6
         );
         let (_, untriaged) = crate::coverage::Observed::classify(decisions, &observed.uncovered);
-        let reach = self
-            .artifacts
-            .iter()
-            .flat_map(|artifact| &artifact.records)
-            .filter_map(|record| match record {
-                blobray_domain::ExecutionEvidence::Coverage {
-                    replacement: true,
-                    coverage,
-                } => Some(coverage.instructions.iter().copied()),
-                _ => None,
-            })
-            .flatten()
-            .collect();
         Ok(Claims {
             entries,
             untriaged,
-            reach,
+            lines: lines.lines,
         })
     }
 

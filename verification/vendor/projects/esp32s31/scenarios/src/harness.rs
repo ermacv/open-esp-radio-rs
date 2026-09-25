@@ -221,34 +221,25 @@ impl Runner {
     /// Authenticate selected inputs, import copies, then remove those copies.
     /// Returns the revision, each input's digest and its authenticated bytes.
     pub fn capture(&self, inputs: &[Input<'_>]) -> Result<(RevisionId, Vec<String>, Vec<Vec<u8>>)> {
-        let mut identities = Vec::with_capacity(inputs.len());
-        let mut contents = Vec::with_capacity(inputs.len());
-        for input in inputs {
-            let bytes = fs::read(input.path)?;
-            let actual = sha256(&bytes);
-            if let Some(expected) = input.sha256
-                && actual != expected
-            {
-                return Err(invalid(format!(
-                    "{}: authenticated input mismatch: {actual}",
-                    input.role
-                )));
-            }
-            identities.push(actual);
-            contents.push(bytes);
-        }
-        let local: Vec<PathBuf> = (0..inputs.len())
+        let (identities, contents) = authenticate(inputs)?;
+        let roles: Vec<&str> = inputs.iter().map(|i| i.role).collect();
+        let revision = self.import(&roles, &contents)?;
+        Ok((revision, identities, contents))
+    }
+
+    /// Import already authenticated input bytes into a new project.
+    pub fn import(&self, roles: &[&str], contents: &[Vec<u8>]) -> Result<RevisionId> {
+        let local: Vec<PathBuf> = (0..contents.len())
             .map(|i| self.run.join(format!("input-{i}")))
             .collect();
-        // Import the authenticated bytes, not a later state of the source path.
         for (bytes, destination) in contents.iter().zip(&local) {
             fs::write(destination, bytes)?;
         }
         self.call("init", &args(["init"]), 0)?;
         let mut import = args(["import"]);
-        for (input, path) in inputs.iter().zip(&local) {
+        for (role, path) in roles.iter().zip(&local) {
             import.push("--input".into());
-            let mut binding = OsString::from(format!("{}=", input.role));
+            let mut binding = OsString::from(format!("{role}="));
             binding.push(path);
             import.push(binding);
         }
@@ -259,7 +250,7 @@ impl Runner {
         for path in local {
             fs::remove_file(path)?;
         }
-        Ok((revision, identities, contents))
+        Ok(revision)
     }
 
     pub fn inventory(&self) -> Result<Revision> {
@@ -277,6 +268,28 @@ impl Runner {
         self.call(name, &command, 0)?;
         Ok(fs::read(output.join("data.bin"))?)
     }
+}
+
+/// Read every input once and check its pinned digest; returns each digest and
+/// the authenticated bytes.
+pub fn authenticate(inputs: &[Input<'_>]) -> Result<(Vec<String>, Vec<Vec<u8>>)> {
+    let mut identities = Vec::with_capacity(inputs.len());
+    let mut contents = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        let bytes = fs::read(input.path)?;
+        let actual = sha256(&bytes);
+        if let Some(expected) = input.sha256
+            && actual != expected
+        {
+            return Err(invalid(format!(
+                "{}: authenticated input mismatch: {actual}",
+                input.role
+            )));
+        }
+        identities.push(actual);
+        contents.push(bytes);
+    }
+    Ok((identities, contents))
 }
 
 pub fn args<const N: usize>(values: [&str; N]) -> Vec<OsString> {
@@ -610,6 +623,7 @@ pub fn data_request(
 pub const RISCV_INTEGER: CallAbi = CallAbi::RiscvInteger;
 
 /// Resolve declared entries from the same captured ELF as their metadata.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct ProbeCatalog {
     entries: BTreeMap<String, (oer_probe_codegen::Entry, u32)>,
 }

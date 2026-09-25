@@ -254,12 +254,7 @@ impl Gain {
             &inputs,
             "captured Wi-Fi/BT gain, calibration storage and RF-test policy; no RF qualification",
         )?;
-        let (runner, run, revision, inventory) = (
-            &session.runner,
-            &session.run,
-            &session.revision,
-            &session.inventory,
-        );
+        let (run, revision, inventory) = (&session.run, &session.revision, &session.inventory);
         let object = named_object(inventory, 0, "phy_tx_gain.o")?;
         let section = named_section(object, ".rodata")?;
         let request = data_request(
@@ -272,7 +267,7 @@ impl Gain {
                 length: 216,
             },
         );
-        let coefficients = runner.data("coefficients", &request, &run.join("coefficients"))?;
+        let coefficients = session.data("coefficients", &request, &run.join("coefficients"))?;
         if sha256(&fs::read(run.join("coefficients/object.elf"))?) != OBJECT_SHA
             || sha256(&coefficients) != COEFFICIENT_SHA
         {

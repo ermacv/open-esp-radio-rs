@@ -482,7 +482,7 @@ impl PhyImage {
             analyses: vec![],
             pointer_table: None,
         };
-        self.runner.data(name, &request, &self.run.join(name))
+        self.session.data(name, &request, &self.run.join(name))
     }
 
     /// Run the real ROM callback installer with the captured ROM table pointer.

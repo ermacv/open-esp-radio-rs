@@ -214,12 +214,7 @@ impl I2c {
             &inputs,
             "I2C software comparison",
         )?;
-        let (runner, run, revision, inventory) = (
-            &session.runner,
-            &session.run,
-            &session.revision,
-            &session.inventory,
-        );
+        let (run, revision, inventory) = (&session.run, &session.revision, &session.inventory);
         let object = named_object(inventory, 0, "phy_i2c.o")?;
         let section = named_section(object, ".rodata.CSWTCH.51")?;
         let request = data_request(
@@ -232,7 +227,7 @@ impl I2c {
                 length: 200,
             },
         );
-        let table = runner.data("table", &request, &run.join("table"))?;
+        let table = session.data("table", &request, &run.join("table"))?;
         if sha256(&fs::read(run.join("table/object.elf"))?) != OBJECT_SHA
             || sha256(&table) != TABLE_SHA
         {

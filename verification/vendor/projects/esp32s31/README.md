@@ -529,6 +529,12 @@ Addresses, byte seeds, lifetime, reset, models and observation relations remain
 scenario choices. Opaque owner/layout types require explicit adapters. Word padding requires
 both an explicit count and fill value; unknown memory stays unknown.
 
+Setup results (the imported revision, its inventory, the probe catalog, linked
+images and data exports) are memoized in [`setup-cache`](scenarios/src/setup_cache.rs)
+below the scenario output, keyed by the Blobray executable, the authenticated input
+bytes and the operation's request. A warm run creates no Blobray project; a miss
+creates it once and checks that its revision equals the cached one.
+
 The generated requests use the Next execution format and run through Blobray's
 in-process verification over the authenticated input bytes and the exported
 linked image: no project, content store or journal participates, and records stay

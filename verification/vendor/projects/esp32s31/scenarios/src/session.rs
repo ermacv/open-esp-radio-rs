@@ -73,6 +73,12 @@ pub struct Session {
     pub artifacts: Vec<Artifact>,
     /// Authenticated bytes of each captured input, by input index.
     inputs: Vec<Vec<u8>>,
+    roles: Vec<String>,
+    /// Setup results memoized by Blobray, input and request content.
+    cache: crate::setup_cache::SetupCache,
+    /// Whether this run's Blobray project exists; it is created only when a
+    /// setup operation misses the cache.
+    project: std::cell::Cell<bool>,
     /// Exported ELF bytes of each prepared image.
     images: std::cell::RefCell<BTreeMap<PreparedImageId, Vec<u8>>>,
     /// Effect contracts and projections the scenario's relations select,
@@ -82,6 +88,7 @@ pub struct Session {
 }
 
 /// A prepared image and its resolved roots, including the entry.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct LinkedImage {
     pub image: PreparedImageId,
     pub manifest: ImageManifest,
@@ -93,9 +100,60 @@ pub fn path_arg(path: &Path) -> OsString {
     path.as_os_str().to_owned()
 }
 
+/// Input index of the compiled production probe ELF.
+const PROBE_INPUT: usize = 2;
+
 impl Session {
-    /// Create a fresh `run-*` directory, capture inputs and read the probe
-    /// catalog of input 2 (compiled production).
+    /// Create the run's Blobray project from the authenticated inputs, once,
+    /// when a setup operation misses the cache.
+    fn ensure_project(&self) -> Result<()> {
+        if self.project.get() {
+            return Ok(());
+        }
+        let roles: Vec<&str> = self.roles.iter().map(String::as_str).collect();
+        let revision = self.runner.import(&roles, &self.inputs)?;
+        if revision != self.revision {
+            return Err(invalid("imported revision differs from the cached setup"));
+        }
+        self.project.set(true);
+        Ok(())
+    }
+
+    /// Export the captured bytes `request` selects into `output`, from the
+    /// setup cache when present. Returns the selected data bytes.
+    pub fn data(
+        &self,
+        name: &str,
+        request: &blobray_domain::DataRequest,
+        output: &Path,
+    ) -> Result<Vec<u8>> {
+        const FILES: [&str; 2] = ["data.bin", "object.elf"];
+        let entry = self.cache.entry("data", request)?;
+        if entry.load::<()>()?.is_none() {
+            self.ensure_project()?;
+            self.runner.data(name, request, output)?;
+            let files: Vec<(&str, PathBuf)> = FILES
+                .iter()
+                .map(|f| (*f, output.join(f)))
+                .filter(|(_, p)| p.exists())
+                .collect();
+            let files: Vec<(&str, &Path)> = files.iter().map(|(n, p)| (*n, p.as_path())).collect();
+            entry.store(&(), &files)?;
+        } else {
+            fs::create_dir_all(output)?;
+            for file in FILES {
+                let cached = entry.file(file);
+                if cached.exists() {
+                    fs::copy(cached, output.join(file))?;
+                }
+            }
+        }
+        Ok(fs::read(output.join("data.bin"))?)
+    }
+
+    /// Create a fresh `run-*` directory, authenticate the inputs and read their
+    /// inventory and the probe catalog of the compiled production input, from
+    /// the setup cache when present.
     pub fn start(
         binary: &Path,
         output: &Path,
@@ -105,17 +163,29 @@ impl Session {
     ) -> Result<Self> {
         let run = start_run(output)?;
         let runner = Runner::new(binary, &run, run.join("project"), budget)?;
-        let (revision, identities, contents) = runner.capture(inputs)?;
+        let (identities, contents) = crate::harness::authenticate(inputs)?;
         let roles: Vec<_> = inputs.iter().map(|i| i.role).collect();
         runner.doc(
             "identities",
             &serde_json::json!({"sha256": identities, "roles": roles, "scope": scope}),
         )?;
-        let inventory = runner.inventory()?;
+        let cache = crate::setup_cache::SetupCache::new(output, binary, &roles, &identities)?;
+        let entry = cache.entry("session", &serde_json::json!({"probes": PROBE_INPUT}))?;
+        let (revision, inventory, probes, project) =
+            match entry.load::<(RevisionId, Revision, ProbeCatalog)>()? {
+                Some((revision, inventory, probes)) => (revision, inventory, probes, false),
+                None => {
+                    let revision = runner.import(&roles, &contents)?;
+                    let inventory = runner.inventory()?;
+                    let probes =
+                        ProbeCatalog::capture(&runner, &revision, &inventory, PROBE_INPUT)?;
+                    entry.store(&(&revision, &inventory, &probes), &[])?;
+                    (revision, inventory, probes, true)
+                }
+            };
         if let Some(rom) = inputs.iter().position(|i| i.role == "rom") {
             verify_rom_symbols(&inventory, rom)?;
         }
-        let probes = ProbeCatalog::capture(&runner, &revision, &inventory, 2)?;
         Ok(Self {
             runner,
             run,
@@ -124,6 +194,9 @@ impl Session {
             probes,
             artifacts: vec![],
             inputs: contents,
+            roles: roles.iter().map(|r| (*r).to_owned()).collect(),
+            cache,
+            project: std::cell::Cell::new(project),
             images: Default::default(),
             effects: vec![],
             projections: vec![],
@@ -307,6 +380,37 @@ impl Session {
     /// request's entry so it resolves like the other roots. The retained plan
     /// request lists every exact companion.
     pub fn link(
+        &self,
+        request: &LinkRequest,
+        linker: &Path,
+        entry: &str,
+        candidates: &[u64],
+    ) -> Result<LinkedImage> {
+        let key = self.cache.entry(
+            "link",
+            &serde_json::json!({
+                "request": request,
+                "linker": crate::harness::sha256(&fs::read(linker)?),
+                "entry": entry,
+                "candidates": candidates,
+            }),
+        )?;
+        let exported = self.run.join("image/image.elf");
+        if let Some(linked) = key.load::<LinkedImage>()? {
+            fs::create_dir_all(self.run.join("image"))?;
+            fs::copy(key.file("image.elf"), &exported)?;
+            self.images
+                .borrow_mut()
+                .insert(linked.image.clone(), fs::read(&exported)?);
+            return Ok(linked);
+        }
+        self.ensure_project()?;
+        let linked = self.link_uncached(request, linker, entry, candidates)?;
+        key.store(&linked, &[("image.elf", &exported)])?;
+        Ok(linked)
+    }
+
+    fn link_uncached(
         &self,
         request: &LinkRequest,
         linker: &Path,

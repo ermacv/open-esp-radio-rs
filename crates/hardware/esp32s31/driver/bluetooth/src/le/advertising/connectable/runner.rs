@@ -38,6 +38,7 @@ use crate::{
         advertising::{
             LegacyConnectableAdvertisingRadioContinuations,
             connectable::{
+                LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
                 LegacyConnectableAdvertisingSetError,
                 active::LegacyConnectableAdvertisingActiveSession,
                 completion::LegacyConnectableAdvertisingCompletionRole,
@@ -53,10 +54,7 @@ use crate::{
     },
     scheduler::{
         SchedulerEmptyListMergeError, SchedulerHeadPublicationError, SchedulerReservationError,
-        SchedulerSequenceAuthorizationError,
-        core::{
-            LegacyConnectableAdvertisingEmptySchedulerMergePrepared, SingleItemSchedulerRunning,
-        },
+        SchedulerSequenceAuthorizationError, core::SingleItemSchedulerRunning,
     },
 };
 
@@ -850,13 +848,13 @@ where
             }
             LegacyConnectableAdvertisingControllerPreparationError::Event(error) => {
                 match error {
-                    crate::scheduler::core::LegacyConnectableAdvertisingEventPreparationError::Timeline(error) => {
+                    crate::le::advertising::connectable::LegacyConnectableAdvertisingEventPreparationError::Timeline(error) => {
                         LegacyConnectableAdvertisingFirstRunnerRecoveredError::Timeline(error)
                     }
-                    crate::scheduler::core::LegacyConnectableAdvertisingEventPreparationError::Sequence(error) => {
+                    crate::le::advertising::connectable::LegacyConnectableAdvertisingEventPreparationError::Sequence(error) => {
                         LegacyConnectableAdvertisingFirstRunnerRecoveredError::Sequence(error)
                     }
-                    crate::scheduler::core::LegacyConnectableAdvertisingEventPreparationError::EventFields(error) => {
+                    crate::le::advertising::connectable::LegacyConnectableAdvertisingEventPreparationError::EventFields(error) => {
                         LegacyConnectableAdvertisingFirstRunnerRecoveredError::EventFields(error)
                     }
                 }

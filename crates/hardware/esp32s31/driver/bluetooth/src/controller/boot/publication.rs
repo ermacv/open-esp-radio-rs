@@ -13,7 +13,10 @@ use super::{
 #[cfg(target_arch = "riscv32")]
 use crate::{
     ble_phy::ControllerBlePhyEngineInitialized,
-    interrupt::{NrtDefaultInterruptEpoch, PrimaryInterruptStep},
+    interrupt::{
+        InterruptOwnerRestartStorage, InterruptOwnerStorage, NrtDefaultInterruptEpoch,
+        SharedInterruptDispatchStorage,
+    },
     le::dtm::post_unlink::DtmPostUnlinkMailbox,
     low_power::ControllerRuntimeEndpoints,
     modem_lp_timer_queue::ModemLpTimerPublishedInterruptStep,
@@ -64,51 +67,6 @@ pub struct ControllerInterruptOwnersReady<
     _interrupts: InterruptRegistersOwner,
     _timer: ModemLpTimerInterruptReadyOwner,
     runtime_control: BluetoothLowPowerRuntimeControlObservation,
-}
-
-/// Platform boundary that publishes both disjoint owners in stable ISR slots.
-///
-/// Implementations must either publish both owners atomically and return one
-/// affine lease, or return the storage value and both unchanged owners. This
-/// transition must not enable a CPU route; routing is a later lifecycle edge.
-#[cfg(target_arch = "riscv32")]
-pub trait InterruptOwnerStorage: Sized {
-    /// Affine proof that both owners remain in the implementation's storage.
-    type Published;
-    /// Exact pre-publication rejection reason.
-    type Error;
-
-    /// Publish both owners without enabling any interrupt source.
-    fn publish(
-        self,
-        interrupts: InterruptRegistersOwner,
-        timer: ModemLpTimerInterruptReadyOwner,
-    ) -> Result<
-        Self::Published,
-        (
-            Self::Error,
-            Self,
-            InterruptRegistersOwner,
-            ModemLpTimerInterruptReadyOwner,
-        ),
-    >;
-}
-
-/// Stable platform dispatch over the published shared interrupt owner.
-///
-/// Implementations must retain the unique primary/NRT register owner in
-/// stable storage across every call. Both methods execute exactly one finite
-/// Controller disposition and enable no CPU route themselves.
-#[cfg(target_arch = "riscv32")]
-pub trait SharedInterruptDispatchStorage {
-    /// Exact reason the shared owner could not service an entry.
-    type Error;
-
-    /// Capture, acknowledge and classify one primary source-124 epoch.
-    fn service_primary_interrupt(&self) -> Result<PrimaryInterruptStep, Self::Error>;
-
-    /// Capture and acknowledge one default-profile NRT source-133 epoch.
-    fn service_nrt_default_interrupt(&self) -> Result<NrtDefaultInterruptEpoch, Self::Error>;
 }
 
 /// Powered Controller after atomic stable publication of both ISR owners.
@@ -763,26 +721,6 @@ fn prepare_output_then_start_timer<Interrupt, Timer, Output, Started>(
 
 #[cfg(test)]
 mod tests;
-
-/// Restore initialized register owners into the same lifetime-long ISR reservation.
-/// Implementations serialize both slots with route binding, reject live routes or
-/// occupied slots without mutation, and never issue another publication lease.
-#[cfg(target_arch = "riscv32")]
-pub trait InterruptOwnerRestartStorage {
-    type RestartError;
-    fn restore_initialized_interrupt_owners(
-        &self,
-        interrupts: InterruptRegistersOwner,
-        timer: ModemLpTimerInterruptReadyOwner,
-    ) -> Result<
-        (),
-        (
-            Self::RestartError,
-            InterruptRegistersOwner,
-            ModemLpTimerInterruptReadyOwner,
-        ),
-    >;
-}
 
 #[cfg(target_arch = "riscv32")]
 impl<P, const MT: usize, const SC: usize> ControllerInterruptOwnersReady<P, MT, SC> {

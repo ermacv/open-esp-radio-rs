@@ -22,11 +22,13 @@ use crate::{
             LegacyAdvertisingControllerPreparationFailStop,
         },
     },
-    le::advertising::prepare_legacy_advertising_set,
-    scheduler::{
-        LegacyAdvertisingEmptySchedulerMergePrepared, LegacyAdvertisingSchedulerHeadPublished,
-        SchedulerHeadPublicationError,
+    le::advertising::{
+        prepare_legacy_advertising_set,
+        scheduler::{
+            LegacyAdvertisingEmptySchedulerMergePrepared, LegacyAdvertisingSchedulerHeadPublished,
+        },
     },
+    scheduler::SchedulerHeadPublicationError,
 };
 
 use oer_bluetooth_hci::{

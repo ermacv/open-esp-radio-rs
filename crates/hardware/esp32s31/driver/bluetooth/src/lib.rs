@@ -35,16 +35,30 @@ pub mod clock;
 #[cfg(target_arch = "riscv32")]
 pub mod common_phy_state;
 pub mod controller;
+/// Controller HAL component initialization after clock setup.
+#[cfg(any(target_arch = "riscv32", test))]
+pub mod controller_hal;
+/// Event-driven controller-time latch and scheduler-epoch projection.
+pub mod controller_time;
 pub mod interrupt;
 pub mod le;
 #[cfg(any(target_arch = "riscv32", test))]
 pub mod low_power;
 pub mod modem_lp_timer_queue;
+/// Controller modem low-power timer task over the published timer owner.
+#[cfg(target_arch = "riscv32")]
+pub mod modem_timer;
+/// Drain-before-retire rule of the modem low-power timer.
+#[cfg(any(target_arch = "riscv32", test))]
+pub mod modem_timer_retirement;
 #[cfg(target_arch = "riscv32")]
 pub mod phy;
 pub mod resources;
 pub mod runtime_resources;
 pub mod scheduler;
+/// Controller-time preparation shared by timed scheduler admissions.
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) mod timed_preparation;
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]
 pub mod validation;
@@ -53,7 +67,7 @@ pub mod validation;
 pub(crate) use ble_phy::AlwaysAwakeTimingReady;
 
 #[cfg(any(target_arch = "riscv32", test))]
-pub(crate) use controller::time::{ControllerSchedulerEpoch, ControllerTimeSample};
+pub(crate) use controller_time::{ControllerSchedulerEpoch, ControllerTimeSample};
 
 #[cfg(target_arch = "riscv32")]
 pub(crate) use le::advertising::legacy::LegacyAdvertisingCancelledRestoreOutcome;

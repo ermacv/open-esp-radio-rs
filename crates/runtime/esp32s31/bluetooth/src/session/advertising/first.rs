@@ -5,11 +5,11 @@
 use core::future::Future;
 
 use oer_esp32s31_bluetooth::{
-    controller::SchedulerRunInterruptStorage,
     le::advertising::{
         LegacyAdvertisingFirstRunner, LegacyAdvertisingFirstRunnerFailure,
         LegacyAdvertisingFirstRunnerStep, LegacyAdvertisingFirstRunning,
     },
+    scheduler::SchedulerRunInterruptStorage,
 };
 
 #[must_use = "retain the wait, running owner, or exact failure"]

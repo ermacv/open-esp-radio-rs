@@ -465,7 +465,7 @@ impl<'a, S, const SC: usize> ControllerPublishedTaskService<'a, S, SC> {
 
     pub(crate) fn peripheral_maintenance_roles_ready(
         &self,
-        candidate: &crate::scheduler::PeripheralConnectionRecurringEventCandidate,
+        candidate: &crate::le::peripheral::PeripheralConnectionRecurringEventCandidate,
     ) -> Result<(), ControllerRoleRetirementError> {
         self.roles.other_roles_ready()?;
         if !candidate.belongs_to(&self.roles.peripheral_connection_resources) {

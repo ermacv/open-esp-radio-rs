@@ -801,7 +801,7 @@ impl PeripheralConnectionFirstEventPrepared {
         self,
         epoch: ControllerSchedulerEpoch,
         config: SchedulerSoftwareConfig,
-        creation: &crate::controller::time::ControllerTimeSample,
+        creation: &crate::controller_time::ControllerTimeSample,
     ) -> Result<PeripheralConnectionFirstEventCandidate, Self> {
         let Some(data_channel) = PeripheralConnectionDataChannel::new(self.event.channel().get())
         else {

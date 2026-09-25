@@ -18,8 +18,8 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_hci::LeControllerCommandEndpoint;
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_bluetooth::{
-    controller::SchedulerRunInterruptStorage,
     le::dtm::{DtmActiveRadioWait, DtmActiveSession, DtmOrderReady, DtmResponsePending},
+    scheduler::SchedulerRunInterruptStorage,
 };
 
 /// Exact radio-side reason an active-session wait completed.

@@ -1936,3 +1936,16 @@ pub(crate) enum LegacyConnectableAdvertisingRuntimeBeginFailure {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) mod scheduler;
+#[cfg(target_arch = "riscv32")]
+pub(crate) use scheduler::{
+    LegacyConnectableAdvertisingAdmissionObservation,
+    LegacyConnectableAdvertisingEmptySchedulerCancelFailure,
+    LegacyConnectableAdvertisingEmptySchedulerMergeFailure,
+    LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
+    LegacyConnectableAdvertisingEventPreparationError,
+    LegacyConnectableAdvertisingEventPreparationFailure, LegacyConnectableAdvertisingEventPrepared,
+    LegacyConnectableAdvertisingPreSequence, LegacyConnectableAdvertisingSequenceObservation,
+};

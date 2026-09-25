@@ -16,12 +16,10 @@ use crate::{
         },
     },
     le::advertising::connectable::{
-        LegacyConnectableAdvertisingEventCandidate, LegacyConnectableAdvertisingNextEventPortable,
-        LegacyConnectableAdvertisingPrepared, active::LegacyConnectableAdvertisingActiveSession,
-    },
-    scheduler::core::{
         LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
-        LegacyConnectableAdvertisingEventPrepared, LegacyConnectableAdvertisingPreSequence,
+        LegacyConnectableAdvertisingEventCandidate, LegacyConnectableAdvertisingEventPrepared,
+        LegacyConnectableAdvertisingNextEventPortable, LegacyConnectableAdvertisingPreSequence,
+        LegacyConnectableAdvertisingPrepared, active::LegacyConnectableAdvertisingActiveSession,
     },
 };
 

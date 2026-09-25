@@ -1,128 +1,25 @@
 //! Fact-bounded scheduler initialization after the controller HAL component.
 
-#[cfg(any(target_arch = "riscv32", test))]
-mod connectable_advertising;
-#[cfg(target_arch = "riscv32")]
-pub(crate) use connectable_advertising::{
-    LegacyConnectableAdvertisingAdmissionObservation,
-    LegacyConnectableAdvertisingEmptySchedulerCancelFailure,
-    LegacyConnectableAdvertisingEmptySchedulerMergeFailure,
-    LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
-    LegacyConnectableAdvertisingEventPreparationError,
-    LegacyConnectableAdvertisingEventPreparationFailure, LegacyConnectableAdvertisingEventPrepared,
-    LegacyConnectableAdvertisingPreSequence, LegacyConnectableAdvertisingSequenceObservation,
-};
-mod dtm;
-#[cfg(target_arch = "riscv32")]
-pub(crate) use dtm::DtmSchedulerStopStep;
 #[cfg(target_arch = "riscv32")]
 mod single_item;
 
-pub use dtm::{
-    DtmControllerEventPreparationError, DtmEmptySchedulerMergePrepared,
-    DtmInitialSchedulerItemPhase, DtmRecurringSchedulerItemPhase,
-    DtmSchedulerHeadPublicationFailure, DtmSchedulerHeadPublished, DtmSchedulerRunning,
-};
-#[cfg(target_arch = "riscv32")]
-pub use dtm::{
-    DtmControllerRxPreparationFailure, DtmControllerRxRecurringPreparationFailure,
-    DtmControllerTxPreparationFailure, DtmControllerTxRecurringPreparationFailure,
-    DtmSchedulerCompletionObserved, DtmSchedulerCompletionObservedDrainStep,
-    DtmSchedulerCompletionStep, DtmSchedulerHardwareHeadEmptyObserved,
-    DtmSchedulerHardwareHeadRetirementStep, DtmSchedulerRecycleStep, DtmSchedulerRunningDrainStep,
-    DtmSchedulerRxSuccessRecycleStep, DtmSchedulerSoftwareListRemovalReady,
-    DtmSchedulerSoftwareListUnlinkStep, DtmSchedulerSoftwareListUnlinked,
-};
-#[cfg(target_arch = "riscv32")]
-pub(crate) use dtm::{
-    DtmFirstPreparationCompletionClass, DtmReceiverFirstPreSequence, DtmReceiverFirstStaged,
-    DtmReceiverRecurringPreSequence, DtmSchedulerSoftwareListRemovalJoin,
-    DtmSchedulerSoftwareListRemovalRecheck, DtmTransmitterFirstPreSequence,
-    DtmTransmitterFirstStaged, DtmTransmitterRecurringPreSequence,
-    classify_dtm_first_preparation_completion,
-};
 #[cfg(target_arch = "riscv32")]
 pub(crate) use single_item::*;
 
-#[cfg(any(target_arch = "riscv32", test))]
-mod peripheral_connection;
-#[cfg(any(target_arch = "riscv32", test))]
-pub(crate) use peripheral_connection::{
-    PeripheralConnectionAdmissionObservation, PeripheralConnectionSequenceObservation,
-};
-#[cfg(any(target_arch = "riscv32", test))]
-pub use peripheral_connection::{
-    PeripheralConnectionEmptySchedulerMergePrepared, PeripheralConnectionFirstEventPreparationError,
-};
-#[cfg(target_arch = "riscv32")]
-pub(crate) use peripheral_connection::{
-    PeripheralConnectionFirstPreSequence, PeripheralConnectionSchedulerCompletionClassification,
-    PeripheralConnectionSchedulerStopStep,
-};
-#[cfg(target_arch = "riscv32")]
-pub use peripheral_connection::{
-    PeripheralConnectionRecurringCandidateError,
-    PeripheralConnectionRecurringEmptySchedulerMergeFailure,
-    PeripheralConnectionRecurringEmptySchedulerMergePrepared,
-    PeripheralConnectionRecurringEventCandidate,
-    PeripheralConnectionRecurringEventPreparationError,
-    PeripheralConnectionRecurringEventPreparationFailure,
-    PeripheralConnectionRecurringEventPrepared, PeripheralConnectionRecurringPreSequence,
-};
-#[cfg(target_arch = "riscv32")]
-pub(crate) use peripheral_connection::{
-    PeripheralConnectionRecurringSchedulerPublicationFailStop,
-    PeripheralConnectionRecurringSchedulerValidationFailure,
-};
-#[cfg(target_arch = "riscv32")]
-pub use peripheral_connection::{
-    PeripheralConnectionSchedulerCompleted, PeripheralConnectionSchedulerHeadPublicationFailure,
-    PeripheralConnectionSchedulerHeadPublished, PeripheralConnectionSchedulerRecycled,
-};
-
-#[cfg(target_arch = "riscv32")]
-use crate::le::advertising::legacy::{
-    LegacyAdvertisingCompletionObservedEvent, LegacyAdvertisingRecurringEventCandidate,
-};
-
 use crate::scheduler::SchedulerSoftwareConfig;
-#[cfg(target_arch = "riscv32")]
-use crate::scheduler::timeline::SchedulerRecurringReserved;
+
 #[cfg(any(target_arch = "riscv32", test))]
-use crate::scheduler::timeline::{SchedulerInitialAdmissionResolved, SchedulerWindowReservation};
-#[cfg(any(target_arch = "riscv32", test))]
-use crate::{
-    ControllerTimeSample,
-    le::advertising::LegacyAdvertisingFirstEventCandidate,
-    scheduler::{
-        SchedulerReservationError, SchedulerSequenceAuthorizationError, SchedulerSequenceReady,
-        SchedulerTimingPolicy,
-    },
-};
-#[cfg(target_arch = "riscv32")]
-use oer_esp32s31_bluetooth_memory::{
-    LeReceivedBatch, LeRxError, PassiveScanMemoryGraphCommandPublished,
-    PassiveScanMemoryGraphCompletionObserved, PassiveScanMemoryGraphPublicationError,
-    PassiveScanMemoryGraphPublicationMismatch, PassiveScanMemoryGraphRecycleError,
-    PassiveScanMemoryGraphRecycled, PassiveScanSchedulerItemCompletionStatus,
-};
-#[cfg(any(target_arch = "riscv32", test))]
-use oer_esp32s31_bluetooth_memory::{
-    PassiveScanMemoryGraphCpuOwned, PassiveScanMemoryGraphEventPrepared,
-    PassiveScanMemoryGraphSchedulerAdmissionPrepared, PassiveScanPrimaryChannel,
-    PassiveScanSchedulerWindow, PassiveScanStartSelection,
-};
+use crate::scheduler::timeline::SchedulerWindowReservation;
 
 use oer_esp32s31_pac::BluetoothControllerTimeScale;
 
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_hal::bluetooth::{
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadPublished,
-    BluetoothSchedulerSoftwareListRemovalReady,
 };
 
 use crate::{
-    controller::hal::ControllerHalInitialized,
+    controller_hal::ControllerHalInitialized,
     resources::{InterruptBankOwner, TaskResources, TeardownPendingPlatform},
     runtime_resources::{
         ControllerInterruptRuntime, ControllerModemTimerRuntime, ControllerPoweredTaskRuntime,
@@ -130,10 +27,10 @@ use crate::{
     },
 };
 
+#[cfg(target_arch = "riscv32")]
+use oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListIndex;
 use {
-    oer_esp32s31_hal::bluetooth::BluetoothControllerLatchedTime,
     oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListHeadError,
-    oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListIndex,
     oer_esp32s31_hal::bluetooth::BluetoothSchedulerHardwareListsCleared,
     oer_esp32s31_hal::types::BluetoothControllerSramAddress,
 };
@@ -148,594 +45,6 @@ fn retain_matching_single_item_identity<Identity: Copy + Eq, Owner>(
         Ok(owner)
     } else {
         Err((expected, owner))
-    }
-}
-
-/// Fresh initial-admission sample sealed by the controller-time worker.
-///
-/// External code can carry this capability but cannot create one from an
-/// integer timestamp. It is distinct from the later sequence-deadline sample.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the fresh admission observation must be consumed or retained"]
-pub struct LegacyAdvertisingAdmissionObservation {
-    pub(crate) sample: ControllerTimeSample,
-}
-
-/// Fresh post-overlap sequence sample sealed by the controller-time worker.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the fresh sequence observation must be consumed or retained"]
-pub struct LegacyAdvertisingSequenceObservation {
-    pub(crate) sample: ControllerTimeSample,
-}
-
-/// First advertising event after common timeline admission and before the
-/// second sequence deadline.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the admitted event must pass sequence authorization or be retained"]
-pub struct LegacyAdvertisingFirstPreSequence<'a> {
-    candidate: LegacyAdvertisingFirstEventCandidate<'a>,
-    reservation: SchedulerWindowReservation<SchedulerInitialAdmissionResolved>,
-}
-
-/// Recurring advertising event after exact timeline reservation.
-#[cfg(target_arch = "riscv32")]
-#[must_use = "authorize the recurring sequence deadline or retain the event"]
-pub struct LegacyAdvertisingRecurringPreSequence<'a> {
-    candidate: LegacyAdvertisingRecurringEventCandidate<'a>,
-    reservation: SchedulerWindowReservation<SchedulerRecurringReserved>,
-}
-
-/// Why one recurring event could not reach a sequence-ready descriptor.
-#[cfg(target_arch = "riscv32")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LegacyAdvertisingRecurringEventPreparationError {
-    Timeline(SchedulerReservationError),
-    Sequence(SchedulerSequenceAuthorizationError),
-    EventImage(oer_esp32s31_bluetooth_memory::LegacyAdvertisingMemoryGraphEventPrepareError),
-}
-
-/// Lossless recurring admission/preparation rejection.
-#[cfg(target_arch = "riscv32")]
-#[must_use = "retry, cancel, or retain the recurring event candidate"]
-pub struct LegacyAdvertisingRecurringEventPreparationFailure<'a> {
-    candidate: LegacyAdvertisingRecurringEventCandidate<'a>,
-    error: LegacyAdvertisingRecurringEventPreparationError,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<'a> LegacyAdvertisingRecurringEventPreparationFailure<'a> {
-    pub const fn error(&self) -> LegacyAdvertisingRecurringEventPreparationError {
-        self.error
-    }
-
-    pub fn into_candidate(self) -> LegacyAdvertisingRecurringEventCandidate<'a> {
-        self.candidate
-    }
-}
-
-/// First advertising descriptor paired with its exact accepted timeline slot.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the prepared event must be published, cancelled through its controller, or retained"]
-pub struct LegacyAdvertisingEventPrepared<'a> {
-    image: crate::le::advertising::legacy::LegacyAdvertisingEventImagePrepared<'a>,
-    reservation: SchedulerWindowReservation<SchedulerSequenceReady>,
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-impl LegacyAdvertisingEventPrepared<'_> {
-    pub const fn identity(
-        &self,
-    ) -> oer_bluetooth_ll::advertising_lifecycle::LegacyAdvertisingEventIdentity {
-        self.image.identity()
-    }
-
-    pub fn pdu(&self) -> &[u8] {
-        self.image.pdu()
-    }
-
-    /// Opaque nominal phase required by later advertising events.
-    pub const fn phase(&self) -> crate::le::advertising::LegacyAdvertisingEventPhase {
-        self.image.phase()
-    }
-}
-
-/// Lossless rejection while joining one advertising item to the empty list.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the unchanged advertising event remains prepared and CPU-owned"]
-pub struct LegacyAdvertisingEmptySchedulerMergeFailure<'a> {
-    error: SchedulerEmptyListMergeError,
-    prepared: LegacyAdvertisingEventPrepared<'a>,
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-impl<'a> LegacyAdvertisingEmptySchedulerMergeFailure<'a> {
-    pub const fn error(&self) -> SchedulerEmptyListMergeError {
-        self.error
-    }
-
-    pub fn into_prepared(self) -> LegacyAdvertisingEventPrepared<'a> {
-        self.prepared
-    }
-}
-
-/// First advertising event joined to the source-owned empty scheduler list.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the merged advertising event must be published or cancelled"]
-pub struct LegacyAdvertisingEmptySchedulerMergePrepared<'a> {
-    item: crate::le::advertising::legacy::LegacyAdvertisingEmptyListLinkPrepared<'a>,
-    reservation: SchedulerWindowReservation<SchedulerSequenceReady>,
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-impl LegacyAdvertisingEmptySchedulerMergePrepared<'_> {
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.item.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        BluetoothSchedulerHardwareListIndex::ZERO
-    }
-}
-
-/// Fresh initial-admission sample sealed by the controller-time worker.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the fresh scanner admission observation must be consumed or retained"]
-pub struct PassiveScanAdmissionObservation {
-    pub(crate) sample: ControllerTimeSample,
-}
-
-/// Fresh post-overlap sequence sample sealed by the controller-time worker.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the fresh scanner sequence observation must be consumed or retained"]
-pub struct PassiveScanSequenceObservation {
-    pub(crate) sample: ControllerTimeSample,
-}
-
-/// CPU-owned scanner graph with a requested window not yet admitted to the
-/// common scheduler timeline.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the scanner candidate must enter common scheduling or be returned"]
-pub struct PassiveScanFirstEventCandidate {
-    graph: PassiveScanMemoryGraphCpuOwned,
-    channel: PassiveScanPrimaryChannel,
-    requested_window: crate::scheduler::SchedulerRawWindow,
-    controller_time: BluetoothControllerLatchedTime,
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-impl PassiveScanFirstEventCandidate {
-    pub(crate) const fn new(
-        graph: PassiveScanMemoryGraphCpuOwned,
-        channel: PassiveScanPrimaryChannel,
-        requested_window: crate::scheduler::SchedulerRawWindow,
-        controller_time: BluetoothControllerLatchedTime,
-    ) -> Self {
-        Self {
-            graph,
-            channel,
-            requested_window,
-            controller_time,
-        }
-    }
-
-    pub const fn requested_window(&self) -> crate::scheduler::SchedulerRawWindow {
-        self.requested_window
-    }
-
-    pub fn cancel(self) -> PassiveScanMemoryGraphCpuOwned {
-        self.graph
-    }
-
-    fn prepare_resolved_event(
-        self,
-        resolved_window: crate::scheduler::SchedulerRawWindow,
-    ) -> PassiveScanMemoryGraphEventPrepared {
-        let window = PassiveScanSchedulerWindow::from_controller_ticks(
-            resolved_window.start(),
-            resolved_window.end(),
-        )
-        .expect("a timeline reservation retains a non-empty forward window");
-        let selection = if resolved_window.start() == self.requested_window.start() {
-            PassiveScanStartSelection::Requested
-        } else {
-            PassiveScanStartSelection::EarliestAvailable
-        };
-        self.graph
-            .prepare_first_event(self.channel, window, selection, self.controller_time)
-    }
-}
-
-/// First scanner event after common timeline admission and before the second
-/// sequence deadline.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the admitted scanner event must pass sequence authorization or be cancelled"]
-pub struct PassiveScanFirstPreSequence {
-    candidate: PassiveScanFirstEventCandidate,
-    reservation: SchedulerWindowReservation<SchedulerInitialAdmissionResolved>,
-}
-
-/// Scanner event image paired with the exact timeline interval encoded into it.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the prepared scanner event must be merged, cancelled, or retained"]
-pub struct PassiveScanEventPrepared {
-    graph: PassiveScanMemoryGraphEventPrepared,
-    reservation: SchedulerWindowReservation<SchedulerSequenceReady>,
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-impl PassiveScanEventPrepared {
-    pub const fn channel(&self) -> PassiveScanPrimaryChannel {
-        self.graph.channel()
-    }
-
-    pub const fn window(&self) -> PassiveScanSchedulerWindow {
-        self.graph.window()
-    }
-}
-
-/// Finite scanner preparation rejection before any MMIO publication.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[cfg(any(target_arch = "riscv32", test))]
-pub enum PassiveScanFirstEventPreparationError {
-    Timeline(SchedulerReservationError),
-    Sequence(SchedulerSequenceAuthorizationError),
-}
-
-/// Lossless first-scanner-event preparation rejection.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the unchanged scanner graph must be retried, cancelled, or retained"]
-pub struct PassiveScanFirstEventPreparationFailure {
-    candidate: PassiveScanFirstEventCandidate,
-    error: PassiveScanFirstEventPreparationError,
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-impl PassiveScanFirstEventPreparationFailure {
-    pub const fn error(&self) -> PassiveScanFirstEventPreparationError {
-        self.error
-    }
-
-    pub fn into_candidate(self) -> PassiveScanFirstEventCandidate {
-        self.candidate
-    }
-}
-
-/// Lossless rejection while joining one detached scanner item to the empty list.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the unchanged detached scanner event remains CPU-owned"]
-pub struct PassiveScanEmptySchedulerMergeFailure {
-    error: SchedulerEmptyListMergeError,
-    prepared: PassiveScanEventPrepared,
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-impl PassiveScanEmptySchedulerMergeFailure {
-    /// Exact reason the exclusive scheduler epoch rejected the scanner item.
-    pub const fn error(&self) -> SchedulerEmptyListMergeError {
-        self.error
-    }
-
-    /// Recover the unchanged detached scanner graph.
-    pub fn into_prepared(self) -> PassiveScanEventPrepared {
-        self.prepared
-    }
-}
-
-/// Detached scanner item joined to the source-owned empty scheduler list.
-///
-/// No scanner register, RX-list head, scheduler head or RUN command is visible
-/// to hardware in this state. Cancellation restores both the common list epoch
-/// and the scanner's private three-item free chain.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the scanner merge must be published through the same scheduler or cancelled"]
-pub struct PassiveScanEmptySchedulerMergePrepared {
-    graph: PassiveScanMemoryGraphSchedulerAdmissionPrepared,
-    reservation: SchedulerWindowReservation<SchedulerSequenceReady>,
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-impl PassiveScanEmptySchedulerMergePrepared {
-    /// Exact detached item selected as the common scheduler head.
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.graph.scheduler_head()
-    }
-
-    /// Hardware list assigned to the first standalone passive scanner.
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        BluetoothSchedulerHardwareListIndex::ZERO
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-enum PassiveScanSchedulerHeadPublicationFailureOwner {
-    PrePublication(PassiveScanEmptySchedulerMergePrepared),
-    RxPublication {
-        _mismatch: PassiveScanMemoryGraphPublicationMismatch,
-        _reservation: SchedulerWindowReservation<SchedulerSequenceReady>,
-        _head: BluetoothSchedulerHardwareListHead,
-    },
-}
-
-/// Lossless scanner-head publication failure.
-///
-/// A scheduler-head validation error is retryable because it occurs before
-/// MMIO. An RX publication mismatch follows the first MMIO write and is sealed
-/// fail-stop while retaining the graph, HAL publication, reservation and
-/// validated scheduler head.
-#[cfg(target_arch = "riscv32")]
-#[must_use = "inspect whether the exact retained owner is retryable or fail-stop"]
-pub struct PassiveScanSchedulerHeadPublicationFailure {
-    head_error: Option<SchedulerHeadPublicationError>,
-    rx_publication_error: Option<PassiveScanMemoryGraphPublicationError>,
-    owner: PassiveScanSchedulerHeadPublicationFailureOwner,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl PassiveScanSchedulerHeadPublicationFailure {
-    /// Exact reason the common scheduler head could not be prepared.
-    pub const fn head_error(&self) -> Option<SchedulerHeadPublicationError> {
-        self.head_error
-    }
-
-    /// Return the typed RX publication mismatch after the first MMIO write.
-    pub const fn rx_publication_error(&self) -> Option<PassiveScanMemoryGraphPublicationError> {
-        self.rx_publication_error
-    }
-
-    /// Recover the unchanged merge only for a pre-MMIO validation failure.
-    pub fn into_retryable_merged(self) -> Result<PassiveScanEmptySchedulerMergePrepared, Self> {
-        match self {
-            Self {
-                owner: PassiveScanSchedulerHeadPublicationFailureOwner::PrePublication(merged),
-                ..
-            } => Ok(merged),
-            failure @ Self {
-                owner: PassiveScanSchedulerHeadPublicationFailureOwner::RxPublication { .. },
-                ..
-            } => Err(failure),
-        }
-    }
-}
-
-/// Scanner graph whose RX list, command and scheduler head are hardware-visible.
-///
-/// The publication transaction validates the common list identity before its
-/// first irreversible write, then publishes RX memory, the restricted scanner
-/// command and the exact scheduler head in that order. Dynamic interrupts and
-/// RUN remain absent.
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the scanner head must advance through the common RUN suffix"]
-pub struct PassiveScanSchedulerHeadPublished {
-    graph: PassiveScanMemoryGraphCommandPublished,
-    publication: BluetoothSchedulerHardwareListHeadPublished,
-    reservation: SchedulerWindowReservation<SchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl PassiveScanSchedulerHeadPublished {
-    /// Exact scanner item retained by the graph and hardware head token.
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.graph.scheduler_head()
-    }
-
-    /// Hardware list containing the first scanner item.
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.publication.index()
-    }
-
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        PassiveScanMemoryGraphCommandPublished,
-        BluetoothSchedulerHardwareListHeadPublished,
-        SchedulerWindowReservation<SchedulerSequenceReady>,
-    ) {
-        (self.graph, self.publication, self.reservation)
-    }
-}
-
-/// CPU-owned scanner graph and copied receive results.
-#[cfg(target_arch = "riscv32")]
-#[must_use = "return the graph and received packets to the scanner role owner"]
-pub(crate) struct PassiveScanSchedulerRecycled {
-    graph: PassiveScanMemoryGraphRecycled,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl PassiveScanSchedulerRecycled {
-    pub fn into_parts(
-        self,
-    ) -> (
-        oer_esp32s31_bluetooth_memory::PassiveScanMemoryGraphCpuOwned,
-        LeReceivedBatch,
-        PassiveScanSchedulerItemCompletionStatus,
-    ) {
-        self.graph.into_parts()
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-pub(crate) struct PassiveScanSchedulerRecycleReady {
-    graph: PassiveScanMemoryGraphCompletionObserved,
-    removal: BluetoothSchedulerSoftwareListRemovalReady,
-    reservation: SchedulerWindowReservation<SchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl PassiveScanSchedulerRecycleReady {
-    const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.graph.scheduler_item_address()
-    }
-
-    const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.removal.index()
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-#[must_use = "failure retains the scanner graph; success returns CPU ownership"]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "no-alloc role-tail outcomes retain the exact scanner graph on every branch"
-)]
-pub(crate) enum PassiveScanSchedulerRecycleStep {
-    SchedulerIdentityMismatch {
-        _ready: PassiveScanSchedulerRecycleReady,
-    },
-    FinishedListDrainStillActive {
-        _ready: PassiveScanSchedulerRecycleReady,
-    },
-    MemoryIdentityMismatch {
-        _ready: PassiveScanSchedulerRecycleReady,
-        _error: PassiveScanMemoryGraphRecycleError,
-    },
-    ReceiveInvalid {
-        _ready: PassiveScanSchedulerRecycleReady,
-        _error: LeRxError,
-    },
-    ReservationIdentityMismatch {
-        _ready: PassiveScanSchedulerRecycleReady,
-    },
-    Recycled(PassiveScanSchedulerRecycled),
-}
-
-/// Lossless rejection before advertising scheduler-head MMIO publication.
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the unchanged advertising merge remains CPU-owned"]
-pub struct LegacyAdvertisingSchedulerHeadPublicationFailure<'a> {
-    error: SchedulerHeadPublicationError,
-    merged: LegacyAdvertisingEmptySchedulerMergePrepared<'a>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<'a> LegacyAdvertisingSchedulerHeadPublicationFailure<'a> {
-    pub const fn error(&self) -> SchedulerHeadPublicationError {
-        self.error
-    }
-
-    pub fn into_merged(self) -> LegacyAdvertisingEmptySchedulerMergePrepared<'a> {
-        self.merged
-    }
-}
-
-/// Advertising graph whose first scheduler item is hardware-visible.
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the published advertising head must advance through the RUN suffix"]
-pub struct LegacyAdvertisingSchedulerHeadPublished<'a> {
-    item: crate::le::advertising::legacy::LegacyAdvertisingHeadPublishedEvent<'a>,
-    publication: BluetoothSchedulerHardwareListHeadPublished,
-    _reservation: SchedulerWindowReservation<SchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<'a> LegacyAdvertisingSchedulerHeadPublished<'a> {
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.item.scheduler_item_address()
-    }
-
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.publication.index()
-    }
-
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        crate::le::advertising::legacy::LegacyAdvertisingHeadPublishedEvent<'a>,
-        BluetoothSchedulerHardwareListHeadPublished,
-        SchedulerWindowReservation<SchedulerSequenceReady>,
-    ) {
-        (self.item, self.publication, self._reservation)
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-#[must_use = "the completed event must advance the LL owner exactly once"]
-pub(crate) struct LegacyAdvertisingSchedulerRecycled<'a> {
-    item: crate::le::advertising::legacy::LegacyAdvertisingRecycledEvent<'a>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<'a> LegacyAdvertisingSchedulerRecycled<'a> {
-    /// Advance the exact LL event while retaining S31 diagnostic statuses.
-    pub fn complete_event(
-        self,
-    ) -> crate::le::advertising::legacy::LegacyAdvertisingEventCompleted<'a> {
-        self.item.complete_event()
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-pub(crate) struct LegacyAdvertisingSchedulerRecycleReady<'a> {
-    item: LegacyAdvertisingCompletionObservedEvent<'a>,
-    removal: BluetoothSchedulerSoftwareListRemovalReady,
-    reservation: SchedulerWindowReservation<SchedulerSequenceReady>,
-}
-
-#[cfg(target_arch = "riscv32")]
-impl LegacyAdvertisingSchedulerRecycleReady<'_> {
-    const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.item.scheduler_item_address()
-    }
-
-    const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.removal.index()
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-#[must_use = "failure retains the advertising graph; success retains CPU ownership"]
-pub(crate) enum LegacyAdvertisingSchedulerRecycleStep<'a> {
-    SchedulerIdentityMismatch {
-        _ready: LegacyAdvertisingSchedulerRecycleReady<'a>,
-    },
-    FinishedListDrainStillActive {
-        _ready: LegacyAdvertisingSchedulerRecycleReady<'a>,
-    },
-    MemoryIdentityMismatch {
-        _ready: LegacyAdvertisingSchedulerRecycleReady<'a>,
-        _error: oer_esp32s31_bluetooth_memory::LegacyAdvertisingMemoryGraphRecycleError,
-    },
-    ReservationIdentityMismatch {
-        _ready: LegacyAdvertisingSchedulerRecycleReady<'a>,
-    },
-    Recycled(LegacyAdvertisingSchedulerRecycled<'a>),
-}
-
-/// Finite reason a first advertising event returned to pre-admission state.
-#[cfg(any(target_arch = "riscv32", test))]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LegacyAdvertisingFirstEventPreparationError {
-    Timeline(SchedulerReservationError),
-    Sequence(SchedulerSequenceAuthorizationError),
-    EventImage(oer_esp32s31_bluetooth_memory::LegacyAdvertisingMemoryGraphEventPrepareError),
-}
-
-/// Rejected first advertising event retaining the exact cancellable candidate.
-#[cfg(any(target_arch = "riscv32", test))]
-#[must_use = "the advertising candidate remains recoverable"]
-pub struct LegacyAdvertisingFirstEventPreparationFailure<'a> {
-    candidate: LegacyAdvertisingFirstEventCandidate<'a>,
-    error: LegacyAdvertisingFirstEventPreparationError,
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-impl<'a> LegacyAdvertisingFirstEventPreparationFailure<'a> {
-    pub const fn error(&self) -> LegacyAdvertisingFirstEventPreparationError {
-        self.error
-    }
-
-    pub fn into_candidate(self) -> LegacyAdvertisingFirstEventCandidate<'a> {
-        self.candidate
-    }
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-impl core::fmt::Debug for LegacyAdvertisingFirstEventPreparationFailure<'_> {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("LegacyAdvertisingFirstEventPreparationFailure")
-            .field("error", &self.error)
-            .finish_non_exhaustive()
     }
 }
 
@@ -783,7 +92,7 @@ impl SchedulerExclusiveListEpoch {
         }
     }
 
-    fn prepare_first_item(
+    pub(crate) fn prepare_first_item(
         &mut self,
         address: BluetoothControllerSramAddress,
     ) -> Result<(), SchedulerEmptyListMergeError> {
@@ -794,7 +103,7 @@ impl SchedulerExclusiveListEpoch {
         Ok(())
     }
 
-    fn cancel_first_item(&mut self, address: BluetoothControllerSramAddress) -> bool {
+    pub(crate) fn cancel_first_item(&mut self, address: BluetoothControllerSramAddress) -> bool {
         if self.state != (SchedulerExclusiveListState::FirstItemPrepared { address }) {
             return false;
         }
@@ -828,11 +137,14 @@ impl SchedulerExclusiveListEpoch {
         self.state = SchedulerExclusiveListState::FirstItemRunning { address };
     }
 
-    fn retains_running_first_item(&self, address: BluetoothControllerSramAddress) -> bool {
+    pub(crate) fn retains_running_first_item(
+        &self,
+        address: BluetoothControllerSramAddress,
+    ) -> bool {
         self.state == SchedulerExclusiveListState::FirstItemRunning { address }
     }
 
-    fn retain_completion_observed_first_item(
+    pub(crate) fn retain_completion_observed_first_item(
         &mut self,
         address: BluetoothControllerSramAddress,
     ) -> bool {
@@ -843,14 +155,14 @@ impl SchedulerExclusiveListEpoch {
         true
     }
 
-    fn retains_completion_observed_first_item(
+    pub(crate) fn retains_completion_observed_first_item(
         &self,
         address: BluetoothControllerSramAddress,
     ) -> bool {
         self.state == SchedulerExclusiveListState::FirstItemCompletionObserved { address }
     }
 
-    fn retain_hardware_head_empty_first_item(
+    pub(crate) fn retain_hardware_head_empty_first_item(
         &mut self,
         address: BluetoothControllerSramAddress,
     ) -> bool {
@@ -868,7 +180,10 @@ impl SchedulerExclusiveListEpoch {
         self.state == SchedulerExclusiveListState::FirstItemHardwareHeadEmptyObserved { address }
     }
 
-    fn unlink_software_list_first_item(&mut self, address: BluetoothControllerSramAddress) -> bool {
+    pub(crate) fn unlink_software_list_first_item(
+        &mut self,
+        address: BluetoothControllerSramAddress,
+    ) -> bool {
         if !self.retains_hardware_head_empty_first_item(address) {
             return false;
         }
@@ -879,14 +194,17 @@ impl SchedulerExclusiveListEpoch {
         true
     }
 
-    fn retains_unlinked_first_item(&self, address: BluetoothControllerSramAddress) -> bool {
+    pub(crate) fn retains_unlinked_first_item(
+        &self,
+        address: BluetoothControllerSramAddress,
+    ) -> bool {
         self.state
             == SchedulerExclusiveListState::FirstItemSoftwareListUnlinkedAwaitingRemovalGate {
                 address,
             }
     }
 
-    fn retain_software_list_removal_ready_first_item(
+    pub(crate) fn retain_software_list_removal_ready_first_item(
         &mut self,
         address: BluetoothControllerSramAddress,
     ) -> bool {
@@ -897,14 +215,14 @@ impl SchedulerExclusiveListEpoch {
         true
     }
 
-    fn retains_software_list_removal_ready_first_item(
+    pub(crate) fn retains_software_list_removal_ready_first_item(
         &self,
         address: BluetoothControllerSramAddress,
     ) -> bool {
         self.state == SchedulerExclusiveListState::FirstItemSoftwareListRemovalReady { address }
     }
 
-    fn commit_recycled_first_item(&mut self) {
+    pub(crate) fn commit_recycled_first_item(&mut self) {
         self.state = SchedulerExclusiveListState::Empty;
     }
 }
@@ -975,11 +293,11 @@ impl<Owner> SchedulerFinishedListDrainPending<Owner> {
         Self { owner }
     }
 
-    const fn owner(&self) -> &Owner {
+    pub(crate) const fn owner(&self) -> &Owner {
         &self.owner
     }
 
-    fn into_owner(self) -> Owner {
+    pub(crate) fn into_owner(self) -> Owner {
         self.owner
     }
 }
@@ -1000,7 +318,7 @@ pub enum SchedulerFinishedListDrainState<Owner> {
 
 #[cfg(any(test, target_arch = "riscv32"))]
 impl<Owner> SchedulerFinishedListDrainState<Owner> {
-    fn from_worker_step(owner: Owner, more: bool) -> Self {
+    pub(crate) fn from_worker_step(owner: Owner, more: bool) -> Self {
         if more {
             Self::Pending(SchedulerFinishedListDrainPending::new(owner))
         } else {
@@ -1035,7 +353,7 @@ pub struct SchedulerInitialized<
     _interrupts: Option<InterruptBankOwner>,
     _platform: crate::resources::runtime_owner::RuntimeOwnerSlot<TeardownPendingPlatform<P>>,
     time_scale: BluetoothControllerTimeScale,
-    _standalone_dtm_profile: crate::controller::hal::StandaloneAlwaysAwakeDtmProfile,
+    _standalone_dtm_profile: crate::controller_hal::StandaloneAlwaysAwakeDtmProfile,
     config: SchedulerSoftwareConfig,
     _scheduler_list: SchedulerExclusiveListEpoch,
     runtime: ControllerRuntimeResources<MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
@@ -1081,7 +399,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     #[cfg(test)]
     pub(crate) fn controller_time_phase(
         &self,
-    ) -> crate::controller::time::ControllerTimeWorkerPhase {
+    ) -> crate::controller_time::ControllerTimeWorkerPhase {
         self.task
             .as_ref()
             .expect("pre-split task")
@@ -1146,8 +464,8 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     pub(crate) fn request_controller_time(
         &mut self,
     ) -> Result<
-        crate::controller::time::ControllerTimeRequest,
-        crate::controller::time::ControllerTimeRequestError,
+        crate::controller_time::ControllerTimeRequest,
+        crate::controller_time::ControllerTimeRequestError,
     > {
         self._standalone_dtm_profile.gate_controller_time_request();
         self.task.request_controller_time()
@@ -1156,18 +474,18 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn cancel_owned_controller_time(
         &mut self,
-        request: crate::controller::time::ControllerTimeRequest,
-    ) -> Result<(), crate::controller::time::ControllerTimeEventError> {
+        request: crate::controller_time::ControllerTimeRequest,
+    ) -> Result<(), crate::controller_time::ControllerTimeEventError> {
         self.task.cancel_owned_controller_time(request)
     }
 
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn recheck_owned_controller_time(
         &mut self,
-        request: crate::controller::time::ControllerTimeRequest,
+        request: crate::controller_time::ControllerTimeRequest,
     ) -> Result<
-        crate::controller::time::ControllerTimeEventStep,
-        crate::controller::time::ControllerTimeEventError,
+        crate::controller_time::ControllerTimeEventStep,
+        crate::controller_time::ControllerTimeEventError,
     > {
         self.task.recheck_owned_controller_time(request)
     }
@@ -1176,395 +494,14 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     pub(crate) fn drain_orphan_controller_time(
         &mut self,
     ) -> Result<
-        crate::controller::time::ControllerTimeEventStep,
-        crate::controller::time::ControllerTimeEventError,
+        crate::controller_time::ControllerTimeEventStep,
+        crate::controller_time::ControllerTimeEventError,
     > {
         self.task.drain_orphan_controller_time()
     }
 
-    /// Admit one already projected first advertising event into the common timeline.
     #[cfg(any(target_arch = "riscv32", test))]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the recoverable failure retains the exact affine radio state and continuation owners without allocation"
-    )]
-    pub fn admit_legacy_advertising_first_event<'a>(
-        &mut self,
-        candidate: LegacyAdvertisingFirstEventCandidate<'a>,
-        admission: LegacyAdvertisingAdmissionObservation,
-    ) -> Result<
-        LegacyAdvertisingFirstPreSequence<'a>,
-        LegacyAdvertisingFirstEventPreparationFailure<'a>,
-    > {
-        let raw_window = candidate.raw_window();
-        let timing_policy =
-            SchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
-        match self
-            .runtime
-            .scheduler_timeline_mut()
-            .reserve_initial_window(
-                raw_window.start(),
-                raw_window.end(),
-                timing_policy,
-                admission.sample,
-            ) {
-            Ok(reservation) => Ok(LegacyAdvertisingFirstPreSequence {
-                candidate,
-                reservation,
-            }),
-            Err(error) => Err(LegacyAdvertisingFirstEventPreparationFailure {
-                candidate,
-                error: LegacyAdvertisingFirstEventPreparationError::Timeline(error),
-            }),
-        }
-    }
-
-    /// Authorize the second deadline and encode the overlap-resolved event image.
-    #[cfg(any(target_arch = "riscv32", test))]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the recoverable failure retains the exact affine radio state and continuation owners without allocation"
-    )]
-    pub fn prepare_legacy_advertising_first_event<'a>(
-        &mut self,
-        admitted: LegacyAdvertisingFirstPreSequence<'a>,
-        sequence: LegacyAdvertisingSequenceObservation,
-    ) -> Result<LegacyAdvertisingEventPrepared<'a>, LegacyAdvertisingFirstEventPreparationFailure<'a>>
-    {
-        let LegacyAdvertisingFirstPreSequence {
-            candidate,
-            reservation,
-        } = admitted;
-        let reservation = match reservation.authorize_sequence(sequence.sample) {
-            Ok(reservation) => reservation,
-            Err(failure) => {
-                let error = failure.error();
-                self.release_scheduler_reservation(failure.into_reservation());
-                return Err(LegacyAdvertisingFirstEventPreparationFailure {
-                    candidate,
-                    error: LegacyAdvertisingFirstEventPreparationError::Sequence(error),
-                });
-            }
-        };
-        let resolved_window = reservation.window();
-        match candidate.prepare_resolved_event_image(resolved_window) {
-            Ok(image) => Ok(LegacyAdvertisingEventPrepared { image, reservation }),
-            Err(failure) => {
-                let error = failure.error();
-                let candidate = failure.into_candidate();
-                self.release_scheduler_reservation(reservation);
-                Err(LegacyAdvertisingFirstEventPreparationFailure {
-                    candidate,
-                    error: LegacyAdvertisingFirstEventPreparationError::EventImage(error),
-                })
-            }
-        }
-    }
-
-    /// Reserve one exact recurring advertising window without displacement.
-    #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the no-alloc rejection retains the complete recurring event"
-    )]
-    pub fn admit_legacy_advertising_recurring_event<'a>(
-        &mut self,
-        candidate: LegacyAdvertisingRecurringEventCandidate<'a>,
-    ) -> Result<
-        LegacyAdvertisingRecurringPreSequence<'a>,
-        LegacyAdvertisingRecurringEventPreparationFailure<'a>,
-    > {
-        let raw_window = candidate.raw_window();
-        let timing_policy =
-            SchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
-        match self
-            .runtime
-            .scheduler_timeline_mut()
-            .reserve_recurring_window(raw_window.start(), raw_window.end(), timing_policy)
-        {
-            Ok(reservation) => Ok(LegacyAdvertisingRecurringPreSequence {
-                candidate,
-                reservation,
-            }),
-            Err(error) => Err(LegacyAdvertisingRecurringEventPreparationFailure {
-                candidate,
-                error: LegacyAdvertisingRecurringEventPreparationError::Timeline(error),
-            }),
-        }
-    }
-
-    /// Authorize the recurring deadline and encode its complete event chain.
-    #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the no-alloc rejection retains the complete recurring event"
-    )]
-    pub fn prepare_legacy_advertising_recurring_event<'a>(
-        &mut self,
-        admitted: LegacyAdvertisingRecurringPreSequence<'a>,
-        sequence: LegacyAdvertisingSequenceObservation,
-    ) -> Result<
-        LegacyAdvertisingEventPrepared<'a>,
-        LegacyAdvertisingRecurringEventPreparationFailure<'a>,
-    > {
-        let LegacyAdvertisingRecurringPreSequence {
-            candidate,
-            reservation,
-        } = admitted;
-        let reservation = match reservation.authorize_sequence(sequence.sample) {
-            Ok(reservation) => reservation,
-            Err(failure) => {
-                let error = failure.error();
-                self.release_scheduler_reservation(failure.into_reservation());
-                return Err(LegacyAdvertisingRecurringEventPreparationFailure {
-                    candidate,
-                    error: LegacyAdvertisingRecurringEventPreparationError::Sequence(error),
-                });
-            }
-        };
-        let resolved_window = reservation.window();
-        match candidate.prepare_resolved_event_image(resolved_window) {
-            Ok(prepared) => {
-                let (image, _, _, _) = prepared.into_parts();
-                Ok(LegacyAdvertisingEventPrepared { image, reservation })
-            }
-            Err(failure) => {
-                let error = failure.error();
-                let candidate = failure.into_candidate();
-                self.release_scheduler_reservation(reservation);
-                Err(LegacyAdvertisingRecurringEventPreparationFailure {
-                    candidate,
-                    error: LegacyAdvertisingRecurringEventPreparationError::EventImage(error),
-                })
-            }
-        }
-    }
-
-    /// Release an unpublished first advertising event and restore both owners.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub fn cancel_legacy_advertising_first_event<'a>(
-        &mut self,
-        prepared: LegacyAdvertisingEventPrepared<'a>,
-    ) -> crate::le::advertising::LegacyAdvertisingCancelled<'a> {
-        let LegacyAdvertisingEventPrepared { image, reservation } = prepared;
-        self.release_scheduler_reservation(reservation);
-        image.cancel()
-    }
-
-    /// Release an admitted first event before its sequence sample arrives.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn cancel_legacy_advertising_first_pre_sequence<'a>(
-        &mut self,
-        admitted: LegacyAdvertisingFirstPreSequence<'a>,
-    ) -> crate::le::advertising::LegacyAdvertisingCancelled<'a> {
-        let LegacyAdvertisingFirstPreSequence {
-            candidate,
-            reservation,
-        } = admitted;
-        self.release_scheduler_reservation(reservation);
-        candidate.cancel()
-    }
-
-    /// Release an admitted recurring event before its sequence sample arrives.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_legacy_advertising_recurring_pre_sequence<'a>(
-        &mut self,
-        admitted: LegacyAdvertisingRecurringPreSequence<'a>,
-    ) -> crate::le::advertising::LegacyAdvertisingRecurringCancelled<'a> {
-        let LegacyAdvertisingRecurringPreSequence {
-            candidate,
-            reservation,
-        } = admitted;
-        self.release_scheduler_reservation(reservation);
-        candidate.cancel()
-    }
-
-    /// Admit one requested passive-scanner window into the common timeline.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub fn admit_passive_scan_first_event(
-        &mut self,
-        candidate: PassiveScanFirstEventCandidate,
-        admission: PassiveScanAdmissionObservation,
-    ) -> Result<PassiveScanFirstPreSequence, PassiveScanFirstEventPreparationFailure> {
-        let requested = candidate.requested_window();
-        let timing_policy =
-            SchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
-        match self
-            .runtime
-            .scheduler_timeline_mut()
-            .reserve_phase_locked_initial_window(
-                requested.start(),
-                requested.end(),
-                timing_policy,
-                admission.sample,
-            ) {
-            Ok(reservation) => Ok(PassiveScanFirstPreSequence {
-                candidate,
-                reservation,
-            }),
-            Err(error) => Err(PassiveScanFirstEventPreparationFailure {
-                candidate,
-                error: PassiveScanFirstEventPreparationError::Timeline(error),
-            }),
-        }
-    }
-
-    /// Authorize the second deadline and only then encode the
-    /// overlap-resolved scanner window into private SRAM.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub fn prepare_passive_scan_first_event(
-        &mut self,
-        admitted: PassiveScanFirstPreSequence,
-        sequence: PassiveScanSequenceObservation,
-    ) -> Result<PassiveScanEventPrepared, PassiveScanFirstEventPreparationFailure> {
-        let PassiveScanFirstPreSequence {
-            candidate,
-            reservation,
-        } = admitted;
-        let reservation = match reservation.authorize_sequence(sequence.sample) {
-            Ok(reservation) => reservation,
-            Err(failure) => {
-                let error = failure.error();
-                self.release_scheduler_reservation(failure.into_reservation());
-                return Err(PassiveScanFirstEventPreparationFailure {
-                    candidate,
-                    error: PassiveScanFirstEventPreparationError::Sequence(error),
-                });
-            }
-        };
-        let graph = candidate.prepare_resolved_event(reservation.window());
-        Ok(PassiveScanEventPrepared { graph, reservation })
-    }
-
-    /// Release one unpublished scanner event and its exact timeline slot.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub fn cancel_passive_scan_first_event(
-        &mut self,
-        prepared: PassiveScanEventPrepared,
-    ) -> PassiveScanMemoryGraphCpuOwned {
-        let PassiveScanEventPrepared { graph, reservation } = prepared;
-        self.release_scheduler_reservation(reservation);
-        graph.into_cpu_owned()
-    }
-
-    /// Release an admitted scanner candidate before its sequence sample arrives.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn cancel_passive_scan_first_pre_sequence(
-        &mut self,
-        admitted: PassiveScanFirstPreSequence,
-    ) -> PassiveScanMemoryGraphCpuOwned {
-        let PassiveScanFirstPreSequence {
-            candidate,
-            reservation,
-        } = admitted;
-        self.release_scheduler_reservation(reservation);
-        candidate.cancel()
-    }
-
-    /// Join one prepared advertising item to this epoch's empty scheduler list.
-    #[cfg(any(target_arch = "riscv32", test))]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the recoverable failure retains the exact affine radio state and continuation owners without allocation"
-    )]
-    pub fn prepare_legacy_advertising_empty_list_merge<'a>(
-        &mut self,
-        prepared: LegacyAdvertisingEventPrepared<'a>,
-    ) -> Result<
-        LegacyAdvertisingEmptySchedulerMergePrepared<'a>,
-        LegacyAdvertisingEmptySchedulerMergeFailure<'a>,
-    > {
-        let LegacyAdvertisingEventPrepared { image, reservation } = prepared;
-        let item = image.prepare_scheduler_bookkeeping();
-        let address = item.scheduler_item_address();
-        if let Err(error) = self._scheduler_list.prepare_first_item(address) {
-            return Err(LegacyAdvertisingEmptySchedulerMergeFailure {
-                error,
-                prepared: LegacyAdvertisingEventPrepared {
-                    image: item.cancel(),
-                    reservation,
-                },
-            });
-        }
-        Ok(LegacyAdvertisingEmptySchedulerMergePrepared {
-            item: item.prepare_empty_list_link(),
-            reservation,
-        })
-    }
-
-    /// Cancel a not-yet-published advertising merge through the same list epoch.
-    #[cfg(any(target_arch = "riscv32", test))]
-    #[expect(
-        clippy::result_large_err,
-        reason = "an identity rejection retains the complete advertising merge"
-    )]
-    pub fn cancel_legacy_advertising_empty_list_merge<'a>(
-        &mut self,
-        merged: LegacyAdvertisingEmptySchedulerMergePrepared<'a>,
-    ) -> Result<LegacyAdvertisingEventPrepared<'a>, LegacyAdvertisingEmptySchedulerMergePrepared<'a>>
-    {
-        if !self
-            ._scheduler_list
-            .cancel_first_item(merged.scheduler_item_address())
-        {
-            return Err(merged);
-        }
-        let LegacyAdvertisingEmptySchedulerMergePrepared { item, reservation } = merged;
-        Ok(LegacyAdvertisingEventPrepared {
-            image: item.cancel().cancel(),
-            reservation,
-        })
-    }
-
-    /// Join the detached first scanner item to this epoch's empty scheduler list.
-    ///
-    /// The private scanner graph has already removed the item from its free
-    /// chain. This transition atomically reserves the same address in the
-    /// source-owned common list without publishing MMIO.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub fn prepare_passive_scan_empty_list_merge(
-        &mut self,
-        prepared: PassiveScanEventPrepared,
-    ) -> Result<PassiveScanEmptySchedulerMergePrepared, PassiveScanEmptySchedulerMergeFailure> {
-        let PassiveScanEventPrepared { graph, reservation } = prepared;
-        let graph = graph.prepare_scheduler_admission();
-        let address = graph.scheduler_head();
-        if let Err(error) = self._scheduler_list.prepare_first_item(address) {
-            return Err(PassiveScanEmptySchedulerMergeFailure {
-                error,
-                prepared: PassiveScanEventPrepared {
-                    graph: graph.cancel(),
-                    reservation,
-                },
-            });
-        }
-        Ok(PassiveScanEmptySchedulerMergePrepared { graph, reservation })
-    }
-
-    /// Restore an unpublished scanner merge through the same scheduler epoch.
-    ///
-    /// Success restores both the common empty-list proof and the selected
-    /// scanner item's position in the private three-item free chain.
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub fn cancel_passive_scan_empty_list_merge(
-        &mut self,
-        merged: PassiveScanEmptySchedulerMergePrepared,
-    ) -> Result<PassiveScanEventPrepared, PassiveScanEmptySchedulerMergePrepared> {
-        if !self
-            ._scheduler_list
-            .cancel_first_item(merged.scheduler_item_address())
-        {
-            return Err(merged);
-        }
-        let PassiveScanEmptySchedulerMergePrepared { graph, reservation } = merged;
-        Ok(PassiveScanEventPrepared {
-            graph: graph.cancel(),
-            reservation,
-        })
-    }
-
-    #[cfg(any(target_arch = "riscv32", test))]
-    fn release_scheduler_reservation<State>(
+    pub(crate) fn release_scheduler_reservation<State>(
         &mut self,
         reservation: SchedulerWindowReservation<State>,
     ) {
@@ -1574,100 +511,12 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
             .expect("a reservation created by this Controller must release into the same timeline");
     }
 
-    /// Publish one prepared advertising item through the common head edge.
-    #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "pre-MMIO rejection retains the complete advertising merge"
-    )]
-    pub(crate) fn publish_legacy_advertising_scheduler_head<'a>(
-        &mut self,
-        merged: LegacyAdvertisingEmptySchedulerMergePrepared<'a>,
-    ) -> Result<
-        LegacyAdvertisingSchedulerHeadPublished<'a>,
-        LegacyAdvertisingSchedulerHeadPublicationFailure<'a>,
-    > {
-        let address = merged.scheduler_item_address();
-        let publication =
-            match self.publish_first_scheduler_item_head(address, merged.hardware_list_index()) {
-                Ok(publication) => publication,
-                Err(error) => {
-                    return Err(LegacyAdvertisingSchedulerHeadPublicationFailure { error, merged });
-                }
-            };
-        let LegacyAdvertisingEmptySchedulerMergePrepared { item, reservation } = merged;
-        let item = item.into_head_published(&publication);
-        Ok(LegacyAdvertisingSchedulerHeadPublished {
-            item,
-            publication,
-            _reservation: reservation,
-        })
-    }
-
-    /// Publish the complete lower passive-scanner transaction.
-    ///
-    /// The common list identity and scheduler-head encoding are checked before
-    /// MMIO. An RX publication mismatch seals every owner after that first
-    /// write; only a matching RX proof continues to the restricted scanner
-    /// command and scheduler head in the reviewed hardware order.
-    #[cfg(target_arch = "riscv32")]
-    #[allow(
-        unsafe_code,
-        reason = "the powered task owner and exact scanner graph jointly retain every PAC publication prerequisite"
-    )]
-    pub(crate) fn publish_passive_scan_scheduler_head(
-        &mut self,
-        merged: PassiveScanEmptySchedulerMergePrepared,
-    ) -> Result<PassiveScanSchedulerHeadPublished, PassiveScanSchedulerHeadPublicationFailure> {
-        let address = merged.scheduler_item_address();
-        let index = merged.hardware_list_index();
-        let head = match self.validate_first_scheduler_item_head(address) {
-            Ok(head) => head,
-            Err(error) => {
-                return Err(PassiveScanSchedulerHeadPublicationFailure {
-                    head_error: Some(error),
-                    rx_publication_error: None,
-                    owner: PassiveScanSchedulerHeadPublicationFailureOwner::PrePublication(merged),
-                });
-            }
-        };
-        let PassiveScanEmptySchedulerMergePrepared { graph, reservation } = merged;
-        let graph = graph.prepare_publication();
-        // SAFETY: `self` holds the sole powered task epoch, and the exact scanner
-        // graph moves into this publication and stays retained by its success or
-        // failure owner.
-        let graph = match unsafe { self.task.publish_passive_scan_rx_memory(graph) } {
-            Ok(graph) => graph,
-            Err(mismatch) => {
-                let error = mismatch.error();
-                return Err(PassiveScanSchedulerHeadPublicationFailure {
-                    head_error: None,
-                    rx_publication_error: Some(error),
-                    owner: PassiveScanSchedulerHeadPublicationFailureOwner::RxPublication {
-                        _mismatch: mismatch,
-                        _reservation: reservation,
-                        _head: head,
-                    },
-                });
-            }
-        };
-        // SAFETY: `graph` is the RX-published scanner graph returned above, and
-        // `self` still holds the sole powered scanner epoch.
-        let graph = unsafe { self.task.publish_passive_scan_command(graph) };
-        let publication = self.publish_validated_first_scheduler_item_head(address, index, head);
-        Ok(PassiveScanSchedulerHeadPublished {
-            graph,
-            publication,
-            reservation,
-        })
-    }
-
     #[cfg(target_arch = "riscv32")]
     #[allow(
         unsafe_code,
         reason = "the powered task owner and exclusive list identity jointly authorize the typed PAC publication"
     )]
-    fn publish_first_scheduler_item_head(
+    pub(crate) fn publish_first_scheduler_item_head(
         &mut self,
         address: BluetoothControllerSramAddress,
         index: BluetoothSchedulerHardwareListIndex,
@@ -1704,260 +553,6 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         let publication = unsafe { self.task.publish_scheduler_hardware_list_head(index, head) };
         self._scheduler_list.retain_published_first_item(address);
         publication
-    }
-
-    /// Release the advertising memory, timeline and source-list owners together.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recycle_legacy_advertising_completed<'a>(
-        &mut self,
-        ready: SingleItemSchedulerSoftwareListRemovalReady<
-            crate::le::advertising::legacy::completion::LegacyAdvertisingCompletionRole<'a>,
-        >,
-    ) -> LegacyAdvertisingSchedulerRecycleStep<'a> {
-        let (item, removal, reservation) = ready.into_parts();
-        let ready = LegacyAdvertisingSchedulerRecycleReady {
-            item,
-            removal,
-            reservation,
-        };
-        let address = ready.scheduler_item_address();
-        if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self
-                ._scheduler_list
-                .retains_software_list_removal_ready_first_item(address)
-        {
-            return LegacyAdvertisingSchedulerRecycleStep::SchedulerIdentityMismatch {
-                _ready: ready,
-            };
-        }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
-            return LegacyAdvertisingSchedulerRecycleStep::FinishedListDrainStillActive {
-                _ready: ready,
-            };
-        }
-        let LegacyAdvertisingSchedulerRecycleReady {
-            item,
-            removal,
-            reservation,
-        } = ready;
-        let prepared = match item.prepare_recycle(removal) {
-            Ok(prepared) => prepared,
-            Err(failure) => {
-                let error = failure.error();
-                let (item, removal) = failure.into_parts();
-                return LegacyAdvertisingSchedulerRecycleStep::MemoryIdentityMismatch {
-                    _ready: LegacyAdvertisingSchedulerRecycleReady {
-                        item,
-                        removal,
-                        reservation,
-                    },
-                    _error: error,
-                };
-            }
-        };
-        let release = match self
-            .runtime
-            .scheduler_timeline_mut()
-            .prepare_release(reservation)
-        {
-            Ok(release) => release,
-            Err(failure) => {
-                let reservation = failure.into_reservation();
-                let (item, removal) = prepared.into_parts();
-                return LegacyAdvertisingSchedulerRecycleStep::ReservationIdentityMismatch {
-                    _ready: LegacyAdvertisingSchedulerRecycleReady {
-                        item,
-                        removal,
-                        reservation,
-                    },
-                };
-            }
-        };
-        let item = prepared.commit();
-        release.commit();
-        self._scheduler_list.commit_recycled_first_item();
-        LegacyAdvertisingSchedulerRecycleStep::Recycled(LegacyAdvertisingSchedulerRecycled { item })
-    }
-
-    /// Extract RX packets and release the scanner memory and common-list owners.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recycle_passive_scan_completed(
-        &mut self,
-        ready: SingleItemSchedulerSoftwareListRemovalReady<
-            crate::le::scanning::passive::active::PassiveScanCompletionRole,
-        >,
-    ) -> PassiveScanSchedulerRecycleStep {
-        let (graph, removal, reservation) = ready.into_parts();
-        let ready = PassiveScanSchedulerRecycleReady {
-            graph,
-            removal,
-            reservation,
-        };
-        let address = ready.scheduler_item_address();
-        if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self
-                ._scheduler_list
-                .retains_software_list_removal_ready_first_item(address)
-        {
-            return PassiveScanSchedulerRecycleStep::SchedulerIdentityMismatch { _ready: ready };
-        }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
-            return PassiveScanSchedulerRecycleStep::FinishedListDrainStillActive { _ready: ready };
-        }
-        let PassiveScanSchedulerRecycleReady {
-            graph,
-            removal,
-            reservation,
-        } = ready;
-        let prepared = match graph.prepare_recycle_after_software_list_removal(removal) {
-            Ok(prepared) => prepared,
-            Err(failure) => {
-                let error = failure.error();
-                let (graph, removal) = failure.into_parts();
-                return PassiveScanSchedulerRecycleStep::MemoryIdentityMismatch {
-                    _ready: PassiveScanSchedulerRecycleReady {
-                        graph,
-                        removal,
-                        reservation,
-                    },
-                    _error: error,
-                };
-            }
-        };
-        let extracted = match prepared.extract_received() {
-            Ok(extracted) => extracted,
-            Err(failure) => {
-                let error = failure.error();
-                let (graph, removal) = failure.into_prepared().into_parts();
-                return PassiveScanSchedulerRecycleStep::ReceiveInvalid {
-                    _ready: PassiveScanSchedulerRecycleReady {
-                        graph,
-                        removal,
-                        reservation,
-                    },
-                    _error: error,
-                };
-            }
-        };
-        let release = match self
-            .runtime
-            .scheduler_timeline_mut()
-            .prepare_release(reservation)
-        {
-            Ok(release) => release,
-            Err(failure) => {
-                let reservation = failure.into_reservation();
-                let (graph, removal) = extracted.into_prepared().into_parts();
-                return PassiveScanSchedulerRecycleStep::ReservationIdentityMismatch {
-                    _ready: PassiveScanSchedulerRecycleReady {
-                        graph,
-                        removal,
-                        reservation,
-                    },
-                };
-            }
-        };
-        let graph = extracted.commit();
-        release.commit();
-        self._scheduler_list.commit_recycled_first_item();
-        PassiveScanSchedulerRecycleStep::Recycled(PassiveScanSchedulerRecycled { graph })
-    }
-
-    /// Reclaim one response-capable advertising graph and classify its copied RX batch.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recycle_legacy_connectable_advertising_completed(
-        &mut self,
-        ready: SingleItemSchedulerSoftwareListRemovalReady<
-            crate::le::advertising::connectable::completion::LegacyConnectableAdvertisingCompletionRole,
-        >,
-    ) -> crate::le::advertising::connectable::completion::LegacyConnectableAdvertisingRecycleStep
-    {
-        use crate::le::advertising::connectable::completion::{
-            LegacyConnectableAdvertisingRecycleReady, LegacyConnectableAdvertisingRecycleStep,
-        };
-
-        let (item, removal, reservation) = ready.into_parts();
-        let ready = LegacyConnectableAdvertisingRecycleReady::new(item, removal, reservation);
-        let address = ready.scheduler_item_address();
-        if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
-            || !self
-                ._scheduler_list
-                .retains_software_list_removal_ready_first_item(address)
-        {
-            return LegacyConnectableAdvertisingRecycleStep::SchedulerIdentityMismatch {
-                _ready: ready,
-            };
-        }
-        if self.runtime.scheduler_finished_lists_mut().is_active() {
-            return LegacyConnectableAdvertisingRecycleStep::FinishedListDrainStillActive {
-                _ready: ready,
-            };
-        }
-
-        #[cfg(feature = "dtm-diagnostics")]
-        if let Some(nodes) = ready.receive_observations() {
-            crate::le::advertising::diagnostics::record(nodes);
-        }
-        let (item, removal, reservation) = ready.into_parts();
-        let (memory, remainder) = item.into_parts();
-        let prepared = match memory.prepare_recycle_after_software_list_removal(removal) {
-            Ok(prepared) => prepared,
-            Err(failure) => {
-                let error = failure.error();
-                let (memory, removal) = failure.into_parts();
-                return LegacyConnectableAdvertisingRecycleStep::MemoryIdentityMismatch {
-                    _ready: LegacyConnectableAdvertisingRecycleReady::new(
-                        crate::le::advertising::connectable::LegacyConnectableAdvertisingCompletionObserved::new(
-                            memory, remainder,
-                        ),
-                        removal,
-                        reservation,
-                    ),
-                    _error: error,
-                };
-            }
-        };
-        let extracted = match prepared.extract_received() {
-            Ok(extracted) => extracted,
-            Err(failure) => {
-                let error = failure.error();
-                let (memory, removal) = failure.into_prepared().into_parts();
-                return LegacyConnectableAdvertisingRecycleStep::ReceiveInvalid {
-                    _ready: LegacyConnectableAdvertisingRecycleReady::new(
-                        crate::le::advertising::connectable::LegacyConnectableAdvertisingCompletionObserved::new(
-                            memory, remainder,
-                        ),
-                        removal,
-                        reservation,
-                    ),
-                    _error: error,
-                };
-            }
-        };
-        let release = match self
-            .runtime
-            .scheduler_timeline_mut()
-            .prepare_release(reservation)
-        {
-            Ok(release) => release,
-            Err(failure) => {
-                let reservation = failure.into_reservation();
-                let (memory, removal) = extracted.into_prepared().into_parts();
-                return LegacyConnectableAdvertisingRecycleStep::ReservationIdentityMismatch {
-                    _ready: LegacyConnectableAdvertisingRecycleReady::new(
-                        crate::le::advertising::connectable::LegacyConnectableAdvertisingCompletionObserved::new(
-                            memory, remainder,
-                        ),
-                        removal,
-                        reservation,
-                    ),
-                };
-            }
-        };
-        let recycled = extracted.commit();
-        release.commit();
-        self._scheduler_list.commit_recycled_first_item();
-        LegacyConnectableAdvertisingRecycleStep::Classified(remainder.classify_recycled(recycled))
     }
 }
 

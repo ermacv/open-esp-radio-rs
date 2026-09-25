@@ -52,11 +52,11 @@ use {
 use oer_esp32s31_pac::{RadioHardware, RadioPhyReleaseError};
 
 #[cfg(any(target_arch = "riscv32", test))]
-use crate::controller::time::ControllerTimeWorker;
+use crate::controller_time::ControllerTimeWorker;
 #[cfg(test)]
-use crate::controller::time::ControllerTimeWorkerPhase;
+use crate::controller_time::ControllerTimeWorkerPhase;
 #[cfg(target_arch = "riscv32")]
-use crate::controller::time::{
+use crate::controller_time::{
     ControllerTimeEventError, ControllerTimeEventStep, ControllerTimeRequest,
     ControllerTimeRequestError,
 };
@@ -282,7 +282,7 @@ impl TaskResources {
     /// Preserve pending or faulted time ownership before any terminal extraction.
     pub(crate) fn controller_time_retirement_ready(
         &self,
-    ) -> Result<(), crate::controller::ControllerTimeRetirementError> {
+    ) -> Result<(), crate::controller_time::ControllerTimeRetirementError> {
         self.controller_time.retirement_ready()
     }
 
@@ -656,7 +656,7 @@ impl TaskResources {
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn step_scheduler_stop(
         &mut self,
-        storage: &impl crate::controller::SchedulerRunInterruptStorage,
+        storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
         stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
     ) -> Result<
         oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopStep,
@@ -691,7 +691,7 @@ impl TaskResources {
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn recheck_scheduler_software_list_removal(
         &mut self,
-        storage: &impl crate::controller::SchedulerRunInterruptStorage,
+        storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
         head: BluetoothSchedulerHardwareListHeadEmptyObserved,
     ) -> Result<
         BluetoothSchedulerSoftwareListRemovalJoin,

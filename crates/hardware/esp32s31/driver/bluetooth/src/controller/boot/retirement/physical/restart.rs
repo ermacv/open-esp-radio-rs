@@ -2,9 +2,9 @@
 
 use super::*;
 use crate::{
-    controller::{
-        ControllerInterruptOwnersReady, ControllerModemTimerTask, InterruptOwnerRestartStorage,
-    },
+    controller::ControllerInterruptOwnersReady,
+    interrupt::InterruptOwnerRestartStorage,
+    modem_timer::ControllerModemTimerTask,
     phy::{
         ControllerPhyClientAcquireFailure, ControllerPhyInitializationFailure,
         ControllerPhyTrackingFailure, PhyInitializationConfig,
@@ -74,7 +74,7 @@ pub struct ControllerRestartFailure<
 }
 impl<
     P,
-    S: InterruptOwnerRestartStorage + crate::controller::ModemLpTimerSoftwareOwnerStorage,
+    S: InterruptOwnerRestartStorage + crate::modem_timer::ModemLpTimerSoftwareOwnerStorage,
     const SC: usize,
     const MT: usize,
 > ControllerRestartFailure<'_, P, S, SC, MT>
@@ -106,7 +106,7 @@ impl<
 pub struct ControllerRestarted<
     'a,
     P,
-    S: crate::controller::ModemLpTimerSoftwareOwnerStorage,
+    S: crate::modem_timer::ModemLpTimerSoftwareOwnerStorage,
     M: RawMutex,
     const SC: usize,
     const MT: usize,
@@ -123,7 +123,7 @@ pub struct ControllerRestarted<
 impl<
     'a,
     P,
-    S: InterruptOwnerRestartStorage + crate::controller::ModemLpTimerSoftwareOwnerStorage,
+    S: InterruptOwnerRestartStorage + crate::modem_timer::ModemLpTimerSoftwareOwnerStorage,
     const SC: usize,
     const MT: usize,
 > ControllerColdReleased<'a, P, S, SC, MT>
@@ -239,7 +239,7 @@ impl<
 fn complete_initialization<
     'a,
     P,
-    S: InterruptOwnerRestartStorage + crate::controller::ModemLpTimerSoftwareOwnerStorage,
+    S: InterruptOwnerRestartStorage + crate::modem_timer::ModemLpTimerSoftwareOwnerStorage,
     M: RawMutex,
     const SC: usize,
     const MT: usize,
@@ -282,7 +282,7 @@ fn complete_initialization<
 fn finish_restart<
     'a,
     P,
-    S: crate::controller::ModemLpTimerSoftwareOwnerStorage,
+    S: crate::modem_timer::ModemLpTimerSoftwareOwnerStorage,
     M: RawMutex,
     const SC: usize,
     const MT: usize,

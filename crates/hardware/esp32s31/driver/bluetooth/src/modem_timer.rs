@@ -19,7 +19,7 @@ use oer_esp32s31_hal::bluetooth::{
 /// Stable-storage boundary for source-127 task ownership.
 ///
 /// The interrupt platform implements this trait for the same affine lease
-/// returned by [`super::InterruptOwnerStorage`]. Taking an owner leaves the
+/// returned by [`crate::interrupt::InterruptOwnerStorage`]. Taking an owner leaves the
 /// stable ISR slot empty, so repeated interrupt entry cannot touch MMIO while
 /// task work owns the timer. Only a fully rearmed owner may be restored.
 pub trait ModemLpTimerSoftwareOwnerStorage {
@@ -167,7 +167,7 @@ impl<'runtime, S, const CAPACITY: usize> ControllerModemTimerTask<'runtime, S, C
 where
     S: ModemLpTimerSoftwareOwnerStorage,
 {
-    pub(super) fn new(
+    pub(crate) fn new(
         storage: &'runtime S,
         runtime: ControllerModemTimerRuntime<'runtime, CAPACITY>,
     ) -> Self {
@@ -310,11 +310,11 @@ pub struct ControllerModemTimerRetired<'runtime, S, const CAPACITY: usize> {
 }
 
 impl<'runtime, S, const CAPACITY: usize> ControllerModemTimerRetired<'runtime, S, CAPACITY> {
-    pub(super) fn matches_storage(&self, storage: &S) -> bool {
+    pub(crate) fn matches_storage(&self, storage: &S) -> bool {
         core::ptr::eq(self.storage, storage)
     }
 
-    pub(super) fn from_maintenance_parts(
+    pub(crate) fn from_maintenance_parts(
         owner: ModemLpTimerInterruptReadyOwner,
         runtime: ControllerModemTimerRuntime<'runtime, CAPACITY>,
         storage: &'runtime S,
@@ -326,7 +326,7 @@ impl<'runtime, S, const CAPACITY: usize> ControllerModemTimerRetired<'runtime, S
         }
     }
 
-    pub(super) fn into_shutdown_parts(
+    pub(crate) fn into_shutdown_parts(
         self,
     ) -> (
         ModemLpTimerInterruptReadyOwner,
@@ -345,7 +345,7 @@ impl<'runtime, S: ModemLpTimerRetirementStorage, const CAPACITY: usize>
     /// This takes no hardware owner. An ISR can publish work after this check;
     /// `try_retire` must recheck after all routes have been disabled.
     pub fn retirement_ready(&self) -> bool {
-        super::modem_timer_retirement::retire_when_drained(
+        crate::modem_timer_retirement::retire_when_drained(
             matches!(self.phase, ControllerModemTimerTaskPhase::Idle),
             self.runtime.queue_is_empty(),
             self.runtime.worker_wake().is_pending(),
@@ -366,11 +366,11 @@ impl<'runtime, S: ModemLpTimerRetirementStorage, const CAPACITY: usize>
     ) -> Result<
         ControllerModemTimerRetired<'runtime, S, CAPACITY>,
         (
-            super::ControllerModemTimerRetirementError<S::RetireError>,
+            crate::modem_timer_retirement::ControllerModemTimerRetirementError<S::RetireError>,
             Self,
         ),
     > {
-        let owner = super::modem_timer_retirement::retire_when_drained(
+        let owner = crate::modem_timer_retirement::retire_when_drained(
             matches!(self.phase, ControllerModemTimerTaskPhase::Idle),
             self.runtime.queue_is_empty(),
             self.runtime.worker_wake().is_pending(),

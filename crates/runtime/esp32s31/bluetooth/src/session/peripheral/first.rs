@@ -15,7 +15,6 @@ use oer_bluetooth_hci::{
 };
 
 use oer_esp32s31_bluetooth::{
-    controller::SchedulerRunInterruptStorage,
     le::{
         advertising::{
             LegacyConnectableAdvertisingConnectionAcceptedReady,
@@ -32,6 +31,7 @@ use oer_esp32s31_bluetooth::{
             LegacyConnectablePeripheralFirstHciRunning, LegacyConnectablePeripheralFirstHciStep,
         },
     },
+    scheduler::SchedulerRunInterruptStorage,
 };
 
 /// Executor disposition after all immediately-ready chip transitions were driven.

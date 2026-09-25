@@ -19,12 +19,15 @@ use crate::{
         LegacyAdvertisingRecurringPreparationError, LegacyAdvertisingRecurringPreparationFailure,
         LegacyAdvertisingResetCompletionReady, LegacyAdvertisingStopping,
         legacy::active::LegacyAdvertisingStopOrder,
+        scheduler::{
+            LegacyAdvertisingEmptySchedulerMergePrepared, LegacyAdvertisingEventPrepared,
+            LegacyAdvertisingRecurringEventPreparationError, LegacyAdvertisingRecurringPreSequence,
+            LegacyAdvertisingSchedulerHeadPublished,
+        },
     },
     scheduler::{
-        BluetoothSchedulerHardwareListIndex, LegacyAdvertisingEmptySchedulerMergePrepared,
-        LegacyAdvertisingEventPrepared, LegacyAdvertisingRecurringEventPreparationError,
-        LegacyAdvertisingRecurringPreSequence, LegacyAdvertisingSchedulerHeadPublished,
-        SchedulerEmptyListMergeError, SchedulerHeadPublicationError,
+        BluetoothSchedulerHardwareListIndex, SchedulerEmptyListMergeError,
+        SchedulerHeadPublicationError,
     },
 };
 

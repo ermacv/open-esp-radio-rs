@@ -34,7 +34,7 @@ use oer_esp32s31_bluetooth_memory::{
     PeripheralConnectionMemoryGraphModelAddress, PeripheralConnectionMemoryGraphStorage,
 };
 
-use super::{
+use crate::le::advertising::connectable::scheduler::{
     LegacyConnectableAdvertisingAdmissionObservation,
     LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
     LegacyConnectableAdvertisingEventPreparationError, LegacyConnectableAdvertisingEventPrepared,
@@ -603,7 +603,7 @@ fn occupied_list_rejects_second_item_without_losing_either_owner() {
     };
     assert_eq!(
         failure.error(),
-        super::SchedulerEmptyListMergeError::ListNotEmpty
+        crate::le::advertising::connectable::scheduler::SchedulerEmptyListMergeError::ListNotEmpty
     );
     let second = failure.into_prepared();
     let first_cancelled = cancel_merge(&mut task, first);

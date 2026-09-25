@@ -42,7 +42,9 @@ use {
     oer_esp32s31_hal::types::BluetoothControllerSramAddress,
 };
 
-use super::{PeripheralConnectionSchedulerCompleted, PeripheralConnectionSequenceObservation};
+use crate::le::peripheral::scheduler::{
+    PeripheralConnectionSchedulerCompleted, PeripheralConnectionSequenceObservation,
+};
 
 use transaction::{
     PeripheralConnectionRecurringCandidateFailure,
@@ -216,7 +218,7 @@ impl PeripheralConnectionRecurringSchedulerTransaction {
 
 /// Private committed LL/phase owner retained across RX publication.
 #[must_use = "rejoin the committed event with its exact RX-published graph"]
-pub(super) struct PeripheralConnectionRecurringSchedulerCommittedRemainder {
+pub(crate) struct PeripheralConnectionRecurringSchedulerCommittedRemainder {
     event: LePeripheralConnectionEventPrepared,
     remainder: PeripheralConnectionCompletedEventRecurringRemainder,
     phase: crate::le::peripheral::connection::PeripheralConnectionRecurringPhase,
@@ -581,7 +583,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     ) -> ControlFlow<
         PeripheralConnectionRecurringSchedulerPublicationFailStop,
         (
-            super::PeripheralConnectionSchedulerHeadPublished,
+            crate::le::peripheral::scheduler::PeripheralConnectionSchedulerHeadPublished,
             BluetoothSchedulerRunInterruptsPrepared,
         ),
     > {
@@ -609,7 +611,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         let event = remainder.join_rx_publication(graph, reservation.window());
         let publication = self.publish_validated_first_scheduler_item_head(address, index, head);
         ControlFlow::Continue((
-            super::PeripheralConnectionSchedulerHeadPublished {
+            crate::le::peripheral::scheduler::PeripheralConnectionSchedulerHeadPublished {
                 event,
                 publication,
                 reservation,

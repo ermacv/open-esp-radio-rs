@@ -5,9 +5,9 @@
 
 use super::*;
 use oer_esp32s31_bluetooth::{
-    controller::{ControllerIdleCommandTask, SchedulerRunInterruptStorage},
-    le::peripheral::PeripheralPhyMaintenanceReady,
+    controller::ControllerIdleCommandTask, le::peripheral::PeripheralPhyMaintenanceReady,
     resources::platform_retirement::ControllerRuntimePlatform,
+    scheduler::SchedulerRunInterruptStorage,
 };
 use oer_esp32s31_bluetooth_runtime::controller::maintenance::PhyMaintenancePolicy;
 use oer_esp32s31_phy::tracking::parameters::PhyParamTrackingOutcome;

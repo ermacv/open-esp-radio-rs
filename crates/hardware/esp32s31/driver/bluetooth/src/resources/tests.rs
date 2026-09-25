@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::controller::time::ControllerTimeWorkerPhase;
+use crate::controller_time::ControllerTimeWorkerPhase;
 
 use oer_esp32s31_bluetooth_memory::{
     DirectionFindingWorkspaceModelAddress, DirectionFindingWorkspaceStorage,
@@ -202,12 +202,12 @@ fn task_retirement_keeps_a_controller_time_ownership_fault() {
     let (mut task, setup) = separate_interrupt_owner(registers);
     assert!(
         task.controller_time
-            .cancel_owned(crate::controller::time::ControllerTimeRequest::for_validation(1))
+            .cancel_owned(crate::controller_time::ControllerTimeRequest::for_validation(1))
             .is_err()
     );
     assert_eq!(
         task.controller_time_retirement_ready(),
-        Err(crate::controller::ControllerTimeRetirementError::Faulted)
+        Err(crate::controller_time::ControllerTimeRetirementError::Faulted)
     );
     let _retained = (task, setup);
 }

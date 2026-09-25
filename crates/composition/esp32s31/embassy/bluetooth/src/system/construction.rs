@@ -11,9 +11,12 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 use oer_bluetooth_hci::LeControllerHciEndpoints;
 
-use oer_esp32s31_bluetooth::controller::{
-    ControllerModemTimerTask, ControllerPublishedRuntimeEndpoints, ControllerPublishedRuntimeSplit,
-    ControllerPublishedRuntimeSplitFailure, hci::ControllerHciBound,
+use oer_esp32s31_bluetooth::{
+    controller::{
+        ControllerPublishedRuntimeEndpoints, ControllerPublishedRuntimeSplit,
+        ControllerPublishedRuntimeSplitFailure, hci::ControllerHciBound,
+    },
+    modem_timer::ControllerModemTimerTask,
 };
 
 use oer_esp32s31_bluetooth_runtime::controller::DtmAbsoluteRecheck;

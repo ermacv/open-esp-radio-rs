@@ -10,16 +10,9 @@ pub use publication::{
     ControllerInterruptOwnersReady, ControllerOutputTimerStarted,
     ControllerPublishedInterruptService, ControllerPublishedRuntimeEndpoints,
     ControllerPublishedRuntimeSplit, ControllerPublishedRuntimeSplitFailure,
-    InterruptOwnerRestartStorage, InterruptOwnerStorage, SharedInterruptDispatchStorage,
 };
-#[cfg(any(target_arch = "riscv32", test))]
-mod modem_timer_retirement;
-#[cfg(target_arch = "riscv32")]
-pub use modem_timer_retirement::ControllerModemTimerRetirementError;
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod maintenance;
-#[cfg(target_arch = "riscv32")]
-mod modem_timer;
 #[cfg(target_arch = "riscv32")]
 pub(crate) mod peripheral_connection;
 #[cfg(target_arch = "riscv32")]
@@ -30,13 +23,6 @@ pub use maintenance::{
 };
 mod role_retirement;
 #[cfg(target_arch = "riscv32")]
-pub use modem_timer::{
-    ControllerModemTimerBegin, ControllerModemTimerReadiness, ControllerModemTimerReadinessClass,
-    ControllerModemTimerRearm, ControllerModemTimerRetired, ControllerModemTimerStep,
-    ControllerModemTimerTask, ModemLpTimerInterruptDispatchStorage, ModemLpTimerRetirementStorage,
-    ModemLpTimerSoftwareOwnerStorage,
-};
-#[cfg(target_arch = "riscv32")]
 pub use retirement::{
     ControllerColdReleased, ControllerPhysicalShutdownError, ControllerPhysicalShutdownFailure,
     ControllerRestartError, ControllerRestartFailure, ControllerRestarted,
@@ -46,10 +32,6 @@ pub use role_retirement::{ControllerRoleRetirementError, ControllerTaskRetiremen
 #[cfg(target_arch = "riscv32")]
 mod scheduler_service;
 #[cfg(target_arch = "riscv32")]
-pub(crate) use scheduler_service::single_item::SingleItemSchedulerCompletionFaultOwner;
-#[cfg(any(target_arch = "riscv32", test))]
-pub(crate) mod timed_preparation;
-#[cfg(target_arch = "riscv32")]
 pub(crate) use scheduler_service::connectable_advertising::{
     LegacyConnectableAdvertisingSchedulerFailStop,
     LegacyConnectableAdvertisingSchedulerFailStopCause,
@@ -57,10 +39,12 @@ pub(crate) use scheduler_service::connectable_advertising::{
     LegacyConnectableAdvertisingSchedulerStartRetryError,
     LegacyConnectableAdvertisingSchedulerStartStep,
 };
+#[cfg(target_arch = "riscv32")]
+pub(crate) use scheduler_service::single_item::SingleItemSchedulerCompletionFaultOwner;
 
 #[cfg(target_arch = "riscv32")]
 use crate::{
-    controller::time::{
+    controller_time::{
         ControllerTimeEventError, ControllerTimeEventStep, ControllerTimePendingCore,
         ControllerTimePendingCoreStep, ControllerTimePendingOrphanStep, ControllerTimePendingOwner,
         ControllerTimePendingOwnerStep, ControllerTimeRequest, ControllerTimeRequestError,
@@ -75,65 +59,33 @@ use crate::{
 #[cfg(target_arch = "riscv32")]
 use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(target_arch = "riscv32")]
-use oer_esp32s31_hal::bluetooth::{
-    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerRunInterruptsPrepared,
-    BluetoothSchedulerSoftwareListRemovalJoin, ControllerHal,
-};
+use oer_esp32s31_hal::bluetooth::BluetoothSchedulerRunInterruptsPrepared;
 
-/// Stable task-side access to the shared interrupt owner for scheduler start.
-///
-/// This is deliberately separate from hard-handler dispatch. Implementations
-/// must execute the finite dynamic interrupt preparation synchronously while
-/// retaining the owner in the same stable slot. Task-side stop and removal
-/// rechecks serialize with live interrupt service without moving that owner.
+// Hardware modem-timer and timed-preparation owners used by controller bring-up.
 #[cfg(target_arch = "riscv32")]
-pub trait SchedulerRunInterruptStorage {
-    /// Monotonic platform time used by the retained quiescence deadline.
-    fn monotonic_micros() -> u64;
+pub(crate) use crate::interrupt::InterruptOwnerRestartStorage;
+#[cfg(target_arch = "riscv32")]
+pub(crate) use crate::modem_timer::{
+    ControllerModemTimerRetired, ControllerModemTimerTask, ModemLpTimerInterruptDispatchStorage,
+    ModemLpTimerSoftwareOwnerStorage,
+};
+#[cfg(target_arch = "riscv32")]
+pub(crate) use crate::timed_preparation;
 
-    /// Serialize one finite common-stop step with the stable ISR register owner.
-    /// Storage rejection must return the unchanged sequence.
-    fn step_scheduler_stop(
-        &self,
-        controller: &mut ControllerHal<'_>,
-        stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
-    ) -> Result<
-        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStopStep,
-        oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
-    >;
-
-    /// Exact reason the stable owner could not prepare scheduler interrupts.
-    type Error;
-
-    /// Clear stale dynamic sources and enable the scheduler-run groups.
-    fn prepare_scheduler_run_interrupts(
-        &self,
-    ) -> Result<BluetoothSchedulerRunInterruptsPrepared, Self::Error>;
-
-    /// Recheck the complete scheduler software-list removal predicate while
-    /// the stable interrupt-register owner remains in platform storage.
-    ///
-    /// Failure returns the unchanged affine empty-head proof.
-    fn recheck_scheduler_software_list_removal(
-        &self,
-        controller: &mut ControllerHal<'_>,
-        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
-    ) -> Result<
-        BluetoothSchedulerSoftwareListRemovalJoin,
-        BluetoothSchedulerHardwareListHeadEmptyObserved,
-    >;
-}
+// The scheduler-run interrupt port is hardware; controller dispatch uses it.
+#[cfg(target_arch = "riscv32")]
+pub(crate) use crate::scheduler::SchedulerRunInterruptStorage;
 
 /// Failed DTM scheduler start before the synchronous run suffix began.
 ///
 /// The published head is returned unchanged. Once interrupt preparation
 /// succeeds, every remaining operation is infallible and ownership advances
-/// directly to [`crate::scheduler::DtmSchedulerRunning`].
+/// directly to [`crate::le::dtm::scheduler::DtmSchedulerRunning`].
 #[must_use = "a failed DTM scheduler start still owns its published graph"]
 #[cfg(target_arch = "riscv32")]
 pub struct DtmSchedulerStartFailure<Role, E> {
     error: E,
-    head: crate::scheduler::DtmSchedulerHeadPublished<Role>,
+    head: crate::le::dtm::scheduler::DtmSchedulerHeadPublished<Role>,
 }
 
 /// Failed advertising scheduler start before the synchronous run suffix began.
@@ -141,7 +93,7 @@ pub struct DtmSchedulerStartFailure<Role, E> {
 #[cfg(target_arch = "riscv32")]
 pub struct LegacyAdvertisingSchedulerStartFailure<'a, E> {
     error: E,
-    head: crate::scheduler::LegacyAdvertisingSchedulerHeadPublished<'a>,
+    head: crate::le::advertising::scheduler::LegacyAdvertisingSchedulerHeadPublished<'a>,
 }
 
 /// Failed scanner scheduler start before the synchronous RUN suffix began.
@@ -149,7 +101,7 @@ pub struct LegacyAdvertisingSchedulerStartFailure<'a, E> {
 #[cfg(target_arch = "riscv32")]
 pub struct PassiveScanSchedulerStartFailure<E> {
     error: E,
-    head: crate::scheduler::PassiveScanSchedulerHeadPublished,
+    head: crate::le::scanning::scheduler::PassiveScanSchedulerHeadPublished,
 }
 
 /// Failed connection scheduler start before the synchronous RUN suffix began.
@@ -157,7 +109,7 @@ pub struct PassiveScanSchedulerStartFailure<E> {
 #[cfg(target_arch = "riscv32")]
 pub struct PeripheralConnectionSchedulerStartFailure<E> {
     error: E,
-    head: crate::scheduler::PeripheralConnectionSchedulerHeadPublished,
+    head: crate::le::peripheral::PeripheralConnectionSchedulerHeadPublished,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -172,7 +124,7 @@ impl<E> PeripheralConnectionSchedulerStartFailure<E> {
         self,
     ) -> (
         E,
-        crate::scheduler::PeripheralConnectionSchedulerHeadPublished,
+        crate::le::peripheral::PeripheralConnectionSchedulerHeadPublished,
     ) {
         (self.error, self.head)
     }
@@ -186,7 +138,12 @@ impl<E> PassiveScanSchedulerStartFailure<E> {
     }
 
     /// Recover the error and unchanged published scanner graph.
-    pub fn into_parts(self) -> (E, crate::scheduler::PassiveScanSchedulerHeadPublished) {
+    pub fn into_parts(
+        self,
+    ) -> (
+        E,
+        crate::le::scanning::scheduler::PassiveScanSchedulerHeadPublished,
+    ) {
         (self.error, self.head)
     }
 }
@@ -201,7 +158,7 @@ impl<'a, E> LegacyAdvertisingSchedulerStartFailure<'a, E> {
         self,
     ) -> (
         E,
-        crate::scheduler::LegacyAdvertisingSchedulerHeadPublished<'a>,
+        crate::le::advertising::scheduler::LegacyAdvertisingSchedulerHeadPublished<'a>,
     ) {
         (self.error, self.head)
     }
@@ -215,7 +172,12 @@ impl<Role, E> DtmSchedulerStartFailure<Role, E> {
     }
 
     /// Recover the error and unchanged published DTM head.
-    pub fn into_parts(self) -> (E, crate::scheduler::DtmSchedulerHeadPublished<Role>) {
+    pub fn into_parts(
+        self,
+    ) -> (
+        E,
+        crate::le::dtm::scheduler::DtmSchedulerHeadPublished<Role>,
+    ) {
         (self.error, self.head)
     }
 }
@@ -227,13 +189,13 @@ pub enum DtmSoftwareListRemovalPublishedStep<Role> {
     /// The supplied owner belongs to another mailbox identity or generation.
     MailboxAffinityMismatch(
         crate::le::dtm::BluetoothPostUnlinkAwaiting<
-            crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
+            crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
         >,
     ),
     /// The primary epoch reported a baseline or unclassified fault.
     Fault {
         /// Already-unlinked graph retained for fail-stop handling.
-        unlinked: crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
+        unlinked: crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
         /// Exact primary controller fault.
         fault: crate::interrupt::PrimaryControllerFault,
     },
@@ -241,7 +203,7 @@ pub enum DtmSoftwareListRemovalPublishedStep<Role> {
     NoSchedulerWork {
         /// Already-unlinked graph re-armed before leaving the serialization boundary.
         awaiting: crate::le::dtm::BluetoothPostUnlinkAwaiting<
-            crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
+            crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
         >,
         /// Exact acknowledged empty primary epoch.
         epoch: crate::interrupt::PrimaryNoSchedulerWork,
@@ -250,51 +212,51 @@ pub enum DtmSoftwareListRemovalPublishedStep<Role> {
     PublishedPending {
         /// Already-unlinked graph re-armed before leaving the serialization boundary.
         awaiting: crate::le::dtm::BluetoothPostUnlinkAwaiting<
-            crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
+            crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
         >,
     },
     /// A direct task-side scheduler observation was not ready.
     DirectPending {
         /// Already-unlinked graph re-armed before leaving the serialization boundary.
         awaiting: crate::le::dtm::BluetoothPostUnlinkAwaiting<
-            crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
+            crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
         >,
     },
     /// The stable interrupt-register owner was unavailable for direct recheck.
     RecheckUnavailable {
         /// Already-unlinked graph re-armed before leaving the serialization boundary.
         awaiting: crate::le::dtm::BluetoothPostUnlinkAwaiting<
-            crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
+            crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
         >,
     },
     /// An internal mailbox invariant rejected re-arm after an empty primary epoch.
     NoSchedulerWorkRearmMismatch {
-        unlinked: crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
+        unlinked: crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
         epoch: crate::interrupt::PrimaryNoSchedulerWork,
     },
     /// An internal mailbox invariant rejected re-arm after a pending scheduler gate.
     PendingRearmMismatch {
-        unlinked: crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
+        unlinked: crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
     },
     /// An internal mailbox invariant rejected re-arm after direct recheck.
     RecheckRearmMismatch {
-        unlinked: crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
+        unlinked: crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
     },
     /// The graph belongs to another Controller scheduler epoch.
     SchedulerIdentityMismatch {
         /// Unchanged already-unlinked graph.
-        unlinked: crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
+        unlinked: crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
         /// Exact classified event which was not consumed by the mismatched graph.
         event: crate::interrupt::PrimarySchedulerEvent,
     },
     /// The graph does not belong to the scheduler epoch performing a direct recheck.
     DirectSchedulerIdentityMismatch {
-        unlinked: crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
+        unlinked: crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
     },
     /// The complete post-unlink return predicate became ready.
     Ready {
         /// Exact removal-ready graph; CPU ownership is still not returned.
-        ready: crate::scheduler::DtmSchedulerSoftwareListRemovalReady<Role>,
+        ready: crate::le::dtm::scheduler::DtmSchedulerSoftwareListRemovalReady<Role>,
     },
 }
 
@@ -303,14 +265,18 @@ pub enum DtmSoftwareListRemovalPublishedStep<Role> {
 #[must_use = "retain the empty-head graph or the armed post-unlink owner"]
 #[cfg(target_arch = "riscv32")]
 pub enum DtmPostUnlinkArmStep<Role> {
-    MailboxBusy(crate::scheduler::DtmSchedulerHardwareHeadEmptyObserved<Role>),
-    MailboxIdentityExhausted(crate::scheduler::DtmSchedulerHardwareHeadEmptyObserved<Role>),
-    GenerationExhausted(crate::scheduler::DtmSchedulerHardwareHeadEmptyObserved<Role>),
-    SchedulerIdentityMismatch(crate::scheduler::DtmSchedulerHardwareHeadEmptyObserved<Role>),
-    MailboxCommitMismatch(crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>),
+    MailboxBusy(crate::le::dtm::scheduler::DtmSchedulerHardwareHeadEmptyObserved<Role>),
+    MailboxIdentityExhausted(
+        crate::le::dtm::scheduler::DtmSchedulerHardwareHeadEmptyObserved<Role>,
+    ),
+    GenerationExhausted(crate::le::dtm::scheduler::DtmSchedulerHardwareHeadEmptyObserved<Role>),
+    SchedulerIdentityMismatch(
+        crate::le::dtm::scheduler::DtmSchedulerHardwareHeadEmptyObserved<Role>,
+    ),
+    MailboxCommitMismatch(crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>),
     Armed(
         crate::le::dtm::BluetoothPostUnlinkAwaiting<
-            crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
+            crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
         >,
     ),
 }
@@ -1242,7 +1208,7 @@ pub enum LegacyAdvertisingControllerPreparationError {
     Runtime(crate::le::advertising::LegacyAdvertisingRuntimeBeginError),
     LinkState(oer_esp32s31_bluetooth_memory::LegacyAdvertisingPduError),
     TimingWindow,
-    Event(crate::scheduler::LegacyAdvertisingFirstEventPreparationError),
+    Event(crate::le::advertising::scheduler::LegacyAdvertisingFirstEventPreparationError),
     EmptyList(crate::scheduler::SchedulerEmptyListMergeError),
     Cancelled,
 }
@@ -1353,15 +1319,21 @@ pub(crate) enum LegacyAdvertisingRecurringSequenceCompletion<
 > {
     Prepared {
         task: ControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-        merged: crate::scheduler::LegacyAdvertisingEmptySchedulerMergePrepared<'static>,
+        merged: crate::le::advertising::scheduler::LegacyAdvertisingEmptySchedulerMergePrepared<
+            'static,
+        >,
     },
     EventRejected {
         task: ControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-        failure: crate::scheduler::LegacyAdvertisingRecurringEventPreparationFailure<'static>,
+        failure:
+            crate::le::advertising::scheduler::LegacyAdvertisingRecurringEventPreparationFailure<
+                'static,
+            >,
     },
     EmptyListRejected {
         task: ControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-        failure: crate::scheduler::LegacyAdvertisingEmptySchedulerMergeFailure<'static>,
+        failure:
+            crate::le::advertising::scheduler::LegacyAdvertisingEmptySchedulerMergeFailure<'static>,
     },
 }
 
@@ -1373,7 +1345,9 @@ pub(crate) enum LegacyAdvertisingRecurringSequenceCompletion<
 #[must_use = "publish the prepared item or retain the restored task owner"]
 #[cfg(target_arch = "riscv32")]
 pub enum LegacyAdvertisingControllerPreparationOutcome {
-    Prepared(crate::scheduler::LegacyAdvertisingEmptySchedulerMergePrepared<'static>),
+    Prepared(
+        crate::le::advertising::scheduler::LegacyAdvertisingEmptySchedulerMergePrepared<'static>,
+    ),
     Rejected(LegacyAdvertisingControllerPreparationError),
 }
 
@@ -1381,10 +1355,10 @@ pub enum LegacyAdvertisingControllerPreparationOutcome {
 enum LegacyAdvertisingControllerPreparationPhase {
     AlwaysAwakeTiming {
         reset: crate::le::advertising::LegacyAdvertisingLinkStateReset<'static>,
-        now: crate::controller::time::ControllerSchedulerNow,
+        now: crate::controller_time::ControllerSchedulerNow,
     },
     Admission(crate::le::advertising::LegacyAdvertisingFirstEventCandidate<'static>),
-    Sequence(crate::scheduler::LegacyAdvertisingFirstPreSequence<'static>),
+    Sequence(crate::le::advertising::scheduler::LegacyAdvertisingFirstPreSequence<'static>),
 }
 
 /// One exact post-enable timing, admission or sequence-time request.
@@ -1477,7 +1451,7 @@ pub enum LegacyAdvertisingControllerCancellationStep<'runtime, S, const SCHEDULE
 pub enum PassiveScanControllerPreparationError {
     Runtime(crate::le::scanning::PassiveScanRuntimeBeginError),
     TimingWindow,
-    Event(crate::scheduler::PassiveScanFirstEventPreparationError),
+    Event(crate::le::scanning::scheduler::PassiveScanFirstEventPreparationError),
     EmptyList(crate::scheduler::SchedulerEmptyListMergeError),
     Cancelled,
 }
@@ -1562,7 +1536,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 #[cfg(target_arch = "riscv32")]
 pub enum PassiveScanControllerPreparationOutcome {
     Prepared {
-        merged: crate::scheduler::PassiveScanEmptySchedulerMergePrepared,
+        merged: crate::le::scanning::scheduler::PassiveScanEmptySchedulerMergePrepared,
         phase: crate::le::scanning::PassiveScanEventPhase,
     },
     Rejected(PassiveScanControllerPreparationError),
@@ -1575,14 +1549,14 @@ enum PassiveScanControllerPreparationPhase {
         channel: oer_esp32s31_bluetooth_memory::PassiveScanPrimaryChannel,
         parameters: oer_bluetooth_ll::scanning::LegacyPassiveScanParameters,
         previous_phase: Option<crate::le::scanning::PassiveScanEventPhase>,
-        now: crate::controller::time::ControllerSchedulerNow,
+        now: crate::controller_time::ControllerSchedulerNow,
     },
     Admission {
-        candidate: crate::scheduler::PassiveScanFirstEventCandidate,
+        candidate: crate::le::scanning::scheduler::PassiveScanFirstEventCandidate,
         phase: crate::le::scanning::PassiveScanEventPhase,
     },
     Sequence {
-        admitted: crate::scheduler::PassiveScanFirstPreSequence,
+        admitted: crate::le::scanning::scheduler::PassiveScanFirstPreSequence,
         phase: crate::le::scanning::PassiveScanEventPhase,
     },
 }
@@ -1670,41 +1644,41 @@ pub enum DtmControllerPreparationOutcome {
     /// Initial transmitter preparation reached a terminal result.
     TransmitterFirst(
         Result<
-            crate::scheduler::DtmEmptySchedulerMergePrepared<
+            crate::le::dtm::scheduler::DtmEmptySchedulerMergePrepared<
                 crate::le::dtm::DtmTransmitterEvent,
-                crate::scheduler::DtmInitialSchedulerItemPhase,
+                crate::le::dtm::scheduler::DtmInitialSchedulerItemPhase,
             >,
-            crate::scheduler::DtmControllerTxPreparationFailure,
+            crate::le::dtm::scheduler::DtmControllerTxPreparationFailure,
         >,
     ),
     /// Initial receiver preparation reached a terminal result.
     ReceiverFirst(
         Result<
-            crate::scheduler::DtmEmptySchedulerMergePrepared<
+            crate::le::dtm::scheduler::DtmEmptySchedulerMergePrepared<
                 crate::le::dtm::DtmReceiverEvent,
-                crate::scheduler::DtmInitialSchedulerItemPhase,
+                crate::le::dtm::scheduler::DtmInitialSchedulerItemPhase,
             >,
-            crate::scheduler::DtmControllerRxPreparationFailure,
+            crate::le::dtm::scheduler::DtmControllerRxPreparationFailure,
         >,
     ),
     /// Recurring transmitter preparation reached a terminal result.
     TransmitterRecurring(
         Result<
-            crate::scheduler::DtmEmptySchedulerMergePrepared<
+            crate::le::dtm::scheduler::DtmEmptySchedulerMergePrepared<
                 crate::le::dtm::DtmTransmitterEvent,
-                crate::scheduler::DtmRecurringSchedulerItemPhase,
+                crate::le::dtm::scheduler::DtmRecurringSchedulerItemPhase,
             >,
-            crate::scheduler::DtmControllerTxRecurringPreparationFailure,
+            crate::le::dtm::scheduler::DtmControllerTxRecurringPreparationFailure,
         >,
     ),
     /// Recurring receiver preparation reached a terminal result.
     ReceiverRecurring(
         Result<
-            crate::scheduler::DtmEmptySchedulerMergePrepared<
+            crate::le::dtm::scheduler::DtmEmptySchedulerMergePrepared<
                 crate::le::dtm::DtmReceiverEvent,
-                crate::scheduler::DtmRecurringSchedulerItemPhase,
+                crate::le::dtm::scheduler::DtmRecurringSchedulerItemPhase,
             >,
-            crate::scheduler::DtmControllerRxRecurringPreparationFailure,
+            crate::le::dtm::scheduler::DtmControllerRxRecurringPreparationFailure,
         >,
     ),
 }
@@ -1717,14 +1691,14 @@ enum DtmControllerPreparationPhase {
         channel: crate::le::dtm::DtmChannel,
         phy: crate::le::dtm::DtmPhy,
         requested_interval_micros: u16,
-        now: crate::controller::time::ControllerSchedulerNow,
+        now: crate::controller_time::ControllerSchedulerNow,
     },
     ReceiverFirstAlwaysAwakeTiming {
         owner: crate::le::dtm::DtmReceiverCpuOwned,
         link_state: crate::DtmLinkStateReset,
         channel: crate::le::dtm::DtmChannel,
         phy: crate::le::dtm::DtmPhy,
-        now: crate::controller::time::ControllerSchedulerNow,
+        now: crate::controller_time::ControllerSchedulerNow,
     },
     ReceiverRecurringAlwaysAwakeTiming {
         owner: crate::le::dtm::DtmActiveReceiverCpuOwned,
@@ -1735,12 +1709,12 @@ enum DtmControllerPreparationPhase {
         epoch: crate::ControllerSchedulerEpoch,
         timing_ready: crate::AlwaysAwakeTimingReady,
     },
-    TransmitterFirstAdmission(crate::scheduler::core::DtmTransmitterFirstStaged),
-    ReceiverFirstAdmission(crate::scheduler::core::DtmReceiverFirstStaged),
-    TransmitterFirstSequence(crate::scheduler::core::DtmTransmitterFirstPreSequence),
-    ReceiverFirstSequence(crate::scheduler::core::DtmReceiverFirstPreSequence),
-    TransmitterRecurringSequence(crate::scheduler::core::DtmTransmitterRecurringPreSequence),
-    ReceiverRecurringSequence(crate::scheduler::core::DtmReceiverRecurringPreSequence),
+    TransmitterFirstAdmission(crate::le::dtm::scheduler::DtmTransmitterFirstStaged),
+    ReceiverFirstAdmission(crate::le::dtm::scheduler::DtmReceiverFirstStaged),
+    TransmitterFirstSequence(crate::le::dtm::scheduler::DtmTransmitterFirstPreSequence),
+    ReceiverFirstSequence(crate::le::dtm::scheduler::DtmReceiverFirstPreSequence),
+    TransmitterRecurringSequence(crate::le::dtm::scheduler::DtmTransmitterRecurringPreSequence),
+    ReceiverRecurringSequence(crate::le::dtm::scheduler::DtmReceiverRecurringPreSequence),
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -1980,7 +1954,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             LegacyAdvertisingControllerPreparationPhase::Admission(candidate) => {
                 let admitted = match controller.runtime.admit_legacy_advertising_first_event(
                     candidate,
-                    crate::scheduler::LegacyAdvertisingAdmissionObservation { sample },
+                    crate::le::advertising::scheduler::LegacyAdvertisingAdmissionObservation {
+                        sample,
+                    },
                 ) {
                     Ok(admitted) => admitted,
                     Err(failure) => {
@@ -2004,7 +1980,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             LegacyAdvertisingControllerPreparationPhase::Sequence(admitted) => {
                 let prepared = match controller.runtime.prepare_legacy_advertising_first_event(
                     admitted,
-                    crate::scheduler::LegacyAdvertisingSequenceObservation { sample },
+                    crate::le::advertising::scheduler::LegacyAdvertisingSequenceObservation {
+                        sample,
+                    },
                 ) {
                     Ok(prepared) => prepared,
                     Err(failure) => {
@@ -2218,7 +2196,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             PassiveScanControllerPreparationPhase::Admission { candidate, phase } => {
                 let admitted = match controller.runtime.admit_passive_scan_first_event(
                     candidate,
-                    crate::scheduler::PassiveScanAdmissionObservation { sample },
+                    crate::le::scanning::scheduler::PassiveScanAdmissionObservation { sample },
                 ) {
                     Ok(admitted) => admitted,
                     Err(failure) => {
@@ -2240,7 +2218,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             PassiveScanControllerPreparationPhase::Sequence { admitted, phase } => {
                 let prepared = match controller.runtime.prepare_passive_scan_first_event(
                     admitted,
-                    crate::scheduler::PassiveScanSequenceObservation { sample },
+                    crate::le::scanning::scheduler::PassiveScanSequenceObservation { sample },
                 ) {
                     Ok(prepared) => prepared,
                     Err(failure) => {
@@ -2479,7 +2457,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             } => {
                 let epoch = epoch.reanchor(&sample);
                 *controller.scheduler_epoch = Some(epoch);
-                let now = crate::controller::time::ControllerSchedulerNow::from_retained_epoch(
+                let now = crate::controller_time::ControllerSchedulerNow::from_retained_epoch(
                     epoch, sample,
                 );
                 let staged = match controller.runtime.stage_dtm_receiver_recurring_item(
@@ -3169,11 +3147,11 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         self,
     ) -> (
         ControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-        crate::controller::time::ControllerSchedulerNow,
+        crate::controller_time::ControllerSchedulerNow,
     ) {
         (
             self.controller,
-            crate::controller::time::ControllerSchedulerNow::from_retained_epoch(
+            crate::controller_time::ControllerSchedulerNow::from_retained_epoch(
                 self.epoch,
                 self.sample,
             ),
@@ -3183,7 +3161,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Apply one fresh sequence observation to an already reserved successor.
     pub(crate) fn finish_legacy_advertising_recurring_event(
         self,
-        admitted: crate::scheduler::LegacyAdvertisingRecurringPreSequence<'static>,
+        admitted: crate::le::advertising::scheduler::LegacyAdvertisingRecurringPreSequence<'static>,
     ) -> LegacyAdvertisingRecurringSequenceCompletion<'runtime, S, SCHEDULER_CAPACITY> {
         let Self {
             mut controller,
@@ -3194,7 +3172,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             .runtime
             .prepare_legacy_advertising_recurring_event(
                 admitted,
-                crate::scheduler::LegacyAdvertisingSequenceObservation { sample },
+                crate::le::advertising::scheduler::LegacyAdvertisingSequenceObservation { sample },
             ) {
             Ok(prepared) => prepared,
             Err(failure) => {
@@ -3484,9 +3462,12 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     ) -> Result<crate::le::peripheral::Le1MPacketStartTiming, LePacketStartTimingError> {
         let epoch =
             (*self.scheduler_epoch).ok_or(LePacketStartTimingError::SchedulerEpochUnavailable)?;
-        Ok(self
-            .ble_phy_timing
-            .complete_le_1m_packet_start(epoch, packet.captured_time()))
+        Ok(
+            crate::le::peripheral::Le1MPacketStartTiming::from_scheduler_micros(
+                self.ble_phy_timing
+                    .complete_le_1m_packet_start(epoch, packet.captured_time()),
+            ),
+        )
     }
 
     /// Move this exact task service into its initialized scheduler epoch.
@@ -3572,9 +3553,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     )]
     pub fn cancel_dtm_transmitter_first_item(
         &mut self,
-        merged: crate::scheduler::DtmEmptySchedulerMergePrepared<
+        merged: crate::le::dtm::scheduler::DtmEmptySchedulerMergePrepared<
             crate::le::dtm::DtmTransmitterEvent,
-            crate::scheduler::DtmInitialSchedulerItemPhase,
+            crate::le::dtm::scheduler::DtmInitialSchedulerItemPhase,
         >,
     ) -> Result<
         (
@@ -3582,9 +3563,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             crate::le::dtm::DtmPayloadPattern,
             crate::le::dtm::DtmPayloadLength,
         ),
-        crate::scheduler::DtmEmptySchedulerMergePrepared<
+        crate::le::dtm::scheduler::DtmEmptySchedulerMergePrepared<
             crate::le::dtm::DtmTransmitterEvent,
-            crate::scheduler::DtmInitialSchedulerItemPhase,
+            crate::le::dtm::scheduler::DtmInitialSchedulerItemPhase,
         >,
     > {
         self.runtime.cancel_dtm_transmitter_first_item(merged)
@@ -3600,15 +3581,15 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     )]
     pub fn cancel_dtm_receiver_first_item(
         &mut self,
-        merged: crate::scheduler::DtmEmptySchedulerMergePrepared<
+        merged: crate::le::dtm::scheduler::DtmEmptySchedulerMergePrepared<
             crate::le::dtm::DtmReceiverEvent,
-            crate::scheduler::DtmInitialSchedulerItemPhase,
+            crate::le::dtm::scheduler::DtmInitialSchedulerItemPhase,
         >,
     ) -> Result<
         crate::le::dtm::DtmReceiverCpuOwned,
-        crate::scheduler::DtmEmptySchedulerMergePrepared<
+        crate::le::dtm::scheduler::DtmEmptySchedulerMergePrepared<
             crate::le::dtm::DtmReceiverEvent,
-            crate::scheduler::DtmInitialSchedulerItemPhase,
+            crate::le::dtm::scheduler::DtmInitialSchedulerItemPhase,
         >,
     > {
         self.runtime.cancel_dtm_receiver_first_item(merged)
@@ -3622,15 +3603,15 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     )]
     pub fn cancel_dtm_transmitter_recurring_item(
         &mut self,
-        merged: crate::scheduler::DtmEmptySchedulerMergePrepared<
+        merged: crate::le::dtm::scheduler::DtmEmptySchedulerMergePrepared<
             crate::le::dtm::DtmTransmitterEvent,
-            crate::scheduler::DtmRecurringSchedulerItemPhase,
+            crate::le::dtm::scheduler::DtmRecurringSchedulerItemPhase,
         >,
     ) -> Result<
         crate::le::dtm::DtmActiveTransmitterCpuOwned,
-        crate::scheduler::DtmEmptySchedulerMergePrepared<
+        crate::le::dtm::scheduler::DtmEmptySchedulerMergePrepared<
             crate::le::dtm::DtmTransmitterEvent,
-            crate::scheduler::DtmRecurringSchedulerItemPhase,
+            crate::le::dtm::scheduler::DtmRecurringSchedulerItemPhase,
         >,
     > {
         self.runtime.cancel_dtm_transmitter_recurring_item(merged)
@@ -3644,15 +3625,15 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     )]
     pub fn cancel_dtm_receiver_recurring_item(
         &mut self,
-        merged: crate::scheduler::DtmEmptySchedulerMergePrepared<
+        merged: crate::le::dtm::scheduler::DtmEmptySchedulerMergePrepared<
             crate::le::dtm::DtmReceiverEvent,
-            crate::scheduler::DtmRecurringSchedulerItemPhase,
+            crate::le::dtm::scheduler::DtmRecurringSchedulerItemPhase,
         >,
     ) -> Result<
         crate::le::dtm::DtmActiveReceiverCpuOwned,
-        crate::scheduler::DtmEmptySchedulerMergePrepared<
+        crate::le::dtm::scheduler::DtmEmptySchedulerMergePrepared<
             crate::le::dtm::DtmReceiverEvent,
-            crate::scheduler::DtmRecurringSchedulerItemPhase,
+            crate::le::dtm::scheduler::DtmRecurringSchedulerItemPhase,
         >,
     > {
         self.runtime.cancel_dtm_receiver_recurring_item(merged)
@@ -3672,10 +3653,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     )]
     pub(crate) fn publish_dtm_scheduler_head<Role, Phase>(
         &mut self,
-        merged: crate::scheduler::DtmEmptySchedulerMergePrepared<Role, Phase>,
+        merged: crate::le::dtm::scheduler::DtmEmptySchedulerMergePrepared<Role, Phase>,
     ) -> Result<
-        crate::scheduler::DtmSchedulerHeadPublished<Role>,
-        crate::scheduler::DtmSchedulerHeadPublicationFailure<Role, Phase>,
+        crate::le::dtm::scheduler::DtmSchedulerHeadPublished<Role>,
+        crate::le::dtm::scheduler::DtmSchedulerHeadPublicationFailure<Role, Phase>,
     >
     where
         Phase: crate::le::dtm::DtmSchedulerItemPhase<Role>,
@@ -3690,10 +3671,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     )]
     pub fn publish_legacy_advertising_scheduler_head<'a>(
         &mut self,
-        merged: crate::scheduler::LegacyAdvertisingEmptySchedulerMergePrepared<'a>,
+        merged: crate::le::advertising::scheduler::LegacyAdvertisingEmptySchedulerMergePrepared<'a>,
     ) -> Result<
-        crate::scheduler::LegacyAdvertisingSchedulerHeadPublished<'a>,
-        crate::scheduler::LegacyAdvertisingSchedulerHeadPublicationFailure<'a>,
+        crate::le::advertising::scheduler::LegacyAdvertisingSchedulerHeadPublished<'a>,
+        crate::le::advertising::scheduler::LegacyAdvertisingSchedulerHeadPublicationFailure<'a>,
     > {
         self.runtime
             .publish_legacy_advertising_scheduler_head(merged)
@@ -3702,10 +3683,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Publish the first passive scanner item through the exclusive head edge.
     pub(crate) fn publish_passive_scan_scheduler_head(
         &mut self,
-        merged: crate::scheduler::PassiveScanEmptySchedulerMergePrepared,
+        merged: crate::le::scanning::scheduler::PassiveScanEmptySchedulerMergePrepared,
     ) -> Result<
-        crate::scheduler::PassiveScanSchedulerHeadPublished,
-        crate::scheduler::PassiveScanSchedulerHeadPublicationFailure,
+        crate::le::scanning::scheduler::PassiveScanSchedulerHeadPublished,
+        crate::le::scanning::scheduler::PassiveScanSchedulerHeadPublicationFailure,
     > {
         self.runtime.publish_passive_scan_scheduler_head(merged)
     }

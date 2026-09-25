@@ -144,8 +144,8 @@ pub enum PeripheralConnectionActiveFaultCause {
     SchedulerEpochUnavailable,
     TimingPolicyUnavailable,
     RecoveryDeltaUnavailable,
-    Candidate(sched::PeripheralConnectionRecurringCandidateError),
-    Preparation(sched::PeripheralConnectionRecurringEventPreparationError),
+    Candidate(crate::le::peripheral::PeripheralConnectionRecurringCandidateError),
+    Preparation(crate::le::peripheral::PeripheralConnectionRecurringEventPreparationError),
     ControllerTimeBegin(ctrl::ControllerSchedulerCurrentBeginError),
     ControllerTime(ctrl::ControllerSchedulerCurrentError),
     EmptyList(sched::SchedulerEmptyListMergeError),
@@ -164,37 +164,37 @@ pub(super) enum Radio<'a, S: SchedulerRunInterruptStorage, const N: usize> {
     Completed(Completed<'a, S, N>),
     ControllerRxBackpressured {
         task: Task<'a, S, N>,
-        completed: sched::PeripheralConnectionSchedulerCompleted,
+        completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         evidence: Evidence,
     },
     ControllerRxCurrent {
         wait_for_recheck: bool,
         pending: TimedCurrent<'a, S, N>,
-        completed: sched::PeripheralConnectionSchedulerCompleted,
+        completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         evidence: Evidence,
     },
     Candidate {
         task: Task<'a, S, N>,
-        candidate: sched::PeripheralConnectionRecurringEventCandidate,
+        candidate: crate::le::peripheral::PeripheralConnectionRecurringEventCandidate,
         evidence: Evidence,
         restoration: Restoration,
     },
     Current {
         wait_for_recheck: bool,
         pending: TimedCurrent<'a, S, N>,
-        admitted: sched::PeripheralConnectionRecurringPreSequence,
+        admitted: crate::le::peripheral::PeripheralConnectionRecurringPreSequence,
         evidence: Evidence,
         restoration: Restoration,
     },
     TerminationCurrent {
         wait_for_recheck: bool,
         pending: TimedCurrent<'a, S, N>,
-        completed: sched::PeripheralConnectionSchedulerCompleted,
+        completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         evidence: Evidence,
     },
     Merged {
         task: Task<'a, S, N>,
-        merged: sched::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
+        merged: crate::le::peripheral::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
         progress_deadline: ProgressDeadline,
         evidence: Evidence,
         restoration: Restoration,
@@ -242,7 +242,7 @@ enum FaultOwner<'a, S: SchedulerRunInterruptStorage, const N: usize> {
     Completion(CompletionFault<'a, S, N>),
     Control(
         Task<'a, S, N>,
-        sched::PeripheralConnectionSchedulerCompleted,
+        crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         Evidence,
     ),
     Recycle(RecycleFault<'a, S, N>),
@@ -258,78 +258,78 @@ enum FaultOwner<'a, S: SchedulerRunInterruptStorage, const N: usize> {
     ),
     Recovery(
         Task<'a, S, N>,
-        sched::PeripheralConnectionSchedulerCompleted,
+        crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         Evidence,
     ),
     Preparation(
         Task<'a, S, N>,
-        sched::PeripheralConnectionRecurringEventPreparationFailure,
+        crate::le::peripheral::PeripheralConnectionRecurringEventPreparationFailure,
         Evidence,
     ),
     Epoch(
         ctrl::ControllerSchedulerEpochUnavailable<'a, S, N>,
-        sched::PeripheralConnectionRecurringPreSequence,
+        crate::le::peripheral::PeripheralConnectionRecurringPreSequence,
         Evidence,
     ),
     TerminationEpoch(
         ctrl::ControllerSchedulerEpochUnavailable<'a, S, N>,
-        sched::PeripheralConnectionSchedulerCompleted,
+        crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         Evidence,
     ),
     CurrentBegin(
         ctrl::ControllerSchedulerCurrentBeginFailure<'a, S, N>,
-        sched::PeripheralConnectionRecurringPreSequence,
+        crate::le::peripheral::PeripheralConnectionRecurringPreSequence,
         Evidence,
     ),
     TerminationCurrentBegin(
         ctrl::ControllerSchedulerCurrentBeginFailure<'a, S, N>,
-        sched::PeripheralConnectionSchedulerCompleted,
+        crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         Evidence,
     ),
     Current(
         ctrl::ControllerSchedulerCurrentFailure<'a, S, N>,
-        sched::PeripheralConnectionRecurringPreSequence,
+        crate::le::peripheral::PeripheralConnectionRecurringPreSequence,
         Evidence,
     ),
     TerminationCurrent(
         ctrl::ControllerSchedulerCurrentFailure<'a, S, N>,
-        sched::PeripheralConnectionSchedulerCompleted,
+        crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         Evidence,
     ),
     ControllerRxEpoch(
         ctrl::ControllerSchedulerEpochUnavailable<'a, S, N>,
-        sched::PeripheralConnectionSchedulerCompleted,
+        crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         Evidence,
     ),
     ControllerRxCurrentBegin(
         ctrl::ControllerSchedulerCurrentBeginFailure<'a, S, N>,
-        sched::PeripheralConnectionSchedulerCompleted,
+        crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         Evidence,
     ),
     ControllerRxCurrent(
         ctrl::ControllerSchedulerCurrentFailure<'a, S, N>,
-        sched::PeripheralConnectionSchedulerCompleted,
+        crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         Evidence,
     ),
     EmptyList(
         Task<'a, S, N>,
-        sched::PeripheralConnectionRecurringEmptySchedulerMergeFailure,
+        crate::le::peripheral::PeripheralConnectionRecurringEmptySchedulerMergeFailure,
         Evidence,
     ),
     Validation(
         Task<'a, S, N>,
-        sched::core::PeripheralConnectionRecurringSchedulerValidationFailure,
+        crate::le::peripheral::PeripheralConnectionRecurringSchedulerValidationFailure,
         Evidence,
     ),
     InterruptStorage(
         Task<'a, S, N>,
         S::Error,
-        sched::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
+        crate::le::peripheral::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
         Evidence,
     ),
     Publication(
         Task<'a, S, N>,
-        sched::core::PeripheralConnectionRecurringSchedulerPublicationFailStop,
+        crate::le::peripheral::PeripheralConnectionRecurringSchedulerPublicationFailStop,
         Evidence,
     ),
 }
@@ -709,7 +709,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
     #[inline(never)]
     fn publish(
         mut task: Task<'a, S, N>,
-        merged: sched::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
+        merged: crate::le::peripheral::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
         evidence: Evidence,
         progress_deadline: ProgressDeadline,
         restoration: Restoration,
@@ -853,7 +853,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
     #[inline(never)]
     fn complete_ready(
         mut task: Task<'a, S, N>,
-        mut completed: sched::PeripheralConnectionSchedulerCompleted,
+        mut completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         evidence: Evidence,
         termination_reference: Option<crate::SchedulerInstant>,
         link: &mut LinkState<'_>,
@@ -974,7 +974,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
 
     fn prepare_candidate(
         mut task: Task<'a, S, N>,
-        completed: sched::PeripheralConnectionSchedulerCompleted,
+        completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         delta: oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
         evidence: Evidence,
         link: &mut LinkState<'_>,
@@ -1003,8 +1003,8 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
             }
             ctrl::PeripheralConnectionRecurringCandidateStep::Rejected {
                 error:
-                    sched::PeripheralConnectionRecurringCandidateError::ConnectionUpdateInstantSkipped
-                    | sched::PeripheralConnectionRecurringCandidateError::ChannelMapUpdateInstantSkipped,
+                    crate::le::peripheral::PeripheralConnectionRecurringCandidateError::ConnectionUpdateInstantSkipped
+                    | crate::le::peripheral::PeripheralConnectionRecurringCandidateError::ChannelMapUpdateInstantSkipped,
                 retry,
             } => {
                 let (completed, _) = retry.into_parts();
@@ -1029,7 +1029,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
     #[inline(never)]
     fn finish_current(
         now: ctrl::ControllerSchedulerNowReady<'a, S, N>,
-        admitted: sched::PeripheralConnectionRecurringPreSequence,
+        admitted: crate::le::peripheral::PeripheralConnectionRecurringPreSequence,
         evidence: Evidence,
         link: &mut LinkState<'_>,
         restoration: Restoration,
@@ -1123,7 +1123,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
     #[inline(never)]
     fn finish_controller_rx_current(
         now: ctrl::ControllerSchedulerNowReady<'a, S, N>,
-        mut completed: sched::PeripheralConnectionSchedulerCompleted,
+        mut completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         evidence: Evidence,
         link: &mut LinkState<'_>,
     ) -> Step<'a, S, N> {
@@ -1181,7 +1181,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
 
     fn begin_controller_rx_current(
         task: Task<'a, S, N>,
-        completed: sched::PeripheralConnectionSchedulerCompleted,
+        completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         evidence: Evidence,
         wait_for_recheck: bool,
     ) -> Step<'a, S, N> {
@@ -1211,7 +1211,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
 
     fn begin_termination_current(
         task: Task<'a, S, N>,
-        completed: sched::PeripheralConnectionSchedulerCompleted,
+        completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         evidence: Evidence,
         wait_for_recheck: bool,
     ) -> Step<'a, S, N> {
@@ -1242,7 +1242,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
     #[inline(never)]
     fn begin_current(
         task: Task<'a, S, N>,
-        admitted: sched::PeripheralConnectionRecurringPreSequence,
+        admitted: crate::le::peripheral::PeripheralConnectionRecurringPreSequence,
         evidence: Evidence,
         wait_for_recheck: bool,
         restoration: Restoration,
@@ -1274,7 +1274,7 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize> Radio<'a, S, N> {
 
     fn retire(
         mut task: Task<'a, S, N>,
-        completed: sched::PeripheralConnectionSchedulerCompleted,
+        completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         evidence: Evidence,
         reason: u8,
         publish_disconnection: bool,

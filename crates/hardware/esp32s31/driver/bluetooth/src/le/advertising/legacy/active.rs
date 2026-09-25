@@ -12,6 +12,7 @@ use crate::{
     le::{
         advertising::{
             LegacyAdvertisingEventCompleted, legacy::completion::LegacyAdvertisingCompletionRole,
+            scheduler::LegacyAdvertisingSchedulerRecycleStep,
         },
         dtm::DtmPostUnlinkWakeCell,
     },
@@ -21,7 +22,6 @@ use crate::{
             SingleItemCompletion, SingleItemCompletionFault, SingleItemCompletionFaultCause,
             SingleItemCompletionStep, SingleItemCompletionWaitKind,
         },
-        core::LegacyAdvertisingSchedulerRecycleStep,
     },
 };
 

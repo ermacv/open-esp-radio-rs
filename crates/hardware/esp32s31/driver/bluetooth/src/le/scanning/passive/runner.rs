@@ -21,11 +21,11 @@ use crate::{
             PassiveScanControllerPreparationFailStop,
         },
     },
-    le::scanning::PassiveScanEventPhase,
-    scheduler::{
-        PassiveScanEmptySchedulerMergePrepared, PassiveScanSchedulerHeadPublished,
-        SchedulerHeadPublicationError,
+    le::scanning::{
+        PassiveScanEventPhase,
+        scheduler::{PassiveScanEmptySchedulerMergePrepared, PassiveScanSchedulerHeadPublished},
     },
+    scheduler::SchedulerHeadPublicationError,
 };
 
 use oer_bluetooth_ll::scanning::{LegacyPassiveScanWindowInFlight, LegacyPassiveScannerEnabled};
@@ -180,7 +180,7 @@ where
 }
 
 enum PassiveScanFirstRunnerPublicationFailStopOwnership {
-    RxPublication(crate::scheduler::PassiveScanSchedulerHeadPublicationFailure),
+    RxPublication(crate::le::scanning::scheduler::PassiveScanSchedulerHeadPublicationFailure),
     RetryabilityInvariant {
         _merged: PassiveScanEmptySchedulerMergePrepared,
     },

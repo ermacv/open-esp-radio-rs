@@ -33,3 +33,21 @@ pub use passive::{
     },
     timing::PassiveScanEventPhase,
 };
+
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) mod scheduler;
+
+// Public scheduler integration, formerly exported from `scheduler`.
+#[cfg(any(target_arch = "riscv32", test))]
+pub use scheduler::PassiveScanSequenceObservation;
+#[cfg(any(target_arch = "riscv32", test))]
+pub use scheduler::{
+    PassiveScanAdmissionObservation, PassiveScanEmptySchedulerMergeFailure,
+    PassiveScanEmptySchedulerMergePrepared, PassiveScanEventPrepared,
+    PassiveScanFirstEventCandidate, PassiveScanFirstEventPreparationError,
+    PassiveScanFirstEventPreparationFailure, PassiveScanFirstPreSequence,
+};
+#[cfg(target_arch = "riscv32")]
+pub use scheduler::{
+    PassiveScanSchedulerHeadPublicationFailure, PassiveScanSchedulerHeadPublished,
+};

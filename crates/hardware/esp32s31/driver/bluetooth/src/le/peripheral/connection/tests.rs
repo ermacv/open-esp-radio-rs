@@ -464,3 +464,14 @@ fn connection_request() -> [u8; LEGACY_CONNECT_IND_PDU_BYTES] {
     pdu[35] = 5;
     pdu
 }
+
+#[test]
+fn packet_start_timing_preserves_elapsed_scheduler_time() {
+    let first = super::PeripheralConnectionPacketStartTiming::from_scheduler_micros(20_000);
+    let second = super::PeripheralConnectionPacketStartTiming::from_scheduler_micros(20_017);
+    assert_eq!(second.elapsed_since(&first), 17);
+    let wrapped = super::PeripheralConnectionPacketStartTiming::from_scheduler_micros(3);
+    let before_wrap =
+        super::PeripheralConnectionPacketStartTiming::from_scheduler_micros(u32::MAX - 1);
+    assert_eq!(wrapped.elapsed_since(&before_wrap), 5);
+}

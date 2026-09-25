@@ -107,8 +107,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         &mut self,
         candidate: crate::le::advertising::connectable::LegacyConnectableAdvertisingEventCandidate,
     ) -> Result<
-        crate::scheduler::core::LegacyConnectableAdvertisingPreSequence,
-        crate::scheduler::core::LegacyConnectableAdvertisingEventPreparationFailure,
+        crate::le::advertising::connectable::LegacyConnectableAdvertisingPreSequence,
+        crate::le::advertising::connectable::LegacyConnectableAdvertisingEventPreparationFailure,
     > {
         self.runtime
             .admit_legacy_connectable_advertising_recurring_event(candidate)
@@ -117,7 +117,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Release a phase-locked recurrence before sequence authorization.
     pub(crate) fn cancel_legacy_connectable_advertising_recurring_pre_sequence(
         &mut self,
-        admitted: crate::scheduler::core::LegacyConnectableAdvertisingPreSequence,
+        admitted: crate::le::advertising::connectable::LegacyConnectableAdvertisingPreSequence,
     ) -> Result<
         crate::le::advertising::connectable::LegacyConnectableAdvertisingCancelled,
         crate::le::advertising::connectable::LegacyConnectableAdvertisingCancellationInvariant,
@@ -129,26 +129,28 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Apply the sole fresh recurring sequence sample.
     pub(crate) fn prepare_legacy_connectable_advertising_recurring_event(
         &mut self,
-        admitted: crate::scheduler::core::LegacyConnectableAdvertisingPreSequence,
+        admitted: crate::le::advertising::connectable::LegacyConnectableAdvertisingPreSequence,
         sample: crate::ControllerTimeSample,
     ) -> Result<
-        crate::scheduler::core::LegacyConnectableAdvertisingEventPrepared,
-        crate::scheduler::core::LegacyConnectableAdvertisingEventPreparationFailure,
+        crate::le::advertising::connectable::LegacyConnectableAdvertisingEventPrepared,
+        crate::le::advertising::connectable::LegacyConnectableAdvertisingEventPreparationFailure,
     > {
         self.runtime.prepare_legacy_connectable_advertising_event(
             admitted,
-            crate::scheduler::core::LegacyConnectableAdvertisingSequenceObservation { sample },
+            crate::le::advertising::connectable::LegacyConnectableAdvertisingSequenceObservation {
+                sample,
+            },
         )
     }
 
     /// Retry only the empty-list join after sequence authorization.
     pub(crate) fn merge_legacy_connectable_advertising_recurring_event(
         &mut self,
-        prepared: crate::scheduler::core::LegacyConnectableAdvertisingEventPrepared,
+        prepared: crate::le::advertising::connectable::LegacyConnectableAdvertisingEventPrepared,
     ) -> Result<
-        crate::scheduler::core::LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
-        crate::scheduler::core::LegacyConnectableAdvertisingEmptySchedulerMergeFailure,
-    > {
+        crate::le::advertising::connectable::LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
+        crate::le::advertising::connectable::LegacyConnectableAdvertisingEmptySchedulerMergeFailure,
+    >{
         self.runtime
             .prepare_legacy_connectable_advertising_empty_list_merge(prepared)
     }
@@ -156,7 +158,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Release one sequence-ready recurrence before list publication.
     pub(crate) fn cancel_legacy_connectable_advertising_recurring_event(
         &mut self,
-        prepared: crate::scheduler::core::LegacyConnectableAdvertisingEventPrepared,
+        prepared: crate::le::advertising::connectable::LegacyConnectableAdvertisingEventPrepared,
     ) -> Result<
         crate::le::advertising::connectable::LegacyConnectableAdvertisingCancelled,
         crate::le::advertising::connectable::LegacyConnectableAdvertisingCancellationInvariant,
@@ -168,11 +170,11 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Undo one unpublished recurring empty-list merge.
     pub(crate) fn cancel_legacy_connectable_advertising_recurring_merge(
         &mut self,
-        merged: crate::scheduler::core::LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
+        merged: crate::le::advertising::connectable::LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
     ) -> Result<
         crate::le::advertising::connectable::LegacyConnectableAdvertisingCancelled,
-        crate::scheduler::core::LegacyConnectableAdvertisingEmptySchedulerCancelFailure,
-    > {
+        crate::le::advertising::connectable::LegacyConnectableAdvertisingEmptySchedulerCancelFailure,
+    >{
         self.runtime
             .cancel_legacy_connectable_advertising_empty_list_merge(merged)
     }
@@ -230,8 +232,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         &mut self,
         candidate: crate::le::advertising::LegacyAdvertisingRecurringEventCandidate<'static>,
     ) -> Result<
-        crate::scheduler::LegacyAdvertisingRecurringPreSequence<'static>,
-        crate::scheduler::LegacyAdvertisingRecurringEventPreparationFailure<'static>,
+        crate::le::advertising::scheduler::LegacyAdvertisingRecurringPreSequence<'static>,
+        crate::le::advertising::scheduler::LegacyAdvertisingRecurringEventPreparationFailure<
+            'static,
+        >,
     > {
         self.runtime
             .admit_legacy_advertising_recurring_event(candidate)
@@ -240,7 +244,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Release a recurring timeline reservation before sequence authorization.
     pub(crate) fn cancel_legacy_advertising_recurring_pre_sequence(
         &mut self,
-        admitted: crate::scheduler::LegacyAdvertisingRecurringPreSequence<'static>,
+        admitted: crate::le::advertising::scheduler::LegacyAdvertisingRecurringPreSequence<'static>,
     ) -> crate::le::advertising::LegacyAdvertisingCancelled<'static> {
         self.runtime
             .cancel_legacy_advertising_recurring_pre_sequence(admitted)
@@ -251,7 +255,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Release a sequence-ready recurring descriptor before scheduler-list publication.
     pub(crate) fn cancel_legacy_advertising_recurring_prepared(
         &mut self,
-        prepared: crate::scheduler::LegacyAdvertisingEventPrepared<'static>,
+        prepared: crate::le::advertising::scheduler::LegacyAdvertisingEventPrepared<'static>,
     ) -> crate::le::advertising::LegacyAdvertisingCancelled<'static> {
         self.runtime.cancel_legacy_advertising_first_event(prepared)
     }
@@ -259,10 +263,12 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Undo one unpublished recurring empty-list merge.
     pub(crate) fn cancel_legacy_advertising_recurring_merge(
         &mut self,
-        merged: crate::scheduler::LegacyAdvertisingEmptySchedulerMergePrepared<'static>,
+        merged: crate::le::advertising::scheduler::LegacyAdvertisingEmptySchedulerMergePrepared<
+            'static,
+        >,
     ) -> Result<
         crate::le::advertising::LegacyAdvertisingCancelled<'static>,
-        crate::scheduler::LegacyAdvertisingEmptySchedulerMergePrepared<'static>,
+        crate::le::advertising::scheduler::LegacyAdvertisingEmptySchedulerMergePrepared<'static>,
     > {
         self.runtime
             .cancel_legacy_advertising_empty_list_merge(merged)
@@ -301,10 +307,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Retry the empty-list join without rebuilding or reauthorizing the event.
     pub(crate) fn merge_legacy_advertising_recurring_event(
         &mut self,
-        prepared: crate::scheduler::LegacyAdvertisingEventPrepared<'static>,
+        prepared: crate::le::advertising::scheduler::LegacyAdvertisingEventPrepared<'static>,
     ) -> Result<
-        crate::scheduler::LegacyAdvertisingEmptySchedulerMergePrepared<'static>,
-        crate::scheduler::LegacyAdvertisingEmptySchedulerMergeFailure<'static>,
+        crate::le::advertising::scheduler::LegacyAdvertisingEmptySchedulerMergePrepared<'static>,
+        crate::le::advertising::scheduler::LegacyAdvertisingEmptySchedulerMergeFailure<'static>,
     > {
         self.runtime
             .prepare_legacy_advertising_empty_list_merge(prepared)
@@ -321,7 +327,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Admit one published advertising graph through the common RUN suffix.
     pub(crate) fn start_legacy_advertising_scheduler<'a>(
         &mut self,
-        head: crate::scheduler::LegacyAdvertisingSchedulerHeadPublished<'a>,
+        head: crate::le::advertising::scheduler::LegacyAdvertisingSchedulerHeadPublished<'a>,
     ) -> Result<
         crate::scheduler::core::SingleItemSchedulerRunning<
             crate::le::advertising::legacy::completion::LegacyAdvertisingCompletionRole<'a>,
@@ -351,7 +357,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Admit one published passive-scanner graph through the common RUN suffix.
     pub(crate) fn start_passive_scan_scheduler(
         &mut self,
-        head: crate::scheduler::PassiveScanSchedulerHeadPublished,
+        head: crate::le::scanning::scheduler::PassiveScanSchedulerHeadPublished,
     ) -> Result<
         crate::scheduler::core::SingleItemSchedulerRunning<
             crate::le::scanning::passive::active::PassiveScanCompletionRole,
@@ -396,7 +402,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         ready: crate::scheduler::core::SingleItemSchedulerSoftwareListRemovalReady<
             crate::le::advertising::legacy::completion::LegacyAdvertisingCompletionRole<'a>,
         >,
-    ) -> crate::scheduler::core::LegacyAdvertisingSchedulerRecycleStep<'a> {
+    ) -> crate::le::advertising::scheduler::LegacyAdvertisingSchedulerRecycleStep<'a> {
         self.runtime.recycle_legacy_advertising_completed(ready)
     }
 
@@ -406,13 +412,13 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         ready: crate::scheduler::core::SingleItemSchedulerSoftwareListRemovalReady<
             crate::le::scanning::passive::active::PassiveScanCompletionRole,
         >,
-    ) -> crate::scheduler::core::PassiveScanSchedulerRecycleStep {
+    ) -> crate::le::scanning::scheduler::PassiveScanSchedulerRecycleStep {
         self.runtime.recycle_passive_scan_completed(ready)
     }
 
     pub(crate) fn restore_passive_scan_recycled(
         &mut self,
-        recycled: crate::scheduler::core::PassiveScanSchedulerRecycled,
+        recycled: crate::le::scanning::scheduler::PassiveScanSchedulerRecycled,
     ) -> Result<
         (
             oer_esp32s31_bluetooth_memory::LeReceivedBatch,

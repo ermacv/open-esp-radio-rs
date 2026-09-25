@@ -139,5 +139,5 @@ impl PeripheralConnectionRecycleFailure {
 
 pub(crate) type PeripheralConnectionRecycleOutcome = ControlFlow<
     PeripheralConnectionRecycleFailure,
-    crate::scheduler::core::PeripheralConnectionSchedulerRecycled,
+    crate::le::peripheral::PeripheralConnectionSchedulerRecycled,
 >;

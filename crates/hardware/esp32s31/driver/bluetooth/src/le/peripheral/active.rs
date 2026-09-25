@@ -66,7 +66,7 @@ use super::hci_order::{
     LegacyConnectablePeripheralFirstHciOrderPublication as OrderPublication,
     LegacyConnectablePeripheralFirstHciResponseWait as ResponseWait,
 };
-use crate::controller::SchedulerRunInterruptStorage;
+use crate::scheduler::SchedulerRunInterruptStorage;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use oer_bluetooth_hci::{
     HciChannelError, HciEpochBound, HostToControllerFrame,

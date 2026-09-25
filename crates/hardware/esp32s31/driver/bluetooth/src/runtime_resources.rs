@@ -174,7 +174,7 @@ pub struct ControllerPoweredTaskRuntime<'runtime, const SCHEDULER_CAPACITY: usiz
     pub(crate) task: crate::resources::runtime_owner::RuntimeOwnerLease<'runtime, TaskResources>,
     pub(crate) time_scale: oer_esp32s31_pac::BluetoothControllerTimeScale,
     pub(crate) _standalone_dtm_profile:
-        &'runtime crate::controller::hal::StandaloneAlwaysAwakeDtmProfile,
+        &'runtime crate::controller_hal::StandaloneAlwaysAwakeDtmProfile,
     pub(crate) config: crate::scheduler::SchedulerSoftwareConfig,
     pub(crate) _scheduler_list: &'runtime mut SchedulerExclusiveListEpoch,
 }
@@ -185,7 +185,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
         runtime: ControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
         task: crate::resources::runtime_owner::RuntimeOwnerLease<'runtime, TaskResources>,
         time_scale: oer_esp32s31_pac::BluetoothControllerTimeScale,
-        standalone_dtm_profile: &'runtime crate::controller::hal::StandaloneAlwaysAwakeDtmProfile,
+        standalone_dtm_profile: &'runtime crate::controller_hal::StandaloneAlwaysAwakeDtmProfile,
         config: crate::scheduler::SchedulerSoftwareConfig,
         scheduler_list: &'runtime mut SchedulerExclusiveListEpoch,
     ) -> ControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY> {
@@ -202,7 +202,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     #[cfg(test)]
     pub(crate) fn controller_time_phase(
         &self,
-    ) -> crate::controller::time::ControllerTimeWorkerPhase {
+    ) -> crate::controller_time::ControllerTimeWorkerPhase {
         self.task.controller_time_phase()
     }
 

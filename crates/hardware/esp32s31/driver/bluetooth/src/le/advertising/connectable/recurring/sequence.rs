@@ -34,16 +34,18 @@ use crate::{
                 TimedPreparationController, TimedPreparationFailStop, TimedPreparationFailStopCause,
             },
         },
-        time::{
-            ControllerTimeEventError, ControllerTimePendingOrphanStep, ControllerTimePendingOwner,
-            ControllerTimePendingOwnerStep, ControllerTimeRequest,
-        },
+    },
+    controller_time::{
+        ControllerTimeEventError, ControllerTimePendingOrphanStep, ControllerTimePendingOwner,
+        ControllerTimePendingOwnerStep, ControllerTimeRequest,
     },
     le::{
         advertising::{
             LegacyAdvertisingEventPhase,
             connectable::{
                 LegacyConnectableAdvertisingDisabledRestoreFailure,
+                LegacyConnectableAdvertisingEmptySchedulerCancelFailure,
+                LegacyConnectableAdvertisingEventPreparationError,
                 LegacyConnectableAdvertisingNextEventPortable,
                 LegacyConnectableAdvertisingNextEventScheduled,
                 LegacyConnectableAdvertisingRecurrenceStopped,
@@ -58,10 +60,6 @@ use crate::{
         ControllerTimeAcquisitionError, SchedulerEmptyListMergeError,
         SchedulerHeadPublicationError, SchedulerReservationError,
         SchedulerSequenceAuthorizationError,
-        core::{
-            LegacyConnectableAdvertisingEmptySchedulerCancelFailure,
-            LegacyConnectableAdvertisingEventPreparationError,
-        },
     },
 };
 

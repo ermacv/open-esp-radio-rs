@@ -10,7 +10,7 @@ use crate::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use oer_bluetooth_hci::BluetoothPublicDeviceAddress;
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(target_arch = "riscv32")]
 use oer_esp32s31_bluetooth_memory::BlePhyLe1MPacketStartCalibration;
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_bluetooth_memory::{
@@ -105,39 +105,29 @@ impl BlePhyTimingAuthority {
         AlwaysAwakeTimingReady::from_completed_sample(epoch, sample)
     }
 
+    /// Scheduler-time packet start of one captured LE 1M packet, in
+    /// microseconds normalized by this PHY's packet-start calibration.
     pub(crate) fn complete_le_1m_packet_start(
         &mut self,
         epoch: crate::ControllerSchedulerEpoch,
         captured: LePacketCapturedTime,
-    ) -> crate::le::peripheral::Le1MPacketStartTiming {
+    ) -> u32 {
         let captured_micros = epoch.project_le_packet_capture(captured);
-        crate::le::peripheral::Le1MPacketStartTiming::from_scheduler_micros(
-            self.le_1m_packet_start_calibration
-                .normalize_controller_micros(captured_micros),
-        )
+        self.le_1m_packet_start_calibration
+            .normalize_controller_micros(captured_micros)
     }
 
+    /// Scheduler-time packet start of one captured connection anchor, in
+    /// microseconds normalized by this PHY's packet-start calibration.
     pub(crate) fn complete_le_1m_peripheral_connection_packet_start(
         &mut self,
         epoch: crate::ControllerSchedulerEpoch,
         captured: PeripheralConnectionCapturedAnchorTime,
-    ) -> crate::le::peripheral::connection::PeripheralConnectionPacketStartTiming {
+    ) -> u32 {
         let captured_micros = epoch.project_peripheral_connection_capture(captured);
-        normalize_le_1m_peripheral_connection_packet_start(
-            self.le_1m_packet_start_calibration,
-            captured_micros,
-        )
+        self.le_1m_packet_start_calibration
+            .normalize_controller_micros(captured_micros)
     }
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-fn normalize_le_1m_peripheral_connection_packet_start(
-    calibration: BlePhyLe1MPacketStartCalibration,
-    captured_micros: u32,
-) -> crate::le::peripheral::connection::PeripheralConnectionPacketStartTiming {
-    crate::le::peripheral::connection::PeripheralConnectionPacketStartTiming::from_scheduler_micros(
-        calibration.normalize_controller_micros(captured_micros),
-    )
 }
 
 /// Powered Controller after BLE PHY init and public-address publication.

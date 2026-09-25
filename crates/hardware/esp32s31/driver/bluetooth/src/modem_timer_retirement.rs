@@ -15,7 +15,7 @@ pub enum ControllerModemTimerRetirementError<E> {
     Storage(E),
 }
 
-pub(super) fn retire_when_drained<Owner, Error>(
+pub(crate) fn retire_when_drained<Owner, Error>(
     task_idle: bool,
     queue_empty: bool,
     worker_pending: bool,
@@ -40,7 +40,7 @@ pub(super) fn retire_when_drained<Owner, Error>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::modem_timer_retirement::*;
 
     #[test]
     fn every_outstanding_obligation_preserves_hardware_storage() {

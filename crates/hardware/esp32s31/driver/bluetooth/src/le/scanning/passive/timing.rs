@@ -9,8 +9,8 @@
 
 #[cfg(target_arch = "riscv32")]
 use crate::{
-    ControllerSchedulerEpoch,
-    scheduler::{PassiveScanFirstEventCandidate, SchedulerRawWindow},
+    ControllerSchedulerEpoch, le::scanning::scheduler::PassiveScanFirstEventCandidate,
+    scheduler::SchedulerRawWindow,
 };
 use oer_bluetooth_ll::scanning::LegacyPassiveScanParameters;
 #[cfg(target_arch = "riscv32")]

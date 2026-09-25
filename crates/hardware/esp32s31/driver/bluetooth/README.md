@@ -81,7 +81,7 @@ waits and terminal quarantine. Feature gates apply to both the owners and
 their unit suites in adjacent child files.
 The separate [`memory`](memory/) crate retains controller-SRAM codecs.
 
-The [composed peripheral host tests](src/scheduler/core/peripheral_connection/recurring/transaction/tests/lifecycle.rs)
+The [composed peripheral host tests](src/le/peripheral/scheduler/recurring/transaction/tests/lifecycle.rs)
 drive the production completion spine, LL recurrence, ACL owner, HCI credit
 transport and maintenance/deadline admission together. They cover delayed and
 unfinished scheduler wakes, post-unlink waits, saturated ACL queues, Instant

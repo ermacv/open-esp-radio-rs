@@ -31,7 +31,7 @@ use crate::{
 
 use oer_esp32s31_hal::types::BluetoothControllerSramAddress;
 
-use super::SchedulerEmptyListMergeError;
+use crate::scheduler::core::SchedulerEmptyListMergeError;
 
 /// Fresh initial-admission sample sealed by the controller-time worker.
 #[must_use = "the fresh connectable-advertising admission sample must be consumed or retained"]

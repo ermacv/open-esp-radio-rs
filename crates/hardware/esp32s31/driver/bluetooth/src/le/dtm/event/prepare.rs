@@ -37,12 +37,14 @@ use crate::{
     DtmTxEventWindow,
     le::dtm::{
         DtmChannel, DtmPayloadLength, DtmPayloadPattern, DtmPhy, DtmPreparedTxGraph, DtmRole,
-        DtmTxSchedulerTiming, rx::DtmReceiverSession,
-        scheduler::item::apply_overlap_insertion_power,
+        DtmTxSchedulerTiming,
+        rx::DtmReceiverSession,
+        scheduler::{
+            DtmInitialSchedulerItemPhase, DtmRecurringSchedulerItemPhase,
+            item::apply_overlap_insertion_power,
+        },
     },
-    scheduler::{
-        DtmInitialSchedulerItemPhase, DtmRecurringSchedulerItemPhase, SchedulerSequenceReady,
-    },
+    scheduler::SchedulerSequenceReady,
 };
 
 use oer_esp32s31_hal::{

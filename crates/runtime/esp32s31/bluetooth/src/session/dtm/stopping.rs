@@ -20,8 +20,8 @@ use oer_bluetooth_hci::{
 use crate::notification::RuntimeNotifications;
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_bluetooth::{
-    controller::SchedulerRunInterruptStorage,
     le::dtm::{BluetoothDtmStoppingWait, DtmStoppingRunner, DtmTestEndResponsePending},
+    scheduler::SchedulerRunInterruptStorage,
 };
 
 /// Exact readiness source for one parked Test End quiescence runner.

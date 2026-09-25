@@ -108,3 +108,39 @@ pub mod diagnostics;
 /// Explicit diagnostic input corruption; absent from ordinary builds.
 #[cfg(feature = "rx-fault-injection")]
 pub mod rx_fault;
+
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) mod scheduler;
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) use scheduler::{
+    PeripheralConnectionAdmissionObservation, PeripheralConnectionSequenceObservation,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+pub use scheduler::{
+    PeripheralConnectionEmptySchedulerMergePrepared, PeripheralConnectionFirstEventPreparationError,
+};
+#[cfg(target_arch = "riscv32")]
+pub(crate) use scheduler::{
+    PeripheralConnectionFirstPreSequence, PeripheralConnectionSchedulerCompletionClassification,
+    PeripheralConnectionSchedulerStopStep,
+};
+#[cfg(target_arch = "riscv32")]
+pub use scheduler::{
+    PeripheralConnectionRecurringCandidateError,
+    PeripheralConnectionRecurringEmptySchedulerMergeFailure,
+    PeripheralConnectionRecurringEmptySchedulerMergePrepared,
+    PeripheralConnectionRecurringEventCandidate,
+    PeripheralConnectionRecurringEventPreparationError,
+    PeripheralConnectionRecurringEventPreparationFailure,
+    PeripheralConnectionRecurringEventPrepared, PeripheralConnectionRecurringPreSequence,
+};
+#[cfg(target_arch = "riscv32")]
+pub(crate) use scheduler::{
+    PeripheralConnectionRecurringSchedulerPublicationFailStop,
+    PeripheralConnectionRecurringSchedulerValidationFailure,
+};
+#[cfg(target_arch = "riscv32")]
+pub use scheduler::{
+    PeripheralConnectionSchedulerCompleted, PeripheralConnectionSchedulerHeadPublicationFailure,
+    PeripheralConnectionSchedulerHeadPublished, PeripheralConnectionSchedulerRecycled,
+};

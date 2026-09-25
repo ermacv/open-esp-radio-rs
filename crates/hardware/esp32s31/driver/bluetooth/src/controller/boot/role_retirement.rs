@@ -21,7 +21,7 @@ pub enum ControllerTaskRetirementError {
     /// Scheduler software still retains pending work or a reservation.
     Runtime(crate::runtime_resources::ControllerRuntimeRetirementError),
     /// A controller-time request, orphan drain or ownership fault remains.
-    ControllerTime(crate::controller::ControllerTimeRetirementError),
+    ControllerTime(crate::controller_time::ControllerTimeRetirementError),
     /// An allocation or portable generation remains checked out by a role.
     Role(ControllerRoleRetirementError),
     /// The original HCI epoch did not reach its lossless drain barrier.

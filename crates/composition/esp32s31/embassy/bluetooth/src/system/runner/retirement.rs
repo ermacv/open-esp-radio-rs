@@ -2,8 +2,9 @@
 
 use super::*;
 use crate::{BluetoothInterruptBindError, BluetoothInterruptDisabled};
-use oer_esp32s31_bluetooth::controller::{
-    ControllerModemTimerRetired, ControllerModemTimerRetirementError, ControllerTaskHciRetired,
+use oer_esp32s31_bluetooth::{
+    controller::ControllerTaskHciRetired, modem_timer::ControllerModemTimerRetired,
+    modem_timer_retirement::ControllerModemTimerRetirementError,
 };
 use oer_esp32s31_bluetooth_runtime::controller::{
     ControllerCommandPhase, ControllerCommandRetirementError,
@@ -635,7 +636,7 @@ impl<const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const
             P,
         >,
     ) -> BluetoothPlatformJoin<P, MT, SC, H2C, C2H, PC> {
-        match platform.try_retire(&self.hardware._command) {
+        match platform.try_retire(self.hardware._command.hci_proof()) {
             Ok(platform) => BluetoothPlatformJoin::Joined(BluetoothHardwareRetiredWithPlatform {
                 _hardware: self,
                 _platform: platform,

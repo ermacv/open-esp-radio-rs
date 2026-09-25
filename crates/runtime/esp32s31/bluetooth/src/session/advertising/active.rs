@@ -5,7 +5,6 @@
 use oer_bluetooth_ll::advertising::AdvertisingDelay;
 
 use oer_esp32s31_bluetooth::{
-    controller::SchedulerRunInterruptStorage,
     le::advertising::{
         LegacyAdvertisingActiveFault, LegacyAdvertisingActiveResponsePending,
         LegacyAdvertisingActiveSession, LegacyAdvertisingActiveStep,
@@ -14,6 +13,7 @@ use oer_esp32s31_bluetooth::{
         LegacyAdvertisingRecurringRunnerStep, LegacyAdvertisingStopping,
     },
     scheduler::BluetoothSchedulerFinishedHardwareListObserved,
+    scheduler::SchedulerRunInterruptStorage,
 };
 
 /// Source-owned entropy policy for the Link Layer's fresh 0..=10 ms delay.

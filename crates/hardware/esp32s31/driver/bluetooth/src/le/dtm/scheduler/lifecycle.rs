@@ -1,15 +1,15 @@
 //! DTM-specific scheduler preparation, publication and completion.
 
-use super::{
-    ControllerTimeAcquisitionError, SchedulerEmptyListMergeError, SchedulerHeadPublicationError,
-};
-#[cfg(target_arch = "riscv32")]
-use super::{SchedulerFinishedListDrainPending, SchedulerFinishedListDrainState};
 #[cfg(target_arch = "riscv32")]
 use crate::le::dtm::event::prepare::{
     DtmCompletionObservedEvent, DtmReviewedEventWordsPlan, DtmRunningEventCompletionObservation,
     DtmSchedulerBookkeepingPrepared,
 };
+use crate::scheduler::core::{
+    ControllerTimeAcquisitionError, SchedulerEmptyListMergeError, SchedulerHeadPublicationError,
+};
+#[cfg(target_arch = "riscv32")]
+use crate::scheduler::core::{SchedulerFinishedListDrainPending, SchedulerFinishedListDrainState};
 
 use crate::le::dtm::event::prepare::{
     DtmEmptyListLinkPrepared, DtmHeadPublishedEvent, DtmRunningEvent, DtmSchedulerItemPhase,
@@ -17,7 +17,7 @@ use crate::le::dtm::event::prepare::{
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::{
     ControllerTimeSample, SchedulerInstant,
-    controller::time::ControllerSchedulerNow,
+    controller_time::ControllerSchedulerNow,
     scheduler::{
         SchedulerTimingPolicy,
         timeline::{SchedulerInitialAdmissionResolved, SchedulerRecurringReserved},
@@ -64,7 +64,7 @@ use {
 };
 
 #[cfg(any(target_arch = "riscv32", test))]
-pub(super) const fn dtm_scheduler_current(now: &ControllerSchedulerNow) -> SchedulerInstant {
+pub(crate) const fn dtm_scheduler_current(now: &ControllerSchedulerNow) -> SchedulerInstant {
     SchedulerInstant::from_image(now.micros())
 }
 
@@ -938,7 +938,7 @@ pub enum DtmSchedulerHardwareHeadRetirementStep<Role> {
 #[cfg(any(target_arch = "riscv32", test))]
 impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY> {
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(super) fn admit_initial_dtm_event(
+    pub(crate) fn admit_initial_dtm_event(
         &mut self,
         event: DtmSchedulerItemEvent,
         now: &ControllerSchedulerNow,
@@ -961,7 +961,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(super) fn reserve_recurring_dtm_event(
+    pub(crate) fn reserve_recurring_dtm_event(
         &mut self,
         event: DtmSchedulerItemEvent,
         now: &ControllerSchedulerNow,
@@ -982,7 +982,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     }
 
     #[cfg(any(target_arch = "riscv32", test))]
-    pub(super) fn finish_dtm_sequence_authorization<State>(
+    pub(crate) fn finish_dtm_sequence_authorization<State>(
         &mut self,
         result: Result<
             DtmSchedulerReservation<SchedulerSequenceReady>,
@@ -1896,7 +1896,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn step_dtm_stop<Role>(
         &mut self,
-        storage: &impl crate::controller::SchedulerRunInterruptStorage,
+        storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
         running: DtmSchedulerRunning<Role>,
         stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
     ) -> DtmSchedulerStopStep<Role> {
@@ -2267,7 +2267,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn recheck_dtm_software_list_removal<Role>(
         &mut self,
-        storage: &impl crate::controller::SchedulerRunInterruptStorage,
+        storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
         unlinked: DtmSchedulerSoftwareListUnlinked<Role>,
     ) -> DtmSchedulerSoftwareListRemovalRecheck<Role> {
         let address = unlinked.scheduler_item_address();

@@ -45,7 +45,7 @@ use oer_bluetooth_hci::LeControllerCommandEndpoint;
 
 use oer_bluetooth_ll::advertising::AdvertisingDelay;
 
-use oer_esp32s31_bluetooth::controller::{
+use oer_esp32s31_bluetooth::modem_timer::{
     ControllerModemTimerBegin, ControllerModemTimerRearm, ControllerModemTimerStep,
     ControllerModemTimerTask,
 };

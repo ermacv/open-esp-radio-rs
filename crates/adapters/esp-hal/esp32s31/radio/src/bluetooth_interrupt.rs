@@ -30,16 +30,16 @@ use esp_hal::{
 };
 
 use oer_esp32s31_bluetooth::{
-    controller::{
-        InterruptOwnerStorage, ModemLpTimerInterruptDispatchStorage, ModemLpTimerRetirementStorage,
-        ModemLpTimerSoftwareOwnerStorage, SchedulerRunInterruptStorage,
-        SharedInterruptDispatchStorage,
-    },
     interrupt::{
-        NrtDefaultInterruptEpoch, PrimaryInterruptStep, step_nrt_default_interrupt,
-        step_primary_interrupt,
+        InterruptOwnerStorage, NrtDefaultInterruptEpoch, PrimaryInterruptStep,
+        SharedInterruptDispatchStorage, step_nrt_default_interrupt, step_primary_interrupt,
     },
     modem_lp_timer_queue::ModemLpTimerStableInterruptStep,
+    modem_timer::{
+        ModemLpTimerInterruptDispatchStorage, ModemLpTimerRetirementStorage,
+        ModemLpTimerSoftwareOwnerStorage,
+    },
+    scheduler::SchedulerRunInterruptStorage,
 };
 
 use oer_esp32s31_hal::bluetooth::{
@@ -204,7 +204,7 @@ impl ReleasedEspHalBluetoothInterruptRegisters {
     >(
         self,
         task: oer_esp32s31_bluetooth::controller::ControllerTaskHciRetired<'runtime, S, SC>,
-        timer: oer_esp32s31_bluetooth::controller::ControllerModemTimerRetired<'runtime, S, MT>,
+        timer: oer_esp32s31_bluetooth::modem_timer::ControllerModemTimerRetired<'runtime, S, MT>,
         platform: oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRetiredPlatform<
             'runtime,
             P,
@@ -245,7 +245,7 @@ impl RetiredEspHalBluetoothInterruptRegisters {
     >(
         self,
         task: oer_esp32s31_bluetooth::controller::ControllerIdleCommandTask<'a, S, SC>,
-        timer: oer_esp32s31_bluetooth::controller::ControllerModemTimerRetired<'a, S, MT>,
+        timer: oer_esp32s31_bluetooth::modem_timer::ControllerModemTimerRetired<'a, S, MT>,
         platform: &mut oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<'a, P>,
         controller: &mut oer_bluetooth_hci::LeControllerCommandEndpoint<'a, M, H2C, C2H, PC>,
         clock: &mut impl oer_esp32s31_phy::state::client::PhyPllTrackClock,
@@ -258,8 +258,8 @@ impl RetiredEspHalBluetoothInterruptRegisters {
         >,
     >
     where
-        S: oer_esp32s31_bluetooth::controller::InterruptOwnerRestartStorage
-            + oer_esp32s31_bluetooth::controller::ModemLpTimerSoftwareOwnerStorage,
+        S: oer_esp32s31_bluetooth::interrupt::InterruptOwnerRestartStorage
+            + oer_esp32s31_bluetooth::modem_timer::ModemLpTimerSoftwareOwnerStorage,
         D: oer_esp32s31_phy::PhyAsyncDelay,
         M: embassy_sync::blocking_mutex::raw::RawMutex,
     {
@@ -297,7 +297,7 @@ impl RetiredEspHalBluetoothInterruptRegisters {
             S,
             SC,
         >,
-        timer: oer_esp32s31_bluetooth::controller::ControllerModemTimerRetired<'a, S, MT>,
+        timer: oer_esp32s31_bluetooth::modem_timer::ControllerModemTimerRetired<'a, S, MT>,
         platform: &mut oer_esp32s31_bluetooth::resources::platform_retirement::ControllerRuntimePlatform<'a, P>,
         controller: &mut oer_bluetooth_hci::LeControllerCommandEndpoint<'a, M, H2C, C2H, PC>,
         clock: &mut impl oer_esp32s31_phy::state::client::PhyPllTrackClock,
@@ -325,9 +325,9 @@ impl RetiredEspHalBluetoothInterruptRegisters {
         >,
     >
     where
-        S: oer_esp32s31_bluetooth::controller::SchedulerRunInterruptStorage
-            + oer_esp32s31_bluetooth::controller::InterruptOwnerRestartStorage
-            + oer_esp32s31_bluetooth::controller::ModemLpTimerSoftwareOwnerStorage,
+        S: oer_esp32s31_bluetooth::scheduler::SchedulerRunInterruptStorage
+            + oer_esp32s31_bluetooth::interrupt::InterruptOwnerRestartStorage
+            + oer_esp32s31_bluetooth::modem_timer::ModemLpTimerSoftwareOwnerStorage,
         D: oer_esp32s31_phy::PhyAsyncDelay,
         M: embassy_sync::blocking_mutex::raw::RawMutex,
     {
@@ -1081,7 +1081,7 @@ impl SharedInterruptDispatchStorage for BoundEspHalBluetoothInterruptEpoch<'_> {
     }
 }
 
-impl oer_esp32s31_bluetooth::controller::InterruptOwnerRestartStorage
+impl oer_esp32s31_bluetooth::interrupt::InterruptOwnerRestartStorage
     for PublishedEspHalBluetoothInterruptOwners
 {
     type RestartError = EspHalBluetoothInterruptStorageError;

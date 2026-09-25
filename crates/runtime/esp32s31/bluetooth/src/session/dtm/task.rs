@@ -24,7 +24,7 @@ use oer_bluetooth_hci::{
 };
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_bluetooth::{
-    controller::{ControllerIdleCommandTask, SchedulerRunInterruptStorage},
+    controller::ControllerIdleCommandTask,
     le::dtm::{
         DtmActiveCommandIntake, DtmActiveCommandMismatch, DtmActiveControllerCommandRoute,
         DtmActiveResetBarrier, DtmActiveSessionFault, DtmActiveSessionRadioStep,
@@ -33,6 +33,7 @@ use oer_esp32s31_bluetooth::{
         DtmTestEndResponsePending, DtmTestEndResponsePublication, DtmTestEndRestoreFailure,
         DtmTestEndRestoreStep,
     },
+    scheduler::SchedulerRunInterruptStorage,
     scheduler::{
         BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListIndex,
     },

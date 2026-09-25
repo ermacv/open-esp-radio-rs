@@ -1,5 +1,5 @@
 use crate::{
-    controller::time::{ControllerSchedulerEpoch, ControllerTimeSample},
+    controller_time::{ControllerSchedulerEpoch, ControllerTimeSample},
     le::{
         advertising::LegacyAdvertisingDefaultTxPowerDbm,
         peripheral::{PeripheralConnectionRuntimeConfig, PeripheralConnectionRuntimeResources},

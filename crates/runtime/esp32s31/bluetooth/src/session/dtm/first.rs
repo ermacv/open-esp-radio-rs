@@ -5,11 +5,11 @@
 use core::future::Future;
 
 use oer_esp32s31_bluetooth::{
-    controller::SchedulerRunInterruptStorage,
     le::dtm::{
         DtmFirstRunner, DtmFirstRunnerCancel, DtmFirstRunnerFailure, DtmFirstRunnerStep,
         DtmResponsePendingSession,
     },
+    scheduler::SchedulerRunInterruptStorage,
 };
 
 /// Executor disposition after driving every immediately available first-event step.

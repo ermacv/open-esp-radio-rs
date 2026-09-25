@@ -30,7 +30,7 @@ use oer_bluetooth_ll::connection::{
 };
 
 #[cfg(target_arch = "riscv32")]
-use crate::scheduler::core::peripheral_connection::PeripheralConnectionSchedulerCompleted;
+use crate::le::peripheral::scheduler::PeripheralConnectionSchedulerCompleted;
 use oer_esp32s31_bluetooth_memory::{
     PeripheralConnectionDataChannel, PeripheralConnectionEventSpan,
     PeripheralConnectionRecurringReceiveWait,

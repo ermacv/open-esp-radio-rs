@@ -6,9 +6,9 @@ use super::super::maintenance::{
 };
 use super::super::progress::PeripheralConnectionProgressDeadline as Progress;
 use super::*;
-use crate::{controller as ctrl, scheduler as sched};
+use crate::controller as ctrl;
 type Task<'a, S, const N: usize> = ctrl::ControllerPublishedTaskService<'a, S, N>;
-type Candidate = sched::PeripheralConnectionRecurringEventCandidate;
+type Candidate = crate::le::peripheral::PeripheralConnectionRecurringEventCandidate;
 
 struct Suspended<'a> {
     state: PeripheralConnectionState<()>,
@@ -75,7 +75,7 @@ pub enum PeripheralPhyMaintenanceError {
     TimeBegin(ctrl::ControllerSchedulerCurrentBeginError),
     Time(ctrl::ControllerSchedulerCurrentError),
     AcquisitionExpired,
-    Candidate(sched::PeripheralConnectionRecurringCandidateError),
+    Candidate(crate::le::peripheral::PeripheralConnectionRecurringCandidateError),
     TimingUnavailable,
 }
 
@@ -348,7 +348,10 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
             {
                 ctrl::PeripheralConnectionRecurringCandidateStep::Prepared(candidate) => candidate,
                 ctrl::PeripheralConnectionRecurringCandidateStep::Rejected {
-                    error: sched::PeripheralConnectionRecurringCandidateError::Maintenance(reason),
+                    error:
+                        crate::le::peripheral::PeripheralConnectionRecurringCandidateError::Maintenance(
+                            reason,
+                        ),
                     retry,
                 } => {
                     let (completed, _) = retry.into_parts();
@@ -410,7 +413,7 @@ fn deferred<'a, S: SchedulerRunInterruptStorage, const N: usize>(
 }
 fn restore_contiguous<'a, S: SchedulerRunInterruptStorage, const N: usize>(
     mut task: Task<'a, S, N>,
-    completed: sched::PeripheralConnectionSchedulerCompleted,
+    completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
     evidence: Evidence,
     session: Suspended<'a>,
     reason: Blocked,
@@ -560,8 +563,8 @@ impl<'a, S: SchedulerRunInterruptStorage, const N: usize>
 impl<
     'a,
     S: SchedulerRunInterruptStorage
-        + ctrl::InterruptOwnerRestartStorage
-        + ctrl::ModemLpTimerSoftwareOwnerStorage,
+        + crate::interrupt::InterruptOwnerRestartStorage
+        + crate::modem_timer::ModemLpTimerSoftwareOwnerStorage,
     const N: usize,
 > PeripheralPhyMaintenanceReady<'a, S, N>
 {
@@ -585,7 +588,7 @@ impl<
         const PC: usize,
     >(
         self,
-        timer: ctrl::ControllerModemTimerRetired<'a, S, MT>,
+        timer: crate::modem_timer::ControllerModemTimerRetired<'a, S, MT>,
         interrupt: oer_esp32s31_hal::bluetooth::InterruptOutputAfterRoutesOwner,
         platform: &mut crate::resources::platform_retirement::ControllerRuntimePlatform<'a, P>,
         controller: &mut LeControllerCommandEndpoint<'a, M, H2C, C2H, PC>,

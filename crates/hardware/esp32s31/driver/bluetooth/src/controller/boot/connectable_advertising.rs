@@ -15,25 +15,21 @@ use crate::{
         advertising::{
             LegacyAdvertisingTimingObservation,
             connectable::{
+                LegacyConnectableAdvertisingAdmissionObservation,
                 LegacyConnectableAdvertisingCancellationInvariant,
-                LegacyConnectableAdvertisingCancelled, LegacyConnectableAdvertisingEventCandidate,
-                LegacyConnectableAdvertisingPrepared,
+                LegacyConnectableAdvertisingCancelled,
+                LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
+                LegacyConnectableAdvertisingEventCandidate,
+                LegacyConnectableAdvertisingEventPreparationError,
+                LegacyConnectableAdvertisingPreSequence, LegacyConnectableAdvertisingPrepared,
                 LegacyConnectableAdvertisingRuntimeBeginFailure,
+                LegacyConnectableAdvertisingSequenceObservation,
                 LegacyConnectableAdvertisingSetPrepared,
             },
         },
         peripheral::PeripheralConnectionRuntimeBeginError,
     },
-    scheduler::{
-        ControllerTimeAcquisitionError,
-        core::{
-            LegacyConnectableAdvertisingAdmissionObservation,
-            LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
-            LegacyConnectableAdvertisingEventPreparationError,
-            LegacyConnectableAdvertisingPreSequence,
-            LegacyConnectableAdvertisingSequenceObservation,
-        },
-    },
+    scheduler::ControllerTimeAcquisitionError,
 };
 
 use oer_esp32s31_bluetooth_memory::{
@@ -200,7 +196,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 enum LegacyConnectableAdvertisingControllerPreparationPhase {
     AlwaysAwakeTiming {
         prepared: LegacyConnectableAdvertisingPrepared,
-        now: crate::controller::time::ControllerSchedulerNow,
+        now: crate::controller_time::ControllerSchedulerNow,
     },
     Admission(LegacyConnectableAdvertisingEventCandidate),
     Sequence(LegacyConnectableAdvertisingPreSequence),

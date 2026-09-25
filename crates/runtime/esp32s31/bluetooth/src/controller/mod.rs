@@ -99,7 +99,6 @@ use oer_esp32s31_bluetooth::{
         ControllerIdleCommandIntake, ControllerIdleCommandTask, ControllerIdleResetBarrier,
         ControllerIdleResetCompletion, ControllerIdleResponsePending,
         ControllerIdleResponsePublication, ControllerSchedulerCurrentError,
-        SchedulerRunInterruptStorage,
     },
     le::{
         advertising::{
@@ -176,6 +175,7 @@ use oer_esp32s31_bluetooth::{
             PassiveScanHciStoppingStep,
         },
     },
+    scheduler::SchedulerRunInterruptStorage,
     scheduler::{
         BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListIndex,
     },

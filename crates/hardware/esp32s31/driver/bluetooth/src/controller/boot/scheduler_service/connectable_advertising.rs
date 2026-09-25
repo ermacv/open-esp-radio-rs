@@ -6,15 +6,11 @@
 
 use crate::{
     le::advertising::connectable::{
+        LegacyConnectableAdvertisingEmptySchedulerMergePrepared,
         LegacyConnectableAdvertisingPublicationRemainder,
         completion::LegacyConnectableAdvertisingCompletionRole,
     },
-    scheduler::{
-        SchedulerHeadPublicationError,
-        core::{
-            LegacyConnectableAdvertisingEmptySchedulerMergePrepared, SingleItemSchedulerRunning,
-        },
-    },
+    scheduler::{SchedulerHeadPublicationError, core::SingleItemSchedulerRunning},
 };
 
 use oer_esp32s31_bluetooth_memory::{

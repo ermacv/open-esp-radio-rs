@@ -6,7 +6,6 @@ use oer_esp32s31_bluetooth_memory::{
 
 use super::{
     BlePhyInitializationReport, apply_register_init, apply_register_init_then_public_address,
-    normalize_le_1m_peripheral_connection_packet_start,
 };
 
 fn model_storage() -> BlePhyEngineCpuOwned {
@@ -60,8 +59,8 @@ fn connection_packet_start_normalization_preserves_elapsed_time() {
         .expect("complete model storage fits physical SRAM");
     let calibration = owner.le_1m_packet_start_calibration();
 
-    let first = normalize_le_1m_peripheral_connection_packet_start(calibration, 20_000);
-    let second = normalize_le_1m_peripheral_connection_packet_start(calibration, 20_017);
+    let first = calibration.normalize_controller_micros(20_000);
+    let second = calibration.normalize_controller_micros(20_017);
 
-    assert_eq!(second.elapsed_since(&first), 17);
+    assert_eq!(second.wrapping_sub(first), 17);
 }

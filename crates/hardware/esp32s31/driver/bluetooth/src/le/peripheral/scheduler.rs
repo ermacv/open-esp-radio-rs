@@ -10,7 +10,7 @@ use core::ops::ControlFlow;
 #[cfg(target_arch = "riscv32")]
 mod recurring;
 #[cfg(all(test, not(target_arch = "riscv32")))]
-#[path = "peripheral_connection/recurring/transaction.rs"]
+#[path = "scheduler/recurring/transaction.rs"]
 mod recurring_transaction_tests;
 #[cfg(target_arch = "riscv32")]
 pub use recurring::{
@@ -28,9 +28,6 @@ pub(crate) use recurring::{
     PeripheralConnectionRecurringSchedulerValidationFailure,
 };
 
-use super::SchedulerEmptyListMergeError;
-#[cfg(target_arch = "riscv32")]
-use super::SchedulerHeadPublicationError;
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::le::peripheral::connection::{
     PeripheralConnectionFirstEventCandidate,
@@ -51,6 +48,9 @@ use crate::le::peripheral::{
         PeripheralConnectionRecycledEvent,
     },
 };
+use crate::scheduler::core::SchedulerEmptyListMergeError;
+#[cfg(target_arch = "riscv32")]
+use crate::scheduler::core::SchedulerHeadPublicationError;
 
 use crate::runtime_resources::ControllerPoweredTaskRuntime;
 #[cfg(target_arch = "riscv32")]
@@ -726,7 +726,7 @@ impl<const SCHEDULER_CAPACITY: usize> ControllerPoweredTaskRuntime<'_, SCHEDULER
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn step_peripheral_connection_stop(
         &mut self,
-        storage: &impl crate::controller::SchedulerRunInterruptStorage,
+        storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
         running: SingleItemSchedulerRunning<PeripheralConnectionCompletionRole>,
         stop: BluetoothSchedulerStop,
     ) -> PeripheralConnectionSchedulerStopStep {

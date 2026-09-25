@@ -115,7 +115,8 @@ impl<S, const SC: usize> ControllerTaskHciRetired<'_, S, SC> {
         self._hardware.release_controller_output(output)
     }
 
-    pub(crate) fn hci_proof(&self) -> &oer_bluetooth_hci::LeControllerHciRetired<'_, ()> {
+    /// HCI retirement proof of this Controller epoch, for its platform lease.
+    pub fn hci_proof(&self) -> &oer_bluetooth_hci::LeControllerHciRetired<'_, ()> {
         &self.hci
     }
 

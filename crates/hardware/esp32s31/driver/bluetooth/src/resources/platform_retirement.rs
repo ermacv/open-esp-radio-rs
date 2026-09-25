@@ -75,7 +75,9 @@ impl<'runtime, P> ControllerRuntimePlatform<'runtime, P> {
             .then(|| self.lease.platform_mut())
     }
 
-    fn try_retire_epoch<Owner>(
+    /// Extract this reservation only with the retirement proof of its own HCI
+    /// epoch. A foreign proof returns the unchanged lease without extracting P.
+    pub fn try_retire<Owner>(
         mut self,
         retired: &LeControllerHciRetired<'_, Owner>,
     ) -> Result<ControllerRetiredPlatform<'runtime, P>, Self> {
@@ -89,16 +91,6 @@ impl<'runtime, P> ControllerRuntimePlatform<'runtime, P> {
             }),
             Err(()) => Err(self),
         }
-    }
-
-    /// Extract this reservation only for its own retired idle Controller task.
-    /// A foreign retirement returns the unchanged lease without extracting P.
-    #[cfg(target_arch = "riscv32")]
-    pub fn try_retire<S, const SC: usize>(
-        self,
-        retired: &crate::controller::ControllerTaskHciRetired<'_, S, SC>,
-    ) -> Result<ControllerRetiredPlatform<'runtime, P>, Self> {
-        self.try_retire_epoch(retired.hci_proof())
     }
 }
 
@@ -173,13 +165,13 @@ mod tests {
             let platform = lease.bind(original.controller.epoch_identity());
             let foreign_proof = retire(&mut foreign.controller);
             let platform = platform
-                .try_retire_epoch(&foreign_proof)
+                .try_retire(&foreign_proof)
                 .err()
                 .expect("foreign retirement must preserve reservation");
             assert_eq!(drops.get(), 0);
             let proof = retire(&mut original.controller);
             platform
-                .try_retire_epoch(&proof)
+                .try_retire(&proof)
                 .unwrap_or_else(|_| panic!("matching epoch"))
         };
         // The real P is extracted; its empty original slot remains exclusively leased.

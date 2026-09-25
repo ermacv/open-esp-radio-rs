@@ -30,6 +30,8 @@ use crate::{
             connectable::LegacyConnectableAdvertisingConnectionTransfer,
         },
         peripheral::{
+            PeripheralConnectionSchedulerCompleted, PeripheralConnectionSchedulerHeadPublished,
+            PeripheralConnectionSchedulerRecycled,
             completion::{
                 PeripheralConnectionCompletionRole, PeripheralConnectionRecycleFailure,
                 PeripheralConnectionRecycleFailureCause,
@@ -38,8 +40,7 @@ use crate::{
         },
     },
     scheduler::{
-        PeripheralConnectionSchedulerCompleted, PeripheralConnectionSchedulerHeadPublished,
-        PeripheralConnectionSchedulerRecycled, SchedulerHeadPublicationError,
+        SchedulerHeadPublicationError,
         completion::{
             SingleItemCompletion, SingleItemCompletionFault, SingleItemCompletionFaultCause,
             SingleItemCompletionStep, SingleItemCompletionWaitKind,
@@ -397,7 +398,7 @@ enum LegacyConnectablePeripheralFirstCompletionFaultOwner {
             >,
         >,
     ),
-    SchedulerStop(crate::scheduler::core::PeripheralConnectionSchedulerStopStep),
+    SchedulerStop(crate::le::peripheral::PeripheralConnectionSchedulerStopStep),
 }
 
 /// Finite reason the peripheral-specific recycle tail sealed its owner.
@@ -747,7 +748,7 @@ where
             }
             LegacyConnectablePeripheralFirstRunningPhase::SchedulerStop { running, stop } => {
                 match task.step_peripheral_connection_stop(running, stop) {
-                    crate::scheduler::core::PeripheralConnectionSchedulerStopStep::Pending {
+                    crate::le::peripheral::PeripheralConnectionSchedulerStopStep::Pending {
                         running,
                         stop,
                     } => waiting(
@@ -762,7 +763,7 @@ where
                             evidence,
                         },
                     ),
-                    crate::scheduler::core::PeripheralConnectionSchedulerStopStep::Retired(
+                    crate::le::peripheral::PeripheralConnectionSchedulerStopStep::Retired(
                         observed,
                     ) => continuing(
                         context,
@@ -1243,7 +1244,7 @@ pub struct LegacyConnectablePeripheralFirstPublicationFailStop<
     _task: ControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     _origin: LegacyConnectablePeripheralOrigin,
     _packet: LeReceivedPdu,
-    _failure: crate::scheduler::PeripheralConnectionSchedulerHeadPublicationFailure,
+    _failure: crate::le::peripheral::PeripheralConnectionSchedulerHeadPublicationFailure,
 }
 
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>

@@ -15,14 +15,14 @@ use super::super::{
 };
 
 pub(crate) type PeripheralConnectionRecurringSchedulerStartOutcome<E> = ControlFlow<
-    crate::scheduler::core::PeripheralConnectionRecurringSchedulerValidationFailure,
+    crate::le::peripheral::PeripheralConnectionRecurringSchedulerValidationFailure,
     ControlFlow<
         (
             E,
-            crate::scheduler::core::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
+            crate::le::peripheral::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
         ),
         ControlFlow<
-            crate::scheduler::core::PeripheralConnectionRecurringSchedulerPublicationFailStop,
+            crate::le::peripheral::PeripheralConnectionRecurringSchedulerPublicationFailStop,
             SingleItemSchedulerRunning<PeripheralConnectionCompletionRole>,
         >,
     >,
@@ -39,7 +39,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// through head/event/RUN publication.
     pub(crate) fn start_peripheral_connection_recurring_scheduler(
         &mut self,
-        merged: crate::scheduler::core::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
+        merged: crate::le::peripheral::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
     ) -> PeripheralConnectionRecurringSchedulerStartOutcome<S::Error>
     where
         S: SchedulerRunInterruptStorage,
@@ -82,7 +82,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     )]
     pub(crate) fn start_peripheral_connection_scheduler(
         &mut self,
-        head: crate::scheduler::PeripheralConnectionSchedulerHeadPublished,
+        head: crate::le::peripheral::PeripheralConnectionSchedulerHeadPublished,
     ) -> Result<
         SingleItemSchedulerRunning<PeripheralConnectionCompletionRole>,
         PeripheralConnectionSchedulerStartFailure<S::Error>,
@@ -120,7 +120,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         &mut self,
         running: SingleItemSchedulerRunning<PeripheralConnectionCompletionRole>,
         stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
-    ) -> crate::scheduler::core::PeripheralConnectionSchedulerStopStep
+    ) -> crate::le::peripheral::PeripheralConnectionSchedulerStopStep
     where
         S: SchedulerRunInterruptStorage,
     {

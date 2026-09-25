@@ -23,11 +23,11 @@ use oer_esp32s31_bluetooth::modem_lp_timer_queue::{
 
 #[cfg(target_arch = "riscv32")]
 use oer_esp32s31_bluetooth::{
-    controller::{
+    modem_lp_timer_queue::ModemLpTimerExpiration,
+    modem_timer::{
         ControllerModemTimerBegin, ControllerModemTimerReadinessClass, ControllerModemTimerRearm,
         ControllerModemTimerStep, ControllerModemTimerTask, ModemLpTimerSoftwareOwnerStorage,
     },
-    modem_lp_timer_queue::ModemLpTimerExpiration,
 };
 
 #[cfg(any(test, target_arch = "riscv32"))]

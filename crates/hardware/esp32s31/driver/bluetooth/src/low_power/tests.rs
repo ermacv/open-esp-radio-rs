@@ -97,7 +97,7 @@ fn task_hardware_outlives_software_storage_without_recovering_a_borrow() {
     };
     assert_eq!(
         hardware.controller_time_phase(),
-        crate::controller::time::ControllerTimeWorkerPhase::Idle
+        crate::controller_time::ControllerTimeWorkerPhase::Idle
     );
     assert!(!hardware.controller_time_needs_recheck());
 }

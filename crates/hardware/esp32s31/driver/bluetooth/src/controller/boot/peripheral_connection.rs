@@ -3,12 +3,12 @@
 use core::ops::ControlFlow;
 
 use crate::{
-    controller::time::{
+    controller_time::{
         ControllerTimeEventError, ControllerTimePendingCore, ControllerTimePendingCoreStep,
         ControllerTimePendingOrphanStep, ControllerTimePendingOwner,
         ControllerTimePendingOwnerStep, ControllerTimeRequest,
     },
-    scheduler::core::PeripheralConnectionSchedulerCompletionClassification,
+    le::peripheral::PeripheralConnectionSchedulerCompletionClassification,
 };
 
 use super::{
@@ -19,18 +19,18 @@ use super::{
 /// Result of closing one recycled connection event against capture evidence.
 #[must_use = "retain the unchanged retry owner or completed connection"]
 pub enum PeripheralConnectionCompletionStep {
-    SchedulerEpochUnavailable(crate::scheduler::PeripheralConnectionSchedulerRecycled),
-    Completed(crate::scheduler::PeripheralConnectionSchedulerCompleted),
+    SchedulerEpochUnavailable(crate::le::peripheral::PeripheralConnectionSchedulerRecycled),
+    Completed(crate::le::peripheral::PeripheralConnectionSchedulerCompleted),
 }
 
 /// Production attempt to enter recurring preparation from one exact completion.
 #[must_use = "retain the prepared candidate or the exact retry owner"]
 pub enum PeripheralConnectionRecurringCandidateStep {
-    Prepared(crate::scheduler::PeripheralConnectionRecurringEventCandidate),
+    Prepared(crate::le::peripheral::PeripheralConnectionRecurringEventCandidate),
     SchedulerEpochUnavailable(PeripheralConnectionRecurringRetry),
     TimingPolicyUnavailable(PeripheralConnectionRecurringRetry),
     Rejected {
-        error: crate::scheduler::PeripheralConnectionRecurringCandidateError,
+        error: crate::le::peripheral::PeripheralConnectionRecurringCandidateError,
         retry: PeripheralConnectionRecurringRetry,
     },
 }
@@ -38,13 +38,13 @@ pub enum PeripheralConnectionRecurringCandidateStep {
 /// Exact completed connection and typed event distance restored before admission.
 #[must_use = "retry recurrence or retain the exact completed connection"]
 pub struct PeripheralConnectionRecurringRetry {
-    completed: crate::scheduler::PeripheralConnectionSchedulerCompleted,
+    completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
     delta: oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
 }
 
 impl PeripheralConnectionRecurringRetry {
     fn new(
-        completed: crate::scheduler::PeripheralConnectionSchedulerCompleted,
+        completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         delta: oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
     ) -> Self {
         Self { completed, delta }
@@ -52,7 +52,7 @@ impl PeripheralConnectionRecurringRetry {
 
     fn from_cancelled(
         cancelled: (
-            crate::scheduler::PeripheralConnectionSchedulerCompleted,
+            crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
             oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
         ),
     ) -> Self {
@@ -60,7 +60,9 @@ impl PeripheralConnectionRecurringRetry {
         Self::new(completed, delta)
     }
 
-    pub const fn completed(&self) -> &crate::scheduler::PeripheralConnectionSchedulerCompleted {
+    pub const fn completed(
+        &self,
+    ) -> &crate::le::peripheral::PeripheralConnectionSchedulerCompleted {
         &self.completed
     }
 
@@ -71,7 +73,7 @@ impl PeripheralConnectionRecurringRetry {
     pub fn into_parts(
         self,
     ) -> (
-        crate::scheduler::PeripheralConnectionSchedulerCompleted,
+        crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
     ) {
         (self.completed, self.delta)
@@ -87,15 +89,15 @@ pub enum PeripheralConnectionRecurringSequenceCompletion<
 > {
     Prepared {
         task: ControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-        merged: crate::scheduler::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
+        merged: crate::le::peripheral::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
     },
     EventRejected {
         task: ControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-        failure: crate::scheduler::PeripheralConnectionRecurringEventPreparationFailure,
+        failure: crate::le::peripheral::PeripheralConnectionRecurringEventPreparationFailure,
     },
     EmptyListRejected {
         task: ControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-        failure: crate::scheduler::PeripheralConnectionRecurringEmptySchedulerMergeFailure,
+        failure: crate::le::peripheral::PeripheralConnectionRecurringEmptySchedulerMergeFailure,
     },
 }
 
@@ -103,7 +105,7 @@ pub enum PeripheralConnectionRecurringSequenceCompletion<
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeripheralConnectionControllerPreparationError {
     TimingWindow,
-    Event(crate::scheduler::core::PeripheralConnectionFirstEventPreparationError),
+    Event(crate::le::peripheral::PeripheralConnectionFirstEventPreparationError),
     EmptyList(crate::scheduler::SchedulerEmptyListMergeError),
 }
 
@@ -116,7 +118,7 @@ pub(crate) enum PeripheralConnectionControllerPreparationFailStopCause {
 
 enum PeripheralConnectionControllerPreparationPhase {
     Sequence {
-        admitted: crate::scheduler::core::PeripheralConnectionFirstPreSequence,
+        admitted: crate::le::peripheral::PeripheralConnectionFirstPreSequence,
         packet: oer_esp32s31_bluetooth_memory::LeReceivedPdu,
     },
 }
@@ -145,7 +147,7 @@ pub struct PeripheralConnectionControllerPreparationPending<
 /// Sequence-authorized first event plus its causal accepted packet.
 #[must_use = "publish the first event or retain both the merge and causal packet"]
 pub(crate) struct PeripheralConnectionControllerPrepared {
-    pub(crate) merged: crate::scheduler::PeripheralConnectionEmptySchedulerMergePrepared,
+    pub(crate) merged: crate::le::peripheral::PeripheralConnectionEmptySchedulerMergePrepared,
     pub(crate) packet: oer_esp32s31_bluetooth_memory::LeReceivedPdu,
     pub(crate) progress_deadline:
         crate::le::peripheral::progress::PeripheralConnectionProgressDeadline,
@@ -251,7 +253,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         self,
     ) -> PeripheralConnectionControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY>
     where
-        S: crate::controller::SchedulerRunInterruptStorage,
+        S: crate::scheduler::SchedulerRunInterruptStorage,
     {
         let (mut owner, sample) = match self.core.recheck() {
             Ok(ControllerTimePendingCoreStep::Waiting(core)) => {
@@ -296,7 +298,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                     .runtime
                     .prepare_peripheral_connection_first_event(
                         admitted,
-                        crate::scheduler::core::PeripheralConnectionSequenceObservation { sample },
+                        crate::le::peripheral::PeripheralConnectionSequenceObservation { sample },
                         default_tx_power,
                         direction_finding_workspace,
                     ) {
@@ -456,13 +458,15 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// status, and it does not schedule recurrence.
     pub fn complete_peripheral_connection_event(
         &mut self,
-        recycled: crate::scheduler::PeripheralConnectionSchedulerRecycled,
+        recycled: crate::le::peripheral::PeripheralConnectionSchedulerRecycled,
     ) -> PeripheralConnectionCompletionStep {
         let epoch = *self.scheduler_epoch;
         match recycled.classify_completion(|captured| {
             epoch.map(|epoch| {
-                self.ble_phy_timing
-                    .complete_le_1m_peripheral_connection_packet_start(epoch, captured)
+                crate::le::peripheral::connection::PeripheralConnectionPacketStartTiming::from_scheduler_micros(
+                    self.ble_phy_timing
+                        .complete_le_1m_peripheral_connection_packet_start(epoch, captured),
+                )
             })
         }) {
             PeripheralConnectionSchedulerCompletionClassification::NormalizationUnavailable(
@@ -476,7 +480,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 
     pub(crate) fn peripheral_supervision_deadline(
         &self,
-        completed: &crate::scheduler::PeripheralConnectionSchedulerCompleted,
+        completed: &crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
     ) -> Option<crate::le::peripheral::supervision::PeripheralSupervisionDeadline> {
         if matches!(
             completed.link_layer_completion().connection_state(),
@@ -514,8 +518,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 
     pub(crate) fn retire_peripheral_connection(
         &mut self,
-        completed: crate::scheduler::PeripheralConnectionSchedulerCompleted,
-    ) -> ControlFlow<crate::scheduler::PeripheralConnectionSchedulerCompleted> {
+        completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
+    ) -> ControlFlow<crate::le::peripheral::PeripheralConnectionSchedulerCompleted> {
         completed.retire(&mut self.roles.peripheral_connection_resources)
     }
 
@@ -530,7 +534,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 
     pub(crate) fn process_peripheral_control(
         &mut self,
-        completed: &mut crate::scheduler::PeripheralConnectionSchedulerCompleted,
+        completed: &mut crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         control: &mut oer_bluetooth_ll::control::LePeripheralControl,
         encryption: &mut oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
         acl: &mut crate::le::peripheral::PeripheralConnectionAcl,
@@ -550,7 +554,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 
     pub(crate) fn enqueue_peripheral_transmission(
         &mut self,
-        completed: &mut crate::scheduler::PeripheralConnectionSchedulerCompleted,
+        completed: &mut crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         control: &mut oer_bluetooth_ll::control::LePeripheralControl,
         encryption: &mut oer_bluetooth_ll::security::LePeripheralEncryptionProcedure,
         acl: &mut crate::le::peripheral::PeripheralConnectionAcl,
@@ -566,7 +570,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// bound; that same config explicitly selects the reviewed software-WW path.
     pub fn prepare_peripheral_connection_recurring_candidate(
         &mut self,
-        completed: crate::scheduler::PeripheralConnectionSchedulerCompleted,
+        completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         delta: oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
     ) -> PeripheralConnectionRecurringCandidateStep {
         self.prepare_peripheral_connection_candidate(completed, delta.into())
@@ -580,7 +584,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Cancellation is legal before maintenance begins and preserves the owner.
     pub fn prepare_peripheral_connection_maintenance_candidate(
         &mut self,
-        completed: crate::scheduler::PeripheralConnectionSchedulerCompleted,
+        completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         delta: oer_bluetooth_ll::connection::LePeripheralConnectionEventDelta,
     ) -> PeripheralConnectionRecurringCandidateStep {
         self.prepare_peripheral_connection_candidate(
@@ -591,7 +595,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 
     fn prepare_peripheral_connection_candidate(
         &mut self,
-        completed: crate::scheduler::PeripheralConnectionSchedulerCompleted,
+        completed: crate::le::peripheral::PeripheralConnectionSchedulerCompleted,
         recurrence: crate::le::peripheral::connection::PeripheralConnectionRecurrence,
     ) -> PeripheralConnectionRecurringCandidateStep {
         let delta = recurrence.delta();
@@ -631,10 +635,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Reserve one provisional recurrence before acquiring its sequence sample.
     pub fn admit_peripheral_connection_recurring_candidate(
         &mut self,
-        candidate: crate::scheduler::PeripheralConnectionRecurringEventCandidate,
+        candidate: crate::le::peripheral::PeripheralConnectionRecurringEventCandidate,
     ) -> ControlFlow<
-        crate::scheduler::PeripheralConnectionRecurringEventPreparationFailure,
-        crate::scheduler::PeripheralConnectionRecurringPreSequence,
+        crate::le::peripheral::PeripheralConnectionRecurringEventPreparationFailure,
+        crate::le::peripheral::PeripheralConnectionRecurringPreSequence,
     > {
         self.runtime
             .admit_peripheral_connection_recurring_event(candidate)
@@ -643,7 +647,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Cancel one candidate which owns no scheduler reservation yet.
     pub fn cancel_peripheral_connection_recurring_candidate(
         &mut self,
-        candidate: crate::scheduler::PeripheralConnectionRecurringEventCandidate,
+        candidate: crate::le::peripheral::PeripheralConnectionRecurringEventCandidate,
     ) -> PeripheralConnectionRecurringRetry {
         PeripheralConnectionRecurringRetry::from_cancelled(candidate.cancel())
     }
@@ -651,7 +655,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Release a recurring reservation before sequence authorization.
     pub fn cancel_peripheral_connection_recurring_pre_sequence(
         &mut self,
-        admitted: crate::scheduler::PeripheralConnectionRecurringPreSequence,
+        admitted: crate::le::peripheral::PeripheralConnectionRecurringPreSequence,
     ) -> PeripheralConnectionRecurringRetry {
         let cancelled = self
             .runtime
@@ -662,7 +666,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Release a sequence-authorized recurring event and its timeline slot.
     pub fn cancel_peripheral_connection_recurring_event(
         &mut self,
-        prepared: crate::scheduler::PeripheralConnectionRecurringEventPrepared,
+        prepared: crate::le::peripheral::PeripheralConnectionRecurringEventPrepared,
     ) -> PeripheralConnectionRecurringRetry {
         let cancelled = self
             .runtime
@@ -673,10 +677,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Retry the infallible detach plus empty-list identity merge.
     pub fn prepare_peripheral_connection_recurring_empty_list_merge(
         &mut self,
-        prepared: crate::scheduler::PeripheralConnectionRecurringEventPrepared,
+        prepared: crate::le::peripheral::PeripheralConnectionRecurringEventPrepared,
     ) -> ControlFlow<
-        crate::scheduler::PeripheralConnectionRecurringEmptySchedulerMergeFailure,
-        crate::scheduler::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
+        crate::le::peripheral::PeripheralConnectionRecurringEmptySchedulerMergeFailure,
+        crate::le::peripheral::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
     > {
         self.runtime
             .prepare_peripheral_connection_recurring_empty_list_merge(prepared)
@@ -685,10 +689,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Undo an unpublished empty-list merge while preserving its reservation.
     pub fn cancel_peripheral_connection_recurring_empty_list_merge(
         &mut self,
-        merged: crate::scheduler::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
+        merged: crate::le::peripheral::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
     ) -> ControlFlow<
-        crate::scheduler::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
-        crate::scheduler::PeripheralConnectionRecurringEventPrepared,
+        crate::le::peripheral::PeripheralConnectionRecurringEmptySchedulerMergePrepared,
+        crate::le::peripheral::PeripheralConnectionRecurringEventPrepared,
     > {
         self.runtime
             .cancel_peripheral_connection_recurring_empty_list_merge(merged)
@@ -705,10 +709,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     )]
     pub fn publish_peripheral_connection_scheduler_head(
         &mut self,
-        merged: crate::scheduler::PeripheralConnectionEmptySchedulerMergePrepared,
+        merged: crate::le::peripheral::PeripheralConnectionEmptySchedulerMergePrepared,
     ) -> Result<
-        crate::scheduler::PeripheralConnectionSchedulerHeadPublished,
-        crate::scheduler::PeripheralConnectionSchedulerHeadPublicationFailure,
+        crate::le::peripheral::PeripheralConnectionSchedulerHeadPublished,
+        crate::le::peripheral::PeripheralConnectionSchedulerHeadPublicationFailure,
     > {
         self.runtime
             .publish_peripheral_connection_scheduler_head(merged)
@@ -726,7 +730,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 
     pub(crate) fn peripheral_maintenance_window(
         &self,
-        candidate: &crate::scheduler::PeripheralConnectionRecurringEventCandidate,
+        candidate: &crate::le::peripheral::PeripheralConnectionRecurringEventCandidate,
         budget: crate::le::peripheral::maintenance::PeripheralMaintenanceBudget,
         acquisition_started: u64,
         monotonic_now: u64,
@@ -763,10 +767,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 
     pub(crate) fn peripheral_progress_deadline(
         &self,
-        admitted: &crate::scheduler::PeripheralConnectionRecurringPreSequence,
+        admitted: &crate::le::peripheral::PeripheralConnectionRecurringPreSequence,
     ) -> crate::le::peripheral::progress::PeripheralConnectionProgressDeadline
     where
-        S: crate::controller::SchedulerRunInterruptStorage,
+        S: crate::scheduler::SchedulerRunInterruptStorage,
     {
         crate::le::peripheral::progress::PeripheralConnectionProgressDeadline::from_sequence(
             S::monotonic_micros(),
@@ -779,7 +783,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     pub(crate) fn check_peripheral_deadlines(
         &self,
         deadlines: crate::le::peripheral::deadlines::Deadlines,
-        admitted: &crate::scheduler::PeripheralConnectionRecurringPreSequence,
+        admitted: &crate::le::peripheral::PeripheralConnectionRecurringPreSequence,
     ) -> crate::le::peripheral::deadlines::Decision {
         deadlines.decide(
             self.peripheral_current_instant(),
@@ -792,7 +796,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 
     pub(crate) fn decide_peripheral_missed_anchor(
         &self,
-        admitted: &crate::scheduler::PeripheralConnectionRecurringPreSequence,
+        admitted: &crate::le::peripheral::PeripheralConnectionRecurringPreSequence,
         restoring_maintenance: bool,
     ) -> crate::le::peripheral::recovery::PeripheralMissedAnchorDecision {
         crate::le::peripheral::recovery::decide_missed_anchor(
@@ -815,7 +819,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Apply this fresh sequence sample to one reserved connection recurrence.
     pub fn finish_peripheral_connection_recurring_event(
         self,
-        admitted: crate::scheduler::PeripheralConnectionRecurringPreSequence,
+        admitted: crate::le::peripheral::PeripheralConnectionRecurringPreSequence,
     ) -> PeripheralConnectionRecurringSequenceCompletion<'runtime, S, SCHEDULER_CAPACITY> {
         let Self {
             mut controller,
@@ -826,7 +830,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             .runtime
             .prepare_peripheral_connection_recurring_event(
                 admitted,
-                crate::scheduler::core::PeripheralConnectionSequenceObservation { sample },
+                crate::le::peripheral::PeripheralConnectionSequenceObservation { sample },
             ) {
             ControlFlow::Continue(prepared) => prepared,
             ControlFlow::Break(failure) => {
@@ -896,7 +900,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         };
         let admitted = match controller.runtime.admit_peripheral_connection_first_event(
             candidate,
-            crate::scheduler::core::PeripheralConnectionAdmissionObservation { sample },
+            crate::le::peripheral::PeripheralConnectionAdmissionObservation { sample },
         ) {
             Ok(admitted) => admitted,
             Err(failure) => {

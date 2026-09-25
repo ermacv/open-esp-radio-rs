@@ -26,15 +26,18 @@ use crate::{
         BluetoothPostUnlinkAwaiting, DtmActiveReceiverCpuOwned, DtmActiveTransmitterCpuOwned,
         DtmReceiverEvent, DtmRole, DtmRxCompletionOutcome, DtmTransmitterEvent,
         runner::DtmFirstRunningParts,
+        scheduler::{
+            DtmControllerEventPreparationError, DtmEmptySchedulerMergePrepared,
+            DtmRecurringSchedulerItemPhase, DtmSchedulerCompletionObserved,
+            DtmSchedulerCompletionObservedDrainStep, DtmSchedulerCompletionStep,
+            DtmSchedulerHardwareHeadEmptyObserved, DtmSchedulerHardwareHeadRetirementStep,
+            DtmSchedulerHeadPublished, DtmSchedulerRecycleStep, DtmSchedulerRunning,
+            DtmSchedulerRunningDrainStep, DtmSchedulerRxSuccessRecycleStep,
+            DtmSchedulerSoftwareListRemovalReady,
+        },
     },
     scheduler::{
-        BluetoothSchedulerFinishedHardwareListObserved, DtmControllerEventPreparationError,
-        DtmEmptySchedulerMergePrepared, DtmRecurringSchedulerItemPhase,
-        DtmSchedulerCompletionObserved, DtmSchedulerCompletionObservedDrainStep,
-        DtmSchedulerCompletionStep, DtmSchedulerHardwareHeadEmptyObserved,
-        DtmSchedulerHardwareHeadRetirementStep, DtmSchedulerHeadPublished, DtmSchedulerRecycleStep,
-        DtmSchedulerRunning, DtmSchedulerRunningDrainStep, DtmSchedulerRxSuccessRecycleStep,
-        DtmSchedulerSoftwareListRemovalReady, SchedulerFinishedListDrainPending,
+        BluetoothSchedulerFinishedHardwareListObserved, SchedulerFinishedListDrainPending,
         SchedulerFinishedListDrainState, SchedulerHeadPublicationError,
     },
 };
@@ -72,8 +75,9 @@ enum DtmRoleCompletionPhase<'runtime, S, const CAPACITY: usize, Role> {
     },
     PostUnlinkAwaiting {
         task: Task<'runtime, S, CAPACITY>,
-        awaiting:
-            BluetoothPostUnlinkAwaiting<crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>>,
+        awaiting: BluetoothPostUnlinkAwaiting<
+            crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
+        >,
     },
     RemovalReady {
         task: Task<'runtime, S, CAPACITY>,
@@ -347,7 +351,7 @@ pub enum DtmActiveCompletionFaultCause {
 enum DtmRoleCompletionFault<'runtime, S, const CAPACITY: usize, Role> {
     Stop {
         task: Task<'runtime, S, CAPACITY>,
-        _step: crate::scheduler::core::DtmSchedulerStopStep<Role>,
+        _step: crate::le::dtm::scheduler::DtmSchedulerStopStep<Role>,
     },
 
     Completion {
@@ -480,7 +484,7 @@ fn step_stopping_role<'runtime, S, const CAPACITY: usize, Role>(
 where
     S: SchedulerRunInterruptStorage,
 {
-    use crate::scheduler::core::DtmSchedulerStopStep;
+    use crate::le::dtm::scheduler::DtmSchedulerStopStep;
     let DtmRoleCompletionPhase::RunningAwaitingWake { mut task, running } = phase else {
         unreachable!("stop starts only after the running finished-list drain is empty")
     };

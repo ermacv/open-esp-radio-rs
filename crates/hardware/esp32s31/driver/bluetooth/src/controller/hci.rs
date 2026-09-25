@@ -235,7 +235,7 @@ impl<
     >
 where
     M: RawMutex,
-    S: crate::controller::ModemLpTimerSoftwareOwnerStorage,
+    S: crate::modem_timer::ModemLpTimerSoftwareOwnerStorage,
 {
     /// Claim the task HAL lease once and borrow stable software endpoints.
     /// Later calls reject before splitting HCI if the task lease was claimed.

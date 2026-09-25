@@ -150,3 +150,23 @@ pub use legacy::{
         LegacyAdvertisingFirstRunning,
     },
 };
+
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) mod scheduler;
+
+// Public scheduler integration, formerly exported from `scheduler`.
+#[cfg(any(target_arch = "riscv32", test))]
+pub use scheduler::LegacyAdvertisingSequenceObservation;
+#[cfg(any(target_arch = "riscv32", test))]
+pub use scheduler::{
+    LegacyAdvertisingAdmissionObservation, LegacyAdvertisingEmptySchedulerMergeFailure,
+    LegacyAdvertisingEmptySchedulerMergePrepared, LegacyAdvertisingEventPrepared,
+    LegacyAdvertisingFirstEventPreparationError, LegacyAdvertisingFirstEventPreparationFailure,
+    LegacyAdvertisingFirstPreSequence,
+};
+#[cfg(target_arch = "riscv32")]
+pub use scheduler::{
+    LegacyAdvertisingRecurringEventPreparationError,
+    LegacyAdvertisingRecurringEventPreparationFailure, LegacyAdvertisingRecurringPreSequence,
+    LegacyAdvertisingSchedulerHeadPublicationFailure, LegacyAdvertisingSchedulerHeadPublished,
+};

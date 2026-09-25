@@ -187,7 +187,7 @@ impl PassiveScanRuntimeResources {
     )]
     pub(crate) fn restore_recycled(
         &mut self,
-        recycled: crate::scheduler::core::PassiveScanSchedulerRecycled,
+        recycled: crate::le::scanning::scheduler::PassiveScanSchedulerRecycled,
     ) -> Result<
         (
             oer_esp32s31_bluetooth_memory::LeReceivedBatch,

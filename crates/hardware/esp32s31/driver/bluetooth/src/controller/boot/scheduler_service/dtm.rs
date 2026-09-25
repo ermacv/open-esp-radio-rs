@@ -20,8 +20,11 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     )]
     pub(crate) fn start_dtm_scheduler<Role>(
         &mut self,
-        head: crate::scheduler::DtmSchedulerHeadPublished<Role>,
-    ) -> Result<crate::scheduler::DtmSchedulerRunning<Role>, DtmSchedulerStartFailure<Role, S::Error>>
+        head: crate::le::dtm::scheduler::DtmSchedulerHeadPublished<Role>,
+    ) -> Result<
+        crate::le::dtm::scheduler::DtmSchedulerRunning<Role>,
+        DtmSchedulerStartFailure<Role, S::Error>,
+    >
     where
         S: SchedulerRunInterruptStorage,
     {
@@ -32,14 +35,16 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         let address = head.scheduler_item_address();
         let (item, publication) = head.into_parts();
         let run = self.publish_scheduler_run_suffix(address, publication, interrupts);
-        Ok(crate::scheduler::DtmSchedulerRunning::new(item, run))
+        Ok(crate::le::dtm::scheduler::DtmSchedulerRunning::new(
+            item, run,
+        ))
     }
 
     pub(crate) fn step_dtm_stop<Role>(
         &mut self,
-        running: crate::scheduler::DtmSchedulerRunning<Role>,
+        running: crate::le::dtm::scheduler::DtmSchedulerRunning<Role>,
         stop: oer_esp32s31_hal::bluetooth::BluetoothSchedulerStop,
-    ) -> crate::scheduler::core::DtmSchedulerStopStep<Role>
+    ) -> crate::le::dtm::scheduler::DtmSchedulerStopStep<Role>
     where
         S: SchedulerRunInterruptStorage,
     {
@@ -54,9 +59,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// until the later unlink and recycle transaction is complete.
     pub fn observe_dtm_completion<Role>(
         &mut self,
-        running: crate::scheduler::DtmSchedulerRunning<Role>,
+        running: crate::le::dtm::scheduler::DtmSchedulerRunning<Role>,
         wake: crate::interrupt::SchedulerWakeBatch,
-    ) -> crate::scheduler::DtmSchedulerCompletionStep<Role> {
+    ) -> crate::le::dtm::scheduler::DtmSchedulerCompletionStep<Role> {
         self.runtime.observe_dtm_completion(running, wake)
     }
 
@@ -69,9 +74,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     pub fn continue_dtm_running_finished_list_drain<Role>(
         &mut self,
         pending: crate::scheduler::SchedulerFinishedListDrainPending<
-            crate::scheduler::DtmSchedulerRunning<Role>,
+            crate::le::dtm::scheduler::DtmSchedulerRunning<Role>,
         >,
-    ) -> crate::scheduler::DtmSchedulerRunningDrainStep<Role> {
+    ) -> crate::le::dtm::scheduler::DtmSchedulerRunningDrainStep<Role> {
         self.runtime
             .continue_dtm_running_finished_list_drain(pending)
     }
@@ -85,9 +90,9 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     pub fn continue_dtm_completed_finished_list_drain<Role>(
         &mut self,
         pending: crate::scheduler::SchedulerFinishedListDrainPending<
-            crate::scheduler::DtmSchedulerCompletionObserved<Role>,
+            crate::le::dtm::scheduler::DtmSchedulerCompletionObserved<Role>,
         >,
-    ) -> crate::scheduler::DtmSchedulerCompletionObservedDrainStep<Role> {
+    ) -> crate::le::dtm::scheduler::DtmSchedulerCompletionObservedDrainStep<Role> {
         self.runtime
             .continue_dtm_completed_finished_list_drain(pending)
     }
@@ -100,8 +105,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// diagnostic shutdown handling, never for a polling retry.
     pub fn observe_dtm_hardware_head_retirement<Role>(
         &mut self,
-        completed: crate::scheduler::DtmSchedulerCompletionObserved<Role>,
-    ) -> crate::scheduler::DtmSchedulerHardwareHeadRetirementStep<Role> {
+        completed: crate::le::dtm::scheduler::DtmSchedulerCompletionObserved<Role>,
+    ) -> crate::le::dtm::scheduler::DtmSchedulerHardwareHeadRetirementStep<Role> {
         self.runtime.observe_dtm_hardware_head_retirement(completed)
     }
 
@@ -112,7 +117,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// mailbox arm. A busy or exhausted mailbox rejects before unlinking.
     pub fn unlink_and_arm_dtm_software_list_removal<Role>(
         &mut self,
-        observed: crate::scheduler::DtmSchedulerHardwareHeadEmptyObserved<Role>,
+        observed: crate::le::dtm::scheduler::DtmSchedulerHardwareHeadEmptyObserved<Role>,
     ) -> DtmPostUnlinkArmStep<Role> {
         let runtime = &mut self.runtime;
         let mailbox = self.mailbox;
@@ -130,10 +135,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 }
             };
             match runtime.unlink_dtm_software_list(observed) {
-                crate::scheduler::core::DtmSchedulerSoftwareListUnlinkStep::SchedulerIdentityMismatch(
+                crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinkStep::SchedulerIdentityMismatch(
                     observed,
                 ) => DtmPostUnlinkArmStep::SchedulerIdentityMismatch(observed),
-                crate::scheduler::core::DtmSchedulerSoftwareListUnlinkStep::Unlinked(
+                crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinkStep::Unlinked(
                     unlinked,
                 ) => {
                     if mailbox.commit_arm(critical_section, key) {
@@ -155,7 +160,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     pub fn consume_published_dtm_software_list_removal<Role>(
         &mut self,
         awaiting: crate::le::dtm::BluetoothPostUnlinkAwaiting<
-            crate::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
+            crate::le::dtm::scheduler::DtmSchedulerSoftwareListUnlinked<Role>,
         >,
     ) -> DtmSoftwareListRemovalPublishedStep<Role>
     where
@@ -168,12 +173,12 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
             let (key, pending) = match mailbox.take(critical_section, awaiting) {
                 PostUnlinkTake::Recheck { key, unlinked } => {
                     return match runtime.recheck_dtm_software_list_removal(storage, unlinked) {
-                        crate::scheduler::core::DtmSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(
+                        crate::le::dtm::scheduler::DtmSchedulerSoftwareListRemovalRecheck::SchedulerIdentityMismatch(
                             unlinked,
                         ) => DtmSoftwareListRemovalPublishedStep::DirectSchedulerIdentityMismatch {
                             unlinked,
                         },
-                        crate::scheduler::core::DtmSchedulerSoftwareListRemovalRecheck::StorageUnavailable(
+                        crate::le::dtm::scheduler::DtmSchedulerSoftwareListRemovalRecheck::StorageUnavailable(
                             unlinked,
                         ) => match mailbox.rearm(critical_section, key, unlinked) {
                             PostUnlinkRearm::Armed(awaiting) => {
@@ -187,7 +192,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                                 }
                             }
                         },
-                        crate::scheduler::core::DtmSchedulerSoftwareListRemovalRecheck::Pending(
+                        crate::le::dtm::scheduler::DtmSchedulerSoftwareListRemovalRecheck::Pending(
                             unlinked,
                         ) => match mailbox.rearm(critical_section, key, unlinked) {
                             PostUnlinkRearm::Armed(awaiting) => {
@@ -201,7 +206,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                                 }
                             }
                         },
-                        crate::scheduler::core::DtmSchedulerSoftwareListRemovalRecheck::Ready(
+                        crate::le::dtm::scheduler::DtmSchedulerSoftwareListRemovalRecheck::Ready(
                             ready,
                         ) => DtmSoftwareListRemovalPublishedStep::Ready { ready },
                     };
@@ -231,14 +236,14 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                 }
                 PrimaryPublishedInterruptStep::Scheduler { event, .. } => {
                     match runtime.join_dtm_software_list_removal(unlinked, event) {
-                        crate::scheduler::core::DtmSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch {
+                        crate::le::dtm::scheduler::DtmSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch {
                             unlinked,
                             event,
                         } => DtmSoftwareListRemovalPublishedStep::SchedulerIdentityMismatch {
                             unlinked,
                             event,
                         },
-                        crate::scheduler::core::DtmSchedulerSoftwareListRemovalJoin::Pending(
+                        crate::le::dtm::scheduler::DtmSchedulerSoftwareListRemovalJoin::Pending(
                             unlinked,
                         ) => match mailbox.rearm(critical_section, key, unlinked) {
                             PostUnlinkRearm::Armed(awaiting) => {
@@ -252,7 +257,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
                                 }
                             }
                         },
-                        crate::scheduler::core::DtmSchedulerSoftwareListRemovalJoin::Ready(
+                        crate::le::dtm::scheduler::DtmSchedulerSoftwareListRemovalJoin::Ready(
                             ready,
                         ) => DtmSoftwareListRemovalPublishedStep::Ready { ready },
                     }
@@ -267,8 +272,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// RX success is rejected into its separate drain/account/re-arm method.
     pub fn recycle_dtm_completed<Role>(
         &mut self,
-        ready: crate::scheduler::DtmSchedulerSoftwareListRemovalReady<Role>,
-    ) -> crate::scheduler::DtmSchedulerRecycleStep<Role> {
+        ready: crate::le::dtm::scheduler::DtmSchedulerSoftwareListRemovalReady<Role>,
+    ) -> crate::le::dtm::scheduler::DtmSchedulerRecycleStep<Role> {
         self.runtime.recycle_dtm_completed(ready)
     }
 
@@ -279,10 +284,10 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// source-list ownership before exposing the re-armed session.
     pub fn recycle_dtm_receiver_success(
         &mut self,
-        ready: crate::scheduler::DtmSchedulerSoftwareListRemovalReady<
+        ready: crate::le::dtm::scheduler::DtmSchedulerSoftwareListRemovalReady<
             crate::le::dtm::DtmReceiverEvent,
         >,
-    ) -> crate::scheduler::DtmSchedulerRxSuccessRecycleStep {
+    ) -> crate::le::dtm::scheduler::DtmSchedulerRxSuccessRecycleStep {
         self.runtime.recycle_dtm_receiver_success(ready)
     }
 }

@@ -8,14 +8,16 @@ use crate::{
         boot::SingleItemSchedulerCompletionFaultOwner,
     },
     interrupt::SchedulerWakeCell,
-    le::{dtm::DtmPostUnlinkWakeCell, scanning::PassiveScanFirstRunning},
+    le::{
+        dtm::DtmPostUnlinkWakeCell,
+        scanning::{PassiveScanFirstRunning, scheduler::PassiveScanSchedulerRecycleStep},
+    },
     scheduler::{
         BluetoothSchedulerFinishedHardwareListObserved,
         completion::{
             SingleItemCompletion, SingleItemCompletionFault, SingleItemCompletionFaultCause,
             SingleItemCompletionStep, SingleItemCompletionWaitKind,
         },
-        core::PassiveScanSchedulerRecycleStep,
     },
 };
 

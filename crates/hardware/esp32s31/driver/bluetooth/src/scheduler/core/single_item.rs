@@ -652,7 +652,7 @@ impl<const CAPACITY: usize> ControllerPoweredTaskRuntime<'_, CAPACITY> {
 
     pub(crate) fn recheck_single_item_software_list_removal<Role: SingleItemSchedulerRole>(
         &mut self,
-        storage: &impl crate::controller::SchedulerRunInterruptStorage,
+        storage: &impl crate::scheduler::SchedulerRunInterruptStorage,
         unlinked: SingleItemSchedulerSoftwareListUnlinked<Role>,
     ) -> SingleItemSchedulerSoftwareListRemovalRecheck<Role> {
         let address = unlinked.scheduler_item_address();

@@ -1285,16 +1285,18 @@ async fn station_lifecycle_task(mut status: StationStatus) {
                 if !connected {
                     let link = negotiated
                         .filter(|snapshot| matches!(snapshot.state, StationLinkState::Connected));
-                    let security = link.and_then(|snapshot| snapshot.link_security).map(
-                        |security| match security {
+                    let security =
+                        link.and_then(|snapshot| snapshot.link_security)
+                            .map(|security| {
+                                match security {
                             oer_esp32s31_ieee80211_system::StationLinkSecurity::Open => {
                                 oer_hil_protocol::StationLinkSecurity::Open
                             }
                             oer_esp32s31_ieee80211_system::StationLinkSecurity::Wpa2Personal => {
                                 oer_hil_protocol::StationLinkSecurity::Wpa2Personal
                             }
-                        },
-                    );
+                        }
+                            });
                     publish_station_lifecycle(StationLifecycleEvent::Connected {
                         generation,
                         association_bandwidth_mhz: link

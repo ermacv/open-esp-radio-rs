@@ -9,7 +9,7 @@
 
 use crate::{
     ControllerTimeSample,
-    controller::time::{
+    controller_time::{
         ControllerTimeEventError, ControllerTimePendingCore, ControllerTimePendingCoreStep,
         ControllerTimePendingOrphanStep, ControllerTimePendingOwner,
         ControllerTimePendingOwnerStep, ControllerTimeRequest,

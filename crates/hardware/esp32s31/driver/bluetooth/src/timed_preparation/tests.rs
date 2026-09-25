@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use super::*;
+use crate::timed_preparation::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Phase(&'static str);

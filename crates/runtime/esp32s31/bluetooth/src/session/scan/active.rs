@@ -3,13 +3,13 @@
 #![forbid(unsafe_code)]
 
 use oer_esp32s31_bluetooth::{
-    controller::SchedulerRunInterruptStorage,
     le::scanning::{
         PassiveScanHciActiveFault, PassiveScanHciActiveSession, PassiveScanHciActiveStep,
         PassiveScanHciRecurringFailure, PassiveScanHciRecurringRunner,
         PassiveScanHciRecurringRunnerStep, PassiveScanHciReportsPending,
     },
     scheduler::BluetoothSchedulerFinishedHardwareListObserved,
+    scheduler::SchedulerRunInterruptStorage,
 };
 
 /// First externally meaningful result after driving every ready radio edge.

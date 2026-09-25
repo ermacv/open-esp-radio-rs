@@ -4,7 +4,7 @@ use crate::{
     ControllerSchedulerEpoch, ControllerTimeSample, DtmRxInitialEventWindow,
     DtmRxRecurringEventWindow, SchedulerInstant,
     clock::ClockedResources,
-    controller::time::ControllerSchedulerNow,
+    controller_time::ControllerSchedulerNow,
     le::dtm::{DtmChannel, DtmPhy, DtmSchedulerItemEvent},
     resources::{BluetoothRadioHardware, BluetoothStopped},
     runtime_resources::ControllerRuntimeResources,
@@ -67,7 +67,7 @@ fn legacy_advertising_memory() -> LegacyAdvertisingMemoryGraphCpuOwned {
         .expect("the advertising graph fits physical controller SRAM")
 }
 
-fn passive_scan_candidate() -> super::PassiveScanFirstEventCandidate {
+fn passive_scan_candidate() -> crate::le::scanning::scheduler::PassiveScanFirstEventCandidate {
     let storage = std::boxed::Box::leak(std::boxed::Box::new(PassiveScanMemoryGraphStorage::new()));
     let base = PassiveScanMemoryGraphModelAddress::new(0x2f00_1000)
         .expect("the model base uses controller SRAM syntax");
@@ -79,7 +79,7 @@ fn passive_scan_candidate() -> super::PassiveScanFirstEventCandidate {
         .expect("the restricted product limits fit the scanner graph");
     let graph = PassiveScanMemoryGraphStorage::pin_static_model(storage, base, reset, allocation)
         .expect("the scanner graph fits physical controller SRAM");
-    super::PassiveScanFirstEventCandidate::new(
+    crate::le::scanning::scheduler::PassiveScanFirstEventCandidate::new(
         graph,
         PassiveScanPrimaryChannel::Channel37,
         crate::scheduler::SchedulerRawWindow::from_projected_scheduler_window(11_000, 12_000)
@@ -162,9 +162,12 @@ fn connection_request() -> [u8; LEGACY_CONNECT_IND_PDU_BYTES] {
     pdu
 }
 
-use super::{
-    BluetoothSchedulerHardwareListsCleared, DtmControllerEventPreparationError,
-    SchedulerEmptyListMergeError, SchedulerExclusiveListEpoch, SchedulerFinishedListDrainState,
+use crate::{
+    le::dtm::scheduler::DtmControllerEventPreparationError,
+    scheduler::core::{
+        BluetoothSchedulerHardwareListsCleared, SchedulerEmptyListMergeError,
+        SchedulerExclusiveListEpoch, SchedulerFinishedListDrainState,
+    },
 };
 
 static PLATFORM_DROPS: AtomicUsize = AtomicUsize::new(0);
@@ -207,7 +210,7 @@ enum ModelSingleItemIdentity {
 fn single_item_identity_mismatch_returns_the_exact_owner() {
     let owner = Rc::new(());
     let identity = Rc::clone(&owner);
-    let Err((expected, returned)) = super::retain_matching_single_item_identity(
+    let Err((expected, returned)) = crate::scheduler::core::retain_matching_single_item_identity(
         ModelSingleItemIdentity::Expected,
         ModelSingleItemIdentity::Foreign,
         owner,
@@ -254,7 +257,7 @@ fn passive_scanner_merge_cancellation_restores_both_cpu_owned_lists() {
     let admitted = task
         .admit_passive_scan_first_event(
             passive_scan_candidate(),
-            super::PassiveScanAdmissionObservation {
+            crate::le::scanning::scheduler::PassiveScanAdmissionObservation {
                 sample: ControllerTimeSample::for_validation(10_000),
             },
         )
@@ -262,7 +265,7 @@ fn passive_scanner_merge_cancellation_restores_both_cpu_owned_lists() {
     let event = task
         .prepare_passive_scan_first_event(
             admitted,
-            super::PassiveScanSequenceObservation {
+            crate::le::scanning::scheduler::PassiveScanSequenceObservation {
                 sample: ControllerTimeSample::for_validation(10_001),
             },
         )
@@ -308,7 +311,7 @@ fn passive_scanner_pre_sequence_cancellation_releases_the_timeline() {
     let admitted = task
         .admit_passive_scan_first_event(
             passive_scan_candidate(),
-            super::PassiveScanAdmissionObservation {
+            crate::le::scanning::scheduler::PassiveScanAdmissionObservation {
                 sample: ControllerTimeSample::for_validation(10_000),
             },
         )
@@ -339,7 +342,7 @@ fn connection_pre_sequence_cancellation_releases_the_timeline() {
     let admitted = task
         .admit_peripheral_connection_first_event(
             candidate,
-            super::PeripheralConnectionAdmissionObservation {
+            crate::le::peripheral::PeripheralConnectionAdmissionObservation {
                 sample: ControllerTimeSample::for_validation(admission_sample),
             },
         )
@@ -376,7 +379,7 @@ fn connection_merge_cancellation_restores_private_and_common_lists() {
     let admitted = task
         .admit_peripheral_connection_first_event(
             candidate,
-            super::PeripheralConnectionAdmissionObservation {
+            crate::le::peripheral::PeripheralConnectionAdmissionObservation {
                 sample: ControllerTimeSample::for_validation(requested.start().wrapping_sub(1_000)),
             },
         )
@@ -384,7 +387,7 @@ fn connection_merge_cancellation_restores_private_and_common_lists() {
     let event = task
         .prepare_peripheral_connection_first_event(
             admitted,
-            super::PeripheralConnectionSequenceObservation {
+            crate::le::peripheral::PeripheralConnectionSequenceObservation {
                 sample: ControllerTimeSample::for_validation(requested.start().wrapping_sub(500)),
             },
             PeripheralConnectionDefaultTxPowerDbm::new(0),
@@ -445,13 +448,16 @@ fn connection_admission_failure_returns_the_unchanged_candidate() {
         .reserve_initial_window(
             requested.start(),
             requested.end(),
-            super::SchedulerTimingPolicy::from_scheduler_config(task.config, task.time_scale),
+            crate::scheduler::SchedulerTimingPolicy::from_scheduler_config(
+                task.config,
+                task.time_scale,
+            ),
             ControllerTimeSample::for_validation(requested.start().wrapping_sub(1_000)),
         )
         .expect("the pristine timeline accepts the blocking window");
     let failure = match task.admit_peripheral_connection_first_event(
         candidate,
-        super::PeripheralConnectionAdmissionObservation {
+        crate::le::peripheral::PeripheralConnectionAdmissionObservation {
             sample: ControllerTimeSample::for_validation(requested.start().wrapping_sub(1_000)),
         },
     ) {
@@ -460,8 +466,8 @@ fn connection_admission_failure_returns_the_unchanged_candidate() {
     };
     assert_eq!(
         failure.error(),
-        super::PeripheralConnectionFirstEventPreparationError::Timeline(
-            super::SchedulerReservationError::TimelineFull,
+        crate::le::peripheral::PeripheralConnectionFirstEventPreparationError::Timeline(
+            crate::scheduler::SchedulerReservationError::TimelineFull,
         )
     );
     let (allocation, connection) = failure.into_candidate().cancel();
@@ -497,7 +503,7 @@ fn connection_merge_failure_preserves_the_prepared_event() {
     let admitted = task
         .admit_peripheral_connection_first_event(
             candidate,
-            super::PeripheralConnectionAdmissionObservation {
+            crate::le::peripheral::PeripheralConnectionAdmissionObservation {
                 sample: ControllerTimeSample::for_validation(requested.start().wrapping_sub(1_000)),
             },
         )
@@ -505,7 +511,7 @@ fn connection_merge_failure_preserves_the_prepared_event() {
     let event = task
         .prepare_peripheral_connection_first_event(
             admitted,
-            super::PeripheralConnectionSequenceObservation {
+            crate::le::peripheral::PeripheralConnectionSequenceObservation {
                 sample: ControllerTimeSample::for_validation(requested.start().wrapping_sub(500)),
             },
             PeripheralConnectionDefaultTxPowerDbm::new(0),
@@ -648,7 +654,7 @@ fn controller_hal_precedes_complete_scheduler_init_and_arms_fail_stop() {
     assert_eq!(scheduler.controller_time_scale(), time_scale);
     assert_eq!(
         scheduler.controller_time_phase(),
-        crate::controller::time::ControllerTimeWorkerPhase::Idle
+        crate::controller_time::ControllerTimeWorkerPhase::Idle
     );
     assert!(!scheduler.controller_time_needs_recheck());
     assert_eq!(scheduler.modem_timer_capacity(), 4);
@@ -663,7 +669,7 @@ fn controller_hal_precedes_complete_scheduler_init_and_arms_fail_stop() {
     ));
     assert_eq!(
         task.controller_time_phase(),
-        crate::controller::time::ControllerTimeWorkerPhase::Idle
+        crate::controller_time::ControllerTimeWorkerPhase::Idle
     );
     assert!(!task.controller_time_needs_recheck());
     drop((interrupt, task, modem_timer));
@@ -700,7 +706,7 @@ fn rejected_initial_sequence_gate_releases_the_controller_owned_reservation() {
         ControllerTimeSample::for_validation(100),
     );
     assert_eq!(
-        super::dtm::dtm_scheduler_current(&now),
+        crate::le::dtm::scheduler::lifecycle::dtm_scheduler_current(&now),
         SchedulerInstant::from_image(1_000)
     );
 
@@ -780,7 +786,7 @@ fn first_advertising_event_uses_common_admission_and_cancels_losslessly() {
     let admitted = task
         .admit_legacy_advertising_first_event(
             candidate,
-            super::LegacyAdvertisingAdmissionObservation {
+            crate::le::advertising::scheduler::LegacyAdvertisingAdmissionObservation {
                 sample: ControllerTimeSample::for_validation(raw_start.wrapping_sub(200)),
             },
         )
@@ -821,7 +827,7 @@ fn first_advertising_event_uses_common_admission_and_cancels_losslessly() {
     let admitted = task
         .admit_legacy_advertising_first_event(
             candidate,
-            super::LegacyAdvertisingAdmissionObservation {
+            crate::le::advertising::scheduler::LegacyAdvertisingAdmissionObservation {
                 sample: ControllerTimeSample::for_validation(raw_start.wrapping_sub(200)),
             },
         )
@@ -829,7 +835,7 @@ fn first_advertising_event_uses_common_admission_and_cancels_losslessly() {
     let prepared = task
         .prepare_legacy_advertising_first_event(
             admitted,
-            super::LegacyAdvertisingSequenceObservation {
+            crate::le::advertising::scheduler::LegacyAdvertisingSequenceObservation {
                 sample: ControllerTimeSample::for_validation(raw_start.wrapping_sub(100)),
             },
         )
@@ -882,7 +888,7 @@ fn rejected_recurring_sequence_gate_releases_the_controller_owned_reservation() 
         ControllerTimeSample::for_validation(100),
     );
     assert_eq!(
-        super::dtm::dtm_scheduler_current(&now),
+        crate::le::dtm::scheduler::lifecycle::dtm_scheduler_current(&now),
         SchedulerInstant::from_image(1_000)
     );
 

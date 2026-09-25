@@ -114,3 +114,31 @@ pub use tx::{
     BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES, BLUETOOTH_DTM_TX_PACKET_STORAGE_BYTES,
     BLUETOOTH_LE_TX_PACKET_PREFIX_BYTES, DtmPreparedTxGraph, DtmTxGraphPrepare,
 };
+
+// Public DTM scheduler lifecycle, formerly exported from `scheduler`.
+#[cfg(target_arch = "riscv32")]
+pub use scheduler::DtmSchedulerRecycleStep;
+#[cfg(any(target_arch = "riscv32", test))]
+pub use scheduler::{DtmControllerEventPreparationError, DtmSchedulerRunning};
+#[cfg(target_arch = "riscv32")]
+pub use scheduler::{
+    DtmControllerRxPreparationFailure, DtmControllerRxRecurringPreparationFailure,
+    DtmControllerTxPreparationFailure, DtmControllerTxRecurringPreparationFailure,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+pub use scheduler::{
+    DtmEmptySchedulerMergePrepared, DtmInitialSchedulerItemPhase, DtmRecurringSchedulerItemPhase,
+};
+#[cfg(target_arch = "riscv32")]
+pub use scheduler::{
+    DtmSchedulerCompletionObserved, DtmSchedulerCompletionObservedDrainStep,
+    DtmSchedulerCompletionStep, DtmSchedulerHardwareHeadEmptyObserved,
+    DtmSchedulerHardwareHeadRetirementStep,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+pub use scheduler::{DtmSchedulerHeadPublicationFailure, DtmSchedulerHeadPublished};
+#[cfg(target_arch = "riscv32")]
+pub use scheduler::{
+    DtmSchedulerRunningDrainStep, DtmSchedulerRxSuccessRecycleStep,
+    DtmSchedulerSoftwareListRemovalReady, DtmSchedulerSoftwareListUnlinked,
+};

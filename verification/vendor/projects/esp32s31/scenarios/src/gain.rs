@@ -14,8 +14,8 @@ use crate::session::Session;
 use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_domain::{
     CallCapture, ComparisonVerdict, DataSelector, DeviceBehavior, DeviceDeclaration,
-    EntrySelection, ExecutionEvent, ExecutionGap, ExecutionRequest, ExecutionStop, FunctionSource,
-    Invocation, LinkRequest, ObservedCallTarget, RegionLifetime, RegisterCell, SessionReset,
+    EntrySelection, ExecutionEvent, ExecutionRequest, ExecutionStop, FunctionSource, Invocation,
+    LinkRequest, ObservedCallTarget, RegionLifetime, RegisterCell, SessionReset,
 };
 use std::{fs, path::PathBuf};
 
@@ -1017,13 +1017,17 @@ impl Gain {
                 MAX_EVENTS,
             )?
             .records;
+        // The unknown curve propagates into the published gain words, which
+        // the comparison cannot prove.
         assert!(matches!(
             stop(&records, 1, true),
-            ExecutionStop::Incomplete {
-                reason: ExecutionGap::Memory { .. },
-                ..
-            }
+            ExecutionStop::Returned { .. }
         ));
+        assert!(records.iter().any(|r| matches!(
+            r,
+            blobray_domain::ExecutionEvidence::FinalMemory { case: 1, replacement: true, chunk }
+                if chunk.mask().is_some_and(|mask| chunk.known & mask != mask)
+        )));
         let mut uninstalled = self
             .bluetooth_request
             .clone()

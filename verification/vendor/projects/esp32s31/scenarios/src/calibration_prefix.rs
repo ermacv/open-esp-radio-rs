@@ -9,8 +9,8 @@ use crate::phy::delay_calls;
 use blobray_domain::{
     CommandCell, CommandObservation, ComparisonDifference, ComparisonVerdict, DeviceBehavior,
     DeviceDeclaration, ExecutionCase, ExecutionEvent, ExecutionEvidence, ExecutionGap,
-    ExecutionRegion, ExecutionStop, Invocation, MemoryAccess, MemorySelection, ModelStatus,
-    ReadRun, RegionLifetime, RegisterCell, SessionReset,
+    ExecutionRegion, ExecutionStop, Invocation, MemorySelection, ModelStatus, ReadRun,
+    RegionLifetime, RegisterCell, SessionReset,
 };
 
 const DESTINATION: u32 = PARAMETER_DESTINATION;
@@ -762,13 +762,12 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         MAX_EVENTS,
         Some(ComparisonVerdict::Incomplete),
     )?;
+    // The unknown parameter pointer loads an unknown address, which is never
+    // dereferenced.
     assert!(matches!(
         stop(&records, 1, false),
         ExecutionStop::Incomplete {
-            reason: ExecutionGap::Memory {
-                address: ROM_PARAMETER_POINTER,
-                access: MemoryAccess::Read
-            },
+            reason: ExecutionGap::UnknownRegister { .. },
             ..
         }
     ));

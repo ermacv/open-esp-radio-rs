@@ -775,13 +775,12 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         MAX_EVENTS,
         Some(ComparisonVerdict::Incomplete),
     )?;
+    // The unknown interface pointer loads an unknown callback, which is never
+    // called.
     assert!(matches!(
         stop(&records, 0, false),
         ExecutionStop::Incomplete {
-            reason: ExecutionGap::Memory {
-                address: ROM_INTERFACE_POINTER,
-                access: MemoryAccess::Read
-            },
+            reason: ExecutionGap::UnknownRegister { .. },
             ..
         }
     ));

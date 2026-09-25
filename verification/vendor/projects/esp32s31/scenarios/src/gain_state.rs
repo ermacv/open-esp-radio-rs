@@ -12,7 +12,7 @@ use crate::layout::*;
 use crate::phy::Right;
 use blobray_domain::{
     CallCapture, CallWordCount, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, ExecutionGap,
-    ExecutionRequest, ExecutionStop, MemoryAccess, RegionLifetime, RegisterCell, SessionReset,
+    ExecutionRequest, ExecutionStop, RegionLifetime, RegisterCell, SessionReset,
 };
 use serde::Serialize;
 
@@ -317,14 +317,13 @@ fn storage_negative(g: &mut Gain, baseline: &Baseline) -> Result<()> {
             MAX_EVENTS,
         )?
         .records;
-    assert!(!g.last_manifest_complete());
-    assert!(matches!(
-        stop(&records, 1, false),
-        ExecutionStop::Incomplete {
-            reason: ExecutionGap::Memory { .. },
-            ..
-        }
-    ));
+    // The unknown cache propagates into the recovered state, which the
+    // comparison cannot prove.
+    assert!(records.iter().any(|r| matches!(
+        r,
+        blobray_domain::ExecutionEvidence::FinalMemory { case: 1, replacement: false, chunk }
+            if chunk.mask().is_some_and(|mask| chunk.known & mask != mask)
+    )));
     assert!(!has_events(&records));
     capacity(g, baseline)
 }
@@ -517,9 +516,7 @@ fn power_negative(g: &mut Gain, request: &ExecutionRequest) -> Result<()> {
     assert!(calls(&observed, mac).is_empty());
     assert!(effects(&observed, true).is_empty());
 
-    // Leave the attenuation byte and later policy inputs unknown. Loading an
-    // unknown byte stops the seed phase, so the policy phase cannot select a
-    // gain or MAC index from partially known parameters.
+    // Leave the attenuation byte and later policy inputs unknown.
     let mut rows = request.cases[PUBLISHING..PUBLISHING + 3].to_vec();
     let source = rows[0]
         .vendor
@@ -539,14 +536,23 @@ fn power_negative(g: &mut Gain, request: &ExecutionRequest) -> Result<()> {
             MAX_EVENTS,
         )?
         .records;
+    // The seed copies the unknown byte into the parameters; the policy phase
+    // stops at the first decision on it, so it selects no gain or MAC index
+    // from partially known parameters.
     assert!(!g.last_manifest_complete());
     assert!(matches!(
         stop(&records, 0, false),
-        ExecutionStop::Incomplete { reason: ExecutionGap::Memory { address, access: MemoryAccess::Read }, .. } if address == INPUT + 8
+        ExecutionStop::Returned { .. }
     ));
-    assert_eq!(stop(&records, 1, false), ExecutionStop::BlockedByPriorPhase);
-    assert_eq!(stop(&records, 2, false), ExecutionStop::BlockedByPriorPhase);
-    assert!(events(&records, 1, false).is_empty() && events(&records, 2, false).is_empty());
+    assert!(matches!(
+        stop(&records, 2, false),
+        ExecutionStop::Incomplete {
+            reason: ExecutionGap::UnknownRegister { .. },
+            ..
+        }
+    ));
+    let observed = events(&records, 2, false);
+    assert!(calls(&observed, set_gain).is_empty() && calls(&observed, mac).is_empty());
     Ok(())
 }
 

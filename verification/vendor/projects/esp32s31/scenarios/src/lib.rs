@@ -18,6 +18,7 @@ pub mod layout;
 pub mod phy;
 pub mod research;
 pub mod rfpll;
+pub mod rx_gain;
 pub mod session;
 
 /// Pinned `libphy.a` archive (ESP-IDF PHY source revision `b88e4b76`).

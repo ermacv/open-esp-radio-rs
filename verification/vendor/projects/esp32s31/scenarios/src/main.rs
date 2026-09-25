@@ -7,7 +7,7 @@ use oer_esp32s31_vendor_scenarios::{
     harness::{Budget, Result},
     harness_edges, i2c, i2c_transport,
     phy::PhyOptions,
-    research, rfpll,
+    research, rfpll, rx_gain,
 };
 use std::{path::PathBuf, process::ExitCode};
 
@@ -34,6 +34,15 @@ enum Scenario {
     Channel {
         #[command(flatten)]
         common: Common,
+    },
+    /// Complete RX-gain root: publication guards, DC calibration and
+    /// failed-channel, minimum-search and shared-budget containment.
+    RxGain {
+        #[command(flatten)]
+        common: Common,
+        /// Authenticated SDK firmware supplying the never-executed diagnostics symbol.
+        #[arg(long)]
+        phy_sdk: PathBuf,
     },
     /// Captured PHY research, navigation, register/data review and
     /// source-free preservation of every retained result.
@@ -202,10 +211,22 @@ fn channel(common: Common) -> Result<ExitCode> {
     ))
 }
 
+fn rx_gain(common: Common, phy_sdk: PathBuf) -> Result<ExitCode> {
+    let mut ctx = rx_gain::RxGain::new(&common.phy(), &phy_sdk)?;
+    rx_gain::exercise(&mut ctx)?;
+    ctx.preserve(0)?;
+    Ok(finish(
+        &[],
+        "authenticated RX gain publication, calibration, containment and source-free replay passed",
+        &ctx.run,
+    ))
+}
+
 fn main() -> ExitCode {
     let result = match Cli::parse().scenario {
         Scenario::Gain { common, rftest } => gain(common, rftest),
         Scenario::Channel { common } => channel(common),
+        Scenario::RxGain { common, phy_sdk } => rx_gain(common, phy_sdk),
         Scenario::Research {
             binary,
             library,

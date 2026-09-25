@@ -596,16 +596,65 @@ failure cases require no partial output publication. These are modeled
 peripheral responses, not proof of physical channel readiness or RF quality.
 
 
-The RX-gain comparison executes complete `phy_set_rx_gain_table` and the
-production `rx_gain_init` executor, including nested ROM DC measurements and
-both gain-memory publishers. It compares ordered hardware effects and projected
-per-gain/base/fine DC coefficients plus the two bank limits. Profiles exercise
-DC/table guards, retained register values, signed estimator inputs, delayed
-I2C completion and work-mode settling. Shared-bank baseband DC is compared
-independently from Wi-Fi corrections. Unknown analog reads and unresolved data
-relocations fail closed; the archive's missing ROM data symbols are resolved by
-the linker against the authenticated companion, preserving relocation addends.
-A stuck-channel profile requires failure without output or gain-table publication.
+The `rx-gain` scenario of the [typed scenario package](scenarios/src/rx_gain.rs)
+compares complete `phy_set_rx_gain_table` with the production `rx_gain_init`
+executor (`open_phy_calibration_trace_rx_gain`). It includes nested ROM DC
+measurements and both gain-memory publishers. `--phy-sdk` is required: the
+co-located RFPLL diagnostics reference `phy_printf`, whose never-executed
+definition is proposed from that firmware after the ROM.
+
+```console
+cargo xtask vendor-scenario rx-gain --library /private/libphy.a \
+  --rom /private/esp32s31_rev0_rom.elf \
+  --production target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf \
+  --phy-sdk /private/phy_tracking_reference.elf \
+  --linker /usr/bin/ld.lld --output target/blobray-research/rx-gain --limit-mode watchdog
+```
+
+Each profile copies the parameters, runs the real `phy_get_romfunc_addr`
+installer and executes the root. The models declare these inputs:
+
+- the work-mode settle branch;
+- idle PBus and PBus readiness;
+- the RX analog cell with delayed I2C completion;
+- channel readiness;
+- estimator readiness and signed samples;
+- the transport controls.
+
+Every other radio register is the retained aperture.
+
+**Matrices.** Each matrix is one request per fill.
+
+- Publication takes both DC/table guards: 16 profiles.
+- Calibration uses samples 0, ±64 and ±2^24: 40 profiles.
+- Both matrices cover seeds 1 and 17, both fills and both settle branches.
+
+**Checks for every profile:**
+
+- ordered effects match on both sides, including readiness waits;
+- both sides read the same never-written registers;
+- production uses at most twice the vendor's steps;
+- the 52 projected per-gain, base and fine DC coefficients and the two bank
+  limits equal the vendor's committed `phy_param` state.
+
+The only exclusion is the outer DC control snapshot that the vendor reads when
+DC is skipped.
+
+**Production-only failures, per fill.** Each must leave the seeded coefficients
+and gain memory unpublished:
+
+- a channel that never becomes ready (typed failure 4);
+- an estimator that never completes (failure 4, no minimum);
+- slow successful minima that exhaust the shared 100,000-operation budget
+  (failure 5, after more than one minimum and before the input ends).
+
+**Negative cases:**
+
+- a saturating production sample is a DIFF;
+- omitted callback installation leaves the vendor INCOMPLETE;
+- an undersized event capacity publishes nothing.
+
+All retained executions replay after move/backup/restore.
 
 These RX-gain profiles do not execute the enclosing calibration parent's
 working-channel restoration, temperature callback, MAC baseband restoration or

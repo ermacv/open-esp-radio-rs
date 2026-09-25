@@ -197,7 +197,7 @@ Checkpoint 12.R, including checkpoint 12.P (execution performance), is
 complete; no Python scenario code remains. Unit 12.6 is complete: channel
 restoration, all temperature-prefix sensor windows and stuck readiness.
 Checkpoint 12.M (mechanisms instead of handwritten knowledge) is complete.
-Unit 12.7 is active on those mechanisms.
+Unit 12.7 (RX gain/calibration) is complete. Unit 12.8 is active.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -825,8 +825,8 @@ current owner docs and the ordinary stage gates. No partial unit is completion.
 | 12.R | done | Typed Rust verification scenarios, detailed below. Every current Python scenario, oracle and host test moves to a Rust owner package with unchanged cases, verdicts, negatives and preservation; Python is removed. Stage 12.6–12.10 obligations are unchanged. |
 | 12.6 | done | Channel restoration: `phy_rfpll/channel.rs`. Actual callback installation, all temperature-prefix sensor ranges, full-root gain publication and committed channel/bandwidth/temperature; stuck readiness cannot publish gain or semantic output. Prefix and full-root evidence remain distinct. |
 | 12.M | done | Mechanisms instead of handwritten knowledge, detailed below. Stage 12.7–12.10 obligations are unchanged. |
-| 12.7 | active | RX gain/calibration: `phy_rfpll/rx_gain.rs`. Both complete roots, DC/table guards, signed estimators, delayed I2C/settle, projected coefficients and bank limits; failed channel, minimum search and shared budget preserve prior coefficients. Readiness observations and genuine output publication remain visible. |
-| 12.8 | pending | TX-DC/PWDET: `phy_rfpll/tx_dc_pwdet.rs`. Actual search/PBus/SAR children, Wi-Fi/BT selection, DC rows, constant/alternating samples and tone/settle paths. Independent PBus/SAR faults cannot publish calibration; observation capacity differs from time/work limits. Preserve seeded gain adjustment and explicit unused-read exclusions. |
+| 12.7 | done | RX gain/calibration: `phy_rfpll/rx_gain.rs`. Both complete roots, DC/table guards, signed estimators, delayed I2C/settle, projected coefficients and bank limits; failed channel, minimum search and shared budget preserve prior coefficients. Readiness observations and genuine output publication remain visible. |
+| 12.8 | active | TX-DC/PWDET: `phy_rfpll/tx_dc_pwdet.rs`. Actual search/PBus/SAR children, Wi-Fi/BT selection, DC rows, constant/alternating samples and tone/settle paths. Independent PBus/SAR faults cannot publish calibration; observation capacity differs from time/work limits. Preserve seeded gain adjustment and explicit unused-read exclusions. |
 | 12.9 | pending | Combined calibration and tracking parents: `phy_rfpll/combined.rs`, `phy_rfpll/parent.rs`, `phy_rfpll/graph.rs`. Execute real children, guards/grant order, channel 13/HT40, client/thermal domains, RFPLL disabled/enabled and signed corrections. Failed TX preserves pre-calibration state and earlier completed power/RFPLL state. Modeled child completions cannot satisfy complete-parent acceptance. |
 | 12.10 | pending | Combined practical-PHY checkpoint: all units and stage-11 scenarios work together under native identities, shared budgets and preservation. Complete required intrinsic/reviewed-summary coverage with direct semantic/unknown/resource tests and explicit applicability; changing model, summary or production invalidates identity. No summary impersonates executed capture. All relevant integration suites, standalone, formatting, strict Clippy, owned public/private docs and the repository CI checks pass before closing stage 12. |
 
@@ -1204,3 +1204,47 @@ unchanged cases, verdicts, negatives and preservation:
 RX gain work in progress also passes on the aperture. All 2044 Blobray
 workspace tests pass, as do formatting, strict Clippy, docs and the standalone
 check.
+
+12.7 acceptance: the typed `rx-gain` scenario links `phy_set_rx_gain_table`
+with the real callback installer and proposed ROM companions. The co-located
+diagnostics' `phy_printf` is proposed from `--phy-sdk`. The root is compared
+with `open_phy_calibration_trace_rx_gain` over the radio aperture and explicit
+inputs.
+
+- **Profiles.** Sixteen publication profiles cover both DC/table guards, and
+  forty calibration profiles cover samples 0, ±64 and ±2^24. Both include seeds
+  1 and 17, both fills and both settle branches.
+- **Checks.** Every profile matches on ordered effects, including readiness
+  waits, and on the never-written registers read. Production stays within twice
+  the vendor's steps. The 52 projected coefficients and two bank limits equal
+  the vendor's committed state.
+- **Failures.** Production-only failures preserve the seeded coefficients and
+  gain memory: a channel that never becomes ready (4), an estimator that never
+  completes (4), and slow successful minima that exhaust the shared budget
+  (5, with more than one minimum).
+- **Negatives.** A saturating production sample is DIFF, omitted installation
+  is INCOMPLETE, and event exhaustion publishes nothing. All 8 retained
+  executions replay after move and backup/restore.
+
+Unit 12.7 also needed two Blobray changes, measured on the RX calibration
+request:
+
+- Evidence and query record spools were written unbuffered, with an `lseek`
+  per fragment: about 15 million syscalls per request. They are now buffered.
+- Checkpoints now sample the clock and report temporary usage on a stride,
+  while cancellation and the work limit stay exact on every checkpoint.
+
+The request's compare fell from 4.6 s to 0.75 s and its evidence read from
+4.4 s to 1.1 s, with byte-identical execution identities and documents. Full
+scenario runs:
+
+| Scenario | Before | After |
+| --- | --- | --- |
+| rx-gain | 149 s | 25 s |
+| gain | 52 s | 13 s |
+| i2c | 76 s | 32 s |
+| channel | 53 s | 20 s |
+| research | 86 s | 82 s |
+
+All 2049 Blobray tests, formatting, strict Clippy, docs and the standalone
+check pass. This is RX calibration state, not RF qualification.

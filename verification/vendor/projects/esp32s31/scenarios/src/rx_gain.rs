@@ -1,0 +1,722 @@
+//! Complete RX-gain root over the captured archive and ROM against compiled
+//! production.
+//!
+//! Publication cases take the table/DC guards; calibration cases execute the
+//! complete DC estimator path with signed samples, delayed analog I2C and both
+//! work-mode settle branches. Both compare ordered effects, the projected
+//! per-gain/base/fine DC coefficients and the two bank limits. Production-only
+//! cases require a failed channel, a failed minimum search and an exhausted
+//! shared budget to leave coefficients and gain memory unpublished. Software
+//! comparison under explicit peripheral inputs, never hardware qualification.
+use crate::evidence::{PhyEffect, environment_reads, events, output, phy_effects, steps};
+use crate::harness::{Buffer, Input, Result, case, evidence, selection};
+use crate::i2c::PHY_SDK_SHA;
+use crate::i2c::{all_complete, returned_low};
+use crate::layout::*;
+use crate::phy::delay_calls;
+use crate::phy::{PhyImage, PhyOptions, Right, image_layout, select, start_session};
+use crate::session::request;
+use blobray_domain::{
+    CommandCell, ComparisonVerdict, DeviceDeclaration, ExecutionCase, ExecutionEvidence,
+    Invocation, LinkRequest, ReadRun, SessionReset,
+};
+use std::path::Path;
+
+pub type Options = PhyOptions;
+
+/// Vendor root arguments: the 2437 MHz channel frequency and bandwidth 0.
+const ROOT_FREQUENCY: u32 = 2437;
+const ROOT_BANDWIDTH: u32 = 0;
+/// PBus RX path value selected by both sides.
+const RX_PATH: u8 = 0xbf;
+/// Semantic parameter words: 16 Wi-Fi per-gain DC, 2 Wi-Fi base, 22 shared
+/// per-gain DC, 12 RXBB adjustments and one Wi-Fi auxiliary word.
+const PARAMETER_WORDS: usize = 53;
+/// Production output: the 52 coefficient words, then the Wi-Fi and shared
+/// last gain indices.
+const OUTPUT_WORDS: usize = 54;
+const OUTPUT_BYTES: u32 = (OUTPUT_WORDS * 2) as u32;
+/// Untouched production output bytes beyond the seeded coefficients.
+const OUTPUT_FILL: u8 = 0xa5;
+/// `phy_param` offsets of the semantic RX state.
+const WIFI_INDEX_DC: usize = 334;
+const WIFI_DC_BASE: usize = 366;
+const SHARED_INDEX_DC: usize = 436;
+const RXBB_ADJUSTMENTS: usize = 480;
+const WIFI_AUXILIARY: usize = 212;
+const GUARD_FLAGS: usize = 164;
+const TABLE_MODE: usize = 16;
+const PARAMETER_RX_PATH: usize = 2;
+const SHARED_LAST_INDEX: usize = 288;
+const WIFI_LAST_INDEX: usize = 289;
+/// Initial last-index bytes and two cleared selector bytes.
+const INITIAL_SHARED_LAST: u8 = 75;
+const INITIAL_WIFI_LAST: u8 = 71;
+const CLEARED: [usize; 2] = [79, 430];
+/// Guard flags: DC already calibrated (bit 0) and tables initialized (bit 1).
+const DC_CALIBRATED: u8 = 1;
+const TABLES_INITIALIZED: u8 = 2;
+/// Outer DC control snapshot the vendor reads even when DC is skipped.
+const DC_CONTROL: u32 = 0x2010_0434;
+/// DC estimator readiness (bit 16), signed samples and activity.
+const ESTIMATOR_READY: u32 = 0x2010_047c;
+const ESTIMATOR_DONE: u32 = 0x10000;
+const ESTIMATOR_SAMPLE: u32 = 0x2010_0464;
+const ESTIMATOR_NEGATED: u32 = 0x2010_0468;
+const ESTIMATOR_MAGNITUDE: u32 = 0x2010_046c;
+const ESTIMATOR_ACTIVITY: u32 = 0x2010_08d0;
+/// PBus readiness word of the calibration path.
+const PBUS_READY: u32 = 0x2010_0894;
+const PBUS_READY_VALUE: u32 = 0x0100_0100;
+/// Idle PBus status with writable retained clock bits.
+const PBUS_IDLE: u32 = 0x1234;
+const WORK_MODE_SETTLE: u32 = 2;
+/// Retained RX analog selector (block 0x67, register 3).
+const RX_ANALOG: u32 = 0x0367;
+/// Production may execute at most this multiple of the vendor's steps.
+const MAX_PRODUCTION_STEP_MULTIPLIER: u64 = 2;
+/// Production outcomes of the typed RX calibration failures.
+const FAILED_CALIBRATION: u32 = 4;
+const OPERATION_LIMIT: u32 = 5;
+/// Estimator readiness samples of the failed and slow minimum profiles.
+const NEVER_READY_SAMPLES: u32 = 10_000;
+const SLOW_MINIMA: u32 = 20;
+const SLOW_MINIMUM_POLLS: u32 = 9_000;
+/// Event capacity of the shared-budget case: every slow poll is a recorded read.
+const BUDGET_EVENTS: u32 = SLOW_MINIMA * (SLOW_MINIMUM_POLLS + 1) + MAX_EVENTS;
+/// Cases of one profile: parameter setup, callback installation and the root.
+const PROFILE_CASES: u32 = 3;
+/// Input index of the PHY SDK firmware after archive, ROM and production.
+const PHY_SDK_INPUT: u64 = 3;
+/// Case index of the root within its profile.
+const ROOT: u32 = 2;
+
+/// One RX root profile.
+#[derive(Clone, Copy, Debug)]
+pub struct Profile {
+    /// Guard flags; zero executes calibration.
+    pub flags: u8,
+    /// Signed estimator sample of the calibration path.
+    pub sample: i32,
+    pub seed: u16,
+    pub fill: u8,
+    /// Work-mode settle branch and delayed analog I2C completion.
+    pub settle: bool,
+}
+
+impl Profile {
+    fn calibrates(&self) -> bool {
+        self.flags == 0
+    }
+    fn label(&self) -> String {
+        format!(
+            "rx-flags{}-sample{}-seed{}-fill{:x}-settle{}",
+            self.flags,
+            self.sample,
+            self.seed,
+            self.fill,
+            u8::from(self.settle)
+        )
+    }
+}
+
+fn profiles(flags: &[u8], samples: &[i32]) -> Vec<Profile> {
+    let mut result = vec![];
+    for &sample in samples {
+        for &flags in flags {
+            for seed in [1, 17] {
+                for fill in FILLS {
+                    for settle in [false, true] {
+                        result.push(Profile {
+                            flags,
+                            sample,
+                            seed,
+                            fill,
+                            settle,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
+/// Publication through both table/DC guards.
+pub fn publication_profiles() -> Vec<Profile> {
+    profiles(&[DC_CALIBRATED, DC_CALIBRATED | TABLES_INITIALIZED], &[0])
+}
+
+/// Complete calibration with zero, small and saturating signed samples.
+pub fn calibration_profiles() -> Vec<Profile> {
+    profiles(&[0], &[0, 64, -64, 1 << 24, -(1 << 24)])
+}
+
+/// Deterministic 9-bit per-gain DC words, signed RXBB adjustments and the
+/// auxiliary word, derived from `seed`.
+pub fn parameters(seed: u16) -> [u16; PARAMETER_WORDS] {
+    core::array::from_fn(|i| match i {
+        0..40 => seed.wrapping_add(i as u16 * 7) & 0x1ff,
+        40..52 => (i as i16 - 46).wrapping_mul(seed as i16) as u16,
+        _ => 0x125,
+    })
+}
+
+fn put_words(image: &mut [u8], offset: usize, values: &[u16]) {
+    for (i, value) in values.iter().enumerate() {
+        image[offset + 2 * i..offset + 2 * i + 2].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+/// Captured `phy_param` image of one profile.
+pub fn parameter_image(profile: &Profile) -> Vec<u8> {
+    let values = parameters(profile.seed);
+    let mut image = vec![0u8; PHY_PARAM_BYTES as usize];
+    let guards = u32::from(profile.flags & DC_CALIBRATED) * 128
+        + u32::from((profile.flags & TABLES_INITIALIZED) >> 1) * 512;
+    image[GUARD_FLAGS..GUARD_FLAGS + 4].copy_from_slice(&guards.to_le_bytes());
+    // The qualified normal gain table; the alternate vendor table mode is excluded.
+    image[TABLE_MODE..TABLE_MODE + 2].copy_from_slice(&0u16.to_le_bytes());
+    put_words(&mut image, WIFI_INDEX_DC, &values[..16]);
+    put_words(&mut image, WIFI_DC_BASE, &values[16..18]);
+    put_words(&mut image, SHARED_INDEX_DC, &values[18..40]);
+    put_words(&mut image, RXBB_ADJUSTMENTS, &values[40..52]);
+    put_words(&mut image, WIFI_AUXILIARY, &values[52..]);
+    image[PARAMETER_RX_PATH] = RX_PATH;
+    image[SHARED_LAST_INDEX] = INITIAL_SHARED_LAST;
+    image[WIFI_LAST_INDEX] = INITIAL_WIFI_LAST;
+    for offset in CLEARED {
+        image[offset] = 0;
+    }
+    image
+}
+
+/// Vendor RX state in production output order.
+pub fn vendor_state(parameters: &[u8]) -> Vec<u8> {
+    let mut state = parameters[WIFI_INDEX_DC..WIFI_DC_BASE + 4].to_vec();
+    state.extend_from_slice(&parameters[SHARED_INDEX_DC..RXBB_ADJUSTMENTS + 24]);
+    state.extend([
+        parameters[WIFI_LAST_INDEX],
+        0,
+        parameters[SHARED_LAST_INDEX],
+        0,
+    ]);
+    state
+}
+
+/// Production output seeded with the input coefficients and untouched indices.
+fn seeded_output(profile: &Profile) -> Vec<u8> {
+    let mut bytes: Vec<u8> = parameters(profile.seed)[..52]
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .collect();
+    bytes.extend([OUTPUT_FILL; 4]);
+    bytes
+}
+
+/// Explicit peripheral inputs; `ready` selects channel readiness.
+pub fn rx_models(profile: &Profile, ready: bool) -> Vec<DeviceDeclaration> {
+    // Work mode selects the settle branch and PBus starts idle; every other
+    // radio register is retained storage starting with the fill pattern.
+    let mut inputs = vec![
+        (WORK_MODE, u32::from(profile.settle) * WORK_MODE_SETTLE),
+        (PBUS_STATUS, PBUS_IDLE),
+    ];
+    let mut models = vec![];
+    if profile.calibrates() {
+        inputs.extend([(I2C_READ_MASK, 0), (I2C_HOST_MAP, 0)]);
+        models.push(analog_bank(
+            "rx-analog",
+            "explicit retained RX analog register",
+            u32::from(profile.settle) * 2,
+            [0, 0],
+            vec![CommandCell {
+                selector: RX_ANALOG,
+                initial: u32::from(profile.fill),
+                reads: None,
+            }],
+        ));
+        let sample = profile.sample;
+        for (id, address, value) in [
+            ("pbus-ready", PBUS_READY, PBUS_READY_VALUE),
+            (
+                "channel-ready",
+                CHANNEL_STATUS,
+                if ready { CHANNEL_READY } else { 0 },
+            ),
+            ("estimator-ready", ESTIMATOR_READY, ESTIMATOR_DONE),
+            ("estimator-sample", ESTIMATOR_SAMPLE, sample as u32),
+            (
+                "estimator-negated",
+                ESTIMATOR_NEGATED,
+                sample.wrapping_neg() as u32,
+            ),
+            (
+                "estimator-magnitude",
+                ESTIMATOR_MAGNITUDE,
+                sample.unsigned_abs(),
+            ),
+        ] {
+            models.push(constant_read(id, address, value));
+        }
+    }
+    models.insert(
+        0,
+        register_bank(
+            "rx-inputs",
+            "work-mode settle branch, idle PBus and transport controls",
+            inputs,
+        ),
+    );
+    models.push(radio_aperture(profile.fill));
+    models
+}
+
+/// Ordered effects; a skipped DC path still snapshots the outer DC control on
+/// the vendor side, which is not an effect.
+pub fn rx_effects(observed: &[blobray_domain::ExecutionEvent], flags: u8) -> Vec<PhyEffect> {
+    phy_effects(observed, &[PBUS_STATUS])
+        .into_iter()
+        .filter(|e| flags == 0 || !matches!(e, PhyEffect::Read(DC_CONTROL, _)))
+        .collect()
+}
+
+/// Environment-supplied registers under the same exclusion as `rx_effects`.
+pub fn rx_environment(
+    observed: &[blobray_domain::ExecutionEvent],
+    flags: u8,
+) -> std::collections::BTreeSet<u32> {
+    let mut read = environment_reads(observed);
+    if flags != 0 {
+        read.remove(&DC_CONTROL);
+    }
+    read
+}
+
+pub struct RxGain {
+    pub image: PhyImage,
+    rom_delay: u32,
+    production_delay: u32,
+}
+
+impl std::ops::Deref for RxGain {
+    type Target = PhyImage;
+    fn deref(&self) -> &PhyImage {
+        &self.image
+    }
+}
+impl std::ops::DerefMut for RxGain {
+    fn deref_mut(&mut self) -> &mut PhyImage {
+        &mut self.image
+    }
+}
+
+impl RxGain {
+    pub fn new(options: &Options, phy_sdk: &Path) -> Result<Self> {
+        let session = start_session(
+            options,
+            &[Input {
+                role: "phy-sdk",
+                path: phy_sdk,
+                sha256: Some(PHY_SDK_SHA),
+            }],
+            "captured RX gain publication and DC calibration; no RF qualification",
+        )?;
+        let link = LinkRequest {
+            companions: vec![],
+            revision: Some(session.revision.clone()),
+            inputs: vec![0],
+            entry: select(&session, 0, "phy_set_rx_gain_table")?,
+            roots: vec![select(&session, 0, "phy_get_romfunc_addr")?],
+            layout: image_layout(),
+        };
+        // ROM first; the co-located RFPLL diagnostics reference `phy_printf`,
+        // bound to the authenticated PHY SDK firmware and never executed.
+        let image = PhyImage::link(
+            session,
+            &link,
+            &options.linker,
+            "phy_set_rx_gain_table",
+            &[ROM_INPUT, PHY_SDK_INPUT],
+        )?;
+        Ok(Self {
+            rom_delay: image.sym(1, "ets_delay_us"),
+            production_delay: image.sym(2, "ets_delay_us"),
+            image,
+        })
+    }
+
+    fn vendor_phase(&self, profile: &Profile) -> Result<Invocation> {
+        let mut phase = self.enter(
+            self.root("phy_set_rx_gain_table"),
+            &[ROOT_FREQUENCY, ROOT_BANDWIDTH],
+            vec![],
+            vec![selection(self.parameter, PHY_PARAM_BYTES)],
+            rx_models(profile, true),
+        );
+        phase.calls = delay_calls("rx-delay", self.rom_delay);
+        Ok(phase)
+    }
+
+    pub fn production_phase(
+        &self,
+        profile: &Profile,
+        models: Vec<DeviceDeclaration>,
+    ) -> Result<Invocation> {
+        let input: Vec<u8> = parameters(profile.seed)
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        let probe = self.probes.invoke(
+            "open_phy_calibration_trace_rx_gain",
+            vec![
+                ("input", Buffer::new(INPUT, input).into()),
+                ("flags", i64::from(profile.flags).into()),
+                ("crystal_selector", 0.into()),
+                ("pbus_rx_path", i64::from(RX_PATH).into()),
+                ("output", Buffer::new(OUTPUT, seeded_output(profile)).into()),
+            ],
+            models,
+            vec![selection(OUTPUT, OUTPUT_BYTES)],
+        )?;
+        let mut phase = self.enter_probe(probe);
+        phase.calls = delay_calls("rx-delay", self.production_delay);
+        Ok(phase)
+    }
+
+    fn rows(&self, profile: &Profile) -> Result<Vec<ExecutionCase>> {
+        let image = parameter_image(profile);
+        let mut root = case(
+            profile.label(),
+            self.vendor_phase(profile)?,
+            Some(self.production_phase(profile, rx_models(profile, true))?),
+            SessionReset::Warm,
+            false,
+        );
+        let relation = root.relation.as_mut().unwrap();
+        // Polling and transport reads are implementation plumbing; the ordered
+        // effect comparison reviews every remaining read and delay.
+        relation.events.mmio_read = false;
+        relation.events.delay = false;
+        relation.returns.low = false;
+        Ok(vec![
+            case(
+                "initialize",
+                self.setup(&image, false),
+                Some(self.setup(&image, true)),
+                SessionReset::Cold,
+                false,
+            ),
+            case(
+                "install-captured-callbacks",
+                self.install_callbacks(INSTALLED_CALLBACK_SLOT)?,
+                Some(self.noop()),
+                SessionReset::Warm,
+                false,
+            ),
+            root,
+        ])
+    }
+}
+
+fn check(label: &str, profile: &Profile, records: &[ExecutionEvidence], root: u32) {
+    assert_eq!(returned_low(records, root, true), Some(0), "{label}");
+    for side in [false, true] {
+        assert!(all_complete(records, root, side), "{label} {side}");
+    }
+    let (vendor_steps, production_steps) =
+        (steps(records, root, false), steps(records, root, true));
+    assert!(
+        production_steps <= vendor_steps.saturating_mul(MAX_PRODUCTION_STEP_MULTIPLIER),
+        "{label}: production {production_steps} steps, vendor {vendor_steps}"
+    );
+    assert_eq!(
+        output(records, root, true),
+        vendor_state(&output(records, root, false)),
+        "{label}: semantic RX state"
+    );
+    let (vendor, production) = (events(records, root, false), events(records, root, true));
+    assert_eq!(
+        rx_environment(&vendor, profile.flags),
+        rx_environment(&production, profile.flags),
+        "{label}: environment-supplied registers"
+    );
+    assert_eq!(
+        rx_effects(&vendor, profile.flags),
+        rx_effects(&production, profile.flags),
+        "{label}: RX effects"
+    );
+}
+
+/// Each matrix is one request per stack fill; every profile starts cold.
+pub fn exercise(ctx: &mut RxGain) -> Result<()> {
+    for (name, matrix) in [
+        ("publication", publication_profiles()),
+        ("calibration", calibration_profiles()),
+    ] {
+        for fill in FILLS {
+            let selected: Vec<Profile> =
+                matrix.iter().copied().filter(|p| p.fill == fill).collect();
+            let mut rows = vec![];
+            for profile in &selected {
+                rows.extend(ctx.rows(profile)?);
+            }
+            let label = format!("rx-{name}-fill{fill:x}");
+            let executed = ctx.compare(&label, rows, fill)?;
+            for (i, profile) in selected.iter().enumerate() {
+                let root = i as u32 * PROFILE_CASES + ROOT;
+                check(&profile.label(), profile, &executed.records, root);
+            }
+        }
+    }
+    containment(ctx)?;
+    negative(ctx)
+}
+
+/// One production-only failing root.
+struct Failure {
+    label: String,
+    models: Vec<DeviceDeclaration>,
+    /// Expected typed failure.
+    outcome: u32,
+    /// Successful estimator minima before the failure: exact, or a range.
+    minima: std::ops::Range<u32>,
+}
+
+/// Unpublished coefficients and gain memory after a failed root.
+fn assert_unpublished(label: &str, profile: &Profile, records: &[ExecutionEvidence], case: u32) {
+    assert_eq!(
+        output(records, case, false),
+        seeded_output(profile),
+        "{label}: output published"
+    );
+    assert!(
+        !rx_effects(&events(records, case, false), 0)
+            .iter()
+            .any(|e| matches!(e, PhyEffect::Write(GAIN_INDEX, _))),
+        "{label}: gain memory published"
+    );
+}
+
+/// A channel that never becomes ready, a minimum search whose estimator never
+/// completes and slow successful minima that exhaust the shared operation
+/// budget all fail without publishing coefficients or gain memory. One
+/// production-only request per fill; each root starts cold.
+fn containment(ctx: &mut RxGain) -> Result<()> {
+    for fill in FILLS {
+        let profile = Profile {
+            flags: 0,
+            sample: 0,
+            seed: 17,
+            fill,
+            settle: false,
+        };
+        let mut failures = vec![Failure {
+            label: "channel-never-ready".into(),
+            models: rx_models(&profile, false),
+            outcome: FAILED_CALIBRATION,
+            minima: 0..1,
+        }];
+        for slow in [false, true] {
+            let mut models = rx_models(&profile, true);
+            models.retain(|m| m.id != "estimator-ready");
+            let runs = if slow {
+                (0..SLOW_MINIMA)
+                    .flat_map(|_| {
+                        [
+                            ReadRun {
+                                value: 0,
+                                count: SLOW_MINIMUM_POLLS,
+                            },
+                            ReadRun::once(ESTIMATOR_DONE),
+                        ]
+                    })
+                    .collect()
+            } else {
+                vec![ReadRun {
+                    value: 0,
+                    count: NEVER_READY_SAMPLES,
+                }]
+            };
+            models.push(sequence_read("estimator-ready", ESTIMATOR_READY, runs));
+            // The not-ready branch also samples estimator activity; idle here.
+            models.push(constant_read("estimator-activity", ESTIMATOR_ACTIVITY, 0));
+            failures.push(if slow {
+                Failure {
+                    label: "minimum-shared-budget".into(),
+                    models,
+                    outcome: OPERATION_LIMIT,
+                    // Several minima complete, but not the whole input sequence.
+                    minima: 2..SLOW_MINIMA,
+                }
+            } else {
+                Failure {
+                    label: "minimum-timeout".into(),
+                    models,
+                    outcome: FAILED_CALIBRATION,
+                    minima: 0..1,
+                }
+            });
+        }
+        let mut rows = vec![];
+        for failure in &failures {
+            let mut row = case(
+                failure.label.clone(),
+                ctx.production_phase(&profile, failure.models.clone())?,
+                None,
+                SessionReset::Cold,
+                false,
+            );
+            row.relation = None;
+            rows.push(row);
+        }
+        let label = format!("rx-containment-fill{fill:x}");
+        let production = ctx.production.clone();
+        let request = request(&production, None, Some(fill), rows, BUDGET_EVENTS);
+        let records = evidence(&ctx.submit(&label, &request, None)?.document);
+        for (case, failure) in failures.iter().enumerate() {
+            let (case, label) = (case as u32, format!("{label}-{}", failure.label));
+            assert_eq!(
+                returned_low(&records, case, false),
+                Some(failure.outcome),
+                "{label}"
+            );
+            assert_unpublished(&label, &profile, &records, case);
+            let minima = rx_effects(&events(&records, case, false), 0)
+                .iter()
+                .filter(|e| matches!(e, PhyEffect::Read(ESTIMATOR_READY, ESTIMATOR_DONE)))
+                .count() as u32;
+            assert!(failure.minima.contains(&minima), "{label}: {minima} minima");
+        }
+    }
+    Ok(())
+}
+
+/// A saturating production sample is a DIFF, omitted callback installation leaves
+/// the vendor INCOMPLETE, and an undersized event capacity publishes nothing.
+fn negative(ctx: &mut RxGain) -> Result<()> {
+    let profile = calibration_profiles()[0];
+    let mut changed = ctx.rows(&profile)?;
+    // A saturating sample drives a different minimum search.
+    let other = Profile {
+        sample: 1 << 24,
+        ..profile
+    };
+    changed[ROOT as usize].replacement =
+        Some(ctx.production_phase(&other, rx_models(&other, true))?);
+    ctx.image.execute(
+        "rx-negative-changed-sample",
+        changed,
+        profile.fill,
+        Right::Production,
+        ComparisonVerdict::Diff,
+        MAX_EVENTS,
+    )?;
+    let mut uninstalled = ctx.rows(&profile)?;
+    uninstalled[1].vendor = ctx.noop();
+    ctx.image.execute(
+        "rx-negative-uninstalled-callbacks",
+        uninstalled,
+        profile.fill,
+        Right::Production,
+        ComparisonVerdict::Incomplete,
+        MAX_EVENTS,
+    )?;
+    let rows = ctx.rows(&profile)?;
+    let limited = request(
+        &ctx.vendor,
+        Some(&ctx.production),
+        Some(profile.fill),
+        rows,
+        1,
+    );
+    ctx.capacity_failure("rx-negative-capacity", &limited)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blobray_domain::ExecutionEvent;
+
+    fn read(address: u32, value: u32) -> ExecutionEvent {
+        ExecutionEvent::Read {
+            address,
+            width: 4,
+            value,
+        }
+    }
+
+    #[test]
+    fn matrices_cover_guards_samples_seeds_fills_and_settle() {
+        let publication = publication_profiles();
+        assert_eq!(publication.len(), 2 * 2 * FILLS.len() * 2);
+        assert!(publication.iter().all(|p| !p.calibrates()));
+        let calibration = calibration_profiles();
+        assert_eq!(calibration.len(), 5 * 2 * FILLS.len() * 2);
+        let samples: std::collections::BTreeSet<_> = calibration.iter().map(|p| p.sample).collect();
+        assert!(samples.contains(&(1 << 24)) && samples.contains(&-(1 << 24)));
+    }
+
+    #[test]
+    fn parameter_image_places_every_semantic_field() {
+        let profile = Profile {
+            flags: DC_CALIBRATED | TABLES_INITIALIZED,
+            sample: 0,
+            seed: 17,
+            fill: 0x5a,
+            settle: false,
+        };
+        let image = parameter_image(&profile);
+        let values = parameters(17);
+        let word = |offset: usize| u16::from_le_bytes([image[offset], image[offset + 1]]);
+        assert_eq!(word(WIFI_INDEX_DC), values[0]);
+        assert_eq!(word(WIFI_DC_BASE + 2), values[17]);
+        assert_eq!(word(SHARED_INDEX_DC + 42), values[39]);
+        assert_eq!(word(RXBB_ADJUSTMENTS + 22), values[51]);
+        assert_eq!(word(WIFI_AUXILIARY), 0x125);
+        assert_eq!(
+            u32::from_le_bytes(image[GUARD_FLAGS..GUARD_FLAGS + 4].try_into().unwrap()),
+            128 + 512
+        );
+        assert_eq!(image[PARAMETER_RX_PATH], RX_PATH);
+        assert_eq!(
+            (image[SHARED_LAST_INDEX], image[WIFI_LAST_INDEX]),
+            (INITIAL_SHARED_LAST, INITIAL_WIFI_LAST)
+        );
+    }
+
+    #[test]
+    fn vendor_state_follows_production_output_order() {
+        let mut parameters = vec![0u8; PHY_PARAM_BYTES as usize];
+        parameters[WIFI_INDEX_DC] = 1;
+        parameters[WIFI_DC_BASE + 3] = 2;
+        parameters[SHARED_INDEX_DC] = 3;
+        parameters[RXBB_ADJUSTMENTS + 23] = 4;
+        parameters[WIFI_LAST_INDEX] = 5;
+        parameters[SHARED_LAST_INDEX] = 6;
+        let state = vendor_state(&parameters);
+        assert_eq!(state.len(), OUTPUT_BYTES as usize);
+        assert_eq!((state[0], state[35], state[36], state[103]), (1, 2, 3, 4));
+        assert_eq!(&state[104..], [5, 0, 6, 0]);
+    }
+
+    #[test]
+    fn readiness_waits_stay_visible_and_only_skipped_dc_snapshot_is_excluded() {
+        let delay = ExecutionEvent::DelayMicros { value: 1 };
+        // A wait before an estimator readiness read is an effect.
+        assert_eq!(
+            rx_effects(&[delay.clone(), read(ESTIMATOR_READY, 0)], 0),
+            [PhyEffect::Delay(1), PhyEffect::Read(ESTIMATOR_READY, 0)]
+        );
+        // A wait before a PBus status read is transport plumbing.
+        assert_eq!(
+            rx_effects(&[delay, read(PBUS_STATUS, 0)], 0),
+            [PhyEffect::Read(PBUS_STATUS, 0)]
+        );
+        let snapshot = [read(DC_CONTROL, 7)];
+        assert_eq!(rx_effects(&snapshot, 0).len(), 1);
+        assert!(rx_effects(&snapshot, DC_CALIBRATED).is_empty());
+        assert!(rx_environment(&snapshot, 0).contains(&DC_CONTROL));
+        assert!(rx_environment(&snapshot, DC_CALIBRATED).is_empty());
+    }
+}

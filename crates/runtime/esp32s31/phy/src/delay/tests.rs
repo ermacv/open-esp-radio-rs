@@ -266,3 +266,16 @@ fn timer_branch_still_yields_and_keeps_its_deadline() {
     assert!(Pin::new(&mut delay).poll(&mut cx).is_ready());
     assert_eq!(polls.get(), 1);
 }
+
+#[test]
+fn unrepresentable_deadline_never_completes_or_registers_a_wake() {
+    let notifications = Arc::new(Notifications::default());
+    let waker = Waker::from(notifications.clone());
+    let mut cx = Context::from_waker(&waker);
+    type Unbounded = HardwareDelay<core::future::Pending<()>, fn() -> Instant, fn(u32)>;
+    let mut delay: Unbounded = HardwareDelay::Unrepresentable;
+    for _ in 0..3 {
+        assert_eq!(Pin::new(&mut delay).poll(&mut cx), Poll::Pending);
+    }
+    assert_eq!(notifications.0.load(Ordering::Relaxed), 0);
+}

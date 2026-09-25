@@ -4,15 +4,11 @@ use oer_esp32s31_ieee80211_dma::rx_ring::{RxRingPaused, RxRingResumeFailure};
 use oer_esp32s31_ieee80211_esp_hal::mac_interrupt_epoch::{
     EspHalMacInterruptRoute, EspHalMacInterruptRouteError,
 };
-use oer_esp32s31_ieee80211_runtime::{
-    datapath::{
-        irq::{
-            MacInterruptEpochActivateError, MacInterruptEpochQuiesceError, PausedInterruptEpoch,
-        },
-        maintenance::{StopError, stop_mac},
-    },
-    time::phy::EmbassyPhyClock,
+use oer_esp32s31_ieee80211_runtime::datapath::{
+    irq::{MacInterruptEpochActivateError, MacInterruptEpochQuiesceError, PausedInterruptEpoch},
+    maintenance::{StopError, stop_mac},
 };
+use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 
 mod access;
 mod observation;
@@ -278,7 +274,7 @@ async fn physical_round_trip(
             .expect("paused worker returned its runner")
             .services_mut()
             .hardware_mut(),
-        &mut EmbassyPhyClock,
+        &mut EmbassyPhyTime,
         100_000,
     )
     .await

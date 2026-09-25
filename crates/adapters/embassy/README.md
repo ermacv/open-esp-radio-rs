@@ -17,9 +17,9 @@ The coexistence mailbox serializes requests to one task-side owner; its async
 loop is part of that binding and does not imply another radio lifecycle.
 
 `esp32s31/executor` is the Embassy platform binding: executor wake-up and
-timer-queue ABI. It has no radio policy or PHY initialization. Concrete PHY
-time bindings live in the radio packages as explicit `time::phy` leaves, while
-chip PHY remains executor-independent.
+timer-queue ABI. It has no radio policy or PHY initialization. The concrete
+PHY time binding is the [PHY runtime](../../runtime/esp32s31/phy/), while chip
+PHY remains executor-independent.
 
 Final memory profiles, static claims, IRQ binding and whole-radio lifecycles
 belong to [integration](../../composition/esp32s31/embassy/). Portable Wi-Fi

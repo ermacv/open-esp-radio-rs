@@ -96,11 +96,12 @@ adapter supplies storage types; integration selects dimensions and acquires
 one complete owner graph. Profile tests run on the host from that production
 module, with hardware dependencies restricted to the ESP32-S31 target.
 
-Both chip Embassy radio runtimes expose their PHY bindings under `time::phy`.
-The Wi-Fi binding supplies a direct Embassy delay; the Bluetooth binding
-retains its microsecond timebase validation, overflow handling and PLL clock.
-These distinct contracts remain separate implementations. Chip PHY stays
-executor-independent, and the executor/time ABI backend owns no PHY policy.
+Every chip radio composition drives PHY time through the one `EmbassyPhyTime`
+of [`runtime/esp32s31/phy`](runtime/esp32s31/phy/): synchronous ROM settles of
+at most 20 us, absolute Embassy deadlines for every other wait, the
+one-megahertz timebase check and fail-stop on an unrepresentable deadline.
+Chip PHY stays executor-independent, and the executor/time ABI backend owns no
+PHY policy.
 
 AP `roles/access_point/network_tx` retains one TX owner. Its `queue`,
 `power_save`, `aggregate` and `completion` modules operate on that same arena

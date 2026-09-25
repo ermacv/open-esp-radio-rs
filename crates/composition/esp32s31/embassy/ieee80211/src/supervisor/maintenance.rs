@@ -118,7 +118,7 @@ impl ShutdownFrontier {
 
 async fn quiesce(
     stopped: ProductionSupervisorStopped,
-    clock: &mut EmbassyPhyClock,
+    clock: &mut EmbassyPhyTime,
 ) -> Result<Quiesced, Failure> {
     let (wifi, mut physical, station, access_point, monitor) = stopped.into_parts();
     let tx_idle = match &physical.tx {
@@ -226,7 +226,7 @@ async fn quiesce(
 pub(super) async fn quiesce_for_shutdown(
     stopped: ProductionSupervisorStopped,
 ) -> Result<ShutdownFrontier, Failure> {
-    let mut clock = EmbassyPhyClock;
+    let mut clock = EmbassyPhyTime;
     let quiesced = quiesce(stopped, &mut clock).await?;
     Ok(ShutdownFrontier {
         wifi: quiesced.wifi,
@@ -249,7 +249,7 @@ pub(super) async fn maintain(
         ProductionWifiOwner::Cold(owner) => owner.phy_client_snapshot(),
         ProductionWifiOwner::Live { owner, .. } => owner.radio_mut().0.client_snapshot(),
     };
-    let mut clock = EmbassyPhyClock;
+    let mut clock = EmbassyPhyTime;
     let due = match snapshot.tracking_schedule_at(clock.now_micros()) {
         Ok(Schedule::Due(_)) => true,
         Ok(Schedule::Inactive | Schedule::At(_)) => false,
@@ -283,7 +283,7 @@ pub(super) async fn maintain(
     )
     .await?;
     let (wifi, outcome) = match await_stack_boundary!(
-        stopped.maintain_phy::<EmbassyPhyDelay, _>(&mut clock, NoopPhyTargetObserver)
+        stopped.maintain_phy::<EmbassyPhyTime, _>(&mut clock, NoopPhyTargetObserver)
     ) {
         Ok(result) => result,
         Err(failure) => {

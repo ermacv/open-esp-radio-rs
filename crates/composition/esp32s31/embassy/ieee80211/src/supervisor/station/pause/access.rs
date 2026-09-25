@@ -13,7 +13,7 @@ use oer_esp32s31_hal::{
     owner::{MacInterruptCheckpoint, maintenance},
 };
 use oer_esp32s31_ieee80211_runtime::datapath::services::SingleRoleServices;
-use oer_esp32s31_ieee80211_runtime::time::phy::EmbassyPhyDelay;
+use oer_esp32s31_phy_runtime::EmbassyPhyTime;
 
 type ParkedRunner = ConnectedDatapathRunner<ConnectedDriverServices<PausedRx, ()>>;
 /// Cold datapath state never participates in the nested PHY future. On failure
@@ -143,7 +143,7 @@ pub(super) async fn round_trip(
             return Err(retain_admission(storage, republish, failure));
         }
     };
-    let mut clock = EmbassyPhyClock;
+    let mut clock = EmbassyPhyTime;
     observations.edge(Edge::Acquired);
     if let PauseOperation::Synthetic {
         duration_micros, ..
@@ -194,7 +194,7 @@ pub(super) async fn round_trip(
         };
         let before = access.wifi_mac_hal().station_receive_policy_snapshot();
         let owner = role.take().expect("paused logical PHY owner");
-        let work = owner.maintain_phy::<EmbassyPhyDelay, _, _>(
+        let work = owner.maintain_phy::<EmbassyPhyTime, _, _>(
             access,
             request,
             &mut clock,

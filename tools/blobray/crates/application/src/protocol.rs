@@ -176,6 +176,12 @@ pub enum ReadQuery {
         request: NamedLinkRequest,
         linker: OriginPath,
     },
+    /// Trial-link `request` and resolve its undefined names in `candidates`.
+    ProposeCompanions {
+        request: LinkRequest,
+        linker: OriginPath,
+        candidates: Vec<u64>,
+    },
     Images,
     Image {
         id: PreparedImageId,

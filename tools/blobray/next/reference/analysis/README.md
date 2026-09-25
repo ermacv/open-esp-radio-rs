@@ -332,7 +332,8 @@ reservation until its records have been staged. Exhaustion aborts publication.
 
 Capture the archive and ROM in one revision, in that order. Analyze that revision
 to obtain a ROM/source publication. Synthetic linking does not treat ET_EXEC as
-a relocatable input. Instead select exact ROM functions as external definitions:
+a relocatable input. Instead select exact ROM functions or data objects as
+external definitions:
 
 ```console
 blobray link-plan --project research --entry phy_set_ftm_en --entry-input 0 --inputs 0 --companion 1:ets_delay_us --companion 1:phy_wait_i2c_sdm_stable --code-start 0x10000000 --data-start 0x20000000 --linker /usr/bin/ld.lld --output ftm.json --limit-mode watchdog
@@ -343,8 +344,9 @@ blobray research --project research --id IMAGE_PUBLICATION --name phy_set_ftm_en
 
 `LinkRequest.companions` and `LinkRecipe.companions` contain exact input/symbol
 selectors. Named CLI selection must be unique. At most 64 definitions are allowed;
-undefined/nonfunction symbols, duplicate names, collisions with selected input
-definitions and addresses inside synthetic placements fail. Definitions are
+undefined symbols, symbols that are neither functions nor data objects, duplicate
+names, collisions with selected input definitions and addresses inside synthetic
+placements fail. Definitions are
 validated against captured executable bytes; no stub implementation is emitted.
 This address-only acquisition checks the exact physical symbol table, declared
 nonzero function extent, allocated code section and unique executable file-backed
@@ -353,9 +355,33 @@ metadata and executable mappings elsewhere in the carrier do not become a runtim
 dependency. A definition neither loads that
 carrier nor proves its code can execute under the static-image profile; selecting
 it as an execution companion still applies all normal loader restrictions.
+A data object (`STT_OBJECT`) needs a nonzero extent inside one non-executable,
+non-TLS `PROGBITS`/`NOBITS` section with a nonzero address. ROM interface
+storage is often declared without `SHF_ALLOC` or a load mapping, so neither is
+required: the definition grants the address only, never the data bytes.
 Code placement uses ELF allocation/execution flags, including vendor sections
 whose names are not `.text`. Address assignments and selected occurrences enter
 the link identity. Other unresolved symbols remain linker failures.
+
+`propose-companions` finds the definitions a request needs instead of a
+hand-kept list. It trial-links the request, with its explicit companions
+applied and unresolved names permitted, reads every name the closure leaves
+undefined from the trial image, and resolves each one in the `--candidate`
+inputs in the given order:
+
+```console
+blobray propose-companions --project research --request link.json --linker /usr/bin/ld.lld --candidate 1 --candidate 3 --limit-mode watchdog
+```
+
+A name resolves to the first candidate input that defines it. Within that input
+a single global or weak function or data object is taken, or a single local one
+when no global or weak one exists. Several definitions of the chosen binding,
+or none in any candidate, leave the name in `unresolved`, and the command exits
+nonzero. Candidates must be distinct captured inputs outside the link inputs.
+The proposal grants nothing and publishes nothing: the client copies the exact
+selections into its link request, which the plan then retains and validates as
+usual. A hidden undefined name cannot be left for a companion and fails the
+trial link.
 
 `FunctionRequest.research` and `FunctionRecipe.research` contain `publication`,
 `companions`, optional `abi` (`riscv-integer`) and optional `knowledge`. Companion

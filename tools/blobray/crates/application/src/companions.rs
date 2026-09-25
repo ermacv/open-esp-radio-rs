@@ -36,14 +36,15 @@ impl ElfSink for Scan<'_> {
         }
         for (i, selection) in self.request.companions.iter().enumerate() {
             if selection.input == self.input && selection.symbol == r.id {
+                // STT_OBJECT (1) or STT_FUNC (2); the carrier validates the extent.
                 if !self.executable
-                    || r.symbol_type != 2
+                    || !matches!(r.symbol_type, 1 | 2)
                     || r.raw_section == 0
                     || r.id.object.location != ObjectLocation::Standalone
                 {
                     return Err(Error::new(
                         ErrorCode::InvalidRequest,
-                        "companion requires a defined function in a captured static RV32 ELF",
+                        "companion requires a defined function or data object in a captured static RV32 ELF",
                     ));
                 }
                 self.matches[i] = Some(r.clone());

@@ -114,6 +114,7 @@ fn render_unbuffered(
             | app::QuerySummary::Images { .. }
             | app::QuerySummary::Image { .. }
             | app::QuerySummary::LinkPlan { .. }
+            | app::QuerySummary::CompanionProposal { .. }
     ) {
         return result.records(
             cancelled,

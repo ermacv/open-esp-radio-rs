@@ -1,7 +1,8 @@
 //! External ELF capability dispatcher. Application owns selection and publication.
 use super::*;
 use blobray_application::{
-    LinkInput, LinkInvocation, LinkOutput, LinkOutputSink, LinkWorkspace, LinkerHost, TemporaryFile,
+    LinkInput, LinkInvocation, LinkOutput, LinkOutputSink, LinkWorkspace, LinkerHost,
+    TemporaryFile, UnresolvedSymbols,
 };
 use std::{
     ffi::OsString,
@@ -156,12 +157,14 @@ fn semantic_arguments(request: &LinkInvocation<'_>, command: &mut Command) -> Re
             "--no-relax",
             "--emit-relocs",
             "--no-demangle",
-            "--error-unresolved-symbols",
-            "--no-undefined",
             "--build-id=none",
             "-T",
             "layout.ld",
         ])
+        .args(match request.unresolved {
+            UnresolvedSymbols::Error => &["--error-unresolved-symbols", "--no-undefined"][..],
+            UnresolvedSymbols::Report => &["--unresolved-symbols=ignore-all"][..],
+        })
         .arg("--entry")
         .arg(OsString::from_vec(request.entry.into()))
         .arg("--undefined")

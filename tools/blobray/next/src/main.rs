@@ -572,6 +572,23 @@ enum Command {
         #[command(flatten)]
         limits: ResourceOptions,
     },
+    /// Propose ROM companions for a link request by a trial link. Every name
+    /// left undefined resolves to exactly one definition in the first
+    /// candidate input that defines it, or is reported unresolved.
+    ProposeCompanions {
+        #[arg(long)]
+        project: PathBuf,
+        /// Link request whose explicit companions are already applied.
+        #[arg(long)]
+        request: PathBuf,
+        #[arg(long)]
+        linker: PathBuf,
+        /// Captured input ordinal searched for definitions, in priority order.
+        #[arg(long = "candidate", required = true)]
+        candidates: Vec<u64>,
+        #[command(flatten)]
+        limits: ResourceOptions,
+    },
     /// List retained prepared images.
     Images {
         #[arg(long)]
@@ -1879,6 +1896,24 @@ fn run(command: Command, format: Format) -> Result<ExitCode> {
             } else {
                 ExitCode::FAILURE
             });
+        }
+        Command::ProposeCompanions {
+            project,
+            request,
+            linker,
+            candidates,
+            limits,
+        } => {
+            return read_query(
+                project,
+                ReadQuery::ProposeCompanions {
+                    request: read_json_file(&request)?,
+                    linker: blobray_domain::OriginPath::from_path(&linker),
+                    candidates,
+                },
+                limits,
+                format,
+            );
         }
         Command::Images { project, limits } => {
             return read_query(project, ReadQuery::Images, limits, format);

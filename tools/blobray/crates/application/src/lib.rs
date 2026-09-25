@@ -38,7 +38,8 @@ pub use functions::{FunctionWork, prepare_function_worker};
 mod linking;
 pub use linking::{
     ImageWork, LinkInput, LinkInvocation, LinkMember, LinkOutput, LinkOutputSink, LinkPlan,
-    LinkWorkspace, LinkerHost, prepare_image_worker, read_link_plan, validate_link_plan,
+    LinkWorkspace, LinkerHost, UnresolvedSymbols, prepare_image_worker, read_link_plan,
+    validate_link_plan,
 };
 mod planning;
 pub use planning::*;

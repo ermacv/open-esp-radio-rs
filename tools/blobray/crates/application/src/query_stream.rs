@@ -96,6 +96,9 @@ pub enum QuerySummary {
     LinkPlan {
         description: Box<LinkPlanDescription>,
     },
+    CompanionProposal {
+        proposal: CompanionProposal,
+    },
     Images {
         count: u64,
     },
@@ -185,6 +188,9 @@ impl QuerySummary {
             } => ResultAssessment::checked(*errors == 0 && *unfinished_runs == 0),
             Self::KnowledgeValidation { .. } => ResultAssessment::checked(true),
             Self::LinkPlan { description } => ResultAssessment::checked(description.ready()),
+            Self::CompanionProposal { proposal } => {
+                ResultAssessment::checked(proposal.unresolved.is_empty())
+            }
             _ => ResultAssessment::default(),
         }
     }
@@ -1057,6 +1063,22 @@ pub fn prepare_query_with_tools(
                     }
                 }
             }
+            ReadQuery::ProposeCompanions {
+                request,
+                linker: executable,
+                candidates,
+            } => QuerySummary::CompanionProposal {
+                proposal: crate::linking::propose_companions(
+                    &work.project.to_path()?,
+                    request,
+                    candidates,
+                    &executable.to_path()?,
+                    linker,
+                    &crate::linking::LinkWorkspace::for_query(stage, &disk, &memory),
+                    &memory,
+                    control,
+                )?,
+            },
             ReadQuery::LinkPlan {
                 request,
                 linker: executable,

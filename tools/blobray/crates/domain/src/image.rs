@@ -77,6 +77,24 @@ pub struct LinkRequest {
     pub roots: Vec<EntrySelection>,
     pub layout: ImageLayout,
 }
+/// Companions proposed for a link request by a trial link. Every name the
+/// selected closure leaves unresolved is either resolved to exactly one defined
+/// function or data object of the first candidate input that defines it, or
+/// reported unresolved. A proposal grants nothing: the client copies the exact
+/// selections into its retained link request.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompanionProposal {
+    pub resolved: Vec<ProposedCompanion>,
+    /// Linker-visible names without a definition in any candidate input.
+    pub unresolved: Vec<String>,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProposedCompanion {
+    pub name: String,
+    pub selection: EntrySelection,
+}
 /// Native convenience selection. Only one defined entry in the explicit input
 /// qualifies; ambiguity returns candidates, never a preferred definition.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

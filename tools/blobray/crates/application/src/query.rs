@@ -210,6 +210,7 @@ impl QueryOutput {
             {
                 Some(File::open(stage.join("query-manifest")).map_err(io)?)
             }
+            (ReadQuery::ProposeCompanions { .. }, QuerySummary::CompanionProposal { .. }) => None,
             (ReadQuery::Images, QuerySummary::Images { .. }) => None,
             (ReadQuery::Image { id, .. }, QuerySummary::Image { id: actual, .. })
                 if id == actual =>

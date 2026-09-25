@@ -872,6 +872,112 @@ fn external_definition_fixture(rom: Vec<u8>) -> Fixture {
     f
 }
 
+/// Entry calling `helper` and storing the addresses of `value` and, when
+/// `missing` is set, of an undefined `missing`, linked against `rom`.
+fn proposal_fixture(rom: Vec<u8>, missing: bool) -> Fixture {
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let section = obj.add_section(Vec::new(), b".text.entry".to_vec(), SectionKind::Text);
+    obj.append_section_data(
+        section,
+        &[
+            0x97, 0, 0, 0, 0xe7, 0x80, 0, 0, 0x67, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+        4,
+    );
+    obj.add_symbol(symbol(
+        b"entry",
+        SymbolSection::Section(section),
+        20,
+        SymbolKind::Text,
+    ));
+    let mut references = vec![(0, b"helper".as_slice(), object::elf::R_RISCV_CALL)];
+    references.push((12, b"value", object::elf::R_RISCV_32));
+    if missing {
+        references.push((16, b"missing", object::elf::R_RISCV_32));
+    }
+    for (offset, name, r_type) in references {
+        // Default visibility, as in vendor objects; a hidden undefined name
+        // cannot be left for a companion.
+        let target = obj.add_symbol(Symbol {
+            scope: object::write::SymbolScope::Dynamic,
+            ..symbol(name, SymbolSection::Undefined, 0, SymbolKind::Unknown)
+        });
+        obj.add_relocation(
+            section,
+            Relocation {
+                offset,
+                symbol: target,
+                addend: 0,
+                flags: RelocationFlags::Elf { r_type },
+            },
+        )
+        .unwrap();
+    }
+    let mut f = custom_fixture(
+        vec![("entry.o", obj.write().unwrap()), ("rom.elf", rom)],
+        0,
+        0,
+    );
+    f.request.inputs = vec![0];
+    f.request.layout.code.start = 0x30000000;
+    f.request.layout.data.start = 0x31000000;
+    f
+}
+
+/// The proposal and whether the command succeeded (no unresolved name).
+fn propose(f: &Fixture, candidate: &str) -> (bool, Option<CompanionProposal>) {
+    let path = f.dir.path().join("link-request.json");
+    fs::write(&path, serde_json::to_vec(&f.request).unwrap()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_blobray"))
+        .args(["--format", "json", "propose-companions", "--project"])
+        .arg(&f.project)
+        .args(["--limit-mode", "watchdog", "--request"])
+        .arg(&path)
+        .arg("--linker")
+        .arg(linker())
+        .args(["--candidate", candidate])
+        .output()
+        .unwrap();
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
+    (
+        output.status.success(),
+        serde_json::from_value(document["summary"]["proposal"].clone()).ok(),
+    )
+}
+
+#[test]
+fn trial_link_proposes_function_and_data_companions_and_reports_the_rest() {
+    let source = fixture(false, true);
+    let image = prepared(&source);
+    let rom = export(&source, image);
+    let with_missing = proposal_fixture(rom.clone(), true);
+    let (success, proposal) = propose(&with_missing, "1");
+    let proposal = proposal.unwrap();
+    assert!(!success, "an unresolved name fails the proposal");
+    assert_eq!(proposal.unresolved, ["missing"]);
+    let names: Vec<_> = proposal.resolved.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["helper", "value"]);
+    assert!(proposal.resolved.iter().all(|c| c.selection.input == 1));
+    // Without the undefined name, the proposal alone closes the image and the
+    // retained request lists each exact companion.
+    let mut f = proposal_fixture(rom, false);
+    let (success, proposal) = propose(&f, "1");
+    let proposal = proposal.unwrap();
+    assert!(success && proposal.unresolved.is_empty());
+    f.request.companions = proposal.resolved.into_iter().map(|c| c.selection).collect();
+    let image = prepared(&f);
+    let recipe = cli(&f, &["image", "--id", image.as_str()]);
+    assert_eq!(
+        recipe["summary"]["manifest"]["plan"]["recipe"]["companions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    // A candidate that is also a link input is rejected before linking.
+    assert_eq!(propose(&f, "0"), (false, None));
+}
+
 #[test]
 fn explicit_captured_rom_definition_links_and_resolves_across_publications() {
     let source = fixture(false, true);

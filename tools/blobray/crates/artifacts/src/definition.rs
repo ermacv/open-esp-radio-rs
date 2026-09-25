@@ -6,8 +6,15 @@ fn invalid(message: &str) -> Error {
     Error::new(ErrorCode::InvalidRequest, message)
 }
 
-/// Validate one exact static function symbol and return its RV32 address.
+/// Validate one exact static function or data symbol and return its RV32 address.
 ///
+/// A data definition (`STT_OBJECT`) needs a nonzero extent inside the address
+/// range of one non-executable, non-TLS `PROGBITS`/`NOBITS` section with a
+/// nonzero address. ROM interface storage is often declared without
+/// `SHF_ALLOC` or a load mapping, so neither is required: the capability is the
+/// address alone and never loads or grants the data bytes.
+///
+/// A function definition:
 /// The selected extent must have one unambiguous executable, file-backed load
 /// mapping matching its allocated code section. Non-executable segments are not
 /// loaded, including data mappings sharing a virtual address with code.
@@ -67,6 +74,11 @@ pub fn inspect_link_definition(
                 .map_err(|_| invalid("definition symbol index overflow"))?,
         ))
         .map_err(|_| invalid("definition symbol absent"))?;
+    if matches!(symbol.flags(), object::SymbolFlags::Elf { st_info, .. }
+        if st_info & 15 == object::elf::STT_OBJECT)
+    {
+        return data_definition(elf, symbol.section_index(), symbol.address(), symbol.size());
+    }
     if !matches!(symbol.flags(), object::SymbolFlags::Elf { st_info, .. }
         if st_info & 15 == object::elf::STT_FUNC)
         || symbol.size() == 0
@@ -154,6 +166,71 @@ pub fn inspect_link_definition(
     }
     if !matched {
         return Err(invalid("definition has no executable captured mapping"));
+    }
+    u32::try_from(address).map_err(|_| invalid("definition address exceeds RV32"))
+}
+
+/// Linker-visible names left undefined in a linked RV32 ELF, in symbol-table
+/// order without duplicates. Bytes and parser views die before return.
+pub fn undefined_names(
+    source: &dyn ByteSource,
+    memory: &WorkingMemory,
+    control: &mut dyn RunControl,
+) -> Result<Vec<String>> {
+    let size = usize::try_from(source.len()).map_err(|_| invalid("linked image too large"))?;
+    let mut bytes = memory.bytes(size, control.position())?;
+    source.read_at(0, &mut bytes, control)?;
+    let file = object::File::parse(&*bytes).map_err(|e| invalid(&e.to_string()))?;
+    if file.is_64() || file.architecture() != object::Architecture::Riscv32 {
+        return Err(invalid("linked image must be RV32 ELF"));
+    }
+    let mut names = Vec::new();
+    for symbol in file.symbols() {
+        control.checkpoint(1)?;
+        if !symbol.is_undefined() || symbol.is_local() {
+            continue;
+        }
+        let name = symbol
+            .name()
+            .map_err(|_| invalid("undefined symbol name is not UTF-8"))?;
+        if !name.is_empty() && !names.iter().any(|n: &String| n == name) {
+            names.push(name.to_owned());
+        }
+    }
+    Ok(names)
+}
+
+fn data_definition(
+    elf: &object::read::elf::ElfFile32<'_>,
+    section: Option<object::SectionIndex>,
+    address: u64,
+    size: u64,
+) -> Result<u32> {
+    let index = section.ok_or_else(|| invalid("data definition has no physical section"))?;
+    let header = elf
+        .elf_section_table()
+        .section(index)
+        .map_err(|_| invalid("data definition section absent"))?;
+    let endian = elf.endian();
+    let flags = header.sh_flags(endian);
+    let kind = header.sh_type(endian);
+    let start = u64::from(header.sh_addr(endian));
+    let section_end = start
+        .checked_add(u64::from(header.sh_size(endian)))
+        .filter(|n| *n <= 1u64 << 32)
+        .ok_or_else(|| invalid("data definition section exceeds RV32"))?;
+    if !matches!(kind, object::elf::SHT_PROGBITS | object::elf::SHT_NOBITS)
+        || flags & (object::elf::SHF_EXECINSTR | object::elf::SHF_TLS) != 0
+        || start == 0
+        || size == 0
+        || address < start
+        || address
+            .checked_add(size)
+            .is_none_or(|end| end > section_end)
+    {
+        return Err(invalid(
+            "data definition needs a nonzero extent inside a non-executable data section",
+        ));
     }
     u32::try_from(address).map_err(|_| invalid("definition address exceeds RV32"))
 }
@@ -339,5 +416,101 @@ mod tests {
             ErrorCode::Cancelled
         );
         assert_eq!(memory.observation().reserved_bytes, 0);
+    }
+    /// An executable carrier with one 8-byte data section at 0x2000 holding a
+    /// 4-byte object at 0x2004. Returns the source, the object and the offset of
+    /// the section header and symbol entry.
+    fn data_fixture() -> (Source, SymbolId, usize, usize) {
+        use object::write::{Object as Writer, Symbol, SymbolSection};
+        let mut file = Writer::new(
+            object::BinaryFormat::Elf,
+            object::Architecture::Riscv32,
+            object::Endianness::Little,
+        );
+        let data = file.add_section(
+            vec![],
+            b".data.interface".to_vec(),
+            object::SectionKind::Data,
+        );
+        file.append_section_data(data, &[0; 8], 4);
+        file.add_symbol(Symbol {
+            name: b"pointer".to_vec(),
+            value: 0x2004,
+            size: 4,
+            kind: object::SymbolKind::Data,
+            scope: object::SymbolScope::Linkage,
+            weak: false,
+            section: SymbolSection::Section(data),
+            flags: object::SymbolFlags::None,
+        });
+        let mut bytes = file.write().unwrap();
+        let parsed = object::File::parse(bytes.as_slice()).unwrap();
+        let index = parsed.section_by_name(".data.interface").unwrap().index().0;
+        let table = parsed.section_by_name(".symtab").unwrap();
+        let (table_offset, _) = table.file_range().unwrap();
+        let table_index = table.index().0;
+        let index_symbol = parsed
+            .symbols()
+            .find(|s| s.name().ok() == Some("pointer"))
+            .unwrap()
+            .index()
+            .0;
+        let section_headers = u32::from_le_bytes(bytes[32..36].try_into().unwrap()) as usize;
+        let header = section_headers + 40 * index;
+        put(&mut bytes, header + 12, 0x2000);
+        bytes[16..18].copy_from_slice(&2u16.to_le_bytes());
+        let selected = SymbolId {
+            object: ObjectId {
+                artifact: ArtifactId::of_bytes(&bytes),
+                location: ObjectLocation::Standalone,
+            },
+            table: SymbolTableKind::Static,
+            table_section: table_index as u32,
+            index: index_symbol as u64,
+        };
+        (
+            Source(bytes),
+            selected,
+            header,
+            table_offset as usize + 16 * index_symbol,
+        )
+    }
+    #[test]
+    fn data_definition_binds_an_address_without_allocation_or_mapping() {
+        let memory = WorkingMemory::new(1024 * 1024).unwrap();
+        let (mut source, mut id, header, _) = data_fixture();
+        assert_eq!(
+            inspect_link_definition(&source, &id, &memory, &mut || Ok(())).unwrap(),
+            0x2004
+        );
+        // ROM interface storage declares only SHF_WRITE and has no load mapping.
+        put(&mut source.0, header + 8, object::elf::SHF_WRITE);
+        id.object.artifact = ArtifactId::of_bytes(&source.0);
+        assert_eq!(
+            inspect_link_definition(&source, &id, &memory, &mut || Ok(())).unwrap(),
+            0x2004
+        );
+        assert_eq!(memory.observation().reserved_bytes, 0);
+    }
+    #[test]
+    fn data_definition_rejects_empty_escaping_tls_and_executable_extents() {
+        for variant in 0..5 {
+            let (mut source, mut id, header, symbol) = data_fixture();
+            match variant {
+                0 => put(&mut source.0, symbol + 8, 0),      // Empty extent.
+                1 => put(&mut source.0, symbol + 4, 0x2006), // Crosses the section end.
+                2 => put(
+                    &mut source.0,
+                    header + 8,
+                    object::elf::SHF_WRITE | object::elf::SHF_TLS,
+                ),
+                3 => put(&mut source.0, header + 8, object::elf::SHF_EXECINSTR),
+                _ => put(&mut source.0, header + 12, 0), // No physical address.
+            }
+            id.object.artifact = ArtifactId::of_bytes(&source.0);
+            let memory = WorkingMemory::new(1024 * 1024).unwrap();
+            let error = inspect_link_definition(&source, &id, &memory, &mut || Ok(())).unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidRequest, "variant {variant}");
+        }
     }
 }

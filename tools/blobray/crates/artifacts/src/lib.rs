@@ -4,7 +4,7 @@
 use blobray_domain::*;
 mod definition;
 mod image;
-pub use definition::inspect_link_definition;
+pub use definition::{inspect_link_definition, undefined_names};
 pub use image::{LinkRootFacts, ValidatedImage, inspect_link_input, validate_image};
 mod cursor;
 mod meter;

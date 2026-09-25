@@ -174,7 +174,9 @@ analysis. Recursive components remain explicit gaps. It applies only the selecte
 knowledge revision. The local ELF borrow ends before summary composition starts.
 No second worker, parser, scheduler or provider registry is introduced.
 
-`companions` validates exact retained ROM definitions for the common link recipe.
+`companions` validates exact retained ROM function and data definitions for the
+common link recipe; `linking::proposal` trial-links a request and proposes them
+from ordered candidate inputs.
 It rejects name collisions and synthetic-placement overlap; the host still only
 executes the explicit linker invocation. Knowledge occurrence validation shares
 input/image identity with function analysis. See the

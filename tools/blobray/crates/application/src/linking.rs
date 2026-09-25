@@ -10,6 +10,8 @@ pub const LINK_METADATA_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_MEMBERS: usize = 4096;
 mod evidence;
 mod probe;
+mod proposal;
+pub(crate) use proposal::propose_companions;
 
 #[derive(Clone, Debug)]
 pub enum LinkInput {
@@ -22,6 +24,15 @@ pub enum LinkInput {
 pub struct LinkMember {
     pub alias: String,
     pub occurrence: LinkObject,
+}
+
+/// Treatment of names the selected closure leaves undefined.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnresolvedSymbols {
+    /// Image preparation: any unresolved name fails the link.
+    Error,
+    /// Companion proposal: unresolved names stay undefined in a trial image.
+    Report,
 }
 
 /// Fixed semantic policy is identified by contract; adapters own flags and script dialect.
@@ -37,6 +48,7 @@ pub struct LinkInvocation<'a> {
     pub members: Vec<LinkMember>,
     pub layout: ImageLayout,
     pub definitions: Vec<(String, u32)>,
+    pub unresolved: UnresolvedSymbols,
 }
 
 /// Application-owned capacity; Linux adapters cannot allocate unaccounted outputs.
@@ -789,6 +801,7 @@ fn prepare_image_inner(
             .collect(),
         layout: work.plan.recipe.layout,
         definitions,
+        unresolved: UnresolvedSymbols::Error,
     };
     let linked = host.link(&invocation, &mut outputs, control);
     *diagnostics = Some(LinkerDiagnostics {

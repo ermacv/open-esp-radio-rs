@@ -282,6 +282,7 @@ mod tests {
             executable: id,
         };
         let invocation = LinkInvocation {
+            unresolved: UnresolvedSymbols::Error,
             executable: Path::new("unused"),
             identity: &identity,
             contract: LinkerContract::ElfAnalysisLinkV1,

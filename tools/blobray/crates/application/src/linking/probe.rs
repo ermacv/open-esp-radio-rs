@@ -98,6 +98,7 @@ fn check_once(
         },
     };
     let request = LinkInvocation {
+        unresolved: UnresolvedSymbols::Error,
         executable,
         identity,
         contract: LinkerContract::ElfAnalysisLinkV1,

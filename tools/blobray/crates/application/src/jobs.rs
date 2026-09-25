@@ -1046,6 +1046,7 @@ impl Application {
                 }
                 ReadQuery::Plan { request } => Some(&mut request.revision),
                 ReadQuery::LinkPlan { request, .. } => Some(&mut request.revision),
+                ReadQuery::ProposeCompanions { request, .. } => Some(&mut request.revision),
                 ReadQuery::NamedLinkPlan { request, .. } => Some(&mut request.revision),
                 ReadQuery::PlanInvestigation { request, .. } => Some(&mut request.revision),
                 _ => None,

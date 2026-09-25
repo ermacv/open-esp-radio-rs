@@ -482,7 +482,7 @@ pub enum XtalDutyPrepareAction {
     },
     ConfigurePbusDebugMode,
     ForcePbus(PhyPbusForceTest),
-    /// Retain the field inside PAC and clear it in the same serialized
+    /// Retain the field in the route restore slot and clear it in the same serialized
     /// radio-owner operation.
     PrepareRxDcoControlRestore,
     /// Complete Rust-owned RX-DCO and IQ-estimator graph.

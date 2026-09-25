@@ -1183,7 +1183,7 @@ enum PhyRfInitPrefixStep {
 /// Event-driven composition of operations one through twenty-five in the complete
 /// pinned `libphy.a[phy_init.o]::phy_rf_init` body.
 ///
-/// The finite MMIO and PAC-owned PHY-I2C plans are semantic actions. Every SDM
+/// The finite MMIO and PAC-planned PHY-I2C commands are semantic actions. Every SDM
 /// sample requires an external PHY-I2C completion. The 100- and 10-microsecond
 /// intervals are separate executor timer edges. No transition is caused by
 /// polling this value.

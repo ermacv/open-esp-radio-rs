@@ -95,7 +95,7 @@ oer_probe_macros::probe! {
         };
         embassy_futures::block_on(oer_esp32s31_phy::target_port::rfpll::track::<
             RfpllTraceDelay,
-        >(registers, request))
+        >(&mut crate::shared_phy(registers), request))
         .map_or(i32::MIN, |outcome| {
             i32::from(outcome.reference_temperature as u16)
                 | (i32::from(outcome.correction.is_some()) << 16)

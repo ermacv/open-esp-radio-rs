@@ -9,17 +9,18 @@ use super::{
     BluetoothTxPowerControlI2cAccess, BluetoothTxPowerControlObservation,
     BluetoothTxPowerControlOperation, BluetoothTxPowerControlPrepareError,
     BluetoothTxPowerControlRegister, BluetoothTxPowerControlRestoreError,
-    BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cCommandMemoryInputs,
-    PhyI2cConfigurationAccess, PhyI2cConfigurationAction, PhyI2cConfigurationError,
-    PhyI2cConfigurationObservation, PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction,
-    PhyI2cHost, PhyI2cInitializationStageOneInputs, PhyI2cInitializationStageTwoError,
-    PhyI2cParallelAccess, configure_initialization_stage_two_with,
+    BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cAddress,
+    PhyI2cCommandMemoryInputs, PhyI2cConfigurationAccess, PhyI2cConfigurationAction,
+    PhyI2cConfigurationError, PhyI2cConfigurationObservation, PhyI2cConfigurationOperation,
+    PhyI2cConfigurationTransaction, PhyI2cHost, PhyI2cInitializationStageOneInputs,
+    PhyI2cInitializationStageTwoError, PhyI2cParallelAccess, PhyI2cParallelWrite,
+    configure_initialization_stage_two_with,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ParallelEvent {
     SelectParallelMap,
-    Start(PhyI2cHost),
+    StartPair,
     RestoreRadioMap,
 }
 
@@ -48,9 +49,9 @@ impl PhyI2cParallelAccess for FakeParallelI2c {
         }
     }
 
-    fn start_write(&mut self, host: PhyI2cHost, _block: u8, _register: u8, _value: u8) {
+    fn start_pair(&mut self, _pair: PhyI2cParallelWrite) {
         self.started.set(true);
-        self.events.push(ParallelEvent::Start(host));
+        self.events.push(ParallelEvent::StartPair);
     }
 }
 
@@ -69,20 +70,12 @@ fn retained_wake_i2c_stage_two_pairs_both_hosts_and_restores_the_radio_map() {
         Some(&ParallelEvent::SelectParallelMap)
     );
     assert_eq!(access.events.last(), Some(&ParallelEvent::RestoreRadioMap));
-    let starts: Vec<_> = access
+    let pairs = access
         .events
         .iter()
-        .filter_map(|event| match event {
-            ParallelEvent::Start(host) => Some(*host),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(starts.len(), 44);
-    assert!(
-        starts
-            .chunks_exact(2)
-            .all(|pair| { pair == [PhyI2cHost::Host0, PhyI2cHost::Host1] })
-    );
+        .filter(|event| **event == ParallelEvent::StartPair)
+        .count();
+    assert_eq!(pairs, 22);
 }
 
 #[test]
@@ -233,7 +226,7 @@ struct FakeConfigurationI2c {
 }
 
 impl PhyI2cConfigurationAccess for FakeConfigurationI2c {
-    fn start_read(&mut self, _block: u8, _register: u8) -> Result<(), ()> {
+    fn start_read(&mut self, _address: PhyI2cAddress) -> Result<(), ()> {
         if self.busy_starts != 0 {
             self.busy_starts -= 1;
             return Err(());
@@ -242,7 +235,7 @@ impl PhyI2cConfigurationAccess for FakeConfigurationI2c {
         Ok(())
     }
 
-    fn start_write(&mut self, _block: u8, _register: u8, _value: u8) -> Result<(), ()> {
+    fn start_write(&mut self, _address: PhyI2cAddress, _value: u8) -> Result<(), ()> {
         if self.busy_starts != 0 {
             self.busy_starts -= 1;
             return Err(());
@@ -393,7 +386,7 @@ fn drive(
 }
 
 #[test]
-fn prepare_configure_and_restore_keep_analog_geometry_and_snapshot_in_pac() {
+fn prepare_configure_and_restore_preserve_analog_order_and_snapshot() {
     let mut access = FakeI2c::new([0xa5, 0xd5]);
     let mut prepare =
         BluetoothTxPowerControlTransaction::new(BluetoothTxPowerControlOperation::PrepareRestore);

@@ -140,7 +140,8 @@ fn admit<I: InterruptAuthority>(
 impl<I: InterruptAuthority> WifiAccess<I> {
     /// Narrow PHY borrow within the retained physical operation.
     pub fn phy_hal(&mut self) -> SharedPhyHal<'_, route::Wifi> {
-        SharedPhyHal::new(self.registers.registers.radio_phy_mut())
+        let (registers, restore) = self.registers.phy_parts_mut();
+        SharedPhyHal::new(registers, restore)
     }
 
     /// Restore the caller's MAC postconditions after PHY children which may

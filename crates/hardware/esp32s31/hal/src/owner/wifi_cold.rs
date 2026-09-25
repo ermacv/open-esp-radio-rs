@@ -2,11 +2,12 @@
 
 use oer_esp32s31_pac::{
     CoexistenceLowPowerClockObservation, MacInterruptSetup as PacMacInterruptSetup,
-    WifiRadioRegisters,
+    RadioPhyRegisters, WifiRadioRegisters,
 };
 
 use crate::{
     clock::WifiClocks,
+    phy::restore::PhyRestoreSlot,
     power::RoutePower,
     root::{RadioHardware, RadioPhyReleaseError, RetainedBluetooth, WifiRoute},
     types::{MacInterruptEnableState, MacInterruptMask},
@@ -16,6 +17,13 @@ use crate::{
 pub(crate) struct WifiRouteState {
     retained: RetainedBluetooth,
     clocks: WifiClocks,
+    phy_restore: PhyRestoreSlot,
+}
+
+impl WifiRouteState {
+    pub(crate) fn phy_restore_mut(&mut self) -> &mut PhyRestoreSlot {
+        &mut self.phy_restore
+    }
 }
 
 /// Pre-runtime Wi-Fi route that still controls the cold MAC interrupt fields.
@@ -44,6 +52,7 @@ impl WifiColdRegisters {
             route: WifiRouteState {
                 retained,
                 clocks: WifiClocks::default(),
+                phy_restore: PhyRestoreSlot::default(),
             },
         }
     }
@@ -85,7 +94,7 @@ impl WifiColdRegisters {
     /// TX-power control still awaits restoration, or when a cold-power
     /// baseline fails readback.
     pub(crate) fn release(mut self) -> Result<RadioHardware, (Self, RadioPhyReleaseError)> {
-        if let Err(error) = crate::root::check_phy_restore_complete(self.registers.radio_phy()) {
+        if let Err(error) = crate::root::check_phy_restore_complete(&self.route.phy_restore) {
             return Err((self, error));
         }
         let phy = self.registers.radio_phy_mut();
@@ -119,6 +128,21 @@ impl WifiColdRegisters {
             .clocks
             .shared
             .retain_coexistence(self.registers.radio_phy_mut());
+    }
+
+    /// Borrow the shared PHY together with the route restore slot.
+    pub(crate) fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
+        (self.registers.radio_phy_mut(), &mut self.route.phy_restore)
+    }
+
+    /// Borrow the Wi-Fi register set together with the route restore slot.
+    pub(crate) fn radio_parts_mut(&mut self) -> (&mut WifiRadioRegisters, &mut PhyRestoreSlot) {
+        (&mut self.registers, &mut self.route.phy_restore)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn phy_restore_mut(&mut self) -> &mut PhyRestoreSlot {
+        &mut self.route.phy_restore
     }
 
     pub(crate) fn radio(&self) -> &WifiRadioRegisters {

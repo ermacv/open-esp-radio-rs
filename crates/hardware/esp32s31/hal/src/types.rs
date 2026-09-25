@@ -36,10 +36,16 @@ pub use oer_esp32s31_pac::{
     MacTxDetachReason, MacTxPowerPair, MacTxPowerTable, MacTxProtection, MacTxPtiCount,
     MacTxPtiProgram, MacTxQueueDetached, MacTxQueueIndex, MacTxStatisticsSnapshot,
     PbusMemoryGroupBoundary, PhyAdcRate, PhyForcedPowerIndex, PhyFtmEnableVendorArgument,
-    PhyGainMemoryEntry, PhyMemoryError, RxBlockAckEntrySnapshot, RxDcoControlPrepareError,
-    RxDcoControlRestoreError, StaBeaconMissLimit, StaBeaconMissTimeoutRaw, StaModemSleepLimit,
-    StaModemWakeConfig, StaModemWakePrepareError, StaModemWakeRestore, StaModemWakeRestoreError,
-    StaModemWakeRestoreFailure, StaTbttAutoPeriod, StaTbttWakePrepareError, StaTbttWakeRestore,
-    StaTbttWakeRestoreError, StaTbttWakeRestoreFailure, StaWakeProtectEarlyTimeRaw,
-    TxBlockAckPayload, TxIqToneControlPrepareError, TxIqToneControlRestoreError,
+    PhyGainMemoryEntry, PhyMemoryError, RxBlockAckEntrySnapshot, StaBeaconMissLimit,
+    StaBeaconMissTimeoutRaw, StaModemSleepLimit, StaModemWakeConfig, StaModemWakePrepareError,
+    StaModemWakeRestore, StaModemWakeRestoreError, StaModemWakeRestoreFailure, StaTbttAutoPeriod,
+    StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreError,
+    StaTbttWakeRestoreFailure, StaWakeProtectEarlyTimeRaw, TxBlockAckPayload,
+};
+
+pub use crate::phy::restore::{
+    BluetoothTxPowerControlPrepareError, BluetoothTxPowerControlRestoreError,
+    RxDcoControlPrepareError, RxDcoControlRestoreError, TxDcPwdetLifecycleError,
+    TxDcPwdetPrepareError, TxDcPwdetRestoreError, TxIqToneControlPrepareError,
+    TxIqToneControlRestoreError,
 };

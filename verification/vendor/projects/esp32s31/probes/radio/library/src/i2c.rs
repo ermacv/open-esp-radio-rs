@@ -67,13 +67,13 @@ oer_probe_macros::probe! {
             for _ in 0..maximum_actions {
                 match transaction.action() {
                     PhyColdI2cAction::StartRead { .. } | PhyColdI2cAction::StartWrite { .. } => {
-                        if transaction.start_target(registers).is_err() {
+                        if transaction.start_target(&mut crate::shared_phy(registers)).is_err() {
                             return 0x10000;
                         }
                     }
                     PhyColdI2cAction::AwaitReadCompletionEdge { .. }
                     | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
-                        if transaction.observe_target_edge(registers).is_err() {
+                        if transaction.observe_target_edge(&mut crate::shared_phy(registers)).is_err() {
                             return 0x10002;
                         }
                     }
@@ -93,7 +93,7 @@ oer_probe_macros::probe! {
     /// Lower the shipping host-selection result to the captured integer ABI.
     pub fn open_phy_trace_i2c_host(block: u32) -> u32 {
         super::with_phy(|registers| {
-            oer_esp32s31_phy::validation::configure_and_select_phy_i2c_host(registers, block as u8)
+            oer_esp32s31_phy::validation::configure_and_select_phy_i2c_host(&mut crate::shared_phy(registers), block as u8)
         })
     }
 }
@@ -102,7 +102,7 @@ oer_probe_macros::probe! {
     /// Execute the complete production reset helper, including its bounded poll policy.
     pub fn open_phy_trace_i2c_reset() -> u32 {
         super::with_phy(
-            |registers| match oer_esp32s31_phy::validation::reset_i2c_master(registers) {
+            |registers| match oer_esp32s31_phy::validation::reset_i2c_master(&mut crate::shared_phy(registers)) {
                 Ok(()) => 0,
                 Err(oer_esp32s31_phy::PhyTargetPortError::HardwareEdgeTimedOut) => 0x10001,
                 Err(_) => 0x10002,

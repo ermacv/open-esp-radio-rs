@@ -375,7 +375,7 @@ impl PhyColdI2cBinding {
     }
 }
 
-/// Non-cloneable identity-bound owner of a PAC-owned PHY-I²C configuration.
+/// Non-cloneable identity-bound owner of a HAL PHY-I²C configuration.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyColdI2cConfigurationBinding {
     outer_action: PhyRfInitPrefixAction,

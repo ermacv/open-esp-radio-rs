@@ -154,9 +154,9 @@ impl RadioOwnerArena {
             .map_err(|_| RadioOwnerArenaError::Borrowed)?;
         let owner = RefMut::filter_map(slot, Option::as_mut)
             .map_err(|_| RadioOwnerArenaError::MissingOwner)?;
-        let registers = RefMut::map(owner, RadioRuntimeOwner::pac_mut);
+        let (registers, restore) = RefMut::map_split(owner, RadioRuntimeOwner::channel_parts_mut);
         Ok(crate::ieee80211::channel::RadioChannelHal::from_published(
-            platform, registers,
+            platform, registers, restore,
         ))
     }
 

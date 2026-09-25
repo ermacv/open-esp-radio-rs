@@ -25,6 +25,7 @@ use oer_esp32s31_pac::{
 
 use crate::{
     clock::BluetoothClocks,
+    phy::restore::PhyRestoreSlot,
     root::{BluetoothRoute, RadioHardware, RadioPhyReleaseError, RetainedWifi},
 };
 
@@ -74,6 +75,7 @@ pub struct ColdOwner {
     interrupts: PacBluetoothInterruptSetup,
     retained: RetainedWifi,
     clocks: BluetoothClocks,
+    phy_restore: PhyRestoreSlot,
 }
 
 /// Failed cold Bluetooth release retaining the complete HAL owner.
@@ -121,6 +123,7 @@ impl ColdOwner {
             interrupts,
             retained,
             clocks: BluetoothClocks::default(),
+            phy_restore: PhyRestoreSlot::default(),
         }
     }
 
@@ -136,7 +139,7 @@ impl ColdOwner {
     /// TX-DC PWDET, TX-IQ, RX-DCO, or Bluetooth TX-power control still awaits
     /// restoration, or when a cold-power baseline fails readback.
     pub fn release(mut self) -> Result<RadioHardware, ColdOwnerReleaseFailure> {
-        if let Err(error) = crate::root::check_phy_restore_complete(self.task.radio_phy()) {
+        if let Err(error) = crate::root::check_phy_restore_complete(&self.phy_restore) {
             return Err(ColdOwnerReleaseFailure { owner: self, error });
         }
         let phy = self.task.radio_phy_mut();
@@ -259,6 +262,7 @@ impl ColdOwner {
                 registers: self.task,
                 retained: self.retained,
                 clocks: self.clocks,
+                phy_restore: self.phy_restore,
                 reunitable: true,
             },
             InterruptSetupOwner {
@@ -275,6 +279,7 @@ pub struct TaskOwner {
     registers: PacBluetoothTaskRegisters,
     retained: RetainedWifi,
     clocks: BluetoothClocks,
+    phy_restore: PhyRestoreSlot,
     reunitable: bool,
 }
 
@@ -293,6 +298,7 @@ impl TaskOwner {
             self.registers,
             self.retained,
             self.clocks,
+            self.phy_restore,
             output.registers,
             timer.registers,
         )
@@ -355,12 +361,24 @@ impl TaskOwner {
             interrupts: interrupts.registers,
             retained: self.retained,
             clocks: self.clocks,
+            phy_restore: self.phy_restore,
         })
     }
 
-    pub(crate) fn radio_phy_mut(&mut self) -> &mut oer_esp32s31_pac::RadioPhyRegisters {
+    /// Borrow the shared PHY and route restore slot, arming fail-stop reunion.
+    pub(crate) fn phy_parts_mut(
+        &mut self,
+    ) -> (
+        &mut oer_esp32s31_pac::RadioPhyRegisters,
+        &mut PhyRestoreSlot,
+    ) {
         self.reunitable = false;
-        self.registers.radio_phy_mut()
+        (self.registers.radio_phy_mut(), &mut self.phy_restore)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn phy_restore_mut(&mut self) -> &mut PhyRestoreSlot {
+        &mut self.phy_restore
     }
 
     /// Execute the reviewed BTBB-v2 component for the lifecycle owner that

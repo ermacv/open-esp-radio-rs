@@ -52,7 +52,8 @@ use crate::{
             Ieee802154PanIdentity, configure_ieee802154_mac_policy,
         },
     },
-    owner::{Ieee802154SharedPhyBorrow, SharedPhyHal, route},
+    owner::{SharedPhyHal, route},
+    phy::restore::PhyRestoreSlot,
     power::{self, PowerError},
     root::{Ieee802154Route, RadioHardware, RadioPhyReleaseError, RetainedIeee802154},
 };
@@ -63,6 +64,7 @@ struct OwnedIeee802154Backend<P> {
     interrupts: Ieee802154InterruptSetup,
     retained: RetainedIeee802154,
     clocks: SharedClockLeases,
+    phy_restore: PhyRestoreSlot,
 }
 
 /// Failed cold-route release retaining the complete IEEE 802.15.4 owner.
@@ -249,6 +251,7 @@ impl<P> Ieee802154Owned<P> {
                 interrupts,
                 retained,
                 clocks: SharedClockLeases::default(),
+                phy_restore: PhyRestoreSlot::default(),
             },
         }
     }
@@ -265,9 +268,9 @@ impl<P> Ieee802154Owned<P> {
     ///
     /// Returns a release failure retaining this owner and its
     /// platform while TX-DC PWDET, TX-IQ, RX-DCO, or Bluetooth TX-power control still
-    /// awaits restoration in the PAC.
+    /// awaits restoration in the route restore slot.
     pub fn release(self) -> Result<(P, RadioHardware), Ieee802154OwnedReleaseFailure<P>> {
-        if let Err(error) = crate::root::check_phy_restore_complete(self.backend.task.radio_phy()) {
+        if let Err(error) = crate::root::check_phy_restore_complete(&self.backend.phy_restore) {
             return Err(Ieee802154OwnedReleaseFailure { owner: self, error });
         }
         let OwnedIeee802154Backend {
@@ -276,6 +279,7 @@ impl<P> Ieee802154Owned<P> {
             interrupts,
             retained,
             mut clocks,
+            phy_restore: _,
         } = self.backend;
         clocks.release_all(task.radio_phy_mut());
         Ok((
@@ -286,6 +290,11 @@ impl<P> Ieee802154Owned<P> {
                 retained,
             }),
         ))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn phy_restore_mut(&mut self) -> &mut PhyRestoreSlot {
+        &mut self.backend.phy_restore
     }
 
     /// Borrow the integration token before any lifecycle mutation.
@@ -723,7 +732,7 @@ impl<P> Ieee802154Clocked<P> {
     #[doc(hidden)]
     pub fn common_phy_parts(&mut self) -> (&mut P, SharedPhyHal<'_, route::Ieee802154>) {
         let backend = self.inner.backend_mut();
-        let shared_phy = backend.task.borrow_shared_phy();
+        let shared_phy = SharedPhyHal::new(backend.task.radio_phy_mut(), &mut backend.phy_restore);
         (&mut backend.platform, shared_phy)
     }
 }

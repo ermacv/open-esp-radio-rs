@@ -39,12 +39,7 @@ pub mod validation;
 /// ```
 pub use generated::MacInterruptMask;
 
-pub use baseband::{
-    BluetoothTxPowerControlPrepareError, BluetoothTxPowerControlRestoreError,
-    RxDcoControlPrepareError, RxDcoControlRestoreError, TxDcPwdetLifecycleError,
-    TxDcPwdetPrepareError, TxDcPwdetRestoreError, TxIqToneControlPrepareError,
-    TxIqToneControlRestoreError,
-};
+pub use baseband::{RxDcoControlField, TxDcPwdetFields, TxIqToneControlFields};
 
 pub use bluetooth::{
     controller::{
@@ -181,14 +176,10 @@ use oer_esp32s31_pac_raw as svd;
 pub use phy::{
     agc::runtime::ForcedRxGain,
     i2c::{
-        BluetoothTxPowerControlAction, BluetoothTxPowerControlCompletion,
-        BluetoothTxPowerControlError, BluetoothTxPowerControlObservation,
-        BluetoothTxPowerControlOperation, BluetoothTxPowerControlTransaction, PhyAdcRate,
-        PhyFilterDcapInputs, PhyI2cAccessError, PhyI2cAddress, PhyI2cBlock,
-        PhyI2cCommandMemoryInputs, PhyI2cConfigurationAction, PhyI2cConfigurationError,
-        PhyI2cConfigurationObservation, PhyI2cConfigurationOperation,
-        PhyI2cConfigurationTransaction, PhyI2cField, PhyI2cHost,
-        PhyI2cInitializationStageOneInputs, PhyI2cInitializationStageTwoError, analog_registers,
+        BluetoothTxPowerControlRegister, PhyAdcRate, PhyFilterDcapInputs, PhyI2cAccessError,
+        PhyI2cAddress, PhyI2cBlock, PhyI2cCommandMemoryInputs, PhyI2cConfigurationCommand,
+        PhyI2cConfigurationOperation, PhyI2cField, PhyI2cHost, PhyI2cInitializationStageOneInputs,
+        PhyI2cParallelWrite, analog_registers,
     },
 };
 

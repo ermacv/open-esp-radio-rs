@@ -17,8 +17,7 @@ extern crate std;
 use core::future::Future;
 
 use oer_esp32s31_pac::{
-    Ieee802154TaskRegisters, MacInterruptRegisters as PacMacInterruptRegisters,
-    MacInterruptSetup as PacMacInterruptSetup,
+    MacInterruptRegisters as PacMacInterruptRegisters, MacInterruptSetup as PacMacInterruptSetup,
     MacPowerInterruptRegisters as PacMacPowerInterruptRegisters, RadioPhyRegisters,
     WifiRadioRegisters,
 };

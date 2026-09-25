@@ -12,6 +12,8 @@ use crate::{
 
 use super::*;
 
+use crate::phy::restore::PhyRestoreSlot;
+
 mod interrupt_checkpoint;
 pub mod maintenance;
 mod wifi_cold;
@@ -102,13 +104,18 @@ pub mod route {
 /// ```
 pub struct SharedPhyHal<'owner, R: route::Route> {
     pub(crate) registers: &'owner mut RadioPhyRegisters,
+    pub(crate) restore: &'owner mut PhyRestoreSlot,
     route: core::marker::PhantomData<fn() -> R>,
 }
 
 impl<'owner, R: route::Route> SharedPhyHal<'owner, R> {
-    pub(crate) fn new(registers: &'owner mut RadioPhyRegisters) -> Self {
+    pub(crate) fn new(
+        registers: &'owner mut RadioPhyRegisters,
+        restore: &'owner mut PhyRestoreSlot,
+    ) -> Self {
         Self {
             registers,
+            restore,
             route: core::marker::PhantomData,
         }
     }
@@ -116,33 +123,27 @@ impl<'owner, R: route::Route> SharedPhyHal<'owner, R> {
 
 pub(crate) mod sealed {
 
-    use crate::{bluetooth::TaskOwner, owner::WifiBasebandEnableObservation};
+    use crate::{
+        bluetooth::TaskOwner, owner::WifiBasebandEnableObservation, phy::restore::PhyRestoreSlot,
+    };
 
-    use super::{Ieee802154TaskRegisters, RadioPhyRegisters};
+    use super::RadioPhyRegisters;
 
     pub trait SharedPhyBorrow {
-        fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters;
+        fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot);
     }
 
     impl SharedPhyBorrow for TaskOwner {
-        fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters {
-            self.radio_phy_mut()
-        }
-    }
-
-    pub trait Ieee802154SharedPhyBorrow {
-        fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters;
-    }
-
-    impl Ieee802154SharedPhyBorrow for Ieee802154TaskRegisters {
-        fn radio_phy_mut(&mut self) -> &mut RadioPhyRegisters {
-            self.radio_phy_mut()
+        fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
+            self.phy_parts_mut()
         }
     }
 
     pub trait SharedPhyAccess {
         fn pac(&self) -> &RadioPhyRegisters;
-        fn pac_mut(&mut self) -> &mut RadioPhyRegisters;
+        /// Borrow the shared PHY registers together with the route restore
+        /// slot that serializes PHY calibrations.
+        fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot);
     }
 
     pub trait SharedPhyContext {
@@ -165,29 +166,12 @@ pub trait SharedPhyBorrow: sealed::SharedPhyBorrow {
     /// The returned capability samples shared Wi-Fi-baseband state through
     /// the retained route PAC owner.
     fn borrow_shared_phy(&mut self) -> SharedPhyHal<'_, route::Bluetooth> {
-        SharedPhyHal::new(sealed::SharedPhyBorrow::radio_phy_mut(self))
+        let (registers, restore) = sealed::SharedPhyBorrow::phy_parts_mut(self);
+        SharedPhyHal::new(registers, restore)
     }
 }
 
 impl SharedPhyBorrow for TaskOwner {}
-
-/// Sealed conversion from the exclusive IEEE 802.15.4 task owner to one
-/// narrow shared-PHY borrow.
-///
-/// This is the same concrete common-PHY port used by the standalone Bluetooth
-/// lifecycle. It conveys neither Wi-Fi ownership nor a PHY/RF-ready claim.
-#[doc(hidden)]
-pub trait Ieee802154SharedPhyBorrow: sealed::Ieee802154SharedPhyBorrow {
-    /// Borrow the shared PHY for one finite IEEE 802.15.4 lower-layer scope.
-    ///
-    /// The returned capability samples shared Wi-Fi-baseband state through
-    /// the retained route PAC owner.
-    fn borrow_shared_phy(&mut self) -> SharedPhyHal<'_, route::Ieee802154> {
-        SharedPhyHal::new(sealed::Ieee802154SharedPhyBorrow::radio_phy_mut(self))
-    }
-}
-
-impl Ieee802154SharedPhyBorrow for Ieee802154TaskRegisters {}
 
 /// Sealed protocol-neutral port accepted by named PHY HAL operations.
 ///
@@ -204,35 +188,45 @@ pub trait SharedPhyAccess: sealed::SharedPhyAccess {
     }
 
     fn set_phy_calibration_clock(&mut self, enabled: bool) {
-        sealed::SharedPhyAccess::pac_mut(self).set_phy_calibration_clock(enabled);
+        phy_pac_mut(self).set_phy_calibration_clock(enabled);
     }
 
     fn set_rx_gain_dc_calibration(&mut self, enabled: bool) {
-        sealed::SharedPhyAccess::pac_mut(self).set_rx_gain_dc_calibration(enabled);
+        phy_pac_mut(self).set_rx_gain_dc_calibration(enabled);
     }
 
     fn configure_power_control_tone(&mut self, selector: u16, step: u8) {
-        sealed::SharedPhyAccess::pac_mut(self).configure_power_control_tone(selector, step);
+        phy_pac_mut(self).configure_power_control_tone(selector, step);
     }
 
     fn configure_calibration_tone(&mut self, enabled: bool, selector: u16, step: u8) {
-        sealed::SharedPhyAccess::pac_mut(self).configure_calibration_tone(enabled, selector, step);
+        phy_pac_mut(self).configure_calibration_tone(enabled, selector, step);
     }
 
     fn configure_tx_iq_correction(&mut self, begin: bool) {
-        sealed::SharedPhyAccess::pac_mut(self).configure_tx_iq_correction(begin);
+        phy_pac_mut(self).configure_tx_iq_correction(begin);
     }
 
+    /// Capture the first-path TX-IQ tone-control state into the route slot.
+    ///
+    /// A second caller is rejected before reading the register and therefore
+    /// cannot replace another calibration's restore authority.
     fn prepare_txiq_tone_control_restore(
         &mut self,
-    ) -> Result<(), oer_esp32s31_pac::TxIqToneControlPrepareError> {
-        sealed::SharedPhyAccess::pac_mut(self).prepare_txiq_tone_control_restore()
+    ) -> Result<(), crate::phy::restore::TxIqToneControlPrepareError> {
+        let (phy, restore) = sealed::SharedPhyAccess::parts_mut(self);
+        restore.prepare_txiq_with(|| phy.capture_txiq_tone_control())
     }
 
+    /// Restore and consume the saved TX-IQ tone-control state.
+    ///
+    /// A caller without a successful prepare operation is rejected before
+    /// MMIO. The slot is cleared only after the complete accessor write.
     fn restore_txiq_tone_control(
         &mut self,
-    ) -> Result<(), oer_esp32s31_pac::TxIqToneControlRestoreError> {
-        sealed::SharedPhyAccess::pac_mut(self).restore_txiq_tone_control()
+    ) -> Result<(), crate::phy::restore::TxIqToneControlRestoreError> {
+        let (phy, restore) = sealed::SharedPhyAccess::parts_mut(self);
+        restore.restore_txiq_with(|fields| phy.restore_txiq_tone_control(fields))
     }
 
     fn configure_txiq_mismatch_power(
@@ -242,72 +236,67 @@ pub trait SharedPhyAccess: sealed::SharedPhyAccess {
         attenuation: u8,
         selector: u16,
     ) {
-        sealed::SharedPhyAccess::pac_mut(self).configure_txiq_mismatch_power(
-            first,
-            polarity,
-            attenuation,
-            selector,
-        );
+        phy_pac_mut(self).configure_txiq_mismatch_power(first, polarity, attenuation, selector);
     }
 
     fn set_tx_iq_gain_coefficient(&mut self, coefficient: i8) {
-        sealed::SharedPhyAccess::pac_mut(self).set_tx_iq_gain_coefficient(coefficient);
+        phy_pac_mut(self).set_tx_iq_gain_coefficient(coefficient);
     }
 
     fn set_tx_iq_phase_coefficient(&mut self, coefficient: i8) {
-        sealed::SharedPhyAccess::pac_mut(self).set_tx_iq_phase_coefficient(coefficient);
+        phy_pac_mut(self).set_tx_iq_phase_coefficient(coefficient);
     }
 
     fn set_rx_iq_gain_coefficient(&mut self, coefficient: i8) {
-        sealed::SharedPhyAccess::pac_mut(self).set_rx_iq_gain_coefficient(coefficient);
+        phy_pac_mut(self).set_rx_iq_gain_coefficient(coefficient);
     }
 
     fn set_rx_iq_phase_coefficient(&mut self, coefficient: i8) {
-        sealed::SharedPhyAccess::pac_mut(self).set_rx_iq_phase_coefficient(coefficient);
+        phy_pac_mut(self).set_rx_iq_phase_coefficient(coefficient);
     }
 
     fn configure_rx_iq_calibration_mode(&mut self) {
-        sealed::SharedPhyAccess::pac_mut(self).configure_rx_iq_calibration_mode();
+        phy_pac_mut(self).configure_rx_iq_calibration_mode();
     }
 
     fn configure_adc_rate(&mut self, rate: PhyAdcRate) {
-        sealed::SharedPhyAccess::pac_mut(self).configure_adc_rate(rate);
+        phy_pac_mut(self).configure_adc_rate(rate);
     }
 
     fn set_power_detector_tone_armed(&mut self, armed: bool) {
-        sealed::SharedPhyAccess::pac_mut(self).set_power_detector_tone_armed(armed);
+        phy_pac_mut(self).set_power_detector_tone_armed(armed);
     }
 
     fn stop_power_detector_tone(&mut self) {
-        sealed::SharedPhyAccess::pac_mut(self).stop_power_detector_tone();
+        phy_pac_mut(self).stop_power_detector_tone();
     }
 
     fn trigger_tx_dc_measurement(&mut self) {
-        sealed::SharedPhyAccess::pac_mut(self).trigger_tx_dc_measurement();
+        phy_pac_mut(self).trigger_tx_dc_measurement();
     }
 
     fn tx_dc_measurement_is_ready(&mut self) -> bool {
-        sealed::SharedPhyAccess::pac_mut(self).tx_dc_measurement_is_ready()
+        phy_pac_mut(self).tx_dc_measurement_is_ready()
     }
 
     fn sample_tx_dc_comparators(&mut self) -> [bool; 2] {
-        sealed::SharedPhyAccess::pac_mut(self).sample_tx_dc_comparators()
+        phy_pac_mut(self).sample_tx_dc_comparators()
     }
 
     fn clear_tx_dc_measurement(&mut self) {
-        sealed::SharedPhyAccess::pac_mut(self).clear_tx_dc_measurement();
+        phy_pac_mut(self).clear_tx_dc_measurement();
     }
 
     fn open_frontend_baseband_internal_clocks(&mut self) {
-        sealed::SharedPhyAccess::pac_mut(self).open_frontend_baseband_internal_clocks();
+        phy_pac_mut(self).open_frontend_baseband_internal_clocks();
     }
 
     fn set_rf_circuit_power(&mut self, enabled: bool) {
-        sealed::SharedPhyAccess::pac_mut(self).set_rf_circuit_power(enabled);
+        phy_pac_mut(self).set_rf_circuit_power(enabled);
     }
 
     fn set_bb_i2c_power_tie(&mut self, enabled: bool) {
-        sealed::SharedPhyAccess::pac_mut(self).set_bb_i2c_power_tie(enabled);
+        phy_pac_mut(self).set_bb_i2c_power_tie(enabled);
     }
 
     fn analog_i2c_is_powered(&self) -> bool {
@@ -315,7 +304,7 @@ pub trait SharedPhyAccess: sealed::SharedPhyAccess {
     }
 
     fn set_analog_i2c_power(&mut self, enabled: bool) {
-        sealed::SharedPhyAccess::pac_mut(self).set_analog_i2c_power(enabled);
+        phy_pac_mut(self).set_analog_i2c_power(enabled);
     }
 
     fn analog_i2c_reset_is_released(&self) -> bool {
@@ -323,11 +312,11 @@ pub trait SharedPhyAccess: sealed::SharedPhyAccess {
     }
 
     fn set_analog_i2c_reset_released(&mut self, released: bool) {
-        sealed::SharedPhyAccess::pac_mut(self).set_analog_i2c_reset_released(released);
+        phy_pac_mut(self).set_analog_i2c_reset_released(released);
     }
 
     fn enable_frontend_baseband_power(&mut self) {
-        sealed::SharedPhyAccess::pac_mut(self).enable_frontend_baseband_power();
+        phy_pac_mut(self).enable_frontend_baseband_power();
     }
 }
 
@@ -353,7 +342,9 @@ pub trait PhyInitializationAccess: SharedPhyContext + sealed::PhyInitializationA
     /// Registration calls this before its first hardware edge. Any other call
     /// only invalidates existing registration results; it cannot mint one.
     fn begin_registration_epoch(&mut self) -> PhyRegistrationEpoch {
-        sealed::SharedPhyAccess::pac_mut(self).begin_registration_epoch()
+        sealed::SharedPhyAccess::parts_mut(self)
+            .0
+            .begin_registration_epoch()
     }
 }
 
@@ -362,8 +353,8 @@ impl sealed::SharedPhyAccess for PhyHal {
         self.registers.radio().radio_phy()
     }
 
-    fn pac_mut(&mut self) -> &mut RadioPhyRegisters {
-        self.registers.radio_mut().radio_phy_mut()
+    fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
+        self.registers.phy_parts_mut()
     }
 }
 
@@ -390,8 +381,8 @@ impl<R: route::Route> sealed::SharedPhyAccess for SharedPhyHal<'_, R> {
         self.registers
     }
 
-    fn pac_mut(&mut self) -> &mut RadioPhyRegisters {
-        self.registers
+    fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
+        (self.registers, self.restore)
     }
 }
 
@@ -408,24 +399,65 @@ impl<R: route::Route> sealed::PhyInitializationAccess for SharedPhyHal<'_, R> {}
 
 impl<R: route::Route> PhyInitializationAccess for SharedPhyHal<'_, R> {}
 
-impl sealed::SharedPhyAccess for RadioPhyRegisters {
-    fn pac(&self) -> &RadioPhyRegisters {
-        self
-    }
+/// Shared PHY capability over externally supplied registers in an isolated
+/// validation image.
+///
+/// Compiled vendor-comparison entry points receive the register partition by
+/// pointer. This wrapper owns a fresh restore slot for one call, so a probe
+/// cannot observe or leak another route's calibration restore obligation.
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub struct ValidationSharedPhy<'registers> {
+    registers: &'registers mut RadioPhyRegisters,
+    restore: PhyRestoreSlot,
+}
 
-    fn pac_mut(&mut self) -> &mut RadioPhyRegisters {
-        self
+#[cfg(feature = "validation-probes")]
+impl<'registers> ValidationSharedPhy<'registers> {
+    pub fn new(registers: &'registers mut RadioPhyRegisters) -> Self {
+        Self {
+            registers,
+            restore: PhyRestoreSlot::default(),
+        }
     }
 }
 
-impl SharedPhyAccess for RadioPhyRegisters {}
+#[cfg(feature = "validation-probes")]
+impl sealed::SharedPhyAccess for ValidationSharedPhy<'_> {
+    fn pac(&self) -> &RadioPhyRegisters {
+        self.registers
+    }
+
+    fn parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
+        (self.registers, &mut self.restore)
+    }
+}
+
+#[cfg(feature = "validation-probes")]
+impl sealed::SharedPhyContext for ValidationSharedPhy<'_> {
+    fn wifi_baseband_enable_observation(&self) -> WifiBasebandEnableObservation {
+        WifiBasebandEnableObservation::from_pac_readback(self.registers.wifi_baseband_is_enabled())
+    }
+}
+
+#[cfg(feature = "validation-probes")]
+impl SharedPhyAccess for ValidationSharedPhy<'_> {}
+
+#[cfg(feature = "validation-probes")]
+impl SharedPhyContext for ValidationSharedPhy<'_> {}
 
 pub(crate) fn phy_pac(access: &(impl SharedPhyAccess + ?Sized)) -> &RadioPhyRegisters {
     sealed::SharedPhyAccess::pac(access)
 }
 
 pub(crate) fn phy_pac_mut(access: &mut (impl SharedPhyAccess + ?Sized)) -> &mut RadioPhyRegisters {
-    sealed::SharedPhyAccess::pac_mut(access)
+    sealed::SharedPhyAccess::parts_mut(access).0
+}
+
+pub(crate) fn phy_parts_mut(
+    access: &mut (impl SharedPhyAccess + ?Sized),
+) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
+    sealed::SharedPhyAccess::parts_mut(access)
 }
 
 /// Type states for the coarse radio power lifecycle.
@@ -527,7 +559,8 @@ impl RadioRuntimeOwner {
         &'owner mut self,
         platform: &'owner mut P,
     ) -> channel::RadioChannelHal<'owner, P> {
-        channel::RadioChannelHal::from_owned(platform, &mut self.registers)
+        let (registers, restore) = self.channel_parts_mut();
+        channel::RadioChannelHal::from_owned(platform, registers, restore)
     }
 
     /// Read the calibrated baseband observation without exposing the PAC
@@ -601,6 +634,16 @@ impl RadioRuntimeOwner {
 
     pub(crate) fn pac_mut(&mut self) -> &mut WifiRadioRegisters {
         &mut self.registers
+    }
+
+    /// Borrow the Wi-Fi register set together with the route restore slot.
+    pub(crate) fn channel_parts_mut(&mut self) -> (&mut WifiRadioRegisters, &mut PhyRestoreSlot) {
+        (&mut self.registers, self.route.phy_restore_mut())
+    }
+
+    /// Borrow the shared PHY together with the route restore slot.
+    pub(crate) fn phy_parts_mut(&mut self) -> (&mut RadioPhyRegisters, &mut PhyRestoreSlot) {
+        (self.registers.radio_phy_mut(), self.route.phy_restore_mut())
     }
 }
 
@@ -766,7 +809,7 @@ pub struct PowerUpFailure<P> {
 /// Failed release of a physically closed radio back to the cold owner.
 ///
 /// This type is constructed only by the post-PHY-close path. It retains the
-/// exact powered owner because a pending PAC restore invariant prevented
+/// exact powered owner because a pending PHY restore obligation prevented
 /// neutral-root reconstruction.
 #[must_use = "failed cold reunion retains the complete closed hardware owner"]
 pub struct ColdReunionFailure<P> {
@@ -967,10 +1010,8 @@ impl<P> Radio<P, state::Powered> {
 
     /// Borrow a narrow channel capability for one transaction.
     pub fn channel_hal(&mut self) -> channel::RadioChannelHal<'_, P> {
-        channel::RadioChannelHal::from_owned(
-            &mut self.peripheral,
-            self.state.registers.registers.radio_mut(),
-        )
+        let (registers, restore) = self.state.registers.registers.radio_parts_mut();
+        channel::RadioChannelHal::from_owned(&mut self.peripheral, registers, restore)
     }
 
     /// Borrow the platform and PHY capability independently.

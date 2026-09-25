@@ -10,8 +10,10 @@ use oer_esp32s31_pac::{
     BluetoothControllerPartition, BluetoothInterruptSetup, BluetoothModemLpTimerRegisters,
     BluetoothTaskParts, BluetoothTaskRegisters, Ieee802154InterruptSetup, Ieee802154Partition,
     Ieee802154TaskParts, Ieee802154TaskRegisters, MacInterruptSetup, RadioPartitions,
-    RadioPhyRegisters, WifiMacPartition, WifiRadioParts, WifiRadioRegisters,
+    WifiMacPartition, WifiRadioParts, WifiRadioRegisters,
 };
+
+use crate::phy::restore::PhyRestoreSlot;
 
 /// Unique protocol-neutral owner of every reviewed ESP32-S31 radio region.
 ///
@@ -290,18 +292,18 @@ pub enum WifiPowerRestoreCheckpoint {
 
 /// Reject release while a PHY calibration still owns a restore obligation.
 pub(crate) fn check_phy_restore_complete(
-    radio_phy: &RadioPhyRegisters,
+    restore: &PhyRestoreSlot,
 ) -> Result<(), RadioPhyReleaseError> {
-    if radio_phy.txdc_pwdet_restore_pending() {
+    if restore.txdc_pending() {
         return Err(RadioPhyReleaseError::TxDcPwdetRestorePending);
     }
-    if radio_phy.txiq_tone_control_restore_pending() {
+    if restore.txiq_pending() {
         return Err(RadioPhyReleaseError::TxIqToneControlRestorePending);
     }
-    if radio_phy.rx_dco_control_restore_pending() {
+    if restore.rx_dco_pending() {
         return Err(RadioPhyReleaseError::RxDcoControlRestorePending);
     }
-    if radio_phy.bluetooth_tx_power_control_restore_pending() {
+    if restore.bluetooth_tx_power_control_pending() {
         return Err(RadioPhyReleaseError::BluetoothTxPowerControlRestorePending);
     }
     Ok(())

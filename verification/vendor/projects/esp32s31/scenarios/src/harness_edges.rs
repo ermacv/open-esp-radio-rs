@@ -2,6 +2,7 @@
 use crate::evidence::{events, stop};
 use crate::harness::{Result, case, invocation};
 use crate::i2c::I2c;
+use crate::layout::FREQUENCY_CONTROL;
 use blobray_domain::{
     CallBinding, CallBoundary, CallCapture, CallDeclaration, CallResponse, CallValue,
     ComparisonVerdict, DeviceBehavior, DeviceDeclaration, ExecutionEvent, ExecutionEvidence,
@@ -22,7 +23,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         lifetime: RegionLifetime::Phase,
         behavior: DeviceBehavior::RegisterBank {
             cells: vec![RegisterCell {
-                address: 0x2010_001c,
+                address: FREQUENCY_CONTROL,
                 width: 4,
                 value: 0,
             }],
@@ -39,6 +40,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         overrides: vec![],
     });
     phase.calls = vec![CallDeclaration {
+        repetition: blobray_domain::CallRepetition::Finite,
         id: "delay".into(),
         applicability: "explicit ROM delay interception".into(),
         lifetime: RegionLifetime::Phase,

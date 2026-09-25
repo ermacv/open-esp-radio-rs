@@ -121,13 +121,13 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         let first = (initial & 0xfffe_ffff) | (enabled << 16);
         let second = (first & 0xffff_ff00) | (a & 255);
         let third = (second & 0xffff_00ff) | ((b & 255) << 8);
-        let writes = [first, second, third].map(|v| (0x2010_0408, v)).to_vec();
+        let writes = [first, second, third].map(|v| (GAIN_BASE, v)).to_vec();
         add(
             name,
             "phy_force_dig_gain",
             1,
             &[enabled, a, b],
-            &[(0x2010_0408, initial)],
+            &[(GAIN_BASE, initial)],
             writes,
             None,
         )?;

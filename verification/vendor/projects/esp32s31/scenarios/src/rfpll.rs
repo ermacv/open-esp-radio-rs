@@ -1,9 +1,10 @@
 //! Captured RFPLL search and frequency maintenance against compiled production.
-use crate::calibration_prefix::{delay_calls, delays_of};
+use crate::calibration_prefix::delays_of;
 use crate::evidence::{events, stop};
 use crate::harness::{Result, case, invocation, known, region, words, words_padded};
 use crate::i2c::{I2c, all_complete, models, returned_low};
 use crate::layout::*;
+use crate::phy::delay_calls;
 use blobray_domain::{
     CommandCell, ComparisonVerdict, DeviceBehavior, DeviceDeclaration, ExecutionCase,
     ExecutionEvent, ExecutionGap, ExecutionRegion, ExecutionStop, Invocation, MemoryAccess,
@@ -85,6 +86,25 @@ pub fn expected_commands(candidates: &[i32], selected: i32) -> Vec<(u32, u32)> {
     result.into_iter().map(|v| (I2C_PORT_1, v)).collect()
 }
 
+/// Frequency-control words the captured maintenance reads and writes.
+const CONTROL: u32 = FREQUENCY_CONTROL;
+const READ_CONTROL: u32 = 0x2010_0020;
+const STATUS: u32 = CHANNEL_STATUS;
+const MEMORY_DATA: u32 = 0x2010_002c;
+const NUMBER: u32 = 0x2010_0030;
+const READ_RESULT: u32 = 0x2010_0040;
+/// SDM deadline counter sampled once per maintenance.
+const SDM: u32 = 0x2010_d800;
+/// Modeled frequency-control words; any other frequency access is INCOMPLETE.
+const FREQUENCY_WORDS: [u32; 6] = [
+    CONTROL,
+    READ_CONTROL,
+    STATUS,
+    MEMORY_DATA,
+    NUMBER,
+    READ_RESULT,
+];
+
 /// Retained frequency-control words and the ordered transactions over them.
 struct Frequency {
     regs: std::collections::BTreeMap<u32, u32>,
@@ -92,20 +112,20 @@ struct Frequency {
 }
 
 impl Frequency {
-    fn get(&self, offset: u32) -> u32 {
-        self.regs[&offset]
+    fn get(&self, register: u32) -> u32 {
+        self.regs[&register]
     }
-    fn read(&mut self, offset: u32) {
-        let value = self.get(offset);
-        self.result.push((false, 0x2010_0000 + offset, value));
+    fn read(&mut self, register: u32) {
+        let value = self.get(register);
+        self.result.push((false, register, value));
     }
-    fn write(&mut self, offset: u32, value: u32) {
-        self.regs.insert(offset, value);
-        self.result.push((true, 0x2010_0000 + offset, value));
+    fn write(&mut self, register: u32, value: u32) {
+        self.regs.insert(register, value);
+        self.result.push((true, register, value));
     }
-    fn update(&mut self, offset: u32, f: impl FnOnce(u32) -> u32) {
-        let value = f(self.get(offset));
-        self.write(offset, value);
+    fn update(&mut self, register: u32, f: impl FnOnce(u32) -> u32) {
+        let value = f(self.get(register));
+        self.write(register, value);
     }
 }
 
@@ -120,42 +140,42 @@ pub fn frequency_expectation(
 ) -> Vec<(bool, u32, u32)> {
     let mut f = Frequency {
         regs: std::collections::BTreeMap::from([
-            (0x1c, 0x4128_0055),
-            (0x20, 0xa5a4_5678),
-            (0x28, initial),
-            (0x30, 0x1234_5678),
+            (CONTROL, 0x4128_0055),
+            (READ_CONTROL, 0xa5a4_5678),
+            (STATUS, initial),
+            (NUMBER, 0x1234_5678),
         ]),
         result: vec![],
     };
-    f.read(0x28);
-    f.write(0x28, (initial & !3) | 2);
-    f.result.push((false, 0x2010_d800, 0x9876_5432));
-    f.read(0x30);
+    f.read(STATUS);
+    f.write(STATUS, (initial & !3) | 2);
+    f.result.push((false, SDM, 0x9876_5432));
+    f.read(NUMBER);
     if let Some(contents) = contents {
         for (i, word) in contents.iter().enumerate() {
             let address = 0x20 + 7 * i as u32;
-            f.read(0x1c);
-            f.update(0x1c, |v| (v & !0x7ff00) | (address << 8));
-            f.read(0x30);
-            f.update(0x30, |v| (v & !3) | 2);
-            f.read(0x20);
-            f.update(0x20, |v| v | 0x10000);
-            f.read(0x20);
-            f.update(0x20, |v| v & !0x10000);
-            f.result.push((false, 0x2010_0040, *word));
+            f.read(CONTROL);
+            f.update(CONTROL, |v| (v & !0x7ff00) | (address << 8));
+            f.read(NUMBER);
+            f.update(NUMBER, |v| (v & !3) | 2);
+            f.read(READ_CONTROL);
+            f.update(READ_CONTROL, |v| v | 0x10000);
+            f.read(READ_CONTROL);
+            f.update(READ_CONTROL, |v| v & !0x10000);
+            f.result.push((false, READ_RESULT, *word));
             let corrected = (((word & 255) | ((word >> 6) & 0x100)) as i32 + delta) & 0xffff;
             let signed = i32::from(corrected as u16 as i16);
             let encoded = (corrected as u32 & 255)
                 | (word & 0xbf00)
                 | (((signed >> 8) as u32) << 14)
                 | 0x0300_0000;
-            f.read(0x1c);
-            f.update(0x1c, |v| (v & !0x7ff00) | (address << 8));
-            f.write(0x2c, encoded);
-            f.read(0x1c);
-            f.update(0x1c, |v| v | 0x10_0000);
-            f.read(0x1c);
-            f.update(0x1c, |v| v & !0x10_0000);
+            f.read(CONTROL);
+            f.update(CONTROL, |v| (v & !0x7ff00) | (address << 8));
+            f.write(MEMORY_DATA, encoded);
+            f.read(CONTROL);
+            f.update(CONTROL, |v| v | 0x10_0000);
+            f.read(CONTROL);
+            f.update(CONTROL, |v| v & !0x10_0000);
         }
         let frequency = match channel {
             1 | 2412 => 2412,
@@ -163,11 +183,11 @@ pub fn frequency_expectation(
             14 | 2484 => 2484,
             other => panic!("unsupported channel {other}"),
         };
-        f.read(0x1c);
-        f.update(0x1c, |v| (v & !255) | ((frequency - 0x60) & 255));
+        f.read(CONTROL);
+        f.update(CONTROL, |v| (v & !255) | ((frequency - 0x60) & 255));
     }
-    f.read(0x28);
-    f.update(0x28, |v| v & !3);
+    f.read(STATUS);
+    f.update(STATUS, |v| v & !3);
     f.result
 }
 
@@ -239,16 +259,11 @@ fn bank(cap: i32, statuses: &[u32], busy: u32) -> Vec<DeviceDeclaration> {
 }
 
 fn sequence(address: u32, values: &[u32], name: &str) -> DeviceDeclaration {
-    DeviceDeclaration {
-        id: name.into(),
-        applicability: "finite caller-supplied peripheral observations".into(),
-        lifetime: RegionLifetime::Phase,
-        behavior: DeviceBehavior::SequenceRead {
-            address,
-            width: 4,
-            runs: values.iter().map(|v| ReadRun::once(*v)).collect(),
-        },
-    }
+    sequence_read(
+        name,
+        address,
+        values.iter().map(|v| ReadRun::once(*v)).collect(),
+    )
 }
 
 fn maintenance_models(
@@ -258,10 +273,10 @@ fn maintenance_models(
     busy: u32,
 ) -> Vec<DeviceDeclaration> {
     let mut result = bank(100, statuses, busy);
-    let mut cells = vec![(0x2010_0028u32, initial)];
+    let mut cells = vec![(STATUS, initial)];
     if let Some(contents) = contents {
         cells.extend([
-            (0x2010_001c, 0x4128_0055),
+            (FREQUENCY_CONTROL, 0x4128_0055),
             (0x2010_0020, 0xa5a4_5678),
             (0x2010_002c, 0),
             (0x2010_0030, 0x1234_5678),
@@ -332,7 +347,7 @@ impl Rfpll {
             bank(cap, statuses, busy),
             vec![],
         )?;
-        phase.calls = delay_calls("requested-delay", self.delay(side), statuses.len());
+        phase.calls = delay_calls("requested-delay", self.delay(side));
         Ok(phase)
     }
 
@@ -390,7 +405,7 @@ impl Rfpll {
             maintenance_models(statuses, initial, contents, busy),
             memory,
         )?;
-        phase.calls = delay_calls("requested-delay", self.delay(side), statuses.len() + 1);
+        phase.calls = delay_calls("requested-delay", self.delay(side));
         Ok(phase)
     }
 }
@@ -401,7 +416,7 @@ fn envelope(events: &[ExecutionEvent]) -> Vec<ExecutionEvent> {
     events
         .iter()
         .filter(|e| match e {
-            ExecutionEvent::Read { address, .. } => !(I2C_PORT_0..0x2010_f824).contains(address),
+            ExecutionEvent::Read { address, .. } => !(I2C_PORT_0..=I2C_HOST_MAP).contains(address),
             ExecutionEvent::Write { address, .. } => {
                 !matches!(*address, I2C_READ_MASK | I2C_HOST_MAP)
             }
@@ -413,7 +428,7 @@ fn envelope(events: &[ExecutionEvent]) -> Vec<ExecutionEvent> {
 }
 
 fn in_frequency_domain(address: u32) -> bool {
-    (0x2010_0000..0x2010_0044).contains(&address) || address == 0x2010_d800
+    FREQUENCY_WORDS.contains(&address) || address == SDM
 }
 
 pub fn exercise(ctx: &mut I2c) -> Result<()> {
@@ -601,7 +616,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                             matches!(
                                 e,
                                 ExecutionEvent::Read {
-                                    address: 0x2010_0028,
+                                    address: CHANNEL_STATUS,
                                     ..
                                 }
                             )
@@ -672,15 +687,13 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
     let frequency_writes: Vec<_> = events(&records, 0, false)
         .iter()
         .filter_map(|e| match e {
-            ExecutionEvent::Write { address, value, .. }
-                if (0x2010_0000..0x2010_0044).contains(address) =>
-            {
+            ExecutionEvent::Write { address, value, .. } if FREQUENCY_WORDS.contains(address) => {
                 Some((*address, *value))
             }
             _ => None,
         })
         .collect();
-    assert_eq!(frequency_writes, [(0x2010_0028, 0x2582_4e5a)]);
+    assert_eq!(frequency_writes, [(CHANNEL_STATUS, 0x2582_4e5a)]);
     let pending = models(&records, 0, false)
         .into_iter()
         .find(|m| m.id == "rfpll")
@@ -812,7 +825,7 @@ mod tests {
     fn frequency_oracle_encodes_signed_corrections() {
         let zero = frequency_expectation(0x2582_4e58, None, 0, 13);
         assert_eq!(zero.len(), 6);
-        assert_eq!(zero[1], (true, 0x2010_0028, 0x2582_4e5a));
+        assert_eq!(zero[1], (true, CHANNEL_STATUS, 0x2582_4e5a));
         let underflow = frequency_expectation(0x2582_4e58, Some(&[0x00aa_bf00]), -5, 1);
         let encoded = underflow
             .iter()

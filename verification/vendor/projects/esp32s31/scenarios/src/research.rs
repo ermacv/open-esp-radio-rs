@@ -7,7 +7,7 @@ use crate::harness::{
     Budget, Input, Result, Runner, args, invalid, named_object, named_section, sha256,
 };
 use crate::i2c::{OBJECT_SHA, TABLE_SHA};
-use crate::layout::{COMMAND_RAM, PHY_PARAM_BYTES, ROM_INTERFACE_POINTER};
+use crate::layout::{COMMAND_RAM, PHY_PARAM_BYTES, ROM_INPUT, ROM_INTERFACE_POINTER};
 use crate::session::{path_arg, start_run};
 use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_application::QuerySummary;
@@ -253,6 +253,7 @@ pub fn exercise(options: &Options) -> Result<PathBuf> {
         },
     ])?;
     let inventory = runner.inventory()?;
+    crate::session::verify_rom_symbols(&inventory, ROM_INPUT as usize)?;
     let mut r = Research {
         runner,
         run: run.clone(),
@@ -271,7 +272,7 @@ pub fn exercise(options: &Options) -> Result<PathBuf> {
     let finite_analysis = analyzed(&rows[0]);
     let finite_records = r.facts("finite-address-facts", &finite_analysis)?;
     let finite_addresses: Vec<ValueAlternative> =
-        [0x2010_d858u32, 0x2010_d860, 0x2010_d868, 0x2010_d870]
+        [0x2010_d858, 0x2010_d860, 0x2010_d868, 0x2010_d870]
             .map(|value| ValueAlternative::Constant { value })
             .to_vec();
     for (expected_offset, expected_access) in [

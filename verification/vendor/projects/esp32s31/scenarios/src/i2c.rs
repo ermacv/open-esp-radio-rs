@@ -256,80 +256,29 @@ impl I2c {
                 symbol: symbol(inventory, input, name)?.id.clone(),
             })
         };
-        let mut rom: Vec<&str> = vec![
-            "phy_encode_i2c_master",
-            "phy_i2c_master_fill",
-            "phy_get_data_sat",
-            "phy_i2c_writeReg",
-            "memset",
-            "phy_get_i2c_mst0_mask",
-            "phy_i2c_paral_write_num",
-        ];
+        // ROM first; the SDK firmware supplies the crystal-clock and
+        // diagnostics symbols the ROM lacks.
+        let mut candidates = vec![ROM_INPUT];
         if leaves {
-            rom.push("phy_wifi_agc_sat_gain");
-            // AGC shares .iram1 with unrelated roots. Close their physical link
-            // references with authenticated symbols, without rewriting that section
-            // or synthesizing bodies. Every selected binding is in the saved request.
-            rom.extend([
-                "ets_delay_us",
-                "phy_wait_i2c_sdm_stable",
-                "phy_force_txrx_off",
-                "phy_dis_hw_set_freq",
-                "phy_i2c_master_reset",
-                "phy_open_fe_bb_clk",
-                "phy_bbpll_cal",
-                "phy_pbus_clear_reg",
-                "phy_i2c_clk_sel",
-                "phy_fe_txrx_reset",
-                "phy_adc_rate_set",
-                "phy_i2cmst_reg_init",
-                "phy_freq_reg_init",
-                "phy_fe_reg_init",
-                "phy_pwdet_reg_init",
-                "phy_write_chan_freq",
-                "phy_set_pbus_reg",
-                "phy_reg_init",
-                "phy_bb_agc_reg_update",
-                "phy_set_chan_reg",
-                "phy_set_txcap_reset",
-                "phy_bb_cbw_chan_cfg",
-                "phy_enable_agc",
-                "phy_wait_freq_set_busy",
-                "phy_reset_ckgen",
-                "phy_en_hw_set_freq",
-                "phy_wifi_enable_set",
-                "phy_disable_agc",
-                "phy_tsens_temp_read",
-                "phy_i2c_writeReg_Mask",
-                "phy_i2c_readReg",
-                "phy_freq_i2c_write_set",
-            ]);
-        }
-        let mut companions: Vec<EntrySelection> =
-            rom.iter().map(|n| select(1, n)).collect::<Result<_>>()?;
-        if leaves {
-            companions.push(select(3, "rtc_clk_xtal_freq_get")?);
+            candidates.push(3);
         }
         if rfpll {
-            for name in [
-                "phy_read_pll_cap",
-                "phy_write_pll_cap",
-                "phy_pll_cap_mem_update",
-                "phy_abs_temp",
-            ] {
-                companions.push(select(1, name)?);
-            }
-            companions.push(select(4, "phy_printf")?);
+            candidates.push(4);
         }
         let link = LinkRequest {
-            companions,
+            companions: vec![],
             revision: Some(revision.clone()),
             inputs: vec![0],
             entry: select(0, "phy_i2c_master_cmd_mem_init")?,
             roots: roots.iter().map(|n| select(0, n)).collect::<Result<_>>()?,
             layout: image_layout(),
         };
-        let linked = session.link(&link, &options.linker, "phy_i2c_master_cmd_mem_init")?;
+        let linked = session.link(
+            &link,
+            &options.linker,
+            "phy_i2c_master_cmd_mem_init",
+            &candidates,
+        )?;
         // Independent current-ELF symbol selection: an inexact source mapping is not
         // sufficient to assert a physical mutable-data address.
         let (parameter, size) = image_symbol(

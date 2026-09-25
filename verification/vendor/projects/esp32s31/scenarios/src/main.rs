@@ -5,7 +5,9 @@ use oer_esp32s31_vendor_scenarios::{
     gain::{Gain, Options},
     gain_state::{self, Unmet},
     harness::{Budget, Result},
-    harness_edges, i2c, i2c_transport, research, rfpll,
+    harness_edges, i2c, i2c_transport,
+    phy::PhyOptions,
+    research, rfpll,
 };
 use std::{path::PathBuf, process::ExitCode};
 
@@ -174,16 +176,22 @@ fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result
     ))
 }
 
+impl Common {
+    fn phy(self) -> PhyOptions {
+        PhyOptions {
+            binary: self.binary,
+            library: self.library,
+            rom: self.rom,
+            production: self.production,
+            linker: self.linker,
+            output: self.output,
+            budget: self.budget,
+        }
+    }
+}
+
 fn channel(common: Common) -> Result<ExitCode> {
-    let options = channel::Options {
-        binary: common.binary,
-        library: common.library,
-        rom: common.rom,
-        production: common.production,
-        linker: common.linker,
-        output: common.output,
-        budget: common.budget,
-    };
+    let options = common.phy();
     let mut ctx = channel::Channel::new(&options)?;
     channel::exercise(&mut ctx)?;
     ctx.preserve(0)?;

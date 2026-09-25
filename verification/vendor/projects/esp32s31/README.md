@@ -268,6 +268,22 @@ encodings are named in [`layout.rs`](scenarios/src/layout.rs). The full gain
 scenario with `--rftest` completes in about half a minute on an otherwise idle
 host.
 
+Scenarios hold vendor knowledge, peripheral inputs and independent
+expectations; Blobray mechanisms supply the rest:
+
+- ROM companions are proposed by `propose-companions` from the ROM, then from
+  any supplied SDK firmware, and copied into the retained link request; no
+  scenario keeps a companion list.
+- Requested-delay models answer every call. Delay counts are evidence, and the
+  scenarios compare delay sequences instead of declaring budgets.
+- Where a scenario uses the radio aperture, every radio register without an
+  explicit model is retained storage that starts with the fill pattern. Only
+  semantic inputs are modeled, and both sides must read the same never-written
+  registers.
+- ROM storage addresses name their ROM symbols (`rom_phyFuns`,
+  `phy_param_rom`, `g_phyFuns_instance`) and are checked against the captured
+  ROM inventory at session start.
+
 Archive and ROM identities are the same pinned inputs as the I2C runner; no SDK
 companion is needed. The gain object and its complete 216-byte coefficient
 section must match independently extracted SHA-256 identities before comparison.
@@ -625,9 +641,11 @@ production side runs `open_phy_channel_trace_state`.
 - the sensor DAC and PLL analog cells;
 - the temperature code;
 - channel readiness;
-- the retained channel, AGC, baseband and gain registers;
-- the gain-memory data ports;
-- the two TX-capacitance command words.
+- the cleared work mode and the transport read-mask and host-map words.
+
+Every other radio register is retained storage that starts with the fill
+pattern (the radio aperture described above). Both sides must read the same
+never-written registers.
 
 **Relation.** The native relation compares ordered MMIO writes. A runner-side
 comparison then reviews every non-transport read and every requested delay. It
@@ -637,9 +655,10 @@ excludes only three things:
 - read-mask and host-map accesses;
 - the single-microsecond delay before a transport read.
 
-Delay budgets are exact for both sides. Production waits before the transport
-read of each analog command. An out-of-range sensor sample adds the DAC
-read-modify-write of the ROM reselection.
+Requested delays are observed, not budgeted: both sides report every delay,
+and the comparison keeps them ordered. Production additionally waits before the
+transport read of each analog command, and an out-of-range sensor sample adds
+the DAC read-modify-write of the ROM reselection.
 
 **Full-root evidence.** These cases cover channels 1, 6, 11 and 13 at both
 bandwidths and both fills. They require:

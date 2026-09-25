@@ -2,5 +2,3 @@
 generated/
 /local.toml
 
-# Python scenario preparation bytecode.
-__pycache__/

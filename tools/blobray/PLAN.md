@@ -195,8 +195,9 @@ is complete: gain state and the RF-test producer. Checkpoint 12.R is active:
 typed Rust verification scenarios replace the Python runners before 12.6.
 Checkpoint 12.R, including checkpoint 12.P (execution performance), is
 complete; no Python scenario code remains. Unit 12.6 is complete: channel
-restoration, all temperature-prefix sensor windows and stuck readiness. Unit
-12.7 is active.
+restoration, all temperature-prefix sensor windows and stuck readiness.
+Checkpoint 12.M (mechanisms instead of handwritten knowledge) is complete.
+Unit 12.7 is active on those mechanisms.
 Format numbers and active positions in earlier acceptance notes are historical
 checkpoints; this section and the stage tables define the current position.
 Stage 03 acceptance includes captured pointers, finite callback alternatives, native
@@ -823,6 +824,7 @@ current owner docs and the ordinary stage gates. No partial unit is completion.
 | 12.5 | done | Gain state and RF-test producer: `phy_rfpll/gain_state.rs`, `phy_rfpll/gain_producer.rs`. Execute real backup/destruction/recovery/init/consumption and the separately authenticated RF-test power producer, including rounding/saturation and gain/MAC publication. Preserve their characterization scope; vendor storage support is not inferred for production. Missing RF-test input remains an unmet obligation, never an omitted case. |
 | 12.R | done | Typed Rust verification scenarios, detailed below. Every current Python scenario, oracle and host test moves to a Rust owner package with unchanged cases, verdicts, negatives and preservation; Python is removed. Stage 12.6–12.10 obligations are unchanged. |
 | 12.6 | done | Channel restoration: `phy_rfpll/channel.rs`. Actual callback installation, all temperature-prefix sensor ranges, full-root gain publication and committed channel/bandwidth/temperature; stuck readiness cannot publish gain or semantic output. Prefix and full-root evidence remain distinct. |
+| 12.M | done | Mechanisms instead of handwritten knowledge, detailed below. Stage 12.7–12.10 obligations are unchanged. |
 | 12.7 | active | RX gain/calibration: `phy_rfpll/rx_gain.rs`. Both complete roots, DC/table guards, signed estimators, delayed I2C/settle, projected coefficients and bank limits; failed channel, minimum search and shared budget preserve prior coefficients. Readiness observations and genuine output publication remain visible. |
 | 12.8 | pending | TX-DC/PWDET: `phy_rfpll/tx_dc_pwdet.rs`. Actual search/PBus/SAR children, Wi-Fi/BT selection, DC rows, constant/alternating samples and tone/settle paths. Independent PBus/SAR faults cannot publish calibration; observation capacity differs from time/work limits. Preserve seeded gain adjustment and explicit unused-read exclusions. |
 | 12.9 | pending | Combined calibration and tracking parents: `phy_rfpll/combined.rs`, `phy_rfpll/parent.rs`, `phy_rfpll/graph.rs`. Execute real children, guards/grant order, channel 13/HT40, client/thermal domains, RFPLL disabled/enabled and signed corrections. Failed TX preserves pre-calibration state and earlier completed power/RFPLL state. Modeled child completions cannot satisfy complete-parent acceptance. |
@@ -1135,3 +1137,70 @@ removed, and no Python scenario code remains. Owner documentation and the
 design contract point to the Rust scenarios. The scenario package tests,
 formatting, strict Clippy, the docs, architecture and standalone checks, and
 the full source-only checkpoint pass.
+
+
+### Checkpoint 12.M: mechanisms instead of handwritten knowledge
+
+User-authorized insertion after 12.6 and before 12.7. A review of the
+verification scenarios showed that about half of their handwritten content is
+not vendor knowledge but work around missing Blobray mechanisms:
+
+- most handwritten peripheral content enumerates registers that only retain
+  written values, with the fill pattern as initial value;
+- finite call models force exact requested-delay budgets per profile, found by
+  exploratory runs;
+- ROM companion lists of 20–26 names per scenario are found by repeated link
+  failures.
+
+Independent oracles, peripheral input values and comparison policies remain
+handwritten; they are the evidence. Scenario 12.7 work in progress also needs
+ROM data definitions as link companions and more than 65,536 recorded events.
+
+| Unit | Status | Acceptance |
+| --- | --- | --- |
+| 12.M.1 | done | A retained MMIO aperture is a Blobray device: every aligned access in a declared range not claimed by an exact model is retained storage with a declared initial word, and every access stays an MMIO event. Scenarios declare the radio block once and model only semantic inputs; retained-register enumerations are removed. Both sides of a comparison must read the same never-written registers. Remaining addresses (inputs and independent expectations) are single named constants, shared ones in one owner; the published SVD is not a scenario dependency, because parts of it are recovered from the same vendor analysis. ROM storage constants name their ROM symbols and are checked against the captured ROM inventory. |
+| 12.M.2 | done | A call declaration answers either a finite ordered response list or, for a single pure response without memory outputs or allocations, every call. Call counts and every observed argument and delay stay evidence. Execution schema changes without conversion. The per-phase event bound rises to 2^20, so a bounded 100,000-operation poll loop is observable without truncation. Scenario delay models use it, and exact per-profile delay budgets are removed; independent delay-sequence expectations stay. |
+| 12.M.3 | done | A supervised query proposes ROM companions for a link request: a trial link reports every unresolved name, each resolved to exactly one defined function or data object in explicitly ordered candidate inputs, or reported unresolved. The retained link request still lists every exact companion. Companions may be ROM data objects without a load mapping. Scenario companion lists are replaced by proposals. |
+
+Acceptance of the checkpoint: every existing scenario (gain with RF-test, i2c
+with both SDK inputs, research and channel) passes on the authenticated inputs
+with unchanged cases, verdicts, negatives and preservation. Blobray tests,
+formatting, strict Clippy, docs, architecture and standalone checks pass.
+
+12.M acceptance:
+
+- **Proposals.** `propose-companions` trial-links a request with unresolved
+  names permitted and resolves each undefined name in ordered candidate inputs.
+  A companion may now be a ROM data object, such as `phy_param_rom`, without a
+  load mapping. On the channel request the proposal reproduces all 26
+  previously handwritten companions in 0.6 s. Gain, i2c, channel and RX gain
+  keep no companion list. Research still exercises the named `--companion`
+  CLI route.
+- **Unbounded calls.** Call declarations are `finite` or `unbounded`, with
+  execution schema 19 and call identity v2, rejected without conversion.
+  Scenario delay models are unbounded; the per-profile delay budgets and their
+  formulas are removed, and independent delay-sequence expectations remain.
+  The per-phase event bound is 2^20.
+- **Radio aperture.** `retained-aperture` is a device: exact ports take
+  precedence, sub-word writes merge, misaligned accesses fail, and every access
+  stays an MMIO event. Channel and RX gain model only semantic inputs and
+  require both sides to read the same never-written radio registers; their
+  retained-register enumerations are removed.
+- **Addresses.** Shared addresses are single constants in `layout.rs`. The SVD
+  is not a scenario dependency. ROM storage constants name `rom_phyFuns`,
+  `phy_param_rom` and `g_phyFuns_instance` and are checked against the
+  captured ROM inventory in every session.
+
+On the authenticated inputs under watchdog limits, every scenario passes with
+unchanged cases, verdicts, negatives and preservation:
+
+| Scenario | Time |
+| --- | --- |
+| gain with RF-test | 52 s |
+| i2c with both SDK inputs | 76 s |
+| channel | 53 s |
+| research | 86 s |
+
+RX gain work in progress also passes on the aperture. All 2044 Blobray
+workspace tests pass, as do formatting, strict Clippy, docs and the standalone
+check.

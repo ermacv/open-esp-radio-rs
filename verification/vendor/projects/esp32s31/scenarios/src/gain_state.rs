@@ -378,7 +378,7 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
                         )?,
                         region(ROM_PARAMETER_POINTER, 4, &[], None, RegionLifetime::Session)?,
                     ],
-                    vec![selection(0x2f07_f968, 4)],
+                    vec![selection(callback_slot(9), 4)],
                     vec![],
                 );
                 rows.push(case(
@@ -460,7 +460,7 @@ fn producer(g: &mut Gain) -> Result<ExecutionRequest> {
                         Some(13),
                     );
                     expected = publication(&[0; 6], 0, &calculated, 32, 0, 0, false);
-                    expected[0] = (Access::Read, 0x2010_0408, 0);
+                    expected[0] = (Access::Read, GAIN_BASE, 0);
                 }
                 expected.extend(mac_power(index, 0xa5a5_a5a5));
                 assert_eq!(

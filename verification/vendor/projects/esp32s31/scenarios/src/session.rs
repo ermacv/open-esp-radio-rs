@@ -6,8 +6,9 @@ use crate::harness::{
 use crate::layout::*;
 use blobray_application::QuerySummary;
 use blobray_domain::{
-    ArtifactId, CallAbi, ErrorCode, ExecutionRequest, ExecutionTarget, FunctionSource,
-    ImageManifest, ImageMapping, LinkRequest, PreparedImageId, Revision, RevisionId,
+    ArtifactId, CallAbi, CompanionProposal, EntrySelection, ErrorCode, ExecutionRequest,
+    ExecutionTarget, FunctionSource, ImageManifest, ImageMapping, LinkRequest, PreparedImageId,
+    Revision, RevisionId,
 };
 use blobray_next_host::wire::RecordDocument;
 use object::{Object, ObjectSymbol};
@@ -66,6 +67,9 @@ impl Session {
             &serde_json::json!({"sha256": identities, "roles": roles, "scope": scope}),
         )?;
         let inventory = runner.inventory()?;
+        if let Some(rom) = inputs.iter().position(|i| i.role == "rom") {
+            verify_rom_symbols(&inventory, rom)?;
+        }
         let probes = ProbeCatalog::capture(&runner, &revision, &inventory, 2)?;
         Ok(Self {
             runner,
@@ -77,9 +81,59 @@ impl Session {
         })
     }
 
-    /// Plan, prepare, inspect and export one linked image. `entry` names the
-    /// request's entry so it resolves like the other roots.
-    pub fn link(&self, request: &LinkRequest, linker: &Path, entry: &str) -> Result<LinkedImage> {
+    /// Every companion the request's closure needs, proposed by a trial link
+    /// against `candidates` in priority order. An unresolved name fails.
+    pub fn propose(
+        &self,
+        request: &LinkRequest,
+        linker: &Path,
+        candidates: &[u64],
+    ) -> Result<Vec<EntrySelection>> {
+        let runner = &self.runner;
+        let mut command = args(["propose-companions", "--request"]);
+        command.extend([
+            path_arg(&runner.doc("propose", request)?),
+            "--linker".into(),
+            path_arg(&std::path::absolute(linker)?),
+        ]);
+        for candidate in candidates {
+            command.extend(["--candidate".into(), candidate.to_string().into()]);
+        }
+        let called = runner.call("propose", &command, 0);
+        // The proposal document is retained even when names stay unresolved.
+        let document: serde_json::Value =
+            serde_json::from_slice(&fs::read(self.run.join("propose.json"))?).unwrap_or_default();
+        let proposal: Option<CompanionProposal> =
+            serde_json::from_value(document["summary"]["proposal"].clone()).ok();
+        match (called, proposal) {
+            (Ok(_), Some(proposal)) if proposal.unresolved.is_empty() => {
+                Ok(proposal.resolved.into_iter().map(|c| c.selection).collect())
+            }
+            (_, Some(proposal)) => Err(invalid(format!(
+                "unresolved link names: {}",
+                proposal.unresolved.join(", ")
+            ))),
+            (Err(error), None) => Err(error),
+            (Ok(_), None) => Err(invalid("propose-companions returned no proposal")),
+        }
+    }
+
+    /// Complete `request` with proposed companions from `candidates`, then plan,
+    /// prepare, inspect and export one linked image. `entry` names the
+    /// request's entry so it resolves like the other roots. The retained plan
+    /// request lists every exact companion.
+    pub fn link(
+        &self,
+        request: &LinkRequest,
+        linker: &Path,
+        entry: &str,
+        candidates: &[u64],
+    ) -> Result<LinkedImage> {
+        let mut request = request.clone();
+        request
+            .companions
+            .extend(self.propose(&request, linker, candidates)?);
+        let request = &request;
         let runner = &self.runner;
         let plan = self.run.join("link-plan.json");
         let linker = path_arg(&std::path::absolute(linker)?);
@@ -274,6 +328,19 @@ impl Session {
         }
         Ok(())
     }
+}
+
+/// The named ROM storage constants are the pinned ROM's own symbols.
+pub fn verify_rom_symbols(inventory: &Revision, rom: usize) -> Result<()> {
+    for (name, address, size) in ROM_SYMBOLS {
+        let symbol = crate::harness::symbol(inventory, rom, name)?;
+        if symbol.value != u64::from(address) || symbol.size != size {
+            return Err(invalid(format!(
+                "ROM symbol {name} differs from its named address"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Create a fresh `run-*` directory below `output` and record it as `latest`.

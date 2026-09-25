@@ -109,7 +109,7 @@ pub fn gain_models(base: u32, fill: u8) -> Vec<DeviceDeclaration> {
             applicability: "explicit gain bank base".into(),
             lifetime: RegionLifetime::Phase,
             behavior: DeviceBehavior::ConstantRead {
-                address: 0x2010_0408,
+                address: GAIN_BASE,
                 width: 4,
                 value: (base << 24) | 0x005a_a55a,
             },
@@ -119,12 +119,12 @@ pub fn gain_models(base: u32, fill: u8) -> Vec<DeviceDeclaration> {
             applicability: "retained index and three passive data ports; no gain algorithm".into(),
             lifetime: RegionLifetime::Phase,
             behavior: DeviceBehavior::RegisterBank {
-                cells: (0x2010_0844..0x2010_0854)
-                    .step_by(4)
+                cells: std::iter::once(GAIN_INDEX)
+                    .chain(GAIN_DATA)
                     .map(|address| RegisterCell {
                         address,
                         width: 4,
-                        value: if address == 0x2010_0844 {
+                        value: if address == GAIN_INDEX {
                             fill_word(fill)
                         } else {
                             0
@@ -149,7 +149,7 @@ pub fn publication(
     let bb = halfwords(&calculated[count..count * 3]);
     let rf = halfwords(&calculated[count * 3..count * 5]);
     let seed_data = words(seed_words);
-    let mut result = vec![(Access::Read, 0x2010_0408, (base << 24) | 0x005a_a55a)];
+    let mut result = vec![(Access::Read, GAIN_BASE, (base << 24) | 0x005a_a55a)];
     let mut control = fill_word(fill);
     for i in 0..count {
         let index = match bb[i] {
@@ -177,13 +177,13 @@ pub fn publication(
         let slot = (base + if bluetooth { 32 } else { 0 } + i as u32) & 255;
         // The captured ROM publisher writes data first, then updates its index.
         result.extend([
-            (Access::Write, 0x2010_0848, word0),
-            (Access::Write, 0x2010_084c, word1),
-            (Access::Write, 0x2010_0850, word2),
-            (Access::Read, 0x2010_0844, control),
+            (Access::Write, GAIN_DATA[0], word0),
+            (Access::Write, GAIN_DATA[1], word1),
+            (Access::Write, GAIN_DATA[2], word2),
+            (Access::Read, GAIN_INDEX, control),
         ]);
         control = (control & 0xfff0_0000) | 0x80000 | (slot << 11);
-        result.push((Access::Write, 0x2010_0844, control));
+        result.push((Access::Write, GAIN_INDEX, control));
     }
     result
 }
@@ -285,31 +285,6 @@ impl Gain {
             "phy_bt_set_tx_gain_new",
             "phy_get_romfunc_addr",
         ];
-        let mut companions: Vec<&str> = vec![
-            "memcpy",
-            "phy_wifi_get_tx_gain",
-            "phy_bt_get_tx_gain",
-            "phy_txbbgain_to_index",
-            "phy_write_gain_mem",
-            "phy_param_addr",
-            "phy_get_romfuncs",
-            "phy_get_data_sat",
-        ];
-        // Co-located archive sections retain physical references outside the
-        // selected gain roots. Bind these names to captured ROM definitions;
-        // the run never grants their absent hardware inputs or executes a model.
-        companions.extend([
-            "phy_i2c_writeReg",
-            "memset",
-            "phy_get_i2c_mst0_mask",
-            "phy_i2c_paral_write_num",
-            "ets_delay_us",
-            "phy_wait_i2c_sdm_stable",
-            "phy_tsens_dac_cal",
-            "phy_tsens_temp_read_local",
-            "phy_i2c_readReg",
-            "phy_i2c_writeReg_Mask",
-        ]);
         // Calibration storage roots need no RF-test input and always participate.
         roots.extend([
             "phy_rf_cal_data_backup_new",
@@ -317,7 +292,6 @@ impl Gain {
             "register_chipv7_phy_init_param",
             "phy_wifi_set_tx_gain_new",
         ]);
-        companions.extend(["phy_get_target_pwr", "phy_byte_to_word"]);
         let root = |input: usize, name: &str| -> Result<EntrySelection> {
             Ok(EntrySelection {
                 input: input as u64,
@@ -325,10 +299,7 @@ impl Gain {
             })
         };
         let mut link = LinkRequest {
-            companions: companions
-                .iter()
-                .map(|n| root(1, n))
-                .collect::<Result<_>>()?,
+            companions: vec![],
             revision: Some(revision.clone()),
             inputs: vec![0],
             entry: root(0, roots[0])?,
@@ -344,7 +315,9 @@ impl Gain {
                 link.roots.push(root(3, name)?);
             }
         }
-        let image = PhyImage::link(session, &link, &options.linker, roots[0])?;
+        // Every ROM definition the closure references, including those of
+        // co-located archive sections, is proposed from the captured ROM.
+        let image = PhyImage::link(session, &link, &options.linker, roots[0], &[ROM_INPUT])?;
         Ok(Self {
             image,
             coefficients,
@@ -1167,14 +1140,14 @@ mod tests {
         assert_eq!(
             wifi[1..4],
             [
-                (Access::Write, 0x2010_0848, 0),
-                (Access::Write, 0x2010_084c, 0x1000_0000),
-                (Access::Write, 0x2010_0850, 0x7f80),
+                (Access::Write, GAIN_DATA[0], 0),
+                (Access::Write, GAIN_DATA[1], 0x1000_0000),
+                (Access::Write, GAIN_DATA[2], 0x7f80),
             ]
         );
-        assert_eq!(wifi[4], (Access::Read, 0x2010_0844, 0xa5a5_a5a5));
-        assert_eq!(wifi[5], (Access::Write, 0x2010_0844, 0xa5af_f800));
-        assert_eq!(wifi[10], (Access::Write, 0x2010_0844, 0xa5a8_0000));
+        assert_eq!(wifi[4], (Access::Read, GAIN_INDEX, 0xa5a5_a5a5));
+        assert_eq!(wifi[5], (Access::Write, GAIN_INDEX, 0xa5af_f800));
+        assert_eq!(wifi[10], (Access::Write, GAIN_INDEX, 0xa5a8_0000));
         // Default is the Wi-Fi bank; explicit BT selects +32 and wraps to zero.
         assert_eq!(
             publication(&[0; 6], 0, &[0; 80], 16, 224, 0, false)[5].2,

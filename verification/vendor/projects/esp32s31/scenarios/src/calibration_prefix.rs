@@ -5,38 +5,15 @@ use crate::harness::{
 };
 use crate::i2c::{I2c, all_complete, models, returned_low};
 use crate::layout::*;
+use crate::phy::delay_calls;
 use blobray_domain::{
-    CallBinding, CallBoundary, CallDeclaration, CallResponse, CallValue, CommandCell,
-    CommandObservation, ComparisonDifference, ComparisonVerdict, DeviceBehavior, DeviceDeclaration,
-    ExecutionEvent, ExecutionEvidence, ExecutionGap, ExecutionRegion, ExecutionStop, Invocation,
-    MemoryAccess, MemorySelection, ModelStatus, ReadRun, RegionLifetime, RegisterCell,
-    SessionReset,
+    CommandCell, CommandObservation, ComparisonDifference, ComparisonVerdict, DeviceBehavior,
+    DeviceDeclaration, ExecutionEvent, ExecutionEvidence, ExecutionGap, ExecutionRegion,
+    ExecutionStop, Invocation, MemoryAccess, MemorySelection, ModelStatus, ReadRun, RegionLifetime,
+    RegisterCell, SessionReset,
 };
 
-const STATUS: u32 = 0x2010_0890;
 const DESTINATION: u32 = PARAMETER_DESTINATION;
-
-pub fn delay_calls(id: &str, address: u32, count: usize) -> Vec<CallDeclaration> {
-    vec![CallDeclaration {
-        id: id.into(),
-        applicability: "declared delay ABI; requested microseconds only".into(),
-        lifetime: RegionLifetime::Phase,
-        binding: CallBinding {
-            address,
-            boundary: CallBoundary::CapturedCode,
-            allow_tail: true,
-        },
-        argument_words: 1,
-        responses: (0..count)
-            .map(|_| CallResponse {
-                return_words: [Some(0), Some(0)],
-                outputs: vec![],
-                allocation: None,
-                delay_micros: Some(CallValue::Argument { word: 0 }),
-            })
-            .collect(),
-    }]
-}
 
 fn pbus_models(initial: u32, settle: bool, busy: u32) -> Vec<DeviceDeclaration> {
     vec![
@@ -48,7 +25,7 @@ fn pbus_models(initial: u32, settle: bool, busy: u32) -> Vec<DeviceDeclaration> 
                 cells: [
                     (0x2010_0884, initial),
                     (0x2010_088c, initial),
-                    (0x2010_9c18, if settle { 2 } else { 0 }),
+                    (WORK_MODE, if settle { 2 } else { 0 }),
                     (0x2010_702c, initial),
                 ]
                 .map(|(address, value)| RegisterCell {
@@ -64,7 +41,7 @@ fn pbus_models(initial: u32, settle: bool, busy: u32) -> Vec<DeviceDeclaration> 
             applicability: "twelve finite command-completion scripts".into(),
             lifetime: RegionLifetime::Phase,
             behavior: DeviceBehavior::SequenceRead {
-                address: STATUS,
+                address: PBUS_STATUS,
                 width: 4,
                 runs: (0..12)
                     .flat_map(|_| {
@@ -196,7 +173,6 @@ impl Prefix {
                 } else {
                     self.rom_delay
                 },
-                2,
             );
         }
         Ok(result)
@@ -258,7 +234,7 @@ impl Prefix {
             lifetime: RegionLifetime::Phase,
             behavior: DeviceBehavior::RegisterBank {
                 cells: [
-                    (0x2010_001c, 0x4128_0055),
+                    (FREQUENCY_CONTROL, 0x4128_0055),
                     (0x2010_7848, 0x1655_a55a),
                     (I2C_READ_MASK, 0),
                     (I2C_HOST_MAP, 0),
@@ -276,7 +252,7 @@ impl Prefix {
             applicability: "four bounded frequency readiness scripts".into(),
             lifetime: RegionLifetime::Phase,
             behavior: DeviceBehavior::SequenceRead {
-                address: 0x2010_0028,
+                address: CHANNEL_STATUS,
                 width: 4,
                 runs: (0..4)
                     .flat_map(|_| {
@@ -364,7 +340,6 @@ impl Prefix {
             } else {
                 self.rom_delay
             },
-            8,
         );
         Ok(result)
     }
@@ -443,7 +418,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                             matches!(
                                 e,
                                 ExecutionEvent::Read {
-                                    address: STATUS,
+                                    address: PBUS_STATUS,
                                     ..
                                 }
                             )
@@ -493,7 +468,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                 matches!(
                     e,
                     ExecutionEvent::Read {
-                        address: STATUS,
+                        address: PBUS_STATUS,
                         value: 0x8000_0000,
                         ..
                     }
@@ -503,7 +478,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         assert!(observed[stuck..].iter().all(|e| matches!(
             e,
             ExecutionEvent::Read {
-                address: STATUS,
+                address: PBUS_STATUS,
                 ..
             }
         )));
@@ -519,10 +494,10 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         assert!(!observed.iter().any(|e| matches!(
             e,
             ExecutionEvent::Read {
-                address: 0x2010_9c18 | 0x2010_702c,
+                address: WORK_MODE | 0x2010_702c,
                 ..
             } | ExecutionEvent::Write {
-                address: 0x2010_9c18 | 0x2010_702c,
+                address: WORK_MODE | 0x2010_702c,
                 ..
             }
         )));
@@ -595,7 +570,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
                             .map(|(_, v)| *v)
                             .collect::<Vec<_>>()
                     };
-                    assert_eq!(at(0x2010_001c), frequency_writes, "{label}");
+                    assert_eq!(at(FREQUENCY_CONTROL), frequency_writes, "{label}");
                     assert_eq!(at(0x2010_7848), nrx_writes, "{label}");
                     let ports: Vec<_> = writes
                         .iter()
@@ -653,7 +628,7 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         for model in &mut failed.models {
             if model.id == "channel-ready" {
                 model.behavior = DeviceBehavior::ConstantRead {
-                    address: 0x2010_0028,
+                    address: CHANNEL_STATUS,
                     width: 4,
                     value: if ready { 0x100 } else { 0 },
                 };

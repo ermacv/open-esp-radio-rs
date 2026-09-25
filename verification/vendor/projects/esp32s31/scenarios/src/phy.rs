@@ -1,19 +1,24 @@
 //! A linked captured PHY image with compiled production and the shared
 //! stack-entry, parameter-setup and callback-installation phases.
 use crate::evidence::outcomes;
+use crate::harness::{Budget, Input};
 use crate::harness::{
     Result, evidence, invalid, invocation, known, manifest, region, selection, symbol, words,
     words_padded,
 };
 use crate::layout::*;
 use crate::session::{Session, image_symbol, request};
+use crate::{I2C_LIBRARY_SHA, ROM_SHA};
 use blobray_domain::{
     ArtifactId, ComparisonVerdict, DataSelector, DeviceDeclaration, EntrySelection, ExecutionCase,
     ExecutionEvidence, ExecutionRegion, ExecutionRequest, ExecutionStop, ExecutionTarget,
     ImageLayout, ImageRegion, Invocation, LinkRequest, MemorySelection, ObjectId, ObjectLocation,
     RegionLifetime,
 };
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 /// Which implementation, if any, is compared with the captured vendor side.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -53,6 +58,75 @@ impl std::ops::DerefMut for PhyImage {
     }
 }
 
+/// Private inputs and budget of a scenario over the pinned archive, ROM and
+/// compiled production.
+pub struct PhyOptions {
+    pub binary: PathBuf,
+    pub library: PathBuf,
+    pub rom: PathBuf,
+    pub production: PathBuf,
+    pub linker: PathBuf,
+    pub output: PathBuf,
+    pub budget: Budget,
+}
+
+/// Start a session over the authenticated archive (input 0), ROM (input 1),
+/// production (input 2) and `extra` inputs from index 3.
+pub fn start_session(options: &PhyOptions, extra: &[Input<'_>], purpose: &str) -> Result<Session> {
+    let mut inputs = vec![
+        Input {
+            role: "phy",
+            path: &options.library,
+            sha256: Some(I2C_LIBRARY_SHA),
+        },
+        Input {
+            role: "rom",
+            path: &options.rom,
+            sha256: Some(ROM_SHA),
+        },
+        Input {
+            role: "production",
+            path: &options.production,
+            sha256: None,
+        },
+    ];
+    inputs.extend_from_slice(extra);
+    Session::start(
+        &options.binary,
+        &options.output,
+        options.budget,
+        &inputs,
+        purpose,
+    )
+}
+
+/// Requested-delay ABI at `address`: every call returns zero and records its
+/// first argument as requested microseconds. The call count is evidence, not
+/// a declared budget; scenarios compare the ordered delay values instead.
+pub fn delay_calls(id: &str, address: u32) -> Vec<blobray_domain::CallDeclaration> {
+    use blobray_domain::{
+        CallBinding, CallBoundary, CallDeclaration, CallRepetition, CallResponse, CallValue,
+    };
+    vec![CallDeclaration {
+        repetition: CallRepetition::Unbounded,
+        id: id.into(),
+        applicability: "declared delay ABI; requested microseconds only".into(),
+        lifetime: RegionLifetime::Phase,
+        binding: CallBinding {
+            address,
+            boundary: CallBoundary::CapturedCode,
+            allow_tail: true,
+        },
+        argument_words: 1,
+        responses: vec![CallResponse {
+            return_words: [Some(0), Some(0)],
+            outputs: vec![],
+            allocation: None,
+            delay_micros: Some(CallValue::Argument { word: 0 }),
+        }],
+    }]
+}
+
 /// Code and data placement of linked PHY images.
 pub fn image_layout() -> ImageLayout {
     ImageLayout {
@@ -77,8 +151,14 @@ pub fn select(session: &Session, input: usize, name: &str) -> Result<EntrySelect
 
 impl PhyImage {
     /// Link the image, check the captured `phy_param` extent and prepare targets.
-    pub fn link(session: Session, link: &LinkRequest, linker: &Path, entry: &str) -> Result<Self> {
-        let linked = session.link(link, linker, entry)?;
+    pub fn link(
+        session: Session,
+        link: &LinkRequest,
+        linker: &Path,
+        entry: &str,
+        candidates: &[u64],
+    ) -> Result<Self> {
+        let linked = session.link(link, linker, entry, candidates)?;
         let (parameter, size) = image_symbol(
             &session.run.join("image/image.elf"),
             &session.run.join("image-symbols.txt"),

@@ -55,6 +55,7 @@ impl LimitMode {
 }
 
 /// One captured input and its independently pinned identity, if any.
+#[derive(Clone, Copy)]
 pub struct Input<'a> {
     pub role: &'a str,
     pub path: &'a Path,

@@ -18,6 +18,7 @@ fn outcome(common: bool, wifi: bool) -> PhyParamTrackingOutcome {
         tx_power: Default::default(),
         calibration: CalibrationProgress {
             common,
+            transmit: wifi,
             wifi,
             bluetooth_ieee802154: false,
         },

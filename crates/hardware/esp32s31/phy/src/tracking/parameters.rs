@@ -254,6 +254,9 @@ impl PhyParamTrackingCalibrationCompletion {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CalibrationProgress {
     pub common: bool,
+    /// The transmit references were committed, whichever clients requested
+    /// tracking; `wifi` and `bluetooth_ieee802154` narrow it to requesters.
+    pub transmit: bool,
     pub wifi: bool,
     pub bluetooth_ieee802154: bool,
 }
@@ -324,6 +327,7 @@ impl PhyParamTrackingTransition {
             },
             calibration: CalibrationProgress {
                 common: false,
+                transmit: false,
                 wifi: false,
                 bluetooth_ieee802154: false,
             },
@@ -437,6 +441,7 @@ impl PhyParamTrackingTransition {
                 PhyParamTrackingCompletion::CalibrationTracked(completion),
             ) if completion.clients == self.request => {
                 self.calibration.common = completion.common_updated;
+                self.calibration.transmit = completion.transmit_updated;
                 self.calibration.wifi = completion.transmit_updated && self.request.wifi();
                 self.calibration.bluetooth_ieee802154 =
                     completion.transmit_updated && self.request.bluetooth_ieee802154();

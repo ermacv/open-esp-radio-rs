@@ -439,6 +439,7 @@ fn calibration_progress_counts_only_accepted_completed_branches() {
         outcome.calibration,
         CalibrationProgress {
             common: true,
+            transmit: true,
             wifi: true,
             bluetooth_ieee802154: true
         }
@@ -614,4 +615,28 @@ fn calibration_completion_reads_back_its_committed_branches() {
     };
     assert!(completion.common_updated());
     assert!(!completion.transmit_updated());
+}
+
+#[test]
+fn transmit_progress_does_not_depend_on_requesting_clients() {
+    let mut transition =
+        PhyParamTrackingTransition::new(PhyParamTrackRequest::new(false, false), POLICY);
+    let outcome = loop {
+        let completion = match transition.action() {
+            PhyParamTrackingAction::Complete(outcome) => break outcome,
+            PhyParamTrackingAction::CalibrationTrack { clients, .. } => {
+                PhyParamTrackingCompletion::CalibrationTracked(
+                    PhyParamTrackingCalibrationCompletion {
+                        clients,
+                        common_updated: false,
+                        transmit_updated: true,
+                    },
+                )
+            }
+            action => completion(action),
+        };
+        transition.advance(completion).unwrap();
+    };
+    assert!(outcome.calibration.transmit);
+    assert!(!outcome.calibration.wifi && !outcome.calibration.bluetooth_ieee802154);
 }

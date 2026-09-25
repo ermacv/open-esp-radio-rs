@@ -604,3 +604,14 @@ fn outcome_reports_the_children_that_committed_an_update() {
         }
     );
 }
+
+#[test]
+fn calibration_completion_reads_back_its_committed_branches() {
+    let completion = PhyParamTrackingCalibrationCompletion {
+        clients: PhyParamTrackRequest::new(true, false),
+        common_updated: true,
+        transmit_updated: false,
+    };
+    assert!(completion.common_updated());
+    assert!(!completion.transmit_updated());
+}

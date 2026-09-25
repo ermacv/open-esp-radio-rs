@@ -238,6 +238,18 @@ pub struct PhyParamTrackingCalibrationCompletion {
     transmit_updated: bool,
 }
 
+impl PhyParamTrackingCalibrationCompletion {
+    /// The common calibration references were recalibrated and committed.
+    pub const fn common_updated(&self) -> bool {
+        self.common_updated
+    }
+
+    /// The transmit calibration references were recalibrated and committed.
+    pub const fn transmit_updated(&self) -> bool {
+        self.transmit_updated
+    }
+}
+
 /// Committed calibration branches, not merely invocation of their wrapper.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CalibrationProgress {

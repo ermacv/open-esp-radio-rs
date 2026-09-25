@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 id = "esp32s31-ieee802154"
 
 [validation]
@@ -231,9 +231,9 @@ domain = "ieee802154"
 title = "ESP32-S31 IEEE 802.15.4 source capabilities"
 source-document = "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md"
 overview = "See the [whole-radio capability map](../FEATURES.md) for shared ownership,\nclock/power lifecycle and cross-protocol composition limits.\n\nThis inventory describes silicon features, source-owned operations and their\ncomposition limits. It does not claim a complete IEEE 802.15.4-2015 stack,\ncalibrated RF operation or on-air qualification.\n\n| Status | Meaning |\n| --- | --- |\n| IMPLEMENTED | A bounded source path owns the complete operation in the exact scope named by the row, including static policy or a polled MAC primitive. This is not an RF qualification result. |\n| PARTIAL | A source subset exists, but the named feature lacks a complete operational composition. |\n| FAIL-CLOSED | A typed boundary deliberately prevents the stated activation/publication. Known registers alone do not establish this status. |\n| ABSENT | No production protocol/runtime owner exists for the operation. |\n| HOST-ONLY | An upper-stack function, not a radio/MAC implementation claim. This label does not claim that a stack integration exists. |\n\nThe [qualification specification](../../../../../qualification/targets/esp32s31/ieee802154.toml)\nowns readiness and hardware-evidence requirements independently. It marks\nRF/channel readiness, active IRQ runtime and RX/TX dataplane composition\nincomplete. Complete static MAC policy or raw ED/CCA does not supply those\nmissing boundaries."
-source-paths = [
-  "crates/hardware/esp32s31/driver/FEATURES.md",
-  "qualification/targets/esp32s31/ieee802154.toml",
+documents = [
+    "crates/hardware/esp32s31/driver/FEATURES.md",
+    "qualification/targets/esp32s31/ieee802154.toml",
 ]
 
 [[sections]]
@@ -242,9 +242,7 @@ domain = "ieee802154"
 title = "Qualification scope mapping"
 source-document = "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md"
 overview = "The [program](../../../../../qualification/targets/esp32s31/ieee802154.toml) retains\nthese scopes and source contracts. It does not qualify absent features such as\nCSMA/CA or CSL, and upper stacks remain outside the radio/MAC target."
-source-paths = [
-  "qualification/targets/esp32s31/ieee802154.toml",
-]
+documents = ["qualification/targets/esp32s31/ieee802154.toml"]
 
 [[sections]]
 id = "ieee802154-capability-sources-and-publication-scope"
@@ -252,10 +250,10 @@ domain = "ieee802154"
 title = "Capability sources and publication scope"
 source-document = "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md"
 overview = "The [ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)\ndefines the hardware inventory. The [ESP-IDF IEEE 802.15.4 API](https://github.com/espressif/esp-idf/blob/master/components/ieee802154/include/esp_ieee802154.h)\nalso describes vendor operations such as timed RX/TX, source matching and\nsecurity; a vendor API is not evidence of an open S31 implementation.\n\n[Portable `RadioCapabilities`](../../../../protocols/ieee802154/src/radio/capabilities.rs)\nis a vocabulary, not the S31 backend's supported-feature image. In particular,\n`CSMA_CA`, `SCHEDULED_TRANSMIT`, `AUTOMATIC_ACKNOWLEDGEMENT`, `SECURITY_OFFLOAD`\nand `SOURCE_MATCH` constants do not compose their corresponding operations.\nThe same applies to portable commands, configuration and software sleep states.\n\nThe [Embassy MAC owner](../../../../adapters/embassy/esp32s31/ieee802154/src/owner.rs)\nprovides `receive_without_auto_ack()`, `transmit_without_ack()`,\n`transmit_with_ack()`, `clear_channel_assessment()` and `energy_detection()`.\nThese are lower runtime entry points, not a complete public RF-ready service.\nThe [MAC actor](mac/src/actor.rs) admits only Direct or\nClearChannelAssessment TX access; neither is a CSMA/CA scheduler."
-source-paths = [
-  "crates/protocols/ieee802154/src/radio/capabilities.rs",
-  "crates/adapters/embassy/esp32s31/ieee802154/src/owner.rs",
-  "crates/hardware/esp32s31/driver/ieee802154/mac/src/actor.rs",
+packages = [
+    "oer-ieee802154",
+    "oer-esp32s31-ieee802154-embassy",
+    "oer-esp32s31-ieee802154-mac",
 ]
 
 [[sections]]
@@ -315,7 +313,6 @@ title = "2.4 GHz O-QPSK / 250 kbit/s"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "MAC/PHY configuration and frame geometry exist, but registered common-PHY, RF wake/tracking and whole-radio operation are not composed."
-source-paths = []
 
 [[items]]
 id = "ieee802154-phy-and-rf-channels-11-26"
@@ -324,9 +321,7 @@ title = "Channels 11-26"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[Channel validation](../../hal/src/ieee802154/lifecycle.rs) and frequency-code publication exist. Static MAC channel readback does not establish RFPLL/BTBB retune readiness."
-source-paths = [
-  "crates/hardware/esp32s31/hal/src/ieee802154/lifecycle.rs",
-]
+packages = ["oer-esp32s31-hal"]
 
 [[items]]
 id = "ieee802154-phy-and-rf-rssi"
@@ -335,9 +330,7 @@ title = "RSSI"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[RX frame view](dma/src/frame.rs) exposes the hardware RSSI byte; calibrated measurement through a complete receive service is not established."
-source-paths = [
-  "crates/hardware/esp32s31/driver/ieee802154/dma/src/frame.rs",
-]
+packages = ["oer-esp32s31-ieee802154-dma"]
 
 [[items]]
 id = "ieee802154-phy-and-rf-lqi"
@@ -346,7 +339,6 @@ title = "LQI"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "RX frame view exposes hardware LQI; the whole-radio receive path remains incomplete."
-source-paths = []
 
 [[items]]
 id = "ieee802154-phy-and-rf-tx-power"
@@ -355,9 +347,7 @@ title = "TX power"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[Power resolution](../../hal/src/ieee802154/tx_power.rs) validates caller-supplied levels and resolves a dBm request to an opaque provider index. A calibrated S31 provider and MMIO publication are not composed; the resolved value grants no hardware authority."
-source-paths = [
-  "crates/hardware/esp32s31/hal/src/ieee802154/tx_power.rs",
-]
+packages = ["oer-esp32s31-hal"]
 
 [[items]]
 id = "ieee802154-cca-and-channel-access-energy-detection-command"
@@ -366,9 +356,7 @@ title = "Energy Detection command"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "[Polled operation](../../hal/src/ieee802154/operation.rs) owns a finite route-detached raw ED command, duration, event/completion and bounded recovery. It does not establish calibrated RF energy, a multi-channel scan or a nonblocking public service."
-source-paths = [
-  "crates/hardware/esp32s31/hal/src/ieee802154/operation.rs",
-]
+packages = ["oer-esp32s31-hal"]
 
 [[items]]
 id = "ieee802154-cca-and-channel-access-standalone-cca-command"
@@ -377,7 +365,6 @@ title = "Standalone CCA command"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "The same serialized polled boundary owns a finite MAC CCA operation. RF readiness and busy-channel HIL coverage remain separate requirements."
-source-paths = []
 
 [[items]]
 id = "ieee802154-cca-and-channel-access-four-cca-modes"
@@ -386,9 +373,7 @@ title = "Four CCA modes"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "[Static policy](../../hal/src/ieee802154/policy.rs) writes Carrier, Energy Detection, OR or AND selection and checks semantic readback."
-source-paths = [
-  "crates/hardware/esp32s31/hal/src/ieee802154/policy.rs",
-]
+packages = ["oer-esp32s31-hal"]
 
 [[items]]
 id = "ieee802154-cca-and-channel-access-cca-threshold"
@@ -397,7 +382,6 @@ title = "CCA threshold"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "Static policy writes and verifies the threshold; this is configuration coverage, not calibrated RF assessment."
-source-paths = []
 
 [[items]]
 id = "ieee802154-cca-and-channel-access-cca-before-tx"
@@ -406,7 +390,6 @@ title = "CCA-before-TX"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "The actor/executor owns ClearChannelThenTransmit command selection. Whole-radio transmission remains incomplete."
-source-paths = []
 
 [[items]]
 id = "ieee802154-cca-and-channel-access-csma-ca"
@@ -415,7 +398,6 @@ title = "CSMA/CA"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No random backoff, contention/retry state or CSMA/CA transmission owner exists. A single CCA-gated command is not CSMA/CA."
-source-paths = []
 
 [[items]]
 id = "ieee802154-cca-and-channel-access-active-scan"
@@ -424,7 +406,6 @@ title = "Active Scan"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No beacon-request and response-collection MAC procedure exists. Raw ED is a separate operation."
-source-paths = []
 
 [[items]]
 id = "ieee802154-rx-tx-dataplane-and-acknowledgments-rx"
@@ -433,9 +414,7 @@ title = "RX"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[RX DMA](dma/src/rx.rs), actor command, acknowledged completion and bounded frame extraction exist. RF-ready public service and on-air reception remain incomplete."
-source-paths = [
-  "crates/hardware/esp32s31/driver/ieee802154/dma/src/rx.rs",
-]
+packages = ["oer-esp32s31-ieee802154-dma"]
 
 [[items]]
 id = "ieee802154-rx-tx-dataplane-and-acknowledgments-direct-tx"
@@ -444,9 +423,7 @@ title = "Direct TX"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[TX DMA](dma/src/tx.rs), MAC actor and PAC command publication exist without a complete RF-ready radio composition."
-source-paths = [
-  "crates/hardware/esp32s31/driver/ieee802154/dma/src/tx.rs",
-]
+packages = ["oer-esp32s31-ieee802154-dma"]
 
 [[items]]
 id = "ieee802154-rx-tx-dataplane-and-acknowledgments-hardware-fcs-generation-check"
@@ -455,7 +432,6 @@ title = "Hardware FCS generation/check"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "TX reserves FCS for hardware; the RX format replaces its two bytes with RSSI/LQI. Parsing that layout alone does not qualify on-air FCS behavior."
-source-paths = []
 
 [[items]]
 id = "ieee802154-rx-tx-dataplane-and-acknowledgments-tx-ack-request-and-ack-reception"
@@ -464,7 +440,6 @@ title = "TX ACK request and ACK reception"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "ACK-request admission, RX_ACK phase, watchdog and correlation exist. Complete on-air ACK exchange remains unqualified."
-source-paths = []
 
 [[items]]
 id = "ieee802154-rx-tx-dataplane-and-acknowledgments-ack-timeout-configuration"
@@ -473,7 +448,6 @@ title = "ACK timeout configuration"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "Static policy validates and converts requests to hardware timeout units, then checks semantic readback. This does not establish a working ACK exchange."
-source-paths = []
 
 [[items]]
 id = "ieee802154-rx-tx-dataplane-and-acknowledgments-hardware-auto-ack-generation"
@@ -482,9 +456,7 @@ title = "Hardware Auto ACK generation"
 status = "fail-closed"
 level = "lower-primitive"
 scope-and-limitations = "The [command executor](runtime/src/pac_command_executor.rs) rejects Receive when `tx_auto_ack` or `enhanced_ack_tx` is enabled. The exposed RX operation is explicitly `receive_without_auto_ack()`."
-source-paths = [
-  "crates/hardware/esp32s31/driver/ieee802154/runtime/src/pac_command_executor.rs",
-]
+packages = ["oer-esp32s31-ieee802154-runtime"]
 
 [[items]]
 id = "ieee802154-rx-tx-dataplane-and-acknowledgments-enhanced-ack-tx"
@@ -493,7 +465,6 @@ title = "Enhanced ACK TX"
 status = "fail-closed"
 level = "lower-primitive"
 scope-and-limitations = "The same receive-policy guard prevents activation. No complete Enhanced ACK formatter/security/completion owner exists."
-source-paths = []
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-hardware-frame-filtering"
@@ -502,7 +473,6 @@ title = "Hardware frame filtering"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "PAN identity and coordinator/promiscuous control are configured, but whole-radio filtering and on-air admission are not closed."
-source-paths = []
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-pan-id"
@@ -511,7 +481,6 @@ title = "PAN ID"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "Static policy owns primary-context PAN identity write/readback."
-source-paths = []
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-short-address"
@@ -520,7 +489,6 @@ title = "Short address"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "Static policy owns primary-context short-address write/readback."
-source-paths = []
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-extended-address"
@@ -529,7 +497,6 @@ title = "Extended address"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "Static policy owns primary-context extended-address write/readback."
-source-paths = []
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-coordinator-filtering-mode"
@@ -538,7 +505,6 @@ title = "Coordinator filtering mode"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "Static policy owns the coordinator control bit and readback; this is not a coordinator protocol stack."
-source-paths = []
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-promiscuous-receive-mode"
@@ -547,7 +513,6 @@ title = "Promiscuous receive mode"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Static control and readback exist; no complete public operational receive service is composed."
-source-paths = []
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-four-multi-pan-contexts"
@@ -556,9 +521,7 @@ title = "Four Multi-PAN contexts"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[PAC MAC access](../../pac/src/ieee802154/mac.rs) represents four contexts. Production static policy uses context zero; no multi-context service/admission lifecycle exists."
-source-paths = [
-  "crates/hardware/esp32s31/pac/src/ieee802154/mac.rs",
-]
+packages = ["oer-esp32s31-pac"]
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-automatic-frame-pending"
@@ -567,7 +530,6 @@ title = "Automatic Frame Pending"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Static `enhanced_pending` control and PAC frame-pending access exist. Source-match and pending-data lifecycle are absent; automatic ACK transmission remains blocked by the RX policy above."
-source-paths = []
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-source-matching-table"
@@ -576,7 +538,6 @@ title = "Source Matching table"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No production add/remove/reset, address ownership or pending-data selection lifecycle exists."
-source-paths = []
 
 [[items]]
 id = "ieee802154-timing-mac-timers-clock-match"
@@ -585,7 +546,6 @@ title = "MAC timers / clock match"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "PAC exposes timer and clock-match primitives, not a complete scheduled-radio epoch or service."
-source-paths = []
 
 [[items]]
 id = "ieee802154-timing-tx-rx-sfd-events"
@@ -594,9 +554,7 @@ title = "TX/RX SFD events"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "[IRQ vocabulary](irq/src/lib.rs) and PAC events represent SFD observations. Complete source-route/runtime composition remains incomplete."
-source-paths = [
-  "crates/hardware/esp32s31/driver/ieee802154/irq/src/lib.rs",
-]
+packages = ["oer-esp32s31-ieee802154-irq"]
 
 [[items]]
 id = "ieee802154-timing-rx-timestamp"
@@ -605,7 +563,6 @@ title = "RX timestamp"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Timer/SFD primitives exist, but receive frames do not publish a timestamp in a validated monotonic radio epoch."
-source-paths = []
 
 [[items]]
 id = "ieee802154-timing-timed-tx-transmit-at"
@@ -614,7 +571,6 @@ title = "Timed TX (`transmit_at`)"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No operational scheduled-TX owner composes timer, RF readiness, DMA and completion."
-source-paths = []
 
 [[items]]
 id = "ieee802154-timing-timed-rx-receive-at"
@@ -623,7 +579,6 @@ title = "Timed RX (`receive_at`)"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No operational scheduled-RX window owner exists."
-source-paths = []
 
 [[items]]
 id = "ieee802154-timing-coordinated-sampled-listening-csl"
@@ -632,7 +587,6 @@ title = "Coordinated Sampled Listening (CSL)"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No CSL scheduling, synchronization or protocol owner exists."
-source-paths = []
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-hardware-tx-security"
@@ -641,7 +595,6 @@ title = "Hardware TX security"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "PAC security controls and programming access exist. No complete runtime key/nonce/counter and protected-frame publication lifecycle is composed. Register access does not establish security offload."
-source-paths = []
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-rx-on-when-idle"
@@ -650,7 +603,6 @@ title = "RX-on-when-idle"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "Portable state exists without a dedicated S31 receive/rearm policy and radio lifetime."
-source-paths = []
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-radio-sleep-wake"
@@ -659,7 +611,6 @@ title = "Radio sleep / wake"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No RF/PHY/baseband stop/wake, retention and restoration owner is composed. A portable sleep state or stopped MAC is not hardware radio sleep."
-source-paths = []
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-powered-lifecycle"
@@ -668,7 +619,6 @@ title = "Powered lifecycle"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Clock/reset foundation and masked-policy transitions exist. Shared-PHY maintenance and complete RF-ready start/stop ownership remain incomplete."
-source-paths = []
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-wifi-bluetooth-coexistence"
@@ -677,9 +627,7 @@ title = "Wi-Fi/Bluetooth coexistence"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[Coexistence infrastructure](../coex/src/lib.rs) and MAC PTI access exist. Static IEEE 802.15.4 policy requires TX/RX and ACK PTI disabled; complete multi-radio request/grant/release operation is not composed."
-source-paths = [
-  "crates/hardware/esp32s31/driver/coex/src/lib.rs",
-]
+packages = ["oer-esp32s31-coex"]
 
 [[items]]
 id = "ieee802154-product-stacks-thread"
@@ -688,7 +636,6 @@ title = "Thread"
 status = "host-only"
 level = "composed-product"
 scope-and-limitations = "Network/upper-MAC stack integration requires an adequate radio backend; this matrix does not claim a production Thread integration."
-source-paths = []
 
 [[items]]
 id = "ieee802154-product-stacks-zigbee"
@@ -697,7 +644,6 @@ title = "Zigbee"
 status = "host-only"
 level = "composed-product"
 scope-and-limitations = "Network/application stack capability is separate from the radio/MAC implementation."
-source-paths = []
 
 [[items]]
 id = "ieee802154-product-stacks-matter"
@@ -706,7 +652,6 @@ title = "Matter"
 status = "host-only"
 level = "composed-product"
 scope-and-limitations = "Application-stack capability; Matter over Thread requires Thread and its radio integration. It is not a hardware MAC feature."
-source-paths = []
 
 [[items]]
 id = "ieee802154-registered-timing-entry-source-fact"
@@ -726,7 +671,7 @@ section = "ieee802154-qualification-scope-mapping"
 title = "Clocks, reset and masked foundation"
 kind = "qualification-mapping"
 details = "Qualification capability: `clock-reset-foundation`\n\nAgreement: Complete finite source transition; hardware evidence is separate."
-source-paths = ["qualification/targets/esp32s31/ieee802154.toml"]
+documents = ["qualification/targets/esp32s31/ieee802154.toml"]
 
 [[references]]
 id = "ieee802154-qualification-scope-mapping-cca-modes-threshold-and-primary-pan-identity"
@@ -734,7 +679,7 @@ section = "ieee802154-qualification-scope-mapping"
 title = "CCA modes, threshold and primary PAN identity"
 kind = "qualification-mapping"
 details = "Qualification capability: `static-mac-policy`\n\nAgreement: Complete static policy/readback, not a complete receive service."
-source-paths = ["qualification/targets/esp32s31/ieee802154.toml"]
+documents = ["qualification/targets/esp32s31/ieee802154.toml"]
 
 [[references]]
 id = "ieee802154-qualification-scope-mapping-raw-ed-standalone-cca"
@@ -742,7 +687,7 @@ section = "ieee802154-qualification-scope-mapping"
 title = "Raw ED / standalone CCA"
 kind = "qualification-mapping"
 details = "Qualification capability: `polled-ed-cca`\n\nAgreement: Implementation is complete; async remains incomplete because the public path runs a finite synchronous poll budget."
-source-paths = ["qualification/targets/esp32s31/ieee802154.toml"]
+documents = ["qualification/targets/esp32s31/ieee802154.toml"]
 
 [[references]]
 id = "ieee802154-qualification-scope-mapping-registered-phy-and-protocol-timing-channel-operation"
@@ -750,7 +695,7 @@ section = "ieee802154-qualification-scope-mapping"
 title = "Registered PHY and protocol timing / channel operation"
 kind = "qualification-mapping"
 details = "Qualification capability: `rf-channel-readiness`\n\nAgreement: `ieee802154-registered-timing-entry` exists; shared PLL, RF retune and tracking lifetime composition remain incomplete."
-source-paths = ["qualification/targets/esp32s31/ieee802154.toml"]
+documents = ["qualification/targets/esp32s31/ieee802154.toml"]
 
 [[references]]
 id = "ieee802154-qualification-scope-mapping-active-irq-service"
@@ -758,7 +703,7 @@ section = "ieee802154-qualification-scope-mapping"
 title = "Active IRQ service"
 kind = "qualification-mapping"
 details = "Qualification capability: `active-interrupt-runtime`\n\nAgreement: Lower IRQ machinery does not close whole-radio route/runtime composition."
-source-paths = ["qualification/targets/esp32s31/ieee802154.toml"]
+documents = ["qualification/targets/esp32s31/ieee802154.toml"]
 
 [[references]]
 id = "ieee802154-qualification-scope-mapping-lower-rx-tx-actor-and-dma-public-dataplane"
@@ -766,7 +711,7 @@ section = "ieee802154-qualification-scope-mapping"
 title = "Lower RX/TX actor and DMA / public dataplane"
 kind = "qualification-mapping"
 details = "Qualification capability: `rx-tx-dataplane`\n\nAgreement: `ieee802154-mac-operation-subset` exists; complete RF-ready public operation is still incomplete."
-source-paths = ["qualification/targets/esp32s31/ieee802154.toml"]
+documents = ["qualification/targets/esp32s31/ieee802154.toml"]
 
 [[references]]
 id = "ieee802154-ownership-and-readiness-hal"
@@ -774,9 +719,7 @@ section = "ieee802154-ownership-and-readiness"
 title = "[HAL](../../hal/src/ieee802154.rs)"
 kind = "source-reference"
 details = "Authority: Masked clock/reset foundation, static policy and bounded polled operations"
-source-paths = [
-  "crates/hardware/esp32s31/hal/src/ieee802154.rs",
-]
+packages = ["oer-esp32s31-hal"]
 
 [[references]]
 id = "ieee802154-ownership-and-readiness-pac-mac"
@@ -784,9 +727,7 @@ section = "ieee802154-ownership-and-readiness"
 title = "[PAC MAC](../../pac/src/ieee802154/mac.rs)"
 kind = "source-reference"
 details = "Authority: Typed register operations and hardware-access leases"
-source-paths = [
-  "crates/hardware/esp32s31/pac/src/ieee802154/mac.rs",
-]
+packages = ["oer-esp32s31-pac"]
 
 [[references]]
 id = "ieee802154-ownership-and-readiness-dma"
@@ -794,9 +735,7 @@ section = "ieee802154-ownership-and-readiness"
 title = "[DMA](dma/src/lib.rs)"
 kind = "source-reference"
 details = "Authority: CPU/device buffer ownership, frame geometry and terminal reclamation"
-source-paths = [
-  "crates/hardware/esp32s31/driver/ieee802154/dma/src/lib.rs",
-]
+packages = ["oer-esp32s31-ieee802154-dma"]
 
 [[references]]
 id = "ieee802154-ownership-and-readiness-mac-actor"
@@ -804,9 +743,7 @@ section = "ieee802154-ownership-and-readiness"
 title = "[MAC actor](mac/src/actor.rs)"
 kind = "source-reference"
 details = "Authority: Serialized operation state, acknowledged IRQ batches, ACK watchdog and completion"
-source-paths = [
-  "crates/hardware/esp32s31/driver/ieee802154/mac/src/actor.rs",
-]
+packages = ["oer-esp32s31-ieee802154-mac"]
 
 [[references]]
 id = "ieee802154-ownership-and-readiness-irq"
@@ -814,9 +751,7 @@ section = "ieee802154-ownership-and-readiness"
 title = "[IRQ](irq/src/lib.rs)"
 kind = "source-reference"
 details = "Authority: Bounded event/abort classification and acknowledged batch handoff"
-source-paths = [
-  "crates/hardware/esp32s31/driver/ieee802154/irq/src/lib.rs",
-]
+packages = ["oer-esp32s31-ieee802154-irq"]
 
 [[references]]
 id = "ieee802154-ownership-and-readiness-runtime"
@@ -824,9 +759,7 @@ section = "ieee802154-ownership-and-readiness"
 title = "[Runtime](runtime/src/lib.rs)"
 kind = "source-reference"
 details = "Authority: Executor-neutral command/completion progression; PAC executor enforces operation policy"
-source-paths = [
-  "crates/hardware/esp32s31/driver/ieee802154/runtime/src/lib.rs",
-]
+packages = ["oer-esp32s31-ieee802154-runtime"]
 
 [[references]]
 id = "ieee802154-ownership-and-readiness-embassy-owner"
@@ -834,9 +767,7 @@ section = "ieee802154-ownership-and-readiness"
 title = "[Embassy owner](../../../../adapters/embassy/esp32s31/ieee802154/src/owner.rs)"
 kind = "source-reference"
 details = "Authority: Async waits and retained lower MAC/DMA owners"
-source-paths = [
-  "crates/adapters/embassy/esp32s31/ieee802154/src/owner.rs",
-]
+packages = ["oer-esp32s31-ieee802154-embassy"]
 
 [[references]]
 id = "ieee802154-source-esp32-s31-datasheet"
@@ -844,7 +775,6 @@ section = "ieee802154-capability-sources-and-publication-scope"
 title = "[ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)"
 kind = "source-reference"
 details = "Defines the hardware inventory. This is an inventory input, not evidence of an open-driver implementation."
-source-paths = []
 
 [[references]]
 id = "ieee802154-source-esp-idf-api"
@@ -852,7 +782,6 @@ section = "ieee802154-capability-sources-and-publication-scope"
 title = "[ESP-IDF IEEE 802.15.4 API](https://github.com/espressif/esp-idf/blob/master/components/ieee802154/include/esp_ieee802154.h)"
 kind = "source-reference"
 details = "Describes vendor operations such as timed RX/TX, source matching and security; a vendor API is not evidence of an open S31 implementation."
-source-paths = []
 
 [[references]]
 id = "ieee802154-source-portable-radio-capabilities"
@@ -860,9 +789,7 @@ section = "ieee802154-capability-sources-and-publication-scope"
 title = "Portable `RadioCapabilities` vocabulary"
 kind = "source-reference"
 details = "The portable capability dictionary is not the S31 backend supported-feature image and does not compose its named operations."
-source-paths = [
-  "crates/protocols/ieee802154/src/radio/capabilities.rs",
-]
+packages = ["oer-ieee802154"]
 
 [[references]]
 id = "ieee802154-source-lower-runtime-entry-points"
@@ -870,7 +797,7 @@ section = "ieee802154-capability-sources-and-publication-scope"
 title = "Lower Embassy owner and MAC actor entry points"
 kind = "source-reference"
 details = "The lower operations do not establish a complete public RF-ready service, and Direct or ClearChannelAssessment access is not a CSMA/CA scheduler."
-source-paths = [
-  "crates/adapters/embassy/esp32s31/ieee802154/src/owner.rs",
-  "crates/hardware/esp32s31/driver/ieee802154/mac/src/actor.rs",
+packages = [
+    "oer-esp32s31-ieee802154-embassy",
+    "oer-esp32s31-ieee802154-mac",
 ]

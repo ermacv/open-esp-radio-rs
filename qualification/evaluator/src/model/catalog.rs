@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
 
 mod imports;
+mod workspace;
 
-pub(crate) const CAPABILITY_CATALOG_SCHEMA: u16 = 2;
+pub(crate) const CAPABILITY_CATALOG_SCHEMA: u16 = 3;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CatalogView {
@@ -23,6 +24,8 @@ pub(crate) struct CatalogView {
     pub(crate) sections: Vec<InventorySection>,
     pub(crate) items: Vec<InventoryItem>,
     pub(crate) references: Vec<InventoryReference>,
+    /// Repository-relative directories of the packages inventory entries name.
+    pub(crate) package_directories: BTreeMap<String, PathBuf>,
 }
 
 #[derive(Clone, Debug)]
@@ -133,7 +136,9 @@ pub(crate) struct InventorySection {
     #[serde(default)]
     pub(crate) overview: String,
     #[serde(default)]
-    pub(crate) source_paths: Vec<PathBuf>,
+    pub(crate) packages: Vec<String>,
+    #[serde(default)]
+    pub(crate) documents: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -145,7 +150,8 @@ pub(crate) struct InventoryItem {
     pub(crate) status: SourceStatus,
     pub(crate) level: CapabilityLevel,
     pub(crate) scope_and_limitations: String,
-    pub(crate) source_paths: Vec<PathBuf>,
+    pub(crate) packages: Vec<String>,
+    pub(crate) documents: Vec<PathBuf>,
     pub(crate) source_fact: Option<String>,
 }
 
@@ -174,7 +180,9 @@ pub(crate) struct InventoryReference {
     pub(crate) kind: InventoryReferenceKind,
     pub(crate) details: String,
     #[serde(default)]
-    pub(crate) source_paths: Vec<PathBuf>,
+    pub(crate) packages: Vec<String>,
+    #[serde(default)]
+    pub(crate) documents: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -199,7 +207,9 @@ struct InventoryItemDocument {
     #[serde(default)]
     scope_and_limitations: Option<String>,
     #[serde(default)]
-    source_paths: Vec<PathBuf>,
+    packages: Vec<String>,
+    #[serde(default)]
+    documents: Vec<PathBuf>,
     #[serde(default)]
     source_fact: Option<String>,
 }
@@ -268,6 +278,8 @@ impl CatalogView {
         let mut item_ids = BTreeSet::new();
         let mut reference_ids = BTreeSet::new();
         let mut loaded_catalogs = Vec::new();
+        // Cargo is consulted only when an inventory entry links packages or documents.
+        let mut packages = None;
 
         for (relative, (input, mut document)) in imports::load(root, paths)? {
             let catalog_id = slug(&document.id, "capability catalog id")?;
@@ -396,17 +408,13 @@ impl CatalogView {
                     &section.source_document,
                     "inventory source document",
                 )?;
-                let mut paths = BTreeSet::new();
-                for path in &section.source_paths {
-                    if !paths.insert(path) {
-                        return Err(format!(
-                            "inventory section {id} repeats source path {}",
-                            path.display()
-                        )
-                        .into());
-                    }
-                    validate_regular_reference(root, path, "inventory section source path")?;
-                }
+                validate_links(
+                    root,
+                    &mut packages,
+                    &id,
+                    &section.packages,
+                    &section.documents,
+                )?;
                 if !section_ids.insert(id.clone()) {
                     return Err(format!("duplicate inventory section {id}").into());
                 }
@@ -423,7 +431,8 @@ impl CatalogView {
                     if item.status.is_some()
                         || item.level.is_some()
                         || item.scope_and_limitations.is_some()
-                        || !item.source_paths.is_empty()
+                        || !item.packages.is_empty()
+                        || !item.documents.is_empty()
                     {
                         return Err(format!(
                             "inventory projection {id} cannot override source fact {reference}"
@@ -443,7 +452,8 @@ impl CatalogView {
                             "{}\n\nLimits: {}",
                             fact.source_contract.scope, fact.source_contract.limits
                         ),
-                        source_paths: fact.source_contract.source_paths.clone(),
+                        packages: Vec::new(),
+                        documents: Vec::new(),
                         source_fact: Some(reference),
                     }
                 } else {
@@ -462,17 +472,7 @@ impl CatalogView {
                         )
                         .into());
                     }
-                    let mut paths = BTreeSet::new();
-                    for path in &item.source_paths {
-                        if !paths.insert(path) {
-                            return Err(format!(
-                                "inventory item {id} repeats source path {}",
-                                path.display()
-                            )
-                            .into());
-                        }
-                        validate_regular_reference(root, path, "inventory source path")?;
-                    }
+                    validate_links(root, &mut packages, &id, &item.packages, &item.documents)?;
                     InventoryItem {
                         id: id.clone(),
                         section: item.section,
@@ -480,7 +480,8 @@ impl CatalogView {
                         status,
                         level,
                         scope_and_limitations,
-                        source_paths: item.source_paths,
+                        packages: item.packages,
+                        documents: item.documents,
                         source_fact: None,
                     }
                 };
@@ -497,17 +498,13 @@ impl CatalogView {
                         format!("inventory reference {id} requires title and details").into(),
                     );
                 }
-                let mut paths = BTreeSet::new();
-                for path in &reference.source_paths {
-                    if !paths.insert(path) {
-                        return Err(format!(
-                            "inventory reference {id} repeats source path {}",
-                            path.display()
-                        )
-                        .into());
-                    }
-                    validate_regular_reference(root, path, "inventory reference source path")?;
-                }
+                validate_links(
+                    root,
+                    &mut packages,
+                    &id,
+                    &reference.packages,
+                    &reference.documents,
+                )?;
                 if !reference_ids.insert(id.clone()) {
                     return Err(format!("duplicate inventory reference {id}").into());
                 }
@@ -533,6 +530,19 @@ impl CatalogView {
             }
         }
         validate_catalog_dependencies(&view.capabilities, allowed_external)?;
+        if let Some(packages) = packages {
+            view.package_directories = packages.directories(
+                view.sections
+                    .iter()
+                    .flat_map(|section| &section.packages)
+                    .chain(view.items.iter().flat_map(|item| &item.packages))
+                    .chain(
+                        view.references
+                            .iter()
+                            .flat_map(|reference| &reference.packages),
+                    ),
+            );
+        }
         view.sources.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(view)
     }
@@ -717,6 +727,26 @@ pub(super) fn validate_catalog_dependencies(
         )?;
     }
     Ok(())
+}
+
+/// Validate an inventory entry's links, reading the workspace from Cargo on first use.
+fn validate_links(
+    root: &Path,
+    workspace: &mut Option<workspace::WorkspacePackages>,
+    entry: &str,
+    packages: &[String],
+    documents: &[PathBuf],
+) -> Result<()> {
+    if packages.is_empty() && documents.is_empty() {
+        return Ok(());
+    }
+    if workspace.is_none() {
+        *workspace = Some(workspace::WorkspacePackages::load(root)?);
+    }
+    workspace
+        .as_ref()
+        .expect("workspace packages were loaded")
+        .validate(root, entry, packages, documents)
 }
 
 pub(super) fn validate_regular_reference(root: &Path, relative: &Path, kind: &str) -> Result<()> {

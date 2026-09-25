@@ -120,6 +120,72 @@ source-paths = ["crates/dma.rs"]
 }
 
 #[test]
+fn inventory_packages_own_entries_while_documents_only_describe_them() {
+    let mut catalog = CatalogView::default();
+    catalog.source_facts.insert(
+        "dma-publication".into(),
+        toml_edit::de::from_str(
+            r#"
+id = "dma-publication"
+status = "diagnostic"
+level = "lower-primitive"
+[source-contract]
+id = "dma-publication"
+composition = "diagnostic"
+scope = "One descriptor publication"
+limits = "Completion not understood"
+source-paths = ["crates/dma/src/publish.rs"]
+"#,
+        )
+        .unwrap(),
+    );
+    catalog
+        .package_directories
+        .insert("oer-dma".into(), PathBuf::from("crates/dma"));
+    for item in [
+        r#"
+id = "dma-rings"
+section = "dma"
+title = "Rings"
+status = "partial"
+level = "lower-primitive"
+scope-and-limitations = "One ring"
+packages = ["oer-dma"]
+documents = ["registers/dma.toml"]
+"#,
+        r#"
+id = "dma-publication-view"
+section = "dma"
+title = "Publication"
+status = "diagnostic"
+level = "lower-primitive"
+scope-and-limitations = "Projected"
+packages = []
+documents = []
+source-fact = "dma-publication"
+"#,
+    ] {
+        catalog
+            .items
+            .push(toml_edit::de::from_str::<crate::model::InventoryItem>(item).unwrap());
+    }
+    let map = ProjectMap::from_catalog(&catalog, None).unwrap();
+    let entry = |id| map.entries.iter().find(|entry| entry.id == id).unwrap();
+    let rings = entry("dma-rings");
+    assert_eq!(rings.owners, BTreeSet::from([PathBuf::from("crates/dma")]));
+    assert_eq!(
+        rings.documents,
+        BTreeSet::from([PathBuf::from("registers/dma.toml")])
+    );
+    let publication = entry("dma-publication-view");
+    assert_eq!(
+        publication.owners,
+        BTreeSet::from([PathBuf::from("crates/dma/src/publish.rs")])
+    );
+    assert!(publication.documents.is_empty());
+}
+
+#[test]
 fn map_order_is_independent_of_catalog_input_order() {
     let mut a = CatalogView::default();
     let mut b = CatalogView::default();

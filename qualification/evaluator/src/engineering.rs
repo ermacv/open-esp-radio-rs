@@ -54,6 +54,8 @@ pub(crate) struct Entry {
     pub(crate) limits: Vec<String>,
     pub(crate) documentation_base: Option<PathBuf>,
     pub(crate) owners: BTreeSet<PathBuf>,
+    /// Non-code documents an inventory entry links; they never count as owners.
+    pub(crate) documents: BTreeSet<PathBuf>,
     pub(crate) source_contracts: Vec<SourceContract>,
     pub(crate) source_facts: Vec<String>,
     pub(crate) dependencies: Vec<String>,
@@ -128,6 +130,7 @@ impl Entry {
             limits: Vec::new(),
             documentation_base: None,
             owners: BTreeSet::new(),
+            documents: BTreeSet::new(),
             source_contracts: Vec::new(),
             source_facts: Vec::new(),
             dependencies: Vec::new(),
@@ -144,6 +147,16 @@ impl Entry {
             gaps: Vec::new(),
             evidence: None,
         }
+    }
+
+    /// Inventory navigation: package directories own the entry, documents describe it.
+    fn link(&mut self, catalog: &CatalogView, packages: &[String], documents: &[PathBuf]) {
+        self.owners.extend(
+            packages
+                .iter()
+                .filter_map(|name| catalog.package_directories.get(name).cloned()),
+        );
+        self.documents.extend(documents.iter().cloned());
     }
 
     fn contracts(&mut self, contracts: &[SourceContract]) {
@@ -358,7 +371,16 @@ impl ProjectMap {
                 .iter()
                 .find(|s| s.id == item.section)
                 .map(|s| s.source_document.clone());
-            entry.owners.extend(item.source_paths.iter().cloned());
+            entry.link(catalog, &item.packages, &item.documents);
+            if let Some(fact) = item
+                .source_fact
+                .as_ref()
+                .and_then(|id| catalog.source_facts.get(id))
+            {
+                entry
+                    .owners
+                    .extend(fact.source_contract.source_paths.iter().cloned());
+            }
             entry.source_facts.extend(item.source_fact.iter().cloned());
             if item.source_fact.is_none() {
                 map.next.extend(actions::source(&entry));
@@ -374,7 +396,7 @@ impl ProjectMap {
                     &reference.details,
                     "not-an-implementation-claim",
                 );
-                entry.owners.extend(reference.source_paths.iter().cloned());
+                entry.link(catalog, &reference.packages, &reference.documents);
                 entry.documentation_base = catalog
                     .sections
                     .iter()

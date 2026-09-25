@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 id = "esp32s31-coex"
 
 [validation]
@@ -27,9 +27,7 @@ domain = "coexistence"
 title = "ESP32-S31 coexistence source capabilities"
 source-document = "crates/hardware/esp32s31/driver/coex/FEATURES.md"
 overview = "See the [whole-radio capability map](../FEATURES.md) for shared ownership,\nclock/power lifecycle and cross-protocol composition limits.\n\nThis inventory distinguishes recovered models, validation hardware access and\nproduction radio integration. The current code is not a working end-to-end\ncoexistence layer. A timer write, mailbox reply or matching vendor leaf does\nnot establish an RF grant, concurrent connectivity or hardware qualification.\n\n| Status | Meaning |\n| --- | --- |\n| IMPLEMENTED | The exact named source operation is complete at the stated boundary. A model-only row claims only that model operation. |\n| PARTIAL | Recovered hardware or source machinery exists without complete operational composition. |\n| FAIL-CLOSED | A typed boundary deliberately prevents activation/publication. Missing code or known register addresses alone do not establish this status. |\n| ABSENT | No production policy/runtime owner implements the operation. |\n\nThe [official S31 coexistence guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s31/api-guides/coexist.html)\ndescribes priority arbitration over a shared 2.4 GHz RF path. Wi-Fi, BT and BLE\nuse state-dependent time slices; IEEE 802.15.4 uses operation-dependent\npriorities rather than a fourth fixed slice. These are vendor capabilities,\nnot open-driver implementation claims.\n\n[S31 SoC declarations](https://github.com/espressif/esp-idf/blob/master/components/soc/esp32s31/include/soc/soc_caps.h)\ninclude hardware PTI and advanced external coexistence. The source boundaries\nbelow determine how much of that hardware the open driver can use."
-source-paths = [
-  "crates/hardware/esp32s31/driver/FEATURES.md",
-]
+documents = ["crates/hardware/esp32s31/driver/FEATURES.md"]
 
 [[sections]]
 id = "coex-internal-arbitration-hardware-and-models"
@@ -37,9 +35,9 @@ domain = "coexistence"
 title = "Internal arbitration hardware and models"
 source-document = "crates/hardware/esp32s31/driver/coex/FEATURES.md"
 overview = "The [PTI comparison profile](../../../../../verification/vendor/projects/esp32s31/profiles/coex-core.toml)\nand [timer-map profile](../../../../../verification/vendor/projects/esp32s31/profiles/coex-core-timer.toml)\nexercise compiled source mappings against reviewed vendor inputs. Their scope\nis the named leaves, not the scheme scheduler or end-to-end coexistence."
-source-paths = [
-  "verification/vendor/projects/esp32s31/profiles/coex-core.toml",
-  "verification/vendor/projects/esp32s31/profiles/coex-core-timer.toml",
+documents = [
+    "verification/vendor/projects/esp32s31/profiles/coex-core.toml",
+    "verification/vendor/projects/esp32s31/profiles/coex-core-timer.toml",
 ]
 
 [[sections]]
@@ -48,9 +46,7 @@ domain = "coexistence"
 title = "Coexistence policy and scheduler"
 source-document = "crates/hardware/esp32s31/driver/coex/FEATURES.md"
 overview = "`CoexClient` represents the reviewed Bluetooth/Wi-Fi request domain only.\nIEEE 802.15.4 must not be added as an inferred third numeric client. The\n[vendor investigation scope](../../../../../verification/vendor/projects/esp32s31/vendor-project.toml)\nseparately names `esp_coex_ieee802154_*` operations; MAC TX/RX/ACK PTI controls\nalso have their own ownership boundary. Neither surface is a fourth time slice."
-source-paths = [
-  "verification/vendor/projects/esp32s31/vendor-project.toml",
-]
+documents = ["verification/vendor/projects/esp32s31/vendor-project.toml"]
 
 [[sections]]
 id = "coex-protocol-integration-and-lifetime"
@@ -58,10 +54,8 @@ domain = "coexistence"
 title = "Protocol integration and lifetime"
 source-document = "crates/hardware/esp32s31/driver/coex/FEATURES.md"
 overview = "The reviewed `libcoexist.a` SHA-256\n`9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8`\ndoes not provide an RF-release acknowledgement through its IEEE 802.15.4\nbreak/stage callbacks. `esp_coex_ieee802154_coex_break_notify` delegates to\n`hal_ieee802154_coex_break_notify`, whose complete body returns without effects;\n`esp_coex_ieee802154_extcoex_rx_stage` and `esp_coex_ieee802154_extcoex_tx_stage`\nalso return without effects. This is artifact-specific evidence, not absence\nof hardware coexistence. PTI setters and force-RX/delay setters are separate\nhardware-writing operations. Their completion does not certify an RF grant.\n\nTimer `force`/`unforce` are not save/restore operations: the reviewed PAC\nclears the timer tick image on force and replaces it with the vendor constant\non unforce. A generic guard which merely calls unforce cannot promise to\nrestore a previous duration or create a non-preemptible maintenance interval.\nSee the [reviewed source boundaries](../../../../../registers/esp32s31/evidence/vendor-radio-libraries.toml)\nand [timer PAC](../../pac/src/modem/coex.rs)."
-source-paths = [
-  "registers/esp32s31/evidence/vendor-radio-libraries.toml",
-  "crates/hardware/esp32s31/pac/src/modem/coex.rs",
-]
+packages = ["oer-esp32s31-pac"]
+documents = ["registers/esp32s31/evidence/vendor-radio-libraries.toml"]
 
 [[sections]]
 id = "coex-external-coexistence"
@@ -83,10 +77,10 @@ domain = "coexistence"
 title = "Readiness authority"
 source-document = "crates/hardware/esp32s31/driver/coex/FEATURES.md"
 overview = "There is no standalone coex qualification target. Existing requirements live in\n[Bluetooth qualification](../../../../../qualification/targets/esp32s31/bluetooth-le.toml)\nand the radio compositions described by the [Wi-Fi](../ieee80211/FEATURES.md)\nand [IEEE 802.15.4](../ieee802154/FEATURES.md) inventories. The Bluetooth\n`coexistence` capability remains incomplete. Recovered tables and validation\nMMIO cannot satisfy missing protocol hooks, scheduler semantics or joint-radio\nHIL evidence. This inventory does not introduce qualification scenarios or\npromote readiness."
-source-paths = [
-  "qualification/targets/esp32s31/bluetooth-le.toml",
-  "crates/hardware/esp32s31/driver/ieee80211/FEATURES.md",
-  "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md",
+packages = ["oer-esp32s31-wifi"]
+documents = [
+    "qualification/targets/esp32s31/bluetooth-le.toml",
+    "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md",
 ]
 
 [[items]]
@@ -96,7 +90,6 @@ title = "Shared RF arbitration"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "PTI, timer and client models exist. No complete radio request/grant/release composition controls shared RF ownership."
-source-paths = []
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-hardware-pti"
@@ -105,7 +98,6 @@ title = "Hardware PTI"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "Typed priority and timer client fields exist; a configured priority is not an observed RF grant."
-source-paths = []
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-48-event-pti-lookup"
@@ -114,9 +106,7 @@ title = "48-event PTI lookup"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "[Model](src/model.rs) owns the reviewed table, event validation and four-bit PTI domain. This is a source lookup, not live priority scheduling."
-source-paths = [
-  "crates/hardware/esp32s31/driver/coex/src/model.rs",
-]
+packages = ["oer-esp32s31-coex"]
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-event-to-timer-mapping"
@@ -125,7 +115,6 @@ title = "Event-to-timer mapping"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "The model maps the complete admitted event domain to five timer identities or no timer. An unmapped event is not a successful request."
-source-paths = []
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-event-duration-lookup"
@@ -134,7 +123,6 @@ title = "Event-duration lookup"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "The model retains five reviewed duration entries and returns no duration for other events."
-source-paths = []
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-five-entry-hardware-timer-bank"
@@ -143,9 +131,7 @@ title = "Five-entry hardware timer bank"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "[Register model](../../../../../registers/esp32s31/model/peripherals/coex-hw-timer.toml) and typed PAC access describe configuration, targets and enable/disable controls. Concrete core-to-MMIO access is validation-only."
-source-paths = [
-  "registers/esp32s31/model/peripherals/coex-hw-timer.toml",
-]
+documents = ["registers/esp32s31/model/peripherals/coex-hw-timer.toml"]
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-timer-clock-conversion"
@@ -154,9 +140,9 @@ title = "Timer clock conversion"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "[Clock model](src/clock.rs) implements four selector domains and reviewed integer conversion rules. [Wi-Fi HAL](../../hal/src/ieee80211/mac.rs) can sample the custom PAC shared-clock fields in production; this clock access does not compose the validation-only timer bridge or a coexistence runtime."
-source-paths = [
-  "crates/hardware/esp32s31/driver/coex/src/clock.rs",
-  "crates/hardware/esp32s31/hal/src/ieee80211/mac.rs",
+packages = [
+    "oer-esp32s31-coex",
+    "oer-esp32s31-hal",
 ]
 
 [[items]]
@@ -166,9 +152,7 @@ title = "Timer programming sequence"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "[Generic program](src/timer.rs) orders client/PTI, duration and latency programming, with a fresh clock sample for each target. This is a trait-driven sequence; timer enable is separate."
-source-paths = [
-  "crates/hardware/esp32s31/driver/coex/src/timer.rs",
-]
+packages = ["oer-esp32s31-coex"]
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-physical-timer-set-enable-disable"
@@ -177,9 +161,7 @@ title = "Physical timer set/enable/disable"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "The [HAL bridge](../../hal/src/coex.rs) implements hardware access only under `validation-probes`; no production hardware owner composes it with the protocol runtimes."
-source-paths = [
-  "crates/hardware/esp32s31/hal/src/coex.rs",
-]
+packages = ["oer-esp32s31-hal"]
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-timer-force-unforce"
@@ -188,7 +170,6 @@ title = "Timer force/unforce"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "Trait/PAC operations and validation entry points exist without a production force lifetime or arbitration policy."
-source-paths = []
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-core-request-semantics"
@@ -197,9 +178,7 @@ title = "Core request semantics"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "[Core](src/core.rs) checks enabled state, maps the event, programs/enables its timer and records the request. This does not own RF grant notification, deadline/cancellation or a complete radio exchange."
-source-paths = [
-  "crates/hardware/esp32s31/driver/coex/src/core.rs",
-]
+packages = ["oer-esp32s31-coex"]
 
 [[items]]
 id = "coex-internal-arbitration-hardware-and-models-core-release-disable-status"
@@ -208,7 +187,6 @@ title = "Core release/disable/status"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "Mapped timer disable and local active-state bookkeeping exist. `uncertain_timers` retains failed programming/publication/withdrawal transactions, including writes followed by errors. New requests return `RecoveryRequired` until release/disable retires the uncertain entries. Software status is not arbiter grant/readback state; disabling tracked timers is not whole-radio shutdown."
-source-paths = []
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-scheduler-state"
@@ -217,9 +195,7 @@ title = "Scheduler state"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "[Scheduler](src/scheduler.rs) retains interval, current schedule, period, phase index and phase slice. Activating this software state does not schedule RF."
-source-paths = [
-  "crates/hardware/esp32s31/driver/coex/src/scheduler.rs",
-]
+packages = ["oer-esp32s31-coex"]
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-phase-representation"
@@ -228,7 +204,6 @@ title = "Phase representation"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "`CoexPhase` retains an opaque four-byte image. Individual byte semantics are not recovered and the image has no MMIO publication operation."
-source-paths = []
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-executable-phase-transitions"
@@ -237,7 +212,6 @@ title = "Executable phase transitions"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No semantic phase decoder, expiry-driven transition or slice publication owner exists."
-source-paths = []
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-scheme-selection"
@@ -246,7 +220,6 @@ title = "Scheme selection"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Wi-Fi/BT/BLE state-to-schedule policy exists."
-source-paths = []
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-wifi-idle-connected-scan-connecting-schemes"
@@ -255,7 +228,6 @@ title = "Wi-Fi IDLE / CONNECTED / SCAN / CONNECTING schemes"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No production state hooks select coexistence periods or allocations."
-source-paths = []
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-tbtt-anchored-periods"
@@ -264,7 +236,6 @@ title = "TBTT-anchored periods"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No owner binds Wi-Fi TBTT to a coexistence period."
-source-paths = []
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-wifi-bt-ble-time-slices"
@@ -273,7 +244,6 @@ title = "Wi-Fi / BT / BLE time slices"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No executable slice scheduler exists."
-source-paths = []
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-ble-advertising-dynamic-priority"
@@ -282,7 +252,6 @@ title = "BLE advertising dynamic priority"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No event-count/promotion policy composes priority changes with advertising."
-source-paths = []
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-ble-connection-dynamic-priority"
@@ -291,7 +260,6 @@ title = "BLE connection dynamic priority"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No connected-runtime producer or consumer implements the vendor dynamic-priority interface."
-source-paths = []
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-ieee-802-15-4-operation-priorities"
@@ -300,9 +268,7 @@ title = "IEEE 802.15.4 operation priorities"
 status = "fail-closed"
 level = "composed-product"
 scope-and-limitations = "[Static MAC policy](../../hal/src/ieee802154/policy.rs) requires TX/RX and ACK PTI disabled. No operation-dependent coexistence lifecycle replaces that policy."
-source-paths = [
-  "crates/hardware/esp32s31/hal/src/ieee802154/policy.rs",
-]
+packages = ["oer-esp32s31-hal"]
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-mesh-status-driven-schemes"
@@ -311,7 +277,6 @@ title = "Mesh status-driven schemes"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No provisioning/traffic/standby status owner selects a coexistence scheme."
-source-paths = []
 
 [[items]]
 id = "coex-coexistence-policy-and-scheduler-classic-a2dp-status-driven-policy"
@@ -320,7 +285,6 @@ title = "Classic A2DP status-driven policy"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic/application status integration selects a scheme."
-source-paths = []
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-embassy-mailbox"
@@ -329,9 +293,7 @@ title = "Embassy mailbox"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "[Adapter](../../../../adapters/embassy/esp32s31/coex/src/lib.rs) serializes Enable, Disable, WifiRequest, BluetoothRequest, Release, Status and Shutdown through one generic `CoexOwner`. This is mailbox/core composition, not live radio integration."
-source-paths = [
-  "crates/adapters/embassy/esp32s31/coex/src/lib.rs",
-]
+packages = ["oer-esp32s31-coex-embassy"]
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-live-wifi-requests"
@@ -340,7 +302,6 @@ title = "Live Wi-Fi requests"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "Production Wi-Fi runtime does not submit requests through the coexistence mailbox."
-source-paths = []
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-live-bt-ble-requests"
@@ -349,7 +310,6 @@ title = "Live BT/BLE requests"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "Production Bluetooth runtime does not submit requests through the coexistence mailbox."
-source-paths = []
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-wifi-beacon-shared-rx-individual-twt-pti-hooks"
@@ -358,9 +318,7 @@ title = "Wi-Fi beacon / shared RX / individual-TWT PTI hooks"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "[Wi-Fi MAC register model](../../../../../registers/esp32s31/model/peripherals/wifi-mac-coex-runtime.toml) contains protocol-specific priority, timing and request-clear controls. These do not compose a shared arbiter lifecycle."
-source-paths = [
-  "registers/esp32s31/model/peripherals/wifi-mac-coex-runtime.toml",
-]
+documents = ["registers/esp32s31/model/peripherals/wifi-mac-coex-runtime.toml"]
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-ieee-802-15-4-request-break-stage-hooks"
@@ -369,7 +327,6 @@ title = "IEEE 802.15.4 request/break/stage hooks"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "MAC PTI and coexistence abort vocabulary exist; the vendor operation family has no complete production bridge."
-source-paths = []
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-wifi-ble-coexistence"
@@ -378,7 +335,6 @@ title = "Wi-Fi + BLE coexistence"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No safe joint-radio runtime and request/grant/release lifecycle exists."
-source-paths = []
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-wifi-classic-coexistence"
@@ -387,7 +343,6 @@ title = "Wi-Fi + Classic coexistence"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic controller or joint-radio composition exists."
-source-paths = []
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-wifi-ieee-802-15-4-coexistence"
@@ -396,7 +351,6 @@ title = "Wi-Fi + IEEE 802.15.4 coexistence"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No complete joint-radio runtime exists; the IEEE MAC keeps PTI disabled."
-source-paths = []
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-ble-ieee-802-15-4-coexistence"
@@ -405,7 +359,6 @@ title = "BLE + IEEE 802.15.4 coexistence"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No complete paired-radio arbitration runtime exists."
-source-paths = []
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-three-protocol-coexistence"
@@ -414,7 +367,6 @@ title = "Three-protocol coexistence"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "Shared register/core infrastructure does not compose concurrent protocol owners."
-source-paths = []
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-coexistence-power-management"
@@ -423,7 +375,6 @@ title = "Coexistence power management"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No shared sleep/wake, retention, request-deadline or radio-release lifecycle exists."
-source-paths = []
 
 [[items]]
 id = "coex-protocol-integration-and-lifetime-gpio-coexistence-diagnostics"
@@ -432,7 +383,6 @@ title = "GPIO coexistence diagnostics"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No production board-pin and arbitration-observation interface exists."
-source-paths = []
 
 [[items]]
 id = "coex-external-coexistence-advanced-external-arbitration-hardware"
@@ -441,9 +391,7 @@ title = "Advanced external arbitration hardware"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "[Reviewed external enable/disable evidence](../../../../../registers/esp32s31/evidence/vendor-radio-libraries.toml) records vendor transactions in high MODEM_LPCON. Those controls are outside the radio-owned model; no platform-owned production bridge publishes them."
-source-paths = [
-  "registers/esp32s31/evidence/vendor-radio-libraries.toml",
-]
+documents = ["registers/esp32s31/evidence/vendor-radio-libraries.toml"]
 
 [[items]]
 id = "coex-external-coexistence-one-wire-two-wire-three-wire-modes"
@@ -452,7 +400,6 @@ title = "One-wire / two-wire / three-wire modes"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No board wiring contract or mode activation/teardown owner exists."
-source-paths = []
 
 [[items]]
 id = "coex-external-coexistence-leader-follower"
@@ -461,7 +408,6 @@ title = "Leader / Follower"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No external arbitration role lifecycle exists."
-source-paths = []
 
 [[items]]
 id = "coex-external-coexistence-request-priority-grant-tx-line-gpios"
@@ -470,7 +416,6 @@ title = "Request / priority / grant / TX-line GPIOs"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No production pin assignment, signal routing or arbitration handoff exists."
-source-paths = []
 
 [[items]]
 id = "coex-external-coexistence-grant-delay-polarity"
@@ -479,7 +424,6 @@ title = "Grant delay / polarity"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No production configuration and readback lifecycle exists."
-source-paths = []
 
 [[items]]
 id = "coex-external-coexistence-external-pti-mid-high"
@@ -488,7 +432,6 @@ title = "External PTI Mid / High"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No external-priority configuration and policy owner exists."
-source-paths = []
 
 [[items]]
 id = "coex-diagnostic-timer-validation-bridge"
@@ -502,14 +445,12 @@ section = "coex-official-coexistence-scenario-scope"
 title = "Wi-Fi STA scan/connecting/connected + BLE scan/advertising/connected"
 kind = "source-reference"
 details = "Vendor classification: `Y`. This is an external vendor scenario classification, not an open-driver source status or HIL evidence."
-source-paths = []
 [[references]]
 id = "coex-official-coexistence-scenario-scope-softap-connecting-connected-or-sniffer-rx-ble"
 section = "coex-official-coexistence-scenario-scope"
 title = "SoftAP connecting/connected or sniffer RX + BLE"
 kind = "source-reference"
 details = "Vendor classification: `C1`. This is an external vendor scenario classification, not an open-driver source status or HIL evidence."
-source-paths = []
 
 [[references]]
 id = "coex-official-coexistence-scenario-scope-esp-now-rx-ble"
@@ -517,7 +458,6 @@ section = "coex-official-coexistence-scenario-scope"
 title = "ESP-NOW RX + BLE"
 kind = "source-reference"
 details = "Vendor classification: `S`. This is an external vendor scenario classification, not an open-driver source status or HIL evidence."
-source-paths = []
 
 [[references]]
 id = "coex-official-coexistence-scenario-scope-wifi-sta-classic-inquiry-page-connected-roles"
@@ -525,14 +465,12 @@ section = "coex-official-coexistence-scenario-scope"
 title = "Wi-Fi STA + Classic inquiry/page/connected roles"
 kind = "source-reference"
 details = "Vendor classification: `Y`. This is an external vendor scenario classification, not an open-driver source status or HIL evidence."
-source-paths = []
 [[references]]
 id = "coex-official-coexistence-scenario-scope-wifi-sta-thread-zigbee-router"
 section = "coex-official-coexistence-scenario-scope"
 title = "Wi-Fi STA + Thread/Zigbee Router"
 kind = "source-reference"
 details = "Vendor classification: `C1`. This is an external vendor scenario classification, not an open-driver source status or HIL evidence."
-source-paths = []
 
 [[references]]
 id = "coex-official-coexistence-scenario-scope-softap-or-sniffer-rx-thread-zigbee-router"
@@ -540,7 +478,6 @@ section = "coex-official-coexistence-scenario-scope"
 title = "SoftAP or sniffer RX + Thread/Zigbee Router"
 kind = "source-reference"
 details = "Vendor classification: `X`. This is an external vendor scenario classification, not an open-driver source status or HIL evidence."
-source-paths = []
 
 [[references]]
 id = "coex-official-coexistence-scenario-scope-thread-zigbee-router-ble-scan"
@@ -548,7 +485,6 @@ section = "coex-official-coexistence-scenario-scope"
 title = "Thread/Zigbee Router + BLE scan"
 kind = "source-reference"
 details = "Vendor classification: `X`. This is an external vendor scenario classification, not an open-driver source status or HIL evidence."
-source-paths = []
 
 [[references]]
 id = "coex-official-coexistence-scenario-scope-thread-zigbee-router-ble-advertising-connected"
@@ -556,4 +492,3 @@ section = "coex-official-coexistence-scenario-scope"
 title = "Thread/Zigbee Router + BLE advertising/connected"
 kind = "source-reference"
 details = "Vendor classification: `Y`. This is an external vendor scenario classification, not an open-driver source status or HIL evidence."
-source-paths = []

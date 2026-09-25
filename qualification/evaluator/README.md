@@ -31,7 +31,7 @@ interoperability; readers retain separate validation logic.
 Unit tests live beside their private modules. No source-name regex is used to
 turn Rust symbol spelling into an ownership or execution proof.
 
-Capability catalog schema 2 stores schema-4 qualification declarations and a
+Capability catalog schema 3 stores schema-4 qualification declarations and a
 wider source-owned domain inventory. Static validation rejects unsafe/symlink
 paths, unsupported schemas, duplicate declarations, invalid unselected
 records, missing dependencies, cycles, inconsistent axes, invalid source
@@ -42,6 +42,15 @@ catalog dependencies transitively before checking the required set. The explicit
 `required-capabilities-from = "catalog-closure"` policy derives that set from
 catalog roots and rejects mixed explicit IDs or inline declarations. Programs
 without this policy still require the exact `required-capabilities` list.
+
+Inventory sections, items and references are navigation, not reviewed claims.
+They name implementation owners as Cargo `packages` and non-code artifacts
+(documentation, register models, qualification targets, vendor profiles) as
+repository-relative `documents`. Package names must be members reported by
+`cargo metadata`, so moving files inside a package never edits a catalog; a
+document inside a package directory is rejected in favour of the package.
+Source contracts keep explicit reviewed `source-paths`: their file set is part
+of the reviewed claim and of HIL property identity.
 
 Catalog source facts provide a narrow reuse mechanism for exact matching source
 scopes. A fact owns one status, level and source contract; inventory projections

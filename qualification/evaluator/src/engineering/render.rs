@@ -64,6 +64,9 @@ pub(super) fn print(map: &ProjectMap, next_only: bool, details: bool) {
             for path in &entry.owners {
                 println!("OWNER\t{}\t{}", entry.id, path.display());
             }
+            for path in &entry.documents {
+                println!("DOCUMENT\t{}\t{}", entry.id, path.display());
+            }
             for path in &entry.knowledge {
                 println!("KNOWLEDGE\t{}\t{}", entry.id, path.display());
             }
@@ -184,7 +187,11 @@ pub(super) fn markdown(map: &ProjectMap, output: &Path, root: &Path) -> Result<S
         for limit in &entry.limits {
             text.push_str(&format!("Limit: {}\n\n", escape(limit)));
         }
-        for (label, paths) in [("Owner", &entry.owners), ("Knowledge", &entry.knowledge)] {
+        for (label, paths) in [
+            ("Owner", &entry.owners),
+            ("Document", &entry.documents),
+            ("Knowledge", &entry.knowledge),
+        ] {
             for path in paths {
                 text.push_str(&format!(
                     "- {label}: [{}]({})\n",

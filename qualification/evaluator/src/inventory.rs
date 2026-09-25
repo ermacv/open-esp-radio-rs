@@ -163,6 +163,14 @@ fn render_domain(catalog: &CatalogView, output: &Path, root: &Path) -> Result<St
                 )?);
                 text.push_str("\n\n");
             }
+            render_links(
+                &mut text,
+                catalog,
+                &section.packages,
+                &section.documents,
+                output,
+                root,
+            )?;
             for item in catalog
                 .items
                 .iter()
@@ -186,19 +194,26 @@ fn render_domain(catalog: &CatalogView, output: &Path, root: &Path) -> Result<St
                     root,
                 )?);
                 text.push_str("\n\n");
-                if !item.source_paths.is_empty() {
-                    text.push_str("Source-owner links: ");
-                    for (index, path) in item.source_paths.iter().enumerate() {
-                        if index > 0 {
-                            text.push_str(", ");
-                        }
-                        text.push_str(&format!(
-                            "[{}]({})",
-                            escape_text(&path.display().to_string()),
-                            link_to(path, output, root)?
-                        ));
-                    }
-                    text.push_str(".\n\n");
+                render_links(
+                    &mut text,
+                    catalog,
+                    &item.packages,
+                    &item.documents,
+                    output,
+                    root,
+                )?;
+                if let Some(fact) = item
+                    .source_fact
+                    .as_ref()
+                    .and_then(|id| catalog.source_facts.get(id))
+                {
+                    render_paths(
+                        &mut text,
+                        "Source-contract paths",
+                        &fact.source_contract.source_paths,
+                        output,
+                        root,
+                    )?;
                 }
             }
             for reference in catalog
@@ -226,20 +241,14 @@ fn render_domain(catalog: &CatalogView, output: &Path, root: &Path) -> Result<St
                     root,
                 )?);
                 text.push_str("\n\n");
-                if !reference.source_paths.is_empty() {
-                    text.push_str("Source-owner links: ");
-                    for (index, path) in reference.source_paths.iter().enumerate() {
-                        if index > 0 {
-                            text.push_str(", ");
-                        }
-                        text.push_str(&format!(
-                            "[{}]({})",
-                            escape_text(&path.display().to_string()),
-                            link_to(path, output, root)?
-                        ));
-                    }
-                    text.push_str(".\n\n");
-                }
+                render_links(
+                    &mut text,
+                    catalog,
+                    &reference.packages,
+                    &reference.documents,
+                    output,
+                    root,
+                )?;
             }
         }
     }
@@ -529,6 +538,61 @@ fn normalize_relative(base: &Path, relative: &Path) -> Result<PathBuf> {
     Ok(parts.into_iter().collect())
 }
 
+/// Inventory navigation: package names link to their directories.
+fn render_links(
+    text: &mut String,
+    catalog: &CatalogView,
+    packages: &[String],
+    documents: &[PathBuf],
+    output: &Path,
+    root: &Path,
+) -> Result<()> {
+    if !packages.is_empty() {
+        text.push_str("Packages: ");
+        for (index, name) in packages.iter().enumerate() {
+            if index > 0 {
+                text.push_str(", ");
+            }
+            let directory = catalog
+                .package_directories
+                .get(name)
+                .ok_or_else(|| format!("inventory package {name} was not resolved"))?;
+            text.push_str(&format!(
+                "[`{}`]({})",
+                escape_text(name),
+                link_to(directory, output, root)?
+            ));
+        }
+        text.push_str(".\n\n");
+    }
+    render_paths(text, "Documents", documents, output, root)
+}
+
+fn render_paths(
+    text: &mut String,
+    label: &str,
+    paths: &[PathBuf],
+    output: &Path,
+    root: &Path,
+) -> Result<()> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    text.push_str(&format!("{label}: "));
+    for (index, path) in paths.iter().enumerate() {
+        if index > 0 {
+            text.push_str(", ");
+        }
+        text.push_str(&format!(
+            "[{}]({})",
+            escape_text(&path.display().to_string()),
+            link_to(path, output, root)?
+        ));
+    }
+    text.push_str(".\n\n");
+    Ok(())
+}
+
 pub(crate) fn link_to(target: &Path, output: &Path, root: &Path) -> Result<String> {
     let root = fs::canonicalize(root)?;
     let output = if output.is_absolute() {
@@ -682,7 +746,7 @@ mod tests {
             fs::write(
                 self.path.join(format!("catalog/{name}.toml")),
                 format!(
-                    "schema = 2\nid = \"{id}\"\n\n[validation]\nverification-project = \"verification.toml\"\nhil-catalog = \"scenarios\"\n{body}"
+                    "schema = 3\nid = \"{id}\"\n\n[validation]\nverification-project = \"verification.toml\"\nhil-catalog = \"scenarios\"\n{body}"
                 ),
             )
             .unwrap();

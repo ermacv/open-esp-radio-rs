@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 id = "esp32s31-bluetooth"
 imports = [
   "qualification/catalog/esp32s31/wifi-phy.toml",
@@ -2405,7 +2405,6 @@ title = "LE 1M PHY"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "DTM and bounded legacy advertising/scanning paths own 1M event publication. This does not imply a complete connected Controller."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-2m-phy"
@@ -2414,7 +2413,6 @@ title = "LE 2M PHY"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "[DTM parameters](src/le/dtm/parameters.rs) own TX/RX selectors and scheduler geometry. Ordinary advertising/scanning and peripheral roles do not select 2M."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-coded-s-8-125-kbit-s"
@@ -2423,7 +2421,6 @@ title = "LE Coded S=8 / 125 kbit/s"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "Enhanced DTM owns the S=8 TX selection and generic Coded RX selection. No ordinary advertising/scanning or ACL role selects Coded PHY."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-coded-s-2-500-kbit-s"
@@ -2432,7 +2429,6 @@ title = "LE Coded S=2 / 500 kbit/s"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "DTM has a distinct S=2 TX identity. RX uses the generic Coded selector; S=2 is not a separate accepted RX selector. No connected Coded path exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-hardware-listen-before-talk-lbt"
@@ -2441,7 +2437,6 @@ title = "Hardware Listen Before Talk (LBT)"
 status = "absent"
 level = "lower-primitive"
 scope-and-limitations = "No Bluetooth LBT policy/activation owner is composed."
-source-paths = []
 
 [[items]]
 id = "bluetooth-static-default-tx-power-selection"
@@ -2450,7 +2445,6 @@ title = "Static/default TX power selection"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "DTM, advertising, scanning and peripheral graph preparation carry default power requests through the recovered [power encoding](memory/src/le_tx_power.rs). No general live power-selection API or radiated-power qualification is implied."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-receiver-test-transmitter-test"
@@ -2459,7 +2453,6 @@ title = "LE Receiver Test / Transmitter Test"
 status = "partial"
 level = "lower-primitive"
 scope-and-limitations = "[DTM](src/le/dtm.rs) commands, SRAM graphs, recurring events and RX accounting are composed with Embassy. Test End/Reset share finite common-scheduler cancellation with an absolute deadline, explicit aborted-item ownership and unlink/recycle. Quiet stop/restart hardware qualification remains pending."
-source-paths = []
 
 [[items]]
 id = "bluetooth-enhanced-dtm-phy-selection"
@@ -2468,7 +2461,6 @@ title = "Enhanced DTM PHY selection"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "HCI Receiver/Transmitter Test v2 select the bounded 1M/2M/Coded domains; S=2 selection is TX-only. This does not cover later CTE test-command versions."
-source-paths = []
 
 [[items]]
 id = "bluetooth-dtm-test-patterns"
@@ -2477,7 +2469,6 @@ title = "DTM test patterns"
 status = "implemented"
 level = "lower-primitive"
 scope-and-limitations = "[TX payload preparation](src/le/dtm/payload.rs) owns the retained HCI test-pattern variants."
-source-paths = []
 
 [[items]]
 id = "bluetooth-long-running-rf-phy-maintenance-including-dtm"
@@ -2492,7 +2483,6 @@ title = "Legacy non-connectable advertising (`ADV_NONCONN_IND`)"
 status = "implemented"
 level = "composed-product"
 scope-and-limitations = "A bounded event owns one to three primary-channel descriptors, scheduler publication, completion, retirement and recycle."
-source-paths = []
 
 [[items]]
 id = "bluetooth-legacy-connectable-advertising-adv-ind"
@@ -2501,7 +2491,6 @@ title = "Legacy connectable advertising (`ADV_IND`)"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[Connectable advertising](src/le/advertising/connectable.rs) owns configuration, response graph, recurrence and `CONNECT_IND` handoff. The S31 slice accepts exactly one selected primary channel."
-source-paths = []
 
 [[items]]
 id = "bluetooth-advertiser-scan-response-scan-rsp"
@@ -2510,7 +2499,6 @@ title = "Advertiser Scan Response (`SCAN_RSP`)"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Bounded response state and graph preparation belong to connectable advertising; this is not a general scannable advertiser."
-source-paths = []
 
 [[items]]
 id = "bluetooth-scannable-non-connectable-advertising-adv-scan-ind"
@@ -2519,7 +2507,6 @@ title = "Scannable non-connectable advertising (`ADV_SCAN_IND`)"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No production role publishes this advertising mode."
-source-paths = []
 
 [[items]]
 id = "bluetooth-low-duty-high-duty-directed-advertising-adv-direct-ind"
@@ -2528,7 +2515,6 @@ title = "Low-duty / high-duty directed advertising (`ADV_DIRECT_IND`)"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No directed-advertising scheduler and lifecycle exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-high-duty-cycle-non-connectable-advertising"
@@ -2537,7 +2523,6 @@ title = "High-duty-cycle non-connectable advertising"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No production scheduling policy implements the named feature."
-source-paths = []
 
 [[items]]
 id = "bluetooth-static-random-advertiser-address"
@@ -2546,7 +2531,6 @@ title = "Static random advertiser address"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "HCI retains a requested random address; application to advertising is role-specific. This does not provide private-address rotation."
-source-paths = []
 
 [[items]]
 id = "bluetooth-legacy-passive-scanning"
@@ -2555,7 +2539,6 @@ title = "Legacy passive scanning"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[Passive scanning](src/le/scanning/passive.rs) composes recurring primary-channel LE 1M windows, public own address, accept-all policy, bounded reports and optional exact report-duplicate suppression. Privacy is disabled; unrelated finished-list dispatch remains incomplete."
-source-paths = []
 
 [[items]]
 id = "bluetooth-active-scanning"
@@ -2564,7 +2547,6 @@ title = "Active scanning"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No `SCAN_REQ` producer and complete request/response scanning lifecycle exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-extended-secondary-channel-scanning"
@@ -2573,7 +2555,6 @@ title = "Extended / secondary-channel scanning"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No AUX scanner, secondary 2M scanner or ordinary Coded scanner is composed. DTM RX is separate."
-source-paths = []
 
 [[items]]
 id = "bluetooth-extended-scanner-filter-policies"
@@ -2582,7 +2563,6 @@ title = "Extended scanner filter policies"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "Production uses the restricted accept-all policy."
-source-paths = []
 
 [[items]]
 id = "bluetooth-filter-accept-list-operation"
@@ -2591,7 +2571,6 @@ title = "Filter Accept List operation"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "HCI capacity reporting exists, but list commands and advertiser/scanner admission policy are not composed."
-source-paths = []
 
 [[items]]
 id = "bluetooth-broadcaster-observer"
@@ -2600,7 +2579,6 @@ title = "Broadcaster / Observer"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "The bounded legacy advertising and passive scanning subsets above exist. Extended/periodic roles and general multi-set operation are absent."
-source-paths = []
 
 [[items]]
 id = "bluetooth-peripheral"
@@ -2609,7 +2587,6 @@ title = "Peripheral"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "`CONNECT_IND` handoff, first-event RUN and active completion/recurrence are composed. Central-initiated feature exchange, Connection Update and Channel Map Update have bounded control paths; active HCI command intake, Disconnect, Reset and bidirectional ACL are composed. Controller-to-Host delivery uses a bounded two-packet FIFO and Host-managed credits. General LLCP remains unsupported."
-source-paths = []
 
 [[items]]
 id = "bluetooth-central-initiator"
@@ -2618,7 +2595,6 @@ title = "Central / Initiator"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Create Connection/initiator scheduling or Central connection owner exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-simultaneous-broadcaster-observer-central-peripheral"
@@ -2627,7 +2603,6 @@ title = "Simultaneous Broadcaster + Observer + Central + Peripheral"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "Individual role subsets do not form a simultaneous multi-role runtime."
-source-paths = []
 
 [[items]]
 id = "bluetooth-multiple-connections-multi-connection-optimization"
@@ -2636,7 +2611,6 @@ title = "Multiple connections / multi-connection optimization"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No multi-handle connection scheduler, ACL ownership or connection-table lifecycle exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-connect-ind-decoding-and-admission"
@@ -2645,7 +2619,6 @@ title = "`CONNECT_IND` decoding and admission"
 status = "implemented"
 level = "composed-product"
 scope-and-limitations = "[Portable connection policy](../../../../protocols/bluetooth/le/ll/src/connection.rs) validates addresses, Access Address, timing, channel map, hop and other request fields; advertiser admission checks the local address and allowed channel-selection algorithm. This row covers admission only."
-source-paths = []
 
 [[items]]
 id = "bluetooth-first-peripheral-connection-window"
@@ -2654,7 +2627,6 @@ title = "First peripheral connection window"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Causal timestamp projection, window planning, SRAM preparation and first hardware `RUN` exist; a successful connection exchange is not established."
-source-paths = []
 
 [[items]]
 id = "bluetooth-recurring-peripheral-events"
@@ -2663,7 +2635,6 @@ title = "Recurring peripheral events"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[Active lifecycle](src/le/peripheral/active/lifecycle.rs) drives completion, recycle, fresh controller time and successor RUN through lower recurrence. Before each successor RUN it reserves software capacity for the complete two-node hardware RX batch; the CPU-owned backpressure boundary races Host capacity with periodic supervision/procedure checks. A guarded window missed before publication is cancelled and rebuilt directly at a later established event with accumulated widening. Published completion, unlink and following Controller-time acquisition share an absolute progress deadline; an overdue live RUN enters bounded common stop, exact-head retirement, unlink and recycle, while a stalled time request fails closed. Requires an explicit local clock accuracy bound; initial establishment-window policy and hardware timing qualification remain open."
-source-paths = []
 
 [[items]]
 id = "bluetooth-channel-selection-algorithm-1"
@@ -2672,7 +2643,6 @@ title = "Channel Selection Algorithm #1"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Portable channel progression exists within the incomplete connection owner."
-source-paths = []
 
 [[items]]
 id = "bluetooth-channel-selection-algorithm-2"
@@ -2681,7 +2651,6 @@ title = "Channel Selection Algorithm #2"
 status = "implemented"
 level = "composed-product"
 scope-and-limitations = "Connectable `ADV_IND` sets local ChSel support, `CONNECT_IND` admission negotiates CSA#2 only when both devices set ChSel, and recurring connection events select the resulting data channels in the portable event owner before S31 descriptor preparation. HIL interoperability remains unqualified."
-source-paths = []
 
 [[items]]
 id = "bluetooth-peripheral-latency"
@@ -2690,7 +2659,6 @@ title = "Peripheral latency"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Timing is validated and retained; live skip/recovery scheduling is not complete."
-source-paths = []
 
 [[items]]
 id = "bluetooth-sleep-clock-accuracy-window-widening"
@@ -2699,7 +2667,6 @@ title = "Sleep Clock Accuracy / window widening"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Portable SCA interpretation and bounded widening exist. A local accuracy bound is caller-owned. Established pre-publication missed events advance the widening reference by their exact delta; initial establishment lateness and HIL behavior remain open."
-source-paths = []
 
 [[items]]
 id = "bluetooth-establishment-supervision-timeout"
@@ -2708,7 +2675,6 @@ title = "Establishment / supervision timeout"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Before establishment, contiguous events preserve the full transmit window plus clock widening. The first peer activity publishes successful LE Connection Complete. Six unanswered events publish failed LE Connection Complete with status `0x3e` and no allocated handle before restoring idle. Established supervision uses the independent hardware valid-RX timestamp and a fresh controller-time gate before recurrence, retiring with `0x08` and publishing Disconnection Complete. A source-backed HIL scenario rfkill-blocks the Linux peer for at least 2500 ms and requires timeout recovery. Closing the Linux user channel can terminate the connection before rfkill, so adapter blocking alone does not establish abrupt RF loss; CRC-error behavior remains unqualified."
-source-paths = []
 
 [[items]]
 id = "bluetooth-missed-event-recovery"
@@ -2717,7 +2683,6 @@ title = "Missed-event recovery"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Fresh Controller time detects an established event whose guarded start closed before RUN. The active owner cancels its unpublished reservation and rebuilds directly at a later event counter, preserving LL/TX ownership and accumulating widening across the full delta. Supervision and `T_terminate` bound recovery. Crossing a Connection Update or Channel Map Update instant retires with `0x28`. Initial establishment-window treatment and on-air qualification remain open."
-source-paths = []
 
 [[items]]
 id = "bluetooth-ll-data-pdu-rx"
@@ -2726,7 +2691,6 @@ title = "LL Data PDU RX"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Accepted nonempty LLID 1/2 payloads retain their L2CAP boundary in a bounded Controller-to-Host HCI ACL FIFO and split at the Host-declared ACL buffer length. Empty acknowledgements consume no slot. Each RUN reserves the worst-case hardware RX batch before an on-air ACK is possible, so a mixed data/control completion remains wholly processable under Host backpressure. Host-managed credits are enforced; exhausted credits stop further RUN admission while Controller-time deadline checks and command intake continue. Disconnect closes new handle use while retaining the old handle solely for outstanding credit returns; idle/reconnect waits for the count to reach zero. The peripheral recovery HIL workload declares one 27-byte Host credit, holds it for 300 ms after the first fragment, returns twenty exact credits and requires two distinct complete ten-fragment 251-byte packets per connection, separated by live channel-map application, but no recorded hardware run qualifies it; DLE remains absent."
-source-paths = []
 
 [[items]]
 id = "bluetooth-ll-data-pdu-tx"
@@ -2735,7 +2699,6 @@ title = "LL Data PDU TX"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "The single TX allocation retains control or Host ACL bytes through publication and peer acknowledgement. One 251-byte HCI ACL credit is fragmented into 27-byte legacy Data PDUs when plaintext or 23-byte plaintext fragments plus a four-octet MIC when encrypted; the HCI queue retains later credited packets. The peripheral recovery HIL workload reassembles each ten-fragment unencrypted input and queues two distinct exact 251-byte Host echoes, with the second following live channel-map application. Qualifying hardware evidence is evaluated independently of this source contract. Multiple radio-resident packets and DLE remain absent."
-source-paths = []
 
 [[items]]
 id = "bluetooth-sn-nesn-retransmission-duplicate-suppression-and-empty-pdu-acknowledgments"
@@ -2744,7 +2707,6 @@ title = "SN/NESN, retransmission, duplicate suppression and empty-PDU acknowledg
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "The bounded control path preserves hardware sequence state and uncompleted TX packets; connection RX applies the reviewed acceptance gate. General ACL reliability is not qualified."
-source-paths = []
 
 [[items]]
 id = "bluetooth-llcp-framework"
@@ -2753,7 +2715,6 @@ title = "LLCP framework"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "A bounded peripheral responder queues feature, version, LE Ping and unknown responses. Central Connection Update and Channel Map Update share a single pending instant-procedure boundary. Same-procedure and incompatible-procedure collisions are distinguished. Local termination has its dedicated supervision-duration timer; Peripheral-initiated Feature and Version Exchange share the 40-second `connProcedureTimeout`, which restarts whenever another LL Control PDU enters the TX graph. Other procedure response timers and LLCP procedures remain absent."
-source-paths = []
 
 [[items]]
 id = "bluetooth-connection-update-channel-map-update"
@@ -2762,7 +2723,6 @@ title = "Connection Update / Channel Map Update"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Validated Central `LL_CONNECTION_UPDATE_IND` and `LL_CHANNEL_MAP_IND` values survive scheduler cancellation and apply at their exact wrapping instants. Connection Update uses the old interval plus the new offset for the instant window, then the new interval; it resets supervision and emits LE Connection Update Complete only when interval, latency or timeout changes. Channel Map Update preserves CSA#1 state and updates CSA#1 or CSA#2 selection. Passed instants and procedure collisions request protocol termination; executor recovery crossing either instant retires with `0x28`. The peripheral recovery HIL source requests an exact 120-ms interval, requires matching successful completion from both Hosts, applies an exact two-channel map and completes a second fragmented ACL round trip afterward, but no recorded hardware run qualifies it."
-source-paths = []
 
 [[items]]
 id = "bluetooth-phy-update"
@@ -2771,7 +2731,6 @@ title = "PHY Update"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No connected PHY negotiation/application owner exists; DTM selection does not implement LLCP."
-source-paths = []
 
 [[items]]
 id = "bluetooth-data-length-extension-data-length-update"
@@ -2780,7 +2739,6 @@ title = "Data Length Extension / Data Length Update"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No negotiated connected packet-length owner exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-feature-exchange"
@@ -2789,7 +2747,6 @@ title = "Feature Exchange"
 status = "implemented"
 level = "composed-product"
 scope-and-limitations = "Central `LL_FEATURE_REQ` produces a queued `LL_FEATURE_RSP` with the used-feature octet intersected against the local mask. Host LE Read Remote Features publishes Command Status before `LL_PERIPHERAL_FEATURE_REQ`, retains the request through TX-graph handoff and response, caches a successful page-zero result, reports unsupported peers with `0x1a`, and treats a 40-second response timeout as immediate connection loss with `0x22`. The source-backed peripheral HIL workload requires successful Command Status followed by the exact remote feature mask `19:40:00:00:00:00:00:00`; no recorded hardware run qualifies it."
-source-paths = []
 
 [[items]]
 id = "bluetooth-version-exchange"
@@ -2798,7 +2755,6 @@ title = "Version Exchange"
 status = "implemented"
 level = "composed-product"
 scope-and-limitations = "Peer and Host-initiated exchanges share one configured Controller identity and queue at most one `LL_VERSION_IND` per connection. Read Remote Version Information publishes Command Status before LL admission, caches the peer identity, preserves reject and timeout status, and retains its masked completion under backpressure. Its 40-second procedure timer starts at the initiating TX graph update and restarts for each later queued LL Control PDU. A missing local identity is rejected rather than inferred from the chip. The source-backed peripheral HIL workload requires successful Command Status followed by Core version 5.4, company value `0xffff` and subversion 1; no recorded hardware run qualifies it."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-ping"
@@ -2807,7 +2763,6 @@ title = "LE Ping"
 status = "implemented"
 level = "composed-product"
 scope-and-limitations = "The declared LE Ping feature accepts an exact `LL_PING_REQ`, queues one `LL_PING_RSP` through the existing reliable control TX owner and consumes `LL_PING_RSP` without creating a response loop. No Host command is needed for this peer-initiated responder."
-source-paths = []
 
 [[items]]
 id = "bluetooth-termination"
@@ -2816,7 +2771,6 @@ title = "Termination"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "An accepted peer `LL_TERMINATE_IND` or supervision timeout retires the unlinked connection, publishes Disconnection Complete under the Host mask and only then restores idle HCI intake. Host Disconnect for the sole handle publishes Command Status, retains the requested reason in `LL_TERMINATE_IND` through retransmission and peer acknowledgment, and reports local-host termination (`0x16`) without replacing the peer-visible reason. A fresh Controller sample immediately before first TX allocation arms `T_terminate` for the connection supervision timeout; expiry also retires the link. A source-backed HIL scenario checks target reason `0x16`, peer reason `0x13` and reconnect, but recorded hardware evidence remains absent."
-source-paths = []
 
 [[items]]
 id = "bluetooth-adaptive-frequency-hopping-channel-assessment"
@@ -2825,7 +2779,6 @@ title = "Adaptive Frequency Hopping / channel assessment"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Initial channel maps, CSA progression and Central-initiated live map application exist. Local channel assessment and Controller-initiated map generation are absent."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-channel-classification"
@@ -2834,7 +2787,6 @@ title = "LE Channel Classification"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No connected classification generation/report/update procedure exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-ble-encryption-accelerator-surface"
@@ -2843,7 +2795,6 @@ title = "BLE encryption accelerator surface"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[Reviewed hardware registers](../../../../../registers/esp32s31/model/peripherals/ble-hw-accelerator.toml) describe encryption operations. The production Link Layer path currently uses the portable software AES-CCM owner, so no connected owner drives this accelerator."
-source-paths = []
 
 [[items]]
 id = "bluetooth-link-layer-encryption"
@@ -2852,7 +2803,6 @@ title = "Link Layer Encryption"
 status = "implemented"
 level = "composed-product"
 scope-and-limitations = "The portable LL crate owns non-copyable LTK/session material, the Peripheral start/pause/restart handshakes, independent 39-bit direction counters, nonce/AAD construction, four-octet MIC authentication and allocation-free software AES-CCM. The production composition supplies fresh SKDp/IVp from the ESP32-S31 hardware RNG, routes the standard redacted HCI LTK reply and negative-reply commands only for the live pending request, and publishes masked LTK Request, Encryption Change and Encryption Key Refresh Complete events. The radio path authenticates and decrypts RX before LL dispatch, encrypts nonempty control and ACL packets while empty acknowledgements carry no MIC and consume no counter, retains ciphertext and its counter through retransmission, and limits encrypted legacy ACL plaintext to 23 octets. Pause keeps its response encrypted, accepts only the peer's unencrypted pause response, requires fresh SKDp/IVp and resets both counters under the replacement session key. MIC or physical-channel sequence failure retires the link with `0x3d`; a missing restart key reliably terminates with `0x06`. Official Core vectors and host regressions cover portable cryptography, HCI policy, counters, retransmission and MIC failure; the fixed-key encrypted ACL HIL scenario exercises start, bidirectional fragmentation, updates, reconnect and cold release. The separate key-refresh scenario replaces the LTK on the same handle and requires exact post-refresh traffic and both Host completion events. Vendor comparison and security-fault coverage remain incomplete. SMP, pairing and key persistence remain Host responsibilities."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-privacy-1-2"
@@ -2861,7 +2811,6 @@ title = "LE Privacy 1.2"
 status = "fail-closed"
 level = "composed-product"
 scope-and-limitations = "The production [scanner image](memory/src/passive_scanning_event_image.rs) fixes privacy disabled. Resolving-list hardware does not provide an RPA/IRK lifecycle."
-source-paths = []
 
 [[items]]
 id = "bluetooth-resolving-list"
@@ -2870,7 +2819,6 @@ title = "Resolving List"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[PHY engine storage](memory/src/ble_phy_engine.rs) owns allocation and base publication. HCI list commands, IRKs and live resolution policy are not composed."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-secure-connections-integration"
@@ -2879,7 +2827,6 @@ title = "LE Secure Connections integration"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No SMP Host integration is connected to a working ACL/encryption Controller path. Generic cryptographic hardware is not pairing support."
-source-paths = []
 
 [[items]]
 id = "bluetooth-encrypted-advertising-data"
@@ -2888,7 +2835,6 @@ title = "Encrypted Advertising Data"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No key/material lifecycle and advertiser/scanner formatter or consumer exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-advertising-extensions-multiple-advertising-sets"
@@ -2897,7 +2843,6 @@ title = "Advertising Extensions / multiple advertising sets"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No `ADV_EXT_IND` or `AUX_ADV_IND` production role or set lifecycle exists. Allocation counts do not create roles."
-source-paths = []
 
 [[items]]
 id = "bluetooth-secondary-channel-advertising-2m-coded-advertising-and-advertising-coding-selection"
@@ -2906,7 +2851,6 @@ title = "Secondary-channel advertising, 2M / Coded advertising and Advertising C
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No AUX scheduling and PHY-selection owner exists. DTM coverage does not extend to advertising."
-source-paths = []
 
 [[items]]
 id = "bluetooth-periodic-advertising-synchronization"
@@ -2915,7 +2859,6 @@ title = "Periodic Advertising / synchronization"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No periodic advertiser or sync role exists; reserved sync capacity is only geometry."
-source-paths = []
 
 [[items]]
 id = "bluetooth-periodic-advertising-sync-transfer-past"
@@ -2924,7 +2867,6 @@ title = "Periodic Advertising Sync Transfer (PAST)"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "Neither the ACL procedure nor periodic-sync owner is composed."
-source-paths = []
 
 [[items]]
 id = "bluetooth-periodic-advertising-with-responses-pawr"
@@ -2933,7 +2875,6 @@ title = "Periodic Advertising with Responses (PAwR)"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No subevent/response-slot scheduling or advertiser/scanner runtime exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-advdatainfo-periodic-advertising-enhancements"
@@ -2942,7 +2883,6 @@ title = "AdvDataInfo / Periodic Advertising Enhancements"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No production periodic-advertising foundation exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-advertising-channel-index"
@@ -2951,7 +2891,6 @@ title = "Advertising Channel Index"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No production owner implements the named feature."
-source-paths = []
 
 [[items]]
 id = "bluetooth-constant-tone-extension-activation"
@@ -2960,7 +2899,6 @@ title = "Constant Tone Extension activation"
 status = "fail-closed"
 level = "composed-product"
 scope-and-limitations = "Normal initialization publishes a [disabled CTE workspace](memory/src/direction_finding_workspace.rs). Recovered CTE controls do not activate Direction Finding."
-source-paths = []
 
 [[items]]
 id = "bluetooth-aoa-aod"
@@ -2969,7 +2907,6 @@ title = "AoA / AoD"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No antenna pattern, IQ sampling, CTE TX/RX protocol or report lifecycle exists; the CTE activation boundary remains disabled."
-source-paths = []
 
 [[items]]
 id = "bluetooth-connected-connectionless-cte-procedures"
@@ -2978,7 +2915,6 @@ title = "Connected / connectionless CTE procedures"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "Neither connected LLCP nor periodic-advertising CTE ownership exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-iq-sample-delivery-over-hci"
@@ -2987,7 +2923,6 @@ title = "IQ sample delivery over HCI"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No sampling-to-HCI producer or reporting lifecycle exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-power-control-path-loss-monitoring"
@@ -2996,7 +2931,6 @@ title = "LE Power Control / Path Loss Monitoring"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No connected procedure, threshold state or HCI event producer exists. Default power encoding is separate."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-connection-subrating"
@@ -3005,7 +2939,6 @@ title = "LE Connection Subrating"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No LLCP, subrate anchor or scheduling lifecycle exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-isochronous-channels-isoal"
@@ -3014,7 +2947,6 @@ title = "LE Isochronous Channels / ISOAL"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No ISO adaptation, stream scheduling or Controller data-path owner exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-connected-isochronous-groups-streams-cig-cis"
@@ -3023,7 +2955,6 @@ title = "Connected Isochronous Groups / Streams (CIG/CIS)"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No connected group/stream control and scheduling lifecycle exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-broadcast-isochronous-groups-streams-big-bis"
@@ -3032,7 +2963,6 @@ title = "Broadcast Isochronous Groups / Streams (BIG/BIS)"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No BIG control, periodic-advertising integration or broadcast ISO scheduler exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-audio-transport"
@@ -3041,7 +2971,6 @@ title = "LE Audio transport"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "CIS/BIS transport is not implemented. Host audio profiles cannot supply the missing Controller path."
-source-paths = []
 
 [[items]]
 id = "bluetooth-hci-command-event-packets"
@@ -3050,7 +2979,6 @@ title = "HCI Command / Event packets"
 status = "implemented"
 level = "composed-product"
 scope-and-limitations = "Bounded in-process transport and typed dispatch own the current bootstrap, DTM and legacy advertising/scanning command/response subset."
-source-paths = []
 
 [[items]]
 id = "bluetooth-acl-sco-iso-packet-framing"
@@ -3059,7 +2987,6 @@ title = "ACL / SCO / ISO packet framing"
 status = "implemented"
 level = "composed-product"
 scope-and-limitations = "[Packet validation](../../../../protocols/bluetooth/hci/src/transport/packet.rs) recognizes standard packet kinds and declared lengths. This is framing only, not an operational data plane."
-source-paths = []
 
 [[items]]
 id = "bluetooth-hci-acl-routing-and-bidirectional-flow-control"
@@ -3068,7 +2995,6 @@ title = "HCI ACL routing and bidirectional flow control"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Host packets for live handle `0x0001` enter one owned ACL slot, preserve HCI packet boundaries across 27-byte unencrypted or 23-byte encrypted plaintext LL fragmentation, and return Number Of Completed Packets only after final acknowledgement or teardown cancellation. Foreign, invalid-boundary or profile-rejected data returns its consumed credit. Accepted Controller packets preserve LL start/continuation boundaries in a two-packet FIFO, cannot precede Connection Complete, fragment to Host Buffer Size and consume one Host credit per emitted HCI packet. Host Number Of Completed Packets restores bounded credits without a success event; the composition exposes a restricted write-only Host credit authority alongside the standard `ExternalController` facade. Flow-controlled output keeps command intake live even when the Host ACL owner is occupied, while an older pending normal response retains causal order. Disconnect removes the handle from data/command admission but retains it for old Controller-credit returns; idle admission prevents handle reuse until all such credits settle. The peripheral recovery HIL workload correlates two distinct exact 251-byte, ten-fragment unencrypted exchanges between a Linux central and a target Host that declares one 27-byte credit and deliberately delays its first return, but no recorded hardware run qualifies it."
-source-paths = []
 
 [[items]]
 id = "bluetooth-hci-sco-iso-data-plane"
@@ -3077,7 +3003,6 @@ title = "HCI SCO / ISO data plane"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "Generic transport packet representations exist, but no synchronous/isochronous stream routes them to radio execution."
-source-paths = []
 
 [[items]]
 id = "bluetooth-hci-reset"
@@ -3086,7 +3011,6 @@ title = "HCI Reset"
 status = "implemented"
 level = "composed-product"
 scope-and-limitations = "Software bootstrap reset and selected active-role reset coordination exist. A source-backed HIL scenario checks active Reset completion, peer supervision timeout, Host bootstrap reconfiguration and reconnect; recorded hardware evidence remains absent. Complete powered reconstruction remains separate."
-source-paths = []
 
 [[items]]
 id = "bluetooth-event-masks"
@@ -3095,7 +3019,6 @@ title = "Event masks"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Bootstrap retains Host masks. Legacy advertising reports, LE Connection Complete, LE Connection Update Complete, LE Long Term Key Request, Encryption Change, Encryption Key Refresh Complete and Disconnection Complete enforce their standard base/LE masks; the complete event inventory is not composed."
-source-paths = []
 
 [[items]]
 id = "bluetooth-read-local-supported-commands"
@@ -3104,7 +3027,6 @@ title = "Read Local Supported Commands"
 status = "implemented"
 level = "composed-product"
 scope-and-limitations = "The standard 64-octet bitmap declares the closed production classifier's exact bootstrap, legacy advertising/scanning, DTM, connected Disconnect/remote-information, LTK reply/negative-reply and Host ACL-credit inventory. LE Rand is advertised only when composition attaches an independent entropy source before bootstrap. Unsupported neighboring commands remain clear."
-source-paths = []
 
 [[items]]
 id = "bluetooth-public-bd-addr-le-read-buffer-size"
@@ -3113,7 +3035,6 @@ title = "Public BD_ADDR / LE Read Buffer Size"
 status = "implemented"
 level = "composed-product"
 scope-and-limitations = "Bootstrap reports the configured address and bounded buffer information; buffer reporting does not establish ACL support."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-set-random-address"
@@ -3122,7 +3043,6 @@ title = "LE Set Random Address"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Bootstrap retains the request; hardware application is role-specific and does not establish privacy."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-read-local-supported-features-command"
@@ -3131,7 +3051,6 @@ title = "LE Read Local Supported Features command"
 status = "implemented"
 level = "composed-product"
 scope-and-limitations = "[Bootstrap](../../../../protocols/bluetooth/hci/src/controller/bootstrap/state.rs) returns bit 0 for LE Encryption, bit 3 for Peripheral-initiated Feature Exchange, bit 4 for the LE Ping responder and bit 14 for Channel Selection Algorithm #2. Every other optional feature bit remains clear."
-source-paths = []
 
 [[items]]
 id = "bluetooth-optional-le-capability-advertisement"
@@ -3140,7 +3059,6 @@ title = "Optional LE capability advertisement"
 status = "fail-closed"
 level = "composed-product"
 scope-and-limitations = "Unsupported optional LE feature bits remain clear until the corresponding production path is complete. DTM-only PHY support does not change this advertisement."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-read-filter-accept-list-size"
@@ -3149,7 +3067,6 @@ title = "LE Read Filter Accept List Size"
 status = "implemented"
 level = "composed-product"
 scope-and-limitations = "Configured capacity is reported; list operation remains absent."
-source-paths = []
 
 [[items]]
 id = "bluetooth-connection-handles-connection-complete-disconnection-complete"
@@ -3158,7 +3075,6 @@ title = "Connection handles / Connection Complete / Disconnection Complete"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "The sole supported peripheral connection uses handle `0x0001`. Successful and failed establishment plus peer/timeout/Host teardown publish standard events in causal order with bounded backpressure. Foreign Disconnect handles return Unknown Connection Identifier; foreign Host ACL is discarded with credit return. Controller-to-Host ACL uses the same handle after Connection Complete. The retired connection remains the exclusive generation barrier until its queued data, events and outstanding Host flow-control credits drain, so `0x0001` cannot be reassigned early; multiple-handle allocation remains absent."
-source-paths = []
 
 [[items]]
 id = "bluetooth-trouble-host-integration"
@@ -3167,7 +3083,6 @@ title = "Trouble Host integration"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "[Production composition](../../../../composition/esp32s31/embassy/bluetooth/src/trouble.rs) consumes the source-owned `bt-hci` Controller facade into a released `trouble-host` 0.8.0 stack with peripheral/GATT support and retains its exact hardware runner beside it. The [`trouble-gatt` standalone application](../../../../../examples/esp32s31-bluetooth-controller/README.md) builds that target composition with a bounded read/write GATT service. A portable integration test proves the affine ownership boundary, while the [typed-HCI tests](../../../../protocols/bluetooth/hci/src/controller/bootstrap/tests.rs) drive the real Trouble runner through bootstrap. Connected GATT interoperability still lacks HIL evidence."
-source-paths = []
 
 [[items]]
 id = "bluetooth-controller-scheduler-timebase"
@@ -3176,7 +3091,6 @@ title = "Controller scheduler timebase"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Always-awake event-driven time ownership uses two raw ticks per microsecond and retains fractional ticks across epoch updates. Effective counter lifetime, timer-expiration handling, wake behavior and periodic tracking remain incomplete."
-source-paths = []
 
 [[items]]
 id = "bluetooth-controller-interrupt-epoch"
@@ -3185,7 +3099,6 @@ title = "Controller interrupt epoch"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "IRQ routing, bounded hard-handler classification and task wake exist; unrelated finished-list and complete role dispatch remain incomplete."
-source-paths = []
 
 [[items]]
 id = "bluetooth-controller-sram-ownership"
@@ -3194,7 +3107,6 @@ title = "Controller SRAM ownership"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Static DTM, advertising, scanning and peripheral graphs have CPU/hardware handoff contracts. Missing role graphs and packet-engine contracts are not implied."
-source-paths = []
 
 [[items]]
 id = "bluetooth-always-awake-controller"
@@ -3203,7 +3115,6 @@ title = "Always-awake Controller"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Production selects standalone always-awake operation; incomplete role and maintenance lifetimes still apply."
-source-paths = []
 
 [[items]]
 id = "bluetooth-bluetooth-modem-sleep-wake-request"
@@ -3212,7 +3123,6 @@ title = "Bluetooth modem sleep / wake request"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No controller sleep scheduler, RF/PHY/baseband stop/wake, retention or wake-request transaction is composed."
-source-paths = []
 
 [[items]]
 id = "bluetooth-low-frequency-sleep-clock-operation"
@@ -3221,7 +3131,6 @@ title = "Low-frequency sleep-clock operation"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "Production uses the standalone main-XTAL time profile. Portable SCA types do not implement a low-power clock/wake lifecycle."
-source-paths = []
 
 [[items]]
 id = "bluetooth-powered-shutdown"
@@ -3230,7 +3139,6 @@ title = "Powered shutdown"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "The projected idle powered-release and same-storage restart facts define the implemented standalone frontier. The broader powered-teardown capability also requires bounded shutdown from active and faulted roles, including scheduler-disable/recheck and packet bottom-half disposition"
-source-paths = []
 
 [[items]]
 id = "bluetooth-internal-wi-fi-bluetooth-coexistence"
@@ -3239,7 +3147,6 @@ title = "Internal Wi-Fi/Bluetooth coexistence"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "The [coexistence core](../coex/src/lib.rs), PAC and [Embassy mailbox](../../../../adapters/embassy/esp32s31/coex/src/lib.rs) exist. Safe concurrent Wi-Fi/Bluetooth singleton ownership is not composed."
-source-paths = []
 
 [[items]]
 id = "bluetooth-wi-fi-bluetooth-ieee-802-15-4-radio-coordination"
@@ -3248,7 +3155,6 @@ title = "Wi-Fi/Bluetooth/IEEE 802.15.4 radio coordination"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Shared arbitration infrastructure exists without a complete multi-radio production lifecycle."
-source-paths = []
 
 [[items]]
 id = "bluetooth-hardware-pti-coexistence"
@@ -3257,7 +3163,6 @@ title = "Hardware PTI coexistence"
 status = "partial"
 level = "composed-product"
 scope-and-limitations = "Recovered priority/register machinery exists without a complete Bluetooth request/grant/release policy."
-source-paths = []
 
 [[items]]
 id = "bluetooth-external-coexistence-interface"
@@ -3266,7 +3171,6 @@ title = "External coexistence interface"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "The SoC declares advanced external coexistence hardware. No Bluetooth board-pin contract and external request/grant runtime is composed."
-source-paths = []
 
 [[items]]
 id = "bluetooth-basic-rate-gfsk-1-mbit-s"
@@ -3275,7 +3179,6 @@ title = "Basic Rate GFSK, 1 Mbit/s"
 status = "absent"
 level = "native-silicon"
 scope-and-limitations = "No BR/EDR PHY-event or Baseband role exists. LE DTM does not exercise Classic."
-source-paths = []
 
 [[items]]
 id = "bluetooth-edr-pi-4-dqpsk-2-mbit-s"
@@ -3284,7 +3187,6 @@ title = "EDR pi/4-DQPSK, 2 Mbit/s"
 status = "absent"
 level = "native-silicon"
 scope-and-limitations = "No EDR formatter/receiver owner exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-edr-8dpsk-3-mbit-s"
@@ -3293,7 +3195,6 @@ title = "EDR 8DPSK, 3 Mbit/s"
 status = "absent"
 level = "native-silicon"
 scope-and-limitations = "No EDR formatter/receiver owner exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-hardware-cca"
@@ -3302,7 +3203,6 @@ title = "Hardware CCA"
 status = "absent"
 level = "native-silicon"
 scope-and-limitations = "No Classic PHY/runtime owner drives channel assessment."
-source-paths = []
 
 [[items]]
 id = "bluetooth-power-class-1-operation"
@@ -3311,7 +3211,6 @@ title = "Power Class 1 operation"
 status = "absent"
 level = "native-silicon"
 scope-and-limitations = "No Classic TX power/runtime path establishes the advertised radio capability."
-source-paths = []
 
 [[items]]
 id = "bluetooth-inquiry-inquiry-scan"
@@ -3320,7 +3219,6 @@ title = "Inquiry / Inquiry Scan"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic discovery role exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-paging-page-scan"
@@ -3329,7 +3227,6 @@ title = "Paging / Page Scan"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic connection-establishment owner exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-acl-links"
@@ -3338,7 +3235,6 @@ title = "ACL links"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No BR/EDR ACL connection or operational HCI data path exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-sco-links"
@@ -3347,7 +3243,6 @@ title = "SCO links"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No synchronous Classic link owner exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-esco-links"
@@ -3356,7 +3251,6 @@ title = "eSCO links"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No enhanced synchronous Classic link owner exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-active-mode"
@@ -3365,7 +3259,6 @@ title = "Active mode"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic connected state exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-sniff-mode"
@@ -3374,7 +3267,6 @@ title = "Sniff mode"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic low-duty connected scheduler exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-sniff-subrating"
@@ -3383,7 +3275,6 @@ title = "Sniff Subrating"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic subrating procedure exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-role-switching"
@@ -3392,7 +3283,6 @@ title = "Role switching"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic piconet role manager exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-channel-classification"
@@ -3401,7 +3291,6 @@ title = "Channel classification"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic channel assessment/classification owner exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-adaptive-frequency-hopping"
@@ -3410,7 +3299,6 @@ title = "Adaptive Frequency Hopping"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic hopping and channel-map lifecycle exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-traditional-power-control"
@@ -3419,7 +3307,6 @@ title = "Traditional Power Control"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic power-control procedure exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-enhanced-power-control"
@@ -3428,7 +3315,6 @@ title = "Enhanced Power Control"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic enhanced power-control procedure exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-ping"
@@ -3437,7 +3323,6 @@ title = "Ping"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic Link Manager transaction owner exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-piconet-management"
@@ -3446,7 +3331,6 @@ title = "Piconet management"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic piconet scheduler/link manager exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-scatternet-management"
@@ -3455,7 +3339,6 @@ title = "Scatternet management"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No multi-piconet scheduler exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-multiple-connections"
@@ -3464,7 +3347,6 @@ title = "Multiple connections"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic link table or concurrent connection scheduler exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-active-peripheral-broadcast"
@@ -3473,7 +3355,6 @@ title = "Active Peripheral Broadcast"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic broadcast role exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-secure-simple-pairing-ssp"
@@ -3482,7 +3363,6 @@ title = "Secure Simple Pairing (SSP)"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic Host/Link Manager pairing lifecycle exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-secure-connections"
@@ -3491,7 +3371,6 @@ title = "Secure Connections"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic connection/security owner exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-e0-encryption"
@@ -3500,7 +3379,6 @@ title = "E0 encryption"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No Classic encryption procedure and packet lifecycle exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-aes-ccm-encryption"
@@ -3509,7 +3387,6 @@ title = "AES-CCM encryption"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "Generic crypto hardware does not establish a Classic encrypted link."
-source-paths = []
 
 [[items]]
 id = "bluetooth-a-law-voice"
@@ -3518,7 +3395,6 @@ title = "A-law voice"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No SCO/eSCO audio path exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-mu-law-voice"
@@ -3527,7 +3403,6 @@ title = "mu-law voice"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No SCO/eSCO audio path exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-cvsd-voice"
@@ -3536,7 +3411,6 @@ title = "CVSD voice"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No SCO/eSCO audio path exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-transparent-voice-data"
@@ -3545,7 +3419,6 @@ title = "Transparent voice data"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "No synchronous Classic audio path exists."
-source-paths = []
 
 [[items]]
 id = "bluetooth-voice-over-hci"
@@ -3554,7 +3427,6 @@ title = "Voice over HCI"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "Packet framing exists, but no synchronous link routes voice over HCI."
-source-paths = []
 
 [[items]]
 id = "bluetooth-voice-over-pcm-i2s"
@@ -3563,7 +3435,6 @@ title = "Voice over PCM/I2S"
 status = "absent"
 level = "composed-product"
 scope-and-limitations = "The SoC declares Bluetooth/I2S routing; no Classic synchronous-link composition owns it."
-source-paths = []
 
 [[items]]
 id = "bluetooth-bluetooth-mesh-1-1"
@@ -3572,7 +3443,6 @@ title = "Bluetooth Mesh 1.1"
 status = "host-only"
 level = "composed-product"
 scope-and-limitations = "Requires a Host/profile stack over an adequate LE Controller; no production Mesh integration is claimed."
-source-paths = []
 
 [[items]]
 id = "bluetooth-enhanced-attribute-protocol-eatt"
@@ -3581,7 +3451,6 @@ title = "Enhanced Attribute Protocol (EATT)"
 status = "host-only"
 level = "composed-product"
 scope-and-limitations = "ATT/L2CAP Host function; no production Host integration is claimed."
-source-paths = []
 
 [[items]]
 id = "bluetooth-gatt-caching"
@@ -3590,7 +3459,6 @@ title = "GATT Caching"
 status = "host-only"
 level = "composed-product"
 scope-and-limitations = "GATT Host function; no production Host integration is claimed."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-gatt-security-levels-characteristic"
@@ -3599,7 +3467,6 @@ title = "LE GATT Security Levels Characteristic"
 status = "host-only"
 level = "composed-product"
 scope-and-limitations = "GATT/security Host function; no production Host integration is claimed."
-source-paths = []
 
 [[items]]
 id = "bluetooth-blufi"
@@ -3608,7 +3475,6 @@ title = "BluFi"
 status = "host-only"
 level = "composed-product"
 scope-and-limitations = "Espressif application/profile protocol requiring LE and Wi-Fi integration; not supplied by this Controller."
-source-paths = []
 
 [[items]]
 id = "bluetooth-le-audio-generic-audio-framework"
@@ -3617,7 +3483,6 @@ title = "LE Audio Generic Audio Framework"
 status = "host-only"
 level = "composed-product"
 scope-and-limitations = "Profiles/services are Host-side; the missing ISO/CIS/BIS Controller transport is tracked separately above."
-source-paths = []
 
 [[items]]
 id = "bluetooth-classic-audio-data-profiles"
@@ -3626,7 +3491,6 @@ title = "Classic audio/data profiles"
 status = "host-only"
 level = "composed-product"
 scope-and-limitations = "A2DP/HFP and other Host profiles do not establish BR/EDR Controller support."
-source-paths = []
 
 [[items]]
 id = "bluetooth-shared-phy-initial-handoff"
@@ -3640,7 +3504,6 @@ section = "bluetooth-capability-sources"
 title = "[ESP32-S31 datasheet, pre-release v0.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf), sections 4.3.3 and 4.3.4"
 kind = "source-reference"
 details = "LE PHY, Controller/Host features and Classic BR/EDR capabilities"
-source-paths = []
 
 [[references]]
 id = "bluetooth-source-esp-idf-s31-soc-capabilities"
@@ -3648,7 +3511,6 @@ section = "bluetooth-capability-sources"
 title = "[ESP-IDF S31 SoC capabilities](https://github.com/espressif/esp-idf/blob/master/components/soc/esp32s31/include/soc/soc_caps.h)"
 kind = "source-reference"
 details = "Classic, LE, ISO/Audio, privacy, CTE, power control, subrating, PAwR and coexistence declarations"
-source-paths = []
 
 [[references]]
 id = "bluetooth-source-esp-idf-s31-bluetooth-documentation"
@@ -3656,7 +3518,6 @@ section = "bluetooth-capability-sources"
 title = "[ESP-IDF S31 Bluetooth documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s31/api-reference/bluetooth/index.html)"
 kind = "source-reference"
 details = "Vendor Controller/Host integration boundary"
-source-paths = []
 
 [[references]]
 id = "bluetooth-source-chip-owners-portable-bluetooth-and-embassy-runtime"
@@ -3664,7 +3525,6 @@ section = "bluetooth-capability-sources"
 title = "[Chip owners](README.md), [portable Bluetooth](../../../../protocols/bluetooth/) and [Embassy runtime](../../../../runtime/embassy/esp32s31/bluetooth/)"
 kind = "source-reference"
 details = "Actual open-driver production composition"
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-initial-phy-registration-acquisition-and-tracking"
@@ -3672,7 +3532,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Initial PHY registration, acquisition and tracking"
 kind = "qualification-mapping"
 details = "`common-phy-baseband` / `bluetooth-initial-phy-handoff`. Common-PHY power/clock prerequisites and borrowed handoff are implemented. The retained client can inspect and evaluate periodic demand; Controller quiescence, target execution and physical release remain incomplete."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-bounded-dtm-sessions"
@@ -3680,7 +3539,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Bounded DTM sessions"
 kind = "qualification-mapping"
 details = "`packet-dataplane` / `bounded-dtm-session`; `dtm-*` roots. DTM source composition exists; the broad dataplane still lacks unrelated-list dispatch and the full Controller lifetime."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-hci-bootstrap-and-command-event-handoff"
@@ -3688,7 +3546,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "HCI bootstrap and command/event handoff"
 kind = "qualification-mapping"
 details = "`hci-bootstrap`, `hci-handoff-storage`, `hci-controller-endpoints`. Complete bounded interfaces do not establish `typed-hci-controller`, which also requires LL and ACL routing."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-portable-advertising-peripheral-admission"
@@ -3696,7 +3553,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Portable advertising / peripheral admission"
 kind = "qualification-mapping"
 details = "`portable-legacy-advertising`, `portable-connectable-advertising`, `portable-peripheral-connection`. Portable readiness has no RF/HIL obligation and does not qualify a hardware advertising or ACL role."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-passive-scanning-complete-link-layer"
@@ -3704,7 +3560,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Passive scanning / complete Link Layer"
 kind = "qualification-mapping"
 details = "`legacy-passive-scanning`, `le-link-layer`. Partial hardware roles remain incomplete at the broader runtime/reliable-link scope."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-coexistence"
@@ -3712,7 +3567,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Coexistence"
 kind = "qualification-mapping"
 details = "`coexistence` / `coex-timer-validation-bridge`, `wifi-bluetooth-coex-runtime`. Diagnostic timer access exists; production joint-radio arbitration is unimplemented."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-powered-shutdown"
@@ -3720,7 +3574,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Powered shutdown"
 kind = "qualification-mapping"
 details = "`powered-teardown` retains the broader active/faulted-role obligation; its source-fact references describe the implemented idle physical release and same-storage restart."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-resource-limits"
@@ -3728,7 +3581,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Resource limits"
 kind = "qualification-mapping"
 details = "`controller-capacity-limits`. Storage geometry does not establish supported concurrent connections, sets, syncs or streams."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-complete-legacy-roles"
@@ -3736,7 +3588,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Complete legacy roles"
 kind = "qualification-mapping"
 details = "`legacy-advertising-roles`, `active-scanning`, `central-initiator`, `concurrent-le-roles`. Bounded advertising and passive scanning do not close Central or simultaneous roles."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-connected-phy-and-control"
@@ -3744,7 +3595,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Connected PHY and control"
 kind = "qualification-mapping"
 details = "`connected-phy-and-data-length`, `ll-control-procedures`, `channel-assessment`. DTM PHY selectors and initial channel maps do not establish negotiated PHY, DLE, LLCP or live assessment."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-encryption-privacy-and-pairing"
@@ -3752,7 +3602,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Encryption, privacy and pairing"
 kind = "qualification-mapping"
 details = "`link-layer-encryption`, `privacy-and-filtering`, `secure-connections-host`. Hardware encryption and resolving-list storage do not establish operational keys, addresses or pairing."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-extended-advertising-scanning-and-initiating"
@@ -3760,7 +3609,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Extended advertising, scanning and initiating"
 kind = "qualification-mapping"
 details = "`extended-advertising`, `extended-scanning-initiating`. AUX chains, multiple sets, secondary PHY and coding selection have no production role."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-periodic-advertising-and-synchronization"
@@ -3768,7 +3616,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Periodic advertising and synchronization"
 kind = "qualification-mapping"
 details = "`periodic-advertising`, `periodic-synchronization`, `periodic-sync-transfer`. Includes ADI, periodic enhancements and PAST; reserved storage is not a sync lifecycle."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-pawr"
@@ -3776,7 +3623,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "PAwR"
 kind = "qualification-mapping"
 details = "`pawr-advertiser`, `pawr-responder`. Advertiser response reception and synchronized response transmission require distinct owners."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-encrypted-advertising-data"
@@ -3784,7 +3630,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Encrypted Advertising Data"
 kind = "qualification-mapping"
 details = "`encrypted-advertising-data`. Host data authentication and key distribution are separate from LL encryption."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-direction-finding-and-cte-tests"
@@ -3792,7 +3637,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Direction Finding and CTE tests"
 kind = "qualification-mapping"
 details = "`connected-direction-finding`, `connectionless-direction-finding`. The current CTE publication remains disabled."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-rf-power-lbt-and-connected-power-policy"
@@ -3800,7 +3644,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "RF power, LBT and connected power policy"
 kind = "qualification-mapping"
 details = "`rf-power-and-lbt`, `le-power-control`, `connection-subrating`. Default power encoding does not supply live RF policy or connected procedures."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-sleep-and-external-multi-radio-coexistence"
@@ -3808,7 +3651,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Sleep and external/multi-radio coexistence"
 kind = "qualification-mapping"
 details = "`modem-sleep-wake`, `external-coexistence`, `multi-radio-coordination`. Always-awake operation and shared primitives do not establish retained wake or concurrent ownership."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-iso-adaptation-and-connected-streams"
@@ -3816,7 +3658,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "ISO adaptation and connected streams"
 kind = "qualification-mapping"
 details = "`iso-dataplane`, `cis-central`, `cis-peripheral`. ISO framing alone does not route SDUs or establish CIS in either role."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-broadcast-isochronous-streams"
@@ -3824,7 +3665,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Broadcast isochronous streams"
 kind = "qualification-mapping"
 details = "`bis-broadcaster`, `bis-synchronizer`. BIG/BIS publication and synchronization require periodic advertising and the ISO dataplane."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-le-audio"
@@ -3832,7 +3672,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "LE Audio"
 kind = "qualification-mapping"
 details = "`le-audio-unicast`, `le-audio-broadcast`, `le-audio-profiles`. Host codec/profile composition depends on operational CIS/BIS transport."
-source-paths = []
 
 [[references]]
 id = "bluetooth-qualification-mapping-other-le-host-features"
@@ -3840,7 +3679,6 @@ section = "bluetooth-qualification-scope-mapping"
 title = "Other LE Host features"
 kind = "qualification-mapping"
 details = "`host-eatt-and-gatt`, `mesh-host`, `blufi-host`. EATT, GATT caching/security levels, Mesh 1.1 and BluFi require their own production Host integrations."
-source-paths = []
 
 [[sections]]
 id = "bluetooth-capability-advertisement"

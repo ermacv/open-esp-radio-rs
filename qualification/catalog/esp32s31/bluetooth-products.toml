@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 id = "esp32s31-bluetooth-products"
 imports = ["qualification/catalog/esp32s31/bluetooth.toml"]
 

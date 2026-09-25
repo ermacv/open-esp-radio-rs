@@ -17,6 +17,8 @@ use crate::{
 mod catalog;
 mod development;
 mod source_contract;
+#[cfg(test)]
+pub(crate) use catalog::InventoryItem;
 pub(crate) use catalog::{
     CAPABILITY_CATALOG_SCHEMA, CapabilityOrigin, CapabilityScope, CatalogView, SourceIdentity,
 };

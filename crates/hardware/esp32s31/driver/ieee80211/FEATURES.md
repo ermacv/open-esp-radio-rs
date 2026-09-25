@@ -3,7 +3,7 @@
 The canonical source inventory for the ESP32-S31 Wi-Fi driver now lives in
 [the Wi-Fi/PHY catalog](../../../../../qualification/catalog/esp32s31/wifi-phy.toml).
 It records source status, composition level, exact scope and limitations, and
-source-owner links independently of qualification readiness.
+package and document links independently of qualification readiness.
 
 Generate the complete static inventory without vendor evidence or HIL runs:
 

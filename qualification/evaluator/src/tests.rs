@@ -37,7 +37,7 @@ impl StaticProgramRoot {
         .unwrap();
         fs::write(
             path.join("catalog/source.toml"),
-            r#"schema = 2
+            r#"schema = 3
 id = "test-catalog"
 
 [validation]

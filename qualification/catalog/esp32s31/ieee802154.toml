@@ -471,7 +471,7 @@ section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "Enhanced ACK TX"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The engine publishes an enhanced ACK for 2015 frames built by a caller-supplied generator; no production Enhanced ACK formatter or IE/security content owner exists."
+scope-and-limitations = "The engine publishes an enhanced ACK for 2015 frames from the role's generator, a port of ESP-IDF's OpenThread generator: the [portable formatter](../../../../protocols/ieee802154/src/mac/enhanced_ack.rs) ports OpenThread GenerateEnhAck, and secured ACKs take the frame counter and the key-index-mode key from caller-held MAC keys with engine-armed transmit security. Header IEs are fixed caller bytes; CSL and link-metrics IE content, secured-ACK receive metadata and on-air qualification are absent."
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-hardware-frame-filtering"

@@ -36,7 +36,8 @@ use oer_ieee802154::{
 };
 
 pub use oer_esp32s31_ieee802154_radio::{
-    IEEE802154_RADIO_CAPABILITIES, Ieee802154EnhancedAckGenerator, Ieee802154Platform,
+    IEEE802154_ENHANCED_ACK_IE_CAPACITY, IEEE802154_RADIO_CAPABILITIES,
+    Ieee802154EnhancedAckGenerator, Ieee802154EnhancedAckIeTooLong, Ieee802154Platform,
 };
 
 /// A received frame copied out of the receive ring.
@@ -517,6 +518,21 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         change: impl FnOnce(&mut PendingTable<PENDING_TABLE_SIZE>) -> T,
     ) -> Result<T, Ieee802154RuntimeError> {
         self.with_radio(|radio, _, _| change(radio.engine().pending_table()))
+    }
+
+    /// Change the enhanced-ACK generator of the installed radio: install
+    /// one (`None` refuses every enhanced ACK, the vendor default), set its
+    /// header IEs, or update its MAC keys and frame counter. The interrupt
+    /// handler uses it under the same lock.
+    ///
+    /// # Errors
+    ///
+    /// No radio is installed.
+    pub fn with_enhanced_ack<T>(
+        &self,
+        change: impl FnOnce(&mut Option<Ieee802154EnhancedAckGenerator>) -> T,
+    ) -> Result<T, Ieee802154RuntimeError> {
+        self.with_radio(|radio, _, _| change(radio.enhanced_ack()))
     }
 
     /// `esp_ieee802154_set_pending_mode`: how the automatic acknowledgement

@@ -48,7 +48,13 @@ transaction that fails keeps its owner as fail-stop; the chip must be reset.
 The runtime is a process singleton. After `start`, `Ieee802154System::runtime`
 accepts portable `RadioCommand`s and yields `Ieee802154RadioEvent`s. The
 engine resolves transmit power through the recovered ESP32-S31 BTBB level set.
-The enhanced-ACK generator is not composed; enhanced ACKs are refused.
+Enhanced ACKs follow ESP-IDF's OpenThread port: `start` installs no
+generator, so 2015 frames are delivered without an ACK, as with the vendor's
+default generator. `Ieee802154SystemRuntime::with_enhanced_ack` installs an
+`Ieee802154EnhancedAckGenerator`, sets its header IEs and gives it the MAC
+keys and frame counter that secure the ACK of a secured frame; the stack
+takes the frame counters of its own secured transmissions from the same
+`MacKeys`. Each `start` begins without a generator.
 
 The shared radio is a software-coexistence build, so the MAC takes part in
 coexistence as the vendor driver does with `CONFIG_ESP_COEX_SW_COEXIST_ENABLE`:

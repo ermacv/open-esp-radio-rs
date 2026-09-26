@@ -21,9 +21,9 @@ use oer_esp32s31_hal::ieee802154::{
 };
 
 use super::{
-    FRAME_SIZE, Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Environment,
-    Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot, Ieee802154SlotError,
-    Ieee802154State, Ieee802154TxError, RX_BUFFER_COUNT,
+    FRAME_SIZE, Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154EnhancedAck,
+    Ieee802154Environment, Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot,
+    Ieee802154SlotError, Ieee802154State, Ieee802154TxError, RX_BUFFER_COUNT,
 };
 
 static LEVELS: [i8; 4] = [-9, -3, 4, 10];
@@ -83,6 +83,7 @@ pub(crate) enum Call {
     SetExtendedAddress([u8; 8]),
     SetAckTimeout(u16),
     SecurityAddress([u8; 8]),
+    GetExtendedAddress,
     SecurityKey([u8; 16]),
     SecurityOffset(u8),
 }
@@ -335,6 +336,7 @@ impl Ieee802154LowLevel for Hw {
         self.extended_address = address;
     }
     fn multipan_extended_address(&mut self, _: Ieee802154MultipanIndex) -> [u8; 8] {
+        self.calls.push(Call::GetExtendedAddress);
         self.extended_address
     }
     fn set_multipan_enable(&mut self, _state: Ieee802154MultipanEnableState) {}
@@ -389,6 +391,7 @@ struct Env {
     now: u64,
     notes: Vec<Note>,
     enhanced_ack: Option<Vec<u8>>,
+    enhanced_ack_key: Option<[u8; 16]>,
 }
 
 impl Ieee802154Environment for Env {
@@ -439,13 +442,16 @@ impl Ieee802154Environment for Env {
         _frame: &[u8; FRAME_SIZE],
         _info: &Ieee802154FrameInfo,
         ack: &mut [u8; FRAME_SIZE],
-    ) -> bool {
+    ) -> Ieee802154EnhancedAck {
         match &self.enhanced_ack {
             Some(image) => {
                 ack[..image.len()].copy_from_slice(image);
-                true
+                match self.enhanced_ack_key {
+                    Some(key) => Ieee802154EnhancedAck::Secured { key },
+                    None => Ieee802154EnhancedAck::Generated,
+                }
             }
-            None => false,
+            None => Ieee802154EnhancedAck::Refused,
         }
     }
 }
@@ -860,6 +866,50 @@ fn a_2015_frame_is_answered_with_the_generated_enhanced_ack() {
         bench.take_notes().as_slice(),
         [Note::ReceiveDone { slot: 0, .. }]
     ));
+}
+
+/// A secured enhanced ACK: the OpenThread port's generator reads the
+/// extended address, then configures transmit security over the ACK image
+/// before the driver publishes it (esp_openthread_radio.c
+/// `enh_ack_set_security_addr_and_key`, esp_ieee802154_dev.c L564-L573).
+#[test]
+fn a_secured_enhanced_ack_configures_transmit_security_first() {
+    let mut bench = Bench::enabled();
+    bench.engine.pib().set_rx_when_idle(true);
+    let address = [0x21; 8];
+    bench.engine.set_extended_address(&mut bench.hw, address);
+    // ACK, security enabled, 2015, short destination; ENC-MIC-32 key index
+    // mode with index 1 after a zero frame counter.
+    let ack = vec![
+        0x13, 0x0a, 0x28, 0x01, 0x34, 0x12, 0x78, 0x56, 0x0d, 0x04, 0x03, 0x02, 0x01, 0x01, 0, 0,
+        0, 0, 0, 0,
+    ];
+    bench.env.enhanced_ack = Some(ack);
+    bench.env.enhanced_ack_key = Some([0x42; 16]);
+    bench.receive();
+    let mut image = DATA_WITH_ACK;
+    image[2] = 0xa8;
+    bench.deliver(&image);
+    bench.interrupt(&[Ieee802154Event::RxDone]);
+    let enhanced_ack = bench.engine.buffers.enhanced_ack.address();
+    assert_subsequence(
+        &bench.hw.calls,
+        &[
+            Call::TxEnhancedAck,
+            Call::GetExtendedAddress,
+            Call::SecurityAddress(address),
+            Call::SecurityKey([0x42; 16]),
+            Call::SecurityOffset(13),
+            Call::SetTransmitSecurity(true),
+            Call::TxAddress(enhanced_ack),
+            Call::EnhancedAckNotify,
+        ],
+    );
+    assert_eq!(bench.engine.state(), Ieee802154State::TxEnhAck);
+
+    // `ACK_TX_DONE` clears the security (L588-L590).
+    bench.interrupt(&[Ieee802154Event::AckTxDone]);
+    assert!(bench.hw.calls.contains(&Call::SetTransmitSecurity(false)));
 }
 
 /// Energy detection and standalone CCA share `ED_START`; `ED_DONE` reports

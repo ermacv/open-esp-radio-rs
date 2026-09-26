@@ -25,14 +25,14 @@ use oer_esp32s31_hal::ieee802154::{
     ll::{Ieee802154LowLevel, Ieee802154RxStatus},
 };
 use oer_esp32s31_ieee802154::engine::{
-    FRAME_SIZE, Ieee802154Engine, Ieee802154Environment, Ieee802154FrameInfo,
-    Ieee802154ReceivedAck, Ieee802154RxSlot, Ieee802154TxError,
+    FRAME_SIZE, Ieee802154Engine, Ieee802154EnhancedAck, Ieee802154Environment,
+    Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot, Ieee802154TxError,
 };
 use oer_ieee802154::{
     AcceptedCommand, Channel, CommandError, Configuration, FcsStatus, FramePending, FrameView,
-    RadioCapabilities, RadioCommand, RadioEvent, RadioFault, RadioState, RadioStateMachine,
-    RadioTimestamp, ReceivedFrame, RequestId, RestingState, RxMetadata, SecurityStatus, TxMode,
-    TxStatus,
+    MacKeys, RadioCapabilities, RadioCommand, RadioEvent, RadioFault, RadioState,
+    RadioStateMachine, RadioTimestamp, ReceivedFrame, RequestId, RestingState, RxMetadata,
+    SecurityStatus, TxMode, TxStatus, generate_enhanced_ack,
 };
 
 /// The portable capabilities the engine implements.
@@ -49,11 +49,107 @@ pub const IEEE802154_RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::
     .union(RadioCapabilities::RECEIVE_TIMESTAMP)
     .union(RadioCapabilities::AUTOMATIC_ACKNOWLEDGEMENT);
 
-/// Builds the enhanced ACK for a received 2015 frame inside the interrupt
-/// handler (`esp_ieee802154_enh_ack_generator`); `false` refuses, and the
-/// frame is delivered without an ACK.
-pub type Ieee802154EnhancedAckGenerator =
-    fn(frame: &[u8; FRAME_SIZE], info: &Ieee802154FrameInfo, ack: &mut [u8; FRAME_SIZE]) -> bool;
+/// Header IE bytes an enhanced ACK carries at most (OpenThread
+/// `OT_ACK_IE_MAX_SIZE`).
+pub const IEEE802154_ENHANCED_ACK_IE_CAPACITY: usize = 16;
+
+/// The header IEs exceed [`IEEE802154_ENHANCED_ACK_IE_CAPACITY`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Ieee802154EnhancedAckIeTooLong;
+
+/// The enhanced-ACK generator of ESP-IDF's OpenThread port
+/// (`ot_radio_enh_ack_generator` of `esp_openthread_radio.c` at ESP-IDF
+/// `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`), run inside the interrupt
+/// handler for each received 2015 frame that requests an ACK.
+///
+/// It builds the ACK with [`generate_enhanced_ack`], carrying the configured
+/// header IEs, and secures the ACK of a secured frame with [`MacKeys`]:
+/// the next frame counter and the key of the frame's key index. Without
+/// keys, or when the frame cannot be acknowledged, the generator refuses
+/// and the engine delivers the frame without an ACK. The port rebuilds its
+/// CSL and link-metrics IEs per frame; here the IEs are the caller's bytes.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Ieee802154EnhancedAckGenerator {
+    header_ies: [u8; IEEE802154_ENHANCED_ACK_IE_CAPACITY],
+    header_ies_len: usize,
+    keys: Option<MacKeys>,
+}
+
+impl Ieee802154EnhancedAckGenerator {
+    /// A generator without header IEs or keys: secured frames are refused.
+    pub const fn new() -> Self {
+        Self {
+            header_ies: [0; IEEE802154_ENHANCED_ACK_IE_CAPACITY],
+            header_ies_len: 0,
+            keys: None,
+        }
+    }
+
+    /// The header IEs every ACK carries.
+    pub fn header_ies(&self) -> &[u8] {
+        &self.header_ies[..self.header_ies_len]
+    }
+
+    /// Replace the header IEs.
+    ///
+    /// # Errors
+    ///
+    /// The IEs exceed [`IEEE802154_ENHANCED_ACK_IE_CAPACITY`]; nothing
+    /// changes.
+    pub fn set_header_ies(&mut self, ies: &[u8]) -> Result<(), Ieee802154EnhancedAckIeTooLong> {
+        let target = self
+            .header_ies
+            .get_mut(..ies.len())
+            .ok_or(Ieee802154EnhancedAckIeTooLong)?;
+        target.copy_from_slice(ies);
+        self.header_ies_len = ies.len();
+        Ok(())
+    }
+
+    /// The MAC keys and frame counter, when secured ACKs are admitted.
+    pub fn keys(&mut self) -> &mut Option<MacKeys> {
+        &mut self.keys
+    }
+
+    fn generate(
+        &mut self,
+        frame: &[u8; FRAME_SIZE],
+        info: &Ieee802154FrameInfo,
+        ack: &mut [u8; FRAME_SIZE],
+    ) -> Ieee802154EnhancedAck {
+        // The PHR counts the RSSI and LQI bytes that replace the FCS.
+        let length = usize::from(frame[0] & 0x7f);
+        let Some(received) = length
+            .checked_sub(1)
+            .and_then(|end| frame.get(1..end))
+            .and_then(|bytes| FrameView::new(bytes).ok())
+        else {
+            return Ieee802154EnhancedAck::Refused;
+        };
+        let header_ies = &self.header_ies[..self.header_ies_len];
+        let Ok(mut generated) = generate_enhanced_ack(received, info.pending, header_ies) else {
+            return Ieee802154EnhancedAck::Refused;
+        };
+        let key = match generated.security() {
+            Some(_) => match self
+                .keys
+                .as_mut()
+                .and_then(|keys| keys.secure(&mut generated))
+            {
+                Some(key) => Some(key),
+                None => return Ieee802154EnhancedAck::Refused,
+            },
+            None => None,
+        };
+        let bytes = generated.bytes();
+        // The PHR counts the FCS the hardware appends.
+        ack[0] = (bytes.len() + 2) as u8;
+        ack[1..=bytes.len()].copy_from_slice(bytes);
+        key.map_or(Ieee802154EnhancedAck::Generated, |key| {
+            Ieee802154EnhancedAck::Secured { key }
+        })
+    }
+}
 
 /// Platform services the engine calls during an entry.
 #[derive(Clone, Copy)]
@@ -62,8 +158,6 @@ pub struct Ieee802154Platform {
     /// truncates it to the vendor's wrapping 32-bit timer domain, and receive
     /// timestamps use it as the radio epoch.
     pub now_micros: fn() -> u64,
-    /// The enhanced-ACK generator; `None` refuses every enhanced ACK.
-    pub enhanced_ack: Option<Ieee802154EnhancedAckGenerator>,
 }
 
 /// Receives the correlated portable events of one entry. Frames are lent
@@ -89,15 +183,22 @@ const NOTIFICATIONS: usize = 8;
 
 /// The engine environment of one entry: notifications are collected and
 /// translated after the engine returns.
-struct Collector {
+struct Collector<'generator> {
     platform: Ieee802154Platform,
+    enhanced_ack: &'generator mut Option<Ieee802154EnhancedAckGenerator>,
     notifications: [Option<Notification>; NOTIFICATIONS],
 }
 
-impl Collector {
-    const fn new(platform: Ieee802154Platform) -> Self {
+type Notifications = [Option<Notification>; NOTIFICATIONS];
+
+impl<'generator> Collector<'generator> {
+    const fn new(
+        platform: Ieee802154Platform,
+        enhanced_ack: &'generator mut Option<Ieee802154EnhancedAckGenerator>,
+    ) -> Self {
         Self {
             platform,
+            enhanced_ack,
             notifications: [None; NOTIFICATIONS],
         }
     }
@@ -112,7 +213,7 @@ impl Collector {
     }
 }
 
-impl Ieee802154Environment for Collector {
+impl Ieee802154Environment for Collector<'_> {
     fn now_micros(&mut self) -> u64 {
         (self.platform.now_micros)()
     }
@@ -157,10 +258,11 @@ impl Ieee802154Environment for Collector {
         frame: &[u8; FRAME_SIZE],
         info: &Ieee802154FrameInfo,
         ack: &mut [u8; FRAME_SIZE],
-    ) -> bool {
-        self.platform
-            .enhanced_ack
-            .is_some_and(|generate| generate(frame, info, ack))
+    ) -> Ieee802154EnhancedAck {
+        match self.enhanced_ack {
+            Some(generator) => generator.generate(frame, info, ack),
+            None => Ieee802154EnhancedAck::Refused,
+        }
     }
 }
 
@@ -226,6 +328,7 @@ pub struct Ieee802154Radio<'storage> {
     engine: Ieee802154Engine<'storage>,
     machine: RadioStateMachine,
     platform: Ieee802154Platform,
+    enhanced_ack: Option<Ieee802154EnhancedAckGenerator>,
 }
 
 impl<'storage> Ieee802154Radio<'storage> {
@@ -236,7 +339,13 @@ impl<'storage> Ieee802154Radio<'storage> {
             engine,
             machine: RadioStateMachine::new(IEEE802154_RADIO_CAPABILITIES),
             platform,
+            enhanced_ack: None,
         }
+    }
+
+    /// The enhanced-ACK generator; `None` refuses every enhanced ACK.
+    pub fn enhanced_ack(&mut self) -> &mut Option<Ieee802154EnhancedAckGenerator> {
+        &mut self.enhanced_ack
     }
 
     /// Return the engine, for the composition's MAC teardown.
@@ -269,7 +378,7 @@ impl<'storage> Ieee802154Radio<'storage> {
         sink: &mut S,
     ) -> Result<AcceptedCommand, CommandError> {
         let accepted = self.machine.admit(command)?;
-        let mut collector = Collector::new(self.platform);
+        let mut collector = Collector::new(self.platform, &mut self.enhanced_ack);
         let engine = &mut self.engine;
         match command {
             RadioCommand::Enable { .. }
@@ -337,7 +446,8 @@ impl<'storage> Ieee802154Radio<'storage> {
             RadioState::Resting(RestingState::Receiving { channel }) => Some(channel),
             _ => None,
         };
-        self.deliver(ll, collector, Some(flushed_on), sink);
+        let notifications = collector.notifications;
+        self.deliver(ll, notifications, Some(flushed_on), sink);
         Ok(accepted)
     }
 
@@ -347,9 +457,10 @@ impl<'storage> Ieee802154Radio<'storage> {
         ll: &mut L,
         sink: &mut S,
     ) {
-        let mut collector = Collector::new(self.platform);
+        let mut collector = Collector::new(self.platform, &mut self.enhanced_ack);
         self.engine.isr(ll, &mut collector);
-        self.deliver(ll, collector, None, sink);
+        let notifications = collector.notifications;
+        self.deliver(ll, notifications, None, sink);
     }
 
     /// Translate collected notifications. Frames flushed by an engine call
@@ -359,15 +470,15 @@ impl<'storage> Ieee802154Radio<'storage> {
     fn deliver<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
         &mut self,
         ll: &mut L,
-        collector: Collector,
+        notifications: Notifications,
         flushed: Option<Option<Channel>>,
         sink: &mut S,
     ) {
-        let mut pending = collector;
+        let mut pending = notifications;
         let mut flushed = flushed;
         loop {
             let mut restore = None;
-            for notification in pending.notifications.into_iter().flatten() {
+            for notification in pending.into_iter().flatten() {
                 if let Some(channel) = self.translate(notification, flushed, sink) {
                     restore = Some(channel);
                 }
@@ -376,11 +487,11 @@ impl<'storage> Ieee802154Radio<'storage> {
                 return;
             };
             // Resume receive on the resting channel an operation left.
-            let mut collector = Collector::new(self.platform);
+            let mut collector = Collector::new(self.platform, &mut self.enhanced_ack);
             let previous = self.engine.pib().channel();
             self.engine.pib().set_channel(channel);
             self.engine.receive(ll, &mut collector);
-            pending = collector;
+            pending = collector.notifications;
             flushed = Channel::new(previous.number()).ok().map(Some);
         }
     }

@@ -13,9 +13,9 @@ use oer_esp32s31_hal::ieee802154::{
 use oer_ieee802154::FrameAddress;
 
 use super::{
-    FRAME_SIZE, Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154Environment,
-    Ieee802154FrameInfo, Ieee802154Interfaces, Ieee802154ReceivedAck, Ieee802154RxSlot,
-    Ieee802154State, Ieee802154TxError,
+    FRAME_SIZE, Ieee802154Engine, Ieee802154EngineBuffers, Ieee802154EnhancedAck,
+    Ieee802154Environment, Ieee802154FrameInfo, Ieee802154Interfaces, Ieee802154ReceivedAck,
+    Ieee802154RxSlot, Ieee802154State, Ieee802154TxError,
 };
 
 static LEVELS: [i8; 1] = [0];
@@ -51,8 +51,8 @@ impl Ieee802154Environment for Received {
         _: &[u8; FRAME_SIZE],
         _: &Ieee802154FrameInfo,
         _: &mut [u8; FRAME_SIZE],
-    ) -> bool {
-        false
+    ) -> Ieee802154EnhancedAck {
+        Ieee802154EnhancedAck::Refused
     }
 }
 

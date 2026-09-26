@@ -394,10 +394,7 @@ pub async fn start<P, C: PlatformClockProvider>(
         engine,
         hardware: Ieee802154MacOwners::new(task, interrupts),
     };
-    let platform_services = Ieee802154Platform {
-        now_micros,
-        enhanced_ack: None,
-    };
+    let platform_services = Ieee802154Platform { now_micros };
     if let Err(parts) = RUNTIME.install(parts, platform_services, defaults) {
         let (mut task, interrupts) = parts.hardware.into_parts();
         let interrupts = interrupts.deactivate(&mut task);

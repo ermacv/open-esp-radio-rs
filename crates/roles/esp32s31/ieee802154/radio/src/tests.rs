@@ -15,19 +15,19 @@ use oer_esp32s31_hal::ieee802154::{
 use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, Ieee802154EngineBuffers};
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_ieee802154::{
-    Channel, CommandError, Configuration, EnergyScanRequest, FramePending, FrameView,
+    Channel, CommandError, Configuration, EnergyScanRequest, FramePending, FrameView, MacKeys,
     RadioCapabilities, RadioCommand, RadioEvent, RadioState, RequestId, RestingState, TxMode,
     TxRequest, TxStatus,
 };
 
-use super::{Ieee802154Platform, Ieee802154Radio, Ieee802154RadioSink};
+use super::{
+    IEEE802154_ENHANCED_ACK_IE_CAPACITY, Ieee802154EnhancedAckGenerator,
+    Ieee802154EnhancedAckIeTooLong, Ieee802154Platform, Ieee802154Radio, Ieee802154RadioSink,
+};
 
 static LEVELS: [i8; 3] = [-9, 0, 10];
 
-const PLATFORM: Ieee802154Platform = Ieee802154Platform {
-    now_micros: || 42,
-    enhanced_ack: None,
-};
+const PLATFORM: Ieee802154Platform = Ieee802154Platform { now_micros: || 42 };
 
 /// Owned copy of one delivered event: the frame bytes and the event.
 #[derive(Debug, PartialEq)]
@@ -389,4 +389,117 @@ fn configuration_reaches_the_identity_and_the_pib() {
     assert!(!pib.promiscuous());
     assert!(!pib.auto_ack_tx());
     assert_eq!(pib.power_table(), [0; 16]);
+}
+
+/// A 2015 data frame requesting an ACK, short addresses, secured at
+/// ENC-MIC-32 with key index 1, then a payload byte and its MIC.
+const SECURED_2015: [u8; 20] = [
+    0x69, 0xa8, 0x11, 0x34, 0x12, 0x01, 0x00, 0x02, 0x00, 0x0d, 0x01, 0x02, 0x03, 0x04, 0x01, 0xaa,
+    0, 0, 0, 0,
+];
+
+impl Bench {
+    fn receiving() -> Self {
+        let mut bench = Self::enabled();
+        bench
+            .submit(RadioCommand::Receive {
+                id: RequestId::new(2),
+                channel: channel(15),
+            })
+            .unwrap();
+        bench
+    }
+
+    /// The image the MAC transmits next.
+    fn transmit_image(&mut self) -> Vec<u8> {
+        let address = self.hw.tx_address.unwrap();
+        let image = self.radio.engine().model_dma_read(address).unwrap();
+        image[..=usize::from(image[0])].to_vec()
+    }
+}
+
+/// With a generator and keys, a secured 2015 frame is answered with a
+/// secured enhanced ACK carrying the next frame counter and the configured
+/// header IEs; transmit security is armed for it and the frame is delivered
+/// once the ACK is sent.
+#[test]
+fn a_secured_2015_frame_is_answered_with_a_secured_enhanced_ack() {
+    let mut bench = Bench::receiving();
+    let mut generator = Ieee802154EnhancedAckGenerator::new();
+    generator.set_header_ies(&[0x00, 0x00]).unwrap();
+    *generator.keys() = Some(MacKeys::new(1, [1; 16], [2; 16], [3; 16], 7));
+    *bench.radio.enhanced_ack() = Some(generator);
+
+    bench.deliver(&SECURED_2015);
+    bench.interrupt(&[Ieee802154Event::RxDone]);
+    assert!(bench.hw.transmit_security);
+    assert_eq!(
+        bench.transmit_image(),
+        [
+            0x15, // MAC bytes plus the FCS
+            // ACK, secured, frame pending (the disabled automatic mode marks
+            // every frame pending), IE present.
+            0x1a, 0x2a, 0x11, 0x34, 0x12, 0x02, 0x00, //
+            0x0d, 0x07, 0x00, 0x00, 0x00, 0x01, // frame counter 7, key index 1
+            0x00, 0x00, // header IE
+            0x00, 0x00, 0x00, 0x00, // MIC
+            0x00, 0x00, // FCS
+        ]
+    );
+    assert_eq!(
+        bench
+            .radio
+            .enhanced_ack()
+            .unwrap()
+            .keys()
+            .unwrap()
+            .frame_counter(),
+        8
+    );
+    assert!(bench.seen().is_empty(), "the frame waits for its ACK");
+
+    bench.interrupt(&[Ieee802154Event::AckTxDone]);
+    assert_eq!(
+        bench.seen(),
+        [Seen::Received {
+            mac: SECURED_2015.to_vec(),
+            channel: 15
+        }]
+    );
+    assert!(!bench.hw.transmit_security);
+}
+
+/// Without keys a secured 2015 frame gets no ACK and is delivered at once,
+/// as when the vendor generator fails.
+#[test]
+fn without_keys_a_secured_2015_frame_is_delivered_without_an_ack() {
+    let mut bench = Bench::receiving();
+    *bench.radio.enhanced_ack() = Some(Ieee802154EnhancedAckGenerator::new());
+    bench.deliver(&SECURED_2015);
+    bench.interrupt(&[Ieee802154Event::RxDone]);
+    assert!(!bench.hw.transmit_security);
+    assert_eq!(
+        bench.seen(),
+        [Seen::Received {
+            mac: SECURED_2015.to_vec(),
+            channel: 15
+        }]
+    );
+}
+
+#[test]
+fn header_ies_are_bounded_by_the_port_capacity() {
+    let mut generator = Ieee802154EnhancedAckGenerator::new();
+    assert_eq!(
+        generator.set_header_ies(&[0; IEEE802154_ENHANCED_ACK_IE_CAPACITY + 1]),
+        Err(Ieee802154EnhancedAckIeTooLong)
+    );
+    assert!(generator.header_ies().is_empty());
+    generator
+        .set_header_ies(&[1; IEEE802154_ENHANCED_ACK_IE_CAPACITY])
+        .unwrap();
+    assert_eq!(
+        generator.header_ies().len(),
+        IEEE802154_ENHANCED_ACK_IE_CAPACITY
+    );
 }

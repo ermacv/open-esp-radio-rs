@@ -21,16 +21,13 @@ use oer_ieee802154::{
 };
 
 use super::{
-    Ieee802154EventsLost, Ieee802154Platform, Ieee802154RadioEvent, Ieee802154Runtime,
-    Ieee802154RuntimeError, Ieee802154RuntimeParts,
+    Ieee802154EnhancedAckGenerator, Ieee802154EventsLost, Ieee802154Platform, Ieee802154RadioEvent,
+    Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
 };
 
 static LEVELS: [i8; 1] = [0];
 
-const PLATFORM: Ieee802154Platform = Ieee802154Platform {
-    now_micros: || 0,
-    enhanced_ack: None,
-};
+const PLATFORM: Ieee802154Platform = Ieee802154Platform { now_micros: || 0 };
 
 /// 2006 data frame without an ACK request, as MAC bytes.
 const MAC: [u8; 10] = [0x41, 0x98, 0x01, 0x34, 0x12, 0xff, 0xff, 0x78, 0x56, 0xaa];
@@ -368,4 +365,40 @@ fn resuming_over_an_installed_radio_returns_the_paused_one() {
     let paused = first.pause().unwrap();
     let occupied = enabled::<4>();
     assert!(occupied.resume(paused).is_err());
+}
+
+/// An installed generator answers a 2015 frame with an enhanced ACK; the
+/// frame reaches the queue once the ACK is sent.
+#[test]
+fn an_installed_enhanced_ack_generator_answers_2015_frames() {
+    let runtime = Runtime::<4>::new();
+    assert_eq!(
+        runtime.with_enhanced_ack(|_| ()),
+        Err(Ieee802154RuntimeError::NotInstalled)
+    );
+    let runtime = enabled::<4>();
+    runtime
+        .with_enhanced_ack(|generator| *generator = Some(Ieee802154EnhancedAckGenerator::new()))
+        .unwrap();
+    runtime
+        .submit(RadioCommand::Receive {
+            id: RequestId::new(2),
+            channel: channel(11),
+        })
+        .unwrap();
+    // 2015 data frame requesting an ACK, short addresses, compressed PAN.
+    let mac = [0x61, 0xa8, 0x05, 0x34, 0x12, 0x01, 0x00, 0x02, 0x00, 0xaa];
+    let mut image = [0; 13];
+    image[0] = 12;
+    image[1..11].copy_from_slice(&mac);
+    runtime.interrupt(Some(&image), &[Ieee802154Event::RxDone]);
+    assert!(
+        runtime.events.try_receive().is_err(),
+        "the frame waits for its ACK"
+    );
+    runtime.interrupt(None, &[Ieee802154Event::AckTxDone]);
+    assert!(matches!(
+        block_on(runtime.next_event()),
+        Ok(Ieee802154RadioEvent::Received(frame)) if frame.frame.as_bytes() == mac
+    ));
 }

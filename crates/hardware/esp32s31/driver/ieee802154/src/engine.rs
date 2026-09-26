@@ -219,13 +219,31 @@ pub trait Ieee802154Environment {
     /// `esp_ieee802154_receive_at_done`.
     fn receive_at_done(&mut self);
     /// `esp_ieee802154_enh_ack_generator`: build the enhanced ACK for
-    /// `frame` into `ack`, returning whether one was generated.
+    /// `frame` into `ack`.
     fn generate_enhanced_ack(
         &mut self,
         frame: &[u8; FRAME_SIZE],
         info: &Ieee802154FrameInfo,
         ack: &mut [u8; FRAME_SIZE],
-    ) -> bool;
+    ) -> Ieee802154EnhancedAck;
+}
+
+/// Outcome of [`Ieee802154Environment::generate_enhanced_ack`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Ieee802154EnhancedAck {
+    /// No ACK: the frame is delivered without one.
+    Refused,
+    /// An unsecured ACK was generated.
+    Generated,
+    /// A secured ACK was generated with its frame counter; the engine
+    /// configures transmit security with `key` and the interface's extended
+    /// address, as ESP-IDF's OpenThread port does from its generator
+    /// (`esp_ieee802154_get_extended_address`,
+    /// `esp_ieee802154_set_transmit_security`).
+    Secured {
+        /// The AES-128 key of the ACK's key index.
+        key: [u8; 16],
+    },
 }
 
 /// A frame given to [`Ieee802154Engine::transmit`] is not a `[PHR, PSDU...]`
@@ -642,6 +660,13 @@ impl<'storage> Ieee802154Engine<'storage> {
     #[cfg(not(target_arch = "riscv32"))]
     pub fn model_transmit_address(&self) -> u32 {
         self.buffers.tx.address()
+    }
+
+    /// The image of the buffer published at `address`, for host models that
+    /// read what the MAC would transmit.
+    #[cfg(not(target_arch = "riscv32"))]
+    pub fn model_dma_read(&mut self, address: u32) -> Option<[u8; FRAME_SIZE]> {
+        self.buffers.frame_at(address).map(|frame| frame.read())
     }
 
     /// `ieee802154_enable` after the modem clock is enabled.
@@ -1495,10 +1520,16 @@ impl<'storage> Ieee802154Engine<'storage> {
         {
             self.rx_info[index].pending = self.ack_config_pending_bit(cx, frame);
             let mut ack = [0; FRAME_SIZE];
-            if cx
+            let generated = cx
                 .env
-                .generate_enhanced_ack(&image, &self.rx_info[index], &mut ack)
-            {
+                .generate_enhanced_ack(&image, &self.rx_info[index], &mut ack);
+            if let Ieee802154EnhancedAck::Secured { key } = generated {
+                let address = cx
+                    .ll
+                    .multipan_extended_address(Ieee802154MultipanIndex::CONTEXT0);
+                self.set_transmit_security(cx.ll, &ack, &key, &address);
+            }
+            if generated != Ieee802154EnhancedAck::Refused {
                 self.buffers.enhanced_ack.write(&ack);
                 cx.ll.set_tx_address(self.buffers.enhanced_ack.address());
                 self.tx = TxSource::EnhancedAck;

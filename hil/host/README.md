@@ -514,7 +514,10 @@ It records these non-secret settings in `fixture-applied.json`. The Linux helper
 keeps hostapd startup diagnostics in a group-readable runtime log and includes
 its bounded, credential-redacted tail in preparation errors before cleanup.
 Debug logging ends before the workload starts; cleanup removes the runtime log.
-The Linux helper owns only `wlan0`; cleanup returns it to managed mode.
+The Linux helper owns only `wlan0`. While it does, a per-boot
+`/run/NetworkManager/conf.d/90-open-radio-hil.conf` keeps NetworkManager from
+managing any `wlan0` netdev, including each one the helper recreates;
+cleanup removes it and returns `wlan0` to managed mode.
 
 AP scenarios wait for the matching `WifiAccessPointStarted` event and validate
 the successful `Idle` to `AccessPoint` transition before starting either external

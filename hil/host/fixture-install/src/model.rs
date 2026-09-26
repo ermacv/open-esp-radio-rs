@@ -20,7 +20,7 @@ impl Provider {
     pub(crate) fn runtime_contract(self) -> &'static str {
         match self {
             Self::LinuxNet => {
-                "schema=13 station_ap=ht20,ht40,he20 legacy_ap=dsss client=ht,non-ht observer=20,40 managed=1 rfkill=restore"
+                "schema=14 station_ap=ht20,ht40,he20 legacy_ap=dsss client=ht,non-ht observer=20,40 managed=1 rfkill=restore"
             }
             Self::LinuxBluetooth => crate::bluetooth_contract::HELPER_CAPABILITIES,
         }

@@ -63,12 +63,34 @@ stop_radio_services() {
     /bin/rm -rf "$WPA_CTRL"
 }
 
+NM_UNMANAGED_CONFIG=/run/NetworkManager/conf.d/90-open-radio-hil.conf
+
 take_network_manager_ownership() {
     # A reconnect between `ip link set down` and the nl80211 type/channel
     # transaction produces EBUSY and leaves a nominal monitor interface
     # without a channel context. The HIL helper, rather than a background
     # desktop policy, owns wlan0 until the explicit `managed` action.
+    #
+    # `nmcli device set managed no` belongs to one netdev. Every recreated
+    # wlan0 is a new device that NetworkManager claimed and reconnected to
+    # the desktop uplink during the private supplicant's 4-way handshake.
+    # A per-boot configuration match on the interface name also covers every
+    # netdev created until `managed` removes it.
+    if ! test -e "$NM_UNMANAGED_CONFIG"; then
+        /bin/mkdir -p /run/NetworkManager/conf.d
+        /usr/bin/printf '[device-open-radio-hil]\nmatch-device=interface-name:wlan0\nmanaged=0\n' \
+            >"$NM_UNMANAGED_CONFIG"
+        /usr/bin/nmcli general reload conf
+    fi
     /usr/bin/nmcli device set wlan0 managed no 2>/dev/null || true
+}
+
+release_network_manager_ownership() {
+    if test -e "$NM_UNMANAGED_CONFIG"; then
+        /bin/rm -f "$NM_UNMANAGED_CONFIG"
+        /usr/bin/nmcli general reload conf
+    fi
+    /usr/bin/nmcli device set wlan0 managed yes
 }
 
 remember_wifi_identity() {
@@ -359,7 +381,7 @@ restore_managed() {
     remember_wifi_identity
     stop_radio_services
     restore_managed_interface
-    /usr/bin/nmcli device set wlan0 managed yes
+    release_network_manager_ownership
     restore_wifi_rfkill
 }
 
@@ -390,7 +412,7 @@ fi
 
 case "$1" in
     capabilities)
-        /usr/bin/printf 'schema=13 station_ap=ht20,ht40,he20 legacy_ap=dsss client=ht,non-ht observer=20,40 managed=1 rfkill=restore\n'
+        /usr/bin/printf 'schema=14 station_ap=ht20,ht40,he20 legacy_ap=dsss client=ht,non-ht observer=20,40 managed=1 rfkill=restore\n'
         ;;
     identity)
         if test -e /sys/class/net/wlan0/phy80211; then

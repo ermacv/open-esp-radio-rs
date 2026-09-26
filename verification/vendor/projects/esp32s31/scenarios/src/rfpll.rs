@@ -1,6 +1,6 @@
 //! Captured RFPLL search and frequency maintenance against compiled production.
 use crate::calibration_prefix::delays_of;
-use crate::contracts::{omitted_read_before, port_polling};
+use crate::contracts::{omitted_read_before, plumbing, port_polling};
 use crate::evidence::{events, stop};
 use crate::harness::direct;
 use crate::harness::{Result, case, known, region, selection, with_stack_fill, words};
@@ -205,9 +205,80 @@ struct Rfpll {
     production_delay: u32,
     search_entry: u32,
     maintain_entry: u32,
+    program_entry: u32,
+    rom_program: u32,
     rom_search: u32,
     rom_track: u32,
     callbacks: Vec<u32>,
+}
+
+/// One direct-programming profile: request, initial capacitor, lock samples
+/// before lock (`None`: never), capacitor-status samples, and the selected
+/// capacitor read independently from the pinned ROM `phy_rfpll_cap_init_cal`.
+struct Program {
+    name: String,
+    frequency: u32,
+    crystal: u32,
+    offset: u32,
+    cap: i32,
+    lock: Option<u32>,
+    statuses: Vec<u32>,
+    busy: u32,
+    selected: u32,
+}
+
+fn program_cases() -> Vec<Program> {
+    let profile = |name: &str, cap: i32, lock, statuses: Vec<u32>, busy, selected| Program {
+        name: name.into(),
+        frequency: 2412,
+        crystal: 1,
+        offset: 0,
+        cap,
+        lock,
+        statuses,
+        busy,
+        selected,
+    };
+    let mut cases = vec![
+        profile("all-accepted", 100, Some(0), vec![0; 20], 0, 100),
+        profile("all-accepted-busy", 100, Some(0), vec![0; 20], 1, 100),
+        profile("late-lock", 100, Some(3), vec![0; 20], 0, 100),
+        profile("no-lock", 100, None, vec![0; 20], 0, 100),
+        profile("no-accepted", 100, Some(0), vec![2; 20], 0, 100),
+        profile(
+            "up-only",
+            100,
+            Some(0),
+            [vec![1; 10], vec![0; 10]].concat(),
+            0,
+            105,
+        ),
+        profile(
+            "down-only",
+            100,
+            Some(0),
+            [vec![0; 10], vec![3]].concat(),
+            0,
+            95,
+        ),
+        profile("late-down", 100, Some(0), vec![1, 1, 0, 0, 1, 0, 1], 0, 98),
+        profile("signed-wrap", 1, Some(0), vec![0, 0, 0, 1, 1], 0, 0),
+        profile("high-byte", 511, Some(0), vec![0; 20], 0, 511),
+    ];
+    for frequency in PROGRAM_FREQUENCIES {
+        for crystal in PROGRAM_CRYSTALS {
+            for offset in PROGRAM_OFFSETS {
+                cases.push(Program {
+                    name: format!("sdm-{frequency}-{crystal}-{offset}"),
+                    frequency,
+                    crystal,
+                    offset,
+                    ..profile("", 100, Some(0), vec![0; 20], 0, 100)
+                });
+            }
+        }
+    }
+    cases
 }
 
 fn bank(cap: i32, statuses: &[u32], busy: u32) -> Vec<DeviceDeclaration> {
@@ -346,6 +417,60 @@ impl Rfpll {
         Ok(phase)
     }
 
+    /// Direct synthesizer programming: vendor ROM `phy_set_rfpll_freq`
+    /// writing its SDM image through a scratch buffer, or the production
+    /// probe.
+    fn program(&self, side: bool, program: &Program) -> Result<Invocation> {
+        let mut models = bank(program.cap, &program.statuses, program.busy);
+        if let Some(DeviceDeclaration {
+            behavior: DeviceBehavior::CommandBank(bank),
+            ..
+        }) = models.first_mut()
+        {
+            // Lock samples, then the calibrated-capacitor high read, share
+            // register 7 of block 0x62.
+            let high = ((program.cap as u32) >> 8) << 2;
+            let lock = |locked: bool| 0xc0 | (u32::from(locked) << 1) | high;
+            let mut samples = match program.lock {
+                Some(unlocked) => [vec![lock(false); unlocked as usize], vec![lock(true)]].concat(),
+                None => vec![lock(false); LOCK_SAMPLES as usize],
+            };
+            samples.push(*samples.last().unwrap());
+            for cell in &mut bank.cells {
+                if cell.selector == 0x0762 {
+                    cell.reads = Some(samples.clone());
+                }
+            }
+            // SDM and calibration-restart registers of blocks 0x62 and 0x63.
+            for selector in [0x0062u32, 0x0063, 0x0363, 0x0463, 0x0563, 0x0663] {
+                bank.cells.push(CommandCell {
+                    selector,
+                    initial: 0,
+                    reads: None,
+                });
+            }
+            bank.cells.sort_by_key(|c| c.selector);
+        }
+        let (frequency, crystal, offset) = (program.frequency, program.crystal, program.offset);
+        let mut phase = if side {
+            self.enter(
+                self.program_entry,
+                &[frequency, crystal, offset],
+                models,
+                vec![],
+            )?
+        } else {
+            self.enter(
+                self.rom_program,
+                &[crystal, frequency, offset, SDM_BUFFER],
+                models,
+                vec![region(SDM_BUFFER, 8, &[0; 8], None, RegionLifetime::Phase)?],
+            )?
+        };
+        phase.calls = delay_calls("requested-delay", self.delay(side));
+        Ok(phase)
+    }
+
     fn setup(&self, side: bool) -> Result<Invocation> {
         let mut data = vec![0u8; PHY_PARAM_BYTES as usize];
         data[..2].copy_from_slice(&[100, 0]);
@@ -428,6 +553,18 @@ fn in_frequency_domain(address: u32) -> bool {
     FREQUENCY_WORDS.contains(&address) || address == SDM
 }
 
+/// Direct-programming frequencies in MHz: both sides of the ROM 4000-MHz
+/// divider split and the 2.4- and 5-GHz band edges.
+const PROGRAM_FREQUENCIES: [u32; 6] = [2412, 2484, 4000, 4001, 5180, 5825];
+/// Crystal selectors: the three table entries and the out-of-table default.
+const PROGRAM_CRYSTALS: [u32; 5] = [0, 1, 2, 3, 4];
+/// Frequency offsets, including the largest byte.
+const PROGRAM_OFFSETS: [u32; 3] = [0, 7, 255];
+/// Lock-status samples the ROM takes before giving up on calibration end.
+const LOCK_SAMPLES: u32 = 100;
+/// Scratch buffer the ROM programming path fills with its SDM image.
+const SDM_BUFFER: u32 = 0x3fff_2000;
+
 pub fn exercise(ctx: &mut I2c) -> Result<()> {
     let rfpll = Rfpll {
         parameter: ctx.parameter,
@@ -436,6 +573,8 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
         production_delay: ctx.probe("open_phy_trace_delay_event"),
         search_entry: ctx.probe("open_phy_rfpll_trace_search"),
         maintain_entry: ctx.probe("open_phy_rfpll_trace_maintain"),
+        program_entry: ctx.probe("open_phy_rfpll_trace_program"),
+        rom_program: ctx.captured(1, "phy_set_rfpll_freq"),
         rom_search: ctx.root("phy_rfpll_cap_init_cal_new"),
         rom_track: ctx.root("phy_rfpll_cap_track_new"),
         callbacks: [
@@ -516,6 +655,50 @@ pub fn exercise(ctx: &mut I2c) -> Result<()> {
             let waits = delays_of(&observed);
             assert_eq!(waits, vec![5; statuses.len()], "{label} {side}");
             assert!(all_complete(&records, case, side), "{label} {side}");
+        }
+    }
+    let program_effects = ctx.review_pair(
+        "rfpll-program",
+        ctx.input_endpoint(1, "phy_set_rfpll_freq")?,
+        ctx.input_endpoint(2, "open_phy_rfpll_trace_program")?,
+        plumbing(&[], MAX_EVENTS),
+        "direct RFPLL programming under explicit capacitor, lock and status inputs",
+    )?;
+    let programs = program_cases();
+    let mut rows = vec![];
+    for program in &programs {
+        let mut row = case(
+            format!("rfpll-program-{}", program.name),
+            rfpll.program(false, program)?,
+            Some(rfpll.program(true, program)?),
+            SessionReset::Cold,
+            false,
+        );
+        let relation = row.relation.as_mut().unwrap();
+        relation.returns.low = true;
+        relation.effects = Some(program_effects.clone());
+        row.stack_fill = Some(FILLS[0]);
+        rows.push(row);
+    }
+    let records = ctx.submit_with(
+        "rfpll-program",
+        &vendor,
+        Some(&replacement),
+        None,
+        rows,
+        MAX_EVENTS,
+        Some(ComparisonVerdict::Match),
+    )?;
+    for (case, program) in programs.iter().enumerate() {
+        let expected = ((program.cap as u32) << 16) | program.selected;
+        for side in [false, true] {
+            let label = format!("rfpll-program-{} {side}", program.name);
+            assert_eq!(
+                returned_low(&records, case as u32, side),
+                Some(expected),
+                "{label}"
+            );
+            assert!(all_complete(&records, case as u32, side), "{label}");
         }
     }
     let mut maintenance: Vec<Maintenance> = vec![];

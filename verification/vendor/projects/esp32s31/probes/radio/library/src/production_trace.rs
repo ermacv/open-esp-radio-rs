@@ -61,6 +61,34 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
+    /// Direct synthesizer programming through the production target executor.
+    /// Returns the initial capacitance in the high halfword and the final one
+    /// in the low halfword, the ROM `phy_rfpll_cap_init_cal` result, or a
+    /// negative code for a transition failure (-1) or an executor failure
+    /// (`i32::MIN`).
+    pub fn open_phy_rfpll_trace_program(frequency_code: u16, crystal_selector: u8, offset: u8) -> i32 {
+        let mut radio =
+            oer_esp32s31_hal::owner::Radio::claim_for_validation(()).assume_powered_for_validation();
+        match embassy_futures::block_on(oer_esp32s31_phy::target_port::rfpll::program::<
+            RfpllTraceDelay,
+        >(
+            radio.phy_hal_mut(),
+            oer_esp32s31_phy::analog::rfpll::RfpllFrequencyRequest {
+                crystal_selector,
+                frequency_code,
+                offset,
+            },
+        )) {
+            Ok(Ok(outcome)) => {
+                ((u32::from(outcome.initial_cap) << 16) | u32::from(outcome.final_cap)) as i32
+            }
+            Ok(Err(_)) => -1,
+            Err(_) => i32::MIN,
+        }
+    }
+}
+
+oer_probe_macros::probe! {
     /// Production frequency-control envelope; no grant or parent policy is modeled here.
     pub fn open_phy_rfpll_trace_maintain(channel: u16) -> i32 {
         let mut radio =

@@ -281,7 +281,7 @@ const I2C_SDK_CLAIMS: [(&str, &str, &str); 5] = [
     ),
     ("archive", "phy_reg_update_new", "open_phy_calibration_leaf"),
 ];
-const I2C_RFPLL_CLAIMS: [(&str, &str, &str); 3] = [
+const I2C_RFPLL_CLAIMS: [(&str, &str, &str); 4] = [
     (
         "archive",
         "phy_rfpll_cap_init_cal_new",
@@ -297,6 +297,7 @@ const I2C_RFPLL_CLAIMS: [(&str, &str, &str); 3] = [
         "phy_rfpll_cap_track_new",
         "open_phy_rfpll_trace_track",
     ),
+    ("rom", "phy_set_rfpll_freq", "open_phy_rfpll_trace_program"),
 ];
 const CHANNEL_CLAIMS: [(&str, &str, &str); 2] = [
     (

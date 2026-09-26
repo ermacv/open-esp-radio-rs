@@ -166,11 +166,12 @@ pub const DECISIONS: &[Decision] = &[
     },
     Decision {
         reason: "async future bookkeeping attributed to signatures and closing braces: \
-            state-discriminant and local stores into the future frame and register restores; \
-            the probes poll each future to completion without suspension, so no resume reads \
-            them",
+            state-discriminant and local stores into the future frame, register restores, and \
+            the ready-flag take of a completed delay future at its `.await`; the probes poll \
+            each future to completion without suspension, so no resume reads them",
         places: &[
             ("target_port.rs", "}"),
+            ("target_port.rs", ".await;"),
             ("target_port/rfpll.rs", "}"),
             (
                 "target_port/temperature.rs",

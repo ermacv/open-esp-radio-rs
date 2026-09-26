@@ -94,6 +94,7 @@ mod registered_radio;
 pub mod registered_route;
 mod registered_wifi;
 mod retained;
+pub mod wifi_client;
 pub use registered_wifi::{
     RegisteredWifiPhy, RegisteredWifiPhyClientReleaseError, RegisteredWifiPhyClientReleaseFailure,
     WifiPhyMaintenanceRequest,

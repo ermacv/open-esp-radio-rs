@@ -6,6 +6,8 @@ pub mod baseband;
 
 pub mod channel;
 
+pub mod client;
+
 pub mod mac;
 
 #[cfg(feature = "validation-probes")]

@@ -245,6 +245,16 @@ pub struct WifiPartition {
     interrupts: MacInterruptSetup,
 }
 
+impl WifiPartition {
+    pub(crate) fn into_parts(self) -> (WifiMacPartition, MacInterruptSetup) {
+        (self.mac, self.interrupts)
+    }
+
+    pub(crate) const fn from_parts(mac: WifiMacPartition, interrupts: MacInterruptSetup) -> Self {
+        Self { mac, interrupts }
+    }
+}
+
 /// Bluetooth controller, modem low-power timer and interrupt partitions,
 /// taken from a concurrent split.
 #[must_use = "dropping a radio partition permanently loses its register authority"]

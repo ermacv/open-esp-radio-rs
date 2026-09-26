@@ -680,6 +680,28 @@ impl<T> SharedRadioLease<'_, T> {
         self.disable_slot(client_index(O::CLIENT), platform)
     }
 
+    /// Record whether Wi-Fi is initialized, as ESP-IDF's
+    /// `modem_clock_configure_wifi_status` does after `esp_wifi_init` and in
+    /// `esp_wifi_deinit`. While it is, disabling a module keeps the Wi-Fi
+    /// clock dependencies' hardware enabled.
+    ///
+    /// # Errors
+    ///
+    /// The modem clocks are poisoned.
+    pub fn set_wifi_initialized(
+        &mut self,
+        _owner: &WifiRadioRegisters,
+        initialized: bool,
+    ) -> Result<(), ModemClockError> {
+        match &mut self.state_mut().clocks {
+            ModemClocks::Ready { planner, .. } => {
+                planner.set_wifi_initialized(initialized);
+                Ok(())
+            }
+            ModemClocks::Poisoned { .. } | ModemClocks::InFlight => Err(ModemClockError::Poisoned),
+        }
+    }
+
     /// Enable a modem clock module of the shared PHY domain, with the same
     /// reference-counted transaction as a client's module.
     ///

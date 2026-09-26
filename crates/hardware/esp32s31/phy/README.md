@@ -216,6 +216,9 @@ serialized by one mechanism:
   `PHY_CALIBRATION`. A closed domain admits no client;
 - `acquire_client` and `release_client` enter and leave Wi-Fi, Bluetooth and
   IEEE 802.15.4 as clients of the one client set;
+  `wifi_client::join_wifi` and `leave_wifi` do this for Wi-Fi on the HAL's
+  clocked Wi-Fi owner (`esp_phy_enable`/`esp_phy_disable(PHY_MODEM_WIFI)`),
+  as `ieee802154_client` does for IEEE 802.15.4 with its BTBB reference;
 - `evaluate_periodic_tracking` and an acquisition that needs initial tracking
   leave the domain pending, and no client operation proceeds until it settles;
 - `admit_maintenance` checks, without register access, whether pending

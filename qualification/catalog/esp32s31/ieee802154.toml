@@ -471,7 +471,7 @@ section = "ieee802154-rx-tx-dataplane-and-acknowledgments"
 title = "Enhanced ACK TX"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The engine publishes an enhanced ACK for 2015 frames from the role's generator, a port of ESP-IDF's OpenThread generator: the [portable formatter](../../../../protocols/ieee802154/src/mac/enhanced_ack.rs) ports OpenThread GenerateEnhAck, and secured ACKs take the frame counter and the key-index-mode key from the radio's MAC keys with engine-armed transmit security. Header IEs are fixed caller bytes; CSL and link-metrics IE content, secured-ACK receive metadata and on-air qualification are absent."
+scope-and-limitations = "The engine publishes an enhanced ACK for 2015 frames from the role's generator, a port of ESP-IDF's OpenThread generator: the [portable formatter](../../../../protocols/ieee802154/src/mac/enhanced_ack.rs) ports OpenThread GenerateEnhAck, and secured ACKs take the frame counter and the key-index-mode key from the radio's MAC keys with engine-armed transmit security. Received frames report the frame-pending bit and the counter and key index of the secured ACK they were sent. Header IEs are fixed caller bytes; CSL and link-metrics IE content and on-air qualification are absent."
 
 [[items]]
 id = "ieee802154-filtering-addressing-and-mac-automation-hardware-frame-filtering"
@@ -601,7 +601,7 @@ section = "ieee802154-security-power-and-coexistence"
 title = "Hardware TX security"
 status = "partial"
 level = "composed-product"
-scope-and-limitations = "The engine programs address, key and payload offset for one secured transmission and clears security at its end. With the radio's MAC keys the role secures each attempt as ESP-IDF's OpenThread port does, taking the [frame counter and key](../../../../protocols/ieee802154/src/mac/security.rs) itself. Key derivation and CSL re-securing are not composed, and hardware security offload is not qualified on air."
+scope-and-limitations = "The engine programs address, key and payload offset for one secured transmission and clears security at its end. With the radio's MAC keys the role secures each attempt as ESP-IDF's OpenThread port does, taking the [frame counter and key](../../../../protocols/ieee802154/src/mac/security.rs) itself; a request keeps the counter of the stack's retransmission or leaves a frame the stack secured as given, and the completion reports the counter and key index written. Key derivation and CSL re-securing are not composed, and hardware security offload is not qualified on air."
 
 [[items]]
 id = "ieee802154-security-power-and-coexistence-rx-on-when-idle"
@@ -642,7 +642,7 @@ section = "ieee802154-product-stacks"
 title = "Thread"
 status = "host-only"
 level = "composed-product"
-scope-and-limitations = "The [OpenThread radio adapter](../../../../adapters/openthread/esp32s31/ieee802154/src/radio.rs) implements the openthread crate's Radio over the runtime, with OpenThread's SubMac running CSMA/CA, retries and security. No composition runs an OpenThread instance, and this matrix does not claim a production Thread integration."
+scope-and-limitations = "The [OpenThread radio adapter](../../../../adapters/openthread/esp32s31/ieee802154/src/radio.rs) implements the Radio trait of the repository's fork of the openthread crate over the runtime: OpenThread's SubMac runs CSMA/CA and retries and the radio secures frames and enhanced ACKs with OpenThread's keys, as ESP-IDF's OpenThread port does. The [Thread example](../../../../../examples/esp32s31/thread/README.md) runs an OpenThread end device; timed transmission and reception, CSL and on-air qualification are absent, and this matrix does not claim a production Thread integration."
 
 [[items]]
 id = "ieee802154-product-stacks-zigbee"

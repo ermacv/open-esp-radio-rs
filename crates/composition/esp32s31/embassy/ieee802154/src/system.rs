@@ -22,6 +22,7 @@ use oer_esp32s31_ieee802154::{
 };
 use oer_esp32s31_ieee802154_esp_hal::{
     BoundEspHalIeee802154InterruptRoute, EspHalIeee802154InterruptRouteError, bind, now_micros,
+    random,
 };
 use oer_esp32s31_ieee802154_runtime::{
     Ieee802154Platform, Ieee802154Runtime, Ieee802154RuntimeError, Ieee802154RuntimeParts,
@@ -394,7 +395,7 @@ pub async fn start<P, C: PlatformClockProvider>(
         engine,
         hardware: Ieee802154MacOwners::new(task, interrupts),
     };
-    let platform_services = Ieee802154Platform { now_micros };
+    let platform_services = Ieee802154Platform { now_micros, random };
     if let Err(parts) = RUNTIME.install(parts, platform_services, defaults) {
         let (mut task, interrupts) = parts.hardware.into_parts();
         let interrupts = interrupts.deactivate(&mut task);

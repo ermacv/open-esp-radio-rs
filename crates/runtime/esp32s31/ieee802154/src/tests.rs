@@ -4,14 +4,18 @@
 
 use std::boxed::Box;
 
-use embassy_futures::block_on;
+use embassy_futures::{
+    block_on,
+    select::{Either, select},
+};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_time::{Duration, Timer};
 use oer_esp32s31_hal::coex::{CoexEventId, CoexPti, CoexPtiTable};
 use oer_esp32s31_hal::ieee802154::{
     Ieee802154TxPowerLevels,
     coex::{Ieee802154CoexConfig, Ieee802154CoexPriorities, Ieee802154Coexistence},
-    ll::model::Ieee802154LlModel,
-    mac::Ieee802154Event,
+    ll::{Ieee802154LlCommand, model::Ieee802154LlModel},
+    mac::{Ieee802154Event, Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation},
 };
 use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, Ieee802154EngineBuffers};
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
@@ -27,7 +31,10 @@ use super::{
 
 static LEVELS: [i8; 1] = [0];
 
-const PLATFORM: Ieee802154Platform = Ieee802154Platform { now_micros: || 0 };
+const PLATFORM: Ieee802154Platform = Ieee802154Platform {
+    now_micros: || 0,
+    random: || 21,
+};
 
 /// 2006 data frame without an ACK request, as MAC bytes.
 const MAC: [u8; 10] = [0x41, 0x98, 0x01, 0x34, 0x12, 0xff, 0xff, 0x78, 0x56, 0xaa];
@@ -401,4 +408,54 @@ fn an_installed_enhanced_ack_generator_answers_2015_frames() {
         block_on(runtime.next_event()),
         Ok(Ieee802154RadioEvent::Received(frame)) if frame.frame.as_bytes() == mac
     ));
+}
+
+/// `next_event` runs the CSMA-CA backoff and then starts the CCA attempt; a
+/// busy channel backs off again, and the outcome arrives as usual.
+#[test]
+fn next_event_runs_csma_ca_backoffs() {
+    let runtime = enabled::<4>();
+    runtime
+        .submit(RadioCommand::Transmit(TxRequest {
+            id: RequestId::new(5),
+            frame: FrameView::new(&MAC).unwrap(),
+            channel: channel(20),
+            mode: TxMode::CsmaCa { max_backoffs: 3 },
+            transmit_power_dbm: None,
+        }))
+        .unwrap();
+    let command = || {
+        runtime
+            .installed
+            .lock(|installed| installed.borrow().as_ref().unwrap().hardware.command)
+    };
+    assert_ne!(command(), Some(Ieee802154LlCommand::CcaTxStart));
+    // The backoff (21 % 8 unit periods, 1.6 ms) ends within the wait.
+    let wait = || {
+        block_on(select(
+            runtime.next_event(),
+            Timer::after(Duration::from_millis(50)),
+        ))
+    };
+    assert!(matches!(wait(), Either::Second(())));
+    assert_eq!(command(), Some(Ieee802154LlCommand::CcaTxStart));
+
+    runtime.installed.lock(|installed| {
+        installed.borrow_mut().as_mut().unwrap().hardware.tx_abort =
+            Ieee802154TxAbortReasonObservation::Named(Ieee802154TxAbortReason::CcaBusy);
+    });
+    runtime.interrupt(None, &[Ieee802154Event::TxAbort]);
+    assert_ne!(command(), Some(Ieee802154LlCommand::CcaTxStart));
+    assert!(matches!(wait(), Either::Second(())));
+    assert_eq!(command(), Some(Ieee802154LlCommand::CcaTxStart));
+
+    runtime.interrupt(None, &[Ieee802154Event::TxDone]);
+    assert_eq!(
+        block_on(runtime.next_event()),
+        Ok(Ieee802154RadioEvent::TransmitDone {
+            id: RequestId::new(5),
+            status: TxStatus::Success,
+            acknowledgement: None,
+        })
+    );
 }

@@ -6,7 +6,7 @@ use std::{boxed::Box, vec, vec::Vec};
 
 use oer_esp32s31_hal::ieee802154::{
     Ieee802154TxPowerLevels,
-    ll::model::Ieee802154LlModel,
+    ll::{Ieee802154LlCommand, model::Ieee802154LlModel},
     mac::{
         Ieee802154Event, Ieee802154RxAbortReason, Ieee802154RxAbortReasonObservation,
         Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation,
@@ -16,8 +16,7 @@ use oer_esp32s31_ieee802154::engine::{Ieee802154Engine, Ieee802154EngineBuffers}
 use oer_esp32s31_ieee802154::pib::Ieee802154PibDefaults;
 use oer_ieee802154::{
     Channel, CommandError, Configuration, EnergyScanRequest, FramePending, FrameView, MacKeys,
-    RadioCapabilities, RadioCommand, RadioEvent, RadioState, RequestId, RestingState, TxMode,
-    TxRequest, TxStatus,
+    RadioCommand, RadioEvent, RadioState, RequestId, RestingState, TxMode, TxRequest, TxStatus,
 };
 
 use super::{
@@ -27,7 +26,10 @@ use super::{
 
 static LEVELS: [i8; 3] = [-9, 0, 10];
 
-const PLATFORM: Ieee802154Platform = Ieee802154Platform { now_micros: || 42 };
+const PLATFORM: Ieee802154Platform = Ieee802154Platform {
+    now_micros: || 42,
+    random: || 21,
+};
 
 /// Owned copy of one delivered event: the frame bytes and the event.
 #[derive(Debug, PartialEq)]
@@ -156,7 +158,7 @@ impl Bench {
 }
 
 #[test]
-fn csma_ca_is_not_advertised_and_admission_needs_enable() {
+fn admission_needs_enable() {
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let levels = Ieee802154TxPowerLevels::new(&LEVELS).unwrap();
     let engine = Ieee802154Engine::new(buffers, levels, Ieee802154PibDefaults::default());
@@ -171,15 +173,7 @@ fn csma_ca_is_not_advertised_and_admission_needs_enable() {
         ),
         Err(CommandError::Disabled)
     );
-
-    let mut bench = Bench::enabled();
-    assert_eq!(
-        bench.transmit(2, &DATA, 11, TxMode::CsmaCa { max_backoffs: 4 }),
-        Err(CommandError::Unsupported {
-            command: oer_ieee802154::CommandKind::Transmit,
-            required: RadioCapabilities::CSMA_CA,
-        })
-    );
+    assert_eq!(radio.state(), RadioState::Disabled);
 }
 
 #[test]
@@ -501,5 +495,157 @@ fn header_ies_are_bounded_by_the_port_capacity() {
     assert_eq!(
         generator.header_ies().len(),
         IEEE802154_ENHANCED_ACK_IE_CAPACITY
+    );
+}
+
+impl Bench {
+    fn tx_abort(&mut self, reason: Ieee802154TxAbortReason) {
+        self.hw.tx_abort = Ieee802154TxAbortReasonObservation::Named(reason);
+        self.interrupt(&[Ieee802154Event::TxAbort]);
+    }
+}
+
+/// `SubMac` backs off before each CCA attempt, receiving on the transmit
+/// channel while the radio receives when idle; a busy channel backs off
+/// again with a larger exponent, and success resumes the resting channel.
+#[test]
+fn a_csma_ca_transmission_backs_off_before_each_cca_attempt() {
+    let mut bench = Bench::enabled();
+    bench
+        .submit(RadioCommand::Receive {
+            id: RequestId::new(2),
+            channel: channel(15),
+        })
+        .unwrap();
+    bench
+        .transmit(3, &DATA, 20, TxMode::CsmaCa { max_backoffs: 4 })
+        .unwrap();
+    // Receive on the transmit channel during the backoff.
+    assert_eq!(bench.hw.channel().unwrap().number(), 20);
+    assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::RxStart));
+    // 21 % 2^3 unit periods of 320 us.
+    assert_eq!(bench.radio.take_csma_backoff(), Some(5 * 320));
+    assert_eq!(
+        bench.radio.take_csma_backoff(),
+        None,
+        "one timer per backoff"
+    );
+
+    bench.radio.csma_attempt(&mut bench.hw, &mut bench.sink);
+    assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::CcaTxStart));
+    bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
+    assert!(bench.seen().is_empty(), "a busy channel backs off again");
+    assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::RxStart));
+    // 21 % 2^4.
+    assert_eq!(bench.radio.take_csma_backoff(), Some(5 * 320));
+
+    bench.radio.csma_attempt(&mut bench.hw, &mut bench.sink);
+    bench.interrupt(&[Ieee802154Event::TxDone]);
+    assert_eq!(
+        bench.seen(),
+        [Seen::TransmitDone {
+            id: RequestId::new(3),
+            status: TxStatus::Success,
+            ack_pending: None
+        }]
+    );
+    assert_eq!(bench.hw.channel().unwrap().number(), 15);
+    assert_eq!(bench.radio.take_csma_backoff(), None);
+}
+
+/// A busy channel, an abort and a coexistence rejection are channel-access
+/// failures; after `max_backoffs` of them the next ends the transmission
+/// with a busy channel. A sleeping radio sleeps through its backoffs.
+#[test]
+fn channel_access_failures_end_with_a_busy_channel() {
+    let mut bench = Bench::enabled();
+    bench
+        .transmit(3, &DATA, 11, TxMode::CsmaCa { max_backoffs: 2 })
+        .unwrap();
+    assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::Stop));
+    for reason in [
+        Ieee802154TxAbortReason::CcaFailed,
+        Ieee802154TxAbortReason::TxCoexistenceBreak,
+    ] {
+        assert!(bench.radio.take_csma_backoff().is_some());
+        bench.radio.csma_attempt(&mut bench.hw, &mut bench.sink);
+        bench.tx_abort(reason);
+        assert!(bench.seen().is_empty());
+    }
+    assert!(bench.radio.take_csma_backoff().is_some());
+    bench.radio.csma_attempt(&mut bench.hw, &mut bench.sink);
+    bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
+    assert_eq!(
+        bench.seen(),
+        [Seen::TransmitDone {
+            id: RequestId::new(3),
+            status: TxStatus::ChannelBusy,
+            ack_pending: None
+        }]
+    );
+    assert_eq!(bench.radio.take_csma_backoff(), None);
+}
+
+/// Other transmit failures end the transmission at once.
+#[test]
+fn a_security_failure_ends_a_csma_ca_transmission() {
+    let mut bench = Bench::enabled();
+    bench
+        .transmit(3, &DATA, 11, TxMode::CsmaCa { max_backoffs: 4 })
+        .unwrap();
+    assert!(bench.radio.take_csma_backoff().is_some());
+    bench.radio.csma_attempt(&mut bench.hw, &mut bench.sink);
+    bench.tx_abort(Ieee802154TxAbortReason::TxSecurityError);
+    assert_eq!(
+        bench.seen(),
+        [Seen::TransmitDone {
+            id: RequestId::new(3),
+            status: TxStatus::SecurityFailure,
+            ack_pending: None
+        }]
+    );
+}
+
+/// Without backoffs the frame goes out at once with one CCA.
+#[test]
+fn no_backoffs_transmit_at_once_with_one_cca() {
+    let mut bench = Bench::enabled();
+    bench
+        .transmit(3, &DATA, 11, TxMode::CsmaCa { max_backoffs: 0 })
+        .unwrap();
+    assert_eq!(bench.hw.command, Some(Ieee802154LlCommand::CcaTxStart));
+    assert_eq!(bench.radio.take_csma_backoff(), None);
+    bench.tx_abort(Ieee802154TxAbortReason::CcaBusy);
+    assert_eq!(
+        bench.seen(),
+        [Seen::TransmitDone {
+            id: RequestId::new(3),
+            status: TxStatus::ChannelBusy,
+            ack_pending: None
+        }]
+    );
+}
+
+/// A frame received on the transmit channel during a backoff is delivered.
+#[test]
+fn a_frame_received_during_a_backoff_is_delivered() {
+    let mut bench = Bench::enabled();
+    bench
+        .submit(RadioCommand::Receive {
+            id: RequestId::new(2),
+            channel: channel(15),
+        })
+        .unwrap();
+    bench
+        .transmit(3, &DATA, 15, TxMode::CsmaCa { max_backoffs: 4 })
+        .unwrap();
+    bench.deliver(&DATA);
+    bench.interrupt(&[Ieee802154Event::RxDone]);
+    assert_eq!(
+        bench.seen(),
+        [Seen::Received {
+            mac: DATA.to_vec(),
+            channel: 15
+        }]
     );
 }

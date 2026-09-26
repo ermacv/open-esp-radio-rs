@@ -2591,6 +2591,7 @@ version = "0.1.0"
 dependencies = [
  "embassy-futures 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "oer-esp32s31-hal",
  "oer-esp32s31-ieee802154",
  "oer-esp32s31-ieee802154-radio",

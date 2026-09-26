@@ -11,19 +11,28 @@
 //! handler and every command run inside that lock. Portable events leave the
 //! lock as owned values through a bounded queue that any executor may await
 //! with [`Ieee802154Runtime::next_event`].
+//!
+//! CSMA-CA backoffs run on `embassy-time` inside
+//! [`Ieee802154Runtime::next_event`], as ESP-IDF's OpenThread `SubMac` runs
+//! them on its tasklet timer: a transmission waiting for the channel
+//! progresses while its consumer awaits events, which it must do to learn
+//! the outcome.
 
 #[cfg(test)]
 extern crate std;
 
 use core::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     sync::atomic::{AtomicBool, Ordering},
 };
 
+use embassy_futures::select::{Either3, select3};
 use embassy_sync::{
     blocking_mutex::{Mutex, raw::RawMutex},
     channel::Channel,
+    signal::Signal,
 };
+use embassy_time::{Duration, Instant, Timer};
 use oer_esp32s31_hal::ieee802154::{
     Ieee802154MultipanIndex, coex::Ieee802154Coexistence, ll::Ieee802154LowLevel,
 };
@@ -267,6 +276,10 @@ pub struct Ieee802154Runtime<'storage, M: RawMutex, H, const EVENTS: usize> {
     installed: Mutex<M, RefCell<Option<Installed<'storage, H>>>>,
     events: Channel<M, Ieee802154RadioEvent, EVENTS>,
     lost: AtomicBool,
+    /// When the running CSMA-CA backoff ends.
+    backoff_until: Mutex<M, Cell<Option<Instant>>>,
+    /// Raised when a backoff starts, so an awaiting consumer rearms.
+    backoff_started: Signal<M, ()>,
 }
 
 impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize> Default
@@ -286,6 +299,17 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
             installed: Mutex::new(RefCell::new(None)),
             events: Channel::new(),
             lost: AtomicBool::new(false),
+            backoff_until: Mutex::new(Cell::new(None)),
+            backoff_started: Signal::new(),
+        }
+    }
+
+    /// Start the backoff timer of a CSMA-CA transmission, if one is due.
+    fn start_backoff(&self, backoff_micros: Option<u32>) {
+        if let Some(micros) = backoff_micros {
+            let until = Instant::now() + Duration::from_micros(u64::from(micros));
+            self.backoff_until.lock(|backoff| backoff.set(Some(until)));
+            self.backoff_started.signal(());
         }
     }
 
@@ -346,6 +370,7 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         });
         while self.events.try_receive().is_ok() {}
         self.lost.store(false, Ordering::Release);
+        self.backoff_until.lock(|backoff| backoff.set(None));
         parts
     }
 
@@ -470,7 +495,12 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
     /// The platform interrupt handler (`ieee802154_isr`). Does nothing while
     /// no radio is installed.
     pub fn on_interrupt(&self) {
-        let _ = self.with_radio(|radio, port, sink| radio.isr(port, sink));
+        if let Ok(backoff) = self.with_radio(|radio, port, sink| {
+            radio.isr(port, sink);
+            radio.take_csma_backoff()
+        }) {
+            self.start_backoff(backoff);
+        }
     }
 
     /// Admit and start one portable command.
@@ -483,8 +513,12 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         &self,
         command: RadioCommand<'_>,
     ) -> Result<AcceptedCommand, Ieee802154RuntimeError> {
-        self.with_radio(|radio, port, sink| radio.submit(port, command, sink))?
-            .map_err(Ieee802154RuntimeError::Rejected)
+        let (accepted, backoff) = self.with_radio(|radio, port, sink| {
+            let accepted = radio.submit(port, command, sink);
+            (accepted, radio.take_csma_backoff())
+        })?;
+        self.start_backoff(backoff);
+        accepted.map_err(Ieee802154RuntimeError::Rejected)
     }
 
     /// The portable state.
@@ -496,16 +530,41 @@ impl<'storage, M: RawMutex, H: Ieee802154LowLevel, const EVENTS: usize>
         self.with_radio(|radio, _, _| radio.state())
     }
 
-    /// Wait for the next event.
+    /// Wait for the next event, running the backoff of a CSMA-CA
+    /// transmission meanwhile: when it ends, the transmission's next CCA
+    /// attempt starts. Cancelling the wait keeps the backoff for the next
+    /// call.
     ///
     /// # Errors
     ///
     /// Reports once that the queue overflowed before the events after it.
     pub async fn next_event(&self) -> Result<Ieee802154RadioEvent, Ieee802154EventsLost> {
-        if self.lost.swap(false, Ordering::AcqRel) {
-            return Err(Ieee802154EventsLost);
+        loop {
+            if self.lost.swap(false, Ordering::AcqRel) {
+                return Err(Ieee802154EventsLost);
+            }
+            let until = self.backoff_until.lock(Cell::get);
+            let backoff = async {
+                match until {
+                    Some(until) => Timer::at(until).await,
+                    None => core::future::pending().await,
+                }
+            };
+            match select3(self.events.receive(), backoff, self.backoff_started.wait()).await {
+                Either3::First(event) => return Ok(event),
+                Either3::Second(()) => {
+                    self.backoff_until.lock(|backoff| backoff.set(None));
+                    if let Ok(backoff) = self.with_radio(|radio, port, sink| {
+                        radio.csma_attempt(port, sink);
+                        radio.take_csma_backoff()
+                    }) {
+                        self.start_backoff(backoff);
+                    }
+                }
+                // A backoff started; wait for its end instead.
+                Either3::Third(()) => {}
+            }
         }
-        Ok(self.events.receive().await)
     }
 
     /// Read or change the frame-pending table.

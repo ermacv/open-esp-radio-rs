@@ -56,6 +56,13 @@ keys and frame counter that secure the ACK of a secured frame; the stack
 takes the frame counters of its own secured transmissions from the same
 `MacKeys`. Each `start` begins without a generator.
 
+CSMA-CA transmissions follow OpenThread `SubMac` over the one-CCA radio: a
+random backoff before each CCA attempt, receiving on the transmit channel
+when the radio was receiving, and another backoff while the channel is busy.
+The backoff timers run inside `Ieee802154SystemRuntime::next_event`, so the
+consumer must await events while a transmission waits for the channel; the
+random words come from the hardware generator.
+
 The shared radio is a software-coexistence build, so the MAC takes part in
 coexistence as the vendor driver does with `CONFIG_ESP_COEX_SW_COEXIST_ENABLE`:
 `start` reads the arbiter's coexistence table once and the engine publishes

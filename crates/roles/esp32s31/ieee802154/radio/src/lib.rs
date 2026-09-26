@@ -29,18 +29,19 @@ use oer_esp32s31_ieee802154::engine::{
     Ieee802154FrameInfo, Ieee802154ReceivedAck, Ieee802154RxSlot, Ieee802154TxError,
 };
 use oer_ieee802154::{
-    AcceptedCommand, Channel, CommandError, Configuration, FcsStatus, FramePending, FrameView,
-    MacKeys, RadioCapabilities, RadioCommand, RadioEvent, RadioFault, RadioState,
+    AcceptedCommand, Channel, CommandError, Configuration, CsmaCa, FcsStatus, FramePending,
+    FrameView, MacKeys, RadioCapabilities, RadioCommand, RadioEvent, RadioFault, RadioState,
     RadioStateMachine, RadioTimestamp, ReceivedFrame, RequestId, RestingState, RxMetadata,
     SecurityStatus, TxMode, TxStatus, generate_enhanced_ack,
 };
 
-/// The portable capabilities the engine implements.
+/// The portable capabilities the role implements.
 ///
-/// CSMA/CA, security offload and source matching have no portable command
-/// yet and are not advertised.
+/// Security offload and source matching have no portable command yet and
+/// are not advertised.
 pub const IEEE802154_RADIO_CAPABILITIES: RadioCapabilities = RadioCapabilities::NONE
     .union(RadioCapabilities::CLEAR_CHANNEL_ASSESSMENT)
+    .union(RadioCapabilities::CSMA_CA)
     .union(RadioCapabilities::ENERGY_SCAN)
     .union(RadioCapabilities::HARDWARE_ACKNOWLEDGEMENT)
     .union(RadioCapabilities::SCHEDULED_TRANSMIT)
@@ -158,6 +159,45 @@ pub struct Ieee802154Platform {
     /// truncates it to the vendor's wrapping 32-bit timer domain, and receive
     /// timestamps use it as the radio epoch.
     pub now_micros: fn() -> u64,
+    /// A uniform random word for each CSMA-CA backoff, as OpenThread draws
+    /// one from its non-cryptographic generator.
+    pub random: fn() -> u32,
+}
+
+/// Where a CSMA-CA transmission stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CsmaPhase {
+    /// A backoff must start: [`Ieee802154Radio::take_csma_backoff`].
+    BackoffDue,
+    /// The backoff runs; [`Ieee802154Radio::csma_attempt`] ends it.
+    BackingOff,
+    /// A CCA attempt is on the air.
+    Attempting,
+}
+
+/// A CSMA-CA transmission, as OpenThread `SubMac` runs one over a radio
+/// that performs a single CCA per transmission.
+struct CsmaTransmission {
+    /// The `[PHR, MAC..., FCS]` image each attempt transmits.
+    image: [u8; FRAME_SIZE],
+    csma: CsmaCa,
+    phase: CsmaPhase,
+}
+
+impl CsmaTransmission {
+    fn image(&self) -> &[u8] {
+        &self.image[..=usize::from(self.image[0])]
+    }
+}
+
+/// What the role does after a notification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Follow {
+    Nothing,
+    /// Resume receive on the resting channel an operation left.
+    Restore(Ieee802154Channel),
+    /// A busy channel backs a CSMA-CA transmission off again.
+    Backoff,
 }
 
 /// Receives the correlated portable events of one entry. Frames are lent
@@ -266,6 +306,20 @@ impl Ieee802154Environment for Collector<'_> {
     }
 }
 
+/// Receive on the transmission's channel during a CSMA-CA backoff when the
+/// radio receives when idle, otherwise sleep (`SubMac::StartTimerForBackoff`).
+fn idle_for_backoff<L, E>(engine: &mut Ieee802154Engine<'_>, ll: &mut L, env: &mut E)
+where
+    L: Ieee802154LowLevel + ?Sized,
+    E: Ieee802154Environment + ?Sized,
+{
+    if engine.pib().rx_when_idle() {
+        engine.receive(ll, env);
+    } else {
+        engine.sleep(ll, env);
+    }
+}
+
 const fn tx_status(error: Ieee802154TxError) -> TxStatus {
     match error {
         Ieee802154TxError::CcaBusy => TxStatus::ChannelBusy,
@@ -329,6 +383,7 @@ pub struct Ieee802154Radio<'storage> {
     machine: RadioStateMachine,
     platform: Ieee802154Platform,
     enhanced_ack: Option<Ieee802154EnhancedAckGenerator>,
+    csma: Option<CsmaTransmission>,
 }
 
 impl<'storage> Ieee802154Radio<'storage> {
@@ -340,6 +395,7 @@ impl<'storage> Ieee802154Radio<'storage> {
             machine: RadioStateMachine::new(IEEE802154_RADIO_CAPABILITIES),
             platform,
             enhanced_ack: None,
+            csma: None,
         }
     }
 
@@ -417,6 +473,7 @@ impl<'storage> Ieee802154Radio<'storage> {
                 // The PHR counts the two FCS bytes the hardware appends.
                 image[0] = (bytes.len() + 2) as u8;
                 image[1..=bytes.len()].copy_from_slice(bytes);
+                let stored = image;
                 let image = &image[..bytes.len() + 3];
                 let started = match request.mode {
                     TxMode::Direct => engine.transmit(ll, &mut collector, image, false),
@@ -426,8 +483,26 @@ impl<'storage> Ieee802154Radio<'storage> {
                     TxMode::Scheduled { at } => {
                         engine.transmit_at(ll, &mut collector, image, false, at.as_micros() as u32)
                     }
-                    TxMode::CsmaCa { .. } => {
-                        unreachable!("CSMA/CA is not advertised, so admission rejects it")
+                    // `SubMac::StartCsmaBackoff`: back off first, or transmit
+                    // with one CCA when no backoff is allowed.
+                    TxMode::CsmaCa { max_backoffs } => {
+                        let csma = CsmaCa::new(max_backoffs);
+                        let backs_off = csma.backoff_micros(0).is_some();
+                        self.csma = Some(CsmaTransmission {
+                            image: stored,
+                            csma,
+                            phase: if backs_off {
+                                CsmaPhase::BackoffDue
+                            } else {
+                                CsmaPhase::Attempting
+                            },
+                        });
+                        if backs_off {
+                            idle_for_backoff(engine, ll, &mut collector);
+                            Ok(())
+                        } else {
+                            engine.transmit(ll, &mut collector, image, true)
+                        }
                     }
                 };
                 started.expect("a validated MAC frame fits one DMA frame");
@@ -449,6 +524,53 @@ impl<'storage> Ieee802154Radio<'storage> {
         let notifications = collector.notifications;
         self.deliver(ll, notifications, Some(flushed_on), sink);
         Ok(accepted)
+    }
+
+    /// The backoff a CSMA-CA transmission must wait now, in microseconds
+    /// (`SubMac::StartTimerForBackoff`); the caller runs the timer and then
+    /// calls [`Self::csma_attempt`]. `None` when no backoff is due.
+    pub fn take_csma_backoff(&mut self) -> Option<u32> {
+        let transmission = self.csma.as_mut()?;
+        if transmission.phase != CsmaPhase::BackoffDue {
+            return None;
+        }
+        transmission.phase = CsmaPhase::BackingOff;
+        transmission.csma.backoff_micros((self.platform.random)())
+    }
+
+    /// End the running CSMA-CA backoff: transmit with one CCA
+    /// (`SubMac::BeginTransmit`), and deliver the events the start produced.
+    pub fn csma_attempt<L: Ieee802154LowLevel + ?Sized, S: Ieee802154RadioSink + ?Sized>(
+        &mut self,
+        ll: &mut L,
+        sink: &mut S,
+    ) {
+        let Some(transmission) = self
+            .csma
+            .as_mut()
+            .filter(|transmission| transmission.phase == CsmaPhase::BackingOff)
+        else {
+            return;
+        };
+        transmission.phase = CsmaPhase::Attempting;
+        let receiving = self.backoff_receive_channel();
+        let mut collector = Collector::new(self.platform, &mut self.enhanced_ack);
+        let transmission = self.csma.as_ref().expect("the attempt's transmission");
+        self.engine
+            .transmit(ll, &mut collector, transmission.image(), true)
+            .expect("a validated MAC frame fits one DMA frame");
+        let notifications = collector.notifications;
+        self.deliver(ll, notifications, Some(receiving), sink);
+    }
+
+    /// The channel a backoff receives on, when the radio receives when idle.
+    fn backoff_receive_channel(&mut self) -> Option<Channel> {
+        let pib = self.engine.pib();
+        if pib.rx_when_idle() {
+            Channel::new(pib.channel().number()).ok()
+        } else {
+            None
+        }
     }
 
     /// The engine interrupt handler; deliver the events it produced.
@@ -477,33 +599,44 @@ impl<'storage> Ieee802154Radio<'storage> {
         let mut pending = notifications;
         let mut flushed = flushed;
         loop {
-            let mut restore = None;
+            let mut follow = Follow::Nothing;
             for notification in pending.into_iter().flatten() {
-                if let Some(channel) = self.translate(notification, flushed, sink) {
-                    restore = Some(channel);
+                match self.translate(notification, flushed, sink) {
+                    Follow::Nothing => {}
+                    next => follow = next,
                 }
             }
-            let Some(channel) = restore else {
-                return;
-            };
-            // Resume receive on the resting channel an operation left.
-            let mut collector = Collector::new(self.platform, &mut self.enhanced_ack);
-            let previous = self.engine.pib().channel();
-            self.engine.pib().set_channel(channel);
-            self.engine.receive(ll, &mut collector);
-            pending = collector.notifications;
-            flushed = Channel::new(previous.number()).ok().map(Some);
+            match follow {
+                Follow::Nothing => return,
+                Follow::Restore(channel) => {
+                    // Resume receive on the resting channel an operation left.
+                    let mut collector = Collector::new(self.platform, &mut self.enhanced_ack);
+                    let previous = self.engine.pib().channel();
+                    self.engine.pib().set_channel(channel);
+                    self.engine.receive(ll, &mut collector);
+                    pending = collector.notifications;
+                    flushed = Channel::new(previous.number()).ok().map(Some);
+                }
+                Follow::Backoff => {
+                    let receiving = self.backoff_receive_channel();
+                    let mut collector = Collector::new(self.platform, &mut self.enhanced_ack);
+                    idle_for_backoff(&mut self.engine, ll, &mut collector);
+                    pending = collector.notifications;
+                    flushed = Some(receiving);
+                }
+            }
         }
     }
 
-    /// Deliver one notification; return the channel to resume receive on
-    /// when a terminal event left the engine on another channel.
+    /// Deliver one notification, and say what follows it: resuming receive
+    /// on the resting channel a terminal event left, or another CSMA-CA
+    /// backoff.
     fn translate<S: Ieee802154RadioSink + ?Sized>(
         &mut self,
         notification: Notification,
         flushed: Option<Option<Channel>>,
         sink: &mut S,
-    ) -> Option<Ieee802154Channel> {
+    ) -> Follow {
         let id = match self.machine.state() {
             RadioState::Transmitting { id, .. }
             | RadioState::EnergyScanning { id, .. }
@@ -520,7 +653,7 @@ impl<'storage> Ieee802154Radio<'storage> {
                     }
                 }
                 let _ = self.engine.receive_handle_done(slot);
-                None
+                Follow::Nothing
             }
             Notification::Transmitted(ack) => {
                 let restore = match id {
@@ -537,7 +670,7 @@ impl<'storage> Ieee802154Radio<'storage> {
                     }
                     None => {
                         self.fault(sink);
-                        None
+                        Follow::Nothing
                     }
                 };
                 if let Some(slot) = ack {
@@ -548,12 +681,31 @@ impl<'storage> Ieee802154Radio<'storage> {
             Notification::TransmitFailed(error) => {
                 let Some(id) = id else {
                     self.fault(sink);
-                    return None;
+                    return Follow::Nothing;
+                };
+                // ESP-IDF's OpenThread port reports a busy channel, an abort
+                // and a coexistence rejection as a channel-access failure,
+                // which `SubMac` backs off from while backoffs remain.
+                let channel_access = matches!(
+                    error,
+                    Ieee802154TxError::CcaBusy
+                        | Ieee802154TxError::Abort
+                        | Ieee802154TxError::Coexist
+                );
+                let status = match self.csma.as_mut() {
+                    Some(transmission) if channel_access => {
+                        if transmission.csma.channel_busy() {
+                            transmission.phase = CsmaPhase::BackoffDue;
+                            return Follow::Backoff;
+                        }
+                        TxStatus::ChannelBusy
+                    }
+                    _ => tx_status(error),
                 };
                 self.finish(
                     RadioEvent::TransmitDone {
                         id,
-                        status: tx_status(error),
+                        status,
                         acknowledgement: None,
                     },
                     sink,
@@ -562,7 +714,7 @@ impl<'storage> Ieee802154Radio<'storage> {
             Notification::EnergyDetected(power) => {
                 let Some(id) = id else {
                     self.fault(sink);
-                    return None;
+                    return Follow::Nothing;
                 };
                 self.finish(
                     RadioEvent::EnergyScanDone {
@@ -575,7 +727,7 @@ impl<'storage> Ieee802154Radio<'storage> {
             Notification::ClearChannelAssessed { busy } => {
                 let Some(id) = id else {
                     self.fault(sink);
-                    return None;
+                    return Follow::Nothing;
                 };
                 self.finish(
                     RadioEvent::ClearChannelAssessmentDone { id, idle: !busy },
@@ -591,7 +743,7 @@ impl<'storage> Ieee802154Radio<'storage> {
                 }
                 _ => {
                     self.fault(sink);
-                    None
+                    Follow::Nothing
                 }
             },
         }
@@ -603,24 +755,26 @@ impl<'storage> Ieee802154Radio<'storage> {
         &mut self,
         event: RadioEvent<'_>,
         sink: &mut S,
-    ) -> Option<Ieee802154Channel> {
+    ) -> Follow {
+        self.csma = None;
         let operation_channel = self.engine.pib().channel();
         if self.machine.observe(event).is_err() {
             self.fault(sink);
-            return None;
+            return Follow::Nothing;
         }
         sink.event(event);
         match self.machine.state() {
             RadioState::Resting(RestingState::Receiving { channel })
                 if hal_channel(channel) != operation_channel =>
             {
-                Some(hal_channel(channel))
+                Follow::Restore(hal_channel(channel))
             }
-            _ => None,
+            _ => Follow::Nothing,
         }
     }
 
     fn fault<S: Ieee802154RadioSink + ?Sized>(&mut self, sink: &mut S) {
+        self.csma = None;
         let id: Option<RequestId> = match self.machine.state() {
             RadioState::Transmitting { id, .. }
             | RadioState::EnergyScanning { id, .. }

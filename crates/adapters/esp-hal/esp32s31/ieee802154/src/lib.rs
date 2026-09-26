@@ -2,7 +2,8 @@
 //!
 //! The typed esp-hal interrupt identifies the IEEE 802.15.4 MAC route. This
 //! adapter keeps its priority, bound core and process-wide claim behind one
-//! affine owner, and supplies the microsecond clock the MAC engine reads.
+//! affine owner, and supplies the microsecond clock the MAC engine reads and
+//! the random words of CSMA-CA backoffs.
 //! The MAC owners live in the IEEE 802.15.4 runtime: the handler bound here
 //! calls the runtime's interrupt entry.
 //!
@@ -21,6 +22,7 @@ use critical_section::Mutex;
 use esp_hal::{
     interrupt::{self, InterruptHandler, Priority},
     peripherals::Interrupt,
+    rng::Rng,
     system::Cpu,
     time::Instant,
 };
@@ -33,6 +35,12 @@ const ROUTE_PRIORITY: Priority = Priority::Priority1;
 /// `esp_hal::init` must have run before the clock is sampled.
 pub fn now_micros() -> u64 {
     Instant::now().duration_since_epoch().as_micros()
+}
+
+/// A random word from the hardware generator, for CSMA-CA backoffs where
+/// ESP-IDF's OpenThread draws from its non-cryptographic generator.
+pub fn random() -> u32 {
+    Rng::new().random()
 }
 
 static ROUTE_CLAIMED: Mutex<Cell<bool>> = Mutex::new(Cell::new(false));

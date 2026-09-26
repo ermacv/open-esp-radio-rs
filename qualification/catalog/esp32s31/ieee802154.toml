@@ -255,7 +255,7 @@ id = "ieee802154-capability-sources-and-publication-scope"
 domain = "ieee802154"
 title = "Capability sources and publication scope"
 source-document = "crates/hardware/esp32s31/driver/ieee802154/FEATURES.md"
-overview = "The [ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)\ndefines the hardware inventory. The [ESP-IDF IEEE 802.15.4 API](https://github.com/espressif/esp-idf/blob/master/components/ieee802154/include/esp_ieee802154.h)\nalso describes vendor operations such as timed RX/TX, source matching and\nsecurity; a vendor API is not evidence of an open S31 implementation.\n\n[Portable `RadioCapabilities`](../../../../protocols/ieee802154/src/radio/capabilities.rs)\nis a vocabulary. The [radio role](../../../../roles/esp32s31/ieee802154/radio/src/lib.rs)\nadvertises the subset the engine implements; `CSMA_CA`, `SECURITY_OFFLOAD` and\n`SOURCE_MATCH` are not advertised. An advertised capability is source coverage,\nnot RF qualification.\n\nThe [runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs) admits portable\ncommands through the role, which starts the operations of the [MAC engine](src/engine.rs)\nported from the public ESP-IDF driver. These are runtime entry points, not a\ncomplete public RF-ready service, and CCA-gated transmission is not a CSMA/CA\nscheduler."
+overview = "The [ESP32-S31 datasheet v0.5, section 4.3.5](https://www.espressif.com/sites/default/files/documentation/esp32-s31_datasheet_en.pdf)\ndefines the hardware inventory. The [ESP-IDF IEEE 802.15.4 API](https://github.com/espressif/esp-idf/blob/master/components/ieee802154/include/esp_ieee802154.h)\nalso describes vendor operations such as timed RX/TX, source matching and\nsecurity; a vendor API is not evidence of an open S31 implementation.\n\n[Portable `RadioCapabilities`](../../../../protocols/ieee802154/src/radio/capabilities.rs)\nis a vocabulary. The [radio role](../../../../roles/esp32s31/ieee802154/radio/src/lib.rs)\nadvertises the subset it implements; `SECURITY_OFFLOAD` and `SOURCE_MATCH` are\nnot advertised. An advertised capability is source coverage,\nnot RF qualification.\n\nThe [runtime](../../../../runtime/esp32s31/ieee802154/src/lib.rs) admits portable\ncommands through the role, which starts the operations of the [MAC engine](src/engine.rs)\nported from the public ESP-IDF driver. These are runtime entry points, not a\ncomplete public RF-ready service; CSMA/CA backoffs run in the runtime's event\nwait."
 packages = [
     "oer-ieee802154",
     "oer-esp32s31-ieee802154-runtime",
@@ -402,9 +402,9 @@ scope-and-limitations = "The engine issues the CCA-then-TX command and reports C
 id = "ieee802154-cca-and-channel-access-csma-ca"
 section = "ieee802154-cca-and-channel-access"
 title = "CSMA/CA"
-status = "absent"
+status = "partial"
 level = "composed-product"
-scope-and-limitations = "No random backoff, contention/retry state or CSMA/CA transmission owner exists. A single CCA-gated command is not CSMA/CA."
+scope-and-limitations = "Unslotted CSMA/CA as ESP-IDF's OpenThread SubMac runs it over the one-CCA radio: the [portable backoff](../../../../protocols/ieee802154/src/mac/csma.rs), the radio role's CCA attempts with receive on the transmit channel during backoffs, and backoff timers in the runtime's event wait. Frame retransmission, slotted CSMA/CA and on-air qualification are absent."
 
 [[items]]
 id = "ieee802154-cca-and-channel-access-active-scan"
@@ -803,7 +803,7 @@ id = "ieee802154-source-lower-runtime-entry-points"
 section = "ieee802154-capability-sources-and-publication-scope"
 title = "Runtime operation entry points"
 kind = "source-reference"
-details = "Portable commands start the ported vendor operations through the role; they do not establish a complete public RF-ready service, and CCA-gated transmission is not a CSMA/CA scheduler."
+details = "Portable commands start the ported vendor operations through the role; they do not establish a complete public RF-ready service. CSMA/CA transmissions back off in the runtime's event wait."
 packages = [
     "oer-esp32s31-ieee802154-runtime",
     "oer-esp32s31-ieee802154-radio",

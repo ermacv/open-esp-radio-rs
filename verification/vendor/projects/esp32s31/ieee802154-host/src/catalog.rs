@@ -279,6 +279,108 @@ fn transmit_with_security() -> Vec<Step> {
     ]
 }
 
+/// Interface 0 owns PAN 0x1234 / short 0x0001, interface 1 PAN 0xabcd /
+/// short 0x1111; interface 1 sets the pending bit for source 0x5678.
+#[cfg(feature = "multipan")]
+fn multipan_identities() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::SetMultipanPanId {
+            index: 0,
+            panid: 0x1234,
+        },
+        Step::SetMultipanShortAddress {
+            index: 0,
+            address: 0x0001,
+        },
+        Step::SetMultipanPanId {
+            index: 1,
+            panid: 0xabcd,
+        },
+        Step::SetMultipanShortAddress {
+            index: 1,
+            address: 0x1111,
+        },
+        Step::SetMultipanExtendedAddress {
+            index: 1,
+            address: [1, 2, 3, 4, 5, 6, 7, 8],
+        },
+        Step::MultipanSetPendingMode { index: 1, mode: 1 },
+        Step::MultipanAddPendingAddress {
+            index: 1,
+            address: vec![0x78, 0x56],
+            short: true,
+        },
+    ]
+}
+
+/// A received data frame requesting an ACK to short `destination` in PAN
+/// `panid`, RSSI -55 and LQI 180.
+#[cfg(feature = "multipan")]
+fn received_frame_to(panid: u16, destination: [u8; 2]) -> Vec<u8> {
+    let mut frame = received_data_frame();
+    frame[4..6].copy_from_slice(&panid.to_le_bytes());
+    frame[6..8].copy_from_slice(&destination);
+    frame
+}
+
+#[cfg(feature = "multipan")]
+fn multipan_receive_routes_to_interface() -> Vec<Step> {
+    let mut steps = multipan_identities();
+    steps.extend([
+        Step::MultipanRxWhenIdle {
+            index: 1,
+            enable: true,
+        },
+        Step::MultipanReceive(1),
+        Step::DeliverFrame(received_frame_to(0xabcd, [0x11, 0x11])),
+        interrupt(event::RX_DONE),
+        interrupt(event::ACK_TX_DONE),
+        Step::DeliverFrame(received_frame_to(0x1234, [0x01, 0x00])),
+        interrupt(event::RX_DONE),
+        interrupt(event::ACK_TX_DONE),
+    ]);
+    steps
+}
+
+#[cfg(feature = "multipan")]
+fn multipan_unmatched_and_broadcast() -> Vec<Step> {
+    let mut steps = multipan_identities();
+    steps.extend([
+        Step::MultipanRxWhenIdle {
+            index: 0,
+            enable: true,
+        },
+        Step::MultipanReceive(0),
+        Step::DeliverFrame(received_frame_to(0x9999, [0x11, 0x11])),
+        interrupt(event::RX_DONE),
+        interrupt(event::ACK_TX_DONE),
+        Step::DeliverFrame(received_frame_to(0xabcd, [0xff, 0xff])),
+        interrupt(event::RX_DONE),
+    ]);
+    steps
+}
+
+#[cfg(feature = "multipan")]
+fn multipan_last_interface_sleeps() -> Vec<Step> {
+    vec![
+        Step::Enable,
+        Step::SetMultipanEnable(0),
+        Step::MultipanReceive(0),
+        Step::MultipanReceive(1),
+        Step::MultipanSleep(0),
+        Step::MultipanSleep(1),
+        Step::MultipanRxWhenIdle {
+            index: 1,
+            enable: true,
+        },
+        Step::MultipanRxWhenIdle {
+            index: 1,
+            enable: false,
+        },
+    ]
+}
+
 fn sleep_after_receive() -> Vec<Step> {
     vec![Step::Enable, Step::Receive, Step::Sleep, Step::Sleep]
 }
@@ -514,5 +616,23 @@ pub const SCENARIOS: &[Scenario] = &[
         name: "sleep-after-receive",
         inputs: no_inputs,
         steps: sleep_after_receive,
+    },
+    #[cfg(feature = "multipan")]
+    Scenario {
+        name: "multipan-receive-routes-to-interface",
+        inputs: no_inputs,
+        steps: multipan_receive_routes_to_interface,
+    },
+    #[cfg(feature = "multipan")]
+    Scenario {
+        name: "multipan-unmatched-and-broadcast",
+        inputs: no_inputs,
+        steps: multipan_unmatched_and_broadcast,
+    },
+    #[cfg(feature = "multipan")]
+    Scenario {
+        name: "multipan-last-interface-sleeps",
+        inputs: no_inputs,
+        steps: multipan_last_interface_sleeps,
     },
 ];

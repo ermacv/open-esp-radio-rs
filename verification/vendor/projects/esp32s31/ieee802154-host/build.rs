@@ -30,15 +30,18 @@ const INCLUDE_DIRS: &[&str] = &[
 
 struct Source {
     path: String,
+    requires: Option<String>,
     sha256: String,
 }
 
 /// Read the `[[source]]` entries of the ledger. The ledger is a flat list of
-/// `path`/`sha256` pairs; any other key is rejected rather than ignored.
+/// `path`/`sha256` pairs, optionally with the Cargo feature (`requires`) that
+/// compiles a translation unit; any other key is rejected rather than ignored.
 fn ledger(text: &str) -> (String, Vec<Source>) {
     let mut revision = None;
     let mut sources = Vec::new();
     let mut path = None;
+    let mut requires = None;
     for line in text.lines().map(str::trim) {
         if line.is_empty() || line.starts_with('#') || line == "[[source]]" {
             continue;
@@ -50,8 +53,10 @@ fn ledger(text: &str) -> (String, Vec<Source>) {
         match key.trim() {
             "revision" => revision = Some(value),
             "path" => path = Some(value),
+            "requires" => requires = Some(value),
             "sha256" => sources.push(Source {
                 path: path.take().expect("sha256 must follow its path"),
+                requires: requires.take(),
                 sha256: value,
             }),
             other => panic!("unknown ledger key: {other}"),
@@ -248,7 +253,21 @@ fn main() {
     for dir in INCLUDE_DIRS {
         build.include(idf.join(dir));
     }
-    for source in sources.iter().filter(|source| source.path.ends_with(".c")) {
+    // `multipan` reproduces `CONFIG_IEEE802154_MULTI_PAN_ENABLE=y` with the
+    // Kconfig default of two interfaces.
+    let multipan = env::var_os("CARGO_FEATURE_MULTIPAN").is_some();
+    if multipan {
+        build
+            .define("CONFIG_IEEE802154_MULTI_PAN_ENABLE", "1")
+            .define("CONFIG_IEEE802154_INTERFACE_NUM", "2");
+    }
+    for source in sources.iter().filter(|source| {
+        source.path.ends_with(".c")
+            && source
+                .requires
+                .as_deref()
+                .is_none_or(|feature| feature == "multipan" && multipan)
+    }) {
         build.file(idf.join(&source.path));
     }
     build

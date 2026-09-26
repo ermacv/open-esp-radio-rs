@@ -64,6 +64,15 @@ path = "components/ieee802154/esp_ieee802154.c"
 sha256 = "a83716d9944d4ffba1998cc64ebb635a605b60fc77c74ae6070e83a1c617f1bc"
 
 [[source]]
+path = "components/ieee802154/esp_ieee802154_multipan.c"
+requires = "multipan"
+sha256 = "4a82ff4a9b1eac7158ecc3c06e800ea1a844c6b2f87ff773fcd55c3cf9552aa3"
+
+[[source]]
+path = "components/ieee802154/include/esp_ieee802154_multipan.h"
+sha256 = "4c040a3b38769a2e697f65f21b04ea84d93f3de9048be27977b8e61b55777146"
+
+[[source]]
 path = "components/ieee802154/include/esp_ieee802154.h"
 sha256 = "244f330affef9e4d4383275c678bfb2a0a5027725ffa8ebf1266897db2ca1e59"
 

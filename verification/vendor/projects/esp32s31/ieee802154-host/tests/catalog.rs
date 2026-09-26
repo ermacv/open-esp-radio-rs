@@ -95,6 +95,9 @@ fn enable_follows_the_public_order_and_mac_init() {
 /// an ACK-requesting frame starts the 200 ms timer-zero watchdog and
 /// `ACK_RX_DONE` stops it before reporting the ACK (esp_ieee802154_dev.c
 /// L507-L536, L595-L602, L992-L1026).
+// The default build's trace; multi-PAN adds identity reads and interface
+// indices.
+#[cfg(not(feature = "multipan"))]
 #[test]
 fn transmit_with_ack_arms_and_disarms_the_ack_watchdog() {
     assert_subsequence(
@@ -113,7 +116,7 @@ fn transmit_with_ack_arms_and_disarms_the_ack_watchdog() {
             "ll ieee802154_ll_clear_events(0x8)",
             "ll ieee802154_ll_set_cmd(0x4d)",
             "ll ieee802154_ll_disable_events(0x100)",
-            "event transmit_done(0x0, 0x1, 0xb, 0xffffffffffffffc4, 0xc8, 0x0, 0x1) \
+            "event transmit_done(0x0, 0x1, 0xb, 0xffffffffffffffc4, 0xc8, 0x0, 0x1, 0x0) \
              [0c6188013412ffff7856aa0000] [05020001c4c8]",
         ],
     );
@@ -142,6 +145,9 @@ fn receive_crc_error_restarts_into_the_same_buffer() {
 /// bit before the ACK leaves; `ACK_TX_DONE` delivers the frame and
 /// `next_operation` re-arms receive into the next buffer
 /// (esp_ieee802154_dev.c L538-L593).
+// The default build's trace; multi-PAN adds identity reads and interface
+// indices.
+#[cfg(not(feature = "multipan"))]
 #[test]
 fn receive_with_auto_ack_selects_pending_before_the_ack() {
     assert_subsequence(
@@ -152,7 +158,7 @@ fn receive_with_auto_ack_selects_pending_before_the_ack() {
             "ll ieee802154_ll_get_tx_auto_ack()",
             "ll ieee802154_ll_set_pending_bit(0x1)",
             "ll ieee802154_ll_clear_events(0x4)",
-            "event receive_done(0x1, 0x1, 0xb, 0xffffffffffffffc9, 0xb4, 0x0, 0x1) \
+            "event receive_done(0x1, 0x1, 0xb, 0xffffffffffffffc9, 0xb4, 0x0, 0x1, 0x0) \
              [0c6188013412ffff7856aac9b4] []",
             "ll ieee802154_ll_set_rx_addr(buf#1)",
             "ll ieee802154_ll_set_cmd(0x42)",

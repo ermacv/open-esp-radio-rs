@@ -69,6 +69,37 @@ pub enum Step {
     Cca,
     /// `esp_ieee802154_receive_handle_done` for the last received frame.
     ReceiveHandleDone,
+    /// `esp_ieee802154_set_multipan_panid`.
+    #[cfg(feature = "multipan")]
+    SetMultipanPanId { index: u8, panid: u16 },
+    /// `esp_ieee802154_set_multipan_short_address`.
+    #[cfg(feature = "multipan")]
+    SetMultipanShortAddress { index: u8, address: u16 },
+    /// `esp_ieee802154_set_multipan_extended_address`.
+    #[cfg(feature = "multipan")]
+    SetMultipanExtendedAddress { index: u8, address: [u8; 8] },
+    /// `esp_ieee802154_set_multipan_enable` of an interface mask.
+    #[cfg(feature = "multipan")]
+    SetMultipanEnable(u8),
+    /// `esp_ieee802154_multipan_receive`.
+    #[cfg(feature = "multipan")]
+    MultipanReceive(u8),
+    /// `esp_ieee802154_multipan_sleep`.
+    #[cfg(feature = "multipan")]
+    MultipanSleep(u8),
+    /// `esp_ieee802154_multipan_set_rx_when_idle`.
+    #[cfg(feature = "multipan")]
+    MultipanRxWhenIdle { index: u8, enable: bool },
+    /// `esp_ieee802154_multipan_set_pending_mode`.
+    #[cfg(feature = "multipan")]
+    MultipanSetPendingMode { index: u8, mode: u32 },
+    /// `esp_ieee802154_multipan_add_pending_addr`.
+    #[cfg(feature = "multipan")]
+    MultipanAddPendingAddress {
+        index: u8,
+        address: Vec<u8>,
+        short: bool,
+    },
     /// Set the value a named getter or external call returns from now on.
     Input(&'static str, u64),
     /// Write `[length, psdu...]` into the RX buffer the driver last published.
@@ -116,6 +147,20 @@ unsafe extern "C" {
     fn esp_ieee802154_energy_detect(duration: u32) -> i32;
     fn esp_ieee802154_cca() -> i32;
     fn esp_ieee802154_receive_handle_done(frame: *const u8) -> i32;
+}
+
+#[cfg(feature = "multipan")]
+unsafe extern "C" {
+    fn esp_ieee802154_set_multipan_panid(index: u32, panid: u16) -> i32;
+    fn esp_ieee802154_set_multipan_short_address(index: u32, address: u16) -> i32;
+    fn esp_ieee802154_set_multipan_extended_address(index: u32, address: *const u8) -> i32;
+    fn esp_ieee802154_set_multipan_enable(mask: u8) -> i32;
+    fn esp_ieee802154_multipan_receive(index: i8) -> i32;
+    fn esp_ieee802154_multipan_sleep(index: i8) -> i32;
+    fn esp_ieee802154_multipan_set_rx_when_idle(index: i8, enable: bool) -> i32;
+    fn esp_ieee802154_multipan_set_pending_mode(index: u32, mode: u32) -> i32;
+    fn esp_ieee802154_multipan_add_pending_addr(index: u32, address: *const u8, short: bool)
+    -> i32;
 }
 
 /// Pinned vendor event, abort and snapshot inputs read by the interrupt handler.
@@ -237,6 +282,55 @@ fn run_step(step: Step, last_rx: &mut Option<usize>) {
                     esp_ieee802154_receive_handle_done(frame as *const u8),
                 )
             }
+            #[cfg(feature = "multipan")]
+            Step::SetMultipanPanId { index, panid } => returned(
+                "esp_ieee802154_set_multipan_panid",
+                esp_ieee802154_set_multipan_panid(index.into(), panid),
+            ),
+            #[cfg(feature = "multipan")]
+            Step::SetMultipanShortAddress { index, address } => returned(
+                "esp_ieee802154_set_multipan_short_address",
+                esp_ieee802154_set_multipan_short_address(index.into(), address),
+            ),
+            #[cfg(feature = "multipan")]
+            Step::SetMultipanExtendedAddress { index, address } => returned(
+                "esp_ieee802154_set_multipan_extended_address",
+                esp_ieee802154_set_multipan_extended_address(index.into(), address.as_ptr()),
+            ),
+            #[cfg(feature = "multipan")]
+            Step::SetMultipanEnable(mask) => returned(
+                "esp_ieee802154_set_multipan_enable",
+                esp_ieee802154_set_multipan_enable(mask),
+            ),
+            #[cfg(feature = "multipan")]
+            Step::MultipanReceive(index) => returned(
+                "esp_ieee802154_multipan_receive",
+                esp_ieee802154_multipan_receive(index as i8),
+            ),
+            #[cfg(feature = "multipan")]
+            Step::MultipanSleep(index) => returned(
+                "esp_ieee802154_multipan_sleep",
+                esp_ieee802154_multipan_sleep(index as i8),
+            ),
+            #[cfg(feature = "multipan")]
+            Step::MultipanRxWhenIdle { index, enable } => returned(
+                "esp_ieee802154_multipan_set_rx_when_idle",
+                esp_ieee802154_multipan_set_rx_when_idle(index as i8, enable),
+            ),
+            #[cfg(feature = "multipan")]
+            Step::MultipanSetPendingMode { index, mode } => returned(
+                "esp_ieee802154_multipan_set_pending_mode",
+                esp_ieee802154_multipan_set_pending_mode(index.into(), mode),
+            ),
+            #[cfg(feature = "multipan")]
+            Step::MultipanAddPendingAddress {
+                index,
+                address,
+                short,
+            } => returned(
+                "esp_ieee802154_multipan_add_pending_addr",
+                esp_ieee802154_multipan_add_pending_addr(index.into(), address.as_ptr(), short),
+            ),
             Step::Input(name, value) => record::set_input(name, value),
             Step::DeliverFrame(frame) => {
                 let address = record::rx_address()

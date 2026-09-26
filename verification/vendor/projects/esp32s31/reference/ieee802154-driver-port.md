@@ -110,14 +110,14 @@ frame semantics belong to the protocol crate.
 | `start_ed`, `tx_init`, `rx_init`, `ieee802154_transmit`, `receive`, `energy_detect`, `cca`, `sleep` | driver engine, runtime entry points | implemented |
 | `event_end_process` register steps | HAL `ll` | implemented |
 | `stop_rx` ... `stop_ed`, `stop_current_operation` | driver engine over HAL `ll` | implemented |
-| `ieee802154_isr`, `isr_handle_*`, `next_operation`, private 12-state machine | driver engine | implemented without test mode, multi-PAN and software coexistence |
+| `ieee802154_isr`, `isr_handle_*`, `next_operation`, private 12-state machine | driver engine | implemented without test mode and software coexistence; multi-PAN is a construction option |
 | RX buffer ring, `set_next_rx_buffer`, frame info | driver engine | implemented: twenty engine-owned receive buffers, the stub buffer, a copied transmit frame and the enhanced-ACK frame; DMA-capable placement is the composition's obligation |
 | `esp_ieee802154_timer.c` | HAL `ll` timers, driver engine callbacks | implemented |
 | `ieee802154_transmit_at`, `receive_at` (timer and ETM) | driver engine over HAL `ll` | implemented on the IEEE 802.15.4 channels zero and one of `MODEM_ETM`; the write-trigger semantics of the set and clear words is not yet verified on hardware |
 | `esp_ieee802154_ack.c` pending table and `ack_config_pending_bit` | protocol pending table, driver engine | implemented for interface zero |
 | `esp_ieee802154_frame.c` | protocol `mac::header` | implemented over `[PHR, PSDU...]` images; malformed headers report absent fields where the vendor reads outside the frame |
 | `esp_ieee802154_sec.c` | driver engine over HAL `ll` | implemented |
-| `esp_ieee802154_multipan.c` | HAL policy, driver | partial: PAC multi-PAN fields |
+| `esp_ieee802154_multipan.c`, `update_mpf_index`, per-interface pending tables | driver engine | implemented for one to four interfaces; the radio role and runtime serve interface zero |
 | `esp_ieee802154_event.c` callbacks | driver engine environment, runtime event queue | implemented; the enhanced-ACK generator is a platform function |
 | `esp_ieee802154_util.c` coexistence scenes, channel conversion | coexistence driver, HAL | partial: channel conversion only |
 | `ieee802154_sleep`, `rf_enable` / `rf_disable`, sleep retention | driver engine, HAL and PHY | partial: engine sleep state; RF gating (off in the default build) and retention absent |

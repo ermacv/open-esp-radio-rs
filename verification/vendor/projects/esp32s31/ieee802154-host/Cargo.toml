@@ -46,6 +46,10 @@ oer-esp32s31-hal = { path = "../../../../../crates/hardware/esp32s31/hal" }
 oer-esp32s31-ieee802154 = { path = "../../../../../crates/hardware/esp32s31/driver/ieee802154" }
 oer-ieee802154 = { path = "../../../../../crates/protocols/ieee802154" }
 
+[features]
+# Build the vendor driver and the port with multi-PAN and two interfaces.
+multipan = []
+
 [build-dependencies]
 cc = "=1.4.3"
 sha2 = "=0.10.9"

@@ -98,13 +98,14 @@ static void frame_info_arguments(const esp_ieee802154_frame_info_t *info, uint64
     args[4] = info ? info->lqi : 0;
     args[5] = info ? (uint64_t)info->timestamp : 0;
     args[6] = info != 0;
+    args[7] = info ? (uint64_t)info->mpf_index : 0;
 }
 
 void esp_ieee802154_receive_done(uint8_t *data, esp_ieee802154_frame_info_t *frame_info)
 {
-    uint64_t args[7];
+    uint64_t args[8];
     frame_info_arguments(frame_info, args);
-    oer_host_event("receive_done", args, 7, data, frame_bytes(data), 0, 0);
+    oer_host_event("receive_done", args, 8, data, frame_bytes(data), 0, 0);
 }
 
 void esp_ieee802154_receive_sfd_done(void) { oer_host_event("receive_sfd_done", 0, 0, 0, 0, 0, 0); }
@@ -118,9 +119,9 @@ void esp_ieee802154_receive_failed(uint16_t error)
 void esp_ieee802154_transmit_done(const uint8_t *frame, const uint8_t *ack,
                                   esp_ieee802154_frame_info_t *ack_frame_info)
 {
-    uint64_t args[7];
+    uint64_t args[8];
     frame_info_arguments(ack_frame_info, args);
-    oer_host_event("transmit_done", args, 7, frame, frame_bytes(frame), ack, frame_bytes(ack));
+    oer_host_event("transmit_done", args, 8, frame, frame_bytes(frame), ack, frame_bytes(ack));
 }
 
 void esp_ieee802154_transmit_failed(const uint8_t *frame, esp_ieee802154_tx_error_t error)

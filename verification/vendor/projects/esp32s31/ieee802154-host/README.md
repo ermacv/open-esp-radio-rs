@@ -77,6 +77,19 @@ are not compared. A vendor assertion, or a step the engine does not own, is
 content. The stand has no BTBB power table, so both sides resolve power
 to index zero. The tests require `MATCH` for every catalog scenario.
 
+## Multi-PAN
+
+`--features multipan` builds the vendor driver with
+`CONFIG_IEEE802154_MULTI_PAN_ENABLE` and the Kconfig default of two
+interfaces, compiles `esp_ieee802154_multipan.c`, constructs the port with the
+same interfaces and adds the multi-PAN scenarios. Every scenario is compared
+in both builds; the two expectation tests that pin the default build's trace
+run only without the feature.
+
+```console
+cargo test --manifest-path verification/vendor/projects/esp32s31/ieee802154-host/Cargo.toml --features multipan
+```
+
 ## Limits
 
 The stand exercises the driver's software behavior against scripted register

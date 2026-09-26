@@ -15,8 +15,8 @@ use oer_esp32s31_hal::ieee802154::{
     ll::{
         Ieee802154EdSampleMode, Ieee802154EtmChannel, Ieee802154EtmRoute,
         Ieee802154EventObservation, Ieee802154LlCommand, Ieee802154LowLevel,
-        Ieee802154RxAbortEnableSet, Ieee802154RxStateCode, Ieee802154RxStatus, Ieee802154Timer,
-        Ieee802154TxAbortEnableSet,
+        Ieee802154MultipanEnableState, Ieee802154RxAbortEnableSet, Ieee802154RxStateCode,
+        Ieee802154RxStatus, Ieee802154Timer, Ieee802154TxAbortEnableSet,
     },
     mac::{
         Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReason,
@@ -194,8 +194,13 @@ fn info_arguments(info: Option<&Ieee802154FrameInfo>) -> Vec<u64> {
             u64::from(info.lqi),
             info.timestamp,
             1,
+            // `ESP_IEEE802154_MULTIPAN_MAX` marks an unmatched frame.
+            info.mpf_index
+                .map_or(u64::from(Ieee802154MultipanIndex::COUNT), |index| {
+                    u64::from(index.value())
+                }),
         ],
-        None => vec![0; 7],
+        None => vec![0; 8],
     }
 }
 
@@ -555,6 +560,17 @@ impl Ieee802154LowLevel for PortLl {
         );
         address
     }
+    fn set_multipan_enable(&mut self, state: Ieee802154MultipanEnableState) {
+        let mask = (0..Ieee802154MultipanIndex::COUNT)
+            .filter_map(Ieee802154MultipanIndex::new)
+            .filter(|index| state.contains(*index))
+            .fold(0, |mask, index| mask | 1 << index.value());
+        self.value("ieee802154_ll_set_multipan_enable_mask", mask);
+    }
+    fn multipan_enable(&mut self) -> Ieee802154MultipanEnableState {
+        let mask = self.ll("ieee802154_ll_get_multipan_enable_mask", &[]);
+        enable_state(mask as u8)
+    }
     fn set_ack_timeout(&mut self, units: u16) {
         self.value("ieee802154_ll_set_ack_timeout", u64::from(units));
     }
@@ -682,6 +698,16 @@ impl Ieee802154Environment for PortEnv {
     }
 }
 
+/// The enable state of a vendor interface mask.
+fn enable_state(mask: u8) -> Ieee802154MultipanEnableState {
+    (0..Ieee802154MultipanIndex::COUNT)
+        .filter_map(Ieee802154MultipanIndex::new)
+        .filter(|index| mask & 1 << index.value() != 0)
+        .fold(Ieee802154MultipanEnableState::NONE, |state, index| {
+            state.with(index)
+        })
+}
+
 /// `esp_ieee802154_set_cca_mode` argument.
 fn cca_mode_of(mode: u32) -> Option<Ieee802154CcaMode> {
     Some(match mode {
@@ -704,6 +730,11 @@ fn pending_mode_of(mode: u32) -> Option<AutoPendingMode> {
     })
 }
 
+#[cfg(feature = "multipan")]
+fn interface(index: u8) -> Result<Ieee802154MultipanIndex, &'static str> {
+    Ieee802154MultipanIndex::new(index).ok_or("interface outside the four contexts")
+}
+
 /// The stand has no BTBB power table; the vendor then resolves every request
 /// to power index zero, which a one-level provider reproduces.
 static LEVELS: [i8; 1] = [0];
@@ -718,7 +749,16 @@ pub fn run(scenario: &Scenario) -> Result<Vec<Record>, String> {
     let buffers = Box::leak(Box::new(Ieee802154EngineBuffers::new()));
     let levels = Ieee802154TxPowerLevels::new(&LEVELS).map_err(|error| format!("{error:?}"))?;
     let defaults = Ieee802154PibDefaults::default();
+    #[cfg(not(feature = "multipan"))]
     let mut engine = Ieee802154Engine::new(buffers, levels, defaults);
+    // The stand's multi-PAN build uses the Kconfig default of two interfaces.
+    #[cfg(feature = "multipan")]
+    let mut engine = Ieee802154Engine::new_multipan(
+        buffers,
+        levels,
+        defaults,
+        oer_esp32s31_ieee802154::engine::Ieee802154Interfaces::new(2).expect("two interfaces"),
+    );
     let shared = Rc::new(RefCell::new(Shared {
         model: LlModel::new((scenario.inputs)()),
         records: Vec::new(),
@@ -811,6 +851,52 @@ pub fn run(scenario: &Scenario) -> Result<Vec<Record>, String> {
                 engine
                     .receive_handle_done(slot)
                     .map_err(|_| "receive slot out of range")?;
+            }
+            #[cfg(feature = "multipan")]
+            Step::SetMultipanPanId { index, panid } => {
+                engine.set_multipan_panid(&mut ll, interface(index)?, panid);
+            }
+            #[cfg(feature = "multipan")]
+            Step::SetMultipanShortAddress { index, address } => {
+                engine.set_multipan_short_address(&mut ll, interface(index)?, address);
+            }
+            #[cfg(feature = "multipan")]
+            Step::SetMultipanExtendedAddress { index, address } => {
+                engine.set_multipan_extended_address(&mut ll, interface(index)?, address);
+            }
+            #[cfg(feature = "multipan")]
+            Step::SetMultipanEnable(mask) => {
+                engine.set_multipan_enable(&mut ll, enable_state(mask))
+            }
+            #[cfg(feature = "multipan")]
+            Step::MultipanReceive(index) => {
+                engine.multipan_receive(&mut ll, &mut env, interface(index)?);
+            }
+            #[cfg(feature = "multipan")]
+            Step::MultipanSleep(index) => {
+                engine.multipan_sleep(&mut ll, &mut env, interface(index)?);
+            }
+            #[cfg(feature = "multipan")]
+            Step::MultipanRxWhenIdle { index, enable } => {
+                engine.multipan_set_rx_when_idle(interface(index)?, enable);
+            }
+            #[cfg(feature = "multipan")]
+            Step::MultipanSetPendingMode { index, mode } => {
+                let mode = pending_mode_of(mode).ok_or("pending mode outside the vendor enum")?;
+                engine.pib().set_pending_mode(interface(index)?, mode);
+            }
+            #[cfg(feature = "multipan")]
+            Step::MultipanAddPendingAddress {
+                index,
+                address,
+                short,
+            } => {
+                let address = if short {
+                    FrameAddress::Short(address[..2].try_into().map_err(|_| "short address")?)
+                } else {
+                    FrameAddress::Extended(address[..8].try_into().map_err(|_| "extended address")?)
+                };
+                let _ = engine.pending_table_for(interface(index)?).add(address);
             }
             Step::Input(name, value) => {
                 shared

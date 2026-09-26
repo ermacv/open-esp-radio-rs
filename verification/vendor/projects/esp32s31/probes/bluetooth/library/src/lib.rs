@@ -160,17 +160,23 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
-    /// Compiled production entry for the complete BLE PHY register-init body.
+    /// Compiled production entry for the complete BLE PHY register-init body,
+    /// `r_ble_phy_init_registers` (`r_sym_ble_nENHlP4KBuQYlFVffaR5` in the
+    /// pinned `libble_app.a`).
     ///
     /// The vendor function obtains these five values from linked globals and
-    /// providers. The comparison profile seeds those exact vendor locations and
-    /// passes the same values through this explicit Rust ABI projection.
-    pub fn open_ble_phy_register_init_trace_r_sym_ble_3472b6b_ni_qdn_wk_yo6_ggv(
+    /// providers: the timing byte at controller configuration `+0x10`, the
+    /// environment and resolving-list pointers, the branch byte `+0x55` of
+    /// the SDK options and the controller configuration word `+0x40`. The
+    /// comparison profile seeds those exact vendor locations and passes the
+    /// same values through this explicit Rust ABI projection. Production
+    /// routes modem ETM channel two where the vendor routes channel zero.
+    pub fn open_ble_phy_register_init_trace_r_ble_phy_init_registers(
         private_timing_source_byte: u32,
         environment_address: u32,
         resolving_list_address: u32,
         set_branch_control_0470_bit_18: u32,
-        runtime_configuration_low_byte: u32,
+        configuration_word_40: u32,
     ) {
         // SAFETY: every comparison case models the recovered prerequisite state,
         // supplies live controller storage for the execution lifetime, performs
@@ -182,8 +188,20 @@ oer_probe_macros::probe! {
                 environment_address,
                 resolving_list_address,
                 set_branch_control_0470_bit_18 != 0,
-                runtime_configuration_low_byte as u8,
+                configuration_word_40,
             );
         }
     }
+}
+
+oer_probe_macros::probe! {
+    /// The production lease selection of the Bluetooth low-power clock.
+    pub fn open_bluetooth_trace_select_low_power_clock() -> u32 =>
+        u32::from(oer_esp32s31_bluetooth::validation::select_low_power_clock());
+}
+
+oer_probe_macros::probe! {
+    /// The production deselection transaction of the Bluetooth low-power clock.
+    pub fn open_bluetooth_trace_deselect_low_power_clock() =>
+        oer_esp32s31_bluetooth::validation::deselect_low_power_clock();
 }

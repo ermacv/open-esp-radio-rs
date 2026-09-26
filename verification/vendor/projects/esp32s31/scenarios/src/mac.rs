@@ -129,6 +129,12 @@ pub struct Leaf {
     /// Full fences production adds to order the leaf's register edge
     /// against surrounding memory and device accesses.
     pub ordering_fences: u32,
+    /// Release fences production adds when it releases the shared-radio
+    /// lease after the leaf's register transaction.
+    pub release_fences: u32,
+    /// Reviewed word writes production performs in place of vendor writes,
+    /// each exactly once.
+    pub replacements: &'static [Replacement],
     /// A bounded feature: the vendor side stops before calling this
     /// function, and only the prefix up to that call is compared.
     pub prefix_until: Option<&'static str>,
@@ -183,6 +189,9 @@ pub struct Vendor<'a> {
     /// Symbols the linked image defines; any other symbol is a ROM address.
     pub image: &'a BTreeMap<String, u32>,
     pub rates: &'a RateTables,
+    /// Symbol values of the vendor firmware, including the absolute
+    /// addresses its linker scripts provide.
+    pub firmware: &'a dyn Fn(&str) -> Result<u32>,
 }
 
 impl Vendor<'_> {
@@ -318,6 +327,8 @@ pub(crate) const fn leaf(
         parameters,
         returns,
         ordering_fences: 0,
+        release_fences: 0,
+        replacements: &[],
         prefix_until: None,
         vendor_abi: None,
         rom: false,
@@ -367,6 +378,32 @@ pub(crate) const fn in_archive(leaf: Leaf, input: u64) -> Leaf {
 pub(crate) const fn ordered(leaf: Leaf, fences: u32) -> Leaf {
     Leaf {
         ordering_fences: fences,
+        ..leaf
+    }
+}
+
+/// A leaf whose production counterpart releases its shared-radio lease
+/// with `fences` release fences.
+pub(crate) const fn released(leaf: Leaf, fences: u32) -> Leaf {
+    Leaf {
+        release_fences: fences,
+        ..leaf
+    }
+}
+
+/// One reviewed write substitution: production writes `replacement` where
+/// the vendor writes `vendor`, as (address, value) pairs, for `reason`.
+#[derive(Clone, Copy)]
+pub struct Replacement {
+    pub vendor: (u32, u32),
+    pub replacement: (u32, u32),
+    pub reason: &'static str,
+}
+
+/// A leaf whose production counterpart performs `replacements`.
+pub(crate) const fn replaced(leaf: Leaf, replacements: &'static [Replacement]) -> Leaf {
+    Leaf {
+        replacements,
         ..leaf
     }
 }
@@ -1076,6 +1113,9 @@ pub(crate) const fn prefix(leaf: Leaf, callee: &'static str) -> Leaf {
 /// Full-fence predecessor and successor sets: device input, output, memory
 /// reads and writes.
 const FULL_FENCE: u8 = 0xf;
+/// Release-fence predecessor and successor sets: memory reads and writes
+/// before memory writes.
+const RELEASE_FENCE: (u8, u8) = (0x3, 0x1);
 
 /// Logical MAC interface contexts: station, access point and two others.
 const INTERFACES: &[u32] = &[0, 1, 2, 3];
@@ -1830,7 +1870,49 @@ impl Mac {
     fn ordering_contract(&mut self, leaf: &Leaf) -> Result<EffectContractRef> {
         let vendor = self.vendor_endpoint(leaf)?;
         let production = self.session.input_endpoint(2, leaf.probe)?;
-        let rule = EffectRule {
+        let write = |(address, value): (u32, u32)| EffectPattern {
+            selector: EffectSelector::MmioWrite { address, width: 4 },
+            value: EffectValue::Exact { value },
+            followed_by: None,
+        };
+        let mut rules: Vec<EffectRule> = leaf
+            .replacements
+            .iter()
+            .map(|replacement| EffectRule {
+                name: format!("replaced-write-{:08x}", replacement.vendor.0),
+                vendor: Some(write(replacement.vendor)),
+                replacement: Some(write(replacement.replacement)),
+                disposition: EffectDisposition::Replaced,
+                min_occurrences: 1,
+                max_occurrences: 1,
+                reason: replacement.reason.into(),
+            })
+            .collect();
+        if leaf.release_fences != 0 {
+            rules.push(EffectRule {
+                name: "lease-release-fence".into(),
+                vendor: None,
+                replacement: Some(EffectPattern {
+                    selector: EffectSelector::Fence {
+                        predecessor: RELEASE_FENCE.0,
+                        successor: RELEASE_FENCE.1,
+                    },
+                    value: EffectValue::Any,
+                    followed_by: None,
+                }),
+                disposition: EffectDisposition::Added,
+                min_occurrences: leaf.release_fences,
+                max_occurrences: leaf.release_fences,
+                reason: "production releases its shared-radio lease after the register \
+                    transaction; the vendor serializes with a critical section answered as \
+                    quiet calls"
+                    .into(),
+            });
+        }
+        if leaf.ordering_fences == 0 {
+            return self.review_ordering(leaf, vendor, production, rules);
+        }
+        rules.push(EffectRule {
             name: "device-ordering-fence".into(),
             vendor: None,
             replacement: Some(EffectPattern {
@@ -1847,12 +1929,22 @@ impl Mac {
             reason: "production orders the register edge against surrounding memory and device \
                 accesses; the vendor leaves ordering to its caller"
                 .into(),
-        };
-        let applicability = "one MAC register edge over retained radio registers";
+        });
+        self.review_ordering(leaf, vendor, production, rules)
+    }
+
+    fn review_ordering(
+        &mut self,
+        leaf: &Leaf,
+        vendor: blobray_domain::CallEndpoint,
+        production: blobray_domain::CallEndpoint,
+        rules: Vec<EffectRule>,
+    ) -> Result<EffectContractRef> {
+        let applicability = "one register transaction over retained radio registers";
         self.session.review_effects(
             &format!("{}-effects", leaf.probe),
             &format!("esp32s31.mac.{}.effects", leaf.vendor),
-            crate::contracts::phy_contract(vendor, production, vec![rule], applicability),
+            crate::contracts::phy_contract(vendor, production, rules, applicability),
             "every register effect compares exactly; production adds ordering fences",
         )
     }
@@ -1863,7 +1955,10 @@ impl Mac {
     /// its probe words.
     fn cases(&mut self, leaf: &Leaf) -> Result<Vec<LeafCase>> {
         let image_symbols = image_symbols(&self.session.run.join("image/image.elf"))?;
-        let effects = if leaf.ordering_fences != 0 {
+        let effects = if leaf.ordering_fences != 0
+            || leaf.release_fences != 0
+            || !leaf.replacements.is_empty()
+        {
             Some(self.ordering_contract(leaf)?)
         } else {
             None
@@ -1946,6 +2041,12 @@ impl Mac {
                     .value,
                 )?)
             };
+            let firmware = |name: &str| -> Result<u32> {
+                Ok(u32::try_from(
+                    crate::harness::symbol(&self.session.inventory, PHY_SDK_INPUT as usize, name)?
+                        .value,
+                )?)
+            };
             let states: Vec<Option<u32>> = if leaf.states.is_empty() {
                 vec![None]
             } else {
@@ -1968,6 +2069,7 @@ impl Mac {
                             &semantic,
                             &Vendor {
                                 resolve: &rom,
+                                firmware: &firmware,
                                 image: &image_symbols,
                                 rates: &self.rates,
                             },
@@ -2011,13 +2113,27 @@ impl Mac {
                     );
                     vendor.calls = vendor_calls.clone();
                     for name in leaf.quiet_calls {
+                        // Names the suite declares absent share one unmapped
+                        // address, which one declaration answers.
+                        let (address, boundary) = if self.suite.absent.contains(name) {
+                            (
+                                blobray_domain::ABSENT_SYMBOL_ADDRESS,
+                                CallBoundary::Unmapped,
+                            )
+                        } else {
+                            (rom(name)?, call_boundary(&image_symbols, name))
+                        };
+                        if vendor.calls.iter().any(|c| c.binding.address == address) {
+                            continue;
+                        }
                         vendor.calls.push(CallDeclaration {
                             id: (*name).into(),
-                            applicability: "an assertion the compared domain never fails".into(),
+                            applicability: "a call the compared domain answers without effect"
+                                .into(),
                             lifetime: RegionLifetime::Phase,
                             binding: CallBinding {
-                                address: rom(name)?,
-                                boundary: call_boundary(&image_symbols, name),
+                                address,
+                                boundary,
                                 allow_tail: true,
                             },
                             argument_words: 1,

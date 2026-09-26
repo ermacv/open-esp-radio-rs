@@ -4,15 +4,17 @@
   "target": "esp32s31",
   "inputs": {
     "archive": "116c7c3a55e2ddfd7937edad2667b5d64717f1967519a0201ca6354246f0b1a2",
-    "bluetooth-production": "eb7c76de97010136088c391955036b15f9825ee37c031152d9b147cee7610944",
+    "bluetooth-production": "d825531281d035c86b145f993e8abfcda66e9633f663693b959723d412f19398",
     "libble_app": "e61c5f8b0e558df8c520bcedd78dd8b930c2b61350b08c03430b774275385723",
     "libbtbb": "9bd762f68df0c894d27c542f01591aad21ee800b69fd6403c8ec6226ceaa8895",
     "libbtdm_common": "389561cead8a68444b46118fb606d5742813c88f8a37c43d22be271aaa4bdb41",
     "libcoexist": "13b1e1d2a1550400ddb2622648933288aee6a285d3aad454978314c4af685147",
+    "libesp-hw-support": "e643ad6aef2d840fa605255dc3c773f328cd103ecbc93ef0047ebc9deea7dadc",
+    "libhal": "7505ee6a2b1a70e43f802d54ccd951da92f8bf6bfbc3a3dd4f2c2f052557fddc",
     "libnet80211": "23de6b00cbc71f4cd4a43c0c6cca4aa670154f52eb43d798668e1f1507f2425d",
     "libpp": "0c791ee12225e93dff3bc85fcbde2fb512e7db2964353c0117fff6153eccbda4",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "38c558629a4abb6ffd30f295357f3f11dbbd83f0777668c602c8d9b20e7fa67f",
+    "production": "28fcbebee12541ebb750658da6539475b026b887ae61930fc4430960b185fb70",
     "rftest": "c76dfc7e80bdbe29dbdafe68f1a09eb18db66ca392a2d66f1c5ddb169d9a2c5a",
     "rom": "a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
@@ -28,11 +30,11 @@
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth",
-      "sha256": "7fdc1692169a160c8585f3de1160fd75e3dcc9880d1f15a384cd6d0917ac50d0"
+      "sha256": "f72c261cadc29958b099cdc2de78f5bfb8324f135e0ee8e37f66e4c038d56182"
     },
     {
       "path": "crates/hardware/esp32s31/driver/bluetooth/memory",
-      "sha256": "53595a97604a36e08c8018e24349a9ba28980f5e4847c4413286eb99d5e5f0b9"
+      "sha256": "929f1267d37102f990750de7f075e2a3d420ef58154764b6bcead043ea1f46f3"
     },
     {
       "path": "crates/hardware/esp32s31/driver/coex",
@@ -52,15 +54,15 @@
     },
     {
       "path": "crates/hardware/esp32s31/hal",
-      "sha256": "a97b9bae004a6f4b6ad2ef6207b12cd201479ebb84fc32dcc24afe671f26a924"
+      "sha256": "8066447e4c987216ff030831ee00376ad228e1f66220f40bd5fa3cd637467dcd"
     },
     {
       "path": "crates/hardware/esp32s31/pac",
-      "sha256": "27e5004e7153f0f4382af246202db156f83ef5d7c6950459127389b82438cac4"
+      "sha256": "e6216432f1a0d6643eec7796652f581f17276ab943e4cce0182322c1a1eb6f4f"
     },
     {
       "path": "crates/hardware/esp32s31/pac/raw",
-      "sha256": "e89b653d444cd064a8a73d628c2e04d0429a9274795c2de709d432d04c341424"
+      "sha256": "a77ecc62f3f6d4fedb1919d4adbd922aabbffd4b6c219f31218e82625f932b0d"
     },
     {
       "path": "crates/hardware/esp32s31/phy",
@@ -168,7 +170,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/probes/bluetooth/library",
-      "sha256": "e69a5583bbb883ee0dd355dc68b9624e895bbc6e96d293ee7bae5b8d563eddbb"
+      "sha256": "ced99edaec42172831cf8aa6733b345b9b9d174f5feb50c0256c2ca9f79eb902"
     },
     {
       "path": "verification/vendor/projects/esp32s31/probes/radio/elf",
@@ -180,7 +182,7 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "32a9238d331860b96e699290edf9b29a3a13289d3435293a0bc269b503238ed3"
+      "sha256": "2ae7add17167207fc1060309446410e6bf1b6abca0aad51d922d28154ea0a5cd"
     },
     {
       "path": "verification/vendor/schema",
@@ -366,7 +368,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "faeef2dfc556e0c8092220252c8edd559e14e834c91c51c404277521883b0e05"
+        "ee057862c35b48c9e89da39326f1c118d2133fe92b180441ee230317b6f20bd3"
       ],
       "coverage": {
         "blocks": {
@@ -402,7 +404,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "ec4e17446669754c1dde36e47aafbe068806f959330f094201fc9196f0b30f8f"
+        "ac356b3c122d85085991db0b4235a1ac7184f0c548a91193c185bf360adec690"
       ],
       "coverage": {
         "blocks": {
@@ -438,7 +440,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "0e95efb08f9914df7188f9aaeea40a8b44ab59f38fb21c79ab0b2108eabaccae"
+        "8d29491b70d9dfe095819b5a7687c7258fcdaa7b2791f4675270e641504199ee"
       ],
       "coverage": {
         "blocks": {
@@ -474,7 +476,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "36be27a077e6b8541a01e25cf881e2d307e70fa4a1d29609beb894a6edb860be"
+        "34f3286a89b00737eb270430fe2cc601974db4c8279c15628494efafd31b2e91"
       ],
       "coverage": {
         "blocks": {
@@ -510,7 +512,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "9ea41598e3e733c60f10b6c9f6db1d22e4713e8b5afd2d8975db6d7927effad8"
+        "1b5b91d9037c0a777cd83dd5e15195617f1ce3824ca7f0c49da21fd4d1c84fb4"
       ],
       "coverage": {
         "blocks": {
@@ -546,7 +548,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "2e9484d1984fb7a964a74f90c6f8a9c1e067c92d7fde1814a53369065efe7263"
+        "7c8ae64024b952fe7f8cf5edc84327e65cc31206fc18f54455eff559f64496c7"
       ],
       "coverage": {
         "blocks": {
@@ -752,7 +754,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "ce22779b4f3d86b3dff40a8d5200a80d380adcff642104abebb2835adf8432b1"
+        "397f24b00c50ba50f927c6ad2532704b2d230af899cb4c820a0b410f516dea3f"
       ],
       "coverage": {
         "blocks": {
@@ -788,7 +790,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "ca7c222d8aef02e45972221396ec2937aff3b421b5e3097fec09ccfbe6060ee7"
+        "598e134cb152dd1eeb1f99703182b7cea221c6417df7ae8be3e44023f76e1744"
       ],
       "coverage": {
         "blocks": {
@@ -824,8 +826,8 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "98bc2b84b9e24b07e0fb8d14470c622d5f5dc4922cb66065d915f3a508e9a539",
-        "cb2fe59ab3891697ae04b0d176e63f5ddc473bceedfbd7405dc2fc7f03968934"
+        "0b556da2e19cdde1aa40fde2d32b0089d07f2e9e4b78549d4856439e36a853d1",
+        "e02678e045c9f9043e61f9ebf2012cc251aaf706ec80b41b3b183b3f2361ce3d"
       ],
       "coverage": {
         "blocks": {
@@ -861,7 +863,7 @@
       "verdict": "match",
       "cases": 101,
       "reviews": [
-        "3655fb7b6fe2a0323a94e42069b8c7b5e114900d2c639001d00f55fd849968c3"
+        "94913d71edba394fb3abaa0460f5052cc917896671869edff831e3300d5ea708"
       ],
       "coverage": {
         "blocks": {
@@ -897,8 +899,8 @@
       "verdict": "match",
       "cases": 74,
       "reviews": [
-        "370766831b1c47eea04cd43d59dc8bc70f3e5a8e1c3a91f9e1594fbfa9567731",
-        "ba6c572aadc57030f899b289a532610f17f619f726473662e53be89ffb6b3c52"
+        "10e94575a9a4123bf417f57b25ddae26fc9c20873501cd41ae057745356be14b",
+        "c0e1d9dfca43e13ef7afc7a74e95b78a1b0301bb1871655a174e09750a07787f"
       ],
       "coverage": {
         "blocks": {
@@ -934,8 +936,8 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "fd7479282724e137c5d13b878c807e28b7ea7a9c571a67ed9f6ec8d497f14516",
-        "fe63ffbb5ff6b834c8404b854e51c1f32b75282f512e60c5864d46a8f5501401"
+        "8f37e1a0152275668d036a21e3a17f55d8cc1b04f9a4c6280e8effdb68fa4e6f",
+        "c479b066e37d15b796e2c5b981fc17b660e29b1fc50882975129f3a499e33643"
       ],
       "coverage": {
         "blocks": {
@@ -971,9 +973,9 @@
       "verdict": "match",
       "cases": 152,
       "reviews": [
-        "065aea9290851a3a0193a9caa00cdc79ccb68d60672a5235dba7ffaf5f64992a",
-        "617f9b78307aa5a1ef2e2896bafdc0a40c70c3ad993ef5f99b8e2cdee5c3d862",
-        "ffe5e423876d7df142faec78f99840982355e7e02c7254570810ef998aa01182"
+        "2b08bcdeb7d7f0b82abd03c9964c0f721b5d1da4816d820dd12a87ddb43aeba3",
+        "83bd79266f13f9f427b0f9c529c142e110b855f36e3b37b4882741d285ac09e7",
+        "9b7c2fd10f2fae29638aca8d33c7d5914e85327eda310a8b4691fc493160b7c5"
       ],
       "coverage": {
         "blocks": {
@@ -1009,8 +1011,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "e0db23f07a6ab0765e5c1491c1d9d6f76393c47a205ad6558e9e439d1fa8b484",
-        "f65845b25a819285d20db9483f512e6905a62757a219b9a324946239e412bacc"
+        "32c3aa6e021e3b6782e8d2ea6a317512d8b9333008f87e2eb2be8eb44cd9b456",
+        "eec9627db9003389cc4147d1896a1c0b45c7bac948e58b9275f3ba5947837e3c"
       ],
       "coverage": {
         "blocks": {
@@ -1046,8 +1048,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "ed4772c0dc621e3d675a8be80999dc2fba5795b67d438d4c2d39572213b78f4e",
-        "f0397f5e9d3cd0f19c5978fbb551abe1fb0002eaf82a9973a79c2e997817f139"
+        "50d51ffc1f8008cd8909413c56fbd606d11d0631802fe0aa85153ac8c9ac4ba9",
+        "edf8f238495bdfba90c48fc52fb51cff51c9c4601effdaf63393742165aabc52"
       ],
       "coverage": {
         "blocks": {
@@ -1083,8 +1085,8 @@
       "verdict": "match",
       "cases": 384,
       "reviews": [
-        "65dfef004f376922b6ab53b35a607985dc8ebdbf64e75c4fb33a30d169b0eeff",
-        "b48425592c063b06eddd2559f288ba8e229dd5201c3a560794f0c9b87172c414"
+        "6dd14985ac938baeb4295c448851962286271265bde1f240a6681dfe8878f7f9",
+        "a2d62bd13b074f3cb147d2ed5b450f2d935934b0cdc0958c718ea3f68e91aeff"
       ],
       "coverage": {
         "blocks": {
@@ -1222,7 +1224,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "588e8f5963b573caa3e928ac1c77a141640870a5e44f36a49b5185ec8e0801e5"
+        "490239331e8516de31f7067981e00f384d4b3187cc820b24e02c87d95d9eac76"
       ],
       "coverage": {
         "blocks": {
@@ -1292,7 +1294,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "5fd52652cbb8cdf29e8d3f05906281bb161e2f20f7d36fb8737f8b7ceff46f75"
+        "f2f6f09524e4e2d11be057eb0b644244153bccb87ce26241494e2d34e6573eb4"
       ],
       "coverage": {
         "blocks": {
@@ -1940,7 +1942,7 @@
       "verdict": "match",
       "cases": 16,
       "reviews": [
-        "01b371eac2eb6f8adfbecf9557f6dd59c628e1898928aa9f9ccc937eb01b673a"
+        "eee41ef93df29d862ddfe7103cfbd4e53cd0be5d297c7c6e5fae4019c848f709"
       ],
       "coverage": {
         "blocks": {
@@ -2452,7 +2454,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "c007c1782f0885b1e046c42330a4e557355339bfd27ba18d8479a82f78375593"
+        "7786c3e462788d362a0aa88406b5a84611dcdece741e17654ea93d138d7c8e86"
       ],
       "coverage": {
         "blocks": {
@@ -2488,7 +2490,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "397e7cd53b65143714f319e9f3233a3f4a613f785083d8352c374fa73ab1406c"
+        "512b2007bedd733cf8ec321f3d1e789977691492b52ffe6b87b46f550c4ebbec"
       ],
       "coverage": {
         "blocks": {
@@ -2524,7 +2526,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "35f004073ff6f58d345a3e18bc6ea16da89e822017fe763706b02ac3ae6d798d"
+        "bf6e805776032fd2d9c04b2370775009110956ac505adc28755e5e3d0112df27"
       ],
       "coverage": {
         "blocks": {
@@ -2560,7 +2562,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "1f6022c7e3d8a8846cfa98dd9ff28fee099407932568b9990367d7ad90ade65d"
+        "02605704d5d78f6b44e2a39834e8f8a9fafed63e5b2503f9a87beba4fd59e6db"
       ],
       "coverage": {
         "blocks": {
@@ -2596,7 +2598,7 @@
       "verdict": "match",
       "cases": 12,
       "reviews": [
-        "5545a031469ca168a91fcc0d5bf7402a7f4ad8db6b2b8392f65ee0d98bc3ea05"
+        "9aaba07ebcffbba31e71a67f81b95c3ef3630db3c1e3369797fed638cdc8d512"
       ],
       "coverage": {
         "blocks": {
@@ -2622,6 +2624,114 @@
         "compared": 0,
         "reviewed": 0,
         "untriaged": 0
+      }
+    },
+    {
+      "suite": "bluetooth",
+      "source": "archive",
+      "symbol": "r_sym_ble_nENHlP4KBuQYlFVffaR5",
+      "production": "open_ble_phy_register_init_trace_r_ble_phy_init_registers",
+      "verdict": "match",
+      "cases": 288,
+      "reviews": [
+        "5467a843f8df24131591aa6d08029abac5d30019eddbd7583ee892b89226704c"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 12,
+          "total": 12
+        },
+        "directions": {
+          "reached": 4,
+          "total": 4
+        },
+        "open": 0,
+        "excluded": 0,
+        "untriaged": 0
+      },
+      "observation": {
+        "executed": 193,
+        "observed": 185,
+        "reviewed": 2,
+        "untriaged": 6
+      },
+      "state": {
+        "written": 0,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 0
+      }
+    },
+    {
+      "suite": "bluetooth",
+      "source": "archive",
+      "symbol": "modem_clock_select_lp_clock_source",
+      "production": "open_bluetooth_trace_select_low_power_clock",
+      "verdict": "match",
+      "cases": 4,
+      "reviews": [
+        "baef5d51f4ad5c4b0d7906a08fa2c96fac45f992d7f65b8b6906c260f8522bd7"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 38,
+          "total": 435
+        },
+        "directions": {
+          "reached": 23,
+          "total": 462
+        },
+        "open": 17,
+        "excluded": 694,
+        "untriaged": 159
+      },
+      "observation": {
+        "executed": 51,
+        "observed": 49,
+        "reviewed": 0,
+        "untriaged": 2
+      },
+      "state": {
+        "written": 14,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 14
+      }
+    },
+    {
+      "suite": "bluetooth",
+      "source": "archive",
+      "symbol": "modem_clock_deselect_lp_clock_source",
+      "production": "open_bluetooth_trace_deselect_low_power_clock",
+      "verdict": "match",
+      "cases": 4,
+      "reviews": [
+        "2f48b81d6a6f43edb2f7fab8d862b030c9bf022f83a04e3027f6c91732739c4c"
+      ],
+      "coverage": {
+        "blocks": {
+          "reached": 29,
+          "total": 383
+        },
+        "directions": {
+          "reached": 17,
+          "total": 414
+        },
+        "open": 17,
+        "excluded": 694,
+        "untriaged": 74
+      },
+      "observation": {
+        "executed": 37,
+        "observed": 35,
+        "reviewed": 0,
+        "untriaged": 2
+      },
+      "state": {
+        "written": 14,
+        "compared": 0,
+        "reviewed": 0,
+        "untriaged": 14
       }
     },
     {
@@ -2731,6 +2841,21 @@
     {
       "function": "GetAccess",
       "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "MODEM_CLOCK_instance",
+      "offset": 34,
+      "kind": "taken"
+    },
+    {
+      "function": "MODEM_CLOCK_instance",
+      "offset": 46,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "MODEM_CLOCK_instance",
+      "offset": 48,
       "kind": "block"
     },
     {
@@ -3019,6 +3144,81 @@
       "kind": "block"
     },
     {
+      "function": "__assert_func",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "__assert_func",
+      "offset": 20,
+      "kind": "taken"
+    },
+    {
+      "function": "__assert_func",
+      "offset": 20,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "__assert_func",
+      "offset": 22,
+      "kind": "block"
+    },
+    {
+      "function": "__assert_func",
+      "offset": 26,
+      "kind": "taken"
+    },
+    {
+      "function": "__assert_func",
+      "offset": 26,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "__assert_func",
+      "offset": 28,
+      "kind": "block"
+    },
+    {
+      "function": "__assert_func",
+      "offset": 28,
+      "kind": "unresolved"
+    },
+    {
+      "function": "__assert_func",
+      "offset": 30,
+      "kind": "block"
+    },
+    {
+      "function": "__assert_func",
+      "offset": 30,
+      "kind": "taken"
+    },
+    {
+      "function": "__assert_func",
+      "offset": 30,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "__assert_func",
+      "offset": 32,
+      "kind": "block"
+    },
+    {
+      "function": "__assert_func",
+      "offset": 44,
+      "kind": "block"
+    },
+    {
+      "function": "__assert_func",
+      "offset": 62,
+      "kind": "block"
+    },
+    {
+      "function": "__assert_func",
+      "offset": 64,
+      "kind": "block"
+    },
+    {
       "function": "__ctzsi2",
       "offset": 0,
       "kind": "block"
@@ -3132,6 +3332,16 @@
       "function": "__popcountsi2",
       "offset": 0,
       "kind": "block"
+    },
+    {
+      "function": "__riscv_save_0",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "__riscv_save_0",
+      "offset": 10,
+      "kind": "unresolved"
     },
     {
       "function": "bt_bb_v2_init_cmplx",
@@ -11086,6 +11296,781 @@
     {
       "function": "memset",
       "offset": 166,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 10,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 26,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 34,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 90,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 92,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 126,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 130,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 132,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 132,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 136,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 138,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 138,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 142,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 218,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 220,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_deselect_lp_clock_source",
+      "offset": 306,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_deselect_all_coex_lpclk_source",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_deselect_all_wifi_lpclk_source",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_enable_wifipwr_clock",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 4,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 10,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 14,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 20,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 26,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 30,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 30,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 30,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 32,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 46,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 82,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 84,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 84,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 88,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 90,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 90,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 94,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 118,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 142,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 166,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_ble_rtc_timer_lpclk_source",
+      "offset": 186,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 4,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 4,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 8,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 10,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 10,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 14,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 14,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 14,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 18,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 20,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 20,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 24,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 26,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 26,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 30,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 30,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 30,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 32,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 42,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 46,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 82,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 84,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 84,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 88,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 90,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 90,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 94,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 118,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 130,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 142,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 166,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_coex_lpclk_source",
+      "offset": 186,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 0,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 4,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 4,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 8,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 10,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 10,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 14,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 14,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 14,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 18,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 20,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 20,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 24,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 26,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 26,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 30,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 30,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 30,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 32,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 42,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 46,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 82,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 84,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 84,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 88,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 90,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 90,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 94,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 118,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 130,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 142,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 166,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 186,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 224,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 224,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 226,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 242,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 242,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 244,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 256,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 264,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 264,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 268,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 272,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 286,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 286,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 288,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_hal_select_wifi_lpclk_source",
+      "offset": 302,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_lpclk_src_module",
+      "offset": 2,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_lpclk_src_module",
+      "offset": 8,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_lpclk_src_module",
+      "offset": 12,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_lpclk_src_module",
+      "offset": 14,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_lpclk_src_module",
+      "offset": 14,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_lpclk_src_module",
+      "offset": 18,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_lpclk_src_module",
+      "offset": 22,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_lpclk_src_module",
+      "offset": 30,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_lpclk_src_power_domain",
+      "offset": 2,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_lpclk_src_power_domain",
+      "offset": 6,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_lpclk_src_power_domain",
+      "offset": 12,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_lpclk_src_power_domain",
+      "offset": 26,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_lpclk_src_power_domain",
+      "offset": 28,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_lpclk_src_power_domain",
+      "offset": 28,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_lpclk_src_power_domain",
+      "offset": 32,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_lpclk_src_power_domain",
+      "offset": 36,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_lpclk_src_power_domain",
+      "offset": 40,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_lpclk_src_power_domain",
+      "offset": 48,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 14,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 30,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 38,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 94,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 96,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 110,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 114,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 116,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 116,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 120,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 122,
+      "kind": "taken"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 122,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 126,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 270,
+      "kind": "fallthrough"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 272,
+      "kind": "block"
+    },
+    {
+      "function": "modem_clock_select_lp_clock_source",
+      "offset": 418,
       "kind": "block"
     },
     {
@@ -24274,6 +25259,18 @@
       "line": 598
     },
     {
+      "path": "crates/hardware/esp32s31/hal/src/bluetooth/validation.rs",
+      "line": 122
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
+      "line": 788
+    },
+    {
+      "path": "crates/hardware/esp32s31/hal/src/shared_radio.rs",
+      "line": 1058
+    },
+    {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/baseband.rs",
       "line": 49
     },
@@ -24290,13 +25287,37 @@
       "line": 237
     },
     {
+      "path": "crates/hardware/esp32s31/pac/src/bluetooth/phy.rs",
+      "line": 367
+    },
+    {
       "path": "crates/hardware/esp32s31/pac/src/bluetooth/scheduler.rs",
       "line": 397
     },
     {
       "path": "crates/hardware/esp32s31/pac/src/phy/baseband.rs",
       "line": 537
+    },
+    {
+      "path": "crates/hardware/esp32s31/pac/src/validation.rs",
+      "line": 216
     }
   ],
-  "unprojected": []
+  "unprojected": [
+    {
+      "symbol": "dev.4",
+      "offset": 18,
+      "length": 2
+    },
+    {
+      "symbol": "modem_clock_context.7",
+      "offset": 12,
+      "length": 8
+    },
+    {
+      "symbol": "modem_clock_context.7",
+      "offset": 24,
+      "length": 4
+    }
+  ]
 }

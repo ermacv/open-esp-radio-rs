@@ -1,18 +1,22 @@
 //! Bluetooth LE controller leaves of the pinned `esp32s31-bt-lib` and
-//! `libbtbb.a` archives, compared with the compiled production Bluetooth
-//! probes on the `wifi-mac` leaf machinery.
+//! `libbtbb.a` archives, and the Bluetooth low-power clock selection of the
+//! pinned ESP-IDF modem clock driver (`libesp_hw_support.a` over
+//! `libhal.a`), compared with the compiled production Bluetooth probes on the
+//! `wifi-mac` leaf machinery.
 //!
 //! The controller archives name their functions by obfuscated symbols that
 //! change between releases; each leaf names the symbol of the pinned
 //! release.
 use crate::harness::Result;
 use crate::mac::{
-    Domain, Leaf, Objects, Suite, Vendor, in_archive, leaf, objects, ordered, prefix, quiet,
+    Domain, Leaf, Objects, Replacement, Suite, Vendor, in_archive, leaf, objects, ordered, prefix,
+    quiet, released, replaced,
 };
 
-/// Session inputs of the second and third suite archives.
+/// Session inputs of the second to fourth suite archives.
 const BTDM_COMMON_INPUT: u64 = 4;
 const BTBB_INPUT: u64 = 5;
+const HW_SUPPORT_INPUT: u64 = 6;
 
 /// `bt_bb_v2_init_cmplx` prints its version for a nonzero argument; the
 /// claim covers argument one.
@@ -67,6 +71,114 @@ fn btbb_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
             vendor.symbol(PHY_PARAM)? + PHY_PARAM_GAIN,
             vec![*gain as u8],
         )],
+        ..Default::default()
+    })
+}
+
+/// BLE PHY initialization timing bytes: zero, the normal profile's 91 and
+/// all set.
+const PHY_TIMING_BYTES: &[u32] = &[0, 91, 0xff];
+/// Environment bases: a low and a high word-aligned base inside controller
+/// SRAM.
+const PHY_ENVIRONMENTS: &[u32] = &[0x2f00_0100, 0x2f07_ff00];
+/// Resolving-list bases: a low and a high word inside controller SRAM.
+const PHY_RESOLVING_LISTS: &[u32] = &[0x2f00_0200, 0x2f07_fe00];
+/// The 0x20101470 bit-18 branch: not taken and taken.
+const PHY_BRANCH: &[u32] = &[0, 1];
+/// Controller configuration words at +0x40: zero, the pinned default 0x7d0
+/// and all set.
+const PHY_CONFIGURATION_WORDS: &[u32] = &[0, 0x7d0, u32::MAX];
+
+/// The configuration pointer cell and the configuration it names, with its
+/// timing byte at +0x10 and word at +0x40.
+const PHY_CONFIGURATION_CELL: &str = "sym_controller_5RjCWP84jPuSUuPWsdfH";
+const PHY_CONFIGURATION: u32 = 0x3fff_3200;
+const PHY_CONFIGURATION_BYTES: usize = 0x48;
+const PHY_CONFIGURATION_TIMING: usize = 0x10;
+const PHY_CONFIGURATION_WORD: usize = 0x40;
+/// The environment pointer cell of `ble_70.o`.
+const PHY_ENVIRONMENT_CELL: &str = "sym_ble_wp7iIlMybMkUqAGDXiBb";
+/// The resolving-list pointer cell of `ble_38.o`, which
+/// `r_sym_ble_K9RI7JxM1NMxwdTUJ82J` returns.
+const PHY_RESOLVING_LIST_CELL: &str = "sym_ble_sk1y8NvQWFYV5NnjiU1r";
+/// The `ble_25.o` pointer cell `r_sym_ble_Fh7KRrkOJ0DaZapRKpqP` follows: its
+/// object's word +0x20 names the SDK options, whose byte +0x55 selects the
+/// branch.
+const PHY_OPTIONS_CELL: &str = "sym_ble_yqQIeEuNtnC1SQAK2SBM";
+const PHY_OPTIONS_HOLDER: u32 = 0x3fff_3300;
+const PHY_OPTIONS_HOLDER_BYTES: usize = 0x24;
+const PHY_OPTIONS_POINTER: usize = 0x20;
+const PHY_OPTIONS: u32 = 0x3fff_3400;
+const PHY_OPTIONS_BRANCH: usize = 0x55;
+
+/// Modem ETM channel-zero event and task words and the channel-enable set
+/// word the vendor writes, and the channel-two words production writes in
+/// their place: IEEE 802.15.4 owns channel zero, so by the user's decision
+/// the Bluetooth route runs on channel two.
+const ETM_CHANNEL0_EVENT: u32 = 0x2010_880c;
+const ETM_CHANNEL0_TASK: u32 = 0x2010_8810;
+const ETM_CHANNEL2_EVENT: u32 = 0x2010_881c;
+const ETM_CHANNEL2_TASK: u32 = 0x2010_8820;
+const ETM_CHANNEL_ENABLE_SET: u32 = 0x2010_8804;
+const ETM_REMAP: &str = "modem ETM channel zero is IEEE 802.15.4's; by the user's decision \
+    production runs the Bluetooth PHY route on channel two";
+const PHY_ETM_REPLACEMENTS: &[Replacement] = &[
+    Replacement {
+        vendor: (ETM_CHANNEL0_EVENT, 8),
+        replacement: (ETM_CHANNEL2_EVENT, 8),
+        reason: ETM_REMAP,
+    },
+    Replacement {
+        vendor: (ETM_CHANNEL0_TASK, 0x14),
+        replacement: (ETM_CHANNEL2_TASK, 0x14),
+        reason: ETM_REMAP,
+    },
+    Replacement {
+        vendor: (ETM_CHANNEL_ENABLE_SET, 1 << 0),
+        replacement: (ETM_CHANNEL_ENABLE_SET, 1 << 2),
+        reason: ETM_REMAP,
+    },
+];
+
+/// The BLE PHY initializer reads every input from linked globals: the
+/// configuration, the environment and resolving-list cells, and the SDK
+/// options behind the `ble_25.o` cell.
+fn phy_init_abi(words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
+    let [timing, environment, resolving_list, branch, word] = words else {
+        unreachable!("PHY init words: timing, environment, resolving list, branch, word")
+    };
+    let mut configuration = vec![0; PHY_CONFIGURATION_BYTES];
+    configuration[PHY_CONFIGURATION_TIMING] = *timing as u8;
+    configuration[PHY_CONFIGURATION_WORD..PHY_CONFIGURATION_WORD + 4]
+        .copy_from_slice(&word.to_le_bytes());
+    let mut holder = vec![0; PHY_OPTIONS_HOLDER_BYTES];
+    holder[PHY_OPTIONS_POINTER..].copy_from_slice(&PHY_OPTIONS.to_le_bytes());
+    let mut options = vec![0; PHY_OPTIONS_BRANCH + 1];
+    options[PHY_OPTIONS_BRANCH] = *branch as u8;
+    Ok(Objects {
+        vendor: vec![
+            (PHY_CONFIGURATION, configuration),
+            (PHY_OPTIONS_HOLDER, holder),
+            (PHY_OPTIONS, options),
+        ],
+        image: vec![
+            (
+                vendor.symbol(PHY_CONFIGURATION_CELL)?,
+                PHY_CONFIGURATION.to_le_bytes().to_vec(),
+            ),
+            (
+                vendor.symbol(PHY_ENVIRONMENT_CELL)?,
+                environment.to_le_bytes().to_vec(),
+            ),
+            (
+                vendor.symbol(PHY_RESOLVING_LIST_CELL)?,
+                resolving_list.to_le_bytes().to_vec(),
+            ),
+            (
+                vendor.symbol(PHY_OPTIONS_CELL)?,
+                PHY_OPTIONS_HOLDER.to_le_bytes().to_vec(),
+            ),
+        ],
         ..Default::default()
     })
 }
@@ -155,18 +267,171 @@ pub const LEAVES: &[Leaf] = &[
         ),
         BTBB_INPUT,
     ),
+    // BLE PHY register initialization (`r_ble_phy_init_registers`). The
+    // scheduler timing and ETM resource bookkeeping it calls touch only
+    // software state and are answered without effect; the ETM route moves to
+    // channel two; the owner closes with its device fence.
+    ordered(
+        replaced(
+            quiet(
+                objects(
+                    leaf(
+                        "r_sym_ble_nENHlP4KBuQYlFVffaR5",
+                        "open_ble_phy_register_init_trace_r_ble_phy_init_registers",
+                        &[
+                            (
+                                "private_timing_source_byte",
+                                Domain::Words(PHY_TIMING_BYTES),
+                            ),
+                            ("environment_address", Domain::Words(PHY_ENVIRONMENTS)),
+                            ("resolving_list_address", Domain::Words(PHY_RESOLVING_LISTS)),
+                            ("set_branch_control_0470_bit_18", Domain::Words(PHY_BRANCH)),
+                            (
+                                "configuration_word_40",
+                                Domain::Words(PHY_CONFIGURATION_WORDS),
+                            ),
+                        ],
+                        false,
+                    ),
+                    phy_init_abi,
+                ),
+                &[
+                    "r_sym_sched_modWXEVwpjpaAKhsFBrP",
+                    "r_sym_resMgmt_Zl2TCBLFeHxQsRxH3wmd",
+                ],
+            ),
+            PHY_ETM_REPLACEMENTS,
+        ),
+        1,
+    ),
+    // The FreeRTOS critical section and the sleep power-domain bookkeeping
+    // around the modem clock registers are answered without effect.
+    quiet(
+        released(
+            in_archive(
+                objects(
+                    leaf(
+                        "modem_clock_select_lp_clock_source",
+                        "open_bluetooth_trace_select_low_power_clock",
+                        &[],
+                        false,
+                    ),
+                    low_power_clock_select_abi,
+                ),
+                HW_SUPPORT_INPUT,
+            ),
+            1,
+        ),
+        MODEM_CLOCK_QUIET,
+    ),
+    quiet(
+        released(
+            in_archive(
+                objects(
+                    leaf(
+                        "modem_clock_deselect_lp_clock_source",
+                        "open_bluetooth_trace_deselect_low_power_clock",
+                        &[],
+                        false,
+                    ),
+                    low_power_clock_deselect_abi,
+                ),
+                HW_SUPPORT_INPUT,
+            ),
+            1,
+        ),
+        MODEM_CLOCK_QUIET,
+    ),
 ];
+
+/// Modem clock driver calls outside its register transaction. The FreeRTOS
+/// port lives in the firmware's writable IRAM, which cannot carry a link
+/// definition, so the suite declares it absent.
+const MODEM_CLOCK_QUIET: &[&str] = &[
+    "xPortInIsrContext",
+    "xPortEnterCriticalTimeout",
+    "vPortExitCriticalMultiCore",
+    "esp_sleep_pd_config",
+];
+/// ESP-IDF `PERIPH_BT_MODULE` of `soc/esp32s31/include/soc/periph_defs.h`.
+const PERIPH_BT_MODULE: u32 = 6;
+/// ESP-IDF `MODEM_CLOCK_LPCLK_SRC_MAIN_XTAL` of `hal/modem_clock_types.h`.
+const MODEM_CLOCK_LPCLK_SRC_MAIN_XTAL: u32 = 2;
+/// Divider the ESP-IDF Bluetooth controller passes for the main crystal:
+/// `CONFIG_XTAL_FREQ * 1000000 / s_bt_xtal_lpclk_freq - 1` with the reference
+/// build's 40-MHz crystal and the 100-kHz default low-power clock.
+const BLUETOOTH_MAIN_XTAL_DIVIDER: u32 = 40_000_000 / 100_000 - 1;
+
+/// The modem clock HAL context `MODEM_CLOCK_instance` initializes on first
+/// use: the `MODEM_SYSCON` and `MODEM_LPCON` bases the firmware's linker
+/// scripts provide. It is copied into the linked image, so the driver finds
+/// its HAL initialized and never references the absent linker names.
+fn modem_clock_hal_context(vendor: &Vendor<'_>) -> Result<(u32, Vec<u8>)> {
+    let mut context = (vendor.firmware)("MODEM_SYSCON")?.to_le_bytes().to_vec();
+    context.extend((vendor.firmware)("MODEM_LPCON")?.to_le_bytes());
+    Ok((vendor.symbol("modem_clock_hal.8")?, context))
+}
+
+/// `modem_clock_select_lp_clock_source(PERIPH_BT_MODULE, MAIN_XTAL, divider)`,
+/// the call of the ESP-IDF Bluetooth controller; production takes no words.
+fn low_power_clock_select_abi(_words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
+    Ok(Objects {
+        vendor_words: vec![
+            PERIPH_BT_MODULE,
+            MODEM_CLOCK_LPCLK_SRC_MAIN_XTAL,
+            BLUETOOTH_MAIN_XTAL_DIVIDER,
+        ],
+        image: vec![modem_clock_hal_context(vendor)?],
+        ..Default::default()
+    })
+}
+
+/// `modem_clock_deselect_lp_clock_source(PERIPH_BT_MODULE)`; production
+/// takes no words.
+fn low_power_clock_deselect_abi(_words: &[u32], vendor: &Vendor<'_>) -> Result<Objects> {
+    Ok(Objects {
+        vendor_words: vec![PERIPH_BT_MODULE],
+        image: vec![modem_clock_hal_context(vendor)?],
+        ..Default::default()
+    })
+}
 
 /// The Bluetooth controller suite.
 pub const BLUETOOTH: Suite = Suite {
     title: "Bluetooth LE controller leaf comparison",
-    archives: &["libble_app", "libbtdm_common", "libbtbb"],
+    archives: &[
+        "libble_app",
+        "libbtdm_common",
+        "libbtbb",
+        "libesp-hw-support",
+        "libhal",
+    ],
     leaves: LEAVES,
     wifi: false,
     // ESP-IDF linker-script broker tables, which the interrupt and scheduler
-    // reach only after their compared prefixes.
+    // reach only after their compared prefixes; the peripheral bases and ROM
+    // aliases the linker scripts provide and the firmware's writable-IRAM
+    // error, log and I2C functions, which only modem clock driver paths the
+    // compared cases never take reference; and the writable-IRAM FreeRTOS
+    // port, which the modem clock leaves answer as quiet calls.
     absent: &[
         "_nrtIsr_linear_broker_flash",
         "_btdm_sched_linear_broker_flash",
+        "MODEM_SYSCON",
+        "MODEM_LPCON",
+        "LP_CLKRST",
+        "PMU",
+        "HP_SYS_CLKRST",
+        "HP_ALIVE_SYS",
+        "TIMERG0",
+        "esp_rom_delay_us",
+        "esp_rom_printf",
+        "_esp_error_check_failed",
+        "_regi2c_impl_write",
+        "esp_log",
+        "esp_log_timestamp",
+        "xPortInIsrContext",
+        "xPortEnterCriticalTimeout",
+        "vPortExitCriticalMultiCore",
     ],
 };

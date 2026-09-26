@@ -158,3 +158,17 @@ id = "phy-sdk"
 source = "local-build"
 path = "target/architecture-research/phy-vendor-tracking/vendor-wifi/build/phy_tracking_reference.elf"
 sha256 = "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9"
+
+# ESP-IDF component archives of the same reference build: the modem clock
+# driver and its HAL, linked for the Bluetooth low-power clock comparison.
+[[artifact]]
+id = "libesp-hw-support"
+source = "local-build"
+path = "target/architecture-research/phy-vendor-tracking/vendor-wifi/build/esp-idf/esp_hw_support/libesp_hw_support.a"
+sha256 = "e643ad6aef2d840fa605255dc3c773f328cd103ecbc93ef0047ebc9deea7dadc"
+
+[[artifact]]
+id = "libhal"
+source = "local-build"
+path = "target/architecture-research/phy-vendor-tracking/vendor-wifi/build/esp-idf/hal/libhal.a"
+sha256 = "7505ee6a2b1a70e43f802d54ccd951da92f8bf6bfbc3a3dd4f2c2f052557fddc"

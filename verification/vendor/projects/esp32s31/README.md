@@ -434,6 +434,34 @@ cargo xtask vendor-scenario coex \
   --linker /usr/bin/ld.lld --output target/blobray-research/coex --limit-mode watchdog
 ```
 
+## BLE PHY register initialization
+
+The `bluetooth` scenario compares the pinned `r_sym_ble_nENHlP4KBuQYlFVffaR5`
+(`r_ble_phy_init_registers`) with the production transaction through
+`open_ble_phy_register_init_trace_r_ble_phy_init_registers` over timing bytes,
+environment and resolving-list bases, the `0x20101470` branch and
+configuration words. The vendor reads those inputs from linked globals, which
+each case seeds; its scheduler-timing and ETM resource bookkeeping calls are
+answered without effect. The vendor routes modem ETM channel zero from event 8
+to task 20; IEEE 802.15.4 owns that channel here, so production routes channel
+two instead. Three reviewed replacement rules pair those writes, production's
+closing device fence is the one added effect, and every other register access
+compares exactly.
+
+## Bluetooth low-power clock
+
+The `bluetooth` scenario ([`ble.rs`](scenarios/src/ble.rs)) also links the
+ESP-IDF `libesp_hw_support.a` and `libhal.a` of the reference build and
+compares `modem_clock_select_lp_clock_source(PERIPH_BT_MODULE, MAIN_XTAL, 399)`
+with the production lease selection, and
+`modem_clock_deselect_lp_clock_source(PERIPH_BT_MODULE)` with the production
+deselection transaction, over each fill of the retained radio register block.
+The driver's FreeRTOS critical section and its sleep power-domain bookkeeping
+are answered without effect; every modem clock register access is compared
+exactly. The driver's HAL context is copied into the linked image with the
+`MODEM_SYSCON` and `MODEM_LPCON` bases of the pinned firmware, because Blobray
+binds no linker-script absolute symbol.
+
 ## Inputs and probes
 
 Private vendor artifacts are explicit scenario arguments; they are captured into

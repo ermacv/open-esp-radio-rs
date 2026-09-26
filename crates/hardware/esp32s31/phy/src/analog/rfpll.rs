@@ -189,7 +189,6 @@ enum CapSearchPhase {
 struct CapSearchState {
     initial: u16,
     phase: CapSearchPhase,
-    offset: u8,
     phase_attempts: u8,
     accepted: u8,
     sum: u16,
@@ -199,11 +198,11 @@ struct CapSearchState {
 impl CapSearchState {
     const fn candidate(self) -> u16 {
         match self.phase {
-            CapSearchPhase::Down => self.initial.wrapping_sub(self.offset as u16),
+            CapSearchPhase::Down => self.initial.wrapping_sub(self.phase_attempts as u16),
             CapSearchPhase::Up => self
                 .initial
                 .wrapping_add(1)
-                .wrapping_add(self.offset as u16),
+                .wrapping_add(self.phase_attempts as u16),
         }
     }
 }
@@ -610,7 +609,6 @@ impl RfpllFrequencyTransition {
                 RfpllFrequencyStep::CapWriteLow(CapWriteContinuation::Search(CapSearchState {
                     initial,
                     phase: CapSearchPhase::Down,
-                    offset: 0,
                     phase_attempts: 0,
                     accepted: 0,
                     sum: 0,
@@ -654,7 +652,6 @@ impl RfpllFrequencyTransition {
                 if value == 0 {
                     search.sum = search.sum.wrapping_add(search.candidate());
                     search.accepted = search.accepted.wrapping_add(1);
-                    search.offset = search.offset.wrapping_add(1);
                     search.phase_attempts = search.phase_attempts.wrapping_add(1);
                     if search.phase_attempts == CAP_SEARCH_LIMIT {
                         self.finish_cap_phase(search);
@@ -665,7 +662,6 @@ impl RfpllFrequencyTransition {
                 } else if search.accepted != 0 {
                     self.finish_cap_phase(search);
                 } else {
-                    search.offset = search.offset.wrapping_add(1);
                     search.phase_attempts = search.phase_attempts.wrapping_add(1);
                     if search.phase_attempts == CAP_SEARCH_LIMIT {
                         self.finish_cap_phase(search);

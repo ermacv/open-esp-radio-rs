@@ -602,12 +602,12 @@ fn channel_frequency_init_composes_the_complete_cold_graph() {
                 assert!(!outcome.table_was_initialized);
                 assert!(outcome.table_is_initialized);
                 let calibration = outcome.calibration.unwrap();
-                assert_eq!(calibration.nominal.final_cap, 0xc9);
-                assert_eq!(calibration.low.final_cap, 0x81);
-                assert_eq!(calibration.high.final_cap, 0xc1);
+                assert_eq!(calibration.nominal.final_cap, 0xc8);
+                assert_eq!(calibration.low.final_cap, 0x80);
+                assert_eq!(calibration.high.final_cap, 0xc0);
                 assert_eq!(calibration.table.entries_written, 85);
-                assert_eq!(calibration.table.low_frequency_cap, 0x81);
-                assert_eq!(calibration.table.high_frequency_cap, 0xc1);
+                assert_eq!(calibration.table.low_frequency_cap, 0x80);
+                assert_eq!(calibration.table.high_frequency_cap, 0xc0);
                 assert_eq!(outcome.i2c.sdm_register_0, 0x8f);
                 break;
             }

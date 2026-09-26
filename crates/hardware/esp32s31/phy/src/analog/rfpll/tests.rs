@@ -59,7 +59,13 @@ fn enter_cap_search(transition: &mut RfpllFrequencyTransition, low: u8, high: u8
     transition.advance(completion).unwrap();
 }
 
-fn complete_cap_candidate(transition: &mut RfpllFrequencyTransition, status: u8) {
+fn complete_cap_candidate(transition: &mut RfpllFrequencyTransition, status: u8) -> u8 {
+    let RfpllFrequencyAction::WriteByte {
+        value: candidate, ..
+    } = transition.action()
+    else {
+        panic!("expected cap low write");
+    };
     advance_writes(transition, 2);
     assert_eq!(transition.action(), RfpllFrequencyAction::DelayMicros(5));
     transition
@@ -74,6 +80,7 @@ fn complete_cap_candidate(transition: &mut RfpllFrequencyTransition, status: u8)
             value: status,
         })
         .unwrap();
+    candidate
 }
 
 #[test]
@@ -118,7 +125,7 @@ fn lock_deadline_is_one_hundred_external_delay_and_read_edges() {
 }
 
 #[test]
-fn capacitor_search_preserves_shared_offset_sum_and_first_match_order() {
+fn capacitor_search_restarts_the_upward_offset_and_keeps_the_shared_sum() {
     let mut transition = RfpllFrequencyTransition::new(RfpllFrequencyRequest {
         crystal_selector: 0x31,
         frequency_code: 0x983,
@@ -126,11 +133,8 @@ fn capacitor_search_preserves_shared_offset_sum_and_first_match_order() {
     });
     enter_cap_search(&mut transition, 100, 0);
 
-    complete_cap_candidate(&mut transition, 0);
-    complete_cap_candidate(&mut transition, 0);
-    complete_cap_candidate(&mut transition, 1);
-    complete_cap_candidate(&mut transition, 0);
-    complete_cap_candidate(&mut transition, 1);
+    let candidates = [0, 0, 1, 0, 1].map(|status| complete_cap_candidate(&mut transition, status));
+    assert_eq!(candidates, [100, 99, 98, 101, 102]);
 
     advance_writes(&mut transition, 2);
     transition
@@ -140,7 +144,7 @@ fn capacitor_search_preserves_shared_offset_sum_and_first_match_order() {
         panic!("expected completion");
     };
     assert_eq!(outcome.initial_cap, 100);
-    assert_eq!(outcome.final_cap, (100 + 99 + 103) / 3);
+    assert_eq!(outcome.final_cap, (100 + 99 + 101) / 3);
     assert_eq!(outcome.accepted_cap_samples, 3);
     assert!(outcome.lock_observed);
 }

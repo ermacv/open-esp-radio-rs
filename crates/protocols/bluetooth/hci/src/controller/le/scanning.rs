@@ -17,7 +17,7 @@ use bt_hci::{
     },
 };
 
-use crate::{BootstrapPhase, HciCommandPacket, HciControllerResponse};
+use crate::{HciCommandPacket, HciControllerResponse};
 
 /// Complete Command Complete event size for this command family.
 pub const LE_LEGACY_SCANNING_COMMAND_COMPLETE_EVENT_CAPACITY: usize = 6;
@@ -134,15 +134,6 @@ impl LeLegacyScanningConfigurationCommand {
     pub const fn parameters(self) -> LeLegacyPassiveScanParameters {
         self.parameters
     }
-
-    pub(crate) fn into_active_session_command_complete(
-        self,
-    ) -> LeLegacyScanningCommandCompleteEvent {
-        LeLegacyScanningCommandCompleteEvent::new(
-            LeLegacyScanningCommandKind::SetParameters.opcode(),
-            HciError::CMD_DISALLOWED.to_status(),
-        )
-    }
 }
 
 /// Immutable Host configuration snapshot retained from Enable until radio start.
@@ -164,141 +155,41 @@ impl LeLegacyScanningEnableRequest {
     }
 }
 
-pub(crate) enum LeLegacyScanningIdleEnableDisposition {
-    Start(LeLegacyScanningEnableRequest),
-    Complete(LeLegacyScanningCommandCompleteEvent),
-}
-
-pub(crate) enum LeLegacyScanningActiveEnableDisposition {
-    Disable(LeLegacyScanningEnableCommand),
-    Complete(LeLegacyScanningCommandCompleteEvent),
-}
-
-impl LeLegacyScanningEnableCommand {
-    pub(crate) fn into_started_command_complete(self) -> LeLegacyScanningCommandCompleteEvent {
-        debug_assert!(self.enable);
-        LeLegacyScanningCommandCompleteEvent::new(
-            LeLegacyScanningCommandKind::SetEnable.opcode(),
-            Status::SUCCESS,
-        )
-    }
-
-    pub(crate) fn into_hardware_failure_command_complete(
-        self,
-    ) -> LeLegacyScanningCommandCompleteEvent {
-        debug_assert!(self.enable);
-        LeLegacyScanningCommandCompleteEvent::new(
-            LeLegacyScanningCommandKind::SetEnable.opcode(),
-            HciError::HARDWARE_FAILURE.to_status(),
-        )
-    }
-
-    pub(crate) fn into_active_session_disposition(self) -> LeLegacyScanningActiveEnableDisposition {
-        if self.enable {
-            LeLegacyScanningActiveEnableDisposition::Complete(
-                LeLegacyScanningCommandCompleteEvent::new(
-                    LeLegacyScanningCommandKind::SetEnable.opcode(),
-                    HciError::CMD_DISALLOWED.to_status(),
-                ),
-            )
-        } else {
-            LeLegacyScanningActiveEnableDisposition::Disable(self)
-        }
-    }
-
-    pub(crate) fn into_stopped_command_complete(self) -> LeLegacyScanningCommandCompleteEvent {
-        debug_assert!(!self.enable);
-        LeLegacyScanningCommandCompleteEvent::new(
-            LeLegacyScanningCommandKind::SetEnable.opcode(),
-            Status::SUCCESS,
-        )
-    }
-}
+/// Enable found no Set Scan Parameters since Reset.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLegacyScanningParametersMissing;
 
 /// Reset-scoped software configuration for the passive scanner.
-pub(crate) struct LeLegacyScanningConfiguration {
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LeLegacyScanningConfiguration {
     parameters: Option<LeLegacyPassiveScanParameters>,
 }
 
 impl LeLegacyScanningConfiguration {
-    pub(crate) const fn new() -> Self {
+    /// No parameters set.
+    pub const fn new() -> Self {
         Self { parameters: None }
     }
 
-    pub(crate) fn dispatch(
-        &mut self,
-        phase: BootstrapPhase,
-        command: LeLegacyScanningConfigurationCommand,
-    ) -> LeLegacyScanningCommandCompleteEvent {
-        if phase == BootstrapPhase::AwaitingReset {
-            return LeLegacyScanningCommandCompleteEvent::new(
-                LeLegacyScanningCommandKind::SetParameters.opcode(),
-                HciError::CMD_DISALLOWED.to_status(),
-            );
-        }
+    /// Apply Set Scan Parameters.
+    pub fn configure(&mut self, command: LeLegacyScanningConfigurationCommand) {
         self.parameters = Some(command.parameters());
-        LeLegacyScanningCommandCompleteEvent::new(
-            LeLegacyScanningCommandKind::SetParameters.opcode(),
-            Status::SUCCESS,
-        )
     }
 
-    pub(crate) fn reset(&mut self) {
-        *self = Self::new();
-    }
-
-    pub(crate) fn dispatch_idle_enable(
+    /// Snapshot the configuration for an enabling Set Scan Enable.
+    pub fn enable_request(
         &self,
-        phase: BootstrapPhase,
         command: LeLegacyScanningEnableCommand,
-    ) -> LeLegacyScanningIdleEnableDisposition {
-        if phase == BootstrapPhase::AwaitingReset {
-            return LeLegacyScanningIdleEnableDisposition::Complete(
-                LeLegacyScanningCommandCompleteEvent::new(
-                    LeLegacyScanningCommandKind::SetEnable.opcode(),
-                    HciError::CMD_DISALLOWED.to_status(),
-                ),
-            );
-        }
-        if !command.enable() {
-            return LeLegacyScanningIdleEnableDisposition::Complete(
-                LeLegacyScanningCommandCompleteEvent::new(
-                    LeLegacyScanningCommandKind::SetEnable.opcode(),
-                    Status::SUCCESS,
-                ),
-            );
-        }
-        let Some(parameters) = self.parameters else {
-            return LeLegacyScanningIdleEnableDisposition::Complete(
-                LeLegacyScanningCommandCompleteEvent::new(
-                    LeLegacyScanningCommandKind::SetEnable.opcode(),
-                    HciError::CMD_DISALLOWED.to_status(),
-                ),
-            );
-        };
-        LeLegacyScanningIdleEnableDisposition::Start(LeLegacyScanningEnableRequest {
+    ) -> Result<LeLegacyScanningEnableRequest, LeLegacyScanningParametersMissing> {
+        let parameters = self.parameters.ok_or(LeLegacyScanningParametersMissing)?;
+        Ok(LeLegacyScanningEnableRequest {
             parameters,
             duplicate_policy: command.duplicate_policy(),
         })
     }
 
-    pub(crate) fn complete_enable_while_radio_unavailable(
-        phase: BootstrapPhase,
-        command: LeLegacyScanningEnableCommand,
-    ) -> LeLegacyScanningCommandCompleteEvent {
-        let status = if phase == BootstrapPhase::AwaitingReset || command.enable() {
-            HciError::CMD_DISALLOWED.to_status()
-        } else {
-            Status::SUCCESS
-        };
-        LeLegacyScanningCommandCompleteEvent::new(
-            LeLegacyScanningCommandKind::SetEnable.opcode(),
-            status,
-        )
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn parameters(&self) -> Option<LeLegacyPassiveScanParameters> {
+    /// Current parameters.
+    pub const fn parameters(&self) -> Option<LeLegacyPassiveScanParameters> {
         self.parameters
     }
 }
@@ -431,7 +322,8 @@ pub struct LeLegacyScanningCommandCompleteEvent {
 }
 
 impl LeLegacyScanningCommandCompleteEvent {
-    pub(crate) fn new(opcode: Opcode, status: Status) -> Self {
+    /// Command Complete for `opcode` with `status` and no return parameters.
+    pub fn new(opcode: Opcode, status: Status) -> Self {
         let opcode_bytes = opcode.to_raw().to_le_bytes();
         Self {
             bytes: [

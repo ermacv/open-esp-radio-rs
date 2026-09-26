@@ -7,7 +7,7 @@ use bt_hci::{
     event::{CommandComplete, CommandCompleteWithStatus, Event, le::LeEvent},
     param::{
         AddrKind, BdAddr, Duration, Error as HciError, LeAdvEventKind, LeScanKind,
-        ScanningFilterPolicy, Status,
+        ScanningFilterPolicy,
     },
 };
 
@@ -15,9 +15,9 @@ use super::{
     LeLegacyAdvertisingReportEvent, LeLegacyAdvertisingReportEventError, LeLegacyScanningCommand,
     LeLegacyScanningConfiguration, LeLegacyScanningConfigurationCommand,
     LeLegacyScanningDecodeError, LeLegacyScanningDuplicatePolicy, LeLegacyScanningEnableCommand,
-    LeLegacyScanningIdleEnableDisposition,
+    LeLegacyScanningParametersMissing,
 };
-use crate::{BootstrapPhase, HciCommandPacket};
+use crate::HciCommandPacket;
 
 fn decode<C>(command: &C) -> Result<LeLegacyScanningCommand, LeLegacyScanningDecodeError>
 where
@@ -29,7 +29,7 @@ where
         .params()
         .write_hci(&mut &mut encoded[..length])
         .expect("the standard parameters fit their declared size");
-    LeLegacyScanningCommand::decode(HciCommandPacket::for_test(C::OPCODE, &encoded[..length]))
+    LeLegacyScanningCommand::decode(HciCommandPacket::new(C::OPCODE, &encoded[..length]))
 }
 
 #[test]
@@ -129,7 +129,7 @@ fn unsupported_profiles_and_invalid_timing_fail_closed() {
 #[test]
 fn malformed_standard_parameter_body_is_rejected_by_bt_hci() {
     let error =
-        LeLegacyScanningCommand::decode(HciCommandPacket::for_test(LeSetScanEnable::OPCODE, &[1]))
+        LeLegacyScanningCommand::decode(HciCommandPacket::new(LeSetScanEnable::OPCODE, &[1]))
             .expect_err("a truncated standard command must fail closed");
     let response = error
         .into_command_complete()
@@ -142,13 +142,11 @@ fn malformed_standard_parameter_body_is_rejected_by_bt_hci() {
 
 #[test]
 fn rejection_completion_roundtrips_through_bt_hci() {
-    let response = LeLegacyScanningCommand::decode(HciCommandPacket::for_test(
-        LeSetScanEnable::OPCODE,
-        &[2, 0],
-    ))
-    .expect_err("bt-hci rejects an invalid bool")
-    .into_command_complete()
-    .expect("the opcode belongs to scanning");
+    let response =
+        LeLegacyScanningCommand::decode(HciCommandPacket::new(LeSetScanEnable::OPCODE, &[2, 0]))
+            .expect_err("bt-hci rejects an invalid bool")
+            .into_command_complete()
+            .expect("the opcode belongs to scanning");
     let complete = CommandComplete::from_hci_bytes_complete(&response.as_bytes()[2..])
         .expect("the event parameters decode through bt-hci");
     let complete: CommandCompleteWithStatus<'_> = complete
@@ -175,38 +173,23 @@ fn reset_scoped_configuration_freezes_an_enable_snapshot() {
     let parameters = LeLegacyScanningConfigurationCommand::from_command(parameters)
         .expect("Set Parameters is configuration");
     let mut configuration = LeLegacyScanningConfiguration::new();
-
-    assert_eq!(
-        configuration
-            .dispatch(BootstrapPhase::AwaitingReset, parameters)
-            .status(),
-        HciError::CMD_DISALLOWED.to_status()
-    );
-    assert_eq!(configuration.parameters(), None);
-    assert_eq!(
-        configuration
-            .dispatch(BootstrapPhase::Configuring, parameters)
-            .status(),
-        Status::SUCCESS
-    );
-
     let enable = LeLegacyScanningEnableCommand {
         enable: true,
         duplicate_policy: LeLegacyScanningDuplicatePolicy::FilterDuplicates,
     };
-    let LeLegacyScanningIdleEnableDisposition::Start(request) =
-        configuration.dispatch_idle_enable(BootstrapPhase::Configuring, enable)
-    else {
-        panic!("configured Enable must retain a hardware start");
-    };
+    assert_eq!(
+        configuration.enable_request(enable),
+        Err(LeLegacyScanningParametersMissing)
+    );
+    configuration.configure(parameters);
+    let request = configuration
+        .enable_request(enable)
+        .expect("configured Enable takes a snapshot");
     assert_eq!(request.parameters(), parameters.parameters());
     assert_eq!(
         request.duplicate_policy(),
         LeLegacyScanningDuplicatePolicy::FilterDuplicates
     );
-
-    configuration.reset();
-    assert_eq!(configuration.parameters(), None);
 }
 
 #[test]

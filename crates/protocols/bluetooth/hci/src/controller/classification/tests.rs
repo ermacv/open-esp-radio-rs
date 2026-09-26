@@ -22,17 +22,15 @@ use crate::{
 
 #[test]
 fn disconnect_is_owned_and_malformed_input_keeps_command_status_semantics() {
-    let classified = classify_le_controller_command(HciCommandPacket::for_test(
-        Disconnect::OPCODE,
-        &[1, 0, 0x13],
-    ));
+    let classified =
+        classify_le_controller_command(HciCommandPacket::new(Disconnect::OPCODE, &[1, 0, 0x13]));
     let LeControllerCommandClassification::Disconnect(command) = classified else {
         panic!("valid Disconnect did not become a semantic command");
     };
     assert_eq!(command.handle().raw(), 1);
     assert_eq!(command.reason(), 0x13);
 
-    let malformed = classify_le_controller_command(HciCommandPacket::for_test(
+    let malformed = classify_le_controller_command(HciCommandPacket::new(
         LeDisconnectCommand::OPCODE,
         &[1, 0, 0x16],
     ));
@@ -47,7 +45,7 @@ fn disconnect_is_owned_and_malformed_input_keeps_command_status_semantics() {
 
 #[test]
 fn read_remote_features_is_classified_before_the_closed_bootstrap_table() {
-    let classified = classify_le_controller_command(HciCommandPacket::for_test(
+    let classified = classify_le_controller_command(HciCommandPacket::new(
         LeReadRemoteFeatures::OPCODE,
         &[1, 0],
     ));
@@ -56,10 +54,8 @@ fn read_remote_features_is_classified_before_the_closed_bootstrap_table() {
     };
     assert_eq!(command.handle(), bt_hci::param::ConnHandle::new(1));
 
-    let malformed = classify_le_controller_command(HciCommandPacket::for_test(
-        LeReadRemoteFeatures::OPCODE,
-        &[1],
-    ));
+    let malformed =
+        classify_le_controller_command(HciCommandPacket::new(LeReadRemoteFeatures::OPCODE, &[1]));
     let LeControllerCommandClassification::MalformedReadRemoteFeatures(response) = malformed else {
         panic!("malformed remote-feature request escaped its command family");
     };
@@ -71,7 +67,7 @@ fn read_remote_features_is_classified_before_the_closed_bootstrap_table() {
 
 #[test]
 fn read_remote_version_is_classified_before_the_closed_bootstrap_table() {
-    let classified = classify_le_controller_command(HciCommandPacket::for_test(
+    let classified = classify_le_controller_command(HciCommandPacket::new(
         ReadRemoteVersionInformation::OPCODE,
         &[1, 0],
     ));
@@ -81,7 +77,7 @@ fn read_remote_version_is_classified_before_the_closed_bootstrap_table() {
     };
     assert_eq!(command.handle(), bt_hci::param::ConnHandle::new(1));
 
-    let malformed = classify_le_controller_command(HciCommandPacket::for_test(
+    let malformed = classify_le_controller_command(HciCommandPacket::new(
         ReadRemoteVersionInformation::OPCODE,
         &[1],
     ));
@@ -101,7 +97,7 @@ fn long_term_key_replies_are_owned_before_the_closed_bootstrap_table() {
     let mut parameters = [0; 18];
     parameters[..2].copy_from_slice(&1_u16.to_le_bytes());
     parameters[2..].copy_from_slice(&[0x5a; 16]);
-    let classified = classify_le_controller_command(HciCommandPacket::for_test(
+    let classified = classify_le_controller_command(HciCommandPacket::new(
         LeLongTermKeyRequestReply::OPCODE,
         &parameters,
     ));
@@ -111,7 +107,7 @@ fn long_term_key_replies_are_owned_before_the_closed_bootstrap_table() {
     assert_eq!(command.handle(), bt_hci::param::ConnHandle::new(1));
     assert_eq!(command.into_long_term_key(), [0x5a; 16]);
 
-    let classified = classify_le_controller_command(HciCommandPacket::for_test(
+    let classified = classify_le_controller_command(HciCommandPacket::new(
         LeLongTermKeyRequestNegativeReply::OPCODE,
         &[1, 0],
     ));
@@ -120,7 +116,7 @@ fn long_term_key_replies_are_owned_before_the_closed_bootstrap_table() {
     };
     assert_eq!(command.handle(), bt_hci::param::ConnHandle::new(1));
 
-    let malformed = classify_le_controller_command(HciCommandPacket::for_test(
+    let malformed = classify_le_controller_command(HciCommandPacket::new(
         LeLongTermKeyRequestReply::OPCODE,
         &[1, 0],
     ));
@@ -136,7 +132,7 @@ fn long_term_key_replies_are_owned_before_the_closed_bootstrap_table() {
 #[test]
 fn bootstrap_command_is_owned_without_advancing_software_state() {
     let mut bootstrap = bootstrap();
-    let classified = classify_le_controller_command(HciCommandPacket::for_test(Reset::OPCODE, &[]));
+    let classified = classify_le_controller_command(HciCommandPacket::new(Reset::OPCODE, &[]));
 
     let LeControllerCommandClassification::Bootstrap(command) = classified else {
         panic!("Reset did not become an owned bootstrap command");
@@ -145,7 +141,7 @@ fn bootstrap_command_is_owned_without_advancing_software_state() {
     assert!(command.is_reset());
     assert_eq!(bootstrap.phase(), BootstrapPhase::AwaitingReset);
 
-    let response = bootstrap.dispatch_owned(command, false);
+    let response = bootstrap.dispatch(command, false);
     assert_eq!(response.status(), Status::SUCCESS);
     assert_eq!(bootstrap.phase(), BootstrapPhase::Configuring);
 }
@@ -153,7 +149,7 @@ fn bootstrap_command_is_owned_without_advancing_software_state() {
 #[test]
 fn bootstrap_payload_is_typed_and_independent_of_receive_storage() {
     let mut parameters = [6, 5, 4, 3, 2, 0xc1];
-    let command = match classify_le_controller_command(HciCommandPacket::for_test(
+    let command = match classify_le_controller_command(HciCommandPacket::new(
         LeSetRandomAddr::OPCODE,
         &parameters,
     )) {
@@ -173,19 +169,19 @@ fn active_reset_can_be_held_until_the_session_policy_dispatches_it() {
     let mut bootstrap = bootstrap();
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
+            .dispatch(OwnedBootstrapCommand::Reset, false)
             .status(),
         Status::SUCCESS
     );
     let requested_mask = EventMask::new().enable_hardware_error(true);
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(requested_mask), false)
+            .dispatch(OwnedBootstrapCommand::SetEventMask(requested_mask), false)
             .status(),
         Status::SUCCESS
     );
 
-    let classified = classify_le_controller_command(HciCommandPacket::for_test(Reset::OPCODE, &[]));
+    let classified = classify_le_controller_command(HciCommandPacket::new(Reset::OPCODE, &[]));
     assert_eq!(bootstrap.event_mask(), requested_mask);
     let LeControllerCommandClassification::Bootstrap(reset) = classified else {
         panic!("active Reset did not remain an owned policy input");
@@ -193,11 +189,11 @@ fn active_reset_can_be_held_until_the_session_policy_dispatches_it() {
     assert!(reset.is_reset());
     assert_eq!(bootstrap.event_mask(), requested_mask);
 
+    assert_eq!(bootstrap.dispatch(reset, false).status(), Status::SUCCESS);
     assert_eq!(
-        bootstrap.dispatch_owned(reset, false).status(),
-        Status::SUCCESS
+        bootstrap.event_mask(),
+        crate::controller::bootstrap::state::default_event_mask()
     );
-    assert_eq!(bootstrap.event_mask(), EventMask::new());
 }
 
 #[test]
@@ -206,19 +202,19 @@ fn malformed_known_bootstrap_is_owned_without_touching_an_epoch() {
     let requested_mask = EventMask::new().enable_hardware_error(true);
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
+            .dispatch(OwnedBootstrapCommand::Reset, false)
             .status(),
         Status::SUCCESS
     );
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::SetEventMask(requested_mask), false)
+            .dispatch(OwnedBootstrapCommand::SetEventMask(requested_mask), false)
             .status(),
         Status::SUCCESS
     );
 
     let classified =
-        classify_le_controller_command(HciCommandPacket::for_test(SetEventMask::OPCODE, &[0; 7]));
+        classify_le_controller_command(HciCommandPacket::new(SetEventMask::OPCODE, &[0; 7]));
 
     let LeControllerCommandClassification::MalformedBootstrap(response) = classified else {
         panic!("malformed bootstrap command escaped its command family");
@@ -234,10 +230,8 @@ fn malformed_known_bootstrap_is_owned_without_touching_an_epoch() {
 
 #[test]
 fn valid_dtm_command_becomes_an_owned_semantic_token() {
-    let classified = classify_le_controller_command(HciCommandPacket::for_test(
-        LE_RECEIVER_TEST_V1_OPCODE,
-        &[39],
-    ));
+    let classified =
+        classify_le_controller_command(HciCommandPacket::new(LE_RECEIVER_TEST_V1_OPCODE, &[39]));
 
     let LeControllerCommandClassification::Dtm(LeDtmCommand::ReceiverTest(command)) = classified
     else {
@@ -248,7 +242,7 @@ fn valid_dtm_command_becomes_an_owned_semantic_token() {
 
 #[test]
 fn advertising_configuration_and_enable_are_owned() {
-    let parameters = classify_le_controller_command(HciCommandPacket::for_test(
+    let parameters = classify_le_controller_command(HciCommandPacket::new(
         LeSetAdvParams::OPCODE,
         &[
             0x20, 0x00, 0x40, 0x00, 0x03, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0x07, 0x00,
@@ -262,7 +256,7 @@ fn advertising_configuration_and_enable_are_owned() {
     ));
 
     let data =
-        classify_le_controller_command(HciCommandPacket::for_test(LeSetAdvData::OPCODE, &[0; 32]));
+        classify_le_controller_command(HciCommandPacket::new(LeSetAdvData::OPCODE, &[0; 32]));
     assert!(matches!(
         data,
         LeControllerCommandClassification::LegacyAdvertisingConfiguration(
@@ -270,7 +264,7 @@ fn advertising_configuration_and_enable_are_owned() {
         )
     ));
 
-    let scan_response = classify_le_controller_command(HciCommandPacket::for_test(
+    let scan_response = classify_le_controller_command(HciCommandPacket::new(
         LeSetScanResponseData::OPCODE,
         &[0; 32],
     ));
@@ -282,7 +276,7 @@ fn advertising_configuration_and_enable_are_owned() {
     ));
 
     let enable =
-        classify_le_controller_command(HciCommandPacket::for_test(LeSetAdvEnable::OPCODE, &[1]));
+        classify_le_controller_command(HciCommandPacket::new(LeSetAdvEnable::OPCODE, &[1]));
     assert!(matches!(
         enable,
         LeControllerCommandClassification::LegacyAdvertisingEnable(_)
@@ -292,8 +286,7 @@ fn advertising_configuration_and_enable_are_owned() {
 #[test]
 fn malformed_claimed_advertising_configuration_has_exact_status() {
     for opcode in [LeSetAdvData::OPCODE, LeSetScanResponseData::OPCODE] {
-        let classified =
-            classify_le_controller_command(HciCommandPacket::for_test(opcode, &[32; 32]));
+        let classified = classify_le_controller_command(HciCommandPacket::new(opcode, &[32; 32]));
         let LeControllerCommandClassification::MalformedLegacyAdvertising(response) = classified
         else {
             panic!("invalid advertising data escaped its claimed family");
@@ -335,8 +328,7 @@ fn known_dtm_rejections_retain_their_required_status() {
             HciError::INVALID_HCI_PARAMETERS.to_status(),
         ),
     ] {
-        let classified =
-            classify_le_controller_command(HciCommandPacket::for_test(opcode, parameters));
+        let classified = classify_le_controller_command(HciCommandPacket::new(opcode, parameters));
         let LeControllerCommandClassification::MalformedDtm(response) = classified else {
             panic!("malformed known DTM command escaped its command family");
         };
@@ -348,10 +340,8 @@ fn known_dtm_rejections_retain_their_required_status() {
 #[test]
 fn malformed_enable_response_is_owned_across_receive_storage_reuse() {
     let mut parameters = [2];
-    let classified = classify_le_controller_command(HciCommandPacket::for_test(
-        LeSetAdvEnable::OPCODE,
-        &parameters,
-    ));
+    let classified =
+        classify_le_controller_command(HciCommandPacket::new(LeSetAdvEnable::OPCODE, &parameters));
     parameters.fill(0);
 
     assert_eq!(classified.opcode(), LeSetAdvEnable::OPCODE);
@@ -368,7 +358,7 @@ fn malformed_enable_response_is_owned_across_receive_storage_reuse() {
 #[test]
 fn unrelated_opcode_group_produces_an_exact_unknown_command_completion() {
     let opcode = Opcode::new(OpcodeGroup::VENDOR_SPECIFIC, 7);
-    let classified = classify_le_controller_command(HciCommandPacket::for_test(opcode, &[2, 3, 5]));
+    let classified = classify_le_controller_command(HciCommandPacket::new(opcode, &[2, 3, 5]));
 
     let LeControllerCommandClassification::Unsupported(response) = classified else {
         panic!("unclaimed opcode did not produce an owned terminal response");

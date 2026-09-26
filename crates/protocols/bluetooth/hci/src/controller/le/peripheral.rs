@@ -210,7 +210,8 @@ impl LeLongTermKeyCommandCompleteEvent {
         )
     }
 
-    pub(crate) fn accepted(opcode: Opcode, handle: ConnHandle) -> Self {
+    /// Successful completion for `handle`.
+    pub fn accepted(opcode: Opcode, handle: ConnHandle) -> Self {
         Self::new(opcode, Status::SUCCESS, handle)
     }
 

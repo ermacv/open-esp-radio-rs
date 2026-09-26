@@ -18,9 +18,7 @@ use bt_hci::{
     param::{AddrKind, AdvFilterPolicy, AdvKind, BdAddr, Error as HciError, Status},
 };
 
-use crate::{
-    BluetoothPublicDeviceAddress, BootstrapPhase, HciCommandPacket, HciControllerResponse,
-};
+use crate::{BluetoothPublicDeviceAddress, HciCommandPacket, HciControllerResponse};
 
 /// Largest legacy advertising data value accepted by the HCI command.
 pub const LE_LEGACY_ADVERTISING_DATA_CAPACITY: usize = 31;
@@ -249,52 +247,6 @@ impl LeLegacyAdvertisingEnableCommand {
     pub const fn enable(self) -> bool {
         self.enable
     }
-
-    pub(crate) fn into_started_command_complete(self) -> LeLegacyAdvertisingCommandCompleteEvent {
-        debug_assert!(self.enable);
-        LeLegacyAdvertisingCommandCompleteEvent::new(
-            LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
-            Status::SUCCESS,
-        )
-    }
-
-    pub(crate) fn into_hardware_failure_command_complete(
-        self,
-    ) -> LeLegacyAdvertisingCommandCompleteEvent {
-        debug_assert!(self.enable);
-        LeLegacyAdvertisingCommandCompleteEvent::new(
-            LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
-            HciError::HARDWARE_FAILURE.to_status(),
-        )
-    }
-
-    pub(crate) fn into_active_session_disposition(
-        self,
-    ) -> LeLegacyAdvertisingActiveEnableDisposition {
-        if self.enable {
-            LeLegacyAdvertisingActiveEnableDisposition::Complete(
-                LeLegacyAdvertisingCommandCompleteEvent::new(
-                    LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
-                    Status::SUCCESS,
-                ),
-            )
-        } else {
-            LeLegacyAdvertisingActiveEnableDisposition::Disable(self)
-        }
-    }
-
-    pub(crate) fn into_stopped_command_complete(self) -> LeLegacyAdvertisingCommandCompleteEvent {
-        debug_assert!(!self.enable);
-        LeLegacyAdvertisingCommandCompleteEvent::new(
-            LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
-            Status::SUCCESS,
-        )
-    }
-}
-
-pub(crate) enum LeLegacyAdvertisingActiveEnableDisposition {
-    Disable(LeLegacyAdvertisingEnableCommand),
-    Complete(LeLegacyAdvertisingCommandCompleteEvent),
 }
 
 /// Resolved advertiser address retained by an accepted Enable transaction.
@@ -378,11 +330,18 @@ impl LeLegacyConnectableAdvertisingEnableRequest {
     }
 }
 
-pub(crate) enum LeLegacyAdvertisingIdleEnableDisposition {
-    StartNonconnectable(LeLegacyNonconnectableAdvertisingEnableRequest),
-    StartConnectable(LeLegacyConnectableAdvertisingEnableRequest),
-    Complete(LeLegacyAdvertisingCommandCompleteEvent),
+/// Role-specific snapshot of the configuration taken by Enable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeLegacyAdvertisingEnableRequest {
+    /// Non-connectable undirected advertising.
+    Nonconnectable(LeLegacyNonconnectableAdvertisingEnableRequest),
+    /// Connectable undirected advertising with its scan response.
+    Connectable(LeLegacyConnectableAdvertisingEnableRequest),
 }
+
+/// Enable asked for a random own address that the Host never set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLegacyAdvertisingRandomAddressMissing;
 
 impl LeLegacyAdvertisingConfigurationCommand {
     /// Extract the software-only configuration commands from the full family.
@@ -409,31 +368,23 @@ impl LeLegacyAdvertisingConfigurationCommand {
             Self::SetScanResponseData(_) => LeLegacyAdvertisingCommandKind::SetScanResponseData,
         }
     }
-
-    pub(crate) fn into_active_session_command_complete(
-        self,
-    ) -> LeLegacyAdvertisingCommandCompleteEvent {
-        LeLegacyAdvertisingCommandCompleteEvent::new(
-            self.kind().opcode(),
-            HciError::CMD_DISALLOWED.to_status(),
-        )
-    }
 }
 
 /// Reset-scoped software configuration for one legacy advertising set.
 ///
-/// Reset restores the standard connectable-undirected, public-address,
-/// all-primary-channels, unfiltered parameter defaults. This state contains
-/// only Host intent and those defaults. It grants no Link Layer, scheduler,
-/// SRAM, or radio ownership and has no enabled state.
-pub(crate) struct LeLegacyAdvertisingConfiguration {
+/// A new value holds the standard connectable-undirected, public-address,
+/// all-primary-channels, unfiltered parameter defaults. It contains only Host
+/// intent and has no enabled state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LeLegacyAdvertisingConfiguration {
     parameters: LeLegacyAdvertisingParameters,
     data: LeLegacyAdvertisingData,
     scan_response_data: LeLegacyScanResponseData,
 }
 
 impl LeLegacyAdvertisingConfiguration {
-    pub(crate) const fn new() -> Self {
+    /// The standard defaults.
+    pub const fn new() -> Self {
         Self {
             parameters: LeLegacyAdvertisingParameters {
                 role: LeLegacyAdvertisingRole::Connectable,
@@ -459,18 +410,8 @@ impl LeLegacyAdvertisingConfiguration {
         }
     }
 
-    pub(crate) fn dispatch(
-        &mut self,
-        phase: BootstrapPhase,
-        command: LeLegacyAdvertisingConfigurationCommand,
-    ) -> LeLegacyAdvertisingCommandCompleteEvent {
-        let kind = command.kind();
-        if phase == BootstrapPhase::AwaitingReset {
-            return LeLegacyAdvertisingCommandCompleteEvent::new(
-                kind.opcode(),
-                HciError::CMD_DISALLOWED.to_status(),
-            );
-        }
+    /// Apply one configuration command.
+    pub fn configure(&mut self, command: LeLegacyAdvertisingConfigurationCommand) {
         match command {
             LeLegacyAdvertisingConfigurationCommand::SetParameters(parameters) => {
                 self.parameters = parameters;
@@ -482,56 +423,26 @@ impl LeLegacyAdvertisingConfiguration {
                 self.scan_response_data = data;
             }
         }
-        LeLegacyAdvertisingCommandCompleteEvent::new(kind.opcode(), Status::SUCCESS)
     }
 
-    pub(crate) fn reset(&mut self) {
-        *self = Self::new();
-    }
-
-    pub(crate) fn dispatch_idle_enable(
+    /// Snapshot the configuration for Enable, resolving the own address.
+    pub fn enable_request(
         &self,
-        phase: BootstrapPhase,
-        command: LeLegacyAdvertisingEnableCommand,
         public_address: BluetoothPublicDeviceAddress,
-        requested_random_address: Option<bt_hci::param::BdAddr>,
-    ) -> LeLegacyAdvertisingIdleEnableDisposition {
-        if phase == BootstrapPhase::AwaitingReset {
-            return LeLegacyAdvertisingIdleEnableDisposition::Complete(
-                LeLegacyAdvertisingCommandCompleteEvent::new(
-                    LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
-                    HciError::CMD_DISALLOWED.to_status(),
-                ),
-            );
-        }
-        if !command.enable() {
-            return LeLegacyAdvertisingIdleEnableDisposition::Complete(
-                LeLegacyAdvertisingCommandCompleteEvent::new(
-                    LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
-                    Status::SUCCESS,
-                ),
-            );
-        }
+        random_address: Option<BdAddr>,
+    ) -> Result<LeLegacyAdvertisingEnableRequest, LeLegacyAdvertisingRandomAddressMissing> {
         let parameters = self.parameters;
         let advertiser = match parameters.own_address_kind() {
             LeLegacyAdvertisingOwnAddressKind::Public => {
                 LeLegacyAdvertisingAddress::Public(public_address)
             }
-            LeLegacyAdvertisingOwnAddressKind::Random => {
-                let Some(address) = requested_random_address else {
-                    return LeLegacyAdvertisingIdleEnableDisposition::Complete(
-                        LeLegacyAdvertisingCommandCompleteEvent::new(
-                            LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
-                            HciError::INVALID_HCI_PARAMETERS.to_status(),
-                        ),
-                    );
-                };
-                LeLegacyAdvertisingAddress::Random(address)
-            }
+            LeLegacyAdvertisingOwnAddressKind::Random => LeLegacyAdvertisingAddress::Random(
+                random_address.ok_or(LeLegacyAdvertisingRandomAddressMissing)?,
+            ),
         };
-        match parameters.role() {
+        Ok(match parameters.role() {
             LeLegacyAdvertisingRole::Nonconnectable => {
-                LeLegacyAdvertisingIdleEnableDisposition::StartNonconnectable(
+                LeLegacyAdvertisingEnableRequest::Nonconnectable(
                     LeLegacyNonconnectableAdvertisingEnableRequest {
                         parameters,
                         data: self.data,
@@ -539,47 +450,36 @@ impl LeLegacyAdvertisingConfiguration {
                     },
                 )
             }
-            LeLegacyAdvertisingRole::Connectable => {
-                LeLegacyAdvertisingIdleEnableDisposition::StartConnectable(
-                    LeLegacyConnectableAdvertisingEnableRequest {
-                        parameters,
-                        data: self.data,
-                        scan_response_data: self.scan_response_data,
-                        advertiser,
-                    },
-                )
-            }
-        }
+            LeLegacyAdvertisingRole::Connectable => LeLegacyAdvertisingEnableRequest::Connectable(
+                LeLegacyConnectableAdvertisingEnableRequest {
+                    parameters,
+                    data: self.data,
+                    scan_response_data: self.scan_response_data,
+                    advertiser,
+                },
+            ),
+        })
     }
 
-    pub(crate) fn complete_enable_while_radio_unavailable(
-        phase: BootstrapPhase,
-        command: LeLegacyAdvertisingEnableCommand,
-    ) -> LeLegacyAdvertisingCommandCompleteEvent {
-        let status = if phase == BootstrapPhase::AwaitingReset || command.enable() {
-            HciError::CMD_DISALLOWED.to_status()
-        } else {
-            Status::SUCCESS
-        };
-        LeLegacyAdvertisingCommandCompleteEvent::new(
-            LeLegacyAdvertisingCommandKind::SetEnable.opcode(),
-            status,
-        )
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn parameters(&self) -> LeLegacyAdvertisingParameters {
+    /// Current parameters.
+    pub const fn parameters(&self) -> LeLegacyAdvertisingParameters {
         self.parameters
     }
 
-    #[cfg(test)]
-    pub(crate) const fn data(&self) -> LeLegacyAdvertisingData {
+    /// Current advertising data.
+    pub const fn data(&self) -> LeLegacyAdvertisingData {
         self.data
     }
 
-    #[cfg(test)]
-    pub(crate) const fn scan_response_data(&self) -> LeLegacyScanResponseData {
+    /// Current scan-response data.
+    pub const fn scan_response_data(&self) -> LeLegacyScanResponseData {
         self.scan_response_data
+    }
+}
+
+impl Default for LeLegacyAdvertisingConfiguration {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -760,7 +660,8 @@ pub struct LeLegacyAdvertisingCommandCompleteEvent {
 }
 
 impl LeLegacyAdvertisingCommandCompleteEvent {
-    pub(crate) fn new(opcode: Opcode, status: Status) -> Self {
+    /// Command Complete for `opcode` with `status` and no return parameters.
+    pub fn new(opcode: Opcode, status: Status) -> Self {
         let opcode_bytes = opcode.to_raw().to_le_bytes();
         Self {
             bytes: [

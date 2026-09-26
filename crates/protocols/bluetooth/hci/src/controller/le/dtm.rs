@@ -487,14 +487,16 @@ impl LeReceiverTestCommand {
         LeDtmCommandCompleteEvent::without_return_parameters(self.kind.opcode(), Status::SUCCESS)
     }
 
-    pub(crate) fn into_hardware_failure_command_complete(self) -> LeDtmCommandCompleteEvent {
+    /// Command Complete reporting Hardware Failure.
+    pub fn into_hardware_failure_command_complete(self) -> LeDtmCommandCompleteEvent {
         LeDtmCommandCompleteEvent::without_return_parameters(
             self.kind.opcode(),
             HciError::HARDWARE_FAILURE.to_status(),
         )
     }
 
-    pub(crate) fn into_radio_unavailable_command_complete(self) -> LeDtmCommandCompleteEvent {
+    /// Command Complete reporting Command Disallowed while the radio is unavailable.
+    pub fn into_radio_unavailable_command_complete(self) -> LeDtmCommandCompleteEvent {
         LeDtmCommandCompleteEvent::without_return_parameters(
             self.kind.opcode(),
             HciError::CMD_DISALLOWED.to_status(),
@@ -547,14 +549,16 @@ impl LeTransmitterTestCommand {
         LeDtmCommandCompleteEvent::without_return_parameters(self.kind.opcode(), Status::SUCCESS)
     }
 
-    pub(crate) fn into_hardware_failure_command_complete(self) -> LeDtmCommandCompleteEvent {
+    /// Command Complete reporting Hardware Failure.
+    pub fn into_hardware_failure_command_complete(self) -> LeDtmCommandCompleteEvent {
         LeDtmCommandCompleteEvent::without_return_parameters(
             self.kind.opcode(),
             HciError::HARDWARE_FAILURE.to_status(),
         )
     }
 
-    pub(crate) fn into_radio_unavailable_command_complete(self) -> LeDtmCommandCompleteEvent {
+    /// Command Complete reporting Command Disallowed while the radio is unavailable.
+    pub fn into_radio_unavailable_command_complete(self) -> LeDtmCommandCompleteEvent {
         LeDtmCommandCompleteEvent::without_return_parameters(
             self.kind.opcode(),
             HciError::CMD_DISALLOWED.to_status(),
@@ -595,7 +599,9 @@ pub struct LeDtmCommandCompleteEvent {
 }
 
 impl LeDtmCommandCompleteEvent {
-    fn without_return_parameters(opcode: Opcode, status: Status) -> Self {
+    /// Command Complete carrying only `status`, as a test start or a refused
+    /// command returns.
+    pub fn without_return_parameters(opcode: Opcode, status: Status) -> Self {
         let mut event = Self::header(opcode, status, 0);
         event.length = 6;
         event

@@ -34,6 +34,12 @@ impl BootstrapCommandCompleteEvent {
         self.status
     }
 
+    /// Command Complete refusing a bootstrap command with `error`, as the
+    /// Controller core does when its role state forbids the command.
+    pub fn error(opcode: Opcode, error: HciError) -> Self {
+        command_error(opcode, error)
+    }
+
     fn new(opcode: Opcode, status: Status, return_parameters: &[u8]) -> Self {
         let length = 6 + return_parameters.len();
         assert!(

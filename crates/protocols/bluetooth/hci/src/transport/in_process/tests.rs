@@ -18,11 +18,11 @@ use embassy_futures::{
 };
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-use super::{
-    HciChannelError, HciClassifiedCommandIntake, HciEpochBoundCommandReceiveError,
-    HostToControllerFrame, InProcessHciChannel,
+use super::{HciChannelError, HostToControllerFrame, InProcessHciChannel};
+use crate::{
+    LE_TEST_END_OPCODE, LeControllerCommandClassification, LeDtmCommand,
+    classify_le_controller_command,
 };
-use crate::{LE_TEST_END_OPCODE, LeControllerCommandClassification, LeDtmCommand};
 
 const RESET_COMMAND_COMPLETE: [u8; 6] = [0x0e, 0x04, 0x01, 0x03, 0x0c, 0x00];
 const HARDWARE_ERROR: [u8; 3] = [0x10, 0x01, 0x42];
@@ -41,78 +41,43 @@ fn controller_epoch_identity_distinguishes_live_channels() {
     assert!(!first_identity.same_epoch(second_controller.epoch_identity()));
 }
 
-#[test]
-fn epoch_bound_test_end_rejects_a_live_cross_wired_endpoint() {
-    let mut first_channel = TestChannel::new();
-    let (first_host, first_controller) = first_channel.split();
-    let mut second_channel = TestChannel::new();
-    let (_second_host, second_controller) = second_channel.split();
-
-    block_on(first_host.write(&LeTestEnd::new())).expect("Test End enters its source queue");
-    let mut buffer = [0; 16];
-    let bound = match first_controller.try_receive_classified_command(&mut buffer) {
-        Ok(bound) => bound,
-        Err(_) => panic!("the source endpoint must classify its oldest Test End"),
-    };
-    let bound = match bound.try_into_dtm() {
-        Ok(bound) => bound,
-        Err(_) => panic!("Test End must retain an owned DTM command"),
-    };
-    let bound = match bound.try_into_test_end() {
-        Ok(bound) => bound,
-        Err(_) => panic!("the DTM command must retain semantic Test End ownership"),
-    };
-
-    assert!(bound.originates_from(&first_controller));
-    assert!(!bound.originates_from(&second_controller));
-    let bound = match bound.try_into_for_endpoint(&second_controller) {
-        Ok(_) => panic!("a foreign live endpoint must not consume the semantic owner"),
-        Err(bound) => bound,
-    };
-    let command = match bound.try_into_for_endpoint(&first_controller) {
-        Ok(command) => command,
-        Err(_) => panic!("the source endpoint must recover its semantic owner"),
-    };
-    let response = command.into_ended_command_complete(0x1234);
-    assert_eq!(response.opcode(), LE_TEST_END_OPCODE);
+fn command_opcode(
+    frame: Result<HostToControllerFrame<'_>, HciChannelError>,
+) -> bt_hci::cmd::Opcode {
+    match frame {
+        Ok(HostToControllerFrame::Command(command)) => command.opcode(),
+        other => panic!("expected a command, got {other:?}"),
+    }
 }
 
 #[test]
-fn empty_and_cancelled_receive_create_no_epoch_token_or_consumption() {
+fn empty_and_cancelled_receive_consume_nothing() {
     let mut channel = TestChannel::new();
     let (host, controller) = channel.split();
     let mut buffer = [0; 16];
 
     assert!(matches!(
-        controller.try_receive_classified_command(&mut buffer),
-        Err(HciEpochBoundCommandReceiveError::Channel(
-            HciChannelError::Empty
-        ))
+        controller.try_receive(&mut buffer),
+        Err(HciChannelError::Empty)
     ));
-
     {
-        let mut cancelled = pin!(controller.receive_classified_command(&mut buffer));
+        let mut cancelled = pin!(controller.receive(&mut buffer));
         assert_pending(cancelled.as_mut());
     }
-
     block_on(host.write(&LeTestEnd::new()))
         .expect("the replacement receive gets one queued command");
-    let bound = match block_on(controller.receive_classified_command(&mut buffer)) {
-        Ok(bound) => bound,
-        Err(_) => panic!("cancelled empty receive must leave the later packet available"),
-    };
-    assert_eq!(bound.value().opcode(), LE_TEST_END_OPCODE);
-    assert!(bound.originates_from(&controller));
+    assert_eq!(
+        command_opcode(block_on(controller.receive(&mut buffer))),
+        LE_TEST_END_OPCODE
+    );
     assert!(matches!(
-        controller.try_receive_classified_command(&mut buffer),
-        Err(HciEpochBoundCommandReceiveError::Channel(
-            HciChannelError::Empty
-        ))
+        controller.try_receive(&mut buffer),
+        Err(HciChannelError::Empty)
     ));
 }
 
 #[test]
-fn epoch_bound_classification_preserves_host_command_fifo() {
+fn received_commands_keep_host_fifo_order() {
     type FifoChannel = InProcessHciChannel<NoopRawMutex, 2, 1, 16>;
 
     let mut channel = FifoChannel::new();
@@ -123,27 +88,20 @@ fn epoch_bound_classification_preserves_host_command_fifo() {
     });
 
     let mut buffer = [0; 16];
-    let first = match controller.try_receive_classified_command(&mut buffer) {
-        Ok(bound) => bound,
-        Err(_) => panic!("the oldest Test End must be classified first"),
+    let Ok(HostToControllerFrame::Command(first)) = controller.try_receive(&mut buffer) else {
+        panic!("the oldest Test End comes first");
     };
-    assert_eq!(first.value().opcode(), LE_TEST_END_OPCODE);
     assert!(matches!(
-        first.value(),
+        classify_le_controller_command(first),
         LeControllerCommandClassification::Dtm(LeDtmCommand::TestEnd(_))
     ));
-
-    let second = match controller.try_receive_classified_command(&mut buffer) {
-        Ok(bound) => bound,
-        Err(_) => panic!("Reset must remain second in the Host FIFO"),
+    let Ok(HostToControllerFrame::Command(second)) = controller.try_receive(&mut buffer) else {
+        panic!("Reset stays second");
     };
-    assert_eq!(second.value().opcode(), Reset::OPCODE);
     assert!(matches!(
-        second.value(),
+        classify_le_controller_command(second),
         LeControllerCommandClassification::Bootstrap(_)
     ));
-    assert!(first.originates_from(&controller));
-    assert!(second.originates_from(&controller));
 }
 
 #[test]
@@ -182,16 +140,13 @@ fn receive_readiness_wait_is_side_effect_free_and_wakes_after_publish() {
     }
 
     let mut buffer = [0; 16];
-    let command = match controller.try_receive_classified_command(&mut buffer) {
-        Ok(command) => command,
-        Err(_) => panic!("readiness must leave the exact oldest packet queued"),
-    };
-    assert_eq!(command.value().opcode(), LE_TEST_END_OPCODE);
+    assert_eq!(
+        command_opcode(controller.try_receive(&mut buffer)),
+        LE_TEST_END_OPCODE
+    );
     assert!(matches!(
-        controller.try_receive_classified_command(&mut buffer),
-        Err(HciEpochBoundCommandReceiveError::Channel(
-            HciChannelError::Empty
-        ))
+        controller.try_receive(&mut buffer),
+        Err(HciChannelError::Empty)
     ));
 }
 
@@ -210,49 +165,14 @@ fn cancelled_receive_readiness_wait_consumes_and_reserves_nothing() {
     block_on(controller.wait_receive_ready());
 
     let mut buffer = [0; 16];
-    let command = match controller.try_receive_classified_command(&mut buffer) {
-        Ok(command) => command,
-        Err(_) => {
-            panic!("cancelled and repeated readiness waits must not consume the packet")
-        }
-    };
-    assert_eq!(command.value().opcode(), LE_TEST_END_OPCODE);
+    assert_eq!(
+        command_opcode(controller.try_receive(&mut buffer)),
+        LE_TEST_END_OPCODE
+    );
 }
 
 #[test]
-fn event_loop_intake_returns_buffer_for_commands_and_stale_empty() {
-    type FifoChannel = InProcessHciChannel<NoopRawMutex, 2, 1, 16>;
-
-    let mut channel = FifoChannel::new();
-    let (host, controller) = channel.split();
-    block_on(async {
-        host.write(&LeTestEnd::new()).await.unwrap();
-        host.write(&Reset::new()).await.unwrap();
-    });
-
-    let mut storage = [0; 16];
-    let (first, buffer) = match controller.try_receive_classified_command_with_buffer(&mut storage)
-    {
-        HciClassifiedCommandIntake::Command { command, buffer } => (command, buffer),
-        _ => panic!("the first command must return reusable storage"),
-    };
-    assert_eq!(first.value().opcode(), LE_TEST_END_OPCODE);
-
-    let (second, buffer) = match controller.try_receive_classified_command_with_buffer(buffer) {
-        HciClassifiedCommandIntake::Command { command, buffer } => (command, buffer),
-        _ => panic!("the second command must reuse the same storage"),
-    };
-    assert_eq!(second.value().opcode(), Reset::OPCODE);
-
-    let buffer = match controller.try_receive_classified_command_with_buffer(buffer) {
-        HciClassifiedCommandIntake::Empty { buffer } => buffer,
-        _ => panic!("stale readiness must return storage for another wait"),
-    };
-    assert_eq!(buffer.len(), storage.len());
-}
-
-#[test]
-fn event_loop_intake_transfers_exact_data_frame_to_outer_router() {
+fn receive_transfers_the_exact_data_frame() {
     let mut channel = TestChannel::new();
     let (host, controller) = channel.split();
     let acl = AclPacket::new(
@@ -264,12 +184,7 @@ fn event_loop_intake_transfers_exact_data_frame_to_outer_router() {
     block_on(host.write(&acl)).unwrap();
 
     let mut storage = [0; 16];
-    let frame = match controller.try_receive_classified_command_with_buffer(&mut storage) {
-        HciClassifiedCommandIntake::NonCommand(frame) => frame,
-        _ => panic!("the data packet must transfer its exact borrowed frame"),
-    };
-    assert!(frame.originates_from(&controller));
-    let HostToControllerFrame::Acl(received) = frame.value() else {
+    let Ok(HostToControllerFrame::Acl(received)) = controller.try_receive(&mut storage) else {
         panic!("the outer router must receive the original ACL kind");
     };
     assert_eq!(received.handle(), ConnHandle::new(7));
@@ -540,18 +455,18 @@ fn every_host_packet_header_rejects_declared_length_mismatch() {
         (PacketKind::IsoData, &[0x01, 0x00, 0x00, 0x00, 0xcc][..]),
     ] {
         assert_eq!(
-            super::validate_host_packet(kind, bytes),
+            super::codec::validate_host_packet(kind, bytes),
             Err(HciChannelError::TrailingBytes)
         );
     }
     assert_eq!(
-        super::validate_host_packet(PacketKind::Cmd, &[0x03, 0x0c, 0x01]),
+        super::codec::validate_host_packet(PacketKind::Cmd, &[0x03, 0x0c, 0x01]),
         Err(HciChannelError::InvalidPacket(
             bt_hci::FromHciBytesError::InvalidSize
         ))
     );
     assert_eq!(
-        super::validate_host_packet(PacketKind::Event, &HARDWARE_ERROR),
+        super::codec::validate_host_packet(PacketKind::Event, &HARDWARE_ERROR),
         Err(HciChannelError::InvalidDirection)
     );
 }
@@ -689,11 +604,8 @@ fn closed_readiness_and_cancelled_waits_observe_terminal_state() {
     );
     let mut buffer = [0; 16];
     assert!(matches!(
-        controller.try_receive_classified_command_with_buffer(&mut buffer),
-        HciClassifiedCommandIntake::Channel {
-            error: HciChannelError::Closed,
-            ..
-        }
+        controller.try_receive(&mut buffer),
+        Err(HciChannelError::Closed)
     ));
     assert_eq!(
         event_parameter(block_on(host.read(&mut buffer)).unwrap()),
@@ -713,6 +625,55 @@ fn closed_epoch_rejects_independent_host_acl_credit_sender() {
     assert_eq!(block_on(pending), Err(HciChannelError::Closed));
     assert_eq!(
         block_on(credits.return_completed_packets(&[])),
+        Err(HciChannelError::Closed)
+    );
+}
+
+#[test]
+fn retirement_requires_drained_queues_and_restart_needs_its_own_proof() {
+    use super::{HciRestartError, HciRetirementError};
+
+    let mut channel = TestChannel::new();
+    let mut other = TestChannel::new();
+    let (host, mut controller) = channel.split();
+    let (_, other_controller) = other.split();
+
+    block_on(host.write(&Reset::new())).unwrap();
+    assert!(matches!(
+        controller.try_retire(),
+        Err(HciRetirementError::HostPacketsPending)
+    ));
+    let mut buffer = [0; 16];
+    controller.try_receive(&mut buffer).unwrap();
+    controller
+        .try_publish(PacketKind::Event, &HARDWARE_ERROR)
+        .unwrap();
+    assert!(matches!(
+        controller.try_retire(),
+        Err(HciRetirementError::ControllerPacketsPending)
+    ));
+    block_on(host.read::<ControllerToHostPacket<'_>>(&mut buffer)).unwrap();
+
+    let foreign = other_controller.try_retire().unwrap();
+    let retired = controller.try_retire().unwrap();
+    assert!(retired.matches_epoch(controller.epoch_identity()));
+    let Err((error, _)) = controller.restart(foreign) else {
+        panic!("a foreign proof cannot restart this epoch");
+    };
+    assert_eq!(error, HciRestartError::EpochMismatch);
+    // The old Host stays closed.
+    assert_eq!(
+        block_on(host.write(&Reset::new())),
+        Err(HciChannelError::Closed)
+    );
+    let old_identity = controller.epoch_identity();
+    let Ok(new_host) = controller.restart(retired) else {
+        panic!("the matching proof restarts the epoch");
+    };
+    assert!(!old_identity.same_epoch(controller.epoch_identity()));
+    block_on(new_host.write(&Reset::new())).unwrap();
+    assert_eq!(
+        block_on(host.write(&Reset::new())),
         Err(HciChannelError::Closed)
     );
 }

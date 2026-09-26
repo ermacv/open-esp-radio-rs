@@ -52,11 +52,13 @@ impl core::fmt::Debug for LeRandCommandCompleteEvent {
 }
 
 impl LeRandCommandCompleteEvent {
-    pub(crate) fn success(random: [u8; 8]) -> Self {
+    /// Successful completion carrying `random`.
+    pub fn success(random: [u8; 8]) -> Self {
         Self::new(Status::SUCCESS, random)
     }
 
-    pub(crate) fn error(error: HciError) -> Self {
+    /// Failed completion with zeroed return octets.
+    pub fn error(error: HciError) -> Self {
         Self::new(error.to_status(), [0; 8])
     }
 

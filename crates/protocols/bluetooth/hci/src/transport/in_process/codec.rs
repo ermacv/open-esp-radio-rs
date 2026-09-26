@@ -1,6 +1,7 @@
 //! Complete packet validation and conversion at the async channel boundary.
 
 use super::*;
+use crate::wire::command_from_validated_bytes;
 
 pub(super) fn require_profile_buffer<const PACKET_CAPACITY: usize>(
     available: usize,
@@ -184,7 +185,6 @@ fn require_no_remaining(remaining: &[u8]) -> Result<(), HciChannelError> {
     }
 }
 
-#[cfg(test)]
 pub(super) fn decode_host_slot<'buffer, const PACKET_CAPACITY: usize>(
     mut slot: PacketSlot<PACKET_CAPACITY>,
     buffer: &'buffer mut [u8],

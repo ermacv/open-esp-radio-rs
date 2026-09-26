@@ -27,8 +27,8 @@ impl HciCommandPacket<'_> {
         self.parameters
     }
 
-    #[cfg(test)]
-    pub(crate) const fn for_test(opcode: Opcode, parameters: &[u8]) -> HciCommandPacket<'_> {
+    /// A command with `opcode` and its complete parameter bytes.
+    pub const fn new(opcode: Opcode, parameters: &[u8]) -> HciCommandPacket<'_> {
         HciCommandPacket { opcode, parameters }
     }
 }

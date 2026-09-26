@@ -63,8 +63,8 @@ impl<'a, M: RawMutex, const DEPTH: usize, const PACKET_CAPACITY: usize>
         outgoing: PacketQueueEpoch<'a, M, C2H, PACKET_CAPACITY>,
         incoming: &AsyncPacketQueueState<DEPTH, PACKET_CAPACITY>,
         out: &AsyncPacketQueueState<C2H, PACKET_CAPACITY>,
-    ) -> Result<u64, crate::LeControllerHciRestartError> {
-        use crate::LeControllerHciRestartError as Error;
+    ) -> Result<u64, super::HciRestartError> {
+        use super::HciRestartError as Error;
         if incoming.generation != self.generation
             || out.generation != outgoing.generation
             || self.generation != outgoing.generation
@@ -79,27 +79,10 @@ impl<'a, M: RawMutex, const DEPTH: usize, const PACKET_CAPACITY: usize>
             .ok_or(Error::GenerationExhausted)
     }
 
-    pub(super) fn check_restart_with<const C2H: usize>(
-        self,
-        outgoing: PacketQueueEpoch<'a, M, C2H, PACKET_CAPACITY>,
-    ) -> Result<(), crate::LeControllerHciRestartError> {
-        self.queue.state.lock(|incoming| {
-            outgoing.queue.state.lock(|out| {
-                self.admit_restart(outgoing, &incoming.borrow(), &out.borrow())
-                    .map(|_| ())
-            })
-        })
-    }
-
-    /// Reuse only the exact drained, closed pair. Both directions advance
-    /// atomically; generation exhaustion leaves them permanently closed.
     pub(super) fn restart_with<const C2H: usize>(
         self,
         outgoing: PacketQueueEpoch<'a, M, C2H, PACKET_CAPACITY>,
-    ) -> Result<
-        (Self, PacketQueueEpoch<'a, M, C2H, PACKET_CAPACITY>),
-        crate::LeControllerHciRestartError,
-    > {
+    ) -> Result<(Self, PacketQueueEpoch<'a, M, C2H, PACKET_CAPACITY>), super::HciRestartError> {
         self.queue.state.lock(|incoming| {
             outgoing.queue.state.lock(|outgoing_state| {
                 let mut incoming = incoming.borrow_mut();
@@ -166,7 +149,7 @@ impl<'a, M: RawMutex, const DEPTH: usize, const PACKET_CAPACITY: usize>
     pub(super) async fn wait_drained_with<const C2H: usize>(
         self,
         outgoing: PacketQueueEpoch<'_, M, C2H, PACKET_CAPACITY>,
-    ) -> Result<(), crate::LeControllerHciRetirementError> {
+    ) -> Result<(), super::HciRetirementError> {
         poll_fn(|context| {
             self.queue.state.lock(|incoming| {
                 outgoing.queue.state.lock(|outgoing| {
@@ -177,7 +160,7 @@ impl<'a, M: RawMutex, const DEPTH: usize, const PACKET_CAPACITY: usize>
                         || incoming.closed
                         || outgoing.closed
                     {
-                        return Poll::Ready(Err(crate::LeControllerHciRetirementError::Closed));
+                        return Poll::Ready(Err(super::HciRetirementError::Closed));
                     }
                     if incoming.length == 0 && outgoing.length == 0 {
                         return Poll::Ready(Ok(()));
@@ -196,8 +179,8 @@ impl<'a, M: RawMutex, const DEPTH: usize, const PACKET_CAPACITY: usize>
     pub(super) fn try_retire_with<const C2H: usize>(
         self,
         outgoing: PacketQueueEpoch<'_, M, C2H, PACKET_CAPACITY>,
-    ) -> Result<(), crate::LeControllerHciRetirementError> {
-        use crate::LeControllerHciRetirementError as Error;
+    ) -> Result<(), super::HciRetirementError> {
+        use super::HciRetirementError as Error;
         self.queue.state.lock(|incoming| {
             outgoing.queue.state.lock(|outgoing| {
                 let mut incoming = incoming.borrow_mut();
@@ -499,20 +482,20 @@ mod restart_tests {
         let b = outgoing.epoch();
         assert!(matches!(
             a.restart_with(b),
-            Err(crate::LeControllerHciRestartError::NotRetired)
+            Err(super::HciRestartError::NotRetired)
         ));
         a.try_send(PacketSlot::EMPTY).unwrap();
         a.close();
         b.close();
         assert!(matches!(
             a.restart_with(b),
-            Err(crate::LeControllerHciRestartError::NotRetired)
+            Err(super::HciRestartError::NotRetired)
         ));
         a.try_receive().unwrap();
         let (fresh_a, fresh_b) = a.restart_with(b).unwrap();
         assert!(matches!(
             a.restart_with(b),
-            Err(crate::LeControllerHciRestartError::EpochMismatch)
+            Err(super::HciRestartError::EpochMismatch)
         ));
         fresh_a.try_retire_with(fresh_b).unwrap();
         incoming
@@ -525,7 +508,7 @@ mod restart_tests {
         let b = outgoing.epoch();
         assert!(matches!(
             a.restart_with(b),
-            Err(crate::LeControllerHciRestartError::GenerationExhausted)
+            Err(super::HciRestartError::GenerationExhausted)
         ));
         assert!(matches!(
             a.try_send(PacketSlot::EMPTY),

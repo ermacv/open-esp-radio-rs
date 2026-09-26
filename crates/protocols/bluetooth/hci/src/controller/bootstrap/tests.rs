@@ -28,10 +28,11 @@ use embassy_sync::{blocking_mutex::raw::NoopRawMutex, signal::Signal};
 use trouble_host::{BleHostError, Error as TroubleError, HostResources, Packet, PacketPool};
 
 use crate::{
-    HciCommandPacket, HostToControllerFrame, InProcessHciChannel, InProcessHciControllerEndpoint,
+    HciCommandPacket, HostToControllerFrame, InProcessHciChannel, InProcessHciControllerTransport,
     InProcessHciHostTransport, LeControllerCommandClassification, classify_le_controller_command,
 };
 
+use super::state::{default_event_mask, default_le_event_mask};
 use super::{
     BluetoothPublicDeviceAddress, BootstrapCommand, BootstrapConfigError, BootstrapHostBuffers,
     BootstrapPhase, LeControllerBootstrap, LeControllerBootstrapConfig, OwnedBootstrapCommand,
@@ -40,7 +41,7 @@ use super::{
 
 type TestChannel = InProcessHciChannel<NoopRawMutex, 1, 1, 80>;
 type TestHost<'channel> = InProcessHciHostTransport<'channel, NoopRawMutex, 1, 1, 80>;
-type TestController<'channel> = InProcessHciControllerEndpoint<'channel, NoopRawMutex, 1, 1, 80>;
+type TestController<'channel> = InProcessHciControllerTransport<'channel, NoopRawMutex, 1, 1, 80>;
 
 struct TestPacket([u8; 64]);
 
@@ -229,8 +230,22 @@ fn trouble_no_security_bootstrap_and_conservative_extensions_are_supported() {
             round_trip(&host, &controller, &mut bootstrap, &Reset::new()).await,
             &[],
         );
-        assert_eq!(bootstrap.event_mask(), EventMask::new());
-        assert_eq!(bootstrap.le_event_mask(), LeEventMask::new());
+        // Reset restores the specification defaults.
+        assert_eq!(bootstrap.event_mask(), default_event_mask());
+        assert!(!bootstrap.event_mask().is_le_meta_enabled());
+        assert!(bootstrap.event_mask().is_disconnection_complete_enabled());
+        assert_eq!(bootstrap.le_event_mask(), default_le_event_mask());
+        assert!(bootstrap.le_event_mask().is_le_adv_report_enabled());
+        assert!(
+            bootstrap
+                .le_event_mask()
+                .is_le_long_term_key_request_enabled()
+        );
+        assert!(
+            !bootstrap
+                .le_event_mask()
+                .is_le_phy_update_complete_enabled()
+        );
         assert_eq!(bootstrap.requested_random_address(), None);
         assert_eq!(bootstrap.host_buffers(), None);
         assert_eq!(
@@ -252,45 +267,13 @@ fn read_bd_addr_converts_canonical_identity_at_the_hci_boundary() {
     let mut bootstrap = LeControllerBootstrap::new(config);
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
+            .dispatch(OwnedBootstrapCommand::Reset, false)
             .status(),
         Status::SUCCESS
     );
-    let response = bootstrap.dispatch_owned(OwnedBootstrapCommand::ReadBdAddr, false);
+    let response = bootstrap.dispatch(OwnedBootstrapCommand::ReadBdAddr, false);
     assert_eq!(response.status(), Status::SUCCESS);
     assert_eq!(&response.as_bytes()[6..], &[6, 5, 4, 3, 2, 1]);
-}
-
-#[test]
-fn active_radio_rejects_random_address_without_replacing_epoch_state() {
-    let config = LeControllerBootstrapConfig::new(
-        BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
-        27,
-        1,
-    )
-    .unwrap();
-    let mut bootstrap = LeControllerBootstrap::new(config);
-    let retained = BdAddr::new([0xc6, 5, 4, 3, 2, 1]);
-    let rejected = BdAddr::new([0xc7, 6, 5, 4, 3, 2]);
-    assert_eq!(
-        bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
-            .status(),
-        Status::SUCCESS
-    );
-    assert_eq!(
-        bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::LeSetRandomAddress(retained), false)
-            .status(),
-        Status::SUCCESS
-    );
-
-    let response = bootstrap.dispatch_owned_while_radio_active(
-        OwnedBootstrapCommand::LeSetRandomAddress(rejected),
-        false,
-    );
-    assert_eq!(response.status(), HciError::CMD_DISALLOWED.to_status());
-    assert_eq!(bootstrap.requested_random_address(), Some(retained));
 }
 
 #[test]
@@ -357,11 +340,8 @@ fn real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary() 
     // Deterministic entropy is a host-test input, never a production RNG.
     let entropy = BootstrapTestEntropy(core::sync::atomic::AtomicUsize::new(0));
     let mut hci = crate::LeControllerHciResources::<NoopRawMutex, 4, 1, 255>::new(config).unwrap();
-    let crate::LeControllerHciEndpoints {
-        host,
-        mut controller,
-    } = hci.split();
-    controller.install_random_source(&entropy).unwrap();
+    let crate::LeControllerHciEndpoints { host, controller } = hci.split();
+    let mut bootstrap = LeControllerBootstrap::new(config);
     let external = ExternalController::<_, 2>::new(host);
     let mut resources = HostResources::<TestPacketPool, 1, 1>::new();
     let stack = trouble_host::new(external, &mut resources).build();
@@ -382,7 +362,7 @@ fn real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary() 
         // rejects the operational command because no filter-list owner or
         // Link Layer exists yet.
         let controller_and_probe = join(
-            drive_bootstrap_until(&mut controller, &stop),
+            drive_bootstrap_until(&controller, &mut bootstrap, &entropy, &stop),
             initialized_probe,
         );
         match select(runner.run(), controller_and_probe).await {
@@ -400,9 +380,9 @@ fn real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary() 
         }
     });
 
-    assert_eq!(controller.bootstrap_phase(), BootstrapPhase::Configuring);
+    assert_eq!(bootstrap.phase(), BootstrapPhase::Configuring);
     assert_eq!(
-        controller.bootstrap.host_buffers(),
+        bootstrap.host_buffers(),
         Some(BootstrapHostBuffers {
             acl_data_packet_length: 255,
             total_acl_data_packets: 1,
@@ -419,50 +399,46 @@ impl crate::LeRandomSource for BootstrapTestEntropy {
     }
 }
 
+/// A minimal bootstrap-only Controller over the raw transport.
 async fn drive_bootstrap_until(
-    controller: &mut crate::LeControllerCommandEndpoint<'_, NoopRawMutex, 4, 1, 255>,
+    controller: &InProcessHciControllerTransport<'_, NoopRawMutex, 4, 1, 255>,
+    bootstrap: &mut LeControllerBootstrap,
+    entropy: &BootstrapTestEntropy,
     stop: &Signal<NoopRawMutex, ()>,
 ) {
-    use crate::{
-        LeControllerCommandIntake, LeControllerCommandReadyClaim,
-        LeControllerIdleClassifiedCommandRoute, LeControllerResetCompletion,
-        LeControllerResponsePublication,
-    };
-    let LeControllerCommandReadyClaim::Ready(mut ready) =
-        controller.claim_initial_command_ready(())
-    else {
-        panic!("fresh controller owns command authority");
-    };
-    let mut command_buffer = [0; 255];
+    use crate::LeRandomSource;
+    let mut buffer = [0; 255];
     loop {
-        match select(stop.wait(), controller.wait_command_available(&ready)).await {
+        match select(stop.wait(), controller.wait_receive_ready()).await {
             Either::First(()) => return,
-            Either::Second(result) => result.unwrap(),
+            Either::Second(()) => {}
         }
-        let LeControllerCommandIntake::Command { command, .. } =
-            controller.try_receive_classified_command_with_buffer(ready, &mut command_buffer)
+        let Ok(HostToControllerFrame::Command(command)) = controller.try_receive(&mut buffer)
         else {
             panic!("Trouble bootstrap must submit an HCI command");
         };
-        let pending = match controller.route_idle_classified_command(command) {
-            LeControllerIdleClassifiedCommandRoute::ResponsePending(pending) => pending,
-            LeControllerIdleClassifiedCommandRoute::ResetBarrier(barrier) => {
-                // No radio has been started in this host-only fixture.
-                let LeControllerResetCompletion::ResponsePending(pending) =
-                    controller.complete_reset_after_quiescence(barrier)
-                else {
-                    panic!("Reset belongs to this controller");
-                };
-                pending
+        let response = match classify_le_controller_command(command) {
+            LeControllerCommandClassification::Bootstrap(command) => {
+                let response = bootstrap.dispatch(command, true);
+                controller
+                    .publish(bt_hci::PacketKind::Event, response.as_bytes())
+                    .await
+            }
+            LeControllerCommandClassification::Random(_) => {
+                let response =
+                    crate::LeRandCommandCompleteEvent::success(entropy.random_bytes().unwrap());
+                controller
+                    .publish(bt_hci::PacketKind::Event, response.as_bytes())
+                    .await
+            }
+            LeControllerCommandClassification::Unsupported(response) => {
+                controller
+                    .publish(bt_hci::PacketKind::Event, response.as_bytes())
+                    .await
             }
             _ => panic!("bootstrap must not start a radio role"),
         };
-        controller.wait_response_capacity(&pending).await.unwrap();
-        let LeControllerResponsePublication::Published(next) = pending.try_publish(controller)
-        else {
-            panic!("response capacity and authority belong to this controller");
-        };
-        ready = next;
+        response.unwrap();
     }
 }
 
@@ -477,14 +453,12 @@ fn known_commands_are_disallowed_before_reset_and_malformed_input_never_mutates(
     let mut bootstrap = LeControllerBootstrap::new(config);
 
     let before_reset =
-        bootstrap.dispatch_owned(OwnedBootstrapCommand::SetEventMask(EventMask::new()), false);
+        bootstrap.dispatch(OwnedBootstrapCommand::SetEventMask(EventMask::new()), false);
     assert_eq!(before_reset.status(), HciError::CMD_DISALLOWED.to_status());
     assert_eq!(bootstrap.phase(), BootstrapPhase::AwaitingReset);
 
-    let malformed_reset = dispatch_test_packet(
-        &mut bootstrap,
-        HciCommandPacket::for_test(Reset::OPCODE, &[0]),
-    );
+    let malformed_reset =
+        dispatch_test_packet(&mut bootstrap, HciCommandPacket::new(Reset::OPCODE, &[0]));
     assert_eq!(
         malformed_reset.status(),
         HciError::INVALID_HCI_PARAMETERS.to_status()
@@ -493,25 +467,25 @@ fn known_commands_are_disallowed_before_reset_and_malformed_input_never_mutates(
 
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
+            .dispatch(OwnedBootstrapCommand::Reset, false)
             .status(),
         Status::SUCCESS
     );
     let malformed_mask = dispatch_test_packet(
         &mut bootstrap,
-        HciCommandPacket::for_test(SetEventMask::OPCODE, &[0; 7]),
+        HciCommandPacket::new(SetEventMask::OPCODE, &[0; 7]),
     );
     assert_eq!(
         malformed_mask.status(),
         HciError::INVALID_HCI_PARAMETERS.to_status()
     );
-    assert_eq!(bootstrap.event_mask(), EventMask::new());
+    assert_eq!(bootstrap.event_mask(), default_event_mask());
 
     let sync_host_buffers = [0xff, 0x00, 1, 1, 0, 1, 0];
     assert_eq!(
         dispatch_test_packet(
             &mut bootstrap,
-            HciCommandPacket::for_test(HostBufferSize::OPCODE, &sync_host_buffers),
+            HciCommandPacket::new(HostBufferSize::OPCODE, &sync_host_buffers),
         )
         .status(),
         HciError::INVALID_HCI_PARAMETERS.to_status()
@@ -521,7 +495,7 @@ fn known_commands_are_disallowed_before_reset_and_malformed_input_never_mutates(
     assert_eq!(
         dispatch_test_packet(
             &mut bootstrap,
-            HciCommandPacket::for_test(SetControllerToHostFlowControl::OPCODE, &[2]),
+            HciCommandPacket::new(SetControllerToHostFlowControl::OPCODE, &[2]),
         )
         .status(),
         HciError::UNSUPPORTED.to_status()
@@ -533,7 +507,7 @@ fn known_commands_are_disallowed_before_reset_and_malformed_input_never_mutates(
 
     let unknown = Opcode::new(OpcodeGroup::VENDOR_SPECIFIC, 1);
     assert_eq!(
-        dispatch_test_packet(&mut bootstrap, HciCommandPacket::for_test(unknown, &[]),).status(),
+        dispatch_test_packet(&mut bootstrap, HciCommandPacket::new(unknown, &[]),).status(),
         HciError::UNKNOWN_CMD.to_status()
     );
 }
@@ -570,13 +544,12 @@ fn supported_commands_report_matches_the_closed_operational_inventory() {
     let mut bootstrap = LeControllerBootstrap::new(config);
     assert_eq!(
         bootstrap
-            .dispatch_owned(OwnedBootstrapCommand::Reset, false)
+            .dispatch(OwnedBootstrapCommand::Reset, false)
             .status(),
         Status::SUCCESS
     );
 
-    let response =
-        bootstrap.dispatch_owned(OwnedBootstrapCommand::ReadLocalSupportedCommands, false);
+    let response = bootstrap.dispatch(OwnedBootstrapCommand::ReadLocalSupportedCommands, false);
     assert_eq!(response.opcode(), ReadLocalSupportedCmds::OPCODE);
     assert_eq!(response.status(), Status::SUCCESS);
     assert_eq!(response.as_bytes().len(), 70);
@@ -724,9 +697,7 @@ fn dispatch_test_packet(
         | LeControllerCommandClassification::MalformedLongTermKeyReply(_) => {
             command_error(crate::LeDisconnectCommand::OPCODE, HciError::UNKNOWN_CMD)
         }
-        LeControllerCommandClassification::Bootstrap(command) => {
-            bootstrap.dispatch_owned(command, false)
-        }
+        LeControllerCommandClassification::Bootstrap(command) => bootstrap.dispatch(command, false),
         LeControllerCommandClassification::MalformedBootstrap(response) => response,
         LeControllerCommandClassification::Dtm(command) => {
             command_error(command.kind().opcode(), HciError::UNKNOWN_CMD)

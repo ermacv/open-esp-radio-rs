@@ -9,7 +9,7 @@ use super::le::peripheral::{
     LeReadRemoteVersionInformationDecodeError,
 };
 use crate::{
-    BootstrapCommandCompleteEvent, HciCommandPacket, HciEpochBound, LeDisconnectCommand,
+    BootstrapCommandCompleteEvent, HciCommandPacket, LeDisconnectCommand,
     LeDisconnectCommandStatusEvent, LeDtmCommand, LeDtmCommandCompleteEvent,
     LeLegacyAdvertisingCommand, LeLegacyAdvertisingCommandCompleteEvent,
     LeLegacyAdvertisingCommandKind, LeLegacyAdvertisingConfigurationCommand,
@@ -20,7 +20,7 @@ use crate::{
     LeLongTermKeyRequestNegativeReplyCommand, LeLongTermKeyRequestReplyCommand,
     LeReadRemoteFeaturesCommand, LeReadRemoteFeaturesCommandStatusEvent,
     LeReadRemoteVersionInformationCommand, LeReadRemoteVersionInformationCommandStatusEvent,
-    LeTestEndCommand, OwnedBootstrapCommand, UnknownCommandCompleteEvent,
+    OwnedBootstrapCommand, UnknownCommandCompleteEvent,
 };
 
 /// One finite result of classifying a validated HCI command packet.
@@ -109,26 +109,6 @@ impl LeControllerCommandClassification {
             Self::MalformedLegacyScanning(response) => response.opcode(),
             Self::Unsupported(response) => response.opcode(),
         }
-    }
-}
-
-impl<'epoch> HciEpochBound<'epoch, LeControllerCommandClassification> {
-    /// Refine an epoch-bound production classification into a semantic DTM command.
-    pub fn try_into_dtm(self) -> Result<HciEpochBound<'epoch, LeDtmCommand>, Self> {
-        self.try_map(|classification| match classification {
-            LeControllerCommandClassification::Dtm(command) => Ok(command),
-            classification => Err(classification),
-        })
-    }
-}
-
-impl<'epoch> HciEpochBound<'epoch, LeDtmCommand> {
-    /// Refine an epoch-bound DTM command into the semantic Test End owner.
-    pub fn try_into_test_end(self) -> Result<HciEpochBound<'epoch, LeTestEndCommand>, Self> {
-        self.try_map(|command| match command {
-            LeDtmCommand::TestEnd(command) => Ok(command),
-            command => Err(command),
-        })
     }
 }
 

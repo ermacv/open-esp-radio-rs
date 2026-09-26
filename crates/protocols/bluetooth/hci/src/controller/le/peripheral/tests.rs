@@ -24,7 +24,7 @@ use std::format;
 
 #[test]
 fn disconnect_decode_owns_validated_handle_and_reason() {
-    let command = LeDisconnectCommand::decode(HciCommandPacket::for_test(
+    let command = LeDisconnectCommand::decode(HciCommandPacket::new(
         LeDisconnectCommand::OPCODE,
         &[0xbc, 0x0a, 0x13],
     ))
@@ -39,7 +39,7 @@ fn disconnect_decode_owns_validated_handle_and_reason() {
         &[0, 0x10, 0x13][..],
     ] {
         assert_eq!(
-            LeDisconnectCommand::decode(HciCommandPacket::for_test(
+            LeDisconnectCommand::decode(HciCommandPacket::new(
                 LeDisconnectCommand::OPCODE,
                 parameters,
             )),
@@ -64,14 +64,14 @@ fn disconnect_status_roundtrips_through_bt_hci() {
 
 #[test]
 fn read_remote_features_command_and_events_use_standard_wire_shapes() {
-    let command = LeReadRemoteFeaturesCommand::decode(HciCommandPacket::for_test(
+    let command = LeReadRemoteFeaturesCommand::decode(HciCommandPacket::new(
         LeReadRemoteFeaturesCommand::OPCODE,
         &[0xbc, 0x0a],
     ))
     .unwrap();
     assert_eq!(command.handle(), ConnHandle::new(0x0abc));
     assert_eq!(
-        LeReadRemoteFeaturesCommand::decode(HciCommandPacket::for_test(
+        LeReadRemoteFeaturesCommand::decode(HciCommandPacket::new(
             LeReadRemoteFeaturesCommand::OPCODE,
             &[0, 0x10],
         )),
@@ -102,14 +102,14 @@ fn read_remote_features_command_and_events_use_standard_wire_shapes() {
 
 #[test]
 fn read_remote_version_command_and_events_use_standard_wire_shapes() {
-    let command = LeReadRemoteVersionInformationCommand::decode(HciCommandPacket::for_test(
+    let command = LeReadRemoteVersionInformationCommand::decode(HciCommandPacket::new(
         LeReadRemoteVersionInformationCommand::OPCODE,
         &[0xbc, 0x0a],
     ))
     .unwrap();
     assert_eq!(command.handle(), ConnHandle::new(0x0abc));
     assert_eq!(
-        LeReadRemoteVersionInformationCommand::decode(HciCommandPacket::for_test(
+        LeReadRemoteVersionInformationCommand::decode(HciCommandPacket::new(
             LeReadRemoteVersionInformationCommand::OPCODE,
             &[0, 0x10],
         )),
@@ -152,7 +152,7 @@ fn long_term_key_commands_transfer_a_redacted_secret_and_use_standard_completion
     let mut parameters = [0; 18];
     parameters[..2].copy_from_slice(&0x0abcu16.to_le_bytes());
     parameters[2..].copy_from_slice(&key);
-    let reply = LeLongTermKeyRequestReplyCommand::decode(HciCommandPacket::for_test(
+    let reply = LeLongTermKeyRequestReplyCommand::decode(HciCommandPacket::new(
         LeLongTermKeyRequestReplyCommand::OPCODE,
         &parameters,
     ))
@@ -161,7 +161,7 @@ fn long_term_key_commands_transfer_a_redacted_secret_and_use_standard_completion
     assert!(!format!("{reply:?}").contains("5a"));
     assert_eq!(reply.into_long_term_key(), key);
 
-    let negative = LeLongTermKeyRequestNegativeReplyCommand::decode(HciCommandPacket::for_test(
+    let negative = LeLongTermKeyRequestNegativeReplyCommand::decode(HciCommandPacket::new(
         LeLongTermKeyRequestNegativeReplyCommand::OPCODE,
         &[0xbc, 0x0a],
     ))
@@ -181,7 +181,7 @@ fn long_term_key_commands_transfer_a_redacted_secret_and_use_standard_completion
 
     for parameters in [&[][..], &[1, 0][..], &[0; 17][..], &[0; 19][..]] {
         assert!(matches!(
-            LeLongTermKeyRequestReplyCommand::decode(HciCommandPacket::for_test(
+            LeLongTermKeyRequestReplyCommand::decode(HciCommandPacket::new(
                 LeLongTermKeyRequestReplyCommand::OPCODE,
                 parameters,
             )),
@@ -189,7 +189,7 @@ fn long_term_key_commands_transfer_a_redacted_secret_and_use_standard_completion
         ));
     }
     assert_eq!(
-        LeLongTermKeyRequestNegativeReplyCommand::decode(HciCommandPacket::for_test(
+        LeLongTermKeyRequestNegativeReplyCommand::decode(HciCommandPacket::new(
             LeLongTermKeyRequestNegativeReplyCommand::OPCODE,
             &[0, 0x10],
         )),

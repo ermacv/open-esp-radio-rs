@@ -28,7 +28,8 @@ pub struct LeControllerToHostAclProfile {
 }
 
 impl LeControllerToHostAclProfile {
-    pub(crate) const fn new(
+    /// The Host's Controller-to-Host ACL buffer profile.
+    pub const fn new(
         maximum_payload: usize,
         total_packets: Option<u16>,
         flow_controlled: bool,
@@ -68,7 +69,8 @@ impl LeHostCompletedPacketsCommand {
     /// Standard Host Number Of Completed Packets opcode.
     pub const OPCODE: Opcode = HostNumberOfCompletedPackets::OPCODE;
 
-    pub(crate) fn decode(
+    /// Decode Host Number Of Completed Packets.
+    pub fn decode(
         command: crate::HciCommandPacket<'_>,
     ) -> Result<Self, LeHostCompletedPacketsDecodeError> {
         if command.opcode() != Self::OPCODE {
@@ -119,8 +121,11 @@ impl LeHostCompletedPacketsCommand {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum LeHostCompletedPacketsDecodeError {
+/// Why a command is not a valid Host Number Of Completed Packets.
+pub enum LeHostCompletedPacketsDecodeError {
+    /// Another opcode.
     Unsupported,
+    /// The opcode matched but its parameters are invalid.
     Malformed,
 }
 
@@ -549,7 +554,7 @@ mod tests {
 
     #[test]
     fn host_completed_packets_owns_one_live_handle_credit_sum() {
-        let command = LeHostCompletedPacketsCommand::decode(crate::HciCommandPacket::for_test(
+        let command = LeHostCompletedPacketsCommand::decode(crate::HciCommandPacket::new(
             LeHostCompletedPacketsCommand::OPCODE,
             &[2, 1, 0, 2, 0, 1, 0, 3, 0],
         ))
@@ -557,7 +562,7 @@ mod tests {
         assert_eq!(command.completed_for(Some(ConnHandle::new(1))), Some(5));
         assert_eq!(command.completed_for(Some(ConnHandle::new(2))), None);
 
-        let empty = LeHostCompletedPacketsCommand::decode(crate::HciCommandPacket::for_test(
+        let empty = LeHostCompletedPacketsCommand::decode(crate::HciCommandPacket::new(
             LeHostCompletedPacketsCommand::OPCODE,
             &[0],
         ))
@@ -566,7 +571,7 @@ mod tests {
 
         for parameters in [&[][..], &[1, 1, 0, 1][..], &[1, 0, 0x10, 1, 0][..]] {
             assert_eq!(
-                LeHostCompletedPacketsCommand::decode(crate::HciCommandPacket::for_test(
+                LeHostCompletedPacketsCommand::decode(crate::HciCommandPacket::new(
                     LeHostCompletedPacketsCommand::OPCODE,
                     parameters,
                 )),
@@ -574,7 +579,7 @@ mod tests {
             );
         }
 
-        let mixed = LeHostCompletedPacketsCommand::decode(crate::HciCommandPacket::for_test(
+        let mixed = LeHostCompletedPacketsCommand::decode(crate::HciCommandPacket::new(
             LeHostCompletedPacketsCommand::OPCODE,
             &[2, 1, 0, 1, 0, 2, 0, 1, 0],
         ))

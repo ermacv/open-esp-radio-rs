@@ -4,13 +4,10 @@ mod in_process;
 mod packet;
 mod queue;
 
-pub(crate) use in_process::{
-    HciActivePeripheralIntake, HciClassifiedCommandIntake, InProcessHciChannel,
-    InProcessHciControllerEndpoint,
-};
+pub(crate) use in_process::InProcessHciChannel;
 pub use in_process::{
-    HciChannelError, HciEpochBound, HciEpochIdentity, InProcessHciHostTransport,
-    LeHostAclCreditSender,
+    HciChannelError, HciEpochIdentity, HciRestartError, HciRetired, HciRetirementError,
+    InProcessHciControllerTransport, InProcessHciHostTransport, LeHostAclCreditSender,
 };
 pub use queue::{ControllerToHostQueue, ControllerToHostQueueError};
 

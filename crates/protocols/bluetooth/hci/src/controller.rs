@@ -1,50 +1,24 @@
-//! Statically bounded resources and the sole combined Controller epoch.
-//!
-//! Bootstrap, LE configuration and command/response order belong to this same
-//! owner boundary. The endpoint cannot release its raw transport or mutable state.
+//! HCI command, event and data codecs, and the statically bounded channel
+//! resources of one Controller epoch.
 
 pub(super) mod bootstrap;
 pub(super) mod classification;
 pub(super) mod le;
-pub(super) mod order;
 pub(super) mod random;
 pub(super) mod response;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
-use self::le::advertising::LeLegacyAdvertisingConfiguration;
-
-use self::le::scanning::{LeLegacyScanningConfiguration, LeLegacyScanningIdleEnableDisposition};
-
 use crate::{
-    BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BootstrapCommandCompleteEvent, BootstrapPhase,
-    HciControllerResponse, InProcessHciChannel, InProcessHciControllerEndpoint,
-    InProcessHciHostTransport, LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY,
-    LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY, LeConnectionUpdateCompleteEvent,
-    LeControllerBootstrap, LeControllerBootstrapConfig, LeControllerCommandReady,
-    LeDisconnectionCompleteEvent, LeLegacyAdvertisingCommandCompleteEvent,
-    LeLegacyAdvertisingConfigurationCommand, LeLegacyAdvertisingEnableCommand,
-    LeLegacyAdvertisingIdleEnableDisposition, LeLegacyAdvertisingReportEvent,
-    LeLegacyScanningCommandCompleteEvent, LeLegacyScanningConfigurationCommand,
-    LeLegacyScanningEnableCommand, LeNumberOfCompletedPacketsEvent,
-    LePeripheralConnectionCompleteEvent, LeReadRemoteFeaturesCompleteEvent,
-    LeReadRemoteVersionInformationCompleteEvent, OwnedBootstrapCommand,
-};
-
-mod retirement;
-pub use retirement::{
-    LeControllerHciRestartError, LeControllerHciRetired, LeControllerHciRetirementError,
-};
-
-mod endpoint;
-pub use endpoint::{
-    LeControllerCommandEndpoint, LeControllerCommandReadyClaim,
-    LeLegacyAdvertisingReportPublication, LePeripheralConnectionEventPublication,
+    BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, InProcessHciChannel,
+    InProcessHciControllerTransport, InProcessHciHostTransport,
+    LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LE_LEGACY_ADVERTISING_REPORT_EVENT_CAPACITY,
+    LeControllerBootstrapConfig,
 };
 
 const HCI_ACL_HEADER_BYTES: usize = 4;
 
-/// Why an HCI runtime profile cannot represent its advertised LE resources.
+/// Why an HCI profile cannot represent its advertised LE resources.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LeControllerHciResourcesError {
     /// A complete command, event or advertised LE ACL packet does not fit one
@@ -56,7 +30,7 @@ pub enum LeControllerHciResourcesError {
         available: usize,
     },
     /// The Controller advertised more simultaneous Host ACL credits than its
-    /// source-owned inbound queue can retain.
+    /// inbound queue can retain.
     AclCreditsExceedHostQueue {
         /// Credits reported by LE Read Buffer Size.
         credits: usize,
@@ -65,11 +39,7 @@ pub enum LeControllerHciResourcesError {
     },
 }
 
-/// Complete disjoint endpoints borrowed from one HCI resource epoch.
-///
-/// The Host transport is independent, while all Controller command authority
-/// remains in one [`LeControllerCommandEndpoint`]. The shared lifetime prevents
-/// a second split until both endpoints are returned.
+/// Both endpoints borrowed from one HCI resource epoch.
 #[must_use = "all HCI endpoints belong to one resource epoch"]
 pub struct LeControllerHciEndpoints<
     'resources,
@@ -88,8 +58,8 @@ pub struct LeControllerHciEndpoints<
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
     >,
-    /// Sole combined transport and bootstrap command endpoint.
-    pub controller: LeControllerCommandEndpoint<
+    /// Controller-facing raw transport.
+    pub controller: InProcessHciControllerTransport<
         'resources,
         M,
         HOST_TO_CONTROLLER_DEPTH,
@@ -98,14 +68,11 @@ pub struct LeControllerHciEndpoints<
     >,
 }
 
-/// Allocation-free transport, bootstrap, and Link Layer configuration for one HCI epoch.
+/// Allocation-free packet storage for one HCI epoch.
 ///
-/// The aggregate replaces a vendor packet mempool, global HCI environment and
-/// callback-broker node with bounded packet queues and typed bootstrap state.
-/// Its reset-scoped advertising owner retains parameters, advertising data,
-/// and scan-response data until Enable captures one role-specific snapshot.
-/// It is neither `Copy` nor `Clone`; splitting requires a unique mutable borrow
-/// and yields the only Host and combined command endpoints for that epoch.
+/// Construction checks that every packet of the bootstrap profile and every
+/// advertised Host ACL credit fits the storage. The aggregate is neither
+/// `Copy` nor `Clone`; splitting requires a unique borrow.
 #[must_use = "HCI runtime resources must remain owned by their Controller epoch"]
 pub struct LeControllerHciResources<
     M,
@@ -117,10 +84,7 @@ pub struct LeControllerHciResources<
 {
     channel:
         InProcessHciChannel<M, HOST_TO_CONTROLLER_DEPTH, CONTROLLER_TO_HOST_DEPTH, PACKET_CAPACITY>,
-    bootstrap: LeControllerBootstrap,
-    legacy_advertising: LeLegacyAdvertisingConfiguration,
-    legacy_scanning: LeLegacyScanningConfiguration,
-    initial_ready_available: bool,
+    config: LeControllerBootstrapConfig,
 }
 
 impl<
@@ -158,25 +122,21 @@ where
 
         Ok(Self {
             channel: InProcessHciChannel::new(),
-            bootstrap: LeControllerBootstrap::new(config),
-            legacy_advertising: LeLegacyAdvertisingConfiguration::new(),
-            legacy_scanning: LeLegacyScanningConfiguration::new(),
-            initial_ready_available: true,
+            config,
         })
     }
 
-    /// Immutable bootstrap profile retained by this exact epoch.
+    /// Bootstrap profile this storage was checked against.
     pub const fn config(&self) -> LeControllerBootstrapConfig {
-        self.bootstrap.config()
+        self.config
     }
 
-    /// Whether the transport is open, initial authority remains unclaimed and no packet or
-    /// successful bootstrap command has entered this epoch.
+    /// Whether the transport is open and no packet has entered either direction.
     pub fn is_pristine(&self) -> bool {
-        self.initial_ready_available && self.channel.is_pristine() && self.bootstrap.is_pristine()
+        self.channel.is_pristine()
     }
 
-    /// Borrow the only Host transport and combined Controller command endpoint.
+    /// Borrow the only Host and Controller endpoints.
     pub fn split(
         &mut self,
     ) -> LeControllerHciEndpoints<
@@ -186,18 +146,8 @@ where
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
     > {
-        let (host, transport) = self.channel.split();
-        LeControllerHciEndpoints {
-            host,
-            controller: LeControllerCommandEndpoint {
-                transport,
-                random_source: None,
-                bootstrap: &mut self.bootstrap,
-                legacy_advertising: &mut self.legacy_advertising,
-                legacy_scanning: &mut self.legacy_scanning,
-                initial_ready_available: &mut self.initial_ready_available,
-            },
-        }
+        let (host, controller) = self.channel.split();
+        LeControllerHciEndpoints { host, controller }
     }
 }
 

@@ -26,7 +26,7 @@ use crate::HciCommandPacket;
 mod command;
 mod config;
 mod response;
-mod state;
+pub(crate) mod state;
 
 pub(crate) use command::BootstrapCommandDecodeError;
 pub use command::{BootstrapCommand, OwnedBootstrapCommand, le_controller_supported_commands};

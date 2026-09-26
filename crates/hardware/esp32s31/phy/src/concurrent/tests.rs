@@ -308,3 +308,33 @@ fn rf_closes_only_after_the_last_client_left() {
     );
     assert!(lease.attachment_mut().idle_domain().is_ok());
 }
+
+#[test]
+fn the_final_state_cache_follows_the_registered_domain_across_rf_close() {
+    let identity = crate::PhyCalibrationIdentity {
+        rf_cal_version: 7,
+        base_mac_address: [2, 3, 5, 7, 11, 13],
+        mac_extension: 17,
+    };
+    let (radio, _partitions) =
+        RadioHardware::for_validation().into_concurrent(ConcurrentPhy::new());
+    {
+        let lease = radio
+            .try_acquire()
+            .unwrap_or_else(|_| panic!("a fresh arbiter grants its lease"));
+        assert!(matches!(
+            lease.attachment().calibration_cache(identity),
+            Err(ConcurrentPhyError::NotRegistered)
+        ));
+    }
+    for radio in [registered_arbiter(), rf_closed_arbiter()] {
+        let lease = radio
+            .try_acquire()
+            .unwrap_or_else(|_| panic!("a fresh arbiter grants its lease"));
+        let cache = lease
+            .attachment()
+            .calibration_cache(identity)
+            .unwrap_or_else(|_| panic!("a registered domain exports its state"));
+        assert_eq!(cache.identity(), identity);
+    }
+}

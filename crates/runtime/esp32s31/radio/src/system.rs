@@ -12,9 +12,9 @@ use oer_esp32s31_hal::{
     shared_radio::{PlatformClockProvider, SharedRadio, SharedRadioLease},
 };
 use oer_esp32s31_phy::{
-    ConcurrentPhyRegisterFailure, ConcurrentPhyTrackingError, ConcurrentRfError,
-    ConcurrentTrackingTick, NoopPhyTargetObserver, PhyCalibrationIdentity, PhyRegisterConfig,
-    close_concurrent_rf,
+    ConcurrentPhyRegisterFailure, ConcurrentPhyRegistration, ConcurrentPhyTrackingError,
+    ConcurrentRfError, ConcurrentTrackingTick, NoopPhyTargetObserver, PhyCalibrationCache,
+    PhyCalibrationIdentity, PhyRegisterConfig, close_concurrent_rf,
     concurrent::{ConcurrentAcquire, ConcurrentPhy, ConcurrentPhyError},
     ieee802154_client::{
         Ieee802154PhyClientError, RegisteredIeee802154OperationalRoute,
@@ -35,6 +35,8 @@ pub struct RadioResources<P, C> {
     pub platform: P,
     /// The platform sources of the modem clocks.
     pub clocks: C,
+    /// The retained cache the first registration validates and replays.
+    retained_cache: Option<PhyCalibrationCache>,
 }
 
 /// The shared radio: the arbiter with its PHY domain and the platform
@@ -54,6 +56,22 @@ pub struct RadioGuard<'radio, P, C> {
     resources: MutexGuard<'radio, CriticalSectionRawMutex, RadioResources<P, C>>,
     lease: SharedRadioLease<'radio, ConcurrentPhy>,
     identity: PhyCalibrationIdentity,
+}
+
+/// How [`RadioGuard::prepare_phy`] made the shared PHY ready.
+#[must_use = "a registration carries the new calibration cache and outcome"]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the registration carries its calibration cache inline without allocation"
+)]
+pub enum RadioPhyPrepared {
+    /// This call registered the domain; the registration reports its
+    /// calibration path and carries the fresh cache.
+    Registered(ConcurrentPhyRegistration),
+    /// Closed RF was woken without calibration.
+    Woken,
+    /// The domain was registered with RF open already.
+    AlreadyOpen,
 }
 
 /// Why the shared PHY could not be prepared for a joining client.
@@ -122,11 +140,26 @@ impl<P, C: PlatformClockProvider> RadioSystem<P, C> {
         (
             Self {
                 radio,
-                resources: Mutex::new(RadioResources { platform, clocks }),
+                resources: Mutex::new(RadioResources {
+                    platform,
+                    clocks,
+                    retained_cache: None,
+                }),
                 identity,
             },
             partitions,
         )
+    }
+
+    /// Supply a retained calibration cache for the first registration, which
+    /// validates it against the calibration identity and replays it instead
+    /// of calibrating fully when it matches. Call it before any client
+    /// prepares the PHY; a later registration of the same system starts
+    /// without a cache.
+    #[must_use]
+    pub fn with_calibration_cache(mut self, cache: PhyCalibrationCache) -> Self {
+        self.resources.get_mut().retained_cache = Some(cache);
+        self
     }
 
     /// Take the arbiter lease and the platform resources, waiting while
@@ -258,13 +291,18 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
 
     /// The arbiter lease with the platform token and clock sources.
     pub fn parts(&mut self) -> (&mut SharedRadioLease<'radio, ConcurrentPhy>, &mut P, &mut C) {
-        let RadioResources { platform, clocks } = &mut *self.resources;
+        let RadioResources {
+            platform, clocks, ..
+        } = &mut *self.resources;
         (&mut self.lease, platform, clocks)
     }
 
     /// The first-client half of `esp_phy_enable`: register the shared PHY
-    /// domain once, or wake its closed RF. A registered, open domain is left
-    /// unchanged.
+    /// domain once, with the retained calibration cache when one was
+    /// supplied, or wake its closed RF. A registered, open domain is left
+    /// unchanged. The domain stays registered across RF close and wake, as
+    /// ESP-IDF's calibrated PHY does, so only the first preparation
+    /// registers.
     ///
     /// # Errors
     ///
@@ -274,35 +312,56 @@ impl<'radio, P, C: PlatformClockProvider> RadioGuard<'radio, P, C> {
     /// # Cancellation
     ///
     /// Once polled, drive this future to a terminal result.
-    pub async fn prepare_phy(&mut self) -> Result<(), RadioPhyError> {
+    pub async fn prepare_phy(&mut self) -> Result<RadioPhyPrepared, RadioPhyError> {
         let identity = self.identity;
-        let (lease, platform, clocks) = self.parts();
+        let RadioResources {
+            platform,
+            clocks,
+            retained_cache,
+        } = &mut *self.resources;
+        let lease = &mut self.lease;
         if lease.attachment().rf_closed() {
             return wake_concurrent_rf::<EmbassyPhyTime>(lease, clocks)
                 .await
+                .map(|()| RadioPhyPrepared::Woken)
                 .map_err(RadioPhyError::Wake);
         }
         if lease.attachment().client_snapshot().is_some() {
-            return Ok(());
+            return Ok(RadioPhyPrepared::AlreadyOpen);
         }
+        let config = match retained_cache.take() {
+            Some(cache) => PhyRegisterConfig::new(identity).with_calibration_cache(cache),
+            None => PhyRegisterConfig::new(identity),
+        };
         match register_concurrent_phy::<P, EmbassyPhyTime, _>(
             lease,
             platform,
             clocks,
-            PhyRegisterConfig::new(identity),
+            config,
             NoopPhyTargetObserver,
         )
         .await
         {
-            Ok(_registration) => Ok(()),
+            Ok(registration) => Ok(RadioPhyPrepared::Registered(registration)),
             Err(ConcurrentPhyRegisterFailure::Rejected(ConcurrentPhyError::AlreadyRegistered)) => {
-                Ok(())
+                Ok(RadioPhyPrepared::AlreadyOpen)
             }
             Err(ConcurrentPhyRegisterFailure::Rejected(error)) => {
                 Err(RadioPhyError::Registration(error))
             }
             Err(_) => Err(RadioPhyError::RegistrationFailed),
         }
+    }
+
+    /// Capture the registered domain's current calibration state as a cache
+    /// for the next cold registration, with the system's calibration
+    /// identity: the final-state handoff after runtime tracking.
+    ///
+    /// # Errors
+    ///
+    /// The domain is not registered, awaits tracking or is poisoned.
+    pub fn calibration_cache(&self) -> Result<PhyCalibrationCache, ConcurrentPhyError> {
+        self.lease.attachment().calibration_cache(self.identity)
     }
 
     /// The last-client half of `esp_phy_disable`: close RF when the domain

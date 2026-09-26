@@ -13,6 +13,7 @@ use crate::{
         HT_CAPABILITY_IE_LEN, HT_OPERATION_IE_LEN, HtPeerCapabilities, ht_capability_ie_for_peer,
         ht_operation_ie, ht_peer_capabilities,
     },
+    protection::ApBssProtection,
     security::WifiSecurityMode,
     sequence::SequenceNumber,
     station_power_save::STA_NULL_DATA_FRAME_LEN,
@@ -528,6 +529,8 @@ pub enum ApManagementRequest<'a> {
         /// The peer supplied WMM information or HT, both of which imply QoS
         /// data framing for this profile.
         qos_supported: bool,
+        /// Capability Information Short Preamble.
+        short_preamble: bool,
     },
     Disassociation {
         peer: [u8; 6],
@@ -619,6 +622,7 @@ pub fn parse_ap_management_request<'a>(
                 maximum_legacy_rate_500kbps: maximum_ap_legacy_rate(profile, information_elements),
                 ht_capabilities,
                 qos_supported: ht_capabilities.is_some() || supports_wmm(information_elements),
+                short_preamble: capabilities & 0x0020 != 0,
             })
         }
         10 | 12 => {
@@ -771,38 +775,8 @@ pub fn write_open_authentication_response(
     Ok(AP_AUTHENTICATION_RESPONSE_LEN)
 }
 
-/// Encode the AP HT association response as one complete MPDU.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the frame writer keeps each independently reviewed 802.11 field explicit at its boundary"
-)]
-pub fn write_ht_association_response_frame(
-    profile: &Advertisement,
-    output: &mut [u8],
-    access_point: [u8; 6],
-    peer: [u8; 6],
-    status: u16,
-    association_id: u16,
-    management_sequence: SequenceNumber,
-    channel: WifiChannel,
-    peer_ht: Option<HtPeerCapabilities>,
-) -> Result<usize, ApAssociationResponseError> {
-    write_ht_association_response_frame_for_security(
-        profile,
-        output,
-        access_point,
-        peer,
-        status,
-        association_id,
-        management_sequence,
-        channel,
-        peer_ht,
-        WifiSecurityMode::Wpa2Personal,
-    )
-}
-
 /// Encode an association response with capability privacy matching the exact
-/// AP mode. The WPA2 wrapper above retains its original bytes.
+/// AP mode and the BSS's current protection.
 #[expect(
     clippy::too_many_arguments,
     reason = "the frame writer keeps each independently reviewed 802.11 field explicit at its boundary"
@@ -818,6 +792,7 @@ pub fn write_ht_association_response_frame_for_security(
     channel: WifiChannel,
     peer_ht: Option<HtPeerCapabilities>,
     security: WifiSecurityMode,
+    protection: ApBssProtection,
 ) -> Result<usize, ApAssociationResponseError> {
     if output.len() < AP_ASSOCIATION_RESPONSE_LEN {
         return Err(ApAssociationResponseError::OutputTooSmall {
@@ -830,7 +805,15 @@ pub fn write_ht_association_response_frame_for_security(
     let body: &mut [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN] = (&mut frame[MANAGEMENT_HEADER_LEN..])
         .try_into()
         .expect("checked association response body length");
-    write_ht_association_response(profile, body, status, association_id, channel, peer_ht)?;
+    write_ht_association_response(
+        profile,
+        body,
+        status,
+        association_id,
+        channel,
+        peer_ht,
+        protection,
+    )?;
     if security == WifiSecurityMode::Open {
         body[..2].copy_from_slice(&profile.capabilities(security).to_le_bytes());
     }
@@ -890,6 +873,7 @@ pub fn write_ht_association_response(
     association_id: u16,
     channel: WifiChannel,
     peer_ht: Option<HtPeerCapabilities>,
+    protection: ApBssProtection,
 ) -> Result<(), ApAssociationResponseError> {
     if status == 0 && association_id & 0x3fff == 0 {
         return Err(ApAssociationResponseError::MissingAssociationId);
@@ -904,10 +888,10 @@ pub fn write_ht_association_response(
     body[8..16].copy_from_slice(profile.legacy_rates.supported());
     body[16..18].copy_from_slice(&[50, 4]);
     body[18..22].copy_from_slice(profile.legacy_rates.extended());
-    body[22..25].copy_from_slice(&[42, 1, profile.erp_information()]);
+    body[22..25].copy_from_slice(&[42, 1, protection.erp_information()]);
     body[25..AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN].copy_from_slice(&profile.wmm.element());
     let ht_capability = ht_capability_ie_for_peer(profile.ht, channel, peer_ht);
-    let ht_operation = ht_operation_ie(channel);
+    let ht_operation = ht_operation_ie(channel, protection.ht);
     let ht_capability_end = AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN + ht_capability.len();
     body[AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN..ht_capability_end]
         .copy_from_slice(&ht_capability);

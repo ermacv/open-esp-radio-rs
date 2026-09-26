@@ -141,6 +141,7 @@ impl<'peers> AccessPointService<'peers> {
         existing.wpa2 = Some(wpa2);
         existing.association_security_binding = association_security_binding;
         existing.maximum_legacy_rate_500kbps = capabilities.maximum_legacy_rate_500kbps;
+        existing.short_preamble = capabilities.short_preamble;
         existing.ht = capabilities.ht;
         existing.qos_supported = capabilities.qos_supported;
         existing.last_activity_micros = now_micros;
@@ -194,6 +195,7 @@ impl<'peers> AccessPointService<'peers> {
         existing.association_security_binding = None;
         existing.pending_ptk = None;
         existing.maximum_legacy_rate_500kbps = capabilities.maximum_legacy_rate_500kbps;
+        existing.short_preamble = capabilities.short_preamble;
         existing.ht = capabilities.ht;
         // Ordinary Open MSDUs retain the non-QoS sequence space. The bounded
         // A-MSDU owner uses this peer's independent QoS/TID-0 counter only

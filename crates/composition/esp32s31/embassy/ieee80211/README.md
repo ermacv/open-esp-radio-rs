@@ -15,7 +15,7 @@ observers. The runner, not `WifiControl`, retains the stopped PHY/MAC owner,
 DMA arenas and IRQ route while it is spawned. Internal crates do not depend on
 the `oer` facade; the facade reexports their application-facing contracts.
 This crate also reexports every input of `new`, `RadioConfig` and
-`WatchdogConfig`: `EspHalRadioPeripheral`, `PhyCalibrationIdentity`,
+`WatchdogConfig`: `EspHalRadioPeripheral`, `PhyCalibrationIdentity`, `RtsLengthThreshold`,
 `phy_get_rf_cal_version`, `DeadlineWatchdog`, `DeadlineBudget` and the
 `await_stack_boundary!` poll boundary. Applications therefore need no direct
 PHY, SoC or esp-hal adapter dependency; board startup and the executor remain

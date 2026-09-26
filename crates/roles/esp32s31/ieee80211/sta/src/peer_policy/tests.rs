@@ -129,7 +129,7 @@ fn scan_policy_collects_every_bss_protection_fact() {
         protection.basic_rates,
         BasicRates::from_rate_elements(&[0x82, 0x84, 0x8b, 0x96], &[])
     );
-    assert_eq!(protection.he_txop_rts, None);
+    assert_eq!(protection.he_txop_rts_threshold, None);
 }
 
 #[test]

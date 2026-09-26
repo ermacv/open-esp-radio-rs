@@ -22,8 +22,9 @@ use oer_esp32s31_ieee80211_mac::{
     ap_policy::{configure_ap_receive_policy, disable_ap_receive_policy},
     ap_tsf::{reset_and_start_access_point_tsf, stop_access_point_tsf},
     crypto::CryptoKeyError,
-    tx::protection::{BasicRates, BssProtection, ErpProtection, HtProtectionMode},
+    tx::protection::{BasicRates, BssProtection, HePacketPadding},
 };
+use oer_ieee80211_mac::protection::ApBssProtection;
 
 use oer_ieee80211_mac::{
     ap::{
@@ -381,6 +382,8 @@ impl ApEngineObserver {
 #[must_use = "an active AP engine must be consumed through stop before radio reuse"]
 pub struct ApEngine<'storage> {
     next_probe_response_micros: u64,
+    /// Protection carried by the retained beacon/probe-response template.
+    advertised_protection: ApBssProtection,
     service: AccessPointService<'storage>,
     beacon: ApBeacon<'storage>,
     security: ApSecurity<'storage>,
@@ -406,6 +409,7 @@ impl<'storage> ApEngine<'storage> {
         dtim_period: u8,
     ) -> Result<Self, ApEngineStartFailure<'storage>> {
         let security_mode = service.security_mode();
+        let advertised_protection = service.bss_protection(is_forty_mhz(channel));
         let beacon_len = match write_ht_beacon(
             &crate::profile::ADVERTISEMENT,
             beacon_storage,
@@ -416,6 +420,7 @@ impl<'storage> ApEngine<'storage> {
             dtim_period,
             SequenceNumber::ZERO,
             security_mode,
+            advertised_protection,
         ) {
             Ok(len) => len,
             Err(error) => {
@@ -457,6 +462,7 @@ impl<'storage> ApEngine<'storage> {
         reset_and_start_access_point_tsf(hardware);
         Ok(Self {
             next_probe_response_micros: 0,
+            advertised_protection,
             service,
             beacon,
             security,
@@ -497,6 +503,7 @@ impl<'storage> ApEngine<'storage> {
         let buffered_group_frames = self.service.buffered_group_frames();
         let unicast_tim_bitmap = self.service.unicast_tim_bitmap().ok()?;
         let unicast_tim_bitmap = unicast_tim_bitmap.partial();
+        self.advertise_current_protection().ok()?;
         let management_sequence = self.service.next_management_sequence();
         let beacon = self.beacon.prepare(
             executor_timestamp_micros,
@@ -613,33 +620,34 @@ impl<'storage> ApEngine<'storage> {
         self.service.peer_status(peer)
     }
 
-    /// Derive this BSS's protection facts from its associated peers.
-    ///
-    /// A peer which reached Association without HT capabilities places an HT
-    /// BSS in non-HT mixed mode. A maximum advertised legacy rate no faster
-    /// than 11 Mbit/s cannot prove ERP membership, so that peer enables ERP
-    /// Use Protection. Any OFDM maximum is positive ERP proof. Basic rates and
-    /// the short-preamble capability are those of the local advertisement.
-    pub fn bss_protection(&self) -> BssProtection {
-        let mut non_erp_member = false;
-        let mut non_ht_member = false;
-        for peer in self
-            .service
-            .peers()
-            .filter(|peer| peer.phase != ApPeerPhase::Authenticated)
-        {
-            non_erp_member |= peer.maximum_legacy_rate_500kbps <= 22;
-            non_ht_member |= peer.ht.is_none();
+    /// Protection this BSS requires now, from its associated peers.
+    pub(crate) fn required_protection(&self) -> ApBssProtection {
+        self.service.bss_protection(is_forty_mhz(self.channel))
+    }
+
+    /// Replace the protection fields of the retained beacon/probe-response
+    /// template when the associated peer set changed them.
+    pub(crate) fn advertise_current_protection(&mut self) -> Result<(), ApEngineError> {
+        let required = self.required_protection();
+        if required != self.advertised_protection {
+            self.beacon
+                .set_bss_protection(required)
+                .map_err(|_| ApEngineError::BeaconPreparation)?;
+            self.advertised_protection = required;
         }
+        Ok(())
+    }
+
+    /// Transmit protection facts of this BSS: the required ERP and HT
+    /// protection with the local basic rates and short-preamble capability.
+    pub fn bss_protection(&self) -> BssProtection {
+        let required = self.required_protection();
         let advertisement = &crate::profile::ADVERTISEMENT;
         BssProtection {
-            erp: ErpProtection::new(non_erp_member, false),
-            ht: if non_ht_member {
-                HtProtectionMode::NonHtMixed
-            } else {
-                HtProtectionMode::None
-            },
-            he_txop_rts: None,
+            erp: required.erp,
+            ht: required.ht.mode,
+            he_txop_rts_threshold: None,
+            he_packet_padding: HePacketPadding::None,
             basic_rates: BasicRates::from_rate_elements(
                 advertisement.legacy_rates.supported(),
                 advertisement.legacy_rates.extended(),
@@ -841,6 +849,13 @@ impl<'storage> ApEngine<'storage> {
             security,
         }
     }
+}
+
+const fn is_forty_mhz(channel: WifiChannel) -> bool {
+    !matches!(
+        channel.width(),
+        oer_ieee80211_mac::channel::WifiChannelWidth::Mhz20
+    )
 }
 
 #[cfg(test)]

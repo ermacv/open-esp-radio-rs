@@ -80,6 +80,7 @@ fn exercise_retention(destination: impl Fn(usize) -> u8) {
                 },
                 ApAssociationCapabilities {
                     maximum_legacy_rate_500kbps: 108,
+                    short_preamble: true,
                     ht: None,
                     qos_supported: false,
                 },

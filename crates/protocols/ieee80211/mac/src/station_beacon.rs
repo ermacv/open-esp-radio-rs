@@ -8,6 +8,12 @@ const BEACON_FRAME_CONTROL: u16 = 0x0080;
 const FRAME_TYPE_AND_SUBTYPE_MASK: u16 = 0x00fc;
 const FIXED_BEACON_LENGTH: usize = 36;
 const TIM_ELEMENT_ID: u8 = 5;
+const ERP_ELEMENT_ID: u8 = 42;
+const HT_OPERATION_ELEMENT_ID: u8 = 61;
+const EXTENSION_ELEMENT_ID: u8 = 255;
+const HE_OPERATION_EXTENSION_ID: u8 = 36;
+
+use crate::protection::{ErpProtection, HtProtectionMode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaBeaconError {
@@ -35,6 +41,28 @@ pub struct StaBeaconObservation {
     pub interval_tu: u16,
     pub capability_information: u16,
     pub tim: Option<StaTimObservation>,
+    pub protection: StaBeaconProtection,
+}
+
+/// BSS protection fields advertised by one beacon.
+///
+/// An absent ERP or HT Operation element carries no requirement. The HE
+/// TXOP Duration RTS Threshold is `None` when the HE Operation element is
+/// absent or encodes the disabled values zero or 1023.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct StaBeaconProtection {
+    pub erp: ErpProtection,
+    pub ht: HtProtectionMode,
+    pub he_txop_rts_threshold: Option<u16>,
+}
+
+impl StaBeaconProtection {
+    /// A beacon without any protection requirement.
+    pub const UNPROTECTED: Self = Self {
+        erp: ErpProtection::NONE,
+        ht: HtProtectionMode::None,
+        he_txop_rts_threshold: None,
+    };
 }
 
 /// Parse one beacon from the associated BSS and locate the station's TIM bit.
@@ -61,6 +89,7 @@ pub fn parse_sta_beacon(
     let mut timestamp = [0_u8; 8];
     timestamp.copy_from_slice(&mpdu[24..32]);
     let mut tim = None;
+    let mut protection = StaBeaconProtection::default();
     let mut offset = FIXED_BEACON_LENGTH;
     while offset < mpdu.len() {
         let header = mpdu
@@ -94,6 +123,23 @@ pub fn parse_sta_beacon(
                 group_buffered: body[0] == 0 && bitmap_control & 1 != 0,
             });
         }
+        let body = &mpdu[body_start..body_end];
+        match (header[0], body) {
+            (ERP_ELEMENT_ID, [information]) => {
+                protection.erp = ErpProtection::from_information(Some(*information));
+            }
+            (HT_OPERATION_ELEMENT_ID, [_, _, information, ..]) if body.len() == 22 => {
+                protection.ht = HtProtectionMode::from_field(*information);
+            }
+            // HE Operation Parameters: TXOP Duration RTS Threshold in bits
+            // 13:4 of its first two octets.
+            (EXTENSION_ELEMENT_ID, [HE_OPERATION_EXTENSION_ID, low, high, ..]) => {
+                let threshold = ((u16::from(*high) & 0x3f) << 4) | (u16::from(*low) >> 4);
+                protection.he_txop_rts_threshold =
+                    (!matches!(threshold, 0 | 0x03ff)).then_some(threshold);
+            }
+            _ => {}
+        }
         offset = body_end;
     }
 
@@ -102,6 +148,7 @@ pub fn parse_sta_beacon(
         interval_tu,
         capability_information: u16::from_le_bytes([mpdu[34], mpdu[35]]),
         tim,
+        protection,
     })
 }
 

@@ -11,9 +11,10 @@ use oer_esp32s31_hal::types::{
 use oer_esp32s31_ieee80211_mac::{
     MacInterface,
     crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
-    tx::protection::{BssProtection, ErpProtection},
+    tx::protection::BssProtection,
     tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot, TxSlotState},
 };
+use oer_ieee80211_mac::protection::ErpProtection;
 use oer_ieee80211_mac::station::StaTxSequenceCounters;
 
 use super::*;

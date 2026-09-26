@@ -20,10 +20,7 @@ use oer_esp32s31_ieee80211_mac::{
     tx::{
         HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, TxSlot,
         ampdu::{HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage},
-        protection::{
-            BssProtection, HePacketPadding, HeTxopDurationRtsThreshold, HeTxopRtsRule,
-            TxProtection,
-        },
+        protection::{BssProtection, HeTxopDurationRtsThreshold, TxProtection},
     },
 };
 
@@ -801,10 +798,7 @@ fn he_aggregate_above_the_txop_threshold_uses_rts_and_survives_a_cts_timeout() {
         .unwrap();
     // Two 32-us units leave no APEP budget after the preamble and BlockAck.
     ordinary.policy_mut().install_bss_protection(BssProtection {
-        he_txop_rts: Some(HeTxopRtsRule::new(
-            HeTxopDurationRtsThreshold::new(2).unwrap(),
-            HePacketPadding::None,
-        )),
+        he_txop_rts_threshold: HeTxopDurationRtsThreshold::new(2),
         ..BssProtection::UNPROTECTED
     });
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());

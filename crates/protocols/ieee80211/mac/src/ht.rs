@@ -6,6 +6,7 @@
 //! capability and operation elements.
 
 use crate::channel::{WifiChannel, WifiChannelWidth};
+use crate::protection::HtOperationProtection;
 
 pub const HT_CAPABILITY_IE_LEN: usize = 28;
 pub const HT_OPERATION_IE_LEN: usize = 24;
@@ -133,8 +134,12 @@ pub const fn ht_capability_ie_for_peer(
     element
 }
 
-/// Build the complete HT Operation element for one validated BSS channel.
-pub const fn ht_operation_ie(channel: WifiChannel) -> [u8; HT_OPERATION_IE_LEN] {
+/// Build the complete HT Operation element for one validated BSS channel and
+/// its current protection requirements.
+pub const fn ht_operation_ie(
+    channel: WifiChannel,
+    protection: HtOperationProtection,
+) -> [u8; HT_OPERATION_IE_LEN] {
     let mut element = [0_u8; 24];
     element[0] = 61;
     element[1] = 22;
@@ -148,6 +153,7 @@ pub const fn ht_operation_ie(channel: WifiChannel) -> [u8; HT_OPERATION_IE_LEN] 
         // IEEE secondary offset three and STA channel width one.
         WifiChannelWidth::Mhz40Below => 0x07,
     };
+    element[4] = protection.information_byte();
     element
 }
 
@@ -163,6 +169,11 @@ pub struct HtPeerCapabilities {
 impl HtPeerCapabilities {
     pub const fn supports_40_mhz(self) -> bool {
         self.capability_info & (1 << 1) != 0
+    }
+
+    /// HT Capabilities Information HT-Greenfield.
+    pub const fn supports_greenfield(self) -> bool {
+        self.capability_info & (1 << 4) != 0
     }
 
     pub const fn supports_short_guard_interval(self, width: WifiChannelWidth) -> bool {

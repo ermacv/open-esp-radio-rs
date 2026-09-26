@@ -2,6 +2,24 @@ const TEST_HT_CAPABILITIES: crate::ht::HtLocalCapabilities =
     crate::ht::HtLocalCapabilities::new(0x100c, 0x03, 0xff, 0x01);
 
 use super::*;
+use crate::protection::HtProtectionMode;
+
+#[test]
+fn ht_operation_carries_the_current_protection_byte() {
+    let channel = WifiChannel::mhz20(6).unwrap();
+    let element = ht_operation_ie(
+        channel,
+        HtOperationProtection {
+            mode: HtProtectionMode::NonHtMixed,
+            non_greenfield_present: true,
+        },
+    );
+    assert_eq!(element[4], 0x07);
+    assert_eq!(
+        HtProtectionMode::from_operation_ie(Some(&element)),
+        HtProtectionMode::NonHtMixed
+    );
+}
 
 #[test]
 fn ht20_records_are_complete_and_bounded() {
@@ -12,7 +30,10 @@ fn ht20_records_are_complete_and_bounded() {
     assert_eq!(capability[5], 0xff);
     assert_eq!(capability[17], 0x01);
     assert_eq!(capability[18], 0);
-    assert_eq!(ht_operation_ie(channel)[..4], [61, 22, 6, 0]);
+    assert_eq!(
+        ht_operation_ie(channel, HtOperationProtection::default())[..4],
+        [61, 22, 6, 0]
+    );
     assert_eq!(
         ht_peer_capabilities(&capability),
         Some(HtPeerCapabilities {
@@ -33,8 +54,14 @@ fn ht40_records_keep_width_geometry_and_peer_facts_coherent() {
     let below = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Below).unwrap();
     let capability = ht_capability_ie(TEST_HT_CAPABILITIES, above);
     assert_eq!(u16::from_le_bytes([capability[2], capability[3]]), 0x106e);
-    assert_eq!(ht_operation_ie(above)[..4], [61, 22, 6, 0x05]);
-    assert_eq!(ht_operation_ie(below)[..4], [61, 22, 6, 0x07]);
+    assert_eq!(
+        ht_operation_ie(above, HtOperationProtection::default())[..4],
+        [61, 22, 6, 0x05]
+    );
+    assert_eq!(
+        ht_operation_ie(below, HtOperationProtection::default())[..4],
+        [61, 22, 6, 0x07]
+    );
     let peer = ht_peer_capabilities(&capability).unwrap();
     assert!(peer.supports_40_mhz());
     assert!(peer.supports_short_guard_interval(WifiChannelWidth::Mhz40Above));

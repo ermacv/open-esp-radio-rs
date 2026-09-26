@@ -884,6 +884,7 @@ impl ProductionWifiEpochRunner {
                         completion_timeout_us: TX_COMPLETION_TIMEOUT_US,
                         poll_interval_us: 1,
                     },
+                    self.rts_length_threshold,
                 )
             }),
             ProductionOrdinaryTxResources::Epoch(tx) => tx,

@@ -83,6 +83,7 @@ fn corrupt_mic(frame: OwnedEapolFrame<512>) -> OwnedEapolFrame<512> {
 fn ht_capabilities() -> ApAssociationCapabilities {
     ApAssociationCapabilities {
         maximum_legacy_rate_500kbps: 108,
+        short_preamble: true,
         ht: ht_peer_capabilities(&ht_capability_ie(
             TEST_HT_CAPABILITIES,
             WifiChannel::mhz20(6).unwrap(),
@@ -93,6 +94,7 @@ fn ht_capabilities() -> ApAssociationCapabilities {
 
 const LEGACY_CAPABILITIES: ApAssociationCapabilities = ApAssociationCapabilities {
     maximum_legacy_rate_500kbps: 108,
+    short_preamble: true,
     ht: None,
     qos_supported: false,
 };
@@ -533,6 +535,7 @@ fn association_rejects_a_peer_without_a_common_legacy_rate() {
                 association_security(&WPA2_RSN),
                 ApAssociationCapabilities {
                     maximum_legacy_rate_500kbps: 0,
+                    short_preamble: true,
                     ht: None,
                     qos_supported: false,
                 },
@@ -1136,4 +1139,74 @@ fn tx_block_ack_is_owned_by_the_exact_authorized_ht_peer() {
             .unwrap()
             .amsdu
     );
+}
+
+#[test]
+fn bss_protection_follows_associated_erp_ht_and_preamble_membership() {
+    use oer_ieee80211_mac::protection::{
+        ApBssProtection, ErpProtection, HtOperationProtection, HtProtectionMode,
+    };
+
+    let mut storage = AccessPointPeerStorage::new();
+    let mut service = AccessPointService::new_open(
+        AP,
+        AccessPointClientLimit::new(2).unwrap(),
+        AccessPointInactiveTimeout::default(),
+        &mut storage,
+    );
+    let open = ApAssociationSecurityObservation {
+        privacy: false,
+        rsn_ie: None,
+        rsn_ie_count: 0,
+        rsnxe: None,
+        rsnxe_count: 0,
+        legacy_wpa_present: false,
+        malformed_elements: false,
+    };
+    // An authenticated 11b station is not yet a BSS member.
+    service.authenticate_open(OTHER, 0);
+    assert_eq!(service.bss_protection(true), ApBssProtection::default());
+
+    // A 20-MHz-only, non-greenfield HT peer in a 40-MHz BSS.
+    service.authenticate_open(PEER, 1);
+    service
+        .associate_open(PEER, open, ht_capabilities(), 2)
+        .unwrap();
+    let ht_only = HtOperationProtection {
+        mode: HtProtectionMode::TwentyMhz,
+        non_greenfield_present: true,
+    };
+    assert_eq!(
+        service.bss_protection(true),
+        ApBssProtection {
+            non_erp_present: false,
+            erp: ErpProtection::NONE,
+            ht: ht_only,
+        }
+    );
+    assert_eq!(
+        service.bss_protection(false).ht.mode,
+        HtProtectionMode::None
+    );
+
+    // A non-ERP peer without short preamble requires ERP protection with
+    // Barker preambles and places the BSS in non-HT mixed mode.
+    service
+        .associate_open(
+            OTHER,
+            open,
+            ApAssociationCapabilities {
+                maximum_legacy_rate_500kbps: 22,
+                short_preamble: false,
+                ht: None,
+                qos_supported: false,
+            },
+            3,
+        )
+        .unwrap();
+    let mixed = service.bss_protection(true);
+    assert!(mixed.non_erp_present);
+    assert_eq!(mixed.erp, ErpProtection::new(true, true));
+    assert_eq!(mixed.erp_information(), 0x07);
+    assert_eq!(mixed.ht.mode, HtProtectionMode::NonHtMixed);
 }

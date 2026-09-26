@@ -100,8 +100,8 @@ reason = "role epoch future retains separate physical, station, AP and monitor r
 [[reviewed_frames]]
 function_contains = "run_access_point_service::{closure#0}"
 source_ends_with = ["crates/composition/esp32s31/embassy/ieee80211/src/supervisor/access_point.rs", "oer-esp32s31-ieee80211-system-0.1.0/src/supervisor/access_point.rs"]
-max_bytes = 16896
-reason = "AP epoch future retains the distinct DMA producer and ordered protocol-consumer owners with the peer-derived BSS protection facts, one optional deferred frame, one complete four-frame typed protocol-action quantum, the exact STA resume frontier and both affine A-MPDU arenas until teardown; it runs on the PSRAM task stack while runtime painting still enforces 16-KiB CPU-stack headroom; the Wi-Fi frontier retains registered PHY state and its shared client scheduler through role transfers"
+max_bytes = 17408
+reason = "AP epoch future retains the distinct DMA producer and ordered protocol-consumer owners with the peer-derived BSS protection facts and the protection advertised by the beacon template, one optional deferred frame, one complete four-frame typed protocol-action quantum, the exact STA resume frontier and both affine A-MPDU arenas until teardown; it runs on the PSRAM task stack while runtime painting still enforces 16-KiB CPU-stack headroom; the Wi-Fi frontier retains registered PHY state and its shared client scheduler through role transfers"
 
 [[reviewed_frames]]
 function_contains = "ProductionStationEnginePort<"

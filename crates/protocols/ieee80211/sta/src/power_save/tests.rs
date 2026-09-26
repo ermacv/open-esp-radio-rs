@@ -1,4 +1,5 @@
 use super::*;
+use oer_ieee80211_mac::station_beacon::StaBeaconProtection;
 
 const POLICY: StaPowerSavePolicy = match StaPowerSavePolicy::new(100, 2_000) {
     Ok(policy) => policy,
@@ -13,6 +14,7 @@ fn beacon(tim: Option<StaTimObservation>) -> StaBeaconObservation {
         interval_tu: 500,
         capability_information: 0,
         tim,
+        protection: StaBeaconProtection::UNPROTECTED,
     }
 }
 

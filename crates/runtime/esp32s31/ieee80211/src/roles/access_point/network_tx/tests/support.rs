@@ -90,6 +90,7 @@ pub(super) fn with_authorized_ap_capabilities(
                 },
                 ApAssociationCapabilities {
                     maximum_legacy_rate_500kbps: 108,
+                    short_preamble: true,
                     ht: ht.then(|| oer_ieee80211_mac::ht::ht_peer_capabilities(&ht_ie).unwrap()),
                     qos_supported: ht,
                 },

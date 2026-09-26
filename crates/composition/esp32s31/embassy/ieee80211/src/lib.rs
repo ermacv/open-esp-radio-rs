@@ -40,6 +40,7 @@ pub use watchdog::WatchdogConfig;
 // construct the composition through this crate (or the `oer` facade) alone.
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
+pub use oer_esp32s31_ieee80211_mac::tx::protection::RtsLengthThreshold;
 pub use oer_esp32s31_phy::{PhyCalibrationIdentity, phy_get_rf_cal_version};
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_soc_esp_hal::watchdog::{DeadlineBudget, DeadlineWatchdog};
@@ -329,6 +330,7 @@ pub struct RadioConfig {
     pub(crate) initial_channel: oer_ieee80211_mac::channel::WifiChannel,
     pub(crate) calibration_cache: Option<oer_esp32s31_phy::PhyCalibrationCache>,
     pub(crate) maximum_tx_power_quarter_dbm: Option<i8>,
+    pub(crate) rts_length_threshold: Option<RtsLengthThreshold>,
     pub(crate) station_tracking: Option<TrackingConfig>,
     #[cfg(feature = "connected-datapath-cycle-telemetry")]
     pub(crate) connected_datapath_poll_observer: Option<ConnectedDatapathPollObserver>,
@@ -356,6 +358,7 @@ impl RadioConfig {
             initial_channel,
             calibration_cache: None,
             maximum_tx_power_quarter_dbm: None,
+            rts_length_threshold: Some(RtsLengthThreshold::VENDOR_DEFAULT),
             station_tracking: Some(TrackingConfig::new(
                 core::num::NonZeroU64::new(1_000_000).unwrap(),
             )),
@@ -400,6 +403,18 @@ impl RadioConfig {
     /// Apply the board/regulatory TX ceiling to the calibrated power profile.
     pub const fn with_maximum_tx_power_quarter_dbm(mut self, maximum: i8) -> Self {
         self.maximum_tx_power_quarter_dbm = Some(maximum);
+        self
+    }
+
+    /// Set the local dot11RTSThreshold: every individually addressed PSDU
+    /// longer than `threshold` bytes is preceded by RTS/CTS. `None` disables
+    /// the length rule; BSS-required protection is unaffected. The default is
+    /// the vendor's 2346 bytes.
+    pub const fn with_rts_length_threshold(
+        mut self,
+        threshold: Option<RtsLengthThreshold>,
+    ) -> Self {
+        self.rts_length_threshold = threshold;
         self
     }
 

@@ -35,11 +35,13 @@ use oer_esp32s31_ieee80211_mac::{
             StaTxBlockAckResponseDisposition, StaTxBlockAckSessions, StaTxBlockAckSessionsError,
             TxBlockAckResponse,
         },
+        protection::{BssProtection, HeTxopDurationRtsThreshold},
     },
 };
 
 use oer_ieee80211_mac::{
     station::{StaDisconnect, StaDisconnectKind},
+    station_beacon::StaBeaconProtection,
     station_power_save::{StaAssociationId, StaPowerManagement},
     trigger::TriggerCommonInfo,
     twt::{INDIVIDUAL_TWT_FLOW_CAPACITY, IndividualTwtAction, IndividualTwtFlowId},
@@ -344,6 +346,12 @@ pub trait ConnectedControlTx {
     /// publishing more MPDUs than the peer's reorder window can retain.
     fn set_tx_block_ack_agreement(&mut self, tid: u8, agreement: Option<(u16, bool)>);
 
+    /// BSS protection facts every later publication selects from.
+    fn bss_protection(&self) -> BssProtection;
+
+    /// Replace the BSS protection facts after the BSS changed them.
+    fn install_bss_protection(&mut self, protection: BssProtection);
+
     /// Hand one validated Trigger response to the unique aggregate/network
     /// owner. A successful return means physical TX ownership was published;
     /// implementations without that exact contract must return a typed reason.
@@ -429,6 +437,14 @@ where
     }
 
     fn set_tx_block_ack_agreement(&mut self, _tid: u8, _agreement: Option<(u16, bool)>) {}
+
+    fn bss_protection(&self) -> BssProtection {
+        self.policy().protection().bss()
+    }
+
+    fn install_bss_protection(&mut self, protection: BssProtection) {
+        self.policy_mut().install_bss_protection(protection);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1388,6 +1404,7 @@ impl ConnectedControlCore {
         }
         if let ConnectedRxControlEvent::Beacon(observation) = event {
             self.beacon_probe_attempts = 0;
+            follow_beacon_protection(tx, observation.protection);
             if let Some(monitor) = &mut self.beacon_monitor {
                 monitor.observe(tx.now_micros(), observation)?;
             }
@@ -2065,6 +2082,24 @@ impl ConnectedControlCore {
         }
         self.in_flight = Some(ControlInFlight::TxAddba { tid });
         Ok(DatapathControlProgress::TxPending)
+    }
+}
+
+/// Apply the associated BSS's current ERP, HT Operation and HE Operation
+/// protection fields. Basic rates, the short-preamble capability and the
+/// peer packet padding were fixed at association and are retained.
+fn follow_beacon_protection<X: ConnectedControlTx>(tx: &mut X, beacon: StaBeaconProtection) {
+    let current = tx.bss_protection();
+    let followed = BssProtection {
+        erp: beacon.erp,
+        ht: beacon.ht,
+        he_txop_rts_threshold: beacon
+            .he_txop_rts_threshold
+            .and_then(HeTxopDurationRtsThreshold::new),
+        ..current
+    };
+    if followed != current {
+        tx.install_bss_protection(followed);
     }
 }
 

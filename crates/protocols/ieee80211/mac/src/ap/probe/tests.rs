@@ -79,6 +79,7 @@ fn response_preserves_advertisement_without_tim_or_beacon_mutation() {
             2,
             seq(0),
             security,
+            crate::protection::ApBssProtection::default(),
         )
         .unwrap();
         let before = beacon;

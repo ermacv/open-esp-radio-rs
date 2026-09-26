@@ -6,10 +6,12 @@ use oer_ieee80211_mac::sequence::SequenceNumber;
 
 use oer_ieee80211_mac::{
     beacon::{
-        ApBeaconBuildError, TimPartialVirtualBitmap, WPA2_BEACON_CAPACITY, stamp,
-        write_tim_partial_virtual_bitmap, write_wpa2_ht_beacon,
+        ApBeaconBuildError, ApBeaconProtectionError, TimPartialVirtualBitmap, WPA2_BEACON_CAPACITY,
+        stamp, update_bss_protection, write_ht_beacon, write_tim_partial_virtual_bitmap,
     },
     channel::WifiChannel,
+    protection::ApBssProtection,
+    security::WifiSecurityMode,
     ssid::WifiSsid,
     tbtt::next_tbtt_delay,
 };
@@ -33,6 +35,14 @@ impl<'storage> ApBeacon<'storage> {
         &self.storage[..self.len]
     }
 
+    /// Replace the template's ERP and HT Operation protection fields.
+    pub(crate) fn set_bss_protection(
+        &mut self,
+        protection: ApBssProtection,
+    ) -> Result<(), ApBeaconProtectionError> {
+        update_bss_protection(&mut self.storage[..self.len], protection)
+    }
+
     pub fn new(
         storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
         access_point: [u8; 6],
@@ -42,7 +52,7 @@ impl<'storage> ApBeacon<'storage> {
         dtim_period: u8,
         management_sequence: SequenceNumber,
     ) -> Result<Self, ApBeaconBuildError> {
-        let len = write_wpa2_ht_beacon(
+        let len = write_ht_beacon(
             &crate::profile::ADVERTISEMENT,
             storage,
             access_point,
@@ -51,6 +61,8 @@ impl<'storage> ApBeacon<'storage> {
             beacon_interval_tu,
             dtim_period,
             management_sequence,
+            WifiSecurityMode::Wpa2Personal,
+            ApBssProtection::default(),
         )?;
         Ok(Self {
             storage,

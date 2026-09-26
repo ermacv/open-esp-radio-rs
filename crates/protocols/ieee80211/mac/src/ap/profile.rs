@@ -106,7 +106,6 @@ pub struct Advertisement {
     pub ht: HtLocalCapabilities,
     pub wmm: WmmParameters,
     capability_information: u16,
-    erp_information: u8,
 }
 
 impl Advertisement {
@@ -116,16 +115,13 @@ impl Advertisement {
         ht: HtLocalCapabilities,
         wmm: WmmParameters,
         capability_information: u16,
-        erp_information: u8,
     ) -> Self {
         assert!(capability_information & 0x0010 == 0);
-        assert!(erp_information & !0x07 == 0);
         Self {
             legacy_rates,
             ht,
             wmm,
             capability_information,
-            erp_information,
         }
     }
 
@@ -135,10 +131,6 @@ impl Advertisement {
                 WifiSecurityMode::Open => 0,
                 WifiSecurityMode::Wpa2Personal => 0x0010,
             }
-    }
-
-    pub const fn erp_information(&self) -> u8 {
-        self.erp_information
     }
 }
 

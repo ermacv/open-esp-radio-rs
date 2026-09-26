@@ -60,6 +60,7 @@ impl<'storage> ApEngine<'storage> {
                 if now_micros < self.next_probe_response_micros {
                     return Ok(ApManagementOutcome::Ignored);
                 }
+                self.advertise_current_protection()?;
                 let sequence = self.service.next_management_sequence();
                 let len = oer_ieee80211_mac::ap::probe::write_response(
                     self.beacon.advertisement(),
@@ -138,6 +139,7 @@ impl<'storage> ApEngine<'storage> {
                 maximum_legacy_rate_500kbps,
                 ht_capabilities,
                 qos_supported,
+                short_preamble,
             } => {
                 let Some(peer_status) = self.service.peer_status(peer) else {
                     // Vendor `hostap_recv_mgmt` treats a peer lookup miss as
@@ -168,6 +170,7 @@ impl<'storage> ApEngine<'storage> {
                         self.channel,
                         peer_status.ht,
                         self.service.security_mode(),
+                        self.required_protection(),
                     )?;
                     #[cfg(any(feature = "diagnostics", test))]
                     self.observe(ApEngineObservationEvent::AssociationResponsePrepared {
@@ -183,6 +186,7 @@ impl<'storage> ApEngine<'storage> {
                 }
                 let capabilities = ApAssociationCapabilities {
                     maximum_legacy_rate_500kbps,
+                    short_preamble,
                     ht: ht_capabilities,
                     qos_supported,
                 };
@@ -220,6 +224,7 @@ impl<'storage> ApEngine<'storage> {
                     self.channel,
                     ht_capabilities,
                     self.service.security_mode(),
+                    self.required_protection(),
                 )?;
                 if association_id.is_some() {
                     // Recovered `ic_set_sta` evidence gives the legacy B/G

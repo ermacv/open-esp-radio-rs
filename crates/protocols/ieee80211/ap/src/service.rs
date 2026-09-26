@@ -23,6 +23,9 @@ use oer_ieee80211_mac::block_ack::{
     TxBlockAckError, TxBlockAckResponse, TxBlockAckSession,
 };
 use oer_ieee80211_mac::ht::HtPeerCapabilities;
+use oer_ieee80211_mac::protection::{
+    ApBssProtection, ErpProtection, HtOperationProtection, HtProtectionMode,
+};
 use oer_ieee80211_mac::security::WifiSecurityMode;
 use oer_ieee80211_rsn::{
     Akm, AssociationSecurityBinding, OwnedEapolFrame, Pmk, Ptk, PtkContext,
@@ -292,6 +295,8 @@ pub struct ApPeerClose {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ApAssociationCapabilities {
     pub maximum_legacy_rate_500kbps: u8,
+    /// Capability Information Short Preamble of the Association Request.
+    pub short_preamble: bool,
     pub ht: Option<HtPeerCapabilities>,
     pub qos_supported: bool,
 }
@@ -406,6 +411,7 @@ struct ApPeer {
     wpa2_retry: RsnRetry,
     wpa2_retry_alarm: Option<RsnRetryAlarm>,
     maximum_legacy_rate_500kbps: u8,
+    short_preamble: bool,
     ht: Option<HtPeerCapabilities>,
     qos_supported: bool,
     /// Independent QoS sequence spaces for this receiver's TIDs. TX BlockAck
@@ -448,6 +454,25 @@ impl Default for AccessPointPeerStorage {
 }
 
 impl ApPeer {
+    fn status(&self) -> ApPeerStatus {
+        ApPeerStatus {
+            address: self.address,
+            association_id: self.association_id,
+            association_epoch: self.association_epoch,
+            phase: self.phase,
+            maximum_legacy_rate_500kbps: self.maximum_legacy_rate_500kbps,
+            short_preamble: self.short_preamble,
+            ht: self.ht,
+            qos_supported: self.qos_supported,
+            tx_block_ack: self.tx_block_ack.operational(),
+            power_state: self.power_state,
+            buffered_unicast_frames: self.buffered_unicast_frames,
+            buffered_release_in_flight: self.buffered_release_in_flight,
+            last_activity_micros: self.last_activity_micros,
+            deadline_micros: self.deadline_micros,
+        }
+    }
+
     const fn authenticated(
         address: [u8; 6],
         association_id: u16,
@@ -467,6 +492,7 @@ impl ApPeer {
             // Authentication precedes rate negotiation. Keep the universally
             // compatible 1-Mbit/s value until Association succeeds.
             maximum_legacy_rate_500kbps: 2,
+            short_preamble: false,
             ht: None,
             qos_supported: false,
             next_qos_sequences: [SequenceNumber::ZERO; 8],
@@ -543,6 +569,7 @@ pub struct ApPeerStatus {
     pub association_epoch: u32,
     pub phase: ApPeerPhase,
     pub maximum_legacy_rate_500kbps: u8,
+    pub short_preamble: bool,
     pub ht: Option<HtPeerCapabilities>,
     pub qos_supported: bool,
     pub tx_block_ack: Option<OperationalTxBlockAck>,
@@ -684,21 +711,7 @@ impl<'peers> AccessPointService<'peers> {
             .iter()
             .flatten()
             .find(|peer| peer.address == address)
-            .map(|peer| ApPeerStatus {
-                address: peer.address,
-                association_id: peer.association_id,
-                association_epoch: peer.association_epoch,
-                phase: peer.phase,
-                maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
-                ht: peer.ht,
-                qos_supported: peer.qos_supported,
-                tx_block_ack: peer.tx_block_ack.operational(),
-                power_state: peer.power_state,
-                buffered_unicast_frames: peer.buffered_unicast_frames,
-                buffered_release_in_flight: peer.buffered_release_in_flight,
-                last_activity_micros: peer.last_activity_micros,
-                deadline_micros: peer.deadline_micros,
-            })
+            .map(ApPeer::status)
     }
 
     /// Resolve a peer address once at aggregate admission. Subsequent MPDUs
@@ -715,43 +728,58 @@ impl<'peers> AccessPointService<'peers> {
 
     pub fn bound_peer_status(&self, binding: ApPeerBinding) -> Option<ApPeerStatus> {
         let peer = self.bound_peer(binding)?;
-        Some(ApPeerStatus {
-            address: peer.address,
-            association_id: peer.association_id,
-            association_epoch: peer.association_epoch,
-            phase: peer.phase,
-            maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
-            ht: peer.ht,
-            qos_supported: peer.qos_supported,
-            tx_block_ack: peer.tx_block_ack.operational(),
-            power_state: peer.power_state,
-            buffered_unicast_frames: peer.buffered_unicast_frames,
-            buffered_release_in_flight: peer.buffered_release_in_flight,
-            last_activity_micros: peer.last_activity_micros,
-            deadline_micros: peer.deadline_micros,
-        })
+        Some(peer.status())
     }
 
     pub fn peers(&self) -> impl Iterator<Item = ApPeerStatus> + '_ {
-        self.storage()
-            .peers
-            .iter()
-            .flatten()
-            .map(|peer| ApPeerStatus {
-                address: peer.address,
-                association_id: peer.association_id,
-                association_epoch: peer.association_epoch,
-                phase: peer.phase,
-                maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
-                ht: peer.ht,
-                qos_supported: peer.qos_supported,
-                tx_block_ack: peer.tx_block_ack.operational(),
-                power_state: peer.power_state,
-                buffered_unicast_frames: peer.buffered_unicast_frames,
-                buffered_release_in_flight: peer.buffered_release_in_flight,
-                last_activity_micros: peer.last_activity_micros,
-                deadline_micros: peer.deadline_micros,
-            })
+        self.storage().peers.iter().flatten().map(ApPeer::status)
+    }
+
+    /// Protection this BSS requires of every transmitter, derived from its
+    /// associated peers.
+    ///
+    /// A peer without ERP-OFDM rates is non-ERP and requires ERP protection;
+    /// Barker_Preamble_Mode follows a non-ERP peer that cannot receive short
+    /// preambles. A peer without HT Capabilities places the HT BSS in non-HT
+    /// mixed mode; otherwise a 20-MHz-only HT peer of a 40-MHz BSS selects
+    /// 20-MHz protection. Overlapping legacy BSS detection (Nonmember mode) is
+    /// not observed by this service. Authenticated peers are not members.
+    pub fn bss_protection(&self, forty_mhz_bss: bool) -> ApBssProtection {
+        let mut non_erp_present = false;
+        let mut barker_preamble = false;
+        let mut non_ht_present = false;
+        let mut twenty_mhz_only = false;
+        let mut non_greenfield_present = false;
+        for peer in self
+            .peers()
+            .filter(|peer| peer.phase != ApPeerPhase::Authenticated)
+        {
+            let non_erp = peer.maximum_legacy_rate_500kbps <= 22;
+            non_erp_present |= non_erp;
+            barker_preamble |= non_erp && !peer.short_preamble;
+            match peer.ht {
+                None => non_ht_present = true,
+                Some(ht) => {
+                    twenty_mhz_only |= !ht.supports_40_mhz();
+                    non_greenfield_present |= !ht.supports_greenfield();
+                }
+            }
+        }
+        let mode = if non_ht_present {
+            HtProtectionMode::NonHtMixed
+        } else if forty_mhz_bss && twenty_mhz_only {
+            HtProtectionMode::TwentyMhz
+        } else {
+            HtProtectionMode::None
+        };
+        ApBssProtection {
+            non_erp_present,
+            erp: ErpProtection::new(non_erp_present, barker_preamble),
+            ht: HtOperationProtection {
+                mode,
+                non_greenfield_present,
+            },
+        }
     }
 
     pub fn has_operational_tx_block_ack(&self) -> bool {
@@ -787,21 +815,7 @@ impl<'peers> AccessPointService<'peers> {
     pub fn status(&self) -> AccessPointServiceStatus {
         let mut peers = [None; AP_MAX_CLIENTS];
         for (destination, source) in peers.iter_mut().zip(self.storage().peers.iter()) {
-            *destination = source.as_ref().map(|peer| ApPeerStatus {
-                address: peer.address,
-                association_id: peer.association_id,
-                association_epoch: peer.association_epoch,
-                phase: peer.phase,
-                maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
-                ht: peer.ht,
-                qos_supported: peer.qos_supported,
-                tx_block_ack: peer.tx_block_ack.operational(),
-                power_state: peer.power_state,
-                buffered_unicast_frames: peer.buffered_unicast_frames,
-                buffered_release_in_flight: peer.buffered_release_in_flight,
-                last_activity_micros: peer.last_activity_micros,
-                deadline_micros: peer.deadline_micros,
-            });
+            *destination = source.as_ref().map(ApPeer::status);
         }
         AccessPointServiceStatus {
             security: self.security_mode(),
@@ -901,21 +915,7 @@ impl<'peers> AccessPointService<'peers> {
         identity: ApAssociationIdentity,
     ) -> Option<ApPeerStatus> {
         let peer = self.bound_association(identity)?;
-        (peer.phase == ApPeerPhase::Authorized).then(|| ApPeerStatus {
-            address: peer.address,
-            association_id: peer.association_id,
-            association_epoch: peer.association_epoch,
-            phase: peer.phase,
-            maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
-            ht: peer.ht,
-            qos_supported: peer.qos_supported,
-            tx_block_ack: peer.tx_block_ack.operational(),
-            power_state: peer.power_state,
-            buffered_unicast_frames: peer.buffered_unicast_frames,
-            buffered_release_in_flight: peer.buffered_release_in_flight,
-            last_activity_micros: peer.last_activity_micros,
-            deadline_micros: peer.deadline_micros,
-        })
+        (peer.phase == ApPeerPhase::Authorized).then(|| peer.status())
     }
 
     fn bound_peer(&self, binding: ApPeerBinding) -> Option<&ApPeer> {

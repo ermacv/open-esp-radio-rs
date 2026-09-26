@@ -27,111 +27,9 @@
 
 use core::num::NonZeroU16;
 
+use oer_ieee80211_mac::protection::{ErpProtection, HtProtectionMode};
+
 use crate::tx::{HeMcs, HeRate, HtChannelWidth, LegacyRate, TxPhyRate};
-
-/// ERP Information element facts which affect protection.
-///
-/// Stored as the element's Use_Protection (bit one) and Barker_Preamble_Mode
-/// (bit two); NonERP_Present is not a transmit requirement.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ErpProtection(u8);
-
-impl ErpProtection {
-    const USE_PROTECTION: u8 = 1 << 1;
-    const BARKER_PREAMBLE_MODE: u8 = 1 << 2;
-
-    /// No non-ERP station requires protection.
-    pub const NONE: Self = Self(0);
-
-    /// Decode the one-byte ERP Information element payload. An absent
-    /// element carries no protection requirement.
-    pub const fn from_information(information: Option<u8>) -> Self {
-        match information {
-            Some(value) => Self(value & (Self::USE_PROTECTION | Self::BARKER_PREAMBLE_MODE)),
-            None => Self::NONE,
-        }
-    }
-
-    pub const fn new(use_protection: bool, long_preamble_required: bool) -> Self {
-        Self(
-            if use_protection { Self::USE_PROTECTION } else { 0 }
-                | if long_preamble_required {
-                    Self::BARKER_PREAMBLE_MODE
-                } else {
-                    0
-                },
-        )
-    }
-
-    pub const fn use_protection(self) -> bool {
-        self.0 & Self::USE_PROTECTION != 0
-    }
-
-    /// Barker_Preamble_Mode: DSSS/HR control frames use the long preamble.
-    pub const fn long_preamble_required(self) -> bool {
-        self.0 & Self::BARKER_PREAMBLE_MODE != 0
-    }
-
-    /// Encode the ERP Information payload with NonERP_Present.
-    pub const fn information(self, non_erp_present: bool) -> u8 {
-        self.0 | non_erp_present as u8
-    }
-}
-
-/// Two-bit HT Protection field of the HT Operation element.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum HtProtectionMode {
-    #[default]
-    None,
-    Nonmember,
-    TwentyMhz,
-    NonHtMixed,
-}
-
-impl HtProtectionMode {
-    /// Decode a complete 24-byte HT Operation element.
-    pub const fn from_operation_ie(operation: Option<&[u8; 24]>) -> Self {
-        let Some(operation) = operation else {
-            return Self::None;
-        };
-        if operation[0] != 61 || operation[1] != 22 {
-            return Self::None;
-        }
-        Self::from_field(operation[4])
-    }
-
-    /// Decode the low two bits of HT Operation Information byte one.
-    pub const fn from_field(field: u8) -> Self {
-        match field & 0x03 {
-            1 => Self::Nonmember,
-            2 => Self::TwentyMhz,
-            3 => Self::NonHtMixed,
-            _ => Self::None,
-        }
-    }
-
-    pub const fn field(self) -> u8 {
-        match self {
-            Self::None => 0,
-            Self::Nonmember => 1,
-            Self::TwentyMhz => 2,
-            Self::NonHtMixed => 3,
-        }
-    }
-
-    /// Whether this mode protects one HT or HE PPDU of the given width.
-    ///
-    /// Nonmember and non-HT mixed modes protect every HT PPDU; 20-MHz mode
-    /// protects only 40-MHz PPDUs. HE PPDUs follow the HT rules, as in
-    /// mt76x02 and rt2800, because non-HE stations cannot decode them either.
-    const fn protects(self, forty_mhz: bool) -> bool {
-        match self {
-            Self::None => false,
-            Self::TwentyMhz => forty_mhz,
-            Self::Nonmember | Self::NonHtMixed => true,
-        }
-    }
-}
 
 /// Finite HE TXOP Duration RTS Threshold in the element's native 32-us units.
 ///
@@ -315,7 +213,10 @@ impl BasicRates {
 pub struct BssProtection {
     pub erp: ErpProtection,
     pub ht: HtProtectionMode,
-    pub he_txop_rts: Option<HeTxopRtsRule>,
+    /// HE Operation TXOP Duration RTS Threshold of the BSS.
+    pub he_txop_rts_threshold: Option<HeTxopDurationRtsThreshold>,
+    /// Peer nominal packet padding, fixed at association.
+    pub he_packet_padding: HePacketPadding,
     pub basic_rates: BasicRates,
     /// Capability Information Short Preamble.
     pub short_preamble: bool,
@@ -326,7 +227,8 @@ impl BssProtection {
     pub const UNPROTECTED: Self = Self {
         erp: ErpProtection::NONE,
         ht: HtProtectionMode::None,
-        he_txop_rts: None,
+        he_txop_rts_threshold: None,
+        he_packet_padding: HePacketPadding::None,
         basic_rates: BasicRates(0),
         short_preamble: false,
     };
@@ -489,14 +391,16 @@ impl WifiTxProtectionPolicy {
             TxPhyRate::Legacy(rate) => (!is_dsss(rate), false),
             TxPhyRate::Ht(rate) => (
                 true,
-                self.bss
-                    .ht
-                    .protects(matches!(rate.channel_width, HtChannelWidth::Mhz40)),
+                ht_protects(
+                    self.bss.ht,
+                    matches!(rate.channel_width, HtChannelWidth::Mhz40),
+                ),
             ),
-            TxPhyRate::He(_) => (true, self.bss.ht.protects(false)),
+            TxPhyRate::He(_) => (true, ht_protects(self.bss.ht, false)),
         };
-        let he_txop = match (self.bss.he_txop_rts, ppdu.rate) {
-            (Some(rule), TxPhyRate::He(rate)) => {
+        let he_txop = match (self.bss.he_txop_rts_threshold, ppdu.rate) {
+            (Some(threshold), TxPhyRate::He(rate)) => {
+                let rule = HeTxopRtsRule::new(threshold, self.bss.he_packet_padding);
                 ppdu.psdu_length > u32::from(rule.maximum_unprotected_apep_bytes(rate))
             }
             _ => false,
@@ -570,6 +474,19 @@ impl WifiTxProtectionPolicy {
             (LegacyRate::Cck11MLong, true) => LegacyRate::Cck11MShort,
             (rate, _) => rate,
         }
+    }
+}
+
+/// Whether an HT Protection mode protects one HT or HE PPDU of this width.
+///
+/// Nonmember and non-HT mixed modes protect every HT PPDU; 20-MHz mode
+/// protects only 40-MHz PPDUs. HE PPDUs follow the HT rules, as in mt76x02
+/// and rt2800, because non-HE stations cannot decode them either.
+const fn ht_protects(mode: HtProtectionMode, forty_mhz: bool) -> bool {
+    match mode {
+        HtProtectionMode::None => false,
+        HtProtectionMode::TwentyMhz => forty_mhz,
+        HtProtectionMode::Nonmember | HtProtectionMode::NonHtMixed => true,
     }
 }
 

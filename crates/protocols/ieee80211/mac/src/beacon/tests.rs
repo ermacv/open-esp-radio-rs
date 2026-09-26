@@ -2,12 +2,15 @@ use crate::ap::profile::tests::TEST_ADVERTISEMENT;
 use crate::sequence::seq;
 
 use super::{
-    ApBeaconBuildError, WPA2_BEACON_CAPACITY, WPA2_PERSONAL_CCMP_PSK_RSN_IE, dtim, stamp,
-    write_wpa2_ht_beacon,
+    ApBeaconBuildError, ApBeaconProtectionError, WPA2_BEACON_CAPACITY,
+    WPA2_PERSONAL_CCMP_PSK_RSN_IE, dtim, stamp, update_bss_protection, write_ht_beacon,
+    write_tim_partial_virtual_bitmap,
 };
 use crate::{
     channel::{WifiChannel, WifiChannelWidth},
     ht::HtDuplicateMcs32,
+    protection::{ApBssProtection, ErpProtection, HtOperationProtection, HtProtectionMode},
+    security::WifiSecurityMode,
     ssid::WifiSsid,
 };
 
@@ -46,7 +49,7 @@ fn builds_the_bounded_wpa2_ht20_beacon() {
     let ap = [0x02, 0, 0, 0, 0, 1];
     let ssid = WifiSsid::new(b"open-radio-ap").unwrap();
     let mut bytes = [0; WPA2_BEACON_CAPACITY];
-    let len = write_wpa2_ht_beacon(
+    let len = write_ht_beacon(
         &TEST_ADVERTISEMENT,
         &mut bytes,
         ap,
@@ -55,6 +58,8 @@ fn builds_the_bounded_wpa2_ht20_beacon() {
         100,
         2,
         seq(0x0abc),
+        WifiSecurityMode::Wpa2Personal,
+        ApBssProtection::default(),
     )
     .unwrap();
 
@@ -64,6 +69,7 @@ fn builds_the_bounded_wpa2_ht20_beacon() {
     assert_eq!(&bytes[16..22], &ap);
     assert_eq!(&bytes[22..24], &0xabc0_u16.to_le_bytes());
     assert_eq!(dtim(&bytes[..len]), Some((64, 1, 2)));
+    assert!(bytes[..len].windows(3).any(|window| window == [42, 1, 0]));
     assert!(
         bytes[..len]
             .windows(22)
@@ -79,7 +85,7 @@ fn ht40_beacon_advertises_the_validated_secondary_channel() {
     let ssid = WifiSsid::new(b"open-radio-ap").unwrap();
     let mut bytes = [0; WPA2_BEACON_CAPACITY];
     let channel = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
-    let len = write_wpa2_ht_beacon(
+    let len = write_ht_beacon(
         &TEST_ADVERTISEMENT,
         &mut bytes,
         [2; 6],
@@ -88,6 +94,8 @@ fn ht40_beacon_advertises_the_validated_secondary_channel() {
         100,
         2,
         seq(0),
+        WifiSecurityMode::Wpa2Personal,
+        ApBssProtection::default(),
     )
     .unwrap();
     assert!(
@@ -122,7 +130,7 @@ fn rejects_unrepresentable_beacon_policy_before_mutation() {
     let ssid = WifiSsid::new(b"ap").unwrap();
     let mut bytes = [0xaa; WPA2_BEACON_CAPACITY];
     assert_eq!(
-        write_wpa2_ht_beacon(
+        write_ht_beacon(
             &TEST_ADVERTISEMENT,
             &mut bytes,
             [0; 6],
@@ -131,8 +139,63 @@ fn rejects_unrepresentable_beacon_policy_before_mutation() {
             100,
             2,
             seq(0),
+            WifiSecurityMode::Wpa2Personal,
+            ApBssProtection::default(),
         ),
         Err(ApBeaconBuildError::InvalidPrimaryChannel)
     );
     assert!(bytes.iter().all(|byte| *byte == 0xaa));
+}
+
+#[test]
+fn protection_update_rewrites_only_erp_and_ht_operation_after_tim_growth() {
+    let mut bytes = [0; WPA2_BEACON_CAPACITY];
+    let len = write_ht_beacon(
+        &TEST_ADVERTISEMENT,
+        &mut bytes,
+        [2; 6],
+        &WifiSsid::new(b"ap").unwrap(),
+        WifiChannel::mhz20(6).unwrap(),
+        100,
+        2,
+        seq(0),
+        WifiSecurityMode::Open,
+        ApBssProtection::default(),
+    )
+    .unwrap();
+    let mut bitmap = crate::beacon::TimVirtualBitmap::<4>::try_new().unwrap();
+    bitmap
+        .set(crate::beacon::TimAssociationId::new(25).unwrap(), true)
+        .unwrap();
+    let len = write_tim_partial_virtual_bitmap(&mut bytes, len, bitmap.partial()).unwrap();
+    let before = bytes;
+
+    let protection = ApBssProtection {
+        non_erp_present: true,
+        erp: ErpProtection::new(true, true),
+        ht: HtOperationProtection {
+            mode: HtProtectionMode::NonHtMixed,
+            non_greenfield_present: true,
+        },
+    };
+    update_bss_protection(&mut bytes[..len], protection).unwrap();
+    let erp = bytes[..len]
+        .windows(2)
+        .position(|window| window == [42, 1])
+        .unwrap();
+    let ht_operation = bytes[..len]
+        .windows(3)
+        .position(|window| window == [61, 22, 6])
+        .unwrap();
+    assert_eq!(bytes[erp + 2], 0x07);
+    assert_eq!(bytes[ht_operation + 4], 0x07);
+    for index in 0..len {
+        let rewritten = index == erp + 2 || index == ht_operation + 4;
+        assert_eq!(bytes[index] != before[index], rewritten, "byte {index}");
+    }
+
+    assert_eq!(
+        update_bss_protection(&mut bytes[..erp], protection),
+        Err(ApBeaconProtectionError::MissingProtectionElement)
+    );
 }

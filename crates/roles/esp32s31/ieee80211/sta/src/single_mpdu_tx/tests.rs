@@ -13,7 +13,7 @@ use oer_esp32s31_ieee80211_mac::{
     crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
     tx::{
         HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxSlot, TxSlotState,
-        protection::{BssProtection, ErpProtection, RtsLengthThreshold},
+        protection::{BssProtection, RtsLengthThreshold},
         runtime::VENDOR_SHORT_RETRY_LIMIT,
     },
 };
@@ -21,6 +21,7 @@ use oer_esp32s31_ieee80211_mac::{
 use oer_ieee80211_mac::{
     channel::WifiChannel,
     extensions::espressif::esp_now::{EspNowDestination, EspNowRandomValue, EspNowUnicastAddress},
+    protection::ErpProtection,
 };
 
 use oer_ieee80211_softmac::{

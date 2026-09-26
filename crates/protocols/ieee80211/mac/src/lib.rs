@@ -23,6 +23,7 @@ pub mod he;
 pub mod ht;
 pub mod management;
 pub mod ndpa;
+pub mod protection;
 pub mod scan;
 pub mod security;
 pub mod sequence;

@@ -9,6 +9,7 @@ use crate::{
     ap::profile::Advertisement,
     channel::WifiChannel,
     ht::{ht_capability_ie, ht_operation_ie},
+    protection::ApBssProtection,
     security::WifiSecurityMode,
     sequence::SequenceNumber,
     ssid::WifiSsid,
@@ -150,43 +151,17 @@ impl<'bitmap> TimPartialVirtualBitmap<'bitmap> {
     }
 }
 
-/// Build one visible WPA2-Personal HT/WMM beacon without allocating.
+/// Build the exact Open or WPA2-Personal HT/WMM beacon without allocating.
 ///
-/// The caller owns timestamp/DTIM progression through [`stamp`]. This builder
-/// publishes the fixed first-AP profile only: 100 TU, a two-byte TIM bitmap
-/// covering the complete public AID 1..=15 range, CCMP, PSK, WMM and coherent
-/// one-stream HT capability records.
+/// Open clears Privacy and omits the RSN element. The ERP and HT Operation
+/// elements carry `protection`; [`update_bss_protection`] replaces them in
+/// place when the peer set changes. The caller owns timestamp/DTIM
+/// progression through [`stamp`]; the two-byte TIM bitmap covers the public
+/// AID 1..=15 range.
 #[expect(
     clippy::too_many_arguments,
     reason = "the frame writer keeps the caller-owned local profile and independent 802.11 fields explicit"
 )]
-pub fn write_wpa2_ht_beacon(
-    profile: &Advertisement,
-    output: &mut [u8],
-    access_point: [u8; 6],
-    ssid: &WifiSsid,
-    channel: WifiChannel,
-    beacon_interval_tu: u16,
-    dtim_period: u8,
-    management_sequence: SequenceNumber,
-) -> Result<usize, ApBeaconBuildError> {
-    write_ht_beacon(
-        profile,
-        output,
-        access_point,
-        ssid,
-        channel,
-        beacon_interval_tu,
-        dtim_period,
-        management_sequence,
-        WifiSecurityMode::Wpa2Personal,
-    )
-}
-
-/// Build the exact Open or WPA2-Personal beacon selected by the AP request.
-/// Open clears Privacy and omits the RSN element; WPA2 retains the original
-/// byte-for-byte profile.
-#[allow(clippy::too_many_arguments)]
 pub fn write_ht_beacon(
     profile: &Advertisement,
     output: &mut [u8],
@@ -197,6 +172,7 @@ pub fn write_ht_beacon(
     dtim_period: u8,
     management_sequence: SequenceNumber,
     security: WifiSecurityMode,
+    protection: ApBssProtection,
 ) -> Result<usize, ApBeaconBuildError> {
     if !(1..=13).contains(&channel.primary()) {
         return Err(ApBeaconBuildError::InvalidPrimaryChannel);
@@ -207,7 +183,7 @@ pub fn write_ht_beacon(
 
     let wmm_parameter_ie = profile.wmm.element();
     let ht_capability = ht_capability_ie(profile.ht, channel);
-    let ht_operation = ht_operation_ie(channel);
+    let ht_operation = ht_operation_ie(channel, protection.ht);
     let rsn = match security {
         WifiSecurityMode::Open => &[][..],
         WifiSecurityMode::Wpa2Personal => &WPA2_PERSONAL_CCMP_PSK_RSN_IE,
@@ -220,6 +196,7 @@ pub fn write_ht_beacon(
         + profile.legacy_rates.supported().len()
         + 3
         + 7
+        + 3
         + rsn.len()
         + 2
         + profile.legacy_rates.extended().len()
@@ -254,6 +231,12 @@ pub fn write_ht_beacon(
         5,
         &[dtim_period - 1, dtim_period, 0, 0, 0],
     );
+    write_element(
+        frame,
+        &mut offset,
+        ERP_ELEMENT_ID,
+        &[protection.erp_information()],
+    );
     if !rsn.is_empty() {
         copy_record(frame, &mut offset, rsn);
     }
@@ -263,6 +246,52 @@ pub fn write_ht_beacon(
     copy_record(frame, &mut offset, &ht_operation);
     debug_assert_eq!(offset, required);
     Ok(required)
+}
+
+const ERP_ELEMENT_ID: u8 = 42;
+const HT_OPERATION_ELEMENT_ID: u8 = 61;
+
+/// Replace the ERP Information and HT Operation protection fields of one
+/// beacon or probe-response template in place.
+///
+/// Every other byte, including the TIM that [`write_tim_partial_virtual_bitmap`]
+/// resizes, is retained. A template without both elements is rejected
+/// unchanged.
+pub fn update_bss_protection(
+    frame: &mut [u8],
+    protection: ApBssProtection,
+) -> Result<(), ApBeaconProtectionError> {
+    const FIXED_BEACON_LENGTH: usize = MANAGEMENT_HEADER_LEN + BEACON_FIXED_BODY_LEN;
+    let mut erp = None;
+    let mut ht_operation = None;
+    let mut offset = FIXED_BEACON_LENGTH;
+    while offset + 2 <= frame.len() {
+        let id = frame[offset];
+        let length = usize::from(frame[offset + 1]);
+        let value = offset + 2;
+        if value + length > frame.len() {
+            return Err(ApBeaconProtectionError::MalformedElement);
+        }
+        match id {
+            ERP_ELEMENT_ID if length == 1 => erp = Some(value),
+            // Primary Channel, Information byte zero, then byte one.
+            HT_OPERATION_ELEMENT_ID if length == 22 => ht_operation = Some(value + 2),
+            _ => {}
+        }
+        offset = value + length;
+    }
+    let (Some(erp), Some(ht_operation)) = (erp, ht_operation) else {
+        return Err(ApBeaconProtectionError::MissingProtectionElement);
+    };
+    frame[erp] = protection.erp_information();
+    frame[ht_operation] = protection.ht.information_byte();
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApBeaconProtectionError {
+    MalformedElement,
+    MissingProtectionElement,
 }
 
 fn write_element(frame: &mut [u8], offset: &mut usize, id: u8, value: &[u8]) {

@@ -80,8 +80,7 @@ pub const ADVERTISEMENT: oer_ieee80211_mac::ap::profile::Advertisement = {
             ],
         ),
         // ESS, Short Preamble and Short Slot Time. Privacy follows AP security.
+        // ERP and HT protection follow the associated peers.
         0x0421,
-        // No non-ERP peer/protection/Barker-preamble requirement at creation.
-        0,
     )
 };

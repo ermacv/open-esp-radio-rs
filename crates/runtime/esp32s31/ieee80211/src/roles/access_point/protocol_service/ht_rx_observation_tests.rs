@@ -71,6 +71,7 @@ fn ap_entropy_is_consumed_only_for_a_fresh_wpa2_association() {
         maximum_legacy_rate_500kbps: 108,
         ht_capabilities: None,
         qos_supported: true,
+        short_preamble: true,
     };
     let expected = ([0xa5; 32], 0x1234_5678_9abc_def0);
     let calls = Cell::new(0);

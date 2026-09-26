@@ -53,7 +53,7 @@ use oer_esp32s31_ieee80211_sta::{
 use oer_ieee80211_mac::{
     qos::WmmAccessCategory,
     station::{StaDisconnect, StaDisconnectKind, StaTxSequenceCounters},
-    station_beacon::{StaBeaconObservation, StaTimObservation},
+    station_beacon::{StaBeaconObservation, StaBeaconProtection, StaTimObservation},
     station_power_save::StaPowerManagement,
     twt::{
         IndividualTwtAction, IndividualTwtControl, IndividualTwtFlowId, IndividualTwtFlowType,
@@ -491,6 +491,7 @@ fn idle_beacon() -> StaBeaconObservation {
             unicast_buffered: false,
             group_buffered: false,
         }),
+        protection: StaBeaconProtection::UNPROTECTED,
     }
 }
 
@@ -1505,6 +1506,7 @@ fn beacon_received_on_exact_deadline_refreshes_before_loss_check() {
         interval_tu: 100,
         capability_information: 0,
         tim: None,
+        protection: StaBeaconProtection::UNPROTECTED,
     }));
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
@@ -1515,6 +1517,72 @@ fn beacon_received_on_exact_deadline_refreshes_before_loss_check() {
         control.beacon_monitor().unwrap().deadline_micros(),
         Some(614_400)
     );
+}
+
+#[test]
+fn connected_beacon_protection_updates_the_tx_bss_facts() {
+    use oer_esp32s31_ieee80211_mac::tx::protection::{
+        BasicRates, BssProtection, HePacketPadding, HeTxopDurationRtsThreshold,
+    };
+    use oer_ieee80211_mac::protection::{ErpProtection, HtProtectionMode};
+
+    let resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
+    let (mut publisher, receiver) = resources.split();
+    let mut control = ConnectedControl::new(
+        receiver,
+        BSSID,
+        false,
+        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+    );
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    let associated = BssProtection {
+        basic_rates: BasicRates::from_rate_elements(&[0x82, 0x84], &[]),
+        short_preamble: true,
+        he_packet_padding: HePacketPadding::Us16,
+        ..BssProtection::UNPROTECTED
+    };
+    tx.policy_mut().install_bss_protection(associated);
+
+    publisher.publish(beacon_event(StaBeaconObservation {
+        timestamp_tsf: 123,
+        interval_tu: 100,
+        capability_information: 0,
+        tim: None,
+        protection: StaBeaconProtection {
+            erp: ErpProtection::new(true, false),
+            ht: HtProtectionMode::NonHtMixed,
+            he_txop_rts_threshold: Some(64),
+        },
+    }));
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(DatapathControlProgress::More)
+    );
+    assert_eq!(
+        tx.policy().protection().bss(),
+        BssProtection {
+            erp: ErpProtection::new(true, false),
+            ht: HtProtectionMode::NonHtMixed,
+            he_txop_rts_threshold: HeTxopDurationRtsThreshold::new(64),
+            ..associated
+        }
+    );
+
+    // The BSS later drops every requirement.
+    publisher.publish(beacon_event(StaBeaconObservation {
+        timestamp_tsf: 204_923,
+        interval_tu: 100,
+        capability_information: 0,
+        tim: None,
+        protection: StaBeaconProtection::UNPROTECTED,
+    }));
+    embassy_futures::block_on(control.service(&mut hardware, &mut tx)).unwrap();
+    assert_eq!(tx.policy().protection().bss(), associated);
 }
 
 #[test]

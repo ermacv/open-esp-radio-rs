@@ -13,11 +13,7 @@ use oer_esp32s31_ieee80211::ordinary_tx::WifiTxPowerPair;
 use oer_esp32s31_ieee80211_mac::{
     ap_policy::ApRxPolicyHardware,
     crypto::CcmpKeyHardware,
-    tx::{
-        HardwareOwnedTxDma, PreparedTxDma, TxSlot,
-        protection::{ErpProtection, HtProtectionMode},
-        runtime::WifiTxRuntimePolicy,
-    },
+    tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot, runtime::WifiTxRuntimePolicy},
 };
 
 use oer_ieee80211_mac::{
@@ -26,6 +22,7 @@ use oer_ieee80211_mac::{
 };
 
 use oer_ieee80211_ap::{AccessPointService, ApAssociationCapabilities};
+use oer_ieee80211_mac::protection::{ErpProtection, HtProtectionMode};
 
 use oer_ieee80211_rsn::{Pmk, frames::RsnGtk};
 
@@ -272,6 +269,7 @@ fn mixed_bss_protects_ordinary_data_with_cts_to_self_at_a_dsss_rate() {
             open,
             ApAssociationCapabilities {
                 maximum_legacy_rate_500kbps: 108,
+                short_preamble: true,
                 ht: oer_ieee80211_mac::ht::ht_peer_capabilities(&ht_ie),
                 qos_supported: true,
             },
@@ -285,6 +283,7 @@ fn mixed_bss_protects_ordinary_data_with_cts_to_self_at_a_dsss_rate() {
             open,
             ApAssociationCapabilities {
                 maximum_legacy_rate_500kbps: 22,
+                short_preamble: true,
                 ht: None,
                 qos_supported: false,
             },

@@ -1,10 +1,12 @@
 use super::*;
+use oer_ieee80211_mac::station_beacon::StaBeaconProtection;
 
 const BEACON: StaBeaconObservation = StaBeaconObservation {
     timestamp_tsf: 10,
     interval_tu: 100,
     capability_information: 0,
     tim: None,
+    protection: StaBeaconProtection::UNPROTECTED,
 };
 
 #[test]

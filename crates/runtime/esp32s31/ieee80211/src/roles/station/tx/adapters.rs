@@ -99,6 +99,19 @@ impl<
         self.set_block_ack_agreement(tid, agreement);
     }
 
+    fn bss_protection(&self) -> oer_esp32s31_ieee80211_mac::tx::protection::BssProtection {
+        self.ordinary.policy().protection().bss()
+    }
+
+    fn install_bss_protection(
+        &mut self,
+        protection: oer_esp32s31_ieee80211_mac::tx::protection::BssProtection,
+    ) {
+        self.ordinary
+            .policy_mut()
+            .install_bss_protection(protection);
+    }
+
     fn publish_he_trigger_response<H: oer_esp32s31_ieee80211_mac::tx::TxHardware>(
         &mut self,
         _hardware: &mut H,

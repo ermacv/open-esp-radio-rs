@@ -562,6 +562,7 @@ struct ProductionWifiEpochRunner {
     station_control: &'static StationControlResources<CriticalSectionRawMutex>,
     monitor_capture: &'static CaptureResources,
     radio_start: RadioStartConfig,
+    rts_length_threshold: Option<crate::RtsLengthThreshold>,
 }
 
 /// Eternal supervisor for the Core0 radio ownership domain. Controlled child
@@ -873,6 +874,7 @@ pub async fn new(
         initial_channel,
         calibration_cache,
         maximum_tx_power_quarter_dbm,
+        rts_length_threshold,
         station_tracking,
         #[cfg(feature = "connected-datapath-cycle-telemetry")]
         connected_datapath_poll_observer,
@@ -1065,6 +1067,7 @@ pub async fn new(
             station_control: memory.station_control,
             monitor_capture: monitor.capture,
             radio_start,
+            rts_length_threshold,
         },
         stopped,
     ) {

@@ -222,9 +222,8 @@ fn idle_ap_tx_lends_and_resumes_the_exact_ordinary_owner() {
 
 #[test]
 fn ap_aggregate_config_carries_the_protection_selected_for_its_length() {
-    use oer_esp32s31_ieee80211_mac::tx::protection::{
-        BasicRates, BssProtection, HtProtectionMode, TxProtection,
-    };
+    use oer_esp32s31_ieee80211_mac::tx::protection::{BasicRates, BssProtection, TxProtection};
+    use oer_ieee80211_mac::protection::HtProtectionMode;
 
     let mut slot = pin!(TxSlot::<256>::new_model());
     let mut tx = ApTx::new(

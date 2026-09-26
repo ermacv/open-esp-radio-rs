@@ -12,6 +12,7 @@ use oer_ieee80211_rsn::{
 };
 
 use super::*;
+use oer_ieee80211_mac::protection::HtProtectionMode;
 
 #[derive(Default)]
 struct Hardware {
@@ -610,6 +611,7 @@ fn open_ht_peer_uses_bounded_qos_amsdu_without_key_or_block_ack_owner() {
             },
             oer_ieee80211_ap::ApAssociationCapabilities {
                 maximum_legacy_rate_500kbps: 108,
+                short_preamble: true,
                 ht: oer_ieee80211_mac::ht::ht_peer_capabilities(&ht_ie),
                 qos_supported: true,
             },
@@ -668,4 +670,70 @@ fn open_ht_peer_uses_bounded_qos_amsdu_without_key_or_block_ack_owner() {
             .is_none()
     );
     let _ = engine.stop(&mut hardware);
+}
+
+#[test]
+fn non_erp_association_updates_the_advertised_erp_and_ht_protection() {
+    const RSN: [u8; 22] = [
+        0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
+    ];
+    let ap = [2, 0, 0, 0, 0, 1];
+    let peer = [2, 0, 0, 0, 0, 2];
+    let mut beacon = [0; WPA2_BEACON_CAPACITY];
+    let mut peers = oer_ieee80211_ap::AccessPointPeerStorage::new();
+    let mut pairwise = ApPairwiseKeyStorage::new();
+    let ssid = WifiSsid::new(b"ap").unwrap();
+    let mut hardware = Hardware::default();
+    let mut engine = ApEngine::start(
+        &mut hardware,
+        service(ap, &mut peers),
+        &mut beacon,
+        &mut pairwise,
+        &ssid,
+        WifiChannel::mhz20(6).unwrap(),
+        100,
+        2,
+    )
+    .unwrap_or_else(|_| panic!("AP start"));
+    let protection_fields = |frame: &[u8]| {
+        let erp = frame.windows(2).position(|w| w == [42, 1]).unwrap();
+        let ht = frame.windows(3).position(|w| w == [61, 22, 6]).unwrap();
+        (frame[erp + 2], frame[ht + 4])
+    };
+    let initial = engine.prepare_beacon(0).unwrap();
+    assert_eq!(protection_fields(initial), (0, 0));
+
+    let mut authentication = [0; 30];
+    authentication[..2].copy_from_slice(&0x00b0_u16.to_le_bytes());
+    authentication[4..10].copy_from_slice(&ap);
+    authentication[10..16].copy_from_slice(&peer);
+    authentication[16..22].copy_from_slice(&ap);
+    authentication[26..28].copy_from_slice(&1_u16.to_le_bytes());
+    let mut output = [0; 256];
+    engine
+        .handle_management(&mut hardware, &authentication, [7; 32], 9, 1, &mut output)
+        .unwrap();
+
+    // An 802.11b station: DSSS/HR rates only, no Short Preamble, no HT.
+    let mut association = [0; 56];
+    association[24..26].copy_from_slice(&0x0010_u16.to_le_bytes());
+    association[4..10].copy_from_slice(&ap);
+    association[10..16].copy_from_slice(&peer);
+    association[16..22].copy_from_slice(&ap);
+    association[28..34].copy_from_slice(&[1, 4, 0x82, 0x84, 0x8b, 0x96]);
+    association[34..].copy_from_slice(&RSN);
+    let outcome = engine
+        .handle_management(&mut hardware, &association, [7; 32], 9, 2, &mut output)
+        .unwrap();
+    let ApManagementOutcome::Response { len, .. } = outcome else {
+        panic!("association must be answered");
+    };
+    assert_eq!(protection_fields(&output[..len]), (0x07, 0x03));
+
+    let bss = engine.bss_protection();
+    assert!(bss.erp.use_protection());
+    assert!(bss.erp.long_preamble_required());
+    assert_eq!(bss.ht, HtProtectionMode::NonHtMixed);
+    let updated = engine.prepare_beacon(102_400).unwrap();
+    assert_eq!(protection_fields(updated), (0x07, 0x03));
 }

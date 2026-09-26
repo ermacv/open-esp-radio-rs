@@ -30,7 +30,8 @@ fn bss(erp: ErpProtection, ht: HtProtectionMode, basic_rates: BasicRates) -> Bss
     BssProtection {
         erp,
         ht,
-        he_txop_rts: None,
+        he_txop_rts_threshold: None,
+        he_packet_padding: HePacketPadding::None,
         basic_rates,
         short_preamble: true,
     }
@@ -392,7 +393,7 @@ fn he_txop_threshold_requests_rts_for_individual_he_ppdus_above_the_budget() {
         HtProtectionMode::None,
         basic(OFDM_BASIC),
     );
-    bss.he_txop_rts = Some(rule);
+    bss.he_txop_rts_threshold = Some(rule.threshold());
     let mut policy = policy(bss);
     policy.set_rts_length_threshold(None);
     let rate = he(HeMcs::Mcs7);

@@ -4,6 +4,7 @@ const TEST_HT_CAPABILITIES: crate::ht::HtLocalCapabilities =
     crate::ht::HtLocalCapabilities::new(0x100c, 0x03, 0xff, 0x01);
 
 use super::*;
+use crate::protection::ApBssProtection;
 use crate::sequence::seq;
 
 #[test]
@@ -276,10 +277,28 @@ fn ap_action_frame_and_parser_preserve_per_peer_addba_identity() {
 fn association_response_owns_status_aid_and_ht_channel_capability() {
     let mut body = [0; AP_ASSOCIATION_RESPONSE_BODY_LEN];
     let ht20 = WifiChannel::mhz20(6).unwrap();
-    write_ht_association_response(&TEST_ADVERTISEMENT, &mut body, 17, 0x0123, ht20, None).unwrap();
+    write_ht_association_response(
+        &TEST_ADVERTISEMENT,
+        &mut body,
+        17,
+        0x0123,
+        ht20,
+        None,
+        ApBssProtection::default(),
+    )
+    .unwrap();
     assert_eq!(&body[2..4], &17_u16.to_le_bytes());
     assert_eq!(&body[4..6], &[0, 0]);
-    write_ht_association_response(&TEST_ADVERTISEMENT, &mut body, 0, 1, ht20, None).unwrap();
+    write_ht_association_response(
+        &TEST_ADVERTISEMENT,
+        &mut body,
+        0,
+        1,
+        ht20,
+        None,
+        ApBssProtection::default(),
+    )
+    .unwrap();
     assert_eq!(&body[4..6], &0xc001_u16.to_le_bytes());
     assert!(body.windows(2).any(|window| window == [45, 26]));
     assert!(body.windows(3).any(|window| window == [61, 22, 6]));
@@ -287,8 +306,16 @@ fn association_response_owns_status_aid_and_ht_channel_capability() {
     let mut peer_ht_record = crate::ht::ht_capability_ie(TEST_HT_CAPABILITIES, ht20);
     peer_ht_record[4] = 0x17;
     let peer_ht = ht_peer_capabilities(&peer_ht_record).unwrap();
-    write_ht_association_response(&TEST_ADVERTISEMENT, &mut body, 0, 1, ht20, Some(peer_ht))
-        .unwrap();
+    write_ht_association_response(
+        &TEST_ADVERTISEMENT,
+        &mut body,
+        0,
+        1,
+        ht20,
+        Some(peer_ht),
+        ApBssProtection::default(),
+    )
+    .unwrap();
     assert_eq!(
         body[AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN + 4],
         0x17,
@@ -296,12 +323,29 @@ fn association_response_owns_status_aid_and_ht_channel_capability() {
     );
 
     assert_eq!(
-        write_ht_association_response(&TEST_ADVERTISEMENT, &mut body, 0, 0, ht20, None),
+        write_ht_association_response(
+            &TEST_ADVERTISEMENT,
+            &mut body,
+            0,
+            0,
+            ht20,
+            None,
+            ApBssProtection::default(),
+        ),
         Err(ApAssociationResponseError::MissingAssociationId)
     );
 
     let ht40 = WifiChannel::new_2_4_ghz(6, crate::channel::WifiChannelWidth::Mhz40Below).unwrap();
-    write_ht_association_response(&TEST_ADVERTISEMENT, &mut body, 0, 1, ht40, None).unwrap();
+    write_ht_association_response(
+        &TEST_ADVERTISEMENT,
+        &mut body,
+        0,
+        1,
+        ht40,
+        None,
+        ApBssProtection::default(),
+    )
+    .unwrap();
     assert!(body.windows(4).any(|window| window == [45, 26, 0x6e, 0x10]));
     assert!(body.windows(4).any(|window| window == [61, 22, 6, 0x07]));
     let ht_capability = AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN;
@@ -450,6 +494,7 @@ fn association_retains_the_highest_common_advertised_legacy_rate() {
             maximum_legacy_rate_500kbps: 108,
             ht_capabilities: None,
             qos_supported: false,
+            short_preamble: false,
         })
     );
 }
@@ -521,7 +566,7 @@ fn complete_response_encoders_own_addresses_sequence_and_status() {
     assert_eq!(&authentication[28..30], &17_u16.to_le_bytes());
 
     let mut association = [0; AP_ASSOCIATION_RESPONSE_LEN];
-    write_ht_association_response_frame(
+    write_ht_association_response_frame_for_security(
         &TEST_ADVERTISEMENT,
         &mut association,
         access_point,
@@ -531,6 +576,8 @@ fn complete_response_encoders_own_addresses_sequence_and_status() {
         seq(8),
         WifiChannel::mhz20(6).unwrap(),
         None,
+        WifiSecurityMode::Wpa2Personal,
+        ApBssProtection::default(),
     )
     .unwrap();
     assert_eq!(&association[..2], &0x0010_u16.to_le_bytes());

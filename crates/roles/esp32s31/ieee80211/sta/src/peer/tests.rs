@@ -8,7 +8,7 @@ use oer_esp32s31_hal::types::{
 
 use oer_esp32s31_ieee80211_mac::{
     rate::schedule::RateScheduleKind,
-    tx::protection::{BssProtection, HePacketPadding, HeTxopDurationRtsThreshold, HeTxopRtsRule},
+    tx::protection::{BssProtection, HePacketPadding, HeTxopDurationRtsThreshold},
 };
 
 use oer_ieee80211_mac::{
@@ -165,7 +165,10 @@ fn ht40_mcs32_access_point() -> ScanRecord {
     let channel = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
     let mut capability = ht_capability_ie(TEST_HT_CAPABILITIES, channel);
     HtDuplicateMcs32::new().advertise_receive_only(&mut capability);
-    let operation = ht_operation_ie(channel);
+    let operation = ht_operation_ie(
+        channel,
+        oer_ieee80211_mac::protection::HtOperationProtection::default(),
+    );
 
     let mut access_point = ScanRecord::EMPTY;
     access_point.bssid = [2, 3, 4, 5, 6, 7];
@@ -239,7 +242,8 @@ fn port_owns_scan_and_association_peer_programming() {
             // HE PHY Capabilities without PPE Thresholds advertise Nominal
             // Packet Padding code two (16 us) in element byte 18.
             Some(Event::Protection(BssProtection {
-                he_txop_rts: Some(HeTxopRtsRule::new(threshold, HePacketPadding::Us16)),
+                he_txop_rts_threshold: Some(threshold),
+                he_packet_padding: HePacketPadding::Us16,
                 ..BssProtection::UNPROTECTED
             })),
             Some(Event::Wmm),

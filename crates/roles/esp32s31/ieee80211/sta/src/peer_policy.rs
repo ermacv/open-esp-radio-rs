@@ -6,19 +6,23 @@ use oer_esp32s31_ieee80211_mac::{
         HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociation,
         StaRateControlAssociationInput, StaRateControlPeerHighestRate, StaRateControlPhy,
     },
-    tx::protection::{
-        BasicRates, BssProtection, ErpProtection, HePacketPadding, HeTxopDurationRtsThreshold,
-        HeTxopRtsRule, HtProtectionMode,
-    },
+    tx::protection::{BasicRates, BssProtection, HePacketPadding, HeTxopDurationRtsThreshold},
     tx::{HeMcs, HtPeerAmpduParameters},
 };
 use {
-    oer_ieee80211_mac::extensions::wmm::WmmParameterSet, oer_ieee80211_mac::he::He20Capabilities,
-    oer_ieee80211_mac::he::He20PeerState, oer_ieee80211_mac::he::HeDcmConstellation,
-    oer_ieee80211_mac::he::HeElementError, oer_ieee80211_mac::he::HeMcsNssSupport,
-    oer_ieee80211_mac::he::parse_he20_capabilities, oer_ieee80211_mac::he::parse_he20_operation,
-    oer_ieee80211_mac::he::parse_he20_peer_state, oer_ieee80211_mac::ht::HtPeerCapabilities,
-    oer_ieee80211_mac::scan::ScanRecord, oer_ieee80211_mac::station::AssociationResponse,
+    oer_ieee80211_mac::extensions::wmm::WmmParameterSet,
+    oer_ieee80211_mac::he::He20Capabilities,
+    oer_ieee80211_mac::he::He20PeerState,
+    oer_ieee80211_mac::he::HeDcmConstellation,
+    oer_ieee80211_mac::he::HeElementError,
+    oer_ieee80211_mac::he::HeMcsNssSupport,
+    oer_ieee80211_mac::he::parse_he20_capabilities,
+    oer_ieee80211_mac::he::parse_he20_operation,
+    oer_ieee80211_mac::he::parse_he20_peer_state,
+    oer_ieee80211_mac::ht::HtPeerCapabilities,
+    oer_ieee80211_mac::protection::{ErpProtection, HtProtectionMode},
+    oer_ieee80211_mac::scan::ScanRecord,
+    oer_ieee80211_mac::station::AssociationResponse,
     oer_ieee80211_mac::station::association::PhyMode,
 };
 
@@ -152,7 +156,8 @@ impl StaPeerScanPolicy {
         let protection = BssProtection {
             erp: ErpProtection::from_information(access_point.erp_information()),
             ht: HtProtectionMode::from_operation_ie(access_point.ht_operation_ie_bytes()),
-            he_txop_rts: None,
+            he_txop_rts_threshold: None,
+            he_packet_padding: HePacketPadding::None,
             basic_rates: BasicRates::from_rate_elements(
                 access_point.supported_rates_bytes(),
                 access_point.extended_supported_rates_bytes(),
@@ -249,15 +254,10 @@ impl StaPeerScanPolicy {
         });
 
         let protection = BssProtection {
-            he_txop_rts: he_peer_state
+            he_txop_rts_threshold: he_peer_state
                 .and_then(|state| state.rts_threshold)
-                .and_then(HeTxopDurationRtsThreshold::new)
-                .map(|threshold| {
-                    HeTxopRtsRule::new(
-                        threshold,
-                        vendor_packet_padding(access_point.he_capability_ie_bytes()),
-                    )
-                }),
+                .and_then(HeTxopDurationRtsThreshold::new),
+            he_packet_padding: vendor_packet_padding(access_point.he_capability_ie_bytes()),
             ..self.protection
         };
 

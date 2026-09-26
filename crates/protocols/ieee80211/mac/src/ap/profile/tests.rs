@@ -48,8 +48,6 @@ pub(crate) const TEST_ADVERTISEMENT: crate::ap::profile::Advertisement = {
         ),
         // ESS, Short Preamble and Short Slot Time. Privacy follows AP security.
         0x0421,
-        // No non-ERP peer/protection/Barker-preamble requirement at creation.
-        0,
     )
 };
 
@@ -119,8 +117,12 @@ fn beacon_association_and_peer_rate_admission_use_the_supplied_profile() {
         TEST_ADVERTISEMENT.ht,
         TEST_ADVERTISEMENT.wmm,
         1,
-        5,
     );
+    let protection = crate::protection::ApBssProtection {
+        non_erp_present: true,
+        erp: crate::protection::ErpProtection::new(true, false),
+        ht: crate::protection::HtOperationProtection::default(),
+    };
     let address = [2, 0, 0, 0, 0, 1];
     let peer = [2, 0, 0, 0, 0, 2];
     let channel = WifiChannel::mhz20(6).unwrap();
@@ -135,6 +137,7 @@ fn beacon_association_and_peer_rate_admission_use_the_supplied_profile() {
         2,
         seq(0),
         WifiSecurityMode::Open,
+        protection,
     )
     .unwrap();
     assert_eq!(u16::from_le_bytes(beacon[34..36].try_into().unwrap()), 1);
@@ -150,13 +153,14 @@ fn beacon_association_and_peer_rate_admission_use_the_supplied_profile() {
         channel,
         None,
         WifiSecurityMode::Wpa2Personal,
+        protection,
     )
     .unwrap();
     assert_eq!(
         u16::from_le_bytes(response[24..26].try_into().unwrap()),
         0x0011
     );
-    assert_eq!(response[48], 5);
+    assert_eq!(response[48], 0x03);
     assert_eq!(&response[32..40], &[0x82; 8]);
     assert_eq!(&response[42..46], &[0x84; 4]);
 

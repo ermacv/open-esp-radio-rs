@@ -611,6 +611,7 @@ impl RxGain {
             entry: select(&session, 0, "phy_set_rx_gain_table")?,
             roots: vec![select(&session, 0, "phy_get_romfunc_addr")?],
             layout: image_layout(),
+            absent: vec![],
         };
         // ROM first; the co-located RFPLL diagnostics reference `phy_printf`,
         // bound to the authenticated PHY SDK firmware and never executed.

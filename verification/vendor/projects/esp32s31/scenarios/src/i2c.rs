@@ -273,6 +273,7 @@ impl I2c {
             entry: select(0, "phy_i2c_master_cmd_mem_init")?,
             roots: roots.iter().map(|n| select(0, n)).collect::<Result<_>>()?,
             layout: image_layout(),
+            absent: vec![],
         };
         let linked = session.link(
             &link,

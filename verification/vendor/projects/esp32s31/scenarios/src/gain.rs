@@ -313,6 +313,7 @@ impl Gain {
                 .map(|n| root(0, n))
                 .collect::<Result<_>>()?,
             layout: image_layout(),
+            absent: vec![],
         };
         if options.rftest.is_some() {
             link.inputs.push(3);

@@ -313,6 +313,7 @@ impl TxDc {
             entry: select(&session, 0, "phy_txdc_cal_pwdet_init")?,
             roots: vec![select(&session, 0, "phy_get_romfunc_addr")?],
             layout: image_layout(),
+            absent: vec![],
         };
         let mut image = PhyImage::link(
             session,

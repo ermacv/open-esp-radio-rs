@@ -10,15 +10,20 @@ use crate::layout::{INPUT, OUTPUT, radio_aperture};
 use crate::phy::{image_layout, select};
 use crate::session::{Session, image_symbol_id, request};
 use blobray_domain::{
-    ComparisonVerdict, EffectContractRef, EffectDisposition, EffectPattern, EffectRule,
-    EffectSelector, EffectValue, ExecutionCase, ExecutionGoal, ExecutionSymbol, ExecutionTarget,
-    LinkRequest, ObjectId, ObjectLocation, SessionReset,
+    CallBinding, CallBoundary, CallDeclaration, CallOutput, CallOutputScope, CallRepetition,
+    CallResponse, ComparisonVerdict, EffectContractRef, EffectDisposition, EffectPattern,
+    EffectRule, EffectSelector, EffectValue, ExecutionCase, ExecutionGoal, ExecutionSymbol,
+    ExecutionTarget, LinkRequest, ObjectId, ObjectLocation, RegionLifetime, SessionReset,
 };
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// SHA-256 of the pinned `libpp.a`.
 pub const LIBPP_SHA: &str = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e";
+/// Names no pinned input defines: newlib `putchar`, which only the
+/// `libpp.a` diagnostic dumps reachable from the transmit leaves call. They
+/// resolve to an unmapped address, so reaching one stops the case.
+const ABSENT: &[&str] = &["putchar"];
 /// Input index of the vendor Wi-Fi firmware.
 const PHY_SDK_INPUT: u64 = 3;
 /// Radio register fills: all clear, all set and two alternating patterns.
@@ -95,16 +100,26 @@ pub struct Leaf {
     /// A bounded feature: the vendor side stops before calling this
     /// function, and only the prefix up to that call is compared.
     pub prefix_until: Option<&'static str>,
-    /// Builds the vendor ABI from the semantic probe words when the vendor
-    /// reads them from its own objects: vendor argument words and the
-    /// initialized objects, as (address, bytes).
+    /// Builds both sides' objects from the semantic probe words when the
+    /// vendor reads its arguments from its own objects.
     pub vendor_abi: Option<VendorAbi>,
     /// The vendor function is a ROM symbol rather than a `libpp.a` root.
     pub rom: bool,
 }
 
-/// Vendor argument words and initialized objects for the semantic words.
-pub type VendorAbi = fn(&[u32]) -> (Vec<u32>, Vec<(u32, Vec<u8>)>);
+/// Objects of one case: vendor argument words, initialized vendor and
+/// production objects as (address, bytes), and vendor call models.
+#[derive(Default)]
+pub struct Objects {
+    pub vendor_words: Vec<u32>,
+    pub vendor: Vec<(u32, Vec<u8>)>,
+    pub production: Vec<(u32, Vec<u8>)>,
+    pub calls: Vec<CallDeclaration>,
+}
+
+/// Builds a case's objects from the semantic probe words; `rom` resolves a
+/// ROM data symbol's address.
+pub type VendorAbi = fn(&[u32], &dyn Fn(&str) -> Result<u32>) -> Result<Objects>;
 
 const fn leaf(
     vendor: &'static str,
@@ -150,7 +165,7 @@ const fn objects(leaf: Leaf, abi: VendorAbi) -> Leaf {
 /// context holds at 0x34 a pointer to the interface record, whose word at
 /// 0x10 carries the interface in bits 18 and 19. The probe's first word is
 /// the object address itself.
-fn edca_abi(words: &[u32]) -> (Vec<u32>, Vec<(u32, Vec<u8>)>) {
+fn edca_abi(words: &[u32], _rom: &dyn Fn(&str) -> Result<u32>) -> Result<Objects> {
     const CONTEXT: u32 = INPUT + 0x100;
     const INTERFACE_RECORD: u32 = INPUT + 0x200;
     let [_, queue, aifsn, window, interface] = words else {
@@ -163,14 +178,192 @@ fn edca_abi(words: &[u32]) -> (Vec<u32>, Vec<(u32, Vec<u8>)>) {
     context[0x34..].copy_from_slice(&INTERFACE_RECORD.to_le_bytes());
     let mut record = vec![0u8; 0x14];
     record[0x10..].copy_from_slice(&(interface << 18).to_le_bytes());
-    (
-        vec![INPUT],
-        vec![
+    Ok(Objects {
+        vendor_words: vec![INPUT],
+        vendor: vec![
             (INPUT, object),
             (CONTEXT, context),
             (INTERFACE_RECORD, record),
         ],
-    )
+        ..Default::default()
+    })
+}
+
+/// Canonical HT transmit parameters of the reviewed `hal_mac_tx_set_ppdu`
+/// fixture, in `CanonicalHtTxParameters` order: queue 0, descriptor head,
+/// MCS 7, short guard interval, 40 MHz, A-MPDU, length 0xc2e, two
+/// descriptors, data powers 1/1, RTS powers 2/2, spacing density 5, no
+/// timeout, scheduler and packet priority 1, one priority, zero AIFSN and
+/// window, the station interface, no hardware key and no TXOP.
+const PPDU_CANONICAL: [u32; 22] = [
+    0,
+    PPDU_DESCRIPTOR,
+    7,
+    1,
+    1,
+    1,
+    0xc2e,
+    2,
+    1,
+    1,
+    2,
+    2,
+    1,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+];
+/// Vendor PP object addresses of that fixture: the transmit context, the
+/// first descriptor, the `pTxRx` rate table and the OSI function table.
+const PPDU_PROGRAM: u32 = 0x3fff_1000;
+const PPDU_DESCRIPTOR: u32 = 0x3fff_1200;
+const PPDU_AUXILIARY: u32 = 0x3fff_1600;
+const PPDU_OSI_TABLE: u32 = 0x3fff_1800;
+/// Bytes of the OSI function table through the `coex_pti_clamp` slot.
+const PPDU_OSI_BYTES: usize = 0x1ac;
+const PPDU_COEX_PTI_CLAMP_SLOT: usize = 0x1a8;
+/// Unmapped address the OSI slot names; a call model answers it.
+const PPDU_COEX_PTI_CLAMP: u32 = 0x5000_0000;
+/// Vendor PP objects of the fixture, as (address, words).
+const PPDU_VENDOR: &[(u32, &[u32])] = &[
+    (PPDU_PROGRAM, &[0x3fff_1100, 0]),
+    (
+        0x3fff_1100,
+        &[
+            0,
+            PPDU_DESCRIPTOR,
+            0,
+            0,
+            0,
+            // Two halfword lengths summed by the bounded HT A-MPDU branch
+            // of mac_tx_set_len; the second remains zero.
+            0x0000_0c2e,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0x3fff_1500,
+            0,
+            0x3fff_1300,
+        ],
+    ),
+    (PPDU_DESCRIPTOR, &[0x3fff_1400, 0x0000_8000, 0, 0]),
+    (
+        0x3fff_1300,
+        &[
+            // Word-zero bit 14 enables the guarded channel-width branch;
+            // word-two bit 15 selects 40 MHz in it and in mac_tx_set_htsig.
+            0x004c_6009,
+            0,
+            0x0000_8000,
+            0x0000_0021,
+            0,
+            0,
+            0,
+            0,
+            0x0001_0001,
+            0,
+            0x0002_0000,
+            0x0002_0000,
+            0,
+            0,
+            0,
+            0,
+        ],
+    ),
+    (0x3fff_1400, &[0]),
+    (0x3fff_1500, &[0]),
+    (0x3fff_1580, &[0x0028_0000, 0x0004_0000, 0, 0, 0, 0]),
+    // The selected pTxRx rate row contributes entry class one to both packed
+    // length words at byte offsets 0x40 and 0x41.
+    (PPDU_AUXILIARY, &[0; 16]),
+    (PPDU_AUXILIARY + 0x40, &[0x0000_0101, 0x0000_0c2e, 0]),
+];
+/// ROM `s_phy_get_max_pwr` rows the fixture seeds.
+const PPDU_MAX_POWER: [u32; 22] = [
+    0x0201_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0202_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0101_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0201_0201,
+    0x0000_0201,
+];
+
+fn words(values: &[u32]) -> Vec<u8> {
+    values.iter().flat_map(|w| w.to_le_bytes()).collect()
+}
+
+/// The reviewed ordinary-queue-zero HT40 MCS7 A-MPDU fixture of
+/// `hal_mac_tx_set_ppdu`: vendor PP objects, the ROM rate-table pointer,
+/// power rows and OSI table, and the canonical production parameters.
+fn ppdu_abi(_words: &[u32], rom: &dyn Fn(&str) -> Result<u32>) -> Result<Objects> {
+    let mut vendor: Vec<(u32, Vec<u8>)> = PPDU_VENDOR
+        .iter()
+        .map(|(address, values)| (*address, words(values)))
+        .collect();
+    let mut table = vec![0u8; PPDU_OSI_BYTES];
+    table[PPDU_COEX_PTI_CLAMP_SLOT..].copy_from_slice(&PPDU_COEX_PTI_CLAMP.to_le_bytes());
+    vendor.extend([
+        (PPDU_OSI_TABLE, table),
+        (rom("pTxRx")?, PPDU_AUXILIARY.to_le_bytes().to_vec()),
+        (rom("g_osi_funcs_p")?, PPDU_OSI_TABLE.to_le_bytes().to_vec()),
+        (rom("s_phy_get_max_pwr")?, words(&PPDU_MAX_POWER)),
+    ]);
+    let clamp = CallDeclaration {
+        id: "coex-pti-clamp".into(),
+        applicability: "the OSI coexistence PTI clamp returns one through its output word".into(),
+        lifetime: RegionLifetime::Phase,
+        binding: CallBinding {
+            address: PPDU_COEX_PTI_CLAMP,
+            boundary: CallBoundary::Unmapped,
+            allow_tail: false,
+        },
+        argument_words: 2,
+        responses: vec![CallResponse {
+            return_words: [Some(0), None],
+            // The clamp stores its one-byte result through its second
+            // argument, a byte of the caller's frame.
+            outputs: vec![CallOutput {
+                pointer_argument: 1,
+                byte_offset: 0,
+                width: 1,
+                value: 1,
+                scope: CallOutputScope::PrivateStack,
+            }],
+            allocation: None,
+            delay_micros: None,
+        }],
+        repetition: CallRepetition::Finite,
+    };
+    Ok(Objects {
+        vendor_words: vec![PPDU_PROGRAM, PPDU_AUXILIARY],
+        vendor,
+        production: vec![(INPUT, words(&PPDU_CANONICAL))],
+        calls: vec![clamp],
+    })
 }
 
 /// A leaf compared only up to the vendor's call of `callee`.
@@ -445,6 +638,18 @@ pub const LEAVES: &[Leaf] = &[
         &[("low", TSF_LOW), ("high", TSF_HIGH)],
         false,
     )),
+    objects(
+        leaf(
+            "hal_mac_tx_set_ppdu",
+            "open_libpp_tx_trace_hal_mac_tx_set_ppdu",
+            &[
+                ("program_address", Domain::Words(&[INPUT])),
+                ("_vendor_auxiliary", Domain::Words(&[PPDU_AUXILIARY])),
+            ],
+            false,
+        ),
+        ppdu_abi,
+    ),
 ];
 
 /// Linked `libpp.a` image with its captured roots and both execution targets.
@@ -516,6 +721,7 @@ impl Mac {
             entry: select(&session, 0, LEAVES[0].vendor)?,
             roots,
             layout: image_layout(),
+            absent: ABSENT.iter().map(|n| (*n).to_owned()).collect(),
         };
         let linked = session.link(
             &link,
@@ -666,17 +872,35 @@ impl Mac {
                 ),
                 None => (vec![], vec![]),
             };
-            let (vendor_words, mut vendor_memory) = match leaf.vendor_abi {
-                Some(abi) => {
-                    let (vendor_words, objects) = abi(&words);
-                    let objects = objects
-                        .iter()
-                        .map(|(address, bytes)| known(*address, bytes.len() as u32, bytes))
-                        .collect::<Result<Vec<_>>>()?;
-                    (vendor_words, objects)
-                }
-                None => (words.clone(), memory.clone()),
+            let regions = |objects: &[(u32, Vec<u8>)]| {
+                objects
+                    .iter()
+                    .map(|(address, bytes)| known(*address, bytes.len() as u32, bytes))
+                    .collect::<Result<Vec<_>>>()
             };
+            let rom = |name: &str| -> Result<u32> {
+                Ok(u32::try_from(
+                    crate::harness::symbol(
+                        &self.session.inventory,
+                        crate::layout::ROM_INPUT as usize,
+                        name,
+                    )?
+                    .value,
+                )?)
+            };
+            let (vendor_words, mut vendor_memory, production_memory, vendor_calls) =
+                match leaf.vendor_abi {
+                    Some(abi) => {
+                        let objects = abi(&words, &rom)?;
+                        (
+                            objects.vendor_words,
+                            regions(&objects.vendor)?,
+                            regions(&objects.production)?,
+                            objects.calls,
+                        )
+                    }
+                    None => (words.clone(), memory.clone(), vec![], vec![]),
+                };
             vendor_memory.extend(output_memory.clone());
             for fill in LEAF_FILLS {
                 let mut vendor = direct(
@@ -686,6 +910,7 @@ impl Mac {
                     vec![radio_aperture(fill)],
                     observe.clone(),
                 );
+                vendor.calls = vendor_calls.clone();
                 if let Some(callee) = leaf.prefix_until {
                     vendor.goal = ExecutionGoal::ObserveCall {
                         target: ExecutionSymbol {
@@ -706,6 +931,7 @@ impl Mac {
                     observe.clone(),
                 )?;
                 production.memory.extend(output_memory.clone());
+                production.memory.extend(production_memory.clone());
                 production.arguments.resize(8, Some(0));
                 let mut row = case(
                     format!("{}{label}-{fill:02x}", leaf.vendor),

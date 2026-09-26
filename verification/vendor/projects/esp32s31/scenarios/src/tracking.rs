@@ -483,6 +483,7 @@ impl Tracking {
                 select(&session, 0, "phy_cal_param_track")?,
             ],
             layout: image_layout(),
+            absent: vec![],
         };
         let mut image = PhyImage::link(
             session,

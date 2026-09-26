@@ -367,6 +367,15 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_snapshot(
     ))
     .await;
     yield_now().await;
+    let positions = aggregate.partial_missing_by_position;
+    let counts = aggregate.partial_missing_counts;
+    runtime_log_reliably(format_args!(
+        "OAMPBM missing1={} missing2={} missing3_4={} missing5_8={} missing9={} \
+         positions={:?}",
+        counts[0], counts[1], counts[2], counts[3], counts[4], positions,
+    ))
+    .await;
+    yield_now().await;
     runtime_log_reliably(format_args!(
         "OAMPI tx_irq_epochs={} tx_irq_samples={} tx_irq_skew={} \
          tx_irq_service_us={} tx_irq_service_max_us={} tx_flight_samples={} \

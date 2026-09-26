@@ -41,6 +41,20 @@ fn completion_to_publication_bucket(micros: u32) -> usize {
         .unwrap_or(COMPLETION_TO_PUBLICATION_BOUNDS_MICROS.len())
 }
 
+/// Original positions of one hardware BlockAck window.
+pub const BLOCK_ACK_POSITIONS: usize = 32;
+pub const PARTIAL_MISSING_BUCKETS: usize = 5;
+
+fn partial_missing_bucket(missing: u8) -> usize {
+    match missing {
+        0 | 1 => 0,
+        2 => 1,
+        3..=4 => 2,
+        5..=8 => 3,
+        _ => 4,
+    }
+}
+
 struct PhaseTimingCounters {
     micros: AtomicU32,
     lifetime_max_micros: AtomicU32,
@@ -469,6 +483,8 @@ pub struct AggregateTxCounters {
     block_ack_start_lag_max: AtomicU32,
     full_block_ack: AtomicU32,
     partial_block_ack: AtomicU32,
+    partial_missing_by_position: [AtomicU32; BLOCK_ACK_POSITIONS],
+    partial_missing_counts: [AtomicU32; PARTIAL_MISSING_BUCKETS],
     empty_block_ack: AtomicU32,
     tx_irq_epochs: AtomicU32,
     tx_irq_service_samples: AtomicU32,
@@ -584,6 +600,8 @@ impl AggregateTxCounters {
             block_ack_start_lag_max: AtomicU32::new(0),
             full_block_ack: AtomicU32::new(0),
             partial_block_ack: AtomicU32::new(0),
+            partial_missing_by_position: [const { AtomicU32::new(0) }; BLOCK_ACK_POSITIONS],
+            partial_missing_counts: [const { AtomicU32::new(0) }; PARTIAL_MISSING_BUCKETS],
             empty_block_ack: AtomicU32::new(0),
             tx_irq_epochs: AtomicU32::new(0),
             tx_irq_service_samples: AtomicU32::new(0),
@@ -768,6 +786,12 @@ impl AggregateTxCounters {
             block_ack_start_lag_max: self.block_ack_start_lag_max.load(Ordering::Relaxed),
             full_block_ack: self.full_block_ack.load(Ordering::Relaxed),
             partial_block_ack: self.partial_block_ack.load(Ordering::Relaxed),
+            partial_missing_by_position: core::array::from_fn(|position| {
+                self.partial_missing_by_position[position].load(Ordering::Relaxed)
+            }),
+            partial_missing_counts: core::array::from_fn(|bucket| {
+                self.partial_missing_counts[bucket].load(Ordering::Relaxed)
+            }),
             empty_block_ack: self.empty_block_ack.load(Ordering::Relaxed),
             tx_irq_epochs: self.tx_irq_epochs.load(Ordering::Relaxed),
             tx_irq_service_samples: self.tx_irq_service_samples.load(Ordering::Relaxed),
@@ -1158,8 +1182,9 @@ impl AggregateTxObserver for AggregateTxCounters {
                 first_sequence,
                 starting_sequence,
                 subframes,
-                missing,
+                missing_original_indices,
             } => {
+                let missing = missing_original_indices.count_ones() as u8;
                 self.publications_pending.fetch_sub(1, Ordering::Relaxed);
                 self.block_ack_samples.fetch_add(1, Ordering::Relaxed);
                 if block_ack_received {
@@ -1195,6 +1220,15 @@ impl AggregateTxObserver for AggregateTxCounters {
                     self.empty_block_ack.fetch_add(1, Ordering::Relaxed);
                 } else {
                     self.partial_block_ack.fetch_add(1, Ordering::Relaxed);
+                    self.partial_missing_counts[partial_missing_bucket(missing)]
+                        .fetch_add(1, Ordering::Relaxed);
+                    let mut positions = missing_original_indices;
+                    while positions != 0 {
+                        let position = positions.trailing_zeros() as usize;
+                        self.partial_missing_by_position[position]
+                            .fetch_add(1, Ordering::Relaxed);
+                        positions &= positions - 1;
+                    }
                 }
             }
             AggregateTxObservation::CompletionCoreCompleted { micros } => {
@@ -1472,6 +1506,10 @@ pub struct AggregateTxCounterSnapshot {
     pub block_ack_start_lag_max: u32,
     pub full_block_ack: u32,
     pub partial_block_ack: u32,
+    /// Partial BlockAcks missing each original aggregate position.
+    pub partial_missing_by_position: [u32; BLOCK_ACK_POSITIONS],
+    /// Partial BlockAcks by missing count: 1, 2, 3-4, 5-8, 9 or more.
+    pub partial_missing_counts: [u32; PARTIAL_MISSING_BUCKETS],
     pub empty_block_ack: u32,
     pub tx_irq_epochs: u32,
     pub tx_irq_service_samples: u32,
@@ -1664,6 +1702,14 @@ impl AggregateTxCounterSnapshot {
             partial_block_ack: self
                 .partial_block_ack
                 .wrapping_sub(earlier.partial_block_ack),
+            partial_missing_by_position: core::array::from_fn(|position| {
+                self.partial_missing_by_position[position]
+                    .wrapping_sub(earlier.partial_missing_by_position[position])
+            }),
+            partial_missing_counts: core::array::from_fn(|bucket| {
+                self.partial_missing_counts[bucket]
+                    .wrapping_sub(earlier.partial_missing_counts[bucket])
+            }),
             empty_block_ack: self.empty_block_ack.wrapping_sub(earlier.empty_block_ack),
             tx_irq_epochs: self.tx_irq_epochs.wrapping_sub(earlier.tx_irq_epochs),
             tx_irq_service_samples: self

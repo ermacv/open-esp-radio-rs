@@ -439,7 +439,7 @@ fn publication_balance_tracks_attempts_across_live_interval_boundaries() {
         first_sequence: SequenceNumber::new(0).unwrap(),
         starting_sequence: SequenceNumber::new(0).unwrap(),
         subframes: 2,
-        missing: 1,
+        missing_original_indices: 0b10,
     });
     counters.record_publication(2, 1); // Retry is a new publication.
     counters.record_hardware_timeout();
@@ -546,4 +546,36 @@ fn publication_latency_is_bucketed_and_unprepared_successors_are_counted() {
     assert_eq!(delta.unprepared_publication_samples, 1);
     assert_eq!(delta.unprepared_publication_micros, 2_500);
     assert_eq!(delta.prepared_scheduler_timing.samples, 0);
+}
+
+#[test]
+fn partial_block_acks_are_attributed_to_original_positions() {
+    let counters = AggregateTxCounters::new();
+    let before = counters.snapshot();
+    let block_ack = |subframes, missing_original_indices| {
+        AggregateTxObservation::BlockAckProcessed {
+            tx_status: 0,
+            block_ack_received: true,
+            control: 0,
+            first_sequence: SequenceNumber::new(0).unwrap(),
+            starting_sequence: SequenceNumber::new(0).unwrap(),
+            subframes,
+            missing_original_indices,
+        }
+    };
+    // First publication loses positions 3 and 31; its compacted retry then
+    // loses original position 31 again.
+    counters.observe(block_ack(32, 1 << 3 | 1 << 31));
+    counters.observe(block_ack(2, 1 << 31));
+    // Neither a full nor an empty BlockAck is attributed.
+    counters.observe(block_ack(32, 0));
+    counters.observe(block_ack(2, 0b11));
+    let delta = counters.snapshot().wrapping_delta_since(before);
+    assert_eq!(delta.partial_block_ack, 2);
+    assert_eq!(delta.full_block_ack, 1);
+    assert_eq!(delta.empty_block_ack, 1);
+    assert_eq!(delta.partial_missing_by_position[3], 1);
+    assert_eq!(delta.partial_missing_by_position[31], 2);
+    assert_eq!(delta.partial_missing_by_position.iter().sum::<u32>(), 3);
+    assert_eq!(delta.partial_missing_counts, [1, 1, 0, 0, 0]);
 }

@@ -28,6 +28,9 @@ mod bluetooth_route_policy;
 mod esp32s31;
 
 #[cfg(feature = "esp32s31")]
+mod platform_clocks;
+
+#[cfg(feature = "esp32s31")]
 pub use coordinator::BluetoothPlatformBusy;
 
 #[cfg(feature = "esp32s31")]
@@ -48,6 +51,8 @@ pub use bluetooth_route_policy::{
 
 #[cfg(feature = "esp32s31")]
 pub use esp32s31::{EspHalBluetoothPlatform, EspHalRadioPlatform};
+#[cfg(feature = "esp32s31")]
+pub use platform_clocks::EspHalRadioClocks;
 
 #[cfg(test)]
 extern crate std;

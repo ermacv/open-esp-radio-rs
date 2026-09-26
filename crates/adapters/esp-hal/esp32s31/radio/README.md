@@ -14,6 +14,14 @@ base-eFuse accessor plus the pinned S31 second-universal-address policy. The
 result remains in canonical EUI-48 order; the generic HCI bootstrap type
 performs the reviewed conversion to HCI `BD_ADDR` byte order.
 
+`EspHalRadioClocks` implements the HAL `PlatformClockProvider` for the radio
+arbiter's modem clocks. The two platform-owned sources stay under ESP-HAL's
+own reference counts: the 160 MHz PLL output through its clock-tree node
+(`clock::ll::request_pll_f160m`/`release_pll_f160m`) and the analog-I2C
+master clock shared with ESP-HAL's regi2c accesses
+(`clock::ll::acquire_analog_i2c_master_clock`/`release_analog_i2c_master_clock`,
+added by the pinned fork).
+
 Bluetooth uses this coordinator. The Wi-Fi ESP-HAL adapter owns the same
 singleton types independently, so the production APIs cannot safely compose
 simultaneous Wi-Fi and Bluetooth. Neither adapter grants a second claim of

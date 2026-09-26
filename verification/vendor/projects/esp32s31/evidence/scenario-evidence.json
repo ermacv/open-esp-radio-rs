@@ -5,7 +5,7 @@
   "inputs": {
     "archive": "d4218e359b9716c616cbf116172f44d9195d4f2e020fad73279067e92d08e580",
     "phy-sdk": "ea4197a4e8d40fe43f5b1590132fab7365b2b1034dfa61f498743778002b07d9",
-    "production": "d3d5df408bb091b43e73ba5d2df1adcb54c5e73d460ec08d1cc67f97624f4dbb",
+    "production": "6492fb0c7a69e11405a7fd20e90be869e5ae006388d9949f5c61437e7b1e7367",
     "rftest": "547786cd684eb9cd8902955176e9a9a7f113d8faa3f415e12108ed261f55a11e",
     "rom": "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542",
     "sdk": "e5e2929ae216e324dac3efd13cf1e05146dfcc4ea64098a1fead74b8ac453195"
@@ -49,7 +49,7 @@
     },
     {
       "path": "crates/hardware/esp32s31/phy",
-      "sha256": "e4a9f27b398afc32e7439a755b5b647fd065a91747c10b6cc099f191ea5bf041"
+      "sha256": "420a0bd4f1fca98fb78671068c159af38485a20f389ecef3f6c82a15190cfba5"
     },
     {
       "path": "crates/memory",
@@ -149,11 +149,11 @@
     },
     {
       "path": "verification/vendor/projects/esp32s31/probes/radio/library",
-      "sha256": "bea3939eca7df7c5330074c28523b8ad0c3e1b9eea20c7e7987f15f75f13125c"
+      "sha256": "3433318f9a946fea3609f6b80c58dc40a54867b926b6d69106e284e54a8197d1"
     },
     {
       "path": "verification/vendor/projects/esp32s31/scenarios",
-      "sha256": "a19c26b84eea6edf066daebcc5c28fa18cd967752e3b97efae40becf6bdcadb0"
+      "sha256": "31a646eab61f4554246a0a7518e99681f7b7465c92cd46d7b3c852b64af1b714"
     },
     {
       "path": "verification/vendor/schema",
@@ -304,7 +304,7 @@
       "verdict": "match",
       "cases": 13,
       "reviews": [
-        "b2b6d9f03002a5ee3d7aefcde7220b44145491b49614023b0428505b3ad317dd"
+        "88b6ab771249675780cc489d6325680e8329c06cd664bc5a6d02dfa18334c073"
       ],
       "coverage": {
         "blocks": {
@@ -333,7 +333,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "5f2f30d55d80f4f726361bed1dc68067ba75a622ef18119bb352b26f4229d645"
+        "c5be8152c99f33a06fdf668dfc2141884cb16a09b27d65cd3ba22b17f35da920"
       ],
       "coverage": {
         "blocks": {
@@ -362,7 +362,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "5c255375ffd6a3490f8882507682b36367a9fb0e868d704568fc13f221d06961"
+        "3cd32b4216828600aa6133643060d6a5c60f5ca6b642b8aefe0afe1b8785e4e4"
       ],
       "coverage": {
         "blocks": {
@@ -391,7 +391,7 @@
       "verdict": "match",
       "cases": 4,
       "reviews": [
-        "5c68831b7e4dca6e7a321b274b27441e4ee3ffe3368083379195d7036c0cecb2"
+        "b2c9e8fcbc3c9792c53228a803915d0c1a2ec3c1cadba0a8b89704a8bfc53608"
       ],
       "coverage": {
         "blocks": {
@@ -420,7 +420,7 @@
       "verdict": "match",
       "cases": 8,
       "reviews": [
-        "41be717df541d5ab1963476fef8c62dcb75006013fad5c3870f65b9499d958a5"
+        "23e984cfc65e33d20daae0c8526684ebc687d93599e58802a7234b1d65d53a91"
       ],
       "coverage": {
         "blocks": {
@@ -449,7 +449,7 @@
       "verdict": "match",
       "cases": 3,
       "reviews": [
-        "38da77dbee4605e7a0050dc227a6a1332f1abadeb0011dca407f7d37e92458ea"
+        "bc04493a3a8884a56fca40417733bd02d1acb0b651c52bd843208d6df20a1052"
       ],
       "coverage": {
         "blocks": {
@@ -613,7 +613,7 @@
       "verdict": "match",
       "cases": 36,
       "reviews": [
-        "dd1f4883a29e8203ca02061e1fd61723b497d49ea2bacc13f072ed183512660a"
+        "7c64ee9e64c97f32954a82f3d4c77ea48b021dbd0f95ff84da047a99db92ec3c"
       ],
       "coverage": {
         "blocks": {
@@ -628,8 +628,8 @@
         "untriaged": 5
       },
       "observation": {
-        "executed": 106,
-        "observed": 106,
+        "executed": 105,
+        "observed": 105,
         "reviewed": 0,
         "untriaged": 0
       }
@@ -642,7 +642,7 @@
       "verdict": "match",
       "cases": 48,
       "reviews": [
-        "09e9bd981111a05521902669da73aed148cb5d56e079d0189886b359ac0bf885"
+        "58800516665589301e4d185d12268139cd54ae9c3bd5221366da3754ce4791ee"
       ],
       "coverage": {
         "blocks": {
@@ -657,8 +657,8 @@
         "untriaged": 24
       },
       "observation": {
-        "executed": 200,
-        "observed": 191,
+        "executed": 199,
+        "observed": 190,
         "reviewed": 1,
         "untriaged": 8
       }
@@ -671,7 +671,7 @@
       "verdict": "match",
       "cases": 10,
       "reviews": [
-        "37b3ee97dc5c7e2c9494465063515192a6fb1f730e67736ad9dec72006dc4bb0"
+        "7dfa20476ef0b23c9fc8f0a3e501ef3207d49affeeb575f9c08ebbd0681bfdc0"
       ],
       "coverage": {
         "blocks": {
@@ -698,28 +698,28 @@
       "symbol": "phy_chip_set_chan",
       "production": "open_phy_channel_trace_state",
       "verdict": "match",
-      "cases": 56,
+      "cases": 60,
       "reviews": [
-        "660328c4648d42b128130ee58c62fa66f14f56d0973f2cd22e1dd0e868e79ecb",
-        "faec8096ca7e43f06bbff23f869df670a021f3381e5fe7a452de89d040785721"
+        "446b7c4229f637ade33ce77395ceb192e30ec9cc7a394624122a66a9276e9cc6",
+        "d5ef4ffc03c48a720c56e6e2ed0929a4e35466d1a67c071e99eac0c0a6cdc96e"
       ],
       "coverage": {
         "blocks": {
-          "reached": 146,
+          "reached": 148,
           "total": 609
         },
         "directions": {
-          "reached": 86,
+          "reached": 87,
           "total": 606
         },
-        "excluded": 862,
-        "untriaged": 121
+        "excluded": 874,
+        "untriaged": 106
       },
       "observation": {
-        "executed": 365,
-        "observed": 353,
+        "executed": 364,
+        "observed": 354,
         "reviewed": 2,
-        "untriaged": 10
+        "untriaged": 8
       }
     },
     {
@@ -730,7 +730,7 @@
       "verdict": "match",
       "cases": 1280,
       "reviews": [
-        "bf76bd126cc5afd726671a639e9876d1a81bcde0247923ae539d219f441840a3"
+        "0b028937764ca22230bcfe63cbe5163fd5cd5c021ab3cf61a333bbd056d47876"
       ],
       "coverage": {
         "blocks": {
@@ -759,8 +759,8 @@
       "verdict": "match",
       "cases": 64,
       "reviews": [
-        "0aad628d5e3852443982d60a1d7511b5e64eaf5c3497c2407e7fe755e5e2f3ff",
-        "affa1ec244d6d341e58b68b56aba6239a28922779ccf5158b6f2c27fc6f6c68b"
+        "945febb755f3b498a4b66759538b207bdaed49acdd7e56bc3d21a733b8eda045",
+        "f6a19f79cb5337f1fa4c4f144e354b8a0dac1da8cfc8d06b7f11fe4fc542c64b"
       ],
       "coverage": {
         "blocks": {
@@ -775,10 +775,10 @@
         "untriaged": 134
       },
       "observation": {
-        "executed": 456,
-        "observed": 431,
+        "executed": 447,
+        "observed": 426,
         "reviewed": 14,
-        "untriaged": 11
+        "untriaged": 7
       }
     },
     {
@@ -789,8 +789,8 @@
       "verdict": "match",
       "cases": 64,
       "reviews": [
-        "2ba4a94b408c42d21dcf32aa769c93211ae389554014365e4da7fbf8328f157c",
-        "a63be0abeaebb2f4e31729f630aa4aa60e906e0a2ec7b801b6f8f7dc7ee16432"
+        "0f674825f24b4702ceac7a96ce13ed74dfb995a6f8e4a89729a2dc6834a37a8a",
+        "e90ae133eb7fa156cc5b99e2573bedac0e47dd9ef866c0307448174b9f5a665e"
       ],
       "coverage": {
         "blocks": {
@@ -819,8 +819,8 @@
       "verdict": "match",
       "cases": 80,
       "reviews": [
-        "847707b127e3160552fa75cdbbbadf35a6e78c5623038190809eea19089a2895",
-        "c174c0ea3e4c0c26910912f3b43fd822738630af22d3804e4c56b43822a8b1d4"
+        "5239badde98007b0a42a0acd8b5d99e629d9213208c4f431cf3279e1f9d4d7d0",
+        "fd1a49a976de79587c35d4a0f7ca8ca9fb3e4e29b01536a5b26410c1d97e0cfb"
       ],
       "coverage": {
         "blocks": {
@@ -831,14 +831,14 @@
           "reached": 277,
           "total": 894
         },
-        "excluded": 860,
-        "untriaged": 279
+        "excluded": 872,
+        "untriaged": 267
       },
       "observation": {
-        "executed": 1395,
+        "executed": 1389,
         "observed": 1343,
         "reviewed": 18,
-        "untriaged": 34
+        "untriaged": 28
       }
     },
     {
@@ -849,8 +849,8 @@
       "verdict": "match",
       "cases": 320,
       "reviews": [
-        "4becc3d7325339f4ea76d98184469f0dd35057b22ce6f969dd72d381eee0266f",
-        "634d941545129c8b7446ea9504ce22650ca25352ba100b684af5e300fc4d1e5a"
+        "ba9fce3aba4d1189cbfb4c62d75999ed29cd76cdf2afda440931e9887a6a404d",
+        "d064afe7d60eb5569c7687a644455b7ede02f2aa0cbac9fa0ffffa178977af1c"
       ],
       "coverage": {
         "blocks": {
@@ -861,14 +861,14 @@
           "reached": 351,
           "total": 982
         },
-        "excluded": 860,
-        "untriaged": 296
+        "excluded": 872,
+        "untriaged": 284
       },
       "observation": {
-        "executed": 1822,
+        "executed": 1816,
         "observed": 1743,
         "reviewed": 33,
-        "untriaged": 46
+        "untriaged": 40
       }
     }
   ],
@@ -954,36 +954,6 @@
       "kind": "block"
     },
     {
-      "function": "phy_chan14_mic_cfg_new",
-      "offset": 0,
-      "kind": "block"
-    },
-    {
-      "function": "phy_chan14_mic_cfg_new",
-      "offset": 10,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_chan14_mic_cfg_new",
-      "offset": 10,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_chan14_mic_cfg_new",
-      "offset": 14,
-      "kind": "block"
-    },
-    {
-      "function": "phy_chan14_mic_cfg_new",
-      "offset": 40,
-      "kind": "block"
-    },
-    {
-      "function": "phy_chan14_mic_cfg_new",
-      "offset": 48,
-      "kind": "block"
-    },
-    {
       "function": "phy_chan_to_freq",
       "offset": 0,
       "kind": "block"
@@ -1051,36 +1021,6 @@
     {
       "function": "phy_chip_set_chan",
       "offset": 64,
-      "kind": "block"
-    },
-    {
-      "function": "phy_chip_set_chan",
-      "offset": 172,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_chip_set_chan",
-      "offset": 174,
-      "kind": "block"
-    },
-    {
-      "function": "phy_chip_set_chan",
-      "offset": 178,
-      "kind": "taken"
-    },
-    {
-      "function": "phy_chip_set_chan",
-      "offset": 178,
-      "kind": "fallthrough"
-    },
-    {
-      "function": "phy_chip_set_chan",
-      "offset": 182,
-      "kind": "block"
-    },
-    {
-      "function": "phy_chip_set_chan",
-      "offset": 184,
       "kind": "block"
     },
     {
@@ -2646,10 +2586,6 @@
   ],
   "unobserved": [
     {
-      "path": "crates/hardware/esp32s31/phy/src/analog/dcode.rs",
-      "line": 345
-    },
-    {
       "path": "crates/hardware/esp32s31/phy/src/analog/frequency.rs",
       "line": 402
     },
@@ -2658,28 +2594,8 @@
       "line": 404
     },
     {
-      "path": "crates/hardware/esp32s31/phy/src/analog/rfpll.rs",
-      "line": 59
-    },
-    {
-      "path": "crates/hardware/esp32s31/phy/src/analog/rfpll.rs",
-      "line": 71
-    },
-    {
-      "path": "crates/hardware/esp32s31/phy/src/analog/rfpll.rs",
-      "line": 72
-    },
-    {
-      "path": "crates/hardware/esp32s31/phy/src/analog/rfpll.rs",
-      "line": 74
-    },
-    {
       "path": "crates/hardware/esp32s31/phy/src/state.rs",
-      "line": 867
-    },
-    {
-      "path": "crates/hardware/esp32s31/phy/src/state.rs",
-      "line": 1296
+      "line": 870
     },
     {
       "path": "crates/hardware/esp32s31/phy/src/target_port/rfpll.rs",

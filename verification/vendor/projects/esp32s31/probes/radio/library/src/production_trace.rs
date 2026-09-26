@@ -128,7 +128,7 @@ oer_probe_macros::probe! {
     /// conversion. Channel sequencing remains entirely in the production PHY;
     /// platform MMIO is provided by the same ESP-HAL adapter used by firmware.
     pub fn open_phy_production_trace_phy_chip_set_chan(channel_or_frequency: u32, cbw: u32) -> u32 =>
-        trace_channel(channel_or_frequency, cbw).map_or(1, |_| 0);
+        trace_channel(channel_or_frequency, cbw, [0, 0]).map_or(1, |_| 0);
 }
 
 oer_probe_macros::probe! {
@@ -155,27 +155,35 @@ oer_probe_macros::probe! {
 }
 
 oer_probe_macros::probe! {
-    /// Channel and temperature committed by the real production transition.
-    /// Output is left untouched on failure.
+    /// Channel, temperature, bandwidth and 802.11p configuration committed by
+    /// the real production transition from the given 802.11p enable and
+    /// configuration bytes. Output is left untouched on failure.
     pub fn open_phy_channel_trace_state(
         channel_or_frequency: u32,
         cbw: u32,
-        output: &mut [u16; 3],
+        dot11p: &[u8; 2],
+        output: &mut [u16; 4],
     ) -> u32 {
-        let Ok(state) = trace_channel(channel_or_frequency, cbw) else {
+        let Ok(state) = trace_channel(channel_or_frequency, cbw, *dot11p) else {
             return 1;
         };
         let parameters = state.calibration_tracking_parameters(None);
+        let dot11p = state.dot11p_configuration();
         *output = [
             state.current_wifi_channel(),
             state.temperature_observation().value as u16,
             u16::from(parameters.channel_bandwidth),
+            u16::from_le_bytes([dot11p.enabled, dot11p.configuration]),
         ];
         0
     }
 }
 
-fn trace_channel(channel_or_frequency: u32, cbw: u32) -> Result<oer_esp32s31_phy::PhyState, ()> {
+fn trace_channel(
+    channel_or_frequency: u32,
+    cbw: u32,
+    [dot11p_enabled, dot11p_configuration]: [u8; 2],
+) -> Result<oer_esp32s31_phy::PhyState, ()> {
     // SAFETY: the verifier executes this entry in an isolated image and never
     // creates a second peripheral owner during the same execution.
     let peripherals = unsafe { esp_hal::peripherals::Peripherals::steal() };
@@ -194,16 +202,19 @@ fn trace_channel(channel_or_frequency: u32, cbw: u32) -> Result<oer_esp32s31_phy
     let mut radio = radio.assume_powered_for_validation();
     let mut channel = radio.channel_hal();
     let mut state = oer_esp32s31_phy::PhyState::default();
+    state.set_dot11p_configuration(dot11p_enabled, dot11p_configuration);
     let mut observer = oer_esp32s31_phy::target_port::NoopPhyTargetObserver;
-    embassy_futures::block_on(
-        oer_esp32s31_phy::validation::select_channel::<ProductionTraceDelay, _, _>(
-            &mut state,
-            channel_or_frequency as u16,
-            cbw as u8,
-            &mut channel,
-            &mut observer,
-        ),
-    )
+    embassy_futures::block_on(oer_esp32s31_phy::validation::select_channel::<
+        ProductionTraceDelay,
+        _,
+        _,
+    >(
+        &mut state,
+        channel_or_frequency as u16,
+        cbw as u8,
+        &mut channel,
+        &mut observer,
+    ))
     .map_err(|_| ())?;
     Ok(state)
 }
@@ -606,8 +617,16 @@ fn snapshot_committed(state: &oer_esp32s31_phy::PhyState, progress: u16, output:
         *destination = u16::from_le_bytes([pair[0], pair[1]]);
     }
     output[4] = u16::from_le_bytes([
-        if snapshot.wifi.rx_gain_dc_calibrated { 0x80 } else { 0 },
-        if snapshot.wifi.rx_gain_tables_initialized { 0x02 } else { 0 },
+        if snapshot.wifi.rx_gain_dc_calibrated {
+            0x80
+        } else {
+            0
+        },
+        if snapshot.wifi.rx_gain_tables_initialized {
+            0x02
+        } else {
+            0
+        },
     ]);
     output[5] = u16::from_le_bytes([
         snapshot.wifi.shared_rx_table_last_index,

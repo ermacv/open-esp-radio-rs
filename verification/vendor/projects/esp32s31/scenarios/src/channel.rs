@@ -22,14 +22,16 @@ use blobray_domain::{
     SessionReset,
 };
 
-/// Offsets of the committed channel, temperature and bandwidth in `phy_param`.
+/// Offsets of the committed channel, temperature, bandwidth and 802.11p
+/// enable/configuration bytes in `phy_param`.
 const PARAMETER_CHANNEL: usize = 284;
 const PARAMETER_TEMPERATURE: usize = 0;
 const PARAMETER_BANDWIDTH: usize = 287;
-/// Production output: channel, temperature and bandwidth halfwords.
-const SEMANTIC_BYTES: u32 = 6;
+const PARAMETER_DOT11P: usize = 0x28;
+/// Production output: channel, temperature, bandwidth and 802.11p halfwords.
+const SEMANTIC_BYTES: u32 = 8;
 /// Committed `phy_param` fields in production output order.
-const COMMITTED: [OutputField; 3] = [
+const COMMITTED: [OutputField; 4] = [
     OutputField {
         name: "channel",
         parameter: PARAMETER_CHANNEL as u32,
@@ -51,6 +53,13 @@ const COMMITTED: [OutputField; 3] = [
         width: 1,
         count: 1,
     },
+    OutputField {
+        name: "dot11p",
+        parameter: PARAMETER_DOT11P as u32,
+        output: 6,
+        width: 1,
+        count: 2,
+    },
 ];
 /// Untouched production output bytes.
 const OUTPUT_FILL: u8 = 0xa5;
@@ -66,7 +75,8 @@ const PLL_REGISTER: u32 = 0x026b;
 pub type Options = PhyOptions;
 
 /// One channel transition: requested channel, bandwidth, sensor DAC, sensor
-/// code and stack/register fill.
+/// code, stack/register fill and the 802.11p enable and configuration bytes
+/// both sides start with.
 #[derive(Clone, Copy, Debug)]
 pub struct Transition {
     pub channel: u32,
@@ -74,24 +84,42 @@ pub struct Transition {
     pub dac: u32,
     pub code: u32,
     pub fill: u8,
+    pub dot11p: [u8; 2],
 }
 
 impl Transition {
     fn label(&self) -> String {
+        let dot11p = match self.dot11p {
+            [0, _] => String::new(),
+            [enabled, configuration] => format!("-dot11p{enabled}-{configuration:x}"),
+        };
         format!(
-            "channel-{}-cbw{}-dac{:x}-code{}-fill{:x}",
+            "channel-{}-cbw{}-dac{:x}-code{}-fill{:x}{dot11p}",
             self.channel, self.cbw, self.dac, self.code, self.fill
         )
     }
 }
 
-/// Full-root matrix: every tracked channel class at both bandwidths.
+/// Enabled 802.11p with a configuration byte distinct from every fill.
+const DOT11P: [u8; 2] = [1, 0x3c];
+
+/// Full-root matrix: every tracked channel class at both bandwidths, and one
+/// channel at both bandwidths with 802.11p enabled.
 pub fn full_transitions() -> Vec<Transition> {
-    transitions(
+    let mut result = transitions(
         [1, 6, 11, 13]
             .into_iter()
             .flat_map(|channel| [0, 1].map(|cbw| (channel, cbw, 5, 100))),
-    )
+    );
+    result.extend(
+        transitions([0, 1].into_iter().map(|cbw| (6, cbw, 5, 100)))
+            .into_iter()
+            .map(|t| Transition {
+                dot11p: DOT11P,
+                ..t
+            }),
+    );
+    result
 }
 
 /// Every sensor code in every DAC window, with the first fill. Each boundary
@@ -109,6 +137,7 @@ pub fn sensor_transitions() -> Vec<Transition> {
                     dac: window.0 | u32::from(fill & 0xf0),
                     code: u32::from(code),
                     fill,
+                    dot11p: [0, 0],
                 }
             })
         })
@@ -138,6 +167,7 @@ fn transitions(specs: impl Iterator<Item = (u32, u32, u32, u32)>) -> Vec<Transit
                 dac: dac | u32::from(fill & 0xf0),
                 code,
                 fill,
+                dot11p: [0, 0],
             })
         })
         .collect()
@@ -310,6 +340,7 @@ impl Channel {
             vec![
                 ("channel_or_frequency", i64::from(t.channel).into()),
                 ("cbw", i64::from(t.cbw).into()),
+                ("dot11p", Buffer::new(INPUT, t.dot11p).into()),
                 (
                     "output",
                     Buffer::new(OUTPUT, [OUTPUT_FILL; SEMANTIC_BYTES as usize]).into(),
@@ -376,6 +407,8 @@ impl Channel {
     /// Zeroed parameters, captured callback installation, then the transition.
     fn rows(&self, t: &Transition, install: bool) -> Result<Vec<ExecutionCase>> {
         let zero = vec![0u8; PHY_PARAM_BYTES as usize];
+        let mut parameters = zero.clone();
+        parameters[PARAMETER_DOT11P..PARAMETER_DOT11P + 2].copy_from_slice(&t.dot11p);
         let noop = self.noop();
         let mut transition = case(
             t.label(),
@@ -392,7 +425,7 @@ impl Channel {
         let rows = vec![
             case(
                 "initialize",
-                self.setup(&zero, false),
+                self.setup(&parameters, false),
                 Some(self.setup(&zero, true)),
                 SessionReset::Cold,
                 false,
@@ -423,6 +456,8 @@ pub fn vendor_semantic(parameters: &[u8]) -> [u8; SEMANTIC_BYTES as usize] {
         parameters[PARAMETER_TEMPERATURE + 1],
         parameters[PARAMETER_BANDWIDTH],
         0,
+        parameters[PARAMETER_DOT11P],
+        parameters[PARAMETER_DOT11P + 1],
     ]
 }
 
@@ -444,6 +479,7 @@ fn check_transition(
     expected[..2].copy_from_slice(&(t.channel as u16).to_le_bytes());
     expected[2..4].copy_from_slice(&(temperature as i16).to_le_bytes());
     expected[4] = t.cbw as u8;
+    expected[6..].copy_from_slice(&t.dot11p);
     assert_eq!(committed, expected, "{label}: vendor commit");
     events(records, root, false)
 }
@@ -525,6 +561,7 @@ fn stuck_readiness(ctx: &mut Channel) -> Result<()> {
             dac: 5,
             code: 100,
             fill,
+            dot11p: [0, 0],
         };
         let mut row = case(
             format!("stuck-readiness-fill{fill:x}"),
@@ -658,7 +695,9 @@ mod tests {
 
     #[test]
     fn matrices_cover_channels_windows_and_fills() {
-        assert_eq!(full_transitions().len(), 4 * 2 * FILLS.len());
+        let full = full_transitions();
+        assert_eq!(full.len(), (4 + 1) * 2 * FILLS.len());
+        assert!(full.iter().any(|t| t.dot11p == DOT11P));
         let sensor = sensor_transitions();
         assert_eq!(sensor.len(), SENSOR_WINDOWS.len() * 256);
         assert!(sensor.len() as u32 * SENSOR_CASES <= blobray_domain::MAX_EXECUTION_CASES as u32);
@@ -685,11 +724,15 @@ mod tests {
     }
 
     #[test]
-    fn semantic_bytes_select_channel_temperature_and_bandwidth() {
+    fn semantic_bytes_select_channel_temperature_bandwidth_and_dot11p() {
         let mut parameters = vec![0u8; PHY_PARAM_BYTES as usize];
         parameters[PARAMETER_CHANNEL..PARAMETER_CHANNEL + 2].copy_from_slice(&[13, 0]);
         parameters[..2].copy_from_slice(&(-48i16).to_le_bytes());
         parameters[PARAMETER_BANDWIDTH] = 1;
-        assert_eq!(vendor_semantic(&parameters), [13, 0, 0xd0, 0xff, 1, 0]);
+        parameters[PARAMETER_DOT11P..PARAMETER_DOT11P + 2].copy_from_slice(&DOT11P);
+        assert_eq!(
+            vendor_semantic(&parameters),
+            [13, 0, 0xd0, 0xff, 1, 0, DOT11P[0], DOT11P[1]]
+        );
     }
 }

@@ -7,7 +7,7 @@
 //! scenario, so the table cannot silently outlive the code it describes.
 use crate::harness::{Result, invalid};
 use crate::session::evidence_index::{Location, LocationKind};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 /// What one decision excludes.
 #[derive(Clone, Copy, Debug)]
@@ -15,6 +15,32 @@ pub enum Place {
     /// Every uncovered location of the vendor function. Applies to a scenario
     /// only when the function is in one of its closures.
     Function(&'static str),
+    /// Uncovered locations of the vendor function at offsets from `start`
+    /// up to `end`: one path of a function whose other paths are compared.
+    Range {
+        function: &'static str,
+        start: u32,
+        end: u32,
+    },
+}
+
+impl Place {
+    fn function(&self) -> &'static str {
+        match self {
+            Place::Function(name) | Place::Range { function: name, .. } => name,
+        }
+    }
+
+    fn excludes(&self, location: &Location) -> bool {
+        match self {
+            Place::Function(name) => location.function == *name,
+            Place::Range {
+                function,
+                start,
+                end,
+            } => location.function == *function && (*start..*end).contains(&location.offset),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -23,12 +49,14 @@ pub struct Decision {
     pub places: &'static [Place],
 }
 
-/// Vendor runtime helpers inside the PHY closures. Their paths depend on
-/// operand magnitudes, alignment and diagnostic formatting, not on driver
-/// behavior: production has its own Rust arithmetic, copies and no vendor
-/// console output, and the comparisons observe the helpers only through the
-/// PHY effects that use their results.
-pub const RUNTIME: &[Decision] = &[
+/// Reviewed exclusions of every scenario. Vendor runtime helpers inside the
+/// PHY closures: their paths depend on operand magnitudes, alignment and
+/// diagnostic formatting, not on driver behavior; production has its own Rust
+/// arithmetic, copies and no vendor console output, and the comparisons
+/// observe the helpers only through the PHY effects that use their results.
+/// Vendor configurations production rejects fail-closed have no production
+/// path to compare.
+pub const DECISIONS: &[Decision] = &[
     Decision {
         reason: "vendor diagnostic formatting; production emits no vendor console output",
         places: &[
@@ -57,6 +85,19 @@ pub const RUNTIME: &[Decision] = &[
             Place::Function("__riscv_restore_12"),
         ],
     },
+    Decision {
+        reason: "channel-14 MIC configuration: production rejects an enabled MIC option \
+            and channel 14 fail-closed, as the qualified AP/STA profile requires",
+        places: &[
+            Place::Function("phy_chan14_mic_cfg_new"),
+            // The `phy_param[0x26]` guard's enabled path up to the 802.11p guard.
+            Place::Range {
+                function: "phy_chip_set_chan",
+                start: 0xac,
+                end: 0xc0,
+            },
+        ],
+    },
 ];
 
 /// Uncovered locations of one scenario's claimed closures, and the functions
@@ -74,34 +115,24 @@ impl Observed {
         locations: &BTreeSet<Location>,
     ) -> (BTreeSet<Location>, BTreeSet<Location>) {
         let excluded = |location: &Location| {
-            decisions.iter().any(|d| {
-                d.places.iter().any(|p| match p {
-                    Place::Function(name) => location.function == *name,
-                })
-            })
+            decisions
+                .iter()
+                .any(|d| d.places.iter().any(|p| p.excludes(location)))
         };
         locations.iter().cloned().partition(excluded)
     }
 
-    /// Every decision must still exclude an uncovered location of a function
-    /// this scenario's closures contain.
+    /// Every place must still exclude an uncovered location when its
+    /// function is in one of this scenario's closures.
     pub fn check(&self, suite: &str, decisions: &[Decision]) -> Result<()> {
-        let mut uncovered: BTreeMap<&str, usize> = BTreeMap::new();
-        for location in &self.uncovered {
-            *uncovered.entry(location.function.as_str()).or_default() += 1;
-        }
-        for decision in decisions {
-            for place in decision.places {
-                match place {
-                    Place::Function(name) => {
-                        if self.functions.contains(*name) && !uncovered.contains_key(name) {
-                            return Err(invalid(format!(
-                                "{suite}: coverage decision for {name} excludes nothing; \
-                                 its function is fully covered"
-                            )));
-                        }
-                    }
-                }
+        for place in decisions.iter().flat_map(|d| d.places) {
+            if self.functions.contains(place.function())
+                && !self.uncovered.iter().any(|l| place.excludes(l))
+            {
+                return Err(invalid(format!(
+                    "{suite}: coverage decision {place:?} excludes nothing; \
+                     its locations are covered"
+                )));
             }
         }
         Ok(())
@@ -151,5 +182,27 @@ mod tests {
         assert!(observed.check("suite", DECISIONS).is_err());
         observed.uncovered.insert(at("helper", 0));
         observed.check("suite", DECISIONS).unwrap();
+    }
+
+    #[test]
+    fn a_range_excludes_only_its_offsets_and_goes_stale_when_covered() {
+        const RANGE: &[Decision] = &[Decision {
+            reason: "test",
+            places: &[Place::Range {
+                function: "phy_root",
+                start: 4,
+                end: 8,
+            }],
+        }];
+        let locations = BTreeSet::from([at("phy_root", 4), at("phy_root", 8)]);
+        let (excluded, untriaged) = Observed::classify(RANGE, &locations);
+        assert_eq!(excluded, BTreeSet::from([at("phy_root", 4)]));
+        assert_eq!(untriaged, BTreeSet::from([at("phy_root", 8)]));
+        let mut observed = Observed::default();
+        observed.functions.insert("phy_root".into());
+        observed.uncovered.insert(at("phy_root", 8));
+        assert!(observed.check("suite", RANGE).is_err());
+        observed.uncovered.insert(at("phy_root", 6));
+        observed.check("suite", RANGE).unwrap();
     }
 }

@@ -368,7 +368,7 @@ fn gain(common: Common, rftest: Option<PathBuf>) -> Result<Outcome> {
     g.negative()?;
     let claims = g
         .session
-        .claims("gain", &g.roots, &GAIN_CLAIMS, coverage::RUNTIME)?;
+        .claims("gain", &g.roots, &GAIN_CLAIMS, coverage::DECISIONS)?;
     Ok((
         finish(
             &unmet,
@@ -418,7 +418,7 @@ fn i2c(common: Common, sdk: Option<PathBuf>, phy_sdk: Option<PathBuf>) -> Result
     }
     let claims = ctx
         .session
-        .claims("i2c", &ctx.roots, &list, coverage::RUNTIME)?;
+        .claims("i2c", &ctx.roots, &list, coverage::DECISIONS)?;
     Ok((
         finish(&unmet, "authenticated PHY comparisons passed", &ctx.run),
         claims,
@@ -446,7 +446,7 @@ fn channel(common: Common) -> Result<Outcome> {
     channel::exercise(&mut ctx)?;
     let claims = ctx
         .session
-        .claims("channel", &ctx.roots, &CHANNEL_CLAIMS, coverage::RUNTIME)?;
+        .claims("channel", &ctx.roots, &CHANNEL_CLAIMS, coverage::DECISIONS)?;
     Ok((
         finish(
             &[],
@@ -462,7 +462,7 @@ fn rx_gain(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     rx_gain::exercise(&mut ctx)?;
     let claims = ctx
         .session
-        .claims("rx-gain", &ctx.roots, &RX_GAIN_CLAIMS, coverage::RUNTIME)?;
+        .claims("rx-gain", &ctx.roots, &RX_GAIN_CLAIMS, coverage::DECISIONS)?;
     Ok((
         finish(
             &[],
@@ -478,7 +478,7 @@ fn tx_dc(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     tx_dc::exercise(&mut ctx)?;
     let claims = ctx
         .session
-        .claims("tx-dc", &ctx.roots, &TX_DC_CLAIMS, coverage::RUNTIME)?;
+        .claims("tx-dc", &ctx.roots, &TX_DC_CLAIMS, coverage::DECISIONS)?;
     Ok((
         finish(
             &[],
@@ -492,9 +492,12 @@ fn tx_dc(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
 fn tracking(common: Common, phy_sdk: PathBuf) -> Result<Outcome> {
     let mut ctx = tracking::Tracking::new(&common.phy(), &phy_sdk)?;
     tracking::exercise(&mut ctx)?;
-    let claims = ctx
-        .session
-        .claims("tracking", &ctx.roots, &TRACKING_CLAIMS, coverage::RUNTIME)?;
+    let claims = ctx.session.claims(
+        "tracking",
+        &ctx.roots,
+        &TRACKING_CLAIMS,
+        coverage::DECISIONS,
+    )?;
     Ok((
         finish(
             &[],

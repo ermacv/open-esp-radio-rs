@@ -10,11 +10,11 @@ use crate::layout::{INPUT, OUTPUT, radio_aperture};
 use crate::phy::{image_layout, select};
 use crate::session::{Session, image_symbol_id, request};
 use blobray_domain::{
-    CallBinding, CallBoundary, CallDeclaration, CallOutput, CallOutputScope, CallRepetition,
-    CallResponse, ComparisonVerdict, EffectContractRef, EffectDisposition, EffectPattern,
-    EffectRule, EffectSelector, EffectValue, ExecutionCase, ExecutionGoal, ExecutionSymbol,
-    ExecutionTarget, LinkRequest, MemoryPair, ObjectId, ObjectLocation, RegionLifetime,
-    SessionReset,
+    CallBinding, CallBoundary, CallCapture, CallDeclaration, CallOutput, CallOutputScope,
+    CallRepetition, CallResponse, ComparisonVerdict, EffectContractRef, EffectDisposition,
+    EffectPattern, EffectRule, EffectSelector, EffectValue, ExecutionCase, ExecutionGoal,
+    ExecutionSymbol, ExecutionTarget, LinkRequest, MemoryPair, ObjectId, ObjectLocation,
+    RegionLifetime, SessionReset,
 };
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -25,6 +25,8 @@ pub const LIBPP_SHA: &str = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e1
 /// `libpp.a` diagnostic dumps reachable from the transmit leaves call. They
 /// resolve to an unmapped address, so reaching one stops the case.
 const ABSENT: &[&str] = &["putchar"];
+/// Input index of the compiled production probe ELF.
+const PROBE_INPUT: usize = 2;
 /// Input index of the vendor Wi-Fi firmware.
 const PHY_SDK_INPUT: u64 = 3;
 /// Radio register fills: all clear, all set and two alternating patterns.
@@ -109,7 +111,18 @@ pub struct Leaf {
     /// Object states the builder receives after the probe words: a further
     /// case dimension that reaches the probe only through the objects.
     pub states: &'static [u32],
+    /// A dispatcher compared up to its selected callee: for the case words,
+    /// the vendor callee and the production callee both sides stop before.
+    /// Reaching another callee leaves the goal unmet; the first argument
+    /// word at both stops must be the case's first word.
+    pub dispatch: Option<Dispatch>,
+    /// Vendor functions answered with a zero return and no other effect:
+    /// assertions the compared domain never fails.
+    pub quiet_calls: &'static [&'static str],
 }
+
+/// The vendor and production callees a dispatcher selects for the words.
+pub type Dispatch = fn(&[u32]) -> (&'static str, &'static str);
 
 /// Objects of one case: vendor argument words, initialized vendor and
 /// production objects as (address, bytes), and vendor call models.
@@ -145,6 +158,24 @@ const fn leaf(
         vendor_abi: None,
         rom: false,
         states: &[],
+        dispatch: None,
+        quiet_calls: &[],
+    }
+}
+
+/// A dispatcher leaf compared up to the callee `select` names.
+const fn dispatching(leaf: Leaf, select: Dispatch) -> Leaf {
+    Leaf {
+        dispatch: Some(select),
+        ..leaf
+    }
+}
+
+/// A leaf whose vendor `calls` return zero with no other effect.
+const fn quiet(leaf: Leaf, calls: &'static [&'static str]) -> Leaf {
+    Leaf {
+        quiet_calls: calls,
+        ..leaf
     }
 }
 
@@ -473,6 +504,31 @@ fn image_symbols(elf: &std::path::Path) -> Result<BTreeMap<String, u32>> {
     Ok(symbols)
 }
 
+/// Transmit-error details of status four and the retry leaf each selects.
+const TX_ERROR_DETAILS: &[u32] = &[0, 1, 2, 3, 4, 5, 6];
+/// Ordinary queues the dispatcher cases use: the lowest and the highest.
+const TX_ERROR_QUEUES: &[u32] = &[0, 4];
+
+/// `lmacProcessTxError` of status four: detail zero is a CTS timeout,
+/// details two and six ACK timeouts, and the others collisions.
+fn tx_error_leaf(words: &[u32]) -> (&'static str, &'static str) {
+    match words[1] {
+        0 => ("lmacProcessCtsTimeout", "open_libpp_tx_retry_cts_timeout"),
+        2 | 6 => ("lmacProcessAckTimeout", "open_libpp_tx_retry_ack_timeout"),
+        _ => ("lmacProcessCollision", "open_libpp_tx_retry_collision"),
+    }
+}
+
+/// `lmacProcessTxError` loads ROM `our_instances_ptr` before dispatching;
+/// only the key-error detail `0xc0`, outside these cases, dereferences it.
+fn tx_error_abi(words: &[u32], resolve: &dyn Fn(&str) -> Result<u32>) -> Result<Objects> {
+    Ok(Objects {
+        vendor_words: words.to_vec(),
+        vendor: vec![(resolve("our_instances_ptr")?, vec![0; 4])],
+        ..Default::default()
+    })
+}
+
 /// A leaf compared only up to the vendor's call of `callee`.
 const fn prefix(leaf: Leaf, callee: &'static str) -> Leaf {
     Leaf {
@@ -535,6 +591,9 @@ const TSF_HIGH: Domain = Domain::Output {
 
 /// Bytes of the transmit Block Ack record: control, sequence and bitmap.
 const BLOCK_ACK_BYTES: u32 = 12;
+
+/// One case with the initial bytes of its compared objects and its probe words.
+type LeafCase = (ExecutionCase, Vec<u8>, Vec<u32>);
 
 /// Every compared leaf.
 pub const LEAVES: &[Leaf] = &[
@@ -775,6 +834,25 @@ pub const LEAVES: &[Leaf] = &[
         ),
         "rcGetSMPDURate",
     ),
+    quiet(
+        dispatching(
+            objects(
+                leaf(
+                    "lmacProcessTxError",
+                    "open_libpp_tx_retry_trace_lmac_process_tx_error",
+                    &[
+                        ("queue", Domain::Words(TX_ERROR_QUEUES)),
+                        ("detail", Domain::Words(TX_ERROR_DETAILS)),
+                        ("_selector", Domain::Words(&[0])),
+                    ],
+                    false,
+                ),
+                tx_error_abi,
+            ),
+            tx_error_leaf,
+        ),
+        &["wifi_assert"],
+    ),
 ];
 
 /// Linked `libpp.a` image with its captured roots and both execution targets.
@@ -933,8 +1011,9 @@ impl Mac {
 
     /// Both sides of `leaf` for every argument combination, object state and
     /// fill.
-    /// Each case carries the initial bytes of the objects it compares.
-    fn cases(&mut self, leaf: &Leaf) -> Result<Vec<(ExecutionCase, Vec<u8>)>> {
+    /// Each case carries the initial bytes of the objects it compares and
+    /// its probe words.
+    fn cases(&mut self, leaf: &Leaf) -> Result<Vec<LeafCase>> {
         let image_symbols = image_symbols(&self.session.run.join("image/image.elf"))?;
         let effects = if leaf.ordering_fences != 0 {
             Some(self.ordering_contract(leaf)?)
@@ -1073,6 +1152,26 @@ impl Mac {
                         observed.clone(),
                     );
                     vendor.calls = vendor_calls.clone();
+                    for name in leaf.quiet_calls {
+                        vendor.calls.push(CallDeclaration {
+                            id: (*name).into(),
+                            applicability: "an assertion the compared domain never fails".into(),
+                            lifetime: RegionLifetime::Phase,
+                            binding: CallBinding {
+                                address: rom(name)?,
+                                boundary: CallBoundary::Unmapped,
+                                allow_tail: true,
+                            },
+                            argument_words: 1,
+                            responses: vec![CallResponse {
+                                return_words: [Some(0), None],
+                                outputs: vec![],
+                                allocation: None,
+                                delay_micros: None,
+                            }],
+                            repetition: CallRepetition::Unbounded,
+                        });
+                    }
                     if let Some(callee) = leaf.prefix_until {
                         vendor.goal = ExecutionGoal::ObserveCall {
                             target: ExecutionSymbol {
@@ -1092,6 +1191,40 @@ impl Mac {
                         vec![radio_aperture(fill)],
                         observed.clone(),
                     )?;
+                    if let Some(select) = leaf.dispatch {
+                        let (vendor_callee, production_callee) = select(&words);
+                        let capture = CallCapture {
+                            include_tail: true,
+                            argument_words: 1,
+                            overrides: vec![],
+                        };
+                        vendor.goal = ExecutionGoal::ObserveCall {
+                            target: ExecutionSymbol {
+                                source: self.vendor.source.clone(),
+                                symbol: image_symbol_id(
+                                    &self.session.run.join("image/image.elf"),
+                                    &self.image_object,
+                                    vendor_callee,
+                                )?,
+                            },
+                            include_tail: true,
+                        };
+                        vendor.observe_calls = Some(capture.clone());
+                        production.goal = ExecutionGoal::ObserveCall {
+                            target: ExecutionSymbol {
+                                source: self.production.source.clone(),
+                                symbol: crate::harness::symbol(
+                                    &self.session.inventory,
+                                    PROBE_INPUT,
+                                    production_callee,
+                                )?
+                                .id
+                                .clone(),
+                            },
+                            include_tail: true,
+                        };
+                        production.observe_calls = Some(capture);
+                    }
                     production.memory.extend(output_memory.clone());
                     production.memory.extend(production_memory.clone());
                     production.arguments.resize(8, Some(0));
@@ -1112,7 +1245,7 @@ impl Mac {
                             replacement: index,
                         })
                         .collect();
-                    rows.push((row, initial.clone()));
+                    rows.push((row, initial.clone(), words.clone()));
                 }
             }
         }
@@ -1123,7 +1256,13 @@ impl Mac {
 /// Compare every leaf; each must MATCH in every case and record effects.
 pub fn exercise(ctx: &mut Mac) -> Result<()> {
     for leaf in LEAVES {
-        let (rows, initial): (Vec<_>, Vec<_>) = ctx.cases(leaf)?.into_iter().unzip();
+        let mut rows = vec![];
+        let (mut initial, mut case_words) = (vec![], vec![]);
+        for (row, bytes, words) in ctx.cases(leaf)? {
+            rows.push(row);
+            initial.push(bytes);
+            case_words.push(words);
+        }
         let count = rows.len() as u32;
         let (vendor, production) = (ctx.vendor.clone(), ctx.production.clone());
         let records = ctx
@@ -1142,6 +1281,27 @@ pub fn exercise(ctx: &mut Mac) -> Result<()> {
                         leaf.vendor
                     )));
                 }
+            }
+            if leaf.dispatch.is_some() {
+                let expected = case_words[case as usize][0];
+                for side in [false, true] {
+                    let argument = crate::evidence::events(&records, case, side)
+                        .iter()
+                        .rev()
+                        .find_map(|e| match e {
+                            blobray_domain::ExecutionEvent::TransferArgument { word: 0, value } => {
+                                value.value()
+                            }
+                            _ => None,
+                        });
+                    if argument != Some(expected) {
+                        return Err(invalid(format!(
+                            "{} case {case}: side {side} reached its callee with {argument:?}",
+                            leaf.vendor
+                        )));
+                    }
+                }
+                continue;
             }
             // A leaf must act: a register effect, or a write that changes an
             // object it is compared through.

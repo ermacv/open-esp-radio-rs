@@ -38,6 +38,21 @@ pub struct Decision {
 /// Reviewed unobserved lines.
 pub const DECISIONS: &[Decision] = &[
     Decision {
+        reason: "status-four transmit-error classification, compared through the stop goal: \
+            each dispatch case completes only at its reviewed retry leaf, which dependence on \
+            compared effects does not record",
+        places: &[
+            (
+                "driver/ieee80211/mac/src/tx.rs",
+                "4 => match self.detail() {",
+            ),
+            (
+                "driver/ieee80211/mac/src/tx.rs",
+                "1 | 3..=5 => TxCompletionDisposition::Collision,",
+            ),
+        ],
+    },
+    Decision {
         reason: "claim of the validation-only radio owner capability in the isolated probe \
             image, which carries no data the leaf reads; the leaf's register effects and return \
             compare",

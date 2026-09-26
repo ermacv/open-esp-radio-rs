@@ -593,6 +593,25 @@ impl Session {
             .sum();
         let (total, time) = self.executed.get();
         self.executed.set((total + steps, time + seconds));
+        if result.verdict != verdict {
+            // Name the first case that departs from the expected verdict.
+            let departing = result.records.iter().find_map(|r| match r {
+                ExecutionEvidence::Comparison {
+                    case,
+                    result: compared,
+                } if Some(compared.verdict) != verdict => Some((*case, compared.clone())),
+                _ => None,
+            });
+            if let Some((case, compared)) = departing {
+                let stops: Vec<_> = [false, true]
+                    .map(|side| crate::evidence::stop(&result.records, case, side))
+                    .to_vec();
+                panic!(
+                    "{label}: {:?}, expected {verdict:?}; case {case} `{}`: {compared:?}; stops {stops:?}",
+                    result.verdict, request.cases[case as usize].name
+                );
+            }
+        }
         assert_eq!(result.verdict, verdict, "{label}");
         let identity = ArtifactId::of_bytes(&serde_json::to_vec(request)?);
         let records: Vec<ExecutionEvidence> = if events {

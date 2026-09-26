@@ -16,7 +16,8 @@ pub enum RadioError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NewError {
-    RadioAlreadyClaimed,
+    /// The shared PHY could not be prepared for Wi-Fi.
+    Phy(oer_esp32s31_radio_runtime::RadioPhyError),
     RadioStart,
     StationRole,
     MacStart,
@@ -89,41 +90,21 @@ impl WifiSystem {
     }
 }
 
-/// Sole application radio root. Consuming it materializes Wi-Fi exactly once;
-/// future BLE/802.15.4 roots remain owned by this boundary until implemented.
-pub struct RadioInstance {
-    wifi: WifiSystem,
-    initialization: RadioInitialization,
-}
-
-/// Named subsystem capabilities returned by the radio root.
-pub struct RadioParts {
+/// Wi-Fi started on the shared radio: the application capabilities, the
+/// bring-up evidence and the sole owner-holding runner.
+pub struct WifiStarted {
     pub wifi: WifiSystem,
-    pub initialization: RadioInitialization,
+    pub initialization: WifiInitialization,
+    pub runner: crate::SystemRunner,
 }
 
-impl RadioInstance {
-    pub(super) const fn new(wifi: WifiSystem, initialization: RadioInitialization) -> Self {
-        Self {
-            wifi,
-            initialization,
-        }
-    }
-
-    pub fn into_parts(self) -> RadioParts {
-        RadioParts {
-            wifi: self.wifi,
-            initialization: self.initialization,
-        }
-    }
-}
-
-/// Value-only cold-start evidence available without exposing PHY, register or
-/// calibration owners.
-pub struct RadioInitialization {
+/// Value-only evidence of Wi-Fi's bring-up on the shared radio, without
+/// exposing PHY, register or calibration owners.
+pub struct WifiInitialization {
+    /// How the shared PHY was prepared for Wi-Fi. Only the first client to
+    /// join registers the domain; its registration reports the calibration
+    /// path and carries the fresh calibration cache.
+    pub phy: oer_esp32s31_radio_runtime::RadioPhyPrepared,
     pub start: oer_esp32s31_ieee80211::mac_start::WifiMacStartReport,
-    /// The cold registration this initialization performed.
-    pub registration: oer_esp32s31_phy::PhyRegisterOutcome,
     pub transition: oer_esp32s31_ieee80211::runtime::WifiRuntimeTransitionReport,
-    pub calibration_cache: Option<oer_esp32s31_phy::PhyCalibrationCache>,
 }

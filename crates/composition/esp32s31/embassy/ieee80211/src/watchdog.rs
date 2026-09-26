@@ -8,25 +8,22 @@ use oer_esp32s31_soc_esp_hal::watchdog::{DeadlineBudget, DeadlineLease, Deadline
 pub struct WatchdogConfig {
     watchdog: &'static DeadlineWatchdog,
     startup: DeadlineBudget,
-    maintenance: DeadlineBudget,
     shutdown: DeadlineBudget,
 }
 impl WatchdogConfig {
     /// Bind caller-owned stable policy to one exclusive SoC deadline service.
-    /// Startup covers cold registration/tracking or powered restart;
-    /// maintenance includes quiescence and full restoration; shutdown covers
-    /// physical release (and a complete retained close/wake cycle in Wi-Fi).
+    /// Startup covers Wi-Fi bring-up on the shared radio, including the
+    /// first client's PHY registration or RF wake; shutdown covers MAC/RX/IRQ
+    /// quiescence and Wi-Fi's release from the shared radio.
     /// Place this configuration in static board/application storage.
     pub const fn new(
         watchdog: &'static DeadlineWatchdog,
         startup: DeadlineBudget,
-        maintenance: DeadlineBudget,
         shutdown: DeadlineBudget,
     ) -> Self {
         Self {
             watchdog,
             startup,
-            maintenance,
             shutdown,
         }
     }
@@ -44,15 +41,6 @@ impl WatchdogConfig {
     }
     pub(crate) fn shutdown(self) -> DeadlineLease<'static> {
         self.begin(self.shutdown)
-    }
-    pub(crate) fn maintenance(self, remaining_micros: Option<u64>) -> DeadlineLease<'static> {
-        let micros = remaining_micros
-            .unwrap_or(u64::from(self.maintenance.as_micros()))
-            .min(u64::from(self.maintenance.as_micros())) as u32;
-        let Some(micros) = core::num::NonZeroU32::new(micros) else {
-            oer_esp32s31_soc_esp_hal::reset_system()
-        };
-        self.begin(DeadlineBudget::from_micros(micros))
     }
     #[inline(never)]
     pub(crate) fn complete(lease: DeadlineLease<'_>) {

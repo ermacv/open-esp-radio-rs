@@ -9,9 +9,8 @@ Send nor Sync. The recorder belongs to the unique platform timer owner.
 
 A window includes all users of the shared timer. It does not identify the PHY
 future or promise that an interrupt corresponds to one particular requested
-settling interval. The HIL station pause opens a window around the complete
-pause request, including control handoff, and closes it before publishing
-results. These boundaries differ from the physical radio-exclusive interval.
+settling interval. Window boundaries differ from any physical radio-exclusive
+interval.
 
 ```mermaid
 sequenceDiagram

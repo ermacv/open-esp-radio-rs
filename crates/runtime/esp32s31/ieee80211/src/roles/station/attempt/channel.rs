@@ -1,5 +1,10 @@
 use super::*;
 
+use oer_esp32s31_hal::shared_radio::PlatformClockProvider;
+use oer_esp32s31_phy::ConcurrentWifiChannelError;
+
+use crate::roles::radio_channel::RadioChannel;
+
 /// Channel-switch capability accepted by the concrete attempt owner.
 pub trait StaAttemptChannel<H> {
     fn switch_channel<'a>(
@@ -7,11 +12,12 @@ pub trait StaAttemptChannel<H> {
         hardware: &'a mut H,
         channel_or_frequency: u16,
         cbw: u8,
-    ) -> impl Future<Output = Result<(), PhyTargetPortError>> + 'a;
+    ) -> impl Future<Output = Result<(), ConcurrentWifiChannelError>> + 'a;
 }
 
-impl<P, O, D> StaAttemptChannel<RadioRuntimeOwner> for ScanPhy<'_, P, O, D>
+impl<P, C, O, D> StaAttemptChannel<RadioRuntimeOwner> for RadioChannel<'_, P, C, O, D>
 where
+    C: PlatformClockProvider,
     O: PhyTargetObserver,
     D: PhyAsyncDelay,
 {
@@ -20,13 +26,15 @@ where
         hardware: &'a mut RadioRuntimeOwner,
         channel_or_frequency: u16,
         cbw: u8,
-    ) -> impl Future<Output = Result<(), PhyTargetPortError>> + 'a {
-        ScanPhy::switch_channel(self, channel_or_frequency, cbw, hardware)
+    ) -> impl Future<Output = Result<(), ConcurrentWifiChannelError>> + 'a {
+        RadioChannel::switch_channel(self, channel_or_frequency, cbw, hardware)
     }
 }
 
-impl<'arena, P, O, D> StaAttemptChannel<CooperativeRadioHardware<'arena>> for ScanPhy<'_, P, O, D>
+impl<'arena, P, C, O, D> StaAttemptChannel<CooperativeRadioHardware<'arena>>
+    for RadioChannel<'_, P, C, O, D>
 where
+    C: PlatformClockProvider,
     O: PhyTargetObserver,
     D: PhyAsyncDelay,
 {
@@ -35,7 +43,7 @@ where
         hardware: &'a mut CooperativeRadioHardware<'arena>,
         channel_or_frequency: u16,
         cbw: u8,
-    ) -> Result<(), PhyTargetPortError> {
+    ) -> Result<(), ConcurrentWifiChannelError> {
         let access = hardware.register_access();
         self.switch_published_channel(channel_or_frequency, cbw, access)
             .await

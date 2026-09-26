@@ -2,9 +2,8 @@
 //!
 //! The supervisor transfers its non-`Send` runner to one permanent child task on its
 //! recorded executor. The non-`Sync` mailbox retains the exact returned runner;
-//! signals carry pause, stop and completion notifications. A pause returns the
-//! same runner to its parent for physical suspension and resubmission. Stop
-//! stays latched across that handoff and retains ordinary terminal teardown.
+//! signals carry stop and completion notifications. Stop stays latched and
+//! retains ordinary terminal teardown.
 
 use core::cell::{Cell, RefCell};
 
@@ -14,14 +13,14 @@ use core::future::{Future, poll_fn};
 
 use embassy_executor::Spawner;
 
-use embassy_futures::select::{Either, Either3, select, select3};
+use embassy_futures::select::{Either, select};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 use exchange::Exchange;
 
 use oer_esp32s31_ieee80211_runtime::{
-    datapath::execution::{Control, Exit},
+    datapath::{DatapathRunnerExit, execution::Control},
     roles::station::connected::{StationCommand, StationCommandReceiver},
 };
 
@@ -33,7 +32,8 @@ use super::{ConnectedDatapathError, ConnectedDatapathRunner};
 
 pub(super) struct ConnectedDatapathTaskReturn {
     pub(super) runner: ConnectedDatapathRunner,
-    pub(super) result: Result<Exit<ConnectedDisconnectReason>, ConnectedDatapathError>,
+    pub(super) result:
+        Result<DatapathRunnerExit<ConnectedDisconnectReason>, ConnectedDatapathError>,
 }
 
 /// Same-executor rendezvous for the non-`Send` connected radio owner.
@@ -42,10 +42,7 @@ pub(super) struct ConnectedDatapathTaskReturn {
 /// not implement `Sync`: both participants are spawned by the one Core0
 /// executor recorded before the physical supervisor starts.
 pub(crate) struct ConnectedDatapathMailbox {
-    // Configuration stays with the permanent worker, not every moved role union.
-    watchdog: &'static crate::WatchdogConfig,
     bound: Cell<bool>,
-    pause: &'static super::pause::Storage,
     exchange: Exchange<ConnectedDatapathRunner, ConnectedDatapathTaskReturn>,
     control: RefCell<Control<CriticalSectionRawMutex>>,
     #[cfg(feature = "connected-datapath-cycle-telemetry")]
@@ -54,16 +51,12 @@ pub(crate) struct ConnectedDatapathMailbox {
 
 impl ConnectedDatapathMailbox {
     const fn new(
-        watchdog: &'static crate::WatchdogConfig,
-        pause: &'static super::pause::Storage,
         #[cfg(feature = "connected-datapath-cycle-telemetry")] poll_observer: Option<
             crate::ConnectedDatapathPollObserver,
         >,
     ) -> Self {
         Self {
-            watchdog,
             bound: Cell::new(false),
-            pause,
             exchange: Exchange::new(),
             control: RefCell::new(Control::new()),
             #[cfg(feature = "connected-datapath-cycle-telemetry")]
@@ -86,21 +79,13 @@ impl ConnectedDatapathMailbox {
             self.bound.get(),
             "radio runner binds its Core0 executor before station start"
         );
-        self.resume(runner);
-        // No await: the same-core worker cannot poll before this new epoch
-        // replaces control. Failed submission must never clear an old Stop.
-        *self.control.borrow_mut() = Control::new();
-    }
-
-    // Materialize the by-value exchange only in this synchronous leaf. Its
-    // temporary runner must not occupy the caller's poll frame while PHY
-    // calibration executes through that same future.
-    #[inline(never)]
-    pub(super) fn resume(&self, runner: &mut Option<ConnectedDatapathRunner>) {
         let runner = runner.take().expect("live connected runner");
         if self.exchange.submit(runner).is_err() {
             panic!("previous connected datapath owner must be reclaimed");
         }
+        // No await: the same-core worker cannot poll before this new epoch
+        // replaces control. Failed submission must never clear an old Stop.
+        *self.control.borrow_mut() = Control::new();
     }
 
     pub(super) fn request_stop(&self) {
@@ -120,20 +105,15 @@ impl ConnectedDatapathMailbox {
     }
 }
 
-static CONNECTED_PAUSE_STORAGE: StaticCell<super::pause::Storage> = StaticCell::new();
-
 static CONNECTED_DATAPATH_MAILBOX: StaticCell<ConnectedDatapathMailbox> = StaticCell::new();
 
 pub(in crate::supervisor) fn initialize_connected_datapath_mailbox(
-    watchdog: &'static crate::WatchdogConfig,
     #[cfg(feature = "connected-datapath-cycle-telemetry")] poll_observer: Option<
         crate::ConnectedDatapathPollObserver,
     >,
 ) -> &'static ConnectedDatapathMailbox {
     CONNECTED_DATAPATH_MAILBOX.init_with(|| {
         ConnectedDatapathMailbox::new(
-            watchdog,
-            CONNECTED_PAUSE_STORAGE.init_with(super::pause::Storage::new),
             #[cfg(feature = "connected-datapath-cycle-telemetry")]
             poll_observer,
         )
@@ -196,208 +176,26 @@ async fn connected_datapath_task(mailbox: &'static ConnectedDatapathMailbox) {
     }
 }
 
-pub(super) async fn wait_connected_datapath_completion(
-    mailbox: &'static ConnectedDatapathMailbox,
-    control: &mut StationCommandReceiver<'_, CriticalSectionRawMutex>,
-    role: &super::pause::Role,
-) -> (
-    Option<StationCommand>,
-    super::PauseOperation,
-    bool,
-    Option<oer_esp32s31_soc_esp_hal::watchdog::DeadlineLease<'static>>,
-) {
-    use super::PauseOperation;
-    match select3(
-        mailbox.wait_completed(),
-        control.wait(),
-        super::pause_request::REQUESTS.wait_next(wait_automatic(role)),
-    )
-    .await
-    {
-        Either3::First(()) => (None, PauseOperation::Access, false, None),
-        Either3::Second(command) => {
-            mailbox.request_stop();
-            mailbox.wait_completed().await;
-            (Some(command), PauseOperation::Access, false, None)
-        }
-        Either3::Third(request) => {
-            let (operation, automatic) = match request {
-                Either::First(operation) => (operation, false),
-                Either::Second(operation) => (PauseOperation::Automatic(operation), true),
-            };
-            // Include draining the active datapath, not just the PHY poll.
-            mailbox
-                .pause
-                .edge(super::pause_request::timeline::Edge::Requested);
-            let protection = mailbox.watchdog.maintenance(None);
-            mailbox.control.borrow().request_pause();
-            match select(mailbox.wait_completed(), control.wait()).await {
-                Either::First(()) => (None, operation, automatic, Some(protection)),
-                Either::Second(command) => {
-                    mailbox.request_stop();
-                    mailbox.wait_completed().await;
-                    (Some(command), operation, automatic, Some(protection))
-                }
-            }
-        }
-    }
-}
-
-/// Keep active execution separate from connection assembly and terminal teardown.
-/// A physical fault returns a reference to its already retained owner frontier.
-#[allow(clippy::type_complexity)]
+/// Keep active execution separate from connection assembly and terminal
+/// teardown. A station command stops the worker at its next TX-idle boundary.
 pub(super) async fn run(
     mailbox: &'static ConnectedDatapathMailbox,
     station_control: &mut StationCommandReceiver<'_, CriticalSectionRawMutex>,
-    mut interrupt_epoch: crate::interrupts::MacInterruptEpoch,
-    tracking: Option<super::TrackingConfig>,
-    role: &mut Option<super::pause::Role>,
     runner: &mut Option<ConnectedDatapathRunner>,
-) -> Result<
-    (
-        crate::interrupts::MacInterruptEpoch,
-        Result<
-            oer_esp32s31_ieee80211_runtime::datapath::DatapathRunnerExit<ConnectedDisconnectReason>,
-            ConnectedDatapathError,
-        >,
-        Option<StationCommand>,
-    ),
-    &'static super::pause::Failure,
-> {
-    use super::{PauseError, pause, pause_request};
-    use oer_esp32s31_ieee80211_runtime::datapath::DatapathRunnerExit;
-    use oer_ieee80211_runtime::await_stack_boundary;
-    let _pause_availability = pause_request::REQUESTS.open(tracking);
-    let mut requested_command = None;
+) -> (
+    Result<DatapathRunnerExit<ConnectedDisconnectReason>, ConnectedDatapathError>,
+    Option<StationCommand>,
+) {
     mailbox.start(runner);
-    loop {
-        let (requested, operation, automatic, mut protection) =
-            await_stack_boundary!(wait_connected_datapath_completion(
-                mailbox,
-                station_control,
-                role.as_ref().expect("connected PHY owner")
-            ));
-        requested_command = requested_command
-            .into_iter()
-            .chain(requested)
-            .max_by_key(|command| *command as u8);
-        let result = take_runner(mailbox, runner);
-        match result {
-            Ok(Exit::Paused) => {
-                use super::pause_request::timeline::Edge;
-                mailbox.pause.edge(Edge::Drained);
-                let mut completion = None;
-                if requested_command.is_none() {
-                    let started = embassy_time::Instant::now();
-                    match await_stack_boundary!(pause::round_trip(
-                        interrupt_epoch,
-                        role,
-                        operation,
-                        runner,
-                        mailbox.pause
-                    )) {
-                        Ok((irq, result)) => {
-                            interrupt_epoch = irq;
-                            mailbox.pause.edge(Edge::ProtocolRestored);
-                            let elapsed_micros = started.elapsed().as_micros();
-                            completion = Some((result, elapsed_micros));
-                        }
-                        Err(failure) => {
-                            let stage = failure.stage();
-                            crate::maintenance_policy::enforce(failure, stage.shared_phy_failure());
-                            complete_protection(&mut protection);
-                            pause_request::REQUESTS
-                                .automatic
-                                .report(super::TrackingStatus::Failed(stage));
-                            pause_request::REQUESTS.finish(Err(stage));
-                            return Err(failure);
-                        }
-                    }
-                } else if !automatic {
-                    pause_request::REQUESTS.finish(Err(PauseError::Interrupted));
-                }
-                // Requests arriving while the parent owns the physical pause
-                // must be latched before the worker can schedule another frame.
-                requested_command = requested_command
-                    .into_iter()
-                    .chain(station_control.try_take())
-                    .max_by_key(|command| *command as u8);
-                if requested_command.is_some() {
-                    mailbox.request_stop();
-                }
-                mailbox.resume(runner);
-                mailbox.pause.edge(Edge::WorkerReleased);
-                complete_protection(&mut protection);
-                // Publish success only after returning the restored owner to
-                // its worker. Capture the older stop/resume elapsed separately.
-                if let Some((result, elapsed_micros)) = completion {
-                    if automatic {
-                        let super::PauseOperation::Automatic(operation) = operation else {
-                            unreachable!("automatic selected operation")
-                        };
-                        match result {
-                            Ok(outcome) => pause_request::REQUESTS.automatic.completed(
-                                operation,
-                                elapsed_micros,
-                                outcome,
-                            ),
-                            Err(error) => pause_request::REQUESTS
-                                .automatic
-                                .report(super::TrackingStatus::Failed(error)),
-                        }
-                    } else {
-                        finish_pause(mailbox, result, elapsed_micros);
-                    }
-                }
-            }
-            Ok(Exit::Stopped) => {
-                complete_protection(&mut protection);
-                return Ok((
-                    interrupt_epoch,
-                    Ok(DatapathRunnerExit::Stopped),
-                    requested_command,
-                ));
-            }
-            Ok(Exit::Role(reason)) => {
-                complete_protection(&mut protection);
-                return Ok((
-                    interrupt_epoch,
-                    Ok(DatapathRunnerExit::Role(reason)),
-                    requested_command,
-                ));
-            }
-            Err(error) => {
-                complete_protection(&mut protection);
-                return Ok((interrupt_epoch, Err(error), requested_command));
-            }
+    let command = match select(mailbox.wait_completed(), station_control.wait()).await {
+        Either::First(()) => None,
+        Either::Second(command) => {
+            mailbox.request_stop();
+            mailbox.wait_completed().await;
+            Some(command)
         }
-    }
-}
-
-fn complete_protection(
-    protection: &mut Option<oer_esp32s31_soc_esp_hal::watchdog::DeadlineLease<'static>>,
-) {
-    if let Some(protection) = protection.take() {
-        crate::WatchdogConfig::complete(protection);
-    }
-}
-
-// Materialize the diagnostic snapshot after the hardware call chain has
-// unwound. Its by-value signal payload need not live on the calibration stack.
-#[inline(never)]
-fn finish_pause(
-    _mailbox: &ConnectedDatapathMailbox,
-    result: Result<Option<oer_esp32s31_phy::tracking::PhyParamTrackingOutcome>, super::PauseError>,
-    elapsed_micros: u64,
-) {
-    super::pause_request::REQUESTS.finish(result.map(|tracking| super::PauseReport {
-        #[cfg(feature = "diagnostics")]
-        timings: _mailbox.pause.timings(),
-        #[cfg(feature = "diagnostics")]
-        timeline: _mailbox.pause.timeline(),
-        tracking,
-        elapsed_micros,
-    }));
+    };
+    (take_runner(mailbox, runner), command)
 }
 
 /// Transfer once into caller-owned storage instead of keeping a second complete
@@ -406,48 +204,8 @@ fn finish_pause(
 fn take_runner(
     mailbox: &ConnectedDatapathMailbox,
     runner: &mut Option<ConnectedDatapathRunner>,
-) -> Result<Exit<ConnectedDisconnectReason>, ConnectedDatapathError> {
+) -> Result<DatapathRunnerExit<ConnectedDisconnectReason>, ConnectedDatapathError> {
     let returned = mailbox.take_return();
     *runner = Some(returned.runner);
     returned.result
-}
-
-async fn wait_automatic(
-    role: &super::pause::Role,
-) -> oer_esp32s31_phy::tracking::maintenance::Operation {
-    use super::{TrackingStatus, pause_request::REQUESTS};
-    use oer_esp32s31_phy::tracking::service::{Demand, Suspension};
-    loop {
-        let (config, observation_requested) = REQUESTS.automatic.snapshot();
-        let Some(config) = config else {
-            REQUESTS.automatic.changed().await;
-            continue;
-        };
-        let now = embassy_time::Instant::now().as_micros();
-        let demand = match role.inspect_phy_tracking(now) {
-            Ok(snapshot) => config.inspect(snapshot, now, observation_requested),
-            Err(_) => Demand::Suspended(Suspension::Clock),
-        };
-        match demand {
-            Demand::Run(operation) => {
-                if REQUESTS.automatic.try_begin(config, operation) {
-                    return operation;
-                }
-            }
-            Demand::At(deadline_micros) => {
-                REQUESTS
-                    .automatic
-                    .report(TrackingStatus::Waiting { deadline_micros });
-                select(
-                    embassy_time::Timer::at(embassy_time::Instant::from_micros(deadline_micros)),
-                    REQUESTS.automatic.changed(),
-                )
-                .await;
-            }
-            Demand::Suspended(reason) => {
-                REQUESTS.automatic.report(TrackingStatus::Suspended(reason));
-                REQUESTS.automatic.changed().await;
-            }
-        }
-    }
 }

@@ -14,7 +14,11 @@ use crate::roles::scan::{
     rx::ScanFrameObserver,
 };
 
-use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError, RegisteredWifiPhy};
+use oer_esp32s31_hal::shared_radio::PlatformClockProvider;
+use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver};
+use oer_esp32s31_radio_runtime::RadioSystem;
+
+use crate::roles::radio_channel::RadioChannel;
 
 use oer_esp32s31_ieee80211::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
@@ -26,7 +30,6 @@ use oer_esp32s31_ieee80211_mac::{
 use oer_esp32s31_ieee80211_sta::{
     attempt::{StaAttemptSecurity, StaIdentity},
     control_tx::{ControlTransmitter, ControlTxError},
-    hardware::channel::ScanPhy,
     scan::{StaScanBackend, StaScanConfig, StaScanError},
     scan_tx::{RunningScanTx, ScanTxSummary},
 };
@@ -173,6 +176,7 @@ pub struct StationScanResources<
     'sequence,
     'slot,
     P,
+    C,
     Q,
     D,
     H,
@@ -185,8 +189,8 @@ pub struct StationScanResources<
     const RECORDS: usize,
     const TX_BUFFER_SIZE: usize,
 > {
-    pub phy: &'radio mut RegisteredWifiPhy,
-    pub platform: &'radio mut P,
+    /// The shared radio; each channel switch leases it for one transaction.
+    pub radio: &'radio RadioSystem<P, C>,
     pub phy_observer: Q,
     pub phy_delay: D,
     pub hardware: H,
@@ -410,6 +414,7 @@ pub async fn run_esp32s31_station_scan<
     'rates,
     'channels,
     P,
+    C,
     Q,
     D,
     H,
@@ -428,6 +433,7 @@ pub async fn run_esp32s31_station_scan<
         'sequence,
         'slot,
         P,
+        C,
         Q,
         D,
         H,
@@ -459,7 +465,7 @@ pub async fn run_esp32s31_station_scan<
         TX_BUFFER_SIZE,
     >,
     StaScanError<
-        ScanPortError<PhyTargetPortError, <R as ScanReceivePort<H>>::Error, ControlTxError>,
+        ScanPortError<ConcurrentWifiChannelError, <R as ScanReceivePort<H>>::Error, ControlTxError>,
     >,
 >
 where
@@ -472,11 +478,11 @@ where
     T: WifiTxTimer,
     O: ScanFrameObserver,
     W: ScanTimer,
-    ScanPhy<'radio, P, Q, D>: ScanPhyPort<H, Error = PhyTargetPortError>,
+    C: PlatformClockProvider,
+    RadioChannel<'radio, P, C, Q, D>: ScanPhyPort<H, Error = ConcurrentWifiChannelError>,
 {
     let StationScanResources {
-        phy,
-        platform,
+        radio,
         phy_observer,
         phy_delay,
         hardware,
@@ -506,7 +512,7 @@ where
     .with_candidate_selection(request.select_candidate);
     let owner = ScanPort::new(
         ScanRadio::new(
-            ScanPhy::<_, _, D>::new(phy, platform, phy_observer),
+            RadioChannel::<_, _, _, D>::new(radio, phy_observer),
             hardware,
             receive,
             RunningScanTx::new(control),
@@ -546,7 +552,7 @@ where
         } => (owner, StationScanDecision::InvalidPlan { error, progress }),
     };
     let parts = owner.into_parts();
-    let (_phy, _platform, phy_observer) = parts.phy.into_parts();
+    let phy_observer = parts.phy.into_observer();
     let (control, transmit) = parts.tx.into_parts();
     StationScanOutcome {
         returned: StationScanReturned {

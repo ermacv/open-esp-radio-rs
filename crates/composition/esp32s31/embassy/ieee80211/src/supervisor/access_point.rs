@@ -79,7 +79,7 @@ pub(super) struct ProductionAccessPointParked {
 
 pub(super) struct ProductionAccessPointTask {
     channel: WifiChannel,
-    owner: WifiRoleOwner<EspHalRadioPeripheral>,
+    owner: WifiRoleOwner<EspHalWifiPlatform>,
     registers: RadioRuntimeOwner,
     interrupts: MacInterruptEpoch,
     service: ProductionAccessPointControl,
@@ -88,7 +88,7 @@ pub(super) struct ProductionAccessPointTask {
 }
 
 pub(super) struct ProductionAccessPointPreflightFault {
-    _owner: WifiRoleOwner<EspHalRadioPeripheral>,
+    _owner: WifiRoleOwner<EspHalWifiPlatform>,
     _registers: RadioRuntimeOwner,
     _interrupts: MacInterruptEpoch,
     _physical: ProductionWifiPhysicalResources,
@@ -100,7 +100,7 @@ pub(super) struct ProductionAccessPointPreflightFault {
 }
 
 pub(super) struct ProductionAccessPointEngineFault {
-    _owner: WifiRoleOwner<EspHalRadioPeripheral>,
+    _owner: WifiRoleOwner<EspHalWifiPlatform>,
     _registers: RadioRuntimeOwner,
     _interrupts: MacInterruptEpoch,
     _ring: ProductionRxRing,
@@ -128,7 +128,7 @@ pub(super) enum ProductionAccessPointPreparationFault {
 
 pub(super) enum ProductionAccessPointTeardownFault {
     Aggregate {
-        _owner: WifiRoleOwner<EspHalRadioPeripheral>,
+        _owner: WifiRoleOwner<EspHalWifiPlatform>,
         _registers: RadioRuntimeOwner,
         _interrupts: MacInterruptEpoch,
         _stopped: ProductionAccessPointStopped,
@@ -136,7 +136,7 @@ pub(super) enum ProductionAccessPointTeardownFault {
         _parked: ProductionAccessPointParked,
     },
     TxRestore {
-        _owner: WifiRoleOwner<EspHalRadioPeripheral>,
+        _owner: WifiRoleOwner<EspHalWifiPlatform>,
         _registers: RadioRuntimeOwner,
         _interrupts: MacInterruptEpoch,
         _ring: ProductionRxRing,
@@ -200,16 +200,19 @@ impl ProductionWifiEpochRunner {
         if requested_channel != current_channel {
             diagnostics_event!("open-radio: AP prepare channel switch begin");
             let lowered_channel = lower_wifi_channel(requested_channel);
-            let observer = NoopPhyTargetObserver;
-            let (phy, platform) = materialized.owner.radio_mut();
-            let mut channel = ScanPhy::<_, _, EmbassyPhyTime>::new(phy, platform, observer);
-            if await_stack_boundary!(channel.select_channel(
-                lowered_channel.channel_or_frequency,
-                lowered_channel.cbw,
-                &mut materialized.registers,
-            ))
-            .is_err()
-            {
+            let mut channel = ScanPhy::<_, EmbassyPhyTime>::new(NoopPhyTargetObserver);
+            let selected = {
+                let mut guard = self.radio.lock().await;
+                let (lease, platform, _) = guard.parts();
+                await_stack_boundary!(channel.select_channel(
+                    lease,
+                    platform,
+                    lowered_channel.channel_or_frequency,
+                    lowered_channel.cbw,
+                    &mut materialized.registers,
+                ))
+            };
+            if selected.is_err() {
                 return Err(ProductionAccessPointPreparationFault::Preflight {
                     _fault: ProductionAccessPointPreflightFault {
                         _owner: materialized.owner,
@@ -242,12 +245,7 @@ impl ProductionWifiEpochRunner {
             board,
             station_address,
         } = station;
-        let power = materialized
-            .owner
-            .radio_mut()
-            .0
-            .state()
-            .tx_target_power_profile();
+        let power = materialized.owner.start_report().wifi.tx_power;
         let tx_epoch = self.initialize_tx_epoch(tx, power);
         let ring = match rx_ring {
             Some(ring) => ring,
@@ -659,13 +657,6 @@ pub(super) async fn wait_for_active_wifi_role_stop(
                     )))
                     .await;
             }
-            EmbassyWifiSupervisorCommand::CycleRetainedRadio => {
-                endpoint
-                    .respond(EmbassyWifiSupervisorResponse::CycleRetainedRadio(Err(
-                        RadioError::RoleActive(EmbassyWifiStartKind::WholeRadioRetainedCycle),
-                    )))
-                    .await;
-            }
             EmbassyWifiSupervisorCommand::Scan(request) => {
                 endpoint
                     .respond(EmbassyWifiSupervisorResponse::Scan(Err(
@@ -768,7 +759,7 @@ impl ProductionWifiEpochRunner {
             .and_then(|hooks| hooks.rx_delivery);
         let result = {
             let network = task.parked.station.resume.radio_runner_mut();
-            let (_, platform) = task.owner.radio_mut();
+            let platform = task.owner.platform_mut();
             await_stack_boundary!(
                 task.service.run_until_stopped(
                     &mut task.registers,

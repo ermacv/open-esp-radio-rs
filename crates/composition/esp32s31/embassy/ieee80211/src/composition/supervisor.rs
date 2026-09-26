@@ -288,15 +288,17 @@ pub async fn drive_esp32s31_monitor_role<
     Reject,
     D,
     O,
+    RP,
+    RC,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 >(
     endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
     controller: &mut MonitorController<'runtime, M>,
+    radio: &oer_esp32s31_radio_runtime::RadioSystem<RP, RC>,
     task: MonitorTask<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     channel_policy: MonitorChannelPolicy,
-    _delay: D,
     observer: &mut O,
     reject_while_active: Reject,
 ) -> EmbassyWifiActiveRoleExit<
@@ -314,8 +316,9 @@ where
     Reject: FnMut(EmbassyWifiStartKind) -> E,
     D: PhyAsyncDelay,
     O: PhyTargetObserver,
+    RC: oer_esp32s31_hal::shared_radio::PlatformClockProvider,
 {
-    let role = task.run_channel_policy_to_exit::<D, O>(channel_policy, observer);
+    let role = task.run_channel_policy_to_exit::<D, O, RP, RC>(radio, channel_policy, observer);
     let mut role = core::pin::pin!(role);
     let mut control = MonitorActiveRoleControl { inner: controller };
     await_stack_boundary!(drive_embassy_wifi_active_role_pinned(

@@ -1,47 +1,58 @@
 #![no_std]
 #![deny(unsafe_code, clippy::undocumented_unsafe_blocks)]
 
-//! Concrete ESP32-S31 Embassy radio composition.
+//! Concrete ESP32-S31 Embassy Wi-Fi composition on the shared radio.
 //!
-//! On ESP32-S31, `new` returns one application radio root and the sole owner-holding
-//! runner. Board firmware owns credentials, IP policy and sockets; it does not
-//! assemble PAC, DMA, ISR or role transactions. The [`resources`] profile is also
-//! available on the host for product resource and ownership validation.
+//! On ESP32-S31, `new` brings Wi-Fi up as a client of the application's
+//! [`SharedRadio`] and returns the Wi-Fi application capabilities with the
+//! sole owner-holding runner. Board firmware owns credentials, IP policy and
+//! sockets; it does not assemble PAC, DMA, ISR or role transactions. The
+//! [`resources`] profile is also available on the host for product resource
+//! and ownership validation.
 //!
-//! Connected and stopped-role PHY maintenance use the shared-PHY terminal
-//! policy: an invalid PHY owner, unconfirmed MAC/RX stop or failed hardware
-//! restoration requests system reset while retaining the failed frontier.
-//! The composition selects that response through the non-radio SoC adapter;
+//! Every shared-PHY transaction (bring-up, channel changes, release) takes the
+//! radio arbiter lease for that one transaction; the shared radio's periodic
+//! tracking is the only PHY maintenance. Lifecycle failures use the
+//! shared-PHY terminal policy: an unconfirmed MAC/RX stop, an ambiguous RF
+//! close/wake or registration, and failed initial tracking or channel
+//! execution request system reset while retaining the failed frontier. The
+//! composition selects that response through the non-radio SoC adapter;
 //! neither PHY nor MAC/DMA drivers depend on a reset/watchdog mechanism.
-//! Rejected requests and physical admission, peer-notification errors, and
-//! ownership faults at an already-quiesced frontier retain their existing
-//! rejection/quarantine behavior. They do not authorize automatic restart.
-//! Explicit shutdown/cycling and restart use the same policy: ambiguous RF
-//! close/wake, incomplete registration cleanup and failed initial tracking or
-//! channel execution request reset. Unchanged preparation, completed cleanup,
-//! closed-RF reunion, shared-client and pending-work failures retain their
-//! non-runnable lifecycle owners without escalation.
-//! Initial cold start applies the same classification and retains rejected
-//! hardware in the lifecycle fault slot instead of discarding its owner.
+//! Rejected requests and ownership faults at an already-quiesced frontier
+//! retain their non-runnable owners without escalation.
 //! [`RadioConfig`] additionally requires a stable caller-owned [`WatchdogConfig`]
-//! and explicit startup, maintenance and shutdown budgets. Its SoC TIMG1 lease
-//! starts before quiescence and remains armed through hardware restoration.
-//! Cancellation leaves the timer armed; no periodic feed or default exists.
-//! This does not qualify a worst-case reset-to-RF-off bound.
+//! and explicit startup and shutdown budgets. Its SoC TIMG1 lease starts
+//! before the transition and remains armed until it completes. Cancellation
+//! leaves the timer armed; no periodic feed or default exists. This does not
+//! qualify a worst-case reset-to-RF-off bound.
 
 #[cfg(target_arch = "riscv32")]
-mod maintenance_policy;
+mod lifecycle_policy;
 #[cfg(target_arch = "riscv32")]
 mod watchdog;
 #[cfg(target_arch = "riscv32")]
 pub use watchdog::WatchdogConfig;
 
-// Inputs of `new`, `RadioConfig` and `WatchdogConfig`, so an application can
-// construct the composition through this crate (or the `oer` facade) alone.
+// Inputs of `new`, `RadioConfig` and `WatchdogConfig`, and the shared radio
+// they join, so an application can construct the composition through this
+// crate (or the `oer` facade) alone.
 #[cfg(target_arch = "riscv32")]
-pub use oer_esp32s31_ieee80211_esp_hal::EspHalRadioPeripheral;
+pub use oer_esp32s31_hal::root::{ConcurrentPartitions, RadioHardware, WifiPartition};
+#[cfg(target_arch = "riscv32")]
+pub use oer_esp32s31_ieee80211_esp_hal::EspHalWifiPlatform;
 pub use oer_esp32s31_ieee80211_mac::tx::protection::RtsLengthThreshold;
-pub use oer_esp32s31_phy::{PhyCalibrationIdentity, phy_get_rf_cal_version};
+#[cfg(target_arch = "riscv32")]
+pub use oer_esp32s31_radio_esp_hal::{EspHalRadioClocks, EspHalRadioPlatform};
+#[cfg(target_arch = "riscv32")]
+pub use oer_esp32s31_radio_runtime::{RadioPhyError, RadioPhyPrepared};
+
+/// The shared ESP32-S31 radio Wi-Fi joins: the arbiter with the esp-hal
+/// platform and clock sources. The application creates it once and runs its
+/// periodic PHY tracking
+/// ([`RadioSystem::run_tracking`](oer_esp32s31_radio_runtime::RadioSystem::run_tracking)).
+#[cfg(target_arch = "riscv32")]
+pub type SharedRadio =
+    oer_esp32s31_radio_runtime::RadioSystem<EspHalRadioPlatform, EspHalRadioClocks>;
 #[cfg(target_arch = "riscv32")]
 pub use oer_esp32s31_soc_esp_hal::watchdog::{DeadlineBudget, DeadlineWatchdog};
 pub use oer_ieee80211_runtime::await_stack_boundary;
@@ -182,8 +193,7 @@ pub use esp_now::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use facade::{
-    NewError, RadioError, RadioInitialization, RadioInstance, RadioParts, WifiControl, WifiParts,
-    WifiSystem,
+    NewError, RadioError, WifiControl, WifiInitialization, WifiParts, WifiStarted, WifiSystem,
 };
 #[cfg(feature = "mac-irq-diagnostics")]
 #[cfg(target_arch = "riscv32")]
@@ -253,13 +263,7 @@ pub use status::{
 #[cfg(target_arch = "riscv32")]
 pub use supervisor::station::{DiagnosticRxStatistics, DiagnosticSnapshot, DiagnosticTxVector};
 #[cfg(target_arch = "riscv32")]
-pub use supervisor::station::{
-    PauseError, PauseOperation, PauseReport, PauseTimeline, TrackingConfig, TrackingReport,
-    TrackingStatus, configure_station_tracking, request_station_temperature_observation,
-    station_pause_round_trip, station_tracking_report, station_tracking_status,
-};
-#[cfg(target_arch = "riscv32")]
-pub use supervisor::{RadioRunners, RadioSystem, SystemRunner, new};
+pub use supervisor::{SystemRunner, new};
 #[cfg(target_arch = "riscv32")]
 #[cfg(not(feature = "upstream-network"))]
 pub use wifi_network::WifiNetworkRunner;
@@ -313,8 +317,10 @@ impl ConnectedDatapathPollObserver {
     }
 }
 
-/// Board-derived radio identity. Reading eFuse remains an application
+/// Board-derived Wi-Fi identity. Reading eFuse remains an application
 /// responsibility; credentials are supplied separately to `start_station`.
+/// The PHY calibration identity and retained calibration cache belong to the
+/// shared radio ([`SharedRadio`]).
 #[cfg(target_arch = "riscv32")]
 pub struct RadioConfig {
     #[cfg(feature = "rx-ownership-observation")]
@@ -326,12 +332,9 @@ pub struct RadioConfig {
     >,
     pub(crate) station_mac: oer_radio::wifi::WifiMacAddress,
     pub(crate) access_point_mac: oer_radio::wifi::WifiMacAddress,
-    pub(crate) calibration: oer_esp32s31_phy::PhyCalibrationIdentity,
     pub(crate) initial_channel: oer_ieee80211_mac::channel::WifiChannel,
-    pub(crate) calibration_cache: Option<oer_esp32s31_phy::PhyCalibrationCache>,
     pub(crate) maximum_tx_power_quarter_dbm: Option<i8>,
     pub(crate) rts_length_threshold: Option<RtsLengthThreshold>,
-    pub(crate) station_tracking: Option<TrackingConfig>,
     #[cfg(feature = "connected-datapath-cycle-telemetry")]
     pub(crate) connected_datapath_poll_observer: Option<ConnectedDatapathPollObserver>,
     #[cfg(feature = "diagnostics")]
@@ -344,7 +347,6 @@ impl RadioConfig {
         watchdog: &'static WatchdogConfig,
         station_mac: oer_radio::wifi::WifiMacAddress,
         access_point_mac: oer_radio::wifi::WifiMacAddress,
-        calibration: oer_esp32s31_phy::PhyCalibrationIdentity,
         initial_channel: oer_ieee80211_mac::channel::WifiChannel,
     ) -> Self {
         Self {
@@ -354,14 +356,9 @@ impl RadioConfig {
             station_mac,
             access_point_airtime: None,
             access_point_mac,
-            calibration,
             initial_channel,
-            calibration_cache: None,
             maximum_tx_power_quarter_dbm: None,
             rts_length_threshold: Some(RtsLengthThreshold::VENDOR_DEFAULT),
-            station_tracking: Some(TrackingConfig::new(
-                core::num::NonZeroU64::new(1_000_000).unwrap(),
-            )),
             #[cfg(feature = "connected-datapath-cycle-telemetry")]
             connected_datapath_poll_observer: None,
             #[cfg(feature = "diagnostics")]
@@ -377,16 +374,6 @@ impl RadioConfig {
         observer: &'static dyn oer_esp32s31_ieee80211_dma::rx_observation::RxOwnershipObserver,
     ) -> Self {
         self.rx_ownership_observer = Some(observer);
-        self
-    }
-
-    /// Supply a caller-owned retained PHY calibration cache. Cold registration
-    /// validates its schema, chip identity and calibration products, then uses
-    /// the partial path to republish hardware-resident state. Invalid caches
-    /// fall back to full calibration, and either successful path returns a
-    /// fresh cache for the next cold start.
-    pub fn with_calibration_cache(mut self, cache: oer_esp32s31_phy::PhyCalibrationCache) -> Self {
-        self.calibration_cache = Some(cache);
         self
     }
 
@@ -415,23 +402,6 @@ impl RadioConfig {
         threshold: Option<RtsLengthThreshold>,
     ) -> Self {
         self.rts_length_threshold = threshold;
-        self
-    }
-
-    /// Set the observation cadence for automatic connected-station PHY
-    /// maintenance. The default is one second, matching the current vendor
-    /// scheduler. Thermal predicates still decide whether hardware work is due.
-    pub const fn with_station_tracking_period(
-        mut self,
-        period_micros: core::num::NonZeroU64,
-    ) -> Self {
-        self.station_tracking = Some(TrackingConfig::new(period_micros));
-        self
-    }
-
-    /// Disable automatic PHY maintenance for connected station epochs.
-    pub const fn without_station_tracking(mut self) -> Self {
-        self.station_tracking = None;
         self
     }
 

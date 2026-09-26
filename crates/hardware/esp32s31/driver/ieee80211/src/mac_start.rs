@@ -123,10 +123,10 @@ where
         let WifiColdStart {
             clocked,
             platform,
-            tx_power,
+            report,
             ..
         } = &mut cold;
-        platform.install_phy_tx_power_profile(*tx_power);
+        platform.install_phy_tx_power_profile(report.tx_power);
         let mut mac = clocked.cold_mac_hal(lease);
         initialize_wifi_mac(
             platform,

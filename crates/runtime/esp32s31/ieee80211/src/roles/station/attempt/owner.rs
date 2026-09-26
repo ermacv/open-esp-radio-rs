@@ -5,7 +5,7 @@ use super::*;
 pub enum StaAttemptTargetError<J, W> {
     State(StaAttemptStateError),
     Candidate(StaPeerPortError),
-    Channel(PhyTargetPortError),
+    Channel(ConcurrentWifiChannelError),
     Authentication(StaJoinError<StaJoinPortError<RxFrontierError, J>>),
     Association(StaJoinError<StaJoinPortError<RxFrontierError, J>>),
     Peer(StaPeerPortError),

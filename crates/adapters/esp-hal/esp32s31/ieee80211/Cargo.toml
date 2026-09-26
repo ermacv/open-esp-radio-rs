@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "ESP-HAL whole-radio singleton and platform adapter for ESP32-S31"
+description = "ESP-HAL Wi-Fi MAC platform adapter for ESP32-S31"
 
 [features]
 default = []

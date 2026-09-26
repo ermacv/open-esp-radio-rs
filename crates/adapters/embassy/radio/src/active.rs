@@ -124,14 +124,6 @@ where
                     .respond(EmbassyWifiSupervisorResponse::RestartRadio(Err(error)))
                     .await;
             }
-            Either::Second(EmbassyWifiSupervisorCommand::CycleRetainedRadio) => {
-                let error = active_start_error(EmbassyWifiStartKind::WholeRadioRetainedCycle);
-                endpoint
-                    .respond(EmbassyWifiSupervisorResponse::CycleRetainedRadio(Err(
-                        error,
-                    )))
-                    .await;
-            }
             Either::Second(EmbassyWifiSupervisorCommand::Scan(request)) => {
                 let error = active_start_error(EmbassyWifiStartKind::StandaloneScan);
                 endpoint

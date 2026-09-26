@@ -20,7 +20,7 @@ use {
 use oer_radio::wifi::{
     MonitorCapturePolicy, MonitorRequest, StationRequest, StationScanChannels, StationScanPolicy,
     StationSecurity, WIFI_SCAN_RESULT_CAPACITY, WifiMacAddress, WifiMonitorConfig,
-    WifiRadioCalibrationPath, WifiScanReport, WifiScanRequest, WifiScanResult,
+    WifiRadioRestartRf, WifiScanReport, WifiScanRequest, WifiScanResult,
     WifiServicePlanningError, WifiServiceRequest, WifiSsid, WifiStartFailure, WifiStartReport,
     WifiStationConfig, WifiStopReport, WifiSupervisorConfiguration, WifiSupervisorPort,
 };
@@ -68,13 +68,13 @@ impl EmbassyWifiActiveRoleControl for TestRoleControl<'_> {
     }
 }
 
-struct RetainedCycleControls {
+struct RestartControls {
     started: Signal<NoopRawMutex, ()>,
     release: Signal<NoopRawMutex, ()>,
     completed: Signal<NoopRawMutex, ()>,
 }
 
-impl RetainedCycleControls {
+impl RestartControls {
     const fn new() -> Self {
         Self {
             started: Signal::new(),
@@ -85,7 +85,7 @@ impl RetainedCycleControls {
 }
 
 struct FakeLocalEpochRunner {
-    retained_cycle: Option<Rc<RetainedCycleControls>>,
+    restart: Option<Rc<RestartControls>>,
     mode: FakeEpochMode,
 }
 
@@ -100,21 +100,21 @@ enum FakeEpochMode {
 impl FakeLocalEpochRunner {
     const fn immediate() -> Self {
         Self {
-            retained_cycle: None,
+            restart: None,
             mode: FakeEpochMode::Normal,
         }
     }
 
-    fn with_retained_cycle(controls: Rc<RetainedCycleControls>) -> Self {
+    fn with_restart(controls: Rc<RestartControls>) -> Self {
         Self {
-            retained_cycle: Some(controls),
+            restart: Some(controls),
             mode: FakeEpochMode::Normal,
         }
     }
 
     fn with_mode(mode: FakeEpochMode) -> Self {
         Self {
-            retained_cycle: None,
+            restart: None,
             mode,
         }
     }
@@ -208,35 +208,23 @@ impl EmbassyWifiRoleEpochRunner<NoopRawMutex> for FakeLocalEpochRunner {
     async fn restart_radio<'a>(
         &'a mut self,
         slot: &'a mut Option<Self::Stopped>,
-    ) -> Result<WifiRadioCalibrationPath, Self::LifecycleFaulted> {
+    ) -> Result<WifiRadioRestartRf, Self::LifecycleFaulted> {
         let stopped = slot
             .take()
             .expect("test actor retains stopped owner between epochs");
         if matches!(self.mode, FakeEpochMode::LifecycleFault) {
             return Err(stopped);
         }
-        stopped.set(stopped.get() + 10);
-        *slot = Some(stopped);
-        Ok(WifiRadioCalibrationPath::RestoredCache)
-    }
-
-    async fn cycle_retained_radio<'a>(
-        &'a mut self,
-        slot: &'a mut Option<Self::Stopped>,
-    ) -> Result<(), Self::LifecycleFaulted> {
-        let stopped = slot
-            .take()
-            .expect("test actor retains stopped owner between epochs");
-        if let Some(controls) = &self.retained_cycle {
+        if let Some(controls) = &self.restart {
             controls.started.signal(());
             controls.release.wait().await;
         }
-        stopped.set(stopped.get() + 20);
+        stopped.set(stopped.get() + 10);
         *slot = Some(stopped);
-        if let Some(controls) = &self.retained_cycle {
+        if let Some(controls) = &self.restart {
             controls.completed.signal(());
         }
-        Ok(())
+        Ok(WifiRadioRestartRf::ClosedAndWoken)
     }
 }
 
@@ -401,42 +389,13 @@ fn idle_restart_runs_in_the_owner_actor_and_advances_generation() {
 
     let application = async {
         let (wifi, restart) = radio.into_wifi().restart_radio().await.unwrap();
-        assert_eq!(
-            restart.calibration_path(),
-            WifiRadioCalibrationPath::RestoredCache
-        );
+        assert_eq!(restart.rf(), WifiRadioRestartRf::ClosedAndWoken);
         let station = wifi.start_station(station_request()).await.unwrap();
         (restart.generation().value(), station.generation().value())
     };
     let Either::First(generations) = run(select(application, task.run()));
     assert_eq!(generations, (1, 2));
     assert_eq!(observed_owner.get(), 11);
-}
-
-#[test]
-fn idle_retained_cycle_runs_in_the_owner_actor_and_advances_generation() {
-    let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, &'static str>::new();
-    let configuration = WifiSupervisorConfiguration::new(TEST_CAPABILITIES).with_station(
-        WifiStationConfig::new(WifiMacAddress::new([0x02, 0, 0, 0, 0, 1]).unwrap()),
-    );
-    let owner = Rc::new(Cell::new(0));
-    let observed_owner = Rc::clone(&owner);
-    let (radio, task) = prepare_embassy_wifi_supervisor(
-        &resources,
-        configuration,
-        FakeLocalEpochRunner::immediate(),
-        owner,
-    )
-    .unwrap_or_else(|_| panic!("fresh supervisor must prepare"));
-
-    let application = async {
-        let (wifi, retained) = radio.into_wifi().cycle_retained_radio().await.unwrap();
-        let station = wifi.start_station(station_request()).await.unwrap();
-        (retained.generation().value(), station.generation().value())
-    };
-    let Either::First(generations) = run(select(application, task.run()));
-    assert_eq!(generations, (1, 2));
-    assert_eq!(observed_owner.get(), 21);
 }
 
 #[test]
@@ -469,38 +428,6 @@ fn not_started_keeps_the_epoch_generation_and_exact_stopped_owner() {
         port.stop().await.unwrap();
         assert_eq!(observed_owner.get(), 1);
         assert_eq!(Rc::strong_count(&observed_owner), 2);
-    };
-    assert!(matches!(
-        run(select(application, task.run())),
-        Either::First(())
-    ));
-}
-
-#[test]
-fn retained_cycle_after_cold_restart_keeps_phy_registration_generation() {
-    let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, &'static str>::new();
-    let configuration = WifiSupervisorConfiguration::new(TEST_CAPABILITIES);
-    let owner = Rc::new(Cell::new(0));
-    let observed_owner = Rc::clone(&owner);
-    let (radio, task) = prepare_embassy_wifi_supervisor(
-        &resources,
-        configuration,
-        FakeLocalEpochRunner::immediate(),
-        owner,
-    )
-    .unwrap_or_else(|_| panic!("fresh supervisor must prepare"));
-
-    let application = async {
-        let mut port = radio.into_wifi().into_port();
-        let restart = port.restart_radio().await.unwrap();
-        assert_eq!(restart.generation().value(), 1);
-        assert_eq!(restart.previous_phy_registration_generation().value(), 0);
-        assert_eq!(restart.phy_registration_generation().value(), 1);
-        let retained = port.cycle_retained_radio().await.unwrap();
-        assert_eq!(retained.generation().value(), 2);
-        assert_eq!(retained.previous_phy_registration_generation().value(), 1);
-        assert_eq!(retained.phy_registration_generation().value(), 1);
-        assert_eq!(observed_owner.get(), 30);
     };
     assert!(matches!(
         run(select(application, task.run())),
@@ -589,27 +516,27 @@ fn supervisor_prepare_failure_returns_runner_and_stopped_owner() {
 }
 
 #[test]
-fn cancelled_retained_cycle_caller_does_not_cancel_the_owner_actor() {
+fn cancelled_restart_caller_does_not_cancel_the_owner_actor() {
     let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, &'static str>::new();
     let configuration = WifiSupervisorConfiguration::new(TEST_CAPABILITIES).with_station(
         WifiStationConfig::new(WifiMacAddress::new([0x02, 0, 0, 0, 0, 1]).unwrap()),
     );
     let owner = Rc::new(Cell::new(0));
     let observed_owner = Rc::clone(&owner);
-    let controls = Rc::new(RetainedCycleControls::new());
+    let controls = Rc::new(RestartControls::new());
     let (radio, task) = prepare_embassy_wifi_supervisor(
         &resources,
         configuration,
-        FakeLocalEpochRunner::with_retained_cycle(Rc::clone(&controls)),
+        FakeLocalEpochRunner::with_restart(Rc::clone(&controls)),
         owner,
     )
     .unwrap_or_else(|_| panic!("fresh supervisor must prepare"));
 
     let application = async {
         let mut port = radio.into_wifi().into_port();
-        let retained_cycle = port.cycle_retained_radio();
+        let restart = port.restart_radio();
         assert!(matches!(
-            select(retained_cycle, controls.started.wait()).await,
+            select(restart, controls.started.wait()).await,
             Either::Second(())
         ));
         controls.release.signal(());
@@ -620,7 +547,7 @@ fn cancelled_retained_cycle_caller_does_not_cancel_the_owner_actor() {
     };
     let Either::First(generation) = run(select(application, task.run()));
     assert_eq!(generation, 2);
-    assert_eq!(observed_owner.get(), 21);
+    assert_eq!(observed_owner.get(), 11);
 }
 
 #[test]
@@ -1139,7 +1066,7 @@ fn active_role_rejects_a_new_start_with_the_untouched_request() {
 }
 
 #[test]
-fn active_role_identifies_a_rejected_retained_cycle() {
+fn active_role_identifies_a_rejected_restart() {
     let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, &'static str>::new();
     let (radio, mut endpoint) = resources.split().unwrap();
     let stop = Signal::<NoopRawMutex, ()>::new();
@@ -1151,8 +1078,8 @@ fn active_role_identifies_a_rejected_retained_cycle() {
     };
 
     let application = async {
-        match radio.into_wifi().cycle_retained_radio().await {
-            Ok(_) => panic!("an active role cannot enter a retained RF cycle"),
+        match radio.into_wifi().restart_radio().await {
+            Ok(_) => panic!("an active role cannot restart the radio"),
             Err(error) => error,
         }
     };
@@ -1162,7 +1089,7 @@ fn active_role_identifies_a_rejected_retained_cycle() {
             "returned-owner"
         };
         let exit = drive_embassy_wifi_active_role(&mut endpoint, &mut control, role, |kind| {
-            assert_eq!(kind, EmbassyWifiStartKind::WholeRadioRetainedCycle);
+            assert_eq!(kind, EmbassyWifiStartKind::WholeRadioRestart);
             finish.signal(());
             "already-running"
         })

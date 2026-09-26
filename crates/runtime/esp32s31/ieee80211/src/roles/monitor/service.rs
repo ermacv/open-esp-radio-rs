@@ -283,22 +283,16 @@ where
         self.quarantined = true;
     }
 
-    /// Borrow the radio registers and platform only after both asynchronous
-    /// actors have released them.
-    pub fn stopped_radio_mut(
-        &mut self,
-    ) -> Result<(&mut H, &mut R::Platform), MonitorStoppedAccessError> {
+    /// Borrow the radio registers only after both asynchronous actors have
+    /// released them.
+    pub fn stopped_hardware_mut(&mut self) -> Result<&mut H, MonitorStoppedAccessError> {
         if !self.logical_parked {
             return Err(MonitorStoppedAccessError::RoleActive);
         }
-        Ok((
-            self.hardware
-                .as_mut()
-                .expect("monitor hardware owner exists"),
-            self.platform
-                .as_mut()
-                .expect("monitor platform owner exists"),
-        ))
+        Ok(self
+            .hardware
+            .as_mut()
+            .expect("monitor hardware owner exists"))
     }
 
     /// Prepare the cold ring for its first epoch. A running physical ring is

@@ -605,14 +605,14 @@ fn cancelled_run_keeps_owner_available_for_explicit_shutdown() {
     assert_eq!(owner.receive_phase(), RxFrontierPhase::Live);
     assert!(owner.interrupt_active());
     assert_eq!(
-        owner.stopped_radio_mut().map(|_| ()),
+        owner.stopped_hardware_mut().map(|_| ()),
         Err(MonitorStoppedAccessError::RoleActive)
     );
     block_on(owner.stop()).unwrap_or_else(|_| panic!("cancelled monitor must remain recoverable"));
     assert_eq!(owner.receive_phase(), RxFrontierPhase::Live);
     assert!(owner.interrupt_active());
     assert!(runtime.irq.is_rx_moderation_active());
-    assert!(owner.stopped_radio_mut().is_ok());
+    assert!(owner.stopped_hardware_mut().is_ok());
 }
 
 #[test]

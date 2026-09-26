@@ -115,6 +115,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "bt-hci"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f63b3d6f0ef006d9b87a075705d6c142b03681ad34090659647f0e227c1c667f"
+dependencies = [
+ "bt-hci-transport",
+ "btuuid",
+ "embassy-sync 0.7.2",
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
+ "futures-intrusive",
+ "heapless 0.8.0",
+]
+
+[[package]]
+name = "bt-hci-transport"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ffb9819c69cf88877f5eebc8c5ade0ab50f2bf9475bbb3eb714d66c55b0cb64"
+dependencies = [
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
+]
+
+[[package]]
+name = "btuuid"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5f48f1e9b0aad0a4f05d17bdeae0fa20ff798e272a03a6940ca27ad9c5a6ae7"
+
+[[package]]
 name = "bytemuck"
 version = "1.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1010,6 +1041,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92d699e522242e69e3003b94ecc1f960f3a5e015aa7c5d7486e65ad01dd94f5e"
 
 [[package]]
+name = "futures-intrusive"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d930c203dd0b6ff06e0201a4a2fe9149b43c684fd4420555b26d21b1a02956f"
+dependencies = [
+ "futures-core",
+ "lock_api",
+]
+
+[[package]]
 name = "futures-sink"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1194,6 +1235,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 
 [[package]]
+name = "lock_api"
+version = "0.4.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
+dependencies = [
+ "scopeguard",
+]
+
+[[package]]
 name = "log"
 version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1288,6 +1338,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oer-bluetooth-hci"
+version = "0.1.0"
+dependencies = [
+ "bt-hci",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embedded-io 0.7.1",
+]
+
+[[package]]
 name = "oer-embassy-net-owned"
 version = "0.1.0"
 dependencies = [
@@ -1305,6 +1364,27 @@ dependencies = [
  "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "oer-network-interface",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-bluetooth-hci",
+ "oer-esp32s31-bluetooth-memory",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+]
+
+[[package]]
+name = "oer-esp32s31-bluetooth-memory"
+version = "0.1.0"
+dependencies = [
+ "oer-esp32s31-hal",
+ "pin-project",
+ "vcell",
 ]
 
 [[package]]
@@ -1440,6 +1520,7 @@ dependencies = [
  "oer-esp32s31-ieee80211-mac",
  "oer-esp32s31-ieee80211-sta",
  "oer-esp32s31-phy",
+ "oer-esp32s31-radio-runtime",
  "oer-ieee80211-datapath",
  "oer-ieee80211-mac",
  "oer-ieee80211-rsn",
@@ -1493,6 +1574,8 @@ dependencies = [
  "oer-esp32s31-ieee80211-xarxa-upstream",
  "oer-esp32s31-phy",
  "oer-esp32s31-phy-runtime",
+ "oer-esp32s31-radio-esp-hal",
+ "oer-esp32s31-radio-runtime",
  "oer-esp32s31-soc-esp-hal",
  "oer-ieee80211-ap",
  "oer-ieee80211-mac",
@@ -1569,6 +1652,30 @@ dependencies = [
  "esp-hal",
  "oer-esp32s31-platform-board",
  "oer-esp32s31-platform-layout",
+]
+
+[[package]]
+name = "oer-esp32s31-radio-esp-hal"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "esp-hal",
+ "oer-bluetooth-hci",
+ "oer-esp32s31-bluetooth",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+]
+
+[[package]]
+name = "oer-esp32s31-radio-runtime"
+version = "0.1.0"
+dependencies = [
+ "embassy-sync 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-time 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "oer-esp32s31-hal",
+ "oer-esp32s31-phy",
+ "oer-esp32s31-phy-runtime",
 ]
 
 [[package]]
@@ -1888,6 +1995,12 @@ name = "scoped-tls"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
+
+[[package]]
+name = "scopeguard"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "sdio"

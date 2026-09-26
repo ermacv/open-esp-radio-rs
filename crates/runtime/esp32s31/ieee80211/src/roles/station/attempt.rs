@@ -21,7 +21,7 @@ use crate::{
 
 use oer_esp32s31_hal::owner::RadioRuntimeOwner;
 
-use oer_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
+use oer_esp32s31_phy::{ConcurrentWifiChannelError, PhyAsyncDelay, PhyTargetObserver};
 
 use oer_esp32s31_ieee80211::cooperative_hardware::CooperativeRadioHardware;
 
@@ -40,7 +40,6 @@ use oer_esp32s31_ieee80211_sta::{
         StaAttemptSecurityExecution, StaAttemptStateError, StaAttemptStation, StaAttemptStepError,
         StaConnectedEntryFailure, StaInstalledSecurity,
     },
-    hardware::channel::ScanPhy,
     join::{StaJoinObserver, StaJoinPortError, StaJoinTransmit},
     peer::{
         ConnectedStaPeer, PreparedStaPeer, ProgrammedStaPeer, StaPeerPort, StaPeerPortError,

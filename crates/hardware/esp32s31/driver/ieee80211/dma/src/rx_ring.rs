@@ -4,8 +4,6 @@
 //! decoding remains in the MAC crate, while the semantic MMIO operations are
 //! defined by [`crate::rx_dma::RxDma`].
 
-mod pause;
-pub use pause::{RxResumeError, RxRingPaused, RxRingResumeFailure};
 
 #[cfg(target_pointer_width = "32")]
 use core::sync::atomic::AtomicU32;

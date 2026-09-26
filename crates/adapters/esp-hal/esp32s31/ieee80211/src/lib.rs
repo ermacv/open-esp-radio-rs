@@ -2,19 +2,15 @@
 #![cfg(feature = "esp32s31")]
 #![forbid(unsafe_code)]
 
-//! ESP-HAL ownership adapter for the open ESP32-S31 radio driver.
+//! ESP-HAL Wi-Fi platform adapter for the open ESP32-S31 Wi-Fi driver.
 //!
-//! The open driver owns the recovered cold-start sequence. This adapter retains
-//! the documented chip-level singleton tokens. Route-owned radio words are
-//! accessed only through the affine custom PAC; the remaining platform words
-//! use the official `esp32s31` PAC until their own reviewed carveouts exist.
+//! The open driver owns the recovered Wi-Fi bring-up on the shared radio.
+//! This adapter supplies Wi-Fi's own MAC platform: the `WIFI` singleton, its
+//! CPU interrupt binding and the MAC initializer's platform sources.
 
 use esp_hal::{
     interrupt::{self, InterruptHandler},
-    peripherals::{
-        HP_SYS_CLKRST, I2C_ANA_MST, Interrupt, LP_AON_CLK_RST, LP_PERI, LP_TSENS, MODEM_LPCON,
-        MODEM_SYSCON, PMU, WIFI,
-    },
+    peripherals::{Interrupt, WIFI},
     rng::Rng,
     system::Cpu,
 };
@@ -31,52 +27,21 @@ use oer_esp32s31_ieee80211_mac::init::{
 
 pub mod mac_interrupt_epoch;
 
-/// Complete platform capability needed by the open radio power transition.
+/// Wi-Fi's own MAC platform on the shared radio.
 ///
-/// Keeping these singleton tokens together prevents the application from
-/// independently constructing another safe owner while `Radio<Self>` is live.
-/// `esp-hal` currently exposes register access as associated methods, so the
-/// fields themselves are retained as ownership proofs. In particular,
-/// `_modem_syscon` is never dereferenced outside the custom PAC route.
-pub struct EspHalRadioPeripheral {
+/// It retains the virtual `WIFI` singleton, which proves ownership of the
+/// Wi-Fi CPU interrupt lines, and the calibrated TX power profile consumed by
+/// cold MAC initialization. The shared radio-platform singletons belong to
+/// the radio system's `EspHalRadioPlatform`.
+pub struct EspHalWifiPlatform {
     _wifi: WIFI<'static>,
-    _modem_syscon: MODEM_SYSCON<'static>,
-    _modem_lpcon: MODEM_LPCON<'static>,
-    _hp_sys_clkrst: HP_SYS_CLKRST<'static>,
-    _pmu: PMU<'static>,
-    _lp_aon_clkrst: LP_AON_CLK_RST<'static>,
-    _lp_peri: LP_PERI<'static>,
-    _lp_tsens: LP_TSENS<'static>,
-    _i2c_ana_mst: I2C_ANA_MST<'static>,
     phy_tx_power: Option<PhyTxTargetPowerProfile>,
 }
 
-impl EspHalRadioPeripheral {
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "construction consumes every distinct esp-hal singleton needed for exclusive radio power ownership"
-    )]
-    pub fn new(
-        wifi: WIFI<'static>,
-        modem_syscon: MODEM_SYSCON<'static>,
-        modem_lpcon: MODEM_LPCON<'static>,
-        hp_sys_clkrst: HP_SYS_CLKRST<'static>,
-        pmu: PMU<'static>,
-        lp_aon_clkrst: LP_AON_CLK_RST<'static>,
-        lp_peri: LP_PERI<'static>,
-        lp_tsens: LP_TSENS<'static>,
-        i2c_ana_mst: I2C_ANA_MST<'static>,
-    ) -> Self {
+impl EspHalWifiPlatform {
+    pub const fn new(wifi: WIFI<'static>) -> Self {
         Self {
             _wifi: wifi,
-            _modem_syscon: modem_syscon,
-            _modem_lpcon: modem_lpcon,
-            _hp_sys_clkrst: hp_sys_clkrst,
-            _pmu: pmu,
-            _lp_aon_clkrst: lp_aon_clkrst,
-            _lp_peri: lp_peri,
-            _lp_tsens: lp_tsens,
-            _i2c_ana_mst: i2c_ana_mst,
             phy_tx_power: None,
         }
     }
@@ -107,13 +72,13 @@ impl EspHalRadioPeripheral {
     }
 }
 
-impl WifiMacPlatform for EspHalRadioPeripheral {
+impl WifiMacPlatform for EspHalWifiPlatform {
     fn install_phy_tx_power_profile(&mut self, profile: PhyTxTargetPowerProfile) {
-        EspHalRadioPeripheral::install_phy_tx_power_profile(self, profile);
+        EspHalWifiPlatform::install_phy_tx_power_profile(self, profile);
     }
 }
 
-impl MacDelayEntropy for EspHalRadioPeripheral {
+impl MacDelayEntropy for EspHalWifiPlatform {
     fn mac_delay_random(&mut self) -> u32 {
         // SOURCE: complete libpp hal_he_set_mac_delay on-chip branch obtains
         // `_random()` from g_wifi_osi_funcs. The esp-hal adapter implements
@@ -122,7 +87,7 @@ impl MacDelayEntropy for EspHalRadioPeripheral {
     }
 }
 
-impl MacSlowClockCalibrationSource for EspHalRadioPeripheral {
+impl MacSlowClockCalibrationSource for EspHalWifiPlatform {
     fn mac_slow_clock_calibration(&mut self) -> MacSlowClockCalibration {
         // SOURCE: the S31 esp-hal radio adapter installs slowclk_cal_get in
         // its OSI table and currently returns an unimplemented zero placeholder.
@@ -132,7 +97,7 @@ impl MacSlowClockCalibrationSource for EspHalRadioPeripheral {
     }
 }
 
-impl MacTxPowerSource for EspHalRadioPeripheral {
+impl MacTxPowerSource for EspHalWifiPlatform {
     fn mac_tx_power_pair(&mut self, rate: u8) -> MacTxPowerPair {
         let Some(profile) = &self.phy_tx_power else {
             // Cold MAC init is ordered after the open PHY profile transfer.
@@ -148,7 +113,7 @@ impl MacTxPowerSource for EspHalRadioPeripheral {
     }
 }
 
-impl MacCoexPtiSource for EspHalRadioPeripheral {
+impl MacCoexPtiSource for EspHalWifiPlatform {
     fn mac_coex_pti(&mut self, event: MacCoexEvent) -> MacCoexPti {
         // These cold values configure the MAC's own scheduler even though this
         // integration starts no Bluetooth/802.15.4 coexistence runtime. In
@@ -157,8 +122,7 @@ impl MacCoexPtiSource for EspHalRadioPeripheral {
         // TX (PTI one) outrank an immediate response: RX-only HIL passed, but
         // concurrent TX produced thousands of WDEVRX_ABORT_FCS_PASS events.
         //
-        // The exclusive route has no radio arbiter yet, so it reads the
-        // arbiter's cold table (`coex_pti_tab`) directly.
+        // The values are the arbiter's cold table (`coex_pti_tab`).
         MacCoexPti::from_osi_value(CoexPtiTable::VENDOR.pti(event.coex_event()).value())
     }
 }
